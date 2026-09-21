@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -13,9 +13,13 @@ from PySide6.QtWidgets import (
 
 
 class PropertiesPanel(QWidget):
+    cut_requested = Signal(str, float)
+    delete_requested = Signal(str)
+
     def __init__(self, update_color_effect, update_volume, save_subtitles, parent=None):
         super().__init__(parent)
         self.update_color_effect_callback = update_color_effect
+        self.selected_clip = None
         self.setObjectName("properties_panel")
         self.setStyleSheet(
             "QWidget#properties_panel { background: #181818; border: 1px solid #2d2d2d; border-radius: 12px; }"
@@ -33,18 +37,32 @@ class PropertiesPanel(QWidget):
         clip_form.setSpacing(9)
         self.clip_name = QLabel("Aucun clip sélectionné")
         self.clip_duration = QLabel("--")
-        self.clip_track = QLabel("--")
-        self.clip_start = QLabel("--")
-        self.clip_end = QLabel("--")
-        for label in (self.clip_name, self.clip_duration, self.clip_track, self.clip_start, self.clip_end):
+        self.clip_position = QLabel("--")
+        for label in (self.clip_name, self.clip_duration, self.clip_position):
             label.setStyleSheet("color: #d7dff7; font-size: 12px;")
         self.clip_name.setStyleSheet("color: #f5f5f5; font-size: 13px; font-weight: 700;")
         clip_form.addRow("Nom", self.clip_name)
         clip_form.addRow("Durée", self.clip_duration)
-        clip_form.addRow("Piste", self.clip_track)
-        clip_form.addRow("Début", self.clip_start)
-        clip_form.addRow("Fin", self.clip_end)
+        clip_form.addRow("Position", self.clip_position)
         layout.addWidget(clip_group)
+
+        actions_layout = QVBoxLayout()
+        actions_layout.setSpacing(8)
+        self.cut_button = QPushButton("✂️ Couper à la tête de lecture")
+        self.delete_button = QPushButton("🗑️ Supprimer")
+        for button in (self.cut_button, self.delete_button):
+            button.setStyleSheet(
+                "QPushButton { background: #2b2b2b; color: white; border: 1px solid #3f3f3f; border-radius: 7px; }"
+                "QPushButton:hover { background: #3a3a3a; }"
+                "QPushButton:disabled { background: #242424; color: #7a7a7a; border: 1px solid #2d2d2d; }"
+            )
+        self.cut_button.clicked.connect(self.emit_cut_requested)
+        self.delete_button.clicked.connect(self.emit_delete_requested)
+        self.cut_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
+        actions_layout.addWidget(self.cut_button)
+        actions_layout.addWidget(self.delete_button)
+        layout.addLayout(actions_layout)
 
         color_group = QGroupBox("Couleur")
         color_group.setStyleSheet(self.group_style())
@@ -121,16 +139,43 @@ class PropertiesPanel(QWidget):
         self.contrast_value.setText(str(self.contrast_slider.value()))
         self.saturation_value.setText(str(self.saturation_slider.value()))
 
-    def set_clip(self, clip, track_name):
+    def show_clip(self, clip):
+        if clip is None:
+            self.selected_clip = None
+            self.clip_name.setText("Aucun clip sélectionné")
+            self.clip_duration.setText("--")
+            self.clip_position.setText("--")
+            self.cut_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+            return
+
+        self.selected_clip = clip
         duration = clip["end"] - clip["start"]
-        self.clip_name.setText(f"Nom: {clip['label']}")
-        self.clip_duration.setText(f"Durée: {duration:.2f}s")
-        self.clip_track.setText(f"Piste: {track_name}")
-        self.clip_start.setText(f"Début: {clip['start']:.2f}s")
-        self.clip_end.setText(f"Fin: {clip['end']:.2f}s")
+        self.clip_name.setText(clip["label"])
+        self.clip_duration.setText(f"{duration:.2f}s")
+        self.clip_position.setText(f"{clip['start']:.2f}s")
+        self.cut_button.setEnabled(True)
+        self.delete_button.setEnabled(True)
+
         is_subtitle = clip["track"] == 2
         self.subtitle_group.setVisible(is_subtitle)
         if is_subtitle:
             self.subtitle_editor.blockSignals(True)
             self.subtitle_editor.setPlainText(clip.get("text", ""))
             self.subtitle_editor.blockSignals(False)
+
+    def set_clip(self, clip, track_name=None):
+        self.show_clip(clip)
+
+    def emit_cut_requested(self):
+        if self.selected_clip is None:
+            return
+        if self.timeline_panel is None:
+            return
+        playhead_seconds = self.timeline_panel.playhead_seconds
+        self.cut_requested.emit(self.selected_clip.get("id"), playhead_seconds)
+
+    def emit_delete_requested(self):
+        if self.selected_clip is None:
+            return
+        self.delete_requested.emit(self.selected_clip.get("id"))

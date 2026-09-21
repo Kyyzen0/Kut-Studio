@@ -6,6 +6,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QMainWindow, QMenu, QSplitter, QVBoxLayout, QWidget
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
+from core.timeline_model import cut_clip, delete_clip
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
@@ -26,6 +27,7 @@ class MainWindow(QMainWindow):
         self.project_panel = ProjectPanel(self.load_video)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
         self.timeline_panel = TimelinePanel()
+        self.properties_panel.timeline_panel = self.timeline_panel
 
         self.preview_panel.player.durationChanged.connect(self.timeline_panel.setDuration)
         self.preview_panel.player.positionChanged.connect(self.timeline_panel.setPlaybackPosition)
@@ -33,6 +35,10 @@ class MainWindow(QMainWindow):
         self.timeline_panel.play_button.clicked.connect(self.toggle_play)
         self.timeline_panel.seek_requested.connect(self.seek_to_position)
         self.timeline_panel.clip_clicked.connect(self.on_clip_selected)
+        self.timeline_panel.clip_selected.connect(self.properties_panel.show_clip)
+        self.timeline_panel.clip_selected.connect(self.on_clip_selected)
+        self.properties_panel.cut_requested.connect(self.cut_selected_clip)
+        self.properties_panel.delete_requested.connect(self.delete_selected_clip)
         self.timeline_panel.transition_clicked.connect(self.offer_transition)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
 
@@ -112,7 +118,31 @@ class MainWindow(QMainWindow):
 
     def on_clip_selected(self, clip):
         self.active_subtitle_clip = clip if clip["track"] == 2 else None
-        self.properties_panel.set_clip(clip, self.timeline_panel.track_names[clip["track"]])
+        self.properties_panel.show_clip(clip)
+        self.timeline_panel.playhead_seconds = clip["start"]
+        self.timeline_panel.time_label.setText(self.timeline_panel.format_time(clip["start"]))
+        self.preview_panel.player.setPosition(int(clip["start"] * 1000))
+        self.update_subtitle_overlay(clip["start"])
+
+    def cut_selected_clip(self, clip_id, playhead_pos):
+        self.timeline_panel.clips = cut_clip(self.timeline_panel.clips, clip_id, playhead_pos)
+        self.timeline_panel.selected_clip = next(
+            (clip for clip in self.timeline_panel.clips if clip.get("id") == clip_id), None
+        )
+        if self.timeline_panel.selected_clip is None:
+            self.timeline_panel.selected_clip = next(
+                (clip for clip in self.timeline_panel.clips if clip["track"] == 0 and clip["start"] <= playhead_pos <= clip["end"]),
+                None,
+            )
+        if self.timeline_panel.selected_clip is not None:
+            self.on_clip_selected(self.timeline_panel.selected_clip)
+        self.timeline_panel.update()
+
+    def delete_selected_clip(self, clip_id):
+        self.timeline_panel.clips = delete_clip(self.timeline_panel.clips, clip_id)
+        self.timeline_panel.selected_clip = None
+        self.properties_panel.set_clip(None, "")
+        self.timeline_panel.update()
 
     def update_subtitle_from_editor(self):
         if self.active_subtitle_clip is None:
