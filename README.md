@@ -1,6 +1,6 @@
-# Kut Studio
+# Kut-Studio
 
-Kut Studio est un prototype de montage vidéo construit avec PySide6.
+Kut-Studio est un prototype de montage vidéo construit avec PySide6.
 
 ## Lancer
 
