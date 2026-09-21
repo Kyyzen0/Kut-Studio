@@ -16,7 +16,7 @@ def default_clips():
             "start": 1.0,
             "end": 5.0,
             "label": "Sous-titre 01",
-            "text": "Bienvenue dans Premiere Simple",
+            "text": "Bienvenue dans Kut Studio",
             "color": QColor("#e6c84f"),
         },
     ]

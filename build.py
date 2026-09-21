@@ -1,6 +1,7 @@
 import subprocess
 import sys
 
+APP_NAME = "Kut Studio"
 
 subprocess.check_call([
     sys.executable,
@@ -9,6 +10,6 @@ subprocess.check_call([
     "--noconfirm",
     "--windowed",
     "--name",
-    "PremiereSimple",
+    APP_NAME,
     "main.py",
 ])

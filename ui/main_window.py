@@ -15,7 +15,7 @@ from ui.timeline_panel import TimelinePanel
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Premiere Simple - v0.4")
+        self.setWindowTitle("Kut Studio - v0.5")
         self.setGeometry(100, 100, 1200, 700)
         self.subtitle_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "subtitles.srt")
         self.active_subtitle_clip = None

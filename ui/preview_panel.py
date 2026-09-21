@@ -50,7 +50,7 @@ class PreviewPanel(QWidget):
         top_header.setStyleSheet("background: #171717; border: 1px solid #2d2d2d; border-radius: 12px;")
         header_layout = QHBoxLayout(top_header)
         header_layout.setContentsMargins(14, 8, 14, 8)
-        title = QLabel("Premiere Simple / Sequence 01")
+        title = QLabel("Kut Studio / Sequence 01")
         title.setStyleSheet("color: #f2f2f2; font-size: 15px; font-weight: 700;")
         status = QLabel("EDIT MODE • 4K • 24fps")
         status.setStyleSheet("color: #9ec0ff; font-size: 11px; font-weight: 600;")
