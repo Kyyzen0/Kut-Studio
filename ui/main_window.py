@@ -136,12 +136,14 @@ class MainWindow(QMainWindow):
             )
         if self.timeline_panel.selected_clip is not None:
             self.on_clip_selected(self.timeline_panel.selected_clip)
+        self.timeline_panel.refresh_clip_widgets()
         self.timeline_panel.update()
 
     def delete_selected_clip(self, clip_id):
         self.timeline_panel.clips = delete_clip(self.timeline_panel.clips, clip_id)
         self.timeline_panel.selected_clip = None
         self.properties_panel.set_clip(None, "")
+        self.timeline_panel.refresh_clip_widgets()
         self.timeline_panel.update()
 
     def update_subtitle_from_editor(self):
