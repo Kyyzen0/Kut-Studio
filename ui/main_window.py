@@ -3,7 +3,17 @@ import os
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtWidgets import QMainWindow, QMenu, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
 from core.timeline_model import cut_clip, delete_clip
@@ -11,13 +21,16 @@ from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
+from ui.export_panel import ExportPanel
+from ui.theme import COLORS, global_stylesheet, label_style
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Kut-Studio - v0.5")
-        self.setGeometry(100, 100, 1200, 700)
+        self.setWindowTitle("Kut-Studio")
+        self.setMinimumSize(1080, 680)
+        self.resize(1440, 900)
         self.subtitle_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "subtitles.srt")
         self.active_subtitle_clip = None
         self.transition_seconds = None
@@ -27,7 +40,10 @@ class MainWindow(QMainWindow):
         self.project_panel = ProjectPanel(self.load_video)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
         self.timeline_panel = TimelinePanel()
+        self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
+        self.export_panel.export_requested.connect(self.launch_export)
+        self.export_panel.close_requested.connect(self.show_editor)
 
         self.preview_panel.player.durationChanged.connect(self.timeline_panel.setDuration)
         self.preview_panel.player.positionChanged.connect(self.timeline_panel.setPlaybackPosition)
@@ -43,21 +59,89 @@ class MainWindow(QMainWindow):
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
 
         top_split = QSplitter(Qt.Horizontal)
+        top_split.setObjectName("workspace_splitter")
         top_split.addWidget(self.project_panel)
         top_split.addWidget(self.preview_panel)
         top_split.addWidget(self.properties_panel)
         top_split.setSizes([220, 650, 260])
+        top_split.setStretchFactor(0, 0)
+        top_split.setStretchFactor(1, 1)
+        top_split.setStretchFactor(2, 0)
         main_split = QSplitter(Qt.Vertical)
         main_split.addWidget(top_split)
         main_split.addWidget(self.timeline_panel)
         main_split.setSizes([500, 270])
-        self.setCentralWidget(main_split)
+        main_split.setStretchFactor(0, 1)
+        main_split.setStretchFactor(1, 0)
+
+        self.editor_page = QWidget()
+        editor_layout = QVBoxLayout(self.editor_page)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.addWidget(main_split)
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self.editor_page)
+        self.pages.addWidget(self.export_panel)
+
+        shell = QWidget()
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(self._build_top_bar())
+        shell_layout.addWidget(self.pages)
+        self.setCentralWidget(shell)
 
         self.timeline_timer = QTimer(self)
         self.timeline_timer.setInterval(40)
         self.timeline_timer.timeout.connect(self.update_timeline)
         self.timeline_timer.start()
-        self.setStyleSheet(self.global_style())
+        self.setStyleSheet(global_stylesheet())
+
+    def _build_top_bar(self):
+        bar = QWidget()
+        bar.setFixedHeight(56)
+        bar.setStyleSheet(
+            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+        )
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(18, 0, 18, 0)
+        layout.setSpacing(14)
+
+        logo = QLabel("K")
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setFixedSize(28, 28)
+        logo.setStyleSheet(
+            f"background: {COLORS['accent']}; color: white; border-radius: 7px; font-size: 15px; font-weight: 800;"
+        )
+        brand = QLabel("KUT-STUDIO")
+        brand.setStyleSheet(label_style(13, "text", 800))
+        project = QLabel("Mon montage  /  Projet sans titre")
+        project.setStyleSheet(label_style(12, "muted", 500))
+        saved = QLabel("●  Enregistré")
+        saved.setStyleSheet(label_style(11, "success", 600))
+        self.export_button = QPushButton("Exporter")
+        self.export_button.setCursor(Qt.PointingHandCursor)
+        self.export_button.setStyleSheet(
+            f"QPushButton {{ background: {COLORS['accent']}; border: none; padding: 8px 17px; font-weight: 700; }}"
+            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
+        )
+        self.export_button.clicked.connect(self.show_export)
+        layout.addWidget(logo)
+        layout.addWidget(brand)
+        layout.addSpacing(18)
+        layout.addWidget(project)
+        layout.addWidget(saved)
+        layout.addStretch()
+        layout.addWidget(self.export_button)
+        return bar
+
+    def show_export(self):
+        self.pages.setCurrentWidget(self.export_panel)
+
+    def show_editor(self):
+        self.pages.setCurrentWidget(self.editor_page)
+
+    def launch_export(self):
+        self.export_panel.mark_export_error("Moteur d'export non configuré")
 
     def _build_menu_bar(self):
         menu_bar = self.menuBar()
@@ -88,23 +172,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def global_style():
-        return (
-            "QMainWindow { background: #121212; color: white; }"
-            "QWidget { color: white; }"
-            "QSplitter::handle { background: #2a2a2a; }"
-            "QSplitter::handle:vertical { width: 4px; }"
-            "QSplitter::handle:horizontal { height: 4px; }"
-            "QLabel { color: white; }"
-            "QPushButton { background: #2d2d2d; color: white; border: 1px solid #3a3a3a; border-radius: 8px; padding: 7px 12px; }"
-            "QPushButton:hover { background: #3a3a3a; }"
-            "QListWidget::item { background: transparent; }"
-            "QMenuBar { background: #1b1b1b; color: #f3f3f3; border-bottom: 1px solid #2d2d2d; padding: 4px; }"
-            "QMenuBar::item { background: transparent; padding: 6px 10px; border-radius: 6px; }"
-            "QMenuBar::item:selected { background: #2f5d9a; }"
-            "QMenu { background: #1d1d1d; border: 1px solid #2d2d2d; color: #f3f3f3; }"
-            "QMenu::item { padding: 7px 20px; }"
-            "QMenu::item:selected { background: #2f5d9a; }"
-        )
+        return global_stylesheet()
 
     def on_playback_state_changed(self, state):
         is_playing = state == QMediaPlayer.PlayingState

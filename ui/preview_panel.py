@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QGraphicsColorizeEffect,
 )
 
+from ui.theme import COLORS, label_style
+
 
 class PreviewPanel(QWidget):
     def __init__(self, toggle_play, stop_playback, seek_relative, parent=None):
@@ -21,6 +23,7 @@ class PreviewPanel(QWidget):
         self.audio_output.setVolume(1.0)
         self.player.setAudioOutput(self.audio_output)
         self.video_widget = QVideoWidget()
+        self.video_widget.setAspectRatioMode(Qt.KeepAspectRatio)
         self.player.setVideoOutput(self.video_widget)
 
         self.color_effect = QGraphicsColorizeEffect(self.video_widget)
@@ -36,24 +39,30 @@ class PreviewPanel(QWidget):
         )
         self.preview_transition_overlay.hide()
 
+        self.empty_state = QLabel("Votre histoire commence ici\n\nImportez vos médias, puis déposez-les sur la timeline.")
+        self.empty_state.setAlignment(Qt.AlignCenter)
+        self.empty_state.setStyleSheet(label_style(14, "muted", 500))
+
         self.preview_subtitle_overlay = QLabel()
         self.preview_subtitle_overlay.setAlignment(Qt.AlignCenter)
         self.preview_subtitle_overlay.setWordWrap(True)
         self.preview_subtitle_overlay.setStyleSheet(
-            "background: rgba(0, 0, 0, 190); color: white; border-radius: 5px;"
+            f"background: rgba(0, 0, 0, 190); color: {COLORS['text']}; border-radius: 5px;"
             "padding: 6px 12px; font-size: 16px; font-weight: 700;"
         )
         self.preview_subtitle_overlay.hide()
 
         top_header = QWidget()
         top_header.setFixedHeight(54)
-        top_header.setStyleSheet("background: #171717; border: 1px solid #2d2d2d; border-radius: 12px;")
+        top_header.setStyleSheet(
+            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+        )
         header_layout = QHBoxLayout(top_header)
         header_layout.setContentsMargins(14, 8, 14, 8)
-        title = QLabel("Kut-Studio / Sequence 01")
-        title.setStyleSheet("color: #f2f2f2; font-size: 15px; font-weight: 700;")
-        status = QLabel("EDIT MODE • 4K • 24fps")
-        status.setStyleSheet("color: #9ec0ff; font-size: 11px; font-weight: 600;")
+        title = QLabel("ESPACE DE TRAVAIL\nMontage vidéo")
+        title.setStyleSheet(label_style(13, "text", 700))
+        status = QLabel("PREVIEW   ·   1920 × 1080 · 30 fps")
+        status.setStyleSheet(label_style(11, "muted", 600))
         status.setAlignment(Qt.AlignRight)
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -61,7 +70,7 @@ class PreviewPanel(QWidget):
 
         toolbar = QWidget()
         toolbar.setFixedHeight(90)
-        toolbar.setStyleSheet("background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 12px;")
+        toolbar.setStyleSheet(f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};")
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(8, 8, 8, 8)
         toolbar_layout.setSpacing(8)
@@ -107,6 +116,7 @@ class PreviewPanel(QWidget):
         preview_layout = QGridLayout(preview_container)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.addWidget(self.video_widget, 0, 0)
+        preview_layout.addWidget(self.empty_state, 0, 0, Qt.AlignCenter)
         preview_layout.addWidget(self.preview_transition_overlay, 0, 0, Qt.AlignCenter)
         preview_layout.addWidget(self.preview_subtitle_overlay, 0, 0, Qt.AlignHCenter | Qt.AlignBottom)
 
@@ -116,23 +126,25 @@ class PreviewPanel(QWidget):
         layout.addWidget(toolbar)
         layout.addWidget(preview_container)
         self.setObjectName("viewer_panel")
-        self.setStyleSheet("QWidget#viewer_panel { background: #151515; border: 1px solid #2b2b2b; border-radius: 12px; }")
+        self.setStyleSheet(f"QWidget#viewer_panel {{ background: {COLORS['background']}; }}")
 
     @staticmethod
     def make_tool_button(label, bg="#2a2a2a", accent=False):
         button = QPushButton(label)
+        button.setCursor(Qt.PointingHandCursor)
         if accent:
             button.setStyleSheet(
-                "QPushButton { background: #2f6fec; color: white; border: none; border-radius: 8px; padding: 9px 14px; font-weight: 700; }"
-                "QPushButton:hover { background: #3d7ef3; }"
+                f"QPushButton {{ background: {COLORS['accent']}; color: white; border: none; border-radius: 6px; padding: 9px 14px; font-weight: 700; }}"
+                f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
             )
         else:
             button.setStyleSheet(
-                "QPushButton { background: %s; color: white; border: 1px solid #3a3a3a; border-radius: 8px; padding: 9px 12px; font-weight: 600; }"
-                "QPushButton:hover { background: #373737; }" % bg
+                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 9px 12px; font-weight: 600; }}"
+                f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
             )
         return button
 
     def load_video(self, path):
+        self.empty_state.hide()
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()

@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.theme import COLORS, label_style
+
 
 class PropertiesPanel(QWidget):
     cut_requested = Signal(str, float)
@@ -20,15 +22,29 @@ class PropertiesPanel(QWidget):
         super().__init__(parent)
         self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
+        self.timeline_panel = None
         self.setObjectName("properties_panel")
         self.setStyleSheet(
-            "QWidget#properties_panel { background: #181818; border: 1px solid #2d2d2d; border-radius: 12px; }"
+            f"QWidget#properties_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        title = QLabel("Propriétés")
-        title.setStyleSheet("color: #e6e6e6; font-weight: 700; font-size: 13px; margin-bottom: 6px;")
+        layout.setContentsMargins(16, 18, 16, 14)
+        layout.setSpacing(10)
+        title = QLabel("PROPRIÉTÉS")
+        title.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(title)
+
+        project_group = QGroupBox("Paramètres du projet")
+        project_group.setStyleSheet(self.group_style())
+        project_form = QFormLayout(project_group)
+        project_form.setContentsMargins(12, 16, 12, 12)
+        project_form.setSpacing(8)
+        project_form.addRow("État", QLabel("Aucun clip sélectionné"))
+        project_form.addRow("Résolution", QLabel("1920 × 1080"))
+        project_form.addRow("Format", QLabel("16:9"))
+        project_form.addRow("Fréquence", QLabel("30 fps"))
+        project_form.addRow("Fond", QLabel("#000000"))
+        layout.addWidget(project_group)
 
         clip_group = QGroupBox("Clip sélectionné")
         clip_group.setStyleSheet(self.group_style())
@@ -39,8 +55,8 @@ class PropertiesPanel(QWidget):
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
         for label in (self.clip_name, self.clip_duration, self.clip_position):
-            label.setStyleSheet("color: #d7dff7; font-size: 12px;")
-        self.clip_name.setStyleSheet("color: #f5f5f5; font-size: 13px; font-weight: 700;")
+            label.setStyleSheet(label_style(12, "muted", 500))
+        self.clip_name.setStyleSheet(label_style(13, "text", 700))
         clip_form.addRow("Nom", self.clip_name)
         clip_form.addRow("Durée", self.clip_duration)
         clip_form.addRow("Position", self.clip_position)
@@ -52,9 +68,8 @@ class PropertiesPanel(QWidget):
         self.delete_button = QPushButton("🗑️ Supprimer")
         for button in (self.cut_button, self.delete_button):
             button.setStyleSheet(
-                "QPushButton { background: #2b2b2b; color: white; border: 1px solid #3f3f3f; border-radius: 7px; }"
-                "QPushButton:hover { background: #3a3a3a; }"
-                "QPushButton:disabled { background: #242424; color: #7a7a7a; border: 1px solid #2d2d2d; }"
+                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; }}"
+                f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
             )
         self.cut_button.clicked.connect(self.emit_cut_requested)
         self.delete_button.clicked.connect(self.emit_delete_requested)
@@ -110,8 +125,8 @@ class PropertiesPanel(QWidget):
     @staticmethod
     def group_style():
         return (
-            "QGroupBox { color: #dfe8ff; border: 1px solid #2d2d2d; border-radius: 10px; margin-top: 10px; padding-top: 10px; }"
-            "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #dfe8ff; }"
+            f"QGroupBox {{ color: {COLORS['muted']}; border: 1px solid {COLORS['border']}; border-radius: 6px; margin-top: 10px; padding-top: 10px; }}"
+            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; color: {COLORS['muted']}; }}"
         )
 
     @staticmethod
@@ -123,7 +138,7 @@ class PropertiesPanel(QWidget):
         value_label = QLabel(f"{value}{suffix}")
         value_label.setMinimumWidth(38)
         value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        value_label.setStyleSheet("color: #b9c7d9; font-size: 11px;")
+        value_label.setStyleSheet(label_style(11, "muted", 600))
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
@@ -147,6 +162,7 @@ class PropertiesPanel(QWidget):
             self.clip_position.setText("--")
             self.cut_button.setEnabled(False)
             self.delete_button.setEnabled(False)
+            self.subtitle_group.hide()
             return
 
         self.selected_clip = clip

@@ -12,6 +12,7 @@ from core.timeline_model import (
     transition_gap_pixels,
     v1_transition_pairs,
 )
+from ui.theme import COLORS, label_style
 
 
 class ClipWidget(QWidget):
@@ -36,11 +37,11 @@ class ClipWidget(QWidget):
 
     def refresh_style(self):
         selected = self.parent_timeline is not None and self.parent_timeline.selected_clip is self.clip
-        border = "#f7d154" if selected else "#ffffff"
+        border = COLORS["accent_hover"] if selected else "#59616F"
         color = self.clip["color"].name()
         self.setStyleSheet(
-            f"QWidget {{ background: {color}; border: 2px solid {border}; border-radius: 8px; color: white; }}"
-            "QWidget::hover { border-color: #dfe7ff; }"
+            f"QWidget {{ background: {color}; border: 2px solid {border}; border-radius: 6px; color: white; }}"
+            f"QWidget::hover {{ border-color: {COLORS['accent_hover']}; }}"
         )
         self.label.setText(self.clip["label"])
         self.duration_label.setText(self.parent_timeline.format_time(self.clip["end"] - self.clip["start"]))
@@ -116,7 +117,7 @@ class TimelinePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(270)
-        self.setStyleSheet("background: #1e1e1e; color: white;")
+        self.setStyleSheet(f"background: {COLORS['panel_alt']}; color: {COLORS['text']};")
         self.header_height = 40
         self.ruler_height = 34
         self.track_height = 56
@@ -125,8 +126,8 @@ class TimelinePanel(QWidget):
         self.duration_seconds = 30.0
         self.playhead_seconds = 0.0
         self.pixels_per_second = 120.0
-        self.track_names = TRACK_NAMES
-        self.track_labels = TRACK_LABELS
+        self.track_names = ["V1", "A1", "T"]
+        self.track_labels = ["VIDÉO 1", "AUDIO 1", "TEXTE"]
         self.markers = MARKERS
         self.clips = default_clips()
         self.clip_widgets = {}
@@ -139,23 +140,24 @@ class TimelinePanel(QWidget):
 
         self.play_button = QPushButton("▶")
         self.play_button.setFixedWidth(42)
-        self.play_button.setStyleSheet(
-            "QPushButton { background: #2d2d2d; color: white; border: 1px solid #3b3b3b; border-radius: 7px; font-weight: 600; }"
-            "QPushButton:hover { background: #3b3b3b; }"
-        )
+        self.play_button.setToolTip("Lecture / pause (Espace)")
         self.time_label = QLabel("00:00")
         self.time_label.setStyleSheet("color: #f0f0f0; font-weight: 700; font-size: 12px;")
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet("color: #a0a0a0; font-size: 12px;")
         self.zoom_out_btn = QPushButton("−")
         self.zoom_out_btn.setFixedWidth(26)
+        self.zoom_out_btn.setToolTip("Réduire le zoom")
         self.zoom_label = QLabel("100%")
         self.zoom_label.setStyleSheet("color: #dfe7ff; font-weight: 700; min-width: 48px; font-size: 11px;")
         self.zoom_label.setAlignment(Qt.AlignCenter)
         self.zoom_in_btn = QPushButton("+")
         self.zoom_in_btn.setFixedWidth(26)
+        self.zoom_in_btn.setToolTip("Augmenter le zoom")
         for button in (self.zoom_out_btn, self.zoom_in_btn):
-            button.setStyleSheet("QPushButton { background: #2a2a2a; color: white; border: 1px solid #3a3a3a; border-radius: 5px; }")
+            button.setStyleSheet(
+                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 5px; }}"
+            )
         self.header = QWidget(self)
         self.header.setStyleSheet("background: #202020; border-bottom: 1px solid #2f2f2f;")
         header_layout = QHBoxLayout(self.header)
@@ -167,6 +169,13 @@ class TimelinePanel(QWidget):
         header_layout.addWidget(self.zoom_out_btn)
         header_layout.addWidget(self.zoom_label)
         header_layout.addWidget(self.zoom_in_btn)
+        self.clip_count_label = QLabel()
+        self.clip_count_label.setStyleSheet(label_style(11, "muted", 500))
+        self.version_label = QLabel("KUT-STUDIO / v0.1")
+        self.version_label.setStyleSheet(label_style(11, "muted", 500))
+        header_layout.addSpacing(12)
+        header_layout.addWidget(self.clip_count_label)
+        header_layout.addWidget(self.version_label)
         self.zoom_out_btn.clicked.connect(self.zoom_out)
         self.zoom_in_btn.clicked.connect(self.zoom_in)
         self.refresh_clip_widgets()
@@ -188,6 +197,7 @@ class TimelinePanel(QWidget):
         self.refresh_clip_widgets()
 
     def refresh_clip_widgets(self):
+        self.clip_count_label.setText(f"{len(self.clips)} clip" if len(self.clips) == 1 else f"{len(self.clips)} clips")
         current_ids = {clip["id"] for clip in self.clips}
         for clip_id, widget in list(self.clip_widgets.items()):
             if clip_id not in current_ids:
@@ -224,42 +234,42 @@ class TimelinePanel(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#1e1e1e"))
-        painter.fillRect(0, 0, self.width(), self.header_height, QColor("#222222"))
+        painter.fillRect(self.rect(), QColor(COLORS["panel_alt"]))
+        painter.fillRect(0, 0, self.width(), self.header_height, QColor(COLORS["panel"]))
         ruler_top = self.header_height + 8
         ruler_bottom = ruler_top + self.ruler_height
-        painter.fillRect(0, ruler_top, self.width(), self.ruler_height, QColor("#262626"))
-        painter.setPen(QPen(QColor("#3d3d3d"), 1))
+        painter.fillRect(0, ruler_top, self.width(), self.ruler_height, QColor(COLORS["surface"]))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1))
         painter.drawLine(self.left_margin, ruler_top, self.width(), ruler_top)
         painter.drawLine(self.left_margin, ruler_bottom, self.width(), ruler_bottom)
         major_ticks = max(1, int(self.duration_seconds) + 1)
         for second in range(major_ticks):
             x = self.left_margin + second * self.pixels_per_second * self.zoom
             if x < self.width() - 10:
-                painter.setPen(QPen(QColor("#303030"), 1))
+                painter.setPen(QPen(QColor(COLORS["border"]), 1))
                 painter.drawLine(int(x), ruler_bottom, int(x), self.height())
                 if second % 5 == 0:
-                    painter.setPen(QPen(QColor("#f0f0f0"), 1))
+                    painter.setPen(QPen(QColor(COLORS["text"]), 1))
                     painter.drawLine(int(x), ruler_top, int(x), ruler_bottom)
                     painter.drawText(int(x) + 5, ruler_top + 20, self.format_time(second))
                 else:
-                    painter.setPen(QPen(QColor("#8b8b8b"), 1))
+                    painter.setPen(QPen(QColor(COLORS["muted"]), 1))
                     painter.drawLine(int(x), ruler_top + 10, int(x), ruler_bottom)
 
         for row in range(3):
             y = ruler_bottom + 8 + row * (self.track_height + 8)
-            painter.fillRect(0, y, self.width(), self.track_height, QColor("#171717"))
-            painter.setPen(QPen(QColor("#3a3a3a"), 1))
+            painter.fillRect(0, y, self.width(), self.track_height, QColor(COLORS["panel_alt"]))
+            painter.setPen(QPen(QColor(COLORS["border"]), 1))
             painter.drawLine(self.left_margin, y, self.width(), y)
             painter.drawLine(self.left_margin, y, self.left_margin, y + self.track_height)
-            painter.setBrush(QColor("#232323"))
+            painter.setBrush(QColor(COLORS["surface"]))
             painter.drawRoundedRect(10, y + 10, 28, 24, 5, 5)
-            painter.setPen(QPen(QColor("#f4f4f4"), 1))
+            painter.setPen(QPen(QColor(COLORS["text"]), 1))
             painter.drawText(16, y + 27, self.track_names[row])
-            painter.setPen(QPen(QColor("#8f8f8f"), 1))
+            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
             painter.drawText(45, y + 25, self.track_labels[row])
-            painter.setPen(QPen(QColor("#555555"), 1))
-            painter.drawText(13, y + 47, "M   S   🔒")
+            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
+            painter.drawText(13, y + 47, "M   S   LOCK")
             painter.setBrush(Qt.NoBrush)
 
         for previous, following in v1_transition_pairs(self.clips, self.pixels_per_second, self.zoom):
@@ -282,11 +292,14 @@ class TimelinePanel(QWidget):
                 painter.setBrush(QColor("#f7c948"))
                 painter.drawPolygon([QPoint(int(marker_x) - 5, ruler_top), QPoint(int(marker_x) + 5, ruler_top), QPoint(int(marker_x), ruler_top + 8)])
                 painter.setBrush(Qt.NoBrush)
+        if not self.clips:
+            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
+            painter.drawText(self.left_margin + 24, ruler_bottom + 45, "Déposez votre premier clip ici")
         playhead_x = self.left_margin + self.playhead_seconds * self.pixels_per_second * self.zoom
-        painter.setPen(QPen(QColor("#ff3b30"), 2))
+        painter.setPen(QPen(QColor(COLORS["accent_hover"]), 2))
         painter.drawLine(int(playhead_x), self.header_height, int(playhead_x), self.height())
-        painter.fillRect(int(playhead_x) - 7, self.header_height, 14, 18, QColor("#ff3b30"))
-        painter.setPen(QPen(QColor("#2a2a2a"), 1))
+        painter.fillRect(int(playhead_x) - 7, self.header_height, 14, 18, QColor(COLORS["accent"]))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1))
         painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
 
     def get_seconds_from_x(self, x):
