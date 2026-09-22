@@ -6,15 +6,20 @@ from PySide6.QtWidgets import QGraphicsOpacityEffect
 
 
 def apply_color_effect(effect, brightness, contrast, saturation):
-    color = QColor("#ffffff")
-    if brightness < 0:
-        color = QColor("#203050")
-    elif brightness > 0:
-        color = QColor("#fff1c2")
-    if saturation < 0:
-        color = QColor("#aeb7c4")
-    elif saturation > 0:
-        color = QColor("#ffb84d")
+    base_color = QColor("#ffffff")
+    brightness_target = QColor("#203050" if brightness < 0 else "#fff1c2")
+    saturation_target = QColor("#aeb7c4" if saturation < 0 else "#ffb84d")
+    brightness_ratio = min(1.0, abs(brightness) / 100.0)
+    saturation_ratio = min(1.0, abs(saturation) / 100.0)
+
+    channels = []
+    for channel in range(3):
+        base_value = base_color.getRgbF()[channel]
+        brightness_delta = brightness_target.getRgbF()[channel] - base_value
+        saturation_delta = saturation_target.getRgbF()[channel] - base_value
+        value = base_value + brightness_delta * brightness_ratio + saturation_delta * saturation_ratio
+        channels.append(max(0.0, min(1.0, value)))
+    color = QColor.fromRgbF(*channels)
     strength = min(1.0, (abs(brightness) + abs(contrast) + abs(saturation)) / 300.0)
     effect.setColor(color)
     effect.setStrength(strength)
