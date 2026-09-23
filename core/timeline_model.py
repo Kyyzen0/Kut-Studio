@@ -8,15 +8,16 @@ MARKERS = [4.0, 9.0, 14.0]
 
 def default_clips():
     return [
-        {"id": "intro", "track": 0, "start": 0.0, "end": 4.0, "label": "Intro", "color": QColor("#4da3ff")},
-        {"id": "plan_a", "track": 0, "start": 6.5, "end": 12.0, "label": "Plan A", "color": QColor("#58c4a7")},
-        {"id": "b_roll", "track": 1, "start": 2.0, "end": 7.5, "label": "B-roll", "color": QColor("#b070ff")},
+        {"id": "intro", "track": 0, "start": 0.0, "end": 4.0, "label": "Intro", "source_path": "", "color": QColor("#4da3ff")},
+        {"id": "plan_a", "track": 0, "start": 6.5, "end": 12.0, "label": "Plan A", "source_path": "", "color": QColor("#58c4a7")},
+        {"id": "b_roll", "track": 1, "start": 2.0, "end": 7.5, "label": "B-roll", "source_path": "", "color": QColor("#b070ff")},
         {
             "id": "subtitle_01",
             "track": 2,
             "start": 1.0,
             "end": 5.0,
             "label": "Sous-titre 01",
+            "source_path": "",
             "text": "Bienvenue dans Kut-Studio",
             "color": QColor("#e6c84f"),
         },
