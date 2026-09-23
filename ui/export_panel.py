@@ -30,7 +30,7 @@ _RESOLUTION_CHOICES = [
 _QUALITY_PRESETS = {
     "Élevée": ExportPreset(name="Élevée", resolution=(1920, 1080), crf=18, audio_bitrate="192k"),
     "Standard": ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
-    "Basse": ExportPreset(name="Basse", resolution=(1920, 720), crf=28, audio_bitrate="96k"),
+    "Basse": ExportPreset(name="Basse", resolution=(1280, 720), crf=28, audio_bitrate="96k"),
 }
 
 
