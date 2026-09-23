@@ -66,6 +66,7 @@ def test_export_full_pipeline_emits_finished_ok(qtbot, tmp_path, fake_ffmpeg_pat
 
     # Importer MainWindow et construire l'UI
     from ui.main_window import MainWindow
+    monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_: None)
     window = MainWindow()
     qtbot.addWidget(window)
 

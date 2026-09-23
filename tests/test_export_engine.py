@@ -1,7 +1,8 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QProcess
+from PySide6.QtCore import QProcess
+from PySide6.QtWidgets import QApplication
 
 from core import export_engine
 from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
@@ -9,8 +10,8 @@ from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportR
 
 @pytest.fixture(scope="module", autouse=True)
 def qt_app():
-    """Create the Qt application required by QProcess."""
-    app = QCoreApplication.instance() or QCoreApplication([])
+    """Create the Qt Widgets application required by the export test suite."""
+    app = QApplication.instance() or QApplication([])
     yield app
 
 

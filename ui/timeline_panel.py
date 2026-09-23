@@ -38,7 +38,8 @@ class ClipWidget(QWidget):
     def refresh_style(self):
         selected = self.parent_timeline is not None and self.parent_timeline.selected_clip is self.clip
         border = COLORS["accent_hover"] if selected else "#59616F"
-        color = self.clip["color"].name()
+        clip_color = self.clip.get("color", "#4da3ff")
+        color = clip_color.name() if isinstance(clip_color, QColor) else str(clip_color)
         self.setStyleSheet(
             f"QWidget {{ background: {color}; border: 2px solid {border}; border-radius: 6px; color: white; }}"
             f"QWidget::hover {{ border-color: {COLORS['accent_hover']}; }}"

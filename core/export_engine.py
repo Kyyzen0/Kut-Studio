@@ -60,6 +60,14 @@ class ExportRequest:
     preset: ExportPreset
     fps: int = 30
 
+    def __post_init__(self) -> None:
+        """Reject invalid export settings before an ffmpeg process is started."""
+        if self.fps <= 0:
+            raise ValueError("La fréquence d'images doit être supérieure à zéro.")
+        width, height = self.preset.resolution
+        if width <= 0 or height <= 0:
+            raise ValueError("La résolution d'export doit être positive.")
+
 
 class ExportEngine(QObject):
     """Run a non-blocking ffmpeg export and report its state through Qt signals."""
@@ -125,11 +133,7 @@ class ExportEngine(QObject):
         exportable_clips: list[dict[str, object]] | None = None,
     ) -> list[str]:
         """Build the ffmpeg command for an export request."""
-        if request.fps <= 0:
-            raise ValueError("La fréquence d'images doit être supérieure à zéro.")
         width, height = request.preset.resolution
-        if width <= 0 or height <= 0:
-            raise ValueError("La résolution d'export doit être positive.")
         output_path = Path(request.output_path).expanduser()
         if not output_path.parent.exists():
             raise ValueError(f"Le dossier de sortie est introuvable : {output_path.parent}")
