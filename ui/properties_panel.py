@@ -37,13 +37,27 @@ class PropertiesPanel(QWidget):
         project_group = QGroupBox("Paramètres du projet")
         project_group.setStyleSheet(self.group_style())
         project_form = QFormLayout(project_group)
-        project_form.setContentsMargins(12, 16, 12, 12)
-        project_form.setSpacing(8)
-        project_form.addRow("État", QLabel("Aucun clip sélectionné"))
-        project_form.addRow("Résolution", QLabel("1920 × 1080"))
-        project_form.addRow("Format", QLabel("16:9"))
-        project_form.addRow("Fréquence", QLabel("30 fps"))
-        project_form.addRow("Fond", QLabel("#000000"))
+        project_form.setContentsMargins(12, 18, 12, 14)
+        project_form.setSpacing(10)
+        project_form.setLabelAlignment(Qt.AlignLeft)
+        project_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        project_form.setHorizontalSpacing(12)
+        project_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        project_state = QLabel("Aucun clip sélectionné")
+        project_resolution = QLabel("1920 × 1080")
+        project_format = QLabel("16:9")
+        project_fps = QLabel("30 fps")
+        project_background = QLabel("#000000")
+        for label in (project_state, project_resolution, project_format, project_fps, project_background):
+            label.setStyleSheet(label_style(12, "text", 500))
+            label.setWordWrap(True)
+
+        project_form.addRow("État", project_state)
+        project_form.addRow("Résolution", project_resolution)
+        project_form.addRow("Format", project_format)
+        project_form.addRow("Fréquence", project_fps)
+        project_form.addRow("Fond", project_background)
         layout.addWidget(project_group)
 
         clip_group = QGroupBox("Clip sélectionné")
@@ -68,8 +82,9 @@ class PropertiesPanel(QWidget):
         self.delete_button = QPushButton("🗑️ Supprimer")
         for button in (self.cut_button, self.delete_button):
             button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; }}"
+                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 8px 12px; font-weight: 600; }}"
                 f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
+                f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; border-color: {COLORS['border']}; }}"
             )
         self.cut_button.clicked.connect(self.emit_cut_requested)
         self.delete_button.clicked.connect(self.emit_delete_requested)
@@ -134,17 +149,19 @@ class PropertiesPanel(QWidget):
         slider = QSlider(Qt.Horizontal)
         slider.setRange(minimum, maximum)
         slider.setValue(value)
-        slider.setMinimumWidth(90)
+        slider.setMinimumWidth(60)
         value_label = QLabel(f"{value}{suffix}")
-        value_label.setMinimumWidth(38)
+        value_label.setMinimumWidth(42)
+        value_label.setMaximumWidth(48)
         value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         value_label.setStyleSheet(label_style(11, "muted", 600))
         container = QWidget()
+        container.setMinimumWidth(140)
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
-        row.addWidget(slider)
-        row.addWidget(value_label)
+        row.addWidget(slider, 1)
+        row.addWidget(value_label, 0)
         slider._value_label = value_label
         slider._suffix = suffix
         return slider, container, value_label

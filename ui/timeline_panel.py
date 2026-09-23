@@ -126,8 +126,8 @@ class TimelinePanel(QWidget):
         self.duration_seconds = 30.0
         self.playhead_seconds = 0.0
         self.pixels_per_second = 120.0
-        self.track_names = ["V1", "A1", "T"]
-        self.track_labels = ["VIDÉO 1", "AUDIO 1", "TEXTE"]
+        self.track_names = list(TRACK_NAMES)
+        self.track_labels = list(TRACK_LABELS)
         self.markers = MARKERS
         self.clips = default_clips()
         self.clip_widgets = {}

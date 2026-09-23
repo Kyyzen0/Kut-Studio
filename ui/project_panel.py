@@ -1,4 +1,12 @@
-from PySide6.QtWidgets import QFileDialog, QLabel, QListWidget, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QFileDialog,
+    QLabel,
+    QListWidget,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.theme import COLORS, label_style
 
@@ -19,7 +27,8 @@ class ProjectPanel(QWidget):
         layout.addWidget(title)
 
         self.navigation = QListWidget()
-        self.navigation.setFixedHeight(174)
+        self.navigation.setMinimumHeight(190)
+        self.navigation.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         self.navigation.setSpacing(2)
         self.navigation.addItems(["▣   Médias", "♪   Audio", "T   Texte", "✦   Effets", "◇   Transitions"])
         self.navigation.setCurrentRow(0)
