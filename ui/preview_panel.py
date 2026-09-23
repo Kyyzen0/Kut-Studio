@@ -16,7 +16,7 @@ from ui.theme import COLORS, label_style
 
 
 class PreviewPanel(QWidget):
-    def __init__(self, toggle_play, stop_playback, seek_relative, parent=None):
+    def __init__(self, toggle_play, stop_playback, seek_relative, cut_callback, open_file_callback, parent=None):
         super().__init__(parent)
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -79,8 +79,15 @@ class PreviewPanel(QWidget):
         file_layout = QHBoxLayout(file_group)
         file_layout.setContentsMargins(0, 0, 0, 0)
         file_layout.setSpacing(6)
-        for label in ("Import", "New", "Open"):
-            file_layout.addWidget(self.make_tool_button(label))
+        import_button = self.make_tool_button("Import")
+        import_button.clicked.connect(open_file_callback)
+        new_button = self.make_tool_button("New")
+        new_button.clicked.connect(lambda: self._notify_placeholder("Nouveau projet"))
+        open_button = self.make_tool_button("Open")
+        open_button.clicked.connect(open_file_callback)
+        file_layout.addWidget(import_button)
+        file_layout.addWidget(new_button)
+        file_layout.addWidget(open_button)
 
         transport_group = QWidget()
         transport_layout = QHBoxLayout(transport_group)
@@ -104,8 +111,18 @@ class PreviewPanel(QWidget):
         edit_layout = QHBoxLayout(edit_group)
         edit_layout.setContentsMargins(0, 0, 0, 0)
         edit_layout.setSpacing(6)
-        for label in ("Mark In", "Mark Out", "Cut", "Split"):
-            edit_layout.addWidget(self.make_tool_button(label))
+        mark_in_button = self.make_tool_button("Mark In")
+        mark_in_button.clicked.connect(lambda: self._notify_placeholder("Mark In"))
+        mark_out_button = self.make_tool_button("Mark Out")
+        mark_out_button.clicked.connect(lambda: self._notify_placeholder("Mark Out"))
+        cut_button = self.make_tool_button("Cut")
+        cut_button.clicked.connect(cut_callback)
+        split_button = self.make_tool_button("Split")
+        split_button.clicked.connect(lambda: self._notify_placeholder("Split"))
+        edit_layout.addWidget(mark_in_button)
+        edit_layout.addWidget(mark_out_button)
+        edit_layout.addWidget(cut_button)
+        edit_layout.addWidget(split_button)
 
         toolbar_layout.addWidget(file_group)
         toolbar_layout.addWidget(transport_group)
@@ -143,6 +160,9 @@ class PreviewPanel(QWidget):
                 f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
             )
         return button
+
+    def _notify_placeholder(self, feature_name):
+        print(f"[PreviewPanel] {feature_name} : à implémenter")
 
     def load_video(self, path):
         self.empty_state.hide()

@@ -39,7 +39,13 @@ class MainWindow(QMainWindow):
         self.transition_seconds = None
         self._build_menu_bar()
 
-        self.preview_panel = PreviewPanel(self.toggle_play, self.stop_playback, self.seek_relative)
+        self.preview_panel = PreviewPanel(
+            self.toggle_play,
+            self.stop_playback,
+            self.seek_relative,
+            self.cut_at_playhead,
+            self.open_video_file,
+        )
         self.project_panel = ProjectPanel(self.load_video)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
         self.timeline_panel = TimelinePanel()
@@ -184,29 +190,63 @@ class MainWindow(QMainWindow):
     def _build_menu_bar(self):
         menu_bar = self.menuBar()
         menu_bar.setNativeMenuBar(False)
+
+        # Fichier
         file_menu = QMenu("Fichier", self)
-        for label in ("Nouveau", "Ouvrir"):
-            file_menu.addAction(QAction(label, self))
+        new_action = QAction("Nouveau", self)
+        new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(lambda: self._notify_placeholder("Nouveau projet"))
+        open_action = QAction("Ouvrir...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self.open_video_file)
+        save_action = QAction("Enregistrer", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(lambda: self._notify_placeholder("Enregistrement projet"))
+        save_as_action = QAction("Enregistrer sous...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(lambda: self._notify_placeholder("Enregistrement projet"))
+        file_menu.addAction(new_action)
+        file_menu.addAction(open_action)
         file_menu.addSeparator()
-        for label in ("Enregistrer", "Enregistrer sous..."):
-            file_menu.addAction(QAction(label, self))
+        file_menu.addAction(save_action)
+        file_menu.addAction(save_as_action)
         file_menu.addSeparator()
         exit_action = QAction("Quitter", self)
+        exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        # Édition
         edit_menu = QMenu("Édition", self)
         for label in ("Annuler", "Rétablir"):
-            edit_menu.addAction(QAction(label, self))
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
+            edit_menu.addAction(action)
         edit_menu.addSeparator()
         for label in ("Couper", "Copier", "Coller"):
-            edit_menu.addAction(QAction(label, self))
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
+            edit_menu.addAction(action)
+
+        # Séquence
         sequence_menu = QMenu("Séquence", self)
         for label in ("Ajouter un clip", "Couper / Réduire", "Marqueur"):
-            sequence_menu.addAction(QAction(label, self))
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
+            sequence_menu.addAction(action)
+
+        # Fenêtre
         window_menu = QMenu("Fenêtre", self)
-        window_menu.addAction(QAction("Réinitialiser la disposition", self))
+        reset_action = QAction("Réinitialiser la disposition", self)
+        reset_action.triggered.connect(lambda: self._notify_placeholder("Reset disposition"))
+        window_menu.addAction(reset_action)
+
         for menu in (file_menu, edit_menu, sequence_menu, window_menu):
             menu_bar.addMenu(menu)
+
+    def _notify_placeholder(self, feature_name):
+        """Affiche un message discret pour les features à venir."""
+        print(f"[MainWindow] {feature_name} : à implémenter")
 
     @staticmethod
     def global_style():
@@ -229,6 +269,31 @@ class MainWindow(QMainWindow):
         self.timeline_panel.time_label.setText(self.timeline_panel.format_time(clip["start"]))
         self.preview_panel.player.setPosition(int(clip["start"] * 1000))
         self.update_subtitle_overlay(clip["start"])
+
+    def cut_at_playhead(self):
+        clip = self.timeline_panel.selected_clip
+        if clip is None:
+            print("[MainWindow] Cut : aucun clip sélectionné")
+            return
+        self.cut_selected_clip(clip["id"], self.timeline_panel.playhead_seconds)
+
+    def open_video_file(self):
+        """Ouvre un dialogue pour charger une vidéo et l'ajoute au projet."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Ouvrir une vidéo",
+            os.path.expanduser("~/Movies"),
+            "Vidéos (*.mp4 *.mov *.avi *.mkv *.webm)",
+        )
+        if not path:
+            return
+        self.project_panel.add_file(path)
+        # Sélectionner le nouveau fichier dans le bin
+        last_index = self.project_panel.bin.count() - 1
+        if last_index >= 0:
+            self.project_panel.bin.setCurrentRow(last_index)
+        # Charger dans le preview
+        self.preview_panel.load_video(path)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
         self.timeline_panel.clips = cut_clip(self.timeline_panel.clips, clip_id, playhead_pos)

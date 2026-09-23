@@ -1,9 +1,11 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QFileDialog,
     QLabel,
     QListWidget,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +28,15 @@ class ProjectPanel(QWidget):
         title.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(title)
 
+        self.bin = QListWidget()
+        self.bin.setAcceptDrops(True)
+        self.bin.setStyleSheet(
+            f"QListWidget {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 7px; padding: 5px; }}"
+            f"QListWidget::item {{ padding: 10px 8px; border-radius: 5px; color: {COLORS['muted']}; }}"
+            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
+        )
+        self.bin.itemClicked.connect(load_video)
+
         self.navigation = QListWidget()
         self.navigation.setMinimumHeight(190)
         self.navigation.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
@@ -37,6 +48,7 @@ class ProjectPanel(QWidget):
             f"QListWidget::item {{ color: {COLORS['muted']}; padding: 9px 10px; border-radius: 6px; }}"
             f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
         )
+        self.navigation.currentRowChanged.connect(self.on_tab_changed)
         layout.addWidget(self.navigation)
 
         media_header = QVBoxLayout()
@@ -49,15 +61,27 @@ class ProjectPanel(QWidget):
         media_header.addWidget(self.media_count)
         layout.addLayout(media_header)
 
-        self.bin = QListWidget()
-        self.bin.setAcceptDrops(True)
-        self.bin.setStyleSheet(
-            f"QListWidget {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 7px; padding: 5px; }}"
-            f"QListWidget::item {{ padding: 10px 8px; border-radius: 5px; color: {COLORS['muted']}; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
+        # Conteneur empilé pour les différents contenus de bibliothèque.
+        self.content_stack = QStackedWidget()
+        self.content_stack.addWidget(self.bin)
+
+        self._audio_placeholder = self._make_placeholder_label(
+            "Bibliothèque audio\n\nGlissez vos fichiers .mp3 / .wav ici\n(à implémenter)"
         )
-        self.bin.itemClicked.connect(load_video)
-        layout.addWidget(self.bin)
+        self._text_placeholder = self._make_placeholder_label(
+            "Modèles de texte\n\nSous-titres, titres, call-outs\n(à implémenter)"
+        )
+        self._effects_placeholder = self._make_placeholder_label(
+            "Effets visuels\n\nCouleur, recadrage, filtres\n(à implémenter)"
+        )
+        self._transitions_placeholder = self._make_placeholder_label(
+            "Transitions\n\nFondu, volets, glissements\n(à implémenter)"
+        )
+        self.content_stack.addWidget(self._audio_placeholder)
+        self.content_stack.addWidget(self._text_placeholder)
+        self.content_stack.addWidget(self._effects_placeholder)
+        self.content_stack.addWidget(self._transitions_placeholder)
+        layout.addWidget(self.content_stack)
 
         self.import_button = QPushButton("+  Importer des médias")
         self.import_button.setStyleSheet(
@@ -66,6 +90,16 @@ class ProjectPanel(QWidget):
         )
         self.import_button.clicked.connect(self.import_media)
         layout.addWidget(self.import_button)
+
+    def _make_placeholder_label(self, message):
+        label = QLabel(message)
+        label.setAlignment(Qt.AlignCenter)
+        label.setWordWrap(True)
+        label.setStyleSheet(label_style(13, "muted", 500))
+        return label
+
+    def on_tab_changed(self, index):
+        self.content_stack.setCurrentIndex(index)
 
     def import_media(self):
         paths, _ = QFileDialog.getOpenFileNames(
