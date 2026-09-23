@@ -93,7 +93,12 @@ class ExportEngine(QObject):
 
         try:
             self._temporary_directory = tempfile.TemporaryDirectory(prefix="kut-studio-export-")
-            command = self._build_command(request)
+            exportable_clips = self._filter_exportable_clips(request.clips)
+            self._duration_seconds = sum(
+                max(0.0, float(clip.get("end", 0.0)) - float(clip.get("start", 0.0)))
+                for clip in exportable_clips
+            )
+            command = self._build_command(request, exportable_clips)
         except (OSError, ValueError) as error:
             self._cleanup_temporary_directory()
             self.failed.emit(str(error))
@@ -102,11 +107,6 @@ class ExportEngine(QObject):
         self._request = request
         self._error_output = ""
         self._cancel_requested = False
-        self._duration_seconds = sum(
-            max(0.0, float(clip.get("end", 0.0)) - float(clip.get("start", 0.0)))
-            for clip in request.clips
-            if clip.get("source_path") and not clip.get("text")
-        )
         self.progress_changed.emit(0)
         self.status_changed.emit("Export en cours...")
         self._process.start(command[0], command[1:])
@@ -119,7 +119,11 @@ class ExportEngine(QObject):
         self.status_changed.emit("Annulation de l'export...")
         self._process.kill()
 
-    def _build_command(self, request: ExportRequest) -> list[str]:
+    def _build_command(
+        self,
+        request: ExportRequest,
+        exportable_clips: list[dict[str, object]] | None = None,
+    ) -> list[str]:
         """Build the ffmpeg command for an export request."""
         if request.fps <= 0:
             raise ValueError("La fréquence d'images doit être supérieure à zéro.")
@@ -131,7 +135,11 @@ class ExportEngine(QObject):
             raise ValueError(f"Le dossier de sortie est introuvable : {output_path.parent}")
         if self._temporary_directory is None:
             self._temporary_directory = tempfile.TemporaryDirectory(prefix="kut-studio-export-")
-        concat_path = self._create_concat_file(request.clips, self._temporary_directory.name)
+        concat_path = self._create_concat_file(
+            request.clips,
+            self._temporary_directory.name,
+            exportable_clips,
+        )
 
         command = [
             _ffmpeg_path,
@@ -161,32 +169,43 @@ class ExportEngine(QObject):
         command.append(str(output_path))
         return command
 
-    def _create_concat_file(self, clips: list[dict[str, object]], tmp_dir: str) -> str:
+    def _create_concat_file(
+        self,
+        clips: list[dict[str, object]],
+        tmp_dir: str,
+        exportable_clips: list[dict[str, object]] | None = None,
+    ) -> str:
         """Write the ffmpeg concat demuxer file and return its path."""
-        media_paths: list[str] = []
-        ordered_clips = sorted(
-            clips,
-            key=lambda item: (float(item.get("start", 0.0)), str(item.get("id", ""))),
-        )
-        for clip in ordered_clips:
-            if clip.get("text"):
-                continue
-            media_path = self._clip_media_path(clip)
-            if media_path:
-                media_paths.append(media_path)
-            else:
-                self.status_changed.emit(
-                    f"Avertissement : le clip {clip.get('id', 'inconnu')} est ignoré, source_path manquant."
-                )
-        if not media_paths:
-            raise ValueError("Aucun média vidéo à exporter.")
-
+        if exportable_clips is None:
+            exportable_clips = self._filter_exportable_clips(clips)
         concat_path = Path(tmp_dir) / "concat.txt"
         with concat_path.open("w", encoding="utf-8") as concat_file:
-            for media_path in media_paths:
+            for clip in exportable_clips:
+                media_path = self._clip_media_path(clip)
+                if media_path is None:
+                    continue
                 escaped_path = media_path.replace("'", "'\\''")
                 concat_file.write(f"file '{escaped_path}'\n")
         return str(concat_path)
+
+    def _filter_exportable_clips(self, clips: list[dict[str, object]]) -> list[dict[str, object]]:
+        """Return the ordered list of clips that will actually be exported."""
+        result: list[dict[str, object]] = []
+        for clip in sorted(
+            clips,
+            key=lambda item: (float(item.get("start", 0.0)), str(item.get("id", ""))),
+        ):
+            if clip.get("text"):
+                continue
+            if not self._clip_media_path(clip):
+                self.status_changed.emit(
+                    f"Avertissement : le clip {clip.get('id', 'inconnu')} est ignoré, source_path manquant."
+                )
+                continue
+            result.append(clip)
+        if not result:
+            raise ValueError("Aucun média vidéo à exporter.")
+        return result
 
     def _parse_progress(self, line: str) -> int | None:
         """Convert one ffmpeg out_time_ms line into a percentage."""
@@ -237,6 +256,8 @@ class ExportEngine(QObject):
         """Report a QProcess-level error when ffmpeg cannot run."""
         if error == QProcess.FailedToStart:
             self.failed.emit("Impossible de démarrer ffmpeg.")
+        else:
+            self.failed.emit(f"Erreur ffmpeg ({error.name}) : voir logs.")
 
     @staticmethod
     def _clip_media_path(clip: dict[str, object]) -> str | None:
