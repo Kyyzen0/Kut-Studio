@@ -4,10 +4,12 @@ from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
+from core.export_engine import ExportEngine
 from core.timeline_model import cut_clip, delete_clip
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -44,6 +47,14 @@ class MainWindow(QMainWindow):
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
         self.export_panel.close_requested.connect(self.show_editor)
+        self.export_panel.cancel_requested.connect(self.cancel_export)
+
+        self.export_engine = ExportEngine(self)
+        self.export_engine.progress_changed.connect(self.export_panel.progress_bar.setValue)
+        self.export_engine.status_changed.connect(self.export_panel.set_status)
+        self.export_engine.finished_ok.connect(self._on_export_finished)
+        self.export_engine.failed.connect(self.export_panel.mark_export_error)
+        self.export_engine.cancelled.connect(self.export_panel.mark_export_cancelled)
 
         self.preview_panel.player.durationChanged.connect(self.timeline_panel.setDuration)
         self.preview_panel.player.positionChanged.connect(self.timeline_panel.setPlaybackPosition)
@@ -141,7 +152,34 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(self.editor_page)
 
     def launch_export(self):
-        self.export_panel.mark_export_error("Moteur d'export non configuré")
+        default_dir = os.path.expanduser("~/Movies")
+        os.makedirs(default_dir, exist_ok=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer l'export",
+            os.path.join(default_dir, "kut-studio-export.mp4"),
+            "Vidéos (*.mp4 *.mov)",
+        )
+        if not path:
+            return
+        try:
+            request = self.export_panel.build_request(self.timeline_panel.clips, path)
+        except Exception as exc:
+            self.export_panel.mark_export_error(f"Paramètres invalides : {exc}")
+            return
+        self.export_panel.mark_export_started()
+        self.export_engine.start(request)
+
+    def cancel_export(self):
+        self.export_engine.cancel()
+
+    def _on_export_finished(self, output_path):
+        self.export_panel.mark_export_finished()
+        QMessageBox.information(
+            self,
+            "Export terminé",
+            f"L'export est terminé avec succès.\n\nFichier : {output_path}",
+        )
 
     def _build_menu_bar(self):
         menu_bar = self.menuBar()
