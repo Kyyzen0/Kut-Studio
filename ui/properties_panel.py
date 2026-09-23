@@ -28,43 +28,36 @@ class PropertiesPanel(QWidget):
             f"QWidget#properties_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 18, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(6)
         title = QLabel("PROPRIÉTÉS")
         title.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(title)
 
         project_group = QGroupBox("Paramètres du projet")
         project_group.setStyleSheet(self.group_style())
-        project_form = QFormLayout(project_group)
-        project_form.setContentsMargins(12, 18, 12, 14)
-        project_form.setSpacing(10)
-        project_form.setLabelAlignment(Qt.AlignLeft)
-        project_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        project_form.setHorizontalSpacing(12)
-        project_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        project_layout = QVBoxLayout(project_group)
+        project_layout.setContentsMargins(12, 10, 12, 6)
+        project_layout.setSpacing(3)
 
-        project_state = QLabel("Aucun clip sélectionné")
-        project_resolution = QLabel("1920 × 1080")
-        project_format = QLabel("16:9")
-        project_fps = QLabel("30 fps")
-        project_background = QLabel("#000000")
-        for label in (project_state, project_resolution, project_format, project_fps, project_background):
-            label.setStyleSheet(label_style(12, "text", 500))
-            label.setWordWrap(True)
-
-        project_form.addRow("État", project_state)
-        project_form.addRow("Résolution", project_resolution)
-        project_form.addRow("Format", project_format)
-        project_form.addRow("Fréquence", project_fps)
-        project_form.addRow("Fond", project_background)
+        project_fields = [
+            ("État", "Aucun clip sélectionné"),
+            ("Résolution", "1920 × 1080"),
+            ("Format", "16:9"),
+            ("Fréquence", "30 fps"),
+            ("Fond", "#000000"),
+        ]
+        for field, value in project_fields:
+            lbl = QLabel(f"{field} : {value}")
+            lbl.setStyleSheet(label_style(12, "text", 500))
+            project_layout.addWidget(lbl)
         layout.addWidget(project_group)
 
         clip_group = QGroupBox("Clip sélectionné")
         clip_group.setStyleSheet(self.group_style())
         clip_form = QFormLayout(clip_group)
-        clip_form.setContentsMargins(12, 16, 12, 12)
-        clip_form.setSpacing(9)
+        clip_form.setContentsMargins(12, 10, 12, 6)
+        clip_form.setSpacing(4)
         self.clip_name = QLabel("Aucun clip sélectionné")
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
@@ -77,12 +70,12 @@ class PropertiesPanel(QWidget):
         layout.addWidget(clip_group)
 
         actions_layout = QVBoxLayout()
-        actions_layout.setSpacing(8)
+        actions_layout.setSpacing(6)
         self.cut_button = QPushButton("✂️ Couper à la tête de lecture")
         self.delete_button = QPushButton("🗑️ Supprimer")
         for button in (self.cut_button, self.delete_button):
             button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 8px 12px; font-weight: 600; }}"
+                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 7px 12px; font-weight: 600; }}"
                 f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
                 f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; border-color: {COLORS['border']}; }}"
             )
@@ -97,8 +90,8 @@ class PropertiesPanel(QWidget):
         color_group = QGroupBox("Couleur")
         color_group.setStyleSheet(self.group_style())
         color_form = QFormLayout(color_group)
-        color_form.setContentsMargins(12, 16, 12, 12)
-        color_form.setSpacing(8)
+        color_form.setContentsMargins(12, 10, 12, 6)
+        color_form.setSpacing(4)
         self.brightness_slider, brightness_row, self.brightness_value = self.make_slider(-100, 100, 0)
         self.contrast_slider, contrast_row, self.contrast_value = self.make_slider(-100, 100, 0)
         self.saturation_slider, saturation_row, self.saturation_value = self.make_slider(-100, 100, 0)
@@ -113,7 +106,7 @@ class PropertiesPanel(QWidget):
         audio_group = QGroupBox("Audio")
         audio_group.setStyleSheet(self.group_style())
         audio_form = QFormLayout(audio_group)
-        audio_form.setContentsMargins(12, 16, 12, 12)
+        audio_form.setContentsMargins(12, 10, 12, 6)
         self.volume_slider, volume_row, self.volume_value = self.make_slider(0, 200, 100, suffix=" %")
         audio_form.addRow("Volume", volume_row)
         layout.addWidget(audio_group)
@@ -140,7 +133,7 @@ class PropertiesPanel(QWidget):
     @staticmethod
     def group_style():
         return (
-            f"QGroupBox {{ color: {COLORS['muted']}; border: 1px solid {COLORS['border']}; border-radius: 6px; margin-top: 10px; padding-top: 10px; }}"
+            f"QGroupBox {{ color: {COLORS['muted']}; border: 1px solid {COLORS['border']}; border-radius: 6px; margin-top: 8px; padding-top: 8px; }}"
             f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; color: {COLORS['muted']}; }}"
         )
 
@@ -151,8 +144,7 @@ class PropertiesPanel(QWidget):
         slider.setValue(value)
         slider.setMinimumWidth(60)
         value_label = QLabel(f"{value}{suffix}")
-        value_label.setMinimumWidth(42)
-        value_label.setMaximumWidth(48)
+        value_label.setFixedWidth(40)
         value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         value_label.setStyleSheet(label_style(11, "muted", 600))
         container = QWidget()
