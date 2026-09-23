@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QProcess
 
 from core import export_engine
 from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
@@ -100,3 +100,14 @@ def test_missing_source_path_emits_warning(engine, tmp_path):
 
     assert "source_path manquant" in messages[0]
     engine._cleanup_temporary_directory()
+
+
+def test_process_error_does_not_emit_failed_when_cancel_requested(engine):
+    """Ignore Qt process errors emitted during a user-triggered cancel."""
+    engine._cancel_requested = True
+    messages = []
+    engine.failed.connect(messages.append)
+
+    engine._process_error(QProcess.Crashed)
+
+    assert messages == []

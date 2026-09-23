@@ -254,6 +254,8 @@ class ExportEngine(QObject):
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
         """Report a QProcess-level error when ffmpeg cannot run."""
+        if self._cancel_requested:
+            return
         if error == QProcess.FailedToStart:
             self.failed.emit("Impossible de démarrer ffmpeg.")
         else:
