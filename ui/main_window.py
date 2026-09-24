@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
 from core.export_engine import ExportEngine
 from core.project_factory import create_default_project
+from core.project_io import load_project, save_project
 from core.project_model import Project
 from core.timeline_operations import cut_clip, delete_clip, find_clip, move_clip, trim_clip_left, trim_clip_right
 from core.timeline_view_model import build_export_clips
@@ -42,6 +43,9 @@ class MainWindow(QMainWindow):
         self.transition_seconds = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.
         self.project: Project = create_default_project()
+        # État du document courant pour la persistance ``.kut``.
+        self.current_project_path: str | None = None
+        self.project_dirty: bool = False
         self._build_menu_bar()
 
         self.preview_panel = PreviewPanel(
@@ -137,10 +141,10 @@ class MainWindow(QMainWindow):
         )
         brand = QLabel("KUT-STUDIO")
         brand.setStyleSheet(label_style(13, "text", 800))
-        project = QLabel("Mon montage  /  Projet sans titre")
-        project.setStyleSheet(label_style(12, "muted", 500))
-        saved = QLabel("●  Enregistré")
-        saved.setStyleSheet(label_style(11, "success", 600))
+        self.project_label = QLabel()
+        self.project_label.setStyleSheet(label_style(12, "muted", 500))
+        self.saved_indicator = QLabel()
+        self.saved_indicator.setStyleSheet(label_style(11, "success", 600))
         self.export_button = QPushButton("Exporter")
         self.export_button.setCursor(Qt.PointingHandCursor)
         self.export_button.setStyleSheet(
@@ -151,10 +155,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(logo)
         layout.addWidget(brand)
         layout.addSpacing(18)
-        layout.addWidget(project)
-        layout.addWidget(saved)
+        layout.addWidget(self.project_label)
+        layout.addWidget(self.saved_indicator)
         layout.addStretch()
         layout.addWidget(self.export_button)
+        self._update_top_bar()
         return bar
 
     def show_export(self):
@@ -162,6 +167,118 @@ class MainWindow(QMainWindow):
 
     def show_editor(self):
         self.pages.setCurrentWidget(self.editor_page)
+
+    # ------------------------------------------------------------------
+    # État du document et persistance ``.kut``
+    # ------------------------------------------------------------------
+
+    def _update_top_bar(self) -> None:
+        """Met à jour le nom du projet et l'indicateur « Enregistré / Non enregistré »."""
+        name = self.project.name if self.project is not None else "Projet sans titre"
+        self.project_label.setText(f"Mon montage  /  {name}")
+        if self.project_dirty:
+            self.saved_indicator.setText("●  Non enregistré")
+            self.saved_indicator.setStyleSheet(label_style(11, "danger", 600))
+        else:
+            self.saved_indicator.setText("●  Enregistré")
+            self.saved_indicator.setStyleSheet(label_style(11, "success", 600))
+
+    def _mark_dirty(self) -> None:
+        self.project_dirty = True
+        self._update_top_bar()
+
+    def _mark_clean(self) -> None:
+        self.project_dirty = False
+        self._update_top_bar()
+
+    def _reset_selection_and_inspector(self) -> None:
+        """Réinitialise la sélection de clip et l'inspecteur après un changement de projet."""
+        self.active_subtitle_clip = None
+        self.timeline_panel.selected_clip_id = None
+        self.properties_panel.set_clip(None, "")
+
+    def new_project(self) -> None:
+        """Crée un nouveau projet vierge via ``create_default_project()``."""
+        self.project = create_default_project()
+        self.current_project_path = None
+        self.timeline_panel.set_project(self.project)
+        self._reset_selection_and_inspector()
+        self._mark_clean()
+
+    def save_project_file(self) -> None:
+        """Enregistre le projet courant. Délègue à ``save_project_as`` si aucun chemin."""
+        if self.current_project_path is None:
+            self.save_project_as()
+            return
+        try:
+            save_project(self.project, self.current_project_path)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Enregistrement impossible",
+                f"Impossible d'enregistrer le projet :\n\n{exc}",
+            )
+            return
+        self._mark_clean()
+
+    def save_project_as(self) -> None:
+        """Ouvre un dialogue pour choisir un chemin ``.kut`` et enregistre le projet."""
+        if self.current_project_path is not None:
+            default_path = self.current_project_path
+        else:
+            safe_name = (self.project.name or "projet").strip() or "projet"
+            default_path = os.path.join(os.path.expanduser("~"), f"{safe_name}.kut")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer le projet sous...",
+            default_path,
+            "Projets Kut-Studio (*.kut)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".kut"):
+            path = path + ".kut"
+        try:
+            save_project(self.project, path)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Enregistrement impossible",
+                f"Impossible d'enregistrer le projet :\n\n{exc}",
+            )
+            return
+        self.current_project_path = path
+        self._mark_clean()
+
+    def open_project_file(self) -> None:
+        """Ouvre un dialogue et charge un projet ``.kut`` sélectionné."""
+        default_dir = os.path.expanduser("~")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Ouvrir un projet Kut-Studio",
+            default_dir,
+            "Projets Kut-Studio (*.kut)",
+        )
+        if not path:
+            return
+        self._load_project_from_path(path)
+
+    def _load_project_from_path(self, path: str) -> None:
+        """Charge ``path`` et remplace ``self.project`` uniquement en cas de succès."""
+        try:
+            loaded = load_project(path)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            QMessageBox.critical(
+                self,
+                "Impossible d'ouvrir le projet",
+                f"Le fichier {path} n'a pas pu être ouvert :\n\n{exc}",
+            )
+            return
+        self.project = loaded
+        self.current_project_path = path
+        self.timeline_panel.set_project(self.project)
+        self._reset_selection_and_inspector()
+        self._mark_clean()
 
     def launch_export(self):
         default_dir = os.path.expanduser("~/Movies")
@@ -205,16 +322,16 @@ class MainWindow(QMainWindow):
         file_menu = QMenu("Fichier", self)
         new_action = QAction("Nouveau", self)
         new_action.setShortcut("Ctrl+N")
-        new_action.triggered.connect(lambda: self._notify_placeholder("Nouveau projet"))
+        new_action.triggered.connect(self.new_project)
         open_action = QAction("Ouvrir...", self)
         open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.open_video_file)
+        open_action.triggered.connect(self.open_project_file)
         save_action = QAction("Enregistrer", self)
         save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(lambda: self._notify_placeholder("Enregistrement projet"))
+        save_action.triggered.connect(self.save_project_file)
         save_as_action = QAction("Enregistrer sous...", self)
         save_as_action.setShortcut("Ctrl+Shift+S")
-        save_as_action.triggered.connect(lambda: self._notify_placeholder("Enregistrement projet"))
+        save_as_action.triggered.connect(self.save_project_as)
         file_menu.addAction(new_action)
         file_menu.addAction(open_action)
         file_menu.addSeparator()
@@ -291,21 +408,27 @@ class MainWindow(QMainWindow):
             move_clip(self.project, clip_id, new_timeline_start)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] move refusé : {exc}")
+            return
         self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
 
     def on_trim_left_requested(self, clip_id: str, new_timeline_start: float) -> None:
         try:
             trim_clip_left(self.project, clip_id, new_timeline_start)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim gauche refusé : {exc}")
+            return
         self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
 
     def on_trim_right_requested(self, clip_id: str, new_timeline_end: float) -> None:
         try:
             trim_clip_right(self.project, clip_id, new_timeline_end)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim droit refusé : {exc}")
+            return
         self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
 
     def cut_at_playhead(self):
         clip_id = self.timeline_panel.selected_clip_id
@@ -339,6 +462,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] cut refusé : {exc}")
             return
         self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
         # Tenter de conserver la sélection : si l'ancien id existe encore
         # (clip gauche de la coupe), on le re-sélectionne, sinon on prend
         # le clip V1 actif autour du playhead.
@@ -370,6 +494,7 @@ class MainWindow(QMainWindow):
         self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
         self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
 
     def update_subtitle_from_editor(self):
         if self.active_subtitle_clip is None:
@@ -382,6 +507,7 @@ class MainWindow(QMainWindow):
 
         # 1. Mettre à jour le modèle métier.
         clip.text = new_text
+        self._mark_dirty()
 
         # 2. Rafraîchir immédiatement la projection de timeline.
         #    ``set_project`` réinitialise ``selected_clip_id`` ; on le
