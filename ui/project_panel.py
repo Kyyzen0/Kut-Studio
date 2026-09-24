@@ -26,12 +26,18 @@ class ProjectPanel(QWidget):
     def __init__(
         self,
         on_asset_selected,
+        on_add_to_timeline,
         on_import_requested,
         parent=None,
     ):
         super().__init__(parent)
         self.on_asset_selected = on_asset_selected
+        self.on_add_to_timeline = on_add_to_timeline
         self.on_import_requested = on_import_requested
+        # Mémorise l'identifiant du média actuellement sélectionné dans la
+        # bibliothèque. Mis à jour dès que la ligne courante de la liste
+        # change (clic utilisateur ou ``setCurrentRow`` programmatique).
+        self._selected_asset_id: str | None = None
         self.setObjectName("project_panel")
         self.setStyleSheet(
             f"QWidget#project_panel {{ background: {COLORS['panel']}; border-right: 1px solid {COLORS['border']}; }}"
@@ -51,6 +57,9 @@ class ProjectPanel(QWidget):
             f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
         )
         self.bin.itemClicked.connect(self._on_item_clicked)
+        # ``currentRowChanged`` couvre à la fois la sélection par clic
+        # utilisateur et la sélection programmatique (``setCurrentRow``).
+        self.bin.currentRowChanged.connect(self._on_current_row_changed)
 
         self.navigation = QListWidget()
         self.navigation.setMinimumHeight(190)
@@ -106,6 +115,20 @@ class ProjectPanel(QWidget):
         self.import_button.clicked.connect(self.on_import_requested)
         layout.addWidget(self.import_button)
 
+        # Bouton « Ajouter à la timeline ». Désactivé tant qu'aucun média
+        # n'est sélectionné ; activé automatiquement dès qu'une ligne de
+        # la bibliothèque devient la sélection courante (cf. slot
+        # ``_on_current_row_changed`` plus bas).
+        self.add_to_timeline_button = QPushButton("+  Ajouter à la timeline")
+        self.add_to_timeline_button.setEnabled(False)
+        self.add_to_timeline_button.setStyleSheet(
+            f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['accent_dark']}; border: 1px solid {COLORS['accent']}; padding: 9px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
+            f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; border-color: {COLORS['border']}; font-weight: 400; }}"
+        )
+        self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
+        layout.addWidget(self.add_to_timeline_button)
+
     # ------------------------------------------------------------------
     # API publique (vue sur le Project)
     # ------------------------------------------------------------------
@@ -136,6 +159,11 @@ class ProjectPanel(QWidget):
             for row in range(self.bin.count())
         ]
 
+    @property
+    def selected_asset_id(self) -> str | None:
+        """Identifiant du média actuellement sélectionné, ou ``None``."""
+        return self._selected_asset_id
+
     # ------------------------------------------------------------------
     # Slots internes
     # ------------------------------------------------------------------
@@ -144,6 +172,32 @@ class ProjectPanel(QWidget):
         asset_id = item.data(Qt.UserRole)
         if asset_id is not None:
             self.on_asset_selected(asset_id)
+
+    def _on_current_row_changed(self, row: int) -> None:
+        """Met à jour l'état du bouton « Ajouter à la timeline ».
+
+        Centralise l'activation du bouton en fonction de la présence ou
+        non d'un média sélectionné dans la bibliothèque. Toute la logique
+        dépend uniquement de l'état de la ``QListWidget`` ; aucun chemin
+        d'appel ne stocke de valeur dérivée.
+        """
+        has_selection = 0 <= row < self.bin.count()
+        self._selected_asset_id = (
+            self.bin.item(row).data(Qt.UserRole) if has_selection else None
+        )
+        self.add_to_timeline_button.setEnabled(has_selection)
+
+    def _on_add_to_timeline_clicked(self) -> None:
+        """Transmet au ``MainWindow`` l'identifiant du média sélectionné.
+
+        Le bouton est désactivé tant qu'aucun média n'est sélectionné
+        (cf. ``_on_current_row_changed``). Ce slot ne fait rien si la
+        sélection a été perdue entre-temps (sécurité défensive).
+        """
+        if self._selected_asset_id is None:
+            self.add_to_timeline_button.setEnabled(False)
+            return
+        self.on_add_to_timeline(self._selected_asset_id)
 
     def _refresh_count(self) -> None:
         count = self.bin.count()

@@ -4,6 +4,7 @@ import pytest
 
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.timeline_operations import (
+    add_clip_to_track,
     cut_clip,
     delete_clip,
     find_clip,
@@ -479,3 +480,135 @@ def test_delete_clip_raises_for_unknown_id() -> None:
     project = _make_project()
     with pytest.raises(KeyError):
         delete_clip(project, "ghost")
+
+
+# ---------------------------------------------------------------------------
+# Création (add_clip_to_track — tâche 6B)
+# ---------------------------------------------------------------------------
+
+
+def test_add_clip_to_track_creates_clip_with_expected_values() -> None:
+    """L'ajout d'un clip crée un Clip avec toutes les valeurs attendues."""
+    project = _make_project()
+    v1_before = len(find_track(project, "V1").clips)
+
+    # asset-a : duration=10.0, name="A".
+    new_clip = add_clip_to_track(project, "asset-a", "V1", 5.0)
+
+    # Identifiant réellement unique, préfixé et bien formé.
+    assert new_clip.id.startswith("clip-")
+    assert len(new_clip.id) == len("clip-") + 12
+
+    # Attributs métier.
+    assert new_clip.asset_id == "asset-a"
+    assert new_clip.track_id == "V1"
+    assert new_clip.timeline_start == pytest.approx(5.0)
+    assert new_clip.source_in == pytest.approx(0.0)
+    assert new_clip.source_out == pytest.approx(10.0)
+    assert new_clip.enabled is True
+    assert new_clip.label == "A"
+    assert new_clip.text == ""
+
+    # Le clip a bien été ajouté à la piste V1 du projet.
+    v1 = find_track(project, "V1")
+    assert len(v1.clips) == v1_before + 1
+    assert new_clip in v1.clips
+
+
+def test_add_clip_to_track_duration_equals_media_duration() -> None:
+    """La durée du clip créé est égale à la durée du MediaAsset source.
+
+    Pour asset-b (duration=8.0) le clip doit donc avoir source_out=8.0
+    et duration=8.0, quelle que soit la position demandée.
+    """
+    project = _make_project()
+
+    clip_short = add_clip_to_track(project, "asset-b", "V1", 0.0)
+    assert clip_short.source_in == pytest.approx(0.0)
+    assert clip_short.source_out == pytest.approx(8.0)
+    assert clip_short.duration == pytest.approx(8.0)
+
+    clip_offset = add_clip_to_track(project, "asset-b", "V1", 12.5)
+    assert clip_offset.source_out == pytest.approx(8.0)
+    assert clip_offset.duration == pytest.approx(8.0)
+
+
+def test_add_clip_to_track_label_equals_media_name() -> None:
+    """Le label du clip est exactement le nom du MediaAsset source."""
+    project = _make_project()
+
+    clip_a = add_clip_to_track(project, "asset-a", "V1", 0.0)
+    assert clip_a.label == "A"
+
+    clip_b = add_clip_to_track(project, "asset-b", "V1", 0.0)
+    assert clip_b.label == "B"
+
+
+def test_add_clip_to_track_two_insertions_create_distinct_clips() -> None:
+    """Deux insertions du même média produisent deux clips différents.
+
+    Chaque insertion doit :
+
+    - utiliser un nouvel identifiant (UUID) ;
+    - aboutir à un clip supplémentaire sur la piste ciblée ;
+    - placer le clip à la position demandée sans écraser le précédent.
+    """
+    project = _make_project()
+    v1_before = len(find_track(project, "V1").clips)
+
+    clip1 = add_clip_to_track(project, "asset-a", "V1", 0.0)
+    clip2 = add_clip_to_track(project, "asset-a", "V1", 5.0)
+
+    # Identifiants strictement différents.
+    assert clip1.id != clip2.id
+    # Positions demandées respectées.
+    assert clip1.timeline_start == pytest.approx(0.0)
+    assert clip2.timeline_start == pytest.approx(5.0)
+    # Les deux clips sont présents sur V1.
+    v1 = find_track(project, "V1")
+    assert len(v1.clips) == v1_before + 2
+    assert clip1 in v1.clips
+    assert clip2 in v1.clips
+
+
+def test_add_clip_to_track_rejects_unknown_asset() -> None:
+    """Un asset inconnu lève ``KeyError`` et ne modifie pas le projet."""
+    project = _make_project()
+    v1_before = len(find_track(project, "V1").clips)
+    assets_before = list(project.media_assets)
+
+    with pytest.raises(KeyError, match="asset-ghost"):
+        add_clip_to_track(project, "asset-ghost", "V1", 0.0)
+
+    # Aucune mutation en cas d'erreur.
+    assert len(find_track(project, "V1").clips) == v1_before
+    assert project.media_assets == assets_before
+
+
+def test_add_clip_to_track_rejects_unknown_track() -> None:
+    """Une piste inconnue lève ``KeyError`` et ne modifie pas le projet."""
+    project = _make_project()
+    assets_before = list(project.media_assets)
+    clips_per_track = {
+        track.id: list(track.clips) for track in project.tracks
+    }
+
+    with pytest.raises(KeyError, match="V999"):
+        add_clip_to_track(project, "asset-a", "V999", 0.0)
+
+    # Aucune mutation en cas d'erreur : assets et clips intacts.
+    assert project.media_assets == assets_before
+    for track in project.tracks:
+        assert track.clips == clips_per_track[track.id]
+
+
+def test_add_clip_to_track_rejects_negative_position() -> None:
+    """Une position strictement négative lève ``ValueError``."""
+    project = _make_project()
+    v1_before = len(find_track(project, "V1").clips)
+
+    with pytest.raises(ValueError, match="négatif"):
+        add_clip_to_track(project, "asset-a", "V1", -0.5)
+
+    # Le projet reste strictement intact.
+    assert len(find_track(project, "V1").clips) == v1_before

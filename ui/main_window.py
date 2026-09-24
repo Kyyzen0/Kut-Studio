@@ -23,7 +23,15 @@ from core.media_probe import MediaProbeError, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
-from core.timeline_operations import cut_clip, delete_clip, find_clip, move_clip, trim_clip_left, trim_clip_right
+from core.timeline_operations import (
+    add_clip_to_track,
+    cut_clip,
+    delete_clip,
+    find_clip,
+    move_clip,
+    trim_clip_left,
+    trim_clip_right,
+)
 from core.timeline_view_model import build_export_clips
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -58,6 +66,7 @@ class MainWindow(QMainWindow):
         )
         self.project_panel = ProjectPanel(
             on_asset_selected=self.preview_media_asset,
+            on_add_to_timeline=self.add_asset_to_v1,
             on_import_requested=self.import_media_via_dialog,
         )
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
@@ -512,6 +521,54 @@ class MainWindow(QMainWindow):
         if asset is None:
             return
         self.preview_panel.load_video(asset.path)
+
+    def add_asset_to_v1(self, asset_id: str) -> None:
+        """Ajoute un clip sur la piste ``V1`` à la position du playhead.
+
+        Le point d'entrée est appelé par ``ProjectPanel`` lorsque
+        l'utilisateur clique sur « Ajouter à la timeline ». Il délègue
+        à ``core.timeline_operations.add_clip_to_track`` pour conserver
+        toute la logique métier hors du contexte Qt, puis :
+
+        - reconstruit la projection de la timeline depuis ``self.project`` ;
+        - sélectionne le clip nouvellement créé et l'affiche dans
+          l'inspecteur (``on_clip_selected``) ;
+        - marque le projet comme « Non enregistré ».
+
+        La prévisualisation en cours (vidéo en lecture dans
+        ``PreviewPanel``) n'est pas touchée : on continue à diffuser la
+        même source, on ne fait que déplacer la tête de lecture via la
+        sélection du clip.
+
+        En cas d'erreur (asset inconnu, position négative…), un
+        ``QMessageBox.critical`` est affiché et le projet n'est pas
+        modifié — l'identité de l'exception est remontée telle quelle.
+        """
+        # Capture du playhead AVANT toute opération : la sélection du
+        # nouveau clip modifie ``timeline_panel.playhead_seconds`` via
+        # ``on_clip_selected`` (``= view.start``).
+        timeline_start = self.timeline_panel.playhead_seconds
+        try:
+            new_clip = add_clip_to_track(
+                self.project,
+                asset_id,
+                "V1",
+                timeline_start,
+            )
+        except (KeyError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Ajout impossible",
+                f"Impossible d'ajouter le média à la timeline :\n\n{exc}",
+            )
+            return
+
+        # Rafraîchit la projection (qui inclut le nouveau clip).
+        self.timeline_panel.set_project(self.project)
+        # Sélection + inspecteur : ``select_clip`` émet ``clip_selected``
+        # qui déclenche ``on_clip_selected`` et donc l'affichage inspecteur.
+        self.timeline_panel.select_clip(new_clip.id)
+        self._mark_dirty()
 
     def _refresh_project_library(self) -> None:
         """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``."""

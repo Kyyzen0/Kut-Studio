@@ -9,6 +9,7 @@ import json
 import pathlib
 
 import pytest
+from PySide6.QtCore import Qt
 
 from core.project_model import Project
 from core.timeline_operations import find_clip
@@ -691,3 +692,273 @@ def test_imported_media_asset_survives_save_and_load(
         for row in range(fresh_window.project_panel.bin.count())
     ]
     assert "clip.mp4" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Tâche 6B — Ajout d'un média importé à la timeline
+# ---------------------------------------------------------------------------
+
+
+def test_add_to_timeline_button_is_disabled_without_selection(
+    qtbot, monkeypatch
+) -> None:
+    """Le bouton « Ajouter à la timeline » démarre désactivé.
+
+    Au démarrage de l'application, aucune ligne de la bibliothèque
+    n'est sélectionnée : le bouton doit donc rester désactivé
+    tant que l'utilisateur n'a pas cliqué sur un média.
+    """
+    window = _build_window(qtbot, monkeypatch)
+    button = window.project_panel.add_to_timeline_button
+    assert button.isEnabled() is False
+
+
+def test_add_to_timeline_button_becomes_active_after_selection(
+    qtbot, monkeypatch
+) -> None:
+    """Sélectionner un média active automatiquement le bouton d'ajout."""
+    window = _build_window(qtbot, monkeypatch)
+    button = window.project_panel.add_to_timeline_button
+    bin_widget = window.project_panel.bin
+
+    # Au moins un média (issu du projet de démo : asset-intro, asset-plan-a, etc.).
+    assert bin_widget.count() >= 1
+
+    # Avant sélection : bouton désactivé.
+    assert button.isEnabled() is False
+
+    # Sélection du premier média → le bouton devient actif.
+    bin_widget.setCurrentRow(0)
+    assert button.isEnabled() is True
+
+    # Et l'identifiant exposé via ``selected_asset_id`` est cohérent.
+    expected_id = bin_widget.item(0).data(Qt.UserRole)
+    assert window.project_panel.selected_asset_id == expected_id
+
+
+def test_add_asset_to_v1_creates_clip_at_playhead_position(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """L'action « Ajouter à la timeline » crée un clip sur V1 au playhead.
+
+    Le clip ajouté doit :
+
+    - se trouver sur la piste ``V1`` ;
+    - démarrer à la position courante du playhead (``3.7s``) ;
+    - utiliser toute la durée du MediaAsset ;
+    - être labellisé avec ``MediaAsset.name`` ;
+    - être référencé par un identifiant unique généré par la fonction
+      métier.
+    """
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr(
+        "ui.main_window.probe_video",
+        _fake_probe(duration=42.0, width=1920, height=1080),
+    )
+    assert window.import_video_to_project(str(video_path)) is True
+    asset_id = window.project.media_assets[-1].id
+    asset_name = window.project.media_assets[-1].name
+
+    # Position du playhead volontairement non triviale.
+    window.timeline_panel.playhead_seconds = 3.7
+
+    v1_before = len(next(t for t in window.project.tracks if t.id == "V1").clips)
+    window.add_asset_to_v1(asset_id)
+    v1_after = next(t for t in window.project.tracks if t.id == "V1").clips
+
+    # Un clip a bien été ajouté sur V1.
+    assert len(v1_after) == v1_before + 1
+    new_clip = v1_after[-1]
+    assert new_clip.asset_id == asset_id
+    assert new_clip.track_id == "V1"
+    assert new_clip.timeline_start == pytest.approx(3.7)
+    assert new_clip.source_in == pytest.approx(0.0)
+    assert new_clip.source_out == pytest.approx(42.0)
+    assert new_clip.duration == pytest.approx(42.0)
+    assert new_clip.enabled is True
+    assert new_clip.label == asset_name
+    assert new_clip.text == ""
+
+
+def test_added_clip_is_selected_and_visible_in_inspector(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Le clip ajouté est sélectionné et son détail s'affiche dans l'inspecteur."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=15.0))
+    assert window.import_video_to_project(str(video_path)) is True
+    asset_id = window.project.media_assets[-1].id
+    asset_name = window.project.media_assets[-1].name
+
+    # Avant l'ajout : rien n'est sélectionné, inspecteur vide.
+    assert window.timeline_panel.selected_clip_id is None
+    assert window.properties_panel.selected_clip is None
+
+    window.add_asset_to_v1(asset_id)
+    new_clip = next(
+        c for t in window.project.tracks if t.id == "V1" for c in t.clips
+        if c.asset_id == asset_id
+    )
+
+    # La timeline sélectionne le nouveau clip.
+    assert window.timeline_panel.selected_clip_id == new_clip.id
+
+    # L'inspecteur affiche bien les informations du clip ajouté.
+    selected_view = window.properties_panel.selected_clip
+    assert selected_view is not None
+    assert selected_view.id == new_clip.id
+    assert selected_view.label == asset_name
+
+
+def test_add_asset_to_v1_marks_project_as_dirty(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Ajouter un média à la timeline passe le projet en « Non enregistré »."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=10.0))
+    assert window.import_video_to_project(str(video_path)) is True
+    assert window.project_dirty is True  # l'import lui-même a déjà dirty le projet
+
+    # On l'enregistre puis on le rend propre pour ne mesurer que l'effet
+    # de l'ajout à la timeline.
+    target = tmp_path / "baseline.kut"
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: _fake_save_dialog(str(target)),
+    )
+    window.save_project_as()
+    assert window.project_dirty is False
+    assert "Enregistré" in window.saved_indicator.text()
+
+    asset_id = window.project.media_assets[-1].id
+    window.add_asset_to_v1(asset_id)
+
+    assert window.project_dirty is True
+    assert "Non enregistré" in window.saved_indicator.text()
+
+
+def test_added_media_and_clip_survive_save_and_load(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Après un aller-retour ``.kut``, le média ET le clip ajouté sont conservés.
+
+    On construit le scénario complet :
+
+    1. import d'un média via la fausse sonde ;
+    2. ajout à la timeline à une position choisie ;
+    3. sauvegarde ``save_project_as`` ;
+    4. ouverture dans une nouvelle ``MainWindow`` ;
+    5. vérifications : ``media_assets`` contient toujours le média,
+       la piste V1 contient toujours le clip créé.
+    """
+    from core.project_io import load_project
+    from core.project_factory import create_default_project
+
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "roundtrip.mp4"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr(
+        "ui.main_window.probe_video",
+        _fake_probe(duration=21.0, width=1280, height=720),
+    )
+    assert window.import_video_to_project(str(video_path)) is True
+    asset_id = window.project.media_assets[-1].id
+
+    # Ajout à la timeline à un offset précis.
+    window.timeline_panel.playhead_seconds = 0.5
+    window.add_asset_to_v1(asset_id)
+
+    # Sauvegarde du projet.
+    target = tmp_path / "roundtrip.kut"
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: _fake_save_dialog(str(target)),
+    )
+    window.save_project_as()
+    assert target.exists()
+
+    # Recharge dans une nouvelle MainWindow et vérifie que média + clip sont là.
+    fresh = _build_window(qtbot, monkeypatch)
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getOpenFileName",
+        lambda *args, **kwargs: _fake_open_dialog(str(target)),
+    )
+    fresh.open_project_file()
+
+    # Le média importé est bien présent dans le projet rechargé.
+    reloaded_assets = fresh.project.media_assets
+    assert any(a.id == asset_id and a.name == "roundtrip.mp4" for a in reloaded_assets), (
+        "Le média importé devrait être conservé après le rechargement."
+    )
+
+    # Le clip ajouté sur V1 est bien conservé.
+    v1 = next(t for t in fresh.project.tracks if t.id == "V1")
+    matching_clips = [c for c in v1.clips if c.asset_id == asset_id]
+    assert len(matching_clips) == 1
+    new_clip = matching_clips[0]
+    assert new_clip.timeline_start == pytest.approx(0.5)
+    assert new_clip.source_out == pytest.approx(21.0)
+    # Et le round-trip via la couche d'I/O reste compatible : le projet
+    # rechargé a strictement la même structure que celui attendu par
+    # ``create_default_project()`` plus notre clip en plus.
+    baseline = create_default_project()
+    baseline_v1 = next(t for t in baseline.tracks if t.id == "V1")
+    # Le projet rechargé doit contenir au moins les clips de démo + le nôtre.
+    baseline_clip_ids = {c.id for c in baseline_v1.clips}
+    reloaded_v1_ids = {c.id for c in v1.clips}
+    assert baseline_clip_ids.issubset(reloaded_v1_ids)
+    # Et le fichier passe par load_project sans souci.
+    assert load_project(str(target)).name == fresh.project.name
+
+
+def test_click_on_add_to_timeline_button_triggers_add_asset_to_v1(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Le clic sur le bouton appelle bien ``add_asset_to_v1`` avec le bon asset.
+
+    On simule le parcours utilisateur complet : sélection d'un média
+    (programmatiquement via ``setCurrentRow``), puis clic sur le bouton.
+    Le clip résultant doit être ajouté sur V1 à la position courante.
+    """
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "via_button.mp4"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr(
+        "ui.main_window.probe_video",
+        _fake_probe(duration=11.0, width=1280, height=720),
+    )
+    assert window.import_video_to_project(str(video_path)) is True
+    asset_id = window.project.media_assets[-1].id
+
+    bin_widget = window.project_panel.bin
+    button = window.project_panel.add_to_timeline_button
+
+    # Le média importé se trouve en dernière position dans la liste.
+    target_row = bin_widget.count() - 1
+    bin_widget.setCurrentRow(target_row)
+    assert button.isEnabled() is True
+
+    window.timeline_panel.playhead_seconds = 0.0
+    v1_clips_before = list(
+        next(t for t in window.project.tracks if t.id == "V1").clips
+    )
+
+    # Clic sur le bouton : équivalent à l'événement utilisateur.
+    button.click()
+
+    v1_clips_after = next(t for t in window.project.tracks if t.id == "V1").clips
+    assert len(v1_clips_after) == len(v1_clips_before) + 1
+    new_clip = v1_clips_after[-1]
+    assert new_clip.asset_id == asset_id
+    assert new_clip.track_id == "V1"

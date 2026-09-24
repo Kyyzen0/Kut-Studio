@@ -20,6 +20,8 @@ pas de transitions.
 
 from __future__ import annotations
 
+import uuid
+
 from .project_model import Clip, MediaAsset, Project, Track
 
 
@@ -285,3 +287,66 @@ def delete_clip(project: Project, clip_id: str) -> Clip:
     clip = track.clips[index]
     del track.clips[index]
     return clip
+
+
+# ---------------------------------------------------------------------------
+# Création
+# ---------------------------------------------------------------------------
+
+
+def add_clip_to_track(
+    project: Project,
+    asset_id: str,
+    track_id: str,
+    timeline_start: float,
+) -> Clip:
+    """Crée un nouveau ``Clip`` à partir d'un ``MediaAsset`` et l'ajoute à la piste.
+
+    Le clip utilise la totalité du média : ``source_in = 0.0``,
+    ``source_out = MediaAsset.duration``. Il est créé activé, labellisé
+    avec ``MediaAsset.name`` et sans texte. Son identifiant est généré
+    de manière réellement unique (UUID) afin de permettre plusieurs
+    insertions successives du même média sans collision.
+
+    Aucun contrôle n'est effectué à ce stade :
+
+    - les chevauchements avec d'autres clips de la piste sont autorisés ;
+    - pas de snapping, ni de ripple edit, ni de transition ;
+    - pas de gestion d'undo/redo.
+
+    Args:
+        project: projet cible, modifié en place.
+        asset_id: identifiant du ``MediaAsset`` à utiliser comme source.
+        track_id: identifiant de la ``Track`` qui accueillera le clip.
+        timeline_start: position de début sur la timeline (en secondes).
+
+    Returns:
+        Le nouveau ``Clip`` créé et ajouté à la piste.
+
+    Raises:
+        KeyError: si ``asset_id`` ou ``track_id`` est introuvable dans
+            ``project``. Le message d'erreur mentionne l'identifiant
+            inconnu pour faciliter le diagnostic.
+        ValueError: si ``timeline_start`` est strictement négatif.
+    """
+    if timeline_start < 0.0:
+        raise ValueError(
+            f"Impossible d'ajouter un clip à un temps négatif "
+            f"(timeline_start={timeline_start})."
+        )
+    asset = _find_asset(project, asset_id)
+    track = find_track(project, track_id)
+
+    new_clip = Clip(
+        id=f"clip-{uuid.uuid4().hex[:12]}",
+        asset_id=asset.id,
+        track_id=track.id,
+        timeline_start=timeline_start,
+        source_in=0.0,
+        source_out=asset.duration,
+        enabled=True,
+        label=asset.name,
+        text="",
+    )
+    track.clips.append(new_clip)
+    return new_clip
