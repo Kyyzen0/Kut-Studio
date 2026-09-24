@@ -19,7 +19,10 @@ from PySide6.QtWidgets import (
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
 from core.export_engine import ExportEngine
-from core.timeline_model import cut_clip, delete_clip
+from core.project_factory import create_default_project
+from core.project_model import Project
+from core.timeline_operations import cut_clip, delete_clip, find_clip, move_clip, trim_clip_left, trim_clip_right
+from core.timeline_view_model import build_export_clips
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
@@ -37,6 +40,8 @@ class MainWindow(QMainWindow):
         self.subtitle_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "subtitles.srt")
         self.active_subtitle_clip = None
         self.transition_seconds = None
+        # ``Project`` est désormais l'unique source de vérité de la timeline.
+        self.project: Project = create_default_project()
         self._build_menu_bar()
 
         self.preview_panel = PreviewPanel(
@@ -48,7 +53,7 @@ class MainWindow(QMainWindow):
         )
         self.project_panel = ProjectPanel(self.load_video)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
-        self.timeline_panel = TimelinePanel()
+        self.timeline_panel = TimelinePanel(self.project)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
@@ -67,12 +72,13 @@ class MainWindow(QMainWindow):
         self.preview_panel.player.playbackStateChanged.connect(self.on_playback_state_changed)
         self.timeline_panel.play_button.clicked.connect(self.toggle_play)
         self.timeline_panel.seek_requested.connect(self.seek_to_position)
-        self.timeline_panel.clip_clicked.connect(self.on_clip_selected)
-        self.timeline_panel.clip_selected.connect(self.properties_panel.show_clip)
         self.timeline_panel.clip_selected.connect(self.on_clip_selected)
+        self.timeline_panel.transition_clicked.connect(self.offer_transition)
+        self.timeline_panel.move_clip_requested.connect(self.on_move_clip_requested)
+        self.timeline_panel.trim_clip_left_requested.connect(self.on_trim_left_requested)
+        self.timeline_panel.trim_clip_right_requested.connect(self.on_trim_right_requested)
         self.properties_panel.cut_requested.connect(self.cut_selected_clip)
         self.properties_panel.delete_requested.connect(self.delete_selected_clip)
-        self.timeline_panel.transition_clicked.connect(self.offer_transition)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
 
         top_split = QSplitter(Qt.Horizontal)
@@ -169,12 +175,16 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            request = self.export_panel.build_request(self.timeline_panel.clips, path)
+            request = self.export_panel.build_request(self.get_export_clips(), path)
         except Exception as exc:
             self.export_panel.mark_export_error(f"Paramètres invalides : {exc}")
             return
         self.export_panel.mark_export_started()
         self.export_engine.start(request)
+
+    def get_export_clips(self) -> list[dict]:
+        """Retourne les dictionnaires attendus par ExportEngine (adaptateur)."""
+        return build_export_clips(self.project)
 
     def cancel_export(self):
         self.export_engine.cancel()
@@ -262,20 +272,47 @@ class MainWindow(QMainWindow):
             self.timeline_panel.setPlaybackPosition(self.preview_panel.player.position())
         self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
 
-    def on_clip_selected(self, clip):
-        self.active_subtitle_clip = clip if clip["track"] == 2 else None
-        self.properties_panel.show_clip(clip)
-        self.timeline_panel.playhead_seconds = clip["start"]
-        self.timeline_panel.time_label.setText(self.timeline_panel.format_time(clip["start"]))
-        self.preview_panel.player.setPosition(int(clip["start"] * 1000))
-        self.update_subtitle_overlay(clip["start"])
+    def on_clip_selected(self, clip_id):
+        view = self.timeline_panel.find_view_by_id(clip_id)
+        if view is None:
+            return
+        self.active_subtitle_clip = view if view.track_id == "S1" else None
+        self.properties_panel.show_clip(view)
+        self.timeline_panel.playhead_seconds = view.start
+        self.timeline_panel.time_label.setText(
+            self.timeline_panel.format_time(view.start)
+        )
+        self.preview_panel.player.setPosition(int(view.start * 1000))
+        self.update_subtitle_overlay(view.start)
+
+    def on_move_clip_requested(self, clip_id: str, new_timeline_start: float) -> None:
+        """Applique un déplacement demandé par la timeline."""
+        try:
+            move_clip(self.project, clip_id, new_timeline_start)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] move refusé : {exc}")
+        self.timeline_panel.set_project(self.project)
+
+    def on_trim_left_requested(self, clip_id: str, new_timeline_start: float) -> None:
+        try:
+            trim_clip_left(self.project, clip_id, new_timeline_start)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] trim gauche refusé : {exc}")
+        self.timeline_panel.set_project(self.project)
+
+    def on_trim_right_requested(self, clip_id: str, new_timeline_end: float) -> None:
+        try:
+            trim_clip_right(self.project, clip_id, new_timeline_end)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] trim droit refusé : {exc}")
+        self.timeline_panel.set_project(self.project)
 
     def cut_at_playhead(self):
-        clip = self.timeline_panel.selected_clip
-        if clip is None:
+        clip_id = self.timeline_panel.selected_clip_id
+        if clip_id is None:
             print("[MainWindow] Cut : aucun clip sélectionné")
             return
-        self.cut_selected_clip(clip["id"], self.timeline_panel.playhead_seconds)
+        self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     def open_video_file(self):
         """Ouvre un dialogue pour charger une vidéo et l'ajoute au projet."""
@@ -296,47 +333,81 @@ class MainWindow(QMainWindow):
         self.preview_panel.load_video(path)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
-        self.timeline_panel.clips = cut_clip(self.timeline_panel.clips, clip_id, playhead_pos)
-        self.timeline_panel.selected_clip = next(
-            (clip for clip in self.timeline_panel.clips if clip.get("id") == clip_id), None
-        )
-        if self.timeline_panel.selected_clip is None:
-            self.timeline_panel.selected_clip = next(
-                (clip for clip in self.timeline_panel.clips if clip["track"] == 0 and clip["start"] <= playhead_pos <= clip["end"]),
+        try:
+            cut_clip(self.project, clip_id, playhead_pos)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] cut refusé : {exc}")
+            return
+        self.timeline_panel.set_project(self.project)
+        # Tenter de conserver la sélection : si l'ancien id existe encore
+        # (clip gauche de la coupe), on le re-sélectionne, sinon on prend
+        # le clip V1 actif autour du playhead.
+        new_id = clip_id
+        if self.timeline_panel.find_view_by_id(new_id) is None:
+            view_at_playhead = next(
+                (
+                    v
+                    for v in self.timeline_panel.clip_views
+                    if v.track_id == "V1" and v.start <= playhead_pos <= v.end
+                ),
                 None,
             )
-        if self.timeline_panel.selected_clip is not None:
-            self.on_clip_selected(self.timeline_panel.selected_clip)
-        self.timeline_panel.refresh_clip_widgets()
-        self.timeline_panel.update()
+            new_id = view_at_playhead.id if view_at_playhead is not None else None
+        if new_id is not None:
+            self.timeline_panel.select_clip(new_id)
+            self.on_clip_selected(new_id)
+        else:
+            self.properties_panel.set_clip(None, "")
+            self.timeline_panel.selected_clip_id = None
 
     def delete_selected_clip(self, clip_id):
-        self.timeline_panel.clips = delete_clip(self.timeline_panel.clips, clip_id)
-        self.timeline_panel.selected_clip = None
+        try:
+            delete_clip(self.project, clip_id)
+        except KeyError as exc:
+            print(f"[MainWindow] delete refusé : {exc}")
+            return
+        self.timeline_panel.selected_clip_id = None
+        self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
-        self.timeline_panel.refresh_clip_widgets()
-        self.timeline_panel.update()
+        self.timeline_panel.set_project(self.project)
 
     def update_subtitle_from_editor(self):
         if self.active_subtitle_clip is None:
             return
-        self.active_subtitle_clip["text"] = self.properties_panel.subtitle_editor.toPlainText()
+        new_text = self.properties_panel.subtitle_editor.toPlainText()
+        try:
+            clip = find_clip(self.project, self.active_subtitle_clip.id)
+        except KeyError:
+            return
+        clip.text = new_text
         self.save_subtitles()
         self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+        # Rafraîchir la projection pour que la vue reflète le nouveau texte.
+        self.timeline_panel.set_project(self.project)
+        # Conserver la sélection.
+        self.timeline_panel.selected_clip_id = self.active_subtitle_clip.id
 
     def update_subtitle_overlay(self, seconds):
-        subtitle = next(
-            (clip for clip in self.timeline_panel.clips if clip["track"] == 2 and clip["start"] <= seconds <= clip["end"]),
-            None,
-        )
-        if subtitle is not None and subtitle.get("text", "").strip():
-            self.preview_panel.preview_subtitle_overlay.setText(subtitle["text"].strip())
+        subtitle_clip = self._subtitle_clip_at(seconds)
+        if subtitle_clip is not None and subtitle_clip.text.strip():
+            self.preview_panel.preview_subtitle_overlay.setText(subtitle_clip.text.strip())
             self.preview_panel.preview_subtitle_overlay.show()
         else:
             self.preview_panel.preview_subtitle_overlay.hide()
 
+    def _subtitle_clip_at(self, seconds):
+        """Retourne le clip de sous-titre actif à ``seconds`` ou ``None``."""
+        for track in self.project.tracks:
+            if track.id != "S1":
+                continue
+            for clip in track.clips:
+                if clip.timeline_start <= seconds <= clip.timeline_start + clip.duration:
+                    return clip
+        return None
+
     def save_subtitles(self):
-        save_subtitles(self.timeline_panel.clips, self.subtitle_file)
+        export_clips = build_export_clips(self.project)
+        save_subtitles(export_clips, self.subtitle_file)
 
     def update_color_effect(self, *_):
         panel = self.properties_panel

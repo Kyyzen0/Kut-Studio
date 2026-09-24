@@ -13,36 +13,88 @@ if str(ROOT) not in sys.path:
 FAKE_FFMPEG = ROOT / "tests" / "fixtures" / "fake_ffmpeg.sh"
 
 
+def _make_video_asset(path: str, asset_id: str = "asset_1") -> "MediaAsset":
+    """Construit un MediaAsset factice à partir d'un chemin."""
+    from core.project_model import MediaAsset
+
+    return MediaAsset(
+        id=asset_id,
+        path=path,
+        name=Path(path).name,
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+    )
+
+
+def _make_video_project(input_files: list[str]) -> "Project":
+    """Construit un Project contenant les clips vidéo référençant les fichiers."""
+    from core.project_model import Clip, Project, Track
+
+    assets = [_make_video_asset(path, f"asset_{i}") for i, path in enumerate(input_files)]
+    clips = [
+        Clip(
+            id=f"clip_{i}",
+            asset_id=assets[i].id,
+            track_id="V1",
+            timeline_start=float(i * 4),
+            source_in=0.0,
+            source_out=4.0,
+            label=f"Clip {i}",
+        )
+        for i in range(len(input_files))
+    ]
+    return Project(
+        name="Export Test",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_assets=assets,
+        tracks=[Track(id="V1", name="V1", type="video", clips=clips)],
+    )
+
+
+def _make_subtitle_project() -> "Project":
+    """Construit un Project ne contenant qu'un clip de sous-titre."""
+    from core.project_model import Clip, MediaAsset, Project, Track
+
+    asset = MediaAsset(
+        id="asset_sub",
+        path="",
+        name="Subtitle",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="subtitle",
+    )
+    clip = Clip(
+        id="sub_1",
+        asset_id="asset_sub",
+        track_id="S1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=5.0,
+        label="Sous-titre",
+        text="Hello",
+    )
+    return Project(
+        name="Subtitle Test",
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_assets=[asset],
+        tracks=[Track(id="S1", name="S1", type="subtitle", clips=[clip])],
+    )
+
+
 @pytest.fixture
 def fake_ffmpeg_path(monkeypatch):
     """Force le module export_engine à utiliser notre faux ffmpeg."""
     monkeypatch.setattr("core.export_engine._ffmpeg_path", str(FAKE_FFMPEG))
     return FAKE_FFMPEG
-
-
-def _make_video_clip(path: str, clip_id: str = "clip_1", start: float = 0.0, end: float = 4.0):
-    """Construit un clip média factice pour les tests."""
-    return {
-        "id": clip_id,
-        "track": 0,
-        "start": start,
-        "end": end,
-        "label": f"Clip {clip_id}",
-        "color": "#4da3ff",
-        "source_path": path,
-    }
-
-
-def _make_subtitle_clip(text: str = "Hello", clip_id: str = "sub_1"):
-    return {
-        "id": clip_id,
-        "track": 2,
-        "start": 0.0,
-        "end": 5.0,
-        "label": "Sous-titre",
-        "color": "#e6c84f",
-        "text": text,
-    }
 
 
 def _create_dummy_input_files(tmp_path: Path) -> list[str]:
@@ -70,12 +122,9 @@ def test_export_full_pipeline_emits_finished_ok(qtbot, tmp_path, fake_ffmpeg_pat
     window = MainWindow()
     qtbot.addWidget(window)
 
-    # Injecter 2 clips dans la timeline
-    window.timeline_panel.clips = [
-        _make_video_clip(input_files[0], "clip_a", 0.0, 4.0),
-        _make_video_clip(input_files[1], "clip_b", 4.0, 8.0),
-    ]
-    window.timeline_panel.refresh_clip_widgets()
+    # Injecter un Project contenant deux clips dans la timeline.
+    window.project = _make_video_project(input_files)
+    window.timeline_panel.set_project(window.project)
 
     # Vérifier que l'engine est bien créé et capturer les signaux
     from PySide6.QtCore import QObject
@@ -96,7 +145,7 @@ def test_export_full_pipeline_emits_finished_ok(qtbot, tmp_path, fake_ffmpeg_pat
     # Construire la requête et lancer l'export
     from core.export_engine import ExportRequest, ExportFormat, ExportPreset
     request = ExportRequest(
-        clips=window.timeline_panel.clips,
+        clips=window.get_export_clips(),
         output_path=str(output_file),
         format=ExportFormat.MP4_H264,
         preset=ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
@@ -126,15 +175,16 @@ def test_export_with_no_exportable_clips_emits_failed(qtbot, tmp_path, fake_ffmp
     window = MainWindow()
     qtbot.addWidget(window)
 
-    # Clip SANS source_path (sous-titre uniquement)
-    window.timeline_panel.clips = [_make_subtitle_clip("Test")]
+    # Le Project ne contient qu'un sous-titre (pas de média vidéo à exporter).
+    window.project = _make_subtitle_project()
+    window.timeline_panel.set_project(window.project)
 
     engine = window.export_engine
     failed_messages = []
     engine.failed.connect(failed_messages.append)
 
     request = ExportRequest(
-        clips=window.timeline_panel.clips,
+        clips=window.get_export_clips(),
         output_path=str(tmp_path / "output.mp4"),
         format=ExportFormat.MP4_H264,
         preset=ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),

@@ -2,50 +2,98 @@ from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
-from core.timeline_model import (
-    MARKERS,
-    TRACK_LABELS,
-    TRACK_NAMES,
-    default_clips,
-    move_clip,
-    trim_clip,
+from core.project_model import Project
+from core.timeline_view_model import (
+    TimelineClipView,
+    build_clip_views,
     transition_gap_pixels,
     v1_transition_pairs,
 )
 from ui.theme import COLORS, label_style
 
 
+_TRACK_TYPE_LABELS = {"video": "Vidéo", "subtitle": "Sous-titres"}
+_DEMO_MARKERS = (4.0, 9.0, 14.0)
+
+
 class ClipWidget(QWidget):
-    def __init__(self, clip, parent=None):
+    """Widget visuel représentant un TimelineClipView immuable.
+
+    Le widget ne mute jamais le ``Project`` ni la vue : il mémorise
+    uniquement des valeurs de drag temporaires et émet un signal
+    d'intention au relâchement de la souris.
+    """
+
+    def __init__(self, view: TimelineClipView, parent: "TimelinePanel | None" = None):
         super().__init__(parent)
-        self.clip = clip
+        self.view = view
         self.parent_timeline = parent
         self.handle_width = 5
-        self.drag_mode = None
+        self.drag_mode = None  # type: str | None
         self.drag_start_x = 0
-        self.drag_original_start = 0.0
-        self.drag_original_end = 0.0
+        self.drag_original_start = view.start
+        self.drag_original_end = view.end
+        # Valeurs pending pour le rendu pendant un drag : on n'écrit jamais
+        # dans ``self.view`` (frozen) ni dans le ``Project``.
+        self.pending_start = view.start
+        self.pending_end = view.end
         self.setMouseTracking(True)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.label = QLabel(self.clip["label"], self)
+        self.label = QLabel(self.view.label, self)
         self.label.setStyleSheet("color: white; font-weight: 700; font-size: 11px;")
         self.label.move(8, 8)
-        self.duration_label = QLabel(self.parent_timeline.format_time(self.clip["end"] - self.clip["start"]), self)
+        self.duration_label = QLabel(
+            self.parent_timeline.format_time(self.view.end - self.view.start),
+            self,
+        )
         self.duration_label.setStyleSheet("color: rgba(255,255,255,180); font-size: 10px;")
         self.duration_label.move(8, 26)
         self.refresh_style()
 
     def refresh_style(self):
-        selected = self.parent_timeline is not None and self.parent_timeline.selected_clip is self.clip
+        selected = (
+            self.parent_timeline is not None
+            and self.parent_timeline.selected_clip_id == self.view.id
+        )
         border = COLORS["accent_hover"] if selected else "#59616F"
-        clip_color = self.clip.get("color", "#4da3ff")
-        color = clip_color.name() if isinstance(clip_color, QColor) else str(clip_color)
         self.setStyleSheet(
-            f"QWidget {{ background: {color}; border: 2px solid {border}; border-radius: 6px; color: white; }}"
+            f"QWidget {{ background: {self.view.color_key}; "
+            f"border: 2px solid {border}; border-radius: 6px; color: white; }}"
             f"QWidget::hover {{ border-color: {COLORS['accent_hover']}; }}"
         )
-        self.label.setText(self.clip["label"])
-        self.duration_label.setText(self.parent_timeline.format_time(self.clip["end"] - self.clip["start"]))
+        self.label.setText(self.view.label)
+        self.duration_label.setText(
+            self.parent_timeline.format_time(self.view.end - self.view.start)
+        )
+
+    def _apply_pending_geometry(self) -> None:
+        parent = self.parent_timeline
+        if parent is None:
+            return
+        start_x = (
+            parent.left_margin
+            + self.pending_start * parent.pixels_per_second * parent.zoom
+        )
+        width = max(
+            40,
+            (self.pending_end - self.pending_start)
+            * parent.pixels_per_second
+            * parent.zoom,
+        )
+        row = self.view.track_index
+        track_top = (
+            parent.header_height
+            + parent.ruler_height
+            + 8
+            + row * (parent.track_height + 8)
+            + 8
+        )
+        self.setGeometry(
+            int(start_x),
+            int(track_top),
+            max(int(width), 40),
+            parent.track_height - 16,
+        )
 
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
@@ -61,10 +109,12 @@ class ClipWidget(QWidget):
         else:
             self.drag_mode = "move"
         self.drag_start_x = event.globalPos().x()
-        self.drag_original_start = self.clip["start"]
-        self.drag_original_end = self.clip["end"]
-        parent.selected_clip = self.clip
-        parent.clip_selected.emit(self.clip)
+        self.drag_original_start = self.view.start
+        self.drag_original_end = self.view.end
+        self.pending_start = self.view.start
+        self.pending_end = self.view.end
+        parent.selected_clip_id = self.view.id
+        parent.clip_selected.emit(self.view.id)
         parent.refresh_clip_widgets()
         event.accept()
 
@@ -74,21 +124,27 @@ class ClipWidget(QWidget):
         parent = self.parent_timeline
         if parent is None:
             return
-        delta_seconds = (event.globalPos().x() - self.drag_start_x) / (parent.pixels_per_second * parent.zoom)
+        delta_seconds = (event.globalPos().x() - self.drag_start_x) / (
+            parent.pixels_per_second * parent.zoom
+        )
         if self.drag_mode == "move":
-            duration = self.drag_original_end - self.drag_original_start
-            new_start = max(0.0, self.drag_original_start + delta_seconds)
-            self.clip["start"] = new_start
-            self.clip["end"] = new_start + duration
+            self.pending_start = max(
+                0.0, self.drag_original_start + delta_seconds
+            )
+            self.pending_end = self.pending_start + (
+                self.drag_original_end - self.drag_original_start
+            )
         elif self.drag_mode == "trim-right":
-            new_end = max(self.drag_original_start + 0.1, self.drag_original_end + delta_seconds)
-            self.clip["end"] = new_end
+            self.pending_end = max(
+                self.drag_original_start + 0.1,
+                self.drag_original_end + delta_seconds,
+            )
         elif self.drag_mode == "trim-left":
-            new_start = min(self.drag_original_end - 0.1, self.drag_original_start + delta_seconds)
-            self.clip["start"] = new_start
-        parent.selected_clip = self.clip
-        parent.clip_selected.emit(self.clip)
-        parent.refresh_clip_widgets()
+            self.pending_start = min(
+                self.drag_original_end - 0.1,
+                self.drag_original_start + delta_seconds,
+            )
+        self._apply_pending_geometry()
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -97,25 +153,38 @@ class ClipWidget(QWidget):
         parent = self.parent_timeline
         if parent is not None and self.drag_mode is not None:
             if self.drag_mode == "move":
-                move_clip(parent.clips, self.clip["id"], self.clip["start"])
+                parent.move_clip_requested.emit(self.view.id, self.pending_start)
             elif self.drag_mode == "trim-right":
-                trim_clip(parent.clips, self.clip["id"], new_end=self.clip["end"])
+                parent.trim_clip_right_requested.emit(
+                    self.view.id, self.pending_end
+                )
             elif self.drag_mode == "trim-left":
-                trim_clip(parent.clips, self.clip["id"], new_start=self.clip["start"])
-            parent.selected_clip = next((clip for clip in parent.clips if clip["id"] == self.clip["id"]), self.clip)
-            parent.clip_selected.emit(parent.selected_clip)
-            parent.refresh_clip_widgets()
+                parent.trim_clip_left_requested.emit(
+                    self.view.id, self.pending_start
+                )
         self.drag_mode = None
         event.accept()
 
 
 class TimelinePanel(QWidget):
-    seek_requested = Signal(float)
-    clip_clicked = Signal(object)
-    clip_selected = Signal(object)
-    transition_clicked = Signal(float)
+    """Timeline de Kut-Studio, pilotée par un ``Project``.
 
-    def __init__(self, parent=None):
+    La timeline n'est qu'une projection : elle stocke des
+    ``TimelineClipView`` immuables et émet des signaux d'intention
+    (``move_clip_requested``, ``trim_clip_left_requested``,
+    ``trim_clip_right_requested``). C'est ``MainWindow`` qui applique
+    les opérations via ``core.timeline_operations`` puis demande un
+    rafraîchissement via ``set_project``.
+    """
+
+    seek_requested = Signal(float)
+    clip_selected = Signal(str)
+    transition_clicked = Signal(float)
+    move_clip_requested = Signal(str, float)
+    trim_clip_left_requested = Signal(str, float)
+    trim_clip_right_requested = Signal(str, float)
+
+    def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(270)
         self.setStyleSheet(f"background: {COLORS['panel_alt']}; color: {COLORS['text']};")
@@ -127,14 +196,16 @@ class TimelinePanel(QWidget):
         self.duration_seconds = 30.0
         self.playhead_seconds = 0.0
         self.pixels_per_second = 120.0
-        self.track_names = list(TRACK_NAMES)
-        self.track_labels = list(TRACK_LABELS)
-        self.markers = MARKERS
-        self.clips = default_clips()
-        self.clip_widgets = {}
+        self.project = project
+        self.clip_views: list[TimelineClipView] = (
+            build_clip_views(project) if project is not None else []
+        )
+        self._refresh_track_metadata()
+        self.markers = list(_DEMO_MARKERS)
+        self.clip_widgets: dict[str, ClipWidget] = {}
         self.dragging_playhead = False
-        self.selected_clip = None
-        self.drag_mode = None
+        self.selected_clip_id: str | None = None
+        self.drag_mode: str | None = None
         self.drag_start_x = 0
         self.drag_original_start = 0.0
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -181,6 +252,36 @@ class TimelinePanel(QWidget):
         self.zoom_in_btn.clicked.connect(self.zoom_in)
         self.refresh_clip_widgets()
 
+    # ------------------------------------------------------------------
+    # API publique
+    # ------------------------------------------------------------------
+
+    def set_project(self, project: Project) -> None:
+        """Remplace le projet affiché et reconstruit la projection."""
+        self.project = project
+        self._refresh_track_metadata()
+        self.clip_views = build_clip_views(project)
+        self.selected_clip_id = None
+        self.refresh_clip_widgets()
+        self.update()
+
+    def find_view_by_id(self, clip_id: str) -> TimelineClipView | None:
+        """Retourne la vue correspondant à ``clip_id`` ou ``None``."""
+        for view in self.clip_views:
+            if view.id == clip_id:
+                return view
+        return None
+
+    def select_clip(self, clip_id: str) -> None:
+        """Sélectionne un clip par identifiant et émet ``clip_selected``."""
+        self.selected_clip_id = clip_id
+        self.clip_selected.emit(clip_id)
+        self.refresh_clip_widgets()
+
+    # ------------------------------------------------------------------
+    # Rendu
+    # ------------------------------------------------------------------
+
     def resizeEvent(self, event):
         self.header.resize(self.width(), self.header_height)
         self.refresh_clip_widgets()
@@ -192,28 +293,53 @@ class TimelinePanel(QWidget):
         minutes, secs = divmod(total, 60)
         return f"{minutes:02d}:{secs:02d}"
 
-    def select_clip(self, clip):
-        self.selected_clip = clip
-        self.clip_selected.emit(clip)
-        self.refresh_clip_widgets()
+    def _refresh_track_metadata(self) -> None:
+        if self.project is None:
+            self.track_names: list[str] = []
+            self.track_labels: list[str] = []
+            return
+        self.track_names = [track.name for track in self.project.tracks]
+        self.track_labels = [
+            _TRACK_TYPE_LABELS.get(track.type, track.type)
+            for track in self.project.tracks
+        ]
 
     def refresh_clip_widgets(self):
-        self.clip_count_label.setText(f"{len(self.clips)} clip" if len(self.clips) == 1 else f"{len(self.clips)} clips")
-        current_ids = {clip["id"] for clip in self.clips}
+        count = len(self.clip_views)
+        self.clip_count_label.setText(
+            f"{count} clip" if count == 1 else f"{count} clips"
+        )
+        current_ids = {view.id for view in self.clip_views}
         for clip_id, widget in list(self.clip_widgets.items()):
             if clip_id not in current_ids:
                 widget.deleteLater()
                 del self.clip_widgets[clip_id]
-        for clip in self.clips:
-            widget = self.clip_widgets.get(clip["id"])
+        for view in self.clip_views:
+            widget = self.clip_widgets.get(view.id)
             if widget is None:
-                widget = ClipWidget(clip, self)
-                self.clip_widgets[clip["id"]] = widget
-            row = clip["track"]
-            track_top = self.header_height + self.ruler_height + 8 + row * (self.track_height + 8) + 8
-            start_x = self.left_margin + clip["start"] * self.pixels_per_second * self.zoom
-            width = max(40, (clip["end"] - clip["start"]) * self.pixels_per_second * self.zoom)
-            widget.setGeometry(int(start_x), int(track_top), max(int(width), 40), self.track_height - 16)
+                widget = ClipWidget(view, self)
+                self.clip_widgets[view.id] = widget
+            row = view.track_index
+            track_top = (
+                self.header_height
+                + self.ruler_height
+                + 8
+                + row * (self.track_height + 8)
+                + 8
+            )
+            start_x = (
+                self.left_margin + view.start * self.pixels_per_second * self.zoom
+            )
+            width = max(
+                40,
+                (view.end - view.start) * self.pixels_per_second * self.zoom,
+            )
+            widget.setGeometry(
+                int(start_x),
+                int(track_top),
+                max(int(width), 40),
+                self.track_height - 16,
+            )
             widget.refresh_style()
             widget.raise_()
             widget.show()
@@ -257,7 +383,9 @@ class TimelinePanel(QWidget):
                     painter.setPen(QPen(QColor(COLORS["muted"]), 1))
                     painter.drawLine(int(x), ruler_top + 10, int(x), ruler_bottom)
 
-        for row in range(3):
+        for row, (track_name, track_label) in enumerate(
+            zip(self.track_names, self.track_labels)
+        ):
             y = ruler_bottom + 8 + row * (self.track_height + 8)
             painter.fillRect(0, y, self.width(), self.track_height, QColor(COLORS["panel_alt"]))
             painter.setPen(QPen(QColor(COLORS["border"]), 1))
@@ -266,16 +394,24 @@ class TimelinePanel(QWidget):
             painter.setBrush(QColor(COLORS["surface"]))
             painter.drawRoundedRect(10, y + 10, 28, 24, 5, 5)
             painter.setPen(QPen(QColor(COLORS["text"]), 1))
-            painter.drawText(16, y + 27, self.track_names[row])
+            painter.drawText(16, y + 27, track_name)
             painter.setPen(QPen(QColor(COLORS["muted"]), 1))
-            painter.drawText(45, y + 25, self.track_labels[row])
+            painter.drawText(45, y + 25, track_label)
             painter.setPen(QPen(QColor(COLORS["muted"]), 1))
             painter.drawText(13, y + 47, "M   S   LOCK")
             painter.setBrush(Qt.NoBrush)
 
-        for previous, following in v1_transition_pairs(self.clips, self.pixels_per_second, self.zoom):
-            gap_pixels = transition_gap_pixels(previous, following, self.pixels_per_second, self.zoom)
-            transition_x = self.left_margin + following["start"] * self.pixels_per_second * self.zoom - gap_pixels / 2
+        for previous, following in v1_transition_pairs(
+            self.clip_views, self.pixels_per_second, self.zoom
+        ):
+            gap_pixels = transition_gap_pixels(
+                previous, following, self.pixels_per_second, self.zoom
+            )
+            transition_x = (
+                self.left_margin
+                + following.start * self.pixels_per_second * self.zoom
+                - gap_pixels / 2
+            )
             transition_y = ruler_bottom + 8 + self.track_height - 20
             painter.setPen(QPen(QColor("#ffffff"), 1))
             painter.setBrush(QColor("#e26d5c"))
@@ -293,7 +429,7 @@ class TimelinePanel(QWidget):
                 painter.setBrush(QColor("#f7c948"))
                 painter.drawPolygon([QPoint(int(marker_x) - 5, ruler_top), QPoint(int(marker_x) + 5, ruler_top), QPoint(int(marker_x), ruler_top + 8)])
                 painter.setBrush(Qt.NoBrush)
-        if not self.clips:
+        if not self.clip_views:
             painter.setPen(QPen(QColor(COLORS["muted"]), 1))
             painter.drawText(self.left_margin + 24, ruler_bottom + 45, "Déposez votre premier clip ici")
         playhead_x = self.left_margin + self.playhead_seconds * self.pixels_per_second * self.zoom
@@ -348,24 +484,43 @@ class TimelinePanel(QWidget):
         track_bottom = track_top + self.track_height
         if not track_top <= y <= track_bottom:
             return None
-        for previous, following in v1_transition_pairs(self.clips, self.pixels_per_second, self.zoom):
-            gap_pixels = transition_gap_pixels(previous, following, self.pixels_per_second, self.zoom)
-            transition_x = self.left_margin + following["start"] * self.pixels_per_second * self.zoom - gap_pixels / 2
+        for previous, following in v1_transition_pairs(
+            self.clip_views, self.pixels_per_second, self.zoom
+        ):
+            gap_pixels = transition_gap_pixels(
+                previous, following, self.pixels_per_second, self.zoom
+            )
+            transition_x = (
+                self.left_margin
+                + following.start * self.pixels_per_second * self.zoom
+                - gap_pixels / 2
+            )
             if abs(x - transition_x) <= 12:
-                return following["start"]
+                return following.start
         return None
 
     def find_clip_at(self, x, y):
-        for row in range(3):
-            track_top = self.header_height + self.ruler_height + 8 + row * (self.track_height + 8)
+        for row in range(len(self.track_names)):
+            track_top = (
+                self.header_height
+                + self.ruler_height
+                + 8
+                + row * (self.track_height + 8)
+            )
             if track_top <= y <= track_top + self.track_height:
-                for clip in self.clips:
-                    if clip["track"] != row:
+                for view in self.clip_views:
+                    if view.track_index != row:
                         continue
-                    start_x = self.left_margin + clip["start"] * self.pixels_per_second * self.zoom
-                    end_x = self.left_margin + clip["end"] * self.pixels_per_second * self.zoom
+                    start_x = (
+                        self.left_margin
+                        + view.start * self.pixels_per_second * self.zoom
+                    )
+                    end_x = (
+                        self.left_margin
+                        + view.end * self.pixels_per_second * self.zoom
+                    )
                     if start_x <= x <= end_x:
-                        return clip
+                        return view
         return None
 
     def mousePressEvent(self, event):
@@ -378,14 +533,13 @@ class TimelinePanel(QWidget):
                     self.transition_clicked.emit(transition_time)
                     event.accept()
                     return
-                clip = self.find_clip_at(x, y)
-                if clip is not None:
-                    self.selected_clip = clip
+                view = self.find_clip_at(x, y)
+                if view is not None:
+                    self.selected_clip_id = view.id
                     self.drag_mode = "clip"
                     self.drag_start_x = x
-                    self.drag_original_start = clip["start"]
-                    self.clip_clicked.emit(clip)
-                    self.clip_selected.emit(clip)
+                    self.drag_original_start = view.start
+                    self.clip_selected.emit(view.id)
                     self.refresh_clip_widgets()
                     event.accept()
                     return
@@ -398,15 +552,24 @@ class TimelinePanel(QWidget):
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            if self.drag_mode == "clip" and self.selected_clip is not None:
-                delta_seconds = (event.position().x() - self.drag_start_x) / (self.pixels_per_second * self.zoom)
-                clip = self.selected_clip
-                duration = clip["end"] - clip["start"]
-                clip["start"] = max(0.0, self.drag_original_start + delta_seconds)
-                clip["end"] = clip["start"] + duration
-                self.clip_clicked.emit(clip)
-                self.clip_selected.emit(clip)
-                self.refresh_clip_widgets()
+            if self.drag_mode == "clip" and self.selected_clip_id is not None:
+                delta_seconds = (event.position().x() - self.drag_start_x) / (
+                    self.pixels_per_second * self.zoom
+                )
+                view = self.find_view_by_id(self.selected_clip_id)
+                if view is not None:
+                    duration = view.end - view.start
+                    new_start = max(0.0, self.drag_original_start + delta_seconds)
+                    # On ne mute rien : on émet juste un signal
+                    # d'intention au relâchement de la souris.
+                    # Pour la fluidité visuelle, on repositionne le widget
+                    # sous-jacent s'il existe.
+                    widget = self.clip_widgets.get(view.id)
+                    if widget is not None:
+                        widget.pending_start = new_start
+                        widget.pending_end = new_start + duration
+                        widget._apply_pending_geometry()
+                    self.clip_selected.emit(view.id)
                 event.accept()
                 return
             if self.drag_mode == "playhead":
@@ -417,12 +580,21 @@ class TimelinePanel(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            if self.drag_mode == "clip":
-                self.selected_clip = next((clip for clip in self.clips if clip["id"] == self.selected_clip["id"]), self.selected_clip)
-                move_clip(self.clips, self.selected_clip["id"], self.selected_clip["start"])
+            if (
+                self.drag_mode == "clip"
+                and self.selected_clip_id is not None
+            ):
+                view = self.find_view_by_id(self.selected_clip_id)
+                if view is not None:
+                    widget = self.clip_widgets.get(view.id)
+                    new_start = (
+                        widget.pending_start
+                        if widget is not None
+                        else view.start
+                    )
+                    self.move_clip_requested.emit(view.id, new_start)
             self.dragging_playhead = False
             self.drag_mode = None
-            self.refresh_clip_widgets()
             event.accept()
             return
         super().mouseReleaseEvent(event)

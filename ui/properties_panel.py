@@ -163,8 +163,8 @@ class PropertiesPanel(QWidget):
         self.contrast_value.setText(str(self.contrast_slider.value()))
         self.saturation_value.setText(str(self.saturation_slider.value()))
 
-    def show_clip(self, clip):
-        if clip is None:
+    def show_clip(self, view):
+        if view is None:
             self.selected_clip = None
             self.clip_name.setText("Aucun clip sélectionné")
             self.clip_duration.setText("--")
@@ -174,23 +174,23 @@ class PropertiesPanel(QWidget):
             self.subtitle_group.hide()
             return
 
-        self.selected_clip = clip
-        duration = clip["end"] - clip["start"]
-        self.clip_name.setText(clip["label"])
+        self.selected_clip = view
+        duration = view.end - view.start
+        self.clip_name.setText(view.label)
         self.clip_duration.setText(f"{duration:.2f}s")
-        self.clip_position.setText(f"{clip['start']:.2f}s")
+        self.clip_position.setText(f"{view.start:.2f}s")
         self.cut_button.setEnabled(True)
         self.delete_button.setEnabled(True)
 
-        is_subtitle = clip["track"] == 2
+        is_subtitle = view.track_id == "S1"
         self.subtitle_group.setVisible(is_subtitle)
         if is_subtitle:
             self.subtitle_editor.blockSignals(True)
-            self.subtitle_editor.setPlainText(clip.get("text", ""))
+            self.subtitle_editor.setPlainText(view.text)
             self.subtitle_editor.blockSignals(False)
 
-    def set_clip(self, clip, track_name=None):
-        self.show_clip(clip)
+    def set_clip(self, view, track_name=None):
+        self.show_clip(view)
 
     def emit_cut_requested(self):
         if self.selected_clip is None:
@@ -198,9 +198,9 @@ class PropertiesPanel(QWidget):
         if self.timeline_panel is None:
             return
         playhead_seconds = self.timeline_panel.playhead_seconds
-        self.cut_requested.emit(self.selected_clip.get("id"), playhead_seconds)
+        self.cut_requested.emit(self.selected_clip.id, playhead_seconds)
 
     def emit_delete_requested(self):
         if self.selected_clip is None:
             return
-        self.delete_requested.emit(self.selected_clip.get("id"))
+        self.delete_requested.emit(self.selected_clip.id)
