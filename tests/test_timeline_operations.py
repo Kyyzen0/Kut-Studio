@@ -353,6 +353,67 @@ def test_cut_clip_preserves_enabled_flag() -> None:
     assert right.enabled is False
 
 
+def test_cut_clip_preserves_label_text_and_enabled() -> None:
+    """Les deux clips issus d'une coupe conservent label, text et enabled."""
+    project = _make_project()
+    original = find_clip(project, "v1-a")
+    original.label = "Mon intro"
+    original.text = "Bienvenue dans Kut-Studio"
+    original.enabled = False
+
+    left, right = cut_clip(project, "v1-a", 2.0)
+
+    assert left.label == "Mon intro"
+    assert left.text == "Bienvenue dans Kut-Studio"
+    assert left.enabled is False
+    assert right.label == "Mon intro"
+    assert right.text == "Bienvenue dans Kut-Studio"
+    assert right.enabled is False
+
+
+def test_move_clip_preserves_label_and_text() -> None:
+    """move_clip ne doit jamais effacer label ou text."""
+    project = _make_project()
+    find_clip(project, "v1-a").label = "Intro"
+    find_clip(project, "v1-a").text = "Sous-titre"
+
+    moved = move_clip(project, "v1-a", 5.0)
+
+    assert moved.label == "Intro"
+    assert moved.text == "Sous-titre"
+    # Et l'état du projet reflète bien la préservation.
+    assert find_clip(project, "v1-a").label == "Intro"
+    assert find_clip(project, "v1-a").text == "Sous-titre"
+
+
+def test_trim_left_preserves_label_and_text() -> None:
+    """trim_clip_left ne doit jamais effacer label ou text."""
+    project = _make_project()
+    find_clip(project, "v2-a").label = "Plan B"
+    find_clip(project, "v2-a").text = "Note du monteur"
+
+    trimmed = trim_clip_left(project, "v2-a", 2.5)
+
+    assert trimmed.label == "Plan B"
+    assert trimmed.text == "Note du monteur"
+    assert find_clip(project, "v2-a").label == "Plan B"
+    assert find_clip(project, "v2-a").text == "Note du monteur"
+
+
+def test_trim_right_preserves_label_and_text() -> None:
+    """trim_clip_right ne doit jamais effacer label ou text."""
+    project = _make_project()
+    find_clip(project, "v1-a").label = "Intro"
+    find_clip(project, "v1-a").text = "Sous-titre"
+
+    trimmed = trim_clip_right(project, "v1-a", 2.0)
+
+    assert trimmed.label == "Intro"
+    assert trimmed.text == "Sous-titre"
+    assert find_clip(project, "v1-a").label == "Intro"
+    assert find_clip(project, "v1-a").text == "Sous-titre"
+
+
 def test_cut_clip_rejects_cut_at_start_or_end() -> None:
     project = _make_project()
     # v1-a : timeline_start=0.0, timeline_end=4.0

@@ -198,6 +198,95 @@ def test_enabled_flag_is_preserved_through_roundtrip(tmp_path: Path) -> None:
     assert clips[1].enabled is False
 
 
+def test_clip_label_and_text_survive_kut_roundtrip(tmp_path: Path) -> None:
+    """``label`` et ``text`` (notamment pour les sous-titres) survivent au roundtrip."""
+    project = Project(
+        name="Subtitle project",
+        tracks=[
+            Track(
+                id="track-1",
+                name="V1",
+                type="video",
+                clips=[
+                    Clip(
+                        id="c-video",
+                        asset_id="a",
+                        track_id="track-1",
+                        timeline_start=0.0,
+                        source_in=0.0,
+                        source_out=2.0,
+                        label="Mon intro",
+                        text="",
+                    ),
+                    Clip(
+                        id="c-sub",
+                        asset_id="a",
+                        track_id="track-1",
+                        timeline_start=2.0,
+                        source_in=0.0,
+                        source_out=3.0,
+                        label="Sous-titre",
+                        text="Bienvenue dans Kut-Studio",
+                    ),
+                ],
+            ),
+        ],
+    )
+    target = tmp_path / "with-text.kut"
+    save_project(project, str(target))
+
+    loaded = load_project(str(target))
+    clips = loaded.tracks[0].clips
+    assert clips[0].label == "Mon intro"
+    assert clips[0].text == ""
+    assert clips[1].label == "Sous-titre"
+    assert clips[1].text == "Bienvenue dans Kut-Studio"
+
+
+def test_legacy_v1_payload_without_label_and_text_loads_with_defaults(
+    tmp_path: Path,
+) -> None:
+    """Un ancien ``.kut`` v1 sans ``label`` ni ``text`` doit charger avec les défauts."""
+    target = tmp_path / "legacy.kut"
+    legacy_payload = {
+        "format": FORMAT_NAME,
+        "version": CURRENT_VERSION,
+        "project": {
+            "name": "Legacy",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+            "media_assets": [],
+            "tracks": [
+                {
+                    "id": "track-1",
+                    "name": "V1",
+                    "type": "video",
+                    "clips": [
+                        {
+                            "id": "c1",
+                            "asset_id": "a",
+                            "track_id": "track-1",
+                            "timeline_start": 0.0,
+                            "source_in": 0.0,
+                            "source_out": 2.0,
+                            "enabled": True,
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+    target.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    loaded = load_project(str(target))
+    clip = loaded.tracks[0].clips[0]
+    assert clip.id == "c1"
+    assert clip.label == ""
+    assert clip.text == ""
+    assert clip.enabled is True
+
+
 # ---------------------------------------------------------------------------
 # Vérification du contenu brut
 # ---------------------------------------------------------------------------

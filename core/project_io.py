@@ -161,6 +161,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "source_in": clip.source_in,
                             "source_out": clip.source_out,
                             "enabled": clip.enabled,
+                            "label": clip.label,
+                            "text": clip.text,
                         }
                         for clip in track.clips
                     ],

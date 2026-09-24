@@ -251,6 +251,8 @@ def cut_clip(
         source_in=clip.source_in,
         source_out=left_source_out,
         enabled=clip.enabled,
+        label=clip.label,
+        text=clip.text,
     )
     right_clip = Clip(
         id=right_id,
@@ -260,6 +262,8 @@ def cut_clip(
         source_in=left_source_out,
         source_out=clip.source_out,
         enabled=clip.enabled,
+        label=clip.label,
+        text=clip.text,
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]

@@ -60,6 +60,9 @@ class Clip:
         source_in: Point d'entrée dans le média source (en secondes, >= 0).
         source_out: Point de sortie du média source (en secondes, > source_in).
         enabled: Indique si le clip est actif (False = clip désactivé / muet).
+        label: Nom affiché du clip dans la timeline (par défaut "").
+        text: Contenu textuel éventuel du clip, notamment pour les
+            sous-titres (par défaut "" ; reste vide pour les clips vidéo).
     """
 
     id: str
@@ -69,6 +72,8 @@ class Clip:
     source_in: float
     source_out: float
     enabled: bool = True
+    label: str = ""
+    text: str = ""
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""

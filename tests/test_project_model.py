@@ -106,6 +106,21 @@ def test_clip_enabled_defaults_to_true():
     assert clip.enabled is True
 
 
+def test_clip_label_and_text_default_to_empty_string():
+    """Un Clip créé sans préciser ``label`` ou ``text`` doit les avoir vides."""
+    clip = Clip(
+        id="clip-1",
+        asset_id="asset-1",
+        track_id="track-1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=2.0,
+    )
+
+    assert clip.label == ""
+    assert clip.text == ""
+
+
 def test_clip_rejects_source_out_equal_to_source_in():
     """``source_out`` strictement supérieur à ``source_in`` est obligatoire."""
     with pytest.raises(ValueError, match="source_out"):
