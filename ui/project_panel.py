@@ -1,22 +1,37 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
-    QFileDialog,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from core.project_model import MediaAsset
 from ui.theme import COLORS, label_style
 
 
 class ProjectPanel(QWidget):
-    def __init__(self, load_video, parent=None):
+    """Bibliothèque de médias du projet courant.
+
+    Le panneau est désormais une simple **vue** sur
+    ``self.project.media_assets`` : il ne possède plus sa propre liste
+    métier de chemins. La mise à jour est déclenchée par ``MainWindow``
+    via ``set_assets``.
+    """
+
+    def __init__(
+        self,
+        on_asset_selected,
+        on_import_requested,
+        parent=None,
+    ):
         super().__init__(parent)
-        self.load_video_callback = load_video
+        self.on_asset_selected = on_asset_selected
+        self.on_import_requested = on_import_requested
         self.setObjectName("project_panel")
         self.setStyleSheet(
             f"QWidget#project_panel {{ background: {COLORS['panel']}; border-right: 1px solid {COLORS['border']}; }}"
@@ -35,7 +50,7 @@ class ProjectPanel(QWidget):
             f"QListWidget::item {{ padding: 10px 8px; border-radius: 5px; color: {COLORS['muted']}; }}"
             f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
         )
-        self.bin.itemClicked.connect(load_video)
+        self.bin.itemClicked.connect(self._on_item_clicked)
 
         self.navigation = QListWidget()
         self.navigation.setMinimumHeight(190)
@@ -88,8 +103,54 @@ class ProjectPanel(QWidget):
             f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['surface']}; border: 1px solid {COLORS['border']}; padding: 9px; }}"
             f"QPushButton:hover {{ background: {COLORS['accent_dark']}; border-color: {COLORS['accent']}; }}"
         )
-        self.import_button.clicked.connect(self.import_media)
+        self.import_button.clicked.connect(self.on_import_requested)
         layout.addWidget(self.import_button)
+
+    # ------------------------------------------------------------------
+    # API publique (vue sur le Project)
+    # ------------------------------------------------------------------
+
+    def set_assets(self, assets: list[MediaAsset]) -> None:
+        """Reconstruit la liste à partir des ``MediaAsset`` du Project."""
+        self.bin.clear()
+        for asset in assets:
+            item = QListWidgetItem(asset.name)
+            # On stocke l'identifiant métier dans le ``UserRole`` pour le
+            # retrouver lors d'un clic sans jamais détenir de chemin.
+            item.setData(Qt.UserRole, asset.id)
+            self.bin.addItem(item)
+        self._refresh_count()
+
+    def select_asset(self, asset_id: str) -> None:
+        """Sélectionne le média correspondant à ``asset_id`` dans la liste."""
+        for row in range(self.bin.count()):
+            item = self.bin.item(row)
+            if item.data(Qt.UserRole) == asset_id:
+                self.bin.setCurrentRow(row)
+                return
+
+    def asset_ids(self) -> list[str]:
+        """Retourne la liste des identifiants actuellement affichés."""
+        return [
+            self.bin.item(row).data(Qt.UserRole)
+            for row in range(self.bin.count())
+        ]
+
+    # ------------------------------------------------------------------
+    # Slots internes
+    # ------------------------------------------------------------------
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        asset_id = item.data(Qt.UserRole)
+        if asset_id is not None:
+            self.on_asset_selected(asset_id)
+
+    def _refresh_count(self) -> None:
+        count = self.bin.count()
+        if count <= 1:
+            self.media_count.setText(f"{count} média")
+        else:
+            self.media_count.setText(f"{count} médias")
 
     def _make_placeholder_label(self, message):
         label = QLabel(message)
@@ -100,20 +161,3 @@ class ProjectPanel(QWidget):
 
     def on_tab_changed(self, index):
         self.content_stack.setCurrentIndex(index)
-
-    def import_media(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Importer des médias",
-            "",
-            "Vidéos (*.mp4 *.mov *.avi);;Tous les fichiers (*)",
-        )
-        for path in paths:
-            self.add_file(path)
-        if paths:
-            self.bin.setCurrentRow(self.bin.count() - 1)
-            self.load_video_callback(self.bin.currentItem())
-
-    def add_file(self, path):
-        self.bin.addItem(path)
-        self.media_count.setText(f"{self.bin.count()} média" if self.bin.count() == 1 else f"{self.bin.count()} médias")

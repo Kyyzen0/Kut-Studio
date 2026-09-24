@@ -19,9 +19,10 @@ from PySide6.QtWidgets import (
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
 from core.export_engine import ExportEngine
+from core.media_probe import MediaProbeError, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
-from core.project_model import Project
+from core.project_model import MediaAsset, Project
 from core.timeline_operations import cut_clip, delete_clip, find_clip, move_clip, trim_clip_left, trim_clip_right
 from core.timeline_view_model import build_export_clips
 from ui.preview_panel import PreviewPanel
@@ -53,9 +54,12 @@ class MainWindow(QMainWindow):
             self.stop_playback,
             self.seek_relative,
             self.cut_at_playhead,
-            self.open_video_file,
+            self.import_media_via_dialog,
         )
-        self.project_panel = ProjectPanel(self.load_video)
+        self.project_panel = ProjectPanel(
+            on_asset_selected=self.preview_media_asset,
+            on_import_requested=self.import_media_via_dialog,
+        )
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
         self.timeline_panel = TimelinePanel(self.project)
         self.export_panel = ExportPanel()
@@ -63,6 +67,8 @@ class MainWindow(QMainWindow):
         self.export_panel.export_requested.connect(self.launch_export)
         self.export_panel.close_requested.connect(self.show_editor)
         self.export_panel.cancel_requested.connect(self.cancel_export)
+        # Synchroniser la bibliothèque de médias avec le Project initial.
+        self._refresh_project_library()
 
         self.export_engine = ExportEngine(self)
         self.export_engine.progress_changed.connect(self.export_panel.progress_bar.setValue)
@@ -285,6 +291,7 @@ class MainWindow(QMainWindow):
         self.project = loaded
         self.current_project_path = path
         self.timeline_panel.set_project(self.project)
+        self._refresh_project_library()
         self._reset_selection_and_inspector()
         self._mark_clean()
 
@@ -445,23 +452,70 @@ class MainWindow(QMainWindow):
             return
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
-    def open_video_file(self):
-        """Ouvre un dialogue pour charger une vidéo et l'ajoute au projet."""
-        path, _ = QFileDialog.getOpenFileName(
+    # ------------------------------------------------------------------
+    # Import de médias vidéo
+    # ------------------------------------------------------------------
+
+    def import_media_via_dialog(self) -> None:
+        """Ouvre un dialogue d'import et importe chaque fichier sélectionné."""
+        paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Ouvrir une vidéo",
+            "Importer des médias",
             os.path.expanduser("~/Movies"),
             "Vidéos (*.mp4 *.mov *.avi *.mkv *.webm)",
         )
-        if not path:
+        if not paths:
             return
-        self.project_panel.add_file(path)
-        # Sélectionner le nouveau fichier dans le bin
-        last_index = self.project_panel.bin.count() - 1
-        if last_index >= 0:
-            self.project_panel.bin.setCurrentRow(last_index)
-        # Charger dans le preview
-        self.preview_panel.load_video(path)
+        for path in paths:
+            self.import_video_to_project(path)
+
+    def import_video_to_project(self, path: str) -> bool:
+        """Importe ``path`` comme ``MediaAsset`` réel dans ``self.project``.
+
+        L'opération est idempotente pour un même chemin normalisé : un
+        doublon est ignoré silencieusement. En cas d'échec de la sonde,
+        ni le projet ni la bibliothèque ne sont modifiés ; une boîte de
+        dialogue claire est affichée à l'utilisateur.
+        """
+        normalized = os.path.normpath(os.path.abspath(path))
+        for asset in self.project.media_assets:
+            if os.path.normpath(os.path.abspath(asset.path)) == normalized:
+                # Doublon silencieux : on conserve le projet intact et on
+                # met le focus sur l'asset existant dans la bibliothèque.
+                self.project_panel.select_asset(asset.id)
+                self.preview_panel.load_video(asset.path)
+                return False
+
+        try:
+            asset = probe_video(path)
+        except MediaProbeError as exc:
+            QMessageBox.critical(
+                self,
+                "Import impossible",
+                f"Impossible d'importer la vidéo :\n\n{path}\n\n{exc}",
+            )
+            return False
+
+        self.project.media_assets.append(asset)
+        self._refresh_project_library()
+        self.project_panel.select_asset(asset.id)
+        self.preview_panel.load_video(asset.path)
+        self._mark_dirty()
+        return True
+
+    def preview_media_asset(self, asset_id: str) -> None:
+        """Prévisualise le ``MediaAsset`` identifié par ``asset_id``."""
+        asset = next(
+            (a for a in self.project.media_assets if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            return
+        self.preview_panel.load_video(asset.path)
+
+    def _refresh_project_library(self) -> None:
+        """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``."""
+        self.project_panel.set_assets(list(self.project.media_assets))
 
     def cut_selected_clip(self, clip_id, playhead_pos):
         try:
@@ -583,10 +637,14 @@ class MainWindow(QMainWindow):
         self.preview_panel.player.setPosition(int(seconds * 1000))
         self.update_subtitle_overlay(seconds)
 
-    def load_video(self, item):
-        path = item.text()
-        if path.endswith((".mp4", ".mov", ".avi")):
-            self.preview_panel.load_video(path)
+    def load_video(self, asset_id: str) -> None:
+        """Compatibilité : délègue à ``preview_media_asset``.
+
+        Conservé pour ne pas casser d'éventuels appels externes ; les
+        clics de la bibliothèque passent désormais directement par
+        ``preview_media_asset``.
+        """
+        self.preview_media_asset(asset_id)
 
     def stop_playback(self):
         self.preview_panel.player.stop()
@@ -629,4 +687,6 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, event):
         for url in event.mimeData().urls():
-            self.project_panel.add_file(url.toLocalFile())
+            local_path = url.toLocalFile()
+            if local_path:
+                self.import_video_to_project(local_path)

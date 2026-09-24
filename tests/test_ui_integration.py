@@ -486,3 +486,208 @@ def test_save_project_resets_dirty_state(qtbot, tmp_path, monkeypatch) -> None:
 
     assert window.project_dirty is False
     assert "Enregistré" in window.saved_indicator.text()
+
+
+# ---------------------------------------------------------------------------
+# Tâche 6A — Import vidéo dans le Project
+# ---------------------------------------------------------------------------
+
+
+def _fake_probe(width=1280, height=720, fps=30.0, duration=12.5):
+    """Construit un MediaAsset factice pour les tests d'import."""
+    from core.project_model import MediaAsset
+
+    def _factory(path: str):
+        return MediaAsset(
+            id=f"asset-imported-{path}",
+            path=path,
+            name=path.split("/")[-1],
+            duration=duration,
+            width=width,
+            height=height,
+            fps=fps,
+            media_type="video",
+        )
+
+    return _factory
+
+
+def test_import_video_adds_media_asset_to_project(qtbot, tmp_path, monkeypatch) -> None:
+    """Un import réussi ajoute un MediaAsset à window.project.media_assets."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = str(tmp_path / "clip.mp4")
+    video_path_obj = tmp_path / "clip.mp4"
+    video_path_obj.write_bytes(b"\x00")
+
+    initial_assets = list(window.project.media_assets)
+    monkeypatch.setattr(
+        "ui.main_window.probe_video",
+        _fake_probe(width=1920, height=1080, fps=30.0, duration=42.0),
+    )
+
+    result = window.import_video_to_project(video_path)
+
+    assert result is True
+    assert len(window.project.media_assets) == len(initial_assets) + 1
+    imported = window.project.media_assets[-1]
+    assert imported.path == video_path
+    assert imported.name == "clip.mp4"
+    assert imported.width == 1920
+    assert imported.height == 1080
+    assert imported.fps == pytest.approx(30.0)
+    assert imported.duration == pytest.approx(42.0)
+    assert imported.media_type == "video"
+
+
+def test_import_video_updates_library_with_asset_name(qtbot, tmp_path, monkeypatch) -> None:
+    """La bibliothèque ProjectPanel reflète le nom du MediaAsset importé."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "mon_super_clip.mov"
+    video_path.write_bytes(b"\x00")
+
+    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe())
+
+    window.import_video_to_project(str(video_path))
+
+    # Le panneau affiche bien le nom de fichier.
+    rendered_names = [
+        window.project_panel.bin.item(row).text()
+        for row in range(window.project_panel.bin.count())
+    ]
+    assert "mon_super_clip.mov" in rendered_names
+
+
+def test_import_video_marks_project_as_dirty(qtbot, tmp_path, monkeypatch) -> None:
+    """Un import réussi passe le projet en état « Non enregistré »."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+    assert window.project_dirty is False
+
+    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe())
+
+    window.import_video_to_project(str(video_path))
+
+    assert window.project_dirty is True
+    assert "Non enregistré" in window.saved_indicator.text()
+
+
+def test_import_video_refuses_duplicate_by_normalized_path(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Importer deux fois le même chemin ne crée pas de doublon."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+
+    probe_calls: list[str] = []
+    def fake_probe(path):
+        probe_calls.append(path)
+        return _fake_probe()(path)
+
+    monkeypatch.setattr("ui.main_window.probe_video", fake_probe)
+
+    assert window.import_video_to_project(str(video_path)) is True
+    count_after_first = len(window.project.media_assets)
+
+    # Deuxième import du même chemin : aucun nouvel asset, pas de re-sonde.
+    assert window.import_video_to_project(str(video_path)) is False
+    assert len(window.project.media_assets) == count_after_first
+    assert len(probe_calls) == 1
+
+    # Variante : import avec un chemin équivalent (./tmp/...) : même refus.
+    same_via_relative = tmp_path / "." / "clip.mp4"
+    assert window.import_video_to_project(str(same_via_relative)) is False
+    assert len(window.project.media_assets) == count_after_first
+    assert len(probe_calls) == 1
+
+
+def test_import_video_failure_keeps_project_and_library_unchanged(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Si la sonde échoue, ni le Project ni la bibliothèque ne sont modifiés."""
+    window = _build_window(qtbot, monkeypatch)
+    initial_assets = list(window.project.media_assets)
+    initial_names = [
+        window.project_panel.bin.item(row).text()
+        for row in range(window.project_panel.bin.count())
+    ]
+    initial_dirty = window.project_dirty
+
+    video_path = tmp_path / "broken.mp4"
+    video_path.write_bytes(b"\x00")
+
+    from core.media_probe import MediaProbeError
+
+    def failing_probe(path):
+        raise MediaProbeError(f"fichier corrompu : {path}")
+
+    monkeypatch.setattr("ui.main_window.probe_video", failing_probe)
+
+    critical_calls: list[tuple] = []
+    def fake_critical(parent, title, message, *args, **kwargs):
+        critical_calls.append((title, message))
+
+    monkeypatch.setattr("ui.main_window.QMessageBox.critical", fake_critical)
+
+    result = window.import_video_to_project(str(video_path))
+
+    assert result is False
+    # Aucune mutation.
+    assert list(window.project.media_assets) == initial_assets
+    after_names = [
+        window.project_panel.bin.item(row).text()
+        for row in range(window.project_panel.bin.count())
+    ]
+    assert after_names == initial_names
+    assert window.project_dirty is initial_dirty
+    # Une erreur a été signalée.
+    assert critical_calls, "Une erreur aurait dû être affichée."
+    title, _ = critical_calls[0]
+    assert "import" in title.lower()
+
+
+def test_imported_media_asset_survives_save_and_load(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Un MediaAsset importé est conservé après un aller-retour ``.kut``."""
+    from core.project_io import load_project
+
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+    target = tmp_path / "saved.kut"
+
+    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=7.5))
+
+    assert window.import_video_to_project(str(video_path)) is True
+    imported = window.project.media_assets[-1]
+    assert imported.path == str(video_path)
+    assert imported.name == "clip.mp4"
+
+    # Sauvegarde.
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: _fake_save_dialog(str(target)),
+    )
+    window.save_project_as()
+    assert target.exists()
+
+    # Recharge dans une nouvelle fenêtre et vérifie la présence du média.
+    fresh_window = _build_window(qtbot, monkeypatch)
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getOpenFileName",
+        lambda *args, **kwargs: (str(target), "Projets Kut-Studio (*.kut)"),
+    )
+    fresh_window.open_project_file()
+
+    assert any(
+        a.path == str(video_path) and a.name == "clip.mp4"
+        for a in fresh_window.project.media_assets
+    )
+    # Et la bibliothèque de la nouvelle fenêtre reflète bien le média.
+    rendered = [
+        fresh_window.project_panel.bin.item(row).text()
+        for row in range(fresh_window.project_panel.bin.count())
+    ]
+    assert "clip.mp4" in rendered
