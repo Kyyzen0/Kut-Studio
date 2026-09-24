@@ -5,6 +5,7 @@ source de vérité pour la timeline, et que les opérations UI (couper,
 supprimer, éditer un sous-titre) sont propagées au modèle métier.
 """
 
+import json
 import pathlib
 
 import pytest
@@ -371,6 +372,80 @@ def test_open_invalid_file_keeps_current_project(qtbot, tmp_path, monkeypatch) -
     assert sum(len(t.clips) for t in window.project.tracks) == initial_clips
     assert window.current_project_path is None
     assert window.project_dirty is False
+
+
+def test_open_structurally_invalid_kut_keeps_current_project(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Un ``.kut`` au bon format mais avec un clip incomplet est rejeté proprement.
+
+    Le fichier contient un ``format`` et une ``version`` valides, une
+    section ``project`` correctement formée en apparence, mais un clip
+    réduit à ``{}``. La désérialisation lève alors un ``TypeError``
+    (champs requis manquants sur le dataclass ``Clip``). L'interface doit
+    intercepter cette erreur, ne pas remplacer le projet courant et
+    signaler le problème via ``QMessageBox.critical``.
+    """
+    window = _build_window(qtbot, monkeypatch)
+    initial_name = window.project.name
+    initial_clip_count = sum(len(t.clips) for t in window.project.tracks)
+    initial_track_count = len(window.project.tracks)
+    initial_asset_count = len(window.project.media_assets)
+
+    # On capture les appels à ``QMessageBox.critical`` pour vérifier
+    # que le mécanisme d'erreur en place a bien été déclenché.
+    critical_calls: list[tuple] = []
+    def fake_critical(parent, title, message, *args, **kwargs):
+        critical_calls.append((title, message))
+
+    monkeypatch.setattr("ui.main_window.QMessageBox.critical", fake_critical)
+
+    broken = tmp_path / "broken_structure.kut"
+    payload = {
+        "format": "kut-studio-project",
+        "version": 1,
+        "project": {
+            "name": "Projet cassé",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+            "media_assets": [],
+            "tracks": [
+                {
+                    "id": "V1",
+                    "name": "V1",
+                    "type": "video",
+                    "clips": [{}],  # Clip complètement vide → TypeError
+                },
+            ],
+        },
+    }
+    broken.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getOpenFileName",
+        lambda *args, **kwargs: _fake_open_dialog(str(broken)),
+    )
+
+    # L'appel ne doit lever aucune exception Qt (pas de propagation).
+    window.open_project_file()
+
+    # Le projet courant est strictement identique à son état initial.
+    assert window.project.name == initial_name
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_clip_count
+    assert len(window.project.tracks) == initial_track_count
+    assert len(window.project.media_assets) == initial_asset_count
+    assert window.current_project_path is None
+    assert window.project_dirty is False
+
+    # Une erreur a été signalée via le mécanisme en place.
+    assert critical_calls, (
+        "QMessageBox.critical aurait dû être appelé pour signaler "
+        "le fichier structurellement invalide."
+    )
+    title, message = critical_calls[0]
+    assert "projet" in title.lower() or "ouvrir" in title.lower()
+    assert str(broken) in message
 
 
 def test_timeline_modification_marks_project_dirty(qtbot, monkeypatch) -> None:

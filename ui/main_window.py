@@ -264,10 +264,18 @@ class MainWindow(QMainWindow):
         self._load_project_from_path(path)
 
     def _load_project_from_path(self, path: str) -> None:
-        """Charge ``path`` et remplace ``self.project`` uniquement en cas de succès."""
+        """Charge ``path`` et remplace ``self.project`` uniquement en cas de succès.
+
+        Toutes les erreurs de chargement (fichier absent, JSON invalide,
+        format/version non supportés, **ou structure interne incomplète
+        qui lèverait un ``TypeError`` lors de la désérialisation des
+        dataclasses**) sont traitées de la même façon : un message
+        d'erreur est affiché et l'état courant de l'application reste
+        intact.
+        """
         try:
             loaded = load_project(path)
-        except (FileNotFoundError, ValueError, OSError) as exc:
+        except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
             QMessageBox.critical(
                 self,
                 "Impossible d'ouvrir le projet",
