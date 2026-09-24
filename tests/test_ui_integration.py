@@ -91,9 +91,14 @@ def test_main_window_delete_modifies_project(qtbot, monkeypatch) -> None:
     assert "b_roll" not in rendered_ids
 
 
-def test_main_window_subtitle_editor_updates_project(qtbot, monkeypatch) -> None:
-    """Éditer le sous-titre dans l'inspecteur met à jour Clip.text."""
+def test_main_window_subtitle_editor_updates_project(qtbot, tmp_path, monkeypatch) -> None:
+    """Éditer le sous-titre dans l'inspecteur met à jour Clip.text et la vue.
+
+    Le fichier ``.srt`` est écrit dans ``tmp_path`` pour ne pas polluer
+    la racine du dépôt.
+    """
     window = _build_window(qtbot, monkeypatch)
+    window.subtitle_file = str(tmp_path / "subtitles.srt")
 
     # Sélectionner le clip sous-titre : on simule le clic en passant l'ID.
     window.on_clip_selected("subtitle_01")
@@ -109,6 +114,53 @@ def test_main_window_subtitle_editor_updates_project(qtbot, monkeypatch) -> None
     view = window.timeline_panel.find_view_by_id("subtitle_01")
     assert view is not None
     assert view.text == new_text
+
+    # Le ``.srt`` a bien été écrit dans le dossier temporaire.
+    assert (tmp_path / "subtitles.srt").exists()
+
+
+def test_main_window_subtitle_save_failure_does_not_break_ui(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Une ``OSError`` pendant la sauvegarde ``.srt`` ne casse ni le modèle ni la vue."""
+    window = _build_window(qtbot, monkeypatch)
+    window.subtitle_file = str(tmp_path / "subtitles.srt")
+
+    window.on_clip_selected("subtitle_01")
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full simulation")
+
+    # On remplace la fonction locale ``save_subtitles`` utilisée par MainWindow.
+    monkeypatch.setattr("ui.main_window.save_subtitles", boom)
+
+    # L'édition du sous-titre ne doit lever aucune exception Qt.
+    new_text = "Sauvegarde impossible"
+    window.properties_panel.subtitle_editor.setPlainText(new_text)
+
+    # Le modèle et la vue reflètent quand même la modification.
+    updated = find_clip(window.project, "subtitle_01")
+    assert updated.text == new_text
+
+    view = window.timeline_panel.find_view_by_id("subtitle_01")
+    assert view is not None
+    assert view.text == new_text
+
+
+def test_subtitles_srt_is_not_tracked_in_git() -> None:
+    """Le fichier ``subtitles.srt`` ne doit plus apparaître dans l'index Git."""
+    import subprocess
+
+    repo_root = pathlib.Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "ls-files", "subtitles.srt"],
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+    assert result.stdout.strip() == "", (
+        f"subtitles.srt est encore suivi par git : {result.stdout!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

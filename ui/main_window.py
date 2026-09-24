@@ -379,13 +379,27 @@ class MainWindow(QMainWindow):
             clip = find_clip(self.project, self.active_subtitle_clip.id)
         except KeyError:
             return
+
+        # 1. Mettre à jour le modèle métier.
         clip.text = new_text
-        self.save_subtitles()
-        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
-        # Rafraîchir la projection pour que la vue reflète le nouveau texte.
+
+        # 2. Rafraîchir immédiatement la projection de timeline.
+        #    ``set_project`` réinitialise ``selected_clip_id`` ; on le
+        #    restaure juste après et on repeint le widget pour le border.
         self.timeline_panel.set_project(self.project)
-        # Conserver la sélection.
         self.timeline_panel.selected_clip_id = self.active_subtitle_clip.id
+        self.timeline_panel.refresh_clip_widgets()
+
+        # 3. Mettre à jour l'overlay de preview.
+        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+
+        # 4. Sauvegarde ``.srt`` en meilleure effort : un échec I/O ne
+        #    doit jamais bloquer la mise à jour du modèle ni lever dans
+        #    la boucle Qt.
+        try:
+            self.save_subtitles()
+        except OSError as exc:
+            print(f"[MainWindow] sauvegarde .srt impossible : {exc}")
 
     def update_subtitle_overlay(self, seconds):
         subtitle_clip = self._subtitle_clip_at(seconds)

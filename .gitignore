@@ -3,3 +3,6 @@ __pycache__/
 venv/
 .vscode/
 .DS_Store
+
+# Artifactes runtime générés par Kut-Studio.
+subtitles.srt
