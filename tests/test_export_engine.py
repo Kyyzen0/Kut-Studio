@@ -197,9 +197,11 @@ def test_build_command_v2_overlays_after_v1(engine, tmp_path):
 
     filter_complex = command[command.index("-filter_complex") + 1]
 
-    # Les couches doivent apparaître dans l'ordre : V1 puis V2.
-    v1_pos = filter_complex.find("[0:v]")
-    v2_pos = filter_complex.find("[1:v]")
+    # Les couches vidéo sont numérotées ``[v0]`` puis ``[v1]`` selon
+    # l'ordre des pistes (V1 avant V2). Les clips d'une même piste se
+    # partagent le même flux d'entrée via le dédoublonnage.
+    v1_pos = filter_complex.find("[v0]")
+    v2_pos = filter_complex.find("[v1]")
     assert 0 <= v1_pos < v2_pos, (
         "Le clip V1 doit apparaître dans le filter_complex avant V2."
     )
@@ -273,15 +275,23 @@ def test_build_command_with_gap_uses_background_duration(engine, tmp_path):
     assert "d=7.0" in filter_complex
 
 
-def test_build_command_has_no_audio(engine, tmp_path):
-    """Le filtre de sortie doit être muet (``-an``) à ce stade."""
+def test_build_command_includes_audio_mapping(engine, tmp_path):
+    """La commande expose un flux audio AAC stéréo 48 kHz."""
     project = _make_project_with_video(str(tmp_path / "source.mp4"))
     plan = build_render_plan(project)
     request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
 
     command = engine._build_command(request)
 
-    assert "-an" in command
+    # Plus de ``-an`` : l'export est désormais audio-inclusif.
+    assert "-an" not in command
+    # Le flux audio est mappé et encodé en AAC stéréo 48 kHz.
+    assert "-map" in command
+    assert any(arg == "aac" for arg in command)
+    audio_map_index = command.index("-map") + 1
+    assert command.count("-map") >= 2
+    second_map_index = command.index("-map", audio_map_index) + 1
+    assert command[second_map_index].startswith("[")
 
 
 def test_build_command_mov_prores(engine, tmp_path):
@@ -310,7 +320,7 @@ def test_build_layer_filter_includes_required_chain():
         source_path="/tmp/x.mp4", source_in=1.0, source_out=4.0,
         timeline_start=2.5, timeline_end=5.5,
     )
-    filter_str = _build_layer_filter(0, layer, 640, 360, 30)
+    filter_str = _build_layer_filter(0, layer, 0, 640, 360, 30)
 
     assert filter_str.startswith("[0:v]")
     assert "trim=start=1.0:end=4.0" in filter_str
@@ -322,16 +332,18 @@ def test_build_layer_filter_includes_required_chain():
     assert filter_str.endswith("[v0]")
 
 
-def test_build_filter_complex_returns_output_label():
-    """Le filter_complex doit déclarer un label de sortie exploitable."""
+def test_build_filter_complex_returns_output_labels_and_inputs():
+    """Le filter_complex doit déclarer les labels vidéo + audio + les inputs."""
     plan = RenderPlan(
         width=320, height=240, fps=30.0, duration=4.0,
         video_layers=(),
     )
-    filter_complex, output_label = ExportEngine._build_filter_complex(
-        plan, 320, 240, 30
+    filter_complex, video_label, audio_label, input_paths = (
+        ExportEngine._build_filter_complex(plan, 320, 240, 30)
     )
-    assert output_label == "bg"
+    assert video_label == "bg"
+    assert audio_label == "aout"
+    assert input_paths == []
     assert "color=c=black" in filter_complex
 
 
@@ -426,3 +438,181 @@ def test_start_emits_failed_when_plan_has_no_layers(engine, tmp_path, monkeypatc
 
     assert failed_messages, "failed doit être émis quand le plan est vide."
     assert "média" in failed_messages[0].lower() or "video" in failed_messages[0].lower()
+
+
+# ---------------------------------------------------------------------------
+# Audio — tâche 10
+# ---------------------------------------------------------------------------
+
+
+def _audio_asset(asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0):
+    """Construit un ``MediaAsset`` audio conforme à la validation."""
+    return MediaAsset(
+        id=asset_id,
+        path=path,
+        name="Song",
+        duration=duration,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+
+
+def _video_with_audio_asset(asset_id: str = "asset-vid", path: str = "/tmp/clip.mp4", duration: float = 5.0):
+    """Construit un ``MediaAsset`` vidéo avec ``has_audio=True``."""
+    return MediaAsset(
+        id=asset_id,
+        path=path,
+        name="Clip",
+        duration=duration,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=True,
+    )
+
+
+def test_filter_complex_contains_silent_source(engine, tmp_path):
+    """Le filter_complex doit inclure une source silencieuse ``aevalsrc``."""
+    asset = _video_with_audio_asset(path=str(tmp_path / "v.mp4"))
+    project = Project(
+        name="Silent",
+        tracks=[Track(id="V1", name="V1", type="video", clips=[
+            Clip(id="c", asset_id="asset-vid", track_id="V1",
+                 timeline_start=0.0, source_in=0.0, source_out=5.0),
+        ])],
+        media_assets=[asset],
+    )
+    plan = build_render_plan(project)
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    assert "aevalsrc=0|0" in filter_complex
+    assert "[silent_base]" in filter_complex
+
+
+def test_filter_complex_includes_audio_layer_filters(engine, tmp_path):
+    """Pour chaque ``AudioLayer``, le filter_complex doit appliquer ``atrim``."""
+    audio = _audio_asset(path=str(tmp_path / "song.mp3"), duration=20.0)
+    project = Project(
+        name="Audio",
+        tracks=[Track(id="A1", name="A1", type="audio", clips=[
+            Clip(id="music", asset_id="asset-audio", track_id="A1",
+                 timeline_start=2.0, source_in=1.0, source_out=6.0),
+        ])],
+        media_assets=[audio],
+    )
+    plan = build_render_plan(project)
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    # atrim + décalage temporel présents.
+    assert "atrim=start=1.0:end=6.0" in filter_complex
+    assert "asetpts=PTS+2.0/TB" in filter_complex
+    # L'amix fusionne la base silencieuse avec le clip.
+    assert "amix=inputs=" in filter_complex
+
+
+def test_command_no_longer_uses_an(engine, tmp_path):
+    """``-an`` ne doit plus apparaître : l'export est désormais audio-inclusif."""
+    project = _make_project_with_video(str(tmp_path / "source.mp4"))
+    plan = build_render_plan(project)
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+
+    command = engine._build_command(request)
+
+    assert "-an" not in command
+    assert "aac" in command
+    # -map est présent au moins deux fois : vidéo + audio.
+    assert command.count("-map") >= 2
+
+
+def test_export_without_audio_still_has_silent_audio_track(engine, tmp_path):
+    """Une vidéo sans flux audio produit une piste audio silencieuse."""
+    asset_no_audio = MediaAsset(
+        id="v", path=str(tmp_path / "silent.mp4"), name="V",
+        duration=4.0, width=1920, height=1080, fps=30.0,
+        media_type="video", has_audio=False,
+    )
+    project = Project(
+        name="NoAudio",
+        tracks=[Track(id="V1", name="V1", type="video", clips=[
+            Clip(id="c", asset_id="v", track_id="V1",
+                 timeline_start=0.0, source_in=0.0, source_out=4.0),
+        ])],
+        media_assets=[asset_no_audio],
+    )
+    plan = build_render_plan(project)
+
+    # Pas d'AudioLayer car has_audio=False.
+    assert plan.audio_layers == ()
+
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    # La base silencieuse est néanmoins créée et mappée vers ``aout``.
+    assert "[silent_base]" in filter_complex
+    assert "[aout]" in filter_complex
+    # Et la commande expose un ``-map`` vers ``[aout]``.
+    map_indices = [i for i, arg in enumerate(command) if arg == "-map"]
+    audio_map = command[map_indices[1] + 1]
+    assert audio_map == "[aout]"
+
+
+def test_audio_layer_shift_via_setpts(engine, tmp_path):
+    """Un clip audio placé plus tard est décalé via ``setpts=PTS+timeline_start/TB``."""
+    audio = _audio_asset(path=str(tmp_path / "song.mp3"), duration=10.0)
+    project = Project(
+        name="Shift",
+        tracks=[Track(id="A1", name="A1", type="audio", clips=[
+            Clip(id="late", asset_id="asset-audio", track_id="A1",
+                 timeline_start=3.5, source_in=0.0, source_out=2.0),
+        ])],
+        media_assets=[audio],
+    )
+    plan = build_render_plan(project)
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    assert "asetpts=PTS+3.5/TB" in filter_complex
+
+
+def test_audio_and_video_share_same_duration(engine, tmp_path):
+    """La durée finale audio et vidéo est identique (timeline_duration)."""
+    audio = _audio_asset(path=str(tmp_path / "song.mp3"), duration=10.0)
+    video = _video_with_audio_asset(path=str(tmp_path / "v.mp4"), duration=4.0)
+    project = Project(
+        name="SameDuration",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-vid", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="A1", name="A1", type="audio", clips=[
+                Clip(id="a", asset_id="asset-audio", track_id="A1",
+                     timeline_start=0.0, source_in=0.0, source_out=10.0),
+            ]),
+        ],
+        media_assets=[video, audio],
+    )
+    plan = build_render_plan(project)
+    # timeline_duration = max(4, 10) = 10.
+    assert plan.duration == pytest.approx(10.0)
+
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    # Le fond noir et la base silencieuse couvrent tous deux 10s.
+    assert "d=10.0" in filter_complex
+    assert "duration=10.0" in filter_complex

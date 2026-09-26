@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .project_model import MediaAsset, Project
+from .project_model import Clip, MediaAsset, Project
 from .timeline_evaluator import timeline_duration
 
 

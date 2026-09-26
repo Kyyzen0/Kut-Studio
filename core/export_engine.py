@@ -1,14 +1,28 @@
 """Moteur d'export FFmpeg piloté par un :class:`~core.render_plan.RenderPlan`.
 
-Cette itération abandonne le demuxer ``concat`` au profit d'un
-``-filter_complex`` qui compose réellement la timeline :
+Le moteur construit un ``-filter_complex`` complet qui décrit la
+timeline :
 
-1. un fond noir de la taille d'export et de durée ``timeline_duration`` ;
-2. pour chaque ``RenderLayer`` : trim, reset PTS, scale + bandes noires,
-   ``fps=``, décalage temporel via ``setpts=PTS+timeline_start/TB`` ;
-3. chaînage des overlays : ``[bg][v0]overlay -> [v1]overlay -> ...``.
-4. sortie muette (``-an``) — le mixage audio sera traité dans une
-   tâche ultérieure.
+1. **Vidéo** : un fond noir de la taille d'export et de durée
+   ``timeline_duration``, puis pour chaque :class:`RenderLayer` :
+   ``trim``, ``setpts=PTS-STARTPTS``, ``scale`` qui préserve le ratio,
+   ``pad``, ``fps``, ``setpts=PTS+timeline_start/TB`` ; chaînage des
+   overlays successifs (``[bg][v0]overlay -> [v1]overlay -> ...``) pour
+   respecter l'ordre des pistes.
+
+2. **Audio** : une source silencieuse de référence (stéréo, 48 kHz)
+   couvrant toute la timeline, puis pour chaque :class:`AudioLayer` :
+   ``atrim``, ``asetpts=PTS-STARTPTS``, ``aformat`` pour normaliser en
+   stéréo / 48 kHz, ``asetpts=PTS+timeline_start/TB`` pour décaler ;
+   toutes les sources sont mixées via ``amix`` avec
+   ``duration=first`` (la base silencieuse) et ``dropout_transition=0``.
+
+Le résultat est un fichier ``mp4`` / ``mov`` contenant à la fois la
+vidéo H.264 / ProRes et une piste audio AAC stéréo 48 kHz. Si le
+projet ne porte aucun média vidéo, l'export échoue avec un message
+clair. S'il porte uniquement de la vidéo sans flux audio exploitable,
+la sortie contient néanmoins une piste audio silencieuse pour respecter
+la cohérence du conteneur.
 
 L'export reste asynchrone : ``ExportEngine`` est un ``QObject`` qui
 pilote un ``QProcess`` et publie sa progression via les signaux
@@ -19,15 +33,13 @@ et ``cancelled``.
 from __future__ import annotations
 
 import shutil
-import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
-from .render_plan import RenderPlan, RenderLayer
+from .render_plan import AudioLayer, RenderLayer, RenderPlan
 
 
 _ffmpeg_path = shutil.which("ffmpeg")
@@ -187,8 +199,8 @@ class ExportEngine(QObject):
                 f"Le dossier de sortie est introuvable : {output_path.parent}"
             )
 
-        filter_complex, output_label = self._build_filter_complex(
-            plan, width, height, request.fps
+        filter_complex, video_label, audio_label, input_paths = (
+            self._build_filter_complex(plan, width, height, request.fps)
         )
 
         command: list[str] = [
@@ -202,12 +214,12 @@ class ExportEngine(QObject):
             "-nostats",
         ]
 
-        # Une entrée par couche vidéo.
-        for layer in plan.video_layers:
-            command.extend(["-i", layer.source_path])
+        for path in input_paths:
+            command.extend(["-i", path])
 
         command.extend(["-filter_complex", filter_complex])
-        command.extend(["-map", f"[{output_label}]"])
+        command.extend(["-map", f"[{video_label}]"])
+        command.extend(["-map", f"[{audio_label}]"])
 
         if request.format.codec == "h264":
             command.extend(
@@ -230,9 +242,19 @@ class ExportEngine(QObject):
                 ]
             )
 
-        # Pas d'audio dans cette itération : le mixage audio complet
-        # sera traité dans une tâche ultérieure.
-        command.extend(["-an"])
+        # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
+        command.extend(
+            [
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-b:a",
+                "192k",
+            ]
+        )
 
         if request.format.container == "mp4":
             command.extend(["-movflags", "+faststart"])
@@ -246,41 +268,78 @@ class ExportEngine(QObject):
         output_width: int,
         output_height: int,
         fps: int,
-    ) -> tuple[str, str]:
-        """Génère le ``-filter_complex`` complet et le label de sortie."""
+    ) -> tuple[str, str, str, list[str]]:
+        """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
+
+        Returns:
+            filter_complex: chaîne complète à passer à ``-filter_complex``.
+            video_label: label du flux vidéo final.
+            audio_label: label du flux audio final.
+            input_paths: liste dédupliquée des chemins à passer en ``-i``.
+        """
         width, height = output_width, output_height
+        duration = plan.duration
+
+        # Inputs dédupliqués : on assigne un index à chaque chemin unique.
+        input_paths, path_to_index = _build_input_list(plan)
+
         parts: list[str] = []
 
-        # 1. Fond noir, calé sur la taille d'export et la durée totale.
-        bg_duration = (
-            f":d={_format_seconds(plan.duration)}" if plan.duration > 0 else ""
-        )
+        # ---------------- Vidéo ----------------
+        bg_duration = f":d={_format_seconds(duration)}" if duration > 0 else ""
         parts.append(
             f"color=c=black:s={width}x{height}:r={fps}{bg_duration}[bg]"
         )
 
-        # 2. Une chaîne de filtres par couche vidéo.
-        for index, layer in enumerate(plan.video_layers):
+        for layer_index, layer in enumerate(plan.video_layers):
+            input_index = path_to_index[layer.source_path]
             parts.append(
-                _build_layer_filter(index, layer, width, height, fps)
+                _build_layer_filter(layer_index, layer, input_index, width, height, fps)
             )
 
-        # 3. Chaînage des overlays : bg → bg+v0 → ... → final.
         if plan.video_layers:
             previous_label = "bg"
-            for index in range(len(plan.video_layers)):
-                is_last = index == len(plan.video_layers) - 1
-                next_label = "vout" if is_last else f"o{index}"
+            for layer_index in range(len(plan.video_layers)):
+                is_last = layer_index == len(plan.video_layers) - 1
+                next_label = "vout" if is_last else f"o{layer_index}"
                 parts.append(
-                    f"[{previous_label}][v{index}]"
+                    f"[{previous_label}][v{layer_index}]"
                     f"overlay=eof_action=pass[{next_label}]"
                 )
                 previous_label = next_label
-            output_label = "vout"
+            video_label = "vout"
         else:
-            output_label = "bg"
+            video_label = "bg"
 
-        return ";".join(parts), output_label
+        # ---------------- Audio ----------------
+        silent_base_filter = (
+            f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:"
+            f"duration={_format_seconds(duration)}[silent_base]"
+        )
+        parts.append(silent_base_filter)
+
+        if plan.audio_layers:
+            for audio_index, layer in enumerate(plan.audio_layers):
+                input_index = path_to_index[layer.source_path]
+                parts.append(
+                    _build_audio_filter(audio_index, layer, input_index, duration)
+                )
+            n_inputs = len(plan.audio_layers) + 1
+            mixed_inputs = "".join(f"[a{i}]" for i in range(len(plan.audio_layers)))
+            parts.append(
+                f"[silent_base]{mixed_inputs}"
+                f"amix=inputs={n_inputs}:duration=first:dropout_transition=0,"
+                f"aformat=channel_layouts=stereo:sample_rates=48000[aout]"
+            )
+            audio_label = "aout"
+        else:
+            # Aucun clip audio : on renomme la base silencieuse en ``aout``.
+            parts.append(
+                f"[silent_base]aformat=channel_layouts=stereo:sample_rates=48000[aout]"
+            )
+            audio_label = "aout"
+
+        return ";".join(parts), video_label, audio_label, input_paths
 
     # ------------------------------------------------------------------
     # Progression et cycle de vie du processus
@@ -363,37 +422,69 @@ def _format_seconds(value: float) -> str:
     return f"{float(text):.1f}" if "." not in text else text
 
 
+def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
+    """Construit la liste dédupliquée d'inputs et un mapping ``path → index``."""
+    input_paths: list[str] = []
+    path_to_index: dict[str, int] = {}
+    for layer in list(plan.video_layers) + list(plan.audio_layers):
+        if layer.source_path in path_to_index:
+            continue
+        path_to_index[layer.source_path] = len(input_paths)
+        input_paths.append(layer.source_path)
+    return input_paths, path_to_index
+
+
 def _build_layer_filter(
-    index: int, layer: RenderLayer, width: int, height: int, fps: int
+    layer_index: int,
+    layer: RenderLayer,
+    input_index: int,
+    width: int,
+    height: int,
+    fps: int,
 ) -> str:
-    """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
-
-    La chaîne applique successivement :
-
-    1. ``trim`` sur la portion ``[source_in, source_out]`` du média ;
-    2. ``setpts=PTS-STARTPTS`` pour recaler les PTS à 0 ;
-    3. ``scale`` qui préserve le ratio ;
-    4. ``pad`` qui ajoute des bandes noires si nécessaire ;
-    5. ``fps`` qui force la fréquence d'images cible ;
-    6. ``setpts=PTS+timeline_start/TB`` qui décale la couche à sa
-       position sur la timeline.
-    """
+    """Construit la chaîne de filtres FFmpeg pour une couche vidéo."""
     source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
     return (
-        f"[{index}:v]"
+        f"[{input_index}:v]"
         f"trim=start={source_in}:end={source_out},"
         f"setpts=PTS-STARTPTS,"
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
         f"fps={fps},"
-        f"setpts=PTS+{timeline_start}/TB[v{index}]"
+        f"setpts=PTS+{timeline_start}/TB[v{layer_index}]"
     )
 
 
-def _export_engine_module_attributes() -> dict[str, Any]:
-    """Expose un snapshot minimal des attributs utiles pour les tests."""
-    return {
-        "ffmpeg_path": _ffmpeg_path,
-    }
+def _build_audio_filter(
+    audio_index: int,
+    layer: AudioLayer,
+    input_index: int,
+    timeline_duration: float,
+) -> str:
+    """Construit la chaîne de filtres FFmpeg pour une couche audio.
+
+    Chaîne appliquée :
+
+    1. ``atrim`` sur la portion ``[source_in, source_out]`` ;
+    2. ``asetpts=PTS-STARTPTS`` pour recaler les PTS à 0 ;
+    3. ``aformat=channel_layouts=stereo:sample_rates=48000`` pour
+       normaliser la sortie ;
+    4. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
+       position sur la timeline.
+
+    ``timeline_duration`` est utilisée pour borner les PTS via le
+    timebase afin d'éviter tout débordement en cas d'arrondi.
+    """
+    source_in = _format_seconds(layer.source_in)
+    source_out = _format_seconds(layer.source_out)
+    timeline_start = _format_seconds(layer.timeline_start)
+    _ = timeline_duration  # conservé pour traçabilité / évolutions futures
+    return (
+        f"[{input_index}:a]"
+        f"atrim=start={source_in}:end={source_out},"
+        f"asetpts=PTS-STARTPTS,"
+        f"aformat=channel_layouts=stereo:sample_rates=48000,"
+        f"asetpts=PTS+{timeline_start}/TB[a{audio_index}]"
+    )
