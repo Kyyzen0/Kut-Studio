@@ -13,9 +13,11 @@ Transitions).
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QMimeData, Signal
+from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
+    QApplication,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -322,6 +324,12 @@ class AssetBin(QWidget):
         self._list.itemClicked.connect(
             lambda item: on_item_clicked(item.data(Qt.UserRole))
         )
+        self._list.mousePressEvent = self._wrap_mouse_press(
+            self._list.mousePressEvent
+        )
+        self._list.mouseMoveEvent = self._wrap_mouse_move(
+            self._list.mouseMoveEvent
+        )
         self._list.currentRowChanged.connect(
             lambda row: on_selection_changed(
                 self._list.item(row).data(Qt.UserRole)
@@ -360,6 +368,53 @@ class AssetBin(QWidget):
         if not (0 <= row < self._list.count()):
             return None
         return self._list.item(row).data(Qt.UserRole)
+
+    # ------------------------------------------------------------------
+    # Drag & drop
+    # ------------------------------------------------------------------
+
+    def _wrap_mouse_press(self, original):
+        """Capture le point de départ pour le drag manuel."""
+        outer = self
+
+        def handler(event):
+            outer._drag_origin = event.position()
+            outer._dragging = False
+            return original(event)
+
+        return handler
+
+    def _wrap_mouse_move(self, original):
+        """Démarre un QDrag manuel si la souris a bougé au-delà de QApplication.startDragDistance()."""
+        outer = self
+
+        def handler(event):
+            if (
+                event.buttons() & Qt.LeftButton
+                and getattr(outer, "_drag_origin", None) is not None
+                and not getattr(outer, "_dragging", False)
+            ):
+                start = outer._drag_origin
+                distance = (
+                    (event.position().x() - start.x()) ** 2
+                    + (event.position().y() - start.y()) ** 2
+                ) ** 0.5
+                if distance >= QApplication.startDragDistance():
+                    item = outer._list.currentItem()
+                    if item is not None:
+                        asset_id = item.data(Qt.UserRole)
+                        outer._start_drag(asset_id)
+            return original(event)
+
+        return handler
+
+    def _start_drag(self, asset_id: str) -> None:
+        mime = QMimeData()
+        mime.setData("application/x-kut-studio-asset-id", asset_id.encode("utf-8"))
+        drag = QDrag(self._list)
+        drag.setMimeData(mime)
+        self._dragging = True
+        drag.exec(Qt.CopyAction, Qt.CopyAction)
 
 
 # ---------------------------------------------------------------------------

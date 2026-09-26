@@ -510,3 +510,145 @@ def subtitle_cues_from_project(project: Project) -> list[SubtitleCue]:
                 )
             )
     return sorted(cues, key=lambda c: (c.start, c.end))
+
+
+# ---------------------------------------------------------------------------
+# Duplication, activation, ripple delete (tâche 12)
+# ---------------------------------------------------------------------------
+
+
+def duplicate_clip(
+    project: Project,
+    clip_id: str,
+    timeline_start: float | None = None,
+) -> Clip:
+    """Duplique ``clip_id`` sur sa piste.
+
+    Le clip dupliqué hérite de l'asset, des trims, de la durée, de
+    l'état activé, du label et du texte du clip source. Son
+    identifiant est nouveau (UUID).
+
+    Si ``timeline_start`` est fourni, la copie est placée à cet
+    endroit (doit être positif). Sinon, la copie est insérée
+    immédiatement après la fin du clip source, sur la même piste.
+    """
+    source_track, source_index = _find_track_for_clip(project, clip_id)
+    source_clip = source_track.clips[source_index]
+    duration = source_clip.duration
+
+    if timeline_start is None:
+        new_start = float(source_clip.timeline_start + duration)
+    else:
+        if timeline_start < 0.0:
+            raise ValueError(
+                f"Impossible de dupliquer à un temps négatif "
+                f"(timeline_start={timeline_start})."
+            )
+        new_start = float(timeline_start)
+
+    duplicate = Clip(
+        id=f"clip-{uuid.uuid4().hex[:12]}",
+        asset_id=source_clip.asset_id,
+        track_id=source_track.id,
+        timeline_start=new_start,
+        source_in=source_clip.source_in,
+        source_out=source_clip.source_out,
+        enabled=source_clip.enabled,
+        label=source_clip.label,
+        text=source_clip.text,
+    )
+    source_track.clips.append(duplicate)
+    return duplicate
+
+
+def set_clip_enabled(
+    project: Project,
+    clip_id: str,
+    enabled: bool,
+) -> Clip:
+    """Active ou désactive ``clip_id`` et retourne le clip modifié."""
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    clip.enabled = bool(enabled)
+    return clip
+
+
+def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
+    """Supprime ``clip_id`` et ramène à gauche tous les clips suivants.
+
+    Tous les clips (vidéo, audio, sous-titres) dont le début est
+    strictement postérieur à la fin du clip supprimé sont déplacés
+    vers la gauche de ``delta``, où ``delta`` est la durée du clip
+    supprimé. Aucun clip ne se retrouve avec une position négative.
+
+    Returns:
+        Liste des identifiants effectivement déplacés.
+
+    Les assets de la bibliothèque ne sont jamais supprimés.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    deleted_clip = track.clips.pop(index)
+    delta = float(deleted_clip.duration)
+    boundary = float(deleted_clip.timeline_start + deleted_clip.duration)
+    moved: list[str] = []
+    for other_track in project.tracks:
+        for other in list(other_track.clips):
+            if other is deleted_clip:
+                continue
+            if other.timeline_start >= boundary - 1e-9:
+                other.timeline_start = max(0.0, other.timeline_start - delta)
+                moved.append(other.id)
+    return moved
+
+
+# ---------------------------------------------------------------------------
+# Snapping magnétique (tâche 12)
+# ---------------------------------------------------------------------------
+
+
+def snap_timeline_position(
+    project: Project,
+    proposed_position: float,
+    threshold_seconds: float,
+    excluded_clip_id: str | None = None,
+    playhead_seconds: float | None = None,
+) -> float:
+    """Accroche ``proposed_position`` au candidat le plus proche.
+
+    Candidats considérés :
+
+    - ``0.0`` (début de timeline) ;
+    - ``playhead_seconds`` si fourni ;
+    - début et fin de chaque clip, sauf ceux du clip ``excluded_clip_id``.
+
+    Returns:
+        ``proposed_position`` s'il n'existe aucun candidat dans le seuil
+        ``threshold_seconds`` ; sinon la valeur du candidat le plus
+        proche.
+    """
+    if proposed_position < 0.0:
+        proposed_position = 0.0
+    if threshold_seconds <= 0.0:
+        return proposed_position
+
+    candidates: list[float] = [0.0]
+    if playhead_seconds is not None and playhead_seconds >= 0.0:
+        candidates.append(float(playhead_seconds))
+
+    for track in project.tracks:
+        for clip in track.clips:
+            if excluded_clip_id is not None and clip.id == excluded_clip_id:
+                continue
+            start = float(clip.timeline_start)
+            end = float(clip.timeline_start + clip.duration)
+            candidates.append(start)
+            candidates.append(end)
+
+    best = proposed_position
+    best_distance = threshold_seconds
+    for candidate in candidates:
+        distance = abs(candidate - proposed_position)
+        if distance <= best_distance:
+            best = candidate
+            best_distance = distance
+    return best

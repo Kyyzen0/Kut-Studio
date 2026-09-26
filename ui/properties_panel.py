@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +18,9 @@ from ui.theme import COLORS, label_style
 class PropertiesPanel(QWidget):
     cut_requested = Signal(str, float)
     delete_requested = Signal(str)
+    duplicate_requested = Signal(str)
+    ripple_delete_requested = Signal(str)
+    enabled_changed = Signal(str, bool)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -73,7 +77,14 @@ class PropertiesPanel(QWidget):
         actions_layout.setSpacing(6)
         self.cut_button = QPushButton("✂️ Couper à la tête de lecture")
         self.delete_button = QPushButton("🗑️ Supprimer")
-        for button in (self.cut_button, self.delete_button):
+        self.duplicate_button = QPushButton("🧬 Dupliquer (Ctrl+D)")
+        self.ripple_button = QPushButton("✂️ Supprimer avec ripple (Ctrl+Backspace)")
+        for button in (
+            self.cut_button,
+            self.delete_button,
+            self.duplicate_button,
+            self.ripple_button,
+        ):
             button.setStyleSheet(
                 f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 7px 12px; font-weight: 600; }}"
                 f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
@@ -81,11 +92,23 @@ class PropertiesPanel(QWidget):
             )
         self.cut_button.clicked.connect(self.emit_cut_requested)
         self.delete_button.clicked.connect(self.emit_delete_requested)
+        self.duplicate_button.clicked.connect(self.emit_duplicate_requested)
+        self.ripple_button.clicked.connect(self.emit_ripple_requested)
         self.cut_button.setEnabled(False)
         self.delete_button.setEnabled(False)
+        self.duplicate_button.setEnabled(False)
+        self.ripple_button.setEnabled(False)
         actions_layout.addWidget(self.cut_button)
         actions_layout.addWidget(self.delete_button)
+        actions_layout.addWidget(self.duplicate_button)
+        actions_layout.addWidget(self.ripple_button)
         layout.addLayout(actions_layout)
+
+        # Case à cocher « Clip activé ».
+        self.enabled_checkbox = QCheckBox("Clip activé")
+        self.enabled_checkbox.toggled.connect(self.emit_enabled_changed)
+        self.enabled_checkbox.setEnabled(False)
+        layout.addWidget(self.enabled_checkbox)
 
         color_group = QGroupBox("Couleur")
         color_group.setStyleSheet(self.group_style())
@@ -172,6 +195,12 @@ class PropertiesPanel(QWidget):
             self.clip_position.setText("--")
             self.cut_button.setEnabled(False)
             self.delete_button.setEnabled(False)
+            self.duplicate_button.setEnabled(False)
+            self.ripple_button.setEnabled(False)
+            self.enabled_checkbox.blockSignals(True)
+            self.enabled_checkbox.setChecked(False)
+            self.enabled_checkbox.blockSignals(False)
+            self.enabled_checkbox.setEnabled(False)
             self.subtitle_group.hide()
             return
 
@@ -182,6 +211,16 @@ class PropertiesPanel(QWidget):
         self.clip_position.setText(f"{view.start:.2f}s")
         self.cut_button.setEnabled(True)
         self.delete_button.setEnabled(True)
+        self.duplicate_button.setEnabled(True)
+        self.ripple_button.setEnabled(True)
+
+        # État de la case « Clip activé » : reflète ``view.enabled`` si
+        # l'attribut est disponible, sinon True par défaut.
+        enabled = getattr(view, "enabled", True)
+        self.enabled_checkbox.blockSignals(True)
+        self.enabled_checkbox.setChecked(bool(enabled))
+        self.enabled_checkbox.blockSignals(False)
+        self.enabled_checkbox.setEnabled(True)
 
         is_subtitle = view.track_id == "S1"
         self.subtitle_group.setVisible(is_subtitle)
@@ -205,3 +244,18 @@ class PropertiesPanel(QWidget):
         if self.selected_clip is None:
             return
         self.delete_requested.emit(self.selected_clip.id)
+
+    def emit_duplicate_requested(self):
+        if self.selected_clip is None:
+            return
+        self.duplicate_requested.emit(self.selected_clip.id)
+
+    def emit_ripple_requested(self):
+        if self.selected_clip is None:
+            return
+        self.ripple_delete_requested.emit(self.selected_clip.id)
+
+    def emit_enabled_changed(self, checked: bool) -> None:
+        if self.selected_clip is None:
+            return
+        self.enabled_changed.emit(self.selected_clip.id, bool(checked))

@@ -187,6 +187,7 @@ class TimelinePanel(QWidget):
     move_clip_requested = Signal(str, float)
     trim_clip_left_requested = Signal(str, float)
     trim_clip_right_requested = Signal(str, float)
+    asset_dropped = Signal(str, str, float)  # asset_id, track_id, timeline_start
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -212,6 +213,10 @@ class TimelinePanel(QWidget):
         self.drag_mode: str | None = None
         self.drag_start_x = 0
         self.drag_original_start = 0.0
+        self.snap_enabled: bool = True
+        self.snap_threshold_pixels: float = 8.0
+        self.snap_line_x: float | None = None
+        self.setAcceptDrops(True)
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         self.play_button = QPushButton("▶")
@@ -240,6 +245,19 @@ class TimelinePanel(QWidget):
         header_layout.setContentsMargins(8, 6, 10, 6)
         header_layout.addWidget(self.play_button)
         header_layout.addWidget(self.time_label)
+        header_layout.addSpacing(12)
+        self.snap_button = QPushButton("🧲")
+        self.snap_button.setCheckable(True)
+        self.snap_button.setChecked(True)
+        self.snap_button.setFixedWidth(34)
+        self.snap_button.setToolTip("Aimant (snapping magnétique)")
+        self.snap_button.setStyleSheet(
+            f"QPushButton {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; border: 1px solid {COLORS['accent']}; border-radius: 5px; }}"
+            f"QPushButton:checked {{ background: {COLORS['accent']}; }}"
+            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
+        )
+        self.snap_button.toggled.connect(self.set_snap_enabled)
+        header_layout.addWidget(self.snap_button)
         header_layout.addStretch()
         header_layout.addWidget(self.total_time_label)
         header_layout.addWidget(self.zoom_out_btn)
@@ -281,6 +299,49 @@ class TimelinePanel(QWidget):
         self.selected_clip_id = clip_id
         self.clip_selected.emit(clip_id)
         self.refresh_clip_widgets()
+
+    # ------------------------------------------------------------------
+    # Snapping magnétique
+    # ------------------------------------------------------------------
+
+    def set_snap_enabled(self, enabled: bool) -> None:
+        self.snap_enabled = bool(enabled)
+        if not enabled:
+            self.snap_line_x = None
+            self.update()
+
+    def snap_position(
+        self,
+        proposed_position: float,
+        excluded_clip_id: str | None = None,
+    ) -> tuple[float, float | None]:
+        """Accroche ``proposed_position`` au candidat le plus proche.
+
+        Returns:
+            (position, snap_x_pixel) : la position retenue en secondes et
+            la coordonnée x de la ligne de snap (ou ``None`` si l'aimant
+            est désactivé ou si aucun candidat n'est dans le seuil).
+        """
+        from core.timeline_operations import snap_timeline_position
+
+        self.snap_line_x = None
+        if not self.snap_enabled:
+            return proposed_position, None
+        threshold_seconds = self.snap_threshold_pixels / (
+            self.pixels_per_second * self.zoom
+        )
+        snapped = snap_timeline_position(
+            self.project,
+            proposed_position,
+            threshold_seconds,
+            excluded_clip_id=excluded_clip_id,
+            playhead_seconds=self.playhead_seconds,
+        )
+        if abs(snapped - proposed_position) > 1e-6:
+            self.snap_line_x = (
+                self.left_margin + snapped * self.pixels_per_second * self.zoom
+            )
+        return snapped, self.snap_line_x
 
     # ------------------------------------------------------------------
     # Rendu
@@ -466,7 +527,15 @@ class TimelinePanel(QWidget):
         painter.setPen(QPen(QColor(COLORS["accent_hover"]), 2))
         painter.drawLine(int(playhead_x), self.header_height, int(playhead_x), self.height())
         painter.fillRect(int(playhead_x) - 7, self.header_height, 14, 18, QColor(COLORS["accent"]))
-        painter.setPen(QPen(QColor(COLORS["border"]), 1))
+        if self.snap_line_x is not None:
+            painter.setPen(QPen(QColor(COLORS["accent"]), 1))
+            painter.drawLine(
+                int(self.snap_line_x),
+                self.header_height,
+                int(self.snap_line_x),
+                self.height(),
+            )
+            painter.setPen(QPen(QColor(COLORS["border"]), 1))
         painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
 
     def get_seconds_from_x(self, x):
@@ -589,7 +658,12 @@ class TimelinePanel(QWidget):
                 view = self.find_view_by_id(self.selected_clip_id)
                 if view is not None:
                     duration = view.end - view.start
-                    new_start = max(0.0, self.drag_original_start + delta_seconds)
+                    proposed = max(0.0, self.drag_original_start + delta_seconds)
+                    snapped, _ = self.snap_position(
+                        proposed,
+                        excluded_clip_id=self.selected_clip_id,
+                    )
+                    new_start = snapped
                     # On ne mute rien : on émet juste un signal
                     # d'intention au relâchement de la souris.
                     # Pour la fluidité visuelle, on repositionne le widget
@@ -622,9 +696,63 @@ class TimelinePanel(QWidget):
                         if widget is not None
                         else view.start
                     )
+                    self.snap_line_x = None
                     self.move_clip_requested.emit(view.id, new_start)
             self.dragging_playhead = False
             self.drag_mode = None
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    # ------------------------------------------------------------------
+    # Drag & drop depuis la bibliothèque
+    # ------------------------------------------------------------------
+
+    def _track_id_at_y(self, y: float) -> str | None:
+        """Retourne l'identifiant de la piste correspondant à la position ``y``.
+
+        ``None`` si la position est hors zone de pistes.
+        """
+        if self.project is None:
+            return None
+        relative_y = y - self.header_height - self.ruler_height - 8
+        if relative_y < 0:
+            return None
+        track_top_offset = 16  # marge interne avant la première piste
+        adjusted = relative_y - track_top_offset
+        stride = self.track_height + 8
+        if adjusted < 0:
+            return None
+        row = int(adjusted // stride)
+        if row < 0 or row >= len(self.project.tracks):
+            return None
+        return self.project.tracks[row].id
+
+    def dragEnterEvent(self, event) -> None:
+        mime = event.mimeData()
+        if mime.hasFormat("application/x-kut-studio-asset-id"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        mime = event.mimeData()
+        if mime.hasFormat("application/x-kut-studio-asset-id"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        mime = event.mimeData()
+        if not mime.hasFormat("application/x-kut-studio-asset-id"):
+            event.ignore()
+            return
+        asset_id = bytes(mime.data("application/x-kut-studio-asset-id")).decode("utf-8")
+        track_id = self._track_id_at_y(event.position().y())
+        if track_id is None:
+            event.ignore()
+            return
+        proposed = self.get_seconds_from_x(int(event.position().x()))
+        snapped, _ = self.snap_position(proposed)
+        self.asset_dropped.emit(asset_id, track_id, snapped)
+        event.acceptProposedAction()

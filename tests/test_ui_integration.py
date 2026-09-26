@@ -1526,3 +1526,258 @@ def test_legacy_project_without_a1_keeps_existing_tracks(
     # L'ancien projet ne reçoit PAS automatiquement A1.
     assert "A1" not in track_ids
     assert track_ids == ["V1", "S1"]
+
+
+# ---------------------------------------------------------------------------
+# Tâche 12 — Édition non destructive
+# ---------------------------------------------------------------------------
+
+
+def test_undo_shortcut_restores_previous_state(qtbot, monkeypatch) -> None:
+    """Ctrl+Z annule la dernière opération enregistrée."""
+    window = _build_window(qtbot, monkeypatch)
+
+    initial_clips = sum(len(t.clips) for t in window.project.tracks)
+
+    # Une mutation out-of-band : on simule un déplacement via
+    # ``move_clip`` directement, suivi d'un ``record``.
+    from core.timeline_operations import move_clip
+
+    target_clip_id = window.timeline_panel.clip_views[0].id
+    move_clip(window.project, target_clip_id, 10.0)
+    window._record_history("Déplacer le clip")
+
+    assert window.history.can_undo
+    assert window.history.is_dirty is True
+
+    # Déclenchement du raccourci Ctrl+Z (Undo).
+    window.undo_last()
+    # Le clip est revenu à sa position initiale.
+    from core.timeline_evaluator import evaluate_timeline
+    from core.timeline_operations import find_clip
+
+    moved = find_clip(window.project, target_clip_id)
+    assert moved.timeline_start == pytest.approx(
+        window.timeline_panel.clip_views[0].start
+    )
+    # Le nombre total de clips est inchangé.
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_clips
+
+
+def test_redo_shortcut_reapplies_undone_operation(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    from core.timeline_operations import move_clip, find_clip
+
+    clip_id = window.timeline_panel.clip_views[0].id
+    move_clip(window.project, clip_id, 8.0)
+    window._record_history("Déplacer")
+
+    window.undo_last()
+    window.redo_last()
+
+    assert find_clip(window.project, clip_id).timeline_start == pytest.approx(8.0)
+
+
+def test_undo_action_disabled_when_history_empty(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    assert window.undo_action.isEnabled() is False
+    assert window.redo_action.isEnabled() is False
+
+
+def test_undo_action_label_includes_operation_name(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    from core.timeline_operations import move_clip
+
+    clip_id = window.timeline_panel.clip_views[0].id
+    move_clip(window.project, clip_id, 7.0)
+    window._record_history("Action personnalisée")
+    assert "Action personnalisée" in window.undo_action.text()
+
+
+def test_dirty_flag_after_save_undo_and_edit(qtbot, tmp_path, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    assert window.project_dirty is False
+
+    target = tmp_path / "p.kut"
+    window.current_project_path = str(target)
+    save_project(window.project, str(target))
+    window._mark_clean()
+    assert window.project_dirty is False
+
+    from core.timeline_operations import move_clip
+
+    clip_id = window.timeline_panel.clip_views[0].id
+    move_clip(window.project, clip_id, 3.0)
+    window._record_history("Edit")
+    assert window.project_dirty is True
+
+    # Undo : retour à l'état sauvegardé.
+    window.undo_last()
+    assert window.project_dirty is False
+
+    # Redo : l'état modifié revient.
+    window.redo_last()
+    assert window.project_dirty is True
+
+
+def test_duplicate_clip_shortcut_creates_a_copy(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    clip_id = window.timeline_panel.clip_views[0].id
+    window.timeline_panel.select_clip(clip_id)
+
+    initial_count = sum(len(t.clips) for t in window.project.tracks)
+    window.duplicate_selected_clip()
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_count + 1
+    # Undo doit annuler la duplication.
+    window.undo_last()
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_count
+
+
+def test_ripple_delete_shortcut_removes_and_shifts(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    # On sélectionne le premier clip visible de V1.
+    clip_id = window.timeline_panel.clip_views[0].id
+    window.timeline_panel.select_clip(clip_id)
+
+    initial_count = sum(len(t.clips) for t in window.project.tracks)
+    window.ripple_delete_selected_clip()
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_count - 1
+    window.undo_last()
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_count
+
+
+def test_disabled_clip_is_ignored_by_evaluate_timeline(qtbot, monkeypatch) -> None:
+    """Un clip désactivé n'apparaît pas dans l'aperçu évalue_timeline."""
+    window = _build_window(qtbot, monkeypatch)
+    from core.timeline_evaluator import evaluate_timeline
+    from core.timeline_operations import set_clip_enabled
+
+    clip_id = window.timeline_panel.clip_views[0].id
+    target_time = window.timeline_panel.clip_views[0].start + 0.5
+
+    before = evaluate_timeline(window.project, target_time)
+    # Avant désactivation, le clip est actif.
+    assert any(c.clip_id == clip_id for c in before)
+
+    set_clip_enabled(window.project, clip_id, False)
+    after = evaluate_timeline(window.project, target_time)
+    assert not any(c.clip_id == clip_id for c in after)
+
+
+def test_snap_button_toggles_snap_enabled(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    timeline = window.timeline_panel
+    assert timeline.snap_enabled is True
+    timeline.set_snap_enabled(False)
+    assert timeline.snap_enabled is False
+    timeline.set_snap_enabled(True)
+    assert timeline.snap_enabled is True
+
+
+def test_drag_drop_video_asset_on_v1_creates_clip(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    asset_id = "asset-intro"
+    # Le média est déjà présent dans le projet de démo.
+    v1_before = len(next(t for t in window.project.tracks if t.id == "V1").clips)
+    window.on_asset_dropped(asset_id, "V1", 0.0)
+    v1_after = len(next(t for t in window.project.tracks if t.id == "V1").clips)
+    assert v1_after == v1_before + 1
+    window.undo_last()
+    assert len(next(t for t in window.project.tracks if t.id == "V1").clips) == v1_before
+
+
+def test_drag_drop_audio_asset_on_a1_creates_clip(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    audio = MediaAsset(
+        id="audio-test",
+        path="/tmp/song.mp3",
+        name="Song",
+        duration=10.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+    window.project.media_assets.append(audio)
+    a1_before = len(next(t for t in window.project.tracks if t.id == "A1").clips)
+    window.on_asset_dropped(audio.id, "A1", 2.5)
+    a1_after = len(next(t for t in window.project.tracks if t.id == "A1").clips)
+    assert a1_after == a1_before + 1
+
+
+def test_drag_drop_invalid_track_is_rejected(qtbot, monkeypatch) -> None:
+    """Un dépôt sur une piste inexistante ne modifie pas le projet."""
+    window = _build_window(qtbot, monkeypatch)
+    asset_id = "asset-intro"
+    clips_before = sum(len(t.clips) for t in window.project.tracks)
+    # La piste « NOPE » n'existe pas dans le projet.
+    window.on_asset_dropped(asset_id, "NOPE", 1.0)
+    assert sum(len(t.clips) for t in window.project.tracks) == clips_before
+
+
+def test_import_media_then_undo_removes_asset(qtbot, tmp_path, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    # On injecte un faux probe pour éviter de dépendre d'un vrai média.
+    asset_id = "asset-test-import"
+    monkeypatch.setattr(
+        "ui.main_window.probe_media",
+        lambda path: MediaAsset(
+            id=asset_id, path=path, name="Test",
+            duration=4.0, width=1920, height=1080, fps=30.0,
+            media_type="video", has_audio=False,
+        ),
+    )
+    video_path = tmp_path / "v.mp4"
+    video_path.write_bytes(b"\x00")
+    initial = len(window.project.media_assets)
+    window.import_media_to_project(str(video_path))
+    assert len(window.project.media_assets) == initial + 1
+
+    window.undo_last()
+    assert len(window.project.media_assets) == initial
+
+
+def test_import_subtitles_then_undo_removes_clips(qtbot, tmp_path, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    srt_path = tmp_path / "subs.srt"
+    srt_path.write_text(
+        "1\n00:00:00,500 --> 00:00:01,500\nBonjour\n\n", encoding="utf-8",
+    )
+    initial_s1 = len(next(t for t in window.project.tracks if t.id == "S1").clips)
+    window.import_subtitles_from_path(str(srt_path))
+    s1_after = len(next(t for t in window.project.tracks if t.id == "S1").clips)
+    assert s1_after == initial_s1 + 1
+
+    window.undo_last()
+    assert len(next(t for t in window.project.tracks if t.id == "S1").clips) == initial_s1
+
+
+def test_subtitle_text_edit_groups_into_single_history_entry(
+    qtbot, monkeypatch
+) -> None:
+    """Plusieurs frappes consécutives produisent un seul snapshot."""
+    window = _build_window(qtbot, monkeypatch)
+    window.on_clip_selected("subtitle_01")
+    history_length = len(window.history)
+
+    # Plusieurs frappes rapides dans l'éditeur.
+    for char in "ABC":
+        window.properties_panel.subtitle_editor.setPlainText(f"Hello {char}")
+        # Le MainWindow écoute ``textChanged`` : il met à jour le clip
+        # et programme un debounce.
+        window.update_subtitle_from_editor()
+
+    # Force l'émission du timer : on déclenche ``_flush_subtitle_history_record``.
+    window._flush_subtitle_history_record()
+    assert len(window.history) == history_length + 1
+
+    # Exactement UN snapshot supplémentaire lié au sous-titre.
+    # On vérifie qu'un undo ramène le texte du clip à son état initial.
+    initial_text = "Bienvenue dans Kut-Studio"
+    window.undo_last()
+    from core.timeline_operations import find_clip
+
+    assert find_clip(window.project, "subtitle_01").text == initial_text
+    window.redo_last()
+    assert find_clip(window.project, "subtitle_01").text == "Hello C"

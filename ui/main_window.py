@@ -18,20 +18,25 @@ from PySide6.QtWidgets import (
 )
 
 from core.effects import apply_color_effect, play_crossfade_preview, set_volume
+from core.edit_history import ProjectHistory
 from core.export_engine import ExportEngine
 from core.media_probe import MediaProbeError, probe_media, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
-from core.subtitle_io import load_srt, save_srt
+from core.subtitle_io import load_srt, parse_srt, save_srt
 from core.timeline_evaluator import evaluate_timeline
 from core.timeline_operations import (
     add_clip_to_track,
     add_subtitle_clip,
     cut_clip,
     delete_clip,
+    duplicate_clip,
     find_clip,
     move_clip,
+    ripple_delete_clip,
+    set_clip_enabled,
+    snap_timeline_position,
     subtitle_cues_from_project,
     trim_clip_left,
     trim_clip_right,
@@ -62,6 +67,9 @@ class MainWindow(QMainWindow):
         self.transition_seconds = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.
         self.project: Project = create_default_project()
+        # Historique undo/redo non destructif.
+        self.history = ProjectHistory()
+        self.history.reset(self.project)
         # État du document courant pour la persistance ``.kut``.
         self.current_project_path: str | None = None
         self.project_dirty: bool = False
@@ -113,8 +121,12 @@ class MainWindow(QMainWindow):
         self.timeline_panel.move_clip_requested.connect(self.on_move_clip_requested)
         self.timeline_panel.trim_clip_left_requested.connect(self.on_trim_left_requested)
         self.timeline_panel.trim_clip_right_requested.connect(self.on_trim_right_requested)
+        self.timeline_panel.asset_dropped.connect(self.on_asset_dropped)
         self.properties_panel.cut_requested.connect(self.cut_selected_clip)
         self.properties_panel.delete_requested.connect(self.delete_selected_clip)
+        self.properties_panel.duplicate_requested.connect(self.duplicate_clip_from_panel)
+        self.properties_panel.ripple_delete_requested.connect(self.ripple_delete_clip_from_panel)
+        self.properties_panel.enabled_changed.connect(self.set_clip_enabled_from_panel)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
 
         # Initialisation de l'horloge de programme (tâche 8).
@@ -162,6 +174,10 @@ class MainWindow(QMainWindow):
         self.timeline_timer.timeout.connect(self._tick_playback)
         self.timeline_timer.start()
         self.setStyleSheet(global_stylesheet())
+        # Synchronise l'état initial des actions undo/redo. Cette
+        # opération doit suivre ``_build_top_bar`` qui crée
+        # ``project_label``.
+        self._refresh_undo_redo_state()
 
     def _build_top_bar(self):
         bar = QWidget()
@@ -228,8 +244,274 @@ class MainWindow(QMainWindow):
         self._update_top_bar()
 
     def _mark_clean(self) -> None:
+        self._flush_subtitle_history_record()
         self.project_dirty = False
+        self.history.mark_saved()
+        self._refresh_undo_redo_state()
         self._update_top_bar()
+
+    def _record_history(self, label: str) -> None:
+        """Enregistre l'état courant du projet dans l'historique."""
+        # Une autre action clôt la saisie de sous-titre en cours et son
+        # état final est inclus dans ce snapshot d'action.
+        if getattr(self, "_subtitle_edit_pending", None) is not None:
+            timer = getattr(self, "_subtitle_edit_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._subtitle_edit_pending = None
+            self._subtitle_edit_history_before = None
+        self.history.record(self.project, label)
+        self._refresh_undo_redo_state()
+
+    def _refresh_undo_redo_state(self) -> None:
+        """Synchronise les actions et indicateurs undo/redo."""
+        if hasattr(self, "undo_action"):
+            self.undo_action.setEnabled(self.history.can_undo)
+            label = self.history.undo_label
+            self.undo_action.setText(
+                f"Annuler : {label}" if label else "Annuler"
+            )
+        if hasattr(self, "redo_action"):
+            self.redo_action.setEnabled(self.history.can_redo)
+            label = self.history.redo_label
+            self.redo_action.setText(
+                f"Rétablir : {label}" if label else "Rétablir"
+            )
+        # Synchronise le flag ``project_dirty`` avec l'historique.
+        self.project_dirty = self.history.is_dirty
+        self._update_top_bar()
+
+    # ------------------------------------------------------------------
+    # Undo / Redo / Duplicate / Ripple / Enable
+    # ------------------------------------------------------------------
+
+    def _apply_history_snapshot(self, snapshot_project, label: str) -> None:
+        """Ré-installe ``snapshot_project`` partout dans l'interface."""
+        self.project = snapshot_project
+        self.timeline_panel.set_project(self.project)
+        # Conserver un playhead valide.
+        if self.playhead_seconds > self.timeline_panel.duration_seconds:
+            self.playhead_seconds = self.timeline_panel.duration_seconds
+        if self.playhead_seconds < 0.0:
+            self.playhead_seconds = 0.0
+        # Si la sélection courante n'existe plus, on la réinitialise.
+        if (
+            self.timeline_panel.selected_clip_id is not None
+            and self.timeline_panel.find_view_by_id(
+                self.timeline_panel.selected_clip_id
+            ) is None
+        ):
+            self.timeline_panel.selected_clip_id = None
+            self.active_subtitle_clip = None
+            self.properties_panel.set_clip(None, "")
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
+        self._refresh_project_library()
+        self._refresh_undo_redo_state()
+
+    def undo_last(self) -> None:
+        """Annule la dernière opération enregistrée."""
+        self._flush_subtitle_history_record()
+        snapshot = self.history.undo()
+        if snapshot is None:
+            return
+        self._apply_history_snapshot(snapshot, self.history.undo_label or "")
+
+    def redo_last(self) -> None:
+        """Rétablit la dernière opération annulée."""
+        self._flush_subtitle_history_record()
+        snapshot = self.history.redo()
+        if snapshot is None:
+            return
+        self._apply_history_snapshot(snapshot, self.history.redo_label or "")
+
+    def duplicate_selected_clip(self) -> None:
+        """Duplique le clip sélectionné juste après sa fin."""
+        clip_id = self.timeline_panel.selected_clip_id
+        if clip_id is None:
+            return
+        try:
+            new_clip = duplicate_clip(self.project, clip_id)
+        except (KeyError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Duplication impossible",
+                f"Impossible de dupliquer le clip :\n\n{exc}",
+            )
+            return
+        self._record_history("Dupliquer le clip")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(new_clip.id)
+        self._mark_dirty()
+
+    def ripple_delete_selected_clip(self) -> None:
+        """Supprime le clip sélectionné et ramène à gauche les clips suivants."""
+        clip_id = self.timeline_panel.selected_clip_id
+        if clip_id is None:
+            return
+        try:
+            moved_ids = ripple_delete_clip(self.project, clip_id)
+        except KeyError as exc:
+            QMessageBox.critical(
+                self,
+                "Suppression impossible",
+                f"Impossible de supprimer le clip :\n\n{exc}",
+            )
+            return
+        self._record_history("Supprimer avec ripple")
+        self.timeline_panel.selected_clip_id = None
+        self.active_subtitle_clip = None
+        self.properties_panel.set_clip(None, "")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        # Sélectionner le clip précédent sur V1 s'il existe.
+        previous_clip = self._find_previous_v1_clip()
+        if previous_clip is not None:
+            self.timeline_panel.select_clip(previous_clip.id)
+            self.on_clip_selected(previous_clip.id)
+        self._mark_dirty()
+
+    def delete_selected_clip_with_check(self) -> None:
+        """Variante appelée par raccourci : no-op si aucun clip sélectionné."""
+        if self.timeline_panel.selected_clip_id is None:
+            return
+        self.delete_selected_clip(self.timeline_panel.selected_clip_id)
+
+    def _find_previous_v1_clip(self):
+        """Retourne le dernier clip V1 (par timeline_start) ou ``None``."""
+        views = sorted(self.timeline_panel.clip_views, key=lambda v: v.start)
+        for view in reversed(views):
+            if view.track_id == "V1":
+                return view
+        return None
+
+    def toggle_selected_clip_enabled(self) -> None:
+        """Bascule l'état ``enabled`` du clip sélectionné."""
+        clip_id = self.timeline_panel.selected_clip_id
+        if clip_id is None:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        try:
+            set_clip_enabled(self.project, clip_id, not clip.enabled)
+        except KeyError:
+            return
+        self._record_history(
+            "Activer le clip" if not clip.enabled else "Désactiver le clip"
+        )
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        # Conserver la sélection.
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    # ------------------------------------------------------------------
+    # Wrappers pour les actions du panneau Propriétés
+    # ------------------------------------------------------------------
+
+    def duplicate_clip_from_panel(self, clip_id: str) -> None:
+        if self.timeline_panel.selected_clip_id != clip_id:
+            self.timeline_panel.select_clip(clip_id)
+        self.duplicate_selected_clip()
+
+    def ripple_delete_clip_from_panel(self, clip_id: str) -> None:
+        if self.timeline_panel.selected_clip_id != clip_id:
+            self.timeline_panel.select_clip(clip_id)
+        self.ripple_delete_selected_clip()
+
+    def set_clip_enabled_from_panel(self, clip_id: str, enabled: bool) -> None:
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if clip.enabled == enabled:
+            return
+        try:
+            set_clip_enabled(self.project, clip_id, enabled)
+        except KeyError:
+            return
+        self._record_history(
+            "Activer le clip" if enabled else "Désactiver le clip"
+        )
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    # ------------------------------------------------------------------
+    # Drag & drop
+    # ------------------------------------------------------------------
+
+    def on_asset_dropped(self, asset_id: str, track_id: str, timeline_start: float) -> None:
+        """Ajoute le média glissé sur la piste ciblée à la position donnée.
+
+        La compatibilité asset / piste est vérifiée ; un dépôt invalide
+        n'est pas appliqué au projet.
+        """
+        asset = next(
+            (a for a in self.project.media_assets if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            return
+        try:
+            clip = add_clip_to_track(self.project, asset_id, track_id, timeline_start)
+        except (KeyError, ValueError):
+            return
+        self._record_history(
+            f"Déposer « {asset.name} » sur {track_id}"
+        )
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._refresh_project_library()
+        self.timeline_panel.select_clip(clip.id)
+        self._mark_dirty()
+
+    # ------------------------------------------------------------------
+    # Debounce pour la modification de texte des sous-titres
+    # ------------------------------------------------------------------
+
+    def _schedule_subtitle_history_record(self, clip_id: str, new_text: str) -> None:
+        """Programme l'enregistrement d'un snapshot après 500 ms d'inactivité.
+
+        ``history_before_text`` capture l'état du projet juste avant la
+        saisie courante : si plusieurs frappes surviennent avant le
+        déclenchement du timer, on ne crée qu'un seul snapshot couvrant
+        toute la saisie.
+        """
+        if not hasattr(self, "_subtitle_edit_timer"):
+            from PySide6.QtCore import QTimer
+
+            self._subtitle_edit_timer = QTimer(self)
+            self._subtitle_edit_timer.setSingleShot(True)
+            self._subtitle_edit_timer.setInterval(500)
+            self._subtitle_edit_timer.timeout.connect(
+                self._flush_subtitle_history_record
+            )
+            self._subtitle_edit_pending = None
+            self._subtitle_edit_history_before = None
+        if self._subtitle_edit_pending not in (None, clip_id):
+            self._flush_subtitle_history_record()
+        if self._subtitle_edit_pending != clip_id:
+            # Le snapshot final sera capturé au flush, après la saisie.
+            self._subtitle_edit_history_before = None
+            self._subtitle_edit_pending = clip_id
+        self._subtitle_edit_timer.start()
+
+    def _flush_subtitle_history_record(self) -> None:
+        """Enregistre le texte final après le debounce."""
+        if getattr(self, "_subtitle_edit_pending", None) is None:
+            return
+        timer = getattr(self, "_subtitle_edit_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._subtitle_edit_history_before = None
+        self._subtitle_edit_pending = None
+        self.history.record(self.project, "Modifier un sous-titre")
+        self._refresh_undo_redo_state()
 
     def _reset_selection_and_inspector(self) -> None:
         """Réinitialise la sélection de clip et l'inspecteur après un changement de projet."""
@@ -239,8 +521,11 @@ class MainWindow(QMainWindow):
 
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
+        self._flush_subtitle_history_record()
         self.project = create_default_project()
         self.current_project_path = None
+        self.history.reset(self.project)
+        self._refresh_undo_redo_state()
         self.timeline_panel.set_project(self.project)
         self.playhead_seconds = 0.0
         self.is_playing = False
@@ -251,6 +536,7 @@ class MainWindow(QMainWindow):
 
     def save_project_file(self) -> None:
         """Enregistre le projet courant. Délègue à ``save_project_as`` si aucun chemin."""
+        self._flush_subtitle_history_record()
         if self.current_project_path is None:
             self.save_project_as()
             return
@@ -267,6 +553,7 @@ class MainWindow(QMainWindow):
 
     def save_project_as(self) -> None:
         """Ouvre un dialogue pour choisir un chemin ``.kut`` et enregistre le projet."""
+        self._flush_subtitle_history_record()
         if self.current_project_path is not None:
             default_path = self.current_project_path
         else:
@@ -317,6 +604,7 @@ class MainWindow(QMainWindow):
         d'erreur est affiché et l'état courant de l'application reste
         intact.
         """
+        self._flush_subtitle_history_record()
         try:
             loaded = load_project(path)
         except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
@@ -328,6 +616,8 @@ class MainWindow(QMainWindow):
             return
         self.project = loaded
         self.current_project_path = path
+        self.history.reset(self.project)
+        self._refresh_undo_redo_state()
         self.timeline_panel.set_project(self.project)
         self.playhead_seconds = 0.0
         self.is_playing = False
@@ -415,11 +705,46 @@ class MainWindow(QMainWindow):
 
         # Édition
         edit_menu = QMenu("Édition", self)
-        for label in ("Annuler", "Rétablir"):
-            action = QAction(label, self)
-            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
-            edit_menu.addAction(action)
+        self.undo_action = QAction("Annuler", self)
+        self.undo_action.setShortcut("Ctrl+Z")
+        self.undo_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.undo_action.triggered.connect(self.undo_last)
+        edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction("Rétablir", self)
+        self.redo_action.setShortcuts(["Ctrl+Shift+Z", "Ctrl+Y"])
+        self.redo_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.redo_action.triggered.connect(self.redo_last)
+        edit_menu.addAction(self.redo_action)
+
         edit_menu.addSeparator()
+
+        duplicate_action = QAction("Dupliquer le clip", self)
+        duplicate_action.setShortcut("Ctrl+D")
+        duplicate_action.setShortcutContext(Qt.ApplicationShortcut)
+        duplicate_action.triggered.connect(self.duplicate_selected_clip)
+        edit_menu.addAction(duplicate_action)
+
+        self.delete_action = QAction("Supprimer le clip", self)
+        self.delete_action.setShortcuts(["Delete", "Backspace"])
+        self.delete_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.delete_action.triggered.connect(self.delete_selected_clip_with_check)
+        edit_menu.addAction(self.delete_action)
+
+        ripple_action = QAction("Supprimer avec ripple", self)
+        ripple_action.setShortcut("Ctrl+Backspace")
+        ripple_action.setShortcutContext(Qt.ApplicationShortcut)
+        ripple_action.triggered.connect(self.ripple_delete_selected_clip)
+        edit_menu.addAction(ripple_action)
+
+        enable_action = QAction("Activer / Désactiver le clip", self)
+        enable_action.setShortcut("Ctrl+E")
+        enable_action.setShortcutContext(Qt.ApplicationShortcut)
+        enable_action.triggered.connect(self.toggle_selected_clip_enabled)
+        edit_menu.addAction(enable_action)
+
+        edit_menu.addSeparator()
+
         for label in ("Couper", "Copier", "Coller"):
             action = QAction(label, self)
             action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
@@ -521,6 +846,7 @@ class MainWindow(QMainWindow):
         self.preview_panel.play_button.setText("▶ Play")
 
     def on_clip_selected(self, clip_id):
+        self._flush_subtitle_history_record()
         view = self.timeline_panel.find_view_by_id(clip_id)
         if view is None:
             return
@@ -537,6 +863,7 @@ class MainWindow(QMainWindow):
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] move refusé : {exc}")
             return
+        self._record_history("Déplacer le clip")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -547,6 +874,7 @@ class MainWindow(QMainWindow):
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim gauche refusé : {exc}")
             return
+        self._record_history("Trim gauche")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -557,6 +885,7 @@ class MainWindow(QMainWindow):
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim droit refusé : {exc}")
             return
+        self._record_history("Trim droit")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -623,6 +952,7 @@ class MainWindow(QMainWindow):
         self.project_panel.select_asset(asset.id)
         if asset.media_type == "video":
             self.preview_panel.load_video(asset.path)
+        self._record_history(f"Importer le média « {asset.name} »")
         self._mark_dirty()
         return True
 
@@ -709,6 +1039,7 @@ class MainWindow(QMainWindow):
             return
 
         # Rafraîchit la projection (qui inclut le nouveau clip).
+        self._record_history(f"Ajouter le clip « {new_clip.label or new_clip.id} »")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self.timeline_panel.select_clip(new_clip.id)
@@ -741,6 +1072,7 @@ class MainWindow(QMainWindow):
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] cut refusé : {exc}")
             return
+        self._record_history("Couper le clip")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -771,6 +1103,7 @@ class MainWindow(QMainWindow):
         except KeyError as exc:
             print(f"[MainWindow] delete refusé : {exc}")
             return
+        self._record_history("Supprimer le clip")
         self.timeline_panel.selected_clip_id = None
         self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
@@ -787,6 +1120,13 @@ class MainWindow(QMainWindow):
         except KeyError:
             return
 
+        if clip.text == new_text:
+            return
+
+        # Démarrer le groupe avant de modifier le modèle. Le snapshot
+        # final contiendra ainsi le texte complet, pas la première frappe.
+        self._schedule_subtitle_history_record(clip.id, new_text)
+
         # 1. Mettre à jour le modèle métier.
         clip.text = new_text
         self._mark_dirty()
@@ -800,6 +1140,7 @@ class MainWindow(QMainWindow):
 
         # 3. Mettre à jour l'overlay de preview.
         self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+
 
     def update_subtitle_overlay(self, seconds):
         """Affiche le sous-titre actif (borne demi-ouverte ``start <= t < end``).
@@ -844,6 +1185,7 @@ class MainWindow(QMainWindow):
                 duration=cue.end - cue.start,
             )
             created_clips.append(clip)
+        self._record_history(f"Importer le SRT ({len(cues)} sous-titres)")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -866,6 +1208,7 @@ class MainWindow(QMainWindow):
                 f"Impossible d'ajouter le sous-titre :\n\n{exc}",
             )
             return
+        self._record_history("Ajouter un sous-titre")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._refresh_project_library()
