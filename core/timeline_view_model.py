@@ -5,13 +5,14 @@ qui transforme un ``Project`` en une liste de vues prêtes à être
 affichées. La projection est strictement en lecture : aucune vue ne
 peut muter le ``Project`` source.
 
-Deux responsabilités supplémentaires y sont regroupées :
+Trois responsabilités supplémentaires y sont regroupées :
 
 - ``color_key_for_clip`` : couleur déterministe basée sur l'identifiant
   du clip (utilisée pour colorer les blocs sur la timeline).
-- ``build_export_clips`` : adaptateur temporaire produisant les
-  dictionnaires attendus par l'``ExportEngine`` actuel. Cette fonction
-  disparaîtra lorsque le moteur d'export migrera vers les dataclasses.
+- ``build_export_clips`` : adaptateur produisant un snapshot
+  « clé-valeur » du projet, conservé pour la sauvegarde ``.srt`` des
+  sous-titres (``core.effects.save_subtitles``). L'export vidéo
+  principal utilise désormais :class:`core.render_plan.RenderPlan`.
 - ``v1_transition_pairs`` : helper utilisé par la timeline pour repérer
   les jonctions entre clips V1.
 
@@ -101,14 +102,17 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
 
 
 def build_export_clips(project: Project) -> list[dict]:
-    """Adaptateur : produit les dictionnaires attendus par ``ExportEngine``.
+    """Adaptateur : produit un snapshot clé-valeur du ``Project``.
 
-    Compatibilité temporaire : ``ExportEngine`` consomme encore des
-    dictionnaires (``start``, ``end``, ``track``, ``text``,
-    ``source_path``). Cette fonction est une lecture seule qui reflète
-    fidèlement le ``Project`` ; le moteur d'export sera migré vers les
-    dataclasses dans une tâche ultérieure, ce qui supprimera cet
-    adaptateur.
+    Utilisé par :func:`core.effects.save_subtitles` pour écrire un
+    fichier ``.srt`` à partir des clips de la piste ``S1``. L'export
+    vidéo principal (``core.export_engine``) n'utilise plus cette
+    fonction ; il consomme désormais
+    :class:`core.render_plan.RenderPlan`.
+
+    Le format produit est stable (clés ``id``, ``track``, ``start``,
+    ``end``, ``label``, ``text``, ``source_path``, ``color``) et
+    constitue la source de vérité pour la sauvegarde ``.srt``.
     """
     asset_paths = {asset.id: asset.path for asset in project.media_assets}
     export_clips: list[dict] = []

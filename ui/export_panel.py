@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.export_engine import ExportFormat, ExportPreset, ExportRequest
+from core.render_plan import RenderPlan
 from ui.theme import COLORS, label_style
 
 
@@ -131,7 +132,15 @@ class ExportPanel(QWidget):
         layout.addLayout(actions_layout)
         layout.addStretch()
 
-    def build_request(self, clips, output_path):
+    def build_request(self, render_plan: RenderPlan, output_path: str):
+        """Construit un :class:`ExportRequest` à partir d'un :class:`RenderPlan`.
+
+        ``render_plan`` doit provenir de
+        :func:`core.render_plan.build_render_plan`. Le panneau reste
+        responsable des paramètres UI (format, résolution, qualité,
+        fps) ; la composition vidéo est désormais entièrement décrite
+        par le plan de rendu.
+        """
         export_format = self.format_combo.currentData()
         resolution = self.resolution_combo.currentData()
         base_preset = _QUALITY_PRESETS[self.quality_combo.currentText()]
@@ -143,7 +152,7 @@ class ExportPanel(QWidget):
         )
         fps = int(self.fps_combo.currentText())
         return ExportRequest(
-            clips=clips,
+            render_plan=render_plan,
             output_path=output_path,
             format=export_format,
             preset=preset,

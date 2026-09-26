@@ -37,6 +37,7 @@ from core.timeline_evaluator import (
     evaluate_timeline,
     timeline_duration,
 )
+from core.render_plan import RenderPlan, build_render_plan
 from core.timeline_view_model import build_export_clips
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -339,16 +340,22 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            request = self.export_panel.build_request(self.get_export_clips(), path)
+            render_plan = self.get_render_plan()
+            request = self.export_panel.build_request(render_plan, path)
         except Exception as exc:
             self.export_panel.mark_export_error(f"Paramètres invalides : {exc}")
             return
         self.export_panel.mark_export_started()
         self.export_engine.start(request)
 
-    def get_export_clips(self) -> list[dict]:
-        """Retourne les dictionnaires attendus par ExportEngine (adaptateur)."""
-        return build_export_clips(self.project)
+    def get_render_plan(self) -> RenderPlan:
+        """Construit le :class:`RenderPlan` du projet courant.
+
+        Le plan décrit fidèlement la timeline (positions, trims, trous,
+        ordre des pistes, clips activés). C'est désormais l'entrée
+        unique du moteur d'export.
+        """
+        return build_render_plan(self.project)
 
     def cancel_export(self):
         self.export_engine.cancel()
