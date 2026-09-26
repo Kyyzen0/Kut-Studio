@@ -518,3 +518,89 @@ def test_audio_layers_raise_for_missing_asset():
     )
     with pytest.raises(KeyError, match="ghost-audio"):
         build_render_plan(project)
+
+
+# ---------------------------------------------------------------------------
+# subtitle_cues (tâche 11)
+# ---------------------------------------------------------------------------
+
+
+def _subtitle_asset(asset_id: str = "asset-sub", path: str = ""):
+    """Construit un ``MediaAsset`` de sous-titre conforme."""
+    return MediaAsset(
+        id=asset_id,
+        path=path,
+        name="Sous-titre",
+        duration=10.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+
+
+def test_render_plan_carries_active_subtitle_cues():
+    """``subtitle_cues`` contient les cues actifs triés par début."""
+    from core.subtitle_io import SubtitleCue
+
+    asset = _subtitle_asset()
+    project = Project(
+        name="Subs",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=6.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="late", asset_id=asset.id, track_id="S1",
+                     timeline_start=4.0, source_in=0.0, source_out=1.0,
+                     text="Tardif"),
+                Clip(id="early", asset_id=asset.id, track_id="S1",
+                     timeline_start=1.0, source_in=0.0, source_out=1.0,
+                     text="Précoce"),
+                Clip(id="disabled", asset_id=asset.id, track_id="S1",
+                     timeline_start=2.0, source_in=0.0, source_out=1.0,
+                     text="Désactivé", enabled=False),
+            ]),
+        ],
+        media_assets=[
+            MediaAsset(id="asset-v", path="/tmp/v.mp4", name="V",
+                       duration=6.0, width=1920, height=1080, fps=30.0,
+                       media_type="video"),
+            asset,
+        ],
+    )
+    plan = build_render_plan(project)
+    assert isinstance(plan.subtitle_cues, tuple)
+    assert len(plan.subtitle_cues) == 2
+    assert [c.text for c in plan.subtitle_cues] == ["Précoce", "Tardif"]
+    # Type safety.
+    assert all(isinstance(c, SubtitleCue) for c in plan.subtitle_cues)
+
+
+def test_render_plan_subtitle_cues_empty_by_default():
+    """Sans sous-titre actif, ``subtitle_cues`` est vide."""
+    asset = _subtitle_asset()
+    project = Project(
+        name="NoSubs",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="disabled", asset_id=asset.id, track_id="S1",
+                     timeline_start=0.0, source_in=0.0, source_out=1.0,
+                     text="Désactivé", enabled=False),
+            ]),
+        ],
+        media_assets=[
+            MediaAsset(id="asset-v", path="/tmp/v.mp4", name="V",
+                       duration=4.0, width=1920, height=1080, fps=30.0,
+                       media_type="video"),
+            asset,
+        ],
+    )
+    plan = build_render_plan(project)
+    assert plan.subtitle_cues == ()

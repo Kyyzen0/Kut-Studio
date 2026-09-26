@@ -17,18 +17,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
+from core.effects import apply_color_effect, play_crossfade_preview, set_volume
 from core.export_engine import ExportEngine
 from core.media_probe import MediaProbeError, probe_media, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
+from core.subtitle_io import load_srt, save_srt
+from core.timeline_evaluator import evaluate_timeline
 from core.timeline_operations import (
     add_clip_to_track,
+    add_subtitle_clip,
     cut_clip,
     delete_clip,
     find_clip,
     move_clip,
+    subtitle_cues_from_project,
     trim_clip_left,
     trim_clip_right,
 )
@@ -53,7 +57,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Kut-Studio")
         self.setMinimumSize(1080, 680)
         self.resize(1440, 900)
-        self.subtitle_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "subtitles.srt")
+        self.subtitle_file: str | None = None
         self.active_subtitle_clip = None
         self.transition_seconds = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.
@@ -76,7 +80,11 @@ class MainWindow(QMainWindow):
             self.add_asset_to_timeline
         )
         self.project_panel.import_requested.connect(self.import_media_via_dialog)
-        self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
+        self.project_panel.add_subtitle_requested.connect(self.add_subtitle_at_playhead)
+        self.project_panel.import_subtitles_requested.connect(self.import_subtitles_via_dialog)
+        self.project_panel.export_subtitles_requested.connect(self.export_subtitles_via_dialog)
+        self.project_panel.subtitle_selected.connect(self.on_subtitle_clip_selected)
+        self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
         self.timeline_panel = TimelinePanel(self.project)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
@@ -393,6 +401,13 @@ class MainWindow(QMainWindow):
         file_menu.addAction(save_action)
         file_menu.addAction(save_as_action)
         file_menu.addSeparator()
+        import_subs_action = QAction("Importer des sous-titres SRT…", self)
+        import_subs_action.triggered.connect(self.import_subtitles_via_dialog)
+        file_menu.addAction(import_subs_action)
+        export_subs_action = QAction("Exporter les sous-titres SRT…", self)
+        export_subs_action.triggered.connect(self.export_subtitles_via_dialog)
+        file_menu.addAction(export_subs_action)
+        file_menu.addSeparator()
         exit_action = QAction("Quitter", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
@@ -705,8 +720,20 @@ class MainWindow(QMainWindow):
         self.add_asset_to_timeline(asset_id)
 
     def _refresh_project_library(self) -> None:
-        """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``."""
+        """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``.
+
+        Met également à jour la bibliothèque de sous-titres de l'onglet
+        Texte avec les clips activés des pistes ``subtitle``.
+        """
         self.project_panel.set_assets(list(self.project.media_assets))
+        subtitle_clips = [
+            clip
+            for track in self.project.tracks
+            if track.type == "subtitle"
+            for clip in track.clips
+            if clip.enabled and (clip.text or "").strip()
+        ]
+        self.project_panel.set_subtitle_clips(subtitle_clips)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
         try:
@@ -774,35 +801,124 @@ class MainWindow(QMainWindow):
         # 3. Mettre à jour l'overlay de preview.
         self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
 
-        # 4. Sauvegarde ``.srt`` en meilleure effort : un échec I/O ne
-        #    doit jamais bloquer la mise à jour du modèle ni lever dans
-        #    la boucle Qt.
-        try:
-            self.save_subtitles()
-        except OSError as exc:
-            print(f"[MainWindow] sauvegarde .srt impossible : {exc}")
-
     def update_subtitle_overlay(self, seconds):
-        subtitle_clip = self._subtitle_clip_at(seconds)
-        if subtitle_clip is not None and subtitle_clip.text.strip():
-            self.preview_panel.preview_subtitle_overlay.setText(subtitle_clip.text.strip())
+        """Affiche le sous-titre actif (borne demi-ouverte ``start <= t < end``).
+
+        Plusieurs sous-titres superposés sont départagés par leur
+        ordre dans la timeline : le dernier gagne (comportement
+        déterministe).
+        """
+        try:
+            active_clips = evaluate_timeline(self.project, seconds)
+        except ValueError:
+            active_clips = []
+        subtitle_clips = [c for c in active_clips if c.track_type == "subtitle"]
+        text = subtitle_clips[-1].text.strip() if subtitle_clips else ""
+        if text:
+            self.preview_panel.preview_subtitle_overlay.setText(text)
             self.preview_panel.preview_subtitle_overlay.show()
         else:
             self.preview_panel.preview_subtitle_overlay.hide()
 
-    def _subtitle_clip_at(self, seconds):
-        """Retourne le clip de sous-titre actif à ``seconds`` ou ``None``."""
-        for track in self.project.tracks:
-            if track.id != "S1":
-                continue
-            for clip in track.clips:
-                if clip.timeline_start <= seconds <= clip.timeline_start + clip.duration:
-                    return clip
-        return None
+    def export_subtitles_to_path(self, file_path: str) -> None:
+        """Exporte tous les sous-titres actifs vers ``file_path`` (.srt)."""
+        cues = subtitle_cues_from_project(self.project)
+        save_srt(cues, file_path)
+        self.subtitle_file = file_path
 
-    def save_subtitles(self):
-        export_clips = build_export_clips(self.project)
-        save_subtitles(export_clips, self.subtitle_file)
+    def import_subtitles_from_path(self, file_path: str) -> list[Clip]:
+        """Importe les sous-titres d'un .srt et crée les clips dans S1.
+
+        Les cues non vides sont ajoutés après les sous-titres déjà
+        présents ; la liste des clips créés est retournée.
+        """
+        cues = [cue for cue in load_srt(file_path) if cue.text.strip()]
+        if not cues:
+            return []
+        created_clips: list[Clip] = []
+        for cue in cues:
+            clip = add_subtitle_clip(
+                self.project,
+                text=cue.text,
+                timeline_start=cue.start,
+                duration=cue.end - cue.start,
+            )
+            created_clips.append(clip)
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._refresh_project_library()
+        self._mark_dirty()
+        return created_clips
+
+    def add_subtitle_at_playhead(self, text: str, duration: float) -> None:
+        """Ajoute un sous-titre au playhead courant et le sélectionne."""
+        try:
+            clip = add_subtitle_clip(
+                self.project,
+                text=text,
+                timeline_start=self.playhead_seconds,
+                duration=duration,
+            )
+        except (KeyError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Sous-titre impossible",
+                f"Impossible d'ajouter le sous-titre :\n\n{exc}",
+            )
+            return
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._refresh_project_library()
+        self.timeline_panel.select_clip(clip.id)
+        self._mark_dirty()
+
+    def import_subtitles_via_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importer des sous-titres",
+            os.path.expanduser("~"),
+            "Sous-titres (*.srt)",
+        )
+        if not path:
+            return
+        try:
+            self.import_subtitles_from_path(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Import SRT impossible",
+                f"Impossible d'importer les sous-titres :\n\n{exc}",
+            )
+
+    def export_subtitles_via_dialog(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer les sous-titres",
+            os.path.expanduser("~/subtitles.srt"),
+            "Sous-titres (*.srt)",
+        )
+        if not path:
+            return
+        try:
+            self.export_subtitles_to_path(path)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Export SRT impossible",
+                f"Impossible d'enregistrer les sous-titres :\n\n{exc}",
+            )
+
+    def on_subtitle_clip_selected(self, clip_id: str) -> None:
+        """Sélectionne un sous-titre depuis la bibliothèque et synchronise le playhead."""
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        # Le playhead se positionne au début du sous-titre sélectionné.
+        self.seek_to_position(clip.timeline_start)
+        # On rafraîchit la sélection dans le panneau Propriétés.
+        self.timeline_panel.select_clip(clip_id)
+        self.on_clip_selected(clip_id)
 
     def update_color_effect(self, *_):
         panel = self.properties_panel

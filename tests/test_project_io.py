@@ -323,6 +323,58 @@ def test_legacy_v1_payload_without_has_audio_loads_with_false_default(
     assert asset.has_audio is False
 
 
+def test_subtitle_clip_survives_kut_roundtrip(tmp_path: Path) -> None:
+    """Un clip de sous-titre est fidèlement sérialisé puis rechargé."""
+    sub_asset = MediaAsset(
+        id="asset-sub",
+        path="",
+        name="Sous-titre",
+        duration=5.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+    project = Project(
+        name="Subtitle",
+        tracks=[
+            Track(
+                id="S1",
+                name="S1",
+                type="subtitle",
+                clips=[
+                    Clip(
+                        id="c-sub",
+                        asset_id="asset-sub",
+                        track_id="S1",
+                        timeline_start=1.5,
+                        source_in=0.0,
+                        source_out=2.5,
+                        label="Sous-titre",
+                        text="Bienvenue",
+                    ),
+                ],
+            ),
+        ],
+        media_assets=[sub_asset],
+    )
+    target = tmp_path / "with-sub.kut"
+    save_project(project, str(target))
+    loaded = load_project(str(target))
+
+    track = loaded.tracks[0]
+    assert track.type == "subtitle"
+    assert len(track.clips) == 1
+    clip = track.clips[0]
+    assert clip.id == "c-sub"
+    assert clip.timeline_start == pytest.approx(1.5)
+    assert clip.text == "Bienvenue"
+
+    # Le ``MediaAsset`` technique doit être conservé.
+    assert loaded.media_assets[0].media_type == "subtitle"
+
+
 # ---------------------------------------------------------------------------
 # Vérification du contenu brut
 # ---------------------------------------------------------------------------

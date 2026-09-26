@@ -32,7 +32,10 @@ et ``cancelled``.
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,11 +43,37 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, Signal
 
 from .render_plan import AudioLayer, RenderLayer, RenderPlan
+from .subtitle_io import format_srt
 
 
 _ffmpeg_path = shutil.which("ffmpeg")
 if _ffmpeg_path is None:
     raise ImportError("ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH.")
+
+
+def _ffmpeg_supports_subtitles() -> bool:
+    """Retourne ``True`` si le binaire ``ffmpeg`` supporte le filtre ``subtitles``.
+
+    Le filtre ``subtitles`` n'est disponible que si FFmpeg a été compilé
+    avec ``--enable-libass``. Le résultat est mis en cache pour éviter
+    de relancer ``ffmpeg -filters`` à chaque export.
+    """
+    if hasattr(_ffmpeg_supports_subtitles, "_cached"):
+        return _ffmpeg_supports_subtitles._cached  # type: ignore[attr-defined]
+    try:
+        completed = subprocess.run(
+            [_ffmpeg_path, "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        supported = False
+    else:
+        supported = " subtitles " in f" {completed.stdout} "
+    _ffmpeg_supports_subtitles._cached = supported  # type: ignore[attr-defined]
+    return supported
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +173,7 @@ class ExportEngine(QObject):
         self._progress_buffer = ""
         self._duration_seconds = 0.0
         self._cancel_requested = False
+        self._temporary_files: list[str] = []
 
     # ------------------------------------------------------------------
     # API publique
@@ -155,7 +185,8 @@ class ExportEngine(QObject):
         Lève (via le signal ``failed``) si :
         - un export est déjà en cours ;
         - le plan de rendu ne contient aucun clip vidéo ;
-        - le dossier de sortie est introuvable.
+        - le dossier de sortie est introuvable ;
+        - la build FFmpeg ne supporte pas ``subtitles`` (libass requis).
         """
         if self._process.state() != QProcess.NotRunning:
             self.failed.emit("Un export est déjà en cours.")
@@ -165,8 +196,16 @@ class ExportEngine(QObject):
             self._duration_seconds = request.render_plan.duration
             if not request.render_plan.video_layers:
                 raise ValueError("Aucun média vidéo à exporter.")
+            if request.render_plan.subtitle_cues and not _ffmpeg_supports_subtitles():
+                raise RuntimeError(
+                    "La build FFmpeg ne supporte pas le filtre 'subtitles' "
+                    "(libass requis). Installez un FFmpeg avec libass pour "
+                    "incruster les sous-titres."
+                )
+            self._prepare_temporary_files(request.render_plan)
             command = self._build_command(request)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, RuntimeError) as error:
+            self._cleanup_temporary_files()
             self.failed.emit(str(error))
             return
 
@@ -184,6 +223,8 @@ class ExportEngine(QObject):
         self._cancel_requested = True
         self.status_changed.emit("Annulation de l'export...")
         self._process.kill()
+        # ``_process_finished`` se chargera du nettoyage des fichiers
+        # temporaires une fois le slot appelé par Qt.
 
     # ------------------------------------------------------------------
     # Construction de la commande FFmpeg
@@ -199,8 +240,9 @@ class ExportEngine(QObject):
                 f"Le dossier de sortie est introuvable : {output_path.parent}"
             )
 
+        srt_path = self._current_srt_path
         filter_complex, video_label, audio_label, input_paths = (
-            self._build_filter_complex(plan, width, height, request.fps)
+            self._build_filter_complex(plan, width, height, request.fps, srt_path)
         )
 
         command: list[str] = [
@@ -262,18 +304,62 @@ class ExportEngine(QObject):
         command.append(str(output_path))
         return command
 
+    # ------------------------------------------------------------------
+    # Fichiers temporaires (SRT) et nettoyage
+    # ------------------------------------------------------------------
+
+    def _prepare_temporary_files(self, plan: RenderPlan) -> None:
+        """Écrit un SRT temporaire si le projet porte des sous-titres actifs."""
+        self._cleanup_temporary_files()
+        if not plan.subtitle_cues:
+            return
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="kut-studio-subtitles-",
+            suffix=".srt",
+        )
+        # Enregistrer le chemin avant l'écriture afin que le nettoyage
+        # du gestionnaire couvre aussi un échec d'écriture sur disque.
+        self._temporary_files.append(tmp_path)
+        os.close(fd)
+        Path(tmp_path).write_text(
+            format_srt(list(plan.subtitle_cues)),
+            encoding="utf-8",
+        )
+
+    def _cleanup_temporary_files(self) -> None:
+        """Supprime tous les fichiers temporaires créés pour cet export."""
+        for path in self._temporary_files:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        self._temporary_files.clear()
+
+    @property
+    def _current_srt_path(self) -> str | None:
+        """Retourne le SRT temporaire courant (pour la commande FFmpeg)."""
+        for path in self._temporary_files:
+            if path.endswith(".srt"):
+                return path
+        return None
+
     @staticmethod
     def _build_filter_complex(
         plan: RenderPlan,
         output_width: int,
         output_height: int,
         fps: int,
+        srt_path: str | None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
+        Si ``plan.subtitle_cues`` est non vide, le filtre ``subtitles``
+        est appliqué après la composition vidéo pour incruster les
+        sous-titres via libass.
+
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
-            video_label: label du flux vidéo final.
+            video_label: label du flux vidéo final (après incrustation).
             audio_label: label du flux audio final.
             input_paths: liste dédupliquée des chemins à passer en ``-i``.
         """
@@ -339,6 +425,23 @@ class ExportEngine(QObject):
             )
             audio_label = "aout"
 
+        # ---------------- Sous-titres ----------------
+        # L'incrustation se fait via libass (``subtitles=``), appliquée
+        # après la composition vidéo. Le chemin du SRT est préparé par
+        # ``_prepare_temporary_files`` avant le lancement de FFmpeg.
+        if plan.subtitle_cues:
+            if not srt_path:
+                raise RuntimeError(
+                    "Le plan contient des sous-titres actifs mais aucun "
+                    "fichier SRT temporaire n'a été préparé."
+                )
+            parts.append(
+                f"[{video_label}]subtitles={_escape_filter_path(srt_path)}"
+                f":fontsdir={_escape_filter_path(_subtitle_fontsdir())}"
+                f":force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
+            )
+            video_label = "vfinal"
+
         return ";".join(parts), video_label, audio_label, input_paths
 
     # ------------------------------------------------------------------
@@ -382,15 +485,19 @@ class ExportEngine(QObject):
         if self._cancel_requested:
             self._cancel_requested = False
             self.cancelled.emit()
+            self._cleanup_temporary_files()
             return
         if exit_status != QProcess.NormalExit or exit_code != 0:
             self.failed.emit(self._error_output or "L'export ffmpeg a échoué.")
+            self._cleanup_temporary_files()
             return
         if request is None:
             self.failed.emit("La requête d'export est introuvable.")
+            self._cleanup_temporary_files()
             return
         self.progress_changed.emit(100)
         self.status_changed.emit("Export terminé")
+        self._cleanup_temporary_files()
         self.finished_ok.emit(request.output_path)
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
@@ -398,6 +505,7 @@ class ExportEngine(QObject):
         if self._cancel_requested:
             return
         if error == QProcess.FailedToStart:
+            self._cleanup_temporary_files()
             self.failed.emit("Impossible de démarrer ffmpeg.")
         else:
             self.failed.emit(f"Erreur ffmpeg ({error.name}) : voir logs.")
@@ -488,3 +596,57 @@ def _build_audio_filter(
         f"aformat=channel_layouts=stereo:sample_rates=48000,"
         f"asetpts=PTS+{timeline_start}/TB[a{audio_index}]"
     )
+
+
+# ---------------------------------------------------------------------------
+# Helpers pour l'incrustation de sous-titres
+# ---------------------------------------------------------------------------
+
+
+def _escape_filter_path(path: str) -> str:
+    """Échappe les caractères spéciaux d'un chemin pour un filtre FFmpeg.
+
+    La syntaxe des filtres FFmpeg considère ``:`` et ``\\`` comme
+    séparateurs ; on les neutralise par échappement ``\\`` puis on
+    échappe les apostrophes pour les expressions ``force_style``.
+    """
+    escaped = path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    return escaped
+
+
+def _subtitle_fontsdir() -> str:
+    """Chemin d'un dossier de polices générique disponible partout.
+
+    On pointe sur ``/System/Library/Fonts`` sur macOS et sur
+    ``/usr/share/fonts/truetype/dejavu`` sur Linux ; ``/etc`` est un
+    fallback inoffensif qui n'existe pas. Le ``fontsdir`` est fourni à
+    libass pour qu'il résolve les familles de polices génériques.
+    """
+    candidates = [
+        "/System/Library/Fonts",
+        "/Library/Fonts",
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts",
+        "/etc",
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return "/"
+
+
+_SUBTITLE_FORCE_STYLE_RAW = (
+    "FontName=DejaVu Sans,"
+    "FontSize=22,"
+    "PrimaryColour=&H00FFFFFF&,"
+    "OutlineColour=&H00000000&,"
+    "BorderStyle=1,"
+    "Outline=2,"
+    "Shadow=0,"
+    "Alignment=2,"
+    "MarginV=24"
+)
+
+# Valeur destinée au ``filter_complex`` : les virgules sont échappées
+# pour la syntaxe du filtergraph FFmpeg.
+_SUBTITLE_FORCE_STYLE_FORCE = _SUBTITLE_FORCE_STYLE_RAW.replace(",", "\\,")

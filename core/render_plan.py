@@ -23,7 +23,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .project_model import Clip, MediaAsset, Project
+from .subtitle_io import SubtitleCue
 from .timeline_evaluator import timeline_duration
+from .timeline_operations import subtitle_cues_from_project
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +127,10 @@ class RenderPlan:
         audio_layers: Couches audio à mixer. Couvre les pistes audio
             (``A1``…) **et** les clips vidéo dont le média source porte
             une piste audio (``has_audio=True``).
+        subtitle_cues: Cues de sous-titres actifs du projet, triés par
+            ``(start, end)``. Vides si le projet n'a aucun sous-titre
+            actif ; le moteur d'export les utilise pour générer un
+            fichier SRT temporaire et appliquer le filtre ``subtitles``.
     """
 
     width: int
@@ -133,6 +139,7 @@ class RenderPlan:
     duration: float
     video_layers: tuple[RenderLayer, ...] = field(default_factory=tuple)
     audio_layers: tuple[AudioLayer, ...] = field(default_factory=tuple)
+    subtitle_cues: tuple[SubtitleCue, ...] = field(default_factory=tuple)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +228,7 @@ def build_render_plan(project: Project) -> RenderPlan:
         duration=timeline_duration(project),
         video_layers=tuple(video_layers),
         audio_layers=tuple(audio_layers),
+        subtitle_cues=tuple(subtitle_cues_from_project(project)),
     )
 
 

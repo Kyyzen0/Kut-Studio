@@ -5,6 +5,7 @@ import pytest
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.timeline_operations import (
     add_clip_to_track,
+    add_subtitle_clip,
     cut_clip,
     delete_clip,
     find_clip,
@@ -695,3 +696,127 @@ def test_add_video_clip_to_audio_track_is_rejected() -> None:
         add_clip_to_track(project, "asset-v", "A1", 0.0)
 
     assert len(find_track(project, "A1").clips) == a1_before
+
+
+# ---------------------------------------------------------------------------
+# Sous-titres (tâche 11)
+# ---------------------------------------------------------------------------
+
+
+def _make_project_with_subtitle_track() -> Project:
+    """Projet minimaliste avec une piste S1 sans clip."""
+    asset_video = MediaAsset(
+        id="asset-v",
+        path="/tmp/v.mp4",
+        name="V",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+    )
+    return Project(
+        name="Sub",
+        tracks=[Track(id="V1", name="V1", type="video"), Track(id="S1", name="S1", type="subtitle")],
+        media_assets=[asset_video],
+    )
+
+
+def test_add_subtitle_clip_creates_clip_and_asset():
+    """``add_subtitle_clip`` crée un clip activé + un asset technique."""
+    project = _make_project_with_subtitle_track()
+    s1_before = len(find_track(project, "S1").clips)
+    assets_before = len(project.media_assets)
+
+    clip = add_subtitle_clip(project, "Bonjour", timeline_start=2.0, duration=3.0)
+
+    assert clip.id.startswith("clip-")
+    assert clip.asset_id.startswith("asset-subtitle-")
+    assert clip.track_id == "S1"
+    assert clip.timeline_start == pytest.approx(2.0)
+    assert clip.source_out - clip.source_in == pytest.approx(3.0)
+    assert clip.text == "Bonjour"
+    assert clip.enabled is True
+    # Le clip et l'asset technique ont bien été ajoutés.
+    assert len(find_track(project, "S1").clips) == s1_before + 1
+    assert len(project.media_assets) == assets_before + 1
+    sub_asset = project.media_assets[-1]
+    assert sub_asset.media_type == "subtitle"
+    assert sub_asset.width == 0
+    assert sub_asset.height == 0
+    assert sub_asset.fps == 0.0
+
+
+def test_add_subtitle_clip_rejects_empty_text():
+    """Un texte vide (ou blanc) est refusé."""
+    project = _make_project_with_subtitle_track()
+    with pytest.raises(ValueError, match="vide"):
+        add_subtitle_clip(project, "   \n   ", timeline_start=0.0, duration=2.0)
+
+
+def test_add_subtitle_clip_rejects_negative_duration():
+    """Une durée non strictement positive est refusée."""
+    project = _make_project_with_subtitle_track()
+    with pytest.raises(ValueError, match="strictement positive"):
+        add_subtitle_clip(project, "x", timeline_start=0.0, duration=0.0)
+    with pytest.raises(ValueError, match="strictement positive"):
+        add_subtitle_clip(project, "x", timeline_start=0.0, duration=-1.0)
+
+
+def test_add_subtitle_clip_rejects_negative_start():
+    """Un début négatif est refusé."""
+    project = _make_project_with_subtitle_track()
+    with pytest.raises(ValueError, match="négatif"):
+        add_subtitle_clip(project, "x", timeline_start=-0.1, duration=1.0)
+
+
+def test_add_subtitle_clip_rejects_wrong_track():
+    """La piste cible doit exister et être de type ``subtitle``."""
+    project = _make_project_with_subtitle_track()
+    # Track inexistante.
+    with pytest.raises(KeyError):
+        add_subtitle_clip(project, "x", timeline_start=0.0, duration=1.0, track_id="NOPE")
+    # Mauvais type.
+    with pytest.raises(ValueError, match="sous-titre"):
+        add_subtitle_clip(project, "x", timeline_start=0.0, duration=1.0, track_id="V1")
+
+
+def test_subtitle_cues_from_project_returns_sorted_active_cues():
+    """``subtitle_cues_from_project`` ne garde que les clips activés, triés."""
+    from core.timeline_operations import subtitle_cues_from_project
+
+    project = _make_project_with_subtitle_track()
+    s1 = find_track(project, "S1")
+    # Trois clips : un désactivé, deux actifs.
+    s1.clips.append(
+        Clip(id="a", asset_id="asset-sub-1", track_id="S1",
+             timeline_start=5.0, source_in=0.0, source_out=2.0, enabled=True,
+             text="Fin")
+    )
+    s1.clips.append(
+        Clip(id="b", asset_id="asset-sub-2", track_id="S1",
+             timeline_start=1.0, source_in=0.0, source_out=1.0, enabled=True,
+             text="Début")
+    )
+    s1.clips.append(
+        Clip(id="off", asset_id="asset-sub-3", track_id="S1",
+             timeline_start=2.0, source_in=0.0, source_out=1.0, enabled=False,
+             text="Off")
+    )
+
+    cues = subtitle_cues_from_project(project)
+    assert [c.text for c in cues] == ["Début", "Fin"]
+
+
+def test_subtitle_cues_excludes_empty_text():
+    """Les clips activés dont le texte est vide sont ignorés."""
+    from core.timeline_operations import subtitle_cues_from_project
+
+    project = _make_project_with_subtitle_track()
+    s1 = find_track(project, "S1")
+    s1.clips.append(
+        Clip(id="blank", asset_id="x", track_id="S1",
+             timeline_start=0.0, source_in=0.0, source_out=1.0, enabled=True,
+             text="   ")
+    )
+    assert subtitle_cues_from_project(project) == []

@@ -87,10 +87,11 @@ def _make_subtitle_project() -> Project:
         path="",
         name="Subtitle",
         duration=10.0,
-        width=1920,
-        height=1080,
-        fps=30.0,
+        width=0,
+        height=0,
+        fps=0.0,
         media_type="subtitle",
+        has_audio=False,
     )
     clip = Clip(
         id="sub_1",
@@ -701,4 +702,179 @@ def test_real_ffmpeg_export_produces_video_and_audio_streams(qtbot, tmp_path):
     duration = float(streams["format"]["duration"])
     assert abs(duration - 5.0) < 0.5, (
         f"Durée attendue ≈ 5s, obtenue {duration:.3f}s"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tâche 11 — Test d'intégration sous-titres (FFmpeg réel)
+# ---------------------------------------------------------------------------
+
+
+def _build_subtitle_project(video_path: Path) -> Project:
+    """Projet minimal : une vidéo 4 s + un sous-titre incrusté."""
+    video_asset = MediaAsset(
+        id="asset-vid",
+        path=str(video_path),
+        name="Vid",
+        duration=4.0,
+        width=160,
+        height=90,
+        fps=15.0,
+        media_type="video",
+    )
+    sub_asset = MediaAsset(
+        id="asset-sub",
+        path="",
+        name="Sub",
+        duration=4.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+    return Project(
+        name="SubExport",
+        width=160,
+        height=90,
+        fps=15.0,
+        media_assets=[video_asset, sub_asset],
+        tracks=[
+            Track(
+                id="V1", name="V1", type="video",
+                clips=[
+                    Clip(
+                        id="vid", asset_id="asset-vid", track_id="V1",
+                        timeline_start=0.0, source_in=0.0, source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="S1", name="S1", type="subtitle",
+                clips=[
+                    Clip(
+                        id="sub", asset_id="asset-sub", track_id="S1",
+                        timeline_start=1.0, source_in=0.0, source_out=2.5,
+                        text="Bonjour le monde",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
+    """Export réel avec sous-titres : FFmpeg termine, vidéo+audio présents,
+    fichier SRT temporaire nettoyé, filtre ``subtitles`` présent dans la
+    commande.
+
+    Ce test skip si la build FFmpeg locale n'a pas libass (filtre
+    ``subtitles`` indisponible).
+    """
+    import subprocess as _subprocess
+
+    ffmpeg, ffprobe = _require_ffmpeg()
+
+    # Détection rapide de libass.
+    try:
+        check = _subprocess.run(
+            [ffmpeg, "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        libass_available = False
+    else:
+        libass_available = " subtitles " in f" {check.stdout} "
+    if not libass_available:
+        pytest.skip(
+            "La build FFmpeg locale ne contient pas libass : "
+            "filtre 'subtitles' indisponible."
+        )
+
+    # 1. Vidéo temporaire courte, sans audio (pour vérifier que le
+    # moteur ajoute quand même un flux audio silencieux).
+    video_path = tmp_path / "src.mp4"
+    _generate_color_clip(
+        ffmpeg, video_path, color="blue", duration=4.0,
+    )
+
+    # 2. Construction du projet.
+    project = _build_subtitle_project(video_path)
+    plan = build_render_plan(project)
+    assert len(plan.subtitle_cues) == 1
+    assert plan.subtitle_cues[0].text == "Bonjour le monde"
+
+    # 3. Export.
+    from core.export_engine import (
+        ExportEngine,
+        ExportFormat,
+        ExportPreset,
+        ExportRequest,
+    )
+
+    output_path = tmp_path / "out_sub.mp4"
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(output_path),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        fps=15,
+    )
+
+    engine = ExportEngine()
+    # Préparation manuelle des fichiers temporaires : on veut inspecter
+    # la commande AVANT de lancer FFmpeg.
+    engine._prepare_temporary_files(plan)
+    try:
+        command = engine._build_command(request)
+    finally:
+        engine._cleanup_temporary_files()
+
+    # Le filtre ``subtitles=`` doit apparaître dans la commande.
+    filter_complex = command[command.index("-filter_complex") + 1]
+    assert "subtitles=" in filter_complex
+    assert "[vfinal]" in filter_complex
+
+    # Aucun SRT permanent à côté du code source avant export.
+    repo_root = Path(__file__).resolve().parent.parent
+    leftover_pre = list(repo_root.glob("**/*.srt"))
+    leftover_pre = [
+        path
+        for path in leftover_pre
+        if not path.is_relative_to(tmp_path)
+        and "kut-studio-subtitles-" in path.name
+    ]
+    assert leftover_pre == [], (
+        "Aucun SRT temporaire de Kut-Studio ne doit exister avant l'export."
+    )
+
+    engine.start(request)
+    finished, failed = _wait_for_export(engine, timeout_ms=30000)
+
+    assert not failed, f"ffmpeg a échoué : {failed}"
+    assert finished, "finished_ok aurait dû être émis"
+    assert output_path.exists()
+
+    # 4. Le SRT temporaire est nettoyé après succès.
+    import glob as _glob
+
+    leftover_post = _glob.glob("/tmp/kut-studio-subtitles-*.srt") + _glob.glob(
+        "/var/folders/**/kut-studio-subtitles-*.srt", recursive=True
+    )
+    assert leftover_post == [], (
+        f"SRT temporaires non nettoyés : {leftover_post}"
+    )
+
+    # 5. Le fichier de sortie est inspectable.
+    streams = _probe_streams(ffprobe, output_path)
+    has_video = any(s.get("codec_type") == "video" for s in streams["streams"])
+    has_audio = any(s.get("codec_type") == "audio" for s in streams["streams"])
+    assert has_video, "Le fichier final doit contenir un flux vidéo"
+    assert has_audio, "Le fichier final doit contenir un flux audio"
+    duration = float(streams["format"]["duration"])
+    assert abs(duration - 4.0) < 0.5, (
+        f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
     )

@@ -339,7 +339,7 @@ def test_build_filter_complex_returns_output_labels_and_inputs():
         video_layers=(),
     )
     filter_complex, video_label, audio_label, input_paths = (
-        ExportEngine._build_filter_complex(plan, 320, 240, 30)
+        ExportEngine._build_filter_complex(plan, 320, 240, 30, None)
     )
     assert video_label == "bg"
     assert audio_label == "aout"
@@ -616,3 +616,241 @@ def test_audio_and_video_share_same_duration(engine, tmp_path):
     # Le fond noir et la base silencieuse couvrent tous deux 10s.
     assert "d=10.0" in filter_complex
     assert "duration=10.0" in filter_complex
+
+
+# ---------------------------------------------------------------------------
+# Sous-titres — tâche 11
+# ---------------------------------------------------------------------------
+
+
+def _subtitle_asset(asset_id: str = "asset-sub", duration: float = 5.0):
+    return MediaAsset(
+        id=asset_id,
+        path="",
+        name="Sous-titre",
+        duration=duration,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+
+
+def _video_for_subtitle_export(path: str):
+    return MediaAsset(
+        id="asset-v",
+        path=path,
+        name="V",
+        duration=5.0,
+        width=160,
+        height=90,
+        fps=15.0,
+        media_type="video",
+        has_audio=False,
+    )
+
+
+def test_filter_complex_includes_subtitles_filter(engine, tmp_path):
+    """Le filtre ``subtitles=`` apparaît dans le filter_complex."""
+    video = _video_for_subtitle_export(str(tmp_path / "v.mp4"))
+    sub = _subtitle_asset()
+    project = Project(
+        name="Sub",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="s", asset_id="asset-sub", track_id="S1",
+                     timeline_start=0.0, source_in=0.0, source_out=2.0,
+                     text="Bonjour"),
+            ]),
+        ],
+        media_assets=[video, sub],
+    )
+    plan = build_render_plan(project)
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+
+    # ``_prepare_temporary_files`` doit être appelé avant ``_build_command``.
+    engine._prepare_temporary_files(plan)
+    try:
+        command = engine._build_command(request)
+    finally:
+        engine._cleanup_temporary_files()
+
+    filter_complex = command[command.index("-filter_complex") + 1]
+    assert "subtitles=" in filter_complex
+    assert "force_style=" in filter_complex
+    assert "[vfinal]" in filter_complex
+
+
+def test_filter_complex_omits_subtitles_when_no_cues(engine, tmp_path):
+    """Sans sous-titre actif, le filtre ``subtitles=`` n'est pas appliqué."""
+    project = _make_project_with_video(str(tmp_path / "v.mp4"))
+    plan = build_render_plan(project)
+    assert plan.subtitle_cues == ()
+
+    request = make_request(plan, tmp_path, ExportFormat.MP4_H264)
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+    assert "subtitles=" not in filter_complex
+
+
+def test_no_temporary_srt_leftover_when_plan_has_no_subtitles(
+    engine, tmp_path, monkeypatch
+) -> None:
+    """Sans sous-titres, aucun fichier SRT temporaire n'est créé."""
+    import tempfile as _tempfile
+
+    project = _make_project_with_video(str(tmp_path / "v.mp4"))
+    plan = build_render_plan(project)
+
+    monkeypatch.setattr(_tempfile, "tempdir", str(tmp_path))
+    engine._prepare_temporary_files(plan)
+    engine._cleanup_temporary_files()
+
+    leftover = list(tmp_path.glob("kut-studio-subtitles-*.srt"))
+    assert leftover == []
+
+
+def test_temporary_srt_file_is_cleaned_up_after_start_failure(
+    engine, tmp_path, monkeypatch
+) -> None:
+    """Si la construction de la commande échoue, le SRT temp est nettoyé."""
+    import tempfile as _tempfile
+
+    monkeypatch.setattr(_tempfile, "tempdir", str(tmp_path))
+    sub = _subtitle_asset()
+    video = _video_for_subtitle_export(str(tmp_path / "v.mp4"))
+    project = Project(
+        name="Boom",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="s", asset_id="asset-sub", track_id="S1",
+                     timeline_start=0.0, source_in=0.0, source_out=2.0,
+                     text="Hello"),
+            ]),
+        ],
+        media_assets=[video, sub],
+    )
+    plan = build_render_plan(project)
+
+    # Préparation manuelle.
+    engine._prepare_temporary_files(plan)
+    created_files = list(tmp_path.glob("kut-studio-subtitles-*.srt"))
+    assert len(created_files) == 1
+
+    # On force la commande à échouer (dossier de sortie invalide).
+    request = make_request(
+        plan, tmp_path / "no_such_dir" / "out.mp4", ExportFormat.MP4_H264,
+    )
+
+    # ``start`` doit lever via ``failed`` (synchrone) et nettoyer.
+    failed_messages: list[str] = []
+    engine.failed.connect(failed_messages.append)
+    engine.start(request)
+    assert failed_messages, "Le moteur doit émettre failed en cas d'erreur"
+
+    leftover = list(tmp_path.glob("kut-studio-subtitles-*.srt"))
+    assert leftover == [], (
+        "Aucun SRT temporaire ne doit subsister après un échec : "
+        f"{leftover}"
+    )
+
+
+def test_srt_temporary_file_contains_formatted_cues(engine, tmp_path, monkeypatch):
+    """Le SRT temporaire est bien formé et lisible."""
+    import tempfile as _tempfile
+    from core.subtitle_io import load_srt
+
+    monkeypatch.setattr(_tempfile, "tempdir", str(tmp_path))
+    sub = _subtitle_asset()
+    video = _video_for_subtitle_export(str(tmp_path / "v.mp4"))
+    project = Project(
+        name="SubCues",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="s1", asset_id="asset-sub", track_id="S1",
+                     timeline_start=0.0, source_in=0.0, source_out=1.0,
+                     text="Bonjour"),
+                Clip(id="s2", asset_id="asset-sub", track_id="S1",
+                     timeline_start=2.0, source_in=0.0, source_out=1.0,
+                     text="Au revoir"),
+            ]),
+        ],
+        media_assets=[video, sub],
+    )
+    plan = build_render_plan(project)
+
+    engine._prepare_temporary_files(plan)
+    try:
+        temp_files = list(tmp_path.glob("kut-studio-subtitles-*.srt"))
+        assert len(temp_files) == 1
+        cues = load_srt(str(temp_files[0]))
+        assert [c.text for c in cues] == ["Bonjour", "Au revoir"]
+    finally:
+        engine._cleanup_temporary_files()
+
+
+def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Si FFmpeg n'a pas libass, ``start`` émet ``failed`` avec un message clair."""
+    import core.export_engine as engine_module
+    from core.export_engine import (
+        ExportEngine,
+        ExportFormat,
+        ExportPreset,
+        ExportRequest,
+    )
+
+    monkeypatch.setattr(
+        engine_module, "_ffmpeg_supports_subtitles", lambda: False
+    )
+    monkeypatch.setattr(engine_module.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+
+    sub = _subtitle_asset()
+    video = _video_for_subtitle_export(str(tmp_path / "v.mp4"))
+    project = Project(
+        name="NoLibass",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="v", asset_id="asset-v", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="S1", name="S1", type="subtitle", clips=[
+                Clip(id="s", asset_id="asset-sub", track_id="S1",
+                     timeline_start=0.0, source_in=0.0, source_out=2.0,
+                     text="Bonjour"),
+            ]),
+        ],
+        media_assets=[video, sub],
+    )
+    plan = build_render_plan(project)
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(tmp_path / "out.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(
+            name="X", resolution=(160, 90), crf=18, audio_bitrate="192k"
+        ),
+        fps=15,
+    )
+
+    engine = ExportEngine()
+    failed: list[str] = []
+    engine.failed.connect(failed.append)
+    engine.start(request)
+
+    assert failed, "failed doit être émis quand libass manque"
+    assert "libass" in failed[0].lower()

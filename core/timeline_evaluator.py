@@ -49,6 +49,8 @@ class ActiveClip:
         timeline_start: Début du clip sur la timeline, en secondes.
         timeline_end: Fin du clip sur la timeline, en secondes
             (``timeline_start + clip.duration``).
+        text: Texte porté par le clip (sous-titres). Vide pour les
+            autres types de clips.
     """
 
     clip_id: str
@@ -60,6 +62,7 @@ class ActiveClip:
     source_time: float
     timeline_start: float
     timeline_end: float
+    text: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +113,7 @@ def _build_active_clip(
         source_time=source_time,
         timeline_start=clip.timeline_start,
         timeline_end=clip.timeline_start + clip.duration,
+        text=clip.text or "",
     )
 
 

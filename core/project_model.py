@@ -71,6 +71,27 @@ class MediaAsset:
                 raise ValueError(
                     "Un MediaAsset audio doit avoir has_audio=True."
                 )
+        elif self.media_type == "subtitle":
+            # Les sous-titres sont des métadonnées non-visuelles :
+            # pas de dimensions, pas de fps, pas de piste audio.
+            if self.width != 0:
+                raise ValueError(
+                    "Un MediaAsset sous-titre doit avoir une largeur de 0."
+                )
+            if self.height != 0:
+                raise ValueError(
+                    "Un MediaAsset sous-titre doit avoir une hauteur de 0."
+                )
+            if self.fps != 0.0:
+                raise ValueError(
+                    "Un MediaAsset sous-titre doit avoir un fps de 0.0."
+                )
+            if self.has_audio:
+                raise ValueError(
+                    "Un MediaAsset sous-titre ne doit pas porter has_audio=True."
+                )
+            # ``path`` peut être vide : les sous-titres sont inline dans
+            # le ``Project``. La durée n'est pas contrainte ici.
         else:
             if self.duration < 0.0:
                 raise ValueError(

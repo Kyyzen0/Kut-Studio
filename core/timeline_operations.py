@@ -383,3 +383,130 @@ def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None
             f"Impossible d'ajouter un média '{asset.media_type}' sur la piste "
             f"'{track.id}' de type '{track.type}'."
         )
+
+
+# ---------------------------------------------------------------------------
+# Sous-titres (tâche 11)
+# ---------------------------------------------------------------------------
+
+
+from .subtitle_io import SubtitleCue  # noqa: E402  (import local pour cycle)
+
+
+_SUBTITLE_LABEL_MAX = 40
+
+
+def _build_subtitle_label(text: str) -> str:
+    """Génère un libellé court à partir du texte d'un sous-titre."""
+    one_line = text.strip().replace("\n", " ")
+    if not one_line:
+        return ""
+    if len(one_line) <= _SUBTITLE_LABEL_MAX:
+        return one_line
+    return one_line[: _SUBTITLE_LABEL_MAX - 1].rstrip() + "…"
+
+
+def add_subtitle_clip(
+    project: Project,
+    text: str,
+    timeline_start: float,
+    duration: float,
+    track_id: str = "S1",
+) -> Clip:
+    """Crée un nouveau ``Clip`` de sous-titre dans ``project``.
+
+    Un ``MediaAsset`` technique (``media_type="subtitle"``) est créé
+    automatiquement, puis associé au clip. Le clip est ajouté à la
+    piste cible (par défaut ``S1``).
+
+    Args:
+        project: projet cible, modifié en place.
+        text: texte du sous-titre (au moins un caractère non blanc).
+        timeline_start: début sur la timeline (secondes, ``>= 0``).
+        duration: durée du clip (secondes, ``> 0``).
+        track_id: identifiant de la piste (doit être de type ``subtitle``).
+
+    Returns:
+        Le nouveau :class:`Clip` créé et ajouté à la piste.
+
+    Raises:
+        ValueError: si le texte est vide après strip, si la position
+            est négative, si la durée n'est pas strictement positive,
+            ou si la piste cible n'existe pas ou n'est pas de type
+            ``subtitle``.
+    """
+    if not text or not text.strip():
+        raise ValueError("Le texte d'un sous-titre ne peut pas être vide.")
+    if timeline_start < 0.0:
+        raise ValueError(
+            f"Impossible d'ajouter un sous-titre à un temps négatif "
+            f"(timeline_start={timeline_start})."
+        )
+    if duration <= 0.0:
+        raise ValueError(
+            f"La durée d'un sous-titre doit être strictement positive "
+            f"(reçu : {duration})."
+        )
+
+    track = find_track(project, track_id)
+    if track.type != "subtitle":
+        raise ValueError(
+            f"La piste '{track.id}' est de type '{track.type}', "
+            "impossible d'y ajouter un sous-titre."
+        )
+
+    label = _build_subtitle_label(text)
+    asset_id = f"asset-subtitle-{uuid.uuid4().hex[:12]}"
+    asset = MediaAsset(
+        id=asset_id,
+        path="",
+        name=label or "Sous-titre",
+        duration=duration,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+    project.media_assets.append(asset)
+
+    clip = Clip(
+        id=f"clip-{uuid.uuid4().hex[:12]}",
+        asset_id=asset.id,
+        track_id=track.id,
+        timeline_start=timeline_start,
+        source_in=0.0,
+        source_out=duration,
+        enabled=True,
+        label=label,
+        text=text.strip(),
+    )
+    track.clips.append(clip)
+    return clip
+
+
+def subtitle_cues_from_project(project: Project) -> list[SubtitleCue]:
+    """Retourne les :class:`SubtitleCue` actifs du projet, triés.
+
+    Seuls les clips activés des pistes de type ``subtitle`` sont
+    retenus. Les cues sont triés par ``(start, end)`` pour produire
+    un SRT ordonné, prêt à être sauvegardé ou envoyé à FFmpeg.
+    """
+    cues: list[SubtitleCue] = []
+    for track in project.tracks:
+        if track.type != "subtitle":
+            continue
+        for clip in track.clips:
+            if not clip.enabled:
+                continue
+            text = clip.text.strip()
+            if not text:
+                continue
+            cues.append(
+                SubtitleCue(
+                    start=float(clip.timeline_start),
+                    end=float(clip.timeline_start + clip.duration),
+                    text=text,
+                )
+            )
+    return sorted(cues, key=lambda c: (c.start, c.end))

@@ -18,7 +18,7 @@ class PropertiesPanel(QWidget):
     cut_requested = Signal(str, float)
     delete_requested = Signal(str)
 
-    def __init__(self, update_color_effect, update_volume, save_subtitles, parent=None):
+    def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
         self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
@@ -123,7 +123,8 @@ class PropertiesPanel(QWidget):
             "QTextEdit { background: #222222; color: white; border: 1px solid #3b3b3b; border-radius: 6px; padding: 5px; }"
         )
         save_button = QPushButton("Enregistrer le .srt")
-        save_button.clicked.connect(save_subtitles)
+        save_button.setEnabled(False)
+        save_button.setVisible(False)
         subtitle_layout.addWidget(self.subtitle_editor)
         subtitle_layout.addWidget(save_button)
         self.subtitle_group.hide()
