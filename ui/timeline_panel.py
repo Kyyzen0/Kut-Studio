@@ -345,13 +345,39 @@ class TimelinePanel(QWidget):
             widget.show()
 
     def setDuration(self, duration_ms):
-        if duration_ms > 0:
-            self.duration_seconds = max(1.0, duration_ms / 1000.0)
-            self.total_time_label.setText(f"/ {self.format_time(self.duration_seconds)}")
-            self.update()
+        """Compatibilité historique : ``duration_ms`` est traité comme des secondes.
+
+        Conservée pour ne pas casser d'éventuels appels externes ; la
+        valeur d'horloge de la timeline est désormais ``set_timeline_duration``.
+        """
+        self.set_timeline_duration(float(duration_ms))
+
+    def set_timeline_duration(self, duration_seconds: float) -> None:
+        """Met à jour la durée visible à partir de ``timeline_duration(project)``.
+
+        Doit être appelée par ``MainWindow`` après toute opération
+        modifiant la timeline (ajout, déplacement, trim, coupe,
+        suppression, nouveau projet, ouverture).
+        """
+        duration_seconds = max(0.0, float(duration_seconds))
+        # On conserve un minimum visuel d'une seconde pour que la règle
+        # reste lisible même sur une timeline complètement vide.
+        self.duration_seconds = max(duration_seconds, 1.0)
+        self.total_time_label.setText(f"/ {self.format_time(self.duration_seconds)}")
+        self.update()
 
     def setPlaybackPosition(self, position_ms):
-        self.playhead_seconds = min(max(position_ms / 1000.0, 0.0), self.duration_seconds)
+        """Compatibilité : ``position_ms`` est traité comme des secondes."""
+        self.set_playhead_seconds(float(position_ms))
+
+    def set_playhead_seconds(self, position_seconds: float) -> None:
+        """Met à jour la tête de lecture depuis l'horloge de la timeline.
+
+        La valeur est exprimée en secondes sur la timeline (et non plus
+        sur la position du média source). Elle est clampée dans
+        ``[0, duration_seconds]``.
+        """
+        self.playhead_seconds = min(max(float(position_seconds), 0.0), self.duration_seconds)
         self.time_label.setText(self.format_time(self.playhead_seconds))
         self.update()
 

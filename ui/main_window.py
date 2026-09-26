@@ -32,6 +32,11 @@ from core.timeline_operations import (
     trim_clip_left,
     trim_clip_right,
 )
+from core.timeline_evaluator import (
+    ActiveClip,
+    evaluate_timeline,
+    timeline_duration,
+)
 from core.timeline_view_model import build_export_clips
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -86,8 +91,10 @@ class MainWindow(QMainWindow):
         self.export_engine.failed.connect(self.export_panel.mark_export_error)
         self.export_engine.cancelled.connect(self.export_panel.mark_export_cancelled)
 
-        self.preview_panel.player.durationChanged.connect(self.timeline_panel.setDuration)
-        self.preview_panel.player.positionChanged.connect(self.timeline_panel.setPlaybackPosition)
+        # La timeline est désormais l'horloge principale : on ne lit plus
+        # ``QMediaPlayer.positionChanged`` pour piloter ``TimelinePanel``.
+        # Le lecteur ``QMediaPlayer`` n'est qu'un consommateur de la position
+        # de la timeline (voir ``_sync_preview_to_timeline``).
         self.preview_panel.player.playbackStateChanged.connect(self.on_playback_state_changed)
         self.timeline_panel.play_button.clicked.connect(self.toggle_play)
         self.timeline_panel.seek_requested.connect(self.seek_to_position)
@@ -99,6 +106,14 @@ class MainWindow(QMainWindow):
         self.properties_panel.cut_requested.connect(self.cut_selected_clip)
         self.properties_panel.delete_requested.connect(self.delete_selected_clip)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
+
+        # Initialisation de l'horloge de programme (tâche 8).
+        self.playhead_seconds: float = 0.0
+        self.is_playing: bool = False
+        self._last_tick_monotonic: float | None = None
+        # Affichage initial de la durée totale (clip de démo = 12 s).
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
 
         top_split = QSplitter(Qt.Horizontal)
         top_split.setObjectName("workspace_splitter")
@@ -134,7 +149,7 @@ class MainWindow(QMainWindow):
 
         self.timeline_timer = QTimer(self)
         self.timeline_timer.setInterval(40)
-        self.timeline_timer.timeout.connect(self.update_timeline)
+        self.timeline_timer.timeout.connect(self._tick_playback)
         self.timeline_timer.start()
         self.setStyleSheet(global_stylesheet())
 
@@ -217,6 +232,10 @@ class MainWindow(QMainWindow):
         self.project = create_default_project()
         self.current_project_path = None
         self.timeline_panel.set_project(self.project)
+        self.playhead_seconds = 0.0
+        self.is_playing = False
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
         self._reset_selection_and_inspector()
         self._mark_clean()
 
@@ -300,6 +319,10 @@ class MainWindow(QMainWindow):
         self.project = loaded
         self.current_project_path = path
         self.timeline_panel.set_project(self.project)
+        self.playhead_seconds = 0.0
+        self.is_playing = False
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
         self._refresh_project_library()
         self._reset_selection_and_inspector()
         self._mark_clean()
@@ -404,14 +427,75 @@ class MainWindow(QMainWindow):
         return global_stylesheet()
 
     def on_playback_state_changed(self, state):
+        """Synchronise les widgets de transport avec l'état réel du ``QMediaPlayer``.
+
+        L'état de lecture est désormais piloté par ``MainWindow.is_playing``
+        ; ce slot sert à répercuter les transitions natives (fin de
+        média, erreur, etc.) sur les widgets de transport.
+        """
         is_playing = state == QMediaPlayer.PlayingState
         self.timeline_panel.setPlayState(is_playing)
         self.preview_panel.play_button.setText("❚❚ Pause" if is_playing else "▶ Play")
 
-    def update_timeline(self):
-        if self.preview_panel.player.playbackState() == QMediaPlayer.PlayingState:
-            self.timeline_panel.setPlaybackPosition(self.preview_panel.player.position())
-        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+    def _tick_playback(self) -> None:
+        """Avance l'horloge de timeline quand la lecture est active.
+
+        Toute la logique de lecture / pause / seek / stop est désormais
+        concentrée ici : ``MainWindow`` possède le playhead, le timer
+        Qt l'incrémente, puis on synchronise la timeline et l'aperçu.
+        """
+        if self.is_playing:
+            duration = timeline_duration(self.project)
+            # 40 ms = intervalle du timer ; on consomme un delta fixe
+            # pour rester stable face aux variations de wall-clock.
+            next_playhead = self.playhead_seconds + 0.04
+            if duration > 0.0 and next_playhead >= duration:
+                self.playhead_seconds = duration
+                self._pause_internal()
+            else:
+                self.playhead_seconds = next_playhead
+        self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
+        self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds)
+
+    def _sync_preview_to_timeline(self) -> None:
+        """Évalue la timeline à ``playhead_seconds`` et synchronise l'aperçu.
+
+        - S'il existe au moins un clip vidéo actif, on charge la source
+          du dernier clip vidéo retourné par ``evaluate_timeline`` (la
+          piste la plus basse dans ``project.tracks`` est considérée
+          comme visuellement au-dessus).
+        - Sinon, on affiche l'état vide via ``PreviewPanel.show_empty``.
+        - Les clips non-vidéo (audio, sous-titres) n'influencent pas
+          la fenêtre vidéo, mais leurs effets (overlay, etc.) sont
+          appliqués séparément (``update_subtitle_overlay``).
+        """
+        try:
+            active_clips = evaluate_timeline(self.project, self.playhead_seconds)
+        except ValueError:
+            return
+        video_clips = [c for c in active_clips if c.track_type == "video"]
+        if not video_clips:
+            self.preview_panel.show_empty()
+            return
+        top_clip = video_clips[-1]
+        self.preview_panel.preview_at(top_clip.source_path, top_clip.source_time)
+        if self.is_playing:
+            # Si une source vient d'être chargée ou remplacée, on relance
+            # la lecture native pour qu'elle démarre à ``source_time``.
+            if self.preview_panel.player.playbackState() != QMediaPlayer.PlayingState:
+                self.preview_panel.player.play()
+
+    def _update_timeline_duration(self) -> None:
+        """Met à jour la durée affichée à partir de ``timeline_duration(project)``."""
+        self.timeline_panel.set_timeline_duration(timeline_duration(self.project))
+
+    def _pause_internal(self) -> None:
+        """Met la lecture en pause sans toucher au playhead."""
+        self.is_playing = False
+        self.preview_panel.player.pause()
+        self.timeline_panel.setPlayState(False)
+        self.preview_panel.play_button.setText("▶ Play")
 
     def on_clip_selected(self, clip_id):
         view = self.timeline_panel.find_view_by_id(clip_id)
@@ -419,12 +503,9 @@ class MainWindow(QMainWindow):
             return
         self.active_subtitle_clip = view if view.track_id == "S1" else None
         self.properties_panel.show_clip(view)
-        self.timeline_panel.playhead_seconds = view.start
-        self.timeline_panel.time_label.setText(
-            self.timeline_panel.format_time(view.start)
-        )
-        self.preview_panel.player.setPosition(int(view.start * 1000))
-        self.update_subtitle_overlay(view.start)
+        # Sélection d'un clip = seek vers son début sur la timeline.
+        # L'aperçu est resynchronisé par ``seek_to_position``.
+        self.seek_to_position(view.start)
 
     def on_move_clip_requested(self, clip_id: str, new_timeline_start: float) -> None:
         """Applique un déplacement demandé par la timeline."""
@@ -434,6 +515,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] move refusé : {exc}")
             return
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         self._mark_dirty()
 
     def on_trim_left_requested(self, clip_id: str, new_timeline_start: float) -> None:
@@ -443,6 +525,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] trim gauche refusé : {exc}")
             return
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         self._mark_dirty()
 
     def on_trim_right_requested(self, clip_id: str, new_timeline_end: float) -> None:
@@ -452,6 +535,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] trim droit refusé : {exc}")
             return
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         self._mark_dirty()
 
     def cut_at_playhead(self):
@@ -565,6 +649,7 @@ class MainWindow(QMainWindow):
 
         # Rafraîchit la projection (qui inclut le nouveau clip).
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         # Sélection + inspecteur : ``select_clip`` émet ``clip_selected``
         # qui déclenche ``on_clip_selected`` et donc l'affichage inspecteur.
         self.timeline_panel.select_clip(new_clip.id)
@@ -581,6 +666,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] cut refusé : {exc}")
             return
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         self._mark_dirty()
         # Tenter de conserver la sélection : si l'ancien id existe encore
         # (clip gauche de la coupe), on le re-sélectionne, sinon on prend
@@ -613,6 +699,7 @@ class MainWindow(QMainWindow):
         self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
         self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
         self._mark_dirty()
 
     def update_subtitle_from_editor(self):
@@ -691,8 +778,20 @@ class MainWindow(QMainWindow):
             self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
 
     def seek_to_position(self, seconds):
-        self.preview_panel.player.setPosition(int(seconds * 1000))
-        self.update_subtitle_overlay(seconds)
+        """Seek sur la timeline (et non plus sur le média source).
+
+        Met à jour le playhead, synchronise la timeline puis l'aperçu,
+        et rafraîchit l'overlay de sous-titres.
+        """
+        duration = timeline_duration(self.project)
+        if duration > 0.0:
+            seconds = max(0.0, min(float(seconds), duration))
+        else:
+            seconds = max(0.0, float(seconds))
+        self.playhead_seconds = seconds
+        self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
+        self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds)
 
     def load_video(self, asset_id: str) -> None:
         """Compatibilité : délègue à ``preview_media_asset``.
@@ -704,20 +803,32 @@ class MainWindow(QMainWindow):
         self.preview_media_asset(asset_id)
 
     def stop_playback(self):
+        """Stop : playhead à 0, aperçu synchronisé, lecture arrêtée."""
+        self.is_playing = False
         self.preview_panel.player.stop()
-        self.timeline_panel.setPlaybackPosition(0)
-        self.preview_panel.player.setPosition(0)
+        self.playhead_seconds = 0.0
+        self.timeline_panel.set_playhead_seconds(0.0)
+        self._sync_preview_to_timeline()
+        self.timeline_panel.setPlayState(False)
+        self.preview_panel.play_button.setText("▶ Play")
 
     def toggle_play(self):
-        if self.preview_panel.player.playbackState() == QMediaPlayer.PlayingState:
-            self.preview_panel.player.pause()
-        else:
-            self.preview_panel.player.play()
+        """Bascule lecture / pause en pilotant l'horloge de la timeline."""
+        if self.is_playing:
+            self._pause_internal()
+            return
+        # Si la timeline n'a aucun clip activé, rien à lire.
+        if timeline_duration(self.project) <= 0.0:
+            return
+        self.is_playing = True
+        self._sync_preview_to_timeline()
+        self.preview_panel.player.play()
+        self.timeline_panel.setPlayState(True)
+        self.preview_panel.play_button.setText("❚❚ Pause")
 
     def seek_relative(self, delta_seconds):
-        current_ms = self.preview_panel.player.position()
-        new_pos = max(0, min(self.preview_panel.player.duration(), current_ms + int(delta_seconds * 1000)))
-        self.preview_panel.player.setPosition(new_pos)
+        """Seek relatif sur la timeline (avance / recule de ``delta_seconds``)."""
+        self.seek_to_position(self.playhead_seconds + delta_seconds)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Space:

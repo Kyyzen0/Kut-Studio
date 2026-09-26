@@ -962,3 +962,406 @@ def test_click_on_add_to_timeline_button_triggers_add_asset_to_v1(
     new_clip = v1_clips_after[-1]
     assert new_clip.asset_id == asset_id
     assert new_clip.track_id == "V1"
+
+
+# ---------------------------------------------------------------------------
+# Tâche 8 — Aperçu piloté par la timeline
+# ---------------------------------------------------------------------------
+
+
+def _isolate_video_timeline(window) -> None:
+    """Réduit le projet aux seuls clips V1 pour des scénarios déterministes.
+
+    Le projet de démo contient par défaut un clip V2 (b_roll) qui
+    recouvre la plupart de la timeline V1, ce qui rend ambigus les
+    tests sur la « vidéo active ». Cette fonction retire
+    systématiquement les clips V2 et S1, puis reconstruit la
+    projection de la timeline.
+    """
+    for track in window.project.tracks:
+        if track.id in {"V2", "S1"}:
+            track.clips.clear()
+    window.timeline_panel.set_project(window.project)
+    window._update_timeline_duration()
+
+
+def _install_media_spy(monkeypatch, player):
+    """Capture les appels Qt sur le ``QMediaPlayer`` sans toucher au rendu.
+
+    Retourne un dictionnaire mutable ``spy`` mis à jour par les
+    fonctions installées sur le lecteur. ``monkeypatch`` se charge de
+    restaurer l'état après chaque test.
+    """
+    spy = {
+        "setSource": [],
+        "setPosition": [],
+        "play": 0,
+        "pause": 0,
+        "stop": 0,
+    }
+
+    def _set_source(url):
+        spy["setSource"].append(url)
+
+    def _set_position(ms):
+        spy["setPosition"].append(ms)
+
+    def _play():
+        spy["play"] += 1
+
+    def _pause():
+        spy["pause"] += 1
+
+    def _stop():
+        spy["stop"] += 1
+
+    monkeypatch.setattr(player, "setSource", _set_source)
+    monkeypatch.setattr(player, "setPosition", _set_position)
+    monkeypatch.setattr(player, "play", _play)
+    monkeypatch.setattr(player, "pause", _pause)
+    monkeypatch.setattr(player, "stop", _stop)
+    return spy
+
+
+def _assign_paths(window, paths: dict[str, str]) -> None:
+    """Attribue un chemin de média factice aux assets présents dans le projet."""
+    for asset in window.project.media_assets:
+        if asset.id in paths:
+            asset.path = paths[asset.id]
+
+
+def test_main_window_owns_the_timeline_clock(qtbot, monkeypatch) -> None:
+    """``MainWindow`` possède l'horloge de la timeline (playhead, is_playing)."""
+    window = _build_window(qtbot, monkeypatch)
+
+    assert window.playhead_seconds == 0.0
+    assert window.is_playing is False
+
+
+def test_seek_after_move_loads_preview_at_correct_source_time(
+    qtbot, monkeypatch
+) -> None:
+    """Un clip déplacé à 5s, lu à 6s, doit charger la source à 1s."""
+    window = _build_window(qtbot, monkeypatch)
+    _isolate_video_timeline(window)
+    _assign_paths(
+        window,
+        {"asset-intro": "/tmp/intro.mp4", "asset-plan-a": "/tmp/plan_a.mp4"},
+    )
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # Le clip « intro » (V1, source_in=0, duration=4) est déplacé à 5s.
+    window.on_move_clip_requested("intro", 5.0)
+
+    # Seek à 6s sur la timeline.
+    window.seek_to_position(6.0)
+
+    # source_time = 0 + (6 - 5) = 1.0 s → setPosition(1000 ms).
+    assert spy["setPosition"], "setPosition doit avoir été appelé"
+    assert spy["setPosition"][-1] == 1000
+    # setSource doit pointer sur le chemin du média d'intro.
+    assert spy["setSource"], "setSource doit avoir été appelé"
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/intro.mp4"
+
+
+def test_seek_after_trim_left_loads_preview_at_correct_source_time(
+    qtbot, monkeypatch
+) -> None:
+    """Trim gauche → ``source_in`` augmente, ``source_time`` suit."""
+    window = _build_window(qtbot, monkeypatch)
+    _isolate_video_timeline(window)
+    _assign_paths(window, {"asset-intro": "/tmp/intro.mp4"})
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # intro est initialement à [0, 4] (source_in=0, source_out=4).
+    # Trim gauche à 1.5s → source_in = 1.5, clip = [1.5, 4].
+    window.on_trim_left_requested("intro", 1.5)
+
+    # Seek à 1.5s → source_time = 1.5 + (1.5 - 1.5) = 1.5 s.
+    window.seek_to_position(1.5)
+
+    assert spy["setPosition"][-1] == 1500
+
+
+def test_seek_after_trim_right_loads_preview_at_correct_source_time(
+    qtbot, monkeypatch
+) -> None:
+    """Trim droit → ``source_out`` baisse, ``source_time`` reste correct."""
+    window = _build_window(qtbot, monkeypatch)
+    _isolate_video_timeline(window)
+    _assign_paths(window, {"asset-intro": "/tmp/intro.mp4"})
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # intro [0, 4] → trim droit à 3.0s → [0, 3] (source_in=0, source_out=3).
+    window.on_trim_right_requested("intro", 3.0)
+
+    # Seek à 2.0s → source_time = 0 + (2 - 0) = 2.0 s.
+    window.seek_to_position(2.0)
+
+    assert spy["setPosition"][-1] == 2000
+
+
+def test_seek_in_gap_shows_empty_preview(qtbot, monkeypatch) -> None:
+    """Dans un trou entre deux clips, l'aperçu passe à l'état vide."""
+    window = _build_window(qtbot, monkeypatch)
+
+    # On retire le b-roll (V2) qui pontait l'écart entre intro et plan_a.
+    v2 = next(t for t in window.project.tracks if t.id == "V2")
+    v2.clips.clear()
+    window.timeline_panel.set_project(window.project)
+    window._update_timeline_duration()
+
+    _assign_paths(
+        window,
+        {
+            "asset-intro": "/tmp/intro.mp4",
+            "asset-plan-a": "/tmp/plan_a.mp4",
+        },
+    )
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # t=5.0 est dans le trou entre intro [0, 4] et plan_a [6.5, 12].
+    window.seek_to_position(5.0)
+
+    # Aucun clip vidéo actif → show_empty() → player.stop().
+    assert spy["stop"] >= 1
+    # Aucun chargement de source vidéo (sous-titres ignorés).
+    assert spy["setSource"] == []
+    # Le playhead lui-même est bien positionné.
+    assert window.playhead_seconds == pytest.approx(5.0)
+
+
+def test_v2_clip_wins_over_v1_when_both_active(qtbot, monkeypatch) -> None:
+    """Quand V1 et V2 sont actifs, V2 (piste la plus basse) est choisi."""
+    window = _build_window(qtbot, monkeypatch)
+    _assign_paths(
+        window,
+        {
+            "asset-intro": "/tmp/intro.mp4",
+            "asset-plan-a": "/tmp/plan_a.mp4",
+            "asset-b-roll": "/tmp/b_roll.mp4",
+        },
+    )
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # Par défaut, à t=3.0 :
+    #   intro (V1, [0, 4])      → actif
+    #   b_roll (V2, [2, 7.5])   → actif
+    # Le dernier clip vidéo retourné par ``evaluate_timeline`` est b_roll.
+    window.seek_to_position(3.0)
+
+    assert spy["setSource"], "setSource doit avoir été appelé"
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/b_roll.mp4"
+
+
+def test_clip_change_during_playback_loads_new_source(qtbot, monkeypatch) -> None:
+    """Quand le playhead franchit la limite d'un clip, une nouvelle source est chargée."""
+    window = _build_window(qtbot, monkeypatch)
+
+    # On reconstruit V1 avec deux clips adjacents pour éviter tout chevauchement.
+    from core.project_model import Clip
+
+    v1 = next(t for t in window.project.tracks if t.id == "V1")
+    v1.clips.clear()
+    v1.clips.append(
+        Clip(
+            id="alpha",
+            asset_id="asset-intro",
+            track_id="V1",
+            timeline_start=0.0,
+            source_in=0.0,
+            source_out=2.0,
+        )
+    )
+    v1.clips.append(
+        Clip(
+            id="beta",
+            asset_id="asset-plan-a",
+            track_id="V1",
+            timeline_start=2.0,
+            source_in=0.0,
+            source_out=2.0,
+        )
+    )
+    # V2 sans clip pour ne pas interferer.
+    v2 = next(t for t in window.project.tracks if t.id == "V2")
+    v2.clips.clear()
+    window.timeline_panel.set_project(window.project)
+    window._update_timeline_duration()
+
+    _assign_paths(
+        window,
+        {"asset-intro": "/tmp/intro.mp4", "asset-plan-a": "/tmp/plan_a.mp4"},
+    )
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # t=1.0 : clip alpha (intro).
+    window.playhead_seconds = 1.0
+    window._tick_playback()
+    assert spy["setSource"], "setSource doit avoir été appelé"
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/intro.mp4"
+
+    # t=3.0 : clip beta (plan_a). On simule une avancée du playhead pendant la lecture.
+    window.playhead_seconds = 3.0
+    window._tick_playback()
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/plan_a.mp4"
+
+
+def test_playback_auto_pauses_at_timeline_end(qtbot, monkeypatch) -> None:
+    """La lecture se met en pause seule lorsque ``timeline_duration`` est atteinte."""
+    window = _build_window(qtbot, monkeypatch)
+    _assign_paths(window, {"asset-intro": "/tmp/intro.mp4"})
+
+    # Durée totale du projet par défaut = 12 s (fin de plan_a).
+    duration = window.timeline_panel.duration_seconds
+    assert duration == pytest.approx(12.0)
+
+    window.playhead_seconds = duration - 0.005  # très proche de la fin
+    window.is_playing = True
+    window._tick_playback()
+
+    assert window.is_playing is False
+    assert window.playhead_seconds == pytest.approx(12.0)
+
+
+def test_stop_resets_playhead_to_zero_and_resyncs(qtbot, monkeypatch) -> None:
+    """``stop_playback`` remet le playhead à 0 et resynchronise l'aperçu."""
+    window = _build_window(qtbot, monkeypatch)
+    _assign_paths(window, {"asset-intro": "/tmp/intro.mp4"})
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    window.playhead_seconds = 4.0
+    window.is_playing = True
+
+    window.stop_playback()
+
+    assert window.playhead_seconds == 0.0
+    assert window.is_playing is False
+    # Le playhead est projeté sur la timeline.
+    assert window.timeline_panel.playhead_seconds == 0.0
+    # L'aperçu tente de charger l'intro (clip actif à t=0).
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/intro.mp4"
+    # Le lecteur natif est stoppé via ``show_empty`` ou ``stop`` : au moins un appel.
+    assert (spy["stop"] + spy["play"]) >= 1
+
+
+def test_library_preview_does_not_modify_project(qtbot, monkeypatch) -> None:
+    """Cliquer un média de la bibliothèque ne touche ni au projet ni à l'horloge."""
+    window = _build_window(qtbot, monkeypatch)
+    _assign_paths(window, {"asset-intro": "/tmp/intro.mp4"})
+    spy = _install_media_spy(monkeypatch, window.preview_panel.player)
+
+    # On pollue l'horloge pour vérifier qu'elle n'est pas affectée par le clic.
+    window.playhead_seconds = 3.7
+    window.is_playing = False
+
+    initial_clips = sum(len(t.clips) for t in window.project.tracks)
+    initial_dirty = window.project_dirty
+    initial_playhead = window.playhead_seconds
+
+    window.preview_media_asset("asset-intro")
+
+    # Aucune modification du projet, du dirty flag, ni de l'horloge.
+    assert sum(len(t.clips) for t in window.project.tracks) == initial_clips
+    assert window.project_dirty == initial_dirty
+    assert window.playhead_seconds == initial_playhead
+    # L'aperçu charge bien le média de la bibliothèque.
+    assert spy["setSource"][-1].toLocalFile() == "/tmp/intro.mp4"
+    # ``PreviewPanel`` sait qu'il est en mode bibliothèque.
+    assert window.preview_panel.is_library_preview() is True
+
+
+def test_timeline_duration_label_reflects_timeline_duration(
+    qtbot, monkeypatch
+) -> None:
+    """Le label de durée totale suit ``timeline_duration(project)`` après chaque mutation."""
+    window = _build_window(qtbot, monkeypatch)
+    _isolate_video_timeline(window)
+
+    # État initial : plan_a finit à 12 s → label "00:12".
+    assert "00:12" in window.timeline_panel.total_time_label.text()
+
+    # Trim droit du plan_a pour qu'il finisse à 9 s.
+    window.on_trim_right_requested("plan_a", 9.0)
+    assert "00:09" in window.timeline_panel.total_time_label.text()
+
+    # Suppression du plan_a → max restant = 4 (intro).
+    window.delete_selected_clip("plan_a")
+    assert "00:04" in window.timeline_panel.total_time_label.text()
+
+    # Suppression de l'intro → plus aucun clip activé → durée = 0
+    # → le label retombe sur le minimum visuel de 1 s.
+    window.delete_selected_clip("intro")
+    assert "00:01" in window.timeline_panel.total_time_label.text()
+
+
+def test_duration_updates_on_new_project_and_open(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """``new_project`` et ``open_project_file`` réinitialisent la durée affichée."""
+    from core.project_io import save_project
+    from core.project_factory import create_default_project
+
+    window = _build_window(qtbot, monkeypatch)
+
+    # Nouveau projet : 12 s par défaut.
+    window.new_project()
+    assert "00:12" in window.timeline_panel.total_time_label.text()
+
+    # Nouveau projet vide (sans clips) : on simule un projet vide.
+    empty = create_default_project()
+    for track in empty.tracks:
+        track.clips.clear()
+    target = tmp_path / "empty.kut"
+    save_project(empty, str(target))
+
+    monkeypatch.setattr(
+        "ui.main_window.QFileDialog.getOpenFileName",
+        lambda *args, **kwargs: (str(target), "Projets Kut-Studio (*.kut)"),
+    )
+    window.open_project_file()
+
+    # Projet vide : durée = 0 → ``set_timeline_duration`` clamp à 1 s
+    # pour conserver un ruler lisible, d'où "00:01".
+    assert "00:01" in window.timeline_panel.total_time_label.text()
+
+
+def test_old_positionChanged_wiring_is_removed() -> None:
+    """L'ancien branchement ``positionChanged → setPlaybackPosition`` n'existe plus."""
+    main_window_source = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "main_window.py"
+    )
+    source_text = main_window_source.read_text(encoding="utf-8")
+
+    forbidden_patterns = [
+        "positionChanged.connect(self.timeline_panel.setPlaybackPosition",
+        "durationChanged.connect(self.timeline_panel.setDuration",
+    ]
+    for pattern in forbidden_patterns:
+        assert pattern not in source_text, (
+            f"Branchement interdit encore présent : {pattern}"
+        )
+
+
+def test_no_setPlaybackPosition_call_in_update_path() -> None:
+    """``MainWindow`` n'utilise plus ``setPlaybackPosition`` pour piloter la timeline.
+
+    Le slot historique ``setPlaybackPosition`` ne doit plus être appelé
+    que par son wrapper interne (compatibilité). Toute mise à jour
+    directe depuis ``update_timeline`` / ``update`` / ``_tick_playback``
+    est interdite.
+    """
+    import re
+
+    main_window_source = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "main_window.py"
+    )
+    source_text = main_window_source.read_text(encoding="utf-8")
+
+    # Aucun appel direct à ``setPlaybackPosition`` ailleurs que dans
+    # ``set_playhead_seconds`` (où il sert d'alias historique).
+    forbidden_calls = re.findall(r"\.setPlaybackPosition\(", source_text)
+    assert not forbidden_calls, (
+        "MainWindow ne doit plus appeler setPlaybackPosition directement : "
+        f"{forbidden_calls}"
+    )

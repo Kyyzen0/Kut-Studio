@@ -31,6 +31,12 @@ class PreviewPanel(QWidget):
         self.color_effect.setStrength(0.0)
         self.video_widget.setGraphicsEffect(self.color_effect)
 
+        # Suivi interne de la source affichée pour les deux modes :
+        # - ``_timeline_preview_path`` : pilote par la timeline ;
+        # - ``_library_preview_path`` : prévisualisation libre (bibliothèque).
+        self._timeline_preview_path: str | None = None
+        self._library_preview_path: str | None = None
+
         self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
         self.preview_transition_overlay.setAlignment(Qt.AlignCenter)
         self.preview_transition_overlay.setStyleSheet(
@@ -164,7 +170,63 @@ class PreviewPanel(QWidget):
     def _notify_placeholder(self, feature_name):
         print(f"[PreviewPanel] {feature_name} : à implémenter")
 
+    # ------------------------------------------------------------------
+    # Pilotage par la timeline (tâche 8)
+    # ------------------------------------------------------------------
+
+    # Indique si la prévisualisation courante a été déclenchée par un
+    # clic dans la bibliothèque de médias (lecture libre, hors timeline)
+    # ou par le moteur de lecture piloté par ``MainWindow``. Cette
+    # distinction permet de garder une prévisualisation de bibliothèque
+    # stable tant que la timeline ne l'écrase pas explicitement.
+    def is_library_preview(self) -> bool:
+        return bool(self._library_preview_path)
+
+    def library_preview_path(self) -> str | None:
+        return self._library_preview_path
+
     def load_video(self, path):
+        """Prévisualisation libre déclenchée par la bibliothèque.
+
+        Le média est lu immédiatement, indépendamment de la timeline,
+        et ne modifie pas le ``Project``.
+        """
+        if not path:
+            return
         self.empty_state.hide()
+        self._library_preview_path = path
+        self._timeline_preview_path = None
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
+
+    def preview_at(self, path, source_time_seconds):
+        """Affiche ``path`` à la position ``source_time_seconds``.
+
+        Mode piloté par la timeline : la source est chargée si elle
+        diffère de celle déjà en mémoire, puis la tête de lecture est
+        repositionnée. La lecture (``player.play()``) n'est PAS
+        déclenchée ici : c'est ``MainWindow`` qui orchestre la lecture
+        globale via ``toggle_play``.
+
+        Si ``path`` est vide (média de démonstration sans fichier
+        réel), on bascule immédiatement sur l'état vide.
+        """
+        self._library_preview_path = None
+        if not path:
+            self.show_empty()
+            return
+        self.empty_state.hide()
+        if self._timeline_preview_path != path:
+            self._timeline_preview_path = path
+            self.player.setSource(QUrl.fromLocalFile(path))
+        self.player.setPosition(int(source_time_seconds * 1000))
+
+    def show_empty(self):
+        """Affiche l'état vide : aucun clip vidéo actif."""
+        self._library_preview_path = None
+        self._timeline_preview_path = None
+        try:
+            self.player.stop()
+        except Exception:  # pragma: no cover - Qt peut lever si pas initialisé
+            pass
+        self.empty_state.show()
