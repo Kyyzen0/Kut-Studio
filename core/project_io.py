@@ -4,11 +4,11 @@ Le format est un fichier JSON UTF-8 lisible, versionné, indépendant de
 tout framework graphique. Seule la bibliothèque standard Python est
 utilisée : aucune dépendance PySide6, aucun pickle.
 
-Structure du fichier (version 1) :
+Structure du fichier (version 2) :
 
     {
         "format": "kut-studio-project",
-        "version": 1,
+        "version": 2,
         "project": {
             "name": "...",
             "width": 1920,
@@ -18,6 +18,11 @@ Structure du fichier (version 1) :
             "tracks": [ ... ]
         }
     }
+
+La version 2 ajoute le champ ``has_audio`` sur chaque
+``MediaAsset`` pour indiquer si le média porte une piste audio
+exploitable. Les fichiers de version 1 restent lisibles : le champ
+manquant est comblé par une valeur par défaut conservative (``False``).
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -44,11 +49,15 @@ from .project_model import Clip, MediaAsset, Project, Track
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1})
-"""Ensemble des versions que cette version de Kut-Studio sait lire."""
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2})
+"""Ensemble des versions que cette version de Kut-Studio sait lire.
+
+La version 1 reste prise en charge ; ``has_audio`` y est comblé par
+une valeur par défaut conservative (``False``).
+"""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -144,6 +153,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "height": asset.height,
                     "fps": asset.fps,
                     "media_type": asset.media_type,
+                    "has_audio": asset.has_audio,
                 }
                 for asset in project.media_assets
             ],

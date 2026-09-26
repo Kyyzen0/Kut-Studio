@@ -308,6 +308,13 @@ def add_clip_to_track(
     de manière réellement unique (UUID) afin de permettre plusieurs
     insertions successives du même média sans collision.
 
+    Cohérence asset / piste :
+
+    - asset ``video`` → piste de type ``video`` ;
+    - asset ``audio`` → piste de type ``audio`` ;
+    - les pistes de sous-titres (``subtitle``) acceptent uniquement
+      les médias ``subtitle`` (cas historique).
+
     Aucun contrôle n'est effectué à ce stade :
 
     - les chevauchements avec d'autres clips de la piste sont autorisés ;
@@ -327,7 +334,9 @@ def add_clip_to_track(
         KeyError: si ``asset_id`` ou ``track_id`` est introuvable dans
             ``project``. Le message d'erreur mentionne l'identifiant
             inconnu pour faciliter le diagnostic.
-        ValueError: si ``timeline_start`` est strictement négatif.
+        ValueError: si ``timeline_start`` est strictement négatif ou
+            si le type du média ne correspond pas au type de la piste
+            cible.
     """
     if timeline_start < 0.0:
         raise ValueError(
@@ -336,6 +345,7 @@ def add_clip_to_track(
         )
     asset = _find_asset(project, asset_id)
     track = find_track(project, track_id)
+    _validate_track_asset_compatibility(asset, track)
 
     new_clip = Clip(
         id=f"clip-{uuid.uuid4().hex[:12]}",
@@ -350,3 +360,26 @@ def add_clip_to_track(
     )
     track.clips.append(new_clip)
     return new_clip
+
+
+# ---------------------------------------------------------------------------
+# Helpers privés
+# ---------------------------------------------------------------------------
+
+
+# Correspondance type de média → types de pistes acceptés.
+_ALLOWED_TRACK_TYPES_FOR_MEDIA = {
+    "video": frozenset({"video"}),
+    "audio": frozenset({"audio"}),
+    "subtitle": frozenset({"subtitle"}),
+}
+
+
+def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None:
+    """Lève ``ValueError`` si le média et la piste sont incompatibles."""
+    allowed_track_types = _ALLOWED_TRACK_TYPES_FOR_MEDIA.get(asset.media_type)
+    if allowed_track_types is None or track.type not in allowed_track_types:
+        raise ValueError(
+            f"Impossible d'ajouter un média '{asset.media_type}' sur la piste "
+            f"'{track.id}' de type '{track.type}'."
+        )

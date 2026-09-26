@@ -1,4 +1,4 @@
-"""Tests unitaires pour ``core.media_probe.probe_video``.
+"""Tests unitaires pour les sondes ``core.media_probe``.
 
 Tous les tests mockent ``subprocess.run`` et ``shutil.which`` : ils ne
 dépendent ni d'un vrai ``ffprobe`` ni d'un fichier vidéo réel.
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.media_probe import MediaProbeError, probe_video
+from core.media_probe import MediaProbeError, probe_media, probe_video
 
 
 # ---------------------------------------------------------------------------
@@ -27,33 +27,57 @@ def _completed_process(stdout: str = "", stderr: str = "", returncode: int = 0):
     return mock
 
 
-def _ffprobe_payload(width=1920, height=1080, fps_num=30, fps_den=1, duration=12.5):
-    """Construit un payload JSON plausible pour ffprobe."""
+def _video_stream(
+    *,
+    width=1920,
+    height=1080,
+    fps_num=30,
+    fps_den=1,
+    duration=None,
+    has_audio_separately=False,
+):
+    """Construit un flux vidéo ffprobe."""
+    stream = {
+        "codec_type": "video",
+        "width": width,
+        "height": height,
+        "avg_frame_rate": f"{fps_num}/{fps_den}",
+        "r_frame_rate": f"{fps_num}/{fps_den}",
+    }
+    if duration is not None:
+        stream["duration"] = str(duration)
+    return stream
+
+
+def _audio_stream():
+    """Construit un flux audio ffprobe."""
     return {
-        "streams": [
-            {
-                "width": width,
-                "height": height,
-                "avg_frame_rate": f"{fps_num}/{fps_den}",
-                "r_frame_rate": f"{fps_num}/{fps_den}",
-                "duration": str(duration),
-            }
-        ],
+        "codec_type": "audio",
+    }
+
+
+def _payload(*, streams, duration):
+    """Construit un payload JSON ffprobe générique."""
+    return {
+        "streams": streams,
         "format": {"duration": str(duration)},
     }
 
 
 # ---------------------------------------------------------------------------
-# Cas nominal
+# probe_video (compatibilité)
 # ---------------------------------------------------------------------------
 
 
 def test_probe_video_returns_a_valid_media_asset(tmp_path: Path, monkeypatch):
     """Tous les champs attendus sont lus depuis ffprobe."""
     video_path = tmp_path / "clip.mp4"
-    video_path.write_bytes(b"\x00")  # un fichier qui existe suffit
+    video_path.write_bytes(b"\x00")
 
-    payload = _ffprobe_payload(width=1280, height=720, fps_num=60000, fps_den=1001, duration=42.0)
+    payload = _payload(
+        streams=[_video_stream(width=1280, height=720, fps_num=60000, fps_den=1001)],
+        duration=42.0,
+    )
     monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.subprocess.run",
@@ -71,26 +95,19 @@ def test_probe_video_returns_a_valid_media_asset(tmp_path: Path, monkeypatch):
     # 60000/1001 ≈ 59.94
     assert asset.fps == pytest.approx(59.94, rel=1e-3)
     assert asset.id.startswith("asset-")
+    # Pas de flux audio séparé dans le payload → has_audio=False.
+    assert asset.has_audio is False
 
 
-def test_probe_video_falls_back_on_format_duration_when_stream_duration_is_missing(
-    tmp_path: Path, monkeypatch
-):
-    """Si la durée n'est pas dans le flux, le conteneur ``format`` est utilisé."""
-    video_path = tmp_path / "no_stream_duration.mov"
+def test_probe_video_detects_separate_audio_stream(tmp_path: Path, monkeypatch):
+    """Une vidéo avec un flux audio séparé est marquée ``has_audio=True``."""
+    video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"\x00")
 
-    payload = {
-        "streams": [
-            {
-                "width": 1920,
-                "height": 1080,
-                "avg_frame_rate": "30/1",
-                "duration": None,
-            }
-        ],
-        "format": {"duration": "17.5"},
-    }
+    payload = _payload(
+        streams=[_video_stream(), _audio_stream()],
+        duration=10.0,
+    )
     monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.subprocess.run",
@@ -98,12 +115,8 @@ def test_probe_video_falls_back_on_format_duration_when_stream_duration_is_missi
     )
 
     asset = probe_video(str(video_path))
-    assert asset.duration == pytest.approx(17.5)
-
-
-# ---------------------------------------------------------------------------
-# Cas d'erreur
-# ---------------------------------------------------------------------------
+    assert asset.media_type == "video"
+    assert asset.has_audio is True
 
 
 def test_probe_video_raises_when_file_is_missing(tmp_path: Path, monkeypatch):
@@ -166,7 +179,9 @@ def test_probe_video_raises_when_no_video_stream(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.subprocess.run",
-        lambda *args, **kwargs: _completed_process(json.dumps({"streams": []})),
+        lambda *args, **kwargs: _completed_process(
+            json.dumps(_payload(streams=[_audio_stream()], duration=5.0))
+        ),
     )
 
     with pytest.raises(MediaProbeError, match="flux vidéo"):
@@ -181,7 +196,10 @@ def test_probe_video_raises_on_invalid_dimensions(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "core.media_probe.subprocess.run",
         lambda *args, **kwargs: _completed_process(
-            json.dumps(_ffprobe_payload(width=0, height=0))
+            json.dumps(_payload(
+                streams=[_video_stream(width=0, height=0)],
+                duration=1.0,
+            ))
         ),
     )
 
@@ -197,7 +215,10 @@ def test_probe_video_raises_on_invalid_fps(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "core.media_probe.subprocess.run",
         lambda *args, **kwargs: _completed_process(
-            json.dumps(_ffprobe_payload(fps_num=0, fps_den=1))
+            json.dumps(_payload(
+                streams=[_video_stream(fps_num=0, fps_den=1)],
+                duration=1.0,
+            ))
         ),
     )
 
@@ -216,3 +237,80 @@ def test_probe_video_does_not_depend_on_pyside6():
     ).read_text(encoding="utf-8")
     stripped = re.sub(r'^\s*""".*?"""\s*', "", source, count=1, flags=re.DOTALL)
     assert not re.search(r"^\s*(?:from|import)\s+PySide", stripped, flags=re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# probe_media — audio seul
+# ---------------------------------------------------------------------------
+
+
+def test_probe_media_audio_only_returns_audio_asset(tmp_path: Path, monkeypatch):
+    """Un fichier ne contenant que de l'audio est reconnu comme tel."""
+    audio_path = tmp_path / "song.mp3"
+    audio_path.write_bytes(b"\x00")
+
+    payload = _payload(streams=[_audio_stream()], duration=180.5)
+    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr(
+        "core.media_probe.subprocess.run",
+        lambda *args, **kwargs: _completed_process(json.dumps(payload)),
+    )
+
+    asset = probe_media(str(audio_path))
+
+    assert asset.path == str(audio_path)
+    assert asset.name == "song.mp3"
+    assert asset.media_type == "audio"
+    assert asset.has_audio is True
+    assert asset.width == 0
+    assert asset.height == 0
+    assert asset.fps == 0.0
+    assert asset.duration == pytest.approx(180.5)
+
+
+def test_probe_media_raises_when_neither_audio_nor_video(tmp_path: Path, monkeypatch):
+    """Un fichier sans flux exploitable lève une ``MediaProbeError``."""
+    media_path = tmp_path / "weird.dat"
+    media_path.write_bytes(b"\x00")
+
+    payload = {"streams": [{"codec_type": "subtitle"}], "format": {"duration": "1.0"}}
+    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr(
+        "core.media_probe.subprocess.run",
+        lambda *args, **kwargs: _completed_process(json.dumps(payload)),
+    )
+
+    with pytest.raises(MediaProbeError, match="flux vidéo"):
+        probe_media(str(media_path))
+
+
+def test_probe_media_raises_on_invalid_audio_duration(tmp_path: Path, monkeypatch):
+    """Un audio avec une durée nulle ou négative est rejeté."""
+    audio_path = tmp_path / "empty.mp3"
+    audio_path.write_bytes(b"\x00")
+
+    payload = _payload(streams=[_audio_stream()], duration=0.0)
+    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr(
+        "core.media_probe.subprocess.run",
+        lambda *args, **kwargs: _completed_process(json.dumps(payload)),
+    )
+
+    with pytest.raises(MediaProbeError, match="Durée audio"):
+        probe_media(str(audio_path))
+
+
+def test_probe_media_handles_video_only_with_no_audio(tmp_path: Path, monkeypatch):
+    """Une vidéo sans flux audio séparé reste ``has_audio=False``."""
+    video_path = tmp_path / "silent.mp4"
+    video_path.write_bytes(b"\x00")
+    payload = _payload(streams=[_video_stream()], duration=4.0)
+    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr(
+        "core.media_probe.subprocess.run",
+        lambda *args, **kwargs: _completed_process(json.dumps(payload)),
+    )
+
+    asset = probe_media(str(video_path))
+    assert asset.media_type == "video"
+    assert asset.has_audio is False

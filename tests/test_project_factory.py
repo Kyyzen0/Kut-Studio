@@ -4,13 +4,20 @@ from core.project_factory import create_default_project
 from core.project_model import Clip, MediaAsset, Project, Track
 
 
-def test_default_project_has_three_tracks_V1_V2_S1():
-    """Le projet par défaut expose trois pistes : V1, V2 et S1, dans cet ordre."""
+def test_default_project_has_four_tracks_V1_V2_A1_S1():
+    """Le projet par défaut expose quatre pistes : V1, V2, A1 et S1."""
     project = create_default_project()
 
     track_ids = [track.id for track in project.tracks]
-    assert track_ids == ["V1", "V2", "S1"]
-    assert [track.type for track in project.tracks] == ["video", "video", "subtitle"]
+    assert track_ids == ["V1", "V2", "A1", "S1"]
+    assert [track.type for track in project.tracks] == [
+        "video", "video", "audio", "subtitle",
+    ]
+    # La piste audio A1 est créée vide par défaut.
+    a1 = project.tracks[2]
+    assert a1.id == "A1"
+    assert a1.type == "audio"
+    assert a1.clips == []
 
 
 def test_default_project_name_is_unset_title():

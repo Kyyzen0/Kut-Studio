@@ -12,7 +12,11 @@ from core.timeline_view_model import (
 from ui.theme import COLORS, label_style
 
 
-_TRACK_TYPE_LABELS = {"video": "Vidéo", "subtitle": "Sous-titres"}
+_TRACK_TYPE_LABELS = {
+    "video": "Vidéo",
+    "audio": "Audio",
+    "subtitle": "Sous-titres",
+}
 _DEMO_MARKERS = (4.0, 9.0, 14.0)
 
 

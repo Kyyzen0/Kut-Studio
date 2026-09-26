@@ -250,7 +250,7 @@ def test_legacy_v1_payload_without_label_and_text_loads_with_defaults(
     target = tmp_path / "legacy.kut"
     legacy_payload = {
         "format": FORMAT_NAME,
-        "version": CURRENT_VERSION,
+        "version": 1,
         "project": {
             "name": "Legacy",
             "width": 1920,
@@ -285,6 +285,42 @@ def test_legacy_v1_payload_without_label_and_text_loads_with_defaults(
     assert clip.label == ""
     assert clip.text == ""
     assert clip.enabled is True
+
+
+def test_legacy_v1_payload_without_has_audio_loads_with_false_default(
+    tmp_path: Path,
+) -> None:
+    """Un ``.kut`` v1 sans champ ``has_audio`` se charge avec ``False`` par défaut."""
+    target = tmp_path / "legacy-audio.kut"
+    legacy_payload = {
+        "format": FORMAT_NAME,
+        "version": 1,
+        "project": {
+            "name": "Legacy-Audio",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+            "media_assets": [
+                {
+                    "id": "asset-old",
+                    "path": "/tmp/clip.mp4",
+                    "name": "Clip",
+                    "duration": 10.0,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30.0,
+                    "media_type": "video",
+                }
+            ],
+            "tracks": [],
+        },
+    }
+    target.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    loaded = load_project(str(target))
+    asset = loaded.media_assets[0]
+    # Pas de ``has_audio`` dans le payload → default conservative ``False``.
+    assert asset.has_audio is False
 
 
 # ---------------------------------------------------------------------------

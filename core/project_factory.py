@@ -16,13 +16,13 @@ _TRACK_TYPES_LABELS = {"video": "Vidéo", "subtitle": "Sous-titres"}
 def create_default_project() -> Project:
     """Construit le projet de démonstration affiché au démarrage.
 
-    Le projet se nomme « Projet sans titre » et contient trois pistes
-    (V1, V2, S1) avec les clips et ``MediaAsset`` historiquement
-    présents dans l'interface (``Intro``, ``Plan A``, ``B-roll``,
-    sous-titre de bienvenue). Les chemins de médias restent vides :
-    les ``MediaAsset`` sont des objets métier valides mais ne pointent
-    vers aucun fichier sur disque tant que l'utilisateur n'importe pas
-    de média réel.
+    Le projet se nomme « Projet sans titre » et contient quatre
+    pistes (V1, V2, A1, S1) avec les clips et ``MediaAsset``
+    historiquement présents dans l'interface (``Intro``, ``Plan A``,
+    ``B-roll``, sous-titre de bienvenue). Les chemins de médias
+    restent vides : les ``MediaAsset`` sont des objets métier valides
+    mais ne pointent vers aucun fichier sur disque tant que
+    l'utilisateur n'importe pas de média réel.
     """
     asset_intro = _make_demo_asset("asset-intro", "Intro")
     asset_plan_a = _make_demo_asset("asset-plan-a", "Plan A")
@@ -79,6 +79,12 @@ def create_default_project() -> Project:
         type="video",
         clips=[clip_b_roll],
     )
+    track_a1 = Track(
+        id="A1",
+        name="A1",
+        type="audio",
+        clips=[],
+    )
     track_s1 = Track(
         id="S1",
         name="S1",
@@ -97,7 +103,7 @@ def create_default_project() -> Project:
             asset_b_roll,
             asset_subtitle,
         ],
-        tracks=[track_v1, track_v2, track_s1],
+        tracks=[track_v1, track_v2, track_a1, track_s1],
     )
 
 

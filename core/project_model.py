@@ -20,11 +20,21 @@ class MediaAsset:
         id: Identifiant unique du média dans le projet.
         path: Chemin vers le fichier source sur le disque.
         name: Nom humain du média (affiché dans l'UI).
-        duration: Durée totale du média en secondes (>= 0).
-        width: Largeur intrinsèque du média en pixels (> 0).
-        height: Hauteur intrinsèque du média en pixels (> 0).
-        fps: Fréquence d'images du média (> 0).
+        duration: Durée totale du média en secondes. Pour un média
+            audio seul, doit être strictement positive ; pour les
+            autres types, ``>= 0``.
+        width: Largeur intrinsèque du média en pixels. Pour un média
+            audio seul, peut valoir ``0``.
+        height: Hauteur intrinsèque du média en pixels. Pour un média
+            audio seul, peut valoir ``0``.
+        fps: Fréquence d'images du média. Pour un média audio seul,
+            peut valoir ``0.0``. Pour les médias vidéo, doit être
+            strictement positive.
         media_type: Type de média ("video", "audio", "image", "subtitle"...).
+        has_audio: Indique si le média porte une piste audio exploitable.
+            Vrai pour les médias audio seuls ; pour les vidéos, dépend
+            du contenu source. Permet à l'export de mixer l'audio même
+            depuis une piste vidéo.
     """
 
     id: str
@@ -35,17 +45,49 @@ class MediaAsset:
     height: int
     fps: float
     media_type: str
+    has_audio: bool = False
 
     def __post_init__(self) -> None:
         """Rejette les valeurs physiquement impossibles pour un média."""
-        if self.duration < 0.0:
-            raise ValueError("La durée d'un MediaAsset doit être positive ou nulle.")
-        if self.width <= 0:
-            raise ValueError("La largeur d'un MediaAsset doit être strictement positive.")
-        if self.height <= 0:
-            raise ValueError("La hauteur d'un MediaAsset doit être strictement positive.")
-        if self.fps <= 0.0:
-            raise ValueError("Le fps d'un MediaAsset doit être strictement positif.")
+        if self.media_type == "audio":
+            if self.duration <= 0.0:
+                raise ValueError(
+                    "La durée d'un MediaAsset audio doit être strictement positive."
+                )
+            # Pour un média audio seul, les dimensions vidéo sont à 0.
+            if self.width != 0:
+                raise ValueError(
+                    "Un MediaAsset audio doit avoir une largeur de 0."
+                )
+            if self.height != 0:
+                raise ValueError(
+                    "Un MediaAsset audio doit avoir une hauteur de 0."
+                )
+            if self.fps != 0.0:
+                raise ValueError(
+                    "Un MediaAsset audio doit avoir un fps de 0.0."
+                )
+            if not self.has_audio:
+                raise ValueError(
+                    "Un MediaAsset audio doit avoir has_audio=True."
+                )
+        else:
+            if self.duration < 0.0:
+                raise ValueError(
+                    "La durée d'un MediaAsset doit être positive ou nulle."
+                )
+            if self.width <= 0:
+                raise ValueError(
+                    "La largeur d'un MediaAsset doit être strictement positive."
+                )
+            if self.height <= 0:
+                raise ValueError(
+                    "La hauteur d'un MediaAsset doit être strictement positive."
+                )
+            if self.fps <= 0.0:
+                raise ValueError(
+                    "Le fps d'un MediaAsset doit être strictement positif."
+                )
 
 
 @dataclass

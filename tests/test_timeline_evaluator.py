@@ -33,10 +33,11 @@ def _make_asset(
         path=path,
         name=f"Media {asset_id}",
         duration=duration,
-        width=1920,
-        height=1080,
-        fps=30.0,
+        width=0 if media_type == "audio" else 1920,
+        height=0 if media_type == "audio" else 1080,
+        fps=0.0 if media_type == "audio" else 30.0,
         media_type=media_type,
+        has_audio=media_type == "audio",
     )
 
 

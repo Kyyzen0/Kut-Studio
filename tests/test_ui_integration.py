@@ -522,7 +522,7 @@ def test_import_video_adds_media_asset_to_project(qtbot, tmp_path, monkeypatch) 
 
     initial_assets = list(window.project.media_assets)
     monkeypatch.setattr(
-        "ui.main_window.probe_video",
+        "ui.main_window.probe_media",
         _fake_probe(width=1920, height=1080, fps=30.0, duration=42.0),
     )
 
@@ -546,14 +546,14 @@ def test_import_video_updates_library_with_asset_name(qtbot, tmp_path, monkeypat
     video_path = tmp_path / "mon_super_clip.mov"
     video_path.write_bytes(b"\x00")
 
-    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe())
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe())
 
     window.import_video_to_project(str(video_path))
 
     # Le panneau affiche bien le nom de fichier.
     rendered_names = [
-        window.project_panel.bin.item(row).text()
-        for row in range(window.project_panel.bin.count())
+        window.project_panel.bin_videos.item(row).text()
+        for row in range(window.project_panel.bin_videos.count())
     ]
     assert "mon_super_clip.mov" in rendered_names
 
@@ -565,7 +565,7 @@ def test_import_video_marks_project_as_dirty(qtbot, tmp_path, monkeypatch) -> No
     video_path.write_bytes(b"\x00")
     assert window.project_dirty is False
 
-    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe())
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe())
 
     window.import_video_to_project(str(video_path))
 
@@ -586,7 +586,7 @@ def test_import_video_refuses_duplicate_by_normalized_path(
         probe_calls.append(path)
         return _fake_probe()(path)
 
-    monkeypatch.setattr("ui.main_window.probe_video", fake_probe)
+    monkeypatch.setattr("ui.main_window.probe_media", fake_probe)
 
     assert window.import_video_to_project(str(video_path)) is True
     count_after_first = len(window.project.media_assets)
@@ -610,8 +610,8 @@ def test_import_video_failure_keeps_project_and_library_unchanged(
     window = _build_window(qtbot, monkeypatch)
     initial_assets = list(window.project.media_assets)
     initial_names = [
-        window.project_panel.bin.item(row).text()
-        for row in range(window.project_panel.bin.count())
+        window.project_panel.bin_videos.item(row).text()
+        for row in range(window.project_panel.bin_videos.count())
     ]
     initial_dirty = window.project_dirty
 
@@ -623,7 +623,7 @@ def test_import_video_failure_keeps_project_and_library_unchanged(
     def failing_probe(path):
         raise MediaProbeError(f"fichier corrompu : {path}")
 
-    monkeypatch.setattr("ui.main_window.probe_video", failing_probe)
+    monkeypatch.setattr("ui.main_window.probe_media", failing_probe)
 
     critical_calls: list[tuple] = []
     def fake_critical(parent, title, message, *args, **kwargs):
@@ -637,8 +637,8 @@ def test_import_video_failure_keeps_project_and_library_unchanged(
     # Aucune mutation.
     assert list(window.project.media_assets) == initial_assets
     after_names = [
-        window.project_panel.bin.item(row).text()
-        for row in range(window.project_panel.bin.count())
+        window.project_panel.bin_videos.item(row).text()
+        for row in range(window.project_panel.bin_videos.count())
     ]
     assert after_names == initial_names
     assert window.project_dirty is initial_dirty
@@ -659,7 +659,7 @@ def test_imported_media_asset_survives_save_and_load(
     video_path.write_bytes(b"\x00")
     target = tmp_path / "saved.kut"
 
-    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=7.5))
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe(duration=7.5))
 
     assert window.import_video_to_project(str(video_path)) is True
     imported = window.project.media_assets[-1]
@@ -688,8 +688,8 @@ def test_imported_media_asset_survives_save_and_load(
     )
     # Et la bibliothèque de la nouvelle fenêtre reflète bien le média.
     rendered = [
-        fresh_window.project_panel.bin.item(row).text()
-        for row in range(fresh_window.project_panel.bin.count())
+        fresh_window.project_panel.bin_videos.item(row).text()
+        for row in range(fresh_window.project_panel.bin_videos.count())
     ]
     assert "clip.mp4" in rendered
 
@@ -719,7 +719,7 @@ def test_add_to_timeline_button_becomes_active_after_selection(
     """Sélectionner un média active automatiquement le bouton d'ajout."""
     window = _build_window(qtbot, monkeypatch)
     button = window.project_panel.add_to_timeline_button
-    bin_widget = window.project_panel.bin
+    bin_widget = window.project_panel.bin_videos
 
     # Au moins un média (issu du projet de démo : asset-intro, asset-plan-a, etc.).
     assert bin_widget.count() >= 1
@@ -755,7 +755,7 @@ def test_add_asset_to_v1_creates_clip_at_playhead_position(
     video_path.write_bytes(b"\x00")
 
     monkeypatch.setattr(
-        "ui.main_window.probe_video",
+        "ui.main_window.probe_media",
         _fake_probe(duration=42.0, width=1920, height=1080),
     )
     assert window.import_video_to_project(str(video_path)) is True
@@ -791,7 +791,7 @@ def test_added_clip_is_selected_and_visible_in_inspector(
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"\x00")
 
-    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=15.0))
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe(duration=15.0))
     assert window.import_video_to_project(str(video_path)) is True
     asset_id = window.project.media_assets[-1].id
     asset_name = window.project.media_assets[-1].name
@@ -824,7 +824,7 @@ def test_add_asset_to_v1_marks_project_as_dirty(
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"\x00")
 
-    monkeypatch.setattr("ui.main_window.probe_video", _fake_probe(duration=10.0))
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe(duration=10.0))
     assert window.import_video_to_project(str(video_path)) is True
     assert window.project_dirty is True  # l'import lui-même a déjà dirty le projet
 
@@ -868,7 +868,7 @@ def test_added_media_and_clip_survive_save_and_load(
     video_path.write_bytes(b"\x00")
 
     monkeypatch.setattr(
-        "ui.main_window.probe_video",
+        "ui.main_window.probe_media",
         _fake_probe(duration=21.0, width=1280, height=720),
     )
     assert window.import_video_to_project(str(video_path)) is True
@@ -935,13 +935,13 @@ def test_click_on_add_to_timeline_button_triggers_add_asset_to_v1(
     video_path.write_bytes(b"\x00")
 
     monkeypatch.setattr(
-        "ui.main_window.probe_video",
+        "ui.main_window.probe_media",
         _fake_probe(duration=11.0, width=1280, height=720),
     )
     assert window.import_video_to_project(str(video_path)) is True
     asset_id = window.project.media_assets[-1].id
 
-    bin_widget = window.project_panel.bin
+    bin_widget = window.project_panel.bin_videos
     button = window.project_panel.add_to_timeline_button
 
     # Le média importé se trouve en dernière position dans la liste.

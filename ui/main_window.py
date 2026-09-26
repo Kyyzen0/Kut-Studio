@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.effects import apply_color_effect, play_crossfade_preview, save_subtitles, set_volume
 from core.export_engine import ExportEngine
-from core.media_probe import MediaProbeError, probe_video
+from core.media_probe import MediaProbeError, probe_media, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
@@ -70,11 +70,12 @@ class MainWindow(QMainWindow):
             self.cut_at_playhead,
             self.import_media_via_dialog,
         )
-        self.project_panel = ProjectPanel(
-            on_asset_selected=self.preview_media_asset,
-            on_add_to_timeline=self.add_asset_to_v1,
-            on_import_requested=self.import_media_via_dialog,
+        self.project_panel = ProjectPanel()
+        self.project_panel.asset_selected.connect(self.preview_media_asset)
+        self.project_panel.add_to_timeline_requested.connect(
+            self.add_asset_to_timeline
         )
+        self.project_panel.import_requested.connect(self.import_media_via_dialog)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume, self.save_subtitles)
         self.timeline_panel = TimelinePanel(self.project)
         self.export_panel = ExportPanel()
@@ -553,24 +554,29 @@ class MainWindow(QMainWindow):
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     # ------------------------------------------------------------------
-    # Import de médias vidéo
+    # Import de médias (vidéo et audio)
     # ------------------------------------------------------------------
 
     def import_media_via_dialog(self) -> None:
-        """Ouvre un dialogue d'import et importe chaque fichier sélectionné."""
+        """Ouvre un dialogue d'import et importe chaque fichier sélectionné.
+
+        Les filtres du dialogue couvrent les formats vidéo et audio
+        acceptés par ``probe_media``. Chaque fichier est analysé pour
+        déterminer son type (vidéo, audio) avant d'être ajouté au projet.
+        """
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Importer des médias",
             os.path.expanduser("~/Movies"),
-            "Vidéos (*.mp4 *.mov *.avi *.mkv *.webm)",
+            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg)",
         )
         if not paths:
             return
         for path in paths:
-            self.import_video_to_project(path)
+            self.import_media_to_project(path)
 
-    def import_video_to_project(self, path: str) -> bool:
-        """Importe ``path`` comme ``MediaAsset`` réel dans ``self.project``.
+    def import_media_to_project(self, path: str) -> bool:
+        """Importe ``path`` comme ``MediaAsset`` réel (vidéo ou audio).
 
         L'opération est idempotente pour un même chemin normalisé : un
         doublon est ignoré silencieusement. En cas d'échec de la sonde,
@@ -583,67 +589,100 @@ class MainWindow(QMainWindow):
                 # Doublon silencieux : on conserve le projet intact et on
                 # met le focus sur l'asset existant dans la bibliothèque.
                 self.project_panel.select_asset(asset.id)
-                self.preview_panel.load_video(asset.path)
+                if asset.media_type == "video":
+                    self.preview_panel.load_video(asset.path)
                 return False
 
         try:
-            asset = probe_video(path)
+            asset = probe_media(path)
         except MediaProbeError as exc:
             QMessageBox.critical(
                 self,
                 "Import impossible",
-                f"Impossible d'importer la vidéo :\n\n{path}\n\n{exc}",
+                f"Impossible d'importer le média :\n\n{path}\n\n{exc}",
             )
             return False
 
         self.project.media_assets.append(asset)
         self._refresh_project_library()
         self.project_panel.select_asset(asset.id)
-        self.preview_panel.load_video(asset.path)
+        if asset.media_type == "video":
+            self.preview_panel.load_video(asset.path)
         self._mark_dirty()
         return True
 
+    # Compatibilité ascendante : les anciens tests/appels peuvent continuer
+    # d'utiliser ``import_video_to_project``.
+    def import_video_to_project(self, path: str) -> bool:
+        """Délègue à :meth:`import_media_to_project` (alias historique)."""
+        return self.import_media_to_project(path)
+
     def preview_media_asset(self, asset_id: str) -> None:
-        """Prévisualise le ``MediaAsset`` identifié par ``asset_id``."""
+        """Prévisualise le ``MediaAsset`` identifié par ``asset_id``.
+
+        Les assets audio ne déclenchent pas de prévisualisation vidéo.
+        """
         asset = next(
             (a for a in self.project.media_assets if a.id == asset_id),
             None,
         )
         if asset is None:
             return
-        self.preview_panel.load_video(asset.path)
+        if asset.media_type == "video":
+            self.preview_panel.load_video(asset.path)
 
-    def add_asset_to_v1(self, asset_id: str) -> None:
-        """Ajoute un clip sur la piste ``V1`` à la position du playhead.
+    def add_asset_to_timeline(self, asset_id: str) -> None:
+        """Ajoute le média sélectionné à la piste adaptée à son type.
 
-        Le point d'entrée est appelé par ``ProjectPanel`` lorsque
-        l'utilisateur clique sur « Ajouter à la timeline ». Il délègue
-        à ``core.timeline_operations.add_clip_to_track`` pour conserver
-        toute la logique métier hors du contexte Qt, puis :
+        Routing :
 
-        - reconstruit la projection de la timeline depuis ``self.project`` ;
-        - sélectionne le clip nouvellement créé et l'affiche dans
-          l'inspecteur (``on_clip_selected``) ;
-        - marque le projet comme « Non enregistré ».
+        - asset ``video`` → piste ``V1`` (créée si absente) ;
+        - asset ``audio`` → piste ``A1`` (créée si absente) ;
+        - autres types → erreur claire.
 
-        La prévisualisation en cours (vidéo en lecture dans
-        ``PreviewPanel``) n'est pas touchée : on continue à diffuser la
-        même source, on ne fait que déplacer la tête de lecture via la
-        sélection du clip.
-
-        En cas d'erreur (asset inconnu, position négative…), un
-        ``QMessageBox.critical`` est affiché et le projet n'est pas
-        modifié — l'identité de l'exception est remontée telle quelle.
+        Le clip est créé à la position du playhead ; si le playhead est
+        hors limites (typiquement après un reset à zéro sur un projet
+        vide), il est ramené à ``0.0``.
         """
-        # Capture du playhead AVANT toute opération : la sélection du
-        # nouveau clip modifie ``timeline_panel.playhead_seconds`` via
-        # ``on_clip_selected`` (``= view.start``).
+        asset = next(
+            (a for a in self.project.media_assets if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            QMessageBox.critical(
+                self,
+                "Ajout impossible",
+                f"Média '{asset_id}' introuvable dans le projet.",
+            )
+            return
+
+        if asset.media_type == "video":
+            target_track_id = "V1"
+        elif asset.media_type == "audio":
+            target_track_id = "A1"
+        else:
+            QMessageBox.critical(
+                self,
+                "Ajout impossible",
+                f"Le type de média '{asset.media_type}' ne peut pas être "
+                "ajouté à la timeline depuis le panneau de bibliothèque.",
+            )
+            return
+
+        if not any(track.id == target_track_id for track in self.project.tracks):
+            QMessageBox.critical(
+                self,
+                "Ajout impossible",
+                f"La piste '{target_track_id}' est absente du projet courant.",
+            )
+            return
+
         timeline_start = self.timeline_panel.playhead_seconds
         try:
             new_clip = add_clip_to_track(
                 self.project,
                 asset_id,
-                "V1",
+                target_track_id,
                 timeline_start,
             )
         except (KeyError, ValueError) as exc:
@@ -657,10 +696,13 @@ class MainWindow(QMainWindow):
         # Rafraîchit la projection (qui inclut le nouveau clip).
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
-        # Sélection + inspecteur : ``select_clip`` émet ``clip_selected``
-        # qui déclenche ``on_clip_selected`` et donc l'affichage inspecteur.
         self.timeline_panel.select_clip(new_clip.id)
         self._mark_dirty()
+
+    # Compatibilité ascendante : anciens appels.
+    def add_asset_to_v1(self, asset_id: str) -> None:
+        """Délègue à :meth:`add_asset_to_timeline` (alias historique)."""
+        self.add_asset_to_timeline(asset_id)
 
     def _refresh_project_library(self) -> None:
         """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``."""
