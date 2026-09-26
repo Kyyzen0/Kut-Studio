@@ -384,3 +384,137 @@ def test_layers_cover_all_active_clips_of_the_project():
     for layer in plan.video_layers:
         assert layer.source_path == "/tmp/source.mp4"
         assert layer.asset_id == "asset-1"
+
+
+# ---------------------------------------------------------------------------
+# audio_layers (tâche 10)
+# ---------------------------------------------------------------------------
+
+
+def _make_audio_asset(asset_id: str = "asset-audio", path: str = "/tmp/song.mp3", duration: float = 30.0):
+    """Construit un ``MediaAsset`` audio conforme à la validation."""
+    return MediaAsset(
+        id=asset_id,
+        path=path,
+        name="Audio",
+        duration=duration,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+
+
+def test_audio_layers_include_audio_tracks_and_video_with_sound():
+    """``audio_layers`` contient les pistes audio + les vidéos avec son."""
+    audio_asset = _make_audio_asset()
+    silent_video_asset = MediaAsset(
+        id="silent",
+        path="/tmp/silent.mp4",
+        name="Silent",
+        duration=4.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=False,
+    )
+    video_with_audio_asset = MediaAsset(
+        id="vid-with-audio",
+        path="/tmp/v.mp4",
+        name="V",
+        duration=4.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+        has_audio=True,
+    )
+
+    project = Project(
+        name="AudioMix",
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[
+                Clip(id="silent-v1", asset_id="silent", track_id="V1",
+                     timeline_start=0.0, source_in=0.0, source_out=4.0),
+                Clip(id="vid-with-audio", asset_id="vid-with-audio", track_id="V1",
+                     timeline_start=5.0, source_in=0.0, source_out=4.0),
+            ]),
+            Track(id="A1", name="A1", type="audio", clips=[
+                Clip(id="music", asset_id="asset-audio", track_id="A1",
+                     timeline_start=0.0, source_in=0.0, source_out=10.0),
+            ]),
+        ],
+        media_assets=[audio_asset, silent_video_asset, video_with_audio_asset],
+    )
+
+    plan = build_render_plan(project)
+    audio_ids = {layer.clip_id for layer in plan.audio_layers}
+    # Le clip audio pur est présent.
+    assert "music" in audio_ids
+    # Le clip vidéo avec son est également mixé (piste son embarquée).
+    assert "vid-with-audio" in audio_ids
+    # Le clip vidéo silencieux ne produit PAS de couche audio.
+    assert "silent-v1" not in audio_ids
+
+    # La durée totale du plan reste alignée sur la timeline
+    # (``max(end of music, end of vid-with-audio) = 10``).
+    assert plan.duration == pytest.approx(10.0)
+
+
+def test_audio_layers_exclude_disabled_clips():
+    """Un clip audio désactivé ne doit pas apparaître dans ``audio_layers``."""
+    audio_asset = _make_audio_asset(duration=10.0)
+    project = Project(
+        name="Disabled",
+        tracks=[
+            Track(id="A1", name="A1", type="audio", clips=[
+                Clip(id="on", asset_id="asset-audio", track_id="A1",
+                     timeline_start=0.0, source_in=0.0, source_out=5.0),
+                Clip(id="off", asset_id="asset-audio", track_id="A1",
+                     timeline_start=5.0, source_in=0.0, source_out=5.0,
+                     enabled=False),
+            ]),
+        ],
+        media_assets=[audio_asset],
+    )
+    plan = build_render_plan(project)
+    assert {layer.clip_id for layer in plan.audio_layers} == {"on"}
+
+
+def test_audio_layers_track_order_matches_project_tracks():
+    """Les ``AudioLayer`` apparaissent dans l'ordre des pistes du projet."""
+    audio_asset = _make_audio_asset()
+    project = Project(
+        name="Order",
+        tracks=[
+            Track(id="A1", name="A1", type="audio", clips=[
+                Clip(id="first", asset_id="asset-audio", track_id="A1",
+                     timeline_start=0.0, source_in=0.0, source_out=3.0),
+            ]),
+            Track(id="A2", name="A2", type="audio", clips=[
+                Clip(id="second", asset_id="asset-audio", track_id="A2",
+                     timeline_start=0.0, source_in=0.0, source_out=2.0),
+            ]),
+        ],
+        media_assets=[audio_asset],
+    )
+    plan = build_render_plan(project)
+    assert [layer.clip_id for layer in plan.audio_layers] == ["first", "second"]
+
+
+def test_audio_layers_raise_for_missing_asset():
+    """Un clip audio actif sans asset lève une ``KeyError``."""
+    project = Project(
+        name="Orphan",
+        tracks=[
+            Track(id="A1", name="A1", type="audio", clips=[
+                Clip(id="orphan", asset_id="ghost-audio", track_id="A1",
+                     timeline_start=0.0, source_in=0.0, source_out=3.0),
+            ]),
+        ],
+        media_assets=[],
+    )
+    with pytest.raises(KeyError, match="ghost-audio"):
+        build_render_plan(project)

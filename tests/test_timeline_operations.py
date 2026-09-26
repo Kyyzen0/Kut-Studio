@@ -612,3 +612,86 @@ def test_add_clip_to_track_rejects_negative_position() -> None:
 
     # Le projet reste strictement intact.
     assert len(find_track(project, "V1").clips) == v1_before
+
+
+# ---------------------------------------------------------------------------
+# Routage vidéo / audio (tâche 10)
+# ---------------------------------------------------------------------------
+
+
+def _make_project_with_audio() -> Project:
+    """Projet de test avec une piste vidéo, une piste audio et un asset audio."""
+    audio_asset = MediaAsset(
+        id="asset-audio",
+        path="/tmp/song.mp3",
+        name="Song",
+        duration=30.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+    video_asset = MediaAsset(
+        id="asset-v",
+        path="/tmp/clip.mp4",
+        name="Clip",
+        duration=10.0,
+        width=1920,
+        height=1080,
+        fps=30.0,
+        media_type="video",
+    )
+    return Project(
+        name="AudioRouting",
+        tracks=[
+            Track(id="V1", name="V1", type="video"),
+            Track(id="A1", name="A1", type="audio"),
+        ],
+        media_assets=[audio_asset, video_asset],
+    )
+
+
+def test_add_video_clip_to_video_track_succeeds() -> None:
+    """Un asset vidéo peut être ajouté sur une piste vidéo."""
+    project = _make_project_with_audio()
+    clip = add_clip_to_track(project, "asset-v", "V1", 0.0)
+
+    assert clip.asset_id == "asset-v"
+    assert clip.track_id == "V1"
+    assert find_track(project, "V1").clips[-1] is clip
+
+
+def test_add_audio_clip_to_audio_track_succeeds() -> None:
+    """Un asset audio peut être ajouté sur une piste audio (A1)."""
+    project = _make_project_with_audio()
+    clip = add_clip_to_track(project, "asset-audio", "A1", 4.0)
+
+    assert clip.asset_id == "asset-audio"
+    assert clip.track_id == "A1"
+    assert clip.timeline_start == pytest.approx(4.0)
+    assert clip.duration == pytest.approx(30.0)
+    assert find_track(project, "A1").clips[-1] is clip
+
+
+def test_add_audio_clip_to_video_track_is_rejected() -> None:
+    """Un asset audio sur une piste vidéo doit être refusé."""
+    project = _make_project_with_audio()
+    v1_before = len(find_track(project, "V1").clips)
+
+    with pytest.raises(ValueError, match="audio"):
+        add_clip_to_track(project, "asset-audio", "V1", 0.0)
+
+    # Aucune mutation en cas d'erreur.
+    assert len(find_track(project, "V1").clips) == v1_before
+
+
+def test_add_video_clip_to_audio_track_is_rejected() -> None:
+    """Un asset vidéo sur une piste audio doit être refusé."""
+    project = _make_project_with_audio()
+    a1_before = len(find_track(project, "A1").clips)
+
+    with pytest.raises(ValueError, match="video"):
+        add_clip_to_track(project, "asset-v", "A1", 0.0)
+
+    assert len(find_track(project, "A1").clips) == a1_before

@@ -480,3 +480,225 @@ def test_real_ffmpeg_export_with_gap_has_correct_duration(qtbot, tmp_path):
     assert abs(duration - 5.0) < 0.5, (
         f"Durée attendue ≈ 5s (avec trou), obtenue {duration:.3f}s"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tâche 10 — Test d'intégration audio réel (ffmpeg + ffprobe)
+# ---------------------------------------------------------------------------
+
+
+def _generate_color_with_tone(
+    ffmpeg: str,
+    output_path: Path,
+    *,
+    color: str,
+    tone_freq: int,
+    duration: float,
+    fps: int = 15,
+) -> None:
+    """Génère une vidéo couleurisée avec une tonalité audio intégrée."""
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:s=160x90:r={fps}:d={duration}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={tone_freq}:sample_rate=48000:duration={duration}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-ac",
+            "2",
+            "-shortest",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _generate_audio_tone(
+    ffmpeg: str,
+    output_path: Path,
+    *,
+    frequency: int,
+    duration: float,
+) -> None:
+    """Génère un fichier audio pur (tonalité sinusoïdale)."""
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={frequency}:sample_rate=48000:duration={duration}",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-ac",
+            "2",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _probe_streams(ffprobe: str, path: Path) -> dict:
+    """Retourne les infos de flux (``streams`` + ``format``) d'un fichier."""
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    import json as _json
+
+    return _json.loads(result.stdout)
+
+
+def _build_audio_mix_project(
+    video_with_tone_path: Path,
+    audio_tone_path: Path,
+) -> Project:
+    """Projet : V1 (vidéo avec tonalité 440 Hz) + A1 (tonalité 880 Hz décalée) + trou."""
+    video_asset = MediaAsset(
+        id="vid-tone",
+        path=str(video_with_tone_path),
+        name="VidTone",
+        duration=4.0,
+        width=160,
+        height=90,
+        fps=15.0,
+        media_type="video",
+        has_audio=True,
+    )
+    audio_asset = MediaAsset(
+        id="audio-tone",
+        path=str(audio_tone_path),
+        name="AudioTone",
+        duration=3.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+    return Project(
+        name="AudioMix",
+        width=160,
+        height=90,
+        fps=15.0,
+        media_assets=[video_asset, audio_asset],
+        tracks=[
+            Track(
+                id="V1", name="V1", type="video",
+                clips=[
+                    Clip(
+                        id="vid-clip", asset_id="vid-tone", track_id="V1",
+                        timeline_start=0.0, source_in=0.0, source_out=4.0,
+                    ),
+                ],
+            ),
+            Track(
+                id="A1", name="A1", type="audio",
+                clips=[
+                    Clip(
+                        id="audio-clip", asset_id="audio-tone", track_id="A1",
+                        # Le clip audio démarre à 2 s : trou audio [0, 2].
+                        timeline_start=2.0, source_in=0.0, source_out=3.0,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def test_real_ffmpeg_export_produces_video_and_audio_streams(qtbot, tmp_path):
+    """Un projet avec vidéo + audio produit un export avec flux vidéo + audio."""
+    ffmpeg, ffprobe = _require_ffmpeg()
+
+    # 1. Génère une vidéo rouge 4 s avec tonalité 440 Hz embarquée.
+    video_path = tmp_path / "vid.mp4"
+    _generate_color_with_tone(
+        ffmpeg, video_path, color="red", tone_freq=440, duration=4.0,
+    )
+
+    # 2. Génère un fichier audio pur 3 s avec tonalité 880 Hz.
+    audio_path = tmp_path / "song.m4a"
+    _generate_audio_tone(ffmpeg, audio_path, frequency=880, duration=3.0)
+
+    # 3. Construit le projet mixte.
+    project = _build_audio_mix_project(video_path, audio_path)
+    plan = build_render_plan(project)
+    # La durée totale = max(4, 2+3) = 5 s.
+    assert plan.duration == pytest.approx(5.0)
+    # Au moins une couche audio (issue de la vidéo + le clip audio pur).
+    assert len(plan.audio_layers) >= 2
+
+    # 4. Exporte.
+    from core.export_engine import (
+        ExportEngine,
+        ExportFormat,
+        ExportPreset,
+        ExportRequest,
+    )
+
+    output_path = tmp_path / "out_with_audio.mp4"
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(output_path),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(name="Test", resolution=(160, 90), crf=28, audio_bitrate="96k"),
+        fps=15,
+    )
+
+    engine = ExportEngine()
+    engine.start(request)
+    finished, failed = _wait_for_export(engine, timeout_ms=30000)
+
+    assert not failed, f"ffmpeg a échoué : {failed}"
+    assert finished, "finished_ok aurait dû être émis"
+    assert output_path.exists(), "Le fichier de sortie n'a pas été créé"
+
+    # 5. Vérifie la présence d'un flux vidéo ET d'un flux audio.
+    streams = _probe_streams(ffprobe, output_path)
+    has_video = any(s.get("codec_type") == "video" for s in streams["streams"])
+    has_audio = any(s.get("codec_type") == "audio" for s in streams["streams"])
+    assert has_video, "Le fichier final doit contenir un flux vidéo"
+    assert has_audio, "Le fichier final doit contenir un flux audio"
+
+    # 6. Vérifie la durée.
+    duration = float(streams["format"]["duration"])
+    assert abs(duration - 5.0) < 0.5, (
+        f"Durée attendue ≈ 5s, obtenue {duration:.3f}s"
+    )

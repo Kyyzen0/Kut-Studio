@@ -11,7 +11,8 @@ import pathlib
 import pytest
 from PySide6.QtCore import Qt
 
-from core.project_model import Project
+from core.project_model import MediaAsset, Project
+from core.project_io import load_project, save_project
 from core.timeline_operations import find_clip
 from core.timeline_view_model import build_clip_views
 
@@ -1365,3 +1366,171 @@ def test_no_setPlaybackPosition_call_in_update_path() -> None:
         "MainWindow ne doit plus appeler setPlaybackPosition directement : "
         f"{forbidden_calls}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tâche 10 — Audio de bout en bout
+# ---------------------------------------------------------------------------
+
+
+def _audio_asset(asset_id: str = "asset-song", name: str = "Song.mp3", duration: float = 30.0):
+    """Construit un ``MediaAsset`` audio conforme à la validation."""
+    return MediaAsset(
+        id=asset_id,
+        path=f"/tmp/{name}",
+        name=name,
+        duration=duration,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+
+
+def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
+    """L'onglet Audio liste uniquement les assets audio, pas les vidéos."""
+    window = _build_window(qtbot, monkeypatch)
+    # Injecter un asset audio directement.
+    window.project.media_assets.append(_audio_asset())
+    window._refresh_project_library()
+
+    panel = window.project_panel
+
+    # Onglet Médias (par défaut) : ne montre que les vidéos de démo.
+    panel.navigation.setCurrentRow(0)
+    panel._refresh_count()
+    assert panel.media_title.text() == "MÉDIAS DU PROJET"
+    assert "Song" not in {panel.bin_videos.item(r).text() for r in range(panel.bin_videos.count())}
+
+    # Onglet Audio : ne montre que l'asset audio.
+    panel.navigation.setCurrentRow(1)
+    panel._refresh_count()
+    assert panel.media_title.text() == "AUDIOS DU PROJET"
+    audio_names = {
+        panel.bin_audios.item(r).text() for r in range(panel.bin_audios.count())
+    }
+    assert audio_names == {"Song.mp3"}
+
+
+def test_add_asset_to_timeline_routes_audio_to_a1(qtbot, monkeypatch) -> None:
+    """Un asset audio est ajouté sur la piste A1, pas V1."""
+    window = _build_window(qtbot, monkeypatch)
+    audio = _audio_asset()
+    window.project.media_assets.append(audio)
+    window._refresh_project_library()
+
+    # Faire en sorte que la sélection courante pointe sur l'audio.
+    window.project_panel.select_asset(audio.id)
+    window.project_panel.navigation.setCurrentRow(1)
+    window.project_panel._sync_add_button_for_active_tab()
+
+    window.add_asset_to_timeline(audio.id)
+
+    a1 = next(t for t in window.project.tracks if t.id == "A1")
+    assert any(c.asset_id == audio.id for c in a1.clips)
+    # Et pas dans V1.
+    v1 = next(t for t in window.project.tracks if t.id == "V1")
+    assert not any(c.asset_id == audio.id for c in v1.clips)
+
+
+def test_add_asset_to_timeline_routes_video_to_v1(qtbot, monkeypatch) -> None:
+    """Un asset vidéo est ajouté sur V1 par défaut."""
+    window = _build_window(qtbot, monkeypatch)
+    asset_id = "asset-intro"  # asset de démo
+    window.project_panel.select_asset(asset_id)
+    window.project_panel.navigation.setCurrentRow(0)
+    window.project_panel._sync_add_button_for_active_tab()
+
+    initial_v1_count = len(next(t for t in window.project.tracks if t.id == "V1").clips)
+
+    window.add_asset_to_timeline(asset_id)
+
+    v1 = next(t for t in window.project.tracks if t.id == "V1")
+    assert len(v1.clips) == initial_v1_count + 1
+
+
+def test_add_asset_to_timeline_rejects_missing_target_track(
+    qtbot, monkeypatch
+) -> None:
+    """L'ajout d'un asset audio sur un projet sans A1 est refusé."""
+    window = _build_window(qtbot, monkeypatch)
+    # Retirer A1 du projet pour simuler un ancien projet.
+    window.project.tracks = [t for t in window.project.tracks if t.id != "A1"]
+    audio = _audio_asset()
+    window.project.media_assets.append(audio)
+    window._refresh_project_library()
+
+    # On capture les appels à QMessageBox.critical.
+    captured: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.critical",
+        lambda parent, title, message, *a, **k: captured.append((title, message)),
+    )
+
+    window.add_asset_to_timeline(audio.id)
+
+    assert captured, "Un message d'erreur doit être affiché"
+    assert "A1" in captured[0][1]
+
+
+def test_audio_asset_survives_save_and_load(qtbot, tmp_path, monkeypatch) -> None:
+    """Un asset audio est correctement sérialisé puis rechargé en .kut."""
+    window = _build_window(qtbot, monkeypatch)
+    audio = _audio_asset(duration=42.0)
+    window.project.media_assets.append(audio)
+    window._refresh_project_library()
+
+    target = tmp_path / "with-audio.kut"
+    window.current_project_path = None
+    save_project(window.project, str(target))
+    loaded = load_project(str(target))
+
+    reloaded_audio = next(a for a in loaded.media_assets if a.id == audio.id)
+    assert reloaded_audio.media_type == "audio"
+    assert reloaded_audio.has_audio is True
+    assert reloaded_audio.width == 0
+    assert reloaded_audio.height == 0
+    assert reloaded_audio.fps == 0.0
+    assert reloaded_audio.duration == pytest.approx(42.0)
+
+
+def test_main_window_has_a1_in_default_project(qtbot, monkeypatch) -> None:
+    """Le projet par défaut expose une piste audio A1."""
+    window = _build_window(qtbot, monkeypatch)
+    track_ids = [t.id for t in window.project.tracks]
+    assert "A1" in track_ids
+    a1 = next(t for t in window.project.tracks if t.id == "A1")
+    assert a1.type == "audio"
+
+
+def test_legacy_project_without_a1_keeps_existing_tracks(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Un ancien projet sans A1 est conservé tel quel après chargement."""
+    window = _build_window(qtbot, monkeypatch)
+    legacy_payload = {
+        "format": "kut-studio-project",
+        "version": 2,
+        "project": {
+            "name": "Legacy",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+            "media_assets": [],
+            "tracks": [
+                {"id": "V1", "name": "V1", "type": "video", "clips": []},
+                {"id": "S1", "name": "S1", "type": "subtitle", "clips": []},
+            ],
+        },
+    }
+    target = tmp_path / "legacy.kut"
+    target.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    window.current_project_path = None
+    window._load_project_from_path(str(target))
+
+    track_ids = [t.id for t in window.project.tracks]
+    # L'ancien projet ne reçoit PAS automatiquement A1.
+    assert "A1" not in track_ids
+    assert track_ids == ["V1", "S1"]
