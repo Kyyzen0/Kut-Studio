@@ -553,6 +553,62 @@ class ClipWidget(QWidget):
             painter.drawPolygon(diamond)
         painter.end()
 
+    def _paint_time_remapping_badges(self) -> None:
+        """Dessine les badges de remappage temporel (vitesse, reverse, freeze)."""
+        from core.time_remapping import FreezeFrameMode, TimeRemapping
+        
+        time_remapping = getattr(self.view, "time_remapping", None) or TimeRemapping()
+        
+        # Pas de badge si tout est par défaut
+        if time_remapping.is_normal:
+            return
+        
+        palette = _current_palette()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Position du badge : coin supérieur droit
+        badge_x = self.width() - 45
+        badge_y = 4
+        badge_width = 40
+        badge_height = 18
+        
+        # Couleurs
+        bg_color = QColor(palette.clip_text_dim)
+        bg_color.setAlpha(220)
+        text_color = QColor(palette.clip_text)
+        
+        # Dessiner le fond du badge
+        painter.setBrush(bg_color)
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(
+            badge_x, badge_y, badge_width, badge_height, 4, 4
+        )
+        
+        # Texte du badge
+        painter.setPen(text_color)
+        painter.setFont(self.font())
+        
+        # Déterminer le texte à afficher
+        badge_text = ""
+        if time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+            badge_text = "F"
+        elif time_remapping.reverse:
+            badge_text = "R"
+        elif time_remapping.speed != 1.0:
+            badge_text = f"{time_remapping.speed:.1f}x"
+        
+        if badge_text:
+            # Dessiner le texte centré dans le badge
+            text_metrics = painter.fontMetrics()
+            text_width = text_metrics.horizontalAdvance(badge_text)
+            text_height = text_metrics.height()
+            text_x = badge_x + (badge_width - text_width) / 2
+            text_y = badge_y + (badge_height + text_height) / 2 - 2
+            painter.drawText(int(text_x), int(text_y), badge_text)
+        
+        painter.end()
+
     def mouseDoubleClickEvent(self, event):
         """Double-clic sur une poignée : remet le fondu correspondant à zéro."""
         if not self.is_audio_clip:
@@ -725,6 +781,7 @@ class ClipWidget(QWidget):
         super().paintEvent(event)
         self._paint_media_preview()
         self._paint_fade_handles()
+        self._paint_time_remapping_badges()
         keyframes = getattr(self.view, "keyframes", None) or []
         if not keyframes:
             return

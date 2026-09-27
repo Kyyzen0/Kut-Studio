@@ -102,7 +102,24 @@ def _build_active_clip(
     time_seconds: float,
 ) -> ActiveClip:
     """Construit un :class:`ActiveClip` à partir d'un ``Clip`` et du temps."""
-    source_time = clip.source_in + (time_seconds - clip.timeline_start)
+    from .time_remapping import timeline_to_source_time
+    
+    # Calculer le temps source en tenant compte du time remapping
+    local_timeline_time = time_seconds - clip.timeline_start
+    try:
+        source_time = timeline_to_source_time(
+            timeline_time=local_timeline_time,
+            source_in=clip.source_in,
+            source_out=clip.source_out,
+            speed=clip.time_remapping.speed,
+            reverse=clip.time_remapping.reverse,
+            freeze_mode=clip.time_remapping.freeze_mode,
+            freeze_source_time=clip.time_remapping.freeze_source_time,
+        )
+    except ValueError:
+        # Si la conversion échoue (ex: hors bornes), utiliser la méthode classique
+        source_time = clip.source_in + local_timeline_time
+    
     return ActiveClip(
         clip_id=clip.id,
         asset_id=clip.asset_id,
