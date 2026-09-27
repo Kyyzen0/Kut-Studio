@@ -85,8 +85,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kut-Studio")
-        self.setMinimumSize(1080, 680)
-        self.resize(1440, 900)
+        self.setMinimumSize(1180, 720)
+        self.resize(1480, 920)
         self.subtitle_file: str | None = None
         self.active_subtitle_clip = None
         self.transition_seconds = None
@@ -130,6 +130,9 @@ class MainWindow(QMainWindow):
         self.project_panel.subtitle_selected.connect(self.on_subtitle_clip_selected)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
         self.timeline_panel = TimelinePanel(self.project)
+        # La timeline peint ses fonds et ses clips à la main : elle doit
+        # suivre les changements de palette du gestionnaire de thème.
+        self.timeline_panel.subscribe_to_theme(self.theme_manager)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
@@ -193,17 +196,23 @@ class MainWindow(QMainWindow):
         top_split.addWidget(self.project_panel)
         top_split.addWidget(self.preview_panel)
         top_split.addWidget(self.properties_panel)
-        top_split.setSizes([220, 650, 260])
+        top_split.setSizes([260, 720, 300])
         top_split.setStretchFactor(0, 0)
         top_split.setStretchFactor(1, 1)
         top_split.setStretchFactor(2, 0)
+        top_split.setChildrenCollapsible(False)
         main_split = QSplitter(Qt.Vertical)
         main_split.addWidget(top_split)
         main_split.addWidget(self.timeline_panel)
-        main_split.setSizes([500, 270])
+        # Le viewer reste majoritaire, mais la timeline reçoit la
+        # hauteur nécessaire pour afficher toutes les pistes sans
+        # défilement chaque fois que la fenêtre le permet (voir
+        # ``_balance_vertical_split``).
         main_split.setStretchFactor(0, 1)
-        main_split.setStretchFactor(1, 0)
-
+        main_split.setStretchFactor(1, 1)
+        main_split.setChildrenCollapsible(False)
+        self.main_split = main_split
+        QTimer.singleShot(0, lambda: self._balance_vertical_split(main_split))
         self.editor_page = QWidget()
         editor_layout = QVBoxLayout(self.editor_page)
         editor_layout.setContentsMargins(0, 0, 0, 0)
@@ -230,6 +239,38 @@ class MainWindow(QMainWindow):
         # ``project_label``.
         self._refresh_undo_redo_state()
 
+    def _balance_vertical_split(self, splitter) -> None:
+        """Répartit la hauteur entre le viewer et la timeline.
+
+        La timeline reçoit la hauteur nécessaire pour montrer toutes
+        ses pistes, sans jamais descendre sous ~40 % de la fenêtre
+        (le viewer reste le panneau majoritaire).
+        """
+        total = splitter.height()
+        if total <= 0:
+            # La fenêtre n'est pas encore mise en page : on réessaie
+            # au prochain tour de boucle d'événements.
+            QTimer.singleShot(0, lambda: self._balance_vertical_split(splitter))
+            return
+        panel = self.timeline_panel
+        track_count = len(self.project.tracks) if self.project else 1
+        pitch = panel.track_height + panel.track_gap
+        needed = panel.header_height + panel.ruler_height + 8 + pitch * max(
+            track_count, 1
+        ) + 16 + 18  # barres de défilement
+        floor = int(total * 0.40)
+        timeline_height = max(needed, floor)
+        timeline_height = min(timeline_height, int(total * 0.62))
+        timeline_height = max(timeline_height, panel.minimumHeight())
+        viewer_height = max(total - timeline_height, 120)
+        splitter.setSizes([viewer_height, timeline_height])
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        splitter = getattr(self, "main_split", None)
+        if splitter is not None:
+            QTimer.singleShot(0, lambda: self._balance_vertical_split(splitter))
+
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
         if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
@@ -243,40 +284,100 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _build_top_bar(self):
+        from ui.design_system import Iconography, Sizes, Spacing
+        from ui.icons import IconButton, IconLabel, IconName, make_icon
+
         bar = QWidget()
-        bar.setFixedHeight(56)
+        bar.setFixedHeight(Sizes.top_bar)
+        bar.setObjectName("main_topbar")
         bar.setStyleSheet(
-            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+            f"QWidget#main_topbar {{ background: {COLORS['panel']}; "
+            f"border-bottom: 1px solid {COLORS['border']}; }}"
         )
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(18, 0, 18, 0)
-        layout.setSpacing(14)
+        layout.setContentsMargins(Spacing.lg, 0, Spacing.lg, 0)
+        layout.setSpacing(Spacing.md)
 
+        # --- Logo + marque ----------------------------------------------
         logo = QLabel("K")
         logo.setAlignment(Qt.AlignCenter)
-        logo.setFixedSize(28, 28)
+        logo.setFixedSize(32, 32)
         logo.setStyleSheet(
-            f"background: {COLORS['accent']}; color: white; border-radius: 7px; font-size: 15px; font-weight: 800;"
+            f"background: {COLORS['accent']}; color: white; border-radius: 8px; "
+            f"font-size: 16px; font-weight: 800;"
         )
         brand = QLabel("KUT-STUDIO")
-        brand.setStyleSheet(label_style(13, "text", 800))
-        self.project_label = QLabel()
-        self.project_label.setStyleSheet(label_style(12, "muted", 500))
-        self.saved_indicator = QLabel()
-        self.saved_indicator.setStyleSheet(label_style(11, "success", 600))
-        self.export_button = QPushButton("Exporter")
-        self.export_button.setCursor(Qt.PointingHandCursor)
-        self.export_button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']}; border: none; padding: 8px 17px; font-weight: 700; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
-        )
-        self.export_button.clicked.connect(self.show_export)
+        brand.setStyleSheet(label_style(12, "text", 800))
+        brand_lay = QHBoxLayout()
+        brand_lay.setContentsMargins(0, 0, 0, 0)
+        brand_lay.setSpacing(Spacing.sm)
         layout.addWidget(logo)
         layout.addWidget(brand)
-        layout.addSpacing(18)
-        layout.addWidget(self.project_label)
-        layout.addWidget(self.saved_indicator)
+
+        # --- Fil d'ariane projet + indicateur enregistré ---------------
+        center_box = QWidget()
+        center_layout = QHBoxLayout(center_box)
+        center_layout.setContentsMargins(Spacing.lg, 0, 0, 0)
+        center_layout.setSpacing(Spacing.md)
+        center_layout.addStretch()
+        self.project_label = QLabel()
+        self.project_label.setStyleSheet(label_style(12, "muted", 600))
+        self.saved_indicator = QLabel()
+        self.saved_indicator.setStyleSheet(label_style(11, "success", 600))
+        center_layout.addWidget(self.project_label)
+        center_layout.addWidget(self.saved_indicator)
+        center_layout.addStretch()
+        layout.addWidget(center_box, 1)
+
         layout.addStretch()
+
+        # --- Actions rapides de la top-bar -----------------------------
+        # Undo / Redo (synchronisés dans ``_refresh_undo_redo_state``).
+        self.undo_button = IconButton(
+            icon=IconName.RESET,
+            tooltip="Annuler (Ctrl+Z)",
+            size=Sizes.icon_button,
+        )
+        # Redo : on retourne l'icône « reset » de 180° pour signifier
+        # le sens inverse.
+        from PySide6.QtGui import QTransform
+        from PySide6.QtCore import Qt as QtCore
+        from ui.icons import make_icon as _mk_icon
+        redo_icon = _mk_icon(IconName.RESET, size=Sizes.icon_button - 8)
+        # Récupère un pixmap, le fait pivoter et reconstruit un QIcon.
+        from PySide6.QtGui import QIcon
+        from PySide6.QtGui import QPixmap, QPainter
+        base_pixmap = redo_icon.pixmap(64, 64)
+        flipped = QIcon(base_pixmap.transformed(
+            QTransform().rotate(180), QtCore.SmoothTransformation
+        ))
+        self.redo_button = IconButton(
+            icon=IconName.RESET,
+            tooltip="Rétablir (Ctrl+Y)",
+            size=Sizes.icon_button,
+        )
+        self.redo_button.setIcon(flipped)
+        self.undo_button.clicked.connect(self.undo_last)
+        self.redo_button.clicked.connect(self.redo_last)
+        layout.addWidget(self.undo_button)
+        layout.addWidget(self.redo_button)
+
+        separator = QWidget()
+        separator.setFixedWidth(1)
+        separator.setStyleSheet(f"background: {COLORS['border']};")
+        layout.addWidget(separator)
+
+        self.export_button = IconButton(
+            icon=IconName.EXPORT,
+            tooltip="Exporter le montage",
+            size=Sizes.icon_button,
+            square=False,
+            accent=True,
+        )
+        self.export_button.setText("  Exporter")
+        self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.export_button.setMinimumHeight(Sizes.button_md)
+        self.export_button.clicked.connect(self.show_export)
         layout.addWidget(self.export_button)
         self._update_top_bar()
         return bar
@@ -340,6 +441,17 @@ class MainWindow(QMainWindow):
             label = self.history.redo_label
             self.redo_action.setText(
                 f"Rétablir : {label}" if label else "Rétablir"
+            )
+        # Boutons rapides de la top-bar.
+        if hasattr(self, "undo_button"):
+            self.undo_button.setEnabled(self.history.can_undo)
+            self.undo_button.setToolTip(
+                f"Annuler : {self.history.undo_label}" if self.history.undo_label else "Annuler"
+            )
+        if hasattr(self, "redo_button"):
+            self.redo_button.setEnabled(self.history.can_redo)
+            self.redo_button.setToolTip(
+                f"Rétablir : {self.history.redo_label}" if self.history.redo_label else "Rétablir"
             )
         # Synchronise le flag ``project_dirty`` avec l'historique.
         self.project_dirty = self.history.is_dirty
@@ -905,7 +1017,14 @@ class MainWindow(QMainWindow):
         """
         is_playing = state == QMediaPlayer.PlayingState
         self.timeline_panel.setPlayState(is_playing)
-        self.preview_panel.play_button.setText("❚❚ Pause" if is_playing else "▶ Play")
+        from ui.icons import IconName, make_icon
+        from ui.design_system import Iconography
+        if is_playing:
+            self.preview_panel.play_button.setIcon(make_icon(IconName.PAUSE, size=Iconography.lg))
+            self.preview_panel.play_button.setToolTip("Pause")
+        else:
+            self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
+            self.preview_panel.play_button.setToolTip("Lecture")
 
     def _tick_playback(self) -> None:
         """Avance l'horloge de timeline quand la lecture est active.
@@ -986,7 +1105,10 @@ class MainWindow(QMainWindow):
         self.is_playing = False
         self.preview_panel.player.pause()
         self.timeline_panel.setPlayState(False)
-        self.preview_panel.play_button.setText("▶ Play")
+        from ui.icons import IconName, make_icon
+        from ui.design_system import Iconography
+        self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
+        self.preview_panel.play_button.setToolTip("Lecture")
 
     def on_clip_selected(self, clip_id):
         self._flush_subtitle_history_record()
@@ -1653,10 +1775,15 @@ class MainWindow(QMainWindow):
         self.timeline_panel.set_playhead_seconds(0.0)
         self._sync_preview_to_timeline()
         self.timeline_panel.setPlayState(False)
-        self.preview_panel.play_button.setText("▶ Play")
+        from ui.icons import IconName, make_icon
+        from ui.design_system import Iconography
+        self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
+        self.preview_panel.play_button.setToolTip("Lecture")
 
     def toggle_play(self):
         """Bascule lecture / pause en pilotant l'horloge de la timeline."""
+        from ui.icons import IconName, make_icon
+        from ui.design_system import Iconography
         if self.is_playing:
             self._pause_internal()
             return
@@ -1667,7 +1794,8 @@ class MainWindow(QMainWindow):
         self._sync_preview_to_timeline()
         self.preview_panel.player.play()
         self.timeline_panel.setPlayState(True)
-        self.preview_panel.play_button.setText("❚❚ Pause")
+        self.preview_panel.play_button.setIcon(make_icon(IconName.PAUSE, size=Iconography.lg))
+        self.preview_panel.play_button.setToolTip("Pause")
 
     def seek_relative(self, delta_seconds):
         """Seek relatif sur la timeline (avance / recule de ``delta_seconds``)."""
@@ -1888,6 +2016,13 @@ class MainWindow(QMainWindow):
         if self.timeline_panel.selected_clip_id is not None:
             self.on_clip_selected(self.timeline_panel.selected_clip_id)
         self._refresh_undo_redo_state()
+        # Le nombre de pistes a changé : on rééquilibre la hauteur pour
+        # garder toutes les pistes visibles si la place le permet.
+        splitter = getattr(self, "main_split", None)
+        if splitter is not None:
+            QTimer.singleShot(
+                0, lambda: self._balance_vertical_split(splitter)
+            )
 
     # ------------------------------------------------------------------
     # Tâche 14 : préférences utilisateur (thème + langue)

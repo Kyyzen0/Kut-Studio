@@ -1,3 +1,15 @@
+"""Inspecteur de propriétés (clip sélectionné + paramètres du projet).
+
+Refonte UI/UX :
+
+- tous les boutons d'action utilisent des icônes SVG cohérentes ;
+- les espacements et les tailles passent par :mod:`ui.design_system` ;
+- la hiérarchie visuelle est renforcée par un titre clair et un
+  regroupement logique des contrôles.
+"""
+
+from __future__ import annotations
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter, QColor, QPolygonF
 from PySide6.QtCore import QPointF, QRectF
@@ -24,15 +36,12 @@ from core.visual_effects import (
     TransformKeyframe,
     evaluate_transform,
 )
+from ui.design_system import Iconography, Sizes, Spacing
+from ui.icons import IconButton, IconName
 from ui.theme import COLORS, label_style
 
 
-# Minima / maxima exposés à l'UI. Doivent rester compatibles avec les
-# bornes de ``core.visual_effects``.
-# Écart maximal entre la tête de lecture et une image-clé pour la
-# considérer comme « sous » le losange. La suppression et le
-# remplacement réutilisent le temps stocké de cette image-clé : le
-# modèle ne retire une clé que si les temps coïncident à 1e-9 près.
+# Tolérance pour considérer une image-clé comme « sous » le losange.
 _KEYFRAME_MATCH_TOLERANCE = 1e-3
 
 _PROPERTY_RANGES = {
@@ -45,10 +54,10 @@ _PROPERTY_RANGES = {
 
 
 class _DiamondButton(QToolButton):
-    """Petit bouton losange utilisé pour ajouter / retirer une keyframe.
+    """Petit bouton losange pour ajouter / retirer une image-clé.
 
     État ``checked`` : image-clé présente au playhead courant.
-    Clic simple : ajoute une image-clé, ou remplace celle déjà présente.
+    Clic simple : ajoute ou remplace l'image-clé.
     Maj+clic : retire l'image-clé présente sous la tête de lecture.
     """
 
@@ -58,17 +67,17 @@ class _DiamondButton(QToolButton):
         self.setCheckable(True)
         self.setChecked(False)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(18, 18)
+        self.setFixedSize(22, 22)
         self.setToolTip(
             f"Image-clé « {property_name} » : clic pour ajouter ou remplacer, "
             "Maj+clic pour retirer"
         )
 
-    def paintEvent(self, event):  # noqa: D401 - redéfinition Qt
+    def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(3, 3, self.width() - 6, self.height() - 6)
+        rect = QRectF(4, 4, self.width() - 8, self.height() - 8)
         center = QPointF(self.width() / 2, self.height() / 2)
         polygon = QPolygonF(
             [
@@ -79,10 +88,10 @@ class _DiamondButton(QToolButton):
             ]
         )
         if self.isChecked():
-            painter.setBrush(QColor(COLORS["accent"]))
+            painter.setBrush(QColor(COLORS["diamond_filled"]))
         else:
             painter.setBrush(QColor(COLORS["surface"]))
-        painter.setPen(QColor(COLORS["border"]))
+        painter.setPen(QColor(COLORS["diamond_outline"]))
         painter.drawPolygon(polygon)
 
 
@@ -92,24 +101,18 @@ class PropertiesPanel(QWidget):
     duplicate_requested = Signal(str)
     ripple_delete_requested = Signal(str)
     enabled_changed = Signal(str, bool)
-    # Nouveaux signaux pour la tâche 13.
-    transform_changed = Signal(str, str, float)  # (clip_id, property_name, value)
-    keyframe_added = Signal(str, str, float, float)  # (clip_id, prop, t, value)
-    keyframe_removed = Signal(str, str, float)  # (clip_id, prop, t)
-    transform_reset = Signal(str)  # clip_id
+    transform_changed = Signal(str, str, float)
+    keyframe_added = Signal(str, str, float, float)
+    keyframe_removed = Signal(str, str, float)
+    transform_reset = Signal(str)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
-        # Le panneau rassemble beaucoup de contrôles. Sans zone défilante,
-        # Qt réduit la hauteur des QGroupBox lorsque la fenêtre est basse et
-        # les lignes de texte finissent par se chevaucher.
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(280)
         self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
-        self.selected_clip_track_type = None  # type: str | None
+        self.selected_clip_track_type = None
         self.timeline_panel = None
-        # Bloque les valueChanged pendant les rafraîchissements. Le
-        # compteur autorise les appels imbriqués (show_clip → update).
         self._signal_block_depth = 0
         self._allow_property_signals = False
         self._diamond_was_checked: dict[str, bool] = {}
@@ -118,35 +121,61 @@ class PropertiesPanel(QWidget):
         self._current_keyframes: list[TransformKeyframe] = []
         self.setObjectName("properties_panel")
         self.setStyleSheet(
-            f"QWidget#properties_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
+            f"QWidget#properties_panel {{ background: {COLORS['panel']}; "
+            f"border-left: 1px solid {COLORS['border']}; }}"
         )
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # Titre du panneau (header).
+        header = QWidget()
+        header.setFixedHeight(48)
+        header.setStyleSheet(
+            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+        )
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(Spacing.lg, Spacing.sm, Spacing.lg, Spacing.sm)
+        header_layout.setSpacing(0)
+        title = QLabel("PROPRIÉTÉS")
+        title.setStyleSheet(label_style(11, "muted", 800))
+        header_layout.addWidget(title)
+        outer_layout.addWidget(header)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("properties_scroll_area")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.scroll_area.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+        )
+        # Le viewport est un widget distinct : sans fond explicite il
+        # peint la couleur claire par défaut de la plateforme, ce qui
+        # rendait les libellés de l'inspecteur illisibles sur fond clair.
+        self.scroll_area.viewport().setStyleSheet(
+            f"QWidget {{ background: {COLORS['panel']}; }}"
+        )
 
         content = QWidget()
         content.setObjectName("properties_content")
+        content.setStyleSheet(
+            f"QWidget#properties_content {{ background: {COLORS['panel']}; "
+            f"color: {COLORS['text']}; }}"
+        )
         self.scroll_area.setWidget(content)
         outer_layout.addWidget(self.scroll_area)
 
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(14, 12, 14, 10)
-        layout.setSpacing(8)
-        title = QLabel("PROPRIÉTÉS")
-        title.setStyleSheet(label_style(10, "muted", 800))
-        layout.addWidget(title)
+        layout.setContentsMargins(Spacing.lg, Spacing.md, Spacing.lg, Spacing.md)
+        layout.setSpacing(Spacing.md)
 
+        # ----- Paramètres du projet ------------------------------------
         project_group = QGroupBox("Paramètres du projet")
         project_group.setStyleSheet(self.group_style())
         project_layout = QVBoxLayout(project_group)
-        project_layout.setContentsMargins(12, 12, 12, 10)
-        project_layout.setSpacing(6)
+        project_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        project_layout.setSpacing(Spacing.xs)
 
         project_fields = [
             ("État", "Aucun clip sélectionné"),
@@ -157,18 +186,18 @@ class PropertiesPanel(QWidget):
         ]
         for field, value in project_fields:
             lbl = QLabel(f"{field} : {value}")
-            # Une hauteur minimale explicite empêche le compressement de
-            # lignes lors d'un redimensionnement agressif.
-            lbl.setMinimumHeight(18)
+            lbl.setMinimumHeight(20)
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
         layout.addWidget(project_group)
 
+        # ----- Clip sélectionné ---------------------------------------
         clip_group = QGroupBox("Clip sélectionné")
         clip_group.setStyleSheet(self.group_style())
         clip_form = QFormLayout(clip_group)
-        clip_form.setContentsMargins(12, 12, 12, 10)
-        clip_form.setSpacing(6)
+        clip_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        clip_form.setSpacing(Spacing.xs)
+        clip_form.setLabelAlignment(Qt.AlignLeft)
         self.clip_name = QLabel("Aucun clip sélectionné")
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
@@ -180,74 +209,99 @@ class PropertiesPanel(QWidget):
         clip_form.addRow("Position", self.clip_position)
         layout.addWidget(clip_group)
 
-        actions_layout = QVBoxLayout()
-        actions_layout.setSpacing(6)
-        self.cut_button = QPushButton("✂️ Couper à la tête de lecture")
-        self.delete_button = QPushButton("🗑️ Supprimer")
-        self.duplicate_button = QPushButton("🧬 Dupliquer (Ctrl+D)")
-        self.ripple_button = QPushButton("✂️ Supprimer avec ripple (Ctrl+Backspace)")
-        for button in (
-            self.cut_button,
-            self.delete_button,
-            self.duplicate_button,
-            self.ripple_button,
-        ):
-            button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 7px 12px; font-weight: 600; }}"
-                f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
-                f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; border-color: {COLORS['border']}; }}"
-            )
-        self.cut_button.clicked.connect(self.emit_cut_requested)
-        self.delete_button.clicked.connect(self.emit_delete_requested)
-        self.duplicate_button.clicked.connect(self.emit_duplicate_requested)
-        self.ripple_button.clicked.connect(self.emit_ripple_requested)
-        self.cut_button.setEnabled(False)
-        self.delete_button.setEnabled(False)
-        self.duplicate_button.setEnabled(False)
-        self.ripple_button.setEnabled(False)
-        actions_layout.addWidget(self.cut_button)
-        actions_layout.addWidget(self.delete_button)
-        actions_layout.addWidget(self.duplicate_button)
-        actions_layout.addWidget(self.ripple_button)
-        layout.addLayout(actions_layout)
+        # ----- Actions rapides -----------------------------------------
+        actions_group = QGroupBox("Actions")
+        actions_group.setStyleSheet(self.group_style())
+        actions_layout = QVBoxLayout(actions_group)
+        actions_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        actions_layout.setSpacing(Spacing.xs)
 
-        # Case à cocher « Clip activé ».
+        # Première rangée : Couper / Dupliquer.
+        row_a = QWidget()
+        row_a_layout = QVBoxLayout(row_a)
+        row_a_layout.setContentsMargins(0, 0, 0, 0)
+        row_a_layout.setSpacing(Spacing.xs)
+        self.cut_button = self._make_action_button(
+            IconName.CUT, "Couper", "Couper le clip à la tête de lecture"
+        )
+        self.duplicate_button = self._make_action_button(
+            IconName.DUPLICATE, "Dupliquer", "Dupliquer le clip (Ctrl+D)"
+        )
+        row_a_layout.addWidget(self.cut_button)
+        row_a_layout.addWidget(self.duplicate_button)
+        actions_layout.addWidget(row_a)
+
+        # Deuxième rangée : Supprimer / Ripple.
+        row_b = QWidget()
+        row_b_layout = QVBoxLayout(row_b)
+        row_b_layout.setContentsMargins(0, 0, 0, 0)
+        row_b_layout.setSpacing(Spacing.xs)
+        self.delete_button = self._make_action_button(
+            IconName.TRASH, "Supprimer", "Supprimer le clip"
+        )
+        self.ripple_button = self._make_action_button(
+            IconName.SCISSORS,
+            "Supprimer avec ripple",
+            "Supprimer le clip et fermer le trou (Ctrl+Backspace)",
+        )
+        row_b_layout.addWidget(self.delete_button)
+        row_b_layout.addWidget(self.ripple_button)
+        actions_layout.addWidget(row_b)
+
+        # Case « Clip activé ».
         self.enabled_checkbox = QCheckBox("Clip activé")
         self.enabled_checkbox.toggled.connect(self.emit_enabled_changed)
         self.enabled_checkbox.setEnabled(False)
-        layout.addWidget(self.enabled_checkbox)
+        actions_layout.addWidget(self.enabled_checkbox)
+        layout.addWidget(actions_group)
 
+        # ----- Couleur --------------------------------------------------
         color_group = QGroupBox("Couleur")
         color_group.setStyleSheet(self.group_style())
         color_form = QFormLayout(color_group)
-        color_form.setContentsMargins(12, 10, 12, 6)
-        color_form.setSpacing(4)
-        self.brightness_slider, brightness_row, self.brightness_value = self.make_slider(-100, 100, 0)
-        self.contrast_slider, contrast_row, self.contrast_value = self.make_slider(-100, 100, 0)
-        self.saturation_slider, saturation_row, self.saturation_value = self.make_slider(-100, 100, 0)
+        color_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        color_form.setSpacing(Spacing.xs)
+        self.brightness_slider, brightness_row, self.brightness_value = self.make_slider(
+            -100, 100, 0
+        )
+        self.contrast_slider, contrast_row, self.contrast_value = self.make_slider(
+            -100, 100, 0
+        )
+        self.saturation_slider, saturation_row, self.saturation_value = self.make_slider(
+            -100, 100, 0
+        )
         color_form.addRow("Luminosité", brightness_row)
         color_form.addRow("Contraste", contrast_row)
         color_form.addRow("Saturation", saturation_row)
         layout.addWidget(color_group)
-        for slider in (self.brightness_slider, self.contrast_slider, self.saturation_slider):
+        for slider in (
+            self.brightness_slider,
+            self.contrast_slider,
+            self.saturation_slider,
+        ):
             slider.valueChanged.connect(self.update_color_values)
             slider.valueChanged.connect(update_color_effect)
 
+        # ----- Audio ---------------------------------------------------
         audio_group = QGroupBox("Audio")
         audio_group.setStyleSheet(self.group_style())
         audio_form = QFormLayout(audio_group)
-        audio_form.setContentsMargins(12, 10, 12, 6)
-        self.volume_slider, volume_row, self.volume_value = self.make_slider(0, 200, 100, suffix=" %")
+        audio_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        self.volume_slider, volume_row, self.volume_value = self.make_slider(
+            0, 200, 100, suffix=" %"
+        )
         audio_form.addRow("Volume", volume_row)
         layout.addWidget(audio_group)
         self.volume_slider.valueChanged.connect(update_volume)
 
-        # ---------------- Section MOUVEMENT (tâche 13) ----------------
+        # ----- Mouvement (tâche 13) ------------------------------------
         self.movement_group = QGroupBox("Mouvement")
         self.movement_group.setStyleSheet(self.group_style())
         movement_layout = QVBoxLayout(self.movement_group)
-        movement_layout.setContentsMargins(12, 12, 12, 12)
-        movement_layout.setSpacing(6)
+        movement_layout.setContentsMargins(
+            Spacing.md, Spacing.md, Spacing.md, Spacing.md
+        )
+        movement_layout.setSpacing(Spacing.xs)
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
         self._diamonds: dict[str, _DiamondButton] = {}
         self._slider_widgets: dict[str, QSlider] = {}
@@ -255,12 +309,12 @@ class PropertiesPanel(QWidget):
             low, high, step = _PROPERTY_RANGES[property_name]
             default = self._default_value_for(property_name)
             row = QWidget()
-            row_layout = QHBoxLayout(row)
+            row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
+            row_layout.setSpacing(Spacing.xs)
             label = QLabel(self._human_label(property_name))
             label.setStyleSheet(label_style(11, "muted", 600))
-            label.setFixedWidth(58)
+            label.setFixedWidth(76)
             row_layout.addWidget(label)
 
             spin = QDoubleSpinBox()
@@ -268,19 +322,18 @@ class PropertiesPanel(QWidget):
             spin.setRange(low, high)
             spin.setSingleStep(step)
             spin.setValue(default)
-            spin.setMinimumWidth(80)
+            spin.setMinimumWidth(82)
             spin.setEnabled(False)
             spin.valueChanged.connect(self._make_value_changed_handler(property_name))
             self._spin_boxes[property_name] = spin
             row_layout.addWidget(spin)
 
-            # Slider d'appoint (opacité / scale particulièrement utiles).
             if property_name in {"opacity", "scale", "rotation"}:
                 slider = QSlider(Qt.Horizontal)
                 slider_min, slider_max = self._slider_range(property_name)
                 slider.setRange(slider_min, slider_max)
                 slider.setValue(self._slider_position(property_name, default))
-                slider.setMinimumWidth(80)
+                slider.setMinimumWidth(82)
                 slider.setEnabled(False)
                 slider.valueChanged.connect(self._make_slider_handler(property_name))
                 self._slider_widgets[property_name] = slider
@@ -295,34 +348,41 @@ class PropertiesPanel(QWidget):
             row_layout.addWidget(diamond)
             movement_layout.addWidget(row)
 
-        reset_button = QPushButton("↺ Réinitialiser le mouvement")
-        reset_button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 6px 10px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
-            f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; }}"
+        reset_button = IconButton(
+            icon=IconName.RESET,
+            tooltip="Réinitialiser le mouvement",
+            size=Sizes.icon_button,
         )
+        reset_button.setText("  Réinitialiser le mouvement")
+        reset_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         reset_button.clicked.connect(self._emit_reset)
         reset_button.setEnabled(False)
+        reset_button.setMinimumWidth(0)
+        reset_button.setSizePolicy(reset_button.sizePolicy().horizontalPolicy(),
+                                   reset_button.sizePolicy().verticalPolicy())
         self.reset_movement_button = reset_button
         movement_layout.addWidget(reset_button)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True
 
         layout.addWidget(self.movement_group)
-        # Désactivé par défaut : un clip non sélectionné ne doit rien
-        # pouvoir modifier.
         self.movement_group.setEnabled(False)
-        # ---------------- Fin section MOUVEMENT ----------------
 
+        # ----- Sous-titre ----------------------------------------------
         self.subtitle_group = QGroupBox("Sous-titre")
         self.subtitle_group.setStyleSheet(self.group_style())
         subtitle_layout = QVBoxLayout(self.subtitle_group)
-        subtitle_layout.setContentsMargins(12, 16, 12, 12)
+        subtitle_layout.setContentsMargins(
+            Spacing.md, Spacing.md, Spacing.md, Spacing.md
+        )
         self.subtitle_editor = QTextEdit()
-        self.subtitle_editor.setPlaceholderText("Texte affiché sur le preview...")
-        self.subtitle_editor.setFixedHeight(72)
+        self.subtitle_editor.setPlaceholderText(
+            "Texte affiché sur le preview…"
+        )
+        self.subtitle_editor.setFixedHeight(96)
         self.subtitle_editor.setStyleSheet(
-            "QTextEdit { background: #222222; color: white; border: 1px solid #3b3b3b; border-radius: 6px; padding: 5px; }"
+            f"QTextEdit {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; "
+            f"border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 6px; }}"
         )
         save_button = QPushButton("Enregistrer le .srt")
         save_button.setEnabled(False)
@@ -334,6 +394,30 @@ class PropertiesPanel(QWidget):
         layout.addStretch()
 
     # ------------------------------------------------------------------
+    # Helpers privés : construction
+    # ------------------------------------------------------------------
+
+    def _make_action_button(
+        self, icon: IconName, text: str, tooltip: str
+    ) -> IconButton:
+        """Construit un bouton d'action « pleine largeur » aligné sur la grille."""
+        button = IconButton(
+            icon=icon, tooltip=tooltip, size=Sizes.icon_button
+        )
+        button.setText(f"  {text}")
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        # On force une taille minimale confortable ; le bouton peut
+        # s'étirer mais jamais descendre en dessous.
+        button.setMinimumHeight(Sizes.button_md)
+        button.setSizePolicy(
+            button.sizePolicy().horizontalPolicy().Expanding
+            if False
+            else button.sizePolicy().horizontalPolicy(),
+            button.sizePolicy().verticalPolicy(),
+        )
+        return button
+
+    # ------------------------------------------------------------------
     # Helpers privés : MOUVEMENT
     # ------------------------------------------------------------------
 
@@ -343,7 +427,7 @@ class PropertiesPanel(QWidget):
             "position_x": "X",
             "position_y": "Y",
             "scale": "Échelle",
-            "rotation": "Rot°",
+            "rotation": "Rotation",
             "opacity": "Opacité",
         }[property_name]
 
@@ -435,12 +519,6 @@ class PropertiesPanel(QWidget):
         self._apply_diamond_action(property_name, shift=shift)
 
     def _apply_diamond_action(self, property_name: str, *, shift: bool) -> None:
-        """Ajoute, remplace ou retire l'image-clé sous la tête de lecture.
-
-        La tête doit être sur le clip. Sinon le losange revient à l'état
-        réel, sans émettre de signal : un temps clampé à 0 poserait une
-        image-clé au début du clip.
-        """
         if self.selected_clip is None:
             return
         if not self._playhead_inside_clip():
@@ -483,7 +561,6 @@ class PropertiesPanel(QWidget):
         self._set_diamond_checked(property_name, matched is not None)
 
     def _sync_diamond_state_memory(self) -> None:
-        """Initialise ``_diamond_was_checked`` à partir de l'état Qt courant."""
         self._diamond_was_checked = {
             name: diamond.isChecked() for name, diamond in self._diamonds.items()
         }
@@ -505,11 +582,6 @@ class PropertiesPanel(QWidget):
         return bounds[1] - bounds[0]
 
     def _display_local_time(self) -> float:
-        """Temps local utilisé pour afficher et éditer la valeur courante.
-
-        Hors du clip, le temps est clampé sur [0, durée] afin que les
-        champs montrent la valeur au bord du clip.
-        """
         bounds = self._clip_bounds()
         if bounds is None:
             return 0.0
@@ -544,13 +616,6 @@ class PropertiesPanel(QWidget):
         return best
 
     def _edit_target(self, property_name: str, local_time: float) -> tuple[str, float]:
-        """Décide si l'édition écrit la base ou une image-clé.
-
-        Avant la première image-clé, l'évaluation affiche la base : on
-        la modifie. À partir de la première image-clé, la valeur visible
-        vient de l'animation : on remplace la clé sous la tête, ou on en
-        pose une nouvelle pour que le chiffre saisi reste affiché.
-        """
         matched = self._matching_keyframe(property_name, local_time)
         if matched is not None:
             return "keyframe", float(matched.time_seconds)
@@ -581,12 +646,6 @@ class PropertiesPanel(QWidget):
         keyframes: list[TransformKeyframe],
         playhead_seconds: float = 0.0,
     ) -> None:
-        """Synchronise les champs MOUVEMENT avec l'état du clip.
-
-        Cette méthode est appelée par ``MainWindow`` après chaque
-        modification de transform ou lors d'une sélection, pour que
-        l'inspecteur reflète la réalité métier.
-        """
         self._current_playhead_seconds = float(playhead_seconds)
         self._current_transform = transform
         self._current_keyframes = list(keyframes)
@@ -599,7 +658,6 @@ class PropertiesPanel(QWidget):
         transform: ClipTransform | None,
         keyframes: list[TransformKeyframe],
     ) -> None:
-        """Affiche la valeur évaluée au playhead et l'état des losanges."""
         if self.selected_clip is None:
             return
         self._push_signal_block()
@@ -613,8 +671,6 @@ class PropertiesPanel(QWidget):
                     self._clip_duration(),
                 )
                 for property_name in ANIMATABLE_PROPERTIES:
-                    # Le losange est allumé dès 1 ms : on affiche alors la
-                    # valeur stockée, pas l'interpolation vers la clé suivante.
                     matched = self._matching_keyframe(property_name, local_time)
                     if matched is not None:
                         value = float(matched.value)
@@ -634,7 +690,9 @@ class PropertiesPanel(QWidget):
         local = self._display_local_time()
         for property_name, diamond in self._diamonds.items():
             diamond.blockSignals(True)
-            diamond.setChecked(self._matching_keyframe(property_name, local) is not None)
+            diamond.setChecked(
+                self._matching_keyframe(property_name, local) is not None
+            )
             diamond.blockSignals(False)
         self._sync_diamond_state_memory()
 
@@ -644,7 +702,6 @@ class PropertiesPanel(QWidget):
         playhead_seconds: float,
         transform: ClipTransform | None = None,
     ) -> None:
-        """Met à jour losanges et valeurs pour la tête de lecture courante."""
         self._current_playhead_seconds = float(playhead_seconds)
         self._current_keyframes = list(keyframes)
         if transform is not None:
@@ -656,8 +713,11 @@ class PropertiesPanel(QWidget):
     @staticmethod
     def group_style():
         return (
-            f"QGroupBox {{ color: {COLORS['muted']}; border: 1px solid {COLORS['border']}; border-radius: 6px; margin-top: 8px; padding-top: 8px; }}"
-            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; color: {COLORS['muted']}; }}"
+            f"QGroupBox {{ color: {COLORS['muted_strong']}; "
+            f"border: 1px solid {COLORS['border']}; border-radius: 6px; "
+            f"margin-top: 12px; padding-top: 12px; font-weight: 600; }}"
+            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; "
+            f"padding: 0 6px; color: {COLORS['muted_strong']}; }}"
         )
 
     @staticmethod
@@ -674,7 +734,7 @@ class PropertiesPanel(QWidget):
         container.setMinimumWidth(140)
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(Spacing.sm)
         row.addWidget(slider, 1)
         row.addWidget(value_label, 0)
         slider._value_label = value_label
@@ -714,7 +774,9 @@ class PropertiesPanel(QWidget):
                     spin.setValue(self._default_value_for(name))
                 for name, slider in self._slider_widgets.items():
                     slider.setEnabled(False)
-                    slider.setValue(self._slider_position(name, self._default_value_for(name)))
+                    slider.setValue(
+                        self._slider_position(name, self._default_value_for(name))
+                    )
                 for name, diamond in self._diamonds.items():
                     diamond.setEnabled(False)
                     self._set_diamond_checked(name, False)
@@ -732,8 +794,6 @@ class PropertiesPanel(QWidget):
             self.duplicate_button.setEnabled(True)
             self.ripple_button.setEnabled(True)
 
-            # État de la case « Clip activé » : reflète ``view.enabled`` si
-            # l'attribut est disponible, sinon True par défaut.
             enabled = getattr(view, "enabled", True)
             self.enabled_checkbox.blockSignals(True)
             self.enabled_checkbox.setChecked(bool(enabled))
@@ -747,7 +807,6 @@ class PropertiesPanel(QWidget):
                 self.subtitle_editor.setPlainText(view.text)
                 self.subtitle_editor.blockSignals(False)
 
-            # Les transformations visuelles ne s'appliquent qu'aux clips vidéo.
             is_video_clip = getattr(view, "track_type", None) == "video"
             self.movement_group.setEnabled(is_video_clip)
             for spin in self._spin_boxes.values():

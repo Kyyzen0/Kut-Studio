@@ -1,3 +1,18 @@
+"""Viewer (preview) de Kut-Studio (refonte UI/UX).
+
+Le viewer combine :
+
+- une zone d'aperçu ``QGraphicsView`` qui rend la vidéo en cours ;
+- un overlay de sous-titres ;
+- un overlay d'indication de transition ;
+- une barre d'outils de transport (lecture / coupe) ;
+- un état vide explicite pour les nouveaux projets.
+
+Toutes les commandes utilisent des icônes SVG cohérentes.
+"""
+
+from __future__ import annotations
+
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -8,16 +23,26 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QLabel,
-    QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from ui.design_system import Iconography, Sizes, Spacing
+from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style
 
 
 class PreviewPanel(QWidget):
-    def __init__(self, toggle_play, stop_playback, seek_relative, cut_callback, open_file_callback, parent=None):
+    def __init__(
+        self,
+        toggle_play,
+        stop_playback,
+        seek_relative,
+        cut_callback,
+        open_file_callback,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -31,171 +56,175 @@ class PreviewPanel(QWidget):
         self.graphics_scene = QGraphicsScene(self)
         self.graphics_view = QGraphicsView(self.graphics_scene, self)
         self.graphics_view.setRenderHints(self.graphics_view.renderHints())
-        self.graphics_view.setBackgroundBrush(QColor("#000000"))
-        self.graphics_view.setStyleSheet(f"background: {COLORS['background']}; border: none;")
+        self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
+        self.graphics_view.setStyleSheet(
+            f"background: {COLORS['background']}; border: none;"
+        )
         self.video_item = QGraphicsVideoItem()
-        # Taille native par défaut : on laisse Qt décider de la taille de
-        # la vidéo à venir ; en cas de scène vide, ``QGraphicsVideoItem``
-        # occupe un rectangle nul que l'on recentre à la première pose.
         self.graphics_scene.addItem(self.video_item)
         self.player.setVideoOutput(self.video_item)
 
         # Position / échelle courantes appliquées à ``QGraphicsVideoItem``.
-        # Elles sont déduites de ``EvaluatedTransform`` à chaque tick.
         self._applied_pos_x: float = 0.0
         self._applied_pos_y: float = 0.0
         self._applied_scale: float = 1.0
         self._applied_rotation: float = 0.0
         self._applied_opacity: float = 1.0
 
-        # Suivi interne de la source affichée pour les deux modes :
-        # - ``_timeline_preview_path`` : pilote par la timeline ;
-        # - ``_library_preview_path`` : prévisualisation libre (bibliothèque).
+        # Suivi interne de la source affichée pour les deux modes.
         self._timeline_preview_path: str | None = None
         self._library_preview_path: str | None = None
 
+        # Overlays ------------------------------------------------------------
         self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
         self.preview_transition_overlay.setAlignment(Qt.AlignCenter)
         self.preview_transition_overlay.setStyleSheet(
-            "background: rgba(20, 20, 20, 210); color: #f7c948; border: 1px solid #f7c948;"
-            "border-radius: 8px; padding: 8px 14px; font-weight: 700;"
+            f"background: {COLORS['transition_overlay_bg']}; color: {COLORS['transition_overlay']}; "
+            f"border: 1px solid {COLORS['transition_overlay']}; border-radius: 6px; "
+            f"padding: 8px 14px; font-weight: 700;"
         )
         self.preview_transition_overlay.hide()
 
-        self.empty_state = QLabel("Votre histoire commence ici\n\nImportez vos médias, puis déposez-les sur la timeline.")
+        self.empty_state = QLabel(
+            "Votre histoire commence ici\n\n"
+            "Importez vos médias, puis déposez-les sur la timeline."
+        )
         self.empty_state.setAlignment(Qt.AlignCenter)
         self.empty_state.setStyleSheet(label_style(14, "muted", 500))
+        self.empty_state.setWordWrap(True)
 
         self.preview_subtitle_overlay = QLabel()
         self.preview_subtitle_overlay.setAlignment(Qt.AlignCenter)
         self.preview_subtitle_overlay.setWordWrap(True)
         self.preview_subtitle_overlay.setStyleSheet(
-            f"background: rgba(0, 0, 0, 190); color: {COLORS['text']}; border-radius: 5px;"
-            "padding: 6px 12px; font-size: 16px; font-weight: 700;"
+            f"background: rgba(0, 0, 0, 190); color: {COLORS['text']}; "
+            f"border-radius: 6px; padding: 8px 14px; font-size: 16px; font-weight: 700;"
         )
         self.preview_subtitle_overlay.hide()
 
+        # Entête ---------------------------------------------------------------
         top_header = QWidget()
-        top_header.setFixedHeight(54)
+        top_header.setFixedHeight(48)
         top_header.setStyleSheet(
             f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
         )
         header_layout = QHBoxLayout(top_header)
-        header_layout.setContentsMargins(14, 8, 14, 8)
-        title = QLabel("ESPACE DE TRAVAIL\nMontage vidéo")
-        title.setStyleSheet(label_style(13, "text", 700))
-        status = QLabel("PREVIEW   ·   1920 × 1080 · 30 fps")
+        header_layout.setContentsMargins(Spacing.lg, 0, Spacing.lg, 0)
+        header_layout.setSpacing(Spacing.md)
+
+        title_box = QWidget()
+        title_layout = QHBoxLayout(title_box)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(Spacing.sm)
+        title_icon = IconLabel(IconName.MEDIA, size=Iconography.md)
+        title_icon.set_color(QColor(COLORS["muted_strong"]))
+        title_layout.addWidget(title_icon)
+        title = QLabel("VIEWER")
+        title.setStyleSheet(label_style(11, "muted", 800))
+        title_layout.addWidget(title)
+        header_layout.addWidget(title_box)
+
+        header_layout.addStretch()
+
+        status = QLabel("1920 × 1080 · 30 fps")
         status.setStyleSheet(label_style(11, "muted", 600))
         status.setAlignment(Qt.AlignRight)
-        header_layout.addWidget(title)
-        header_layout.addStretch()
         header_layout.addWidget(status)
 
+        # Barre d'outils de transport -----------------------------------------
         toolbar = QWidget()
-        toolbar.setFixedHeight(90)
-        toolbar.setStyleSheet(f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};")
+        toolbar.setFixedHeight(56)
+        toolbar.setStyleSheet(
+            f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
+        )
         toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(8, 8, 8, 8)
-        toolbar_layout.setSpacing(8)
+        toolbar_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
+        toolbar_layout.setSpacing(Spacing.xs)
 
-        file_group = QWidget()
-        file_layout = QHBoxLayout(file_group)
-        file_layout.setContentsMargins(0, 0, 0, 0)
-        file_layout.setSpacing(6)
-        import_button = self.make_tool_button("Import")
-        import_button.clicked.connect(open_file_callback)
-        new_button = self.make_tool_button("New")
-        new_button.clicked.connect(lambda: self._notify_placeholder("Nouveau projet"))
-        open_button = self.make_tool_button("Open")
-        open_button.clicked.connect(open_file_callback)
-        file_layout.addWidget(import_button)
-        file_layout.addWidget(new_button)
-        file_layout.addWidget(open_button)
-
-        transport_group = QWidget()
-        transport_layout = QHBoxLayout(transport_group)
-        transport_layout.setContentsMargins(0, 0, 0, 0)
-        transport_layout.setSpacing(6)
-        rewind = self.make_tool_button("⏪")
-        rewind.setFixedWidth(42)
+        # Transport : retour / play / stop / avance.
+        rewind = IconButton(
+            icon=IconName.REWIND,
+            tooltip="Reculer de 2 s",
+            size=Sizes.icon_button,
+        )
         rewind.clicked.connect(lambda: seek_relative(-2))
-        self.play_button = self.make_tool_button("▶ Play", accent=True)
+        self.play_button = IconButton(
+            icon=IconName.PLAY,
+            tooltip="Lecture / Pause",
+            accent=True,
+            size=Sizes.icon_button + 4,
+        )
         self.play_button.clicked.connect(toggle_play)
-        stop = self.make_tool_button("■")
-        stop.setFixedWidth(42)
+        stop = IconButton(
+            icon=IconName.STOP,
+            tooltip="Stop",
+            size=Sizes.icon_button,
+        )
         stop.clicked.connect(stop_playback)
-        forward = self.make_tool_button("⏩")
-        forward.setFixedWidth(42)
+        forward = IconButton(
+            icon=IconName.FORWARD,
+            tooltip="Avancer de 2 s",
+            size=Sizes.icon_button,
+        )
         forward.clicked.connect(lambda: seek_relative(2))
-        for button in (rewind, self.play_button, stop, forward):
-            transport_layout.addWidget(button)
 
-        edit_group = QWidget()
-        edit_layout = QHBoxLayout(edit_group)
-        edit_layout.setContentsMargins(0, 0, 0, 0)
-        edit_layout.setSpacing(6)
-        mark_in_button = self.make_tool_button("Mark In")
-        mark_in_button.clicked.connect(lambda: self._notify_placeholder("Mark In"))
-        mark_out_button = self.make_tool_button("Mark Out")
-        mark_out_button.clicked.connect(lambda: self._notify_placeholder("Mark Out"))
-        cut_button = self.make_tool_button("Cut")
+        # Séparateur visuel.
+        separator = QWidget()
+        separator.setFixedWidth(1)
+        separator.setStyleSheet(f"background: {COLORS['border']};")
+
+        # Coupe / split / import.
+        cut_button = IconButton(
+            icon=IconName.CUT,
+            tooltip="Couper le clip à la tête de lecture",
+            size=Sizes.icon_button,
+        )
         cut_button.clicked.connect(cut_callback)
-        split_button = self.make_tool_button("Split")
-        split_button.clicked.connect(lambda: self._notify_placeholder("Split"))
-        edit_layout.addWidget(mark_in_button)
-        edit_layout.addWidget(mark_out_button)
-        edit_layout.addWidget(cut_button)
-        edit_layout.addWidget(split_button)
+        import_button = IconButton(
+            icon=IconName.IMPORT,
+            tooltip="Importer un média",
+            size=Sizes.icon_button,
+        )
+        import_button.clicked.connect(open_file_callback)
 
-        toolbar_layout.addWidget(file_group)
-        toolbar_layout.addWidget(transport_group)
-        toolbar_layout.addWidget(edit_group)
+        for button in (rewind, self.play_button, stop, forward, separator,
+                       cut_button, import_button):
+            toolbar_layout.addWidget(button)
         toolbar_layout.addStretch()
 
+        # Zone d'aperçu ---------------------------------------------------------
         preview_container = QWidget()
         preview_layout = QGridLayout(preview_container)
         preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(0)
         preview_layout.addWidget(self.graphics_view, 0, 0)
         preview_layout.addWidget(self.empty_state, 0, 0, Qt.AlignCenter)
-        preview_layout.addWidget(self.preview_transition_overlay, 0, 0, Qt.AlignCenter)
-        preview_layout.addWidget(self.preview_subtitle_overlay, 0, 0, Qt.AlignHCenter | Qt.AlignBottom)
+        preview_layout.addWidget(
+            self.preview_transition_overlay, 0, 0, Qt.AlignCenter
+        )
+        preview_layout.addWidget(
+            self.preview_subtitle_overlay,
+            0, 0,
+            Qt.AlignHCenter | Qt.AlignBottom,
+        )
 
+        # Layout principal ------------------------------------------------------
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         layout.addWidget(top_header)
+        layout.addWidget(preview_container, 1)
         layout.addWidget(toolbar)
-        layout.addWidget(preview_container)
+
         self.setObjectName("viewer_panel")
-        self.setStyleSheet(f"QWidget#viewer_panel {{ background: {COLORS['background']}; }}")
-
-    @staticmethod
-    def make_tool_button(label, bg="#2a2a2a", accent=False):
-        button = QPushButton(label)
-        button.setCursor(Qt.PointingHandCursor)
-        if accent:
-            button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['accent']}; color: white; border: none; border-radius: 6px; padding: 9px 14px; font-weight: 700; }}"
-                f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
-            )
-        else:
-            button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 9px 12px; font-weight: 600; }}"
-                f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
-            )
-        return button
-
-    def _notify_placeholder(self, feature_name):
-        print(f"[PreviewPanel] {feature_name} : à implémenter")
+        self.setStyleSheet(
+            f"QWidget#viewer_panel {{ background: {COLORS['background']}; }}"
+        )
 
     # ------------------------------------------------------------------
-    # Pilotage par la timeline (tâche 8)
+    # API publique
     # ------------------------------------------------------------------
 
-    # Indique si la prévisualisation courante a été déclenchée par un
-    # clic dans la bibliothèque de médias (lecture libre, hors timeline)
-    # ou par le moteur de lecture piloté par ``MainWindow``. Cette
-    # distinction permet de garder une prévisualisation de bibliothèque
-    # stable tant que la timeline ne l'écrase pas explicitement.
     def is_library_preview(self) -> bool:
         return bool(self._library_preview_path)
 
@@ -203,11 +232,7 @@ class PreviewPanel(QWidget):
         return self._library_preview_path
 
     def load_video(self, path):
-        """Prévisualisation libre déclenchée par la bibliothèque.
-
-        Le média est lu immédiatement, indépendamment de la timeline,
-        et ne modifie pas le ``Project``.
-        """
+        """Prévisualisation libre déclenchée par la bibliothèque."""
         if not path:
             return
         self.empty_state.hide()
@@ -217,17 +242,7 @@ class PreviewPanel(QWidget):
         self.player.play()
 
     def preview_at(self, path, source_time_seconds):
-        """Affiche ``path`` à la position ``source_time_seconds``.
-
-        Mode piloté par la timeline : la source est chargée si elle
-        diffère de celle déjà en mémoire, puis la tête de lecture est
-        repositionnée. La lecture (``player.play()``) n'est PAS
-        déclenchée ici : c'est ``MainWindow`` qui orchestre la lecture
-        globale via ``toggle_play``.
-
-        Si ``path`` est vide (média de démonstration sans fichier
-        réel), on bascule immédiatement sur l'état vide.
-        """
+        """Affiche ``path`` à la position ``source_time_seconds``."""
         self._library_preview_path = None
         if not path:
             self.show_empty()
@@ -244,7 +259,7 @@ class PreviewPanel(QWidget):
         self._timeline_preview_path = None
         try:
             self.player.stop()
-        except Exception:  # pragma: no cover - Qt peut lever si pas initialisé
+        except Exception:  # pragma: no cover
             pass
         self.empty_state.show()
 
@@ -263,17 +278,6 @@ class PreviewPanel(QWidget):
         canvas_width: int | None = None,
         canvas_height: int | None = None,
     ) -> None:
-        """Applique un transform à la vidéo affichée sans muter le Project.
-
-        Conventions :
-        - ``position_x`` et ``position_y`` sont normalisées par rapport à
-          la taille du canvas : ``+1.0`` décale d'une largeur / hauteur.
-        - ``scale`` multiplie la taille native de la vidéo dans la scène.
-        - ``rotation`` est en degrés, sens antihoraire (positif ``QGraphicsView``).
-        - ``opacity`` est dans ``[0, 1]``.
-        """
-        # Bornes défensives : on ne tolère pas une opacité hors plage et
-        # un scale nul / négatif qui rendrait l'élément invisible.
         opacity = max(0.0, min(1.0, float(opacity)))
         scale = max(0.01, float(scale))
 
@@ -282,14 +286,11 @@ class PreviewPanel(QWidget):
             canvas_width = max(view_rect.width(), 1)
         if canvas_height is None or canvas_height <= 0:
             canvas_height = max(view_rect.height(), 1)
-        # Centre de la zone d'affichage (en pixels scène).
         scene_w = float(canvas_width)
         scene_h = float(canvas_height)
         center_x = self.graphics_view.mapToScene(view_rect.center()).x()
         center_y = self.graphics_view.mapToScene(view_rect.center()).y()
 
-        # Taille native du média : on conserve la taille courante si
-        # ``QGraphicsVideoItem`` n'a pas encore reçu de frame.
         native = self.video_item.nativeSize()
         item_w = max(float(native.width()), 1.0)
         item_h = max(float(native.height()), 1.0)
@@ -297,21 +298,15 @@ class PreviewPanel(QWidget):
         target_h = item_h * scale
         self.video_item.setScale(scale)
 
-        # Translation de la position : on convertit le delta normalisé
-        # en pixels de scène (la scène est mappée 1:1 par défaut).
         delta_x = float(position_x) * scene_w
         delta_y = float(position_y) * scene_h
-        # ``QGraphicsItem.setTransform`` réinitialise la transformation
-        # ; on l'utilise pour combiner rotation et translation via la
-        # séquence ``translate → rotate → translate(-w/2, -h/2)``.
         transform = QTransform()
         transform.translate(center_x + delta_x, center_y + delta_y)
-        transform.rotate(-float(rotation))  # Qt : positif = horaire.
+        transform.rotate(-float(rotation))
         transform.translate(-target_w / 2.0, -target_h / 2.0)
-        self.video_item.setTransform(transform)  # noqa: F841 - gardé pour clarté
+        self.video_item.setTransform(transform)
         self.video_item.setOpacity(opacity)
 
-        # Mise à jour de l'état interne pour les inspections futures.
         self._applied_pos_x = float(position_x)
         self._applied_pos_y = float(position_y)
         self._applied_scale = scale
@@ -319,7 +314,6 @@ class PreviewPanel(QWidget):
         self._applied_opacity = opacity
 
     def current_applied_transform(self) -> dict[str, float]:
-        """Retourne le transform actuellement appliqué (inspection / tests)."""
         return {
             "position_x": self._applied_pos_x,
             "position_y": self._applied_pos_y,

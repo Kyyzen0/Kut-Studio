@@ -17,11 +17,19 @@ Trois palettes :
 Les palettes sont indépendantes de Qt (les codes couleurs sont des
 ``str`` hexadécimaux). Le :class:`ThemeManager` s'appuie sur Qt pour
 détecter le thème système via ``QApplication.styleHints().colorScheme``.
+
+La palette fournit deux niveaux de tokens :
+
+1. **Tokens bruts** (ex. ``background``, ``surface``, ``border``) :
+   valeurs sémantiques utilisées pour composer des styles locaux.
+2. **Tokens avancés** (ex. ``track_video``, ``track_audio``,
+   ``track_subtitle``, ``playhead``, ``clip_border``) : valeurs
+   spécifiques à certains éléments de l'interface (timeline, clips).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 
@@ -39,29 +47,152 @@ class ThemePalette:
     états de validation, gris pour le texte / bordures.
     """
 
-    background: str = "#111318"
-    panel: str = "#191C22"
-    panel_alt: str = "#15181D"
-    surface: str = "#20242C"
-    surface_hover: str = "#282D37"
+    # Surfaces
+    background: str = "#11141A"
+    panel: str = "#161A21"
+    panel_alt: str = "#1C2129"
+    surface: str = "#222834"
+    surface_hover: str = "#2B3242"
+    surface_active: str = "#323A4D"
+
+    # Bordures / séparateurs
     border: str = "#2B303A"
-    text: str = "#F4F4F5"
-    muted: str = "#9298A5"
-    accent: str = "#7C5CFC"
-    accent_hover: str = "#8B70FF"
-    accent_dark: str = "#30245F"
-    success: str = "#67D6A3"
-    danger: str = "#F27686"
-    disabled_text: str = "#9AA0AC"
+    border_strong: str = "#3A4150"
+    divider: str = "#232831"
+
+    # Texte
+    text: str = "#F4F5F7"
+    text_strong: str = "#FFFFFF"
+    muted: str = "#9098A4"
+    muted_strong: str = "#B7BDC8"
+    disabled_text: str = "#6B7280"
+
+    # États désactivés
     button_disabled_bg: str = "#1A1D22"
-    tooltip_bg: str = "#20242C"
-    selection: str = "#30245F"
+    button_disabled_border: str = "#252A33"
+
+    # Accents
+    accent: str = "#7C5CFC"
+    accent_hover: str = "#8E73FF"
+    accent_dark: str = "#322569"
+    accent_dark_hover: str = "#3B2C7A"
+    selection: str = "#322569"
+
+    # Statuts
+    success: str = "#67D6A3"
+    success_dark: str = "#1E3C2D"
+    danger: str = "#F27686"
+    danger_dark: str = "#3F1F25"
+    warning: str = "#F7C948"
+
+    # Tooltip
+    tooltip_bg: str = "#222834"
+
+    # Timeline / pistes
+    timeline_bg: str = "#14171D"
+    timeline_grid: str = "#1A1E25"
+    track_header_bg: str = "#161A21"
+    track_alt_bg: str = "#181C24"
+    track_divider: str = "#262B34"
+    ruler_bg: str = "#1B1F26"
+    ruler_line: str = "#3A4150"
+    playhead: str = "#67D6A3"
+    playhead_dim: str = "#67D6A380"
+    marker: str = "#F7C948"
+    selection_line: str = "#7C5CFC"
+    snap_line: str = "#7C5CFC80"
+    transition_overlay: str = "#F7C948"
+    transition_overlay_bg: str = "#14171D"
+
+    # Pistes par type
+    track_video: str = "#5B6CFF"
+    track_audio: str = "#67D6A3"
+    track_subtitle: str = "#F7C948"
+
+    # Clip
+    clip_border: str = "#3A4150"
+    clip_border_selected: str = "#8E73FF"
+    clip_border_hover: str = "#7C5CFC"
+    clip_text: str = "#FFFFFF"
+    clip_text_dim: str = "#FFFFFFB3"
+
+    # Keyframe diamond
     diamond_filled: str = "#7C5CFC"
     diamond_outline: str = "#5C5C66"
+    diamond_border: str = "#FFFFFF"
 
 
-# Alias historique conservé : la palette "dark" courante.
-COLORS: dict = ThemePalette().__dict__
+# ---------------------------------------------------------------------------
+# Palette active
+# ---------------------------------------------------------------------------
+#
+# Les panneaux construisent leurs styles locaux à partir de ``COLORS``.
+# Il s'agit d'un ``dict`` simple figé sur le thème sombre, ce qui rendait
+# le thème clair illisible (styles sombres sur fond clair) et imposait de
+# dupliquer chaque couleur. ``COLORS`` est donc un mapping *vivant* qui
+# délègue à la palette active : un seul point de bascule pour toute
+# l'application.
+
+
+_ACTIVE_PALETTE: ThemePalette = ThemePalette()
+
+
+def active_palette() -> ThemePalette:
+    """Retourne la palette actuellement appliquée à l'application."""
+    return _ACTIVE_PALETTE
+
+
+def set_active_palette(palette: ThemePalette) -> None:
+    """Bascule la palette utilisée par :data:`COLORS` et ``label_style``."""
+    global _ACTIVE_PALETTE
+    _ACTIVE_PALETTE = palette
+
+
+class _LiveColors:
+    """Mapping en lecture seule suivant la palette active.
+
+    Se comporte comme un ``dict[str, str]`` pour tous les usages
+    existants (``COLORS["panel"]``, ``.get(...)``, ``in``, ``copy()``).
+    """
+
+    __slots__ = ()
+
+    def __getitem__(self, key: str) -> str:
+        try:
+            return getattr(_ACTIVE_PALETTE, key)
+        except AttributeError as exc:  # pragma: no cover - garde-fou
+            raise KeyError(key) from exc
+
+    def __iter__(self):
+        return iter(vars(_ACTIVE_PALETTE))
+
+    def __len__(self) -> int:
+        return len(vars(_ACTIVE_PALETTE))
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and hasattr(_ACTIVE_PALETTE, key)
+
+    def keys(self):
+        return vars(_ACTIVE_PALETTE).keys()
+
+    def values(self):
+        return vars(_ACTIVE_PALETTE).values()
+
+    def items(self):
+        return vars(_ACTIVE_PALETTE).items()
+
+    def get(self, key, default=None):
+        return getattr(_ACTIVE_PALETTE, key, default)
+
+    def copy(self) -> dict:
+        return vars(_ACTIVE_PALETTE).copy()
+
+    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+        return f"_LiveColors({len(self)} tokens, thème actif inclus)"
+
+
+# Mapping vivant des couleurs (remplace l'ancien instantané du thème sombre).
+COLORS: _LiveColors = _LiveColors()
 
 
 THEMES: dict[str, ThemePalette] = {
@@ -72,20 +203,53 @@ THEMES: dict[str, ThemePalette] = {
         panel_alt="#F0F2F6",
         surface="#FFFFFF",
         surface_hover="#E7EAF2",
+        surface_active="#DDE2EE",
         border="#CFD3DC",
+        border_strong="#B7BDC8",
+        divider="#E5E8EE",
         text="#1B1F26",
+        text_strong="#0E1116",
         muted="#5C6470",
-        accent="#7C5CFC",
-        accent_hover="#8B70FF",
-        accent_dark="#E2DBFF",
-        success="#22A06B",
-        danger="#D63A52",
+        muted_strong="#3F4651",
         disabled_text="#9098A2",
         button_disabled_bg="#EDF0F4",
-        tooltip_bg="#FFFFFF",
+        button_disabled_border="#DDE1E8",
+        accent="#7C5CFC",
+        accent_hover="#6A4DE0",
+        accent_dark="#E2DBFF",
+        accent_dark_hover="#D4C9FF",
         selection="#E2DBFF",
+        success="#22A06B",
+        success_dark="#DEF2E5",
+        danger="#D63A52",
+        danger_dark="#F8DDE2",
+        warning="#B8860B",
+        tooltip_bg="#FFFFFF",
+        timeline_bg="#F4F5F8",
+        timeline_grid="#EEF0F4",
+        track_header_bg="#FFFFFF",
+        track_alt_bg="#F6F7FA",
+        track_divider="#E0E3EA",
+        ruler_bg="#FFFFFF",
+        ruler_line="#CFD3DC",
+        playhead="#22A06B",
+        playhead_dim="#22A06B80",
+        marker="#B8860B",
+        selection_line="#7C5CFC",
+        snap_line="#7C5CFC80",
+        transition_overlay="#B8860B",
+        transition_overlay_bg="#FFFFFFE6",
+        track_video="#3F4FBF",
+        track_audio="#1E8A5C",
+        track_subtitle="#B8860B",
+        clip_border="#B7BDC8",
+        clip_border_selected="#6A4DE0",
+        clip_border_hover="#7C5CFC",
+        clip_text="#FFFFFF",
+        clip_text_dim="#FFFFFFB3",
         diamond_filled="#7C5CFC",
         diamond_outline="#9098A2",
+        diamond_border="#FFFFFF",
     ),
     "system": ThemePalette(),  # valeur par défaut, résolu à l'application.
 }
@@ -103,59 +267,175 @@ def _stylesheet(palette: ThemePalette) -> str:
     return f"""
     QWidget {{
         color: {palette.text};
-        font-family: 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+        font-family: 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', Arial, sans-serif;
         font-size: 13px;
     }}
     QMainWindow {{ background: {palette.background}; }}
     QToolTip {{
         background: {palette.tooltip_bg}; color: {palette.text};
         border: 1px solid {palette.border}; padding: 5px 8px;
+        border-radius: 5px;
     }}
     QSplitter::handle {{ background: {palette.background}; }}
     QSplitter::handle:horizontal {{ width: 6px; }}
     QSplitter::handle:vertical {{ height: 6px; }}
+    QSplitter::handle:hover {{ background: {palette.accent}; }}
+
     QPushButton {{
         background: {palette.surface}; color: {palette.text};
         border: 1px solid {palette.border}; border-radius: 6px;
-        padding: 7px 11px;
+        padding: 7px 12px; font-weight: 500;
     }}
-    QPushButton:hover {{ background: {palette.surface_hover}; border-color: {palette.border}; }}
+    QPushButton:hover {{
+        background: {palette.surface_hover}; border-color: {palette.border_strong};
+    }}
     QPushButton:pressed {{ background: {palette.accent_dark}; }}
     QPushButton:disabled {{
         color: {palette.disabled_text}; background: {palette.button_disabled_bg};
-        border-color: {palette.border};
+        border-color: {palette.button_disabled_border};
     }}
-    QLineEdit, QTextEdit, QComboBox, QListWidget {{
+
+    QToolButton {{
+        background: transparent; color: {palette.text};
+        border: 1px solid transparent; border-radius: 6px;
+        padding: 5px 8px;
+    }}
+    /* Boutons « icône seule » : le padding par défaut rogne l'icône
+       dans les boutons compacts, on le neutralise. */
+    QToolButton#iconOnly, QToolButton#accentIcon {{
+        padding: 0; border-radius: 5px;
+    }}
+    /* Action primaire (bouton Lecture, Exporter…) : une seule surface
+       d'accent par écran, pour marquer clairement le geste principal. */
+    QToolButton#accentIcon, QToolButton#accentText {{
+        background: {palette.accent}; color: {palette.text_strong};
+        border: 1px solid {palette.accent};
+    }}
+    QToolButton#accentIcon:hover, QToolButton#accentText:hover {{
+        background: {palette.accent_hover};
+        border-color: {palette.accent_hover};
+    }}
+    QToolButton#accentIcon:pressed, QToolButton#accentText:pressed {{
+        background: {palette.accent}; border-color: {palette.accent};
+    }}
+    QToolButton#accentIcon:disabled, QToolButton#accentText:disabled {{
+        background: {palette.button_disabled_bg}; color: {palette.disabled_text};
+        border-color: {palette.button_disabled_border};
+    }}
+    QToolButton:hover {{ background: {palette.surface_hover}; }}
+    QToolButton:pressed {{ background: {palette.accent_dark}; }}
+    QToolButton:checked {{
+        background: {palette.accent_dark}; color: {palette.text};
+        border-color: {palette.accent};
+    }}
+    QToolButton#iconOnly:checked {{
+        background: {palette.accent_dark}; border-color: {palette.accent};
+    }}
+    QToolButton:disabled {{
+        color: {palette.disabled_text}; background: transparent;
+    }}
+
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QListWidget, QSpinBox, QDoubleSpinBox {{
         background: {palette.panel_alt}; color: {palette.text};
         border: 1px solid {palette.border}; border-radius: 6px;
         selection-background-color: {palette.selection};
+        padding: 4px 6px;
     }}
-    QComboBox {{ padding: 6px 8px; }}
-    QComboBox QAbstractItemView {{ background: {palette.surface}; color: {palette.text}; }}
+    QComboBox {{ padding: 6px 10px; }}
+    QComboBox::drop-down {{ border: none; width: 18px; }}
+    QComboBox QAbstractItemView {{
+        background: {palette.surface}; color: {palette.text};
+        border: 1px solid {palette.border};
+    }}
+    QSpinBox::up-button, QSpinBox::down-button,
+    QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+        width: 14px; border: none;
+    }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+    QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+        background: {palette.surface_hover};
+    }}
+
     QSlider::groove:horizontal {{ height: 4px; background: {palette.border}; border-radius: 2px; }}
+    QSlider::sub-page:horizontal {{ background: {palette.accent}; border-radius: 2px; }}
     QSlider::handle:horizontal {{
-        width: 12px; margin: -4px 0; background: {palette.accent}; border-radius: 6px;
+        width: 14px; margin: -6px 0; background: {palette.accent};
+        border-radius: 7px; border: 2px solid {palette.surface};
     }}
-    QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
+    QSlider::handle:horizontal:hover {{ background: {palette.accent_hover}; }}
+    QSlider:disabled {{ color: {palette.disabled_text}; }}
+
+    QCheckBox {{
+        color: {palette.text}; spacing: 8px;
+    }}
+    QCheckBox::indicator {{
+        width: 16px; height: 16px; border-radius: 4px;
+        border: 1px solid {palette.border_strong};
+        background: {palette.panel_alt};
+    }}
+    QCheckBox::indicator:hover {{ border-color: {palette.accent}; }}
+    QCheckBox::indicator:checked {{
+        background: {palette.accent}; border-color: {palette.accent};
+        image: none;
+    }}
+
+    QScrollBar:vertical {{
+        background: transparent; width: 10px; margin: 2px;
+    }}
     QScrollBar::handle:vertical {{
-        background: {palette.border}; border-radius: 4px; min-height: 24px;
+        background: {palette.border}; border-radius: 5px; min-height: 24px;
     }}
+    QScrollBar::handle:vertical:hover {{ background: {palette.border_strong}; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QScrollBar:horizontal {{
+        background: transparent; height: 10px; margin: 2px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {palette.border}; border-radius: 5px; min-width: 32px;
+    }}
+    QScrollBar::handle:horizontal:hover {{ background: {palette.border_strong}; }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+
     QMenuBar {{
         background: {palette.panel}; color: {palette.muted};
         border-bottom: 1px solid {palette.border}; padding: 3px 8px;
     }}
-    QMenuBar::item {{ padding: 5px 9px; border-radius: 4px; }}
+    QMenuBar::item {{ padding: 5px 10px; border-radius: 4px; }}
     QMenuBar::item:selected {{ background: {palette.surface_hover}; color: {palette.text}; }}
     QMenu {{ background: {palette.surface}; color: {palette.text}; border: 1px solid {palette.border}; }}
     QMenu::item {{ padding: 7px 22px; }}
     QMenu::item:selected {{ background: {palette.accent_dark}; }}
+    QMenu::separator {{ height: 1px; background: {palette.divider}; margin: 4px 6px; }}
+
     QGroupBox {{
-        color: {palette.muted}; border: 1px solid {palette.border};
-        border-radius: 6px; margin-top: 10px; padding-top: 10px;
+        color: {palette.muted_strong}; border: 1px solid {palette.border};
+        border-radius: 6px; margin-top: 12px; padding-top: 10px;
+        font-weight: 600;
     }}
     QGroupBox::title {{
-        subcontrol-origin: margin; left: 10px; padding: 0 5px; color: {palette.muted};
+        subcontrol-origin: margin; left: 12px; padding: 0 6px;
+        color: {palette.muted_strong};
+    }}
+
+    QLabel {{ color: {palette.text}; }}
+    QLabel:disabled {{ color: {palette.disabled_text}; }}
+
+    QProgressBar {{
+        background: {palette.panel_alt}; border: 1px solid {palette.border};
+        border-radius: 6px; text-align: center; color: {palette.text};
+        height: 18px;
+    }}
+    QProgressBar::chunk {{
+        background: {palette.accent}; border-radius: 5px;
+    }}
+
+    QRadioButton {{ color: {palette.text}; spacing: 8px; }}
+    QRadioButton::indicator {{
+        width: 16px; height: 16px; border-radius: 8px;
+        border: 1px solid {palette.border_strong}; background: {palette.panel_alt};
+    }}
+    QRadioButton::indicator:checked {{
+        background: {palette.accent}; border-color: {palette.accent};
     }}
     """
 
@@ -171,27 +451,23 @@ def global_stylesheet(palette: ThemePalette | None = None) -> str:
     return _stylesheet(palette)
 
 
-# Compatibilité ascendante : garde l'ancienne signature sans argument.
 def _compat_stylesheet() -> str:
     return _stylesheet(THEMES["dark"])
 
 
-# L'ancien nom ``global_stylesheet`` est exposé avec la nouvelle
-# signature : on garde ``label_style`` inchangé pour les widgets existants.
-
-
-def label_style(size=12, color="text", weight=400, palette: ThemePalette | None = None) -> str:
+def label_style(
+    size: int = 12,
+    color: str = "text",
+    weight: int = 400,
+    palette: ThemePalette | None = None,
+) -> str:
     """Génère un style inline minimal à partir des couleurs nommées."""
     if palette is None:
-        palette = ThemePalette()
+        # Suit la palette active : les libellés restent lisibles quel
+        # que soit le thème courant.
+        palette = active_palette()
     hex_color = getattr(palette, color, color) if isinstance(color, str) else color
     return f"color: {hex_color}; font-size: {size}px; font-weight: {weight};"
-
-
-# Compatibilité avec la signature historique : ``label_style(size, color,
-# weight)`` accepte toujours ``color="text"`` etc.
-# Le module ``ui.theme`` historique exposait ``COLORS`` et ``global_stylesheet``
-# ; on garde ces symboles fonctionnels.
 
 
 def colors_dict(palette: ThemePalette | None = None) -> dict:
@@ -224,44 +500,29 @@ class ThemeManager:
         self.requested_mode: str = requested_mode
         self.effective_palette: ThemePalette = self._resolve_palette(requested_mode)
         self._subscribers: list[Callable] = []
+        # Les panneaux lisent leurs couleurs via ``COLORS`` : on publie
+        # la palette résolue avant même la construction des widgets.
+        set_active_palette(self.effective_palette)
 
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
 
     def apply_to(self, app) -> None:
-        """Applique la feuille de style à ``app``.
-
-        Args:
-            app: instance ``QApplication`` ou équivalent (objet Qt racine).
-        """
+        """Applique la feuille de style à ``app``."""
         stylesheet = _stylesheet(self.effective_palette)
         if app is not None:
             try:
-                # ``setStyleSheet`` force Qt à recalculer le style de tous
-                # les widgets de l'application. Éviter ce travail très
-                # coûteux quand le même thème est déjà appliqué est
-                # important, notamment quand plusieurs fenêtres sont créées
-                # successivement (tests, ouverture de projet, etc.).
                 marker_name = "_kut_studio_theme_stylesheet"
                 if app.property(marker_name) == stylesheet:
                     return
                 app.setStyleSheet(stylesheet)
                 app.setProperty(marker_name, stylesheet)
             except Exception:
-                # Compat : si ``app`` n'a pas ``setStyleSheet``, on
-                # ignore silencieusement (cas des tests dry-run).
                 pass
 
     def set_mode(self, mode: str) -> bool:
-        """Change la palette active.
-
-        Args:
-            mode: ``"dark"``, ``"light"`` ou ``"system"``.
-
-        Returns:
-            ``True`` si la palette effective a changé.
-        """
+        """Change la palette active."""
         if mode not in SYSTEM_THEME_NAMES:
             return False
         self.requested_mode = mode
@@ -269,6 +530,7 @@ class ThemeManager:
         if new_palette is self.effective_palette:
             return False
         self.effective_palette = new_palette
+        set_active_palette(new_palette)
         self._notify()
         return True
 
@@ -276,9 +538,11 @@ class ThemeManager:
         """Recalcule la palette effective (par exemple si le système change)."""
         new_palette = self._resolve_palette(self.requested_mode)
         if new_palette is self.effective_palette:
-            return
+            return False
         self.effective_palette = new_palette
+        set_active_palette(new_palette)
         self._notify()
+        return True
 
     def stylesheet(self) -> str:
         """Retourne la feuille de style correspondant à la palette active."""

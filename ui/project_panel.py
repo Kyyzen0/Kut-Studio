@@ -1,14 +1,12 @@
 """Panneau bibliothèque de Kut-Studio.
 
-Ce widget est une simple **vue** sur ``self.project.media_assets`` : il
-ne possède plus sa propre liste métier de chemins. La mise à jour est
-déclenchée par ``MainWindow`` via ``set_assets``.
+Refonte UI/UX :
 
-L'onglet « Médias » liste les ``MediaAsset`` de type ``video`` ; l'onglet
-« Audio » liste ceux de type ``audio``. L'onglet « Texte » est une
-vraie bibliothèque de sous-titres, synchronisée avec la timeline.
-Les autres onglets restent des placeholders historiques (Effets,
-Transitions).
+- onglets avec icônes SVG cohérentes (Médias, Audio, Texte, Effets,
+  Transitions) ;
+- regroupement logique : titre de section, compteur, liste, boutons ;
+- boutons d'action plus grands et plus clairs (avec icônes) ;
+- suppression totale des emojis de l'interface.
 """
 
 from __future__ import annotations
@@ -24,103 +22,131 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
-    QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from core.project_model import MediaAsset
+from ui.design_system import Iconography, Sizes, Spacing
+from ui.icons import IconButton, IconLabel, IconName, make_icon
 from ui.theme import COLORS, label_style
+
+
+# Mapping onglet → icône.
+_TAB_ICONS: dict[int, IconName] = {
+    0: IconName.MEDIA,
+    1: IconName.AUDIO,
+    2: IconName.SUBTITLE,
+    3: IconName.EFFECTS,
+    4: IconName.TRANSITIONS,
+}
 
 
 class ProjectPanel(QWidget):
     """Bibliothèque de médias et de sous-titres du projet courant."""
 
     asset_selected = Signal(str)
-    """Émet l'identifiant du média sélectionné dans la bibliothèque visible."""
-
     add_to_timeline_requested = Signal(str)
-    """Émet l'identifiant du média à ajouter à la timeline."""
-
     import_requested = Signal()
-    """Émis lorsque l'utilisateur clique sur « Importer des médias »."""
-
     add_subtitle_requested = Signal(str, float)
-    """Émis lors d'un ajout de sous-titre : (texte, durée)."""
-
     import_subtitles_requested = Signal()
-    """Émis lors d'un clic sur « Importer un SRT »."""
-
     export_subtitles_requested = Signal()
-    """Émis lors d'un clic sur « Exporter les sous-titres SRT »."""
-
     subtitle_selected = Signal(str)
-    """Émis avec l'identifiant d'un clip de sous-titre sélectionné."""
 
-    def __init__(
-        self,
-        parent=None,
-    ) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("project_panel")
         self.setStyleSheet(
-            f"QWidget#project_panel {{ background: {COLORS['panel']}; border-right: 1px solid {COLORS['border']}; }}"
+            f"QWidget#project_panel {{ background: {COLORS['panel']}; "
+            f"border-right: 1px solid {COLORS['border']}; }}"
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 18, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
+        layout.setSpacing(Spacing.sm)
 
+        # ----- Titre de la bibliothèque ---------------------------------
         title = QLabel("BIBLIOTHÈQUE")
-        title.setStyleSheet(label_style(10, "muted", 800))
+        title.setStyleSheet(label_style(11, "muted", 800))
         layout.addWidget(title)
 
+        # ----- Onglets de navigation (avec icônes) ---------------------
         self.navigation = QListWidget()
-        self.navigation.setMinimumHeight(190)
+        # Cinq onglets doivent tenir sans défilement : la hauteur est
+        # dimensionnée sur la hauteur réelle d'un item (voir le padding
+        # appliqué plus bas), pas sur une valeur arbitraire.
+        self.navigation.setMinimumHeight(92)
         self.navigation.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.navigation.setSpacing(2)
-        self.navigation.addItems([
-            "▣   Médias",
-            "♪   Audio",
-            "T   Texte",
-            "✦   Effets",
-            "◇   Transitions",
-        ])
+        self.navigation.setSpacing(1)
+        for index in range(5):
+            item = QListWidgetItem()
+            self.navigation.addItem(item)
         self.navigation.setCurrentRow(0)
         self.navigation.setStyleSheet(
             f"QListWidget {{ background: transparent; border: none; }}"
-            f"QListWidget::item {{ color: {COLORS['muted']}; padding: 9px 10px; border-radius: 6px; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
+            f"QListWidget::item {{ color: {COLORS['muted']}; padding: 5px 8px; "
+            f"border-radius: 6px; font-size: 12px; }}"
+            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; "
+            f"color: {COLORS['text']}; }}"
         )
+        # Stocke les widgets icône associés pour les rafraîchir ensemble.
+        self._tab_icons: list[IconLabel] = []
+        for row, icon_name in _TAB_ICONS.items():
+            widget = self.navigation.itemWidget(self.navigation.item(row))
+            label = IconLabel(icon_name, size=Iconography.md)
+            self._tab_icons.append(label)
+        # Les QListWidgetItem n'hébergent pas de widget custom par défaut ;
+        # on préfère injecter l'icône via le mécanisme de décoration Qt
+        # (setIcon). Cela reste cohérent avec un style compact.
+        for row, icon_name in _TAB_ICONS.items():
+            item = self.navigation.item(row)
+            item.setIcon(make_icon(icon_name, size=Iconography.md))
+
+        # Labels FR pour les onglets.
+        self._tab_labels = ("Médias", "Audio", "Texte", "Effets", "Transitions")
+        for row, text in enumerate(self._tab_labels):
+            item = self.navigation.item(row)
+            item.setText(f"   {text}")
         self.navigation.currentRowChanged.connect(self.on_tab_changed)
         layout.addWidget(self.navigation)
 
-        media_header = QVBoxLayout()
-        media_header.setSpacing(3)
+        # ----- Titre de la section courante -----------------------------
+        # Une seule ligne (titre à gauche, compteur à droite) : gagne une
+        # ligne verticale, dont la place est comptée quand la fenêtre est
+        # basse.
+        media_header = QWidget()
+        media_header_layout = QHBoxLayout(media_header)
+        media_header_layout.setContentsMargins(0, 0, 0, 0)
+        media_header_layout.setSpacing(Spacing.sm)
         self.media_title = QLabel("MÉDIAS DU PROJET")
         self.media_title.setStyleSheet(label_style(10, "muted", 800))
         self.media_count = QLabel("0 média")
-        self.media_count.setStyleSheet(label_style(11, "muted", 500))
-        media_header.addWidget(self.media_title)
-        media_header.addWidget(self.media_count)
-        layout.addLayout(media_header)
+        self.media_count.setStyleSheet(label_style(10, "muted", 500))
+        media_header_layout.addWidget(self.media_title)
+        media_header_layout.addStretch(1)
+        media_header_layout.addWidget(self.media_count)
+        layout.addWidget(media_header)
 
-        # Contenu empilé : onglets Médias / Audio / Texte (vrais) puis placeholders.
+        # ----- Contenu empilé -------------------------------------------
+        # La pile est la seule zone réellement élastique du panneau : on
+        # lui impose un minimum faible pour que la colonne centrale
+        # puisse agrandir la timeline au lieu d'être bloquée ici.
         self.content_stack = QStackedWidget()
+        self.content_stack.setMinimumHeight(60)
+        self.content_stack.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
 
-        # Onglet Médias : liste les assets vidéo.
         self.bin_videos = self._make_bin()
         self.content_stack.addWidget(self.bin_videos)
 
-        # Onglet Audio : liste les assets audio.
         self.bin_audios = self._make_bin()
         self.content_stack.addWidget(self.bin_audios)
 
-        # Onglet Texte : vraie bibliothèque de sous-titres.
         self.subtitle_view = SubtitleLibraryView(self)
         self.content_stack.addWidget(self.subtitle_view)
 
-        # Placeholders historiques pour Effets / Transitions.
         self._effects_placeholder = self._make_placeholder_label(
             "Effets visuels\n\nCouleur, recadrage, filtres\n(à implémenter)"
         )
@@ -129,26 +155,23 @@ class ProjectPanel(QWidget):
         )
         self.content_stack.addWidget(self._effects_placeholder)
         self.content_stack.addWidget(self._transitions_placeholder)
-        layout.addWidget(self.content_stack)
+        layout.addWidget(self.content_stack, 1)
 
-        self.import_button = QPushButton("+  Importer des médias")
-        self.import_button.setStyleSheet(
-            f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['surface']}; border: 1px solid {COLORS['border']}; padding: 9px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_dark']}; border-color: {COLORS['accent']}; }}"
+        # ----- Boutons d'action principaux -----------------------------
+        self.import_button = self._make_wide_button(
+            IconName.IMPORT, "Importer des médias",
+            accent=False,
+            tooltip="Importer des médias dans le projet",
         )
         self.import_button.clicked.connect(self.import_requested)
         layout.addWidget(self.import_button)
 
-        # Bouton « Ajouter à la timeline ». Désactivé tant qu'aucun média
-        # n'est sélectionné ; activé automatiquement dès qu'une ligne de
-        # la bibliothèque devient la sélection courante.
-        self.add_to_timeline_button = QPushButton("+  Ajouter à la timeline")
-        self.add_to_timeline_button.setEnabled(False)
-        self.add_to_timeline_button.setStyleSheet(
-            f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['accent_dark']}; border: 1px solid {COLORS['accent']}; padding: 9px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
-            f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; border-color: {COLORS['border']}; font-weight: 400; }}"
+        self.add_to_timeline_button = self._make_wide_button(
+            IconName.PLUS, "Ajouter à la timeline",
+            accent=True,
+            tooltip="Ajouter le média sélectionné à la timeline",
         )
+        self.add_to_timeline_button.setEnabled(False)
         self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
         layout.addWidget(self.add_to_timeline_button)
 
@@ -159,39 +182,54 @@ class ProjectPanel(QWidget):
         self.subtitle_view.selected.connect(self.subtitle_selected)
 
     # ------------------------------------------------------------------
-    # API publique (vue sur le Project)
+    # Construction
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_wide_button(
+        icon: IconName,
+        text: str,
+        *,
+        accent: bool = False,
+        tooltip: str | None = None,
+    ) -> IconButton:
+        button = IconButton(
+            icon=icon,
+            tooltip=tooltip or text,
+            size=Sizes.icon_button,
+            accent=accent,
+            square=False,
+        )
+        button.setText(f"  {text}")
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        button.setMinimumHeight(Sizes.button_md)
+        # Le bouton s'étend pour suivre la largeur du panneau parent.
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return button
+
+    # ------------------------------------------------------------------
+    # API publique
     # ------------------------------------------------------------------
 
     def set_assets(self, assets: list[MediaAsset]) -> None:
-        """Reconstruit les listes à partir des ``MediaAsset`` du Project."""
         videos = [a for a in assets if a.media_type == "video"]
         audios = [a for a in assets if a.media_type == "audio"]
         self._populate_bin(self.bin_videos, videos)
         self._populate_bin(self.bin_audios, audios)
         self._refresh_count()
-        # Si la sélection courante n'existe plus après le refresh, on
-        # désactive le bouton d'ajout.
         self._sync_add_button_for_active_tab()
 
     def set_subtitle_clips(self, clips: list) -> None:
-        """Met à jour la bibliothèque de sous-titres de l'onglet Texte.
-
-        ``clips`` est une liste de :class:`~core.project_model.Clip`
-        activés (déjà filtrés) ; on les affiche triés par
-        ``timeline_start``.
-        """
         sorted_clips = sorted(clips, key=lambda c: c.timeline_start)
         self.subtitle_view.set_clips(sorted_clips)
         if self.navigation.currentRow() == 2:
             self._refresh_count()
 
     def select_asset(self, asset_id: str) -> None:
-        """Sélectionne le média dans l'onglet correspondant à son type."""
         for bin_widget in (self.bin_videos, self.bin_audios):
             for row in range(bin_widget.count()):
                 item = bin_widget.item(row)
                 if item.data(Qt.UserRole) == asset_id:
-                    # Bascule l'onglet pour rendre la sélection visible.
                     self.navigation.setCurrentRow(
                         0 if bin_widget is self.bin_videos else 1
                     )
@@ -199,7 +237,6 @@ class ProjectPanel(QWidget):
                     return
 
     def asset_ids(self) -> list[str]:
-        """Retourne les identifiants des assets présents dans la bibliothèque."""
         ids: list[str] = []
         for bin_widget in (self.bin_videos, self.bin_audios):
             for row in range(bin_widget.count()):
@@ -208,12 +245,10 @@ class ProjectPanel(QWidget):
 
     @property
     def selected_asset_id(self) -> str | None:
-        """Identifiant du média actuellement sélectionné, ou ``None``."""
         return self._current_bin().selected_asset_id
 
     @property
     def selected_media_type(self) -> str | None:
-        """Type du média actuellement sélectionné (``"video"`` ou ``"audio"``)."""
         asset_id = self.selected_asset_id
         if asset_id is None:
             return None
@@ -239,9 +274,7 @@ class ProjectPanel(QWidget):
     def _make_bin(self) -> "AssetBin":
         return AssetBin(
             on_item_clicked=lambda asset_id: self.asset_selected.emit(asset_id),
-            on_selection_changed=lambda asset_id: self._on_bin_selection_changed(
-                asset_id
-            ),
+            on_selection_changed=lambda asset_id: self._on_bin_selection_changed(asset_id),
         )
 
     def _populate_bin(self, bin_widget: "AssetBin", assets: list[MediaAsset]) -> None:
@@ -253,13 +286,12 @@ class ProjectPanel(QWidget):
         widget = self.content_stack.currentWidget()
         if isinstance(widget, AssetBin):
             return widget
-        return self.bin_videos  # Fallback : aucun asset n'est sélectionnable.
+        return self.bin_videos
 
     def _on_bin_selection_changed(self, asset_id: str | None) -> None:
         self.add_to_timeline_button.setEnabled(asset_id is not None)
 
     def _sync_add_button_for_active_tab(self) -> None:
-        """Aligne l'état du bouton d'ajout sur la sélection courante."""
         self.add_to_timeline_button.setEnabled(
             self._current_bin().selected_asset_id is not None
         )
@@ -272,7 +304,6 @@ class ProjectPanel(QWidget):
         self.add_to_timeline_requested.emit(asset_id)
 
     def _on_add_subtitle_clicked(self, text: str, duration: float) -> None:
-        """Slot interne relayant l'ajout d'un sous-titre au MainWindow."""
         self.add_subtitle_requested.emit(text, duration)
 
     def _refresh_count(self) -> None:
@@ -304,12 +335,7 @@ class ProjectPanel(QWidget):
 class AssetBin(QWidget):
     """Sous-widget : liste filtrée d'assets avec son propre état de sélection."""
 
-    def __init__(
-        self,
-        on_item_clicked,
-        on_selection_changed,
-        parent=None,
-    ) -> None:
+    def __init__(self, on_item_clicked, on_selection_changed, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -317,19 +343,19 @@ class AssetBin(QWidget):
         self._list = QListWidget()
         self._list.setAcceptDrops(False)
         self._list.setStyleSheet(
-            f"QListWidget {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 7px; padding: 5px; }}"
-            f"QListWidget::item {{ padding: 10px 8px; border-radius: 5px; color: {COLORS['muted']}; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
+            f"QListWidget {{ background: {COLORS['panel_alt']}; "
+            f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
+            f"border-radius: 6px; padding: 5px; }}"
+            f"QListWidget::item {{ padding: 10px 8px; border-radius: 4px; "
+            f"color: {COLORS['muted']}; }}"
+            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; "
+            f"color: {COLORS['text']}; }}"
         )
         self._list.itemClicked.connect(
             lambda item: on_item_clicked(item.data(Qt.UserRole))
         )
-        self._list.mousePressEvent = self._wrap_mouse_press(
-            self._list.mousePressEvent
-        )
-        self._list.mouseMoveEvent = self._wrap_mouse_move(
-            self._list.mouseMoveEvent
-        )
+        self._list.mousePressEvent = self._wrap_mouse_press(self._list.mousePressEvent)
+        self._list.mouseMoveEvent = self._wrap_mouse_move(self._list.mouseMoveEvent)
         self._list.currentRowChanged.connect(
             lambda row: on_selection_changed(
                 self._list.item(row).data(Qt.UserRole)
@@ -351,15 +377,12 @@ class AssetBin(QWidget):
         return self._list.count()
 
     def item(self, row: int) -> QListWidgetItem:
-        """Retourne l'item de la ligne ``row`` (compat ``QListWidget``)."""
         return self._list.item(row)
 
     def setCurrentRow(self, row: int) -> None:
-        """Sélectionne la ligne ``row`` (compat ``QListWidget``)."""
         self._list.setCurrentRow(row)
 
     def currentRow(self) -> int:
-        """Retourne la ligne courante (compat ``QListWidget``)."""
         return self._list.currentRow()
 
     @property
@@ -374,7 +397,6 @@ class AssetBin(QWidget):
     # ------------------------------------------------------------------
 
     def _wrap_mouse_press(self, original):
-        """Capture le point de départ pour le drag manuel."""
         outer = self
 
         def handler(event):
@@ -385,7 +407,6 @@ class AssetBin(QWidget):
         return handler
 
     def _wrap_mouse_move(self, original):
-        """Démarre un QDrag manuel si la souris a bougé au-delà de QApplication.startDragDistance()."""
         outer = self
 
         def handler(event):
@@ -417,44 +438,32 @@ class AssetBin(QWidget):
         drag.exec(Qt.CopyAction, Qt.CopyAction)
 
 
-# ---------------------------------------------------------------------------
-# Bibliothèque de sous-titres
-# ---------------------------------------------------------------------------
-
-
 class SubtitleLibraryView(QWidget):
     """Sous-panneau « Texte » : édition + bibliothèque des sous-titres du projet."""
 
     add_requested = Signal(str, float)
-    """Émis lors d'un clic sur « Ajouter » : (texte, durée)."""
-
     import_requested = Signal()
-    """Émis lors d'un clic sur « Importer un SRT »."""
-
     export_requested = Signal()
-    """Émis lors d'un clic sur « Exporter les sous-titres SRT »."""
-
     selected = Signal(str)
-    """Émis avec l'identifiant d'un clip de sous-titre sélectionné."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(Spacing.sm)
 
-        # Éditeur : champ texte multi-ligne.
         self.text_edit = QPlainTextEdit()
         self.text_edit.setPlaceholderText(
             "Texte du sous-titre…\nVous pouvez écrire sur plusieurs lignes."
         )
-        self.text_edit.setFixedHeight(110)
+        self.text_edit.setMinimumHeight(80)
         self.text_edit.setStyleSheet(
-            f"QPlainTextEdit {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 6px; }}"
+            f"QPlainTextEdit {{ background: {COLORS['panel_alt']}; "
+            f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
+            f"border-radius: 6px; padding: 6px; }}"
         )
         layout.addWidget(self.text_edit)
 
-        # Durée éditable, par défaut 3 s.
         duration_row = QVBoxLayout()
         duration_row.setSpacing(2)
         duration_label = QLabel("Durée (secondes)")
@@ -466,42 +475,60 @@ class SubtitleLibraryView(QWidget):
         self.duration_spin.setDecimals(2)
         self.duration_spin.setValue(3.0)
         self.duration_spin.setStyleSheet(
-            f"QDoubleSpinBox {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 4px; }}"
+            f"QDoubleSpinBox {{ background: {COLORS['panel_alt']}; "
+            f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
+            f"border-radius: 6px; padding: 4px; }}"
         )
         duration_row.addWidget(self.duration_spin)
         layout.addLayout(duration_row)
 
-        # Bouton « Ajouter un sous-titre ».
-        self.add_button = QPushButton("+  Ajouter un sous-titre")
-        self.add_button.setStyleSheet(
-            f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['accent_dark']}; border: 1px solid {COLORS['accent']}; padding: 8px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
+        self.add_button = IconButton(
+            icon=IconName.PLUS,
+            tooltip="Ajouter un sous-titre",
+            size=Sizes.icon_button,
+            square=False,
         )
+        self.add_button.setText("  Ajouter un sous-titre")
+        self.add_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.add_button.setMinimumHeight(Sizes.button_md)
         self.add_button.clicked.connect(self._emit_add_requested)
         layout.addWidget(self.add_button)
 
-        # Ligne des boutons Importer / Exporter.
         io_row = QHBoxLayout()
-        io_row.setSpacing(6)
-        self.import_button = QPushButton("Importer un SRT")
-        self.export_button = QPushButton("Exporter les sous-titres SRT")
-        for button in (self.import_button, self.export_button):
-            button.setStyleSheet(
-                f"QPushButton {{ color: {COLORS['text']}; background: {COLORS['surface']}; border: 1px solid {COLORS['border']}; padding: 6px; }}"
-                f"QPushButton:hover {{ background: {COLORS['accent_dark']}; border-color: {COLORS['accent']}; }}"
-            )
+        io_row.setSpacing(Spacing.sm)
+        self.import_button = IconButton(
+            icon=IconName.IMPORT,
+            tooltip="Importer un fichier SRT",
+            size=Sizes.icon_button,
+            square=False,
+        )
+        self.import_button.setText("  Importer SRT")
+        self.import_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.import_button.setMinimumHeight(Sizes.button_md)
         self.import_button.clicked.connect(self.import_requested)
+        self.export_button = IconButton(
+            icon=IconName.EXPORT,
+            tooltip="Exporter les sous-titres en SRT",
+            size=Sizes.icon_button,
+            square=False,
+        )
+        self.export_button.setText("  Exporter SRT")
+        self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.export_button.setMinimumHeight(Sizes.button_md)
         self.export_button.clicked.connect(self.export_requested)
         io_row.addWidget(self.import_button)
         io_row.addWidget(self.export_button)
         layout.addLayout(io_row)
 
-        # Liste des sous-titres existants.
         self.list_widget = QListWidget()
         self.list_widget.setStyleSheet(
-            f"QListWidget {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 4px; }}"
-            f"QListWidget::item {{ padding: 6px; border-radius: 4px; color: {COLORS['muted']}; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; }}"
+            f"QListWidget {{ background: {COLORS['panel_alt']}; "
+            f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
+            f"border-radius: 6px; padding: 4px; }}"
+            f"QListWidget::item {{ padding: 6px; border-radius: 4px; "
+            f"color: {COLORS['muted']}; }}"
+            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; "
+            f"color: {COLORS['text']}; }}"
         )
         self.list_widget.currentItemChanged.connect(self._on_selection_changed)
         layout.addWidget(self.list_widget, 1)
@@ -511,7 +538,6 @@ class SubtitleLibraryView(QWidget):
     # ------------------------------------------------------------------
 
     def set_clips(self, clips: list) -> None:
-        """Affiche les sous-titres existants (déjà triés par l'appelant)."""
         self.list_widget.clear()
         for clip in clips:
             item = QListWidgetItem(self._format_label(clip))
@@ -528,20 +554,14 @@ class SubtitleLibraryView(QWidget):
         return item.data(Qt.UserRole)
 
     def select_clip_id(self, clip_id: str) -> None:
-        """Sélectionne le clip correspondant à ``clip_id`` s'il existe."""
         for row in range(self.list_widget.count()):
             item = self.list_widget.item(row)
             if item.data(Qt.UserRole) == clip_id:
                 self.list_widget.setCurrentRow(row)
                 return
 
-    # ------------------------------------------------------------------
-    # Helpers internes
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _format_label(clip) -> str:
-        """Formate l'affichage d'un sous-titre dans la liste."""
         start = clip.timeline_start
         duration = getattr(clip, "duration", 0.0)
         text = (clip.text or "").replace("\n", " ").strip()
@@ -558,7 +578,9 @@ class SubtitleLibraryView(QWidget):
         self.text_edit.clear()
 
     def _on_selection_changed(
-        self, current: QListWidgetItem | None, _previous: QListWidgetItem | None
+        self,
+        current: QListWidgetItem | None,
+        _previous: QListWidgetItem | None,
     ) -> None:
         if current is None:
             return
