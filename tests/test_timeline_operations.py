@@ -3,6 +3,7 @@
 import pytest
 
 from core.project_model import Clip, MediaAsset, Project, Track
+from core.time_remapping import FreezeFrameMode, TimeRemapping
 from core.timeline_operations import (
     add_clip_to_track,
     add_subtitle_clip,
@@ -18,6 +19,7 @@ from core.timeline_operations import (
     trim_clip_left,
     trim_clip_right,
 )
+from core.visual_effects import TransformKeyframe, evaluate_transform
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +377,98 @@ def test_cut_clip_preserves_label_text_and_enabled() -> None:
     assert right.label == "Mon intro"
     assert right.text == "Bienvenue dans Kut-Studio"
     assert right.enabled is False
+
+
+def test_cut_clip_uses_source_time_for_a_fast_clip() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.time_remapping = TimeRemapping(speed=2.0)
+
+    left, right = cut_clip(project, "v1-a", 1.0)
+
+    assert (left.source_in, left.source_out) == pytest.approx((0.0, 2.0))
+    assert (right.source_in, right.source_out) == pytest.approx((2.0, 4.0))
+    assert (left.duration, right.duration) == pytest.approx((1.0, 1.0))
+
+
+def test_cut_clip_uses_source_time_for_a_slow_clip() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.time_remapping = TimeRemapping(speed=0.5)
+
+    left, right = cut_clip(project, "v1-a", 3.0)
+
+    assert (left.source_in, left.source_out) == pytest.approx((0.0, 1.5))
+    assert (right.source_in, right.source_out) == pytest.approx((1.5, 4.0))
+    assert left.duration + right.duration == pytest.approx(clip.duration)
+
+
+def test_cut_clip_preserves_playback_order_for_reverse_speed() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.time_remapping = TimeRemapping(speed=2.0, reverse=True)
+
+    left, right = cut_clip(project, "v1-a", 1.0)
+
+    assert (left.source_in, left.source_out) == pytest.approx((2.0, 4.0))
+    assert (right.source_in, right.source_out) == pytest.approx((0.0, 2.0))
+    assert left.duration + right.duration == pytest.approx(2.0)
+
+
+def test_cut_clip_preserves_playback_order_for_slow_reverse() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.time_remapping = TimeRemapping(speed=0.5, reverse=True)
+
+    left, right = cut_clip(project, "v1-a", 3.0)
+
+    assert (left.source_in, left.source_out) == pytest.approx((2.5, 4.0))
+    assert (right.source_in, right.source_out) == pytest.approx((0.0, 2.5))
+    assert left.duration + right.duration == pytest.approx(8.0)
+
+
+def test_cut_clip_splits_freeze_duration_without_doubling_it() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.time_remapping = TimeRemapping(
+        freeze_mode=FreezeFrameMode.FREEZE,
+        freeze_source_time=2.0,
+        freeze_duration=3.5,
+    )
+
+    left, right = cut_clip(project, "v1-a", 1.25)
+
+    assert left.is_frozen and right.is_frozen
+    assert left.time_remapping.freeze_duration == pytest.approx(1.25)
+    assert right.time_remapping.freeze_duration == pytest.approx(2.25)
+    assert left.duration + right.duration == pytest.approx(3.5)
+    assert (left.source_in, left.source_out) == pytest.approx((0.0, 4.0))
+    assert (right.source_in, right.source_out) == pytest.approx((0.0, 4.0))
+
+
+def test_cut_clip_preserves_audio_and_transform_metadata() -> None:
+    project = _make_project()
+    clip = find_clip(project, "v1-a")
+    clip.gain_db = -6.0
+    clip.pan = 0.25
+    clip.fade_in = 1.0
+    clip.fade_out = 1.0
+    clip.transform_keyframes = [
+        TransformKeyframe("scale", 1.0, 0.5),
+        TransformKeyframe("scale", 3.0, 0.8),
+    ]
+
+    left, right = cut_clip(project, "v1-a", 2.0)
+
+    assert (left.gain_db, right.gain_db) == pytest.approx((-6.0, -6.0))
+    assert (left.pan, right.pan) == pytest.approx((0.25, 0.25))
+    assert (left.fade_in, left.fade_out) == pytest.approx((1.0, 0.0))
+    assert (right.fade_in, right.fade_out) == pytest.approx((0.0, 1.0))
+    assert [keyframe.time_seconds for keyframe in left.transform_keyframes] == [1.0]
+    assert [keyframe.time_seconds for keyframe in right.transform_keyframes] == [0.0, 1.0]
+    assert evaluate_transform(
+        right.transform, right.transform_keyframes, 0.0, right.duration
+    ).scale == pytest.approx(0.65)
 
 
 def test_move_clip_preserves_label_and_text() -> None:

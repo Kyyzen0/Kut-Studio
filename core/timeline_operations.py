@@ -23,6 +23,14 @@ from __future__ import annotations
 import uuid
 
 from .project_model import Clip, MediaAsset, Project, Track
+from .time_remapping import (
+    FreezeFrameMode,
+    TimeRemapping,
+    clamp_speed,
+    create_freeze_frame,
+    timeline_to_source_time,
+    validate_time_remapping,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +242,98 @@ def trim_clip_right(
 # ---------------------------------------------------------------------------
 
 
+def _split_time_remapping(
+    clip: Clip, cut_local_time: float
+) -> tuple[TimeRemapping, TimeRemapping]:
+    """Construit les remappages des deux moitiés d'une coupe.
+
+    Un remappage de vitesse ou de lecture inverse peut être partagé car il
+    est immuable. Un arrêt sur image, en revanche, porte sa durée : chaque
+    moitié doit donc recevoir sa propre durée pour ne pas doubler le plan.
+    """
+    remapping = clip.time_remapping
+    if remapping.freeze_mode != FreezeFrameMode.FREEZE:
+        return remapping, remapping
+
+    remaining_duration = clip.duration - cut_local_time
+    return (
+        TimeRemapping(
+            speed=remapping.speed,
+            reverse=remapping.reverse,
+            freeze_mode=remapping.freeze_mode,
+            freeze_source_time=remapping.freeze_source_time,
+            freeze_duration=cut_local_time,
+        ),
+        TimeRemapping(
+            speed=remapping.speed,
+            reverse=remapping.reverse,
+            freeze_mode=remapping.freeze_mode,
+            freeze_source_time=remapping.freeze_source_time,
+            freeze_duration=remaining_duration,
+        ),
+    )
+
+
+def _split_transform_keyframes(
+    clip: Clip, cut_local_time: float
+) -> tuple[list[TransformKeyframe], list[TransformKeyframe]]:
+    """Répartit les keyframes sans faire repartir l'animation à la coupe."""
+    epsilon = 1e-9
+    left_keyframes: list[TransformKeyframe] = []
+    right_keyframes: list[TransformKeyframe] = []
+
+    for keyframe in clip.transform_keyframes:
+        if keyframe.time_seconds <= cut_local_time + epsilon:
+            left_keyframes.append(
+                TransformKeyframe(
+                    property_name=keyframe.property_name,
+                    time_seconds=keyframe.time_seconds,
+                    value=keyframe.value,
+                )
+            )
+        if keyframe.time_seconds >= cut_local_time - epsilon:
+            right_keyframes.append(
+                TransformKeyframe(
+                    property_name=keyframe.property_name,
+                    time_seconds=max(0.0, keyframe.time_seconds - cut_local_time),
+                    value=keyframe.value,
+                )
+            )
+
+    # Le second clip doit démarrer avec la valeur interpolée à la coupe. Sans
+    # cette image-clé synthétique, il repartirait de son transform de base.
+    evaluated = evaluate_transform(
+        clip.transform,
+        clip.transform_keyframes,
+        cut_local_time,
+        clip.duration,
+    )
+    right_at_start = {keyframe.property_name for keyframe in right_keyframes if keyframe.time_seconds <= epsilon}
+    animated_properties = {keyframe.property_name for keyframe in clip.transform_keyframes}
+    for property_name in animated_properties - right_at_start:
+        right_keyframes.append(
+            TransformKeyframe(
+                property_name=property_name,
+                time_seconds=0.0,
+                value=getattr(evaluated, property_name),
+            )
+        )
+
+    left_keyframes.sort(key=lambda keyframe: (keyframe.property_name, keyframe.time_seconds))
+    right_keyframes.sort(key=lambda keyframe: (keyframe.property_name, keyframe.time_seconds))
+    return left_keyframes, right_keyframes
+
+
+def _split_fades(clip: Clip, cut_local_time: float) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Conserve les fondus aux extrémités externes, sans créer de fondu interne."""
+    left_duration = cut_local_time
+    right_duration = clip.duration - cut_local_time
+    return (
+        (min(clip.fade_in, left_duration), 0.0),
+        (0.0, min(clip.fade_out, right_duration)),
+    )
+
+
 def cut_clip(
     project: Project, clip_id: str, cut_timeline_position: float
 ) -> tuple[Clip, Clip]:
@@ -273,32 +373,70 @@ def cut_clip(
                     f"existe déjà dans le projet."
                 )
 
-    delta_in_source = cut_timeline_position - clip.timeline_start
-    left_source_out = clip.source_in + delta_in_source
+    cut_local_time = cut_timeline_position - clip.timeline_start
+    left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
+    left_keyframes, right_keyframes = _split_transform_keyframes(clip, cut_local_time)
+    (left_fade_in, left_fade_out), (right_fade_in, right_fade_out) = _split_fades(
+        clip, cut_local_time
+    )
+
+    if clip.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        # Un freeze lit toujours la même image : ses bornes source restent
+        # intactes, seule sa durée timeline est répartie.
+        left_source_in, left_source_out = clip.source_in, clip.source_out
+        right_source_in, right_source_out = clip.source_in, clip.source_out
+    else:
+        cut_source_time = timeline_to_source_time(
+            cut_local_time,
+            clip.source_in,
+            clip.source_out,
+            clip.time_remapping.speed,
+            clip.time_remapping.reverse,
+            clip.time_remapping.freeze_mode,
+            clip.time_remapping.freeze_source_time,
+        )
+        if clip.time_remapping.reverse:
+            left_source_in, left_source_out = cut_source_time, clip.source_out
+            right_source_in, right_source_out = clip.source_in, cut_source_time
+        else:
+            left_source_in, left_source_out = clip.source_in, cut_source_time
+            right_source_in, right_source_out = cut_source_time, clip.source_out
 
     left_clip = Clip(
         id=clip.id,
         asset_id=clip.asset_id,
         track_id=clip.track_id,
         timeline_start=clip.timeline_start,
-        source_in=clip.source_in,
+        source_in=left_source_in,
         source_out=left_source_out,
         enabled=clip.enabled,
         label=clip.label,
         text=clip.text,
-        time_remapping=clip.time_remapping,
+        transform=clip.transform,
+        transform_keyframes=left_keyframes,
+        gain_db=clip.gain_db,
+        pan=clip.pan,
+        fade_in=left_fade_in,
+        fade_out=left_fade_out,
+        time_remapping=left_remapping,
     )
     right_clip = Clip(
         id=right_id,
         asset_id=clip.asset_id,
         track_id=clip.track_id,
         timeline_start=cut_timeline_position,
-        source_in=left_source_out,
-        source_out=clip.source_out,
+        source_in=right_source_in,
+        source_out=right_source_out,
         enabled=clip.enabled,
         label=clip.label,
         text=clip.text,
-        time_remapping=clip.time_remapping,
+        transform=clip.transform,
+        transform_keyframes=right_keyframes,
+        gain_db=clip.gain_db,
+        pan=clip.pan,
+        fade_in=right_fade_in,
+        fade_out=right_fade_out,
+        time_remapping=right_remapping,
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]
@@ -431,6 +569,7 @@ from .visual_effects import (  # noqa: E402  (import local pour cycle)
     ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
+    evaluate_transform,
 )
 
 
@@ -943,15 +1082,6 @@ def duplicate_clip_preserving_transform(
 # ---------------------------------------------------------------------------
 # Remappage temporel (tâche 18)
 # ---------------------------------------------------------------------------
-
-from .time_remapping import (
-    FreezeFrameMode,
-    TimeRemapping,
-    clamp_speed,
-    create_freeze_frame,
-    validate_time_remapping,
-)
-
 
 def set_clip_speed(
     project: Project, clip_id: str, speed: float
