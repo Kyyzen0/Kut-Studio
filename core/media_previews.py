@@ -43,6 +43,26 @@ def thumbnail_source_times(source_in: float, source_out: float, slots: int) -> l
     return [float(source_in) + span * (index + 0.5) / slots for index in range(slots)]
 
 
+def synthetic_peaks(seed: str, bins: int) -> tuple[float, ...]:
+    """Forme d'onde de repli, stable pour un même identifiant de clip.
+
+    Elle s'affiche quand le fichier est absent ou que FFmpeg ne peut pas
+    décoder. Ce n'est pas le signal source : c'est un dessin déterministe
+    pour que la piste audio ne reste pas vide.
+    """
+    import hashlib
+    import math
+
+    count = max(1, int(bins))
+    digest = hashlib.sha256(seed.encode("utf-8")).digest()
+    peaks: list[float] = []
+    for index in range(count):
+        byte = digest[index % len(digest)]
+        wave = 0.55 + 0.45 * abs(math.sin(index * 0.37 + byte / 40.0))
+        peaks.append(max(0.08, min(1.0, (byte / 255.0) * wave)))
+    return tuple(peaks)
+
+
 def peaks_from_samples(samples, bins: int) -> tuple[float, ...]:
     """Réduit une suite d'échantillons en pics normalisés entre 0 et 1."""
     count = len(samples)

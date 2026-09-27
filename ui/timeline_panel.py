@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QEvent, QPointF, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter, QColor, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -40,7 +40,12 @@ from core.media_previews import (
 )
 from core.project_model import Project, Track
 from core.task_queue import PRIORITY_VISIBLE
-from core.timeline_editing import ClipPlacement, clip_ids_in_range, snap_edit_position
+from core.timeline_editing import (
+    ClipPlacement,
+    clip_ids_in_range,
+    shifted_track_index,
+    snap_edit_position,
+)
 from core.timeline_navigation import (
     clamp_zoom,
     fit_zoom,
@@ -435,6 +440,31 @@ class ClipWidget(QWidget):
         locked = parent.track_is_locked(self.view.track_id)
         x = event.position().x()
         scale = parent.pixels_per_second * parent.zoom
+        if parent.tool == "slip" and not locked:
+            self.drag_mode = "slip"
+            self.drag_start_x = event.globalPos().x()
+            parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
+            event.accept()
+            return
+        if parent.tool == "slide" and not locked:
+            self.drag_mode = "slide"
+            self.drag_start_x = event.globalPos().x()
+            self.drag_original_start = self.view.start
+            self.drag_original_end = self.view.end
+            self.pending_start = self.view.start
+            self.pending_end = self.view.end
+            self.pending_track_index = self.view.track_index
+            parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
+            event.accept()
+            return
+        if parent.tool == "roll" and not locked:
+            self.drag_mode = "roll-left" if x <= self.handle_width else "roll-right"
+            self.drag_start_x = event.globalPos().x()
+            self.drag_original_start = self.view.start
+            self.drag_original_end = self.view.end
+            parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
+            event.accept()
+            return
         if parent.tool == "blade" and self.handle_width < x < self.width() - self.handle_width:
             parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
             if not locked and scale > 0:
@@ -476,6 +506,14 @@ class ClipWidget(QWidget):
             proposed = parent.snap_time(proposed, anchor_id=self.view.id)
             delta = proposed - self.drag_original_start
             parent.preview_group_move(self.view.id, delta, event.globalPos().y())
+        elif self.drag_mode == "slip":
+            parent.preview_slip(self, delta_seconds)
+        elif self.drag_mode == "slide":
+            proposed = max(0.0, self.drag_original_start + delta_seconds)
+            parent.preview_slide(self, proposed)
+        elif self.drag_mode in {"roll-left", "roll-right"}:
+            edge_time = self.drag_original_start if self.drag_mode == "roll-left" else self.drag_original_end
+            parent.preview_roll(self, self.drag_mode, edge_time + delta_seconds)
         elif self.drag_mode == "trim-right":
             proposed = max(
                 self.drag_original_start + 0.1,
@@ -505,6 +543,14 @@ class ClipWidget(QWidget):
                 parent.trim_clip_right_requested.emit(self.view.id, self.pending_end)
             elif self.drag_mode == "trim-left":
                 parent.trim_clip_left_requested.emit(self.view.id, self.pending_start)
+            elif self.drag_mode == "slip":
+                parent.slip_requested.emit(self.view.id, parent._slip_delta)
+            elif self.drag_mode == "slide":
+                parent.slide_requested.emit(self.view.id, self.pending_start)
+            elif self.drag_mode == "roll-left":
+                parent.roll_requested.emit(self.view.id, "left", self.pending_start)
+            elif self.drag_mode == "roll-right":
+                parent.roll_requested.emit(self.view.id, "right", self.pending_end)
             parent.snap_line_x = None
         self.drag_mode = None
         event.accept()
@@ -569,20 +615,24 @@ class ClipWidget(QWidget):
         Rien n'est calculé ici. L'absence de cache laisse le clip plat.
         """
         parent = self.parent_timeline
-        runtime = getattr(parent, "_runtime", None) if parent is not None else None
-        if parent is None or runtime is None or self.width() < 24:
+        if parent is None or self.width() < 24:
             return
         if parent.track_is_collapsed(self.view.track_id):
             return
-        path = self.view.source_path
-        if not path:
-            return
+        runtime = getattr(parent, "_runtime", None)
+        path = self.view.source_path or ""
         painter = QPainter(self)
         painter.setClipRect(self.rect().adjusted(2, 2, -2, -2))
         if self.view.track_type == "audio":
             mode = parent.track_height_mode(self.view.track_id)
-            key = waveform_cache_key(path, waveform_bins(self.width(), mode))
-            peaks = runtime.cache.get(key)
+            bins = waveform_bins(self.width(), mode)
+            peaks = None
+            if runtime is not None and path and os.path.isfile(path):
+                peaks = runtime.cache.get(waveform_cache_key(path, bins))
+            if not peaks:
+                from core.media_previews import synthetic_peaks
+
+                peaks = synthetic_peaks(self.view.id, bins)
             if peaks:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(255, 255, 255, 90))
@@ -596,8 +646,10 @@ class ClipWidget(QWidget):
                         max(1, int(step) - 1),
                         int(bar),
                     )
-        elif self.view.track_type == "video" and runtime.resolved_profile().filmstrips:
-            self._paint_thumbnails(painter, parent, runtime, path)
+        elif self.view.track_type == "video":
+            filmstrips = True if runtime is None else runtime.resolved_profile().filmstrips
+            if filmstrips:
+                self._paint_thumbnails(painter, parent, runtime, path)
         painter.end()
 
     def _paint_thumbnails(self, painter, parent, runtime, path: str) -> None:
@@ -610,11 +662,12 @@ class ClipWidget(QWidget):
             return
         cell = max(1, (self.width() - 8) // len(times))
         for index, instant in enumerate(times):
-            key = thumbnail_cache_key(path, instant, 160)
-            data = runtime.cache.get(key)
-            if not isinstance(data, (bytes, bytearray)) or not data:
-                continue
-            pixmap = parent.pixmap_for(key, data)
+            key = thumbnail_cache_key(path, instant, 160) if path else ""
+            data = runtime.cache.get(key) if runtime is not None and key else None
+            if isinstance(data, (bytes, bytearray)) and data:
+                pixmap = parent.pixmap_for(key, data)
+            else:
+                pixmap = parent.synthetic_thumb(self.view, index, len(times))
             if pixmap is None or pixmap.isNull():
                 continue
             target_h = max(8, self.height() - 16)
@@ -779,6 +832,10 @@ class TimelinePanel(QWidget):
     marker_add_requested = Signal(float)
     marker_remove_requested = Signal(str)
     marker_rename_requested = Signal(str)
+    slip_requested = Signal(str, float)
+    slide_requested = Signal(str, float)
+    roll_requested = Signal(str, str, float)
+    record_requested = Signal(bool)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -824,6 +881,8 @@ class TimelinePanel(QWidget):
         self.tool = "select"
         self.ripple_enabled = False
         self._drag_delta = 0.0
+        self._drag_track_delta = 0
+        self._slip_delta = 0.0
         self._drag_anchor: str | None = None
         self._marquee: QRubberBand | None = None
         self._marquee_origin: QRect | None = None
@@ -959,8 +1018,40 @@ class TimelinePanel(QWidget):
             checkable=True,
             size=Sizes.icon_button,
         )
-        self.blade_button.toggled.connect(self._on_blade_toggled)
+        self.blade_button.toggled.connect(lambda checked: self.set_tool("blade" if checked else "select"))
         left_layout.addWidget(self.blade_button)
+        self.roll_button = IconButton(
+            icon=IconName.CUT,
+            tooltip="Roll (R) : déplace la coupe entre deux clips",
+            checkable=True,
+            size=Sizes.icon_button,
+        )
+        self.slip_button = IconButton(
+            icon=IconName.REWIND,
+            tooltip="Slip (Y) : change le contenu sans bouger le clip",
+            checkable=True,
+            size=Sizes.icon_button,
+        )
+        self.slide_button = IconButton(
+            icon=IconName.FORWARD,
+            tooltip="Slide (U) : glisse le clip et ajuste ses voisins",
+            checkable=True,
+            size=Sizes.icon_button,
+        )
+        self.roll_button.toggled.connect(lambda checked: self.set_tool("roll" if checked else "select"))
+        self.slip_button.toggled.connect(lambda checked: self.set_tool("slip" if checked else "select"))
+        self.slide_button.toggled.connect(lambda checked: self.set_tool("slide" if checked else "select"))
+        left_layout.addWidget(self.roll_button)
+        left_layout.addWidget(self.slip_button)
+        left_layout.addWidget(self.slide_button)
+        self.record_button = IconButton(
+            icon=IconName.MARKER,
+            tooltip="Enregistrer sur les pistes audio armées",
+            checkable=True,
+            size=Sizes.icon_button,
+        )
+        self.record_button.toggled.connect(self.record_requested.emit)
+        left_layout.addWidget(self.record_button)
         self.ripple_button = IconButton(
             icon=IconName.FORWARD,
             tooltip="Ripple (N) : referme le trou après un trim droit ou une suppression",
@@ -1739,39 +1830,40 @@ class TimelinePanel(QWidget):
         return snapped
 
     def preview_group_move(self, anchor_id: str, delta: float, global_y: int) -> None:
+        """Déplace tout le groupe du même écart de temps et de pistes."""
         self._drag_delta = delta
+        self._drag_track_delta = 0
         anchor = self.clip_widgets.get(anchor_id)
-        track_index = None
-        if anchor is not None and len(self.selected_clip_ids) <= 1:
-            track_index = self._track_index_at_global_y(global_y, anchor.view.track_type)
-            if track_index is not None:
-                anchor.pending_track_index = track_index
+        if anchor is not None and self.project is not None:
+            target = self._track_index_at_global_y(global_y, anchor.view.track_type)
+            if target is not None:
+                self._drag_track_delta = target - anchor.view.track_index
         for view in self.clip_views:
             if view.id != anchor_id and view.id not in self.selected_clip_ids:
                 continue
             widget = self.clip_widgets.get(view.id)
-            if widget is None or widget.drag_mode == "trim-left" or widget.drag_mode == "trim-right":
+            if widget is None or widget.drag_mode in {"trim-left", "trim-right"}:
                 continue
             widget.pending_start = max(0.0, view.start + delta)
             widget.pending_end = widget.pending_start + (view.end - view.start)
-            if widget is anchor and track_index is not None:
-                widget.pending_track_index = track_index
-            else:
-                widget.pending_track_index = view.track_index
+            widget.pending_track_index = self._destination_index(view.track_index)
             widget._apply_pending_geometry()
+
+    def _destination_index(self, origin: int) -> int:
+        if self.project is None:
+            return origin
+        return shifted_track_index(self.project.tracks, origin, self._drag_track_delta)
 
     def finish_group_move(self, anchor_id: str) -> None:
         placements = []
-        anchor_track = None
-        anchor_widget = self.clip_widgets.get(anchor_id)
-        if anchor_widget is not None and self.project is not None:
-            index = anchor_widget.pending_track_index
-            if 0 <= index < len(self.project.tracks):
-                anchor_track = self.project.tracks[index].id
         for view in self.clip_views:
             if view.id != anchor_id and view.id not in self.selected_clip_ids:
                 continue
-            track_id = anchor_track if view.id == anchor_id and anchor_track else view.track_id
+            widget = self.clip_widgets.get(view.id)
+            index = widget.pending_track_index if widget is not None else self._destination_index(view.track_index)
+            track_id = view.track_id
+            if self.project is not None and 0 <= index < len(self.project.tracks):
+                track_id = self.project.tracks[index].id
             placements.append(
                 ClipPlacement(
                     clip_id=view.id,
@@ -1781,6 +1873,59 @@ class TimelinePanel(QWidget):
             )
         if placements:
             self.clips_move_requested.emit(placements)
+
+    def preview_slip(self, widget: ClipWidget, delta: float) -> None:
+        self._slip_delta = delta
+        widget.duration_label.setText(f"slip {delta:+.2f}s")
+
+    def preview_slide(self, widget: ClipWidget, new_start: float) -> None:
+        widget.pending_start = new_start
+        widget.pending_end = new_start + (widget.drag_original_end - widget.drag_original_start)
+        widget._apply_pending_geometry()
+
+    def preview_roll(self, widget: ClipWidget, mode: str, edge_time: float) -> None:
+        if mode == "roll-left":
+            widget.pending_start = min(widget.drag_original_end - 0.1, max(0.0, edge_time))
+        else:
+            widget.pending_end = max(widget.drag_original_start + 0.1, edge_time)
+        widget._apply_pending_geometry()
+
+    def synthetic_thumb(self, view: TimelineClipView, index: int, slots: int) -> QPixmap:
+        """Vignette de secours, peinte sans décoder le média."""
+        key = f"synth:{view.id}:{index}:{slots}"
+        cached = self._pixmaps.get(key)
+        if cached is not None:
+            return cached
+        image = QImage(160, 90, QImage.Format_RGB32)
+        color = QColor(view.color_key)
+        image.fill(color.darker(110 + index * 18))
+        painter = QPainter(image)
+        painter.setPen(QColor("white"))
+        painter.drawText(image.rect(), Qt.AlignCenter, view.label or str(index + 1))
+        painter.end()
+        pixmap = QPixmap.fromImage(image)
+        if len(self._pixmaps) > 48:
+            self._pixmaps.clear()
+        self._pixmaps[key] = pixmap
+        return pixmap
+
+    def set_tool(self, name: str) -> None:
+        """Outil actif : select, blade, roll, slip ou slide. Un seul à la fois."""
+        if name not in {"select", "blade", "roll", "slip", "slide"}:
+            name = "select"
+        self.tool = name
+        buttons = {
+            "blade": getattr(self, "blade_button", None),
+            "roll": getattr(self, "roll_button", None),
+            "slip": getattr(self, "slip_button", None),
+            "slide": getattr(self, "slide_button", None),
+        }
+        for tool, button in buttons.items():
+            if button is None:
+                continue
+            button.blockSignals(True)
+            button.setChecked(tool == name)
+            button.blockSignals(False)
 
     def _track_index_at_global_y(self, global_y: int, track_type: str) -> int | None:
         if self.project is None:
@@ -1950,11 +2095,6 @@ class TimelinePanel(QWidget):
         self.zoom = new
         self._apply_zoom()
         self.scroll.horizontalScrollBar().setValue(new_scroll)
-
-    def _on_blade_toggled(self, checked: bool) -> None:
-        self.tool = "blade" if checked else "select"
-        if checked and hasattr(self, "ripple_button"):
-            pass
 
     def _on_ripple_toggled(self, checked: bool) -> None:
         self.ripple_enabled = bool(checked)

@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
 from .timeline_evaluator import timeline_duration
-from .timeline_operations import subtitle_cues_from_project
 from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -196,18 +195,22 @@ def build_render_plan(project: Project) -> RenderPlan:
     Returns:
         Le :class:`RenderPlan` correspondant au projet.
     """
-    asset_cache: dict[str, MediaAsset] = {asset.id: asset for asset in project.media_assets}
-
     video_layers: list[RenderLayer] = []
     audio_layers: list[AudioLayer] = []
+    video_solo = {track.id for track in project.tracks if track.type == "video" and track.solo}
+    audio_solo = {track.id for track in project.tracks if track.type == "audio" and track.solo}
     for track_index, track in enumerate(project.tracks):
         if track.type not in {"video", "audio"}:
             continue
         if track.type == "video" and not track.visible:
             # Une piste vidéo invisible n'apparaît pas dans le rendu.
             continue
+        if video_solo and track.type == "video" and track.id not in video_solo:
+            continue
         if track.type == "audio" and track.muted:
             # Une piste audio muette ne participe pas au mixage.
+            continue
+        if audio_solo and track.type == "audio" and track.id not in audio_solo:
             continue
         for clip in track.clips:
             if not clip.enabled:
@@ -229,7 +232,9 @@ def build_render_plan(project: Project) -> RenderPlan:
                         transform_keyframes=tuple(clip.transform_keyframes),
                     )
                 )
-                if asset.has_audio and not track.muted:
+                # Un solo audio ne laisse passer que les pistes audio armées
+                # en solo : le son embarqué des pistes vidéo est alors exclu.
+                if asset.has_audio and not track.muted and not audio_solo:
                     audio_layers.append(
                         _build_audio_layer(clip, asset, track.id, track_index)
                     )
@@ -244,8 +249,32 @@ def build_render_plan(project: Project) -> RenderPlan:
         duration=timeline_duration(project),
         video_layers=tuple(video_layers),
         audio_layers=tuple(audio_layers),
-        subtitle_cues=tuple(subtitle_cues_from_project(project)),
+        subtitle_cues=tuple(_subtitle_cues_for_export(project)),
     )
+
+
+def _subtitle_cues_for_export(project: Project):
+    """Sous-titres exportés, en respectant visibilité et solo."""
+    from .subtitle_io import SubtitleCue
+
+    solo = {track.id for track in project.tracks if track.type == "subtitle" and track.solo}
+    cues = []
+    for track in project.tracks:
+        if track.type != "subtitle" or not track.visible:
+            continue
+        if solo and track.id not in solo:
+            continue
+        for clip in track.clips:
+            if not clip.enabled or not (clip.text or "").strip():
+                continue
+            cues.append(
+                SubtitleCue(
+                    start=float(clip.timeline_start),
+                    end=float(clip.timeline_start + clip.duration),
+                    text=clip.text.strip(),
+                )
+            )
+    return sorted(cues, key=lambda cue: (cue.start, cue.end))
 
 
 def _build_audio_layer(

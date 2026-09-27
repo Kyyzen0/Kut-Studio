@@ -132,6 +132,166 @@ class ClipPlacement:
     track_id: str
 
 
+def shifted_track_index(tracks, origin: int, delta: int) -> int:
+    """Décale une piste de ``delta`` rangées, si la destination est compatible.
+
+    Le groupe se déplace du même nombre de rangées. Une piste verrouillée,
+    d'un autre type, ou hors du montage laisse le clip sur sa piste d'origine.
+    """
+    if delta == 0 or not tracks:
+        return origin
+    dest = origin + delta
+    if not (0 <= origin < len(tracks)) or not (0 <= dest < len(tracks)):
+        return origin
+    if tracks[dest].locked or tracks[dest].type != tracks[origin].type:
+        return origin
+    return dest
+
+
+def ripple_trim_left(project: Project, clip_id: str, new_timeline_start: float):
+    """Rogne la tête du clip et referme le trou en aval.
+
+    ``trim_clip_left`` avance le début et laisse la fin en place, ce qui
+    ouvre un trou avant le clip. En ripple, le début revient à sa place
+    (le contenu a changé) et tout ce qui commençait à l'ancienne fin
+    recule de la durée retirée.
+    """
+    from .timeline_operations import find_clip, trim_clip_left
+
+    clip = find_clip(project, clip_id)
+    old_start = float(clip.timeline_start)
+    old_end = old_start + float(clip.duration)
+    track_id = clip.track_id
+    trim_clip_left(project, clip_id, new_timeline_start)
+    removed = float(new_timeline_start) - old_start
+    if removed <= 1e-9:
+        return clip
+    clip.timeline_start = old_start
+    shift_track_after(
+        project,
+        track_id,
+        old_end,
+        -removed,
+        exclude_ids={clip_id},
+    )
+    return clip
+
+
+def _neighbors(project: Project, clip_id: str):
+    track, _index = _find_track_for_clip(project, clip_id)
+    ordered = sorted(track.clips, key=lambda item: (item.timeline_start, item.id))
+    position = next(index for index, item in enumerate(ordered) if item.id == clip_id)
+    previous = ordered[position - 1] if position > 0 else None
+    following = ordered[position + 1] if position + 1 < len(ordered) else None
+    return track, previous, ordered[position], following
+
+
+def _asset_duration(project: Project, clip) -> float:
+    return float(_find_asset(project, clip.asset_id).duration)
+
+
+def slip_clip(project: Project, clip_id: str, delta_seconds: float):
+    """Décale la fenêtre source sans bouger le clip sur la timeline.
+
+    Le delta est borné par le début du média et sa durée. La durée du
+    clip sur la timeline ne change pas.
+    """
+    _track, _previous, clip, _following = _neighbors(project, clip_id)
+    _ensure_track_editable(project, _track)
+    if abs(delta_seconds) < 1e-9:
+        return clip
+    limit = _asset_duration(project, clip)
+    if delta_seconds > 0:
+        delta_seconds = min(delta_seconds, limit - clip.source_out)
+    else:
+        delta_seconds = max(delta_seconds, -clip.source_in)
+    clip.source_in += delta_seconds
+    clip.source_out += delta_seconds
+    return clip
+
+
+def slide_clip(project: Project, clip_id: str, new_timeline_start: float):
+    """Glisse un clip et ajuste les voisins pour garder le montage joint.
+
+    Sans voisin, le clip est simplement déplacé. Avec un voisin, sa
+    durée source ne change pas : c'est le clip d'avant qui change de
+    fin, et celui d'après qui change de début.
+    """
+    from .timeline_operations import trim_clip_right
+
+    track, previous, clip, following = _neighbors(project, clip_id)
+    _ensure_track_editable(project, track)
+    if new_timeline_start < 0.0:
+        raise ValueError("Un slide ne peut pas commencer avant 0.")
+    delta = float(new_timeline_start) - float(clip.timeline_start)
+    if abs(delta) < 1e-9:
+        return clip
+    if previous is not None:
+        new_prev_end = previous.timeline_start + previous.duration + delta
+        if new_prev_end <= previous.timeline_start + 0.05:
+            raise ValueError("Le slide écraserait le clip précédent.")
+        if previous.source_out + delta > _asset_duration(project, previous) + 1e-6:
+            raise ValueError("Le slide dépasse la durée du média précédent.")
+        if previous.source_out + delta <= previous.source_in + 0.05:
+            raise ValueError("Le slide laisserait le clip précédent vide.")
+    if following is not None:
+        new_source_in = following.source_in + delta
+        if new_source_in < 0.0 or new_source_in >= following.source_out - 0.05:
+            raise ValueError("Le slide ne tient pas dans le clip suivant.")
+        if following.timeline_start + delta < 0.0:
+            raise ValueError("Le slide pousserait le clip suivant avant 0.")
+    if previous is not None:
+        trim_clip_right(
+            project,
+            previous.id,
+            previous.timeline_start + previous.duration + delta,
+        )
+    clip.timeline_start = float(new_timeline_start)
+    if following is not None:
+        following.timeline_start += delta
+        following.source_in += delta
+    return clip
+
+
+def roll_edit(project: Project, clip_id: str, edge: str, new_time: float):
+    """Déplace la coupe entre ce clip et son voisin, sans changer la durée totale.
+
+    ``edge`` vaut ``"right"`` (coupe sortante) ou ``"left"`` (coupe
+    entrante). S'il n'y a pas de voisin, l'opération retombe sur un trim.
+    """
+    from .timeline_operations import trim_clip_left, trim_clip_right
+
+    _track, previous, clip, following = _neighbors(project, clip_id)
+    _ensure_track_editable(project, _track)
+    if edge == "right":
+        if following is None:
+            return trim_clip_right(project, clip_id, new_time)
+        delta = float(new_time) - (clip.timeline_start + clip.duration)
+        _roll_pair(project, clip, following, delta)
+        return clip
+    if previous is None:
+        return trim_clip_left(project, clip_id, new_time)
+    delta = float(new_time) - clip.timeline_start
+    _roll_pair(project, previous, clip, delta)
+    return clip
+
+
+def _roll_pair(project: Project, left, right, delta: float) -> None:
+    if abs(delta) < 1e-9:
+        return
+    left_out = left.source_out + delta
+    right_in = right.source_in + delta
+    if left_out <= left.source_in + 0.05 or left_out > _asset_duration(project, left) + 1e-6:
+        raise ValueError("Le roll sort du média de gauche.")
+    if right_in < 0.0 or right_in >= right.source_out - 0.05:
+        raise ValueError("Le roll sort du média de droite.")
+    if right.timeline_start + delta < 0.0:
+        raise ValueError("Le roll passerait avant le début de la timeline.")
+    left.source_out = left_out
+    right.source_in = right_in
+    right.timeline_start += delta
+
+
 def relocate_clip(
     project: Project,
     clip_id: str,

@@ -37,6 +37,7 @@ from core.project_model import MediaAsset, Project
 from core.subtitle_io import load_srt, parse_srt, save_srt
 from core.shortcuts import resolve_shortcut
 from core.studio_runtime import StudioRuntime, peak_rss_bytes
+from core.audio_recorder import AudioRecorder, AudioRecorderError, pcm_duration, write_wav
 from core.timeline_editing import (
     add_marker,
     apply_solo,
@@ -44,7 +45,11 @@ from core.timeline_editing import (
     move_clips,
     neighbor_marker,
     remove_marker,
+    ripple_trim_left,
+    roll_edit,
     shift_track_after,
+    slide_clip,
+    slip_clip,
 )
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
@@ -178,6 +183,13 @@ class MainWindow(QMainWindow):
         self.timeline_panel.arm_toggled.connect(self.on_track_armed)
         self.timeline_panel.height_cycle_requested.connect(self.on_track_height_cycle)
         self.timeline_panel.collapse_toggled.connect(self.on_track_collapsed)
+        self.timeline_panel.slip_requested.connect(self.on_slip_requested)
+        self.timeline_panel.slide_requested.connect(self.on_slide_requested)
+        self.timeline_panel.roll_requested.connect(self.on_roll_requested)
+        self.timeline_panel.record_requested.connect(self.on_record_toggled)
+        self._audio_recorder = AudioRecorder()
+        self._record_origin = 0.0
+        self._record_tracks: list[str] = []
         self._apply_runtime_hints()
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
@@ -317,6 +329,9 @@ class MainWindow(QMainWindow):
             workspace.shutdown()
         if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
             self.timeline_timer.stop()
+        recorder = getattr(self, "_audio_recorder", None)
+        if recorder is not None and recorder.is_recording:
+            recorder.stop()
         if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
             self._autosave_timer.stop()
         if hasattr(self, "_debug_timer") and self._debug_timer is not None:
@@ -1557,7 +1572,10 @@ class MainWindow(QMainWindow):
 
     def on_trim_left_requested(self, clip_id: str, new_timeline_start: float) -> None:
         try:
-            trim_clip_left(self.project, clip_id, new_timeline_start)
+            if self.timeline_panel.ripple_enabled:
+                ripple_trim_left(self.project, clip_id, new_timeline_start)
+            else:
+                trim_clip_left(self.project, clip_id, new_timeline_start)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim gauche refusé : {exc}")
             return
@@ -2266,6 +2284,9 @@ class MainWindow(QMainWindow):
             Qt.Key_K: "k",
             Qt.Key_L: "l",
             Qt.Key_B: "b",
+            Qt.Key_R: "r",
+            Qt.Key_Y: "y",
+            Qt.Key_U: "u",
             Qt.Key_V: "v",
             Qt.Key_S: "s",
             Qt.Key_N: "n",
@@ -2304,9 +2325,15 @@ class MainWindow(QMainWindow):
         elif action == "zoom_fit":
             timeline.fit_timeline()
         elif action == "tool_blade":
-            timeline.blade_button.setChecked(not timeline.blade_button.isChecked())
+            timeline.set_tool("select" if timeline.tool == "blade" else "blade")
+        elif action == "tool_roll":
+            timeline.set_tool("select" if timeline.tool == "roll" else "roll")
+        elif action == "tool_slip":
+            timeline.set_tool("select" if timeline.tool == "slip" else "slip")
+        elif action == "tool_slide":
+            timeline.set_tool("select" if timeline.tool == "slide" else "slide")
         elif action == "tool_select":
-            timeline.blade_button.setChecked(False)
+            timeline.set_tool("select")
         elif action == "toggle_snap":
             timeline.snap_button.setChecked(not timeline.snap_button.isChecked())
         elif action == "toggle_ripple":
@@ -2326,6 +2353,122 @@ class MainWindow(QMainWindow):
         else:
             return False
         return True
+
+    def on_slip_requested(self, clip_id: str, delta: float) -> None:
+        try:
+            slip_clip(self.project, clip_id, delta)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] slip refusé : {exc}")
+            self.timeline_panel.set_project(self.project)
+            return
+        self._record_history("Slip")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
+
+    def on_slide_requested(self, clip_id: str, new_start: float) -> None:
+        try:
+            slide_clip(self.project, clip_id, new_start)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] slide refusé : {exc}")
+            self.timeline_panel.set_project(self.project)
+            return
+        self._record_history("Slide")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
+
+    def on_roll_requested(self, clip_id: str, edge: str, new_time: float) -> None:
+        try:
+            roll_edit(self.project, clip_id, edge, new_time)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] roll refusé : {exc}")
+            self.timeline_panel.set_project(self.project)
+            return
+        self._record_history("Roll")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
+
+    def on_record_toggled(self, checked: bool) -> None:
+        """Démarre ou arrête le microphone sur les pistes audio armées."""
+        if checked:
+            armed = [
+                track.id
+                for track in self.project.tracks
+                if track.type == "audio" and track.armed and not track.locked
+            ]
+            if not armed:
+                self._set_record_button(False)
+                QMessageBox.information(
+                    self,
+                    "Enregistrement",
+                    "Armez une piste audio avant d'enregistrer.",
+                )
+                return
+            try:
+                self._audio_recorder.start()
+            except AudioRecorderError as exc:
+                self._set_record_button(False)
+                QMessageBox.critical(self, "Enregistrement", str(exc))
+                return
+            self._record_origin = float(self.playhead_seconds)
+            self._record_tracks = armed
+            return
+        if not self._audio_recorder.is_recording:
+            return
+        pcm, rate, channels = self._audio_recorder.stop()
+        self._place_recording(pcm, rate, channels)
+
+    def _set_record_button(self, checked: bool) -> None:
+        button = self.timeline_panel.record_button
+        button.blockSignals(True)
+        button.setChecked(checked)
+        button.blockSignals(False)
+
+    def _place_recording(self, pcm: bytes, sample_rate: int, channels: int) -> None:
+        import uuid
+        from pathlib import Path
+
+        duration = pcm_duration(pcm, sample_rate, channels)
+        if duration < 0.05:
+            QMessageBox.information(
+                self,
+                "Enregistrement",
+                "L'enregistrement est trop court pour devenir un clip.",
+            )
+            return
+        if self.current_project_path:
+            folder = Path(self.current_project_path).parent / "enregistrements"
+        else:
+            folder = Path.home() / "Movies" / "Kut-Studio"
+        target = folder / f"prise-{uuid.uuid4().hex[:8]}.wav"
+        try:
+            write_wav(str(target), pcm, sample_rate, channels)
+        except OSError as exc:
+            QMessageBox.critical(self, "Enregistrement", str(exc))
+            return
+        asset = MediaAsset(
+            id=f"rec-{uuid.uuid4().hex[:8]}",
+            path=str(target),
+            name=target.stem,
+            duration=duration,
+            width=0,
+            height=0,
+            fps=0.0,
+            media_type="audio",
+            has_audio=True,
+        )
+        self.project.media_assets.append(asset)
+        for track_id in self._record_tracks:
+            try:
+                add_clip_to_track(self.project, asset.id, track_id, self._record_origin)
+            except (KeyError, ValueError) as exc:
+                print(f"[MainWindow] prise non placée sur {track_id} : {exc}")
+        self._record_history("Enregistrer une prise")
+        self._refresh_project_library()
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
 
     def on_clips_move_requested(self, placements) -> None:
         try:

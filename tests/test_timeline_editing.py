@@ -163,7 +163,86 @@ def test_audio_cannot_move_onto_a_video_track():
     raise AssertionError("un clip audio ne doit pas aller sur une piste vidéo")
 
 
+def test_group_track_shift_keeps_the_same_offset():
+    from core.timeline_editing import shifted_track_index
+
+    project = create_default_project()
+    assert shifted_track_index(project.tracks, 0, 1) == 1
+    assert shifted_track_index(project.tracks, 1, 1) == 1
+
+
+def test_ripple_left_closes_the_downstream_gap():
+    from core.timeline_editing import ripple_trim_left
+
+    project = create_default_project()
+    ripple_trim_left(project, "intro", 1.0)
+    intro = next(c for t in project.tracks for c in t.clips if c.id == "intro")
+    plan = next(c for t in project.tracks for c in t.clips if c.id == "plan_a")
+    assert intro.timeline_start == 0.0
+    assert intro.source_in == 1.0
+    assert intro.timeline_start + intro.duration == 3.0
+    assert plan.timeline_start == 5.5
+
+
+def test_slip_roll_and_slide_edit_the_source_window():
+    from core.timeline_editing import roll_edit, slide_clip, slip_clip
+
+    project = create_default_project()
+    slip_clip(project, "intro", 0.4)
+    intro = next(c for t in project.tracks for c in t.clips if c.id == "intro")
+    assert intro.timeline_start == 0.0
+    assert intro.source_in == 0.4
+
+    roll_edit(project, "intro", "right", intro.timeline_start + intro.duration + 0.5)
+    plan = next(c for t in project.tracks for c in t.clips if c.id == "plan_a")
+    assert plan.timeline_start == 7.0
+    assert plan.source_in == 0.5
+
+    slide_clip(project, "plan_a", plan.timeline_start + 0.25)
+    assert intro.timeline_start + intro.duration == 4.75
+
+
+def test_audio_solo_reaches_the_export_plan():
+    from core.project_model import Clip, MediaAsset, Project, Track
+    from core.render_plan import build_render_plan
+
+    def audio(asset_id: str, name: str) -> MediaAsset:
+        return MediaAsset(
+            id=asset_id, path=f"/tmp/{name}.wav", name=name, duration=4.0,
+            width=0, height=0, fps=0.0, media_type="audio", has_audio=True,
+        )
+
+    def clip(clip_id: str, asset_id: str, track_id: str) -> Clip:
+        return Clip(
+            id=clip_id, asset_id=asset_id, track_id=track_id,
+            timeline_start=0.0, source_in=0.0, source_out=2.0,
+        )
+
+    project = Project(
+        name="Solo",
+        media_assets=[audio("a1", "voix"), audio("a2", "musique")],
+        tracks=[
+            Track(id="A1", name="A1", type="audio", solo=True, clips=[clip("voix", "a1", "A1")]),
+            Track(id="A2", name="A2", type="audio", clips=[clip("musique", "a2", "A2")]),
+        ],
+    )
+    plan = build_render_plan(project)
+    assert {layer.clip_id for layer in plan.audio_layers} == {"voix"}
+
+
+def test_synthetic_waveform_exists_without_a_media_file():
+    from core.media_previews import synthetic_peaks
+
+    peaks = synthetic_peaks("intro", 32)
+    assert len(peaks) == 32
+    assert all(0.0 < peak <= 1.0 for peak in peaks)
+    assert synthetic_peaks("intro", 32) == peaks
+
+
 def test_shortcuts_are_resolved_in_one_place():
+    assert resolve_shortcut("r", set()) == "tool_roll"
+    assert resolve_shortcut("y", set()) == "tool_slip"
+    assert resolve_shortcut("u", set()) == "tool_slide"
     assert resolve_shortcut("left", set()) == "frame_back"
     assert resolve_shortcut("left", {"shift"}) == "second_back"
     assert resolve_shortcut("b", set()) == "tool_blade"
