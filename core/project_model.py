@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .time_remapping import TimeRemapping
     from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -177,7 +178,7 @@ class Clip:
     Attributes:
         id: Identifiant unique du clip dans le projet.
         asset_id: Identifiant du MediaAsset source.
-        track_id: Identifiant de la Track sur laquelle le clip est placé.
+        track_id: Identifiant de la Track sur laquelle le clip est placée.
         timeline_start: Position de début sur la timeline (en secondes, >= 0).
         source_in: Point d'entrée dans le média source (en secondes, >= 0).
         source_out: Point de sortie du média source (en secondes, > source_in).
@@ -188,6 +189,7 @@ class Clip:
         transform: Transform 2D appliqué au clip (par défaut : identité).
         transform_keyframes: Images-clés d'animation du transform. Liste
             triée par ``(property_name, time_seconds)``.
+        time_remapping: Remappage temporel (vitesse, reverse, freeze frame).
     """
 
     id: str
@@ -206,6 +208,10 @@ class Clip:
     pan: float = 0.0
     fade_in: float = 0.0
     fade_out: float = 0.0
+    # --- Remappage temporel ---
+    time_remapping: "TimeRemapping" = field(
+        default_factory=lambda: _default_time_remapping()
+    )
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -235,9 +241,29 @@ class Clip:
             self.fade_out *= scale
 
     @property
-    def duration(self) -> float:
-        """Durée du clip sur la timeline (égale à ``source_out - source_in``)."""
+    def source_duration(self) -> float:
+        """Durée source du clip (égale à ``source_out - source_in``).
+        
+        Cette propriété donne la durée originale du média source, indépendamment
+        de la vitesse ou du freeze frame. Utilisez ``duration`` pour obtenir la
+        durée sur la timeline.
+        """
         return self.source_out - self.source_in
+
+    @property
+    def duration(self) -> float:
+        """Durée du clip sur la timeline.
+        
+        La durée timeline dépend de la vitesse et du mode freeze frame :
+        - Sans freeze : duration = source_duration / speed
+        - Avec freeze : duration = freeze_duration
+        """
+        from .time_remapping import FreezeFrameMode
+        
+        if self.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+            return self.time_remapping.freeze_duration
+        
+        return self.source_duration / self.time_remapping.speed
 
     def set_fade_in(self, seconds: float) -> float:
         """Règle le fondu d'entrée sans empiéter sur le fondu de sortie.
@@ -274,6 +300,28 @@ class Clip:
         self.fade_in = 0.0
         self.fade_out = 0.0
 
+    # --- Remappage temporel ---
+
+    @property
+    def is_frozen(self) -> bool:
+        """Le clip est-il en mode arrêt sur image ?"""
+        return self.time_remapping.freeze_mode.value == "freeze"
+
+    @property
+    def is_reversed(self) -> bool:
+        """Le clip est-il en mode reverse ?"""
+        return self.time_remapping.reverse
+
+    @property
+    def speed(self) -> float:
+        """Vitesse de lecture du clip."""
+        return self.time_remapping.speed
+
+    @property
+    def is_time_remapped(self) -> bool:
+        """Le clip a-t-il un remappage temporel non par défaut ?"""
+        return not self.time_remapping.is_normal
+
     @property
     def is_audio_affected(self) -> bool:
         """Le clip porte-t-il des réglages audio à conserver."""
@@ -290,6 +338,13 @@ def _default_transform():  # pragma: no cover - import deferred
     from .visual_effects import ClipTransform
 
     return ClipTransform()
+
+
+def _default_time_remapping():  # pragma: no cover - import deferred
+    """Retourne un :class:`TimeRemapping` par défaut (import paresseux)."""
+    from .time_remapping import TimeRemapping
+
+    return TimeRemapping()
 
 
 @dataclass
