@@ -83,6 +83,21 @@ def test_dock_panel_restores_the_same_widget(window):
     assert manager._panels[PanelId.TIMELINE] is timeline
 
 
+def test_dock_returns_content_to_its_host_before_destroying_window(window):
+    """Rattacher une fenêtre ne doit pas orpheliner son panneau Qt."""
+    manager = window.workspace
+    timeline = window.timeline_panel
+    manager.float_panel(PanelId.TIMELINE)
+
+    manager.dock_panel(PanelId.TIMELINE)
+
+    host = manager.host_of(PanelId.TIMELINE)
+    assert host is not None
+    assert timeline.parentWidget() is host
+    assert host.layout().indexOf(timeline) >= 0
+    assert PanelId.TIMELINE not in manager._windows
+
+
 def test_dock_panel_cleans_up_the_window(window):
     manager = window.workspace
     manager.float_panel(PanelId.TIMELINE)
@@ -249,6 +264,24 @@ def test_capture_reads_real_splitter_sizes(window):
     captured = manager.capture_state()
     assert captured.get(PanelId.TIMELINE).size > 0
     assert 0.1 <= captured.center_ratio <= 0.9
+
+
+def test_opening_mixer_reserves_both_panel_minimum_heights(window, qtbot):
+    """Timeline et mixeur restent réellement utilisables dès l'ouverture."""
+    manager = window.workspace
+    manager.set_panel_visible(PanelId.MIXER, True)
+    qtbot.waitUntil(
+        lambda: window.height() >= window.minimumHeight(), timeout=1000
+    )
+    qtbot.wait(20)
+
+    zone = manager._zones[DockArea.BOTTOM]
+    sizes = zone._splitter.sizes()
+    assert len(sizes) == 2
+    assert all(
+        size >= widget.minimumSizeHint().height()
+        for size, widget in zip(sizes, zone.widgets())
+    )
 
 
 def test_shutdown_releases_windows(window):

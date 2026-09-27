@@ -66,20 +66,31 @@ _AREA_LABELS: dict[DockArea, str] = {
 }
 
 
-def _close_floating_window(window: PanelWindow, content: QWidget) -> None:
+def _close_floating_window(window: PanelWindow, host: PanelHost) -> None:
     """Ferme et détruit une fenêtre détachée en gardant son contenu.
 
-    L'ordre est important : le panneau est d'abord reparenté dans son
-    hôte, sinon la destruction de la fenêtre l'emporterait. La
-    destruction est immédiate (et non ``deleteLater``) pour que les
-    ressources ne subsistent pas jusqu'au prochain tour de boucle.
+    L'ordre est important : le contenu doit revenir dans son
+    :class:`PanelHost` *avant* que la fenêtre soit détruite. Le rattacher
+    à la fenêtre principale ne suffit pas : il sortirait alors du layout
+    de son hôte et deviendrait invisible une fois docké.
+
+    On ne passe volontairement pas par ``window.close()`` ici. Cette
+    méthode déclenche ``PanelWindow.closeEvent`` et donc une seconde
+    demande de rattachement au manager. Le contenu est déjà sauvé ; on
+    masque simplement la fenêtre puis on programme sa destruction Qt.
     """
+    content = host.content
     window.blockSignals(True)
-    content.setParent(window.parentWidget() if window.parentWidget() else None)
-    window.close()
-    window.setParent(None)
-    window.deleteLater()
-    window.blockSignals(False)
+    try:
+        content.setParent(host)
+        layout = host.layout()
+        if layout is not None:
+            layout.addWidget(content)
+        window.hide()
+        window.setParent(None)
+        window.deleteLater()
+    finally:
+        window.blockSignals(False)
 
 
 def separator_action(parent: QWidget | None = None) -> QAction:
@@ -183,22 +194,34 @@ class _Zone(QWidget):
         available = self.height()
         if available <= 0:
             return
-        first = max(1, min(int(first_size), available))
-        rest = max(1, available - first)
-        # Si le reliquat est trop court, on rogne le premier plutôt que
-        # de rendre les autres inutilisables.
-        floors = [max(1, w.minimumSizeHint().height()) for w in widgets[1:]]
-        if rest < sum(floors):
-            first = max(sum(floors), available - sum(floors))
-            rest = available - first
+        primary_floor = max(1, widgets[0].minimumSizeHint().height())
+        floors = [max(1, widget.minimumSizeHint().height()) for widget in widgets[1:]]
+        other_floor = sum(floors)
+        preferred_first = max(primary_floor, int(first_size))
+
+        if available >= preferred_first + other_floor:
+            first = preferred_first
+        elif available >= primary_floor + other_floor:
+            # Priorité à la lisibilité des panneaux secondaires : la
+            # timeline absorbe la réduction disponible, jamais le mixeur.
+            first = available - other_floor
+        else:
+            # L'hôte est encore plus petit que le minimum cumulé. On
+            # fournit tout de même les vrais minima à Qt, qui les
+            # respectera dès que la fenêtre aura été redimensionnée.
+            first = primary_floor
+
+        remaining = max(0, available - first)
         sizes = [first]
-        remaining = rest
-        for index in range(1, len(widgets)):
-            floor = floors[index - 1]
-            share = max(floor, rest // (len(widgets) - index + 1))
-            sizes.append(min(share, remaining))
-            remaining -= sizes[-1]
-        sizes[-1] = max(1, sizes[-1] + remaining)
+        if remaining <= other_floor:
+            sizes.extend(floors)
+        else:
+            surplus = remaining - other_floor
+            per_panel, remainder = divmod(surplus, len(floors))
+            sizes.extend(
+                floor + per_panel + (1 if index < remainder else 0)
+                for index, floor in enumerate(floors)
+            )
         self._splitter.setSizes(sizes)
 
     def distribute(self, available: int) -> None:
@@ -278,6 +301,11 @@ class WorkspaceManager(QObject):
         # d'actions orphelines à chaque changement d'état.
         self._action_cache: dict[PanelId, dict[str, QAction]] = {}
         self._separator = separator_action(window)
+        # ``MainWindow`` fixe un minimum de départ. Celui-ci reste la
+        # référence quand le mixeur est replié ; il augmente seulement
+        # quand deux panneaux verticaux doivent cohabiter dans la zone
+        # basse.
+        self._base_minimum_height = max(1, window.minimumHeight())
 
     # ------------------------------------------------------------------
     # Construction
@@ -520,6 +548,7 @@ class WorkspaceManager(QObject):
         # fois le minimum de la zone libéré, sinon le séparateur
         # refuse de la réduire et laisse un vide.
         self._normalize_area(area)
+        self._sync_window_minimum_height()
         self._apply_sizes()
         if area is DockArea.BOTTOM:
             # Ouvrir le mixeur agrandit la zone basse : on rééquilibre
@@ -558,6 +587,7 @@ class WorkspaceManager(QObject):
 
         self._commit(self._state.with_panel(panel, floating=True, visible=True))
         self._normalize_area(self._state.area_of(panel))
+        self._sync_window_minimum_height()
         self._refresh_dependents()
 
     def dock_panel(self, panel: PanelId) -> None:
@@ -570,12 +600,13 @@ class WorkspaceManager(QObject):
         window = self._windows.pop(panel, None)
         host = self._hosts[panel]
         if window is not None:
-            _close_floating_window(window, host.content)
+            _close_floating_window(window, host)
 
         host.show()
         self._place_host(panel, self._state.area_of(panel))
         self._commit(self._state.with_panel(panel, floating=False))
         self._normalize_area(self._state.area_of(panel))
+        self._sync_window_minimum_height()
         self._refresh_dependents()
 
     def move_panel(self, panel: PanelId, area: DockArea) -> None:
@@ -596,6 +627,7 @@ class WorkspaceManager(QObject):
         self._place_host(panel, area)
         self._normalize_area(origin)
         self._normalize_area(area)
+        self._sync_window_minimum_height()
         self._apply_sizes()
         self.refresh_panel_actions()
         self._refresh_dependents()
@@ -848,7 +880,7 @@ class WorkspaceManager(QObject):
                 if existing is not None:
                     # Idem : on récupère le contenu avant de détruire
                     # la fenêtre, sinon le panneau part avec elle.
-                    _close_floating_window(existing, host.content)
+                    _close_floating_window(existing, host)
                 self._place_host(panel, self._state.area_of(panel))
                 host.setVisible(entry.visible)
         for area in DockArea:
@@ -857,7 +889,37 @@ class WorkspaceManager(QObject):
             self._apply_maximized(maximized)
         else:
             self._apply_sizes()
+        self._sync_window_minimum_height()
         self.refresh_panel_actions()
+
+    def _sync_window_minimum_height(self) -> None:
+        """Garantit la place réelle des panneaux superposés.
+
+        La zone basse peut contenir timeline + mixeur. Leur splitter
+        applique bien leurs minima, mais une ``QMainWindow`` avec un
+        minimum explicite plus petit peut autrement les comprimer avant
+        que Qt ait une chance de répartir leurs tailles. On relève donc
+        le minimum de fenêtre uniquement pendant cette cohabitation.
+        """
+        root = getattr(self, "_root_splitter", None)
+        top = getattr(self, "_top_splitter", None)
+        bottom = self._zones.get(DockArea.BOTTOM)
+        if root is None or top is None or bottom is None:
+            return
+        if self._state.maximized is not None:
+            self._window.setMinimumHeight(self._base_minimum_height)
+            return
+
+        chrome = max(0, self._window.height() - root.height())
+        required = (
+            top.minimumSizeHint().height()
+            + bottom.minimumSizeHint().height()
+            + root.handleWidth()
+            + chrome
+        )
+        self._window.setMinimumHeight(
+            max(self._base_minimum_height, int(required))
+        )
 
     def _normalize_area(self, area: DockArea) -> None:
         """Aligne le contenu d'une zone sur l'état courant.
@@ -1043,7 +1105,7 @@ class WorkspaceManager(QObject):
         # simultanément dans deux dispositions.
         for panel in list(self._windows):
             window = self._windows.pop(panel)
-            _close_floating_window(window, self._hosts[panel].content)
+            _close_floating_window(window, self._hosts[panel])
         self._apply_state(state)
         self._refresh_dependents()
         return True
@@ -1082,7 +1144,7 @@ class WorkspaceManager(QObject):
         """Ferme les fenêtres détachées et libère les ressources."""
         self.save()
         for window in list(self._windows.values()):
-            _close_floating_window(window, self._hosts[window.panel].content)
+            _close_floating_window(window, self._hosts[window.panel])
         self._windows.clear()
         self._hosts.clear()
         self._panels.clear()

@@ -1151,7 +1151,7 @@ class TimelinePanel(QWidget):
         )
         self.timecode_label = QLabel("00:00:00")
         self.timecode_label.setStyleSheet(
-            f"color: {palette.muted}; font-size: 11px; font-variant-numeric: tabular-nums;"
+            f"color: {palette.muted}; font-size: 11px;"
         )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet(

@@ -267,7 +267,7 @@ def _stylesheet(palette: ThemePalette) -> str:
     return f"""
     QWidget {{
         color: {palette.text};
-        font-family: 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', Arial, sans-serif;
+        font-family: 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', Arial;
         font-size: 13px;
     }}
     QMainWindow {{ background: {palette.background}; }}
