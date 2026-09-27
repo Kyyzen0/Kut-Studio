@@ -16,7 +16,6 @@ from core.project_model import Project
 from core.timeline_view_model import (
     TimelineClipView,
     build_clip_views,
-    transition_gap_pixels,
     v1_transition_pairs,
 )
 from ui.i18n import translate
@@ -784,15 +783,21 @@ class TimelinePanel(QWidget):
         )
         painter.setPen(QPen(QColor(COLORS["success"]), 2))
         painter.drawLine(int(playhead_x), ruler_top - 4, int(playhead_x), self.height())
-        gap_pixels = transition_gap_pixels(self.project, self.pixels_per_second, self.zoom)
-        if gap_pixels is not None:
-            x_gap_start, x_gap_end = gap_pixels
+        for previous, following in v1_transition_pairs(
+            self.clip_views, self.pixels_per_second, self.zoom
+        ):
+            x_gap_start = (
+                self.left_margin
+                + previous.end * self.pixels_per_second * self.zoom
+            )
+            x_gap_end = (
+                self.left_margin
+                + following.start * self.pixels_per_second * self.zoom
+            )
             painter.setPen(QPen(QColor(COLORS["success"]), 2))
             painter.drawLine(int(x_gap_start), int(ruler_top - 6), int(x_gap_start), self.height())
             painter.drawLine(int(x_gap_end), int(ruler_top - 6), int(x_gap_end), self.height())
             painter.setPen(QPen(QColor(COLORS["success"]), 1))
             painter.drawText(
-                int(x_gap_start + 6), int(ruler_top + 14), "FONDO"
+                int(x_gap_start + 6), int(ruler_top + 14), "FONDU"
             )
-        for pair in v1_transition_pairs(self.project):
-            pass
