@@ -12,6 +12,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -878,3 +879,288 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     assert abs(duration - 4.0) < 0.5, (
         f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tâche 13 — Intégration réelle d'un export animé
+# ---------------------------------------------------------------------------
+
+
+def _build_animated_project(video_path: Path, audio_path: Path) -> Project:
+    """Projet vidéo + audio 4 s avec une animation d'opacité + position."""
+    from core.visual_effects import ClipTransform, TransformKeyframe
+
+    video_asset = MediaAsset(
+        id="asset-vid-anim",
+        path=str(video_path),
+        name="Vid",
+        duration=4.0,
+        width=160,
+        height=90,
+        fps=15.0,
+        media_type="video",
+    )
+    audio_asset = MediaAsset(
+        id="asset-aud-anim",
+        path=str(audio_path),
+        name="Tone",
+        duration=4.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="audio",
+        has_audio=True,
+    )
+    sub_asset = MediaAsset(
+        id="asset-sub-anim",
+        path="",
+        name="Sub",
+        duration=4.0,
+        width=0,
+        height=0,
+        fps=0.0,
+        media_type="subtitle",
+        has_audio=False,
+    )
+    video_clip = Clip(
+        id="vid-anim",
+        asset_id="asset-vid-anim",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+        # Base : opacité 1.0 + scale 1.0 + position 0.0.
+        transform=ClipTransform(scale=1.0, opacity=1.0),
+        # Animation d'opacité de 1.0 à 0.4 sur [0, 4] et position_x
+        # de 0.0 → 0.5 sur [0, 4].
+        transform_keyframes=[
+            TransformKeyframe(
+                property_name="opacity", time_seconds=0.0, value=1.0
+            ),
+            TransformKeyframe(
+                property_name="opacity", time_seconds=4.0, value=0.4
+            ),
+            TransformKeyframe(
+                property_name="position_x", time_seconds=0.0, value=0.0
+            ),
+            TransformKeyframe(
+                property_name="position_x", time_seconds=4.0, value=0.5
+            ),
+        ],
+    )
+    audio_clip = Clip(
+        id="aud-anim",
+        asset_id="asset-aud-anim",
+        track_id="A1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+    )
+    sub_clip = Clip(
+        id="sub-anim",
+        asset_id="asset-sub-anim",
+        track_id="S1",
+        timeline_start=1.0,
+        source_in=0.0,
+        source_out=2.0,
+        text="Animation",
+    )
+    return Project(
+        name="Animated",
+        width=160,
+        height=90,
+        fps=15.0,
+        media_assets=[video_asset, audio_asset, sub_asset],
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[video_clip]),
+            Track(id="A1", name="A1", type="audio", clips=[audio_clip]),
+            Track(id="S1", name="S1", type="subtitle", clips=[sub_clip]),
+        ],
+    )
+
+
+def _dump_frame_png(
+    ffmpeg: str, path: Path, ts_seconds: float, output: Path
+) -> Path | None:
+    """Extrait une frame PNG unique à ``ts_seconds`` du fichier ``path``.
+
+    Retourne le chemin du PNG écrit, ou ``None`` si ffmpeg a échoué.
+    Utilisé pour comparer les frames init / final d'un rendu animé.
+    """
+    result = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            str(ts_seconds),
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    return output if output.exists() else None
+
+
+def _probe_frame_color(
+    ffmpeg: str, path: Path, ts_seconds: float
+) -> bytes:
+    """Extrait la frame à ``ts_seconds`` via un dump PNG et retourne les octets.
+
+    Permet de comparer deux frames échantillonnées en bytes : si
+    l'animation est effectivement rendue, les bytes diffèrent.
+    """
+    with tempfile.NamedTemporaryFile(
+        prefix=f"frame_{ts_seconds}_",
+        suffix=".png",
+        delete=False,
+    ) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        out = _dump_frame_png(ffmpeg, path, ts_seconds, tmp_path)
+        if out is None:
+            return b""
+        return out.read_bytes()
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
+    """Export réel : clip vidéo avec animation d'opacité via ``geq``.
+
+    Limites de FFmpeg : les filtres standards ``scale``, ``rotate``,
+    ``overlay`` et ``colorchannelmixer`` n'acceptent pas la variable
+    ``T`` (temps) dans leurs expressions sur la version installée.
+    Kut-Studio utilise donc ``geq`` (expression par pixel) pour
+    appliquer l'opacité animée, seule propriété directement
+    animable par FFmpeg via une expression.
+
+    Le test vérifie que :
+    - l'export réussit (finished_ok) ;
+    - la durée est correcte ;
+    - le flux vidéo est présent ;
+    - la commande contient bien le filtre ``geq`` et l'expression
+      interpolée ``if(lt(T\\,t)\\,A\\,B)`` attendue ;
+    - aucun fichier temporaire n'est laissé sur disque.
+    """
+    ffmpeg, ffprobe = _require_ffmpeg()
+
+    # 1. Vidéo rouge 4 s avec tonalité (le moteur s'occupera de l'audio).
+    video_path = tmp_path / "anim_src.mp4"
+    _generate_color_with_tone(
+        ffmpeg, video_path, color="red", tone_freq=440, duration=4.0
+    )
+
+    # 2. Construction du projet animé (sans sous-titre pour isoler le test).
+    from core.visual_effects import ClipTransform, TransformKeyframe
+
+    video_asset = MediaAsset(
+        id="asset-vid-anim",
+        path=str(video_path),
+        name="Vid",
+        duration=4.0,
+        width=160,
+        height=90,
+        fps=15.0,
+        media_type="video",
+    )
+    video_clip = Clip(
+        id="vid-anim",
+        asset_id="asset-vid-anim",
+        track_id="V1",
+        timeline_start=0.0,
+        source_in=0.0,
+        source_out=4.0,
+        transform=ClipTransform(scale=1.0, opacity=1.0),
+        transform_keyframes=[
+            # Opacité : 1.0 → 0.4 sur 4 s (animée via ``geq``).
+            TransformKeyframe(property_name="opacity", time_seconds=0.0, value=1.0),
+            TransformKeyframe(property_name="opacity", time_seconds=4.0, value=0.4),
+        ],
+    )
+    project = Project(
+        name="Animated",
+        width=160,
+        height=90,
+        fps=15.0,
+        media_assets=[video_asset],
+        tracks=[
+            Track(id="V1", name="V1", type="video", clips=[video_clip]),
+        ],
+    )
+    plan = build_render_plan(project)
+    assert any(layer.transform_keyframes for layer in plan.video_layers)
+
+    # 3. Construction de la commande.
+    from core.export_engine import (
+        ExportEngine,
+        ExportFormat,
+        ExportPreset,
+        ExportRequest,
+    )
+
+    output_path = tmp_path / "anim_out.mp4"
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(output_path),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(
+            name="Animated", resolution=(160, 90), crf=28, audio_bitrate="96k"
+        ),
+        fps=15,
+    )
+    engine = ExportEngine()
+
+    # 4. Présence des filtres animés dans le filter_complex.
+    engine._prepare_temporary_files(plan)
+    try:
+        command = engine._build_command(request)
+    finally:
+        engine._cleanup_temporary_files()
+    filter_index = command.index("-filter_complex")
+    filter_complex = command[filter_index + 1]
+    # Quand l'opacité est animée, ``geq`` doit apparaître (le
+    # ``colorchannelmixer`` standard n'accepte pas ``T``).
+    assert "geq=" in filter_complex
+    # L'expression d'opacité animée utilise ``if(lt(T\\,t)\\,A\\,B)``
+    # (forme avec virgules échappées pour passer -filter_complex).
+    assert "lt(T\\," in filter_complex
+    assert "overlay=" in filter_complex
+
+    # 5. Exécution réelle de l'engine (sans sous-titre → engine finit
+    # l'export même sans libass).
+    engine.start(request)
+    finished, failed = _wait_for_export(engine, timeout_ms=60000)
+    assert not failed, f"Export a échoué : {failed}"
+    assert finished, "finished_ok aurait dû être émis"
+    assert output_path.exists()
+
+    # 6. Vérifie les flux vidéo (l'audio peut être absent si le projet
+    # n'a pas de pistes audio — c'est attendu ici).
+    streams = _probe_streams(ffprobe, output_path)
+    has_video = any(s.get("codec_type") == "video" for s in streams["streams"])
+    assert has_video
+    duration = float(streams["format"]["duration"])
+    assert abs(duration - 4.0) < 0.5, (
+        f"Durée attendue ≈ 4s, obtenue {duration:.3f}s"
+    )
+
+    # 7. Aucun fichier temporaire ou média de test ne doit subsister
+    # dans le dossier du test ou le /tmp système.
+    import glob as _glob
+
+    leftover = _glob.glob("/tmp/kut-studio-subtitles-*.srt")
+    assert leftover == [], f"SRT temporaires non nettoyés : {leftover}"

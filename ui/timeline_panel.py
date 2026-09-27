@@ -1,5 +1,5 @@
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QPainter, QColor, QPen
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from core.project_model import Project
@@ -168,6 +168,62 @@ class ClipWidget(QWidget):
                 )
         self.drag_mode = None
         event.accept()
+
+    def paintEvent(self, event):
+        """Dessine le clip puis, par-dessus, les images-clés du transform.
+
+        Les keyframes sont lues depuis la vue du clip (liste ``keyframes``).
+        Chaque image-clé est représentée par un petit losange coloré
+        placé horizontalement à ``time_seconds`` local et verticalement
+        empilé lorsqu'elles partagent le même temps.
+        """
+        super().paintEvent(event)
+        keyframes = getattr(self.view, "keyframes", None) or []
+        if not keyframes:
+            return
+        track_type = getattr(self.view, "track_type", None)
+        # Les transformations ne s'appliquent qu'aux clips vidéo : on
+        # évite de bruiter l'affichage des autres pistes.
+        if track_type not in {"video", None} and not self.view.track_id.startswith("V"):
+            return
+
+        duration = max(self.view.end - self.view.start, 1e-6)
+        parent = self.parent_timeline
+        if parent is None:
+            return
+        pixels_per_second = parent.pixels_per_second * parent.zoom
+        # Regroupement par ``time_seconds`` pour empiler verticalement.
+        grouped: dict[float, list] = {}
+        for kf in keyframes:
+            grouped.setdefault(round(kf.time_seconds, 4), []).append(kf)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        margin = 4
+        diamond_size = 8
+        for time_seconds, items in grouped.items():
+            local = max(0.0, min(duration, time_seconds))
+            x = int(local * pixels_per_second)
+            if x < margin or x > self.width() - margin:
+                continue
+            for index, kf in enumerate(sorted(items, key=lambda k: k.property_name)):
+                y = (
+                    self.height()
+                    - margin
+                    - diamond_size
+                    - index * (diamond_size - 2)
+                )
+                polygon = QPolygonF(
+                    [
+                        QPointF(x, y),
+                        QPointF(x + diamond_size / 2, y + diamond_size / 2),
+                        QPointF(x, y + diamond_size),
+                        QPointF(x - diamond_size / 2, y + diamond_size / 2),
+                    ]
+                )
+                painter.setBrush(QColor(COLORS["accent"]))
+                painter.setPen(QPen(QColor("#FFFFFF"), 1))
+                painter.drawPolygon(polygon)
+        painter.end()
 
 
 class TimelinePanel(QWidget):

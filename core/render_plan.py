@@ -26,6 +26,7 @@ from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
 from .timeline_evaluator import timeline_duration
 from .timeline_operations import subtitle_cues_from_project
+from .visual_effects import ClipTransform, TransformKeyframe
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,8 @@ class RenderLayer:
     source_out: float
     timeline_start: float
     timeline_end: float
+    transform: ClipTransform = field(default_factory=ClipTransform)
+    transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -211,6 +214,8 @@ def build_render_plan(project: Project) -> RenderPlan:
                         source_out=clip.source_out,
                         timeline_start=clip.timeline_start,
                         timeline_end=clip.timeline_start + clip.duration,
+                        transform=clip.transform,
+                        transform_keyframes=tuple(clip.transform_keyframes),
                     )
                 )
                 if asset.has_audio:

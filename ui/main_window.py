@@ -34,8 +34,12 @@ from core.timeline_operations import (
     duplicate_clip,
     find_clip,
     move_clip,
+    remove_transform_keyframe,
+    reset_clip_transform,
     ripple_delete_clip,
     set_clip_enabled,
+    set_clip_transform,
+    set_transform_keyframe,
     snap_timeline_position,
     subtitle_cues_from_project,
     trim_clip_left,
@@ -48,6 +52,7 @@ from core.timeline_evaluator import (
 )
 from core.render_plan import RenderPlan, build_render_plan
 from core.timeline_view_model import build_export_clips
+from core.visual_effects import evaluate_transform
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
@@ -128,6 +133,11 @@ class MainWindow(QMainWindow):
         self.properties_panel.ripple_delete_requested.connect(self.ripple_delete_clip_from_panel)
         self.properties_panel.enabled_changed.connect(self.set_clip_enabled_from_panel)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
+        # Tâche 13 : opérations visuelles.
+        self.properties_panel.transform_changed.connect(self.on_transform_property_changed)
+        self.properties_panel.keyframe_added.connect(self.on_transform_keyframe_added)
+        self.properties_panel.keyframe_removed.connect(self.on_transform_keyframe_removed)
+        self.properties_panel.transform_reset.connect(self.on_transform_reset)
 
         # Initialisation de l'horloge de programme (tâche 8).
         self.playhead_seconds: float = 0.0
@@ -245,6 +255,7 @@ class MainWindow(QMainWindow):
 
     def _mark_clean(self) -> None:
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         self.project_dirty = False
         self.history.mark_saved()
         self._refresh_undo_redo_state()
@@ -312,6 +323,7 @@ class MainWindow(QMainWindow):
     def undo_last(self) -> None:
         """Annule la dernière opération enregistrée."""
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         snapshot = self.history.undo()
         if snapshot is None:
             return
@@ -320,6 +332,7 @@ class MainWindow(QMainWindow):
     def redo_last(self) -> None:
         """Rétablit la dernière opération annulée."""
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         snapshot = self.history.redo()
         if snapshot is None:
             return
@@ -522,6 +535,7 @@ class MainWindow(QMainWindow):
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         self.project = create_default_project()
         self.current_project_path = None
         self.history.reset(self.project)
@@ -605,6 +619,7 @@ class MainWindow(QMainWindow):
         intact.
         """
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         try:
             loaded = load_project(path)
         except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
@@ -828,6 +843,35 @@ class MainWindow(QMainWindow):
             return
         top_clip = video_clips[-1]
         self.preview_panel.preview_at(top_clip.source_path, top_clip.source_time)
+        # Tâche 13 : applique le transform animé du clip supérieur si
+        # la timeline contient au moins un clip vidéo. On évalue le
+        # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité
+        # au sommet pour être conforme à la convention de la tâches 6
+        # (clip actif supérieur = superposition).
+        clip_obj = find_clip(self.project, top_clip.clip_id)
+        if clip_obj is not None:
+            evaluated = evaluate_transform(
+                clip_obj.transform,
+                clip_obj.transform_keyframes,
+                clip_local_time=top_clip.source_time,
+                clip_duration=clip_obj.duration,
+            )
+            self.preview_panel.apply_transform(
+                position_x=evaluated.position_x,
+                position_y=evaluated.position_y,
+                scale=evaluated.scale,
+                rotation=evaluated.rotation,
+                opacity=evaluated.opacity,
+            )
+        # Synchronise les diamants / valeurs MOUVEMENT à la sélection.
+        if (
+            self.properties_panel.selected_clip is not None
+            and self.properties_panel.selected_clip.id == top_clip.clip_id
+        ):
+            self.properties_panel.refresh_keyframe_diamonds(
+                clip_obj.transform_keyframes if clip_obj else [],
+                self.playhead_seconds,
+            )
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.
@@ -847,11 +891,20 @@ class MainWindow(QMainWindow):
 
     def on_clip_selected(self, clip_id):
         self._flush_subtitle_history_record()
+        self._finalize_transform_session()
         view = self.timeline_panel.find_view_by_id(clip_id)
         if view is None:
             return
         self.active_subtitle_clip = view if view.track_id == "S1" else None
         self.properties_panel.show_clip(view)
+        # Synchronise la section MOUVEMENT avec le clip réel.
+        clip = find_clip(self.project, clip_id)
+        if clip is not None:
+            self.properties_panel.update_transform_from_clip(
+                clip.transform,
+                clip.transform_keyframes,
+                playhead_seconds=self.timeline_panel.playhead_seconds,
+            )
         # Sélection d'un clip = seek vers son début sur la timeline.
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
@@ -1284,6 +1337,161 @@ class MainWindow(QMainWindow):
         if menu.exec(QCursor.pos()) is crossfade:
             self.transition_seconds = transition_time
             self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
+
+    def on_transform_property_changed(
+        self, clip_id: str, property_name: str, value: float
+    ):
+        """Applique une modification de transform depuis l'inspecteur.
+
+        Les modifications fréquentes (slider de l'inspecteur) sont
+        coalescées : on ne crée une entrée d'historique qu'après la
+        fin d'une rafale (debounce ~400 ms), pour ne pas polluer
+        l'historique avec des dizaines d'entrées par seconde.
+        """
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if clip is None:
+            return
+        from core.visual_effects import ANIMATABLE_PROPERTIES
+
+        if property_name not in ANIMATABLE_PROPERTIES:
+            return
+        try:
+            new_transform = clip.transform.__class__(
+                **{
+                    **{
+                        field: getattr(clip.transform, field)
+                        for field in (
+                            "position_x",
+                            "position_y",
+                            "scale",
+                            "rotation",
+                            "opacity",
+                        )
+                    },
+                    property_name: float(value),
+                }
+            )
+        except ValueError as exc:
+            print(f"[MainWindow] valeur transform refusée : {exc}")
+            return
+        try:
+            set_clip_transform(self.project, clip_id, new_transform)
+        except ValueError as exc:
+            print(f"[MainWindow] set_clip_transform refusé : {exc}")
+            return
+
+        # Le snapshot courant de l'historique est l'état avant la rafale.
+        # Il suffit d'enregistrer l'état modifié à la fin du debounce.
+        self._ensure_transform_session_capture()
+
+        if not hasattr(self, "_transform_session_timer"):
+            from PySide6.QtCore import QTimer
+
+            self._transform_session_timer = QTimer(self)
+            self._transform_session_timer.setSingleShot(True)
+            self._transform_session_timer.timeout.connect(
+                self._finalize_transform_session
+            )
+        self._transform_session_timer.start(400)
+
+        # Rafraîchit l'aperçu immédiatement pour le retour visuel.
+        self.properties_panel.update_transform_from_clip(
+            clip.transform,
+            clip.transform_keyframes,
+            playhead_seconds=self.playhead_seconds,
+        )
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def _ensure_transform_session_capture(self) -> None:
+        """Marque le début d'une rafale d'édition à regrouper dans l'historique."""
+        if getattr(self, "_transform_session_active", False):
+            return
+        self._transform_session_active = True
+
+    def _finalize_transform_session(self) -> None:
+        """Enregistre l'état final d'une rafale d'édition de transform."""
+        if not getattr(self, "_transform_session_active", False):
+            return
+        timer = getattr(self, "_transform_session_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._transform_session_active = False
+        self.history.record(self.project, "Modifier le mouvement")
+        self._refresh_undo_redo_state()
+        self.timeline_panel.set_project(self.project)
+
+    def on_transform_keyframe_added(
+        self,
+        clip_id: str,
+        property_name: str,
+        clip_local_time: float,
+        value: float,
+    ):
+        self._finalize_transform_session()
+        try:
+            set_transform_keyframe(
+                self.project, clip_id, property_name, clip_local_time, value
+            )
+        except ValueError as exc:
+            print(f"[MainWindow] keyframe refusée : {exc}")
+            return
+        clip = find_clip(self.project, clip_id)
+        self.history.record(self.project, "Ajouter une image-clé")
+        self.timeline_panel.set_project(self.project)
+        if clip is not None:
+            self.properties_panel.update_transform_from_clip(
+                clip.transform,
+                clip.transform_keyframes,
+                playhead_seconds=self.playhead_seconds,
+            )
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def on_transform_keyframe_removed(
+        self, clip_id: str, property_name: str, clip_local_time: float
+    ):
+        self._finalize_transform_session()
+        try:
+            remove_transform_keyframe(
+                self.project, clip_id, property_name, clip_local_time
+            )
+        except ValueError as exc:
+            print(f"[MainWindow] suppression keyframe refusée : {exc}")
+            return
+        clip = find_clip(self.project, clip_id)
+        self.history.record(self.project, "Supprimer une image-clé")
+        self.timeline_panel.set_project(self.project)
+        if clip is not None:
+            self.properties_panel.update_transform_from_clip(
+                clip.transform,
+                clip.transform_keyframes,
+                playhead_seconds=self.playhead_seconds,
+            )
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def on_transform_reset(self, clip_id: str) -> None:
+        self._finalize_transform_session()
+        try:
+            reset_clip_transform(self.project, clip_id)
+        except ValueError as exc:
+            print(f"[MainWindow] reset transform refusé : {exc}")
+            return
+        clip = find_clip(self.project, clip_id)
+        self.history.record(self.project, "Réinitialiser le mouvement")
+        self.timeline_panel.set_project(self.project)
+        if clip is not None:
+            self.properties_panel.update_transform_from_clip(
+                clip.transform,
+                clip.transform_keyframes,
+                playhead_seconds=self.playhead_seconds,
+            )
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
 
     def seek_to_position(self, seconds):
         """Seek sur la timeline (et non plus sur le média source).

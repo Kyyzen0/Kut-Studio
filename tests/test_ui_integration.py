@@ -1781,3 +1781,23 @@ def test_subtitle_text_edit_groups_into_single_history_entry(
     assert find_clip(window.project, "subtitle_01").text == initial_text
     window.redo_last()
     assert find_clip(window.project, "subtitle_01").text == "Hello C"
+
+
+def test_transform_edit_is_one_undoable_history_entry(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    clip = find_clip(window.project, "intro")
+    initial_scale = clip.transform.scale
+    history_length = len(window.history)
+
+    window.on_transform_property_changed("intro", "scale", 2.0)
+    window._finalize_transform_session()
+
+    assert find_clip(window.project, "intro").transform.scale == pytest.approx(2.0)
+    assert len(window.history) == history_length + 1
+
+    window.undo_last()
+    assert find_clip(window.project, "intro").transform.scale == pytest.approx(
+        initial_scale
+    )
+    window.redo_last()
+    assert find_clip(window.project, "intro").transform.scale == pytest.approx(2.0)

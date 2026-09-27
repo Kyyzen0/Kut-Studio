@@ -53,6 +53,10 @@ class TimelineClipView:
         text: Contenu textuel éventuel (sous-titres), ou chaîne vide.
         source_path: Chemin du ``MediaAsset`` lié, ou chaîne vide.
         color_key: Couleur hexadécimale déterministe pour l'affichage.
+        track_type: Type logique de la piste (``"video"``, ``"audio"``...).
+        enabled: Indique si le clip est activé.
+        keyframes: Images-clés de transform portées par le clip (tâche 13).
+        transform: Transform de base du clip (tâche 13).
     """
 
     id: str
@@ -64,6 +68,10 @@ class TimelineClipView:
     text: str
     source_path: str
     color_key: str
+    track_type: str = "video"
+    enabled: bool = True
+    keyframes: tuple = ()
+    transform: object = None
 
 
 def color_key_for_clip(clip: Clip) -> str:
@@ -96,6 +104,10 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     text=clip.text,
                     source_path=asset_paths.get(clip.asset_id, ""),
                     color_key=color_key_for_clip(clip),
+                    track_type=track.type,
+                    enabled=clip.enabled,
+                    keyframes=tuple(clip.transform_keyframes),
+                    transform=clip.transform,
                 )
             )
     return views

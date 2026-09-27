@@ -1,15 +1,16 @@
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
     QGridLayout,
+    QGraphicsScene,
+    QGraphicsView,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
-    QGraphicsColorizeEffect,
 )
 
 from ui.theme import COLORS, label_style
@@ -22,14 +23,30 @@ class PreviewPanel(QWidget):
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(1.0)
         self.player.setAudioOutput(self.audio_output)
-        self.video_widget = QVideoWidget()
-        self.video_widget.setAspectRatioMode(Qt.KeepAspectRatio)
-        self.player.setVideoOutput(self.video_widget)
 
-        self.color_effect = QGraphicsColorizeEffect(self.video_widget)
-        self.color_effect.setColor(QColor("#ffffff"))
-        self.color_effect.setStrength(0.0)
-        self.video_widget.setGraphicsEffect(self.color_effect)
+        # Aperçu basé ``QGraphicsView`` + ``QGraphicsVideoItem`` afin de
+        # pouvoir appliquer des transformations graphiques (position,
+        # échelle, rotation, opacité) au média rendu sans modifier le
+        # ``Project`` sous-jacent.
+        self.graphics_scene = QGraphicsScene(self)
+        self.graphics_view = QGraphicsView(self.graphics_scene, self)
+        self.graphics_view.setRenderHints(self.graphics_view.renderHints())
+        self.graphics_view.setBackgroundBrush(QColor("#000000"))
+        self.graphics_view.setStyleSheet(f"background: {COLORS['background']}; border: none;")
+        self.video_item = QGraphicsVideoItem()
+        # Taille native par défaut : on laisse Qt décider de la taille de
+        # la vidéo à venir ; en cas de scène vide, ``QGraphicsVideoItem``
+        # occupe un rectangle nul que l'on recentre à la première pose.
+        self.graphics_scene.addItem(self.video_item)
+        self.player.setVideoOutput(self.video_item)
+
+        # Position / échelle courantes appliquées à ``QGraphicsVideoItem``.
+        # Elles sont déduites de ``EvaluatedTransform`` à chaque tick.
+        self._applied_pos_x: float = 0.0
+        self._applied_pos_y: float = 0.0
+        self._applied_scale: float = 1.0
+        self._applied_rotation: float = 0.0
+        self._applied_opacity: float = 1.0
 
         # Suivi interne de la source affichée pour les deux modes :
         # - ``_timeline_preview_path`` : pilote par la timeline ;
@@ -138,7 +155,7 @@ class PreviewPanel(QWidget):
         preview_container = QWidget()
         preview_layout = QGridLayout(preview_container)
         preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.addWidget(self.video_widget, 0, 0)
+        preview_layout.addWidget(self.graphics_view, 0, 0)
         preview_layout.addWidget(self.empty_state, 0, 0, Qt.AlignCenter)
         preview_layout.addWidget(self.preview_transition_overlay, 0, 0, Qt.AlignCenter)
         preview_layout.addWidget(self.preview_subtitle_overlay, 0, 0, Qt.AlignHCenter | Qt.AlignBottom)
@@ -230,3 +247,83 @@ class PreviewPanel(QWidget):
         except Exception:  # pragma: no cover - Qt peut lever si pas initialisé
             pass
         self.empty_state.show()
+
+    # ------------------------------------------------------------------
+    # Application du transform courant (tâche 13)
+    # ------------------------------------------------------------------
+
+    def apply_transform(
+        self,
+        *,
+        position_x: float = 0.0,
+        position_y: float = 0.0,
+        scale: float = 1.0,
+        rotation: float = 0.0,
+        opacity: float = 1.0,
+        canvas_width: int | None = None,
+        canvas_height: int | None = None,
+    ) -> None:
+        """Applique un transform à la vidéo affichée sans muter le Project.
+
+        Conventions :
+        - ``position_x`` et ``position_y`` sont normalisées par rapport à
+          la taille du canvas : ``+1.0`` décale d'une largeur / hauteur.
+        - ``scale`` multiplie la taille native de la vidéo dans la scène.
+        - ``rotation`` est en degrés, sens antihoraire (positif ``QGraphicsView``).
+        - ``opacity`` est dans ``[0, 1]``.
+        """
+        # Bornes défensives : on ne tolère pas une opacité hors plage et
+        # un scale nul / négatif qui rendrait l'élément invisible.
+        opacity = max(0.0, min(1.0, float(opacity)))
+        scale = max(0.01, float(scale))
+
+        view_rect = self.graphics_view.viewport().rect()
+        if canvas_width is None or canvas_width <= 0:
+            canvas_width = max(view_rect.width(), 1)
+        if canvas_height is None or canvas_height <= 0:
+            canvas_height = max(view_rect.height(), 1)
+        # Centre de la zone d'affichage (en pixels scène).
+        scene_w = float(canvas_width)
+        scene_h = float(canvas_height)
+        center_x = self.graphics_view.mapToScene(view_rect.center()).x()
+        center_y = self.graphics_view.mapToScene(view_rect.center()).y()
+
+        # Taille native du média : on conserve la taille courante si
+        # ``QGraphicsVideoItem`` n'a pas encore reçu de frame.
+        native = self.video_item.nativeSize()
+        item_w = max(float(native.width()), 1.0)
+        item_h = max(float(native.height()), 1.0)
+        target_w = item_w * scale
+        target_h = item_h * scale
+        self.video_item.setScale(scale)
+
+        # Translation de la position : on convertit le delta normalisé
+        # en pixels de scène (la scène est mappée 1:1 par défaut).
+        delta_x = float(position_x) * scene_w
+        delta_y = float(position_y) * scene_h
+        # ``QGraphicsItem.setTransform`` réinitialise la transformation
+        # ; on l'utilise pour combiner rotation et translation via la
+        # séquence ``translate → rotate → translate(-w/2, -h/2)``.
+        transform = QTransform()
+        transform.translate(center_x + delta_x, center_y + delta_y)
+        transform.rotate(-float(rotation))  # Qt : positif = horaire.
+        transform.translate(-target_w / 2.0, -target_h / 2.0)
+        self.video_item.setTransform(transform)  # noqa: F841 - gardé pour clarté
+        self.video_item.setOpacity(opacity)
+
+        # Mise à jour de l'état interne pour les inspections futures.
+        self._applied_pos_x = float(position_x)
+        self._applied_pos_y = float(position_y)
+        self._applied_scale = scale
+        self._applied_rotation = float(rotation)
+        self._applied_opacity = opacity
+
+    def current_applied_transform(self) -> dict[str, float]:
+        """Retourne le transform actuellement appliqué (inspection / tests)."""
+        return {
+            "position_x": self._applied_pos_x,
+            "position_y": self._applied_pos_y,
+            "scale": self._applied_scale,
+            "rotation": self._applied_rotation,
+            "opacity": self._applied_opacity,
+        }

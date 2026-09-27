@@ -149,8 +149,17 @@ def trim_clip_left(
             f"le clip '{clip_id}' (source_in={new_source_in}, "
             f"source_out={clip.source_out})."
         )
+    old_source_in = clip.source_in
+    old_source_out = clip.source_out
     clip.timeline_start = new_timeline_start
     clip.source_in = new_source_in
+    apply_clip_transform_on_trim(
+        clip,
+        old_source_in=old_source_in,
+        old_source_out=old_source_out,
+        new_source_in=new_source_in,
+        new_source_out=clip.source_out,
+    )
     return clip
 
 
@@ -195,7 +204,16 @@ def trim_clip_right(
             f"(asset={asset.duration}s, source_out={new_source_out})."
         )
 
+    old_source_in = clip.source_in
+    old_source_out = clip.source_out
     clip.source_out = new_source_out
+    apply_clip_transform_on_trim(
+        clip,
+        old_source_in=old_source_in,
+        old_source_out=old_source_out,
+        new_source_in=clip.source_in,
+        new_source_out=new_source_out,
+    )
     return clip
 
 
@@ -391,6 +409,11 @@ def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None
 
 
 from .subtitle_io import SubtitleCue  # noqa: E402  (import local pour cycle)
+from .visual_effects import (  # noqa: E402  (import local pour cycle)
+    ANIMATABLE_PROPERTIES,
+    ClipTransform,
+    TransformKeyframe,
+)
 
 
 _SUBTITLE_LABEL_MAX = 40
@@ -556,6 +579,15 @@ def duplicate_clip(
         enabled=source_clip.enabled,
         label=source_clip.label,
         text=source_clip.text,
+        transform=source_clip.transform,
+        transform_keyframes=[
+            TransformKeyframe(
+                property_name=kf.property_name,
+                time_seconds=kf.time_seconds,
+                value=kf.value,
+            )
+            for kf in source_clip.transform_keyframes
+        ],
     )
     source_track.clips.append(duplicate)
     return duplicate
@@ -652,3 +684,231 @@ def snap_timeline_position(
             best = candidate
             best_distance = distance
     return best
+
+
+# ---------------------------------------------------------------------------
+# Transformations visuelles et images-clés (tâche 13)
+# ---------------------------------------------------------------------------
+
+
+def _require_video_clip(project: Project, clip_id: str) -> Clip:
+    """Retourne le clip après avoir vérifié qu'il appartient à une piste vidéo."""
+    track, index = _find_track_for_clip(project, clip_id)
+    if track.type != "video":
+        raise ValueError(
+            f"Le clip '{clip_id}' est sur une piste '{track.type}' ; "
+            "les transformations visuelles ne s'appliquent qu'aux pistes vidéo."
+        )
+    return track.clips[index]
+
+
+def set_clip_transform(
+    project: Project,
+    clip_id: str,
+    transform: ClipTransform,
+) -> Clip:
+    """Remplace la transform de base d'un clip vidéo par ``transform``.
+
+    Les keyframes existantes sont conservées intactes.
+    """
+    clip = _require_video_clip(project, clip_id)
+    clip.transform = transform
+    return clip
+
+
+def set_transform_keyframe(
+    project: Project,
+    clip_id: str,
+    property_name: str,
+    clip_local_time: float,
+    value: float,
+) -> Clip:
+    """Ajoute (ou remplace) une image-clé pour ``property_name`` à ``clip_local_time``.
+
+    Les images-clés sont conservées triées par
+    ``(property_name, time_seconds)``. Si une image-clé existe déjà
+    pour le même couple, sa valeur est écrasée.
+    """
+    clip = _require_video_clip(project, clip_id)
+    if property_name not in ANIMATABLE_PROPERTIES:
+        raise ValueError(f"Propriété inconnue : {property_name!r}.")
+    duration = clip.duration
+    if duration <= 0.0:
+        raise ValueError(
+            "Le clip doit avoir une durée strictement positive pour "
+            "héberger des images-clés."
+        )
+    if clip_local_time < 0.0:
+        raise ValueError(
+            f"time_seconds doit être positif ou nul (reçu : {clip_local_time})."
+        )
+    if clip_local_time > duration:
+        raise ValueError(
+            f"L'image-clé ({clip_local_time}s) dépasse la durée du clip "
+            f"({duration}s)."
+        )
+    new_kf = TransformKeyframe(
+        property_name=property_name,
+        time_seconds=float(clip_local_time),
+        value=float(value),
+    )
+    # Filtre les keyframes existantes : remplace si même couple.
+    kept = [
+        kf
+        for kf in clip.transform_keyframes
+        if not (
+            kf.property_name == new_kf.property_name
+            and abs(kf.time_seconds - new_kf.time_seconds) < 1e-9
+        )
+    ]
+    kept.append(new_kf)
+    kept.sort(key=lambda kf: (kf.property_name, kf.time_seconds))
+    clip.transform_keyframes = kept
+    return clip
+
+
+def remove_transform_keyframe(
+    project: Project,
+    clip_id: str,
+    property_name: str,
+    clip_local_time: float,
+) -> Clip:
+    """Retire l'image-clé ``(property_name, clip_local_time)`` si elle existe."""
+    clip = _require_video_clip(project, clip_id)
+    clip.transform_keyframes = [
+        kf
+        for kf in clip.transform_keyframes
+        if not (
+            kf.property_name == property_name
+            and abs(kf.time_seconds - clip_local_time) < 1e-9
+        )
+    ]
+    return clip
+
+
+def reset_clip_transform(
+    project: Project,
+    clip_id: str,
+) -> Clip:
+    """Restaure la transform identité et supprime toutes les keyframes du clip."""
+    clip = _require_video_clip(project, clip_id)
+    clip.transform = ClipTransform()
+    clip.transform_keyframes = []
+    return clip
+
+
+def clip_keyframes_remain_valid_after_trim(
+    clip: Clip,
+    *,
+    old_source_in: float,
+    old_source_out: float,
+    new_source_in: float,
+    new_source_out: float,
+) -> list[TransformKeyframe]:
+    """Filtre les keyframes devenues invalides après un trim.
+
+    - Trim gauche : ``source_in`` augmente, donc le temps local 0
+      correspond à un point de source plus avancé. Les keyframes
+      situées au-delà du nouveau ``source_in`` doivent être décalées
+      de ``new_source_in - old_source_in`` pour rester cohérentes.
+    - Trim droit : ``source_out`` diminue, donc la durée effective
+      du clip diminue. Les keyframes situées au-delà de la nouvelle
+      durée sont supprimées.
+    """
+    if new_source_in > new_source_out:
+        raise ValueError("Les nouvelles bornes de source sont invalides.")
+
+    delta_left = float(new_source_in - old_source_in)
+    new_duration = float(new_source_out - new_source_in)
+    new_kfs: list[TransformKeyframe] = []
+    for kf in clip.transform_keyframes:
+        # Conversion temps local : on conserve la position dans le
+        # nouveau clip, en supprimant ce qui dépasse la durée.
+        new_local = float(kf.time_seconds) + delta_left
+        if new_local < 0.0:
+            continue
+        if new_local > new_duration + 1e-6:
+            continue
+        new_kfs.append(
+            TransformKeyframe(
+                property_name=kf.property_name,
+                time_seconds=new_local,
+                value=float(kf.value),
+            )
+        )
+    new_kfs.sort(key=lambda kf: (kf.property_name, kf.time_seconds))
+    return new_kfs
+
+
+def apply_clip_transform_on_move(
+    clip: Clip,
+    timeline_delta: float,
+) -> None:
+    """Déplace les keyframes d'un clip en même temps que le clip lui-même.
+
+    Les temps des keyframes sont relatifs au clip et ne sont pas
+    affectés par un simple déplacement timeline. Cette fonction est
+    un no-op conservé pour la lisibilité des autres opérations.
+    """
+    _ = timeline_delta  # noqa: F841
+    return None  # Les keyframes sont locales, rien à faire.
+
+
+def apply_clip_transform_on_trim(
+    clip: Clip,
+    *,
+    old_source_in: float,
+    old_source_out: float,
+    new_source_in: float,
+    new_source_out: float,
+) -> None:
+    """Filtre les keyframes devenues invalides suite à un trim, en place."""
+    clip.transform_keyframes = clip_keyframes_remain_valid_after_trim(
+        clip,
+        old_source_in=old_source_in,
+        old_source_out=old_source_out,
+        new_source_in=new_source_in,
+        new_source_out=new_source_out,
+    )
+
+
+def duplicate_clip_preserving_transform(
+    project: Project,
+    clip_id: str,
+) -> Clip:
+    """Duplique un clip en propageant ``transform`` et ``transform_keyframes``.
+
+    Variante de :func:`duplicate_clip` qui copie également la
+    transform et les keyframes. Les clips audio / sous-titres sont
+    copiés avec un transform identité (compatibilité).
+    """
+    source_track, source_index = _find_track_for_clip(project, clip_id)
+    source_clip = source_track.clips[source_index]
+    duration = source_clip.duration
+
+    # Clonage profond des keyframes (les TransformKeyframe sont frozen,
+    # donc une shallow copy suffit).
+    new_keyframes = [
+        TransformKeyframe(
+            property_name=kf.property_name,
+            time_seconds=kf.time_seconds,
+            value=kf.value,
+        )
+        for kf in source_clip.transform_keyframes
+    ]
+
+    duplicate = Clip(
+        id=f"clip-{uuid.uuid4().hex[:12]}",
+        asset_id=source_clip.asset_id,
+        track_id=source_track.id,
+        timeline_start=source_clip.timeline_start + duration,
+        source_in=source_clip.source_in,
+        source_out=source_clip.source_out,
+        enabled=source_clip.enabled,
+        label=source_clip.label,
+        text=source_clip.text,
+        transform=source_clip.transform,
+        transform_keyframes=new_keyframes,
+    )
+    source_track.clips.append(duplicate)
+    return duplicate

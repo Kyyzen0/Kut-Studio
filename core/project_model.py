@@ -10,6 +10,10 @@ manipulés hors d'un contexte Qt (tests, scripts, futurs services).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .visual_effects import ClipTransform, TransformKeyframe
 
 
 @dataclass
@@ -126,6 +130,9 @@ class Clip:
         label: Nom affiché du clip dans la timeline (par défaut "").
         text: Contenu textuel éventuel du clip, notamment pour les
             sous-titres (par défaut "" ; reste vide pour les clips vidéo).
+        transform: Transform 2D appliqué au clip (par défaut : identité).
+        transform_keyframes: Images-clés d'animation du transform. Liste
+            triée par ``(property_name, time_seconds)``.
     """
 
     id: str
@@ -137,6 +144,8 @@ class Clip:
     enabled: bool = True
     label: str = ""
     text: str = ""
+    transform: "ClipTransform" = field(default_factory=lambda: _default_transform())
+    transform_keyframes: list["TransformKeyframe"] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -154,6 +163,13 @@ class Clip:
     def duration(self) -> float:
         """Durée du clip sur la timeline (égale à ``source_out - source_in``)."""
         return self.source_out - self.source_in
+
+
+def _default_transform():  # pragma: no cover - import deferred
+    """Retourne un :class:`ClipTransform` par défaut (import paresseux)."""
+    from .visual_effects import ClipTransform
+
+    return ClipTransform()
 
 
 @dataclass

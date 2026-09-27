@@ -44,6 +44,13 @@ from PySide6.QtCore import QObject, QProcess, Signal
 
 from .render_plan import AudioLayer, RenderLayer, RenderPlan
 from .subtitle_io import format_srt
+from .visual_effects import (
+    ANIMATABLE_PROPERTIES,
+    ClipTransform,
+    TransformKeyframe,
+    build_ffmpeg_expression,
+    escape_filter_complex_commas,
+)
 
 
 _ffmpeg_path = shutil.which("ffmpeg")
@@ -385,12 +392,13 @@ class ExportEngine(QObject):
 
         if plan.video_layers:
             previous_label = "bg"
-            for layer_index in range(len(plan.video_layers)):
+            for layer_index, layer in enumerate(plan.video_layers):
                 is_last = layer_index == len(plan.video_layers) - 1
                 next_label = "vout" if is_last else f"o{layer_index}"
+                overlay_args = _build_overlay_args(layer, plan.width, plan.height)
                 parts.append(
                     f"[{previous_label}][v{layer_index}]"
-                    f"overlay=eof_action=pass[{next_label}]"
+                    f"overlay={overlay_args}[{next_label}]"
                 )
                 previous_label = next_label
             video_label = "vout"
@@ -550,10 +558,39 @@ def _build_layer_filter(
     height: int,
     fps: int,
 ) -> str:
-    """Construit la chaîne de filtres FFmpeg pour une couche vidéo."""
+    """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
+
+    La chaîne applique successivement :
+
+    1. ``trim`` sur la portion ``[source_in, source_out]`` du média ;
+    2. ``setpts=PTS-STARTPTS`` pour recaler les PTS à 0 ;
+    3. ``scale`` qui préserve le ratio ;
+    4. ``pad`` qui ajoute des bandes noires si nécessaire ;
+    5. ``fps`` qui force la fréquence d'images cible ;
+    6. ``scale`` animé (variation autour de la valeur de base) ;
+    7. ``rotate`` animé ;
+    8. ``format=rgba`` pour permettre la composition alpha ;
+    9. ``colorchannelmixer`` pour l'opacité animée ;
+    10. ``setpts=PTS+timeline_start/TB`` qui décale la couche à sa
+       position sur la timeline.
+
+    Le temps utilisé dans les expressions est local au clip : on
+    utilise ``PTS-STARTPTS`` (mis à 0 après le ``trim``) comme variable
+    de temps ``T`` dans les expressions générées.
+    """
     source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
+
+    # Expressions animées : on génère une expression FFmpeg par
+    # propriété (les ``if(lt(T,...),...`` sont linéaires).
+    duration = max(layer.source_out - layer.source_in, 1e-6)
+    transform = layer.transform
+    kfs = layer.transform_keyframes
+    scale_expr = _build_animated_scale_expr(transform, kfs, width, height)
+    rotation_expr = _build_animated_rotation_expr(transform, kfs)
+    opacity_expr = _build_animated_opacity_expr(transform, kfs)
+
     return (
         f"[{input_index}:v]"
         f"trim=start={source_in}:end={source_out},"
@@ -561,7 +598,128 @@ def _build_layer_filter(
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
         f"fps={fps},"
+        f"setpts=PTS-STARTPTS,"
+        f"{scale_expr},"
+        f"{rotation_expr},"
+        f"format=rgba,"
+        f"{opacity_expr},"
         f"setpts=PTS+{timeline_start}/TB[v{layer_index}]"
+    )
+
+
+def _build_animated_scale_expr(
+    transform: ClipTransform,
+    keyframes: tuple[TransformKeyframe, ...],
+    width: int,
+    height: int,
+) -> str:
+    """Génère un filtre ``scale`` animé autour de la taille du canvas."""
+    expr = build_ffmpeg_expression(
+        "scale",
+        transform.scale,
+        [kf for kf in keyframes if kf.property_name == "scale"],
+    )
+    # L'échelle s'applique à la dimension : on multiplie par la base
+    # du canvas pour que ``scale=1.0`` couvre tout.
+    base_w = float(width)
+    base_h = float(height)
+    w_expr = f"({expr})*{_format_seconds(base_w)}"
+    h_expr = f"({expr})*{_format_seconds(base_h)}"
+    return (
+        f"scale=w='trunc(iw*{w_expr}/iw)':h='trunc(ih*{h_expr}/ih)':"
+        f"eval=frame"
+    )
+
+
+def _build_animated_rotation_expr(
+    transform: ClipTransform,
+    keyframes: tuple[TransformKeyframe, ...],
+) -> str:
+    """Génère un filtre ``rotate`` animé (degrés)."""
+    expr = build_ffmpeg_expression(
+        "rotation",
+        transform.rotation,
+        [kf for kf in keyframes if kf.property_name == "rotation"],
+    )
+    # ``rotate`` accepte une expression en radians via ``a=...``. On
+    # multiplie l'angle (en degrés) par ``PI/180``. L'extension du
+    # canvas est calculée via ``hypot(iw,ih)`` pour garantir que les
+    # rotations même importantes restent entièrement visibles ; un
+    # overlay final tronquera à la taille du canvas.
+    return (
+        f"rotate=a='{expr}*0.017453292519943295':"
+        f"c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih):"
+        f"fillcolor=black@0"
+    )
+
+
+def _build_animated_opacity_expr(
+    transform: ClipTransform,
+    keyframes: tuple[TransformKeyframe, ...],
+) -> str:
+    """Génère le filtre qui applique l'opacité alpha sur le layer vidéo.
+
+    Deux cas :
+    - Pas d'image-clé : ``colorchannelmixer`` accepte la valeur
+      littérale ; rendu rapide.
+    - Avec images-clés : on passe par ``geq`` car ``colorchannelmixer``
+      n'accepte PAS d'expressions dépendant du temps (``T``). Le
+      ``geq`` filtre chaque pixel et préserve RGB via ``r(X,Y)`` etc.
+    """
+    opacity_keyframes = [kf for kf in keyframes if kf.property_name == "opacity"]
+    if not opacity_keyframes:
+        # Cas statique : literal accepté par colorchannelmixer, plus
+        # performant que ``geq``.
+        return f"colorchannelmixer=aa={_format_seconds(transform.opacity)}"
+
+    # Cas animé : ``geq`` avec une expression ``T``-dépendante. La
+    # formule d'interpolation linéaire est produite par
+    # ``build_ffmpeg_expression``, puis les virgules qu'elle utilise
+    # à l'intérieur (séparateurs d'arguments ``if(...,...,...)``)
+    # sont échappées pour ne pas être confondues avec le séparateur
+    # d'options de ``-filter_complex``.
+    expr = build_ffmpeg_expression(
+        "opacity",
+        transform.opacity,
+        opacity_keyframes,
+    )
+    escaped = escape_filter_complex_commas(expr)
+    # ``geq`` doit voir l'expression de l'alpha ; on garde les
+    # composantes RGB identiques au pixel d'origine.
+    return (
+        "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':"
+        f"a='{escaped}'"
+    )
+
+
+def _build_overlay_args(
+    layer: RenderLayer,
+    canvas_width: int,
+    canvas_height: int,
+) -> str:
+    """Construit la liste d'arguments ``key=value`` du filtre overlay.
+
+    - ``x`` et ``y`` expriment la position animée, normalisée par
+      rapport au canvas.
+    - ``eof_action=pass`` permet à la couche sous-jacente de rester
+      visible après la fin du clip courant.
+    """
+    px_expr = build_ffmpeg_expression(
+        "position_x",
+        layer.transform.position_x,
+        [kf for kf in layer.transform_keyframes if kf.property_name == "position_x"],
+    )
+    py_expr = build_ffmpeg_expression(
+        "position_y",
+        layer.transform.position_y,
+        [kf for kf in layer.transform_keyframes if kf.property_name == "position_y"],
+    )
+    base_x = (canvas_width - canvas_width) / 2.0
+    base_y = (canvas_height - canvas_height) / 2.0
+    x_expr = f"({_format_seconds(base_x)}+({px_expr})*{_format_seconds(canvas_width)})"
+    y_expr = f"({_format_seconds(base_y)}+({py_expr})*{_format_seconds(canvas_height)})"
+    return (
+        f"x='{x_expr}':y='{y_expr}':eval=frame:eof_action=pass"
     )
 
 

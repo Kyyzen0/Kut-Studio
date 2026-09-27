@@ -207,7 +207,7 @@ def test_build_command_v2_overlays_after_v1(engine, tmp_path):
     )
 
     # Le dernier overlay doit produire ``[vout]`` à partir de la couche V2.
-    assert filter_complex.rfind("overlay=eof_action=pass") > v2_pos
+    assert filter_complex.rfind("eof_action=pass") > v2_pos
     assert "[vout]" in filter_complex
 
 

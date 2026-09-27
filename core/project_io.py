@@ -4,11 +4,11 @@ Le format est un fichier JSON UTF-8 lisible, versionné, indépendant de
 tout framework graphique. Seule la bibliothèque standard Python est
 utilisée : aucune dépendance PySide6, aucun pickle.
 
-Structure du fichier (version 2) :
+Structure du fichier (version 3) :
 
     {
         "format": "kut-studio-project",
-        "version": 2,
+        "version": 3,
         "project": {
             "name": "...",
             "width": 1920,
@@ -19,10 +19,10 @@ Structure du fichier (version 2) :
         }
     }
 
-La version 2 ajoute le champ ``has_audio`` sur chaque
-``MediaAsset`` pour indiquer si le média porte une piste audio
-exploitable. Les fichiers de version 1 restent lisibles : le champ
-manquant est comblé par une valeur par défaut conservative (``False``).
+La version 3 ajoute les champs ``transform`` et ``transform_keyframes``
+sur chaque ``Clip``. Les versions 1 et 2 restent lisibles : les champs
+manquants sont comblés par les valeurs visuelles par défaut
+(``ClipTransform()`` + ``[]``).
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from .project_model import Clip, MediaAsset, Project, Track
+from .visual_effects import ClipTransform, TransformKeyframe
 
 
 # ---------------------------------------------------------------------------
@@ -49,14 +50,15 @@ from .project_model import Clip, MediaAsset, Project, Track
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
-La version 1 reste prise en charge ; ``has_audio`` y est comblé par
-une valeur par défaut conservative (``False``).
+Les versions 1 et 2 restent prises en charge ; ``has_audio``,
+``transform`` et ``transform_keyframes`` y sont comblés par des
+valeurs par défaut conservatives.
 """
 
 _FORMAT_KEY = "format"
@@ -173,6 +175,10 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "enabled": clip.enabled,
                             "label": clip.label,
                             "text": clip.text,
+                            "transform": _transform_to_dict(clip.transform),
+                            "transform_keyframes": [
+                                _keyframe_to_dict(kf) for kf in clip.transform_keyframes
+                            ],
                         }
                         for clip in track.clips
                     ],
@@ -223,9 +229,62 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
 
 def _deserialize_track(data: dict[str, Any]) -> Track:
     """Reconstruit une ``Track`` (et ses ``Clip``) à partir d'un dict JSON."""
+    clips = []
+    for raw_clip in data.get("clips", []):
+        clip_kwargs = {
+            key: value
+            for key, value in raw_clip.items()
+            if key not in {"transform", "transform_keyframes"}
+        }
+        clip_kwargs["transform"] = _dict_to_transform(
+            raw_clip.get("transform")
+        )
+        clip_kwargs["transform_keyframes"] = [
+            _dict_to_keyframe(raw) for raw in raw_clip.get("transform_keyframes", [])
+        ]
+        clips.append(Clip(**clip_kwargs))
     return Track(
-        clips=[Clip(**item) for item in data.get("clips", [])],
+        clips=clips,
         **{key: value for key, value in data.items() if key in _TRACK_FIELDS},
+    )
+
+
+def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:
+    return {
+        "position_x": float(transform.position_x),
+        "position_y": float(transform.position_y),
+        "scale": float(transform.scale),
+        "rotation": float(transform.rotation),
+        "opacity": float(transform.opacity),
+    }
+
+
+def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
+    """Désérialise un :class:`ClipTransform` (défaut si absent / invalide)."""
+    if not isinstance(raw, dict):
+        return ClipTransform()
+    return ClipTransform(
+        position_x=float(raw.get("position_x", 0.0)),
+        position_y=float(raw.get("position_y", 0.0)),
+        scale=float(raw.get("scale", 1.0)),
+        rotation=float(raw.get("rotation", 0.0)),
+        opacity=float(raw.get("opacity", 1.0)),
+    )
+
+
+def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
+    return {
+        "property_name": keyframe.property_name,
+        "time_seconds": float(keyframe.time_seconds),
+        "value": float(keyframe.value),
+    }
+
+
+def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
+    return TransformKeyframe(
+        property_name=str(raw["property_name"]),
+        time_seconds=float(raw["time_seconds"]),
+        value=float(raw["value"]),
     )
 
 
