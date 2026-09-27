@@ -21,6 +21,7 @@ from core.export_engine import (
 )
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import RenderPlan, build_render_plan
+from core.visual_effects import ClipTransform, TransformKeyframe
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +184,53 @@ def test_build_command_shifts_layer_by_timeline_start(engine, tmp_path):
     assert "setpts=PTS+2.0" in filter_complex
     # Et le trim doit utiliser la plage source.
     assert "trim=start=0.0:end=3.0" in filter_complex
+
+
+def test_animated_transform_uses_filter_specific_time_variables(engine, tmp_path):
+    """Scale et rotation utilisent ``t`` ; l'opacité via geq garde ``T``."""
+    project = _make_project_with_video(str(tmp_path / "source.mp4"))
+    clip = project.tracks[0].clips[0]
+    clip.transform = ClipTransform(scale=1.0, rotation=0.0, opacity=1.0)
+    clip.transform_keyframes = [
+        TransformKeyframe("scale", 1.0, 1.5),
+        TransformKeyframe("rotation", 1.0, 45.0),
+        TransformKeyframe("opacity", 1.0, 0.5),
+    ]
+    request = make_request(build_render_plan(project), tmp_path, ExportFormat.MP4_H264)
+
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    assert filter_complex.count("lt(t,1.0)") >= 2
+    assert "rotate=a='if(lt(t,1.0)" in filter_complex
+    assert "geq=" in filter_complex
+    assert "lt(T\\," in filter_complex
+
+
+def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_path):
+    """Les coordonnées animées suivent le préréglage et le début du clip."""
+    project = _make_project_with_video(str(tmp_path / "source.mp4"))
+    clip = project.tracks[0].clips[0]
+    clip.timeline_start = 2.0
+    clip.transform = ClipTransform(position_x=0.0, position_y=0.0)
+    clip.transform_keyframes = [
+        TransformKeyframe("position_x", 1.0, 0.5),
+    ]
+    plan = build_render_plan(project)
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(tmp_path / "output.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset("Petit", (320, 180), 18, "192k"),
+        fps=30,
+    )
+
+    command = engine._build_command(request)
+    filter_complex = command[command.index("-filter_complex") + 1]
+
+    assert "lt((t-2.0),1.0)" in filter_complex
+    assert "*320.0" in filter_complex
+    assert "*1920.0" not in filter_complex
 
 
 def test_build_command_v2_overlays_after_v1(engine, tmp_path):
@@ -403,6 +451,18 @@ def test_parse_progress_invalid(engine):
     assert engine._parse_progress("random output") is None
 
 
+def test_start_resets_partial_progress_buffer(engine, tmp_path, monkeypatch):
+    """La sortie partielle d'un export précédent ne fuit pas vers le suivant."""
+    project = _make_project_with_video(str(tmp_path / "source.mp4"))
+    request = make_request(build_render_plan(project), tmp_path, ExportFormat.MP4_H264)
+    engine._progress_buffer = "out_time_ms=500"
+    monkeypatch.setattr(engine._process, "start", lambda *_: None)
+
+    engine.start(request)
+
+    assert engine._progress_buffer == ""
+
+
 def test_process_error_does_not_emit_failed_when_cancel_requested(engine):
     """Une erreur QProcess pendant une annulation ne doit pas lever ``failed``."""
     engine._cancel_requested = True
@@ -565,6 +625,22 @@ def test_export_without_audio_still_has_silent_audio_track(engine, tmp_path):
     map_indices = [i for i, arg in enumerate(command) if arg == "-map"]
     audio_map = command[map_indices[1] + 1]
     assert audio_map == "[aout]"
+
+
+def test_command_uses_audio_bitrate_from_preset(engine, tmp_path):
+    """Le réglage de débit audio du préréglage est transmis à FFmpeg."""
+    project = _make_project_with_video(str(tmp_path / "source.mp4"))
+    plan = build_render_plan(project)
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(tmp_path / "output.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset("Audio", (1920, 1080), 18, "96k"),
+    )
+
+    command = engine._build_command(request)
+    bitrate_index = command.index("-b:a")
+    assert command[bitrate_index + 1] == "96k"
 
 
 def test_audio_layer_shift_via_setpts(engine, tmp_path):

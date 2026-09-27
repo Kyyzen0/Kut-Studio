@@ -4,8 +4,10 @@ from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
@@ -52,13 +54,31 @@ from core.timeline_evaluator import (
 )
 from core.render_plan import RenderPlan, build_render_plan
 from core.timeline_view_model import build_export_clips
+from core.user_settings import (
+    DEFAULT_LANGUAGE,
+    DEFAULT_THEME,
+    UserSettings,
+    load_user_settings,
+    save_user_settings,
+)
 from core.visual_effects import evaluate_transform
+from ui import i18n
+from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
-from ui.theme import COLORS, global_stylesheet, label_style
+from core.track_operations import (
+    add_track as track_operations_add_track,
+    move_track as track_operations_move_track,
+    remove_track as track_operations_remove_track,
+    rename_track as track_operations_rename_track,
+    set_track_locked,
+    set_track_muted,
+    set_track_visible,
+)
+from ui.theme import COLORS, ThemeManager, global_stylesheet, label_style
 
 
 class MainWindow(QMainWindow):
@@ -78,6 +98,15 @@ class MainWindow(QMainWindow):
         # État du document courant pour la persistance ``.kut``.
         self.current_project_path: str | None = None
         self.project_dirty: bool = False
+
+        # Gestionnaire de thème (sombre / clair / système).
+        loaded_settings: UserSettings = load_user_settings()
+        self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
+        self.theme_manager.apply_to(QApplication.instance())
+        i18n.set_language(loaded_settings.language)
+        # S'abonne aux changements de langue pour recharger les libellés.
+        i18n.subscribe(lambda code: self._on_language_changed(code))
+
         self._build_menu_bar()
 
         self.preview_panel = PreviewPanel(
@@ -127,6 +156,16 @@ class MainWindow(QMainWindow):
         self.timeline_panel.trim_clip_left_requested.connect(self.on_trim_left_requested)
         self.timeline_panel.trim_clip_right_requested.connect(self.on_trim_right_requested)
         self.timeline_panel.asset_dropped.connect(self.on_asset_dropped)
+        # Tâche 14 : opérations de pistes (ajout, suppression,
+        # verrouillage, visibilité, mute, déplacement, renommage).
+        self.timeline_panel.add_track_requested.connect(self.on_add_track_requested)
+        self.timeline_panel.remove_track_requested.connect(self.on_remove_track_requested)
+        self.timeline_panel.rename_track_requested.connect(self.on_rename_track_requested)
+        self.timeline_panel.toggle_track_lock_requested.connect(self.on_toggle_track_lock)
+        self.timeline_panel.toggle_track_visible_requested.connect(self.on_toggle_track_visible)
+        self.timeline_panel.toggle_track_muted_requested.connect(self.on_toggle_track_muted)
+        self.timeline_panel.move_track_up_requested.connect(self.on_move_track_up)
+        self.timeline_panel.move_track_down_requested.connect(self.on_move_track_down)
         self.properties_panel.cut_requested.connect(self.cut_selected_clip)
         self.properties_panel.delete_requested.connect(self.delete_selected_clip)
         self.properties_panel.duplicate_requested.connect(self.duplicate_clip_from_panel)
@@ -183,7 +222,7 @@ class MainWindow(QMainWindow):
         self.timeline_timer.setInterval(40)
         self.timeline_timer.timeout.connect(self._tick_playback)
         self.timeline_timer.start()
-        self.setStyleSheet(global_stylesheet())
+        self.theme_manager.apply_to(QApplication.instance())
         # Synchronise l'état initial des actions undo/redo. Cette
         # opération doit suivre ``_build_top_bar`` qui crée
         # ``project_label``.
@@ -778,8 +817,62 @@ class MainWindow(QMainWindow):
         reset_action.triggered.connect(lambda: self._notify_placeholder("Reset disposition"))
         window_menu.addAction(reset_action)
 
+        # Menu Séquence : opérations de piste.
+        track_add_video_action = QAction(i18n.translate("tracks.add_video_long"), self)
+        track_add_video_action.triggered.connect(
+            lambda: self.on_add_track_requested("video")
+        )
+        sequence_menu.addAction(track_add_video_action)
+        track_add_audio_action = QAction(i18n.translate("tracks.add_audio_long"), self)
+        track_add_audio_action.triggered.connect(
+            lambda: self.on_add_track_requested("audio")
+        )
+        sequence_menu.addAction(track_add_audio_action)
+        track_add_subtitle_action = QAction(
+            i18n.translate("tracks.add_subtitle_long"), self
+        )
+        track_add_subtitle_action.triggered.connect(
+            lambda: self.on_add_track_requested("subtitle")
+        )
+        sequence_menu.addAction(track_add_subtitle_action)
+        sequence_menu.addSeparator()
+        track_remove_action = QAction(i18n.translate("tracks.remove"), self)
+        track_remove_action.triggered.connect(self.remove_selected_track)
+        sequence_menu.addAction(track_remove_action)
+        track_move_up_action = QAction(i18n.translate("tracks.move_up"), self)
+        track_move_up_action.triggered.connect(
+            lambda: self._move_selected_track(direction=-1)
+        )
+        sequence_menu.addAction(track_move_up_action)
+        track_move_down_action = QAction(i18n.translate("tracks.move_down"), self)
+        track_move_down_action.triggered.connect(
+            lambda: self._move_selected_track(direction=1)
+        )
+        sequence_menu.addAction(track_move_down_action)
+        track_rename_action = QAction(i18n.translate("tracks.rename"), self)
+        track_rename_action.triggered.connect(self.rename_selected_track)
+        sequence_menu.addAction(track_rename_action)
+        track_lock_action = QAction(i18n.translate("tracks.toggle_lock"), self)
+        track_lock_action.triggered.connect(self.toggle_selected_track_lock)
+        sequence_menu.addAction(track_lock_action)
+        track_visible_action = QAction(i18n.translate("tracks.toggle_visible"), self)
+        track_visible_action.triggered.connect(self.toggle_selected_track_visible)
+        sequence_menu.addAction(track_visible_action)
+        track_mute_action = QAction(i18n.translate("tracks.toggle_mute"), self)
+        track_mute_action.triggered.connect(self.toggle_selected_track_muted)
+        sequence_menu.addAction(track_mute_action)
+
         for menu in (file_menu, edit_menu, sequence_menu, window_menu):
             menu_bar.addMenu(menu)
+
+        # Menu Édition : entrée Préférences (à la fin de la barre).
+        preferences_action = QAction(i18n.translate("action.preferences"), self)
+        preferences_action.setShortcut("Ctrl+,")
+        preferences_action.setShortcutContext(Qt.ApplicationShortcut)
+        preferences_action.triggered.connect(self.show_preferences)
+        # On insère l'entrée dans la barre ``Fenêtre`` pour rester
+        # accessible sans modifier l'ordre établi.
+        window_menu.addAction(preferences_action)
 
     def _notify_placeholder(self, feature_name):
         """Affiche un message discret pour les features à venir."""
@@ -833,6 +926,7 @@ class MainWindow(QMainWindow):
           la fenêtre vidéo, mais leurs effets (overlay, etc.) sont
           appliqués séparément (``update_subtitle_overlay``).
         """
+        self._refresh_motion_inspector()
         try:
             active_clips = evaluate_timeline(self.project, self.playhead_seconds)
         except ValueError:
@@ -863,15 +957,6 @@ class MainWindow(QMainWindow):
                 rotation=evaluated.rotation,
                 opacity=evaluated.opacity,
             )
-        # Synchronise les diamants / valeurs MOUVEMENT à la sélection.
-        if (
-            self.properties_panel.selected_clip is not None
-            and self.properties_panel.selected_clip.id == top_clip.clip_id
-        ):
-            self.properties_panel.refresh_keyframe_diamonds(
-                clip_obj.transform_keyframes if clip_obj else [],
-                self.playhead_seconds,
-            )
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.
@@ -895,7 +980,9 @@ class MainWindow(QMainWindow):
         view = self.timeline_panel.find_view_by_id(clip_id)
         if view is None:
             return
-        self.active_subtitle_clip = view if view.track_id == "S1" else None
+        self.active_subtitle_clip = (
+            view if getattr(view, "track_type", None) == "subtitle" else None
+        )
         self.properties_panel.show_clip(view)
         # Synchronise la section MOUVEMENT avec le clip réel.
         clip = find_clip(self.project, clip_id)
@@ -1385,17 +1472,7 @@ class MainWindow(QMainWindow):
 
         # Le snapshot courant de l'historique est l'état avant la rafale.
         # Il suffit d'enregistrer l'état modifié à la fin du debounce.
-        self._ensure_transform_session_capture()
-
-        if not hasattr(self, "_transform_session_timer"):
-            from PySide6.QtCore import QTimer
-
-            self._transform_session_timer = QTimer(self)
-            self._transform_session_timer.setSingleShot(True)
-            self._transform_session_timer.timeout.connect(
-                self._finalize_transform_session
-            )
-        self._transform_session_timer.start(400)
+        self._schedule_transform_history("Modifier le mouvement")
 
         # Rafraîchit l'aperçu immédiatement pour le retour visuel.
         self.properties_panel.update_transform_from_clip(
@@ -1412,6 +1489,22 @@ class MainWindow(QMainWindow):
             return
         self._transform_session_active = True
 
+    def _schedule_transform_history(self, label: str) -> None:
+        """Regroupe une rafale d'éditions dans une seule entrée d'historique."""
+        first = not getattr(self, "_transform_session_active", False)
+        self._ensure_transform_session_capture()
+        if first:
+            self._transform_session_label = label
+        if not hasattr(self, "_transform_session_timer"):
+            from PySide6.QtCore import QTimer
+
+            self._transform_session_timer = QTimer(self)
+            self._transform_session_timer.setSingleShot(True)
+            self._transform_session_timer.timeout.connect(
+                self._finalize_transform_session
+            )
+        self._transform_session_timer.start(400)
+
     def _finalize_transform_session(self) -> None:
         """Enregistre l'état final d'une rafale d'édition de transform."""
         if not getattr(self, "_transform_session_active", False):
@@ -1420,9 +1513,26 @@ class MainWindow(QMainWindow):
         if timer is not None:
             timer.stop()
         self._transform_session_active = False
-        self.history.record(self.project, "Modifier le mouvement")
+        label = getattr(self, "_transform_session_label", "Modifier le mouvement")
+        self.history.record(self.project, label)
         self._refresh_undo_redo_state()
         self.timeline_panel.set_project(self.project)
+
+    def _refresh_motion_inspector(self) -> None:
+        """Aligne l'inspecteur Mouvement sur le clip sélectionné et la tête de lecture."""
+        panel = self.properties_panel
+        selected = panel.selected_clip
+        if selected is None or getattr(selected, "track_type", None) != "video":
+            return
+        try:
+            clip = find_clip(self.project, selected.id)
+        except KeyError:
+            return
+        panel.refresh_keyframe_diamonds(
+            clip.transform_keyframes,
+            self.playhead_seconds,
+            transform=clip.transform,
+        )
 
     def on_transform_keyframe_added(
         self,
@@ -1431,23 +1541,26 @@ class MainWindow(QMainWindow):
         clip_local_time: float,
         value: float,
     ):
-        self._finalize_transform_session()
         try:
             set_transform_keyframe(
                 self.project, clip_id, property_name, clip_local_time, value
             )
         except ValueError as exc:
             print(f"[MainWindow] keyframe refusée : {exc}")
+            self._refresh_motion_inspector()
             return
-        clip = find_clip(self.project, clip_id)
-        self.history.record(self.project, "Ajouter une image-clé")
-        self.timeline_panel.set_project(self.project)
-        if clip is not None:
-            self.properties_panel.update_transform_from_clip(
-                clip.transform,
-                clip.transform_keyframes,
-                playhead_seconds=self.playhead_seconds,
-            )
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        # Même debounce que le slider de la base : un glisser qui réécrit
+        # l'image-clé sous la tête ne doit pas empiler une entrée par cran.
+        self._schedule_transform_history("Ajouter une image-clé")
+        self.properties_panel.update_transform_from_clip(
+            clip.transform,
+            clip.transform_keyframes,
+            playhead_seconds=self.playhead_seconds,
+        )
         self._sync_preview_to_timeline()
         self._mark_dirty()
 
@@ -1574,3 +1687,267 @@ class MainWindow(QMainWindow):
             local_path = url.toLocalFile()
             if local_path:
                 self.import_video_to_project(local_path)
+
+    # ------------------------------------------------------------------
+    # Tâche 14 : opérations sur les pistes
+    # ------------------------------------------------------------------
+
+    def on_add_track_requested(self, track_type: str) -> None:
+        """Ajoute une piste du type demandé, enregistre l'opération."""
+        try:
+            track = track_operations_add_track(self.project, track_type)
+        except ValueError as exc:
+            QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
+            return
+        self.history.record(self.project, i18n.translate("tracks.add_video_long"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+        # Sélectionne la nouvelle piste via ses boutons (lock/visible/mute).
+        # L'UI se met à jour avec refresh_clip_widgets dans
+        # ``_refresh_after_track_change``.
+
+    def on_remove_track_requested(self, track_id: str) -> None:
+        try:
+            track_operations_remove_track(self.project, track_id)
+        except (KeyError, ValueError) as exc:
+            QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
+            return
+        self.history.record(self.project, i18n.translate("tracks.remove"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def on_rename_track_requested(self, track_id: str, new_name: str) -> None:
+        if not new_name.strip():
+            return
+        try:
+            track_operations_rename_track(self.project, track_id, new_name.strip())
+        except (KeyError, ValueError) as exc:
+            QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
+            return
+        self.history.record(self.project, i18n.translate("tracks.rename"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def on_toggle_track_lock(self, track_id: str, locked: bool) -> None:
+        try:
+            set_track_locked(self.project, track_id, locked)
+        except KeyError as exc:
+            print(f"[MainWindow] lock : {exc}")
+            return
+        self.history.record(self.project, i18n.translate("tracks.toggle_lock"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def on_toggle_track_visible(self, track_id: str, visible: bool) -> None:
+        try:
+            set_track_visible(self.project, track_id, visible)
+        except KeyError as exc:
+            print(f"[MainWindow] visible : {exc}")
+            return
+        self.history.record(self.project, i18n.translate("tracks.toggle_visible"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def on_toggle_track_muted(self, track_id: str, muted: bool) -> None:
+        try:
+            set_track_muted(self.project, track_id, muted)
+        except KeyError as exc:
+            print(f"[MainWindow] muted : {exc}")
+            return
+        self.history.record(self.project, i18n.translate("tracks.toggle_mute"))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def on_move_track_up(self, track_id: str) -> None:
+        self._move_track_relative(track_id, delta=-1)
+
+    def on_move_track_down(self, track_id: str) -> None:
+        self._move_track_relative(track_id, delta=1)
+
+    def _move_track_relative(self, track_id: str, *, delta: int) -> None:
+        try:
+            current_index = next(
+                i for i, track in enumerate(self.project.tracks) if track.id == track_id
+            )
+        except StopIteration:
+            return
+        target = max(0, min(len(self.project.tracks) - 1, current_index + delta))
+        if target == current_index:
+            return
+        try:
+            track_operations_move_track(self.project, track_id, target)
+        except (KeyError, ValueError) as exc:
+            QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
+            return
+        label_key = (
+            "tracks.move_up" if delta < 0 else "tracks.move_down"
+        )
+        self.history.record(self.project, i18n.translate(label_key))
+        self._refresh_after_track_change()
+        self._mark_dirty()
+
+    def remove_selected_track(self) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            QMessageBox.information(
+                self,
+                i18n.translate("prefs.title"),
+                i18n.translate("tracks.remove"),
+            )
+            return
+        self.on_remove_track_requested(sel)
+
+    def rename_selected_track(self) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            return
+        track = next((t for t in self.project.tracks if t.id == sel), None)
+        if track is None:
+            return
+        new_name, ok = QInputDialog.getText(
+            self,
+            i18n.translate("tracks.rename"),
+            i18n.translate("tracks.rename"),
+            text=track.name,
+        )
+        if ok and new_name and new_name != track.name:
+            self.on_rename_track_requested(sel, new_name.strip())
+
+    def _move_selected_track(self, *, direction: int) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            return
+        self._move_track_relative(sel, delta=direction)
+
+    def toggle_selected_track_lock(self) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            return
+        track = next((t for t in self.project.tracks if t.id == sel), None)
+        if track is None:
+            return
+        self.on_toggle_track_lock(sel, not track.locked)
+
+    def toggle_selected_track_visible(self) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            return
+        track = next((t for t in self.project.tracks if t.id == sel), None)
+        if track is None:
+            return
+        self.on_toggle_track_visible(sel, not track.visible)
+
+    def toggle_selected_track_muted(self) -> None:
+        sel = self._selected_track_id()
+        if sel is None:
+            return
+        track = next((t for t in self.project.tracks if t.id == sel), None)
+        if track is None:
+            return
+        self.on_toggle_track_muted(sel, not track.muted)
+
+    def _selected_track_id(self) -> str | None:
+        if self.properties_panel.selected_clip is not None:
+            return self.properties_panel.selected_clip.track_id
+        if self.timeline_panel.selected_clip_id is not None:
+            clip = next(
+                (
+                    clip
+                    for track in self.project.tracks
+                    for clip in track.clips
+                    if clip.id == self.timeline_panel.selected_clip_id
+                ),
+                None,
+            )
+            if clip is not None:
+                return clip.track_id
+        return None
+
+    def _refresh_after_track_change(self) -> None:
+        """Reconstruit la timeline, l'aperçu, l'inspecteur et la durée."""
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
+        # L'inspecteur (propriétés) doit être régénéré pour le clip
+        # sélectionné car l'état de visibilité / mute du track peut
+        # avoir changé la disponibilité des boutons.
+        if self.timeline_panel.selected_clip_id is not None:
+            self.on_clip_selected(self.timeline_panel.selected_clip_id)
+        self._refresh_undo_redo_state()
+
+    # ------------------------------------------------------------------
+    # Tâche 14 : préférences utilisateur (thème + langue)
+    # ------------------------------------------------------------------
+
+    def show_preferences(self) -> None:
+        """Ouvre la fenêtre ``Préférences``."""
+        dialog = PreferencesDialog(
+            current_theme=self.theme_manager.requested_mode,
+            current_language_code=i18n.current_language(),
+            parent=self,
+        )
+        dialog.theme_changed.connect(self.on_user_setting_changed)
+        dialog.language_changed.connect(self.on_user_setting_changed)
+        dialog.restore_defaults_requested.connect(self._restore_default_preferences)
+        dialog.exec()
+
+    def _restore_default_preferences(self) -> None:
+        self._apply_settings(UserSettings())
+
+    def on_user_setting_changed(self, _value: str) -> None:
+        """Recueil les préférences courantes du manager / i18n."""
+        theme_mode = self.theme_manager.requested_mode
+        language_code = i18n.current_language()
+        self._apply_settings(
+            UserSettings(theme_mode=theme_mode, language=language_code)
+        )
+
+    def _apply_settings(self, settings: UserSettings) -> None:
+        # Application du thème dans Qt.
+        self.theme_manager.set_mode(settings.theme_mode)
+        self.theme_manager.apply_to(QApplication.instance())
+        # Application de la langue.
+        if i18n.current_language() != settings.language:
+            i18n.set_language(settings.language)
+        # Persistance (écriture atomique dans le répertoire de
+        # configuration, jamais dans le dépôt du projet).
+        save_user_settings(settings)
+        # Mise à jour des libellés dépendant de la langue.
+        self._retranslate_ui()
+
+    def on_language_changed(self, code: str) -> None:
+        """Callback i18n : retraduit l'interface à chaud."""
+        self._retranslate_ui()
+        # Persistance immédiate : la langue doit suivre les changements.
+        save_user_settings(
+            UserSettings(
+                theme_mode=self.theme_manager.requested_mode,
+                language=code,
+            )
+        )
+
+    def _retranslate_ui(self) -> None:
+        """Force la mise à jour des textes dépendant de la langue."""
+        self.setWindowTitle(i18n.translate("app.title"))
+        # On reconstruit la barre de menus (chemin simple) : chaque
+        # label n'est pas réécrit mais les changements de langue se
+        # font à la réouverture de la fenêtre Préférences au minimum.
+        for menu in self.menuBar().findChildren(QMenu):
+            menu.setTitle(self._translate_menu_title(menu.objectName()))
+        # Mise à jour des widgets traduisibles les plus visibles.
+        if hasattr(self.preview_panel, "update_translations"):
+            self.preview_panel.update_translations()
+        self.timeline_panel.refresh_clip_widgets()
+        self._refresh_undo_redo_state()
+
+    @staticmethod
+    def _translate_menu_title(object_name: str | None) -> str:
+        mapping = {
+            "file_menu": "menu.file",
+            "edit_menu": "menu.edit",
+            "view_menu": "menu.view",
+            "timeline_menu": "menu.timeline",
+            "help_menu": "menu.help",
+        }
+        key = mapping.get(object_name or "")
+        return i18n.translate(key) if key else ""

@@ -31,6 +31,12 @@ def _build_window(qtbot, monkeypatch):
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     window = MainWindow()
     qtbot.addWidget(window)
+    # Le timer interne de l'horloge de timeline continue à émettre des
+    # events toutes les 40 ms tant que la fenêtre existe ; cumulé sur
+    # plusieurs tests successifs, il peut bloquer la boucle d'événements
+    # Qt. On le suspend pour les tests.
+    if hasattr(window, "timeline_timer") and window.timeline_timer is not None:
+        window.timeline_timer.stop()
     return window
 
 

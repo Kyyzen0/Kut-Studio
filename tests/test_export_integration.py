@@ -1039,7 +1039,7 @@ def _probe_frame_color(
 
 
 def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
-    """Export réel : clip vidéo avec animation d'opacité via ``geq``.
+    """Export réel avec opacité, échelle, rotation et position animées.
 
     Limites de FFmpeg : les filtres standards ``scale``, ``rotate``,
     ``overlay`` et ``colorchannelmixer`` n'acceptent pas la variable
@@ -1084,11 +1084,19 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
         timeline_start=0.0,
         source_in=0.0,
         source_out=4.0,
-        transform=ClipTransform(scale=1.0, opacity=1.0),
+        transform=ClipTransform(
+            position_x=0.0, scale=1.0, rotation=0.0, opacity=1.0
+        ),
         transform_keyframes=[
             # Opacité : 1.0 → 0.4 sur 4 s (animée via ``geq``).
             TransformKeyframe(property_name="opacity", time_seconds=0.0, value=1.0),
             TransformKeyframe(property_name="opacity", time_seconds=4.0, value=0.4),
+            TransformKeyframe(property_name="scale", time_seconds=0.0, value=1.0),
+            TransformKeyframe(property_name="scale", time_seconds=4.0, value=0.8),
+            TransformKeyframe(property_name="rotation", time_seconds=0.0, value=0.0),
+            TransformKeyframe(property_name="rotation", time_seconds=4.0, value=15.0),
+            TransformKeyframe(property_name="position_x", time_seconds=0.0, value=0.0),
+            TransformKeyframe(property_name="position_x", time_seconds=4.0, value=0.1),
         ],
     )
     project = Project(
@@ -1138,6 +1146,9 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
     # L'expression d'opacité animée utilise ``if(lt(T\\,t)\\,A\\,B)``
     # (forme avec virgules échappées pour passer -filter_complex).
     assert "lt(T\\," in filter_complex
+    assert "scale=w=" in filter_complex
+    assert "rotate=" in filter_complex
+    assert "lt(t,4.0)" in filter_complex
     assert "overlay=" in filter_complex
 
     # 5. Exécution réelle de l'engine (sans sous-titre → engine finit

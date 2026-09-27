@@ -85,6 +85,14 @@ def _find_asset(project: Project, asset_id: str) -> MediaAsset:
 # ---------------------------------------------------------------------------
 
 
+def _ensure_track_editable(project: Project, track) -> None:
+    """Refuse les opérations sur une piste verrouillée."""
+    if getattr(track, "locked", False):
+        raise ValueError(
+            f"La piste '{track.id}' est verrouillée : modifications refusées."
+        )
+
+
 def move_clip(
     project: Project, clip_id: str, new_timeline_start: float
 ) -> Clip:
@@ -95,7 +103,8 @@ def move_clip(
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas dans le projet.
-        ValueError: si ``new_timeline_start`` est strictement négatif.
+        ValueError: si ``new_timeline_start`` est strictement négatif
+            ou si la piste du clip est verrouillée.
     """
     if new_timeline_start < 0.0:
         raise ValueError(
@@ -103,6 +112,7 @@ def move_clip(
             f"(position demandée : {new_timeline_start})."
         )
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     clip.timeline_start = new_timeline_start
     return clip
@@ -134,6 +144,7 @@ def trim_clip_left(
             f"Impossible de rogner le clip '{clip_id}' avant 0.0 seconde."
         )
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     delta = new_timeline_start - clip.timeline_start
     if delta < 0.0:
@@ -179,6 +190,7 @@ def trim_clip_right(
             du média sous-jacent.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     asset = _find_asset(project, clip.asset_id)
 
@@ -238,6 +250,7 @@ def cut_clip(
             du clip, ou si l'identifiant généré est déjà utilisé.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
 
     timeline_end = clip.timeline_start + clip.duration
@@ -300,8 +313,10 @@ def delete_clip(project: Project, clip_id: str) -> Clip:
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
+        ValueError: si la piste du clip est verrouillée.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     del track.clips[index]
     return clip
@@ -364,6 +379,7 @@ def add_clip_to_track(
     asset = _find_asset(project, asset_id)
     track = find_track(project, track_id)
     _validate_track_asset_compatibility(asset, track)
+    _ensure_track_editable(project, track)
 
     new_clip = Clip(
         id=f"clip-{uuid.uuid4().hex[:12]}",
@@ -512,12 +528,16 @@ def subtitle_cues_from_project(project: Project) -> list[SubtitleCue]:
     """Retourne les :class:`SubtitleCue` actifs du projet, triés.
 
     Seuls les clips activés des pistes de type ``subtitle`` sont
-    retenus. Les cues sont triés par ``(start, end)`` pour produire
-    un SRT ordonné, prêt à être sauvegardé ou envoyé à FFmpeg.
+    retenus. Les pistes invisibles (``track.visible is False``) ne
+    produisent aucun sous-titre. Les cues sont triés par
+    ``(start, end)`` pour produire un SRT ordonné, prêt à être
+    sauvegardé ou envoyé à FFmpeg.
     """
     cues: list[SubtitleCue] = []
     for track in project.tracks:
         if track.type != "subtitle":
+            continue
+        if not track.visible:
             continue
         for clip in track.clips:
             if not clip.enabled:
@@ -556,6 +576,7 @@ def duplicate_clip(
     immédiatement après la fin du clip source, sur la même piste.
     """
     source_track, source_index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, source_track)
     source_clip = source_track.clips[source_index]
     duration = source_clip.duration
 
@@ -619,6 +640,7 @@ def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     Les assets de la bibliothèque ne sont jamais supprimés.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     deleted_clip = track.clips.pop(index)
     delta = float(deleted_clip.duration)
     boundary = float(deleted_clip.timeline_start + deleted_clip.duration)

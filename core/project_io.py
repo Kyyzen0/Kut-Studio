@@ -4,11 +4,11 @@ Le format est un fichier JSON UTF-8 lisible, versionné, indépendant de
 tout framework graphique. Seule la bibliothèque standard Python est
 utilisée : aucune dépendance PySide6, aucun pickle.
 
-Structure du fichier (version 3) :
+Structure du fichier (version 4) :
 
     {
         "format": "kut-studio-project",
-        "version": 3,
+        "version": 4,
         "project": {
             "name": "...",
             "width": 1920,
@@ -19,10 +19,12 @@ Structure du fichier (version 3) :
         }
     }
 
-La version 3 ajoute les champs ``transform`` et ``transform_keyframes``
-sur chaque ``Clip``. Les versions 1 et 2 restent lisibles : les champs
-manquants sont comblés par les valeurs visuelles par défaut
-(``ClipTransform()`` + ``[]``).
+La version 4 ajoute les états ``locked`` / ``visible`` / ``muted`` sur
+chaque ``Track``. La version 3 (transform + keyframes) reste lisible ;
+les champs manquants y sont comblés par ``locked=False``,
+``visible=True`` et ``muted=False``. Les versions 1 et 2 restent
+accessibles : leurs clips héritent du transform identité, les pistes
+reprennent les valeurs par défaut ci-dessus.
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -50,15 +52,15 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 3
+CURRENT_VERSION = 4
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
-Les versions 1 et 2 restent prises en charge ; ``has_audio``,
-``transform`` et ``transform_keyframes`` y sont comblés par des
-valeurs par défaut conservatives.
+Les versions 1 à 4 restent prises en charge ; les champs
+spécifiques (transform, keyframes, états de piste) y sont comblés
+par des valeurs par défaut conservatives.
 """
 
 _FORMAT_KEY = "format"
@@ -66,7 +68,9 @@ _VERSION_KEY = "version"
 _PROJECT_KEY = "project"
 
 _PROJECT_FIELDS = frozenset({"name", "width", "height", "fps"})
-_TRACK_FIELDS = frozenset({"id", "name", "type"})
+_TRACK_FIELDS = frozenset(
+    {"id", "name", "type", "locked", "visible", "muted"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +168,9 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "id": track.id,
                     "name": track.name,
                     "type": track.type,
+                    "locked": track.locked,
+                    "visible": track.visible,
+                    "muted": track.muted,
                     "clips": [
                         {
                             "id": clip.id,

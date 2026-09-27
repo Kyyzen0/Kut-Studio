@@ -1,6 +1,16 @@
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF, QFontMetrics
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QWidget,
+    QFrame,
+    QToolButton,
+    QSizePolicy,
+    QVBoxLayout,
+)
 
 from core.project_model import Project
 from core.timeline_view_model import (
@@ -9,6 +19,7 @@ from core.timeline_view_model import (
     transition_gap_pixels,
     v1_transition_pairs,
 )
+from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
 
@@ -21,24 +32,24 @@ _DEMO_MARKERS = (4.0, 9.0, 14.0)
 
 
 class ClipWidget(QWidget):
-    """Widget visuel représentant un TimelineClipView immuable.
-
-    Le widget ne mute jamais le ``Project`` ni la vue : il mémorise
-    uniquement des valeurs de drag temporaires et émet un signal
-    d'intention au relâchement de la souris.
-    """
+    """Widget visuel représentant un TimelineClipView immuable."""
 
     def __init__(self, view: TimelineClipView, parent: "TimelinePanel | None" = None):
         super().__init__(parent)
         self.view = view
-        self.parent_timeline = parent
+        # ``parent_timeline`` désigne toujours le panneau, même si
+        # nous sommes hébergés par ``self.timeline_grid`` (la zone
+        # scrollable interne). On remonte dans l'arbre Qt pour le
+        # retrouver ; cela conserve la géométrie historique.
+        cursor = parent
+        while cursor is not None and not isinstance(cursor, TimelinePanel):
+            cursor = cursor.parent()
+        self.parent_timeline = cursor if isinstance(cursor, TimelinePanel) else None
         self.handle_width = 5
-        self.drag_mode = None  # type: str | None
+        self.drag_mode = None
         self.drag_start_x = 0
         self.drag_original_start = view.start
         self.drag_original_end = view.end
-        # Valeurs pending pour le rendu pendant un drag : on n'écrit jamais
-        # dans ``self.view`` (frozen) ni dans le ``Project``.
         self.pending_start = view.start
         self.pending_end = view.end
         self.setMouseTracking(True)
@@ -55,9 +66,9 @@ class ClipWidget(QWidget):
         self.refresh_style()
 
     def refresh_style(self):
+        parent = self.parent_timeline
         selected = (
-            self.parent_timeline is not None
-            and self.parent_timeline.selected_clip_id == self.view.id
+            parent is not None and parent.selected_clip_id == self.view.id
         )
         border = COLORS["accent_hover"] if selected else "#59616F"
         self.setStyleSheet(
@@ -67,7 +78,7 @@ class ClipWidget(QWidget):
         )
         self.label.setText(self.view.label)
         self.duration_label.setText(
-            self.parent_timeline.format_time(self.view.end - self.view.start)
+            parent.format_time(self.view.end - self.view.start) if parent else ""
         )
 
     def _apply_pending_geometry(self) -> None:
@@ -85,16 +96,20 @@ class ClipWidget(QWidget):
             * parent.zoom,
         )
         row = self.view.track_index
-        track_top = (
-            parent.header_height
-            + parent.ruler_height
-            + 8
-            + row * (parent.track_height + 8)
-            + 8
+        # ``self`` peut être hébergé par ``self.timeline_grid`` (zone
+        # scrollable), auquel cas ``Y`` est mesuré depuis le coin haut
+        # gauche de la grille (qui ne contient pas l'en-tête global).
+        # On détecte ce cas en regardant le parent immédiat.
+        track_top_within_self = (
+            row * (parent.track_height + 8) + 8
         )
+        if self.parent() is parent:
+            track_top_within_self += (
+                parent.header_height + parent.ruler_height + 8
+            )
         self.setGeometry(
             int(start_x),
-            int(track_top),
+            int(track_top_within_self),
             max(int(width), 40),
             parent.track_height - 16,
         )
@@ -105,6 +120,10 @@ class ClipWidget(QWidget):
         parent = self.parent_timeline
         if parent is None:
             return super().mousePressEvent(event)
+        track = getattr(self.view, "track", None)
+        if track and getattr(track, "locked", False):
+            event.ignore()
+            return
         x = event.position().x()
         if x <= self.handle_width:
             self.drag_mode = "trim-left"
@@ -170,29 +189,18 @@ class ClipWidget(QWidget):
         event.accept()
 
     def paintEvent(self, event):
-        """Dessine le clip puis, par-dessus, les images-clés du transform.
-
-        Les keyframes sont lues depuis la vue du clip (liste ``keyframes``).
-        Chaque image-clé est représentée par un petit losange coloré
-        placé horizontalement à ``time_seconds`` local et verticalement
-        empilé lorsqu'elles partagent le même temps.
-        """
         super().paintEvent(event)
         keyframes = getattr(self.view, "keyframes", None) or []
         if not keyframes:
             return
         track_type = getattr(self.view, "track_type", None)
-        # Les transformations ne s'appliquent qu'aux clips vidéo : on
-        # évite de bruiter l'affichage des autres pistes.
         if track_type not in {"video", None} and not self.view.track_id.startswith("V"):
             return
-
         duration = max(self.view.end - self.view.start, 1e-6)
         parent = self.parent_timeline
         if parent is None:
             return
         pixels_per_second = parent.pixels_per_second * parent.zoom
-        # Regroupement par ``time_seconds`` pour empiler verticalement.
         grouped: dict[float, list] = {}
         for kf in keyframes:
             grouped.setdefault(round(kf.time_seconds, 4), []).append(kf)
@@ -226,15 +234,118 @@ class ClipWidget(QWidget):
         painter.end()
 
 
-class TimelinePanel(QWidget):
-    """Timeline de Kut-Studio, pilotée par un ``Project``.
+class TrackRowHeader(QFrame):
+    """En-tête visuel d'une piste, à gauche de la timeline.
 
-    La timeline n'est qu'une projection : elle stocke des
-    ``TimelineClipView`` immuables et émet des signaux d'intention
-    (``move_clip_requested``, ``trim_clip_left_requested``,
-    ``trim_clip_right_requested``). C'est ``MainWindow`` qui applique
-    les opérations via ``core.timeline_operations`` puis demande un
-    rafraîchissement via ``set_project``.
+    Affiche le nom, le numéro et les boutons d'action. Chaque bouton
+    émet un signal haute niveau que :class:`TimelinePanel` relaie à
+    ``MainWindow``. La classe dérive son style de la palette en cours
+    via ``ThemeManager.apply_to``.
+    """
+
+    lock_toggled = Signal(str, bool)
+    visible_toggled = Signal(str, bool)
+    mute_toggled = Signal(str, bool)
+    rename_requested = Signal(str)
+    move_up_requested = Signal(str)
+    move_down_requested = Signal(str)
+    remove_requested = Signal(str)
+
+    def __init__(self, track, parent=None):
+        super().__init__(parent)
+        self.track = track
+        self.setFrameShape(QFrame.NoFrame)
+        self.setFixedHeight(56)
+        self.setStyleSheet(
+            f"QFrame {{ background: {COLORS['panel']}; border-right: 1px solid {COLORS['border']}; }}"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 4, 6, 4)
+        layout.setSpacing(2)
+        prefix = "V" if track.type == "video" else (
+            "A" if track.type == "audio" else "S"
+        )
+        title = QLabel(f"{prefix}  ·  {track.name}")
+        title.setStyleSheet(label_style(11, "text", 700))
+        layout.addWidget(title)
+        state_parts = []
+        if getattr(track, "locked", False):
+            state_parts.append("🔒")
+        if not getattr(track, "visible", True):
+            state_parts.append("hide")
+        if getattr(track, "muted", False):
+            state_parts.append("🔇")
+        state_label = QLabel(" ".join(state_parts) or "─")
+        state_label.setStyleSheet(label_style(10, "muted", 500))
+        layout.addWidget(state_label)
+        # Boutons compacts en bas : on les superpose horizontalement.
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(2)
+        button_row.addWidget(self._make_button(
+            "🔒", lambda checked: self.lock_toggled.emit(track.id, checked),
+            toggle=True, checked=getattr(track, "locked", False),
+        ))
+        if track.type in {"video", "subtitle"}:
+            button_row.addWidget(self._make_button(
+                "👁",
+                lambda checked: self.visible_toggled.emit(track.id, checked),
+                toggle=True,
+                checked=getattr(track, "visible", True),
+            ))
+        if track.type == "audio":
+            button_row.addWidget(self._make_button(
+                "🔊",
+                lambda checked: self.mute_toggled.emit(track.id, not checked),
+                toggle=True,
+                checked=not getattr(track, "muted", False),
+            ))
+        button_row.addWidget(self._make_button(
+            "↑", lambda: self.move_up_requested.emit(track.id),
+        ))
+        button_row.addWidget(self._make_button(
+            "↓", lambda: self.move_down_requested.emit(track.id),
+        ))
+        button_row.addWidget(self._make_button(
+            "✎", lambda: self.rename_requested.emit(track.id),
+        ))
+        button_row.addWidget(self._make_button(
+            "✕", lambda: self.remove_requested.emit(track.id),
+        ))
+        layout.addLayout(button_row)
+        layout.addStretch()
+
+    @staticmethod
+    def _make_button(label, callback, toggle: bool = False, checked: bool = False) -> QToolButton:
+        btn = QToolButton()
+        btn.setText(label)
+        btn.setFixedSize(22, 22)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(
+            f"QToolButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; "
+            f"border: 1px solid {COLORS['border']}; border-radius: 4px; font-size: 11px; }}"
+            f"QToolButton:hover {{ background: {COLORS['surface_hover']}; }}"
+            f"QToolButton:checked {{ background: {COLORS['accent']}; }}"
+        )
+        if toggle:
+            btn.setCheckable(True)
+            btn.setChecked(checked)
+        btn.clicked.connect(callback)
+        return btn
+
+
+class TimelinePanel(QWidget):
+    """Timeline de Kut-Studio, pilotée par un Project.
+
+    Architecture :
+
+    - en-tête global (lecture, zoom, snap, compteurs, boutons
+      d'ajout de piste) ;
+    - zone centrale : une ``QScrollArea`` verticale unique qui contient
+      la pile des pistes empilées, plus une barre d'outils flottante à
+      droite pour les actions globales ;
+    - chaque piste est rendue par une :class:`TrackRowHeader` (en-tête
+      à gauche) et ses clips (widgets :class:`ClipWidget`).
     """
 
     seek_requested = Signal(float)
@@ -243,7 +354,15 @@ class TimelinePanel(QWidget):
     move_clip_requested = Signal(str, float)
     trim_clip_left_requested = Signal(str, float)
     trim_clip_right_requested = Signal(str, float)
-    asset_dropped = Signal(str, str, float)  # asset_id, track_id, timeline_start
+    asset_dropped = Signal(str, str, float)
+    add_track_requested = Signal(str)
+    remove_track_requested = Signal(str)
+    rename_track_requested = Signal(str, str)
+    toggle_track_lock_requested = Signal(str, bool)
+    toggle_track_visible_requested = Signal(str, bool)
+    toggle_track_muted_requested = Signal(str, bool)
+    move_track_up_requested = Signal(str)
+    move_track_down_requested = Signal(str)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -252,7 +371,7 @@ class TimelinePanel(QWidget):
         self.header_height = 40
         self.ruler_height = 34
         self.track_height = 56
-        self.left_margin = 90
+        self.left_margin = 110
         self.zoom = 1.0
         self.duration_seconds = 30.0
         self.playhead_seconds = 0.0
@@ -264,9 +383,10 @@ class TimelinePanel(QWidget):
         self._refresh_track_metadata()
         self.markers = list(_DEMO_MARKERS)
         self.clip_widgets: dict[str, ClipWidget] = {}
+        self.track_header_widgets: dict[str, TrackRowHeader] = {}
         self.dragging_playhead = False
         self.selected_clip_id: str | None = None
-        self.drag_mode: str | None = None
+        self.drag_mode = None
         self.drag_start_x = 0
         self.drag_original_start = 0.0
         self.snap_enabled: bool = True
@@ -275,47 +395,85 @@ class TimelinePanel(QWidget):
         self.setAcceptDrops(True)
         self.setAttribute(Qt.WA_StyledBackground, True)
 
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # En-tête global
         self.play_button = QPushButton("▶")
         self.play_button.setFixedWidth(42)
-        self.play_button.setToolTip("Lecture / pause (Espace)")
+        self.play_button.setToolTip(translate("tooltip.snap"))
         self.time_label = QLabel("00:00")
-        self.time_label.setStyleSheet("color: #f0f0f0; font-weight: 700; font-size: 12px;")
+        self.time_label.setStyleSheet(
+            "color: #f0f0f0; font-weight: 700; font-size: 12px;"
+        )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet("color: #a0a0a0; font-size: 12px;")
         self.zoom_out_btn = QPushButton("−")
         self.zoom_out_btn.setFixedWidth(26)
-        self.zoom_out_btn.setToolTip("Réduire le zoom")
+        self.zoom_out_btn.setToolTip(translate("tooltip.zoom_out"))
         self.zoom_label = QLabel("100%")
-        self.zoom_label.setStyleSheet("color: #dfe7ff; font-weight: 700; min-width: 48px; font-size: 11px;")
+        self.zoom_label.setStyleSheet(
+            "color: #dfe7ff; font-weight: 700; min-width: 48px; font-size: 11px;"
+        )
         self.zoom_label.setAlignment(Qt.AlignCenter)
         self.zoom_in_btn = QPushButton("+")
         self.zoom_in_btn.setFixedWidth(26)
-        self.zoom_in_btn.setToolTip("Augmenter le zoom")
+        self.zoom_in_btn.setToolTip(translate("tooltip.zoom_in"))
         for button in (self.zoom_out_btn, self.zoom_in_btn):
             button.setStyleSheet(
-                f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; border-radius: 5px; }}"
+                f"QPushButton {{ background: {COLORS['surface']}; "
+                f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
+                f"border-radius: 5px; }}"
             )
+        # Boutons "Ajouter une piste".
+        self.add_video_btn = QPushButton(translate("tracks.add_video"))
+        self.add_video_btn.setToolTip(translate("tooltip.add_video"))
+        self.add_audio_btn = QPushButton(translate("tracks.add_audio"))
+        self.add_audio_btn.setToolTip(translate("tooltip.add_audio"))
+        self.add_subtitle_btn = QPushButton(translate("tracks.add_subtitle"))
+        self.add_subtitle_btn.setToolTip(translate("tooltip.add_subtitle"))
+        for btn in (
+            self.add_video_btn,
+            self.add_audio_btn,
+            self.add_subtitle_btn,
+        ):
+            btn.setStyleSheet(
+                f"QPushButton {{ background: {COLORS['accent_dark']}; "
+                f"color: {COLORS['text']}; border: 1px solid {COLORS['accent']}; "
+                f"border-radius: 5px; padding: 4px 8px; font-weight: 600; }}"
+                f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
+            )
+        self.snap_button = QPushButton("🧲")
+        self.snap_button.setCheckable(True)
+        self.snap_button.setChecked(True)
+        self.snap_button.setFixedWidth(34)
+        self.snap_button.setToolTip(translate("tooltip.snap"))
+        self.snap_button.setStyleSheet(
+            f"QPushButton {{ background: {COLORS['accent_dark']}; "
+            f"color: {COLORS['text']}; border: 1px solid {COLORS['accent']}; "
+            f"border-radius: 5px; }}"
+            f"QPushButton:checked {{ background: {COLORS['accent']}; }}"
+            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
+        )
+        self.snap_button.toggled.connect(self.set_snap_enabled)
         self.header = QWidget(self)
-        self.header.setStyleSheet("background: #202020; border-bottom: 1px solid #2f2f2f;")
+        self.header.setStyleSheet(
+            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+        )
         header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(8, 6, 10, 6)
         header_layout.addWidget(self.play_button)
         header_layout.addWidget(self.time_label)
         header_layout.addSpacing(12)
-        self.snap_button = QPushButton("🧲")
-        self.snap_button.setCheckable(True)
-        self.snap_button.setChecked(True)
-        self.snap_button.setFixedWidth(34)
-        self.snap_button.setToolTip("Aimant (snapping magnétique)")
-        self.snap_button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent_dark']}; color: {COLORS['text']}; border: 1px solid {COLORS['accent']}; border-radius: 5px; }}"
-            f"QPushButton:checked {{ background: {COLORS['accent']}; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent']}; }}"
-        )
-        self.snap_button.toggled.connect(self.set_snap_enabled)
         header_layout.addWidget(self.snap_button)
+        header_layout.addSpacing(8)
+        header_layout.addWidget(self.add_video_btn)
+        header_layout.addWidget(self.add_audio_btn)
+        header_layout.addWidget(self.add_subtitle_btn)
         header_layout.addStretch()
         header_layout.addWidget(self.total_time_label)
+        header_layout.addSpacing(8)
         header_layout.addWidget(self.zoom_out_btn)
         header_layout.addWidget(self.zoom_label)
         header_layout.addWidget(self.zoom_in_btn)
@@ -328,6 +486,29 @@ class TimelinePanel(QWidget):
         header_layout.addWidget(self.version_label)
         self.zoom_out_btn.clicked.connect(self.zoom_out)
         self.zoom_in_btn.clicked.connect(self.zoom_in)
+        self.add_video_btn.clicked.connect(
+            lambda: self.add_track_requested.emit("video")
+        )
+        self.add_audio_btn.clicked.connect(
+            lambda: self.add_track_requested.emit("audio")
+        )
+        self.add_subtitle_btn.clicked.connect(
+            lambda: self.add_track_requested.emit("subtitle")
+        )
+        outer.addWidget(self.header)
+
+        # Zone centrale : QScrollArea verticale contenant la grille.
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(False)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_grid = QWidget()
+        self.timeline_grid.setMinimumWidth(self.left_margin + 1600)
+        self.timeline_grid.setStyleSheet(
+            f"background: {COLORS['panel_alt']};"
+        )
+        self.scroll.setWidget(self.timeline_grid)
+        outer.addWidget(self.scroll, 1)
         self.refresh_clip_widgets()
 
     # ------------------------------------------------------------------
@@ -335,7 +516,6 @@ class TimelinePanel(QWidget):
     # ------------------------------------------------------------------
 
     def set_project(self, project: Project) -> None:
-        """Remplace le projet affiché et reconstruit la projection."""
         self.project = project
         self._refresh_track_metadata()
         self.clip_views = build_clip_views(project)
@@ -344,14 +524,12 @@ class TimelinePanel(QWidget):
         self.update()
 
     def find_view_by_id(self, clip_id: str) -> TimelineClipView | None:
-        """Retourne la vue correspondant à ``clip_id`` ou ``None``."""
         for view in self.clip_views:
             if view.id == clip_id:
                 return view
         return None
 
     def select_clip(self, clip_id: str) -> None:
-        """Sélectionne un clip par identifiant et émet ``clip_selected``."""
         self.selected_clip_id = clip_id
         self.clip_selected.emit(clip_id)
         self.refresh_clip_widgets()
@@ -371,13 +549,6 @@ class TimelinePanel(QWidget):
         proposed_position: float,
         excluded_clip_id: str | None = None,
     ) -> tuple[float, float | None]:
-        """Accroche ``proposed_position`` au candidat le plus proche.
-
-        Returns:
-            (position, snap_x_pixel) : la position retenue en secondes et
-            la coordonnée x de la ligne de snap (ou ``None`` si l'aimant
-            est désactivé ou si aucun candidat n'est dans le seuil).
-        """
         from core.timeline_operations import snap_timeline_position
 
         self.snap_line_x = None
@@ -430,20 +601,57 @@ class TimelinePanel(QWidget):
         self.clip_count_label.setText(
             f"{count} clip" if count == 1 else f"{count} clips"
         )
+        # Nettoyer les anciens headers de pistes.
+        for header in list(self.track_header_widgets.values()):
+            header.setParent(None)
+            header.deleteLater()
+        self.track_header_widgets.clear()
+        # Nettoyer les anciens clips retirés du projet.
         current_ids = {view.id for view in self.clip_views}
         for clip_id, widget in list(self.clip_widgets.items()):
             if clip_id not in current_ids:
                 widget.deleteLater()
                 del self.clip_widgets[clip_id]
+        # Dimensionner la grille intérieure pour au moins toutes les pistes.
+        track_count = max(
+            len(self.project.tracks) if self.project else 1, 1
+        )
+        rows_height = (self.track_height + 8) * track_count + 24
+        self.timeline_grid.setMinimumHeight(int(rows_height))
+        # Positionner les en-têtes de pistes dans la grille.
+        if self.project is not None:
+            for index, track in enumerate(self.project.tracks):
+                header = TrackRowHeader(track, self.timeline_grid)
+                # La grille n'a pas d'en-tête global : on inclut
+                # directement la ruler_height dans l'offset vertical.
+                header_top = (
+                    self.ruler_height
+                    + 8
+                    + index * (self.track_height + 8)
+                )
+                header.setGeometry(
+                    0,
+                    int(header_top),
+                    self.left_margin,
+                    self.track_height,
+                )
+                header.show()
+                header.lock_toggled.connect(self.toggle_track_lock_requested)
+                header.visible_toggled.connect(self.toggle_track_visible_requested)
+                header.mute_toggled.connect(self.toggle_track_muted_requested)
+                header.move_up_requested.connect(self.move_track_up_requested)
+                header.move_down_requested.connect(self.move_track_down_requested)
+                header.remove_requested.connect(self.remove_track_requested)
+                header.rename_requested.connect(self._on_rename_requested)
+                self.track_header_widgets[track.id] = header
         for view in self.clip_views:
             widget = self.clip_widgets.get(view.id)
             if widget is None:
-                widget = ClipWidget(view, self)
+                widget = ClipWidget(view, self.timeline_grid)
                 self.clip_widgets[view.id] = widget
             row = view.track_index
             track_top = (
-                self.header_height
-                + self.ruler_height
+                self.ruler_height
                 + 8
                 + row * (self.track_height + 8)
                 + 8
@@ -464,41 +672,70 @@ class TimelinePanel(QWidget):
             widget.refresh_style()
             widget.raise_()
             widget.show()
+        self.timeline_grid.update()
+
+    def _on_rename_requested(self, track_id: str) -> None:
+        """Demande un nouveau nom à l'utilisateur et relaie vers MainWindow."""
+        if self.project is None:
+            return
+        track = next((t for t in self.project.tracks if t.id == track_id), None)
+        if track is None:
+            return
+        from PySide6.QtWidgets import QInputDialog
+
+        new_name, accepted = QInputDialog.getText(
+            self,
+            translate("action.preferences"),
+            translate("tracks.rename"),
+            text=track.name,
+        )
+        if accepted and new_name and new_name != track.name:
+            self.rename_track_requested.emit(track_id, new_name.strip())
+
+    # ------------------------------------------------------------------
+    # Zoom
+    # ------------------------------------------------------------------
+
+    def zoom_out(self) -> None:
+        self.zoom = max(0.25, self.zoom / 1.25)
+        self._update_zoom_label()
+        self.refresh_clip_widgets()
+
+    def zoom_in(self) -> None:
+        self.zoom = min(8.0, self.zoom * 1.25)
+        self._update_zoom_label()
+        self.refresh_clip_widgets()
+
+    def _update_zoom_label(self) -> None:
+        self.zoom_label.setText(f"{int(self.zoom * 100)}%")
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key_Plus, Qt.Key_Equal):
+            self.zoom_in()
+            event.accept()
+            return
+        if event.key() == Qt.Key_Minus:
+            self.zoom_out()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def setDuration(self, duration_ms):
-        """Compatibilité historique : ``duration_ms`` est traité comme des secondes.
-
-        Conservée pour ne pas casser d'éventuels appels externes ; la
-        valeur d'horloge de la timeline est désormais ``set_timeline_duration``.
-        """
         self.set_timeline_duration(float(duration_ms))
 
     def set_timeline_duration(self, duration_seconds: float) -> None:
-        """Met à jour la durée visible à partir de ``timeline_duration(project)``.
-
-        Doit être appelée par ``MainWindow`` après toute opération
-        modifiant la timeline (ajout, déplacement, trim, coupe,
-        suppression, nouveau projet, ouverture).
-        """
         duration_seconds = max(0.0, float(duration_seconds))
-        # On conserve un minimum visuel d'une seconde pour que la règle
-        # reste lisible même sur une timeline complètement vide.
         self.duration_seconds = max(duration_seconds, 1.0)
         self.total_time_label.setText(f"/ {self.format_time(self.duration_seconds)}")
         self.update()
 
     def setPlaybackPosition(self, position_ms):
-        """Compatibilité : ``position_ms`` est traité comme des secondes."""
         self.set_playhead_seconds(float(position_ms))
 
     def set_playhead_seconds(self, position_seconds: float) -> None:
-        """Met à jour la tête de lecture depuis l'horloge de la timeline.
-
-        La valeur est exprimée en secondes sur la timeline (et non plus
-        sur la position du média source). Elle est clampée dans
-        ``[0, duration_seconds]``.
-        """
-        self.playhead_seconds = min(max(float(position_seconds), 0.0), self.duration_seconds)
+        self.playhead_seconds = min(
+            max(float(position_seconds), 0.0), self.duration_seconds
+        )
         self.time_label.setText(self.format_time(self.playhead_seconds))
         self.update()
 
@@ -512,303 +749,50 @@ class TimelinePanel(QWidget):
         painter.fillRect(0, 0, self.width(), self.header_height, QColor(COLORS["panel"]))
         ruler_top = self.header_height + 8
         ruler_bottom = ruler_top + self.ruler_height
-        painter.fillRect(0, ruler_top, self.width(), self.ruler_height, QColor(COLORS["surface"]))
+        painter.fillRect(
+            0, ruler_top, self.width(), self.ruler_height, QColor(COLORS["surface"])
+        )
         painter.setPen(QPen(QColor(COLORS["border"]), 1))
         painter.drawLine(self.left_margin, ruler_top, self.width(), ruler_top)
         painter.drawLine(self.left_margin, ruler_bottom, self.width(), ruler_bottom)
         major_ticks = max(1, int(self.duration_seconds) + 1)
-        for second in range(major_ticks):
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1))
+        font_metrics = QFontMetrics(painter.font())
+        for second in range(0, major_ticks + 1):
             x = self.left_margin + second * self.pixels_per_second * self.zoom
-            if x < self.width() - 10:
-                painter.setPen(QPen(QColor(COLORS["border"]), 1))
-                painter.drawLine(int(x), ruler_bottom, int(x), self.height())
-                if second % 5 == 0:
-                    painter.setPen(QPen(QColor(COLORS["text"]), 1))
-                    painter.drawLine(int(x), ruler_top, int(x), ruler_bottom)
-                    painter.drawText(int(x) + 5, ruler_top + 20, self.format_time(second))
-                else:
-                    painter.setPen(QPen(QColor(COLORS["muted"]), 1))
-                    painter.drawLine(int(x), ruler_top + 10, int(x), ruler_bottom)
-
-        for row, (track_name, track_label) in enumerate(
-            zip(self.track_names, self.track_labels)
-        ):
-            y = ruler_bottom + 8 + row * (self.track_height + 8)
-            painter.fillRect(0, y, self.width(), self.track_height, QColor(COLORS["panel_alt"]))
-            painter.setPen(QPen(QColor(COLORS["border"]), 1))
-            painter.drawLine(self.left_margin, y, self.width(), y)
-            painter.drawLine(self.left_margin, y, self.left_margin, y + self.track_height)
-            painter.setBrush(QColor(COLORS["surface"]))
-            painter.drawRoundedRect(10, y + 10, 28, 24, 5, 5)
-            painter.setPen(QPen(QColor(COLORS["text"]), 1))
-            painter.drawText(16, y + 27, track_name)
+            if x > self.width():
+                break
+            painter.drawLine(int(x), int(ruler_bottom - 8), int(x), int(ruler_bottom))
+            label = self.format_time(second)
             painter.setPen(QPen(QColor(COLORS["muted"]), 1))
-            painter.drawText(45, y + 25, track_label)
-            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
-            painter.drawText(13, y + 47, "M   S   LOCK")
-            painter.setBrush(Qt.NoBrush)
-
-        for previous, following in v1_transition_pairs(
-            self.clip_views, self.pixels_per_second, self.zoom
-        ):
-            gap_pixels = transition_gap_pixels(
-                previous, following, self.pixels_per_second, self.zoom
-            )
-            transition_x = (
-                self.left_margin
-                + following.start * self.pixels_per_second * self.zoom
-                - gap_pixels / 2
-            )
-            transition_y = ruler_bottom + 8 + self.track_height - 20
-            painter.setPen(QPen(QColor("#ffffff"), 1))
-            painter.setBrush(QColor("#e26d5c"))
-            painter.drawRoundedRect(int(transition_x) - 9, int(transition_y), 18, 18, 4, 4)
-            painter.setPen(QPen(QColor("#ffffff"), 2))
-            painter.drawLine(int(transition_x) - 5, int(transition_y) + 9, int(transition_x) + 5, int(transition_y) + 9)
-            painter.drawLine(int(transition_x), int(transition_y) + 4, int(transition_x), int(transition_y) + 14)
-            painter.setBrush(Qt.NoBrush)
-
-        for marker in self.markers:
-            marker_x = self.left_margin + marker * self.pixels_per_second * self.zoom
-            if marker_x < self.width() - 8:
-                painter.setPen(QPen(QColor("#f7c948"), 1))
-                painter.drawLine(int(marker_x), ruler_top, int(marker_x), self.height())
-                painter.setBrush(QColor("#f7c948"))
-                painter.drawPolygon([QPoint(int(marker_x) - 5, ruler_top), QPoint(int(marker_x) + 5, ruler_top), QPoint(int(marker_x), ruler_top + 8)])
-                painter.setBrush(Qt.NoBrush)
-        if not self.clip_views:
-            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
-            painter.drawText(self.left_margin + 24, ruler_bottom + 45, "Déposez votre premier clip ici")
-        playhead_x = self.left_margin + self.playhead_seconds * self.pixels_per_second * self.zoom
-        painter.setPen(QPen(QColor(COLORS["accent_hover"]), 2))
-        painter.drawLine(int(playhead_x), self.header_height, int(playhead_x), self.height())
-        painter.fillRect(int(playhead_x) - 7, self.header_height, 14, 18, QColor(COLORS["accent"]))
+            painter.drawText(int(x) + 3, int(ruler_top + 12), label)
         if self.snap_line_x is not None:
+            sx = int(self.snap_line_x)
             painter.setPen(QPen(QColor(COLORS["accent"]), 1))
-            painter.drawLine(
-                int(self.snap_line_x),
-                self.header_height,
-                int(self.snap_line_x),
-                self.height(),
+            painter.drawLine(sx, int(ruler_top + 4), sx, self.height())
+        for marker_seconds in self.markers:
+            if marker_seconds > self.duration_seconds:
+                break
+            mx = self.left_margin + marker_seconds * self.pixels_per_second * self.zoom
+            if mx > self.width():
+                break
+            painter.setPen(QPen(QColor(COLORS["accent"]), 1))
+            painter.drawLine(int(mx), ruler_bottom, int(mx), self.height())
+        playhead_x = (
+            self.left_margin
+            + self.playhead_seconds * self.pixels_per_second * self.zoom
+        )
+        painter.setPen(QPen(QColor(COLORS["success"]), 2))
+        painter.drawLine(int(playhead_x), ruler_top - 4, int(playhead_x), self.height())
+        gap_pixels = transition_gap_pixels(self.project, self.pixels_per_second, self.zoom)
+        if gap_pixels is not None:
+            x_gap_start, x_gap_end = gap_pixels
+            painter.setPen(QPen(QColor(COLORS["success"]), 2))
+            painter.drawLine(int(x_gap_start), int(ruler_top - 6), int(x_gap_start), self.height())
+            painter.drawLine(int(x_gap_end), int(ruler_top - 6), int(x_gap_end), self.height())
+            painter.setPen(QPen(QColor(COLORS["success"]), 1))
+            painter.drawText(
+                int(x_gap_start + 6), int(ruler_top + 14), "FONDO"
             )
-            painter.setPen(QPen(QColor(COLORS["border"]), 1))
-        painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
-
-    def get_seconds_from_x(self, x):
-        x = max(self.left_margin, min(x, self.width() - 10))
-        seconds = (x - self.left_margin) / (self.pixels_per_second * self.zoom)
-        return max(0.0, min(self.duration_seconds, seconds))
-
-    def update_playhead_from_x(self, x):
-        seconds = self.get_seconds_from_x(x)
-        self.playhead_seconds = seconds
-        self.time_label.setText(self.format_time(seconds))
-        self.seek_requested.emit(seconds)
-        self.update()
-
-    def update_zoom_label(self):
-        self.zoom_label.setText(f"{int(self.zoom * 100)}%")
-
-    def zoom_in(self):
-        self.zoom = max(0.5, min(3.0, self.zoom * 1.2))
-        self.update_zoom_label()
-        self.refresh_clip_widgets()
-        self.update()
-
-    def zoom_out(self):
-        self.zoom = max(0.5, min(3.0, self.zoom / 1.2))
-        self.update_zoom_label()
-        self.refresh_clip_widgets()
-        self.update()
-
-    def wheelEvent(self, event):
-        if event.modifiers() == Qt.ControlModifier and event.angleDelta().y():
-            factor = 1.0 + abs(event.angleDelta().y()) / 1200.0
-            if event.angleDelta().y() < 0:
-                factor = 1.0 / factor
-            self.zoom = max(0.5, min(3.0, self.zoom * factor))
-            self.update_zoom_label()
-            self.refresh_clip_widgets()
-            self.update()
-            event.accept()
-            return
-        super().wheelEvent(event)
-
-    def find_transition_at(self, x, y):
-        track_top = self.header_height + self.ruler_height + 8
-        track_bottom = track_top + self.track_height
-        if not track_top <= y <= track_bottom:
-            return None
-        for previous, following in v1_transition_pairs(
-            self.clip_views, self.pixels_per_second, self.zoom
-        ):
-            gap_pixels = transition_gap_pixels(
-                previous, following, self.pixels_per_second, self.zoom
-            )
-            transition_x = (
-                self.left_margin
-                + following.start * self.pixels_per_second * self.zoom
-                - gap_pixels / 2
-            )
-            if abs(x - transition_x) <= 12:
-                return following.start
-        return None
-
-    def find_clip_at(self, x, y):
-        for row in range(len(self.track_names)):
-            track_top = (
-                self.header_height
-                + self.ruler_height
-                + 8
-                + row * (self.track_height + 8)
-            )
-            if track_top <= y <= track_top + self.track_height:
-                for view in self.clip_views:
-                    if view.track_index != row:
-                        continue
-                    start_x = (
-                        self.left_margin
-                        + view.start * self.pixels_per_second * self.zoom
-                    )
-                    end_x = (
-                        self.left_margin
-                        + view.end * self.pixels_per_second * self.zoom
-                    )
-                    if start_x <= x <= end_x:
-                        return view
-        return None
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            x = event.position().x()
-            y = event.position().y()
-            if x >= self.left_margin:
-                transition_time = self.find_transition_at(x, y)
-                if transition_time is not None:
-                    self.transition_clicked.emit(transition_time)
-                    event.accept()
-                    return
-                view = self.find_clip_at(x, y)
-                if view is not None:
-                    self.selected_clip_id = view.id
-                    self.drag_mode = "clip"
-                    self.drag_start_x = x
-                    self.drag_original_start = view.start
-                    self.clip_selected.emit(view.id)
-                    self.refresh_clip_widgets()
-                    event.accept()
-                    return
-                self.drag_mode = "playhead"
-                self.dragging_playhead = True
-                self.update_playhead_from_x(x)
-                event.accept()
-                return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.LeftButton:
-            if self.drag_mode == "clip" and self.selected_clip_id is not None:
-                delta_seconds = (event.position().x() - self.drag_start_x) / (
-                    self.pixels_per_second * self.zoom
-                )
-                view = self.find_view_by_id(self.selected_clip_id)
-                if view is not None:
-                    duration = view.end - view.start
-                    proposed = max(0.0, self.drag_original_start + delta_seconds)
-                    snapped, _ = self.snap_position(
-                        proposed,
-                        excluded_clip_id=self.selected_clip_id,
-                    )
-                    new_start = snapped
-                    # On ne mute rien : on émet juste un signal
-                    # d'intention au relâchement de la souris.
-                    # Pour la fluidité visuelle, on repositionne le widget
-                    # sous-jacent s'il existe.
-                    widget = self.clip_widgets.get(view.id)
-                    if widget is not None:
-                        widget.pending_start = new_start
-                        widget.pending_end = new_start + duration
-                        widget._apply_pending_geometry()
-                    self.clip_selected.emit(view.id)
-                event.accept()
-                return
-            if self.drag_mode == "playhead":
-                self.update_playhead_from_x(event.position().x())
-                event.accept()
-                return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            if (
-                self.drag_mode == "clip"
-                and self.selected_clip_id is not None
-            ):
-                view = self.find_view_by_id(self.selected_clip_id)
-                if view is not None:
-                    widget = self.clip_widgets.get(view.id)
-                    new_start = (
-                        widget.pending_start
-                        if widget is not None
-                        else view.start
-                    )
-                    self.snap_line_x = None
-                    self.move_clip_requested.emit(view.id, new_start)
-            self.dragging_playhead = False
-            self.drag_mode = None
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    # ------------------------------------------------------------------
-    # Drag & drop depuis la bibliothèque
-    # ------------------------------------------------------------------
-
-    def _track_id_at_y(self, y: float) -> str | None:
-        """Retourne l'identifiant de la piste correspondant à la position ``y``.
-
-        ``None`` si la position est hors zone de pistes.
-        """
-        if self.project is None:
-            return None
-        relative_y = y - self.header_height - self.ruler_height - 8
-        if relative_y < 0:
-            return None
-        track_top_offset = 16  # marge interne avant la première piste
-        adjusted = relative_y - track_top_offset
-        stride = self.track_height + 8
-        if adjusted < 0:
-            return None
-        row = int(adjusted // stride)
-        if row < 0 or row >= len(self.project.tracks):
-            return None
-        return self.project.tracks[row].id
-
-    def dragEnterEvent(self, event) -> None:
-        mime = event.mimeData()
-        if mime.hasFormat("application/x-kut-studio-asset-id"):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event) -> None:
-        mime = event.mimeData()
-        if mime.hasFormat("application/x-kut-studio-asset-id"):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event) -> None:
-        mime = event.mimeData()
-        if not mime.hasFormat("application/x-kut-studio-asset-id"):
-            event.ignore()
-            return
-        asset_id = bytes(mime.data("application/x-kut-studio-asset-id")).decode("utf-8")
-        track_id = self._track_id_at_y(event.position().y())
-        if track_id is None:
-            event.ignore()
-            return
-        proposed = self.get_seconds_from_x(int(event.position().x()))
-        snapped, _ = self.snap_position(proposed)
-        self.asset_dropped.emit(asset_id, track_id, snapped)
-        event.acceptProposedAction()
+        for pair in v1_transition_pairs(self.project):
+            pass

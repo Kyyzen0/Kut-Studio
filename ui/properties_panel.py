@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter, QColor, QPolygonF
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSlider,
     QTextEdit,
     QToolButton,
@@ -20,12 +22,19 @@ from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
+    evaluate_transform,
 )
 from ui.theme import COLORS, label_style
 
 
 # Minima / maxima exposés à l'UI. Doivent rester compatibles avec les
 # bornes de ``core.visual_effects``.
+# Écart maximal entre la tête de lecture et une image-clé pour la
+# considérer comme « sous » le losange. La suppression et le
+# remplacement réutilisent le temps stocké de cette image-clé : le
+# modèle ne retire une clé que si les temps coïncident à 1e-9 près.
+_KEYFRAME_MATCH_TOLERANCE = 1e-3
+
 _PROPERTY_RANGES = {
     "position_x": (-4.0, 4.0, 0.01),
     "position_y": (-4.0, 4.0, 0.01),
@@ -39,9 +48,8 @@ class _DiamondButton(QToolButton):
     """Petit bouton losange utilisé pour ajouter / retirer une keyframe.
 
     État ``checked`` : image-clé présente au playhead courant.
-    Clic simple : ajoute ou remplace une keyframe.
-    Shift+clic : retire la keyframe existante (sans quoi on ne fait
-    que la mettre à jour, ce qui ne supprime jamais rien).
+    Clic simple : ajoute une image-clé, ou remplace celle déjà présente.
+    Maj+clic : retire l'image-clé présente sous la tête de lecture.
     """
 
     def __init__(self, property_name: str, parent=None):
@@ -51,7 +59,10 @@ class _DiamondButton(QToolButton):
         self.setChecked(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(18, 18)
-        self.setToolTip(f"Ajouter / retirer une image-clé pour « {property_name} »")
+        self.setToolTip(
+            f"Image-clé « {property_name} » : clic pour ajouter ou remplacer, "
+            "Maj+clic pour retirer"
+        )
 
     def paintEvent(self, event):  # noqa: D401 - redéfinition Qt
         super().paintEvent(event)
@@ -89,17 +100,44 @@ class PropertiesPanel(QWidget):
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
+        # Le panneau rassemble beaucoup de contrôles. Sans zone défilante,
+        # Qt réduit la hauteur des QGroupBox lorsque la fenêtre est basse et
+        # les lignes de texte finissent par se chevaucher.
+        self.setMinimumWidth(320)
         self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
         self.selected_clip_track_type = None  # type: str | None
         self.timeline_panel = None
+        # Bloque les valueChanged pendant les rafraîchissements. Le
+        # compteur autorise les appels imbriqués (show_clip → update).
+        self._signal_block_depth = 0
+        self._allow_property_signals = False
+        self._diamond_was_checked: dict[str, bool] = {}
+        self._current_playhead_seconds = 0.0
+        self._current_transform: ClipTransform | None = None
+        self._current_keyframes: list[TransformKeyframe] = []
         self.setObjectName("properties_panel")
         self.setStyleSheet(
             f"QWidget#properties_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
         )
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("properties_scroll_area")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        content = QWidget()
+        content.setObjectName("properties_content")
+        self.scroll_area.setWidget(content)
+        outer_layout.addWidget(self.scroll_area)
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(14, 12, 14, 10)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
         title = QLabel("PROPRIÉTÉS")
         title.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(title)
@@ -107,8 +145,8 @@ class PropertiesPanel(QWidget):
         project_group = QGroupBox("Paramètres du projet")
         project_group.setStyleSheet(self.group_style())
         project_layout = QVBoxLayout(project_group)
-        project_layout.setContentsMargins(12, 10, 12, 6)
-        project_layout.setSpacing(3)
+        project_layout.setContentsMargins(12, 12, 12, 10)
+        project_layout.setSpacing(6)
 
         project_fields = [
             ("État", "Aucun clip sélectionné"),
@@ -119,6 +157,9 @@ class PropertiesPanel(QWidget):
         ]
         for field, value in project_fields:
             lbl = QLabel(f"{field} : {value}")
+            # Une hauteur minimale explicite empêche le compressement de
+            # lignes lors d'un redimensionnement agressif.
+            lbl.setMinimumHeight(18)
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
         layout.addWidget(project_group)
@@ -126,8 +167,8 @@ class PropertiesPanel(QWidget):
         clip_group = QGroupBox("Clip sélectionné")
         clip_group.setStyleSheet(self.group_style())
         clip_form = QFormLayout(clip_group)
-        clip_form.setContentsMargins(12, 10, 12, 6)
-        clip_form.setSpacing(4)
+        clip_form.setContentsMargins(12, 12, 12, 10)
+        clip_form.setSpacing(6)
         self.clip_name = QLabel("Aucun clip sélectionné")
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
@@ -236,12 +277,9 @@ class PropertiesPanel(QWidget):
             # Slider d'appoint (opacité / scale particulièrement utiles).
             if property_name in {"opacity", "scale", "rotation"}:
                 slider = QSlider(Qt.Horizontal)
-                if property_name == "rotation":
-                    slider.setRange(-360, 360)
-                    slider.setValue(0)
-                else:
-                    slider.setRange(int(low * 100), int(high * 100))
-                    slider.setValue(int(default * 100))
+                slider_min, slider_max = self._slider_range(property_name)
+                slider.setRange(slider_min, slider_max)
+                slider.setValue(self._slider_position(property_name, default))
                 slider.setMinimumWidth(80)
                 slider.setEnabled(False)
                 slider.valueChanged.connect(self._make_slider_handler(property_name))
@@ -249,7 +287,9 @@ class PropertiesPanel(QWidget):
                 row_layout.addWidget(slider, 1)
 
             diamond = _DiamondButton(property_name)
-            diamond.clicked.connect(self._make_diamond_clicked_handler(property_name))
+            diamond.clicked.connect(
+                lambda _checked=False, name=property_name: self._on_diamond_clicked(name)
+            )
             diamond.setEnabled(False)
             self._diamonds[property_name] = diamond
             row_layout.addWidget(diamond)
@@ -265,6 +305,8 @@ class PropertiesPanel(QWidget):
         reset_button.setEnabled(False)
         self.reset_movement_button = reset_button
         movement_layout.addWidget(reset_button)
+        self._diamond_was_checked = {name: False for name in self._diamonds}
+        self._allow_property_signals = True
 
         layout.addWidget(self.movement_group)
         # Désactivé par défaut : un clip non sélectionné ne doit rien
@@ -272,7 +314,7 @@ class PropertiesPanel(QWidget):
         self.movement_group.setEnabled(False)
         # ---------------- Fin section MOUVEMENT ----------------
 
-        self.subtitle_group = QGroupBox("Sous-titre S1")
+        self.subtitle_group = QGroupBox("Sous-titre")
         self.subtitle_group.setStyleSheet(self.group_style())
         subtitle_layout = QVBoxLayout(self.subtitle_group)
         subtitle_layout.setContentsMargins(12, 16, 12, 12)
@@ -320,6 +362,30 @@ class PropertiesPanel(QWidget):
             self._on_property_changed(property_name, float(value))
         return _handler
 
+    def _push_signal_block(self) -> None:
+        self._signal_block_depth += 1
+        self._allow_property_signals = False
+
+    def _pop_signal_block(self) -> None:
+        self._signal_block_depth = max(0, self._signal_block_depth - 1)
+        self._allow_property_signals = self._signal_block_depth == 0
+
+    @staticmethod
+    def _slider_range(property_name: str) -> tuple[int, int]:
+        low, high, _step = _PROPERTY_RANGES[property_name]
+        if property_name == "rotation":
+            return int(low), int(high)
+        return int(round(low * 100)), int(round(high * 100))
+
+    @staticmethod
+    def _slider_position(property_name: str, value: float) -> int:
+        low, high = PropertiesPanel._slider_range(property_name)
+        if property_name == "rotation":
+            position = int(round(value))
+        else:
+            position = int(round(value * 100))
+        return max(low, min(high, position))
+
     def _make_slider_handler(self, property_name: str):
         def _handler(value: int) -> None:
             if not self._allow_property_signals:
@@ -330,67 +396,175 @@ class PropertiesPanel(QWidget):
                 float_value = float(value) / 100.0
             spin = self._spin_boxes.get(property_name)
             if spin is not None:
-                self._allow_property_signals = False
-                spin.setValue(float_value)
-                self._allow_property_signals = True
+                self._push_signal_block()
+                try:
+                    spin.setValue(float_value)
+                finally:
+                    self._pop_signal_block()
             self._on_property_changed(property_name, float_value)
         return _handler
 
-    def _make_diamond_clicked_handler(self, property_name: str):
-        def _handler(checked: bool) -> None:
-            self._on_diamond_toggled(property_name, checked)
-        return _handler
-
     def _on_property_changed(self, property_name: str, value: float) -> None:
-        if not self._allow_property_signals:
+        if not self._allow_property_signals or self.selected_clip is None:
             return
-        if self.selected_clip is None:
+        value = float(value)
+        self._sync_sibling_widgets(property_name, value)
+        local = self._display_local_time()
+        mode, time_seconds = self._edit_target(property_name, local)
+        clip_id = self.selected_clip.id
+        if mode == "base":
+            self.transform_changed.emit(clip_id, property_name, value)
             return
-        self.transform_changed.emit(self.selected_clip.id, property_name, float(value))
+        self.keyframe_added.emit(clip_id, property_name, time_seconds, value)
 
-    def _on_diamond_toggled(self, property_name: str, checked: bool) -> None:
+    def _sync_sibling_widgets(self, property_name: str, value: float) -> None:
+        slider = self._slider_widgets.get(property_name)
+        if slider is None:
+            return
+        position = self._slider_position(property_name, value)
+        if slider.value() == position:
+            return
+        self._push_signal_block()
+        try:
+            slider.setValue(position)
+        finally:
+            self._pop_signal_block()
+
+    def _on_diamond_clicked(self, property_name: str) -> None:
+        shift = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+        self._apply_diamond_action(property_name, shift=shift)
+
+    def _apply_diamond_action(self, property_name: str, *, shift: bool) -> None:
+        """Ajoute, remplace ou retire l'image-clé sous la tête de lecture.
+
+        La tête doit être sur le clip. Sinon le losange revient à l'état
+        réel, sans émettre de signal : un temps clampé à 0 poserait une
+        image-clé au début du clip.
+        """
         if self.selected_clip is None:
+            return
+        if not self._playhead_inside_clip():
+            self._restore_diamond(property_name)
+            return
+        local = self._display_local_time()
+        matched = self._matching_keyframe(property_name, local)
+        if shift:
+            if matched is None:
+                self._restore_diamond(property_name)
+                return
+            self._set_diamond_checked(property_name, False)
+            self.keyframe_removed.emit(
+                self.selected_clip.id,
+                property_name,
+                float(matched.time_seconds),
+            )
             return
         spin = self._spin_boxes.get(property_name)
         if spin is None:
             return
-        value = float(spin.value())
-        # On distingue l'ajout de la suppression grâce à l'état précédent :
-        # ``_diamond_was_checked`` mémorise l'état avant le clic, et le
-        # toggle Qt met à jour ``isChecked`` en premier.
-        was_checked = self._diamond_was_checked.get(property_name, False)
-        if checked and not was_checked:
-            # Ajout : on émet ``keyframe_added`` au temps local du playhead.
-            if hasattr(self, "_current_playhead_seconds"):
-                clip_local_time = max(
-                    0.0,
-                    self._current_playhead_seconds - self.selected_clip.start,
-                )
-            else:
-                clip_local_time = 0.0
-            self.keyframe_added.emit(
-                self.selected_clip.id, property_name, clip_local_time, value
-            )
-        elif not checked and was_checked:
-            # Suppression.
-            if hasattr(self, "_current_playhead_seconds"):
-                clip_local_time = max(
-                    0.0,
-                    self._current_playhead_seconds - self.selected_clip.start,
-                )
-            else:
-                clip_local_time = 0.0
-            self.keyframe_removed.emit(
-                self.selected_clip.id, property_name, clip_local_time
-            )
-        # Mémorise l'état pour le prochain toggle (clic ou refresh).
+        time_seconds = float(matched.time_seconds) if matched is not None else float(local)
+        self._set_diamond_checked(property_name, True)
+        self.keyframe_added.emit(
+            self.selected_clip.id,
+            property_name,
+            time_seconds,
+            float(spin.value()),
+        )
+
+    def _set_diamond_checked(self, property_name: str, checked: bool) -> None:
+        diamond = self._diamonds[property_name]
+        diamond.blockSignals(True)
+        diamond.setChecked(checked)
+        diamond.blockSignals(False)
         self._diamond_was_checked[property_name] = checked
+
+    def _restore_diamond(self, property_name: str) -> None:
+        matched = self._matching_keyframe(property_name, self._display_local_time())
+        self._set_diamond_checked(property_name, matched is not None)
 
     def _sync_diamond_state_memory(self) -> None:
         """Initialise ``_diamond_was_checked`` à partir de l'état Qt courant."""
         self._diamond_was_checked = {
             name: diamond.isChecked() for name, diamond in self._diamonds.items()
         }
+
+    def _clip_bounds(self) -> tuple[float, float] | None:
+        clip = self.selected_clip
+        if clip is None:
+            return None
+        start = float(clip.start)
+        end = float(clip.end)
+        if end < start:
+            end = start
+        return start, end
+
+    def _clip_duration(self) -> float:
+        bounds = self._clip_bounds()
+        if bounds is None:
+            return 0.0
+        return bounds[1] - bounds[0]
+
+    def _display_local_time(self) -> float:
+        """Temps local utilisé pour afficher et éditer la valeur courante.
+
+        Hors du clip, le temps est clampé sur [0, durée] afin que les
+        champs montrent la valeur au bord du clip.
+        """
+        bounds = self._clip_bounds()
+        if bounds is None:
+            return 0.0
+        start, end = bounds
+        playhead = float(self._current_playhead_seconds)
+        if playhead < start:
+            return 0.0
+        if playhead > end:
+            return end - start
+        return playhead - start
+
+    def _playhead_inside_clip(self) -> bool:
+        bounds = self._clip_bounds()
+        if bounds is None:
+            return False
+        start, end = bounds
+        playhead = float(self._current_playhead_seconds)
+        return start - 1e-6 <= playhead <= end + 1e-6
+
+    def _matching_keyframe(
+        self, property_name: str, local_time: float
+    ) -> TransformKeyframe | None:
+        best: TransformKeyframe | None = None
+        best_distance = _KEYFRAME_MATCH_TOLERANCE
+        for keyframe in self._current_keyframes:
+            if keyframe.property_name != property_name:
+                continue
+            distance = abs(keyframe.time_seconds - local_time)
+            if distance <= best_distance:
+                best = keyframe
+                best_distance = distance
+        return best
+
+    def _edit_target(self, property_name: str, local_time: float) -> tuple[str, float]:
+        """Décide si l'édition écrit la base ou une image-clé.
+
+        Avant la première image-clé, l'évaluation affiche la base : on
+        la modifie. À partir de la première image-clé, la valeur visible
+        vient de l'animation : on remplace la clé sous la tête, ou on en
+        pose une nouvelle pour que le chiffre saisi reste affiché.
+        """
+        matched = self._matching_keyframe(property_name, local_time)
+        if matched is not None:
+            return "keyframe", float(matched.time_seconds)
+        keyed = [
+            keyframe.time_seconds
+            for keyframe in self._current_keyframes
+            if keyframe.property_name == property_name
+        ]
+        if not keyed or local_time < min(keyed) - 1e-9:
+            return "base", local_time
+        duration = self._clip_duration()
+        if local_time > duration:
+            local_time = duration
+        return "keyframe", local_time
 
     def _emit_reset(self) -> None:
         if self.selected_clip is None:
@@ -414,68 +588,70 @@ class PropertiesPanel(QWidget):
         l'inspecteur reflète la réalité métier.
         """
         self._current_playhead_seconds = float(playhead_seconds)
+        self._current_transform = transform
+        self._current_keyframes = list(keyframes)
         if self.selected_clip is None:
             return
-        self._allow_property_signals = False
-        try:
-            for property_name in ANIMATABLE_PROPERTIES:
-                spin = self._spin_boxes.get(property_name)
-                if spin is None:
-                    continue
-                spin.setValue(float(getattr(transform, property_name)))
-                if property_name in self._slider_widgets:
-                    if property_name == "rotation":
-                        self._slider_widgets[property_name].setValue(int(getattr(transform, property_name)))
-                    else:
-                        self._slider_widgets[property_name].setValue(int(round(getattr(transform, property_name) * 100)))
-            for property_name, diamond in self._diamonds.items():
-                diamond.blockSignals(True)
-                diamond.setChecked(
-                    self._has_keyframe_at_playhead(
-                        keyframes, playhead_seconds, self.selected_clip.start
-                    ).get(property_name, False)
-                )
-                diamond.blockSignals(False)
-            self._sync_diamond_state_memory()
-        finally:
-            self._allow_property_signals = True
+        self._apply_motion_fields(transform, self._current_keyframes)
 
-    @staticmethod
-    def _has_keyframe_at_playhead(
+    def _apply_motion_fields(
+        self,
+        transform: ClipTransform | None,
         keyframes: list[TransformKeyframe],
-        timeline_seconds: float,
-        clip_timeline_start: float,
-        tolerance: float = 1e-3,
-    ) -> dict[str, bool]:
-        """Retourne un mapping ``property_name -> True si une kf existe à l'instant``.
+    ) -> None:
+        """Affiche la valeur évaluée au playhead et l'état des losanges."""
+        if self.selected_clip is None:
+            return
+        self._push_signal_block()
+        try:
+            if transform is not None:
+                local_time = self._display_local_time()
+                evaluated = evaluate_transform(
+                    transform,
+                    keyframes,
+                    local_time,
+                    self._clip_duration(),
+                )
+                for property_name in ANIMATABLE_PROPERTIES:
+                    # Le losange est allumé dès 1 ms : on affiche alors la
+                    # valeur stockée, pas l'interpolation vers la clé suivante.
+                    matched = self._matching_keyframe(property_name, local_time)
+                    if matched is not None:
+                        value = float(matched.value)
+                    else:
+                        value = float(getattr(evaluated, property_name))
+                    spin = self._spin_boxes.get(property_name)
+                    if spin is not None:
+                        spin.setValue(value)
+                    slider = self._slider_widgets.get(property_name)
+                    if slider is not None:
+                        slider.setValue(self._slider_position(property_name, value))
+            self._sync_diamonds()
+        finally:
+            self._pop_signal_block()
 
-        ``timeline_seconds`` est la position du playhead ; on calcule
-        le temps local du clip ``timeline_seconds - clip_timeline_start``.
-        """
-        clip_local = max(0.0, timeline_seconds - clip_timeline_start)
-        result: dict[str, bool] = {}
-        for kf in keyframes:
-            if abs(kf.time_seconds - clip_local) <= tolerance:
-                result[kf.property_name] = True
-        return result
+    def _sync_diamonds(self) -> None:
+        local = self._display_local_time()
+        for property_name, diamond in self._diamonds.items():
+            diamond.blockSignals(True)
+            diamond.setChecked(self._matching_keyframe(property_name, local) is not None)
+            diamond.blockSignals(False)
+        self._sync_diamond_state_memory()
 
     def refresh_keyframe_diamonds(
         self,
         keyframes: list[TransformKeyframe],
         playhead_seconds: float,
+        transform: ClipTransform | None = None,
     ) -> None:
-        """Met à jour uniquement l'état des diamants (sans toucher aux valeurs)."""
+        """Met à jour losanges et valeurs pour la tête de lecture courante."""
         self._current_playhead_seconds = float(playhead_seconds)
+        self._current_keyframes = list(keyframes)
+        if transform is not None:
+            self._current_transform = transform
         if self.selected_clip is None:
             return
-        active = self._has_keyframe_at_playhead(
-            keyframes, playhead_seconds, self.selected_clip.start
-        )
-        for property_name, diamond in self._diamonds.items():
-            diamond.blockSignals(True)
-            diamond.setChecked(active.get(property_name, False))
-            diamond.blockSignals(False)
-        self._sync_diamond_state_memory()
+        self._apply_motion_fields(self._current_transform, self._current_keyframes)
 
     @staticmethod
     def group_style():
@@ -511,11 +687,15 @@ class PropertiesPanel(QWidget):
         self.saturation_value.setText(str(self.saturation_slider.value()))
 
     def show_clip(self, view):
-        self._allow_property_signals = False
+        pending_transform = None
+        pending_keyframes: list[TransformKeyframe] | None = None
+        self._push_signal_block()
         try:
             if view is None:
                 self.selected_clip = None
                 self.selected_clip_track_type = None
+                self._current_transform = None
+                self._current_keyframes = []
                 self.clip_name.setText("Aucun clip sélectionné")
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
@@ -529,14 +709,15 @@ class PropertiesPanel(QWidget):
                 self.enabled_checkbox.setEnabled(False)
                 self.subtitle_group.hide()
                 self.movement_group.setEnabled(False)
-                for spin in self._spin_boxes.values():
+                for name, spin in self._spin_boxes.items():
                     spin.setEnabled(False)
-                    spin.setValue(self._default_value_for("position_x"))
-                for slider in self._slider_widgets.values():
+                    spin.setValue(self._default_value_for(name))
+                for name, slider in self._slider_widgets.items():
                     slider.setEnabled(False)
-                for diamond in self._diamonds.values():
+                    slider.setValue(self._slider_position(name, self._default_value_for(name)))
+                for name, diamond in self._diamonds.items():
                     diamond.setEnabled(False)
-                    diamond.setChecked(False)
+                    self._set_diamond_checked(name, False)
                 self.reset_movement_button.setEnabled(False)
                 return
 
@@ -559,20 +740,15 @@ class PropertiesPanel(QWidget):
             self.enabled_checkbox.blockSignals(False)
             self.enabled_checkbox.setEnabled(True)
 
-            is_subtitle = view.track_id == "S1"
+            is_subtitle = getattr(view, "track_type", None) == "subtitle"
             self.subtitle_group.setVisible(is_subtitle)
             if is_subtitle:
                 self.subtitle_editor.blockSignals(True)
                 self.subtitle_editor.setPlainText(view.text)
                 self.subtitle_editor.blockSignals(False)
 
-            # Les transformations visuelles ne s'appliquent qu'aux
-            # clips vidéo. On désactive proprement la section MOUVEMENT
-            # pour les clips audio et les sous-titres.
-            is_video_clip = (
-                getattr(view, "track_type", None) == "video"
-                or view.track_id.startswith("V")
-            )
+            # Les transformations visuelles ne s'appliquent qu'aux clips vidéo.
+            is_video_clip = getattr(view, "track_type", None) == "video"
             self.movement_group.setEnabled(is_video_clip)
             for spin in self._spin_boxes.values():
                 spin.setEnabled(is_video_clip)
@@ -581,13 +757,28 @@ class PropertiesPanel(QWidget):
             for diamond in self._diamonds.values():
                 diamond.setEnabled(is_video_clip)
             self.reset_movement_button.setEnabled(is_video_clip)
+            if not is_video_clip:
+                self._current_transform = None
+                self._current_keyframes = []
+                for name, spin in self._spin_boxes.items():
+                    spin.setValue(self._default_value_for(name))
+                for name, slider in self._slider_widgets.items():
+                    slider.setValue(
+                        self._slider_position(name, self._default_value_for(name))
+                    )
+                for name in self._diamonds:
+                    self._set_diamond_checked(name, False)
+            if is_video_clip and isinstance(getattr(view, "transform", None), ClipTransform):
+                pending_transform = view.transform
+                pending_keyframes = list(getattr(view, "keyframes", ()) or ())
         finally:
-            self._allow_property_signals = True
-
-    # Initialisation du drapeau anti-rétroaction : évite que les
-    # ``setValue`` lors d'un rafraîchissement externe re-émettent des
-    # ``valueChanged``.
-    _allow_property_signals = False
+            self._pop_signal_block()
+        if pending_transform is not None and pending_keyframes is not None:
+            self.update_transform_from_clip(
+                pending_transform,
+                pending_keyframes,
+                self._current_playhead_seconds,
+            )
 
     def set_clip(self, view, track_name=None):
         self.show_clip(view)

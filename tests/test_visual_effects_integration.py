@@ -385,7 +385,9 @@ def test_export_engine_includes_animated_rotation_and_position(engine, tmp_path)
             break
     assert filter_complex is not None
     assert "rotate=" in filter_complex
-    assert "if(lt(T," in filter_complex
+    # ``rotate`` et ``overlay`` exposent le temps via ``t``. ``T`` ne
+    # fonctionnerait que dans ``geq`` pour l'opacité.
+    assert "if(lt(t," in filter_complex
     assert "overlay=" in filter_complex
 
 

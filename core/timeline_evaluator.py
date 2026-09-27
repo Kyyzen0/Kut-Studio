@@ -133,9 +133,13 @@ def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]
         clip.timeline_start <= time_seconds < clip.timeline_start + clip.duration
 
     Seuls les clips dont l'attribut ``enabled`` vaut ``True`` sont
-    retenus. Les chevauchements sont conservés : à un instant donné,
-    plusieurs clips peuvent être actifs simultanément (par exemple un
-    clip sur V1 et un autre sur V2).
+    retenus. Les pistes verrouillées (``track.locked``) restent prises
+    en compte : le verrouillage concerne l'éditeur, pas le rendu. Les
+    pistes non visibles (``track.visible is False``) sont ignorées dans
+    la mesure où elles ne participent pas au preview / export. Les
+    pistes audio muettes (``track.muted is True``) renvoient leurs
+    clips vidéo sans leur piste audio ; leurs propres clips audio ne
+    sont pas comptés.
 
     Le média référencé par chaque clip actif est résolu via
     ``project.media_assets``. Tout clip actif dont l'identifiant de média
@@ -163,6 +167,8 @@ def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]
 
     active: list[ActiveClip] = []
     for track_index, track in enumerate(project.tracks):
+        if not track.visible:
+            continue
         for clip in track.clips:
             if not clip.enabled:
                 continue

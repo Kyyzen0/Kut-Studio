@@ -181,12 +181,41 @@ class Track:
         name: Nom humain de la piste (ex. "V1", "S1").
         type: Type logique de la piste ("video", "audio", "subtitle"...).
         clips: Liste des clips présents sur cette piste.
+        locked: ``True`` si la piste refuse toute modification depuis
+            l'éditeur (déplacement, trim, suppression, ajout, dépôt).
+            Le verrouillage ne concerne que l'UI ; il n'a aucun effet
+            sur le rendu / l'export, qui continuent à ignorer les
+            pistes verrouillées de la même façon que les autres.
+        visible: ``True`` si la piste doit apparaître dans l'aperçu et
+            être exportée. Les clips des pistes vidéo invisibles ne
+            sont pas rendus ; les sous-titres d'une piste invisible
+            ne sont pas incrustés.
+        muted: ``True`` si les clips audio de la piste doivent rester
+            silencieux à l'export. Pour les pistes non audio, l'effet
+            est limité (un sous-titre "muet" reste incrusté). Défini
+            explicitement par piste pour offrir un comportement
+            cohérent entre types.
     """
 
     id: str
     name: str
     type: str
     clips: list[Clip] = field(default_factory=list)
+    locked: bool = False
+    visible: bool = True
+    muted: bool = False
+
+    @property
+    def is_video(self) -> bool:
+        return self.type == "video"
+
+    @property
+    def is_audio(self) -> bool:
+        return self.type == "audio"
+
+    @property
+    def is_subtitle(self) -> bool:
+        return self.type == "subtitle"
 
 
 @dataclass

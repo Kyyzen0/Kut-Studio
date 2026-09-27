@@ -174,16 +174,21 @@ def build_render_plan(project: Project) -> RenderPlan:
 
     Règles appliquées :
 
-    - Pour la vidéo : seules les pistes de type ``"video"`` sont
-      conservées, avec leurs clips activés uniquement. Les couches
-      sont émises dans l'ordre des pistes du projet.
-    - Pour l'audio : les pistes de type ``"audio"`` sont conservées
-      intégralement ; les pistes vidéo ne contribuent une couche audio
-      que si leur :class:`MediaAsset` porte ``has_audio=True``.
+    - Pour la vidéo : seules les pistes de type ``"video"`` visibles
+      (``track.visible is True``) sont conservées, avec leurs clips
+      activés uniquement. Les couches sont émises dans l'ordre des
+      pistes du projet (les pistes basses sont rendues en premier /
+      au fond).
+    - Pour l'audio : les pistes de type ``"audio"`` non muettes
+      (``track.muted is False``) sont conservées intégralement ; les
+      pistes vidéo non muettes ne contribuent une couche audio que si
+      leur :class:`MediaAsset` porte ``has_audio=True``.
     - Chaque clip actif dont l'asset est introuvable lève une
       ``KeyError`` explicite.
     - La durée du plan est exactement
-      :func:`core.timeline_evaluator.timeline_duration` du projet.
+      :func:`core.timeline_evaluator.timeline_duration` du projet
+      (les pistes invisibles sont prises en compte via ``enabled`` ;
+      les pistes verrouillées ne modifient pas la durée).
 
     Args:
         project: projet source (jamais muté).
@@ -197,6 +202,12 @@ def build_render_plan(project: Project) -> RenderPlan:
     audio_layers: list[AudioLayer] = []
     for track_index, track in enumerate(project.tracks):
         if track.type not in {"video", "audio"}:
+            continue
+        if track.type == "video" and not track.visible:
+            # Une piste vidéo invisible n'apparaît pas dans le rendu.
+            continue
+        if track.type == "audio" and track.muted:
+            # Une piste audio muette ne participe pas au mixage.
             continue
         for clip in track.clips:
             if not clip.enabled:
@@ -218,7 +229,7 @@ def build_render_plan(project: Project) -> RenderPlan:
                         transform_keyframes=tuple(clip.transform_keyframes),
                     )
                 )
-                if asset.has_audio:
+                if asset.has_audio and not track.muted:
                     audio_layers.append(
                         _build_audio_layer(clip, asset, track.id, track_index)
                     )
