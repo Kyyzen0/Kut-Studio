@@ -35,11 +35,29 @@ VALID_THEME_MODES: tuple[str, ...] = ("dark", "light", "system")
 VALID_LANGUAGES: tuple[str, ...] = ("fr", "en", "es")
 """Langues disponibles pour l'interface."""
 
+VALID_PERFORMANCE_PROFILES: tuple[str, ...] = ("auto", "low", "balanced", "high")
+"""Profils de performance reconnus. ``auto`` suit la machine."""
+
+VALID_PREVIEW_QUALITIES: tuple[str, ...] = (
+    "auto",
+    "full",
+    "half",
+    "quarter",
+    "eighth",
+)
+"""Niveaux d'aperçu. ``auto`` suit le profil, sans mesure de frames."""
+
 DEFAULT_THEME: str = "dark"
 """Thème par défaut (le plus sûr, confirmé par l'historique de Kut-Studio)."""
 
 DEFAULT_LANGUAGE: str = "fr"
 """Langue par défaut (français)."""
+
+DEFAULT_PERFORMANCE_PROFILE: str = "auto"
+"""Profil de performance par défaut."""
+
+DEFAULT_PREVIEW_QUALITY: str = "auto"
+"""Qualité d'aperçu par défaut."""
 
 FILE_NAME: str = "user_settings.json"
 """Nom du fichier de préférences à l'intérieur du répertoire de config."""
@@ -52,15 +70,20 @@ FILE_NAME: str = "user_settings.json"
 
 @dataclass(frozen=True)
 class UserSettings:
-    """Préférences utilisateur globales (thème, langue).
+    """Préférences utilisateur globales.
 
     Attributes:
         theme_mode: ``"dark"``, ``"light"`` ou ``"system"``.
         language: code BCP-47 court (``"fr"``, ``"en"``, ``"es"``).
+        performance_profile: ``"auto"``, ``"low"``, ``"balanced"`` ou ``"high"``.
+        preview_quality: ``"auto"``, ``"full"``, ``"half"``, ``"quarter"``
+            ou ``"eighth"``.
     """
 
     theme_mode: str = DEFAULT_THEME
     language: str = DEFAULT_LANGUAGE
+    performance_profile: str = DEFAULT_PERFORMANCE_PROFILE
+    preview_quality: str = DEFAULT_PREVIEW_QUALITY
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +103,20 @@ def _coerce_language(value: object) -> str:
     if isinstance(value, str) and value in VALID_LANGUAGES:
         return value
     return DEFAULT_LANGUAGE
+
+
+def _coerce_performance_profile(value: object) -> str:
+    """Filtre ``performance_profile`` ; ``auto`` si invalide."""
+    if isinstance(value, str) and value in VALID_PERFORMANCE_PROFILES:
+        return value
+    return DEFAULT_PERFORMANCE_PROFILE
+
+
+def _coerce_preview_quality(value: object) -> str:
+    """Filtre ``preview_quality`` ; ``auto`` si invalide."""
+    if isinstance(value, str) and value in VALID_PREVIEW_QUALITIES:
+        return value
+    return DEFAULT_PREVIEW_QUALITY
 
 
 def _default_settings_dir() -> Path:
@@ -180,6 +217,8 @@ def load_user_settings(
     return UserSettings(
         theme_mode=_coerce_theme_mode(data.get("theme_mode")),
         language=_coerce_language(data.get("language")),
+        performance_profile=_coerce_performance_profile(data.get("performance_profile")),
+        preview_quality=_coerce_preview_quality(data.get("preview_quality")),
     )
 
 
@@ -211,6 +250,8 @@ def save_user_settings(
         UserSettings(
             theme_mode=_coerce_theme_mode(settings.theme_mode),
             language=_coerce_language(settings.language),
+            performance_profile=_coerce_performance_profile(settings.performance_profile),
+            preview_quality=_coerce_preview_quality(settings.preview_quality),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -236,9 +277,13 @@ def save_user_settings(
 
 __all__ = [
     "DEFAULT_LANGUAGE",
+    "DEFAULT_PERFORMANCE_PROFILE",
+    "DEFAULT_PREVIEW_QUALITY",
     "DEFAULT_THEME",
     "UserSettings",
     "VALID_LANGUAGES",
+    "VALID_PERFORMANCE_PROFILES",
+    "VALID_PREVIEW_QUALITIES",
     "VALID_THEME_MODES",
     "default_settings_dir",
     "load_user_settings",

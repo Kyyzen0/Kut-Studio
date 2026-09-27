@@ -195,6 +195,13 @@ class Track:
             est limité (un sous-titre "muet" reste incrusté). Défini
             explicitement par piste pour offrir un comportement
             cohérent entre types.
+        solo: ``True`` si cette piste est la seule de son type à être
+            entendue ou vue dans l'aperçu. Le solo vidéo n'affecte pas
+            l'audio.
+        armed: réservé à un futur enregistrement audio. Sans effet
+            sur le rendu actuel.
+        height_mode: ``compact``, ``normal`` ou ``large``.
+        collapsed: piste réduite à une ligne, sans waveform ni vignettes.
     """
 
     id: str
@@ -204,6 +211,14 @@ class Track:
     locked: bool = False
     visible: bool = True
     muted: bool = False
+    solo: bool = False
+    armed: bool = False
+    height_mode: str = "normal"
+    collapsed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.height_mode not in {"compact", "normal", "large"}:
+            self.height_mode = "normal"
 
     @property
     def is_video(self) -> bool:
@@ -219,6 +234,26 @@ class Track:
 
 
 @dataclass
+class Marker:
+    """Repère posé sur la règle de la timeline.
+
+    ``category`` prépare des couleurs futures (``standard``, ``todo``,
+    ``chapter``). L'interface n'en distingue qu'une pour l'instant.
+    """
+
+    id: str
+    time_seconds: float
+    name: str = ""
+    category: str = "standard"
+
+    def __post_init__(self) -> None:
+        if self.time_seconds < 0.0:
+            raise ValueError("Un marqueur ne peut pas être avant 0 seconde.")
+        if self.category not in {"standard", "todo", "chapter"}:
+            self.category = "standard"
+
+
+@dataclass
 class Project:
     """Le projet complet : métadonnées de rendu + médias importés + pistes.
 
@@ -229,6 +264,7 @@ class Project:
         fps: Fréquence d'images cible du projet (> 0).
         media_assets: Liste des médias importés dans le projet.
         tracks: Liste des pistes composant la timeline.
+        markers: Repères de la règle, triés par l'éditeur à l'insertion.
     """
 
     name: str
@@ -237,6 +273,7 @@ class Project:
     fps: float = 30.0
     media_assets: list[MediaAsset] = field(default_factory=list)
     tracks: list[Track] = field(default_factory=list)
+    markers: list[Marker] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Vérifie que les paramètres de rendu du projet sont cohérents."""

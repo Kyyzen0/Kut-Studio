@@ -74,6 +74,11 @@ class PreviewPanel(QWidget):
         # Suivi interne de la source affichée pour les deux modes.
         self._timeline_preview_path: str | None = None
         self._library_preview_path: str | None = None
+        # Diviseur de prévisualisation (1, 2, 4, 8). Le lecteur Qt
+        # décode encore l'image native : ce chiffre est le contrat que
+        # le futur chemin de proxies devra respecter. On ne réduit pas
+        # l'image à la main, ce qui fausserait le cadrage.
+        self.preview_divisor: int = 1
 
         # Overlays ------------------------------------------------------------
         self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
@@ -252,6 +257,24 @@ class PreviewPanel(QWidget):
             self._timeline_preview_path = path
             self.player.setSource(QUrl.fromLocalFile(path))
         self.player.setPosition(int(source_time_seconds * 1000))
+
+    def set_preview_divisor(self, divisor: int) -> None:
+        """Mémorise le niveau d'aperçu demandé par le profil."""
+        self.preview_divisor = max(1, int(divisor))
+
+    def release_media(self) -> None:
+        """Lâche la source décodée.
+
+        À appeler quand le projet change ou que la fenêtre se ferme,
+        sinon le décodeur reste attaché au fichier précédent.
+        """
+        self._library_preview_path = None
+        self._timeline_preview_path = None
+        try:
+            self.player.stop()
+            self.player.setSource(QUrl())
+        except Exception:  # pragma: no cover
+            pass
 
     def show_empty(self):
         """Affiche l'état vide : aucun clip vidéo actif."""

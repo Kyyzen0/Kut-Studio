@@ -1,4 +1,6 @@
 import os
+import time
+from dataclasses import replace
 
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QCursor
@@ -18,15 +20,34 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.autosave import (
+    AutosaveCoordinator,
+    autosave_is_newer,
+    discard_autosave,
+    sidecar_path,
+)
 from core.effects import apply_color_effect, play_crossfade_preview, set_volume
 from core.edit_history import ProjectHistory
 from core.export_engine import ExportEngine
+from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError, probe_media, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
 from core.subtitle_io import load_srt, parse_srt, save_srt
-from core.timeline_evaluator import evaluate_timeline
+from core.shortcuts import resolve_shortcut
+from core.studio_runtime import StudioRuntime, peak_rss_bytes
+from core.timeline_editing import (
+    add_marker,
+    apply_solo,
+    delete_clips,
+    move_clips,
+    neighbor_marker,
+    remove_marker,
+    shift_track_after,
+)
+from core.timeline_index import build_timeline_index
+from core.timeline_navigation import step_frames
 from core.workspace_state import PanelId, workspace_display_name
 from core.timeline_operations import (
     add_clip_to_track,
@@ -49,7 +70,6 @@ from core.timeline_operations import (
 )
 from core.timeline_evaluator import (
     ActiveClip,
-    evaluate_timeline,
     timeline_duration,
 )
 from core.render_plan import RenderPlan, build_render_plan
@@ -57,12 +77,15 @@ from core.timeline_view_model import build_export_clips
 from core.user_settings import (
     DEFAULT_LANGUAGE,
     DEFAULT_THEME,
+    VALID_LANGUAGES,
+    VALID_THEME_MODES,
     UserSettings,
     load_user_settings,
     save_user_settings,
 )
 from core.visual_effects import evaluate_transform
 from ui import i18n
+from ui.debug_overlay import DebugOverlay
 from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -104,6 +127,13 @@ class MainWindow(QMainWindow):
         loaded_settings: UserSettings = load_user_settings()
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
         i18n.set_language(loaded_settings.language)
+        self.runtime = StudioRuntime(
+            profile=loaded_settings.performance_profile,
+            preview_quality=loaded_settings.preview_quality,
+        )
+        self._timeline_index = None
+        self._timeline_index_project_id: int | None = None
+        self._autosave = AutosaveCoordinator()
         # S'abonne aux changements de langue pour recharger les libellés.
         # Conserver la référence permet de se désabonner à la fermeture.
         # Une lambda anonyme conserverait les anciennes fenêtres en mémoire.
@@ -134,6 +164,21 @@ class MainWindow(QMainWindow):
         # La timeline peint ses fonds et ses clips à la main : elle doit
         # suivre les changements de palette du gestionnaire de thème.
         self.timeline_panel.subscribe_to_theme(self.theme_manager)
+        self.timeline_panel.on_structure_changed = self._on_timeline_structure_changed
+        self.timeline_panel.attach_runtime(self.runtime)
+        self.timeline_panel.clips_move_requested.connect(self.on_clips_move_requested)
+        self.timeline_panel.blade_cut_requested.connect(self.on_blade_cut_requested)
+        self.timeline_panel.selection_cleared.connect(self._reset_selection_and_inspector)
+        self.timeline_panel.duplicate_requested.connect(self.duplicate_selected_clip)
+        self.timeline_panel.ripple_delete_requested.connect(self.ripple_delete_selected_clip)
+        self.timeline_panel.toggle_enabled_requested.connect(self.toggle_selected_clip_enabled)
+        self.timeline_panel.marker_add_requested.connect(self.add_marker_at)
+        self.timeline_panel.marker_rename_requested.connect(self.rename_marker)
+        self.timeline_panel.solo_toggled.connect(self.on_track_solo)
+        self.timeline_panel.arm_toggled.connect(self.on_track_armed)
+        self.timeline_panel.height_cycle_requested.connect(self.on_track_height_cycle)
+        self.timeline_panel.collapse_toggled.connect(self.on_track_collapsed)
+        self._apply_runtime_hints()
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
@@ -224,15 +269,29 @@ class MainWindow(QMainWindow):
         shell_layout.addWidget(self.pages)
         self.setCentralWidget(shell)
 
+        self._debug_overlay = DebugOverlay(shell)
+        self._debug_timer = QTimer(self)
+        self._debug_timer.setInterval(500)
+        self._debug_timer.timeout.connect(self._refresh_debug_overlay)
+
+        # L'horloge ne tourne que pendant la lecture. La laisser active
+        # en pause réévaluait toute la timeline et repeignait l'interface
+        # 25 fois par seconde sans que rien ne change.
         self.timeline_timer = QTimer(self)
         self.timeline_timer.setInterval(40)
         self.timeline_timer.timeout.connect(self._tick_playback)
-        self.timeline_timer.start()
+
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(2000)
+        self._autosave_timer.timeout.connect(self._write_autosave)
         self.theme_manager.apply_to(QApplication.instance())
         # Synchronise l'état initial des actions undo/redo. Cette
         # opération doit suivre ``_build_top_bar`` qui crée
         # ``project_label``.
         self._refresh_undo_redo_state()
+        if os.environ.get("KUT_STUDIO_DEBUG") == "1":
+            self.diagnostics_action.setChecked(True)
 
     def on_workspace_changed(self) -> None:
         """Notifié par le gestionnaire d'espace de travail.
@@ -258,6 +317,25 @@ class MainWindow(QMainWindow):
             workspace.shutdown()
         if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
             self.timeline_timer.stop()
+        if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
+            self._autosave_timer.stop()
+        if hasattr(self, "_debug_timer") and self._debug_timer is not None:
+            self._debug_timer.stop()
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is not None:
+            timeline.unsubscribe_from_theme()
+        preview = getattr(self, "preview_panel", None)
+        if preview is not None:
+            preview.release_media()
+        autosave = getattr(self, "_autosave", None)
+        if autosave is not None:
+            autosave.close()
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.shutdown()
+        subtitle_timer = getattr(self, "_subtitle_edit_timer", None)
+        if subtitle_timer is not None:
+            subtitle_timer.stop()
 
         callback = getattr(self, "_i18n_callback", None)
         if callback is not None:
@@ -558,6 +636,7 @@ class MainWindow(QMainWindow):
     def _mark_dirty(self) -> None:
         self.project_dirty = True
         self._update_top_bar()
+        self._schedule_autosave()
 
     def _mark_clean(self) -> None:
         self._flush_subtitle_history_record()
@@ -608,6 +687,12 @@ class MainWindow(QMainWindow):
         # Synchronise le flag ``project_dirty`` avec l'historique.
         self.project_dirty = self.history.is_dirty
         self._update_top_bar()
+        if self.project_dirty:
+            self._schedule_autosave()
+        else:
+            timer = getattr(self, "_autosave_timer", None)
+            if timer is not None:
+                timer.stop()
 
     # ------------------------------------------------------------------
     # Undo / Redo / Duplicate / Ripple / Enable
@@ -703,10 +788,28 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     def delete_selected_clip_with_check(self) -> None:
-        """Variante appelée par raccourci : no-op si aucun clip sélectionné."""
-        if self.timeline_panel.selected_clip_id is None:
+        """Supprime la sélection. En mode ripple, les clips suivants se rapprochent."""
+        ids = list(self.timeline_panel.selected_clip_ids)
+        if not ids and self.timeline_panel.selected_clip_id:
+            ids = [self.timeline_panel.selected_clip_id]
+        if not ids:
             return
-        self.delete_selected_clip(self.timeline_panel.selected_clip_id)
+        if len(ids) == 1 and not self.timeline_panel.ripple_enabled:
+            self.delete_selected_clip(ids[0])
+            return
+        try:
+            delete_clips(self.project, ids, ripple=self.timeline_panel.ripple_enabled)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] suppression groupée refusée : {exc}")
+            return
+        self._record_history("Supprimer la sélection")
+        self.timeline_panel.selected_clip_id = None
+        self.timeline_panel.selected_clip_ids = set()
+        self.active_subtitle_clip = None
+        self.properties_panel.set_clip(None, "")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
 
     def _find_previous_v1_clip(self):
         """Retourne le dernier clip V1 (par timeline_start) ou ``None``."""
@@ -853,6 +956,7 @@ class MainWindow(QMainWindow):
         """Crée un nouveau projet vierge via ``create_default_project()``."""
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._release_open_project()
         self.project = create_default_project()
         self.current_project_path = None
         self.history.reset(self.project)
@@ -873,6 +977,7 @@ class MainWindow(QMainWindow):
             return
         try:
             save_project(self.project, self.current_project_path)
+            discard_autosave(self.current_project_path)
         except OSError as exc:
             QMessageBox.critical(
                 self,
@@ -902,6 +1007,7 @@ class MainWindow(QMainWindow):
             path = path + ".kut"
         try:
             save_project(self.project, path)
+            discard_autosave(path)
         except OSError as exc:
             QMessageBox.critical(
                 self,
@@ -946,6 +1052,25 @@ class MainWindow(QMainWindow):
                 f"Le fichier {path} n'a pas pu être ouvert :\n\n{exc}",
             )
             return
+        if autosave_is_newer(path):
+            answer = QMessageBox.question(
+                self,
+                "Récupération",
+                "Une sauvegarde automatique plus récente que ce projet "
+                "a été trouvée.\n\nVoulez-vous la restaurer ?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Yes:
+                try:
+                    loaded = load_project(str(sidecar_path(path)))
+                except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
+                    QMessageBox.critical(
+                        self,
+                        "Récupération impossible",
+                        f"La sauvegarde automatique n'a pas pu être lue :\n\n{exc}",
+                    )
+        self._release_open_project()
         self.project = loaded
         self.current_project_path = path
         self.history.reset(self.project)
@@ -1153,6 +1278,10 @@ class MainWindow(QMainWindow):
         # On insère l'entrée dans la barre ``Fenêtre`` pour rester
         # accessible sans modifier l'ordre établi.
         window_menu.addAction(preferences_action)
+        self.diagnostics_action = QAction(i18n.translate("debug.toggle"), self)
+        self.diagnostics_action.setCheckable(True)
+        self.diagnostics_action.toggled.connect(self.set_diagnostics_visible)
+        window_menu.addAction(self.diagnostics_action)
 
     def _notify_placeholder(self, feature_name):
         """Affiche un message discret pour les features à venir."""
@@ -1186,9 +1315,13 @@ class MainWindow(QMainWindow):
         Toute la logique de lecture / pause / seek / stop est désormais
         concentrée ici : ``MainWindow`` possède le playhead, le timer
         Qt l'incrémente, puis on synchronise la timeline et l'aperçu.
+        Le timer n'est armé que pendant la lecture. Cet appel reste
+        utilisable à l'arrêt : les tests s'en servent pour forcer une
+        synchronisation.
         """
         if self.is_playing:
-            duration = timeline_duration(self.project)
+            self.runtime.diagnostics.note_playback_tick(time.perf_counter())
+            duration = self._ensure_timeline_index().duration
             # 40 ms = intervalle du timer ; on consomme un delta fixe
             # pour rester stable face aux variations de wall-clock.
             next_playhead = self.playhead_seconds + 0.04
@@ -1198,30 +1331,37 @@ class MainWindow(QMainWindow):
             else:
                 self.playhead_seconds = next_playhead
         self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
-        self._sync_preview_to_timeline()
-        self.update_subtitle_overlay(self.playhead_seconds)
+        active = self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds, active)
 
-    def _sync_preview_to_timeline(self) -> None:
+    def _sync_preview_to_timeline(self) -> list:
         """Évalue la timeline à ``playhead_seconds`` et synchronise l'aperçu.
 
         - S'il existe au moins un clip vidéo actif, on charge la source
-          du dernier clip vidéo retourné par ``evaluate_timeline`` (la
-          piste la plus basse dans ``project.tracks`` est considérée
-          comme visuellement au-dessus).
+          du dernier clip vidéo (la piste la plus basse dans
+          ``project.tracks`` est considérée comme visuellement au-dessus).
         - Sinon, on affiche l'état vide via ``PreviewPanel.show_empty``.
         - Les clips non-vidéo (audio, sous-titres) n'influencent pas
-          la fenêtre vidéo, mais leurs effets (overlay, etc.) sont
-          appliqués séparément (``update_subtitle_overlay``).
+          la fenêtre vidéo. La liste retournée sert à l'overlay, pour
+          ne pas évaluer la timeline une seconde fois dans le même tick.
         """
         self._refresh_motion_inspector()
+        started = time.perf_counter()
         try:
-            active_clips = evaluate_timeline(self.project, self.playhead_seconds)
+            active_clips = self._ensure_timeline_index().active_at(
+                self.project, self.playhead_seconds
+            )
         except ValueError:
-            return
+            return []
+        self.runtime.diagnostics.note_preview_sync(
+            (time.perf_counter() - started) * 1000.0,
+            len(active_clips),
+        )
+        active_clips = apply_solo(self.project, active_clips)
         video_clips = [c for c in active_clips if c.track_type == "video"]
         if not video_clips:
             self.preview_panel.show_empty()
-            return
+            return active_clips
         top_clip = video_clips[-1]
         self.preview_panel.preview_at(top_clip.source_path, top_clip.source_time)
         # Tâche 13 : applique le transform animé du clip supérieur si
@@ -1229,7 +1369,9 @@ class MainWindow(QMainWindow):
         # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité
         # au sommet pour être conforme à la convention de la tâches 6
         # (clip actif supérieur = superposition).
-        clip_obj = find_clip(self.project, top_clip.clip_id)
+        clip_obj = self._ensure_timeline_index().clip(top_clip.clip_id)
+        if clip_obj is None:
+            clip_obj = find_clip(self.project, top_clip.clip_id)
         if clip_obj is not None:
             evaluated = evaluate_transform(
                 clip_obj.transform,
@@ -1249,14 +1391,129 @@ class MainWindow(QMainWindow):
             # la lecture native pour qu'elle démarre à ``source_time``.
             if self.preview_panel.player.playbackState() != QMediaPlayer.PlayingState:
                 self.preview_panel.player.play()
+        return active_clips
 
     def _update_timeline_duration(self) -> None:
         """Met à jour la durée affichée à partir de ``timeline_duration(project)``."""
         self.timeline_panel.set_timeline_duration(timeline_duration(self.project))
 
+    def _ensure_timeline_index(self):
+        """Reconstruit l'index seulement quand le projet a été remplacé.
+
+        Les éditions passent par ``TimelinePanel.set_project``, qui
+        oublie l'index. Entre deux éditions, la lecture réutilise la
+        même structure.
+        """
+        project_id = id(self.project)
+        if (
+            self._timeline_index is None
+            or self._timeline_index_project_id != project_id
+        ):
+            self._timeline_index = build_timeline_index(self.project)
+            self._timeline_index_project_id = project_id
+            self.runtime.note_project_size(
+                media_count=len(self.project.media_assets),
+                clip_count=self._timeline_index.clip_count,
+                track_count=len(self.project.tracks),
+            )
+        return self._timeline_index
+
+    def _on_timeline_structure_changed(self) -> None:
+        self._timeline_index = None
+        self._timeline_index_project_id = None
+        self._ensure_timeline_index()
+        self._apply_runtime_hints()
+
+    def _apply_runtime_hints(self) -> None:
+        """Pousse les budgets du profil vers les panneaux."""
+        profile = self.runtime.resolved_profile()
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is not None:
+            timeline.set_culling_overscan(profile.timeline_overscan_px)
+        preview = getattr(self, "preview_panel", None)
+        if preview is not None:
+            preview.set_preview_divisor(self.runtime.preview_divisor())
+
+    def _release_open_project(self) -> None:
+        """Coupe la lecture, le décodeur et le travail du projet quitté."""
+        self.is_playing = False
+        timer = getattr(self, "timeline_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+        preview = getattr(self, "preview_panel", None)
+        if preview is not None:
+            preview.release_media()
+        self._timeline_index = None
+        self._timeline_index_project_id = None
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.begin_project()
+
+    def _schedule_autosave(self) -> None:
+        timer = getattr(self, "_autosave_timer", None)
+        if timer is None or not self.current_project_path or not self.project_dirty:
+            return
+        timer.start()
+
+    def _write_autosave(self) -> None:
+        if not self.project_dirty or not self.current_project_path:
+            return
+        try:
+            self._autosave.submit(self.project, self.current_project_path)
+        except (OSError, TypeError, ValueError):
+            return
+
+    def set_diagnostics_visible(self, visible: bool) -> None:
+        """Affiche ou cache l'overlay de performance."""
+        if visible:
+            self._debug_timer.start()
+            self._refresh_debug_overlay()
+        else:
+            self._debug_timer.stop()
+            self._debug_overlay.hide()
+
+    def _refresh_debug_overlay(self) -> None:
+        profile = self.runtime.resolved_profile()
+        cache = self.runtime.cache.stats()
+        fps = self.runtime.diagnostics.viewer_fps()
+        rss = peak_rss_bytes()
+        output = self.runtime.output_size(self.project.width, self.project.height)
+        lines = [
+            f"Profil {profile.name} ({self.runtime.requested_profile})"
+            f" · aperçu {self.runtime.preview_label()}",
+            (
+                f"Clips {self.timeline_panel.mounted_clip_count} montés"
+                f" / {len(self.timeline_panel.clip_views)}"
+            ),
+            (
+                f"Cache {cache.entries} · {cache.bytes / (1024 * 1024):.1f} Mo"
+                f" / {cache.budget_bytes / (1024 * 1024):.0f} Mo"
+            ),
+            f"Tâches {self.runtime.tasks.pending} · session {self.runtime.session_id}",
+            (
+                f"Sync {self.runtime.diagnostics.preview_sync_ms:.2f} ms"
+                f" · actifs {self.runtime.diagnostics.active_clips}"
+            ),
+            f"Lecture {fps:.1f} ticks/s" if fps is not None else "Lecture en pause",
+            f"Cible aperçu {output[0]}×{output[1]}",
+        ]
+        if rss is not None:
+            lines.append(f"Mémoire max {rss / (1024 * 1024):.0f} Mo")
+        self._debug_overlay.present(lines)
+
+    def _settings_snapshot(self) -> UserSettings:
+        return UserSettings(
+            theme_mode=self.theme_manager.requested_mode,
+            language=i18n.current_language(),
+            performance_profile=self.runtime.requested_profile,
+            preview_quality=self.runtime.requested_quality,
+        )
+
     def _pause_internal(self) -> None:
         """Met la lecture en pause sans toucher au playhead."""
         self.is_playing = False
+        if self.timeline_timer.isActive():
+            self.timeline_timer.stop()
         self.preview_panel.player.pause()
         self.timeline_panel.setPlayState(False)
         from ui.icons import IconName, make_icon
@@ -1311,10 +1568,24 @@ class MainWindow(QMainWindow):
 
     def on_trim_right_requested(self, clip_id: str, new_timeline_end: float) -> None:
         try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            clip = None
+        old_end = None if clip is None else clip.timeline_start + clip.duration
+        track_id = None if clip is None else clip.track_id
+        try:
             trim_clip_right(self.project, clip_id, new_timeline_end)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] trim droit refusé : {exc}")
             return
+        if self.timeline_panel.ripple_enabled and old_end is not None and track_id:
+            shift_track_after(
+                self.project,
+                track_id,
+                old_end,
+                new_timeline_end - old_end,
+                exclude_ids={clip_id},
+            )
         self._record_history("Trim droit")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
@@ -1368,7 +1639,7 @@ class MainWindow(QMainWindow):
                 return False
 
         try:
-            asset = probe_media(path)
+            asset = cached_probe(self.runtime.cache, path, probe_media)
         except MediaProbeError as exc:
             QMessageBox.critical(
                 self,
@@ -1572,17 +1843,21 @@ class MainWindow(QMainWindow):
         self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
 
 
-    def update_subtitle_overlay(self, seconds):
+    def update_subtitle_overlay(self, seconds, active_clips=None):
         """Affiche le sous-titre actif (borne demi-ouverte ``start <= t < end``).
 
         Plusieurs sous-titres superposés sont départagés par leur
         ordre dans la timeline : le dernier gagne (comportement
-        déterministe).
+        déterministe). ``active_clips`` évite une seconde évaluation
+        quand l'appelant vient déjà de synchroniser l'aperçu.
         """
-        try:
-            active_clips = evaluate_timeline(self.project, seconds)
-        except ValueError:
-            active_clips = []
+        if active_clips is None:
+            try:
+                active_clips = self._ensure_timeline_index().active_at(
+                    self.project, seconds
+                )
+            except (ValueError, KeyError):
+                active_clips = []
         subtitle_clips = [c for c in active_clips if c.track_type == "subtitle"]
         text = subtitle_clips[-1].text.strip() if subtitle_clips else ""
         if text:
@@ -1909,8 +2184,8 @@ class MainWindow(QMainWindow):
             seconds = max(0.0, float(seconds))
         self.playhead_seconds = seconds
         self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
-        self._sync_preview_to_timeline()
-        self.update_subtitle_overlay(self.playhead_seconds)
+        active = self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds, active)
 
     def load_video(self, asset_id: str) -> None:
         """Compatibilité : délègue à ``preview_media_asset``.
@@ -1924,6 +2199,8 @@ class MainWindow(QMainWindow):
     def stop_playback(self):
         """Stop : playhead à 0, aperçu synchronisé, lecture arrêtée."""
         self.is_playing = False
+        if self.timeline_timer.isActive():
+            self.timeline_timer.stop()
         self.preview_panel.player.stop()
         self.playhead_seconds = 0.0
         self.timeline_panel.set_playhead_seconds(0.0)
@@ -1945,6 +2222,7 @@ class MainWindow(QMainWindow):
         if timeline_duration(self.project) <= 0.0:
             return
         self.is_playing = True
+        self.timeline_timer.start()
         self._sync_preview_to_timeline()
         self.preview_panel.player.play()
         self.timeline_panel.setPlayState(True)
@@ -1956,23 +2234,185 @@ class MainWindow(QMainWindow):
         self.seek_to_position(self.playhead_seconds + delta_seconds)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Space:
-            self.toggle_play()
-            event.accept()
+        focus = QApplication.focusWidget()
+        if focus is not None and (
+            focus.inherits("QLineEdit")
+            or focus.inherits("QTextEdit")
+            or focus.inherits("QPlainTextEdit")
+        ):
+            super().keyPressEvent(event)
             return
-        if event.key() in (Qt.Key_Left, Qt.Key_J):
-            self.seek_relative(-2)
-            event.accept()
-            return
-        if event.key() in (Qt.Key_Right, Qt.Key_L):
-            self.seek_relative(2)
-            event.accept()
-            return
-        if event.key() == Qt.Key_K:
-            self.toggle_play()
+        modifiers = set()
+        if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
+            modifiers.add("ctrl")
+        if event.modifiers() & Qt.ShiftModifier:
+            modifiers.add("shift")
+        if event.modifiers() & Qt.AltModifier:
+            modifiers.add("alt")
+        key_name = self._key_name(event.key())
+        action = resolve_shortcut(key_name, modifiers) if key_name else None
+        if action and self._run_editor_shortcut(action):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    @staticmethod
+    def _key_name(key: int) -> str | None:
+        names = {
+            Qt.Key_Space: "space",
+            Qt.Key_Left: "left",
+            Qt.Key_Right: "right",
+            Qt.Key_J: "j",
+            Qt.Key_K: "k",
+            Qt.Key_L: "l",
+            Qt.Key_B: "b",
+            Qt.Key_V: "v",
+            Qt.Key_S: "s",
+            Qt.Key_N: "n",
+            Qt.Key_M: "m",
+            Qt.Key_Equal: "equal",
+            Qt.Key_Plus: "plus",
+            Qt.Key_Minus: "minus",
+            Qt.Key_0: "0",
+            Qt.Key_Z: "z",
+            Qt.Key_A: "a",
+            Qt.Key_BracketLeft: "bracketleft",
+            Qt.Key_BracketRight: "bracketright",
+        }
+        return names.get(key)
+
+    def _run_editor_shortcut(self, action: str) -> bool:
+        timeline = self.timeline_panel
+        if action == "play_pause":
+            self.toggle_play()
+        elif action == "frame_back":
+            self.seek_to_position(step_frames(self.playhead_seconds, -1, self.project.fps))
+        elif action == "frame_forward":
+            self.seek_to_position(step_frames(self.playhead_seconds, 1, self.project.fps))
+        elif action == "second_back":
+            self.seek_relative(-1)
+        elif action == "second_forward":
+            self.seek_relative(1)
+        elif action == "shuttle_back":
+            self.seek_relative(-2)
+        elif action == "shuttle_forward":
+            self.seek_relative(2)
+        elif action == "zoom_in":
+            timeline.zoom_in()
+        elif action == "zoom_out":
+            timeline.zoom_out()
+        elif action == "zoom_fit":
+            timeline.fit_timeline()
+        elif action == "tool_blade":
+            timeline.blade_button.setChecked(not timeline.blade_button.isChecked())
+        elif action == "tool_select":
+            timeline.blade_button.setChecked(False)
+        elif action == "toggle_snap":
+            timeline.snap_button.setChecked(not timeline.snap_button.isChecked())
+        elif action == "toggle_ripple":
+            timeline.ripple_button.setChecked(not timeline.ripple_button.isChecked())
+        elif action == "marker_add":
+            self.add_marker_at(self.playhead_seconds)
+        elif action == "marker_previous":
+            self.goto_marker(-1)
+        elif action == "marker_next":
+            self.goto_marker(1)
+        elif action == "cut_at_playhead":
+            self.cut_at_playhead()
+        elif action == "select_all":
+            ids = [view.id for view in timeline.clip_views]
+            if ids:
+                timeline._set_selection(ids, ids[0], announce=True)
+        else:
+            return False
+        return True
+
+    def on_clips_move_requested(self, placements) -> None:
+        try:
+            move_clips(self.project, list(placements))
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] déplacement refusé : {exc}")
+            self.timeline_panel.set_project(self.project)
+            return
+        self._record_history("Déplacer les clips")
+        selected = set(self.timeline_panel.selected_clip_ids)
+        primary = self.timeline_panel.selected_clip_id
+        self.timeline_panel.set_project(self.project)
+        if selected:
+            self.timeline_panel._set_selection(selected, primary, announce=False)
+        self._update_timeline_duration()
+        self._mark_dirty()
+
+    def on_blade_cut_requested(self, clip_id: str, instant: float) -> None:
+        self.cut_selected_clip(clip_id, instant)
+
+    def add_marker_at(self, seconds: float) -> None:
+        marker = add_marker(self.project, seconds)
+        self._record_history("Ajouter un marqueur")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
+        del marker
+
+    def rename_marker(self, marker_id: str) -> None:
+        marker = next((item for item in self.project.markers if item.id == marker_id), None)
+        if marker is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self,
+            "Marqueur",
+            "Nom du marqueur",
+            text=marker.name,
+        )
+        if not accepted:
+            return
+        marker.name = name.strip()
+        self._record_history("Renommer un marqueur")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
+
+    def goto_marker(self, direction: int) -> None:
+        marker = neighbor_marker(self.project, self.playhead_seconds, direction)
+        if marker is not None:
+            self.seek_to_position(marker.time_seconds)
+
+    def on_track_solo(self, track_id: str, enabled: bool) -> None:
+        track = next((item for item in self.project.tracks if item.id == track_id), None)
+        if track is None:
+            return
+        track.solo = bool(enabled)
+        self._record_history("Solo de piste")
+        self.timeline_panel.set_project(self.project)
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def on_track_armed(self, track_id: str, enabled: bool) -> None:
+        track = next((item for item in self.project.tracks if item.id == track_id), None)
+        if track is None or track.type != "audio":
+            return
+        track.armed = bool(enabled)
+        self._record_history("Armer la piste")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
+
+    def on_track_height_cycle(self, track_id: str) -> None:
+        track = next((item for item in self.project.tracks if item.id == track_id), None)
+        if track is None:
+            return
+        order = ("compact", "normal", "large")
+        current = track.height_mode if track.height_mode in order else "normal"
+        track.height_mode = order[(order.index(current) + 1) % len(order)]
+        self._record_history("Hauteur de piste")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
+
+    def on_track_collapsed(self, track_id: str, collapsed: bool) -> None:
+        track = next((item for item in self.project.tracks if item.id == track_id), None)
+        if track is None:
+            return
+        track.collapsed = bool(collapsed)
+        self._record_history("Réduire la piste")
+        self.timeline_panel.set_project(self.project)
+        self._mark_dirty()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -2187,28 +2627,42 @@ class MainWindow(QMainWindow):
         dialog = PreferencesDialog(
             current_theme=self.theme_manager.requested_mode,
             current_language_code=i18n.current_language(),
+            current_performance=self.runtime.requested_profile,
+            current_preview_quality=self.runtime.requested_quality,
             parent=self,
         )
         dialog.theme_changed.connect(self.on_user_setting_changed)
         dialog.language_changed.connect(self.on_user_setting_changed)
+        dialog.performance_changed.connect(self.on_performance_setting_changed)
+        dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         dialog.exec()
 
     def _restore_default_preferences(self) -> None:
         self._apply_settings(UserSettings())
 
-    def on_user_setting_changed(self, _value: str) -> None:
-        """Recueil les préférences courantes du manager / i18n."""
-        theme_mode = self.theme_manager.requested_mode
-        language_code = i18n.current_language()
-        self._apply_settings(
-            UserSettings(theme_mode=theme_mode, language=language_code)
-        )
+    def on_user_setting_changed(self, value: str) -> None:
+        """Applique un thème ou une langue sans oublier les autres préférences."""
+        settings = self._settings_snapshot()
+        if value in VALID_THEME_MODES:
+            settings = replace(settings, theme_mode=value)
+        elif value in VALID_LANGUAGES:
+            settings = replace(settings, language=value)
+        self._apply_settings(settings)
+
+    def on_performance_setting_changed(self, value: str) -> None:
+        self._apply_settings(replace(self._settings_snapshot(), performance_profile=value))
+
+    def on_preview_quality_changed(self, value: str) -> None:
+        self._apply_settings(replace(self._settings_snapshot(), preview_quality=value))
 
     def _apply_settings(self, settings: UserSettings) -> None:
         # Application du thème dans Qt.
         self.theme_manager.set_mode(settings.theme_mode)
         self.theme_manager.apply_to(QApplication.instance())
+        self.runtime.set_requested_profile(settings.performance_profile)
+        self.runtime.set_preview_quality(settings.preview_quality)
+        self._apply_runtime_hints()
         # Application de la langue.
         if i18n.current_language() != settings.language:
             i18n.set_language(settings.language)
@@ -2221,13 +2675,9 @@ class MainWindow(QMainWindow):
     def on_language_changed(self, code: str) -> None:
         """Callback i18n : retraduit l'interface à chaud."""
         self._retranslate_ui()
-        # Persistance immédiate : la langue doit suivre les changements.
-        save_user_settings(
-            UserSettings(
-                theme_mode=self.theme_manager.requested_mode,
-                language=code,
-            )
-        )
+        # Persistance immédiate : la langue doit suivre les changements
+        # sans effacer le profil de performance ni la qualité d'aperçu.
+        save_user_settings(replace(self._settings_snapshot(), language=code))
 
     def _retranslate_ui(self) -> None:
         """Force la mise à jour des textes dépendant de la langue."""

@@ -52,6 +52,9 @@ class IconName(str, Enum):
     TRASH = "trash"
     RESET = "reset"
     SNAP = "snap"
+    SOLO = "solo"
+    MARKER = "marker"
+    HEIGHT = "height"
 
     LOCK = "lock"
     UNLOCK = "unlock"
@@ -189,6 +192,24 @@ _SVG_TEMPLATES: dict[str, str] = {
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M3 12a9 9 0 1 0 3-6.7"/>'
         '<path d="M3 4v5h5"/></svg>'
+    ),
+    IconName.SOLO: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/>'
+        '<path d="M16 7v10"/><path d="M20 10v4"/></svg>'
+    ),
+    IconName.MARKER: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="currentColor">'
+        '<path d="M12 3 6 8.2V21h12V8.2L12 3Z"/></svg>'
+    ),
+    IconName.HEIGHT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round">'
+        '<path d="M8 7h8"/><path d="M8 12h8"/><path d="M8 17h8"/></svg>'
     ),
     IconName.SNAP: (
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '

@@ -78,7 +78,7 @@ class _Sizes:
     panel_default_width: int = 300
     timeline_track_min_height: int = 56
     timeline_track_height: int = 68
-    timeline_left_margin: int = 200
+    timeline_left_margin: int = 248
     timeline_ruler_height: int = 30
     timeline_header_height: int = 44
     timeline_min_height: int = 320

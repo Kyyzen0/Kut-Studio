@@ -19,12 +19,10 @@ Structure du fichier (version 4) :
         }
     }
 
-La version 4 ajoute les états ``locked`` / ``visible`` / ``muted`` sur
-chaque ``Track``. La version 3 (transform + keyframes) reste lisible ;
-les champs manquants y sont comblés par ``locked=False``,
-``visible=True`` et ``muted=False``. Les versions 1 et 2 restent
-accessibles : leurs clips héritent du transform identité, les pistes
-reprennent les valeurs par défaut ci-dessus.
+La version 5 ajoute les marqueurs de timeline et les états de piste
+``solo``, ``armed``, ``height_mode`` et ``collapsed``. Les versions
+précédentes restent lisibles : ces champs prennent leurs valeurs par
+défaut. La version 4 avait ajouté ``locked`` / ``visible`` / ``muted``.
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -41,7 +39,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .project_model import Clip, MediaAsset, Project, Track
+from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -52,10 +50,10 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 4
+CURRENT_VERSION = 5
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
 Les versions 1 à 4 restent prises en charge ; les champs
@@ -69,13 +67,40 @@ _PROJECT_KEY = "project"
 
 _PROJECT_FIELDS = frozenset({"name", "width", "height", "fps"})
 _TRACK_FIELDS = frozenset(
-    {"id", "name", "type", "locked", "visible", "muted"}
+    {
+        "id",
+        "name",
+        "type",
+        "locked",
+        "visible",
+        "muted",
+        "solo",
+        "armed",
+        "height_mode",
+        "collapsed",
+    }
 )
 
 
 # ---------------------------------------------------------------------------
 # API publique
 # ---------------------------------------------------------------------------
+
+
+def project_payload(project: Project) -> dict[str, Any]:
+    """Photographie sérialisable de ``project``.
+
+    Le dictionnaire est détaché de l'objet vivant : un thread d'écriture
+    peut le poser sur disque pendant que l'interface continue d'éditer.
+    """
+    return _build_payload(project)
+
+
+def write_project_payload(payload: dict[str, Any], file_path: str) -> None:
+    """Écrit un payload déjà construit, de façon atomique."""
+    target = Path(file_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(payload, target)
 
 
 def save_project(project: Project, file_path: str) -> None:
@@ -85,10 +110,7 @@ def save_project(project: Project, file_path: str) -> None:
     un échec (disque plein, permissions, JSON non sérialisable...) ne
     laisse ni fichier cible tronqué, ni fichier temporaire résiduel.
     """
-    payload = _build_payload(project)
-    target = Path(file_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_json(payload, target)
+    write_project_payload(project_payload(project), file_path)
 
 
 def load_project(file_path: str) -> Project:
@@ -163,6 +185,15 @@ def _build_payload(project: Project) -> dict[str, Any]:
                 }
                 for asset in project.media_assets
             ],
+            "markers": [
+                {
+                    "id": marker.id,
+                    "time_seconds": marker.time_seconds,
+                    "name": marker.name,
+                    "category": marker.category,
+                }
+                for marker in project.markers
+            ],
             "tracks": [
                 {
                     "id": track.id,
@@ -171,6 +202,10 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "locked": track.locked,
                     "visible": track.visible,
                     "muted": track.muted,
+                    "solo": track.solo,
+                    "armed": track.armed,
+                    "height_mode": track.height_mode,
+                    "collapsed": track.collapsed,
                     "clips": [
                         {
                             "id": clip.id,
@@ -230,7 +265,18 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
     return Project(
         media_assets=assets,
         tracks=tracks,
+        markers=[_deserialize_marker(item) for item in data.get("markers", [])],
         **{key: value for key, value in data.items() if key in _PROJECT_FIELDS},
+    )
+
+
+def _deserialize_marker(data: dict[str, Any]) -> Marker:
+    """Reconstruit un marqueur. Une catégorie inconnue redevient standard."""
+    return Marker(
+        id=str(data["id"]),
+        time_seconds=float(data.get("time_seconds", 0.0)),
+        name=str(data.get("name", "")),
+        category=str(data.get("category", "standard")),
     )
 
 

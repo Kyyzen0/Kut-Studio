@@ -43,6 +43,12 @@ class ProjectHistory:
 
     Les snapshots sont stockés comme des copies profondes pour éviter
     toute fuite de référence entre versions successives.
+
+    Le coût est assumé : chaque entrée duplique le projet, jusqu'à
+    ``MAX_HISTORY`` copies. C'est acceptable tant que le projet ne
+    contient que des métadonnées. Un partage de structure pourra
+    remplacer :func:`_deepcopy_project` sans changer l'API, le jour
+    où cette copie se voit dans l'interface.
     """
 
     def __init__(self) -> None:
