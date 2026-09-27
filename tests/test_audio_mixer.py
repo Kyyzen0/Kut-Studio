@@ -386,7 +386,7 @@ def test_saved_file_declares_current_version(tmp_path):
     path = str(tmp_path / "p.kut")
     save_project(make_audio_project(), path)
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    assert payload["version"] == CURRENT_VERSION == 6
+    assert payload["version"] == CURRENT_VERSION
 
 
 def _legacy_payload(version: int) -> dict:

@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from .project_model import Clip, Marker, MediaAsset, Project, Track
+from .time_remapping import FreezeFrameMode, TimeRemapping
 from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -53,19 +54,22 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 6
+CURRENT_VERSION = 7
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
-Les versions 1 à 5 restent prises en charge ; les champs spécifiques
-(transform, keyframes, états de piste, mixage audio) y sont comblés par
-des valeurs par défaut conservatives.
+Les versions 1 à 6 restent prises en charge ; les champs spécifiques
+(transform, keyframes, états de piste, mixage audio, remappage temporel) y sont
+comblés par des valeurs par défaut conservatives.
 """
 
 _VERSION_ADDED_AUDIO: int = 6
 """Première version sérialisant le mixage audio non destructif."""
+
+_VERSION_ADDED_TIME_REMAPPING: int = 7
+"""Première version sérialisant le remappage temporel (vitesse, reverse, freeze)."""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -89,6 +93,9 @@ _TRACK_FIELDS = frozenset(
     }
 )
 _CLIP_AUDIO_FIELDS = frozenset({"gain_db", "pan", "fade_in", "fade_out"})
+_CLIP_TIME_REMAPPING_FIELDS = frozenset(
+    {"speed", "reverse", "freeze_mode", "freeze_source_time", "freeze_duration"}
+)
 _CLIP_KNOWN_FIELDS = frozenset(
     {
         "id",
@@ -101,7 +108,7 @@ _CLIP_KNOWN_FIELDS = frozenset(
         "label",
         "text",
     }
-) | _CLIP_AUDIO_FIELDS
+) | _CLIP_AUDIO_FIELDS | _CLIP_TIME_REMAPPING_FIELDS
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +256,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "transform_keyframes": [
                                 _keyframe_to_dict(kf) for kf in clip.transform_keyframes
                             ],
+                            "time_remapping": _time_remapping_to_dict(clip.time_remapping),
                         }
                         for clip in track.clips
                     ],
@@ -315,7 +323,7 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
         clip_kwargs = {
             key: value
             for key, value in raw_clip.items()
-            if key not in {"transform", "transform_keyframes"}
+            if key not in {"transform", "transform_keyframes", "time_remapping"}
             and key in _CLIP_KNOWN_FIELDS
         }
         clip_kwargs["transform"] = _dict_to_transform(
@@ -324,6 +332,14 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
         clip_kwargs["transform_keyframes"] = [
             _dict_to_keyframe(raw) for raw in raw_clip.get("transform_keyframes", [])
         ]
+        # Gérer le time_remapping (version 7+)
+        if "time_remapping" in raw_clip:
+            clip_kwargs["time_remapping"] = _dict_to_time_remapping(
+                raw_clip.get("time_remapping")
+            )
+        else:
+            # Version antérieure à 7 : utiliser les valeurs par défaut
+            clip_kwargs["time_remapping"] = TimeRemapping()
         clips.append(Clip(**clip_kwargs))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS
@@ -374,6 +390,38 @@ def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
         time_seconds=float(raw["time_seconds"]),
         value=float(raw["value"]),
     )
+
+
+def _time_remapping_to_dict(time_remapping: TimeRemapping) -> dict[str, Any]:
+    """Sérialise un TimeRemapping en dict."""
+    return {
+        "speed": float(time_remapping.speed),
+        "reverse": bool(time_remapping.reverse),
+        "freeze_mode": str(time_remapping.freeze_mode.value),
+        "freeze_source_time": float(time_remapping.freeze_source_time),
+        "freeze_duration": float(time_remapping.freeze_duration),
+    }
+
+
+def _dict_to_time_remapping(raw: dict[str, Any] | None) -> TimeRemapping:
+    """Désérialise un TimeRemapping à partir d'un dict.
+
+    Retourne un TimeRemapping par défaut si le dict est None ou invalide.
+    """
+    if not isinstance(raw, dict):
+        return TimeRemapping()
+
+    try:
+        return TimeRemapping(
+            speed=float(raw.get("speed", 1.0)),
+            reverse=bool(raw.get("reverse", False)),
+            freeze_mode=FreezeFrameMode(raw.get("freeze_mode", "none")),
+            freeze_source_time=float(raw.get("freeze_source_time", 0.0)),
+            freeze_duration=float(raw.get("freeze_duration", 1.0)),
+        )
+    except (ValueError, TypeError, KeyError):
+        # Si la désérialisation échoue, retourner les valeurs par défaut
+        return TimeRemapping()
 
 
 # ---------------------------------------------------------------------------
