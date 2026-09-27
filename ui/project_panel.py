@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -77,7 +78,9 @@ class ProjectPanel(QWidget):
         # dimensionnée sur la hauteur réelle d'un item (voir le padding
         # appliqué plus bas), pas sur une valeur arbitraire.
         self.navigation.setMinimumHeight(92)
+        self.navigation.setFixedHeight(154)
         self.navigation.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.navigation.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.navigation.setSpacing(1)
         for index in range(5):
             item = QListWidgetItem()
@@ -448,7 +451,23 @@ class SubtitleLibraryView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setStyleSheet(
+            f"QScrollArea {{ background: {COLORS['panel']}; border: none; }}"
+        )
+        content = QWidget()
+        content.setMinimumHeight(280)
+        self.scroll_area.setWidget(content)
+        outer_layout.addWidget(self.scroll_area)
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Spacing.sm)
 
@@ -500,20 +519,16 @@ class SubtitleLibraryView(QWidget):
             icon=IconName.IMPORT,
             tooltip="Importer un fichier SRT",
             size=Sizes.icon_button,
-            square=False,
+            square=True,
         )
-        self.import_button.setText("  Importer SRT")
-        self.import_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.import_button.setMinimumHeight(Sizes.button_md)
         self.import_button.clicked.connect(self.import_requested)
         self.export_button = IconButton(
             icon=IconName.EXPORT,
             tooltip="Exporter les sous-titres en SRT",
             size=Sizes.icon_button,
-            square=False,
+            square=True,
         )
-        self.export_button.setText("  Exporter SRT")
-        self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.export_button.setMinimumHeight(Sizes.button_md)
         self.export_button.clicked.connect(self.export_requested)
         io_row.addWidget(self.import_button)
@@ -531,6 +546,7 @@ class SubtitleLibraryView(QWidget):
             f"color: {COLORS['text']}; }}"
         )
         self.list_widget.currentItemChanged.connect(self._on_selection_changed)
+        self.list_widget.setMinimumHeight(72)
         layout.addWidget(self.list_widget, 1)
 
     # ------------------------------------------------------------------

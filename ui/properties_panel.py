@@ -15,7 +15,6 @@ from PySide6.QtGui import QPainter, QColor, QPolygonF
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -99,11 +98,6 @@ class _DiamondButton(QToolButton):
 
 
 class PropertiesPanel(QWidget):
-    cut_requested = Signal(str, float)
-    delete_requested = Signal(str)
-    duplicate_requested = Signal(str)
-    ripple_delete_requested = Signal(str)
-    enabled_changed = Signal(str, bool)
     transform_changed = Signal(str, str, float)
     keyframe_added = Signal(str, str, float, float)
     keyframe_removed = Signal(str, str, float)
@@ -222,52 +216,6 @@ class PropertiesPanel(QWidget):
         clip_form.addRow("Durée", self.clip_duration)
         clip_form.addRow("Position", self.clip_position)
         layout.addWidget(clip_group)
-
-        # ----- Actions rapides -----------------------------------------
-        actions_group = QGroupBox("Actions")
-        actions_group.setStyleSheet(self.group_style())
-        actions_layout = QVBoxLayout(actions_group)
-        actions_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
-        actions_layout.setSpacing(Spacing.xs)
-
-        # Première rangée : Couper / Dupliquer.
-        row_a = QWidget()
-        row_a_layout = QVBoxLayout(row_a)
-        row_a_layout.setContentsMargins(0, 0, 0, 0)
-        row_a_layout.setSpacing(Spacing.xs)
-        self.cut_button = self._make_action_button(
-            IconName.CUT, "Couper", "Couper le clip à la tête de lecture"
-        )
-        self.duplicate_button = self._make_action_button(
-            IconName.DUPLICATE, "Dupliquer", "Dupliquer le clip (Ctrl+D)"
-        )
-        row_a_layout.addWidget(self.cut_button)
-        row_a_layout.addWidget(self.duplicate_button)
-        actions_layout.addWidget(row_a)
-
-        # Deuxième rangée : Supprimer / Ripple.
-        row_b = QWidget()
-        row_b_layout = QVBoxLayout(row_b)
-        row_b_layout.setContentsMargins(0, 0, 0, 0)
-        row_b_layout.setSpacing(Spacing.xs)
-        self.delete_button = self._make_action_button(
-            IconName.TRASH, "Supprimer", "Supprimer le clip"
-        )
-        self.ripple_button = self._make_action_button(
-            IconName.SCISSORS,
-            "Supprimer avec ripple",
-            "Supprimer le clip et fermer le trou (Ctrl+Backspace)",
-        )
-        row_b_layout.addWidget(self.delete_button)
-        row_b_layout.addWidget(self.ripple_button)
-        actions_layout.addWidget(row_b)
-
-        # Case « Clip activé ».
-        self.enabled_checkbox = QCheckBox("Clip activé")
-        self.enabled_checkbox.toggled.connect(self.emit_enabled_changed)
-        self.enabled_checkbox.setEnabled(False)
-        actions_layout.addWidget(self.enabled_checkbox)
-        layout.addWidget(actions_group)
 
         # ----- Couleur --------------------------------------------------
         color_group = QGroupBox("Couleur")
@@ -1021,14 +969,6 @@ class PropertiesPanel(QWidget):
                 self.clip_name.setText("Aucun clip sélectionné")
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
-                self.cut_button.setEnabled(False)
-                self.delete_button.setEnabled(False)
-                self.duplicate_button.setEnabled(False)
-                self.ripple_button.setEnabled(False)
-                self.enabled_checkbox.blockSignals(True)
-                self.enabled_checkbox.setChecked(False)
-                self.enabled_checkbox.blockSignals(False)
-                self.enabled_checkbox.setEnabled(False)
                 self.subtitle_group.hide()
                 self.movement_group.setEnabled(False)
                 for name, spin in self._spin_boxes.items():
@@ -1053,17 +993,6 @@ class PropertiesPanel(QWidget):
             self.clip_name.setText(view.label)
             self.clip_duration.setText(f"{duration:.2f}s")
             self.clip_position.setText(f"{view.start:.2f}s")
-            self.cut_button.setEnabled(True)
-            self.delete_button.setEnabled(True)
-            self.duplicate_button.setEnabled(True)
-            self.ripple_button.setEnabled(True)
-
-            enabled = getattr(view, "enabled", True)
-            self.enabled_checkbox.blockSignals(True)
-            self.enabled_checkbox.setChecked(bool(enabled))
-            self.enabled_checkbox.blockSignals(False)
-            self.enabled_checkbox.setEnabled(True)
-
             is_subtitle = getattr(view, "track_type", None) == "subtitle"
             self.subtitle_group.setVisible(is_subtitle)
             if is_subtitle:
@@ -1163,34 +1092,6 @@ class PropertiesPanel(QWidget):
     def set_clip(self, view, track_name=None):
         self.show_clip(view)
 
-    def emit_cut_requested(self):
-        if self.selected_clip is None:
-            return
-        if self.timeline_panel is None:
-            return
-        playhead_seconds = self.timeline_panel.playhead_seconds
-        self.cut_requested.emit(self.selected_clip.id, playhead_seconds)
-
-    def emit_delete_requested(self):
-        if self.selected_clip is None:
-            return
-        self.delete_requested.emit(self.selected_clip.id)
-
-    def emit_duplicate_requested(self):
-        if self.selected_clip is None:
-            return
-        self.duplicate_requested.emit(self.selected_clip.id)
-
-    def emit_ripple_requested(self):
-        if self.selected_clip is None:
-            return
-        self.ripple_delete_requested.emit(self.selected_clip.id)
-
-    def emit_enabled_changed(self, checked: bool) -> None:
-        if self.selected_clip is None:
-            return
-        self.enabled_changed.emit(self.selected_clip.id, bool(checked))
-
     def _on_speed_changed(self, value: float) -> None:
         if self.selected_clip is None or self._signal_block_depth > 0:
             return
@@ -1221,4 +1122,3 @@ class PropertiesPanel(QWidget):
         if self.selected_clip is None or self._signal_block_depth > 0:
             return
         self.time_remapping_reset.emit(self.selected_clip.id)
-

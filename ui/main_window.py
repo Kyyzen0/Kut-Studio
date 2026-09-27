@@ -233,11 +233,6 @@ class MainWindow(QMainWindow):
         self.timeline_panel.toggle_track_muted_requested.connect(self.on_toggle_track_muted)
         self.timeline_panel.move_track_up_requested.connect(self.on_move_track_up)
         self.timeline_panel.move_track_down_requested.connect(self.on_move_track_down)
-        self.properties_panel.cut_requested.connect(self.cut_selected_clip)
-        self.properties_panel.delete_requested.connect(self.delete_selected_clip)
-        self.properties_panel.duplicate_requested.connect(self.duplicate_clip_from_panel)
-        self.properties_panel.ripple_delete_requested.connect(self.ripple_delete_clip_from_panel)
-        self.properties_panel.enabled_changed.connect(self.set_clip_enabled_from_panel)
         self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
         # Tâche 13 : opérations visuelles.
         self.properties_panel.transform_changed.connect(self.on_transform_property_changed)
@@ -1104,39 +1099,6 @@ class MainWindow(QMainWindow):
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         # Conserver la sélection.
-        self.timeline_panel.select_clip(clip_id)
-        self._mark_dirty()
-
-    # ------------------------------------------------------------------
-    # Wrappers pour les actions du panneau Propriétés
-    # ------------------------------------------------------------------
-
-    def duplicate_clip_from_panel(self, clip_id: str) -> None:
-        if self.timeline_panel.selected_clip_id != clip_id:
-            self.timeline_panel.select_clip(clip_id)
-        self.duplicate_selected_clip()
-
-    def ripple_delete_clip_from_panel(self, clip_id: str) -> None:
-        if self.timeline_panel.selected_clip_id != clip_id:
-            self.timeline_panel.select_clip(clip_id)
-        self.ripple_delete_selected_clip()
-
-    def set_clip_enabled_from_panel(self, clip_id: str, enabled: bool) -> None:
-        try:
-            clip = find_clip(self.project, clip_id)
-        except KeyError:
-            return
-        if clip.enabled == enabled:
-            return
-        try:
-            set_clip_enabled(self.project, clip_id, enabled)
-        except KeyError:
-            return
-        self._record_history(
-            "Activer le clip" if enabled else "Désactiver le clip"
-        )
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
         self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 

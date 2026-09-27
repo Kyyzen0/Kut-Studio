@@ -1,12 +1,14 @@
 """Comportement de l'inspecteur Mouvement et des sous-titres."""
 
 import pytest
+from PySide6.QtWidgets import QGroupBox
 
 from core.timeline_operations import add_subtitle_clip, find_clip
 from core.timeline_view_model import TimelineClipView
 from core.track_operations import add_track
 from core.visual_effects import ClipTransform, TransformKeyframe
 from ui.properties_panel import PropertiesPanel
+from ui.project_panel import ProjectPanel
 
 
 def _panel(qtbot) -> PropertiesPanel:
@@ -33,6 +35,28 @@ def _view(**overrides) -> TimelineClipView:
     }
     fields.update(overrides)
     return TimelineClipView(**fields)
+
+
+def test_properties_panel_omits_redundant_timeline_actions(qtbot) -> None:
+    """Les actions de montage restent dans la timeline, pas l'inspecteur."""
+    panel = _panel(qtbot)
+
+    assert all(group.title() != "Actions" for group in panel.findChildren(QGroupBox))
+
+
+def test_subtitle_library_scrolls_in_a_short_side_panel(qtbot) -> None:
+    """Une fenêtre basse ne doit plus superposer les contrôles de sous-titres."""
+    panel = ProjectPanel()
+    qtbot.addWidget(panel)
+    panel.resize(280, 360)
+    panel.navigation.setCurrentRow(2)
+    panel.show()
+    qtbot.wait(20)
+
+    subtitles = panel.subtitle_view
+    assert subtitles.scroll_area.verticalScrollBar().maximum() > 0
+    assert subtitles.import_button.text() == ""
+    assert subtitles.export_button.text() == ""
 
 
 def test_clearing_selection_restores_each_motion_default(qtbot) -> None:
