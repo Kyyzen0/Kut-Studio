@@ -244,6 +244,13 @@ class MainWindow(QMainWindow):
         self.properties_panel.keyframe_added.connect(self.on_transform_keyframe_added)
         self.properties_panel.keyframe_removed.connect(self.on_transform_keyframe_removed)
         self.properties_panel.transform_reset.connect(self.on_transform_reset)
+        # Tâche 18 : time remapping
+        self.properties_panel.speed_changed.connect(self.on_speed_changed)
+        self.properties_panel.reverse_toggled.connect(self.on_reverse_toggled)
+        self.properties_panel.freeze_frame_created.connect(self.on_freeze_frame_created)
+        self.properties_panel.freeze_frame_removed.connect(self.on_freeze_frame_removed)
+        self.properties_panel.freeze_duration_changed.connect(self.on_freeze_duration_changed)
+        self.properties_panel.time_remapping_reset.connect(self.on_time_remapping_reset)
 
         # Initialisation de l'horloge de programme (tâche 8).
         # ``playhead_seconds`` est une propriété qui délègue au
@@ -1128,6 +1135,91 @@ class MainWindow(QMainWindow):
         self._record_history(
             "Activer le clip" if enabled else "Désactiver le clip"
         )
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    # Tâche 18 : remappage temporel
+    def on_speed_changed(self, clip_id: str, speed: float) -> None:
+        """Modifie la vitesse d'un clip depuis l'inspecteur."""
+        from core.timeline_operations import set_clip_speed
+        try:
+            clip = set_clip_speed(self.project, clip_id, speed)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] vitesse refusée : {exc}")
+            return
+        self._record_history("Modifier la vitesse")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    def on_reverse_toggled(self, clip_id: str, reverse: bool) -> None:
+        """Modifie le mode reverse d'un clip depuis l'inspecteur."""
+        from core.timeline_operations import set_clip_reverse
+        try:
+            clip = set_clip_reverse(self.project, clip_id, reverse)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] reverse refusé : {exc}")
+            return
+        self._record_history("Inverser le clip" if reverse else "Désinverser le clip")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    def on_freeze_frame_created(self, clip_id: str, freeze_source_time: float, freeze_duration: float) -> None:
+        """Crée un arrêt sur image pour un clip depuis l'inspecteur."""
+        from core.timeline_operations import set_clip_freeze_frame
+        try:
+            clip = set_clip_freeze_frame(self.project, clip_id, freeze_source_time, freeze_duration)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] arrêt sur image refusé : {exc}")
+            return
+        self._record_history("Créer un arrêt sur image")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    def on_freeze_frame_removed(self, clip_id: str) -> None:
+        """Supprime un arrêt sur image pour un clip depuis l'inspecteur."""
+        from core.timeline_operations import remove_clip_freeze_frame
+        try:
+            clip = remove_clip_freeze_frame(self.project, clip_id)
+        except KeyError as exc:
+            print(f"[MainWindow] suppression arrêt sur image refusée : {exc}")
+            return
+        self._record_history("Supprimer l'arrêt sur image")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    def on_freeze_duration_changed(self, clip_id: str, freeze_duration: float) -> None:
+        """Modifie la durée d'un arrêt sur image depuis l'inspecteur."""
+        from core.timeline_operations import set_clip_freeze_duration
+        try:
+            clip = set_clip_freeze_duration(self.project, clip_id, freeze_duration)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] durée arrêt sur image refusée : {exc}")
+            return
+        self._record_history("Modifier la durée de l'arrêt sur image")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self.timeline_panel.select_clip(clip_id)
+        self._mark_dirty()
+
+    def on_time_remapping_reset(self, clip_id: str) -> None:
+        """Réinitialise le remappage temporel d'un clip depuis l'inspecteur."""
+        from core.timeline_operations import reset_clip_time_remapping
+        try:
+            clip = reset_clip_time_remapping(self.project, clip_id)
+        except KeyError as exc:
+            print(f"[MainWindow] réinitialisation remappage temporel refusée : {exc}")
+            return
+        self._record_history("Réinitialiser la vitesse et le remappage temporel")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self.timeline_panel.select_clip(clip_id)

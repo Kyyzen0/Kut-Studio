@@ -57,6 +57,10 @@ class TimelineClipView:
         enabled: Indique si le clip est activé.
         keyframes: Images-clés de transform portées par le clip (tâche 13).
         transform: Transform de base du clip (tâche 13).
+        source_in: Point d'entrée dans le média source.
+        source_out: Point de sortie du média source.
+        source_duration: Durée source du clip (source_out - source_in).
+        time_remapping: Remappage temporel (vitesse, reverse, freeze frame).
     """
 
     id: str
@@ -72,6 +76,10 @@ class TimelineClipView:
     enabled: bool = True
     keyframes: tuple = ()
     transform: object = None
+    source_in: float = 0.0
+    source_out: float = 0.0
+    source_duration: float = 0.0
+    time_remapping: object = None
 
 
 def color_key_for_clip(clip: Clip) -> str:
@@ -108,6 +116,10 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     enabled=clip.enabled,
                     keyframes=tuple(clip.transform_keyframes),
                     transform=clip.transform,
+                    source_in=clip.source_in,
+                    source_out=clip.source_out,
+                    source_duration=clip.source_duration,
+                    time_remapping=clip.time_remapping,
                 )
             )
     return views

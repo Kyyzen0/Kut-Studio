@@ -934,3 +934,247 @@ def duplicate_clip_preserving_transform(
     )
     source_track.clips.append(duplicate)
     return duplicate
+
+
+# ---------------------------------------------------------------------------
+# Remappage temporel (tâche 18)
+# ---------------------------------------------------------------------------
+
+from .time_remapping import (
+    FreezeFrameMode,
+    TimeRemapping,
+    clamp_speed,
+    create_freeze_frame,
+    validate_time_remapping,
+)
+
+
+def set_clip_speed(
+    project: Project, clip_id: str, speed: float
+) -> Clip:
+    """Modifie la vitesse de lecture d'un clip.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+        speed: La nouvelle vitesse (sera clampée entre MIN_SPEED et MAX_SPEED).
+    
+    Returns:
+        Le clip modifié.
+    
+    Raises:
+        KeyError: Si le clip n'est pas trouvé.
+        ValueError: Si la vitesse est invalide.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    
+    # Valider la vitesse
+    clamped_speed = clamp_speed(speed)
+    
+    # Valider le time remapping
+    new_time_remapping = TimeRemapping(
+        speed=clamped_speed,
+        reverse=clip.time_remapping.reverse,
+        freeze_mode=clip.time_remapping.freeze_mode,
+        freeze_source_time=clip.time_remapping.freeze_source_time,
+        freeze_duration=clip.time_remapping.freeze_duration,
+    )
+    
+    errors = validate_time_remapping(
+        speed=new_time_remapping.speed,
+        reverse=new_time_remapping.reverse,
+        freeze_mode=new_time_remapping.freeze_mode,
+        freeze_source_time=new_time_remapping.freeze_source_time,
+        freeze_duration=new_time_remapping.freeze_duration,
+        source_in=clip.source_in,
+        source_out=clip.source_out,
+        media_type=_find_asset(project, clip.asset_id).media_type,
+    )
+    if errors:
+        raise ValueError(f"Vitesse invalide: {'; '.join(errors)}")
+    
+    clip.time_remapping = new_time_remapping
+    return clip
+
+
+def set_clip_reverse(
+    project: Project, clip_id: str, reverse: bool
+) -> Clip:
+    """Modifie le mode reverse d'un clip.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+        reverse: Le nouvel état reverse.
+    
+    Returns:
+        Le clip modifié.
+    
+    Raises:
+        KeyError: Si le clip n'est pas trouvé.
+        ValueError: Si le reverse est invalide (ex: durée trop longue).
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    asset = _find_asset(project, clip.asset_id)
+    
+    # Valider le reverse
+    new_time_remapping = TimeRemapping(
+        speed=clip.time_remapping.speed,
+        reverse=reverse,
+        freeze_mode=clip.time_remapping.freeze_mode,
+        freeze_source_time=clip.time_remapping.freeze_source_time,
+        freeze_duration=clip.time_remapping.freeze_duration,
+    )
+    
+    errors = validate_time_remapping(
+        speed=new_time_remapping.speed,
+        reverse=new_time_remapping.reverse,
+        freeze_mode=new_time_remapping.freeze_mode,
+        freeze_source_time=new_time_remapping.freeze_source_time,
+        freeze_duration=new_time_remapping.freeze_duration,
+        source_in=clip.source_in,
+        source_out=clip.source_out,
+        media_type=asset.media_type,
+    )
+    if errors:
+        raise ValueError(f"Reverse invalide: {'; '.join(errors)}")
+    
+    clip.time_remapping = new_time_remapping
+    return clip
+
+
+def set_clip_freeze_frame(
+    project: Project, clip_id: str, freeze_source_time: float, freeze_duration: float
+) -> Clip:
+    """Active le mode arrêt sur image pour un clip.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+        freeze_source_time: L'instant source pour l'arrêt sur image.
+        freeze_duration: La durée de l'arrêt sur image sur la timeline.
+    
+    Returns:
+        Le clip modifié.
+    
+    Raises:
+        KeyError: Si le clip n'est pas trouvé.
+        ValueError: Si le freeze frame est invalide.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    asset = _find_asset(project, clip.asset_id)
+    
+    # Créer le time remapping pour le freeze frame
+    new_time_remapping = create_freeze_frame(
+        source_in=clip.source_in,
+        source_out=clip.source_out,
+        freeze_source_time=freeze_source_time,
+        freeze_duration=freeze_duration,
+    )
+    
+    # Valider
+    errors = validate_time_remapping(
+        speed=new_time_remapping.speed,
+        reverse=new_time_remapping.reverse,
+        freeze_mode=new_time_remapping.freeze_mode,
+        freeze_source_time=new_time_remapping.freeze_source_time,
+        freeze_duration=new_time_remapping.freeze_duration,
+        source_in=clip.source_in,
+        source_out=clip.source_out,
+        media_type=asset.media_type,
+    )
+    if errors:
+        raise ValueError(f"Arrêt sur image invalide: {'; '.join(errors)}")
+    
+    clip.time_remapping = new_time_remapping
+    return clip
+
+
+def remove_clip_freeze_frame(
+    project: Project, clip_id: str
+) -> Clip:
+    """Désactive le mode arrêt sur image pour un clip.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+    
+    Returns:
+        Le clip modifié.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    
+    # Réinitialiser le time remapping
+    clip.time_remapping = TimeRemapping.default()
+    return clip
+
+
+def set_clip_freeze_duration(
+    project: Project, clip_id: str, freeze_duration: float
+) -> Clip:
+    """Modifie la durée d'un arrêt sur image.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+        freeze_duration: La nouvelle durée (doit être > 0).
+    
+    Returns:
+        Le clip modifié.
+    
+    Raises:
+        KeyError: Si le clip n'est pas trouvé.
+        ValueError: Si la durée est invalide.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    asset = _find_asset(project, clip.asset_id)
+    
+    # Mettre à jour la durée
+    new_time_remapping = TimeRemapping(
+        speed=clip.time_remapping.speed,
+        reverse=clip.time_remapping.reverse,
+        freeze_mode=clip.time_remapping.freeze_mode,
+        freeze_source_time=clip.time_remapping.freeze_source_time,
+        freeze_duration=freeze_duration,
+    )
+    
+    # Valider
+    errors = validate_time_remapping(
+        speed=new_time_remapping.speed,
+        reverse=new_time_remapping.reverse,
+        freeze_mode=new_time_remapping.freeze_mode,
+        freeze_source_time=new_time_remapping.freeze_source_time,
+        freeze_duration=new_time_remapping.freeze_duration,
+        source_in=clip.source_in,
+        source_out=clip.source_out,
+        media_type=asset.media_type,
+    )
+    if errors:
+        raise ValueError(f"Durée d'arrêt sur image invalide: {'; '.join(errors)}")
+    
+    clip.time_remapping = new_time_remapping
+    return clip
+
+
+def reset_clip_time_remapping(
+    project: Project, clip_id: str
+) -> Clip:
+    """Réinitialise le remappage temporel d'un clip aux valeurs par défaut.
+    
+    Args:
+        project: Le projet à modifier.
+        clip_id: L'identifiant du clip à modifier.
+    
+    Returns:
+        Le clip modifié.
+    """
+    track, index = _find_track_for_clip(project, clip_id)
+    clip = track.clips[index]
+    
+    clip.time_remapping = TimeRemapping.default()
+    return clip

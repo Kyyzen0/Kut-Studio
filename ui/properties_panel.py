@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
+from core.time_remapping import FreezeFrameMode, TimeRemapping, MIN_SPEED, MAX_SPEED
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
@@ -110,6 +111,13 @@ class PropertiesPanel(QWidget):
     audio_pan_changed = Signal(float)
     audio_fade_changed = Signal(str, float)
     audio_fades_reset = Signal()
+    # Time remapping signals
+    speed_changed = Signal(str, float)
+    reverse_toggled = Signal(str, bool)
+    freeze_frame_created = Signal(str, float, float)
+    freeze_frame_removed = Signal(str)
+    freeze_duration_changed = Signal(str, float)
+    time_remapping_reset = Signal(str)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -298,6 +306,134 @@ class PropertiesPanel(QWidget):
         audio_form.addRow("Volume", volume_row)
         layout.addWidget(audio_group)
         self.volume_slider.valueChanged.connect(update_volume)
+
+        # ----- Vitesse et durée (tâche 18) -----------------------------
+        self.speed_group = QGroupBox("Vitesse et durée")
+        self.speed_group.setStyleSheet(self.group_style())
+        speed_form = QFormLayout(self.speed_group)
+        speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        speed_form.setSpacing(Spacing.xs)
+        speed_form.setLabelAlignment(Qt.AlignLeft)
+
+        # Vitesse numérique
+        self.speed_spinbox = QDoubleSpinBox()
+        self.speed_spinbox.setDecimals(2)
+        self.speed_spinbox.setRange(MIN_SPEED, MAX_SPEED)
+        self.speed_spinbox.setSingleStep(0.1)
+        self.speed_spinbox.setValue(1.0)
+        self.speed_spinbox.setMinimumWidth(70)
+        self.speed_spinbox.setEnabled(False)
+        self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
+        speed_form.addRow("Vitesse", self.speed_spinbox)
+
+        # Boutons de preset de vitesse
+        speed_presets = QWidget()
+        speed_presets_layout = QHBoxLayout(speed_presets)
+        speed_presets_layout.setContentsMargins(0, 0, 0, 0)
+        speed_presets_layout.setSpacing(Spacing.xs)
+
+        self.speed_0_25x_button = self._make_action_button(
+            None, "0,25x", "Vitesse 0,25x"
+        )
+        self.speed_0_5x_button = self._make_action_button(
+            None, "0,5x", "Vitesse 0,5x"
+        )
+        self.speed_1x_button = self._make_action_button(
+            None, "1x", "Vitesse normale"
+        )
+        self.speed_2x_button = self._make_action_button(
+            None, "2x", "Vitesse 2x"
+        )
+        self.speed_4x_button = self._make_action_button(
+            None, "4x", "Vitesse 4x"
+        )
+
+        # Connecter les boutons de preset
+        self.speed_0_25x_button.clicked.connect(lambda: self.speed_spinbox.setValue(0.25))
+        self.speed_0_5x_button.clicked.connect(lambda: self.speed_spinbox.setValue(0.5))
+        self.speed_1x_button.clicked.connect(lambda: self.speed_spinbox.setValue(1.0))
+        self.speed_2x_button.clicked.connect(lambda: self.speed_spinbox.setValue(2.0))
+        self.speed_4x_button.clicked.connect(lambda: self.speed_spinbox.setValue(4.0))
+        
+        for btn in [
+            self.speed_0_25x_button,
+            self.speed_0_5x_button,
+            self.speed_1x_button,
+            self.speed_2x_button,
+            self.speed_4x_button,
+        ]:
+            btn.setMinimumWidth(40)
+            btn.setEnabled(False)
+            speed_presets_layout.addWidget(btn)
+
+        speed_form.addRow("Presets", speed_presets)
+
+        # Bouton Reverse
+        self.reverse_button = IconButton(
+            icon=None, tooltip="Inverser la lecture", size=Sizes.icon_button
+        )
+        self.reverse_button.setText("  Inverser")
+        self.reverse_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.reverse_button.setCheckable(True)
+        self.reverse_button.setMinimumHeight(Sizes.button_md)
+        self.reverse_button.setEnabled(False)
+        self.reverse_button.toggled.connect(self._on_reverse_toggled)
+        speed_form.addRow("Reverse", self.reverse_button)
+
+        # Freeze frame
+        self.freeze_frame_button = self._make_action_button(
+            None, "Créer arrêt sur image", "Créer un arrêt sur image"
+        )
+        self.freeze_frame_button.setEnabled(False)
+        self.freeze_frame_button.clicked.connect(self._on_freeze_frame_clicked)
+        speed_form.addRow("Arrêt sur image", self.freeze_frame_button)
+
+        # Durée freeze frame (visible uniquement en mode freeze)
+        self.freeze_duration_spinbox = QDoubleSpinBox()
+        self.freeze_duration_spinbox.setDecimals(2)
+        self.freeze_duration_spinbox.setRange(0.01, 3600.0)  # 0.01s à 1h
+        self.freeze_duration_spinbox.setSingleStep(0.1)
+        self.freeze_duration_spinbox.setValue(1.0)
+        self.freeze_duration_spinbox.setMinimumWidth(70)
+        self.freeze_duration_spinbox.setEnabled(False)
+        self.freeze_duration_spinbox.valueChanged.connect(self._on_freeze_duration_changed)
+        self.freeze_duration_label = QLabel("1,00 s")
+        self.freeze_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        self.freeze_duration_label.setVisible(False)
+
+        freeze_row = QWidget()
+        freeze_row_layout = QHBoxLayout(freeze_row)
+        freeze_row_layout.setContentsMargins(0, 0, 0, 0)
+        freeze_row_layout.setSpacing(Spacing.sm)
+        freeze_row_layout.addWidget(self.freeze_duration_spinbox)
+        freeze_row_layout.addWidget(self.freeze_duration_label)
+        freeze_row.setVisible(False)
+        speed_form.addRow("Durée", freeze_row)
+        self.freeze_duration_row = freeze_row
+
+        # Bouton de réinitialisation
+        self.reset_speed_button = self._make_action_button(
+            None, "Réinitialiser", "Réinitialiser la vitesse et le remappage temporel"
+        )
+        self.reset_speed_button.setEnabled(False)
+        self.reset_speed_button.clicked.connect(self._on_time_remapping_reset)
+        speed_form.addRow("", self.reset_speed_button)
+
+        # Affichage des durées source et timeline
+        self.source_duration_label = QLabel("Source: --")
+        self.source_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        self.timeline_duration_label = QLabel("Timeline: --")
+        self.timeline_duration_label.setStyleSheet(label_style(11, "muted", 500))
+        duration_info = QWidget()
+        duration_layout = QHBoxLayout(duration_info)
+        duration_layout.setContentsMargins(0, 0, 0, 0)
+        duration_layout.setSpacing(Spacing.md)
+        duration_layout.addWidget(self.source_duration_label)
+        duration_layout.addWidget(self.timeline_duration_label)
+        duration_layout.addStretch()
+        speed_form.addRow("", duration_info)
+
+        layout.addWidget(self.speed_group)
 
         # ----- Mouvement (tâche 13) ------------------------------------
         self.movement_group = QGroupBox("Mouvement")
@@ -906,6 +1042,8 @@ class PropertiesPanel(QWidget):
                     diamond.setEnabled(False)
                     self._set_diamond_checked(name, False)
                 self.reset_movement_button.setEnabled(False)
+                # Time remapping
+                self.speed_group.setEnabled(False)
                 return
 
             self.selected_clip = view
@@ -955,6 +1093,63 @@ class PropertiesPanel(QWidget):
             if is_video_clip and isinstance(getattr(view, "transform", None), ClipTransform):
                 pending_transform = view.transform
                 pending_keyframes = list(getattr(view, "keyframes", ()) or ())
+
+            # Time remapping
+            time_remapping = getattr(view, "time_remapping", None) or TimeRemapping()
+            is_frozen = time_remapping.freeze_mode == FreezeFrameMode.FREEZE
+            is_audio_clip = self.selected_clip_track_type == "audio"
+            locked = getattr(view, "locked", False)
+            enabled_tr = not locked
+            
+            # Vitesse
+            self.speed_spinbox.blockSignals(True)
+            self.speed_spinbox.setValue(time_remapping.speed)
+            self.speed_spinbox.blockSignals(False)
+            self.speed_spinbox.setEnabled(enabled_tr and not is_frozen)
+            
+            # Boutons preset
+            for btn in [
+                self.speed_0_25x_button,
+                self.speed_0_5x_button,
+                self.speed_1x_button,
+                self.speed_2x_button,
+                self.speed_4x_button,
+            ]:
+                btn.setEnabled(enabled_tr and not is_frozen)
+            
+            # Reverse
+            self.reverse_button.blockSignals(True)
+            self.reverse_button.setChecked(time_remapping.reverse)
+            self.reverse_button.blockSignals(False)
+            self.reverse_button.setEnabled(enabled_tr and not is_frozen)
+            
+            # Freeze frame
+            self.freeze_frame_button.setEnabled(enabled_tr and not is_audio_clip)
+            self.freeze_frame_button.setChecked(is_frozen)
+            
+            # Durée freeze frame
+            self.freeze_duration_spinbox.blockSignals(True)
+            self.freeze_duration_spinbox.setValue(time_remapping.freeze_duration)
+            self.freeze_duration_spinbox.blockSignals(False)
+            self.freeze_duration_row.setVisible(is_frozen)
+            self.freeze_duration_spinbox.setEnabled(enabled_tr and is_frozen)
+            self.freeze_duration_label.setText(f"{time_remapping.freeze_duration:.2f} s")
+            self.freeze_duration_label.setVisible(is_frozen)
+            
+            # Bouton reset
+            self.reset_speed_button.setEnabled(enabled_tr)
+            
+            # Affichage des durées
+            source_duration = getattr(view, "source_duration", 0.0)
+            timeline_duration = duration
+            self.source_duration_label.setText(f"Source: {source_duration:.2f}s")
+            self.timeline_duration_label.setText(f"Timeline: {timeline_duration:.2f}s")
+            
+            # Désactiver les contrôles incompatibles
+            if is_audio_clip and is_frozen:
+                self._on_time_remapping_reset()
+                
+            self.speed_group.setEnabled(enabled_tr)
         finally:
             self._pop_signal_block()
         if pending_transform is not None and pending_keyframes is not None:
@@ -994,3 +1189,35 @@ class PropertiesPanel(QWidget):
         if self.selected_clip is None:
             return
         self.enabled_changed.emit(self.selected_clip.id, bool(checked))
+
+    def _on_speed_changed(self, value: float) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        self.speed_changed.emit(self.selected_clip.id, float(value))
+
+    def _on_reverse_toggled(self, checked: bool) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        self.reverse_toggled.emit(self.selected_clip.id, bool(checked))
+
+    def _on_freeze_frame_clicked(self) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        # Créer un freeze frame au milieu du clip par défaut
+        source_mid = self.selected_clip.source_in + (
+            self.selected_clip.source_out - self.selected_clip.source_in
+        ) / 2.0
+        self.freeze_frame_created.emit(
+            self.selected_clip.id, source_mid, self.freeze_duration_spinbox.value()
+        )
+
+    def _on_freeze_duration_changed(self, value: float) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        self.freeze_duration_changed.emit(self.selected_clip.id, float(value))
+
+    def _on_time_remapping_reset(self) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        self.time_remapping_reset.emit(self.selected_clip.id)
+
