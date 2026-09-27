@@ -1,0 +1,955 @@
+"""Gestionnaire de l'espace de travail de Kut-Studio.
+
+Le :class:`WorkspaceManager` est la **seule** autorité sur la disposition
+de l'interface. Il possède :
+
+- un registre ``PanelId -> (widget, zone, hôte, fenêtre)`` ;
+- l'état sérialisable (:class:`~core.workspace_state.WorkspaceState`) ;
+- la construction des zones dock (splitters imbriqués) ;
+- les opérations : visible / maximisé / détaché / rattaché / réinitialisé.
+
+Points de conception importants :
+
+**Une seule instance par panneau.** Détacher un panneau ne crée rien de
+nouveau : le *widget existant* est reparenté dans une
+:class:`~ui.workspace.panel_host.PanelWindow`. Les signaux, le modèle de
+projet et l'état d'édition restent donc partagés — il ne peut pas y avoir
+deux timelines divergentes.
+
+**Un seul état.** Les composants ne stockent pas leurs propres
+coordonnées ; le manager publie un :class:`WorkspaceState` immuable.
+Les mutations passent par des méthodes qui renvoient un nouvel état.
+
+**Pas de recalcul global pendant un drag.** Les zones utilisent
+nativement :class:`QSplitter`, qui ne recompose que ce qui est
+nécessaire. Le manager n'écoute pas les déplacements du séparateur pour
+reconstruire quoi que ce soit ; il ne lit les tailles qu'au moment de
+sauvegarder l'état.
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QMenu,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
+
+from core.workspace_state import (
+    DEFAULT_SIZE,
+    MIN_SIZE,
+    DockArea,
+    FloatingGeometry,
+    PanelId,
+    WorkspaceState,
+    delete_named_workspace,
+    list_named_workspaces,
+    load_named_workspace,
+    load_workspace_state,
+    save_named_workspace,
+    save_workspace_state,
+)
+from ui.icons import IconName
+from ui.workspace.panel_host import PanelHost, PanelWindow
+
+
+#: Libellés lisibles des zones de dock, pour les menus.
+_AREA_LABELS: dict[DockArea, str] = {
+    DockArea.LEFT: "Zone gauche",
+    DockArea.CENTER: "Zone centrale",
+    DockArea.RIGHT: "Zone droite",
+    DockArea.BOTTOM: "Zone basse",
+}
+
+
+def _close_floating_window(window: PanelWindow, content: QWidget) -> None:
+    """Ferme et détruit une fenêtre détachée en gardant son contenu.
+
+    L'ordre est important : le panneau est d'abord reparenté dans son
+    hôte, sinon la destruction de la fenêtre l'emporterait. La
+    destruction est immédiate (et non ``deleteLater``) pour que les
+    ressources ne subsistent pas jusqu'au prochain tour de boucle.
+    """
+    window.blockSignals(True)
+    content.setParent(window.parentWidget() if window.parentWidget() else None)
+    window.close()
+    window.setParent(None)
+    window.deleteLater()
+    window.blockSignals(False)
+
+
+def separator_action(parent: QWidget | None = None) -> QAction:
+    """Séparateur de menu partagé par tous les menus de panneaux."""
+    action = QAction(parent)
+    action.setSeparator(True)
+    return action
+
+
+class _Zone(QWidget):
+    """Zone de dock : un conteneur simple, sans logique propre."""
+
+    def __init__(self, area: DockArea, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.area = area
+        self.setObjectName(f"dockZone_{area.value}")
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+    def take_all(self) -> list[QWidget]:
+        """Retire et retourne tous les widgets enfants du layout."""
+        taken: list[QWidget] = []
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                taken.append(widget)
+        return taken
+
+    def index_of(self, widget: QWidget) -> int | None:
+        """Index d'un widget dans la zone, ou ``None`` s'il n'y est pas."""
+        for index in range(self._layout.count()):
+            if self._layout.itemAt(index).widget() is widget:
+                return index
+        return None
+
+    def remove_at(self, index: int) -> QWidget | None:
+        """Retire le widget d'``index`` de la zone."""
+        item = self._layout.takeAt(index)
+        if item is None:
+            return None
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+        return widget
+
+    def add(self, widget: QWidget, stretch: int = 0) -> None:
+        self._layout.addWidget(widget, stretch)
+
+
+class WorkspaceManager(QObject):
+    """Orchestre la disposition, la visibilité et le détachage des panneaux.
+
+    Args:
+        window: fenêtre principale, utilisée comme parent des fenêtres
+            détachées et pour l'intégration des menus.
+        settings_dir: répertoire de persistance ; ``None`` = répertoire
+            utilisateur standard.
+    """
+
+    #: Panneaux de l'application, dans l'ordre de construction.
+    DEFAULT_PANELS: tuple[PanelId, ...] = (
+        PanelId.MEDIA,
+        PanelId.VIEWER,
+        PanelId.INSPECTOR,
+        PanelId.TIMELINE,
+    )
+
+    def __init__(
+        self,
+        window: QMainWindow,
+        settings_dir=None,
+    ) -> None:
+        super().__init__(window)
+        self._window = window
+        self._settings_dir = settings_dir
+        self._panels: dict[PanelId, QWidget] = {}
+        self._hosts: dict[PanelId, PanelHost] = {}
+        self._windows: dict[PanelId, PanelWindow] = {}
+        self._zones: dict[DockArea, _Zone] = {}
+        self._state: WorkspaceState = WorkspaceState.default()
+        # Disposition sauvegardée avant maximisation, pour pouvoir
+        # restaurer exactement l'espace de travail précédent.
+        self._pre_maximize: WorkspaceState | None = None
+        self._suspend_capture = False
+        self._root: QWidget | None = None
+        self._splitters: list[QSplitter] = []
+        # Actions de panneaux créées une seule fois (voir
+        # ``build_actions``) : évite de peupler la fenêtre principale
+        # d'actions orphelines à chaque changement d'état.
+        self._action_cache: dict[PanelId, dict[str, QAction]] = {}
+        self._separator = separator_action(window)
+
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def register(self, panel: PanelId, widget: QWidget) -> None:
+        """Enregistre un composant de panneau (sans le docker encore)."""
+        if panel in self._panels:
+            raise ValueError(f"Panneau déjà enregistré : {panel.value}")
+        self._panels[panel] = widget
+
+    def build(
+        self,
+        state: WorkspaceState | None = None,
+        *,
+        load_persisted: bool = True,
+    ) -> QWidget:
+        """Construit la disposition et retourne le widget racine.
+
+        La disposition initiale est lue depuis les préférences si
+        ``load_persisted`` est vrai, sinon depuis ``state`` ou les valeurs
+        par défaut.
+        """
+        if state is not None:
+            self._state = state.normalized()
+        elif load_persisted:
+            self._state = load_workspace_state(self._settings_dir)
+        else:
+            self._state = WorkspaceState.default()
+
+        for area in DockArea:
+            self._zones[area] = _Zone(area)
+
+        for panel, widget in self._panels.items():
+            host = PanelHost(panel, widget, manager=self)
+            # La barre d'options ne doit jamais couvrir une commande
+            # existante : on la décale sous la barre d'outils des
+            # panneaux qui en ont une.
+            toolbar = int(getattr(widget, "header_height", 0) or 0)
+            host.set_options_offset_y(toolbar)
+            self._hosts[panel] = host
+
+        self._root = self._compose()
+        self._apply_state(self._state)
+        return self._root
+
+    def _compose(self) -> QWidget:
+        """Reconstitue l'arbre de splitters à partir de l'état courant.
+
+        Refait à chaque application d'état ; le nombre de manipulations
+        est constant (4 panneaux), donc le coût est négligeable et
+        happens seulement sur une action explicite de l'utilisateur.
+        """
+        for zone in self._zones.values():
+            zone.take_all()
+        for window in self._windows.values():
+            window.hide()
+
+        # Colonne centrale : media | viewer | inspector
+        center = self._zones[DockArea.LEFT]
+        viewer = self._zones[DockArea.CENTER]
+        right = self._zones[DockArea.RIGHT]
+        top = QSplitter(Qt.Horizontal)
+        top.setObjectName("workspace_top")
+        top.addWidget(center)
+        top.addWidget(viewer)
+        top.addWidget(right)
+        top.setChildrenCollapsible(False)
+        top.setHandleWidth(6)
+        self._apply_splitter_minimums(top)
+        self._top_splitter = top
+
+        bottom = self._zones[DockArea.BOTTOM]
+        root = QSplitter(Qt.Vertical)
+        root.setObjectName("workspace_root")
+        root.addWidget(top)
+        root.addWidget(bottom)
+        root.setChildrenCollapsible(False)
+        root.setHandleWidth(6)
+        root.setStretchFactor(0, 1)
+        root.setStretchFactor(1, 1)
+        self._root_splitter = root
+        self._splitters = [top, root]
+
+        # Les widgets flottants ne doivent pas rester dans les zones.
+        for panel, host in self._hosts.items():
+            if self._state.is_floating(panel):
+                host.setParent(None)
+            else:
+                host.setParent(None)
+            self._place_host(panel, self._state.area_of(panel))
+
+        return root
+
+    def _place_host(self, panel: PanelId, area: DockArea) -> None:
+        """Insère l'hôte d'un panneau dans la zone demandée.
+
+        Retire d'abord l'hôte de toute autre zone : sans cela un
+        déplacement de zone laisserait le panneau dans les deux.
+        """
+        host = self._hosts[panel]
+        for other, zone in self._zones.items():
+            index = zone.index_of(host)
+            if index is not None and other is not area:
+                zone.remove_at(index)
+        zone = self._zones[area]
+        zone.add(host, stretch=1)
+        host.show()
+        self._apply_area_minimum(area)
+
+    def _apply_splitter_minimums(self, splitter: QSplitter) -> None:
+        """Applique les tailles minimales par zone (anti-effondrement)."""
+        for index, area in enumerate(
+            (DockArea.LEFT, DockArea.CENTER, DockArea.RIGHT)
+        ):
+            zone = self._zones[area]
+            width = MIN_SIZE.get(self._primary_panel(area), 200)
+            zone.setMinimumWidth(width)
+            if splitter.count() > index:
+                splitter.setSizes(splitter.sizes())
+
+    def _apply_area_minimum(self, area: DockArea) -> None:
+        zone = self._zones.get(area)
+        if zone is None:
+            return
+        panels = [p for p in self._panels if self._state.area_of(p) is area]
+        if not panels:
+            zone.setMinimumWidth(0)
+            zone.setMinimumHeight(0)
+            return
+        sizes = [MIN_SIZE.get(p, 200) for p in panels]
+        if area is DockArea.BOTTOM:
+            zone.setMinimumHeight(max(sizes))
+            zone.setMinimumWidth(0)
+        else:
+            zone.setMinimumWidth(max(sizes))
+            zone.setMinimumHeight(0)
+
+    def _primary_panel(self, area: DockArea) -> PanelId:
+        """Panneau de référence d'une zone (pour les minima)."""
+        for panel in self._panels:
+            if self._state.area_of(panel) is area:
+                return panel
+        return PanelId.VIEWER
+
+    # ------------------------------------------------------------------
+    # Lecture de l'état
+    # ------------------------------------------------------------------
+
+    @property
+    def state(self) -> WorkspaceState:
+        """Instantané courant (immuable)."""
+        return self._state
+
+    def host_of(self, panel: PanelId) -> PanelHost | None:
+        return self._hosts.get(panel)
+
+    def is_floating(self, panel: PanelId) -> bool:
+        return panel in self._windows and self._windows[panel].isVisible()
+
+    def is_shown(self, panel: PanelId) -> bool:
+        """Le panneau est-il réellement à l'écran ?
+
+        Diffère de :meth:`is_visible` : un panneau peut être *ouvert*
+        tout en étant temporairement masqué, parce qu'un autre panneau
+        est maximisé.
+        """
+        if not self.is_visible(panel):
+            return False
+        maximized = self._state.maximized
+        if maximized is not None:
+            return maximized is panel
+        if self._state.is_floating(panel):
+            window = self._windows.get(panel)
+            return window is not None and window.isVisible()
+        host = self._hosts.get(panel)
+        return host is not None and not host.isHidden()
+
+    def is_maximized(self, panel: PanelId) -> bool:
+        return self._state.maximized is panel
+
+    def is_visible(self, panel: PanelId) -> bool:
+        """Le panneau est-il ouvert ?
+
+        L'état fait foi : l'état des widgets ne peut pas être utilisé
+        comme référence car un panneau d'une fenêtre pas encore
+        affichée n'est pas « visible » alors qu'il est bien ouvert.
+        """
+        entry = self._state.get(panel)
+        if not entry.visible:
+            return False
+        if entry.floating:
+            window = self._windows.get(panel)
+            return window is not None and window.isVisible()
+        return True
+
+    # ------------------------------------------------------------------
+    # Opérations
+    # ------------------------------------------------------------------
+
+    def toggle_panel(self, panel: PanelId) -> None:
+        """Ouvre ou ferme un panneau."""
+        if self._state.is_visible(panel) and self.is_visible(panel):
+            self.set_panel_visible(panel, False)
+        else:
+            self.set_panel_visible(panel, True)
+
+    def set_panel_visible(self, panel: PanelId, visible: bool) -> None:
+        """Affiche ou masque un panneau."""
+        if panel not in self._panels:
+            return
+        area = self._state.area_of(panel)
+        if visible and self._state.is_floating(panel):
+            window = self._windows.get(panel)
+            if window is not None:
+                window.show()
+                window.raise_()
+        else:
+            host = self._hosts.get(panel)
+            if host is not None:
+                host.setVisible(visible)
+        self._commit(self._state.with_panel(panel, visible=visible))
+        # La zone du panneau doit être recalculée : une zone devenue
+        # vide se masque, une zone réactivée réapparaît. L'ordre
+        # compte — les tailles ne peuvent être redistribuées qu'une
+        # fois le minimum de la zone libéré, sinon le séparateur
+        # refuse de la réduire et laisse un vide.
+        self._normalize_area(area)
+        self._apply_sizes()
+        self._refresh_dependents()
+
+    def float_panel(self, panel: PanelId) -> None:
+        """Détache un panneau dans une fenêtre séparée.
+
+        Le composant existant est reparenté : aucune logique n'est
+        dupliquée, le projet reste la source de vérité unique.
+        """
+        if panel not in self._panels:
+            return
+        if panel in self._windows:
+            window = self._windows[panel]
+            window.show()
+            window.raise_()
+            return
+
+        host = self._hosts[panel]
+        content = host.content
+        window = PanelWindow(panel, content, manager=self, parent=self._window)
+        self._windows[panel] = window
+
+        # Le panneau quitte sa zone mais garde sa zone de retour.
+        host.setParent(None)
+        host.hide()
+        self._normalize_area(self._state.area_of(panel))
+
+        geom = self._state.floating_geometry(panel)
+        window.setGeometry(geom.x, geom.y, geom.width, geom.height)
+        window.show()
+        window.refresh_actions()
+
+        self._commit(self._state.with_panel(panel, floating=True, visible=True))
+        self._normalize_area(self._state.area_of(panel))
+        self._refresh_dependents()
+
+    def dock_panel(self, panel: PanelId) -> None:
+        """Rattache un panneau détaché à sa zone d'origine.
+
+        Le composant est d'abord reparenté **dans son hôte** : sans
+        cela, la destruction de la fenêtre détachée emporterait le
+        panneau avec elle.
+        """
+        window = self._windows.pop(panel, None)
+        host = self._hosts[panel]
+        if window is not None:
+            _close_floating_window(window, host.content)
+
+        host.show()
+        self._place_host(panel, self._state.area_of(panel))
+        self._commit(self._state.with_panel(panel, floating=False))
+        self._normalize_area(self._state.area_of(panel))
+        self._refresh_dependents()
+
+    def move_panel(self, panel: PanelId, area: DockArea) -> None:
+        """Déplace un panneau docké vers une autre zone.
+
+        Fondation du docking : l'identité du panneau ne change jamais,
+        seule sa zone d'accueil est mise à jour. Un panneau détaché est
+        d'abord rattaché, puis déplacé.
+        """
+        if panel not in self._panels:
+            return
+        if self._state.is_floating(panel):
+            self.dock_panel(panel)
+        origin = self._state.area_of(panel)
+        if area is origin:
+            return
+        self._commit(self._state.with_panel(panel, area=area, floating=False))
+        self._place_host(panel, area)
+        self._normalize_area(origin)
+        self._normalize_area(area)
+        self._apply_sizes()
+        self.refresh_panel_actions()
+        self._refresh_dependents()
+
+    def maximize_panel(self, panel: PanelId) -> None:
+        """Maximise temporairement un panneau dans l'espace de travail."""
+        if self._state.maximized is panel:
+            self.restore_layout()
+            return
+        if panel not in self._panels or not self.is_visible(panel):
+            return
+        if self._pre_maximize is None:
+            self._pre_maximize = self._state
+        self._state = self._state.with_maximized(panel)
+        self._apply_maximized(panel)
+        self._refresh_dependents()
+
+    def restore_layout(self) -> None:
+        """Restaure la disposition précédant une maximisation."""
+        if self._state.maximized is None:
+            return
+        self._state = self._state.with_maximized(None)
+        if self._pre_maximize is not None:
+            self._state = self._pre_maximize
+            self._pre_maximize = None
+        self._apply_state(self._state)
+        self._refresh_dependents()
+
+    def reset_panel_size(self, panel: PanelId) -> None:
+        """Réinitialise la taille d'un panneau à sa valeur préférée."""
+        if panel not in self._panels:
+            return
+        self._commit(self._state.with_panel(panel, size=DEFAULT_SIZE[panel]))
+        if self._state.is_floating(panel):
+            window = self._windows.get(panel)
+            if window is not None:
+                geom = self._state.floating_geometry(panel)
+                window.resize(geom.width, geom.height)
+        else:
+            self._apply_sizes()
+        self._refresh_dependents()
+
+    def reset_layout(self) -> None:
+        """Rétablit la disposition par défaut."""
+        self._pre_maximize = None
+        for panel in list(self._windows):
+            self.dock_panel(panel)
+        self._commit(WorkspaceState.default())
+        self._apply_state(self._state)
+        self._refresh_dependents()
+
+    # ------------------------------------------------------------------
+    # Équilibrage
+    # ------------------------------------------------------------------
+
+    def balance_vertical_split(self) -> None:
+        """Répartit la hauteur entre la zone haute et la timeline.
+
+        La timeline reçoit la hauteur nécessaire pour montrer toutes ses
+        pistes, sans jamais descendre sous 40 % de l'espace disponible
+        (le viewer reste le panneau majoritaire). Appelée à l'ouverture
+        et à chaque changement de pistes — pas pendant un drag.
+        """
+        root = getattr(self, "_root_splitter", None)
+        if root is None:
+            return
+        total = root.height()
+        if total <= 0:
+            QTimer.singleShot(0, self.balance_vertical_split)
+            return
+        timeline = self._panels.get(PanelId.TIMELINE)
+        if timeline is None:
+            return
+        track_count = len(
+            self._project_tracks()
+        ) or 1
+        pitch = timeline.track_height + timeline.track_gap
+        needed = (
+            timeline.header_height
+            + timeline.ruler_height
+            + 8
+            + pitch * max(track_count, 1)
+            + 34  # marges + barres de défilement
+        )
+        bottom = max(needed, int(total * 0.40))
+        bottom = min(bottom, int(total * 0.62))
+        bottom = max(bottom, timeline.minimumHeight())
+        top = max(total - bottom, 160)
+        root.setSizes([top, bottom])
+
+    def _project_tracks(self) -> list:
+        """Pistes du projet courant, si le panneau timeline le porte."""
+        timeline = self._panels.get(PanelId.TIMELINE)
+        project = getattr(timeline, "project", None)
+        return list(getattr(project, "tracks", []) or [])
+
+    # ------------------------------------------------------------------
+    # Actions de panneau
+    # ------------------------------------------------------------------
+
+    def build_actions(self, panel: PanelId) -> list[QAction]:
+        """Menu contextuel d'un panneau.
+
+        Les actions sont **créées une seule fois** puis rafraîchies.
+        Les recréer à chaque appel (au survol, à chaque changement
+        d'état) empilait des dizaines d'``QAction`` orphelins dans la
+        fenêtre principale.
+
+        L'API reste en ``QAction`` afin que la même liste alimente la
+        barre d'options, le menu « Fenêtre » et d'éventuels
+        raccourcis, sans duplication de logique.
+        """
+        actions = self._action_cache.get(panel)
+        if actions is None:
+            actions = self._create_actions(panel)
+            self._action_cache[panel] = actions
+        else:
+            self._refresh_actions(panel, actions)
+        maximize_restore = (
+            actions["restore"]
+            if self._state.maximized is panel
+            else actions["maximize"]
+        )
+        return [
+            actions["place"],
+            actions["move"],
+            maximize_restore,
+            actions["reset"],
+            self._separator,
+            actions["close"],
+        ]
+
+    def _create_actions(self, panel: PanelId) -> dict[str, QAction]:
+        parent = self._window
+        icons = {
+            "float": self._icon(IconName.PANEL_FLOAT),
+            "dock": self._icon(IconName.PANEL_DOCK),
+            "maximize": self._icon(IconName.PANEL_MAXIMIZE),
+            "restore": self._icon(IconName.PANEL_RESTORE),
+            "reset": self._icon(IconName.PANEL_RESET),
+            "close": self._icon(IconName.PANEL_CLOSE),
+        }
+        place = QAction("Détacher le panneau", parent)
+        place.setIcon(icons["float"])
+        place.triggered.connect(lambda _c=False, p=panel: self.float_panel(p))
+
+        maximize = QAction("Maximiser le panneau", parent)
+        maximize.setIcon(icons["maximize"])
+        maximize.triggered.connect(
+            lambda _c=False, p=panel: self.maximize_panel(p)
+        )
+
+        restore = QAction("Restaurer la disposition", parent)
+        restore.setIcon(icons["restore"])
+        restore.triggered.connect(self.restore_layout)
+
+        reset = QAction("Réinitialiser la taille", parent)
+        reset.setIcon(icons["reset"])
+        reset.triggered.connect(lambda _c=False, p=panel: self.reset_panel_size(p))
+
+        close = QAction("Fermer le panneau", parent)
+        close.setIcon(icons["close"])
+        close.triggered.connect(
+            lambda _c=False, p=panel: self.set_panel_visible(p, False)
+        )
+
+        # Déplacement vers une autre zone : effectif dès aujourd'hui, il
+        # pose les fondations du docking complet.
+        move = QMenu(f"Déplacer vers…", parent)
+        for area in DockArea:
+            entry = QAction(_AREA_LABELS[area], move)
+            entry.triggered.connect(
+                lambda _c=False, a=area, p=panel: self.move_panel(p, a)
+            )
+            move.addAction(entry)
+
+        return {
+            "place": place,
+            "maximize": maximize,
+            "restore": restore,
+            "reset": reset,
+            "close": close,
+            "move": move,
+        }
+
+    def _refresh_actions(self, panel: PanelId, actions: dict) -> None:
+        """Met à jour l'état des actions d'un panneau (sans les recréer)."""
+        floating = self.is_floating(panel)
+        actions["place"].setText("Rattacher" if floating else "Détacher le panneau")
+        actions["place"].setIcon(
+            self._icon(IconName.PANEL_DOCK if floating else IconName.PANEL_FLOAT)
+        )
+        maximized = self._state.maximized is panel
+        actions["maximize"].setEnabled(self.is_visible(panel) or floating)
+        actions["restore"].setEnabled(True)
+        actions["reset"].setEnabled(self.is_visible(panel) or floating)
+        actions["close"].setEnabled(self.is_visible(panel))
+
+    def _icon(self, name: IconName):
+        from ui.icons import make_icon
+        from ui.design_system import Iconography
+
+        return make_icon(name, size=Iconography.md)
+
+    # ------------------------------------------------------------------
+    # Application de l'état
+    # ------------------------------------------------------------------
+
+    def _commit(self, state: WorkspaceState) -> None:
+        """Adopte un nouvel état et rafraîchit l'affichage."""
+        self._state = state.normalized()
+        self._apply_sizes()
+        self.refresh_panel_actions()
+
+    def _apply_state(self, state: WorkspaceState) -> None:
+        """Applique intégralement un état (restauration complète)."""
+        self._state = state.normalized()
+        maximized = self._state.maximized
+        for panel, host in self._hosts.items():
+            entry = self._state.get(panel)
+            if entry.floating:
+                host.hide()
+                if panel not in self._windows:
+                    window = PanelWindow(
+                        panel, host.content, manager=self, parent=self._window
+                    )
+                    self._windows[panel] = window
+                window = self._windows[panel]
+                geom = self._state.floating_geometry(panel)
+                window.setGeometry(geom.x, geom.y, geom.width, geom.height)
+                window.setVisible(entry.visible)
+                window.refresh_actions()
+            else:
+                existing = self._windows.pop(panel, None)
+                if existing is not None:
+                    # Idem : on récupère le contenu avant de détruire
+                    # la fenêtre, sinon le panneau part avec elle.
+                    _close_floating_window(existing, host.content)
+                self._place_host(panel, self._state.area_of(panel))
+                host.setVisible(entry.visible)
+        for area in DockArea:
+            self._normalize_area(area)
+        if maximized is not None:
+            self._apply_maximized(maximized)
+        else:
+            self._apply_sizes()
+        self.refresh_panel_actions()
+
+    def _normalize_area(self, area: DockArea) -> None:
+        """Aligne le contenu d'une zone sur l'état courant.
+
+        Fonction idempotente et réparatrice : elle retire les hôtes qui
+        n'ont plus leur place dans la zone et y réinsère ceux qui
+        manquent. C'est le seul endroit qui manipule le contenu des
+        zones, ce qui évite toute divergence entre l'état et l'affichage.
+        """
+        zone = self._zones[area]
+        expected = self._state.visible_panels(area)
+        expected_set = set(expected)
+
+        present = [
+            item.widget()
+            for index in range(zone._layout.count())
+            for item in (zone._layout.itemAt(index),)
+            if item.widget() is not None
+        ]
+        # Retire les hôtes qui ne doivent plus être ici.
+        for widget in present:
+            panel = getattr(widget, "panel", None)
+            if panel is None or panel not in expected_set:
+                zone._layout.removeWidget(widget)
+                widget.setParent(None)
+        # Réinsère les hôtes attendus manquants, dans l'ordre de l'état.
+        for panel in expected:
+            host = self._hosts.get(panel)
+            if host is None or host in present:
+                continue
+            host.setParent(None)
+            zone.add(host, stretch=1)
+            host.show()
+        for widget in present:
+            panel = getattr(widget, "panel", None)
+            if panel in expected_set:
+                widget.show()
+
+        self._apply_area_minimum(area)
+        zone.setVisible(bool(expected))
+        if not expected:
+            zone.setMinimumWidth(0)
+            zone.setMinimumHeight(0)
+
+    def _apply_maximized(self, panel: PanelId) -> None:
+        """Affiche un seul panneau dans l'espace de travail."""
+        for other, host in self._hosts.items():
+            if other is panel:
+                continue
+            if self._state.is_floating(other):
+                window = self._windows.get(other)
+                if window is not None:
+                    window.hide()
+            else:
+                host.hide()
+        if self._state.is_floating(panel):
+            window = self._windows.get(panel)
+            if window is not None:
+                window.show()
+                window.raise_()
+        else:
+            host = self._hosts[panel]
+            host.setParent(None)
+            # On place le panneau maximisé dans la zone racine (centre),
+            # sans reconstruire la disposition entière.
+            zone = self._zones[DockArea.CENTER]
+            zone.take_all()
+            zone.add(host, stretch=1)
+            host.show()
+            for other_area in DockArea:
+                if other_area is not DockArea.CENTER:
+                    self._zones[other_area].setVisible(False)
+            self._zones[DockArea.BOTTOM].setVisible(False)
+            root = self._root_splitter
+            root.setSizes([root.height(), 0])
+        self._refresh_dependents()
+
+    def _apply_sizes(self) -> None:
+        """Applique les tailles préférées aux zones."""
+        if self._state.maximized is not None:
+            return
+        top = getattr(self, "_top_splitter", None)
+        if top is None:
+            return
+        left = self._zone_width(DockArea.LEFT)
+        center = self._zone_width(DockArea.CENTER)
+        right = self._zone_width(DockArea.RIGHT)
+        total = max(top.width(), left + center + right)
+        if total <= 0:
+            return
+        top.setSizes([left, center, right])
+        root = getattr(self, "_root_splitter", None)
+        if root is not None:
+            ratio = float(self._state.center_ratio)
+            root.setSizes(
+                [int(root.height() * ratio), int(root.height() * (1 - ratio))]
+            )
+
+    def _zone_width(self, area: DockArea) -> int:
+        panels = [
+            p for p in self._panels
+            if self._state.area_of(p) is area
+            and not self._state.is_floating(p)
+            and self._state.is_visible(p)
+        ]
+        if not panels:
+            return 0
+        if area is DockArea.CENTER:
+            return max(480, DEFAULT_SIZE[PanelId.VIEWER])
+        return max(MIN_SIZE.get(panels[0], 200), self._state.get(panels[0]).size)
+
+    def refresh_panel_actions(self) -> None:
+        """Reconstruit les menus d'options de tous les panneaux."""
+        for host in self._hosts.values():
+            host.refresh_actions()
+        for window in self._windows.values():
+            window.refresh_actions()
+
+    def _refresh_dependents(self) -> None:
+        """Notifie l'hôte principal que la disposition a changé."""
+        callback = getattr(self._window, "on_workspace_changed", None)
+        if callable(callback):
+            callback()
+
+    # ------------------------------------------------------------------
+    # Persistance
+    # ------------------------------------------------------------------
+
+    def capture_state(self) -> WorkspaceState:
+        """Lit l'état réel des séparateurs pour le persister.
+
+        Appelé à la fermeture (et lors d'une sauvegarde explicite), donc
+        le coût n'affecte pas l'interaction.
+        """
+        if self._state.maximized is not None:
+            return self._state
+        state = self._state
+        top = getattr(self, "_top_splitter", None)
+        root = getattr(self, "_root_splitter", None)
+        if top is not None and top.width() > 0:
+            sizes = top.sizes()
+            if len(sizes) == 3 and sizes[1] > 0:
+                state = state.with_panel(
+                    PanelId.MEDIA, size=max(MIN_SIZE[PanelId.MEDIA], sizes[0])
+                )
+                state = state.with_panel(
+                    PanelId.INSPECTOR,
+                    size=max(MIN_SIZE[PanelId.INSPECTOR], sizes[2]),
+                )
+        if root is not None and root.height() > 0:
+            sizes = root.sizes()
+            if len(sizes) == 2 and sum(sizes) > 0:
+                ratio = max(0.1, min(0.9, sizes[0] / sum(sizes)))
+                state = state.with_center_ratio(ratio)
+                state = state.with_panel(
+                    PanelId.TIMELINE,
+                    size=max(MIN_SIZE[PanelId.TIMELINE], sizes[1]),
+                )
+        for panel, window in self._windows.items():
+            if window.isVisible():
+                geom = window.geometry()
+                state = state.with_floating_geometry(
+                    panel,
+                    FloatingGeometry(
+                        geom.x(), geom.y(), geom.width(), geom.height()
+                    ),
+                )
+        return state.normalized()
+
+    def list_workspaces(self) -> tuple[str, ...]:
+        """Espaces de travail disponibles (natifs puis personnalisés)."""
+        return list_named_workspaces(self._settings_dir)
+
+    def apply_workspace(self, name: str) -> bool:
+        """Applique un espace de travail nommé."""
+        state = load_named_workspace(name, self._settings_dir)
+        if state is None:
+            return False
+        self._pre_maximize = None
+        # Les fenêtres flottantes de la disposition courante sont
+        # fermées avant d'appliquer : un panneau ne peut pas être
+        # simultanément dans deux dispositions.
+        for panel in list(self._windows):
+            window = self._windows.pop(panel)
+            _close_floating_window(window, self._hosts[panel].content)
+        self._apply_state(state)
+        self._refresh_dependents()
+        return True
+
+    def save_workspace_as(self, name: str) -> bool:
+        """Enregistre la disposition courante sous un nom."""
+        if not name.strip():
+            return False
+        try:
+            save_named_workspace(
+                name.strip(), self.capture_state(), self._settings_dir
+            )
+        except OSError:
+            return False
+        return True
+
+    def delete_workspace(self, name: str) -> bool:
+        """Supprime un espace de travail personnalisé."""
+        return delete_named_workspace(name, self._settings_dir)
+
+    def save(self) -> None:
+        """Persiste l'espace de travail courant."""
+        self._state = self.capture_state()
+        try:
+            save_workspace_state(self._state, self._settings_dir)
+        except OSError:
+            # Une préférence non persistée ne doit jamais empêcher la
+            # fermeture de l'application.
+            pass
+
+    # ------------------------------------------------------------------
+    # Nettoyage
+    # ------------------------------------------------------------------
+
+    def shutdown(self) -> None:
+        """Ferme les fenêtres détachées et libère les ressources."""
+        self.save()
+        for window in list(self._windows.values()):
+            _close_floating_window(window, self._hosts[window.panel].content)
+        self._windows.clear()
+        self._hosts.clear()
+        self._panels.clear()
+        self._zones.clear()
+        self._action_cache.clear()
+        self._splitters = []
+
+
+__all__ = ["WorkspaceManager"]

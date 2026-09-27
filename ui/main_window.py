@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -28,6 +27,7 @@ from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
 from core.subtitle_io import load_srt, parse_srt, save_srt
 from core.timeline_evaluator import evaluate_timeline
+from core.workspace_state import PanelId, workspace_display_name
 from core.timeline_operations import (
     add_clip_to_track,
     add_subtitle_clip,
@@ -69,6 +69,7 @@ from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
+from ui.workspace import WorkspaceManager
 from core.track_operations import (
     add_track as track_operations_add_track,
     move_track as track_operations_move_track,
@@ -184,39 +185,33 @@ class MainWindow(QMainWindow):
         self.properties_panel.transform_reset.connect(self.on_transform_reset)
 
         # Initialisation de l'horloge de programme (tâche 8).
-        self.playhead_seconds: float = 0.0
+        # ``playhead_seconds`` est une propriété qui délègue au
+        # panneau de timeline (voir plus bas) : le repli sert uniquement
+        # avant la construction du panneau.
+        self._playhead_fallback: float = 0.0
         self.is_playing: bool = False
         self._last_tick_monotonic: float | None = None
         # Affichage initial de la durée totale (clip de démo = 12 s).
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
 
-        top_split = QSplitter(Qt.Horizontal)
-        top_split.setObjectName("workspace_splitter")
-        top_split.addWidget(self.project_panel)
-        top_split.addWidget(self.preview_panel)
-        top_split.addWidget(self.properties_panel)
-        top_split.setSizes([260, 720, 300])
-        top_split.setStretchFactor(0, 0)
-        top_split.setStretchFactor(1, 1)
-        top_split.setStretchFactor(2, 0)
-        top_split.setChildrenCollapsible(False)
-        main_split = QSplitter(Qt.Vertical)
-        main_split.addWidget(top_split)
-        main_split.addWidget(self.timeline_panel)
-        # Le viewer reste majoritaire, mais la timeline reçoit la
-        # hauteur nécessaire pour afficher toutes les pistes sans
-        # défilement chaque fois que la fenêtre le permet (voir
-        # ``_balance_vertical_split``).
-        main_split.setStretchFactor(0, 1)
-        main_split.setStretchFactor(1, 1)
-        main_split.setChildrenCollapsible(False)
-        self.main_split = main_split
-        QTimer.singleShot(0, lambda: self._balance_vertical_split(main_split))
+        # Espace de travail : le gestionnaire est l'unique autorité sur
+        # la disposition. Il enregistre les quatre panneaux existants
+        # (mêmes objets, mêmes signaux) puis compose les zones dock.
+        self.workspace = WorkspaceManager(self)
+        self.workspace.register(PanelId.MEDIA, self.project_panel)
+        self.workspace.register(PanelId.VIEWER, self.preview_panel)
+        self.workspace.register(PanelId.INSPECTOR, self.properties_panel)
+        self.workspace.register(PanelId.TIMELINE, self.timeline_panel)
+        workspace_root = self.workspace.build()
+        # Le menu « Fenêtre » ne peut être rempli qu'une fois le
+        # gestionnaire d'espace de travail construit.
+        self._build_workspace_menu(self.window_menu)
+
         self.editor_page = QWidget()
         editor_layout = QVBoxLayout(self.editor_page)
         editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.addWidget(main_split)
+        editor_layout.addWidget(workspace_root)
         self.pages = QStackedWidget()
         self.pages.addWidget(self.editor_page)
         self.pages.addWidget(self.export_panel)
@@ -239,40 +234,28 @@ class MainWindow(QMainWindow):
         # ``project_label``.
         self._refresh_undo_redo_state()
 
-    def _balance_vertical_split(self, splitter) -> None:
-        """Répartit la hauteur entre le viewer et la timeline.
+    def on_workspace_changed(self) -> None:
+        """Notifié par le gestionnaire d'espace de travail.
 
-        La timeline reçoit la hauteur nécessaire pour montrer toutes
-        ses pistes, sans jamais descendre sous ~40 % de la fenêtre
-        (le viewer reste le panneau majoritaire).
+        Volontairement léger : on ne fait que resynchroniser l'état de
+        lecture et les menus. Appeler ``_retranslate_ui`` ici
+        reconstruirait la timeline à chaque changement de disposition,
+        ce qui serait inutile et coûteux.
         """
-        total = splitter.height()
-        if total <= 0:
-            # La fenêtre n'est pas encore mise en page : on réessaie
-            # au prochain tour de boucle d'événements.
-            QTimer.singleShot(0, lambda: self._balance_vertical_split(splitter))
-            return
-        panel = self.timeline_panel
-        track_count = len(self.project.tracks) if self.project else 1
-        pitch = panel.track_height + panel.track_gap
-        needed = panel.header_height + panel.ruler_height + 8 + pitch * max(
-            track_count, 1
-        ) + 16 + 18  # barres de défilement
-        floor = int(total * 0.40)
-        timeline_height = max(needed, floor)
-        timeline_height = min(timeline_height, int(total * 0.62))
-        timeline_height = max(timeline_height, panel.minimumHeight())
-        viewer_height = max(total - timeline_height, 120)
-        splitter.setSizes([viewer_height, timeline_height])
+        self._sync_playhead_labels()
+        self._sync_workspace_menu()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        splitter = getattr(self, "main_split", None)
-        if splitter is not None:
-            QTimer.singleShot(0, lambda: self._balance_vertical_split(splitter))
+        workspace = getattr(self, "workspace", None)
+        if workspace is not None:
+            QTimer.singleShot(0, workspace.balance_vertical_split)
 
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
+        workspace = getattr(self, "workspace", None)
+        if workspace is not None:
+            workspace.shutdown()
         if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
             self.timeline_timer.stop()
 
@@ -282,6 +265,175 @@ class MainWindow(QMainWindow):
             self._i18n_callback = None
 
         super().closeEvent(event)
+
+    def _workspace_icon(self, name: str):
+        """Icône du registre d'icônes pour les menus de workspace."""
+        from ui.design_system import Iconography
+        from ui.icons import IconName, make_icon
+
+        return make_icon(getattr(IconName, name), size=Iconography.md)
+
+    @property
+    def playhead_seconds(self) -> float:
+        """Position de la tête de lecture, en secondes.
+
+        **Source de vérité unique** : le panneau de timeline. La
+        fenêtre lit et écrit par cette propriété, ce qui évite deux
+        états qui divergeraient — notamment quand la timeline est
+        détachée dans une fenêtre séparée, où seule une des deux
+        copies serait mise à jour.
+        """
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is None:
+            return self._playhead_fallback
+        return timeline.playhead_seconds
+
+    @playhead_seconds.setter
+    def playhead_seconds(self, value: float) -> None:
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is None:
+            self._playhead_fallback = float(value)
+            return
+        # On passe par la méthode du panneau : elle applique le
+        # bornage et rafraîchit le compteur horaire.
+        timeline.set_playhead_seconds(float(value))
+
+    def _sync_playhead_labels(self) -> None:
+        """Réaffiche l'heure courante sur les panneaux de transport.
+
+        Inutile en temps normal (l'écriture passe déjà par le panneau),
+        mais utile après un changement de disposition : la tête de
+        lecture peut migrer vers une autre fenêtre.
+        """
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is not None:
+            timeline.set_playhead_seconds(timeline.playhead_seconds)
+
+    def _build_workspace_menu(self, menu: QMenu) -> None:
+        """Remplit le menu « Fenêtre » avec les actions de panneaux.
+
+        Ce menu est la voie *principale* et découvrable : la barre
+        d'options au survol reste un raccourci discret. Les deux
+        partagent la même source d'actions
+        (:meth:`WorkspaceManager.build_actions`), donc aucune logique
+        n'est dupliquée.
+        """
+        panels_menu = menu.addMenu("Panneaux")
+        for panel in PanelId:
+            action = QAction(panel.label(), self)
+            action.setCheckable(True)
+            action.setChecked(self.workspace.is_visible(panel))
+            action.setIcon(self._workspace_icon("PANEL_MAXIMIZE"))
+            action.triggered.connect(
+                lambda _checked, p=panel: self.toggle_panel(p)
+            )
+            panels_menu.addAction(action)
+
+        menu.addSeparator()
+        for panel in PanelId:
+            # Un sous-menu par panneau : sans étiquette, quatre groupes
+            # d'actions identiques seraient ambiguës.
+            panel_menu = menu.addMenu(panel.label())
+            for action in self.workspace.build_actions(panel):
+                if isinstance(action, QMenu):
+                    action.setParent(panel_menu)
+                    panel_menu.addMenu(action)
+                else:
+                    panel_menu.addAction(action)
+        restore_action = QAction("Restaurer la disposition", self)
+        restore_action.setIcon(self._workspace_icon("PANEL_RESTORE"))
+        restore_action.triggered.connect(self.restore_workspace_layout)
+        menu.addSeparator()
+        menu.addAction(restore_action)
+
+        # Espaces de travail nommés (§8) : appliqués ou enregistrés.
+        spaces = menu.addMenu("Espaces de travail")
+        for name in self.workspace.list_workspaces():
+            action = QAction(workspace_display_name(name), self)
+            action.triggered.connect(
+                lambda _c=False, n=name: self.apply_workspace(n)
+            )
+            spaces.addAction(action)
+        spaces.addSeparator()
+        save_space = QAction("Enregistrer la disposition sous…", spaces)
+        save_space.triggered.connect(self.save_workspace_as)
+        spaces.addAction(save_space)
+
+    # -- Espaces de travail --------------------------------------------
+
+    def apply_workspace(self, name: str) -> None:
+        """Applique un espace de travail nommé."""
+        if not self.workspace.apply_workspace(name):
+            return
+        self._sync_workspace_menu()
+
+    def save_workspace_as(self) -> None:
+        """Enregistre la disposition courante sous un nom choisi."""
+        name, accepted = QInputDialog.getText(
+            self, "Espace de travail", "Nom de l'espace de travail :"
+        )
+        if not accepted or not name.strip():
+            return
+        if self.workspace.save_workspace_as(name):
+            QMessageBox.information(
+                self,
+                "Espace de travail",
+                f"Disposition enregistrée sous « {name.strip()} ».",
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Espace de travail",
+                "Impossible d'enregistrer cet espace de travail.",
+            )
+
+    # -- Actions de workspace ------------------------------------------
+
+    def toggle_panel(self, panel: PanelId) -> None:
+        """Ouvre ou ferme un panneau depuis le menu."""
+        if self.workspace.state.is_visible(panel) and self.workspace.is_visible(
+            panel
+        ):
+            self.workspace.set_panel_visible(panel, False)
+        else:
+            self.workspace.set_panel_visible(panel, True)
+        self._sync_workspace_menu()
+
+    def maximize_panel(self, panel: PanelId) -> None:
+        """Maximise temporairement un panneau."""
+        self.workspace.maximize_panel(panel)
+        self._sync_workspace_menu()
+
+    def restore_workspace_layout(self) -> None:
+        """Restaure la disposition précédant une maximisation."""
+        self.workspace.restore_layout()
+        self._sync_workspace_menu()
+
+    def reset_workspace_layout(self) -> None:
+        """Rétablit la disposition et la taille par défaut."""
+        self.workspace.reset_layout()
+        self._sync_workspace_menu()
+
+    def _sync_workspace_menu(self) -> None:
+        """Recalcule l'état coché du menu « Panneaux »."""
+        menu = self.menuBar()
+        window_menu = None
+        for candidate in menu.actions():
+            if candidate.menu() is not None and candidate.text() == "Fenêtre":
+                window_menu = candidate.menu()
+                break
+        if window_menu is None:
+            return
+        panels_menu = None
+        for action in window_menu.actions():
+            sub = action.menu()
+            if sub is not None and sub.title() == "Panneaux":
+                panels_menu = sub
+                break
+        if panels_menu is None:
+            return
+        for action, panel in zip(panels_menu.actions(), PanelId):
+            action.setChecked(self.workspace.is_visible(panel))
 
     def _build_top_bar(self):
         from ui.design_system import Iconography, Sizes, Spacing
@@ -937,10 +1089,12 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
             sequence_menu.addAction(action)
 
-        # Fenêtre
+        # Fenêtre — le contenu dépend du gestionnaire d'espace de
+        # travail, créé plus bas ; on ne garde que la partie fixe ici.
         window_menu = QMenu("Fenêtre", self)
+        self.window_menu = window_menu
         reset_action = QAction("Réinitialiser la disposition", self)
-        reset_action.triggered.connect(lambda: self._notify_placeholder("Reset disposition"))
+        reset_action.triggered.connect(self.reset_workspace_layout)
         window_menu.addAction(reset_action)
 
         # Menu Séquence : opérations de piste.

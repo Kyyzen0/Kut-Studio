@@ -276,10 +276,13 @@ def _stylesheet(palette: ThemePalette) -> str:
         border: 1px solid {palette.border}; padding: 5px 8px;
         border-radius: 5px;
     }}
+    /* Séparateurs redimensionnables : zone de saisie confortable,
+       aspect neutre au repos, teinte discrète au survol. */
     QSplitter::handle {{ background: {palette.background}; }}
     QSplitter::handle:horizontal {{ width: 6px; }}
     QSplitter::handle:vertical {{ height: 6px; }}
     QSplitter::handle:hover {{ background: {palette.accent}; }}
+    QSplitter::handle:pressed {{ background: {palette.accent_hover}; }}
 
     QPushButton {{
         background: {palette.surface}; color: {palette.text};

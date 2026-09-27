@@ -92,6 +92,12 @@ class IconName(str, Enum):
     TIMER = "timer"
     LIST = "list"
     MENU = "menu"
+    PANEL_FLOAT = "panel_float"
+    PANEL_DOCK = "panel_dock"
+    PANEL_CLOSE = "panel_close"
+    PANEL_MAXIMIZE = "panel_maximize"
+    PANEL_RESTORE = "panel_restore"
+    PANEL_RESET = "panel_reset"
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +450,52 @@ _SVG_TEMPLATES: dict[str, str] = {
         '<rect x="3" y="6" width="18" height="2" rx="1"/>'
         '<rect x="3" y="11" width="18" height="2" rx="1"/>'
         '<rect x="3" y="16" width="18" height="2" rx="1"/></svg>'
+    ),
+    IconName.PANEL_FLOAT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="9" y="4" width="11" height="9" rx="1.6"/>'
+        '<path d="M15 20H6a2 2 0 0 1-2-2V9"/></svg>'
+    ),
+    IconName.PANEL_DOCK: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+        '<rect x="12" y="13" width="7" height="5" rx="1" fill="currentColor" '
+        'fill-opacity=".25"/>'
+        '<path d="M12 15.5h7"/></svg>'
+    ),
+    IconName.PANEL_CLOSE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+        '<path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></svg>'
+    ),
+    IconName.PANEL_MAXIMIZE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+        '<path d="M9 8h6M9 8v3M15 16h-6M15 16v-3"/></svg>'
+    ),
+    IconName.PANEL_RESTORE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+        '<rect x="7" y="8" width="10" height="8" rx="1.4" '
+        'fill="currentColor" fill-opacity=".25"/>'
+        '<path d="M9.5 10.5 14.5 14.5M14.5 10.5 9.5 14.5"/></svg>'
+    ),
+    IconName.PANEL_RESET: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+        '<path d="M8 9h8M8 15h5"/></svg>'
     ),
 }
 

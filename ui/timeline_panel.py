@@ -945,7 +945,10 @@ class TimelinePanel(QWidget):
     # ------------------------------------------------------------------
 
     def resizeEvent(self, event):
-        self.refresh_clip_widgets()
+        # Redimensionnement pur : on ne fait que repositionner les
+        # enfants. Appeler ``refresh_clip_widgets`` ici recréait tous
+        # les en-têtes à chaque pixel de drag du séparateur.
+        self._layout_children()
         super().resizeEvent(event)
 
     @staticmethod
@@ -966,6 +969,13 @@ class TimelinePanel(QWidget):
         ]
 
     def refresh_clip_widgets(self):
+        """Reconstruit en-têtes et clips, puis repositionne tout.
+
+        Cette méthode est *coûteuse* (crée/détruit des widgets) : elle
+        n'est appelée que sur changement de contenu (projet, zoom,
+        sélection). Le redimensionnement d'un séparateur passe par
+        :meth:`_layout_children`, qui ne fait que de la géométrie.
+        """
         count = len(self.clip_views)
         self.clip_count_label.setText(
             f"{count} clip" if count == 1 else f"{count} clips"
@@ -1026,17 +1036,41 @@ class TimelinePanel(QWidget):
                 header.rename_requested.connect(self._on_rename_requested)
                 self.track_header_widgets[track.id] = header
 
-        # Positionner les clips (dans la zone défilante de la timeline).
+        # Créer les clips manquants, puis Deleguer la géométrie.
         for view in self.clip_views:
             widget = self.clip_widgets.get(view.id)
             if widget is None:
                 widget = ClipWidget(view, self.timeline_grid)
                 self.clip_widgets[view.id] = widget
-            row = view.track_index
+            widget.refresh_style()
+            widget.show()
+        self._layout_children()
+
+    def _layout_children(self) -> None:
+        """Repositionne en-têtes et clips — sans rien recréer.
+
+        Utilisé par le redimensionnement : aucun widget n'est alloué ni
+        détruit, ce qui garde le drag du séparateur fluide même avec
+        beaucoup de clips.
+        """
+        for header in self.track_header_widgets.values():
+            index = self._track_index(header.track.id)
+            if index is None:
+                continue
+            header.setGeometry(
+                0,
+                int(self.ruler_height + 8 + index * (self.track_height + self.track_gap)),
+                self.left_margin,
+                self.track_height + self.track_gap,
+            )
+        for view in self.clip_views:
+            widget = self.clip_widgets.get(view.id)
+            if widget is None:
+                continue
             track_top = (
                 self.ruler_height
                 + 8
-                + row * (self.track_height + self.track_gap)
+                + view.track_index * (self.track_height + self.track_gap)
             )
             start_x = (
                 self.left_margin + view.start * self.pixels_per_second * self.zoom
@@ -1051,10 +1085,17 @@ class TimelinePanel(QWidget):
                 max(int(width), 40),
                 self.track_height,
             )
-            widget.refresh_style()
             widget.raise_()
-            widget.show()
         self.timeline_grid.update()
+
+    def _track_index(self, track_id: str) -> int | None:
+        """Index d'une piste dans le projet, ou ``None`` si absente."""
+        if self.project is None:
+            return None
+        for index, track in enumerate(self.project.tracks):
+            if track.id == track_id:
+                return index
+        return None
 
     def _on_rename_requested(self, track_id: str) -> None:
         """Demande un nouveau nom à l'utilisateur et relaie vers MainWindow."""
