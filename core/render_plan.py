@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
+from .time_remapping import TimeRemapping
 from .timeline_evaluator import timeline_duration
 from .visual_effects import ClipTransform, TransformKeyframe
 
@@ -65,8 +66,10 @@ class RenderLayer:
     source_out: float
     timeline_start: float
     timeline_end: float
+    source_fps: float = 0.0
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
+    time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
 
 
 @dataclass(frozen=True)
@@ -110,12 +113,14 @@ class AudioLayer:
     source_out: float
     timeline_start: float
     timeline_end: float
+    source_fps: float = 0.0
     gain_db: float = 0.0
     pan: float = 0.0
     fade_in: float = 0.0
     fade_out: float = 0.0
     track_volume_db: float = 0.0
     track_pan: float = 0.0
+    time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
 
     @property
     def duration(self) -> float:
@@ -267,8 +272,10 @@ def build_render_plan(
                         source_out=clip.source_out,
                         timeline_start=clip.timeline_start,
                         timeline_end=clip.timeline_start + clip.duration,
+                        source_fps=float(asset.fps),
                         transform=clip.transform,
                         transform_keyframes=tuple(clip.transform_keyframes),
+                        time_remapping=clip.time_remapping,
                     )
                 )
                 # Un solo audio ne laisse passer que les pistes audio armées
@@ -333,10 +340,12 @@ def _build_audio_layer(
         source_out=clip.source_out,
         timeline_start=clip.timeline_start,
         timeline_end=clip.timeline_start + clip.duration,
+        source_fps=float(asset.fps),
         gain_db=float(getattr(clip, "gain_db", 0.0)),
         pan=float(getattr(clip, "pan", 0.0)),
         fade_in=float(getattr(clip, "fade_in", 0.0)),
         fade_out=float(getattr(clip, "fade_out", 0.0)),
         track_volume_db=float(getattr(track, "volume_db", 0.0)),
         track_pan=float(getattr(track, "pan", 0.0)),
+        time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
     )

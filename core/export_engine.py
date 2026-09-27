@@ -44,6 +44,13 @@ from PySide6.QtCore import QObject, QProcess, Signal
 
 from .render_plan import AudioLayer, RenderLayer, RenderPlan
 from .subtitle_io import format_srt
+from .time_remapping import (
+    MAX_REVERSE_DURATION_SECONDS,
+    FreezeFrameMode,
+    get_ffmpeg_freeze_filter,
+    get_ffmpeg_reverse_filter,
+    get_ffmpeg_speed_filter,
+)
 from .visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
@@ -601,20 +608,45 @@ def _build_layer_filter(
     rotation_expr = _build_animated_rotation_expr(transform, kfs)
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
 
-    return (
-        f"[{input_index}:v]"
-        f"trim=start={source_in}:end={source_out},"
-        f"setpts=PTS-STARTPTS,"
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"fps={fps},"
-        f"setpts=PTS-STARTPTS,"
-        f"{scale_expr},"
-        f"{rotation_expr},"
-        f"format=rgba,"
-        f"{opacity_expr},"
-        f"setpts=PTS+{timeline_start}/TB[v{layer_index}]"
-    )
+    # Filtres de remappage temporel (freeze, reverse, speed)
+    time_remapping_filter = _build_time_remapping_video_filter(layer)
+
+    parts = [
+        f"[{input_index}:v]",
+        f"trim=start={source_in}:end={source_out},",
+        f"setpts=PTS-STARTPTS,",
+    ]
+
+    # Freeze frame: appliqué immédiatement après trim/setpts
+    # car il sélectionne une frame spécifique
+    if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        parts.append(f"{time_remapping_filter},")
+        parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
+        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
+        parts.append(f"fps={fps},")
+        parts.append(f"format=rgba,")
+        parts.append(f"{opacity_expr},")
+        parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
+    else:
+        # Cas normal: appliquer scale/pad/fps avant le time_remapping
+        # Le time_remapping (reverse/speed) doit être appliqué AVANT setpts
+        # pour que le décalage timeline soit correct
+        parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
+        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
+        parts.append(f"fps={fps},")
+        
+        # Appliquer le time_remapping (reverse/speed) ici
+        if time_remapping_filter:
+            parts.append(f"{time_remapping_filter},")
+        
+        parts.append(f"setpts=PTS-STARTPTS,")
+        parts.append(f"{scale_expr},")
+        parts.append(f"{rotation_expr},")
+        parts.append(f"format=rgba,")
+        parts.append(f"{opacity_expr},")
+        parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
+
+    return "".join(parts)
 
 
 def _build_animated_scale_expr(
@@ -779,6 +811,12 @@ def _build_audio_filter(
         "aformat=channel_layouts=stereo:sample_rates=48000",
     ]
 
+    # Filtres de remappage temporel (freeze, reverse, speed)
+    time_remapping_filter = _build_time_remapping_audio_filter(layer)
+    if time_remapping_filter:
+        # Appliquer le time_remapping avant les effets audio
+        steps.append(time_remapping_filter)
+
     total_db = _clamp_db(layer.total_gain_db)
     if abs(total_db) > 1e-6:
         steps.append(f"volume={_format_db(total_db)}dB")
@@ -866,6 +904,104 @@ def _build_master_filter(plan) -> str:
         bounded = max(MIN_GAIN_DB, min(MAX_GAIN_DB, master))
         return f"volume={_format_db(bounded)}dB"
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Filtres de remappage temporel
+# ---------------------------------------------------------------------------
+
+
+def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
+    """Construit les filtres de remappage temporel pour une couche vidéo.
+
+    Applique dans l'ordre :
+    1. Freeze frame (si activé) - sélectionne une seule image
+    2. Reverse (si activé) - inverse la lecture
+    3. Speed (si != 1.0) - change la vitesse via atempo
+
+    Returns:
+        Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
+        si aucun remappage n'est actif.
+    """
+    tr = layer.time_remapping
+    parts: list[str] = []
+
+    # Freeze frame: on sélectionne une seule image
+    if tr.freeze_mode == FreezeFrameMode.FREEZE:
+        # Freeze: on utilise select pour garder une seule frame
+        # L'audio est silencieux, géré séparément
+        # Calculer le frame number à partir du temps source et du FPS source
+        freeze_filters = get_ffmpeg_freeze_filter(
+            tr.freeze_source_time,
+            layer.source_fps if layer.source_fps > 0 else 30.0,
+        )
+        parts.extend(freeze_filters)
+        # Après un freeze, on n'applique ni reverse ni speed
+        return ",".join(parts)
+
+    # Reverse: on applique le filtre reverse
+    if tr.reverse:
+        # Vérifier la durée pour éviter les problèmes de mémoire
+        source_duration = layer.source_out - layer.source_in
+        if source_duration > MAX_REVERSE_DURATION_SECONDS:
+            raise ValueError(
+                f"Impossible d'appliquer reverse : clip trop long "
+                f"({source_duration:.0f}s > {MAX_REVERSE_DURATION_SECONDS:.0f}s). "
+                f"Limitation FFmpeg pour éviter une consommation mémoire excessive."
+            )
+        parts.append("reverse")
+
+    # Speed: on applique les filtres atempo
+    if tr.speed != 1.0:
+        speed_filters = get_ffmpeg_speed_filter(tr.speed)
+        parts.extend(speed_filters)
+
+    return ",".join(parts)
+
+
+def _build_time_remapping_audio_filter(layer: AudioLayer) -> str:
+    """Construit les filtres de remappage temporel pour une couche audio.
+
+    Applique dans l'ordre :
+    1. Freeze frame: l'audio est silencieux (volume=0)
+    2. Reverse: areverse
+    3. Speed: atempo
+
+    Note: Le freeze frame pour l'audio se traduit par un silence total.
+    La durée timeline est déjà correcte dans le RenderPlan.
+
+    Returns:
+        Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
+        si aucun remappage n'est actif.
+    """
+    tr = layer.time_remapping
+    parts: list[str] = []
+
+    # Freeze frame: l'audio est silencieux
+    if tr.freeze_mode == FreezeFrameMode.FREEZE:
+        # Pour le freeze, on rend l'audio silencieux mais on garde la bonne durée
+        # Le trim et asetpts sont déjà appliqués avant
+        return "volume=0"
+
+    # Reverse
+    if tr.reverse:
+        # Vérifier la durée pour éviter les problèmes de mémoire
+        source_duration = layer.source_out - layer.source_in
+        if source_duration > MAX_REVERSE_DURATION_SECONDS:
+            raise ValueError(
+                f"Impossible d'appliquer reverse : clip trop long "
+                f"({source_duration:.0f}s > {MAX_REVERSE_DURATION_SECONDS:.0f}s). "
+                f"Limitation FFmpeg pour éviter une consommation mémoire excessive."
+            )
+        parts.append("areverse")
+
+    # Speed
+    if tr.speed != 1.0:
+        speed_filters = get_ffmpeg_speed_filter(tr.speed)
+        # Pour l'audio, atempo fonctionne directement
+        parts.extend(speed_filters)
+
+    return ",".join(parts)
 
 
 # ---------------------------------------------------------------------------
