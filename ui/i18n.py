@@ -177,6 +177,120 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "track.video_default": {"fr": "V{n}", "en": "V{n}", "es": "V{n}"},
     "track.audio_default": {"fr": "A{n}", "en": "A{n}", "es": "A{n}"},
     "track.subtitle_default": {"fr": "S{n}", "en": "S{n}", "es": "S{n}"},
+
+    # --- Mixeur audio -------------------------------------------------
+    "mixer.title": {"fr": "MIXEUR", "en": "MIXER", "es": "MEZCLADOR"},
+    "mixer.master": {"fr": "Master", "en": "Master", "es": "Master"},
+    "mixer.output": {"fr": "Sortie", "en": "Output", "es": "Salida"},
+    "mixer.volume": {"fr": "Volume", "en": "Volume", "es": "Volumen"},
+    "mixer.pan": {"fr": "Panoramique", "en": "Pan", "es": "Pan"},
+    "mixer.pan_center": {"fr": "Centré", "en": "Center", "es": "Centrado"},
+    "mixer.pan_left": {"fr": "Gauche", "en": "Left", "es": "Izquierda"},
+    "mixer.pan_right": {"fr": "Droite", "en": "Right", "es": "Derecha"},
+    "mixer.mute": {"fr": "Muet", "en": "Mute", "es": "Silenciar"},
+    "mixer.solo": {"fr": "Solo", "en": "Solo", "es": "Solo"},
+    "mixer.arm": {"fr": "Armé", "en": "Arm", "es": "Armar"},
+    "mixer.reset": {"fr": "Réinitialiser le volume et le panoramique", "en": "Reset volume and pan", "es": "Restablecer volumen y paneo"},
+    "mixer.master_mute": {"fr": "Couper la sortie principale", "en": "Mute master output", "es": "Silenciar la salida principal"},
+    "mixer.master_reset": {"fr": "Réinitialiser la sortie principale", "en": "Reset master output", "es": "Restablecer la salida principal"},
+    "mixer.locked": {"fr": "Piste verrouillée", "en": "Locked track", "es": "Pista bloqueada"},
+    "mixer.no_tracks": {
+        "fr": "Aucune piste audio dans ce projet.",
+        "en": "This project has no audio track.",
+        "es": "Este proyecto no tiene pista de audio.",
+    },
+    "mixer.track_volume": {
+        "fr": "Volume de la piste {name}",
+        "en": "Track volume for {name}",
+        "es": "Volumen de la pista {name}",
+    },
+    "mixer.track_pan": {
+        "fr": "Panoramique de la piste {name}",
+        "en": "Pan for track {name}",
+        "es": "Paneo de la pista {name}",
+    },
+    "mixer.track_mute": {
+        "fr": "Couper la piste {name}",
+        "en": "Mute track {name}",
+        "es": "Silenciar la pista {name}",
+    },
+    "mixer.track_solo": {
+        "fr": "Solo sur la piste {name}",
+        "en": "Solo track {name}",
+        "es": "Solo en la pista {name}",
+    },
+    "mixer.track_arm": {
+        "fr": "Armer la piste {name} pour l'enregistrement",
+        "en": "Arm track {name} for recording",
+        "es": "Armar la pista {name} para grabar",
+    },
+    "mixer.solo_active": {
+        "fr": "Solo actif : seules les pistes solo sont entendues.",
+        "en": "Solo active: only soloed tracks are heard.",
+        "es": "Solo activo: solo se escuchan las pistas con solo.",
+    },
+
+    # --- Réglages audio d'un clip -------------------------------------
+    "audio.gain": {"fr": "Gain", "en": "Gain", "es": "Ganancia"},
+    "audio.fade_in": {"fr": "Fondu d'entrée", "en": "Fade in", "es": "Fundido de entrada"},
+    "audio.fade_out": {"fr": "Fondu de sortie", "en": "Fade out", "es": "Fundido de salida"},
+    "audio.reset_fades": {"fr": "Retirer les fondus", "en": "Remove fades", "es": "Quitar fundidos"},
+    "audio.no_audio": {
+        "fr": "Ce clip ne porte pas de réglages audio.",
+        "en": "This clip has no audio settings.",
+        "es": "Este clip no tiene ajustes de audio.",
+    },
+    "audio.fade_too_long": {
+        "fr": "Fondu trop long pour un clip de {duration}s.",
+        "en": "Fade too long for a {duration}s clip.",
+        "es": "Fundido demasiado largo para un clip de {duration}s.",
+    },
+
+    # --- Enregistrement audio -----------------------------------------
+    "record.start": {"fr": "Enregistrer", "en": "Record", "es": "Grabar"},
+    "record.stop": {"fr": "Arrêter l'enregistrement", "en": "Stop recording", "es": "Detener la grabación"},
+    "record.no_armed_track": {
+        "fr": "Aucune piste audio armée. Armez-en une pour enregistrer.",
+        "en": "No armed audio track. Arm one to record.",
+        "es": "Ninguna pista de audio armada. Arma una para grabar.",
+    },
+    "record.failed": {
+        "fr": "L'enregistrement a échoué : {error}",
+        "en": "Recording failed: {error}",
+        "es": "La grabación falló: {error}",
+    },
+    "record.timed_out": {
+        "fr": "L'enregistrement a expiré.",
+        "en": "Recording timed out.",
+        "es": "La grabación expiró.",
+    },
+    "record.cancelled": {
+        "fr": "Enregistrement annulé.",
+        "en": "Recording cancelled.",
+        "es": "Grabación cancelada.",
+    },
+    "record.placed": {
+        "fr": "Prise enregistrée sur {track}.",
+        "en": "Take recorded on {track}.",
+        "es": "Toma grabada en {track}.",
+    },
+    "record.too_short": {
+        "fr": "Prise trop courte pour être placée.",
+        "en": "Take too short to be placed.",
+        "es": "Toma demasiado corta para colocarse.",
+    },
+
+    # --- Actions audio dans la timeline -------------------------------
+    "audio.action.reset_fades": {
+        "fr": "Retirer les fondus",
+        "en": "Remove fades",
+        "es": "Quitar fundidos",
+    },
+    "audio.action.gain": {
+        "fr": "Régler le gain",
+        "en": "Adjust gain",
+        "es": "Ajustar ganancia",
+    },
 }
 
 

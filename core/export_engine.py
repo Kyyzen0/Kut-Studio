@@ -425,9 +425,14 @@ class ExportEngine(QObject):
                 )
             n_inputs = len(plan.audio_layers) + 1
             mixed_inputs = "".join(f"[a{i}]" for i in range(len(plan.audio_layers)))
+            # Le gain Master est appliqué après l'amix : il doit
+            # piloter l'ensemble du mixage, pas chaque couche.
+            master_filter = _build_master_filter(plan)
+            tail = f",{master_filter}" if master_filter else ""
             parts.append(
                 f"[silent_base]{mixed_inputs}"
-                f"amix=inputs={n_inputs}:duration=first:dropout_transition=0,"
+                f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
+                f"{tail},"
                 f"aformat=channel_layouts=stereo:sample_rates=48000[aout]"
             )
             audio_label = "aout"
@@ -743,29 +748,124 @@ def _build_audio_filter(
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche audio.
 
-    Chaîne appliquée :
+    Chaîne appliquée, dans cet ordre :
 
     1. ``atrim`` sur la portion ``[source_in, source_out]`` ;
     2. ``asetpts=PTS-STARTPTS`` pour recaler les PTS à 0 ;
-    3. ``aformat=channel_layouts=stereo:sample_rates=48000`` pour
-       normaliser la sortie ;
-    4. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
+    3. ``aformat`` en stéréo 48 kHz (avant tout traitement de gain, pour
+       que ``pan`` et ``afade``/opèrent sur un format connu) ;
+    4. ``volume`` : gain du clip **et** volume de piste, additionnés en
+       décibels ;
+    5. ``afade`` d'entrée puis de sortie, seulement si non nuls ;
+    6. ``pan`` stéréo, seulement si le panoramique n'est pas centré ;
+    7. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
        position sur la timeline.
 
-    ``timeline_duration`` est utilisée pour borner les PTS via le
-    timebase afin d'éviter tout débordement en cas d'arrondi.
+    Chaque filtre est **omis** s'il n'a rien à faire : une chaîne
+    neutre n'est pas émise. Toutes les valeurs sont bornées avant
+    formatage pour qu'aucun caractère de séparation de filtre ne
+    puisse s'injecter dans la commande.
     """
+    from .audio_mixer import pan_needs_filter
+
     source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
     _ = timeline_duration  # conservé pour traçabilité / évolutions futures
+
+    steps: list[str] = [
+        f"atrim=start={source_in}:end={source_out}",
+        "asetpts=PTS-STARTPTS",
+        "aformat=channel_layouts=stereo:sample_rates=48000",
+    ]
+
+    total_db = _clamp_db(layer.total_gain_db)
+    if abs(total_db) > 1e-6:
+        steps.append(f"volume={_format_db(total_db)}dB")
+
+    fade_in = max(0.0, float(layer.fade_in))
+    fade_out = max(0.0, float(layer.fade_out))
+    duration = layer.duration
+    if fade_in > 1e-6 and duration > 0.0:
+        start = _format_seconds(0.0)
+        stop = _format_seconds(min(fade_in, duration))
+        steps.append(
+            f"afade=t=in:st={start}:d={stop}:curve=tri"
+        )
+    if fade_out > 1e-6 and duration > 0.0:
+        start = _format_seconds(max(0.0, duration - fade_out))
+        length = _format_seconds(min(fade_out, duration))
+        steps.append(
+            f"afade=t=out:st={start}:d={length}:curve=tri"
+        )
+
+    if pan_needs_filter(layer.total_pan):
+        steps.append(_build_pan_filter(layer.total_pan))
+
+    steps.append(f"asetpts=PTS+{timeline_start}/TB")
+    return f"[{input_index}:a]" + ",".join(steps) + f"[a{audio_index}]"
+
+
+def _clamp_db(value: float) -> float:
+    """Borne un gain pour qu'il ne puisse jamais casser la commande."""
+    from .audio_mixer import MAX_GAIN_DB, MIN_GAIN_DB
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:  # NaN
+        return 0.0
+    return max(MIN_GAIN_DB, min(MAX_GAIN_DB, number))
+
+
+def _format_db(value: float) -> str:
+    """Formate un gain en dB pour un filtre FFmpeg (point décimal sûr)."""
+    text = f"{value:.3f}"
+    # FFmpeg attend un point décimal ; une locale française donnerait « , ».
+    return text.replace(",", ".")
+
+
+def _build_pan_filter(pan: float) -> str:
+    """Filtre ``stereotools`` appliquant un panoramique constant-power.
+
+    On passe par la balance de puissance de :mod:`core.audio_mixer` : le
+    gain total reste cohérent quand le son glisse d'un côté à l'autre,
+    et un panoramique centré n'émet aucun filtre.
+
+    Aucun caractère ``|`` ici : c'est le séparateur du graphe de
+    filtres, il ferait échouer le parsing de la commande.
+    """
+    from .audio_mixer import pan_to_gains
+
+    left, right = pan_to_gains(pan)
     return (
-        f"[{input_index}:a]"
-        f"atrim=start={source_in}:end={source_out},"
-        f"asetpts=PTS-STARTPTS,"
-        f"aformat=channel_layouts=stereo:sample_rates=48000,"
-        f"asetpts=PTS+{timeline_start}/TB[a{audio_index}]"
+        "stereotools=in_channels=2:out_channels=2"
+        f":balance_out={_format_ratio(left)}:{_format_ratio(right)}"
     )
+
+
+def _format_ratio(value: float) -> str:
+    """Formate un gain de balance stereo (0 → 1) pour ``stereotools``."""
+    ratio = max(0.0, min(1.0, float(value)))
+    return f"{ratio:.4f}"
+
+
+def _build_master_filter(plan) -> str:
+    """Filtre appliqué au mixage final : gain Master et coupure globale.
+
+    Retourne une chaîne vide si aucun réglage Master n'est actif, pour
+    ne pas alourdir la commande d'un filtre sans effet.
+    """
+    from .audio_mixer import MAX_GAIN_DB, MIN_GAIN_DB
+
+    if getattr(plan, "master_muted", False):
+        return "volume=0dB"
+    master = float(getattr(plan, "master_gain_db", 0.0) or 0.0)
+    if abs(master) > 1e-6:
+        bounded = max(MIN_GAIN_DB, min(MAX_GAIN_DB, master))
+        return f"volume={_format_db(bounded)}dB"
+    return ""
 
 
 # ---------------------------------------------------------------------------

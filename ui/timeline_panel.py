@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QEvent, QPointF, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,
@@ -431,6 +431,143 @@ class ClipWidget(QWidget):
         self.setGeometry(*rect)
         self.duration_label.setText(parent.format_time(self.pending_end - self.pending_start))
 
+    # ------------------------------------------------------------------
+    # Fondus audio
+    # ------------------------------------------------------------------
+
+    def clip_model(self):
+        """Le :class:`Clip` métier correspondant, ou ``None``.
+
+        La vue est immuable ; c'est le modèle qui porte les réglages
+        audio. On l'atteint par le panneau pour ne jamais dupliquer
+        l'état.
+        """
+        parent = self.parent_timeline
+        if parent is None:
+            return None
+        return parent.clip_model(self.view.id)
+
+    @property
+    def is_audio_clip(self) -> bool:
+        """Le clip porte-t-il des réglages de fondu ?"""
+        if getattr(self.view, "track_type", None) == "audio":
+            return True
+        return self.view.track_id.startswith("A")
+
+    def fade_seconds(self, which: str) -> float:
+        """Durée de fondu du clip (``"in"`` ou ``"out"``), 0 si absent."""
+        model = self.clip_model()
+        if model is None:
+            return 0.0
+        return float(getattr(model, f"fade_{which}", 0.0))
+
+    def _fade_hit_rect(self, which: str) -> QRectF:
+        """Zone cliquable d'une poignée de fondu, en coordonnées clip.
+
+        La zone est volontairement plus haute que la courbe : la cible
+        reste confortable même sur une piste compacte.
+        """
+        width = max(self.width(), 1)
+        height = self.height()
+        grab = 14.0
+        if which == "in":
+            seconds = self.fade_seconds("in")
+        else:
+            seconds = self.fade_seconds("out")
+        parent = self.parent_timeline
+        if parent is None or parent.pixels_per_second * parent.zoom <= 0:
+            return QRectF()
+        pixels = min(seconds, max(self.view.end - self.view.start, 0.0)) * (
+            parent.pixels_per_second * parent.zoom
+        )
+        pixels = max(0.0, min(pixels, width))
+        if which == "in":
+            return QRectF(0.0, 0.0, max(pixels, 0.0) + grab, height)
+        return QRectF(width - max(pixels, 0.0) - grab, 0.0, max(pixels, 0.0) + grab, height)
+
+    def _fade_handle_center_x(self, which: str) -> float:
+        """Abscisse du sommet de la courbe de fondu."""
+        parent = self.parent_timeline
+        if parent is None or parent.pixels_per_second * parent.zoom <= 0:
+            return 0.0
+        seconds = self.fade_seconds(which)
+        pixels = seconds * (parent.pixels_per_second * parent.zoom)
+        if which == "out":
+            return max(0.0, self.width() - pixels)
+        return min(float(self.width()), pixels)
+
+    def _paint_fade_handles(self) -> None:
+        """Dessine les courbes de fondu et leurs poignées."""
+        if not self.is_audio_clip:
+            return
+        fade_in = self.fade_seconds("in")
+        fade_out = self.fade_seconds("out")
+        if fade_in <= 0.0 and fade_out <= 0.0:
+            return
+        palette = _current_palette()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        width = float(self.width())
+        height = float(self.height())
+        stroke = QColor(palette.clip_text_dim)
+        stroke.setAlpha(200)
+        painter.setPen(QPen(stroke, 1.4))
+
+        if fade_in > 0.0:
+            peak = self._fade_handle_center_x("in")
+            line = QPolygonF()
+            steps = 12
+            for step in range(steps + 1):
+                ratio = step / steps
+                line.append(
+                    QPointF(peak * ratio, height - 2 - (height - 4) * ratio)
+                )
+            painter.drawPolyline(line)
+
+        if fade_out > 0.0:
+            peak = self._fade_handle_center_x("out")
+            line = QPolygonF()
+            steps = 12
+            for step in range(steps + 1):
+                ratio = step / steps
+                x = peak + (width - peak) * ratio
+                line.append(QPointF(x, 2 + (height - 4) * ratio))
+            painter.drawPolyline(line)
+
+        # Poignées : petits losanges cliquables.
+        painter.setBrush(QColor(palette.clip_text))
+        painter.setPen(QPen(QColor(palette.clip_border), 1))
+        for which in ("in", "out"):
+            seconds = self.fade_seconds(which)
+            if seconds <= 0.0:
+                continue
+            x = self._fade_handle_center_x(which)
+            diamond = QPolygonF(
+                [
+                    QPointF(x, 6),
+                    QPointF(x + 5, 11),
+                    QPointF(x, 16),
+                    QPointF(x - 5, 11),
+                ]
+            )
+            painter.drawPolygon(diamond)
+        painter.end()
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-clic sur une poignée : remet le fondu correspondant à zéro."""
+        if not self.is_audio_clip:
+            super().mouseDoubleClickEvent(event)
+            return
+        position = event.position()
+        for which in ("in", "out"):
+            if self._fade_hit_rect(which).contains(position):
+                parent = self.parent_timeline
+                if parent is not None:
+                    parent.reset_clip_fades_requested.emit(self.view.id)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
@@ -440,6 +577,20 @@ class ClipWidget(QWidget):
         locked = parent.track_is_locked(self.view.track_id)
         x = event.position().x()
         scale = parent.pixels_per_second * parent.zoom
+        # Les poignées de fondu priment sur les autres manipulations :
+        # elles occupent les coins du clip, zone sinon ambiguë.
+        if self.is_audio_clip and not locked:
+            for which in ("in", "out"):
+                if self._fade_hit_rect(which).contains(event.position()):
+                    self.drag_mode = f"fade-{which}"
+                    self.drag_start_x = event.globalPos().x()
+                    self.drag_original_fade = self.fade_seconds(which)
+                    parent.begin_drag(self.view.id)
+                    parent._select_from_pointer(
+                        self.view.id, event.modifiers(), drag=False
+                    )
+                    event.accept()
+                    return
         if parent.tool == "slip" and not locked:
             self.drag_mode = "slip"
             self.drag_start_x = event.globalPos().x()
@@ -501,7 +652,10 @@ class ClipWidget(QWidget):
         if scale <= 0:
             return
         delta_seconds = (event.globalPos().x() - self.drag_start_x) / scale
-        if self.drag_mode == "move":
+        if self.drag_mode in {"fade-in", "fade-out"}:
+            which = self.drag_mode.split("-", 1)[1]
+            parent.preview_fade(self, which, self.drag_original_fade + delta_seconds)
+        elif self.drag_mode == "move":
             proposed = max(0.0, self.drag_original_start + delta_seconds)
             proposed = parent.snap_time(proposed, anchor_id=self.view.id)
             delta = proposed - self.drag_original_start
@@ -551,6 +705,11 @@ class ClipWidget(QWidget):
                 parent.roll_requested.emit(self.view.id, "left", self.pending_start)
             elif self.drag_mode == "roll-right":
                 parent.roll_requested.emit(self.view.id, "right", self.pending_end)
+            elif self.drag_mode in {"fade-in", "fade-out"}:
+                which = self.drag_mode.split("-", 1)[1]
+                parent.fade_changed_requested.emit(
+                    self.view.id, which, self.pending_fade
+                )
             parent.snap_line_x = None
         self.drag_mode = None
         event.accept()
@@ -565,6 +724,7 @@ class ClipWidget(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         self._paint_media_preview()
+        self._paint_fade_handles()
         keyframes = getattr(self.view, "keyframes", None) or []
         if not keyframes:
             return
@@ -835,6 +995,8 @@ class TimelinePanel(QWidget):
     slip_requested = Signal(str, float)
     slide_requested = Signal(str, float)
     roll_requested = Signal(str, str, float)
+    fade_changed_requested = Signal(str, str, float)
+    reset_clip_fades_requested = Signal(str)
     record_requested = Signal(bool)
 
     def __init__(self, project: Project | None = None, parent=None):
@@ -1890,6 +2052,26 @@ class TimelinePanel(QWidget):
             widget.pending_end = max(widget.drag_original_start + 0.1, edge_time)
         widget._apply_pending_geometry()
 
+    def preview_fade(self, widget: ClipWidget, which: str, seconds: float) -> None:
+        """Prévisualise un fondu pendant le glisser de sa poignée.
+
+        La valeur est bornée à la durée du clip et ne peut pas empiéter
+        sur le fondu opposé : c'est le modèle qui applique la contrainte
+        finale, l'aperçu doit juste rester plausible.
+        """
+        duration = max(widget.view.end - widget.view.start, 0.0)
+        bounded = max(0.0, min(float(seconds), duration))
+        other = widget.fade_seconds("out" if which == "in" else "in")
+        bounded = max(0.0, min(bounded, duration - other))
+        widget.pending_fade = bounded
+        model = widget.clip_model()
+        if model is not None:
+            if which == "in":
+                model.set_fade_in(bounded)
+            else:
+                model.set_fade_out(bounded)
+        widget.update()
+
     def synthetic_thumb(self, view: TimelineClipView, index: int, slots: int) -> QPixmap:
         """Vignette de secours, peinte sans décoder le média."""
         key = f"synth:{view.id}:{index}:{slots}"
@@ -2057,19 +2239,31 @@ class TimelinePanel(QWidget):
         if token.cancelled or self._runtime is None:
             return
         peaks = extract_waveform_peaks(path, bins)
-        self._runtime.mailbox.push(key, peaks if peaks else (), max(32, bins * 8))
+        self._runtime.mailbox.push(
+            key,
+            peaks if peaks else (),
+            max(32, bins * 8),
+            session_id=self._runtime.session_id,
+        )
 
     def _thumb_job(self, token, path: str, instant: float, key: str) -> None:
         if token.cancelled or self._runtime is None:
             return
         image = extract_thumbnail(path, instant, 160)
-        self._runtime.mailbox.push(key, image if image else b"", len(image) if image else 1)
+        self._runtime.mailbox.push(
+            key,
+            image if image else b"",
+            len(image) if image else 1,
+            session_id=self._runtime.session_id,
+        )
 
     def _drain_previews(self) -> None:
         runtime = self._runtime
         if runtime is None:
             return
-        items = runtime.mailbox.drain()
+        # Le filtre de session est appliqué par la mailbox : un résultat
+        # produit pour un projet déjà remplacé n'atteint jamais le cache.
+        items = runtime.mailbox.drain(runtime.session_id)
         for key, value, size, namespace in items:
             runtime.cache.put(key, value, size_bytes=size, namespace=namespace)
         if items:

@@ -338,6 +338,18 @@ def _stylesheet(palette: ThemePalette) -> str:
         color: {palette.disabled_text}; background: transparent;
     }}
 
+    /* Tranches du mixeur : le fond est déclaré dans la feuille globale
+       pour que les boutons enfants conservent les règles globales. */
+    QFrame#mixerStrip {{
+        background: {palette.panel};
+        border: 1px solid {palette.border};
+        border-radius: 6px;
+    }}
+    QFrame#mixerMasterBar {{
+        background: {palette.panel_alt};
+        border-top: 1px solid {palette.border};
+    }}
+
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QListWidget, QSpinBox, QDoubleSpinBox {{
         background: {palette.panel_alt}; color: {palette.text};
         border: 1px solid {palette.border}; border-radius: 6px;

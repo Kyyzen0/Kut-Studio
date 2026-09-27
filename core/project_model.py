@@ -16,6 +16,61 @@ if TYPE_CHECKING:
     from .visual_effects import ClipTransform, TransformKeyframe
 
 
+# ---------------------------------------------------------------------------
+# Bornes audio
+# ---------------------------------------------------------------------------
+
+MIN_GAIN_DB: float = -60.0
+"""Gain minimal (dB). -60 dB est perçu comme le silence."""
+
+MAX_GAIN_DB: float = 12.0
+"""Gain maximal (dB). Au-delà, le risque de saturation augmente fort."""
+
+MIN_PAN: float = -1.0
+"""Panoramique fully gauche."""
+
+MAX_PAN: float = 1.0
+"""Panoramique fully droite."""
+
+
+def clamp_gain_db(value: object) -> float:
+    """Ramène un gain (dB) dans la plage autorisée.
+
+    Une valeur non numérique (``None``, ``"x"``) retombe sur 0 dB plutôt
+    que de lever : un projet chargé ne doit jamais casser sur un champ
+    audio absent ou douteux.
+    """
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:  # NaN
+        return 0.0
+    return max(MIN_GAIN_DB, min(MAX_GAIN_DB, number))
+
+
+def clamp_pan(value: object) -> float:
+    """Ramène un panoramique dans ``[-1, 1]``. Non numérique → centré."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:
+        return 0.0
+    return max(MIN_PAN, min(MAX_PAN, number))
+
+
+def clamp_fade(value: object) -> float:
+    """Ramène une durée de fondu à une valeur non négative."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number:
+        return 0.0
+    return max(0.0, number)
+
+
 @dataclass
 class MediaAsset:
     """Décrit un média source importé dans le projet (vidéo, audio, image...).
@@ -146,6 +201,11 @@ class Clip:
     text: str = ""
     transform: "ClipTransform" = field(default_factory=lambda: _default_transform())
     transform_keyframes: list["TransformKeyframe"] = field(default_factory=list)
+    # --- Mixage audio (non destructif, ignoré par la vidéo) ---
+    gain_db: float = 0.0
+    pan: float = 0.0
+    fade_in: float = 0.0
+    fade_out: float = 0.0
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -159,10 +219,70 @@ class Clip:
         if self.timeline_start < 0.0:
             raise ValueError("timeline_start doit être positif ou nul.")
 
+        # --- Bornes audio ---
+        # On normalise au lieu de lever : ces paramètres sont édités
+        # par des faders et des poignées de fondu, un dépassement est
+        # une gêne d'usage, pas une corruption de projet.
+        self.gain_db = clamp_gain_db(self.gain_db)
+        self.pan = clamp_pan(self.pan)
+        self.fade_in = clamp_fade(self.fade_in)
+        self.fade_out = clamp_fade(self.fade_out)
+        # Deux fondus ne peuvent pas se chevaucher.
+        duration = self.duration
+        if self.fade_in + self.fade_out > duration:
+            scale = duration / (self.fade_in + self.fade_out)
+            self.fade_in *= scale
+            self.fade_out *= scale
+
     @property
     def duration(self) -> float:
         """Durée du clip sur la timeline (égale à ``source_out - source_in``)."""
         return self.source_out - self.source_in
+
+    def set_fade_in(self, seconds: float) -> float:
+        """Règle le fondu d'entrée sans empiéter sur le fondu de sortie.
+
+        Le fondu de sortie n'est **pas** réajusté : une poignée ne doit
+        jamais déplacer celle que l'utilisateur vient de régler.
+
+        Returns:
+            La valeur effectivement appliquée (bornée).
+        """
+        self.fade_in = min(clamp_fade(seconds), max(0.0, self.duration - self.fade_out))
+        return self.fade_in
+
+    def set_fade_out(self, seconds: float) -> float:
+        """Règle le fondu de sortie sans empiéter sur le fondu d'entrée."""
+        self.fade_out = min(clamp_fade(seconds), max(0.0, self.duration - self.fade_in))
+        return self.fade_out
+
+    def _rebalance_fades(self) -> None:
+        """Force ``fade_in + fade_out <= duration`` en rognant proportionnellement.
+
+        Réservé au chargement d'un projet : les setters ne l'appellent
+        pas, pour ne pas déplacer un fondu déjà réglé par l'utilisateur.
+        """
+        duration = self.duration
+        total = self.fade_in + self.fade_out
+        if total > duration and total > 0.0:
+            scale = duration / total
+            self.fade_in *= scale
+            self.fade_out *= scale
+
+    def reset_fades(self) -> None:
+        """Remet les deux fondus à zéro (double-clic / bouton Réinitialiser)."""
+        self.fade_in = 0.0
+        self.fade_out = 0.0
+
+    @property
+    def is_audio_affected(self) -> bool:
+        """Le clip porte-t-il des réglages audio à conserver."""
+        return (
+            self.gain_db != 0.0
+            or self.pan != 0.0
+            or self.fade_in != 0.0
+            or self.fade_out != 0.0
+        )
 
 
 def _default_transform():  # pragma: no cover - import deferred
@@ -215,10 +335,30 @@ class Track:
     armed: bool = False
     height_mode: str = "normal"
     collapsed: bool = False
+    # --- Mixage audio (non destructif, ignoré par la vidéo) ---
+    volume_db: float = 0.0
+    pan: float = 0.0
 
     def __post_init__(self) -> None:
         if self.height_mode not in {"compact", "normal", "large"}:
             self.height_mode = "normal"
+        self.volume_db = clamp_gain_db(self.volume_db)
+        self.pan = clamp_pan(self.pan)
+
+    def set_volume_db(self, value: float) -> float:
+        """Règle le volume de piste, borné, et retourne la valeur appliquée."""
+        self.volume_db = clamp_gain_db(value)
+        return self.volume_db
+
+    def set_pan(self, value: float) -> float:
+        """Règle le panoramique de piste, borné, et retourne la valeur appliquée."""
+        self.pan = clamp_pan(value)
+        return self.pan
+
+    def reset_audio(self) -> None:
+        """Remet volume et panoramique à leur valeur neutre."""
+        self.volume_db = 0.0
+        self.pan = 0.0
 
     @property
     def is_video(self) -> bool:

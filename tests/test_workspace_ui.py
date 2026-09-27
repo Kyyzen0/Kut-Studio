@@ -174,7 +174,7 @@ def test_maximize_hides_the_other_panels(window):
 def test_maximize_keeps_panels_open_in_the_state(window):
     manager = window.workspace
     manager.maximize_panel(PanelId.TIMELINE)
-    for panel in PanelId:
+    for panel in (PanelId.TIMELINE, PanelId.VIEWER, PanelId.MEDIA, PanelId.INSPECTOR):
         assert manager.state.get(panel).visible
 
 
@@ -183,7 +183,8 @@ def test_restore_brings_back_the_previous_layout(window):
     manager.maximize_panel(PanelId.VIEWER)
     manager.restore_layout()
     assert manager.state.maximized is None
-    for panel in PanelId:
+    # Le mixeur reste replié : il n'a pas été ouvert par cette séquence.
+    for panel in (PanelId.TIMELINE, PanelId.VIEWER, PanelId.MEDIA, PanelId.INSPECTOR):
         assert manager.is_visible(panel)
 
 
@@ -332,9 +333,11 @@ def test_move_panel_keeps_the_same_widget(window):
 def test_move_panel_vacues_the_origin_area(window):
     manager = window.workspace
     manager.move_panel(PanelId.MEDIA, DockArea.RIGHT)
-    assert manager._zones[DockArea.LEFT]._layout.count() == 0
+    # On compte les panneaux réellement présents, pas les enfants du
+    # layout de zone (qui contient le QSplitter interne).
+    assert manager._zones[DockArea.LEFT].widgets() == []
     assert not manager._zones[DockArea.LEFT].isVisible()
-    assert manager._zones[DockArea.RIGHT]._layout.count() == 2
+    assert len(manager._zones[DockArea.RIGHT].widgets()) == 2
 
 
 def test_move_panel_docks_a_floating_panel_first(window):

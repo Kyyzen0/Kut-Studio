@@ -20,9 +20,12 @@ Structure du fichier (version 4) :
     }
 
 La version 5 ajoute les marqueurs de timeline et les états de piste
-``solo``, ``armed``, ``height_mode`` et ``collapsed``. Les versions
-précédentes restent lisibles : ces champs prennent leurs valeurs par
-défaut. La version 4 avait ajouté ``locked`` / ``visible`` / ``muted``.
+``solo``, ``armed``, ``height_mode`` et ``collapsed``. La version 6
+ajoute le mixage audio non destructif : ``volume_db`` / ``pan`` sur les
+pistes, ``gain_db`` / ``pan`` / ``fade_in`` / ``fade_out`` sur les clips.
+Les versions précédentes restent lisibles : ces champs prennent leurs
+valeurs par défaut. La version 4 avait ajouté ``locked`` /
+``visible`` / ``muted``.
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -50,16 +53,19 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 5
+CURRENT_VERSION = 6
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
-Les versions 1 à 4 restent prises en charge ; les champs
-spécifiques (transform, keyframes, états de piste) y sont comblés
-par des valeurs par défaut conservatives.
+Les versions 1 à 5 restent prises en charge ; les champs spécifiques
+(transform, keyframes, états de piste, mixage audio) y sont comblés par
+des valeurs par défaut conservatives.
 """
+
+_VERSION_ADDED_AUDIO: int = 6
+"""Première version sérialisant le mixage audio non destructif."""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -78,8 +84,24 @@ _TRACK_FIELDS = frozenset(
         "armed",
         "height_mode",
         "collapsed",
+        "volume_db",
+        "pan",
     }
 )
+_CLIP_AUDIO_FIELDS = frozenset({"gain_db", "pan", "fade_in", "fade_out"})
+_CLIP_KNOWN_FIELDS = frozenset(
+    {
+        "id",
+        "asset_id",
+        "track_id",
+        "timeline_start",
+        "source_in",
+        "source_out",
+        "enabled",
+        "label",
+        "text",
+    }
+) | _CLIP_AUDIO_FIELDS
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +228,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "armed": track.armed,
                     "height_mode": track.height_mode,
                     "collapsed": track.collapsed,
+                    "volume_db": float(track.volume_db),
+                    "pan": float(track.pan),
                     "clips": [
                         {
                             "id": clip.id,
@@ -217,6 +241,10 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "enabled": clip.enabled,
                             "label": clip.label,
                             "text": clip.text,
+                            "gain_db": float(clip.gain_db),
+                            "pan": float(clip.pan),
+                            "fade_in": float(clip.fade_in),
+                            "fade_out": float(clip.fade_out),
                             "transform": _transform_to_dict(clip.transform),
                             "transform_keyframes": [
                                 _keyframe_to_dict(kf) for kf in clip.transform_keyframes
@@ -288,6 +316,7 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
             key: value
             for key, value in raw_clip.items()
             if key not in {"transform", "transform_keyframes"}
+            and key in _CLIP_KNOWN_FIELDS
         }
         clip_kwargs["transform"] = _dict_to_transform(
             raw_clip.get("transform")
@@ -296,10 +325,16 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
             _dict_to_keyframe(raw) for raw in raw_clip.get("transform_keyframes", [])
         ]
         clips.append(Clip(**clip_kwargs))
-    return Track(
-        clips=clips,
-        **{key: value for key, value in data.items() if key in _TRACK_FIELDS},
-    )
+    track_kwargs = {
+        key: value for key, value in data.items() if key in _TRACK_FIELDS
+    }
+    # Une version antérieure à 6 ne connaît pas le mixage : on force les
+    # valeurs neutres plutôt que de laisser un champ absent وغير défini.
+    if "volume_db" not in track_kwargs:
+        track_kwargs["volume_db"] = 0.0
+    if "pan" not in track_kwargs:
+        track_kwargs["pan"] = 0.0
+    return Track(clips=clips, **track_kwargs)
 
 
 def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:

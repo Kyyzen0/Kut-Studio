@@ -12,6 +12,7 @@ import pytest
 
 from core.workspace_state import (
     BUILTIN_WORKSPACES,
+    DEFAULT_HIDDEN,
     DEFAULT_SIZE,
     MIN_SIZE,
     WORKSPACES_DIR_NAME,
@@ -38,8 +39,19 @@ from core.workspace_state import (
 def test_default_state_exposes_every_panel_visible():
     state = WorkspaceState.default()
     for panel in PanelId:
+        if panel in DEFAULT_HIDDEN:
+            # Le mixeur démarre replié : il ne doit pas voler de place
+            # à l'édition tant que l'utilisateur ne l'ouvre pas.
+            assert state.is_visible(panel) is False
+            continue
         assert state.is_visible(panel)
         assert not state.is_floating(panel)
+
+
+def test_mixer_is_collapsed_by_default():
+    state = WorkspaceState.default()
+    assert PanelId.MIXER in DEFAULT_HIDDEN
+    assert state.is_visible(PanelId.MIXER) is False
 
 
 def test_default_state_places_panels_in_expected_areas():

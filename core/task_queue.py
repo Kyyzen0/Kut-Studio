@@ -47,19 +47,30 @@ class _QueuedTask:
 
 
 class TaskQueue:
-    """File en mémoire, dédoublonnée et annulable par session."""
+    """File en mémoire, dédoublonnée et annulable par session.
+
+    Sure pour un usage parallèle : le thread d'interface soumet et
+    annule, pendant que :class:`QueueWorker` pompe. Un verrou protège
+    les structures internes, mais **la fonction d'une tâche n'est
+    jamais exécutée sous le verrou** — sinon une tâche qui soumettrait
+    ou annulerait une autre tâche depuis son propre corps
+    s'interbloquerait.
+    """
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._tasks: list[_QueuedTask] = []
         self._by_key: dict[str, _QueuedTask] = {}
         self._sequence = 0
 
     def __len__(self) -> int:
-        return len(self._tasks)
+        with self._lock:
+            return len(self._tasks)
 
     @property
     def pending(self) -> int:
-        return len(self._tasks)
+        with self._lock:
+            return len(self._tasks)
 
     def submit(
         self,
@@ -70,58 +81,96 @@ class TaskQueue:
         session_id: int = 0,
     ) -> CancelToken:
         """Planifie ``fn``. Une tâche de même clé encore en attente est remplacée."""
-        previous = self._by_key.get(key)
-        if previous is not None:
-            previous.token.cancel()
-            self._tasks.remove(previous)
         token = CancelToken()
-        self._sequence += 1
-        task = _QueuedTask(
-            priority=int(priority),
-            sequence=self._sequence,
-            key=key,
-            session_id=session_id,
-            fn=fn,
-            token=token,
-        )
-        self._tasks.append(task)
-        self._by_key[key] = task
+        with self._lock:
+            previous = self._by_key.get(key)
+            if previous is not None:
+                # La tâche remplacée est annulée *avant* d'être retirée :
+                # si elle est déjà en cours d'exécution côté worker, elle
+                # verra son jeton et s'arrêtera d'elle-même.
+                previous.token.cancel()
+                try:
+                    self._tasks.remove(previous)
+                except ValueError:
+                    # Déjà pompée par le worker : rien à retirer.
+                    pass
+            self._sequence += 1
+            task = _QueuedTask(
+                priority=int(priority),
+                sequence=self._sequence,
+                key=key,
+                session_id=session_id,
+                fn=fn,
+                token=token,
+            )
+            self._tasks.append(task)
+            self._by_key[key] = task
         return token
 
     def cancel_key(self, key: str) -> None:
-        task = self._by_key.pop(key, None)
-        if task is None:
-            return
-        task.token.cancel()
-        self._tasks.remove(task)
+        with self._lock:
+            task = self._by_key.pop(key, None)
+            if task is None:
+                return
+            task.token.cancel()
+            try:
+                self._tasks.remove(task)
+            except ValueError:
+                pass
 
     def cancel_session(self, session_id: int) -> None:
         """Annule les tâches d'une session, typiquement un projet fermé."""
-        for task in list(self._tasks):
-            if task.session_id == session_id:
-                self.cancel_key(task.key)
+        with self._lock:
+            victims = [
+                task for task in self._tasks if task.session_id == session_id
+            ]
+            for task in victims:
+                task.token.cancel()
+                self._by_key.pop(task.key, None)
+                try:
+                    self._tasks.remove(task)
+                except ValueError:
+                    pass
 
     def cancel_all(self) -> None:
-        for task in self._tasks:
-            task.token.cancel()
-        self._tasks.clear()
-        self._by_key.clear()
+        with self._lock:
+            for task in self._tasks:
+                task.token.cancel()
+            self._tasks.clear()
+            self._by_key.clear()
+
+    def _pop_next(self) -> _QueuedTask | None:
+        """Retire et retourne la prochaine tâche valide, sous verrou."""
+        with self._lock:
+            if not self._tasks:
+                return None
+            self._tasks.sort()
+            task = self._tasks.pop(0)
+            # On ne libère la clé que si elle désigne encore cette tâche :
+            # un ``submit`` concurrent a pu la remplacer.
+            if self._by_key.get(task.key) is task:
+                self._by_key.pop(task.key, None)
+            return task
 
     def pump(self, limit: int = 1) -> int:
         """Exécute au plus ``limit`` tâches encore valides.
 
         Les tâches déjà annulées sont retirées sans être appelées.
         L'ordre est la priorité, puis l'ordre de soumission.
+
+        La fonction d'une tâche est appelée **hors verrou** : elle peut
+        donc soumettre, annuler ou annuler une session sans bloquer.
         """
         if limit <= 0:
             return 0
         ran = 0
-        while self._tasks and ran < limit:
-            self._tasks.sort()
-            task = self._tasks.pop(0)
-            self._by_key.pop(task.key, None)
+        while ran < limit:
+            task = self._pop_next()
+            if task is None:
+                break
             if task.token.cancelled:
                 continue
+            # Exécution délibérément hors du verrou.
             task.fn(task.token)
             ran += 1
         return ran

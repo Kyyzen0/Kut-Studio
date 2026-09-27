@@ -101,6 +101,14 @@ class IconName(str, Enum):
     PANEL_MAXIMIZE = "panel_maximize"
     PANEL_RESTORE = "panel_restore"
     PANEL_RESET = "panel_reset"
+    AUDIO_VOLUME = "audio_volume"
+    AUDIO_MUTE = "audio_mute"
+    AUDIO_SOLO = "audio_solo"
+    AUDIO_ARM = "audio_arm"
+    AUDIO_FADE = "audio_fade"
+    AUDIO_PAN = "audio_pan"
+    AUDIO_MIXER = "audio_mixer"
+    MIC = "mic"
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +525,76 @@ _SVG_TEMPLATES: dict[str, str] = {
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
         '<rect x="3" y="4" width="18" height="16" rx="2"/>'
         '<path d="M8 9h8M8 15h5"/></svg>'
+    ),
+    IconName.AUDIO_VOLUME: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="currentColor" '
+        'fill-opacity=".2"/>'
+        '<path d="M15.6 9.2a4 4 0 0 1 0 5.6"/>'
+        '<path d="M18.4 6.4a8 8 0 0 1 0 11.2"/></svg>'
+    ),
+    IconName.AUDIO_MUTE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="currentColor" '
+        'fill-opacity=".2"/>'
+        '<path d="m16 9.5 5 5M21 9.5l-5 5"/></svg>'
+    ),
+    IconName.AUDIO_SOLO: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="12" cy="12" r="8"/>'
+        '<circle cx="12" cy="12" r="3" fill="currentColor" '
+        'stroke="none"/></svg>'
+    ),
+    IconName.AUDIO_ARM: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="9" y="3" width="6" height="10" rx="3"/>'
+        '<path d="M5.5 11a6.5 6.5 0 0 0 13 0"/>'
+        '<path d="M12 17.5V21"/></svg>'
+    ),
+    IconName.AUDIO_FADE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M3 18h18"/>'
+        '<path d="M3 18 11 6"/>'
+        '<path d="M21 18 13 6"/>'
+        '<circle cx="11" cy="6" r="1.6" fill="currentColor"/>'
+        '<circle cx="13" cy="6" r="1.6" fill="currentColor"/></svg>'
+    ),
+    IconName.AUDIO_PAN: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 12h16"/>'
+        '<circle cx="8" cy="12" r="2.4" fill="currentColor" '
+        'fill-opacity=".2"/>'
+        '<circle cx="16" cy="12" r="2.4" fill="currentColor" '
+        'fill-opacity=".2"/>'
+        '<path d="M12 7v10"/></svg>'
+    ),
+    IconName.AUDIO_MIXER: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M6 4v6M6 14v6M12 4v3M12 11v9M18 4v9M18 17v3"/>'
+        '<path d="M3.5 10h5M9.5 7h5M15.5 13h5"/></svg>'
+    ),
+    IconName.MIC: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="9" y="3" width="6" height="10" rx="3"/>'
+        '<path d="M5.5 11a6.5 6.5 0 0 0 13 0"/>'
+        '<path d="M12 17.5V21"/>'
+        '<path d="M8.5 21h7"/></svg>'
     ),
 }
 

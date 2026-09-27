@@ -84,6 +84,33 @@ class UserSettings:
     language: str = DEFAULT_LANGUAGE
     performance_profile: str = DEFAULT_PERFORMANCE_PROFILE
     preview_quality: str = DEFAULT_PREVIEW_QUALITY
+    master_gain_db: float = 0.0
+    master_muted: bool = False
+
+
+DEFAULT_MASTER_GAIN_DB: float = 0.0
+"""Gain Master par défaut (neutre)."""
+
+MAX_MASTER_GAIN_DB: float = 12.0
+"""Borne haute du gain Master, alignée sur celle des pistes."""
+
+
+def _coerce_master_gain(value: object) -> float:
+    """Borne un gain Master relu depuis le disque.
+
+    Une valeur absente ou corrompue retombe sur 0 dB : mieux vaut un
+    mixage neutre qu'un gain fou au démarrage. Le Master décrit la
+    session de l'utilisateur, il ne fait donc **pas** partie du projet
+    ``.kut``.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return DEFAULT_MASTER_GAIN_DB
+    number = float(value)
+    if number != number:  # NaN
+        return DEFAULT_MASTER_GAIN_DB
+    from .project_model import MIN_GAIN_DB
+
+    return max(MIN_GAIN_DB, min(MAX_MASTER_GAIN_DB, number))
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +246,8 @@ def load_user_settings(
         language=_coerce_language(data.get("language")),
         performance_profile=_coerce_performance_profile(data.get("performance_profile")),
         preview_quality=_coerce_preview_quality(data.get("preview_quality")),
+        master_gain_db=_coerce_master_gain(data.get("master_gain_db")),
+        master_muted=bool(data.get("master_muted", False)),
     )
 
 
@@ -252,6 +281,8 @@ def save_user_settings(
             language=_coerce_language(settings.language),
             performance_profile=_coerce_performance_profile(settings.performance_profile),
             preview_quality=_coerce_preview_quality(settings.preview_quality),
+            master_gain_db=_coerce_master_gain(settings.master_gain_db),
+            master_muted=bool(settings.master_muted),
         )
     )
     fd, tmp_name = tempfile.mkstemp(

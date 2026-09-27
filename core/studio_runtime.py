@@ -82,21 +82,57 @@ class PreviewMailbox:
 
     Le cache n'est pas protégé pour des écritures concurrentes. Le
     worker ne fait qu'empiler ; le thread Qt vide la boîte.
+
+    Chaque entrée mémorise la **session** qui l'a produite. Un résultat
+    de projet clos est ignoré à la lecture : sans cela, une tâche déjà
+    partie chez le worker pouvait écrire dans le cache du projet
+    suivant, qui vient pourtant d'être vidé.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._items: list[tuple[str, object, int, str]] = []
+        self._items: list[tuple[str, object, int, str, int]] = []
 
-    def push(self, key: str, value: object, size_bytes: int, namespace: str = "project") -> None:
+    def push(
+        self,
+        key: str,
+        value: object,
+        size_bytes: int,
+        namespace: str = "project",
+        session_id: int = 0,
+    ) -> None:
         with self._lock:
-            self._items.append((key, value, max(1, int(size_bytes)), namespace))
+            self._items.append(
+                (key, value, max(1, int(size_bytes)), namespace, int(session_id))
+            )
 
-    def drain(self) -> list[tuple[str, object, int, str]]:
+    def drain(
+        self, current_session: int | None = None
+    ) -> list[tuple[str, object, int, str]]:
+        """Vide la boîte et retourne les entrées de la session courante.
+
+        Les entrées issues d'une session antérieure sont **écartées** :
+        elles appartiennent à un projet remplacé. Passer
+        ``current_session=None`` retire ce filtre (usage de test isolé).
+        """
         with self._lock:
             items = self._items
             self._items = []
-        return items
+        if current_session is None:
+            return [entry[:4] for entry in items]
+        return [
+            entry[:4] for entry in items if entry[4] == current_session
+        ]
+
+    def pending_sessions(self) -> tuple[int, ...]:
+        """Sessions encore représentées dans la boîte (diagnostic)."""
+        with self._lock:
+            return tuple(entry[4] for entry in self._items)
+
+    def clear(self) -> None:
+        """Jette toutes les entrées en attente."""
+        with self._lock:
+            self._items.clear()
 
 
 class StudioRuntime:
@@ -160,10 +196,16 @@ class StudioRuntime:
         self._refresh_budgets()
 
     def begin_project(self) -> None:
-        """Invalide le travail du projet précédent et libère son cache."""
+        """Invalide le travail du projet précédent et libère son cache.
+
+        Les résultats déjà calculés par l'ancien projet mais pas encore
+        appliqués sont également écartés : sans cela ils repeupleraient
+        le cache fraîchement vidé.
+        """
         previous = self.session_id
         self.session_id += 1
         self.tasks.cancel_session(previous)
+        self.mailbox.clear()
         self.cache.clear_namespace("project")
         self.weight = "light"
         self._refresh_budgets()

@@ -90,45 +90,150 @@ def separator_action(parent: QWidget | None = None) -> QAction:
 
 
 class _Zone(QWidget):
-    """Zone de dock : un conteneur simple, sans logique propre."""
+    """Zone de dock : contient un ou plusieurs panneaux.
+
+    Les panneaux d'une même zone sont empilés dans un
+    :class:`QSplitter` orienté selon la zone (horizontal pour LEFT /
+    CENTER / RIGHT, vertical pour BOTTOM). Le séparateur est donc
+    réellement déplaçable par l'utilisateur : c'est ce qui permet
+    d'agrandir la timeline ou le mixeur sans passer par un menu.
+    """
 
     def __init__(self, area: DockArea, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.area = area
         self.setObjectName(f"dockZone_{area.value}")
+        orientation = (
+            Qt.Vertical if area is DockArea.BOTTOM else Qt.Horizontal
+        )
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
+        self._splitter = QSplitter(orientation, self)
+        self._splitter.setChildrenCollapsible(False)
+        self._splitter.setHandleWidth(6)
+        self._layout.addWidget(self._splitter)
+
+    # -- contenu -------------------------------------------------------
+
+    def widgets(self) -> list[QWidget]:
+        """Panneaux actuellement dans la zone, dans l'ordre."""
+        return [
+            self._splitter.widget(index)
+            for index in range(self._splitter.count())
+        ]
+
+    def contains(self, widget: QWidget) -> bool:
+        return widget in self.widgets()
+
+    def add(self, widget: QWidget) -> None:
+        if self.contains(widget):
+            return
+        widget.setParent(None)
+        self._splitter.addWidget(widget)
+
+    def remove(self, widget: QWidget) -> None:
+        """Détache un panneau de la zone.
+
+        :class:`QSplitter` ne propose pas ``removeWidget`` : le
+        reparentage suffit à faire sortir le widget de la découpe, et
+        c'est la méthode qu'utilise Qt elle-même.
+        """
+        if not self.contains(widget):
+            return
+        widget.setParent(None)
+
+    def clear(self) -> None:
+        for widget in self.widgets():
+            self.remove(widget)
 
     def take_all(self) -> list[QWidget]:
-        """Retire et retourne tous les widgets enfants du layout."""
-        taken: list[QWidget] = []
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                taken.append(widget)
+        """Retire et retourne tous les panneaux de la zone."""
+        taken = self.widgets()
+        self.clear()
         return taken
 
     def index_of(self, widget: QWidget) -> int | None:
-        """Index d'un widget dans la zone, ou ``None`` s'il n'y est pas."""
-        for index in range(self._layout.count()):
-            if self._layout.itemAt(index).widget() is widget:
-                return index
-        return None
+        widgets = self.widgets()
+        return widgets.index(widget) if widget in widgets else None
 
     def remove_at(self, index: int) -> QWidget | None:
-        """Retire le widget d'``index`` de la zone."""
-        item = self._layout.takeAt(index)
-        if item is None:
-            return None
-        widget = item.widget()
-        if widget is not None:
-            widget.setParent(None)
-        return widget
+        if 0 <= index < self._splitter.count():
+            widget = self._splitter.widget(index)
+            self.remove(widget)
+            return widget
+        return None
 
-    def add(self, widget: QWidget, stretch: int = 0) -> None:
-        self._layout.addWidget(widget, stretch)
+    def set_stretch(self, widget: QWidget, stretch: int) -> None:
+        index = self.index_of(widget)
+        if index is not None:
+            self._splitter.setStretchFactor(index, stretch)
+
+    def set_timeline_first(self, first_size: int) -> None:
+        """Donne au premier panneau une taille fixe, le reste aux autres.
+
+        Utilisé pour la zone basse : la timeline est le panneau de
+        travail principal et mérite la part calculée, les autres
+        (mixeur) prennent le reliquat, sans jamais passer sous leur
+        minimum.
+        """
+        widgets = self.widgets()
+        if len(widgets) < 2 or self.area is not DockArea.BOTTOM:
+            return
+        available = self.height()
+        if available <= 0:
+            return
+        first = max(1, min(int(first_size), available))
+        rest = max(1, available - first)
+        # Si le reliquat est trop court, on rogne le premier plutôt que
+        # de rendre les autres inutilisables.
+        floors = [max(1, w.minimumSizeHint().height()) for w in widgets[1:]]
+        if rest < sum(floors):
+            first = max(sum(floors), available - sum(floors))
+            rest = available - first
+        sizes = [first]
+        remaining = rest
+        for index in range(1, len(widgets)):
+            floor = floors[index - 1]
+            share = max(floor, rest // (len(widgets) - index + 1))
+            sizes.append(min(share, remaining))
+            remaining -= sizes[-1]
+        sizes[-1] = max(1, sizes[-1] + remaining)
+        self._splitter.setSizes(sizes)
+
+    def distribute(self, available: int) -> None:
+        """Répartit la hauteur/largeur disponible selon les préférences.
+
+        Sans cela, un ``QSplitter`` partage selon les ``sizeHint`` et le
+        panneau le plus gourmet peut écraser ses voisins. On répartit
+        donc au prorata des tailles préférées, avec un plancher igual au
+        minimum de chaque panneau.
+        """
+        widgets = self.widgets()
+        if len(widgets) < 2 or available <= 0:
+            return
+        weights = []
+        for widget in widgets:
+            hint = widget.sizeHint()
+            preferred = (
+                hint.height()
+                if self.area is DockArea.BOTTOM
+                else hint.width()
+            )
+            minimum = widget.minimumSizeHint()
+            floor = (
+                minimum.height()
+                if self.area is DockArea.BOTTOM
+                else minimum.width()
+            )
+            weights.append(max(int(preferred), int(floor), 1))
+        total = sum(weights)
+        if total <= 0:
+            return
+        sizes = [max(1, int(available * w / total)) for w in weights]
+        # Le dernier absorbe l'arrondi pour que la somme soit exacte.
+        sizes[-1] = max(1, available - sum(sizes[:-1]))
+        self._splitter.setSizes(sizes)
 
 
 class WorkspaceManager(QObject):
@@ -279,7 +384,7 @@ class WorkspaceManager(QObject):
             if index is not None and other is not area:
                 zone.remove_at(index)
         zone = self._zones[area]
-        zone.add(host, stretch=1)
+        zone.add(host)
         host.show()
         self._apply_area_minimum(area)
 
@@ -295,20 +400,34 @@ class WorkspaceManager(QObject):
                 splitter.setSizes(splitter.sizes())
 
     def _apply_area_minimum(self, area: DockArea) -> None:
+        """Applique la taille minimale d'une zone.
+
+        Une zone peut contenir plusieurs panneaux (couteau, timeline et
+        mixeur partagent la zone basse). Comme ils sont **côte à côte**
+        dans un même ``QSplitter``, la zone doit réserver la *somme* de
+        leurs minimums : avec un simple maximum, le séparateur ne peut
+        pas satisfaire les deux et l'un des panneaux se retrouve
+        écrasé.
+        """
         zone = self._zones.get(area)
         if zone is None:
             return
-        panels = [p for p in self._panels if self._state.area_of(p) is area]
+        panels = [
+            p
+            for p in self._panels
+            if self._state.area_of(p) is area
+            and not self._state.is_floating(p)
+            and self._state.is_visible(p)
+        ]
         if not panels:
             zone.setMinimumWidth(0)
             zone.setMinimumHeight(0)
             return
-        sizes = [MIN_SIZE.get(p, 200) for p in panels]
         if area is DockArea.BOTTOM:
-            zone.setMinimumHeight(max(sizes))
+            zone.setMinimumHeight(sum(MIN_SIZE.get(p, 200) for p in panels))
             zone.setMinimumWidth(0)
         else:
-            zone.setMinimumWidth(max(sizes))
+            zone.setMinimumWidth(sum(MIN_SIZE.get(p, 200) for p in panels))
             zone.setMinimumHeight(0)
 
     def _primary_panel(self, area: DockArea) -> PanelId:
@@ -402,6 +521,10 @@ class WorkspaceManager(QObject):
         # refuse de la réduire et laisse un vide.
         self._normalize_area(area)
         self._apply_sizes()
+        if area is DockArea.BOTTOM:
+            # Ouvrir le mixeur agrandit la zone basse : on rééquilibre
+            # pour que la timeline garde sa hauteur confortable.
+            QTimer.singleShot(0, self.balance_vertical_split)
         self._refresh_dependents()
 
     def float_panel(self, panel: PanelId) -> None:
@@ -546,22 +669,37 @@ class WorkspaceManager(QObject):
         timeline = self._panels.get(PanelId.TIMELINE)
         if timeline is None:
             return
-        track_count = len(
-            self._project_tracks()
-        ) or 1
+        track_count = len(self._project_tracks()) or 1
         pitch = timeline.track_height + timeline.track_gap
-        needed = (
+        timeline_needed = (
             timeline.header_height
             + timeline.ruler_height
             + 8
             + pitch * max(track_count, 1)
             + 34  # marges + barres de défilement
         )
+        # La zone basse peut héberger d'autres panneaux (le mixeur) :
+        # chacun réclame son minimum, sinon l'un se fait écraser.
+        extras = 0
+        for panel in self._panels:
+            if panel is PanelId.TIMELINE:
+                continue
+            if (
+                self._state.area_of(panel) is DockArea.BOTTOM
+                and self._state.is_visible(panel)
+            ):
+                extras += MIN_SIZE.get(panel, 200)
+        needed = timeline_needed + extras
         bottom = max(needed, int(total * 0.40))
-        bottom = min(bottom, int(total * 0.62))
-        bottom = max(bottom, timeline.minimumHeight())
+        bottom = min(bottom, int(total * 0.80))
+        bottom = max(bottom, timeline.minimumHeight() + extras)
         top = max(total - bottom, 160)
         root.setSizes([top, bottom])
+        # Partage interne déterministe : la timeline prend ce dont elle a
+        # besoin, le reste va aux autres panneaux de la zone (mixeur).
+        zone = self._zones.get(DockArea.BOTTOM)
+        if zone is not None and len(zone.widgets()) > 1:
+            zone.set_timeline_first(timeline_needed)
 
     def _project_tracks(self) -> list:
         """Pistes du projet courant, si le panneau timeline le porte."""
@@ -733,25 +871,19 @@ class WorkspaceManager(QObject):
         expected = self._state.visible_panels(area)
         expected_set = set(expected)
 
-        present = [
-            item.widget()
-            for index in range(zone._layout.count())
-            for item in (zone._layout.itemAt(index),)
-            if item.widget() is not None
-        ]
+        present = [w for w in zone.widgets() if w is not None]
         # Retire les hôtes qui ne doivent plus être ici.
         for widget in present:
             panel = getattr(widget, "panel", None)
             if panel is None or panel not in expected_set:
-                zone._layout.removeWidget(widget)
-                widget.setParent(None)
+                zone.remove(widget)
         # Réinsère les hôtes attendus manquants, dans l'ordre de l'état.
         for panel in expected:
             host = self._hosts.get(panel)
             if host is None or host in present:
                 continue
             host.setParent(None)
-            zone.add(host, stretch=1)
+            zone.add(host)
             host.show()
         for widget in present:
             panel = getattr(widget, "panel", None)
@@ -763,6 +895,13 @@ class WorkspaceManager(QObject):
         if not expected:
             zone.setMinimumWidth(0)
             zone.setMinimumHeight(0)
+            return
+        # Répartition interne : chaque panneau reçoit la part que sa
+        # taille préférée demande, pas un simple partage par défaut.
+        if area is DockArea.BOTTOM:
+            zone.distribute(max(0, zone.height()))
+        else:
+            zone.distribute(max(0, zone.width()))
 
     def _apply_maximized(self, panel: PanelId) -> None:
         """Affiche un seul panneau dans l'espace de travail."""
@@ -787,7 +926,7 @@ class WorkspaceManager(QObject):
             # sans reconstruire la disposition entière.
             zone = self._zones[DockArea.CENTER]
             zone.take_all()
-            zone.add(host, stretch=1)
+            zone.add(host)
             host.show()
             for other_area in DockArea:
                 if other_area is not DockArea.CENTER:

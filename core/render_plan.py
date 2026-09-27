@@ -95,6 +95,10 @@ class AudioLayer:
         source_out: Point de sortie du média source (secondes).
         timeline_start: Début du clip sur la timeline (secondes).
         timeline_end: Fin du clip sur la timeline (secondes).
+        gain_db: Gain du clip seul (dB), hors volume de piste.
+        pan: Panoramique du clip, borné à ``[-1, 1]``.
+        fade_in: Durée du fondu d'entrée (secondes, ``>= 0``).
+        fade_out: Durée du fondu de sortie (secondes, ``>= 0``).
     """
 
     clip_id: str
@@ -106,6 +110,27 @@ class AudioLayer:
     source_out: float
     timeline_start: float
     timeline_end: float
+    gain_db: float = 0.0
+    pan: float = 0.0
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+    track_volume_db: float = 0.0
+    track_pan: float = 0.0
+
+    @property
+    def duration(self) -> float:
+        """Durée du clip sur la timeline."""
+        return max(0.0, self.timeline_end - self.timeline_start)
+
+    @property
+    def total_gain_db(self) -> float:
+        """Gain total appliqué : volume de piste + gain de clip."""
+        return float(self.track_volume_db) + float(self.gain_db)
+
+    @property
+    def total_pan(self) -> float:
+        """Panoramique total, borné (réglage clip + réglage piste)."""
+        return max(-1.0, min(1.0, float(self.pan) + float(self.track_pan)))
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +167,15 @@ class RenderPlan:
     video_layers: tuple[RenderLayer, ...] = field(default_factory=tuple)
     audio_layers: tuple[AudioLayer, ...] = field(default_factory=tuple)
     subtitle_cues: tuple[SubtitleCue, ...] = field(default_factory=tuple)
+    master_gain_db: float = 0.0
+    master_muted: bool = False
+
+    @property
+    def is_audio_silent(self) -> bool:
+        """Aucun son ne doit sortir : l'export vidéo reste valide."""
+        if self.master_muted:
+            return True
+        return not self.audio_layers
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +202,12 @@ def _find_asset(project: Project, asset_id: str) -> MediaAsset:
 # ---------------------------------------------------------------------------
 
 
-def build_render_plan(project: Project) -> RenderPlan:
+def build_render_plan(
+    project: Project,
+    *,
+    master_gain_db: float = 0.0,
+    master_muted: bool = False,
+) -> RenderPlan:
     """Construit un :class:`RenderPlan` à partir d'un :class:`Project`.
 
     Règles appliquées :
@@ -236,11 +275,13 @@ def build_render_plan(project: Project) -> RenderPlan:
                 # en solo : le son embarqué des pistes vidéo est alors exclu.
                 if asset.has_audio and not track.muted and not audio_solo:
                     audio_layers.append(
-                        _build_audio_layer(clip, asset, track.id, track_index)
+                        _build_audio_layer(
+                            clip, asset, track.id, track_index, track
+                        )
                     )
             else:  # track.type == "audio"
                 audio_layers.append(
-                    _build_audio_layer(clip, asset, track.id, track_index)
+                    _build_audio_layer(clip, asset, track.id, track_index, track)
                 )
     return RenderPlan(
         width=project.width,
@@ -250,6 +291,8 @@ def build_render_plan(project: Project) -> RenderPlan:
         video_layers=tuple(video_layers),
         audio_layers=tuple(audio_layers),
         subtitle_cues=tuple(_subtitle_cues_for_export(project)),
+        master_gain_db=float(master_gain_db),
+        master_muted=bool(master_muted),
     )
 
 
@@ -278,7 +321,7 @@ def _subtitle_cues_for_export(project: Project):
 
 
 def _build_audio_layer(
-    clip, asset: MediaAsset, track_id: str, track_index: int
+    clip, asset: MediaAsset, track_id: str, track_index: int, track=None
 ) -> AudioLayer:
     return AudioLayer(
         clip_id=clip.id,
@@ -290,4 +333,10 @@ def _build_audio_layer(
         source_out=clip.source_out,
         timeline_start=clip.timeline_start,
         timeline_end=clip.timeline_start + clip.duration,
+        gain_db=float(getattr(clip, "gain_db", 0.0)),
+        pan=float(getattr(clip, "pan", 0.0)),
+        fade_in=float(getattr(clip, "fade_in", 0.0)),
+        fade_out=float(getattr(clip, "fade_out", 0.0)),
+        track_volume_db=float(getattr(track, "volume_db", 0.0)),
+        track_pan=float(getattr(track, "pan", 0.0)),
     )

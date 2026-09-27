@@ -48,6 +48,7 @@ class PanelId(str, Enum):
     VIEWER = "viewer"
     MEDIA = "media"
     INSPECTOR = "inspector"
+    MIXER = "mixer"
 
     def label(self) -> str:
         """Nom lisible du panneau (utilisé dans les menus)."""
@@ -59,6 +60,7 @@ _PANEL_LABELS: dict[PanelId, str] = {
     PanelId.VIEWER: "Viewer",
     PanelId.MEDIA: "Médias",
     PanelId.INSPECTOR: "Inspecteur",
+    PanelId.MIXER: "Mixeur",
 }
 
 
@@ -77,6 +79,9 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
     PanelId.VIEWER: DockArea.CENTER,
     PanelId.INSPECTOR: DockArea.RIGHT,
     PanelId.TIMELINE: DockArea.BOTTOM,
+    # Le mixeur démarre replié : il n'occupe de la place que lorsque
+    # l'utilisateur l'ouvre, sans leAnon disruptive pour l'édition.
+    PanelId.MIXER: DockArea.BOTTOM,
 }
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
@@ -85,6 +90,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.VIEWER: 720,
     PanelId.INSPECTOR: 300,
     PanelId.TIMELINE: 390,
+    PanelId.MIXER: 320,
 }
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
@@ -93,7 +99,11 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.VIEWER: 320,
     PanelId.INSPECTOR: 260,
     PanelId.TIMELINE: 240,
+    PanelId.MIXER: 320,
 }
+
+#: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
+DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER})
 
 #: Taille de la barre d'outils d'options d'un panneau (px).
 PANEL_TOOLBAR_SIZE: int = 28
@@ -187,9 +197,13 @@ class WorkspaceState:
 
     @classmethod
     def default(cls) -> "WorkspaceState":
-        """État par défaut : les quatre panneaux visibles et dockés."""
+        """État par défaut : les panneaux principaux visibles et dockés."""
         panels = tuple(
-            PanelState(panel=pid, area=DEFAULT_AREA[pid]).normalized()
+            PanelState(
+                panel=pid,
+                area=DEFAULT_AREA[pid],
+                visible=pid not in DEFAULT_HIDDEN,
+            ).normalized()
             for pid in PanelId
         )
         return cls(panels=panels).normalized()
@@ -224,10 +238,14 @@ class WorkspaceState:
                 )
 
         known = {p.panel for p in panels}
-        # Les panneaux ajoutés par une version future restent visibles.
+        # Un panneau absent du fichier est traité comme « choix de
+        # l'utilisateur inconnu » : on applique le défaut de
+        # l'application (le mixeur reste replié), pas « tout visible ».
         for pid in PanelId:
             if pid not in known:
-                panels.append(PanelState(panel=pid).normalized())
+                panels.append(
+                    PanelState(panel=pid, visible=pid not in DEFAULT_HIDDEN).normalized()
+                )
 
         floating: list[tuple[PanelId, FloatingGeometry]] = []
         raw_float = data.get("floating")
@@ -270,7 +288,9 @@ class WorkspaceState:
         for entry in self.panels:
             by_id.setdefault(entry.panel, entry)
         for pid in PanelId:
-            by_id.setdefault(pid, PanelState(panel=pid))
+            by_id.setdefault(
+                pid, PanelState(panel=pid, visible=pid not in DEFAULT_HIDDEN)
+            )
         ordered = tuple(
             by_id[pid].normalized() for pid in PanelId
         )

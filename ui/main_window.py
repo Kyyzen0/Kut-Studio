@@ -91,6 +91,7 @@ from core.user_settings import (
 from core.visual_effects import evaluate_transform
 from ui import i18n
 from ui.debug_overlay import DebugOverlay
+from ui.mixer_panel import MixerPanel
 from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
@@ -130,6 +131,9 @@ class MainWindow(QMainWindow):
 
         # Gestionnaire de thème (sombre / clair / système).
         loaded_settings: UserSettings = load_user_settings()
+        # État Master : préférence de session, jamais du projet.
+        self._master_gain_db = float(loaded_settings.master_gain_db)
+        self._master_muted = bool(loaded_settings.master_muted)
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
         i18n.set_language(loaded_settings.language)
         self.runtime = StudioRuntime(
@@ -255,11 +259,15 @@ class MainWindow(QMainWindow):
         # Espace de travail : le gestionnaire est l'unique autorité sur
         # la disposition. Il enregistre les quatre panneaux existants
         # (mêmes objets, mêmes signaux) puis compose les zones dock.
+        self.mixer_panel = MixerPanel()
         self.workspace = WorkspaceManager(self)
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         self.workspace.register(PanelId.VIEWER, self.preview_panel)
         self.workspace.register(PanelId.INSPECTOR, self.properties_panel)
         self.workspace.register(PanelId.TIMELINE, self.timeline_panel)
+        self.workspace.register(PanelId.MIXER, self.mixer_panel)
+        self._connect_audio_controls()
+        self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
         # Le menu « Fenêtre » ne peut être rempli qu'une fois le
         # gestionnaire d'espace de travail construit.
@@ -321,6 +329,238 @@ class MainWindow(QMainWindow):
         workspace = getattr(self, "workspace", None)
         if workspace is not None:
             QTimer.singleShot(0, workspace.balance_vertical_split)
+
+    def _connect_audio_controls(self) -> None:
+        """Branche le mixeur et l'inspecteur sur les handlers audio.
+
+        Aucun de ces widgets n'écrit dans le projet : ils émettent une
+        intention, et les handlers ci-dessous appliquent le changement,
+        enregistrent l'historique et marquent le projet modifié. C'est
+        le même chemin que pour le déplacement d'un clip, ce qui évite
+        deux conventions d'annulation.
+        """
+        mixer = self.mixer_panel
+        mixer.volume_changed.connect(self.on_track_volume_changed)
+        mixer.pan_changed.connect(self.on_track_pan_changed)
+        mixer.mute_toggled.connect(self.on_track_mute_toggled)
+        mixer.solo_toggled.connect(self.on_track_solo_toggled)
+        mixer.arm_toggled.connect(self.on_track_arm_toggled)
+        mixer.reset_requested.connect(self.on_track_audio_reset)
+        mixer.master_volume_changed.connect(self.on_master_volume_changed)
+        mixer.master_mute_toggled.connect(self.on_master_mute_toggled)
+        mixer.master_reset_requested.connect(self.on_master_reset)
+
+        properties = self.properties_panel
+        properties.audio_gain_changed.connect(self.on_clip_gain_changed)
+        properties.audio_pan_changed.connect(self.on_clip_pan_changed)
+        properties.audio_fade_changed.connect(self.on_clip_fade_changed)
+        properties.audio_fades_reset.connect(self.on_clip_fades_reset)
+
+        timeline = self.timeline_panel
+        timeline.fade_changed_requested.connect(self.on_clip_fade_from_timeline)
+        timeline.reset_clip_fades_requested.connect(self.on_clip_fades_reset)
+
+        # Le volume Master est une préférence d'interface, pas du projet :
+        # il vit dans les réglages utilisateur, jamais dans le ``.kut``.
+        # Les valeurs initiales viennent des préférences chargées.
+        mixer.set_master(self._master_gain_db, self._master_muted)
+        return
+
+    # -- Mixeur : pistes ------------------------------------------------
+
+    def _find_audio_track(self, track_id: str):
+        if self.project is None or not track_id:
+            return None
+        for track in self.project.tracks:
+            if track.id == track_id and track.type == "audio":
+                return track
+        return None
+
+    def on_track_volume_changed(self, track_id: str, value: float) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            self.mixer_panel.refresh_track(track) if track else None
+            return
+        track.set_volume_db(value)
+        self._record_audio_change(i18n.translate("mixer.volume"))
+
+    def on_track_pan_changed(self, track_id: str, value: float) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            if track is not None:
+                self.mixer_panel.refresh_track(track)
+            return
+        track.set_pan(value)
+        self._record_audio_change(i18n.translate("mixer.pan"))
+
+    def on_track_mute_toggled(self, track_id: str, muted: bool) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None:
+            return
+        if track.locked:
+            self.mixer_panel.refresh_track(track)
+            return
+        track.muted = bool(muted)
+        self.mixer_panel.refresh_track(track)
+        self._record_audio_change(i18n.translate("mixer.mute"))
+
+    def on_track_solo_toggled(self, track_id: str, solo: bool) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None:
+            return
+        if track.locked:
+            self.mixer_panel.refresh_track(track)
+            return
+        track.solo = bool(solo)
+        # Le solo est un état global : toutes les tranches doivent refléter.
+        self.mixer_panel.set_project(self.project)
+        self._record_audio_change(i18n.translate("mixer.solo"))
+
+    def on_track_arm_toggled(self, track_id: str, armed: bool) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None:
+            return
+        if track.locked:
+            self.mixer_panel.refresh_track(track)
+            return
+        track.armed = bool(armed)
+        self._record_audio_change(i18n.translate("mixer.arm"))
+
+    def on_track_audio_reset(self, track_id: str) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            if track is not None:
+                self.mixer_panel.refresh_track(track)
+            return
+        track.reset_audio()
+        self.mixer_panel.refresh_track(track)
+        self._record_audio_change(i18n.translate("mixer.reset"))
+
+    def on_master_volume_changed(self, value: float) -> None:
+        self._master_gain_db = float(value)
+        self._save_master_state()
+
+    def on_master_mute_toggled(self, muted: bool) -> None:
+        self._master_muted = bool(muted)
+        self._save_master_state()
+
+    def on_master_reset(self) -> None:
+        self._master_gain_db = 0.0
+        self._master_muted = False
+        self.mixer_panel.set_master(0.0, False)
+        self._save_master_state()
+
+    def _save_master_state(self) -> None:
+        """Persiste l'état Master dans les préférences utilisateur.
+
+        Le Master n'appartient pas au projet : il décrit la session de
+        mixage de l'utilisateur, pas le montage livré.
+        """
+        from core.user_settings import UserSettings, save_user_settings
+
+        try:
+            save_user_settings(
+                UserSettings(
+                    theme_mode=self.theme_manager.requested_mode,
+                    language=i18n.current_language(),
+                    master_gain_db=self._master_gain_db,
+                    master_muted=self._master_muted,
+                )
+            )
+        except OSError:
+            pass
+
+    # -- Inspecteur : clip ----------------------------------------------
+
+    def _selected_audio_clip(self):
+        """Clip audio sélectionné et sa piste, ou ``(None, None)``."""
+        clip_id = self.timeline_panel.selected_clip_id
+        if not clip_id or self.project is None:
+            return None, None
+        for track in self.project.tracks:
+            for clip in track.clips:
+                if clip.id == clip_id:
+                    return clip, track
+        return None, None
+
+    def on_clip_gain_changed(self, value: float) -> None:
+        clip, track = self._selected_audio_clip()
+        if clip is None or track is None or track.locked:
+            self._sync_audio_inspector()
+            return
+        clip.gain_db = float(value)
+        self._record_audio_change(i18n.translate("audio.gain"))
+
+    def on_clip_pan_changed(self, value: float) -> None:
+        clip, track = self._selected_audio_clip()
+        if clip is None or track is None or track.locked:
+            self._sync_audio_inspector()
+            return
+        clip.pan = float(value)
+        self._record_audio_change(i18n.translate("mixer.pan"))
+
+    def on_clip_fade_changed(self, which: str, value: float) -> None:
+        clip, track = self._selected_audio_clip()
+        if clip is None or track is None or track.locked:
+            self._sync_audio_inspector()
+            return
+        if which == "in":
+            clip.set_fade_in(float(value))
+        else:
+            clip.set_fade_out(float(value))
+        self.timeline_panel.refresh_clip_widgets()
+        self._record_audio_change(
+            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out")
+        )
+
+    def on_clip_fade_from_timeline(self, clip_id: str, which: str, value: float) -> None:
+        """Applique un fondu glisse dans la timeline."""
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.locked:
+            return
+        if which == "in":
+            clip.set_fade_in(float(value))
+        else:
+            clip.set_fade_out(float(value))
+        self._sync_audio_inspector()
+        self._record_audio_change(i18n.translate("audio.action.reset_fades"))
+
+    def on_clip_fades_reset(self, *args) -> None:
+        """Double-clic ou bouton Réinitialiser : fondus à zéro."""
+        clip_id = args[0] if args else self.timeline_panel.selected_clip_id
+        clip, track = self._find_clip_and_track(clip_id) if clip_id else (None, None)
+        if clip is None or track is None or track.locked:
+            return
+        clip.reset_fades()
+        self.timeline_panel.refresh_clip_widgets()
+        self._sync_audio_inspector()
+        self._record_audio_change(i18n.translate("audio.reset_fades"))
+
+    def _find_clip_and_track(self, clip_id: str):
+        if self.project is None or not clip_id:
+            return None, None
+        for track in self.project.tracks:
+            for clip in track.clips:
+                if clip.id == clip_id:
+                    return clip, track
+        return None, None
+
+    def _record_audio_change(self, label: str) -> None:
+        """Enregistre une modification audio dans l'historique."""
+        if self.project is None:
+            return
+        self.history.record(self.project, label)
+        self._mark_dirty()
+        self.mixer_panel.set_project(self.project)
+        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
+
+    def _sync_audio_inspector(self) -> None:
+        """Rafraîchit le groupe audio de l'inspecteur depuis le modèle."""
+        clip, track = self._selected_audio_clip()
+        if clip is None or getattr(track, "type", None) != "audio":
+            self.properties_panel.set_audio_clip(None)
+            return
+        self.properties_panel.set_audio_clip(clip, locked=bool(track.locked))
 
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
@@ -735,6 +975,10 @@ class MainWindow(QMainWindow):
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
         self._refresh_project_library()
+        mixer = getattr(self, "mixer_panel", None)
+        if mixer is not None:
+            mixer.set_project(self.project)
+        self._sync_audio_inspector()
         self._refresh_undo_redo_state()
 
     def undo_last(self) -> None:
@@ -1097,6 +1341,8 @@ class MainWindow(QMainWindow):
         self._sync_preview_to_timeline()
         self._refresh_project_library()
         self._reset_selection_and_inspector()
+        self.mixer_panel.set_project(self.project)
+        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
         self._mark_clean()
 
     def launch_export(self):
@@ -1554,6 +1800,8 @@ class MainWindow(QMainWindow):
                 clip.transform_keyframes,
                 playhead_seconds=self.timeline_panel.playhead_seconds,
             )
+        # Réglages audio : visibles uniquement pour un clip sur piste audio.
+        self._sync_audio_inspector()
         # Sélection d'un clip = seek vers son début sur la timeline.
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
@@ -2806,6 +3054,12 @@ class MainWindow(QMainWindow):
         self.runtime.set_requested_profile(settings.performance_profile)
         self.runtime.set_preview_quality(settings.preview_quality)
         self._apply_runtime_hints()
+        # État Master : preference de session, jamais du projet.
+        self._master_gain_db = float(settings.master_gain_db)
+        self._master_muted = bool(settings.master_muted)
+        mixer = getattr(self, "mixer_panel", None)
+        if mixer is not None:
+            mixer.set_master(self._master_gain_db, self._master_muted)
         # Application de la langue.
         if i18n.current_language() != settings.language:
             i18n.set_language(settings.language)
@@ -2833,6 +3087,10 @@ class MainWindow(QMainWindow):
         # Mise à jour des widgets traduisibles les plus visibles.
         if hasattr(self.preview_panel, "update_translations"):
             self.preview_panel.update_translations()
+        mixer = getattr(self, "mixer_panel", None)
+        if mixer is not None:
+            mixer.update_translations()
+        self._sync_workspace_menu()
         self.timeline_panel.refresh_clip_widgets()
         self._refresh_undo_redo_state()
 
