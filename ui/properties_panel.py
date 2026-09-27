@@ -39,6 +39,7 @@ from core.visual_effects import (
     evaluate_transform,
 )
 from ui.design_system import Iconography, Sizes, Spacing
+from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import COLORS, label_style
 
@@ -308,7 +309,7 @@ class PropertiesPanel(QWidget):
         self.volume_slider.valueChanged.connect(update_volume)
 
         # ----- Vitesse et durée (tâche 18) -----------------------------
-        self.speed_group = QGroupBox("Vitesse et durée")
+        self.speed_group = QGroupBox(translate("group.speed_and_duration"))
         self.speed_group.setStyleSheet(self.group_style())
         speed_form = QFormLayout(self.speed_group)
         speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
@@ -324,7 +325,7 @@ class PropertiesPanel(QWidget):
         self.speed_spinbox.setMinimumWidth(70)
         self.speed_spinbox.setEnabled(False)
         self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
-        speed_form.addRow("Vitesse", self.speed_spinbox)
+        speed_form.addRow(translate("field.speed"), self.speed_spinbox)
 
         # Boutons de preset de vitesse
         speed_presets = QWidget()
@@ -333,19 +334,19 @@ class PropertiesPanel(QWidget):
         speed_presets_layout.setSpacing(Spacing.xs)
 
         self.speed_0_25x_button = self._make_action_button(
-            None, "0,25x", "Vitesse 0,25x"
+            None, translate("action.speed_0.25x"), translate("tooltip.speed_0.25x")
         )
         self.speed_0_5x_button = self._make_action_button(
-            None, "0,5x", "Vitesse 0,5x"
+            None, translate("action.speed_0.5x"), translate("tooltip.speed_0.5x")
         )
         self.speed_1x_button = self._make_action_button(
-            None, "1x", "Vitesse normale"
+            None, translate("action.speed_1x"), translate("tooltip.speed_1x")
         )
         self.speed_2x_button = self._make_action_button(
-            None, "2x", "Vitesse 2x"
+            None, translate("action.speed_2x"), translate("tooltip.speed_2x")
         )
         self.speed_4x_button = self._make_action_button(
-            None, "4x", "Vitesse 4x"
+            None, translate("action.speed_4x"), translate("tooltip.speed_4x")
         )
 
         # Connecter les boutons de preset
@@ -370,23 +371,23 @@ class PropertiesPanel(QWidget):
 
         # Bouton Reverse
         self.reverse_button = IconButton(
-            icon=None, tooltip="Inverser la lecture", size=Sizes.icon_button
+            icon=None, tooltip=translate("tooltip.reverse"), size=Sizes.icon_button
         )
-        self.reverse_button.setText("  Inverser")
+        self.reverse_button.setText("  " + translate("field.reverse"))
         self.reverse_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.reverse_button.setCheckable(True)
         self.reverse_button.setMinimumHeight(Sizes.button_md)
         self.reverse_button.setEnabled(False)
         self.reverse_button.toggled.connect(self._on_reverse_toggled)
-        speed_form.addRow("Reverse", self.reverse_button)
+        speed_form.addRow(translate("field.reverse"), self.reverse_button)
 
         # Freeze frame
         self.freeze_frame_button = self._make_action_button(
-            None, "Créer arrêt sur image", "Créer un arrêt sur image"
+            None, translate("field.freeze_frame"), translate("tooltip.freeze_frame")
         )
         self.freeze_frame_button.setEnabled(False)
         self.freeze_frame_button.clicked.connect(self._on_freeze_frame_clicked)
-        speed_form.addRow("Arrêt sur image", self.freeze_frame_button)
+        speed_form.addRow(translate("field.freeze_frame"), self.freeze_frame_button)
 
         # Durée freeze frame (visible uniquement en mode freeze)
         self.freeze_duration_spinbox = QDoubleSpinBox()
@@ -408,12 +409,12 @@ class PropertiesPanel(QWidget):
         freeze_row_layout.addWidget(self.freeze_duration_spinbox)
         freeze_row_layout.addWidget(self.freeze_duration_label)
         freeze_row.setVisible(False)
-        speed_form.addRow("Durée", freeze_row)
+        speed_form.addRow(translate("field.freeze_duration"), freeze_row)
         self.freeze_duration_row = freeze_row
 
         # Bouton de réinitialisation
         self.reset_speed_button = self._make_action_button(
-            None, "Réinitialiser", "Réinitialiser la vitesse et le remappage temporel"
+            None, translate("action.reset_speed"), translate("tooltip.reset_speed")
         )
         self.reset_speed_button.setEnabled(False)
         self.reset_speed_button.clicked.connect(self._on_time_remapping_reset)

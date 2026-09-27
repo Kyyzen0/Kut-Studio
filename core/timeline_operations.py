@@ -286,6 +286,7 @@ def cut_clip(
         enabled=clip.enabled,
         label=clip.label,
         text=clip.text,
+        time_remapping=clip.time_remapping,
     )
     right_clip = Clip(
         id=right_id,
@@ -297,6 +298,7 @@ def cut_clip(
         enabled=clip.enabled,
         label=clip.label,
         text=clip.text,
+        time_remapping=clip.time_remapping,
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]
@@ -609,6 +611,7 @@ def duplicate_clip(
             )
             for kf in source_clip.transform_keyframes
         ],
+        time_remapping=source_clip.time_remapping,
     )
     source_track.clips.append(duplicate)
     return duplicate
@@ -931,6 +934,7 @@ def duplicate_clip_preserving_transform(
         text=source_clip.text,
         transform=source_clip.transform,
         transform_keyframes=new_keyframes,
+        time_remapping=source_clip.time_remapping,
     )
     source_track.clips.append(duplicate)
     return duplicate
