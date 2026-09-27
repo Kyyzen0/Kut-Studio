@@ -53,6 +53,19 @@ def test_main_window_owns_a_real_project(qtbot, monkeypatch) -> None:
     assert window.project.name == "Projet sans titre"
 
 
+def test_closed_window_unsubscribes_from_language_changes(qtbot, monkeypatch) -> None:
+    """Une fenêtre fermée ne doit pas rester retenue par le module i18n."""
+    from ui import i18n
+
+    window = _build_window(qtbot, monkeypatch)
+    callback = window._i18n_callback
+    assert callback in i18n._subscribers
+
+    window.close()
+
+    assert callback not in i18n._subscribers
+
+
 def test_main_window_timeline_reflects_project(qtbot, monkeypatch) -> None:
     """La timeline de MainWindow est une projection de self.project."""
     window = _build_window(qtbot, monkeypatch)

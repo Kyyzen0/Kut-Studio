@@ -238,7 +238,16 @@ class ThemeManager:
         stylesheet = _stylesheet(self.effective_palette)
         if app is not None:
             try:
+                # ``setStyleSheet`` force Qt à recalculer le style de tous
+                # les widgets de l'application. Éviter ce travail très
+                # coûteux quand le même thème est déjà appliqué est
+                # important, notamment quand plusieurs fenêtres sont créées
+                # successivement (tests, ouverture de projet, etc.).
+                marker_name = "_kut_studio_theme_stylesheet"
+                if app.property(marker_name) == stylesheet:
+                    return
                 app.setStyleSheet(stylesheet)
+                app.setProperty(marker_name, stylesheet)
             except Exception:
                 # Compat : si ``app`` n'a pas ``setStyleSheet``, on
                 # ignore silencieusement (cas des tests dry-run).

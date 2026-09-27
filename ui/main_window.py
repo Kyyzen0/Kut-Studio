@@ -102,10 +102,12 @@ class MainWindow(QMainWindow):
         # Gestionnaire de thème (sombre / clair / système).
         loaded_settings: UserSettings = load_user_settings()
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
-        self.theme_manager.apply_to(QApplication.instance())
         i18n.set_language(loaded_settings.language)
         # S'abonne aux changements de langue pour recharger les libellés.
-        i18n.subscribe(lambda code: self._on_language_changed(code))
+        # Conserver la référence permet de se désabonner à la fermeture.
+        # Une lambda anonyme conserverait les anciennes fenêtres en mémoire.
+        self._i18n_callback = self.on_language_changed
+        i18n.subscribe(self._i18n_callback)
 
         self._build_menu_bar()
 
@@ -227,6 +229,18 @@ class MainWindow(QMainWindow):
         # opération doit suivre ``_build_top_bar`` qui crée
         # ``project_label``.
         self._refresh_undo_redo_state()
+
+    def closeEvent(self, event) -> None:
+        """Libère les abonnements globaux avant de fermer la fenêtre."""
+        if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
+            self.timeline_timer.stop()
+
+        callback = getattr(self, "_i18n_callback", None)
+        if callback is not None:
+            i18n.unsubscribe(callback)
+            self._i18n_callback = None
+
+        super().closeEvent(event)
 
     def _build_top_bar(self):
         bar = QWidget()
