@@ -63,8 +63,21 @@ from .visual_effects import (
 
 
 _ffmpeg_path = shutil.which("ffmpeg")
-if _ffmpeg_path is None:
-    raise ImportError("ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH.")
+
+
+def require_ffmpeg() -> str:
+    """Retourne le chemin FFmpeg ou lève un :class:`ImportError` explicite.
+
+    La résolution est paresseuse : importer ``core.export_engine`` (donc
+    ouvrir l'application) ne doit jamais planter sur une machine sans
+    FFmpeg — seul le démarrage d'un export l'exige.
+    """
+    path = _ffmpeg_path or shutil.which("ffmpeg")
+    if path is None:
+        raise ImportError(
+            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
+        )
+    return path
 
 
 def _ffmpeg_supports_subtitles() -> bool:
@@ -76,9 +89,13 @@ def _ffmpeg_supports_subtitles() -> bool:
     """
     if hasattr(_ffmpeg_supports_subtitles, "_cached"):
         return _ffmpeg_supports_subtitles._cached  # type: ignore[attr-defined]
+    ffmpeg = _ffmpeg_path or shutil.which("ffmpeg")
+    if ffmpeg is None:
+        _ffmpeg_supports_subtitles._cached = False  # type: ignore[attr-defined]
+        return False
     try:
         completed = subprocess.run(
-            [_ffmpeg_path, "-hide_banner", "-filters"],
+            [ffmpeg, "-hide_banner", "-filters"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -220,7 +237,7 @@ class ExportEngine(QObject):
                 )
             self._prepare_temporary_files(request.render_plan)
             command = self._build_command(request)
-        except (OSError, ValueError, RuntimeError) as error:
+        except (ImportError, OSError, ValueError, RuntimeError) as error:
             self._cleanup_temporary_files()
             self.failed.emit(str(error))
             return
@@ -263,7 +280,7 @@ class ExportEngine(QObject):
         )
 
         command: list[str] = [
-            _ffmpeg_path,
+            require_ffmpeg(),
             "-y",
             "-hide_banner",
             "-loglevel",

@@ -63,12 +63,14 @@ def clamp_pan(value: object) -> float:
 
 
 def clamp_fade(value: object) -> float:
-    """Ramène une durée de fondu à une valeur non négative."""
+    """Ramène une durée de fondu à une valeur finie non négative."""
     try:
         number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0.0
-    if number != number:
+    if number != number:  # NaN
+        return 0.0
+    if number in (float("inf"), float("-inf")):
         return 0.0
     return max(0.0, number)
 

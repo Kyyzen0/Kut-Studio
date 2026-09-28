@@ -136,6 +136,12 @@ class TransformKeyframe:
             raise ValueError(
                 f"Propriété de keyframe inconnue : {self.property_name!r}."
             )
+        if self.time_seconds != self.time_seconds:  # NaN
+            raise ValueError("time_seconds ne peut pas être NaN.")
+        if self.time_seconds in (float("inf"), float("-inf")):
+            raise ValueError(
+                f"time_seconds doit être fini (reçu : {self.time_seconds})."
+            )
         if self.time_seconds < 0.0:
             raise ValueError(
                 f"time_seconds doit être positif ou nul "
@@ -437,6 +443,8 @@ def _coerce_value(property_name: str, value: float) -> float:
 
 def _format_number(value: float) -> str:
     """Formate un flottant pour le filtergraph FFmpeg (pas de scientifique)."""
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / Inf
+        raise ValueError(f"Valeur non finie refusée pour FFmpeg : {value!r}.")
     if value == 0:
         return "0"
     text = f"{value:.6f}"
