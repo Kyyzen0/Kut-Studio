@@ -464,9 +464,10 @@ class MainWindow(QMainWindow):
             return
         if track.locked:
             self.mixer_panel.refresh_track(track)
+            self.timeline_panel.refresh_headers()
             return
         track.muted = bool(muted)
-        self.mixer_panel.refresh_track(track)
+        self.timeline_panel.refresh_headers()
         self._record_audio_change(i18n.translate("mixer.mute"))
 
     def on_track_solo_toggled(self, track_id: str, solo: bool) -> None:
@@ -475,10 +476,12 @@ class MainWindow(QMainWindow):
             return
         if track.locked:
             self.mixer_panel.refresh_track(track)
+            self.timeline_panel.refresh_headers()
             return
         track.solo = bool(solo)
         # Le solo est un état global : toutes les tranches doivent refléter.
-        self.mixer_panel.set_project(self.project)
+        self.timeline_panel.refresh_headers()
+        self._sync_preview_to_timeline()
         self._record_audio_change(i18n.translate("mixer.solo"))
 
     def on_track_arm_toggled(self, track_id: str, armed: bool) -> None:
@@ -487,8 +490,10 @@ class MainWindow(QMainWindow):
             return
         if track.locked:
             self.mixer_panel.refresh_track(track)
+            self.timeline_panel.refresh_headers()
             return
         track.armed = bool(armed)
+        self.timeline_panel.refresh_headers()
         self._record_audio_change(i18n.translate("mixer.arm"))
 
     def on_track_audio_reset(self, track_id: str) -> None:
@@ -585,7 +590,9 @@ class MainWindow(QMainWindow):
         else:
             clip.set_fade_out(float(value))
         self._sync_audio_inspector()
-        self._record_audio_change(i18n.translate("audio.action.reset_fades"))
+        self._record_audio_change(
+            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out")
+        )
 
     def on_clip_fades_reset(self, *args) -> None:
         """Double-clic ou bouton Réinitialiser : fondus à zéro."""
@@ -1182,23 +1189,17 @@ class MainWindow(QMainWindow):
     def _apply_history_snapshot(self, snapshot_project, label: str) -> None:
         """Ré-installe ``snapshot_project`` partout dans l'interface."""
         self.project = snapshot_project
-        self.timeline_panel.set_project(self.project)
-        # Conserver un playhead valide.
-        if self.playhead_seconds > self.timeline_panel.duration_seconds:
-            self.playhead_seconds = self.timeline_panel.duration_seconds
-        if self.playhead_seconds < 0.0:
-            self.playhead_seconds = 0.0
-        # Si la sélection courante n'existe plus, on la réinitialise.
-        if (
-            self.timeline_panel.selected_clip_id is not None
-            and self.timeline_panel.find_view_by_id(
-                self.timeline_panel.selected_clip_id
-            ) is None
-        ):
-            self.timeline_panel.selected_clip_id = None
-            self.active_subtitle_clip = None
-            self.properties_panel.set_clip(None, "")
+        # La durée affichée vaut au moins une seconde : on borne la tête
+        # avec la durée réelle du projet, puis on la repousse au widget.
+        duration = timeline_duration(self.project)
+        if duration > 0.0:
+            self.playhead_seconds = min(max(self.playhead_seconds, 0.0), duration)
+        else:
+            self.playhead_seconds = max(0.0, self.playhead_seconds)
+        self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
+        self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
+        self.playhead_seconds = self.timeline_panel.playhead_seconds
         self._sync_preview_to_timeline()
         self._refresh_project_library()
         mixer = getattr(self, "mixer_panel", None)
@@ -1321,10 +1322,8 @@ class MainWindow(QMainWindow):
         self._record_history(
             "Désactiver le clip" if was_enabled else "Activer le clip"
         )
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        # Conserver la sélection.
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     # Tâche 18 : remappage temporel
@@ -1337,9 +1336,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] vitesse refusée : {exc}")
             return
         self._record_history("Modifier la vitesse")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     def on_reverse_toggled(self, clip_id: str, reverse: bool) -> None:
@@ -1351,9 +1349,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] reverse refusé : {exc}")
             return
         self._record_history("Inverser le clip" if reverse else "Désinverser le clip")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     def on_freeze_frame_created(self, clip_id: str, freeze_source_time: float, freeze_duration: float) -> None:
@@ -1365,9 +1362,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] arrêt sur image refusé : {exc}")
             return
         self._record_history("Créer un arrêt sur image")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     def on_freeze_frame_removed(self, clip_id: str) -> None:
@@ -1379,9 +1375,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] suppression arrêt sur image refusée : {exc}")
             return
         self._record_history("Supprimer l'arrêt sur image")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     def on_freeze_duration_changed(self, clip_id: str, freeze_duration: float) -> None:
@@ -1393,9 +1388,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] durée arrêt sur image refusée : {exc}")
             return
         self._record_history("Modifier la durée de l'arrêt sur image")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     def on_time_remapping_reset(self, clip_id: str) -> None:
@@ -1407,14 +1401,91 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] réinitialisation remappage temporel refusée : {exc}")
             return
         self._record_history("Réinitialiser la vitesse et le remappage temporel")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
-        self.timeline_panel.select_clip(clip_id)
         self._mark_dirty()
 
     # ------------------------------------------------------------------
     # Effets visuels du clip (tâche 21)
     # ------------------------------------------------------------------
+
+    def _restore_clip_selection(self, clip_id: str) -> None:
+        """Resélectionne ``clip_id`` et rafraîchit l'inspecteur sans seek.
+
+        ``select_clip`` annonce la sélection, et ``on_clip_selected``
+        place alors la tête de lecture au début du clip. C'est le bon
+        comportement pour un clic. Après une coupe, un changement de
+        vitesse ou un mute, la tête de lecture doit rester où elle est.
+        """
+        if self.timeline_panel.find_view_by_id(clip_id) is None:
+            self._reset_selection_and_inspector()
+            return
+        self.timeline_panel._set_selection([clip_id], clip_id, announce=False)
+        view = self.timeline_panel.find_view_by_id(clip_id)
+        self.active_subtitle_clip = (
+            view if getattr(view, "track_type", None) == "subtitle" else None
+        )
+        self.properties_panel.show_clip(view)
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            clip = None
+        if clip is not None:
+            self.properties_panel.update_transform_from_clip(
+                clip.transform,
+                clip.transform_keyframes,
+                playhead_seconds=self.playhead_seconds,
+            )
+        self._sync_audio_inspector()
+
+    def _reload_timeline_preserving_selection(
+        self, preferred_id: str | None = None
+    ) -> None:
+        """Reconstruit la timeline sans bouger la tête de lecture.
+
+        ``set_project`` efface la sélection. Si on la relisait ensuite,
+        elle serait vide et l'inspecteur resterait sur l'ancien clip.
+        Un clic doit toujours chercher le début du clip ; un
+        rafraîchissement après édition, non.
+
+        ``preferred_id`` devient la sélection principale quand l'édition
+        porte sur un clip précis (vitesse, effet) qui n'était pas
+        forcément surligné dans la timeline.
+        """
+        panel = self.timeline_panel
+        selected = set(panel.selected_clip_ids)
+        primary = panel.selected_clip_id
+        if primary:
+            selected.add(primary)
+        inspector = getattr(self.properties_panel, "selected_clip", None)
+        inspector_id = getattr(inspector, "id", None)
+        playhead = self.playhead_seconds
+        panel.set_project(self.project)
+        alive = {
+            clip_id
+            for clip_id in selected
+            if panel.find_view_by_id(clip_id) is not None
+        }
+        if preferred_id and panel.find_view_by_id(preferred_id) is not None:
+            alive.add(preferred_id)
+            primary = preferred_id
+        elif (
+            not alive
+            and inspector_id
+            and panel.find_view_by_id(inspector_id) is not None
+        ):
+            alive = {inspector_id}
+            primary = inspector_id
+        if alive:
+            chosen = primary if primary in alive else next(iter(alive))
+            self._restore_clip_selection(chosen)
+            if len(alive) > 1:
+                panel._set_selection(alive, chosen, announce=False)
+        else:
+            self._reset_selection_and_inspector()
+        if self.playhead_seconds != playhead:
+            self.playhead_seconds = playhead
+            panel.set_playhead_seconds(playhead)
 
     def _selected_video_clip_id(self) -> str | None:
         """Identifiant du clip vidéo actuellement sélectionné, ou ``None``."""
@@ -1430,11 +1501,7 @@ class MainWindow(QMainWindow):
         """Reconstruit timeline et inspecteur depuis le ``Project``."""
         # Les badges font partie des projections ``TimelineClipView`` :
         # les reconstruire est plus sûr qu'une mutation visuelle locale.
-        self.timeline_panel.set_project(self.project)
-        # Une modification d'effet ne doit pas ramener la tête de lecture
-        # au début du clip : on restaure la sélection sans réémettre le
-        # signal qui déclenche ``seek_to_position``.
-        self.timeline_panel._set_selection([clip_id], clip_id, announce=False)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         try:
             clip = find_clip(self.project, clip_id)
@@ -1586,7 +1653,7 @@ class MainWindow(QMainWindow):
     def _reset_selection_and_inspector(self) -> None:
         """Réinitialise la sélection de clip et l'inspecteur après un changement de projet."""
         self.active_subtitle_clip = None
-        self.timeline_panel.selected_clip_id = None
+        self.timeline_panel._set_selection([], None, announce=False)
         self.timeline_panel.clear_transition_selection()
         self.properties_panel.set_clip(None, "")
 
@@ -1604,7 +1671,10 @@ class MainWindow(QMainWindow):
         self.is_playing = False
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
+        self._refresh_project_library()
         self._reset_selection_and_inspector()
+        self.mixer_panel.set_project(self.project)
+        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
         self._mark_clean()
 
     def save_project_file(self) -> None:
@@ -1936,21 +2006,32 @@ class MainWindow(QMainWindow):
         return global_stylesheet()
 
     def on_playback_state_changed(self, state):
-        """Synchronise les widgets de transport avec l'état réel du ``QMediaPlayer``.
+        """Met à jour l'icône du visualiseur quand il lit un média de bibliothèque.
 
-        L'état de lecture est désormais piloté par ``MainWindow.is_playing``
-        ; ce slot sert à répercuter les transitions natives (fin de
-        média, erreur, etc.) sur les widgets de transport.
+        L'horloge de la timeline reste l'autorité du transport. Le
+        ``QMediaPlayer`` s'arrête aussi dans un trou, au changement de
+        source ou à la fin d'un fichier : recopier cet état sur le
+        bouton Lecture ferait clignoter Pause alors que la timeline
+        continue, et un clic suivant lancerait la timeline au lieu de
+        mettre en pause l'aperçu de bibliothèque.
         """
-        is_playing = state == QMediaPlayer.PlayingState
-        self.timeline_panel.setPlayState(is_playing)
-        from ui.icons import IconName, make_icon
+        if self.is_playing:
+            return
+        self._set_preview_play_icon(state == QMediaPlayer.PlayingState)
+
+    def _set_preview_play_icon(self, playing: bool) -> None:
         from ui.design_system import Iconography
-        if is_playing:
-            self.preview_panel.play_button.setIcon(make_icon(IconName.PAUSE, size=Iconography.lg))
+        from ui.icons import IconName, make_icon
+
+        if playing:
+            self.preview_panel.play_button.setIcon(
+                make_icon(IconName.PAUSE, size=Iconography.lg)
+            )
             self.preview_panel.play_button.setToolTip("Pause")
         else:
-            self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
+            self.preview_panel.play_button.setIcon(
+                make_icon(IconName.PLAY, size=Iconography.lg)
+            )
             self.preview_panel.play_button.setToolTip("Lecture")
 
     def _tick_playback(self) -> None:
@@ -2081,12 +2162,21 @@ class MainWindow(QMainWindow):
 
     def _release_open_project(self) -> None:
         """Coupe la lecture, le décodeur et le travail du projet quitté."""
+        recorder = getattr(self, "_audio_recorder", None)
+        if recorder is not None and recorder.is_recording:
+            recorder.stop()
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is not None and hasattr(timeline, "record_button"):
+            self._set_record_button(False)
         self.is_playing = False
         timer = getattr(self, "timeline_timer", None)
         if timer is not None and timer.isActive():
             timer.stop()
+        if timeline is not None:
+            timeline.setPlayState(False)
         preview = getattr(self, "preview_panel", None)
         if preview is not None:
+            self._set_preview_play_icon(False)
             preview.release_media()
         self._timeline_index = None
         self._timeline_index_project_id = None
@@ -2163,10 +2253,7 @@ class MainWindow(QMainWindow):
             self.timeline_timer.stop()
         self.preview_panel.player.pause()
         self.timeline_panel.setPlayState(False)
-        from ui.icons import IconName, make_icon
-        from ui.design_system import Iconography
-        self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
-        self.preview_panel.play_button.setToolTip("Lecture")
+        self._set_preview_play_icon(False)
 
     def on_clip_selected(self, clip_id):
         self._flush_subtitle_history_record()
@@ -2200,7 +2287,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] move refusé : {exc}")
             return
         self._record_history("Déplacer le clip")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -2214,7 +2301,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] trim gauche refusé : {exc}")
             return
         self._record_history("Trim gauche")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -2239,7 +2326,7 @@ class MainWindow(QMainWindow):
                 exclude_ids={clip_id},
             )
         self._record_history("Trim droit")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -2444,8 +2531,7 @@ class MainWindow(QMainWindow):
             )
             new_id = view_at_playhead.id if view_at_playhead is not None else None
         if new_id is not None:
-            self.timeline_panel.select_clip(new_id)
-            self.on_clip_selected(new_id)
+            self._restore_clip_selection(new_id)
         else:
             self.properties_panel.set_clip(None, "")
             self.timeline_panel.selected_clip_id = None
@@ -2543,7 +2629,7 @@ class MainWindow(QMainWindow):
             )
             created_clips.append(clip)
         self._record_history(f"Importer le SRT ({len(cues)} sous-titres)")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._refresh_project_library()
         self._mark_dirty()
@@ -2828,7 +2914,7 @@ class MainWindow(QMainWindow):
         label = getattr(self, "_transform_session_label", "Modifier le mouvement")
         self.history.record(self.project, label)
         self._refresh_undo_redo_state()
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection()
 
     def _refresh_motion_inspector(self) -> None:
         """Aligne l'inspecteur Mouvement sur le clip sélectionné et la tête de lecture."""
@@ -2889,7 +2975,7 @@ class MainWindow(QMainWindow):
             return
         clip = find_clip(self.project, clip_id)
         self.history.record(self.project, "Supprimer une image-clé")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(
                 clip.transform,
@@ -2908,7 +2994,7 @@ class MainWindow(QMainWindow):
             return
         clip = find_clip(self.project, clip_id)
         self.history.record(self.project, "Réinitialiser le mouvement")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(
                 clip.transform,
@@ -2953,17 +3039,20 @@ class MainWindow(QMainWindow):
         self.timeline_panel.set_playhead_seconds(0.0)
         self._sync_preview_to_timeline()
         self.timeline_panel.setPlayState(False)
-        from ui.icons import IconName, make_icon
-        from ui.design_system import Iconography
-        self.preview_panel.play_button.setIcon(make_icon(IconName.PLAY, size=Iconography.lg))
-        self.preview_panel.play_button.setToolTip("Lecture")
+        self._set_preview_play_icon(False)
 
     def toggle_play(self):
         """Bascule lecture / pause en pilotant l'horloge de la timeline."""
-        from ui.icons import IconName, make_icon
-        from ui.design_system import Iconography
         if self.is_playing:
             self._pause_internal()
+            return
+        preview = self.preview_panel
+        if (
+            self.sender() is preview.play_button
+            and preview.is_library_preview()
+            and preview.player.playbackState() == QMediaPlayer.PlayingState
+        ):
+            preview.player.pause()
             return
         # Si la timeline n'a aucun clip activé, rien à lire.
         if timeline_duration(self.project) <= 0.0:
@@ -2973,8 +3062,7 @@ class MainWindow(QMainWindow):
         self._sync_preview_to_timeline()
         self.preview_panel.player.play()
         self.timeline_panel.setPlayState(True)
-        self.preview_panel.play_button.setIcon(make_icon(IconName.PAUSE, size=Iconography.lg))
-        self.preview_panel.play_button.setToolTip("Pause")
+        self._set_preview_play_icon(True)
 
     def seek_relative(self, delta_seconds):
         """Seek relatif sur la timeline (avance / recule de ``delta_seconds``)."""
@@ -3088,10 +3176,10 @@ class MainWindow(QMainWindow):
             slip_clip(self.project, clip_id, delta)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] slip refusé : {exc}")
-            self.timeline_panel.set_project(self.project)
+            self._reload_timeline_preserving_selection()
             return
         self._record_history("Slip")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._mark_dirty()
 
     def on_slide_requested(self, clip_id: str, new_start: float) -> None:
@@ -3099,10 +3187,10 @@ class MainWindow(QMainWindow):
             slide_clip(self.project, clip_id, new_start)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] slide refusé : {exc}")
-            self.timeline_panel.set_project(self.project)
+            self._reload_timeline_preserving_selection()
             return
         self._record_history("Slide")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -3111,10 +3199,10 @@ class MainWindow(QMainWindow):
             roll_edit(self.project, clip_id, edge, new_time)
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] roll refusé : {exc}")
-            self.timeline_panel.set_project(self.project)
+            self._reload_timeline_preserving_selection()
             return
         self._record_history("Roll")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -3195,7 +3283,7 @@ class MainWindow(QMainWindow):
                 print(f"[MainWindow] prise non placée sur {track_id} : {exc}")
         self._record_history("Enregistrer une prise")
         self._refresh_project_library()
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -3204,14 +3292,10 @@ class MainWindow(QMainWindow):
             move_clips(self.project, list(placements))
         except (KeyError, ValueError) as exc:
             print(f"[MainWindow] déplacement refusé : {exc}")
-            self.timeline_panel.set_project(self.project)
+            self._reload_timeline_preserving_selection()
             return
         self._record_history("Déplacer les clips")
-        selected = set(self.timeline_panel.selected_clip_ids)
-        primary = self.timeline_panel.selected_clip_id
-        self.timeline_panel.set_project(self.project)
-        if selected:
-            self.timeline_panel._set_selection(selected, primary, announce=False)
+        self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._mark_dirty()
 
@@ -3221,7 +3305,7 @@ class MainWindow(QMainWindow):
     def add_marker_at(self, seconds: float) -> None:
         marker = add_marker(self.project, seconds)
         self._record_history("Ajouter un marqueur")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection()
         self._mark_dirty()
         del marker
 
@@ -3239,7 +3323,7 @@ class MainWindow(QMainWindow):
             return
         marker.name = name.strip()
         self._record_history("Renommer un marqueur")
-        self.timeline_panel.set_project(self.project)
+        self._reload_timeline_preserving_selection()
         self._mark_dirty()
 
     def goto_marker(self, direction: int) -> None:
@@ -3251,19 +3335,24 @@ class MainWindow(QMainWindow):
         track = next((item for item in self.project.tracks if item.id == track_id), None)
         if track is None:
             return
+        if track.locked:
+            self.timeline_panel.refresh_headers()
+            return
         track.solo = bool(enabled)
         self._record_history("Solo de piste")
-        self.timeline_panel.set_project(self.project)
-        self._sync_preview_to_timeline()
+        self._refresh_after_track_change()
         self._mark_dirty()
 
     def on_track_armed(self, track_id: str, enabled: bool) -> None:
         track = next((item for item in self.project.tracks if item.id == track_id), None)
         if track is None or track.type != "audio":
             return
+        if track.locked:
+            self.timeline_panel.refresh_headers()
+            return
         track.armed = bool(enabled)
         self._record_history("Armer la piste")
-        self.timeline_panel.set_project(self.project)
+        self._refresh_after_track_change()
         self._mark_dirty()
 
     def on_track_height_cycle(self, track_id: str) -> None:
@@ -3274,7 +3363,7 @@ class MainWindow(QMainWindow):
         current = track.height_mode if track.height_mode in order else "normal"
         track.height_mode = order[(order.index(current) + 1) % len(order)]
         self._record_history("Hauteur de piste")
-        self.timeline_panel.set_project(self.project)
+        self._refresh_after_track_change()
         self._mark_dirty()
 
     def on_track_collapsed(self, track_id: str, collapsed: bool) -> None:
@@ -3283,7 +3372,7 @@ class MainWindow(QMainWindow):
             return
         track.collapsed = bool(collapsed)
         self._record_history("Réduire la piste")
-        self.timeline_panel.set_project(self.project)
+        self._refresh_after_track_change()
         self._mark_dirty()
 
     def dragEnterEvent(self, event):
@@ -3362,6 +3451,10 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     def on_toggle_track_muted(self, track_id: str, muted: bool) -> None:
+        track = next((item for item in self.project.tracks if item.id == track_id), None)
+        if track is not None and track.locked:
+            self.timeline_panel.refresh_headers()
+            return
         try:
             set_track_muted(self.project, track_id, muted)
         except KeyError as exc:
@@ -3477,23 +3570,22 @@ class MainWindow(QMainWindow):
         return None
 
     def _refresh_after_track_change(self) -> None:
-        """Reconstruit la timeline, l'aperçu, l'inspecteur et la durée."""
-        self.timeline_panel.set_project(self.project)
+        """Reconstruit la timeline, l'aperçu, le mixeur et la bibliothèque.
+
+        ``set_project`` efface la sélection. On la restaure sans passer
+        par ``on_clip_selected``, qui déplacerait la tête de lecture au
+        début du clip. L'appel suivant lisait donc toujours une
+        sélection vide, et l'inspecteur restait sur l'ancien clip.
+        """
+        self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
-        # L'inspecteur (propriétés) doit être régénéré pour le clip
-        # sélectionné car l'état de visibilité / mute du track peut
-        # avoir changé la disponibilité des boutons.
-        if self.timeline_panel.selected_clip_id is not None:
-            self.on_clip_selected(self.timeline_panel.selected_clip_id)
+        self._refresh_project_library()
+        mixer = getattr(self, "mixer_panel", None)
+        if mixer is not None:
+            mixer.set_project(self.project)
+            mixer.set_master(self._master_gain_db, self._master_muted)
         self._refresh_undo_redo_state()
-        # Le nombre de pistes a changé : on rééquilibre la hauteur pour
-        # garder toutes les pistes visibles si la place le permet.
-        splitter = getattr(self, "main_split", None)
-        if splitter is not None:
-            QTimer.singleShot(
-                0, lambda: self._balance_vertical_split(splitter)
-            )
 
     # ------------------------------------------------------------------
     # Tâche 14 : préférences utilisateur (thème + langue)

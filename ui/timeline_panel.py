@@ -1631,6 +1631,16 @@ class TimelinePanel(QWidget):
             for track in self.project.tracks
         ]
 
+    def refresh_headers(self) -> None:
+        """Recrée les en-têtes depuis le projet, sans toucher à la sélection.
+
+        Le cache de signature est oublié : un bouton qui vient d'être
+        basculé alors que le modèle a refusé le changement (piste
+        verrouillée) retrouve ainsi l'état réel.
+        """
+        self._cached_header_signature = None
+        self.refresh_clip_widgets()
+
     def refresh_clip_widgets(self):
         """Met à jour en-têtes et clips visibles, puis repositionne.
 

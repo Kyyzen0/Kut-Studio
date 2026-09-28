@@ -287,6 +287,44 @@ def test_new_project_resets_state(qtbot, monkeypatch) -> None:
     )
 
 
+def test_new_project_resyncs_library_and_mixer(qtbot, monkeypatch) -> None:
+    """Un nouveau projet vide la bibliothèque et le mixeur de l'ancien."""
+    from core.project_factory import create_default_project
+    from core.track_operations import add_track
+
+    window = _build_window(qtbot, monkeypatch)
+    window.project.media_assets.append(_audio_asset("extra-audio", "extra.wav", 1.0))
+    add_track(window.project, "audio")
+    window._refresh_project_library()
+    window.mixer_panel.set_project(window.project)
+    assert any(
+        asset.id == "extra-audio"
+        for asset in window.project_panel.bin_audios.all_assets()
+    )
+    inflated = window.mixer_panel.strip_count()
+
+    window.new_project()
+
+    fresh = create_default_project()
+    library_ids = {
+        asset.id
+        for asset in window.project_panel.bin_videos.all_assets()
+    }
+    library_ids.update(
+        asset.id for asset in window.project_panel.bin_audios.all_assets()
+    )
+    assert "extra-audio" not in library_ids
+    assert library_ids == {
+        asset.id
+        for asset in fresh.media_assets
+        if asset.media_type in {"audio", "video"}
+    }
+    assert window.mixer_panel.strip_count() == sum(
+        1 for track in fresh.tracks if track.type == "audio"
+    )
+    assert window.mixer_panel.strip_count() < inflated
+
+
 def test_save_as_creates_a_valid_kut_file(qtbot, tmp_path, monkeypatch) -> None:
     """``save_project_as`` écrit un fichier ``.kut`` valide et mémorise le chemin."""
     from core.project_io import load_project
@@ -1299,6 +1337,175 @@ def test_stop_resets_playhead_to_zero_and_resyncs(qtbot, monkeypatch) -> None:
     assert spy["setSource"][-1].toLocalFile() == "/tmp/intro.mp4"
     # Le lecteur natif est stoppé via ``show_empty`` ou ``stop`` : au moins un appel.
     assert (spy["stop"] + spy["play"]) >= 1
+
+
+def test_mute_keeps_selection_and_playhead(qtbot, monkeypatch) -> None:
+    """Couper le son d'une piste ne désélectionne pas le clip ni ne saute."""
+    window = _build_window(qtbot, monkeypatch)
+    window.timeline_panel._set_selection(["intro"], "intro", announce=False)
+    window.playhead_seconds = 2.5
+
+    window.on_toggle_track_muted("V1", True)
+
+    assert next(track for track in window.project.tracks if track.id == "V1").muted
+    assert window.timeline_panel.selected_clip_id == "intro"
+    assert window.playhead_seconds == pytest.approx(2.5)
+
+
+def test_timeline_solo_updates_mixer_and_keeps_playhead(qtbot, monkeypatch) -> None:
+    """Le solo demandé par la timeline se reflète dans le mixeur."""
+    window = _build_window(qtbot, monkeypatch)
+    window.playhead_seconds = 1.25
+    window.timeline_panel._set_selection(["intro"], "intro", announce=False)
+
+    window.on_track_solo("A1", True)
+
+    track = next(item for item in window.project.tracks if item.id == "A1")
+    assert track.solo is True
+    strip = window.mixer_panel.strip_for("A1")
+    assert strip is not None
+    assert strip.solo_button.isChecked() is True
+    assert window.playhead_seconds == pytest.approx(1.25)
+    assert window.timeline_panel.selected_clip_id == "intro"
+
+
+def test_locked_track_solo_is_rejected(qtbot, monkeypatch) -> None:
+    """Une piste verrouillée ne passe pas en solo, même depuis la timeline."""
+    window = _build_window(qtbot, monkeypatch)
+    track = next(item for item in window.project.tracks if item.id == "A1")
+    track.locked = True
+
+    window.on_track_solo("A1", True)
+
+    assert track.solo is False
+
+
+def test_cut_keeps_the_playhead(qtbot, monkeypatch) -> None:
+    """Couper un clip laisse la tête de lecture sur le point de coupe."""
+    window = _build_window(qtbot, monkeypatch)
+    window.playhead_seconds = 1.5
+
+    window.cut_selected_clip("intro", 1.5)
+
+    assert window.playhead_seconds == pytest.approx(1.5)
+    assert window.timeline_panel.selected_clip_id == "intro"
+    assert find_clip(window.project, "intro-split-2") is not None
+
+
+def test_speed_change_keeps_the_playhead(qtbot, monkeypatch) -> None:
+    """Changer la vitesse ne ramène pas la tête de lecture au début du clip."""
+    window = _build_window(qtbot, monkeypatch)
+    window.playhead_seconds = 0.5
+
+    window.on_speed_changed("intro", 1.5)
+
+    assert window.playhead_seconds == pytest.approx(0.5)
+    assert window.timeline_panel.selected_clip_id == "intro"
+
+
+def test_media_player_does_not_hijack_timeline_transport(qtbot, monkeypatch) -> None:
+    """Un arrêt du décodeur pendant la lecture ne met pas la timeline en pause."""
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    window = _build_window(qtbot, monkeypatch)
+    calls: list[bool] = []
+    window.is_playing = True
+    window.timeline_panel.setPlayState = lambda playing: calls.append(playing)
+
+    window.on_playback_state_changed(QMediaPlayer.StoppedState)
+
+    assert window.is_playing is True
+    assert calls == []
+
+
+def test_library_preview_pause_does_not_start_the_timeline(qtbot, monkeypatch) -> None:
+    """Le bouton Pause de l'aperçu bibliothèque ne lance pas la timeline."""
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    window = _build_window(qtbot, monkeypatch)
+    paused: list[bool] = []
+    window.preview_panel._library_preview_path = "/tmp/intro.mp4"
+    monkeypatch.setattr(
+        window.preview_panel.player,
+        "playbackState",
+        lambda: QMediaPlayer.PlayingState,
+    )
+    monkeypatch.setattr(
+        window.preview_panel.player,
+        "pause",
+        lambda: paused.append(True),
+    )
+
+    qtbot.mouseClick(window.preview_panel.play_button, Qt.LeftButton)
+
+    assert paused == [True]
+    assert window.is_playing is False
+
+
+def test_new_project_stops_playback_and_recording(qtbot, monkeypatch) -> None:
+    """Nouveau projet coupe l'horloge, le micro et les deux boutons lecture."""
+    from core.audio_recorder import AudioRecorder, ToneSource
+
+    window = _build_window(qtbot, monkeypatch)
+    play_states: list[bool] = []
+    window.timeline_panel.setPlayState = lambda playing: play_states.append(playing)
+    window.is_playing = True
+    window.timeline_timer.start()
+    window._audio_recorder = AudioRecorder(ToneSource())
+    window._audio_recorder.start()
+    window._set_record_button(True)
+    window.preview_panel.play_button.setToolTip("Pause")
+
+    window.new_project()
+
+    assert window.is_playing is False
+    assert window.timeline_timer.isActive() is False
+    assert window._audio_recorder.is_recording is False
+    assert window.timeline_panel.record_button.isChecked() is False
+    assert play_states[-1] is False
+    assert window.preview_panel.play_button.toolTip() == "Lecture"
+
+
+def test_move_keeps_selection_and_playhead(qtbot, monkeypatch) -> None:
+    """Déplacer un clip ne le désélectionne pas et ne saute pas."""
+    window = _build_window(qtbot, monkeypatch)
+    window.playhead_seconds = 1.25
+    window.timeline_panel.set_playhead_seconds(1.25)
+
+    window.on_move_clip_requested("intro", 2.0)
+
+    assert window.playhead_seconds == pytest.approx(1.25)
+    assert window.timeline_panel.playhead_seconds == pytest.approx(1.25)
+    assert window.timeline_panel.selected_clip_id == "intro"
+    assert window.properties_panel.selected_clip is not None
+    assert window.properties_panel.selected_clip.id == "intro"
+    assert find_clip(window.project, "intro").timeline_start == pytest.approx(2.0)
+
+
+def test_undo_restores_a_stale_inspector_without_seeking(qtbot, monkeypatch) -> None:
+    """Annuler repose la sélection quand l'inspecteur montre encore le clip."""
+    from core.timeline_operations import move_clip
+
+    window = _build_window(qtbot, monkeypatch)
+    original = find_clip(window.project, "intro").timeline_start
+    window.timeline_panel._set_selection(["intro"], "intro", announce=False)
+    window.properties_panel.show_clip(window.timeline_panel.find_view_by_id("intro"))
+    window.playhead_seconds = 1.5
+    window.timeline_panel.set_playhead_seconds(1.5)
+    # Comme avant le correctif : la timeline oublie la sélection, l'inspecteur non.
+    window.timeline_panel.set_project(window.project)
+    assert window.timeline_panel.selected_clip_id is None
+
+    move_clip(window.project, "intro", 2.0)
+    window._record_history("Déplacer")
+    window.undo_last()
+
+    assert find_clip(window.project, "intro").timeline_start == pytest.approx(original)
+    assert window.timeline_panel.selected_clip_id == "intro"
+    assert window.properties_panel.selected_clip is not None
+    assert window.properties_panel.selected_clip.id == "intro"
+    assert window.playhead_seconds == pytest.approx(1.5)
+    assert window.timeline_panel.playhead_seconds == pytest.approx(1.5)
 
 
 def test_library_preview_does_not_modify_project(qtbot, monkeypatch) -> None:
