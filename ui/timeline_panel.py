@@ -1296,7 +1296,10 @@ class TimelinePanel(QWidget):
         left_layout.addWidget(self.slip_button)
         left_layout.addWidget(self.slide_button)
         self.record_button = IconButton(
-            icon=IconName.MARKER,
+            # Icône distincte de ``marker_button`` : les deux boutons sont
+            # voisins dans la barre d'outils et partageaient auparavant le
+            # même glyphe de marqueur, ce qui les rendait indiscernables.
+            icon=IconName.MIC,
             tooltip="Enregistrer sur les pistes audio armées",
             checkable=True,
             size=Sizes.icon_button,
