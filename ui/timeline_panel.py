@@ -55,7 +55,6 @@ from core.timeline_navigation import (
 from core.timeline_view_model import (
     TimelineClipView,
     build_clip_views,
-    v1_transition_pairs,
 )
 from ui.timeline_ruler import TimelineRuler
 from ui.design_system import Iconography, Sizes, Spacing
@@ -891,6 +890,37 @@ class ClipWidget(QWidget):
             painter.drawPixmap(6 + index * cell, 8, cell - 2, target_h, pixmap)
 
 
+class TransitionMarkerWidget(QLabel):
+    """Marqueur interactif projeté depuis une transition du projet."""
+
+    def __init__(self, transition_id: str, timeline: "TimelinePanel") -> None:
+        super().__init__(timeline.timeline_grid)
+        self.transition_id = transition_id
+        self.timeline = timeline
+        self.setAlignment(Qt.AlignCenter)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Cliquer pour modifier cette transition")
+
+    def refresh_style(self, label: str) -> None:
+        palette = _current_palette()
+        selected = self.timeline.selected_transition_id == self.transition_id
+        background = palette.accent if selected else palette.panel_alt
+        border = palette.clip_border_selected if selected else palette.clip_border
+        self.setText(label)
+        self.setStyleSheet(
+            f"QLabel {{ background: {background}; color: {palette.clip_text}; "
+            f"border: 1px solid {border}; border-radius: 4px; "
+            "font-size: 10px; font-weight: 700; padding: 1px 4px; }}"
+        )
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.timeline.select_transition(self.transition_id)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 # ---------------------------------------------------------------------------
 # Grille de pistes
 # ---------------------------------------------------------------------------
@@ -1023,6 +1053,7 @@ class TimelinePanel(QWidget):
 
     seek_requested = Signal(float)
     clip_selected = Signal(str)
+    transition_selected = Signal(str)
     transition_clicked = Signal(float)
     move_clip_requested = Signal(str, float)
     trim_clip_left_requested = Signal(str, float)
@@ -1087,11 +1118,12 @@ class TimelinePanel(QWidget):
         self.markers: list = []
         self.clip_widgets: dict[str, ClipWidget] = {}
         self.track_header_widgets: dict[str, TrackRowHeader] = {}
+        self.transition_widgets: dict[str, TransitionMarkerWidget] = {}
         # Marge autour de la zone visible, en pixels. Les clips hors de
         # cette fenêtre ne sont pas des widgets. Voir ``_sync_mounted_clips``.
         self._overscan_px = 720
         self._cached_header_signature: tuple | None = None
-        self._transition_pairs: list = []
+        self.selected_transition_id: str | None = None
         self._cull_guard = False
         self.dragging_playhead = False
         self.selected_clip_id: str | None = None
@@ -1427,6 +1459,7 @@ class TimelinePanel(QWidget):
             header.refresh_state(palette)
         for widget in self.clip_widgets.values():
             widget.refresh_style()
+        self._sync_transition_widgets()
         self._restyle_toolbar(palette)
         self.update()
 
@@ -1450,6 +1483,7 @@ class TimelinePanel(QWidget):
         self.clip_views = build_clip_views(project)
         self.selected_clip_id = None
         self.selected_clip_ids = set()
+        self.selected_transition_id = None
         self.refresh_clip_widgets()
         self.update()
         callback = getattr(self, "on_structure_changed", None)
@@ -1572,7 +1606,7 @@ class TimelinePanel(QWidget):
             self._cached_header_signature = signature
         self._sync_mounted_clips(refresh_views=True)
         self._layout_children()
-        self._rebuild_transition_cache()
+        self._sync_transition_widgets()
 
     def _header_signature(self) -> tuple:
         if self.project is None:
@@ -1769,12 +1803,67 @@ class TimelinePanel(QWidget):
         if widget is not None:
             widget.refresh_style()
 
-    def _rebuild_transition_cache(self) -> None:
-        self._transition_pairs = v1_transition_pairs(
-            self.clip_views,
-            self.pixels_per_second,
-            self.zoom,
-        )
+    def _sync_transition_widgets(self) -> None:
+        """Projette les transitions persistantes dans la timeline."""
+        transitions = list(getattr(self.project, "transitions", [])) if self.project else []
+        wanted = {transition.id: transition for transition in transitions}
+        for transition_id in set(self.transition_widgets) - set(wanted):
+            widget = self.transition_widgets.pop(transition_id)
+            widget.hide()
+            widget.deleteLater()
+        for transition_id, transition in wanted.items():
+            widget = self.transition_widgets.get(transition_id)
+            if widget is None:
+                widget = TransitionMarkerWidget(transition_id, self)
+                self.transition_widgets[transition_id] = widget
+            widget.refresh_style(self._transition_label(transition))
+            widget.show()
+            widget.raise_()
+        if self.selected_transition_id not in wanted:
+            self.selected_transition_id = None
+        self._layout_transition_widgets()
+
+    @staticmethod
+    def _transition_label(transition) -> str:
+        labels = {
+            "crossfade": "FONDU",
+            "fade_black": "NOIR",
+            "wipe_left": "BALAYAGE ←",
+            "wipe_right": "BALAYAGE →",
+        }
+        return f"{labels.get(transition.type.value, 'TRANSITION')} · {transition.duration:.1f}s"
+
+    def _layout_transition_widgets(self) -> None:
+        if self.project is None:
+            return
+        views = {view.id: view for view in self.clip_views}
+        pixels = self.pixels_per_second * self.zoom
+        for transition in self.project.transitions:
+            widget = self.transition_widgets.get(transition.id)
+            outgoing = views.get(transition.from_clip_id)
+            incoming = views.get(transition.to_clip_id)
+            if widget is None or outgoing is None or incoming is None:
+                continue
+            width = max(54, int(transition.duration * pixels))
+            x = int(self.left_margin + (outgoing.end - transition.duration) * pixels)
+            y = int(self.row_top(outgoing.track_index) + 3)
+            widget.setGeometry(x, y, width, 20)
+
+    def select_transition(self, transition_id: str) -> None:
+        if self.project is None or not any(
+            item.id == transition_id for item in self.project.transitions
+        ):
+            return
+        self.selected_transition_id = transition_id
+        self._set_selection([], None, announce=False)
+        self._sync_transition_widgets()
+        self.transition_selected.emit(transition_id)
+
+    def clear_transition_selection(self) -> None:
+        if self.selected_transition_id is None:
+            return
+        self.selected_transition_id = None
+        self._sync_transition_widgets()
 
     def _layout_children(self) -> None:
         """Repositionne en-têtes et clips — sans rien recréer.
@@ -1796,6 +1885,7 @@ class TimelinePanel(QWidget):
                 continue
             widget.setGeometry(*self.clip_rect(view, view.start, view.end))
             widget.raise_()
+        self._layout_transition_widgets()
         self._publish_overlay()
         self._schedule_previews()
         self._sync_ruler()
@@ -1856,9 +1946,9 @@ class TimelinePanel(QWidget):
         """
         self._update_zoom_label()
         self._update_scroll_extent()
-        self._rebuild_transition_cache()
         self._sync_mounted_clips()
         self._layout_children()
+        self._sync_transition_widgets()
         self.update()
 
     def _update_zoom_label(self) -> None:
@@ -1984,6 +2074,8 @@ class TimelinePanel(QWidget):
         return clip_id in self.selected_clip_ids or clip_id == self.selected_clip_id
 
     def _set_selection(self, ids, primary: str | None, announce: bool) -> None:
+        if ids:
+            self.clear_transition_selection()
         previous = set(self.selected_clip_ids)
         if self.selected_clip_id:
             previous.add(self.selected_clip_id)

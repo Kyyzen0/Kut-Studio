@@ -130,6 +130,34 @@ def test_main_window_adds_persistent_transition_from_library(qtbot, monkeypatch)
     assert incoming.timeline_start == pytest.approx(3.5)
 
 
+def test_transition_marker_inspector_edit_and_removal(qtbot, monkeypatch) -> None:
+    """Un marqueur sélectionne, modifie puis supprime la transition seule."""
+    window = _build_window(qtbot, monkeypatch)
+    incoming = find_clip(window.project, "plan_a")
+    incoming.timeline_start = 4.0
+    window.timeline_panel.set_project(window.project)
+    window.timeline_panel.selected_clip_ids = {"intro", "plan_a"}
+    window.add_transition_from_library("crossfade", 0.5)
+    transition_id = window.project.transitions[0].id
+
+    marker = window.timeline_panel.transition_widgets[transition_id]
+    qtbot.mouseClick(marker, Qt.LeftButton)
+    assert window.timeline_panel.selected_transition_id == transition_id
+    assert window.properties_panel.selected_transition_id == transition_id
+    assert not window.properties_panel.transition_group.isHidden()
+
+    window.properties_panel.transition_type_combo.setCurrentIndex(1)
+    window.properties_panel.transition_duration_spin.setValue(0.75)
+    transition = window.project.transitions[0]
+    assert transition.type.value == "fade_black"
+    assert transition.duration == pytest.approx(0.75)
+
+    window.remove_selected_transition(transition_id)
+    assert window.project.transitions == []
+    assert find_clip(window.project, "intro") is not None
+    assert find_clip(window.project, "plan_a") is not None
+
+
 def test_main_window_subtitle_editor_updates_project(qtbot, tmp_path, monkeypatch) -> None:
     """Éditer le sous-titre dans l'inspecteur met à jour Clip.text et la vue.
 

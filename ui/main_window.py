@@ -179,6 +179,10 @@ class MainWindow(QMainWindow):
         self.timeline_panel.clips_move_requested.connect(self.on_clips_move_requested)
         self.timeline_panel.blade_cut_requested.connect(self.on_blade_cut_requested)
         self.timeline_panel.selection_cleared.connect(self._reset_selection_and_inspector)
+        self.timeline_panel.transition_selected.connect(self.on_transition_selected)
+        self.properties_panel.transition_type_changed.connect(self.on_transition_type_changed)
+        self.properties_panel.transition_duration_changed.connect(self.on_transition_duration_changed)
+        self.properties_panel.transition_remove_requested.connect(self.remove_selected_transition)
         self.timeline_panel.duplicate_requested.connect(self.duplicate_selected_clip)
         self.timeline_panel.ripple_delete_requested.connect(self.ripple_delete_selected_clip)
         self.timeline_panel.toggle_enabled_requested.connect(self.toggle_selected_clip_enabled)
@@ -1264,6 +1268,7 @@ class MainWindow(QMainWindow):
         """Réinitialise la sélection de clip et l'inspecteur après un changement de projet."""
         self.active_subtitle_clip = None
         self.timeline_panel.selected_clip_id = None
+        self.timeline_panel.clear_transition_selection()
         self.properties_panel.set_clip(None, "")
 
     def new_project(self) -> None:
@@ -2319,25 +2324,92 @@ class MainWindow(QMainWindow):
             and view.track_type == "video"
         ]
         if len(selected) != 2:
-            print("[MainWindow] sélectionnez deux clips vidéo pour une transition.")
+            self.statusBar().showMessage(
+                "Sélectionnez deux clips vidéo pour créer une transition.", 5000
+            )
             return
         selected.sort(key=lambda view: view.start)
         if selected[0].track_id != selected[1].track_id:
-            print("[MainWindow] les clips doivent être sur la même piste.")
+            self.statusBar().showMessage(
+                "Les clips doivent être placés sur la même piste.", 5000
+            )
             return
         from core.transitions import TransitionType, add_transition
         try:
-            add_transition(
+            transition = add_transition(
                 self.project, selected[0].id, selected[1].id,
                 TransitionType(transition_type), duration,
             )
         except (KeyError, ValueError) as error:
-            print(f"[MainWindow] transition refusée : {error}")
+            self.statusBar().showMessage(f"Transition refusée : {error}", 6000)
             return
         self._record_history("Ajouter une transition")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
+        self.timeline_panel.select_transition(transition.id)
+        self.statusBar().showMessage("Transition ajoutée.", 3000)
+
+    def on_transition_selected(self, transition_id: str) -> None:
+        """Affiche les réglages de la transition choisie sur la timeline."""
+        transition = next(
+            (item for item in self.project.transitions if item.id == transition_id), None
+        )
+        if transition is None:
+            self.properties_panel.clear_transition()
+            return
+        outgoing = self.timeline_panel.find_view_by_id(transition.from_clip_id)
+        incoming = self.timeline_panel.find_view_by_id(transition.to_clip_id)
+        if outgoing is None or incoming is None:
+            self.properties_panel.clear_transition()
+            return
+        track = next((item for item in self.project.tracks if item.id == outgoing.track_id), None)
+        self.properties_panel.show_transition(
+            transition, outgoing, incoming, track.name if track is not None else outgoing.track_id
+        )
+
+    def on_transition_type_changed(self, transition_id: str, transition_type: str) -> None:
+        self._update_transition(transition_id, transition_type=transition_type)
+
+    def on_transition_duration_changed(self, transition_id: str, duration: float) -> None:
+        self._update_transition(transition_id, duration=duration)
+
+    def _update_transition(
+        self, transition_id: str, *, transition_type: str | None = None,
+        duration: float | None = None,
+    ) -> None:
+        from core.transitions import TransitionType, update_transition
+
+        try:
+            update_transition(
+                self.project,
+                transition_id,
+                transition_type=TransitionType(transition_type) if transition_type else None,
+                duration=duration,
+            )
+        except (KeyError, ValueError) as error:
+            self.statusBar().showMessage(f"Modification refusée : {error}", 6000)
+            self.on_transition_selected(transition_id)
+            return
+        self._record_history("Modifier une transition")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
+        self.timeline_panel.select_transition(transition_id)
+
+    def remove_selected_transition(self, transition_id: str) -> None:
+        from core.transitions import remove_transition
+
+        try:
+            remove_transition(self.project, transition_id)
+        except KeyError:
+            return
+        self._record_history("Supprimer une transition")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
+        self.properties_panel.clear_transition()
+        self.statusBar().showMessage("Transition supprimée.", 3000)
 
     def on_transform_property_changed(
         self, clip_id: str, property_name: str, value: float

@@ -109,6 +109,18 @@ def update_transition(
 def remove_transition(project: "Project", transition_id: str) -> Transition:
     current = _find_transition(project, transition_id)
     project.transitions.remove(current)
+    # Les fondus audio sont appliqués avec la transition afin que le
+    # chevauchement sonne comme le fondu vidéo. Ils ne doivent pas
+    # survivre lorsque la dernière transition concernée est supprimée.
+    try:
+        _track, outgoing = _find_video_clip(project, current.from_clip_id)
+        _track, incoming = _find_video_clip(project, current.to_clip_id)
+    except KeyError:
+        return current
+    if not any(item.from_clip_id == current.from_clip_id for item in project.transitions):
+        outgoing.set_fade_out(0.0)
+    if not any(item.to_clip_id == current.to_clip_id for item in project.transitions):
+        incoming.set_fade_in(0.0)
     return current
 
 
@@ -133,4 +145,3 @@ def _find_video_clip(project: "Project", clip_id: str) -> tuple["Track", "Clip"]
                     raise ValueError("Une transition ne peut concerner que des clips vidéo.")
                 return track, clip
     raise KeyError(f"Clip '{clip_id}' introuvable.")
-

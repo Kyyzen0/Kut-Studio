@@ -15,6 +15,7 @@ from PySide6.QtGui import QPainter, QColor, QPolygonF
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -113,6 +114,9 @@ class PropertiesPanel(QWidget):
     freeze_frame_removed = Signal(str)
     freeze_duration_changed = Signal(str, float)
     time_remapping_reset = Signal(str)
+    transition_type_changed = Signal(str, str)
+    transition_duration_changed = Signal(str, float)
+    transition_remove_requested = Signal(str)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -120,6 +124,7 @@ class PropertiesPanel(QWidget):
         self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
         self.selected_clip_track_type = None
+        self.selected_transition_id: str | None = None
         self.timeline_panel = None
         self._signal_block_depth = 0
         self._allow_property_signals = False
@@ -216,6 +221,46 @@ class PropertiesPanel(QWidget):
         clip_form.addRow("Durée", self.clip_duration)
         clip_form.addRow("Position", self.clip_position)
         layout.addWidget(clip_group)
+
+        # ----- Transition sélectionnée --------------------------------
+        self.transition_group = QGroupBox("Transition")
+        self.transition_group.setStyleSheet(self.group_style())
+        transition_form = QFormLayout(self.transition_group)
+        transition_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        transition_form.setSpacing(Spacing.xs)
+        self.transition_type_combo = QComboBox()
+        self.transition_type_combo.addItem("Fondu enchaîné", "crossfade")
+        self.transition_type_combo.addItem("Fondu au noir", "fade_black")
+        self.transition_type_combo.addItem("Balayage gauche", "wipe_left")
+        self.transition_type_combo.addItem("Balayage droite", "wipe_right")
+        self.transition_duration_spin = QDoubleSpinBox()
+        self.transition_duration_spin.setRange(0.1, 5.0)
+        self.transition_duration_spin.setDecimals(2)
+        self.transition_duration_spin.setSingleStep(0.1)
+        self.transition_duration_spin.setSuffix(" s")
+        self.transition_from_label = QLabel("--")
+        self.transition_to_label = QLabel("--")
+        self.transition_track_label = QLabel("--")
+        for label in (
+            self.transition_from_label,
+            self.transition_to_label,
+            self.transition_track_label,
+        ):
+            label.setStyleSheet(label_style(11, "muted", 500))
+        self.remove_transition_button = self._make_action_button(
+            IconName.REMOVE, "Supprimer la transition", "Supprimer uniquement la transition"
+        )
+        transition_form.addRow("Type", self.transition_type_combo)
+        transition_form.addRow("Durée", self.transition_duration_spin)
+        transition_form.addRow("Clip sortant", self.transition_from_label)
+        transition_form.addRow("Clip entrant", self.transition_to_label)
+        transition_form.addRow("Piste", self.transition_track_label)
+        transition_form.addRow("", self.remove_transition_button)
+        self.transition_type_combo.currentIndexChanged.connect(self._on_transition_type_changed)
+        self.transition_duration_spin.valueChanged.connect(self._on_transition_duration_changed)
+        self.remove_transition_button.clicked.connect(self._on_transition_remove)
+        self.transition_group.hide()
+        layout.addWidget(self.transition_group)
 
         # ----- Couleur --------------------------------------------------
         color_group = QGroupBox("Couleur")
@@ -961,6 +1006,8 @@ class PropertiesPanel(QWidget):
         pending_keyframes: list[TransformKeyframe] | None = None
         self._push_signal_block()
         try:
+            self.selected_transition_id = None
+            self.transition_group.hide()
             if view is None:
                 self.selected_clip = None
                 self.selected_clip_track_type = None
@@ -1091,6 +1138,47 @@ class PropertiesPanel(QWidget):
 
     def set_clip(self, view, track_name=None):
         self.show_clip(view)
+
+    def show_transition(self, transition, outgoing_view, incoming_view, track_name: str) -> None:
+        """Affiche l'édition d'une transition sans créer d'état métier local."""
+        self.show_clip(None)
+        self.selected_transition_id = transition.id
+        self.transition_type_combo.blockSignals(True)
+        index = self.transition_type_combo.findData(transition.type.value)
+        self.transition_type_combo.setCurrentIndex(max(0, index))
+        self.transition_type_combo.blockSignals(False)
+        maximum = max(0.1, min(
+            outgoing_view.end - outgoing_view.start,
+            incoming_view.end - incoming_view.start,
+        ) / 2.0)
+        self.transition_duration_spin.blockSignals(True)
+        self.transition_duration_spin.setMaximum(maximum)
+        self.transition_duration_spin.setValue(min(transition.duration, maximum))
+        self.transition_duration_spin.blockSignals(False)
+        self.transition_from_label.setText(outgoing_view.label)
+        self.transition_to_label.setText(incoming_view.label)
+        self.transition_track_label.setText(track_name)
+        self.transition_group.show()
+
+    def clear_transition(self) -> None:
+        self.selected_transition_id = None
+        self.transition_group.hide()
+
+    def _on_transition_type_changed(self, _index: int) -> None:
+        if self.selected_transition_id is None or self._signal_block_depth > 0:
+            return
+        self.transition_type_changed.emit(
+            self.selected_transition_id, str(self.transition_type_combo.currentData())
+        )
+
+    def _on_transition_duration_changed(self, value: float) -> None:
+        if self.selected_transition_id is None or self._signal_block_depth > 0:
+            return
+        self.transition_duration_changed.emit(self.selected_transition_id, float(value))
+
+    def _on_transition_remove(self) -> None:
+        if self.selected_transition_id is not None:
+            self.transition_remove_requested.emit(self.selected_transition_id)
 
     def _on_speed_changed(self, value: float) -> None:
         if self.selected_clip is None or self._signal_block_depth > 0:

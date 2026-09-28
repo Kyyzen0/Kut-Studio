@@ -48,6 +48,8 @@ def test_transition_can_be_updated_and_removed():
     assert updated.type is TransitionType.FADE_BLACK
     assert remove_transition(project, updated.id) == updated
     assert project.transitions == []
+    assert project.tracks[0].clips[0].fade_out == 0.0
+    assert project.tracks[0].clips[1].fade_in == 0.0
 
 
 def test_cut_or_delete_removes_stale_transition():
