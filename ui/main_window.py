@@ -521,13 +521,10 @@ class MainWindow(QMainWindow):
         Le Master n'appartient pas au projet : il décrit la session de
         mixage de l'utilisateur, pas le montage livré.
         """
-        from core.user_settings import UserSettings, save_user_settings
-
         try:
             save_user_settings(
-                UserSettings(
-                    theme_mode=self.theme_manager.requested_mode,
-                    language=i18n.current_language(),
+                replace(
+                    self._settings_snapshot(),
                     master_gain_db=self._master_gain_db,
                     master_muted=self._master_muted,
                 )
@@ -1316,12 +1313,13 @@ class MainWindow(QMainWindow):
             clip = find_clip(self.project, clip_id)
         except KeyError:
             return
+        was_enabled = clip.enabled
         try:
-            set_clip_enabled(self.project, clip_id, not clip.enabled)
+            set_clip_enabled(self.project, clip_id, not was_enabled)
         except KeyError:
             return
         self._record_history(
-            "Activer le clip" if not clip.enabled else "Désactiver le clip"
+            "Désactiver le clip" if was_enabled else "Activer le clip"
         )
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
@@ -1771,7 +1769,8 @@ class MainWindow(QMainWindow):
         menu_bar.setNativeMenuBar(False)
 
         # Fichier
-        file_menu = QMenu("Fichier", self)
+        file_menu = QMenu(i18n.translate("menu.file"), self)
+        file_menu.setObjectName("file_menu")
         new_action = QAction("Nouveau", self)
         new_action.setShortcut("Ctrl+N")
         new_action.triggered.connect(self.new_project)
@@ -1803,7 +1802,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         # Édition
-        edit_menu = QMenu("Édition", self)
+        edit_menu = QMenu(i18n.translate("menu.edit"), self)
+        edit_menu.setObjectName("edit_menu")
         self.undo_action = QAction("Annuler", self)
         self.undo_action.setShortcut("Ctrl+Z")
         self.undo_action.setShortcutContext(Qt.ApplicationShortcut)
@@ -1850,7 +1850,8 @@ class MainWindow(QMainWindow):
             edit_menu.addAction(action)
 
         # Séquence
-        sequence_menu = QMenu("Séquence", self)
+        sequence_menu = QMenu(i18n.translate("menu.timeline"), self)
+        sequence_menu.setObjectName("timeline_menu")
         for label in ("Ajouter un clip", "Couper / Réduire", "Marqueur"):
             action = QAction(label, self)
             action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
@@ -1859,6 +1860,7 @@ class MainWindow(QMainWindow):
         # Fenêtre — le contenu dépend du gestionnaire d'espace de
         # travail, créé plus bas ; on ne garde que la partie fixe ici.
         window_menu = QMenu("Fenêtre", self)
+        window_menu.setObjectName("window_menu")
         self.window_menu = window_menu
         reset_action = QAction("Réinitialiser la disposition", self)
         reset_action.triggered.connect(self.reset_workspace_layout)
@@ -2150,6 +2152,8 @@ class MainWindow(QMainWindow):
             language=i18n.current_language(),
             performance_profile=self.runtime.requested_profile,
             preview_quality=self.runtime.requested_quality,
+            master_gain_db=self._master_gain_db,
+            master_muted=self._master_muted,
         )
 
     def _pause_internal(self) -> None:
@@ -3303,7 +3307,12 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
             return
-        self.history.record(self.project, i18n.translate("tracks.add_video_long"))
+        label_keys = {
+            "video": "tracks.add_video_long",
+            "audio": "tracks.add_audio_long",
+            "subtitle": "tracks.add_subtitle_long",
+        }
+        self.history.record(self.project, i18n.translate(label_keys[track.type]))
         self._refresh_after_track_change()
         self._mark_dirty()
         # Sélectionne la nouvelle piste via ses boutons (lock/visible/mute).
@@ -3556,11 +3565,15 @@ class MainWindow(QMainWindow):
     def _retranslate_ui(self) -> None:
         """Force la mise à jour des textes dépendant de la langue."""
         self.setWindowTitle(i18n.translate("app.title"))
-        # On reconstruit la barre de menus (chemin simple) : chaque
-        # label n'est pas réécrit mais les changements de langue se
-        # font à la réouverture de la fenêtre Préférences au minimum.
-        for menu in self.menuBar().findChildren(QMenu):
-            menu.setTitle(self._translate_menu_title(menu.objectName()))
+        # Les menus racine qui possèdent une clé de traduction sont
+        # mis à jour ; les sous-menus sans clé conservent leur titre.
+        for action in self.menuBar().actions():
+            menu = action.menu()
+            if menu is None:
+                continue
+            translated_title = self._translate_menu_title(menu.objectName())
+            if translated_title:
+                menu.setTitle(translated_title)
         # Mise à jour des widgets traduisibles les plus visibles.
         if hasattr(self.preview_panel, "update_translations"):
             self.preview_panel.update_translations()

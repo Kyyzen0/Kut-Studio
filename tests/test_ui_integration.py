@@ -1693,6 +1693,67 @@ def test_undo_action_label_includes_operation_name(qtbot, monkeypatch) -> None:
     assert "Action personnalisée" in window.undo_action.text()
 
 
+def test_toggle_clip_history_label_describes_the_action(qtbot, monkeypatch) -> None:
+    """L'historique doit décrire l'état précédent, pas celui déjà inversé."""
+    window = _build_window(qtbot, monkeypatch)
+    clip_id = window.timeline_panel.clip_views[0].id
+    window.timeline_panel.select_clip(clip_id)
+
+    window.toggle_selected_clip_enabled()
+    assert window.history.undo_label == "Désactiver le clip"
+
+    window.toggle_selected_clip_enabled()
+    assert window.history.undo_label == "Activer le clip"
+
+
+def test_settings_changes_preserve_master_and_runtime_preferences(
+    qtbot, monkeypatch
+) -> None:
+    """Une préférence ne doit pas remettre les autres à leurs valeurs par défaut."""
+    window = _build_window(qtbot, monkeypatch)
+    saved = []
+    monkeypatch.setattr("ui.main_window.save_user_settings", saved.append)
+    window._master_gain_db = -6.0
+    window._master_muted = True
+    window.runtime.set_requested_profile("high")
+    window.runtime.set_preview_quality("half")
+
+    window._save_master_state()
+    assert saved[-1].performance_profile == "high"
+    assert saved[-1].preview_quality == "half"
+
+    window.on_user_setting_changed("light")
+    assert window._master_gain_db == pytest.approx(-6.0)
+    assert window._master_muted is True
+    assert saved[-1].master_gain_db == pytest.approx(-6.0)
+    assert saved[-1].master_muted is True
+
+
+def test_retranslation_keeps_menu_titles_and_translates_known_menus(
+    qtbot, monkeypatch
+) -> None:
+    """Les sous-menus non traduits ne doivent jamais devenir des titres vides."""
+    from ui import i18n
+
+    window = _build_window(qtbot, monkeypatch)
+    monkeypatch.setattr("ui.main_window.save_user_settings", lambda *_: None)
+    previous_language = i18n.current_language()
+    target_language = "en" if previous_language != "en" else "es"
+    try:
+        i18n.set_language(target_language)
+        menus = {
+            action.menu().objectName(): action.menu()
+            for action in window.menuBar().actions()
+            if action.menu() is not None
+        }
+        assert menus["file_menu"].title() == i18n.translate("menu.file")
+        assert menus["edit_menu"].title() == i18n.translate("menu.edit")
+        assert menus["timeline_menu"].title() == i18n.translate("menu.timeline")
+        assert window.window_menu.title() == "Fenêtre"
+    finally:
+        i18n.set_language(previous_language)
+
+
 def test_dirty_flag_after_save_undo_and_edit(qtbot, tmp_path, monkeypatch) -> None:
     window = _build_window(qtbot, monkeypatch)
     assert window.project_dirty is False
