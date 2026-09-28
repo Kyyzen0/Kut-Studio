@@ -27,6 +27,14 @@ from core.autosave import (
     sidecar_path,
 )
 from core.effects import apply_color_effect, play_crossfade_preview, set_volume
+from core.effects_library import (
+    EffectCategory,
+    EffectPreset,
+    UserPresetStore,
+    apply_preset_to_clip,
+    builtin_presets,
+    snapshot_clip_preset,
+)
 from core.edit_history import ProjectHistory
 from core.export_engine import ExportEngine
 from core.media_cache import cached_probe
@@ -94,7 +102,7 @@ from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
-from ui.project_panel import ProjectPanel
+from ui.project_panel import ProjectPanel, SavePresetDialog
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
@@ -262,6 +270,21 @@ class MainWindow(QMainWindow):
         self.properties_panel.effect_moved.connect(self.on_clip_effect_moved)
         self.properties_panel.effect_parameter_changed.connect(
             self.on_clip_effect_parameter_changed
+        )
+        # Tâche 22 : bibliothèque d'effets et presets.
+        # ``UserPresetStore`` conserve la liste des presets utilisateur
+        # en mémoire et persiste à chaque mutation.
+        self.user_preset_store = UserPresetStore()
+        self.project_panel.set_user_effect_presets(self.user_preset_store.all())
+        self.user_preset_store.subscribe(self._on_user_presets_changed)
+        self.project_panel.effect_apply_requested.connect(
+            self.on_effect_preset_apply_requested
+        )
+        self.project_panel.effect_preset_save_requested.connect(
+            self.on_effect_preset_save_requested
+        )
+        self.project_panel.effect_preset_delete_requested.connect(
+            self.on_effect_preset_delete_requested
         )
 
         # Initialisation de l'horloge de programme (tâche 8).
@@ -1511,7 +1534,133 @@ class MainWindow(QMainWindow):
             self.properties_panel.update_effects_from_clip(
                 list(clip.effects), "video"
             )
+        # La bibliothèque d'effets se contente d'être notifiée de
+        # l'état du clip sélectionné ; l'inspecteur, lui, garde la
+        # responsabilité de l'édition fine.
+        self._sync_effects_library_context()
         self._mark_dirty()
+
+    def _sync_effects_library_context(self) -> None:
+        """Synchronise la bibliothèque d'effets avec le clip sélectionné."""
+        clip_id = self._selected_video_clip_id()
+        clip_has_effects = False
+        if clip_id is not None:
+            try:
+                clip = find_clip(self.project, clip_id)
+            except KeyError:
+                clip = None
+            clip_has_effects = bool(clip and clip.effects)
+        self.project_panel.update_effects_clip_context(
+            has_video_clip=clip_id is not None,
+            clip_has_effects=clip_has_effects,
+        )
+
+    def _on_user_presets_changed(self) -> None:
+        """Répercute les mutations du store vers la bibliothèque."""
+        self.project_panel.set_user_effect_presets(
+            self.user_preset_store.all()
+        )
+
+    # ------------------------------------------------------------------
+    # Tâche 22 : gestion des presets d'effets
+    # ------------------------------------------------------------------
+
+    def on_effect_preset_apply_requested(self, preset_id: str) -> None:
+        """Applique un preset (intégré ou utilisateur) au clip vidéo courant."""
+        clip_id = self._selected_video_clip_id()
+        if clip_id is None:
+            return
+        # On cherche d'abord chez les intégrés, puis chez l'utilisateur.
+        preset = next(
+            (p for p in builtin_presets() if p.id == preset_id),
+            None,
+        )
+        if preset is None:
+            preset = self.user_preset_store.get(preset_id)
+        if preset is None:
+            print(f"[MainWindow] preset inconnu : {preset_id!r}")
+            return
+        try:
+            apply_preset_to_clip(self.project, clip_id, preset)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] application du preset refusée : {exc}")
+            return
+        self._record_history("Appliquer un preset d'effets")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_effect_preset_save_requested(self) -> None:
+        """Ouvre le dialogue d'enregistrement d'un preset utilisateur."""
+        clip_id = self._selected_video_clip_id()
+        if clip_id is None:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if not clip.effects:
+            QMessageBox.information(
+                self,
+                i18n.translate("effects.library.dialog.title"),
+                i18n.translate("effects.library.no_effects_to_save"),
+            )
+            return
+        default_name = ""
+        if clip.label:
+            default_name = f"Preset « {clip.label} »"
+        dialog = SavePresetDialog(
+            self,
+            default_name=default_name,
+            default_category=EffectCategory.LOOK,
+        )
+        if dialog.exec() != dialog.Accepted:
+            return
+        name, description, category = dialog.result_data()
+        if not name:
+            return
+        try:
+            preset = snapshot_clip_preset(
+                clip,
+                name=name,
+                description=description,
+                category=category,
+            )
+        except ValueError as exc:
+            print(f"[MainWindow] capture de preset refusée : {exc}")
+            return
+        try:
+            self.user_preset_store.add(preset)
+        except ValueError as exc:
+            print(f"[MainWindow] ajout du preset refusé : {exc}")
+            return
+        self._record_history("Enregistrer un preset utilisateur")
+
+    def on_effect_preset_delete_requested(self, preset_id: str) -> None:
+        """Supprime un preset utilisateur après confirmation."""
+        preset = self.user_preset_store.get(preset_id)
+        if preset is None:
+            return
+        if preset.builtin:
+            QMessageBox.information(
+                self,
+                i18n.translate("effects.library.delete"),
+                i18n.translate("effects.library.user_builtin_lock"),
+            )
+            return
+        confirm = QMessageBox.question(
+            self,
+            i18n.translate("effects.library.delete"),
+            i18n.translate("effects.library.delete_confirm").format(name=preset.name),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            self.user_preset_store.remove(preset_id)
+        except KeyError as exc:
+            print(f"[MainWindow] suppression du preset refusée : {exc}")
+            return
+        self._record_history("Supprimer un preset utilisateur")
 
     def on_clip_effect_enabled_changed(
         self, clip_id: str, effect_id: str, enabled: bool
@@ -1656,6 +1805,8 @@ class MainWindow(QMainWindow):
         self.timeline_panel._set_selection([], None, announce=False)
         self.timeline_panel.clear_transition_selection()
         self.properties_panel.set_clip(None, "")
+        # La bibliothèque d'effets perd son contexte de clip.
+        self._sync_effects_library_context()
 
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
@@ -2275,6 +2426,8 @@ class MainWindow(QMainWindow):
             )
         # Réglages audio : visibles uniquement pour un clip sur piste audio.
         self._sync_audio_inspector()
+        # La bibliothèque d'effets doit suivre la sélection courante.
+        self._sync_effects_library_context()
         # Sélection d'un clip = seek vers son début sur la timeline.
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
@@ -2505,6 +2658,8 @@ class MainWindow(QMainWindow):
             if clip.enabled and (clip.text or "").strip()
         ]
         self.project_panel.set_subtitle_clips(subtitle_clips)
+        # La bibliothèque d'effets suit la sélection courante.
+        self._sync_effects_library_context()
 
     def cut_selected_clip(self, clip_id, playhead_pos):
         try:

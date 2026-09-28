@@ -435,6 +435,212 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Intensity",
         "es": "Intensidad",
     },
+
+    # --- Catégories de la bibliothèque d'effets (tâche 22) -------------
+    "effects.category.color": {
+        "fr": "Couleur",
+        "en": "Color",
+        "es": "Color",
+    },
+    "effects.category.creative": {
+        "fr": "Créatif",
+        "en": "Creative",
+        "es": "Creativo",
+    },
+    "effects.category.stylized": {
+        "fr": "Stylisé",
+        "en": "Stylized",
+        "es": "Estilizado",
+    },
+    "effects.category.look": {
+        "fr": "Look",
+        "en": "Look",
+        "es": "Look",
+    },
+    "effects.category.all": {
+        "fr": "Toutes catégories",
+        "en": "All categories",
+        "es": "Todas las categorías",
+    },
+
+    # --- Présets intégrés (tâche 22) ------------------------------------
+    "effects.preset.cinema.name": {
+        "fr": "Cinéma",
+        "en": "Cinema",
+        "es": "Cine",
+    },
+    "effects.preset.cinema.description": {
+        "fr": "Contraste poussé, saturation contenue, vignette douce.",
+        "en": "Pushed contrast, contained saturation, soft vignette.",
+        "es": "Contraste marcado, saturación contenida, viñeta suave.",
+    },
+    "effects.preset.black_and_white.name": {
+        "fr": "Noir et blanc",
+        "en": "Black & white",
+        "es": "Blanco y negro",
+    },
+    "effects.preset.black_and_white.description": {
+        "fr": "Conversion en niveaux de gris avec regain de contraste.",
+        "en": "Grayscale conversion with a contrast boost.",
+        "es": "Conversión a escala de grises con contraste reforzado.",
+    },
+    "effects.preset.vintage.name": {
+        "fr": "Vintage",
+        "en": "Vintage",
+        "es": "Vintage",
+    },
+    "effects.preset.vintage.description": {
+        "fr": "Virage sépia, contraste léger et vignette marquée.",
+        "en": "Sepia tone, slight contrast and strong vignette.",
+        "es": "Tono sepia, contraste ligero y viñeta marcada.",
+    },
+    "effects.preset.sharp.name": {
+        "fr": "Net",
+        "en": "Sharp",
+        "es": "Nítido",
+    },
+    "effects.preset.sharp.description": {
+        "fr": "Accentue les contours et booste le contraste.",
+        "en": "Accentuates edges and boosts contrast.",
+        "es": "Acentúa los bordes y aumenta el contraste.",
+    },
+    "effects.preset.blur.name": {
+        "fr": "Flou",
+        "en": "Blur",
+        "es": "Desenfoque",
+    },
+    "effects.preset.blur.description": {
+        "fr": "Adoucit l'image avec un flou gaussien maîtrisé.",
+        "en": "Softens the image with a controlled gaussian blur.",
+        "es": "Suaviza la imagen con un desenfoque gaussiano controlado.",
+    },
+    "effects.preset.cool_grade.name": {
+        "fr": "Étalonnage froid",
+        "en": "Cool grade",
+        "es": "Etalonaje frío",
+    },
+    "effects.preset.cool_grade.description": {
+        "fr": "Saturation réduite et luminosité légèrement poussée.",
+        "en": "Reduced saturation and a slight brightness boost.",
+        "es": "Saturación reducida y brillo ligeramente aumentado.",
+    },
+    "effects.preset.warm_grade.name": {
+        "fr": "Étalonnage chaud",
+        "en": "Warm grade",
+        "es": "Etalonaje cálido",
+    },
+    "effects.preset.warm_grade.description": {
+        "fr": "Saturation renforcée et contraste légèrement poussé.",
+        "en": "Boosted saturation and slightly pushed contrast.",
+        "es": "Saturación reforzada y contraste ligeramente marcado.",
+    },
+    "effects.preset.noir.name": {
+        "fr": "Film noir",
+        "en": "Film noir",
+        "es": "Cine negro",
+    },
+    "effects.preset.noir.description": {
+        "fr": "Noir et blanc contrasté et vignette intense.",
+        "en": "High-contrast black & white with deep vignette.",
+        "es": "Blanco y negro contrastado con viñeta intensa.",
+    },
+
+    # --- Bibliothèque d'effets : actions & libellés UI (tâche 22) -------
+    "effects.library.title": {
+        "fr": "Bibliothèque d'effets",
+        "en": "Effects library",
+        "es": "Biblioteca de efectos",
+    },
+    "effects.library.search": {
+        "fr": "Rechercher un effet ou un preset…",
+        "en": "Search an effect or preset…",
+        "es": "Buscar un efecto o preset…",
+    },
+    "effects.library.section.builtin": {
+        "fr": "Préréglages",
+        "en": "Presets",
+        "es": "Preajustes",
+    },
+    "effects.library.section.user": {
+        "fr": "Mes presets",
+        "en": "My presets",
+        "es": "Mis presets",
+    },
+    "effects.library.apply": {
+        "fr": "Appliquer au clip",
+        "en": "Apply to clip",
+        "es": "Aplicar al clip",
+    },
+    "effects.library.apply_hint": {
+        "fr": "Sélectionnez un clip vidéo dans la timeline pour appliquer un preset.",
+        "en": "Select a video clip in the timeline to apply a preset.",
+        "es": "Selecciona un clip de vídeo en la línea de tiempo para aplicar un preset.",
+    },
+    "effects.library.no_results": {
+        "fr": "Aucun preset ne correspond à votre recherche.",
+        "en": "No preset matches your search.",
+        "es": "Ningún preset coincide con tu búsqueda.",
+    },
+    "effects.library.save": {
+        "fr": "Enregistrer comme preset",
+        "en": "Save as preset",
+        "es": "Guardar como preset",
+    },
+    "effects.library.delete": {
+        "fr": "Supprimer ce preset",
+        "en": "Delete this preset",
+        "es": "Eliminar este preset",
+    },
+    "effects.library.user_empty": {
+        "fr": "Aucun preset enregistré. Sélectionnez un clip, appliquez des effets puis cliquez sur « Enregistrer comme preset ».",
+        "en": "No preset saved yet. Select a clip, apply effects then click “Save as preset”.",
+        "es": "Aún no hay presets guardados. Selecciona un clip, aplica efectos y luego pulsa «Guardar como preset».",
+    },
+    "effects.library.user_builtin_lock": {
+        "fr": "Les préréglages ne peuvent pas être supprimés.",
+        "en": "Built-in presets cannot be deleted.",
+        "es": "Los preajustes no se pueden eliminar.",
+    },
+    "effects.library.dialog.title": {
+        "fr": "Enregistrer un preset",
+        "en": "Save preset",
+        "es": "Guardar preset",
+    },
+    "effects.library.dialog.name": {
+        "fr": "Nom du preset",
+        "en": "Preset name",
+        "es": "Nombre del preset",
+    },
+    "effects.library.dialog.description": {
+        "fr": "Description (optionnelle)",
+        "en": "Description (optional)",
+        "es": "Descripción (opcional)",
+    },
+    "effects.library.dialog.category": {
+        "fr": "Catégorie",
+        "en": "Category",
+        "es": "Categoría",
+    },
+    "effects.library.dialog.save": {
+        "fr": "Enregistrer",
+        "en": "Save",
+        "es": "Guardar",
+    },
+    "effects.library.dialog.cancel": {
+        "fr": "Annuler",
+        "en": "Cancel",
+        "es": "Cancelar",
+    },
+    "effects.library.no_effects_to_save": {
+        "fr": "Le clip sélectionné n'a aucun effet à enregistrer.",
+        "en": "The selected clip has no effect to save.",
+        "es": "El clip seleccionado no tiene efectos para guardar.",
+    },
+    "effects.library.delete_confirm": {
+        "fr": "Supprimer le preset « {name} » ?",
+        "en": "Delete preset “{name}”?",
+        "es": "¿Eliminar el preset «{name}»?",
+    },
 }
 
 

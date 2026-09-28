@@ -1688,7 +1688,7 @@ def test_global_navigation_changes_library_without_duplicate_local_tabs(qtbot, m
     assert panel.content_stack.currentWidget() is panel.bin_audios
 
     window._select_top_nav(2)  # Effets
-    assert panel.content_stack.currentWidget() is panel._effects_placeholder
+    assert panel.content_stack.currentWidget() is panel.effects_view
 
 
 def test_effect_can_be_added_from_the_inspector(qtbot, monkeypatch) -> None:
