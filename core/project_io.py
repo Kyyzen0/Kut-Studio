@@ -314,19 +314,49 @@ def _validate_envelope(data: dict[str, Any], source: Path) -> None:
 
 
 def _deserialize_project(data: dict[str, Any]) -> Project:
-    """Reconstruit un ``Project`` à partir de la section ``project`` du JSON."""
-    assets = [
-        MediaAsset(**item)
-        for item in data.get("media_assets", [])
-    ]
-    tracks = [
-        _deserialize_track(item)
-        for item in data.get("tracks", [])
-    ]
+    """Reconstruit un ``Project`` à partir de la section ``project`` du JSON.
+
+    Le chargement reste strict pour les clips, pistes, assets et
+    marqueurs : une entrée structurellement invalide fait échouer
+    l'ouverture (erreur interceptée par l'interface, projet courant
+    conservé) plutôt que de perdre silencieusement du contenu. Seuls
+    les sous-objets décoratifs (transitions, effets) sont ignorés à
+    l'unité, sans bloquer le fichier.
+    """
+    assets: list[MediaAsset] = []
+    raw_assets = data.get("media_assets", [])
+    if raw_assets is None:
+        raw_assets = []
+    if not isinstance(raw_assets, list):
+        raise ValueError("Liste de médias invalide : tableau JSON attendu.")
+    for item in raw_assets:
+        if not isinstance(item, dict):
+            raise ValueError("Média invalide : objet JSON attendu.")
+        assets.append(MediaAsset(**item))
+    tracks: list[Track] = []
+    raw_tracks = data.get("tracks", [])
+    if raw_tracks is None:
+        raw_tracks = []
+    if not isinstance(raw_tracks, list):
+        raise ValueError("Liste de pistes invalide : tableau JSON attendu.")
+    for item in raw_tracks:
+        if not isinstance(item, dict):
+            raise ValueError("Piste invalide : objet JSON attendu.")
+        tracks.append(_deserialize_track(item))
+    markers: list[Marker] = []
+    raw_markers = data.get("markers", [])
+    if raw_markers is None:
+        raw_markers = []
+    if not isinstance(raw_markers, list):
+        raise ValueError("Liste de marqueurs invalide : tableau JSON attendu.")
+    for item in raw_markers:
+        if not isinstance(item, dict):
+            raise ValueError("Marqueur invalide : objet JSON attendu.")
+        markers.append(_deserialize_marker(item))
     project = Project(
         media_assets=assets,
         tracks=tracks,
-        markers=[_deserialize_marker(item) for item in data.get("markers", [])],
+        markers=markers,
         **{key: value for key, value in data.items() if key in _PROJECT_FIELDS},
     )
     project.transitions = _deserialize_transitions(data.get("transitions", []), project)
@@ -367,10 +397,25 @@ def _deserialize_marker(data: dict[str, Any]) -> Marker:
 
 
 def _deserialize_track(data: dict[str, Any]) -> Track:
-    """Reconstruit une ``Track`` (et ses ``Clip``) à partir d'un dict JSON."""
+    """Reconstruit une ``Track`` (et ses ``Clip``) à partir d'un dict JSON.
+
+    Le chargement reste strict : un clip incomplet ou incohérent fait
+    échouer l'ouverture du fichier (erreur interceptée par l'interface,
+    projet courant conservé) plutôt que de perdre silencieusement du
+    contenu de timeline. Les garde-fous ci-dessous convertissent les
+    structures malformées en ``ValueError`` explicites — interceptées
+    par l'appelant — au lieu de laisser fuir ``AttributeError``.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("Piste invalide : objet JSON attendu.")
     track_type = str(data.get("type", "video"))
+    raw_clips = data.get("clips", [])
+    if not isinstance(raw_clips, list):
+        raise ValueError("Liste de clips invalide : tableau JSON attendu.")
     clips = []
-    for raw_clip in data.get("clips", []):
+    for raw_clip in raw_clips:
+        if not isinstance(raw_clip, dict):
+            raise ValueError("Clip invalide : objet JSON attendu.")
         clip_kwargs = {
             key: value
             for key, value in raw_clip.items()
@@ -380,8 +425,11 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
         clip_kwargs["transform"] = _dict_to_transform(
             raw_clip.get("transform")
         )
+        keyframes_raw = raw_clip.get("transform_keyframes", [])
+        if not isinstance(keyframes_raw, list):
+            raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
         clip_kwargs["transform_keyframes"] = [
-            _dict_to_keyframe(raw) for raw in raw_clip.get("transform_keyframes", [])
+            _dict_to_keyframe(raw) for raw in keyframes_raw
         ]
         # Gérer le time_remapping (version 7+)
         if "time_remapping" in raw_clip:
@@ -426,13 +474,16 @@ def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
     """Désérialise un :class:`ClipTransform` (défaut si absent / invalide)."""
     if not isinstance(raw, dict):
         return ClipTransform()
-    return ClipTransform(
-        position_x=float(raw.get("position_x", 0.0)),
-        position_y=float(raw.get("position_y", 0.0)),
-        scale=float(raw.get("scale", 1.0)),
-        rotation=float(raw.get("rotation", 0.0)),
-        opacity=float(raw.get("opacity", 1.0)),
-    )
+    try:
+        return ClipTransform(
+            position_x=float(raw.get("position_x", 0.0)),
+            position_y=float(raw.get("position_y", 0.0)),
+            scale=float(raw.get("scale", 1.0)),
+            rotation=float(raw.get("rotation", 0.0)),
+            opacity=float(raw.get("opacity", 1.0)),
+        )
+    except (TypeError, ValueError):
+        return ClipTransform()
 
 
 def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
@@ -444,6 +495,8 @@ def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
 
 
 def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
+    if not isinstance(raw, dict):
+        raise ValueError("Image-clé invalide : objet JSON attendu.")
     return TransformKeyframe(
         property_name=str(raw["property_name"]),
         time_seconds=float(raw["time_seconds"]),
@@ -547,7 +600,10 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
-            json.dump(payload, tmp_file, indent=2, ensure_ascii=False)
+            # allow_nan=False : un NaN/Inf (ex. fade corrompu) doit faire
+            # échouer la sauvegarde plutôt que d'écrire du JSON invalide
+            # ("Infinity") qu'aucun lecteur strict ne peut relire.
+            json.dump(payload, tmp_file, indent=2, ensure_ascii=False, allow_nan=False)
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
         os.replace(tmp_path, target)
