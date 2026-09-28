@@ -23,9 +23,16 @@ La version 5 ajoute les marqueurs de timeline et les états de piste
 ``solo``, ``armed``, ``height_mode`` et ``collapsed``. La version 6
 ajoute le mixage audio non destructif : ``volume_db`` / ``pan`` sur les
 pistes, ``gain_db`` / ``pan`` / ``fade_in`` / ``fade_out`` sur les clips.
+La version 7 ajoute le remappage temporel (``speed``, ``reverse``,
+``freeze_mode``...). La version 9 ajoute les effets visuels non
+destructifs portés par chaque clip vidéo (``effects``).
 Les versions précédentes restent lisibles : ces champs prennent leurs
-valeurs par défaut. La version 4 avait ajouté ``locked`` /
-``visible`` / ``muted``.
+valeurs par défaut (liste d'effets vide). La version 4 avait ajouté
+``locked`` / ``visible`` / ``muted``.
+
+Une entrée d'effet invalide ou inconnue est ignorée sans empêcher
+l'ouverture du projet : seule l'entrée fautive est écartée, les autres
+effets du clip et le reste du projet sont conservés.
 
 L'écriture est atomique : le payload est d'abord écrit dans un fichier
 temporaire placé dans le même dossier que la cible, puis déplacé via
@@ -42,6 +49,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .effects_model import ClipEffect, EffectType
 from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
@@ -55,15 +63,15 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 8
+CURRENT_VERSION = 9
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
-Les versions 1 à 6 restent prises en charge ; les champs spécifiques
-(transform, keyframes, états de piste, mixage audio, remappage temporel) y sont
-comblés par des valeurs par défaut conservatives.
+Les versions 1 à 8 restent prises en charge ; les champs spécifiques
+(transform, keyframes, états de piste, mixage audio, remappage temporel,
+effets) y sont comblés par des valeurs par défaut conservatives.
 """
 
 _VERSION_ADDED_AUDIO: int = 6
@@ -71,6 +79,9 @@ _VERSION_ADDED_AUDIO: int = 6
 
 _VERSION_ADDED_TIME_REMAPPING: int = 7
 """Première version sérialisant le remappage temporel (vitesse, reverse, freeze)."""
+
+_VERSION_ADDED_EFFECTS: int = 9
+"""Première version sérialisant les effets visuels d'un clip vidéo."""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -268,6 +279,9 @@ def _build_payload(project: Project) -> dict[str, Any]:
                                 _keyframe_to_dict(kf) for kf in clip.transform_keyframes
                             ],
                             "time_remapping": _time_remapping_to_dict(clip.time_remapping),
+                            "effects": [
+                                _effect_to_dict(effect) for effect in clip.effects
+                            ],
                         }
                         for clip in track.clips
                     ],
@@ -354,12 +368,13 @@ def _deserialize_marker(data: dict[str, Any]) -> Marker:
 
 def _deserialize_track(data: dict[str, Any]) -> Track:
     """Reconstruit une ``Track`` (et ses ``Clip``) à partir d'un dict JSON."""
+    track_type = str(data.get("type", "video"))
     clips = []
     for raw_clip in data.get("clips", []):
         clip_kwargs = {
             key: value
             for key, value in raw_clip.items()
-            if key not in {"transform", "transform_keyframes", "time_remapping"}
+            if key not in {"transform", "transform_keyframes", "time_remapping", "effects"}
             and key in _CLIP_KNOWN_FIELDS
         }
         clip_kwargs["transform"] = _dict_to_transform(
@@ -376,6 +391,14 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
         else:
             # Version antérieure à 7 : utiliser les valeurs par défaut
             clip_kwargs["time_remapping"] = TimeRemapping()
+        # Effets (version 9+) : uniquement sur les pistes vidéo. Une
+        # version antérieure n'a pas la clé : la liste reste vide.
+        if track_type == "video":
+            clip_kwargs["effects"] = _deserialize_clip_effects(
+                raw_clip.get("effects")
+            )
+        else:
+            clip_kwargs["effects"] = []
         clips.append(Clip(**clip_kwargs))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS
@@ -458,6 +481,49 @@ def _dict_to_time_remapping(raw: dict[str, Any] | None) -> TimeRemapping:
     except (ValueError, TypeError, KeyError):
         # Si la désérialisation échoue, retourner les valeurs par défaut
         return TimeRemapping()
+
+
+def _effect_to_dict(effect: ClipEffect) -> dict[str, Any]:
+    """Sérialise un :class:`ClipEffect` en dict JSON."""
+    return {
+        "id": effect.id,
+        "type": effect.type.value,
+        "enabled": bool(effect.enabled),
+        "params": {name: float(value) for name, value in effect.params.items()},
+    }
+
+
+def _deserialize_clip_effects(raw: Any) -> list[ClipEffect]:
+    """Désérialise la liste d'effets d'un clip.
+
+    Une entrée non-dict, un identifiant/type manquant, un type inconnu ou
+    des paramètres invalides ne font pas échouer le chargement : seule
+    l'entrée fautive est ignorée, les autres sont conservées dans
+    l'ordre du fichier. Une version antérieure (clé absente ou ``None``)
+    donne une liste vide.
+    """
+    if not isinstance(raw, list):
+        return []
+    effects: list[ClipEffect] = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            effect = ClipEffect(
+                id=str(item["id"]),
+                type=EffectType(item["type"]),
+                enabled=bool(item.get("enabled", True)),
+                params=item.get("params", {}),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if effect.id in seen_ids:
+            # Un identifiant dupliqué rendrait les opérations ambiguës.
+            continue
+        seen_ids.add(effect.id)
+        effects.append(effect)
+    return effects
 
 
 # ---------------------------------------------------------------------------

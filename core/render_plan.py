@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
 from .time_remapping import TimeRemapping
@@ -71,6 +72,7 @@ class RenderLayer:
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -287,6 +289,7 @@ def build_render_plan(
                         transform=clip.transform,
                         transform_keyframes=tuple(clip.transform_keyframes),
                         time_remapping=clip.time_remapping,
+                        effects=tuple(clip.effects),
                     )
                 )
                 # Un solo audio ne laisse passer que les pistes audio armées

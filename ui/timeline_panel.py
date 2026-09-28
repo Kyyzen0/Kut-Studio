@@ -568,7 +568,11 @@ class ClipWidget(QWidget):
         
         # Position du badge : coin supérieur droit
         badge_x = self.width() - 45
-        badge_y = 4
+        active_effects = [
+            effect for effect in getattr(self.view, "effects", ())
+            if getattr(effect, "enabled", False)
+        ]
+        badge_y = 26 if active_effects else 4
         badge_width = 40
         badge_height = 18
         
@@ -606,6 +610,31 @@ class ClipWidget(QWidget):
             text_y = badge_y + (badge_height + text_height) / 2 - 2
             painter.drawText(int(text_x), int(text_y), badge_text)
         
+        painter.end()
+
+    def _paint_effect_badge(self) -> None:
+        """Signale les effets actifs sans masquer le nom du clip."""
+        active_effects = [
+            effect for effect in getattr(self.view, "effects", ())
+            if getattr(effect, "enabled", False)
+        ]
+        if not active_effects:
+            return
+        palette = _current_palette()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        badge_width, badge_height = 38, 18
+        badge_x = self.width() - badge_width - 5
+        painter.setBrush(QColor("#0F766E"))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(badge_x, 4, badge_width, badge_height, 4, 4)
+        painter.setPen(QColor(palette.clip_text))
+        painter.setFont(self.font())
+        painter.drawText(
+            QRect(badge_x, 4, badge_width, badge_height),
+            Qt.AlignCenter,
+            f"FX {len(active_effects)}",
+        )
         painter.end()
 
     def mouseDoubleClickEvent(self, event):
@@ -780,6 +809,7 @@ class ClipWidget(QWidget):
         super().paintEvent(event)
         self._paint_media_preview()
         self._paint_fade_handles()
+        self._paint_effect_badge()
         self._paint_time_remapping_badges()
         keyframes = getattr(self.view, "keyframes", None) or []
         if not keyframes:

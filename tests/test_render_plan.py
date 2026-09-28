@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from core.effects_model import EffectType, create_effect
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import (
     RenderLayer,
@@ -83,6 +84,24 @@ def test_empty_project_produces_zero_duration_plan():
     assert plan.width == 1920
     assert plan.height == 1080
     assert plan.fps == pytest.approx(30.0)
+
+
+def test_render_layer_keeps_clip_effects_in_application_order():
+    """L'export reçoit les effets activés et désactivés du clip, sans les muter."""
+    clip = _make_clip(clip_id="clip-effects")
+    clip.effects = [
+        create_effect(EffectType.BLUR, effect_id="fx-blur"),
+        create_effect(EffectType.SEPIA, effect_id="fx-sepia", enabled=False),
+    ]
+    project = Project(
+        name="Effets", media_assets=[_make_asset()],
+        tracks=[Track(id="V1", name="V1", type="video", clips=[clip])],
+    )
+
+    layer = build_render_plan(project).video_layers[0]
+
+    assert [effect.id for effect in layer.effects] == ["fx-blur", "fx-sepia"]
+    assert layer.effects[1].enabled is False
 
 
 def test_project_with_only_subtitle_track_is_also_empty_for_video():

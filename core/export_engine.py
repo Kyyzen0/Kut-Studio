@@ -42,6 +42,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from .effects_model import ClipEffect, EffectType
 from .render_plan import AudioLayer, RenderLayer, RenderPlan, RenderTransition
 from .subtitle_io import format_srt
 from .transitions import TransitionType
@@ -634,9 +635,10 @@ def _build_layer_filter(
     5. ``fps`` qui force la fréquence d'images cible ;
     6. ``scale`` animé (variation autour de la valeur de base) ;
     7. ``rotate`` animé ;
-    8. ``format=rgba`` pour permettre la composition alpha ;
-    9. ``colorchannelmixer`` pour l'opacité animée ;
-    10. ``setpts=PTS+timeline_start/TB`` qui décale la couche à sa
+    8. effets visuels activés du clip, dans leur ordre ;
+    9. ``format=rgba`` pour permettre la composition alpha ;
+    10. ``colorchannelmixer`` pour l'opacité animée ;
+    11. ``setpts=PTS+timeline_start/TB`` qui décale la couche à sa
        position sur la timeline.
 
     Le temps utilisé dans les expressions est local au clip : après le
@@ -655,6 +657,7 @@ def _build_layer_filter(
     scale_expr = _build_animated_scale_expr(transform, kfs, width, height)
     rotation_expr = _build_animated_rotation_expr(transform, kfs)
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
+    effect_filters = _build_clip_effect_filters(layer.effects)
 
     # Filtres de remappage temporel (freeze, reverse, speed)
     time_remapping_filter = _build_time_remapping_video_filter(layer)
@@ -672,6 +675,8 @@ def _build_layer_filter(
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
         parts.append(f"fps={fps},")
+        if effect_filters:
+            parts.append(f"{effect_filters},")
         parts.append(f"format=rgba,")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
@@ -690,11 +695,54 @@ def _build_layer_filter(
         parts.append(f"setpts=PTS-STARTPTS,")
         parts.append(f"{scale_expr},")
         parts.append(f"{rotation_expr},")
+        if effect_filters:
+            parts.append(f"{effect_filters},")
         parts.append(f"format=rgba,")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
 
     return "".join(parts)
+
+
+def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
+    """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
+
+    Chaque valeur vient du modèle validé : on ne concatène donc jamais
+    d'expression fournie par l'utilisateur. Les filtres s'exécutent avant
+    l'alpha du calque afin de conserver une composition ``rgba`` fiable.
+    """
+    filters: list[str] = []
+    for effect in effects:
+        if not effect.enabled:
+            continue
+        params = effect.params
+        if effect.type is EffectType.COLOR_CORRECTION:
+            filters.append(
+                "eq="
+                f"brightness={_format_seconds(params['brightness'])}:"
+                f"contrast={_format_seconds(params['contrast'])}:"
+                f"saturation={_format_seconds(params['saturation'])}"
+            )
+        elif effect.type is EffectType.BLUR:
+            filters.append(
+                f"gblur=sigma={_format_seconds(params['intensity'])}"
+            )
+        elif effect.type is EffectType.SHARPEN:
+            filters.append(
+                "unsharp=luma_msize_x=5:luma_msize_y=5:"
+                f"luma_amount={_format_seconds(params['intensity'])}"
+            )
+        elif effect.type is EffectType.VIGNETTE:
+            angle = float(params["intensity"]) * 0.7853981633974483
+            filters.append(f"vignette=angle={_format_seconds(angle)}")
+        elif effect.type is EffectType.BLACK_AND_WHITE:
+            filters.append("hue=s=0")
+        elif effect.type is EffectType.SEPIA:
+            filters.append(
+                "colorchannelmixer="
+                ".393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
+            )
+    return ",".join(filters)
 
 
 def _build_animated_scale_expr(

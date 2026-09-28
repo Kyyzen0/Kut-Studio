@@ -107,6 +107,14 @@ class PreviewPanel(QWidget):
         )
         self.preview_subtitle_overlay.hide()
 
+        self.preview_effects_overlay = QLabel()
+        self.preview_effects_overlay.setAlignment(Qt.AlignCenter)
+        self.preview_effects_overlay.setStyleSheet(
+            f"background: rgba(15, 118, 110, 210); color: {COLORS['text']};"
+            " border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 700;"
+        )
+        self.preview_effects_overlay.hide()
+
         # Entête ---------------------------------------------------------------
         top_header = QWidget()
         top_header.setFixedHeight(40)
@@ -229,6 +237,11 @@ class PreviewPanel(QWidget):
             0, 0,
             Qt.AlignHCenter | Qt.AlignBottom,
         )
+        preview_layout.addWidget(
+            self.preview_effects_overlay,
+            0, 0,
+            Qt.AlignRight | Qt.AlignTop,
+        )
 
         # Layout principal ------------------------------------------------------
         layout = QVBoxLayout(self)
@@ -279,6 +292,21 @@ class PreviewPanel(QWidget):
         """Mémorise le niveau d'aperçu demandé par le profil."""
         self.preview_divisor = max(1, int(divisor))
 
+    def set_effects(self, effects) -> None:
+        """Affiche l'état des effets actifs du clip prévisualisé.
+
+        Le décodage natif de ``QMediaPlayer`` ne permet pas de chaîner les
+        filtres FFmpeg image par image. Cette pastille maintient donc un
+        retour fidèle sur l'état qui sera appliqué au rendu final.
+        """
+        active = [effect for effect in effects or () if effect.enabled]
+        if not active:
+            self.preview_effects_overlay.hide()
+            return
+        names = ", ".join(effect.type.value.replace("_", " ") for effect in active)
+        self.preview_effects_overlay.setText(f"FX · {names}")
+        self.preview_effects_overlay.show()
+
     def set_timecode(self, current_seconds: float, total_seconds: float) -> None:
         """Met à jour le timecode turquoise et la durée totale."""
         try:
@@ -310,6 +338,7 @@ class PreviewPanel(QWidget):
         except Exception:  # pragma: no cover
             pass
         self.empty_state.show()
+        self.preview_effects_overlay.hide()
 
     # ------------------------------------------------------------------
     # Application du transform courant (tâche 13)

@@ -310,6 +310,131 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Adjust gain",
         "es": "Ajustar ganancia",
     },
+
+    # --- Effets visuels d'un clip (tâche 21) --------------------------
+    "effects.section": {
+        "fr": "Effets du clip",
+        "en": "Clip effects",
+        "es": "Efectos del clip",
+    },
+    "effects.no_clip": {
+        "fr": "Sélectionnez un clip vidéo pour gérer ses effets.",
+        "en": "Select a video clip to manage its effects.",
+        "es": "Selecciona un clip de vídeo para gestionar sus efectos.",
+    },
+    "effects.video_only": {
+        "fr": "Les effets ne s'appliquent qu'aux clips vidéo.",
+        "en": "Effects only apply to video clips.",
+        "es": "Los efectos solo se aplican a los clips de vídeo.",
+    },
+    "effects.empty": {
+        "fr": "Aucun effet sur ce clip.",
+        "en": "No effect on this clip.",
+        "es": "Ningún efecto en este clip.",
+    },
+    "effects.enable": {"fr": "Activer", "en": "Enable", "es": "Activar"},
+    "effects.disable": {"fr": "Désactiver", "en": "Disable", "es": "Desactivar"},
+    "effects.remove": {"fr": "Supprimer", "en": "Remove", "es": "Eliminar"},
+    "effects.move_up": {"fr": "Monter", "en": "Move up", "es": "Subir"},
+    "effects.move_down": {"fr": "Descendre", "en": "Move down", "es": "Bajar"},
+    "effects.disabled_suffix": {
+        "fr": "désactivé",
+        "en": "disabled",
+        "es": "desactivado",
+    },
+    "effects.no_parameters": {
+        "fr": "Aucun réglage pour cet effet.",
+        "en": "No setting for this effect.",
+        "es": "Sin ajustes para este efecto.",
+    },
+    "effects.library_hint": {
+        "fr": "Sélectionnez un clip vidéo, puis ajoutez un effet.",
+        "en": "Select a video clip, then add an effect.",
+        "es": "Selecciona un clip de vídeo y añade un efecto.",
+    },
+    "effects.add": {"fr": "Ajouter", "en": "Add", "es": "Añadir"},
+    "effects.already_added": {
+        "fr": "Déjà présent sur le clip",
+        "en": "Already on the clip",
+        "es": "Ya está en el clip",
+    },
+    "effects.badge_tooltip": {
+        "fr": "Effets actifs : {names}",
+        "en": "Active effects: {names}",
+        "es": "Efectos activos: {names}",
+    },
+
+    # --- Noms et descriptions des effets ------------------------------
+    "effects.name.color_correction": {
+        "fr": "Correction couleur",
+        "en": "Color correction",
+        "es": "Corrección de color",
+    },
+    "effects.name.blur": {"fr": "Flou", "en": "Blur", "es": "Desenfoque"},
+    "effects.name.sharpen": {
+        "fr": "Netteté",
+        "en": "Sharpen",
+        "es": "Nitidez",
+    },
+    "effects.name.vignette": {"fr": "Vignette", "en": "Vignette", "es": "Viñeta"},
+    "effects.name.black_and_white": {
+        "fr": "Noir et blanc",
+        "en": "Black and white",
+        "es": "Blanco y negro",
+    },
+    "effects.name.sepia": {"fr": "Sépia", "en": "Sepia", "es": "Sepia"},
+    "effects.desc.color_correction": {
+        "fr": "Règle luminosité, contraste et saturation.",
+        "en": "Adjusts brightness, contrast and saturation.",
+        "es": "Ajusta brillo, contraste y saturación.",
+    },
+    "effects.desc.blur": {
+        "fr": "Adoucit l'image avec un flou gaussien.",
+        "en": "Softens the image with a gaussian blur.",
+        "es": "Suaviza la imagen con un desenfoque gaussiano.",
+    },
+    "effects.desc.sharpen": {
+        "fr": "Accentue les contours pour plus de netteté.",
+        "en": "Accentuates edges for more sharpness.",
+        "es": "Acentúa los bordes para más nitidez.",
+    },
+    "effects.desc.vignette": {
+        "fr": "Assombrit les bords de l'image.",
+        "en": "Darkens the edges of the image.",
+        "es": "Oscurece los bordes de la imagen.",
+    },
+    "effects.desc.black_and_white": {
+        "fr": "Convertit l'image en niveaux de gris.",
+        "en": "Converts the image to greyscale.",
+        "es": "Convierte la imagen a escala de grises.",
+    },
+    "effects.desc.sepia": {
+        "fr": "Applique un virage sépia chaleureux.",
+        "en": "Applies a warm sepia tone.",
+        "es": "Aplica un tono sepia cálido.",
+    },
+
+    # --- Paramètres d'effet -------------------------------------------
+    "effects.param.brightness": {
+        "fr": "Luminosité",
+        "en": "Brightness",
+        "es": "Brillo",
+    },
+    "effects.param.contrast": {
+        "fr": "Contraste",
+        "en": "Contrast",
+        "es": "Contraste",
+    },
+    "effects.param.saturation": {
+        "fr": "Saturation",
+        "en": "Saturation",
+        "es": "Saturación",
+    },
+    "effects.param.intensity": {
+        "fr": "Intensité",
+        "en": "Intensity",
+        "es": "Intensidad",
+    },
 }
 
 

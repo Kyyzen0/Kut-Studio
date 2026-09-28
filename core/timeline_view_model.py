@@ -64,6 +64,8 @@ class TimelineClipView:
         source_out: Point de sortie du média source.
         source_duration: Durée source du clip (source_out - source_in).
         time_remapping: Remappage temporel (vitesse, reverse, freeze frame).
+        effects: Effets visuels du clip, dans leur ordre d'application
+            (vide pour l'audio et les sous-titres).
     """
 
     id: str
@@ -83,6 +85,7 @@ class TimelineClipView:
     source_out: float = 0.0
     source_duration: float = 0.0
     time_remapping: object = None
+    effects: tuple = ()
 
 
 def color_key_for_clip(clip: Clip) -> str:
@@ -123,6 +126,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     source_out=clip.source_out,
                     source_duration=clip.source_duration,
                     time_remapping=clip.time_remapping,
+                    effects=tuple(clip.effects),
                 )
             )
     return views

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .effects_model import ClipEffect
     from .time_remapping import TimeRemapping
     from .visual_effects import ClipTransform, TransformKeyframe
 
@@ -190,6 +191,10 @@ class Clip:
         transform_keyframes: Images-clés d'animation du transform. Liste
             triée par ``(property_name, time_seconds)``.
         time_remapping: Remappage temporel (vitesse, reverse, freeze frame).
+        effects: Effets visuels non destructifs du clip, dans leur ordre
+            d'application. Reste vide pour les clips audio et de
+            sous-titres : les opérations de :mod:`core.effects_model`
+            refusent ces pistes.
     """
 
     id: str
@@ -212,6 +217,8 @@ class Clip:
     time_remapping: "TimeRemapping" = field(
         default_factory=lambda: _default_time_remapping()
     )
+    # --- Effets visuels (tâche 21, clips vidéo uniquement) ---
+    effects: list["ClipEffect"] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""

@@ -1484,6 +1484,26 @@ def test_global_navigation_changes_library_without_duplicate_local_tabs(qtbot, m
     assert panel.content_stack.currentWidget() is panel._effects_placeholder
 
 
+def test_effect_can_be_added_from_the_inspector(qtbot, monkeypatch) -> None:
+    """Un effet choisi par l'utilisateur est ajouté au clip vidéo sélectionné."""
+    from core.effects_model import EffectType
+
+    window = _build_window(qtbot, monkeypatch)
+    window.on_clip_selected("intro")
+    inspector = window.properties_panel
+    index = inspector.effect_type_combo.findData(EffectType.BLUR.value)
+    assert index >= 0
+
+    window.seek_to_position(2.0)
+    inspector.effect_type_combo.setCurrentIndex(index)
+    qtbot.mouseClick(inspector.effect_add_button, Qt.LeftButton)
+
+    intro = find_clip(window.project, "intro")
+    assert [effect.type for effect in intro.effects] == [EffectType.BLUR]
+    assert inspector.effects_list.count() == 1
+    assert window.playhead_seconds == pytest.approx(2.0)
+
+
 def test_add_asset_to_timeline_routes_audio_to_a1(qtbot, monkeypatch) -> None:
     """Un asset audio est ajouté sur la piste A1, pas V1."""
     window = _build_window(qtbot, monkeypatch)

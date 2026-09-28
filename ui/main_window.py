@@ -253,6 +253,16 @@ class MainWindow(QMainWindow):
         self.properties_panel.freeze_frame_removed.connect(self.on_freeze_frame_removed)
         self.properties_panel.freeze_duration_changed.connect(self.on_freeze_duration_changed)
         self.properties_panel.time_remapping_reset.connect(self.on_time_remapping_reset)
+        # Tâche 21 : effets visuels du clip.
+        self.properties_panel.effect_enabled_changed.connect(
+            self.on_clip_effect_enabled_changed
+        )
+        self.properties_panel.effect_add_requested.connect(self.on_clip_effect_added)
+        self.properties_panel.effect_removed.connect(self.on_clip_effect_removed)
+        self.properties_panel.effect_moved.connect(self.on_clip_effect_moved)
+        self.properties_panel.effect_parameter_changed.connect(
+            self.on_clip_effect_parameter_changed
+        )
 
         # Initialisation de l'horloge de programme (tâche 8).
         # ``playhead_seconds`` est une propriété qui délègue au
@@ -1405,6 +1415,105 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     # ------------------------------------------------------------------
+    # Effets visuels du clip (tâche 21)
+    # ------------------------------------------------------------------
+
+    def _selected_video_clip_id(self) -> str | None:
+        """Identifiant du clip vidéo actuellement sélectionné, ou ``None``."""
+        view = getattr(self.properties_panel, "selected_clip", None)
+        clip_id = getattr(view, "id", None)
+        if clip_id is None:
+            return None
+        if getattr(view, "track_type", None) != "video":
+            return None
+        return clip_id
+
+    def _refresh_effects_after_change(self, clip_id: str) -> None:
+        """Reconstruit timeline et inspecteur depuis le ``Project``."""
+        # Les badges font partie des projections ``TimelineClipView`` :
+        # les reconstruire est plus sûr qu'une mutation visuelle locale.
+        self.timeline_panel.set_project(self.project)
+        # Une modification d'effet ne doit pas ramener la tête de lecture
+        # au début du clip : on restaure la sélection sans réémettre le
+        # signal qui déclenche ``seek_to_position``.
+        self.timeline_panel._set_selection([clip_id], clip_id, announce=False)
+        self._update_timeline_duration()
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            self.properties_panel.update_effects_from_clip([], None)
+        else:
+            self.properties_panel.update_effects_from_clip(
+                list(clip.effects), "video"
+            )
+        self._mark_dirty()
+
+    def on_clip_effect_enabled_changed(
+        self, clip_id: str, effect_id: str, enabled: bool
+    ) -> None:
+        """Active ou désactive un effet depuis l'inspecteur."""
+        from core.effects_model import set_clip_effect_enabled
+        try:
+            set_clip_effect_enabled(self.project, clip_id, effect_id, enabled)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] effet refusé : {exc}")
+            return
+        self._record_history(
+            "Activer un effet" if enabled else "Désactiver un effet"
+        )
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_effect_added(self, clip_id: str, effect_type: str) -> None:
+        """Ajoute un effet choisi dans l'inspecteur au clip vidéo courant."""
+        from core.effects_model import add_effect_to_clip
+        try:
+            add_effect_to_clip(self.project, clip_id, effect_type)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] ajout d'effet refusé : {exc}")
+            return
+        self._record_history("Ajouter un effet")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_effect_removed(self, clip_id: str, effect_id: str) -> None:
+        """Supprime un effet depuis l'inspecteur."""
+        from core.effects_model import remove_effect_from_clip
+        try:
+            remove_effect_from_clip(self.project, clip_id, effect_id)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] suppression d'effet refusée : {exc}")
+            return
+        self._record_history("Supprimer un effet")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_effect_moved(
+        self, clip_id: str, effect_id: str, delta: int
+    ) -> None:
+        """Réordonne un effet depuis l'inspecteur."""
+        from core.effects_model import move_clip_effect
+        try:
+            move_clip_effect(self.project, clip_id, effect_id, delta)
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] réordonnancement d'effet refusé : {exc}")
+            return
+        self._record_history("Réordonner un effet")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_effect_parameter_changed(
+        self, clip_id: str, effect_id: str, name: str, value: float
+    ) -> None:
+        """Met à jour un paramètre d'effet depuis l'inspecteur."""
+        from core.effects_model import update_clip_effect_parameters
+        try:
+            update_clip_effect_parameters(
+                self.project, clip_id, effect_id, {name: value}
+            )
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] paramètre d'effet refusé : {exc}")
+            return
+        self._record_history("Modifier un effet")
+        self._refresh_effects_after_change(clip_id)
+
+    # ------------------------------------------------------------------
     # Drag & drop
     # ------------------------------------------------------------------
 
@@ -1919,6 +2028,7 @@ class MainWindow(QMainWindow):
                 rotation=evaluated.rotation,
                 opacity=evaluated.opacity,
             )
+            self.preview_panel.set_effects(clip_obj.effects)
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.
