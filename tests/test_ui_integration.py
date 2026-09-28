@@ -1453,7 +1453,7 @@ def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
     panel = window.project_panel
 
     # Onglet Médias (par défaut) : ne montre que les vidéos de démo.
-    panel.navigation.setCurrentRow(0)
+    panel.select_section("media")
     panel._refresh_count()
     # Le titre statique est désormais partagé ; on vérifie plutôt que
     # le compteur reflète bien la sélection courante.
@@ -1461,13 +1461,27 @@ def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
     assert "Song" not in {panel.bin_videos.item(r).text() for r in range(panel.bin_videos.count())}
 
     # Onglet Audio : ne montre que l'asset audio.
-    panel.navigation.setCurrentRow(1)
+    panel.select_section("audio")
     panel._refresh_count()
     assert "audio" in panel.media_count.text().lower()
     audio_names = {
         panel.bin_audios.item(r).text() for r in range(panel.bin_audios.count())
     }
     assert any("Song" in name for name in audio_names)
+
+
+def test_global_navigation_changes_library_without_duplicate_local_tabs(qtbot, monkeypatch) -> None:
+    """Le rail et la barre supérieure pilotent la bibliothèque seuls."""
+    window = _build_window(qtbot, monkeypatch)
+    panel = window.project_panel
+
+    assert not hasattr(panel, "navigation")
+
+    window._on_side_rail_changed("audio")
+    assert panel.content_stack.currentWidget() is panel.bin_audios
+
+    window._select_top_nav(2)  # Effets
+    assert panel.content_stack.currentWidget() is panel._effects_placeholder
 
 
 def test_add_asset_to_timeline_routes_audio_to_a1(qtbot, monkeypatch) -> None:
@@ -1479,7 +1493,7 @@ def test_add_asset_to_timeline_routes_audio_to_a1(qtbot, monkeypatch) -> None:
 
     # Faire en sorte que la sélection courante pointe sur l'audio.
     window.project_panel.select_asset(audio.id)
-    window.project_panel.navigation.setCurrentRow(1)
+    window.project_panel.select_section("audio")
     window.project_panel._sync_add_button_for_active_tab()
 
     window.add_asset_to_timeline(audio.id)
@@ -1496,7 +1510,7 @@ def test_add_asset_to_timeline_routes_video_to_v1(qtbot, monkeypatch) -> None:
     window = _build_window(qtbot, monkeypatch)
     asset_id = "asset-intro"  # asset de démo
     window.project_panel.select_asset(asset_id)
-    window.project_panel.navigation.setCurrentRow(0)
+    window.project_panel.select_section("media")
     window.project_panel._sync_add_button_for_active_tab()
 
     initial_v1_count = len(next(t for t in window.project.tracks if t.id == "V1").clips)

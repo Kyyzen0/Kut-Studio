@@ -14,7 +14,6 @@ from __future__ import annotations
 from PySide6.QtCore import QRect, QSize, Qt, QMimeData, Signal
 from PySide6.QtGui import QColor, QDrag, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractScrollArea,
     QApplication,
     QComboBox,
     QDoubleSpinBox,
@@ -35,19 +34,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MediaAsset
-from ui.design_system import Iconography, Radius, Sizes, Spacing
+from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName, make_icon
 from ui.theme import COLORS, label_style
-
-
-# Mapping onglet → icône.
-_TAB_ICONS: dict[int, IconName] = {
-    0: IconName.MEDIA,
-    1: IconName.AUDIO,
-    2: IconName.SUBTITLE,
-    3: IconName.EFFECTS,
-    4: IconName.TRANSITIONS,
-}
 
 
 class ProjectPanel(QWidget):
@@ -72,6 +61,9 @@ class ProjectPanel(QWidget):
         # ``_search_text`` filtre les assets affichés dans la grille.
         self._search_text: str = ""
         self._active_scope: str = "project"  # ou "favorites"
+        # La section active est choisie par le rail global ou la barre
+        # supérieure. Le panneau ne duplique pas cette navigation.
+        self._active_page_index = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -83,8 +75,8 @@ class ProjectPanel(QWidget):
             f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
         )
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
-        header_layout.setSpacing(Spacing.sm)
+        header_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.xs)
+        header_layout.setSpacing(Spacing.xs)
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -148,12 +140,12 @@ class ProjectPanel(QWidget):
         search_layout.addWidget(self.search_field)
         layout.addWidget(search_row)
 
-        # ----- Sous-navigation : types de médias + arborescence --------
-        # Les deux listes partagent un conteneur défilant : quand la
-        # colonne est basse, l'utilisateur fait défiler la navigation au
-        # lieu de perdre des entrées, et la grille garde la place
-        # restante. Aucun onglet n'est donc jamais tronqué.
+        # ----- Arborescence de la bibliothèque -------------------------
+        # Les modes globaux (Médias, Audio, Texte, Effets, Transitions)
+        # vivent déjà dans le rail et les menus du haut : les répéter ici
+        # encombrait la colonne sans offrir d'action supplémentaire.
         browse_content = QWidget()
+        browse_content.setObjectName("libraryBrowse")
         browse_content.setStyleSheet(
             f"background: {COLORS['panel']};"
             f" border-top: 1px solid {COLORS['border']};"
@@ -164,48 +156,7 @@ class ProjectPanel(QWidget):
         )
         browse_layout.setSpacing(0)
 
-        # -- Types de médias (5 entrées) --
-        self.navigation = QListWidget()
-        self.navigation.setObjectName("libraryNav")
-        self.navigation.setSizePolicy(
-            QSizePolicy.Preferred, QSizePolicy.Fixed
-        )
-        self.navigation.setMinimumHeight(88)
-        self.navigation.setSelectionMode(QListWidget.SingleSelection)
-        self.navigation.setFocusPolicy(Qt.NoFocus)
-        # La liste elle-même ne défile pas : c'est le conteneur commun
-        # qui défile, pour que navigation et dossiers bougent ensemble.
-        self.navigation.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.navigation.setStyleSheet(
-            f"QListWidget {{ background: transparent; border: none;"
-            f" outline: 0; }}"
-            f"QListWidget::item {{ color: {COLORS['muted']};"
-            f" padding: 3px 10px; border-radius: 6px;"
-            f" font-weight: 600; font-size: 12px; }}"
-            f"QListWidget::item:hover {{ color: {COLORS['text']};"
-            f" background: {COLORS['surface_hover']}; }}"
-            f"QListWidget::item:selected {{ color: {COLORS['accent']};"
-            f" background: {COLORS['accent_dark']};"
-            f" border: 1px solid {COLORS['accent']}; }}"
-        )
-        for index in range(5):
-            item = QListWidgetItem()
-            self.navigation.addItem(item)
-        self.navigation.setCurrentRow(0)
-        for row, icon_name in _TAB_ICONS.items():
-            item = self.navigation.item(row)
-            item.setIcon(make_icon(icon_name, size=Iconography.md))
-        self._tab_labels = ("Médias", "Audio", "Texte", "Effets", "Transitions")
-        for row, text in enumerate(self._tab_labels):
-            item = self.navigation.item(row)
-            item.setText(f"  {text}")
-        self.navigation.currentRowChanged.connect(self.on_tab_changed)
-        browse_layout.addWidget(self.navigation)
-
         # -- Arborescence de dossiers (aplatie) --
-        # L'en-tête « DOSSIERS » est remplacé par un filet : le gain de
-        # hauteur va directement à la grille de vignettes, qui est la
-        # zone réellement utile de ce panneau.
         folders_sep = QWidget()
         folders_sep.setFixedHeight(1)
         folders_sep.setStyleSheet(f"background: {COLORS['border']};")
@@ -216,7 +167,8 @@ class ProjectPanel(QWidget):
         self.folder_list = QListWidget()
         self.folder_list.setObjectName("folderList")
         self.folder_list.setFocusPolicy(Qt.NoFocus)
-        self.folder_list.setFixedHeight(52)
+        self.folder_list.setFixedHeight(70)
+        self.folder_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.folder_list.setStyleSheet(
             f"QListWidget {{ background: transparent; border: none;"
             f" outline: 0; }}"
@@ -236,27 +188,14 @@ class ProjectPanel(QWidget):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, folder_id)
             self.folder_list.addItem(item)
+        self.folder_list.itemClicked.connect(self._open_folder)
         browse_layout.addWidget(self.folder_list)
-        browse = QScrollArea()
-        browse.setObjectName("libraryBrowse")
-        browse.setWidgetResizable(True)
-        browse.setFrameShape(QScrollArea.NoFrame)
-        browse.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        browse.setStyleSheet(
-            "QScrollArea { border: none; background: transparent; }"
-        )
-        browse.setWidget(browse_content)
-        # La navigation prend sa taille naturelle, bornée : sans plafond,
-        # son ``sizeHint`` (≈260 px) déborde la colonne basse et la pile
-        # se retrouve réduite à son minimum, sans aucune vignette
-        # visible. 190 px couvre les 5 onglets + les dossiers.
-        browse.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        browse.setMaximumHeight(190)
-        layout.addWidget(browse, 0)
+        browse_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(browse_content, 0)
 
         # ----- Contenu empilé (grilles + placeholders) ----------------
         # Seule zone élastique du panneau : elle absorbe toute la
-        # hauteur restante.
+        # hauteur restante, les blocs au-dessus étant figés.
         self.content_stack = QStackedWidget()
         self.content_stack.setMinimumHeight(120)
         self.content_stack.setSizePolicy(
@@ -278,6 +217,17 @@ class ProjectPanel(QWidget):
         self.transition_view = TransitionLibraryView(self)
         self.content_stack.addWidget(self._effects_placeholder)
         self.content_stack.addWidget(self.transition_view)
+        # Chaque page est faite pour défiler : on neutralise leur
+        # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
+        # sinon la pile réserve cette hauteur et la grille de vignettes
+        # disparaît. On ne fige pas la hauteur : le layout accorde le
+        # surplus quand la colonne est haute.
+        for page in (
+            self.bin_videos, self.bin_audios, self.subtitle_view,
+            self._effects_placeholder, self.transition_view,
+        ):
+            page.setMinimumHeight(0)
+            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         layout.addWidget(self.content_stack, 1)
 
         # ----- Boutons d'action principaux -----------------------------
@@ -300,7 +250,7 @@ class ProjectPanel(QWidget):
         actions_layout.addWidget(self.import_button, 1)
 
         self.add_to_timeline_button = self._make_wide_button(
-            IconName.PLUS, "À la timeline",
+            IconName.PLUS, "Timeline",
             accent=True,
             tooltip="Ajouter le média sélectionné à la timeline",
         )
@@ -336,6 +286,31 @@ class ProjectPanel(QWidget):
         """Filtre les assets par nom au fil de la saisie."""
         self._search_text = text.strip().lower()
         self._refresh_grids()
+
+    def _open_folder(self, item: QListWidgetItem) -> None:
+        """Ouvre le contenu associé à un dossier de la bibliothèque."""
+        folder_sections = {
+            "videos": "media",
+            "audios": "audio",
+            "subtitles": "text",
+        }
+        self.select_section(folder_sections.get(item.data(Qt.UserRole), "media"))
+
+    def select_section(self, section_id: str) -> None:
+        """Affiche la bibliothèque demandée par la navigation globale."""
+        page_index = {
+            "media": 0,
+            "audio": 1,
+            "text": 2,
+            "effects": 3,
+            "transitions": 4,
+        }.get(section_id)
+        if page_index is None:
+            return
+        self._active_page_index = page_index
+        self.content_stack.setCurrentIndex(page_index)
+        self._refresh_count()
+        self._sync_add_button_for_active_tab()
 
     def _filter_assets(self, assets: list[MediaAsset]) -> list[MediaAsset]:
         """Applique le filtre de recherche courant."""
@@ -409,7 +384,7 @@ class ProjectPanel(QWidget):
     def set_subtitle_clips(self, clips: list) -> None:
         sorted_clips = sorted(clips, key=lambda c: c.timeline_start)
         self.subtitle_view.set_clips(sorted_clips)
-        if self.navigation.currentRow() == 2:
+        if self._active_page_index == 2:
             self._refresh_count()
 
     def select_asset(self, asset_id: str) -> None:
@@ -417,8 +392,8 @@ class ProjectPanel(QWidget):
             for row in range(bin_widget.count()):
                 item = bin_widget.item(row)
                 if item.data(Qt.UserRole) == asset_id:
-                    self.navigation.setCurrentRow(
-                        0 if bin_widget is self.bin_videos else 1
+                    self.select_section(
+                        "media" if bin_widget is self.bin_videos else "audio"
                     )
                     bin_widget.setCurrentRow(row)
                     return
@@ -446,13 +421,8 @@ class ProjectPanel(QWidget):
         return None
 
     # ------------------------------------------------------------------
-    # Slots internes
+    # Helpers privés
     # ------------------------------------------------------------------
-
-    def on_tab_changed(self, index: int) -> None:
-        self.content_stack.setCurrentIndex(index)
-        self._refresh_count()
-        self._sync_add_button_for_active_tab()
 
     # ------------------------------------------------------------------
     # Helpers privés
@@ -504,13 +474,13 @@ class ProjectPanel(QWidget):
         if self._active_scope == "favorites":
             self.media_count.setText("Aucun favori")
             return
-        if self.navigation.currentRow() == 0:
+        if self._active_page_index == 0:
             count = self.bin_videos.count()
             label_word = "média" if count <= 1 else "médias"
-        elif self.navigation.currentRow() == 1:
+        elif self._active_page_index == 1:
             count = self.bin_audios.count()
             label_word = "audio" if count <= 1 else "audios"
-        elif self.navigation.currentRow() == 2:
+        elif self._active_page_index == 2:
             count = self.subtitle_view.count()
             label_word = "sous-titre" if count <= 1 else "sous-titres"
         else:

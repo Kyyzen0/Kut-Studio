@@ -49,7 +49,7 @@ def test_subtitle_library_scrolls_in_a_short_side_panel(qtbot) -> None:
     panel = ProjectPanel()
     qtbot.addWidget(panel)
     panel.resize(280, 360)
-    panel.navigation.setCurrentRow(2)
+    panel.select_section("text")
     panel.show()
     qtbot.wait(20)
 

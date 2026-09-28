@@ -359,28 +359,18 @@ class MainWindow(QMainWindow):
         La cible dépend de la section :
 
         - ``media`` : on affiche le panneau Médias ;
-        - ``audio`` / ``text`` / ``transitions`` : on rend le panneau
-          Médias visible et on bascule son onglet correspondant ;
-        - ``edit`` / ``effects`` / ``graphics`` / ``templates`` :
+        - ``audio`` / ``text`` / ``effects`` / ``transitions`` : on rend
+          le panneau Médias visible et on y affiche le contenu demandé ;
+        - ``edit`` / ``graphics`` / ``templates`` :
           aucune action concrète disponible aujourd'hui — on laisse
           l'état actif visuellement et on affiche un message discret
           pour rester honnête vis-à-vis de l'utilisateur.
         """
-        if section_id in ("media", "audio", "text", "transitions"):
+        if section_id in ("media", "audio", "text", "effects", "transitions"):
             # S'assurer que le panneau Médias est visible.
             if not self.workspace.is_visible(PanelId.MEDIA):
                 self.workspace.set_panel_visible(PanelId.MEDIA, True)
-            # Bascule d'onglet à l'intérieur du panneau Médias.
-            tab_index = {
-                "media": 0,
-                "audio": 1,
-                "text": 2,
-                "transitions": 4,
-            }.get(section_id, 0)
-            try:
-                self.project_panel.navigation.setCurrentRow(tab_index)
-            except Exception:
-                pass
+            self.project_panel.select_section(section_id)
             return
 
         # Sections sans panneau dédié pour l'instant : on confirme
@@ -1094,6 +1084,7 @@ class MainWindow(QMainWindow):
         target = section_map.get(index, "edit")
         if hasattr(self, "side_rail") and self.side_rail.active() != target:
             self.side_rail.set_active(target)
+        self._on_side_rail_changed(target)
 
     def show_export(self):
         self.pages.setCurrentWidget(self.export_panel)
