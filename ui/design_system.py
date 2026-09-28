@@ -48,10 +48,12 @@ Spacing = _Spacing()
 @dataclass(frozen=True)
 class _Radius:
     none: int = 0
+    xs: int = 3
     sm: int = 4
     md: int = 6
     lg: int = 8
-    xl: int = 12
+    xl: int = 10
+    xxl: int = 12
     pill: int = 999
 
 
@@ -73,7 +75,11 @@ class _Sizes:
     icon_button_lg: int = 36
     input_md: int = 32
     toolbar: int = 44
-    top_bar: int = 56
+    # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
+    # de 50-56 px pour rester un repère, pas une bande.
+    top_bar: int = 50
+    # Rail vertical d'icônes (Médias / Éditer / Effets…)
+    side_rail_width: int = 64
     panel_min_width: int = 240
     panel_default_width: int = 300
     timeline_track_min_height: int = 56

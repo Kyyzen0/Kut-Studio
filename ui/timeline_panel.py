@@ -1097,6 +1097,10 @@ class TimelinePanel(QWidget):
             f"{_current_palette().text}; }}"
         )
         self.setObjectName("timeline_panel")
+        # Référence faible vers le panneau de prévisualisation : permet
+        # au timecode turquoise de rester en phase avec la tête de
+        # lecture. Aucune dépendance dure, juste un rappel best-effort.
+        self._preview_panel = None
 
         # Dimensions configurables de la timeline.
         self.header_height = Sizes.timeline_header_height
@@ -1233,22 +1237,32 @@ class TimelinePanel(QWidget):
         time_box = QWidget()
         time_layout = QVBoxLayout(time_box)
         time_layout.setContentsMargins(0, 0, 0, 0)
-        time_layout.setSpacing(0)
+        time_layout.setSpacing(2)
         self.time_label = QLabel("00:00")
         self.time_label.setStyleSheet(
-            f"color: {palette.text}; font-weight: 700; font-size: 14px;"
+            f"color: {palette.accent}; font-weight: 800; font-size: 14px;"
+            f" font-family: 'SF Mono', 'Menlo', monospace; letter-spacing: 1px;"
         )
+        # Rangée combinée : timecode + durée totale séparées par un slash.
         self.timecode_label = QLabel("00:00:00")
         self.timecode_label.setStyleSheet(
             f"color: {palette.muted}; font-size: 11px;"
+            f" font-family: 'SF Mono', 'Menlo', monospace;"
         )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet(
             f"color: {palette.muted}; font-size: 11px;"
+            f" font-family: 'SF Mono', 'Menlo', monospace;"
         )
+        time_row = QWidget()
+        time_row_layout = QHBoxLayout(time_row)
+        time_row_layout.setContentsMargins(0, 0, 0, 0)
+        time_row_layout.setSpacing(4)
+        time_row_layout.addWidget(self.timecode_label)
+        time_row_layout.addWidget(self.total_time_label)
+        time_row_layout.addStretch(1)
         time_layout.addWidget(self.time_label)
-        time_layout.addWidget(self.timecode_label)
-        time_layout.addWidget(self.total_time_label)
+        time_layout.addWidget(time_row)
         left_layout.addWidget(time_box)
 
         # Petit séparateur vertical pour aérer visuellement.
@@ -1991,6 +2005,10 @@ class TimelinePanel(QWidget):
         self.time_label.setText(self.format_time(self.playhead_seconds))
         if hasattr(self, "timecode_label"):
             self.timecode_label.setText(format_timecode(self.playhead_seconds, self.fps))
+        # Synchronise le timecode turquoise du panneau de prévisualisation.
+        preview_panel = getattr(self, "_preview_panel", None)
+        if preview_panel is not None and hasattr(preview_panel, "set_timecode"):
+            preview_panel.set_timecode(self.playhead_seconds, self.duration_seconds)
         if abs(previous - self.playhead_seconds) < 1e-6:
             self._sync_ruler()
             return
@@ -2328,6 +2346,19 @@ class TimelinePanel(QWidget):
 
     def attach_runtime(self, runtime) -> None:
         self._runtime = runtime
+
+    def attach_preview_panel(self, preview_panel) -> None:
+        """Référence faible vers le panneau de prévisualisation.
+
+        Le timecode turquoise de la barre de transport se met à jour
+        à chaque changement de tête de lecture. On garde une référence
+        faible (champ ``_preview_panel``) pour pouvoir la nettoyer si
+        le panneau est détruit avant la timeline.
+        """
+        self._preview_panel = preview_panel
+        # Synchronisation immédiate pour aligner les deux horloges.
+        if hasattr(preview_panel, "set_timecode"):
+            preview_panel.set_timecode(self.playhead_seconds, self.duration_seconds)
 
     def pixmap_for(self, key: str, data: bytes):
         pixmap = self._pixmaps.get(key)

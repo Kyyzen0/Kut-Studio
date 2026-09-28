@@ -28,14 +28,17 @@ from .project_model import Clip, Project, Track
 
 
 _CLIP_COLOR_PALETTE: tuple[str, ...] = (
-    "#4da3ff",
-    "#58c4a7",
-    "#b070ff",
-    "#e6c84f",
-    "#f27686",
-    "#67d6a3",
-    "#f7c948",
-    "#7C5CFC",
+    # Palette turquoise / vert-noir cohérente avec l'identité visuelle.
+    # Les clips vidéo tirent des bleus discrets, les audios des
+    # turquoise, et les titres / calques d'ajustement des violets.
+    "#4FA3D9",  # bleu vidéo 1
+    "#36E6C3",  # turquoise signature
+    "#B58EF9",  # violet titres
+    "#5BEFD0",  # turquoise clair
+    "#7B5BE3",  # violet adjustment layer
+    "#235F8A",  # bleu vidéo 2 (clip long)
+    "#94E0CC",  # vert d'eau (audio secondaire)
+    "#3FB59B",  # vert signature secondaire
 )
 
 

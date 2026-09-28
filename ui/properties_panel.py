@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -141,20 +142,55 @@ class PropertiesPanel(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        # Titre du panneau (header).
+        # Titre du panneau (header) + barre d'onglets.
         header = QWidget()
-        header.setFixedHeight(48)
         header.setStyleSheet(
             f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
         )
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(Spacing.lg, Spacing.sm, Spacing.lg, Spacing.sm)
-        header_layout.setSpacing(0)
-        title = QLabel("PROPRIÉTÉS")
-        title.setStyleSheet(label_style(11, "muted", 800))
+        header_layout.setContentsMargins(Spacing.lg, Spacing.sm, Spacing.lg, 0)
+        header_layout.setSpacing(Spacing.sm)
+        title = QLabel("INSPECTEUR")
+        title.setStyleSheet(label_style(10, "muted", 800))
         header_layout.addWidget(title)
+
+        # Onglets : Inspecteur / Couleur / Effets / Audio.
+        # Utilisation de QPushButton ``checkable`` plutôt que
+        # ``QListWidget`` pour garantir un affichage horizontal compact.
+        self.inspector_tabs_row = QWidget()
+        self.inspector_tabs_layout = QHBoxLayout(self.inspector_tabs_row)
+        self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
+        self.inspector_tabs_layout.setSpacing(Spacing.xs)
+        self.inspector_tab_buttons: list[QPushButton] = []
+        for index, label in enumerate(("Inspecteur", "Couleur", "Effets", "Audio")):
+            button = QPushButton(label)
+            button.setObjectName("inspectorTab")
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet(
+                f"QPushButton#inspectorTab {{ background: transparent;"
+                f" color: {COLORS['muted']}; border: 1px solid transparent;"
+                f" border-radius: 6px; padding: 5px 10px;"
+                f" font-weight: 600; font-size: 11px; }}"
+                f"QPushButton#inspectorTab:hover {{ color: {COLORS['text']};"
+                f" background: {COLORS['surface_hover']}; }}"
+                f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
+                f" background: {COLORS['accent_dark']};"
+                f" border: 1px solid {COLORS['accent']}; }}"
+            )
+            button.clicked.connect(
+                lambda _checked=False, idx=index: self._select_inspector_tab(idx)
+            )
+            self.inspector_tab_buttons.append(button)
+            self.inspector_tabs_layout.addWidget(button)
+        self.inspector_tabs_layout.addStretch(1)
+        header_layout.addWidget(self.inspector_tabs_row)
         outer_layout.addWidget(header)
 
+        # Pile de contenu (les widgets existants sont ajoutés plus bas
+        # par appel direct ; ici on prépare la coquille).
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("properties_scroll_area")
         self.scroll_area.setWidgetResizable(True)
@@ -259,7 +295,6 @@ class PropertiesPanel(QWidget):
         self.transition_type_combo.currentIndexChanged.connect(self._on_transition_type_changed)
         self.transition_duration_spin.valueChanged.connect(self._on_transition_duration_changed)
         self.remove_transition_button.clicked.connect(self._on_transition_remove)
-        self.transition_group.hide()
         layout.addWidget(self.transition_group)
 
         # ----- Couleur --------------------------------------------------
@@ -529,9 +564,83 @@ class PropertiesPanel(QWidget):
         save_button.setVisible(False)
         subtitle_layout.addWidget(self.subtitle_editor)
         subtitle_layout.addWidget(save_button)
-        self.subtitle_group.hide()
+        # La visibilité initiale est pilotée par la sélection de clip :
+        # voir ``_set_group_condition`` / ``_apply_group_visibility``.
         layout.addWidget(self.subtitle_group)
         layout.addStretch()
+
+        # ----- Onglets : filtrage par catégorie -----------------------
+        # Le panneau gagne une barre d'onglets : Inspecteur (par
+        # défaut, tout visible), Couleur (color_group + project),
+        # Effets (transition + mouvement), Audio (audio_group +
+        # volume).
+        self._tab_groups: dict[int, list[QWidget]] = {
+            0: [
+                project_group,
+                clip_group,
+                self.transition_group,
+                color_group,
+                self.movement_group,
+                self.speed_group,
+                audio_group,
+                self.audio_group,
+                self.subtitle_group,
+            ],
+            1: [project_group, color_group],  # Couleur
+            2: [project_group, self.movement_group,
+                self.transition_group, self.speed_group],  # Effets
+            3: [project_group, audio_group, self.audio_group],  # Audio
+        }
+        all_groups = [project_group, clip_group, self.transition_group,
+                      color_group, self.movement_group, self.speed_group,
+                      audio_group, self.audio_group, self.subtitle_group]
+        self._all_inspector_groups = all_groups
+        # Certains groupes ont en plus une visibilité *conditionnelle*
+        # pilotée par la sélection (``show_clip`` / ``show_transition``) :
+        # le groupe Transition n'a de sens qu'une transition sélectionnée,
+        # le groupe Sous-titre qu'un clip de sous-titres. Cette
+        # condition est indépendante de l'onglet ; on la stocke à part
+        # pour que le filtre d'onglets ne l'écrase pas. Un groupe n'est
+        # visible que si l'onglet le contient *et* que sa propre
+        # condition est remplie.
+        self._group_conditional: dict[QWidget, bool] = {
+            self.transition_group: False,
+            self.subtitle_group: False,
+        }
+        self._active_inspector_tab: int = 0
+        self._on_inspector_tab_changed(0)
+
+    def _select_inspector_tab(self, index: int) -> None:
+        """Bascule l'onglet actif de l'inspecteur."""
+        for i, button in enumerate(self.inspector_tab_buttons):
+            button.setChecked(i == index)
+        self._on_inspector_tab_changed(index)
+
+    def _set_group_condition(self, group: QWidget, allowed: bool) -> None:
+        """Déclare si un groupe conditionnel est pertinent.
+
+        N'agit pas sur le widget : c'est ``_apply_group_visibility`` qui
+        combine l'onglet courant et cette condition.
+        """
+        self._group_conditional[group] = bool(allowed)
+        self._apply_group_visibility()
+
+    def _apply_group_visibility(self) -> None:
+        """Point unique d'écriture de la visibilité des groupes.
+
+        visible = (groupe présent dans l'onglet actif) ET
+                  (pas de condition, ou condition remplie)
+        """
+        in_tab = set(self._tab_groups.get(self._active_inspector_tab,
+                                          self._tab_groups[0]))
+        for group in self._all_inspector_groups:
+            conditional = self._group_conditional.get(group, True)
+            group.setVisible(group in in_tab and conditional)
+
+    def _on_inspector_tab_changed(self, row: int) -> None:
+        """Filtre les groupes visibles selon l'onglet choisi."""
+        self._active_inspector_tab = row
+        self._apply_group_visibility()
 
     def _build_audio_group(self) -> QGroupBox:
         """Groupe de mixage du clip sélectionné.
@@ -1007,7 +1116,8 @@ class PropertiesPanel(QWidget):
         self._push_signal_block()
         try:
             self.selected_transition_id = None
-            self.transition_group.hide()
+            # Changer de clip invalide toute transition affichée.
+            self._set_group_condition(self.transition_group, False)
             if view is None:
                 self.selected_clip = None
                 self.selected_clip_track_type = None
@@ -1016,7 +1126,7 @@ class PropertiesPanel(QWidget):
                 self.clip_name.setText("Aucun clip sélectionné")
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
-                self.subtitle_group.hide()
+                self._set_group_condition(self.subtitle_group, False)
                 self.movement_group.setEnabled(False)
                 for name, spin in self._spin_boxes.items():
                     spin.setEnabled(False)
@@ -1041,7 +1151,7 @@ class PropertiesPanel(QWidget):
             self.clip_duration.setText(f"{duration:.2f}s")
             self.clip_position.setText(f"{view.start:.2f}s")
             is_subtitle = getattr(view, "track_type", None) == "subtitle"
-            self.subtitle_group.setVisible(is_subtitle)
+            self._set_group_condition(self.subtitle_group, is_subtitle)
             if is_subtitle:
                 self.subtitle_editor.blockSignals(True)
                 self.subtitle_editor.setPlainText(view.text)
@@ -1158,11 +1268,11 @@ class PropertiesPanel(QWidget):
         self.transition_from_label.setText(outgoing_view.label)
         self.transition_to_label.setText(incoming_view.label)
         self.transition_track_label.setText(track_name)
-        self.transition_group.show()
+        self._set_group_condition(self.transition_group, True)
 
     def clear_transition(self) -> None:
         self.selected_transition_id = None
-        self.transition_group.hide()
+        self._set_group_condition(self.transition_group, False)
 
     def _on_transition_type_changed(self, _index: int) -> None:
         if self.selected_transition_id is None or self._signal_block_depth > 0:

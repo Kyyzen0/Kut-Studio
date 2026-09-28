@@ -98,6 +98,7 @@ from ui.project_panel import ProjectPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
+from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
 from core.track_operations import (
     add_track as track_operations_add_track,
@@ -176,6 +177,7 @@ class MainWindow(QMainWindow):
         self.timeline_panel.subscribe_to_theme(self.theme_manager)
         self.timeline_panel.on_structure_changed = self._on_timeline_structure_changed
         self.timeline_panel.attach_runtime(self.runtime)
+        self.timeline_panel.attach_preview_panel(self.preview_panel)
         self.timeline_panel.clips_move_requested.connect(self.on_clips_move_requested)
         self.timeline_panel.blade_cut_requested.connect(self.on_blade_cut_requested)
         self.timeline_panel.selection_cleared.connect(self._reset_selection_and_inspector)
@@ -281,9 +283,25 @@ class MainWindow(QMainWindow):
         self._build_workspace_menu(self.window_menu)
 
         self.editor_page = QWidget()
+        # Le rail vertical est global et reste visible même si tous les
+        # panneaux dockés sont repliés / cachés. On l'intègre donc comme
+        # un widget frère du workspace_root, dans une ligne horizontale.
         editor_layout = QVBoxLayout(self.editor_page)
         editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.addWidget(workspace_root)
+        editor_layout.setSpacing(0)
+
+        # Barre latérale d'icônes (Médias / Éditer / Effets…).
+        self.side_rail = SideRail(DEFAULT_SECTIONS)
+        self.side_rail.set_active("media")
+        self.side_rail.section_changed.connect(self._on_side_rail_changed)
+
+        body_row = QWidget()
+        body_layout = QHBoxLayout(body_row)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self.side_rail)
+        body_layout.addWidget(workspace_root, 1)
+        editor_layout.addWidget(body_row, 1)
         self.pages = QStackedWidget()
         self.pages.addWidget(self.editor_page)
         self.pages.addWidget(self.export_panel)
@@ -330,6 +348,46 @@ class MainWindow(QMainWindow):
         """
         self._sync_playhead_labels()
         self._sync_workspace_menu()
+
+    # ------------------------------------------------------------------
+    # Rail latéral : navigation principale par section
+    # ------------------------------------------------------------------
+
+    def _on_side_rail_changed(self, section_id: str) -> None:
+        """Réagit à un clic sur le rail vertical.
+
+        La cible dépend de la section :
+
+        - ``media`` : on affiche le panneau Médias ;
+        - ``audio`` / ``text`` / ``transitions`` : on rend le panneau
+          Médias visible et on bascule son onglet correspondant ;
+        - ``edit`` / ``effects`` / ``graphics`` / ``templates`` :
+          aucune action concrète disponible aujourd'hui — on laisse
+          l'état actif visuellement et on affiche un message discret
+          pour rester honnête vis-à-vis de l'utilisateur.
+        """
+        if section_id in ("media", "audio", "text", "transitions"):
+            # S'assurer que le panneau Médias est visible.
+            if not self.workspace.is_visible(PanelId.MEDIA):
+                self.workspace.set_panel_visible(PanelId.MEDIA, True)
+            # Bascule d'onglet à l'intérieur du panneau Médias.
+            tab_index = {
+                "media": 0,
+                "audio": 1,
+                "text": 2,
+                "transitions": 4,
+            }.get(section_id, 0)
+            try:
+                self.project_panel.navigation.setCurrentRow(tab_index)
+            except Exception:
+                pass
+            return
+
+        # Sections sans panneau dédié pour l'instant : on confirme
+        # visuellement la sélection mais on prévient l'utilisateur que
+        # la zone est inactive. C'est le comportement « honnête »
+        # demandé par le cahier des charges.
+        self._notify_placeholder(section_id)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -646,8 +704,14 @@ class MainWindow(QMainWindow):
         lecture peut migrer vers une autre fenêtre.
         """
         timeline = getattr(self, "timeline_panel", None)
-        if timeline is not None:
-            timeline.set_playhead_seconds(timeline.playhead_seconds)
+        if timeline is None:
+            return
+        position = timeline.playhead_seconds
+        timeline.set_playhead_seconds(position)
+        # Met aussi à jour le timecode turquoise de la barre de transport.
+        preview = getattr(self, "preview_panel", None)
+        if preview is not None:
+            preview.set_timecode(position, timeline.duration_seconds)
 
     def _build_workspace_menu(self, menu: QMenu) -> None:
         """Remplit le menu « Fenêtre » avec les actions de panneaux.
@@ -780,6 +844,21 @@ class MainWindow(QMainWindow):
             action.setChecked(self.workspace.is_visible(panel))
 
     def _build_top_bar(self):
+        """Barre supérieure fine façon DaVinci / Final Cut.
+
+        Composition :
+
+        - pastilles macOS + logo + marque à gauche ;
+        - navigation centrale (Éditer, Médias, Effets, Couleur, Audio,
+          Graphiques) avec un état actif turquoise ;
+        - nom de séquence et indicateur d'enregistrement au centre ;
+        - à droite, qualité de prévisualisation, résolution, zoom et
+          bouton Exporter turquoise très lisible.
+
+        Toutes les chaînes sont ``setStyleSheet`` au niveau du widget
+        conteneur : la feuille de style globale reste l'autorité pour
+        les widgets enfants.
+        """
         from ui.design_system import Iconography, Sizes, Spacing
         from ui.icons import IconButton, IconLabel, IconName, make_icon
 
@@ -787,96 +866,234 @@ class MainWindow(QMainWindow):
         bar.setFixedHeight(Sizes.top_bar)
         bar.setObjectName("main_topbar")
         bar.setStyleSheet(
-            f"QWidget#main_topbar {{ background: {COLORS['panel']}; "
-            f"border-bottom: 1px solid {COLORS['border']}; }}"
+            f"QWidget#main_topbar {{ background: {COLORS['panel']};"
+            f" border-bottom: 1px solid {COLORS['border']}; }}"
         )
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(Spacing.lg, 0, Spacing.lg, 0)
+        layout.setContentsMargins(Spacing.md, 0, Spacing.md, 0)
         layout.setSpacing(Spacing.md)
 
-        # --- Logo + marque ----------------------------------------------
+        # --- Logo + marque + pastilles macOS ---------------------------
+        logo_box = QWidget()
+        logo_layout = QHBoxLayout(logo_box)
+        logo_layout.setContentsMargins(0, 0, 0, 0)
+        logo_layout.setSpacing(Spacing.sm)
+
+        # Trois petites pastilles façon macOS — purement décoratif mais
+        # elles ancrent visuellement la barre dans le registre
+        # « application macOS haut de gamme » du cahier des charges.
+        macos_box = QWidget()
+        macos_layout = QHBoxLayout(macos_box)
+        macos_layout.setContentsMargins(0, 0, 0, 0)
+        macos_layout.setSpacing(6)
+        for hex_color in ("#FF5F57", "#FEBC2E", "#28C840"):
+            dot = QLabel()
+            dot.setFixedSize(11, 11)
+            dot.setStyleSheet(
+                f"background: {hex_color}; border-radius: 5px;"
+                f" border: 1px solid rgba(0, 0, 0, 0.25);"
+            )
+            macos_layout.addWidget(dot)
+        logo_layout.addWidget(macos_box)
+
+        # Logo carré turquoise + nom de la marque.
         logo = QLabel("K")
         logo.setAlignment(Qt.AlignCenter)
-        logo.setFixedSize(32, 32)
+        logo.setFixedSize(26, 26)
         logo.setStyleSheet(
-            f"background: {COLORS['accent']}; color: white; border-radius: 8px; "
-            f"font-size: 16px; font-weight: 800;"
+            f"background: {COLORS['accent']}; color: #061514;"
+            f" border-radius: 7px; font-size: 14px; font-weight: 800;"
         )
-        brand = QLabel("KUT-STUDIO")
-        brand.setStyleSheet(label_style(12, "text", 800))
-        brand_lay = QHBoxLayout()
-        brand_lay.setContentsMargins(0, 0, 0, 0)
-        brand_lay.setSpacing(Spacing.sm)
-        layout.addWidget(logo)
-        layout.addWidget(brand)
+        brand = QLabel("KUT‑STUDIO")
+        brand.setStyleSheet(label_style(11, "text", 800))
+        logo_layout.addSpacing(Spacing.sm)
+        logo_layout.addWidget(logo)
+        logo_layout.addWidget(brand)
+        layout.addWidget(logo_box)
 
-        # --- Fil d'ariane projet + indicateur enregistré ---------------
-        center_box = QWidget()
-        center_layout = QHBoxLayout(center_box)
-        center_layout.setContentsMargins(Spacing.lg, 0, 0, 0)
-        center_layout.setSpacing(Spacing.md)
-        center_layout.addStretch()
-        self.project_label = QLabel()
-        self.project_label.setStyleSheet(label_style(12, "muted", 600))
-        self.saved_indicator = QLabel()
-        self.saved_indicator.setStyleSheet(label_style(11, "success", 600))
-        center_layout.addWidget(self.project_label)
-        center_layout.addWidget(self.saved_indicator)
-        center_layout.addStretch()
-        layout.addWidget(center_box, 1)
+        # Séparateur vertical fin.
+        layout.addWidget(self._vseparator())
 
-        layout.addStretch()
+        # --- Navigation centrale --------------------------------------
+        # Éditer / Médias / Effets / Couleur / Audio / Graphiques.
+        # Boutons ``checkable`` alignés horizontalement pour un look
+        # segmented compact.
+        top_nav_row = QWidget()
+        top_nav_layout = QHBoxLayout(top_nav_row)
+        top_nav_layout.setContentsMargins(0, 0, 0, 0)
+        top_nav_layout.setSpacing(2)
+        self.top_nav_buttons: list[QPushButton] = []
+        for index, label in enumerate(("Éditer", "Médias", "Effets", "Couleur", "Audio", "Graphiques")):
+            button = QPushButton(label)
+            button.setObjectName("topNavTab")
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet(
+                f"QPushButton#topNavTab {{ background: transparent;"
+                f" color: {COLORS['muted']}; border: 1px solid transparent;"
+                f" border-radius: 6px; padding: 4px 10px;"
+                f" font-weight: 600; font-size: 12px; }}"
+                f"QPushButton#topNavTab:hover {{ color: {COLORS['text']};"
+                f" background: {COLORS['surface_hover']}; }}"
+                f"QPushButton#topNavTab:checked {{ color: {COLORS['accent']};"
+                f" background: {COLORS['accent_dark']};"
+                f" border: 1px solid {COLORS['accent']}; }}"
+            )
+            button.clicked.connect(
+                lambda _checked=False, idx=index: self._select_top_nav(idx)
+            )
+            self.top_nav_buttons.append(button)
+            top_nav_layout.addWidget(button)
+        self.top_nav = top_nav_row
+        layout.addWidget(self.top_nav)
 
-        # --- Actions rapides de la top-bar -----------------------------
-        # Undo / Redo (synchronisés dans ``_refresh_undo_redo_state``).
+        # Étire le nav pour absorber l'espace libre, en gardant les
+        # boutons à gauche (sinon ils se répartissent sur la ligne).
+        top_nav_layout.addStretch(1)
+
+        # Séparateur vertical fin.
+        layout.addWidget(self._vseparator())
+
+        # --- Bloc central : nom de séquence + enregistrement ----------
+        sequence_box = QWidget()
+        sequence_layout = QVBoxLayout(sequence_box)
+        sequence_layout.setContentsMargins(0, 0, 0, 0)
+        sequence_layout.setSpacing(0)
+        sequence_layout.addStretch()
+        seq_title = QLabel("Séquence")
+        seq_title.setStyleSheet(label_style(9, "muted", 700))
+        seq_title.setAlignment(Qt.AlignCenter)
+        self.project_label = QLabel("Projet sans titre")
+        self.project_label.setStyleSheet(label_style(12, "text", 700))
+        self.project_label.setAlignment(Qt.AlignCenter)
+        sequence_layout.addWidget(seq_title)
+        sequence_layout.addWidget(self.project_label)
+        sequence_layout.addStretch()
+
+        saved_box = QWidget()
+        saved_layout = QHBoxLayout(saved_box)
+        saved_layout.setContentsMargins(0, 0, 0, 0)
+        saved_layout.setSpacing(6)
+        self.saved_indicator = QLabel("● Enregistré")
+        self.saved_indicator.setStyleSheet(label_style(10, "success", 700))
+        self.saved_indicator.setAlignment(Qt.AlignCenter)
+        saved_layout.addWidget(self.saved_indicator)
+        layout.addWidget(sequence_box, 1)
+        layout.addWidget(saved_box)
+
+        layout.addWidget(self._vseparator())
+
+        # --- Chip preview settings -------------------------------------
+        # On reste compact : icônes seules pour Aperçu et Qualité, le
+        # texte est dans l'infobulle.
+        preview_btn = IconButton(
+            icon=IconName.MENU,
+            tooltip="Réglages de prévisualisation",
+            size=Sizes.icon_button,
+        )
+        preview_btn.setObjectName("chipButton")
+        layout.addWidget(preview_btn)
+
+        quality_btn = IconButton(
+            icon=IconName.INFO,
+            tooltip="Qualité de prévisualisation : Plein",
+            size=Sizes.icon_button,
+        )
+        quality_btn.setObjectName("chipButton")
+        layout.addWidget(quality_btn)
+
+        resolution_btn = IconButton(
+            icon=IconName.FILM,
+            tooltip="Résolution de la séquence : 1920 × 1080",
+            size=Sizes.icon_button,
+        )
+        resolution_btn.setObjectName("chipButton")
+        layout.addWidget(resolution_btn)
+
+        zoom_out = IconButton(
+            icon=IconName.REMOVE,
+            tooltip="Dézoomer la timeline",
+            size=Sizes.icon_button,
+        )
+        zoom_in = IconButton(
+            icon=IconName.PLUS,
+            tooltip="Zoomer la timeline",
+            size=Sizes.icon_button,
+        )
+        zoom_label = QLabel("100 %")
+        zoom_label.setStyleSheet(label_style(11, "muted", 700))
+        zoom_label.setMinimumWidth(42)
+        zoom_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(zoom_out)
+        layout.addWidget(zoom_label)
+        layout.addWidget(zoom_in)
+
+        layout.addSpacing(Spacing.xs)
+        self.export_button = IconButton(
+            icon=IconName.EXPORT,
+            tooltip="Exporter le montage (⌘E)",
+            size=Sizes.button_md,
+            square=False,
+            accent=True,
+        )
+        self.export_button.setText(" Exporter")
+        self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.export_button.setMinimumWidth(108)
+        self.export_button.setMinimumHeight(32)
+        self.export_button.clicked.connect(self.show_export)
+        layout.addWidget(self.export_button)
+
+        # Undo / Redo conservés mais en mode compact à droite de l'export.
         self.undo_button = IconButton(
             icon=IconName.RESET,
             tooltip="Annuler (Ctrl+Z)",
-            size=Sizes.icon_button,
+            size=Sizes.icon_button_sm,
         )
-        # Redo : on retourne l'icône « reset » de 180° pour signifier
-        # le sens inverse.
-        from PySide6.QtGui import QTransform
-        from PySide6.QtCore import Qt as QtCore
-        from ui.icons import make_icon as _mk_icon
-        redo_icon = _mk_icon(IconName.RESET, size=Sizes.icon_button - 8)
-        # Récupère un pixmap, le fait pivoter et reconstruit un QIcon.
-        from PySide6.QtGui import QIcon
-        from PySide6.QtGui import QPixmap, QPainter
-        base_pixmap = redo_icon.pixmap(64, 64)
-        flipped = QIcon(base_pixmap.transformed(
-            QTransform().rotate(180), QtCore.SmoothTransformation
-        ))
         self.redo_button = IconButton(
             icon=IconName.RESET,
             tooltip="Rétablir (Ctrl+Y)",
-            size=Sizes.icon_button,
+            size=Sizes.icon_button_sm,
         )
-        self.redo_button.setIcon(flipped)
+        from PySide6.QtGui import QTransform, QIcon
+        from PySide6.QtCore import Qt as QtCore
+        base_pixmap = make_icon(IconName.RESET, size=Sizes.icon_button_sm - 4).pixmap(64, 64)
+        self.redo_button.setIcon(
+            QIcon(base_pixmap.transformed(
+                QTransform().rotate(180), QtCore.SmoothTransformation
+            ))
+        )
         self.undo_button.clicked.connect(self.undo_last)
         self.redo_button.clicked.connect(self.redo_last)
         layout.addWidget(self.undo_button)
         layout.addWidget(self.redo_button)
 
-        separator = QWidget()
-        separator.setFixedWidth(1)
-        separator.setStyleSheet(f"background: {COLORS['border']};")
-        layout.addWidget(separator)
-
-        self.export_button = IconButton(
-            icon=IconName.EXPORT,
-            tooltip="Exporter le montage",
-            size=Sizes.icon_button,
-            square=False,
-            accent=True,
-        )
-        self.export_button.setText("  Exporter")
-        self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.export_button.setMinimumHeight(Sizes.button_md)
-        self.export_button.clicked.connect(self.show_export)
-        layout.addWidget(self.export_button)
         self._update_top_bar()
         return bar
+
+    def _vseparator(self) -> "QWidget":
+        """Séparateur vertical fin, réutilisé dans la barre supérieure."""
+        sep = QWidget()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet(f"background: {COLORS['border']};")
+        return sep
+
+    def _select_top_nav(self, index: int) -> None:
+        """Bascule l'onglet actif de la barre supérieure.
+
+        Synchronise le rail latéral : un clic sur ``Médias`` active
+        la section Médias du rail, etc.
+        """
+        for i, button in enumerate(self.top_nav_buttons):
+            button.setChecked(i == index)
+        # Synchronise le rail latéral.
+        rail_sections = ("edit", "media", "effects", "graphics", "audio", "graphics")
+        section_map = {0: "edit", 1: "media", 2: "effects",
+                       3: "graphics", 4: "audio", 5: "graphics"}
+        target = section_map.get(index, "edit")
+        if hasattr(self, "side_rail") and self.side_rail.active() != target:
+            self.side_rail.set_active(target)
 
     def show_export(self):
         self.pages.setCurrentWidget(self.export_panel)

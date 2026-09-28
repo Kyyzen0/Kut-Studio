@@ -2,17 +2,17 @@
 
 Refonte UI/UX :
 
-- onglets avec icônes SVG cohérentes (Médias, Audio, Texte, Effets,
-  Transitions) ;
-- regroupement logique : titre de section, compteur, liste, boutons ;
-- boutons d'action plus grands et plus clairs (avec icônes) ;
-- suppression totale des emojis de l'interface.
+- en-tête compact : onglets Projet / Favoris + compteur ;
+- champ de recherche global filtrant les assets ;
+- arborescence de dossiers (aplatie en sous-sections) ;
+- vignettes média en grille avec miniature, nom court et durée ;
+- la sélection est marquée par un filet turquoise fin.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QMimeData, Signal
-from PySide6.QtGui import QDrag
+from PySide6.QtCore import QRect, QSize, Qt, QMimeData, Signal
+from PySide6.QtGui import QColor, QDrag, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
@@ -20,18 +20,22 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
 
 from core.project_model import MediaAsset
-from ui.design_system import Iconography, Sizes, Spacing
+from ui.design_system import Iconography, Radius, Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName, make_icon
 from ui.theme import COLORS, label_style
 
@@ -65,88 +69,204 @@ class ProjectPanel(QWidget):
             f"QWidget#project_panel {{ background: {COLORS['panel']}; "
             f"border-right: 1px solid {COLORS['border']}; }}"
         )
+        # ``_search_text`` filtre les assets affichés dans la grille.
+        self._search_text: str = ""
+        self._active_scope: str = "project"  # ou "favorites"
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
-        layout.setSpacing(Spacing.sm)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # ----- Titre de la bibliothèque ---------------------------------
+        # ----- En-tête compact : onglets Projet / Favoris --------------
+        header = QWidget()
+        header.setStyleSheet(
+            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
+        )
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
+        header_layout.setSpacing(Spacing.sm)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(Spacing.sm)
         title = QLabel("BIBLIOTHÈQUE")
-        title.setStyleSheet(label_style(11, "muted", 800))
-        layout.addWidget(title)
+        title.setStyleSheet(label_style(10, "muted", 800))
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        # Compteur global (mis à jour à chaque mutation).
+        self.media_count = QLabel("0 média")
+        self.media_count.setStyleSheet(label_style(10, "muted", 500))
+        title_row.addWidget(self.media_count)
+        header_layout.addLayout(title_row)
 
-        # ----- Onglets de navigation (avec icônes) ---------------------
+        # Onglets Projet / Favoris : boutons ``checkable`` dans une
+        # rangée horizontale pour un rendu segmented compact.
+        scope_tabs_row = QWidget()
+        scope_tabs_layout = QHBoxLayout(scope_tabs_row)
+        scope_tabs_layout.setContentsMargins(0, 0, 0, 0)
+        scope_tabs_layout.setSpacing(Spacing.xs)
+        self.scope_tab_buttons: list[QPushButton] = []
+        for index, label in enumerate(("Projet", "Favoris")):
+            button = QPushButton(label)
+            button.setObjectName("scopeTab")
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet(
+                f"QPushButton#scopeTab {{ background: transparent;"
+                f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
+                f" border-radius: 6px; padding: 4px 12px;"
+                f" font-weight: 600; font-size: 11px; }}"
+                f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
+                f" background: {COLORS['surface_hover']}; }}"
+                f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"
+                f" background: {COLORS['accent_dark']};"
+                f" border: 1px solid {COLORS['accent']}; }}"
+            )
+            button.clicked.connect(
+                lambda _checked=False, idx=index: self._select_scope(idx)
+            )
+            self.scope_tab_buttons.append(button)
+            scope_tabs_layout.addWidget(button)
+        scope_tabs_layout.addStretch(1)
+        header_layout.addWidget(scope_tabs_row)
+        layout.addWidget(header)
+
+        # ----- Champ de recherche --------------------------------------
+        search_row = QWidget()
+        search_row.setStyleSheet(f"background: {COLORS['panel']};")
+        search_layout = QHBoxLayout(search_row)
+        search_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
+        search_layout.setSpacing(Spacing.sm)
+        self.search_field = QLineEdit()
+        self.search_field.setObjectName("librarySearch")
+        self.search_field.setPlaceholderText("Rechercher dans la bibliothèque…")
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.setFixedHeight(28)
+        self.search_field.textChanged.connect(self._on_search_changed)
+        search_layout.addWidget(self.search_field)
+        layout.addWidget(search_row)
+
+        # ----- Sous-navigation : types de médias + arborescence --------
+        # Les deux listes partagent un conteneur défilant : quand la
+        # colonne est basse, l'utilisateur fait défiler la navigation au
+        # lieu de perdre des entrées, et la grille garde la place
+        # restante. Aucun onglet n'est donc jamais tronqué.
+        browse_content = QWidget()
+        browse_content.setStyleSheet(
+            f"background: {COLORS['panel']};"
+            f" border-top: 1px solid {COLORS['border']};"
+        )
+        browse_layout = QVBoxLayout(browse_content)
+        browse_layout.setContentsMargins(
+            Spacing.xs, Spacing.xs, Spacing.xs, Spacing.xs
+        )
+        browse_layout.setSpacing(0)
+
+        # -- Types de médias (5 entrées) --
         self.navigation = QListWidget()
-        # Cinq onglets doivent tenir sans défilement : la hauteur est
-        # dimensionnée sur la hauteur réelle d'un item (voir le padding
-        # appliqué plus bas), pas sur une valeur arbitraire.
-        self.navigation.setMinimumHeight(92)
-        self.navigation.setFixedHeight(154)
-        self.navigation.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.navigation.setObjectName("libraryNav")
+        self.navigation.setSizePolicy(
+            QSizePolicy.Preferred, QSizePolicy.Fixed
+        )
+        self.navigation.setMinimumHeight(88)
+        self.navigation.setSelectionMode(QListWidget.SingleSelection)
+        self.navigation.setFocusPolicy(Qt.NoFocus)
+        # La liste elle-même ne défile pas : c'est le conteneur commun
+        # qui défile, pour que navigation et dossiers bougent ensemble.
         self.navigation.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.navigation.setSpacing(1)
+        self.navigation.setStyleSheet(
+            f"QListWidget {{ background: transparent; border: none;"
+            f" outline: 0; }}"
+            f"QListWidget::item {{ color: {COLORS['muted']};"
+            f" padding: 3px 10px; border-radius: 6px;"
+            f" font-weight: 600; font-size: 12px; }}"
+            f"QListWidget::item:hover {{ color: {COLORS['text']};"
+            f" background: {COLORS['surface_hover']}; }}"
+            f"QListWidget::item:selected {{ color: {COLORS['accent']};"
+            f" background: {COLORS['accent_dark']};"
+            f" border: 1px solid {COLORS['accent']}; }}"
+        )
         for index in range(5):
             item = QListWidgetItem()
             self.navigation.addItem(item)
         self.navigation.setCurrentRow(0)
-        self.navigation.setStyleSheet(
-            f"QListWidget {{ background: transparent; border: none; }}"
-            f"QListWidget::item {{ color: {COLORS['muted']}; padding: 5px 8px; "
-            f"border-radius: 6px; font-size: 12px; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; "
-            f"color: {COLORS['text']}; }}"
-        )
-        # Stocke les widgets icône associés pour les rafraîchir ensemble.
-        self._tab_icons: list[IconLabel] = []
-        for row, icon_name in _TAB_ICONS.items():
-            widget = self.navigation.itemWidget(self.navigation.item(row))
-            label = IconLabel(icon_name, size=Iconography.md)
-            self._tab_icons.append(label)
-        # Les QListWidgetItem n'hébergent pas de widget custom par défaut ;
-        # on préfère injecter l'icône via le mécanisme de décoration Qt
-        # (setIcon). Cela reste cohérent avec un style compact.
         for row, icon_name in _TAB_ICONS.items():
             item = self.navigation.item(row)
             item.setIcon(make_icon(icon_name, size=Iconography.md))
-
-        # Labels FR pour les onglets.
         self._tab_labels = ("Médias", "Audio", "Texte", "Effets", "Transitions")
         for row, text in enumerate(self._tab_labels):
             item = self.navigation.item(row)
-            item.setText(f"   {text}")
+            item.setText(f"  {text}")
         self.navigation.currentRowChanged.connect(self.on_tab_changed)
-        layout.addWidget(self.navigation)
+        browse_layout.addWidget(self.navigation)
 
-        # ----- Titre de la section courante -----------------------------
-        # Une seule ligne (titre à gauche, compteur à droite) : gagne une
-        # ligne verticale, dont la place est comptée quand la fenêtre est
-        # basse.
-        media_header = QWidget()
-        media_header_layout = QHBoxLayout(media_header)
-        media_header_layout.setContentsMargins(0, 0, 0, 0)
-        media_header_layout.setSpacing(Spacing.sm)
-        self.media_title = QLabel("MÉDIAS DU PROJET")
-        self.media_title.setStyleSheet(label_style(10, "muted", 800))
-        self.media_count = QLabel("0 média")
-        self.media_count.setStyleSheet(label_style(10, "muted", 500))
-        media_header_layout.addWidget(self.media_title)
-        media_header_layout.addStretch(1)
-        media_header_layout.addWidget(self.media_count)
-        layout.addWidget(media_header)
+        # -- Arborescence de dossiers (aplatie) --
+        # L'en-tête « DOSSIERS » est remplacé par un filet : le gain de
+        # hauteur va directement à la grille de vignettes, qui est la
+        # zone réellement utile de ce panneau.
+        folders_sep = QWidget()
+        folders_sep.setFixedHeight(1)
+        folders_sep.setStyleSheet(f"background: {COLORS['border']};")
+        browse_layout.addSpacing(Spacing.xs)
+        browse_layout.addWidget(folders_sep)
+        browse_layout.addSpacing(Spacing.xs)
 
-        # ----- Contenu empilé -------------------------------------------
-        # La pile est la seule zone réellement élastique du panneau : on
-        # lui impose un minimum faible pour que la colonne centrale
-        # puisse agrandir la timeline au lieu d'être bloquée ici.
+        self.folder_list = QListWidget()
+        self.folder_list.setObjectName("folderList")
+        self.folder_list.setFocusPolicy(Qt.NoFocus)
+        self.folder_list.setFixedHeight(52)
+        self.folder_list.setStyleSheet(
+            f"QListWidget {{ background: transparent; border: none;"
+            f" outline: 0; }}"
+            f"QListWidget::item {{ color: {COLORS['muted']};"
+            f" padding: 2px 6px; border-radius: 4px;"
+            f" font-size: 11px; }}"
+            f"QListWidget::item:hover {{ color: {COLORS['text']}; }}"
+            f"QListWidget::item:selected {{ color: {COLORS['accent']};"
+            f" background: transparent; }}"
+        )
+        folders = (
+            ("▶  Vidéos du projet", "videos"),
+            ("▶  Audio", "audios"),
+            ("▶  Sous-titres", "subtitles"),
+        )
+        for label, folder_id in folders:
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, folder_id)
+            self.folder_list.addItem(item)
+        browse_layout.addWidget(self.folder_list)
+        browse = QScrollArea()
+        browse.setObjectName("libraryBrowse")
+        browse.setWidgetResizable(True)
+        browse.setFrameShape(QScrollArea.NoFrame)
+        browse.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        browse.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+        )
+        browse.setWidget(browse_content)
+        # La navigation prend sa taille naturelle, bornée : sans plafond,
+        # son ``sizeHint`` (≈260 px) déborde la colonne basse et la pile
+        # se retrouve réduite à son minimum, sans aucune vignette
+        # visible. 190 px couvre les 5 onglets + les dossiers.
+        browse.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        browse.setMaximumHeight(190)
+        layout.addWidget(browse, 0)
+
+        # ----- Contenu empilé (grilles + placeholders) ----------------
+        # Seule zone élastique du panneau : elle absorbe toute la
+        # hauteur restante.
         self.content_stack = QStackedWidget()
-        self.content_stack.setMinimumHeight(60)
+        self.content_stack.setMinimumHeight(120)
         self.content_stack.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
 
-        self.bin_videos = self._make_bin()
+        self.bin_videos = self._make_grid_bin()
         self.content_stack.addWidget(self.bin_videos)
 
-        self.bin_audios = self._make_bin()
+        self.bin_audios = self._make_grid_bin()
         self.content_stack.addWidget(self.bin_audios)
 
         self.subtitle_view = SubtitleLibraryView(self)
@@ -161,22 +281,33 @@ class ProjectPanel(QWidget):
         layout.addWidget(self.content_stack, 1)
 
         # ----- Boutons d'action principaux -----------------------------
+        # Une seule rangée : empilés, ils consommaient ~90 px de hauteur
+        # qui revient à la grille de vignettes. L'action primaire garde
+        # l'accent turquoise, l'import reste secondaire.
+        actions = QWidget()
+        actions.setStyleSheet(
+            f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
+        )
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.md)
+        actions_layout.setSpacing(Spacing.xs)
         self.import_button = self._make_wide_button(
-            IconName.IMPORT, "Importer des médias",
+            IconName.IMPORT, "Importer",
             accent=False,
             tooltip="Importer des médias dans le projet",
         )
         self.import_button.clicked.connect(self.import_requested)
-        layout.addWidget(self.import_button)
+        actions_layout.addWidget(self.import_button, 1)
 
         self.add_to_timeline_button = self._make_wide_button(
-            IconName.PLUS, "Ajouter à la timeline",
+            IconName.PLUS, "À la timeline",
             accent=True,
             tooltip="Ajouter le média sélectionné à la timeline",
         )
         self.add_to_timeline_button.setEnabled(False)
         self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
-        layout.addWidget(self.add_to_timeline_button)
+        actions_layout.addWidget(self.add_to_timeline_button, 1)
+        layout.addWidget(actions)
 
         # Câblage des signaux du composant Sous-titres.
         self.subtitle_view.add_requested.connect(self._on_add_subtitle_clicked)
@@ -184,6 +315,58 @@ class ProjectPanel(QWidget):
         self.subtitle_view.export_requested.connect(self.export_subtitles_requested)
         self.subtitle_view.selected.connect(self.subtitle_selected)
         self.transition_view.add_requested.connect(self.add_transition_requested)
+
+    # ------------------------------------------------------------------
+    # Filtres et scopes
+    # ------------------------------------------------------------------
+
+    def _select_scope(self, index: int) -> None:
+        """Bascule l'onglet actif et applique le filtre."""
+        for i, button in enumerate(self.scope_tab_buttons):
+            button.setChecked(i == index)
+        self._active_scope = "favorites" if index == 1 else "project"
+        self._refresh_grids()
+
+    def _on_scope_changed(self, row: int) -> None:
+        """Bascule entre les scopes Projet et Favoris."""
+        self._active_scope = "favorites" if row == 1 else "project"
+        self._refresh_grids()
+
+    def _on_search_changed(self, text: str) -> None:
+        """Filtre les assets par nom au fil de la saisie."""
+        self._search_text = text.strip().lower()
+        self._refresh_grids()
+
+    def _filter_assets(self, assets: list[MediaAsset]) -> list[MediaAsset]:
+        """Applique le filtre de recherche courant."""
+        if not self._search_text:
+            return assets
+        needle = self._search_text
+        return [a for a in assets if needle in a.name.lower()]
+
+    def _refresh_grids(self) -> None:
+        """Réaffiche les assets visibles selon le scope et la recherche."""
+        # On garde la sélection courante si possible.
+        selected = self.selected_asset_id
+        videos = self.bin_videos.all_assets()
+        audios = self.bin_audios.all_assets()
+        if self._active_scope == "favorites":
+            # Pour l'instant, le projet ne gère pas de favoris : on
+            # montre un placeholder honnête plutôt que de simuler des
+            # données.
+            self.bin_videos.set_assets([])
+            self.bin_audios.set_assets([])
+            self.media_count.setText("Aucun favori")
+            return
+        self.bin_videos.set_assets(self._filter_assets(videos))
+        self.bin_audios.set_assets(self._filter_assets(audios))
+        self._refresh_count()
+        if selected:
+            for bin_widget in (self.bin_videos, self.bin_audios):
+                for row in range(bin_widget.count()):
+                    if bin_widget.item(row).data(Qt.UserRole) == selected:
+                        bin_widget.setCurrentRow(row)
+                        return
 
     # ------------------------------------------------------------------
     # Construction
@@ -275,11 +458,16 @@ class ProjectPanel(QWidget):
     # Helpers privés
     # ------------------------------------------------------------------
 
-    def _make_bin(self) -> "AssetBin":
+    def _make_grid_bin(self) -> "AssetBin":
         return AssetBin(
             on_item_clicked=lambda asset_id: self.asset_selected.emit(asset_id),
             on_selection_changed=lambda asset_id: self._on_bin_selection_changed(asset_id),
         )
+
+    def _make_bin(self) -> "AssetBin":
+        # Conservé pour compatibilité ascendante : la grille utilise
+        # désormais ``_make_grid_bin`` ; ``_make_bin`` reste un alias.
+        return self._make_grid_bin()
 
     def _populate_bin(self, bin_widget: "AssetBin", assets: list[MediaAsset]) -> None:
         bin_widget.clear()
@@ -311,18 +499,20 @@ class ProjectPanel(QWidget):
         self.add_subtitle_requested.emit(text, duration)
 
     def _refresh_count(self) -> None:
+        # Le titre statique ``BIBLIOTHÈQUE`` dans l'en-tête suffit : le
+        # nombre d'éléments reflète la section courante.
+        if self._active_scope == "favorites":
+            self.media_count.setText("Aucun favori")
+            return
         if self.navigation.currentRow() == 0:
             count = self.bin_videos.count()
             label_word = "média" if count <= 1 else "médias"
-            self.media_title.setText("MÉDIAS DU PROJET")
         elif self.navigation.currentRow() == 1:
             count = self.bin_audios.count()
             label_word = "audio" if count <= 1 else "audios"
-            self.media_title.setText("AUDIOS DU PROJET")
         elif self.navigation.currentRow() == 2:
             count = self.subtitle_view.count()
             label_word = "sous-titre" if count <= 1 else "sous-titres"
-            self.media_title.setText("SOUS-TITRES DU PROJET")
         else:
             count = 0
             label_word = "média"
@@ -337,24 +527,121 @@ class ProjectPanel(QWidget):
 
 
 class AssetBin(QWidget):
-    """Sous-widget : liste filtrée d'assets avec son propre état de sélection."""
+    """Sous-widget : grille d'assets filtrée avec son propre état de sélection.
+
+    Affiche chaque asset comme une vignette :
+
+    - une miniature générée à partir de l'icône du type de média ;
+    - le nom court ;
+    - la durée formatée.
+
+    La sélection est marquée par un filet turquoise fin et un fond
+    vert foncé subtil — fidèle à la direction artistique premium.
+
+    L'implémentation repose sur un ``QListWidget`` en mode ``ListMode``
+    avec un délégué custom qui peint chaque ligne comme une carte
+    horizontale (poster + nom + durée). C'est plus simple et plus
+    prévisible que ``IconMode``.
+    """
+
+    # Délégué custom : dessine une carte horizontale par ligne.
+    class _CardDelegate(QStyledItemDelegate):
+        CARD_HEIGHT = 52
+        POSTER = 40
+        PADDING = 5
+
+        def sizeHint(self, option, index):  # noqa: D401 - Qt
+            width = option.rect.width() if option.rect.width() > 0 else 280
+            return QSize(width, self.CARD_HEIGHT + self.PADDING)
+
+        def paint(self, painter, option, index):  # noqa: D401 - Qt
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing, True)
+
+            rect = option.rect.adjusted(2, 2, -2, -2)
+            radius = 8
+            selected = bool(option.state & QStyle.State_Selected)
+            hovered = bool(option.state & QStyle.State_MouseOver)
+            base = COLORS["panel_alt"]
+            if selected:
+                base = COLORS["accent_dark"]
+            elif hovered:
+                base = COLORS["surface_hover"]
+            border_color = QColor(COLORS["accent"] if selected else COLORS["border"])
+
+            path = QPainterPath()
+            path.addRoundedRect(rect.toRectF(), radius, radius)
+            painter.fillPath(path, QColor(base))
+            painter.setPen(QPen(border_color, 1 if not selected else 1.4))
+            painter.drawPath(path)
+
+            # Poster carré à gauche, à la taille exacte du widget pour
+            # éviter toute déformation du film.
+            side = min(self.POSTER, rect.height() - 2 * self.PADDING)
+            poster_rect = QRect(
+                rect.left() + self.PADDING,
+                rect.top() + (rect.height() - side) // 2,
+                side,
+                side,
+            )
+            asset = index.data(Qt.UserRole + 1)
+            if asset is not None:
+                poster = _make_asset_thumbnail(asset, size=side)
+                painter.drawPixmap(poster_rect, poster.pixmap(side, side))
+
+            # Nom + durée à droite du poster.
+            text_left = poster_rect.right() + self.PADDING * 2
+            text_rect = QRect(text_left, rect.top() + self.PADDING,
+                              max(10, rect.right() - self.PADDING - text_left),
+                              rect.height() - 2 * self.PADDING)
+            name = index.data(Qt.DisplayRole) or ""
+            duration = index.data(Qt.UserRole + 2) or ""
+            name_pen = QColor(COLORS["text"] if selected else COLORS["text"])
+            painter.setPen(name_pen)
+            font = painter.font()
+            font.setPointSize(10)
+            font.setBold(True)
+            painter.setFont(font)
+            name_rect = text_rect.adjusted(0, 0, 0, -text_rect.height() // 2)
+            painter.drawText(name_rect, Qt.AlignVCenter | Qt.AlignLeft,
+                             painter.fontMetrics().elidedText(
+                                 str(name), Qt.ElideRight, name_rect.width()
+                             ))
+            font.setBold(False)
+            font.setPointSize(9)
+            painter.setFont(font)
+            painter.setPen(QColor(COLORS["accent"] if selected else COLORS["muted"]))
+            duration_rect = text_rect.adjusted(0, text_rect.height() // 2, 0, 0)
+            painter.drawText(duration_rect, Qt.AlignVCenter | Qt.AlignLeft,
+                             str(duration))
+
+            painter.restore()
 
     def __init__(self, on_item_clicked, on_selection_changed, parent=None) -> None:
         super().__init__(parent)
+        self._assets: dict[str, MediaAsset] = {}
+        # Sans cette politique, le QStackedWidget plafonne la page à sa
+        # taille naturelle et la grille n'affiche qu'une vignette.
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(Spacing.xs, Spacing.xs, Spacing.xs, Spacing.xs)
         layout.setSpacing(0)
+
         self._list = QListWidget()
         self._list.setAcceptDrops(False)
+        self._list.setSelectionMode(QListWidget.SingleSelection)
+        self._list.setFocusPolicy(Qt.NoFocus)
+        self._list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._list.setStyleSheet(
-            f"QListWidget {{ background: {COLORS['panel_alt']}; "
-            f"color: {COLORS['text']}; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 6px; padding: 5px; }}"
-            f"QListWidget::item {{ padding: 10px 8px; border-radius: 4px; "
-            f"color: {COLORS['muted']}; }}"
-            f"QListWidget::item:selected {{ background: {COLORS['accent_dark']}; "
-            f"color: {COLORS['text']}; }}"
+            f"QListWidget {{ background: transparent; border: none;"
+            f" outline: 0; padding: 2px; }}"
+            f"QListWidget::item {{ background: transparent;"
+            f" border: none; padding: 0; margin: 2px 0; }}"
         )
+        self._delegate = self._CardDelegate(self._list)
+        self._list.setItemDelegate(self._delegate)
         self._list.itemClicked.connect(
             lambda item: on_item_clicked(item.data(Qt.UserRole))
         )
@@ -369,13 +656,40 @@ class AssetBin(QWidget):
         )
         layout.addWidget(self._list)
 
+    # ------------------------------------------------------------------
+    # API publique
+    # ------------------------------------------------------------------
+
     def add_asset(self, asset: MediaAsset) -> None:
-        item = QListWidgetItem(asset.name)
+        self._assets[asset.id] = asset
+        item = QListWidgetItem()
         item.setData(Qt.UserRole, asset.id)
+        item.setData(Qt.UserRole + 1, asset)
+        item.setData(Qt.UserRole + 2, _format_duration(asset.duration))
+        item.setData(Qt.DisplayRole, asset.name)
+        item.setToolTip(f"{asset.name}\n{_format_duration(asset.duration)}")
         self._list.addItem(item)
+
+    def set_assets(self, assets: list[MediaAsset]) -> None:
+        """Remplace le contenu de la grille."""
+        self._list.clear()
+        self._assets = {a.id: a for a in assets}
+        for asset in assets:
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, asset.id)
+            item.setData(Qt.UserRole + 1, asset)
+            item.setData(Qt.UserRole + 2, _format_duration(asset.duration))
+            item.setData(Qt.DisplayRole, asset.name)
+            item.setToolTip(f"{asset.name}\n{_format_duration(asset.duration)}")
+            self._list.addItem(item)
+
+    def all_assets(self) -> list[MediaAsset]:
+        """Retourne tous les assets connus (sans filtre)."""
+        return list(self._assets.values())
 
     def clear(self) -> None:
         self._list.clear()
+        self._assets.clear()
 
     def count(self) -> int:
         return self._list.count()
@@ -643,3 +957,68 @@ class TransitionLibraryView(QWidget):
         )
         layout.addWidget(self.add_button)
         layout.addStretch(1)
+
+
+# ---------------------------------------------------------------------------
+# Helpers privés : vignettes et libellés
+# ---------------------------------------------------------------------------
+
+
+def _format_duration(seconds: float | None) -> str:
+    """Formate une durée en ``mm:ss`` (ou ``--`` si inconnue)."""
+    if seconds is None or seconds <= 0:
+        return "--:--"
+    total = int(seconds)
+    minutes, secs = divmod(total, 60)
+    if minutes >= 60:
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_asset_caption(asset: MediaAsset) -> str:
+    """Construit un libellé court (nom + durée) pour la grille."""
+    duration = _format_duration(asset.duration)
+    name = (asset.name or "Sans nom").strip()
+    if len(name) > 24:
+        name = name[:23] + "…"
+    return f"{name}\n{duration}"
+
+
+def _make_asset_thumbnail(asset: MediaAsset, size: int = 40) -> QIcon:
+    """Génère une vignette carrée stylisée pour un asset.
+
+    Pas d'extraction d'image vidéo : on dessine un poster sobre —
+    bandeau de couleur typé + pictogramme — sur un fond vert-noir. La
+    vignette reste donc honnête (aucune fausse preview) tout en gardant
+    une identité visuelle constante et un repère de type lisible d'un
+    coup d'œil.
+
+    Le pixmap est produit à la taille exacte demandée : le délégué le
+    redimensionne ensuite sans étirement.
+    """
+    is_audio = asset.media_type == "audio"
+    icon_name = IconName.AUDIO if is_audio else IconName.FILM
+    accent = COLORS["track_audio"] if is_audio else COLORS["track_video"]
+
+    side = max(16, int(size))
+    pixmap = QPixmap(side, side)
+    pixmap.fill(QColor(COLORS["panel_alt"]))
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    # Bandeau coloré à gauche, façon étui de pellicule.
+    band = max(2, side // 8)
+    painter.fillRect(0, 0, band, side, QColor(accent))
+    # Pictogramme centré dans la zone restante.
+    icon_side = max(8, int(side * 0.42))
+    icon = make_icon(icon_name, size=icon_side)
+    icon_rect = QRect(
+        band + (side - band - icon_side) // 2,
+        (side - icon_side) // 2,
+        icon_side,
+        icon_side,
+    )
+    painter.drawPixmap(icon_rect, icon.pixmap(icon_side, icon_side))
+    painter.end()
+    return QIcon(pixmap)

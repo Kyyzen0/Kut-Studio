@@ -109,7 +109,7 @@ class PreviewPanel(QWidget):
 
         # Entête ---------------------------------------------------------------
         top_header = QWidget()
-        top_header.setFixedHeight(48)
+        top_header.setFixedHeight(40)
         top_header.setStyleSheet(
             f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
         )
@@ -125,7 +125,7 @@ class PreviewPanel(QWidget):
         title_icon.set_color(QColor(COLORS["muted_strong"]))
         title_layout.addWidget(title_icon)
         title = QLabel("VIEWER")
-        title.setStyleSheet(label_style(11, "muted", 800))
+        title.setStyleSheet(label_style(10, "muted", 800))
         title_layout.addWidget(title)
         header_layout.addWidget(title_box)
 
@@ -138,13 +138,33 @@ class PreviewPanel(QWidget):
 
         # Barre d'outils de transport -----------------------------------------
         toolbar = QWidget()
-        toolbar.setFixedHeight(56)
+        toolbar.setFixedHeight(48)
         toolbar.setStyleSheet(
             f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
         )
         toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
-        toolbar_layout.setSpacing(Spacing.xs)
+        toolbar_layout.setContentsMargins(Spacing.md, Spacing.xs, Spacing.md, Spacing.xs)
+        toolbar_layout.setSpacing(Spacing.sm)
+
+        # Timecode turquoise à gauche.
+        self.timecode_label = QLabel("00:00:00:00")
+        self.timecode_label.setStyleSheet(
+            f"color: {COLORS['accent']}; font-family: 'SF Mono', 'Menlo', monospace;"
+            f" font-size: 14px; font-weight: 700; letter-spacing: 1px;"
+            f" padding: 0 8px;"
+        )
+        self.duration_label = QLabel("00:00:00")
+        self.duration_label.setStyleSheet(
+            f"color: {COLORS['muted']}; font-family: 'SF Mono', 'Menlo', monospace;"
+            f" font-size: 12px; font-weight: 600;"
+        )
+        toolbar_layout.addWidget(self.timecode_label)
+        toolbar_layout.addSpacing(Spacing.xs)
+        toolbar_layout.addWidget(QLabel("/"))
+        toolbar_layout.addSpacing(Spacing.xs)
+        toolbar_layout.addWidget(self.duration_label)
+
+        toolbar_layout.addStretch()
 
         # Transport : retour / play / stop / avance.
         rewind = IconButton(
@@ -173,12 +193,12 @@ class PreviewPanel(QWidget):
         )
         forward.clicked.connect(lambda: seek_relative(2))
 
-        # Séparateur visuel.
-        separator = QWidget()
-        separator.setFixedWidth(1)
-        separator.setStyleSheet(f"background: {COLORS['border']};")
+        for button in (rewind, self.play_button, stop, forward):
+            toolbar_layout.addWidget(button)
 
-        # Coupe / split / import.
+        toolbar_layout.addStretch()
+
+        # Qualité / actions à droite (discrètes).
         cut_button = IconButton(
             icon=IconName.CUT,
             tooltip="Couper le clip à la tête de lecture",
@@ -191,11 +211,8 @@ class PreviewPanel(QWidget):
             size=Sizes.icon_button,
         )
         import_button.clicked.connect(open_file_callback)
-
-        for button in (rewind, self.play_button, stop, forward, separator,
-                       cut_button, import_button):
-            toolbar_layout.addWidget(button)
-        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(cut_button)
+        toolbar_layout.addWidget(import_button)
 
         # Zone d'aperçu ---------------------------------------------------------
         preview_container = QWidget()
@@ -261,6 +278,14 @@ class PreviewPanel(QWidget):
     def set_preview_divisor(self, divisor: int) -> None:
         """Mémorise le niveau d'aperçu demandé par le profil."""
         self.preview_divisor = max(1, int(divisor))
+
+    def set_timecode(self, current_seconds: float, total_seconds: float) -> None:
+        """Met à jour le timecode turquoise et la durée totale."""
+        try:
+            self.timecode_label.setText(_format_timecode(current_seconds))
+            self.duration_label.setText(_format_duration(total_seconds))
+        except Exception:  # pragma: no cover - cosmetic
+            pass
 
     def release_media(self) -> None:
         """Lâche la source décodée.
@@ -344,3 +369,26 @@ class PreviewPanel(QWidget):
             "rotation": self._applied_rotation,
             "opacity": self._applied_opacity,
         }
+
+
+def _format_timecode(seconds: float) -> str:
+    """Formate un timecode au format ``HH:MM:SS:FF`` (24 fps par défaut)."""
+    if seconds is None or seconds < 0:
+        seconds = 0.0
+    total_frames = int(round(seconds * 24))
+    frames = total_frames % 24
+    total_seconds = total_frames // 24
+    minutes = (total_seconds // 60) % 60
+    hours = total_seconds // 3600
+    return f"{hours:02d}:{minutes:02d}:{total_seconds % 60:02d}:{frames:02d}"
+
+
+def _format_duration(seconds: float) -> str:
+    """Formate une durée simple en ``HH:MM:SS``."""
+    if seconds is None or seconds < 0:
+        return "00:00:00"
+    total = int(seconds)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"

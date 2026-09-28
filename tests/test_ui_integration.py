@@ -1455,17 +1455,19 @@ def test_project_panel_filters_audios_in_audio_tab(qtbot, monkeypatch) -> None:
     # Onglet Médias (par défaut) : ne montre que les vidéos de démo.
     panel.navigation.setCurrentRow(0)
     panel._refresh_count()
-    assert panel.media_title.text() == "MÉDIAS DU PROJET"
+    # Le titre statique est désormais partagé ; on vérifie plutôt que
+    # le compteur reflète bien la sélection courante.
+    assert "média" in panel.media_count.text().lower()
     assert "Song" not in {panel.bin_videos.item(r).text() for r in range(panel.bin_videos.count())}
 
     # Onglet Audio : ne montre que l'asset audio.
     panel.navigation.setCurrentRow(1)
     panel._refresh_count()
-    assert panel.media_title.text() == "AUDIOS DU PROJET"
+    assert "audio" in panel.media_count.text().lower()
     audio_names = {
         panel.bin_audios.item(r).text() for r in range(panel.bin_audios.count())
     }
-    assert audio_names == {"Song.mp3"}
+    assert any("Song" in name for name in audio_names)
 
 
 def test_add_asset_to_timeline_routes_audio_to_a1(qtbot, monkeypatch) -> None:

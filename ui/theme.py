@@ -42,84 +42,96 @@ from typing import Callable
 class ThemePalette:
     """Palette de couleurs pour un thème donné.
 
-    Les valeurs reflètent l'identité visuelle de Kut-Studio :
-    fond sombre ou clair, accents violets, accents colorés pour les
-    états de validation, gris pour le texte / bordures.
+    Direction artistique par défaut : identité vert-noir / turquoise
+    menthe, inspirée des logiciels de montage haut de gamme. Les
+    tokens restent sémantiques (``surface``, ``accent``, ``track_*``…)
+    pour qu'un thème clair puisse les remplacer sans toucher au code
+    métier.
     """
 
-    # Surfaces
-    background: str = "#11141A"
-    panel: str = "#161A21"
-    panel_alt: str = "#1C2129"
-    surface: str = "#222834"
-    surface_hover: str = "#2B3242"
-    surface_active: str = "#323A4D"
+    # Surfaces — fond général vert-noir très sombre
+    background: str = "#061514"
+    panel: str = "#081C1A"
+    panel_alt: str = "#0C2421"
+    panel_elevated: str = "#102C28"
+    surface: str = "#0E2724"
+    surface_hover: str = "#143430"
+    surface_active: str = "#1A3D38"
 
-    # Bordures / séparateurs
-    border: str = "#2B303A"
-    border_strong: str = "#3A4150"
-    divider: str = "#232831"
+    # Bordures / séparateurs discrets
+    border: str = "#183834"
+    border_strong: str = "#23504B"
+    divider: str = "#0F2A27"
 
-    # Texte
-    text: str = "#F4F5F7"
+    # Texte — quasi-blanc légèrement teinté, secondaire gris-vert
+    text: str = "#EEF8F5"
     text_strong: str = "#FFFFFF"
-    muted: str = "#9098A4"
-    muted_strong: str = "#B7BDC8"
-    disabled_text: str = "#6B7280"
+    muted: str = "#94AAA5"
+    muted_strong: str = "#B7CFC9"
+    disabled_text: str = "#506460"
 
     # États désactivés
-    button_disabled_bg: str = "#1A1D22"
-    button_disabled_border: str = "#252A33"
+    button_disabled_bg: str = "#0B1E1C"
+    button_disabled_border: str = "#152F2C"
 
-    # Accents
-    accent: str = "#7C5CFC"
-    accent_hover: str = "#8E73FF"
-    accent_dark: str = "#322569"
-    accent_dark_hover: str = "#3B2C7A"
-    selection: str = "#322569"
+    # Accent turquoise menthe (couleur d'identité)
+    accent: str = "#36E6C3"
+    accent_hover: str = "#5BEFD0"
+    accent_dark: str = "#0E3A33"
+    accent_dark_hover: str = "#154E45"
+    accent_glow: str = "#36E6C326"  # halo subtil, alpha ~15%
+    selection: str = "#0E3A33"
+    selection_line: str = "#36E6C3"
 
     # Statuts
-    success: str = "#67D6A3"
-    success_dark: str = "#1E3C2D"
+    success: str = "#5BE0B4"
+    success_dark: str = "#0F3A2D"
     danger: str = "#F27686"
-    danger_dark: str = "#3F1F25"
+    danger_dark: str = "#3A1F25"
     warning: str = "#F7C948"
 
     # Tooltip
-    tooltip_bg: str = "#222834"
+    tooltip_bg: str = "#0E2724"
 
     # Timeline / pistes
-    timeline_bg: str = "#14171D"
-    timeline_grid: str = "#1A1E25"
-    track_header_bg: str = "#161A21"
-    track_alt_bg: str = "#181C24"
-    track_divider: str = "#262B34"
-    ruler_bg: str = "#1B1F26"
-    ruler_line: str = "#3A4150"
-    playhead: str = "#67D6A3"
-    playhead_dim: str = "#67D6A380"
+    timeline_bg: str = "#061918"
+    timeline_grid: str = "#0A211F"
+    track_header_bg: str = "#081C1A"
+    track_alt_bg: str = "#0A1F1D"
+    track_divider: str = "#102C28"
+    ruler_bg: str = "#081C1A"
+    ruler_line: str = "#1E4540"
+    playhead: str = "#36E6C3"
+    playhead_dim: str = "#36E6C380"
     marker: str = "#F7C948"
-    selection_line: str = "#7C5CFC"
-    snap_line: str = "#7C5CFC80"
+    snap_line: str = "#36E6C380"
     transition_overlay: str = "#F7C948"
-    transition_overlay_bg: str = "#14171D"
+    transition_overlay_bg: str = "#061918"
 
-    # Pistes par type
-    track_video: str = "#5B6CFF"
-    track_audio: str = "#67D6A3"
-    track_subtitle: str = "#F7C948"
+    # Pistes par type — couleurs contrôlées, distinctes
+    track_video: str = "#4FA3D9"        # bleu discret
+    track_video_dim: str = "#1F4A66"
+    track_audio: str = "#36E6C3"        # turquoise / vert signature
+    track_audio_dim: str = "#155246"
+    track_subtitle: str = "#B58EF9"     # violet pour titres et calques
+    track_subtitle_dim: str = "#3F2D5A"
 
     # Clip
-    clip_border: str = "#3A4150"
-    clip_border_selected: str = "#8E73FF"
-    clip_border_hover: str = "#7C5CFC"
+    clip_border: str = "#23504B"
+    clip_border_selected: str = "#36E6C3"
+    clip_border_hover: str = "#5BEFD0"
     clip_text: str = "#FFFFFF"
     clip_text_dim: str = "#FFFFFFB3"
+    clip_title: str = "#B58EF9"
+    clip_title_fill: str = "#2A1F47"
+    clip_audio_fill: str = "#0F2E2A"
+    clip_audio_wave: str = "#36E6C3"
+    clip_adjustment: str = "#7B5BE3"
 
     # Keyframe diamond
-    diamond_filled: str = "#7C5CFC"
-    diamond_outline: str = "#5C5C66"
-    diamond_border: str = "#FFFFFF"
+    diamond_filled: str = "#36E6C3"
+    diamond_outline: str = "#23504B"
+    diamond_border: str = "#061514"
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +213,7 @@ THEMES: dict[str, ThemePalette] = {
         background="#F4F5F8",
         panel="#FFFFFF",
         panel_alt="#F0F2F6",
+        panel_elevated="#FFFFFF",
         surface="#FFFFFF",
         surface_hover="#E7EAF2",
         surface_active="#DDE2EE",
@@ -214,11 +227,13 @@ THEMES: dict[str, ThemePalette] = {
         disabled_text="#9098A2",
         button_disabled_bg="#EDF0F4",
         button_disabled_border="#DDE1E8",
-        accent="#7C5CFC",
-        accent_hover="#6A4DE0",
-        accent_dark="#E2DBFF",
-        accent_dark_hover="#D4C9FF",
-        selection="#E2DBFF",
+        accent="#0FAE8E",
+        accent_hover="#0D9A7D",
+        accent_dark="#D8F4ED",
+        accent_dark_hover="#C2EBE0",
+        accent_glow="#0FAE8E26",
+        selection="#D8F4ED",
+        selection_line="#0FAE8E",
         success="#22A06B",
         success_dark="#DEF2E5",
         danger="#D63A52",
@@ -232,22 +247,29 @@ THEMES: dict[str, ThemePalette] = {
         track_divider="#E0E3EA",
         ruler_bg="#FFFFFF",
         ruler_line="#CFD3DC",
-        playhead="#22A06B",
-        playhead_dim="#22A06B80",
+        playhead="#0FAE8E",
+        playhead_dim="#0FAE8E80",
         marker="#B8860B",
-        selection_line="#7C5CFC",
-        snap_line="#7C5CFC80",
+        snap_line="#0FAE8E80",
         transition_overlay="#B8860B",
         transition_overlay_bg="#FFFFFFE6",
-        track_video="#3F4FBF",
-        track_audio="#1E8A5C",
-        track_subtitle="#B8860B",
+        track_video="#3F7EBF",
+        track_video_dim="#D9E7F4",
+        track_audio="#0FAE8E",
+        track_audio_dim="#CDEEE5",
+        track_subtitle="#7B5BE3",
+        track_subtitle_dim="#E3DAF7",
         clip_border="#B7BDC8",
-        clip_border_selected="#6A4DE0",
-        clip_border_hover="#7C5CFC",
+        clip_border_selected="#0FAE8E",
+        clip_border_hover="#0D9A7D",
         clip_text="#FFFFFF",
         clip_text_dim="#FFFFFFB3",
-        diamond_filled="#7C5CFC",
+        clip_title="#7B5BE3",
+        clip_title_fill="#EDE4FB",
+        clip_audio_fill="#D8F4ED",
+        clip_audio_wave="#0FAE8E",
+        clip_adjustment="#5C46BF",
+        diamond_filled="#0FAE8E",
         diamond_outline="#9098A2",
         diamond_border="#FFFFFF",
     ),
@@ -273,21 +295,21 @@ def _stylesheet(palette: ThemePalette) -> str:
     QMainWindow {{ background: {palette.background}; }}
     QToolTip {{
         background: {palette.tooltip_bg}; color: {palette.text};
-        border: 1px solid {palette.border}; padding: 5px 8px;
+        border: 1px solid {palette.border_strong}; padding: 5px 8px;
         border-radius: 5px;
     }}
     /* Séparateurs redimensionnables : zone de saisie confortable,
        aspect neutre au repos, teinte discrète au survol. */
     QSplitter::handle {{ background: {palette.background}; }}
-    QSplitter::handle:horizontal {{ width: 6px; }}
-    QSplitter::handle:vertical {{ height: 6px; }}
-    QSplitter::handle:hover {{ background: {palette.accent}; }}
+    QSplitter::handle:horizontal {{ width: 4px; }}
+    QSplitter::handle:vertical {{ height: 4px; }}
+    QSplitter::handle:hover {{ background: {palette.accent}; opacity: 0.6; }}
     QSplitter::handle:pressed {{ background: {palette.accent_hover}; }}
 
     QPushButton {{
         background: {palette.surface}; color: {palette.text};
         border: 1px solid {palette.border}; border-radius: 6px;
-        padding: 7px 12px; font-weight: 500;
+        padding: 6px 12px; font-weight: 500;
     }}
     QPushButton:hover {{
         background: {palette.surface_hover}; border-color: {palette.border_strong};
@@ -301,7 +323,7 @@ def _stylesheet(palette: ThemePalette) -> str:
     QToolButton {{
         background: transparent; color: {palette.text};
         border: 1px solid transparent; border-radius: 6px;
-        padding: 5px 8px;
+        padding: 4px 8px;
     }}
     /* Boutons « icône seule » : le padding par défaut rogne l'icône
        dans les boutons compacts, on le neutralise. */
@@ -311,8 +333,9 @@ def _stylesheet(palette: ThemePalette) -> str:
     /* Action primaire (bouton Lecture, Exporter…) : une seule surface
        d'accent par écran, pour marquer clairement le geste principal. */
     QToolButton#accentIcon, QToolButton#accentText {{
-        background: {palette.accent}; color: {palette.text_strong};
+        background: {palette.accent}; color: #061514;
         border: 1px solid {palette.accent};
+        font-weight: 600;
     }}
     QToolButton#accentIcon:hover, QToolButton#accentText:hover {{
         background: {palette.accent_hover};
@@ -343,7 +366,7 @@ def _stylesheet(palette: ThemePalette) -> str:
     QFrame#mixerStrip {{
         background: {palette.panel};
         border: 1px solid {palette.border};
-        border-radius: 6px;
+        border-radius: 8px;
     }}
     QFrame#mixerMasterBar {{
         background: {palette.panel_alt};
@@ -354,13 +377,19 @@ def _stylesheet(palette: ThemePalette) -> str:
         background: {palette.panel_alt}; color: {palette.text};
         border: 1px solid {palette.border}; border-radius: 6px;
         selection-background-color: {palette.selection};
-        padding: 4px 6px;
+        selection-color: {palette.text};
+        padding: 4px 8px;
     }}
-    QComboBox {{ padding: 6px 10px; }}
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+        border-color: {palette.accent};
+    }}
+    QComboBox {{ padding: 5px 10px; }}
     QComboBox::drop-down {{ border: none; width: 18px; }}
     QComboBox QAbstractItemView {{
         background: {palette.surface}; color: {palette.text};
-        border: 1px solid {palette.border};
+        border: 1px solid {palette.border_strong};
+        selection-background-color: {palette.accent_dark};
+        selection-color: {palette.text};
     }}
     QSpinBox::up-button, QSpinBox::down-button,
     QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
@@ -375,7 +404,7 @@ def _stylesheet(palette: ThemePalette) -> str:
     QSlider::sub-page:horizontal {{ background: {palette.accent}; border-radius: 2px; }}
     QSlider::handle:horizontal {{
         width: 14px; margin: -6px 0; background: {palette.accent};
-        border-radius: 7px; border: 2px solid {palette.surface};
+        border-radius: 7px; border: 2px solid {palette.panel};
     }}
     QSlider::handle:horizontal:hover {{ background: {palette.accent_hover}; }}
     QSlider:disabled {{ color: {palette.disabled_text}; }}
@@ -395,40 +424,42 @@ def _stylesheet(palette: ThemePalette) -> str:
     }}
 
     QScrollBar:vertical {{
-        background: transparent; width: 10px; margin: 2px;
+        background: transparent; width: 8px; margin: 2px;
     }}
     QScrollBar::handle:vertical {{
-        background: {palette.border}; border-radius: 5px; min-height: 24px;
+        background: {palette.border}; border-radius: 4px; min-height: 24px;
     }}
     QScrollBar::handle:vertical:hover {{ background: {palette.border_strong}; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     QScrollBar:horizontal {{
-        background: transparent; height: 10px; margin: 2px;
+        background: transparent; height: 8px; margin: 2px;
     }}
     QScrollBar::handle:horizontal {{
-        background: {palette.border}; border-radius: 5px; min-width: 32px;
+        background: {palette.border}; border-radius: 4px; min-width: 32px;
     }}
     QScrollBar::handle:horizontal:hover {{ background: {palette.border_strong}; }}
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
     QMenuBar {{
-        background: {palette.panel}; color: {palette.muted};
-        border-bottom: 1px solid {palette.border}; padding: 3px 8px;
+        background: transparent; color: {palette.muted};
+        border: none; padding: 0;
     }}
     QMenuBar::item {{ padding: 5px 10px; border-radius: 4px; }}
     QMenuBar::item:selected {{ background: {palette.surface_hover}; color: {palette.text}; }}
-    QMenu {{ background: {palette.surface}; color: {palette.text}; border: 1px solid {palette.border}; }}
-    QMenu::item {{ padding: 7px 22px; }}
-    QMenu::item:selected {{ background: {palette.accent_dark}; }}
+    QMenu {{ background: {palette.panel_elevated}; color: {palette.text};
+             border: 1px solid {palette.border_strong}; border-radius: 8px;
+             padding: 4px; }}
+    QMenu::item {{ padding: 7px 22px; border-radius: 4px; }}
+    QMenu::item:selected {{ background: {palette.accent_dark}; color: {palette.text}; }}
     QMenu::separator {{ height: 1px; background: {palette.divider}; margin: 4px 6px; }}
 
     QGroupBox {{
         color: {palette.muted_strong}; border: 1px solid {palette.border};
-        border-radius: 6px; margin-top: 12px; padding-top: 10px;
+        border-radius: 8px; margin-top: 14px; padding-top: 12px;
         font-weight: 600;
     }}
     QGroupBox::title {{
-        subcontrol-origin: margin; left: 12px; padding: 0 6px;
+        subcontrol-origin: margin; left: 12px; padding: 0 8px;
         color: {palette.muted_strong};
     }}
 
@@ -451,6 +482,91 @@ def _stylesheet(palette: ThemePalette) -> str:
     }}
     QRadioButton::indicator:checked {{
         background: {palette.accent}; border-color: {palette.accent};
+    }}
+
+    /* Onglets compacts (utilisés par inspecteur, transitions, etc.) */
+    QTabWidget::pane {{
+        border: none;
+        background: transparent;
+    }}
+    QTabBar {{
+        background: transparent;
+        qproperty-drawBase: 0;
+    }}
+    QTabBar::tab {{
+        background: transparent;
+        color: {palette.muted};
+        padding: 6px 12px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        font-weight: 600;
+        margin-right: 4px;
+    }}
+    QTabBar::tab:hover {{
+        color: {palette.text};
+    }}
+    QTabBar::tab:selected {{
+        color: {palette.text};
+        border-bottom: 2px solid {palette.accent};
+    }}
+
+    /* Boutons « chips » utilisés pour les réglages rapides dans la top bar */
+    QToolButton#chipButton {{
+        background: {palette.surface};
+        border: 1px solid {palette.border};
+        border-radius: 6px;
+        padding: 3px 8px;
+        color: {palette.text};
+        font-weight: 500;
+    }}
+    QToolButton#chipButton:hover {{
+        background: {palette.surface_hover};
+        border-color: {palette.border_strong};
+    }}
+    QToolButton#chipButton:checked {{
+        background: {palette.accent_dark};
+        border-color: {palette.accent};
+        color: {palette.text};
+    }}
+
+    /* Champs numériques inline */
+    QSpinBox, QDoubleSpinBox {{
+        background: {palette.panel_alt};
+        color: {palette.text};
+        border: 1px solid {palette.border};
+        border-radius: 4px;
+        padding: 3px 6px;
+        min-height: 22px;
+        selection-background-color: {palette.accent_dark};
+        selection-color: {palette.text};
+    }}
+
+    /* Switch (interrupteur) utilisé dans l'inspecteur */
+    QToolButton#switchButton {{
+        background: {palette.panel_alt};
+        border: 1px solid {palette.border};
+        border-radius: 11px;
+        padding: 0;
+        min-width: 32px;
+        max-width: 32px;
+        min-height: 18px;
+        max-height: 18px;
+    }}
+    QToolButton#switchButton:checked {{
+        background: {palette.accent};
+        border-color: {palette.accent};
+    }}
+
+    /* Cards arrondies pour les blocs principaux */
+    QFrame#card {{
+        background: {palette.panel};
+        border: 1px solid {palette.border};
+        border-radius: 10px;
+    }}
+    QFrame#cardElevated {{
+        background: {palette.panel_elevated};
+        border: 1px solid {palette.border};
+        border-radius: 10px;
     }}
     """
 
