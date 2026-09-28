@@ -676,7 +676,11 @@ class MainWindow(QMainWindow):
             panel_menu = menu.addMenu(panel.label())
             for action in self.workspace.build_actions(panel):
                 if isinstance(action, QMenu):
-                    action.setParent(panel_menu)
+                    # ``addMenu`` gère l'action associée au sous-menu.
+                    # Reparenté ici, le QMenu devient un enfant visuel du
+                    # parent et Qt calcule son popup en coordonnées locales,
+                    # ce qui le faisait se chevaucher au lieu de s'ouvrir
+                    # à droite.
                     panel_menu.addMenu(action)
                 else:
                     panel_menu.addAction(action)

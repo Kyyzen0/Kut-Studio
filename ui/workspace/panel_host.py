@@ -81,12 +81,14 @@ class PanelOptionsBar(QWidget):
         if menu is None:
             menu = QMenu(self)
             self._menu = menu
-        menu.clear()
+            menu.clear()
         for action in actions:
             if isinstance(action, QMenu):
                 # Un objet de menu ne peut pas être inséré via
-                # ``addAction`` : il doit être attaché via ``addMenu``.
-                action.setParent(menu)
+                # ``addAction`` : ``addMenu`` crée l'action associée et
+                # préserve le positionnement de popup calculé par Qt.
+                # Le reparentage manuel transformerait le menu en enfant
+                # visuel et ferait chevaucher les menus imbriqués.
                 menu.addMenu(action)
             else:
                 menu.addAction(action)

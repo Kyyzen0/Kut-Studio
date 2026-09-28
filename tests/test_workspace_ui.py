@@ -348,6 +348,20 @@ def test_context_menu_offers_every_dock_area(window):
     assert len(areas) == len(DockArea)
 
 
+def test_nested_panel_menu_is_not_reparented_into_its_parent_menu(window):
+    """Un sous-menu doit rester un popup Qt, jamais un widget superposé."""
+    host = window.workspace.host_of(PanelId.VIEWER)
+    assert host is not None
+    host.refresh_actions()
+    menu = host._options._menu
+    move_menu = next(action.menu() for action in menu.actions() if action.menu())
+
+    # Le QMenu est créé par le gestionnaire avec la fenêtre comme parent.
+    # Le reparentage au menu parent fait calculer une position locale et
+    # provoque le chevauchement visible dans l'interface.
+    assert move_menu.parentWidget() is window
+
+
 def test_move_panel_changes_its_area(window):
     manager = window.workspace
     assert manager.state.area_of(PanelId.MEDIA) is DockArea.LEFT
