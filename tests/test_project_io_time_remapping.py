@@ -112,8 +112,8 @@ def _project_with_time_remapping() -> Project:
 
 class TestTimeRemappingSerialization:
     def test_version_is_incremented(self):
-        """La version courante doit être 7."""
-        assert CURRENT_VERSION == 7
+        """La version courante doit être 8."""
+        assert CURRENT_VERSION == 8
 
     def test_payload_includes_time_remapping(self):
         """Le payload doit inclure les champs de time_remapping."""

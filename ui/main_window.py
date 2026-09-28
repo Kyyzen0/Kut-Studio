@@ -168,6 +168,7 @@ class MainWindow(QMainWindow):
         self.project_panel.import_subtitles_requested.connect(self.import_subtitles_via_dialog)
         self.project_panel.export_subtitles_requested.connect(self.export_subtitles_via_dialog)
         self.project_panel.subtitle_selected.connect(self.on_subtitle_clip_selected)
+        self.project_panel.add_transition_requested.connect(self.add_transition_from_library)
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
         self.timeline_panel = TimelinePanel(self.project)
         # La timeline peint ses fonds et ses clips à la main : elle doit
@@ -2309,6 +2310,34 @@ class MainWindow(QMainWindow):
         if menu.exec(QCursor.pos()) is crossfade:
             self.transition_seconds = transition_time
             self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
+
+    def add_transition_from_library(self, transition_type: str, duration: float) -> None:
+        """Ajoute une transition entre les deux clips actuellement sélectionnés."""
+        selected = [
+            view for view in self.timeline_panel.clip_views
+            if view.id in self.timeline_panel.selected_clip_ids
+            and view.track_type == "video"
+        ]
+        if len(selected) != 2:
+            print("[MainWindow] sélectionnez deux clips vidéo pour une transition.")
+            return
+        selected.sort(key=lambda view: view.start)
+        if selected[0].track_id != selected[1].track_id:
+            print("[MainWindow] les clips doivent être sur la même piste.")
+            return
+        from core.transitions import TransitionType, add_transition
+        try:
+            add_transition(
+                self.project, selected[0].id, selected[1].id,
+                TransitionType(transition_type), duration,
+            )
+        except (KeyError, ValueError) as error:
+            print(f"[MainWindow] transition refusée : {error}")
+            return
+        self._record_history("Ajouter une transition")
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
 
     def on_transform_property_changed(
         self, clip_id: str, property_name: str, value: float

@@ -114,6 +114,22 @@ def test_main_window_delete_modifies_project(qtbot, monkeypatch) -> None:
     assert "b_roll" not in rendered_ids
 
 
+def test_main_window_adds_persistent_transition_from_library(qtbot, monkeypatch) -> None:
+    """La bibliothèque crée une transition métier, pas un simple aperçu."""
+    window = _build_window(qtbot, monkeypatch)
+    incoming = find_clip(window.project, "plan_a")
+    incoming.timeline_start = 4.0  # Jonction directe avec la fin de ``intro``.
+    window.timeline_panel.set_project(window.project)
+    window.timeline_panel.selected_clip_ids = {"intro", "plan_a"}
+
+    window.add_transition_from_library("wipe_right", 0.5)
+
+    assert len(window.project.transitions) == 1
+    transition = window.project.transitions[0]
+    assert transition.type.value == "wipe_right"
+    assert incoming.timeline_start == pytest.approx(3.5)
+
+
 def test_main_window_subtitle_editor_updates_project(qtbot, tmp_path, monkeypatch) -> None:
     """Éditer le sous-titre dans l'inspecteur met à jour Clip.text et la vue.
 

@@ -469,6 +469,7 @@ class Project:
     media_assets: list[MediaAsset] = field(default_factory=list)
     tracks: list[Track] = field(default_factory=list)
     markers: list[Marker] = field(default_factory=list)
+    transitions: list["Transition"] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Vérifie que les paramètres de rendu du projet sont cohérents."""

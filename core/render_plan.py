@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
 from .time_remapping import TimeRemapping
+from .transitions import TransitionType
 from .timeline_evaluator import timeline_duration
 from .visual_effects import ClipTransform, TransformKeyframe
 
@@ -138,6 +139,15 @@ class AudioLayer:
         return max(-1.0, min(1.0, float(self.pan) + float(self.track_pan)))
 
 
+@dataclass(frozen=True)
+class RenderTransition:
+    id: str
+    from_clip_id: str
+    to_clip_id: str
+    type: TransitionType
+    duration: float
+
+
 # ---------------------------------------------------------------------------
 # Plan complet
 # ---------------------------------------------------------------------------
@@ -174,6 +184,7 @@ class RenderPlan:
     subtitle_cues: tuple[SubtitleCue, ...] = field(default_factory=tuple)
     master_gain_db: float = 0.0
     master_muted: bool = False
+    transitions: tuple[RenderTransition, ...] = field(default_factory=tuple)
 
     @property
     def is_audio_silent(self) -> bool:
@@ -290,6 +301,18 @@ def build_render_plan(
                 audio_layers.append(
                     _build_audio_layer(clip, asset, track.id, track_index, track)
                 )
+    layer_ids = {layer.clip_id for layer in video_layers}
+    transitions = tuple(
+        RenderTransition(
+            id=transition.id,
+            from_clip_id=transition.from_clip_id,
+            to_clip_id=transition.to_clip_id,
+            type=transition.type,
+            duration=transition.duration,
+        )
+        for transition in project.transitions
+        if transition.from_clip_id in layer_ids and transition.to_clip_id in layer_ids
+    )
     return RenderPlan(
         width=project.width,
         height=project.height,
@@ -300,6 +323,7 @@ def build_render_plan(
         subtitle_cues=tuple(_subtitle_cues_for_export(project)),
         master_gain_db=float(master_gain_db),
         master_muted=bool(master_muted),
+        transitions=transitions,
     )
 
 

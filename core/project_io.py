@@ -44,6 +44,7 @@ from typing import Any
 
 from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
+from .transitions import Transition, TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -54,10 +55,10 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 7
+CURRENT_VERSION = 8
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
 Les versions 1 à 6 restent prises en charge ; les champs spécifiques
@@ -223,6 +224,16 @@ def _build_payload(project: Project) -> dict[str, Any]:
                 }
                 for marker in project.markers
             ],
+            "transitions": [
+                {
+                    "id": transition.id,
+                    "from_clip_id": transition.from_clip_id,
+                    "to_clip_id": transition.to_clip_id,
+                    "type": transition.type.value,
+                    "duration": float(transition.duration),
+                }
+                for transition in project.transitions
+            ],
             "tracks": [
                 {
                     "id": track.id,
@@ -298,12 +309,37 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
         _deserialize_track(item)
         for item in data.get("tracks", [])
     ]
-    return Project(
+    project = Project(
         media_assets=assets,
         tracks=tracks,
         markers=[_deserialize_marker(item) for item in data.get("markers", [])],
         **{key: value for key, value in data.items() if key in _PROJECT_FIELDS},
     )
+    project.transitions = _deserialize_transitions(data.get("transitions", []), project)
+    return project
+
+
+def _deserialize_transitions(raw: Any, project: Project) -> list[Transition]:
+    """Ignore les entrées de transition invalides sans empêcher l'ouverture."""
+    if not isinstance(raw, list):
+        return []
+    clip_ids = {clip.id for track in project.tracks for clip in track.clips}
+    loaded: list[Transition] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            transition = Transition(
+                id=str(item["id"]), from_clip_id=str(item["from_clip_id"]),
+                to_clip_id=str(item["to_clip_id"]),
+                type=TransitionType(item.get("type", "crossfade")),
+                duration=float(item.get("duration", 0.5)),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if transition.from_clip_id in clip_ids and transition.to_clip_id in clip_ids:
+            loaded.append(transition)
+    return loaded
 
 
 def _deserialize_marker(data: dict[str, Any]) -> Marker:

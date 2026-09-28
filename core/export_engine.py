@@ -42,8 +42,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
-from .render_plan import AudioLayer, RenderLayer, RenderPlan
+from .render_plan import AudioLayer, RenderLayer, RenderPlan, RenderTransition
 from .subtitle_io import format_srt
+from .transitions import TransitionType
 from .time_remapping import (
     MAX_REVERSE_DURATION_SECONDS,
     FreezeFrameMode,
@@ -403,13 +404,14 @@ class ExportEngine(QObject):
             )
 
         if plan.video_layers:
+            display_layers = _build_transition_layers(parts, plan)
             previous_label = "bg"
-            for layer_index, layer in enumerate(plan.video_layers):
-                is_last = layer_index == len(plan.video_layers) - 1
+            for layer_index, (label, layer) in enumerate(display_layers):
+                is_last = layer_index == len(display_layers) - 1
                 next_label = "vout" if is_last else f"o{layer_index}"
                 overlay_args = _build_overlay_args(layer, width, height)
                 parts.append(
-                    f"[{previous_label}][v{layer_index}]"
+                    f"[{previous_label}][{label}]"
                     f"overlay={overlay_args}[{next_label}]"
                 )
                 previous_label = next_label
@@ -565,6 +567,52 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
         path_to_index[layer.source_path] = len(input_paths)
         input_paths.append(layer.source_path)
     return input_paths, path_to_index
+
+
+def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[str, RenderLayer]]:
+    """Remplace deux couches liées par leur flux ``xfade`` FFmpeg."""
+    by_id = {layer.clip_id: (index, layer) for index, layer in enumerate(plan.video_layers)}
+    replacements: dict[int, tuple[str, RenderLayer]] = {}
+    hidden: set[int] = set()
+    for transition_index, transition in enumerate(plan.transitions):
+        source = by_id.get(transition.from_clip_id)
+        target = by_id.get(transition.to_clip_id)
+        if source is None or target is None:
+            continue
+        from_index, from_layer = source
+        to_index, to_layer = target
+        if from_layer.track_id != to_layer.track_id or from_index in hidden or to_index in hidden:
+            continue
+        name = _ffmpeg_transition_name(transition)
+        offset = max(0.0, from_layer.timeline_end - from_layer.timeline_start - transition.duration)
+        label = f"transition{transition_index}"
+        parts.append(
+            f"[v{from_index}]setpts=PTS-STARTPTS[ta{transition_index}];"
+            f"[v{to_index}]setpts=PTS-STARTPTS[tb{transition_index}];"
+            f"[ta{transition_index}][tb{transition_index}]"
+            f"xfade=transition={name}:duration={_format_seconds(transition.duration)}:"
+            f"offset={_format_seconds(offset)},"
+            f"setpts=PTS+{_format_seconds(from_layer.timeline_start)}/TB[{label}]"
+        )
+        replacements[min(from_index, to_index)] = (label, from_layer)
+        hidden.update({from_index, to_index})
+    result: list[tuple[str, RenderLayer]] = []
+    for index, layer in enumerate(plan.video_layers):
+        if index in replacements:
+            result.append(replacements[index])
+        if index in hidden:
+            continue
+        result.append((f"v{index}", layer))
+    return result
+
+
+def _ffmpeg_transition_name(transition: RenderTransition) -> str:
+    return {
+        TransitionType.CROSSFADE: "fade",
+        TransitionType.FADE_BLACK: "fadeblack",
+        TransitionType.WIPE_LEFT: "wipeleft",
+        TransitionType.WIPE_RIGHT: "wiperight",
+    }[transition.type]
 
 
 def _build_layer_filter(

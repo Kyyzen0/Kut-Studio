@@ -31,6 +31,7 @@ from .time_remapping import (
     timeline_to_source_time,
     validate_time_remapping,
 )
+from .transitions import remove_transitions_for_clips
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +441,7 @@ def cut_clip(
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]
+    remove_transitions_for_clips(project, {clip_id})
     return left_clip, right_clip
 
 
@@ -459,6 +461,7 @@ def delete_clip(project: Project, clip_id: str) -> Clip:
     _ensure_track_editable(project, track)
     clip = track.clips[index]
     del track.clips[index]
+    remove_transitions_for_clips(project, {clip_id})
     return clip
 
 

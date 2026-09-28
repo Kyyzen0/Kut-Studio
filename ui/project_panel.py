@@ -16,6 +16,7 @@ from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
+    QComboBox,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -55,6 +56,7 @@ class ProjectPanel(QWidget):
     import_subtitles_requested = Signal()
     export_subtitles_requested = Signal()
     subtitle_selected = Signal(str)
+    add_transition_requested = Signal(str, float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -153,11 +155,9 @@ class ProjectPanel(QWidget):
         self._effects_placeholder = self._make_placeholder_label(
             "Effets visuels\n\nCouleur, recadrage, filtres\n(à implémenter)"
         )
-        self._transitions_placeholder = self._make_placeholder_label(
-            "Transitions\n\nFondu, volets, glissements\n(à implémenter)"
-        )
+        self.transition_view = TransitionLibraryView(self)
         self.content_stack.addWidget(self._effects_placeholder)
-        self.content_stack.addWidget(self._transitions_placeholder)
+        self.content_stack.addWidget(self.transition_view)
         layout.addWidget(self.content_stack, 1)
 
         # ----- Boutons d'action principaux -----------------------------
@@ -183,6 +183,7 @@ class ProjectPanel(QWidget):
         self.subtitle_view.import_requested.connect(self.import_subtitles_requested)
         self.subtitle_view.export_requested.connect(self.export_subtitles_requested)
         self.subtitle_view.selected.connect(self.subtitle_selected)
+        self.transition_view.add_requested.connect(self.add_transition_requested)
 
     # ------------------------------------------------------------------
     # Construction
@@ -603,3 +604,42 @@ class SubtitleLibraryView(QWidget):
         clip_id = current.data(Qt.UserRole)
         if clip_id is not None:
             self.selected.emit(clip_id)
+
+
+class TransitionLibraryView(QWidget):
+    """Choix compact d'une transition à poser entre deux clips sélectionnés."""
+
+    add_requested = Signal(str, float)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Spacing.sm)
+        hint = QLabel("Sélectionnez deux clips vidéo consécutifs dans la timeline.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(label_style(11, "muted", 500))
+        layout.addWidget(hint)
+        self.type_combo = QComboBox()
+        self.type_combo.addItem("Fondu enchaîné", "crossfade")
+        self.type_combo.addItem("Fondu au noir", "fade_black")
+        self.type_combo.addItem("Balayage gauche", "wipe_left")
+        self.type_combo.addItem("Balayage droite", "wipe_right")
+        layout.addWidget(self.type_combo)
+        self.duration_spin = QDoubleSpinBox()
+        self.duration_spin.setRange(0.1, 5.0)
+        self.duration_spin.setSingleStep(0.1)
+        self.duration_spin.setValue(0.5)
+        self.duration_spin.setSuffix(" s")
+        layout.addWidget(self.duration_spin)
+        self.add_button = ProjectPanel._make_wide_button(
+            IconName.TRANSITIONS, "Ajouter la transition", accent=True,
+            tooltip="Ajouter la transition entre les deux clips sélectionnés",
+        )
+        self.add_button.clicked.connect(
+            lambda: self.add_requested.emit(
+                str(self.type_combo.currentData()), float(self.duration_spin.value())
+            )
+        )
+        layout.addWidget(self.add_button)
+        layout.addStretch(1)

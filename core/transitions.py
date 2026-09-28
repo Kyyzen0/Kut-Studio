@@ -1,0 +1,136 @@
+"""Transitions persistantes entre deux clips vidéo d'une même piste."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+import uuid
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .project_model import Clip, Project, Track
+
+
+class TransitionType(str, Enum):
+    CROSSFADE = "crossfade"
+    FADE_BLACK = "fade_black"
+    WIPE_LEFT = "wipe_left"
+    WIPE_RIGHT = "wipe_right"
+
+
+@dataclass(frozen=True)
+class Transition:
+    id: str
+    from_clip_id: str
+    to_clip_id: str
+    type: TransitionType = TransitionType.CROSSFADE
+    duration: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not self.id or not self.from_clip_id or not self.to_clip_id:
+            raise ValueError("Une transition doit identifier ses deux clips.")
+        if self.from_clip_id == self.to_clip_id:
+            raise ValueError("Une transition requiert deux clips distincts.")
+        if self.duration <= 0.0:
+            raise ValueError("La durée d'une transition doit être positive.")
+
+
+def transition_pairs(project: "Project", clip_id: str) -> list[Transition]:
+    return [t for t in project.transitions if clip_id in {t.from_clip_id, t.to_clip_id}]
+
+
+def add_transition(
+    project: "Project",
+    from_clip_id: str,
+    to_clip_id: str,
+    transition_type: TransitionType = TransitionType.CROSSFADE,
+    duration: float = 0.5,
+) -> Transition:
+    from_track, from_clip = _find_video_clip(project, from_clip_id)
+    to_track, to_clip = _find_video_clip(project, to_clip_id)
+    if from_track.id != to_track.id:
+        raise ValueError("Les deux clips d'une transition doivent être sur la même piste.")
+    if to_clip.timeline_start < from_clip.timeline_start:
+        raise ValueError("Le clip entrant doit suivre le clip sortant.")
+    overlap = from_clip.timeline_start + from_clip.duration - to_clip.timeline_start
+    if overlap < -1e-6:
+        raise ValueError("Les clips doivent être adjacents ou se chevaucher.")
+    maximum = min(from_clip.duration, to_clip.duration) / 2.0
+    if duration > maximum + 1e-6:
+        raise ValueError("La transition dépasse la moitié du clip le plus court.")
+    if abs(overlap) <= 1e-6:
+        # Une jonction simple devient un vrai recouvrement : c'est la
+        # condition nécessaire au fondu vidéo et audio pendant l'export.
+        to_clip.timeline_start -= float(duration)
+    elif abs(overlap - duration) > 1e-6:
+        raise ValueError("Le chevauchement des clips doit correspondre à la durée de transition.")
+    for current in project.transitions:
+        if current.from_clip_id == from_clip_id and current.to_clip_id == to_clip_id:
+            raise ValueError("Une transition existe déjà sur cette jonction.")
+        if current.to_clip_id == from_clip_id or current.from_clip_id == to_clip_id:
+            raise ValueError("Un clip ne peut pas avoir deux transitions sur la même jonction.")
+    transition = Transition(
+        id=f"transition-{uuid.uuid4().hex[:12]}",
+        from_clip_id=from_clip_id,
+        to_clip_id=to_clip_id,
+        type=TransitionType(transition_type),
+        duration=float(duration),
+    )
+    project.transitions.append(transition)
+    from_clip.set_fade_out(float(duration))
+    to_clip.set_fade_in(float(duration))
+    return transition
+
+
+def update_transition(
+    project: "Project", transition_id: str, *, transition_type: TransitionType | None = None,
+    duration: float | None = None,
+) -> Transition:
+    current = _find_transition(project, transition_id)
+    _track, from_clip = _find_video_clip(project, current.from_clip_id)
+    _to_track, to_clip = _find_video_clip(project, current.to_clip_id)
+    new_duration = current.duration if duration is None else float(duration)
+    if new_duration > min(from_clip.duration, to_clip.duration) / 2.0 + 1e-6:
+        raise ValueError("La transition dépasse la moitié du clip le plus court.")
+    replacement = Transition(
+        id=current.id,
+        from_clip_id=current.from_clip_id,
+        to_clip_id=current.to_clip_id,
+        type=current.type if transition_type is None else TransitionType(transition_type),
+        duration=new_duration,
+    )
+    to_clip.timeline_start = from_clip.timeline_start + from_clip.duration - new_duration
+    from_clip.set_fade_out(new_duration)
+    to_clip.set_fade_in(new_duration)
+    project.transitions[project.transitions.index(current)] = replacement
+    return replacement
+
+
+def remove_transition(project: "Project", transition_id: str) -> Transition:
+    current = _find_transition(project, transition_id)
+    project.transitions.remove(current)
+    return current
+
+
+def remove_transitions_for_clips(project: "Project", clip_ids: set[str]) -> list[Transition]:
+    removed = [t for t in project.transitions if t.from_clip_id in clip_ids or t.to_clip_id in clip_ids]
+    project.transitions[:] = [t for t in project.transitions if t not in removed]
+    return removed
+
+
+def _find_transition(project: "Project", transition_id: str) -> Transition:
+    for transition in project.transitions:
+        if transition.id == transition_id:
+            return transition
+    raise KeyError(f"Transition '{transition_id}' introuvable.")
+
+
+def _find_video_clip(project: "Project", clip_id: str) -> tuple["Track", "Clip"]:
+    for track in project.tracks:
+        for clip in track.clips:
+            if clip.id == clip_id:
+                if track.type != "video":
+                    raise ValueError("Une transition ne peut concerner que des clips vidéo.")
+                return track, clip
+    raise KeyError(f"Clip '{clip_id}' introuvable.")
+
