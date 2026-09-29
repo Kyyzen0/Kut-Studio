@@ -111,6 +111,54 @@ def _ffmpeg_supports_subtitles() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Fichier de sous-titres temporaire (partagé export / aperçu)
+# ---------------------------------------------------------------------------
+
+
+def write_subtitle_file(plan: RenderPlan) -> str | None:
+    """Écrit un fichier SRT ou ASS temporaire pour les sous-titres du plan.
+
+    L'ASS est privilégié dès qu'au moins un clip porte un style non
+    standard ; sinon on conserve le SRT historique pour préserver la
+    compatibilité avec les builds FFmpeg sans libass.
+
+    Returns:
+        Le chemin du fichier écrit, ou ``None`` si le plan n'a aucun
+        sous-titre actif. L'appelant supprime le fichier une fois FFmpeg
+        terminé.
+    """
+    if not plan.subtitle_cues:
+        return None
+    has_custom_style = any(
+        not _is_default_style(style) for style in plan.subtitle_styles
+    )
+    if has_custom_style:
+        suffix = ".ass"
+        content = format_ass_with_styles(
+            list(zip(plan.subtitle_cues, plan.subtitle_styles)),
+            default_style=default_text_style(),
+        )
+    else:
+        suffix = ".srt"
+        content = format_srt(list(plan.subtitle_cues))
+    fd, tmp_path = tempfile.mkstemp(
+        prefix="kut-studio-subtitles-",
+        suffix=suffix,
+    )
+    os.close(fd)
+    try:
+        Path(tmp_path).write_text(content, encoding="utf-8")
+    except OSError:
+        # Pas de fichier à moitié écrit laissé derrière soi.
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
 # Formats et préréglages
 # ---------------------------------------------------------------------------
 
@@ -350,34 +398,16 @@ class ExportEngine(QObject):
     def _prepare_temporary_files(self, plan: RenderPlan) -> None:
         """Écrit un fichier temporaire (SRT ou ASS) si le projet porte des sous-titres.
 
-        L'ASS est privilégié dès qu'au moins un clip porte un style non
-        standard ; sinon on conserve le SRT historique pour préserver la
-        compatibilité avec les builds FFmpeg sans libass.
+        Le contenu et le choix de format sont produits par
+        :func:`write_subtitle_file`, partagé avec le moteur d'aperçu :
+        les deux rendus incrustent donc exactement les mêmes sous-titres.
         """
         self._cleanup_temporary_files()
-        if not plan.subtitle_cues:
-            return
-        has_custom_style = any(
-            not _is_default_style(style) for style in plan.subtitle_styles
-        )
-        if has_custom_style:
-            suffix = ".ass"
-            content = format_ass_with_styles(
-                list(zip(plan.subtitle_cues, plan.subtitle_styles)),
-                default_style=default_text_style(),
-            )
-        else:
-            suffix = ".srt"
-            content = format_srt(list(plan.subtitle_cues))
-        fd, tmp_path = tempfile.mkstemp(
-            prefix="kut-studio-subtitles-",
-            suffix=suffix,
-        )
-        # Enregistrer le chemin avant l'écriture afin que le nettoyage
-        # du gestionnaire couvre aussi un échec d'écriture sur disque.
-        self._temporary_files.append(tmp_path)
-        os.close(fd)
-        Path(tmp_path).write_text(content, encoding="utf-8")
+        path = write_subtitle_file(plan)
+        # Enregistrer le chemin pour que le nettoyage du gestionnaire
+        # couvre aussi un échec ultérieur de l'export.
+        if path:
+            self._temporary_files.append(path)
 
     def _cleanup_temporary_files(self) -> None:
         """Supprime tous les fichiers temporaires créés pour cet export."""

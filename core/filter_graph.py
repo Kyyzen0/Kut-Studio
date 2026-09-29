@@ -35,9 +35,34 @@ def preview_output_size(width, height, quality):
     return (max(2, int(width * factor)), max(2, int(height * factor)))
 
 
+def write_subtitle_file(plan):
+    """Ecrit le SRT/ASS temporaire d'un plan (meme code que l'export).
+
+    Returns:
+        Le chemin du fichier ecrit, ou ``None`` si le plan n'a aucun
+        sous-titre actif. L'appelant supprime le fichier.
+    """
+    from .export_engine import write_subtitle_file as _write
+
+    return _write(plan)
+
+
+def ffmpeg_supports_subtitles():
+    """La build FFmpeg sait-elle incruster des sous-titres (libass) ?
+
+    Sans libass, le filtre ``subtitles`` est absent : tout plan portant
+    des sous-titres echouerait. L'apercu s'en sert pour refuser un
+    segment au lieu de relancer sans fin un rendu impossible.
+    """
+    from .export_engine import _ffmpeg_supports_subtitles
+
+    return bool(_ffmpeg_supports_subtitles())
+
+
 def build_preview_command(plan, **kwargs):
     """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export."""
     from .export_engine import require_ffmpeg
+    from .preview_render import preview_crf, preview_preset
 
     width = int(kwargs.get("width", 1920))
     height = int(kwargs.get("height", 1080))
@@ -56,7 +81,19 @@ def build_preview_command(plan, **kwargs):
     command.extend(["-filter_complex", filter_complex])
     command.extend(["-map", "[" + video_label + "]"])
     command.extend(["-map", "[" + audio_label + "]"])
-    command.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"])
+    # Reglages x264 propres a la qualite d'apercu (brouillon rapide,
+    # haute fidelite plus lente). Le graphe de filtres, lui, reste
+    # exactement celui de l'export.
+    command.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-preset",
+            preview_preset(quality),
+            "-crf",
+            str(preview_crf(quality)),
+        ]
+    )
     command.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k"])
     if start > 0:
         command.extend(["-ss", "%.3f" % max(0.0, start)])
@@ -147,6 +184,8 @@ __all__ = [
     "build_filter_complex",
     "build_input_list",
     "build_preview_command",
+    "ffmpeg_supports_subtitles",
     "fingerprint_plan",
     "preview_output_size",
+    "write_subtitle_file",
 ]

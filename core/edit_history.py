@@ -134,8 +134,9 @@ class ProjectHistory:
             overflow = len(self._undo_stack) - MAX_HISTORY
             del self._undo_stack[:overflow]
             # L'index sauvegardé doit être ajusté s'il pointait sur
-            # une entrée supprimée.
-            if self._saved_index is not None:
+            # une entrée supprimée. Une marque négative signifie
+            # « jamais enregistré sur disque » et doit le rester.
+            if self._saved_index is not None and self._saved_index >= 0:
                 self._saved_index = max(0, self._saved_index - overflow)
         # Toute nouvelle action après ``undo`` vide le ``redo``.
         self._redo_stack = []
@@ -177,6 +178,16 @@ class ProjectHistory:
             self._saved_index = None
             return
         self._saved_index = len(self._undo_stack) - 1
+
+    def mark_unsaved(self) -> None:
+        """L'état courant ne correspond pas au fichier sur disque.
+
+        Aucune opération n'est ajoutée à la pile. Sert après la
+        restauration d'un autosave : le projet affiché est plus récent
+        que le ``.kut``, donc il reste « non enregistré » jusqu'à une
+        vraie sauvegarde.
+        """
+        self._saved_index = -1
 
     def current_project(self) -> Optional[Project]:
         """Retourne le projet courant (référence partagée).

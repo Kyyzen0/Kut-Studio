@@ -168,6 +168,7 @@ class MainWindow(QMainWindow):
         # État Master : préférence de session, jamais du projet.
         self._master_gain_db = float(loaded_settings.master_gain_db)
         self._master_muted = bool(loaded_settings.master_muted)
+        self._render_quality = loaded_settings.render_quality
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
         i18n.set_language(loaded_settings.language)
         self.runtime = StudioRuntime(
@@ -660,25 +661,65 @@ class MainWindow(QMainWindow):
     # Étalonnage couleur (tâche 29)
     # ------------------------------------------------------------------
 
-    def _commit_color_grade(self, clip_id: str, grade: ColorGrade, label: str) -> bool:
+    def _commit_color_grade(
+        self, clip_id: str, grade: ColorGrade, label: str, *, coalesce: bool = False
+    ) -> bool:
         clip, track = self._find_clip_and_track(clip_id)
         if clip is None or track is None or track.type != "video" or track.locked:
             return False
+        if not coalesce:
+            # Une rafale de curseur précédente devient sa propre étape,
+            # distincte de cette action ponctuelle.
+            self._finalize_color_history()
         try:
             ColorGradingService().set_grade(self.project, clip_id, grade)
         except ColorGradingError as exc:
             print(f"[MainWindow] Étalonnage refusé : {exc}")
             return False
-        self._record_history(label)
-        self._mark_dirty()
-        self._reload_timeline_preserving_selection(clip_id)
+        if coalesce:
+            self._schedule_color_history(label, clip_id)
+        else:
+            self._record_history(label)
+            self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_color_monitor(clip_id)
+        return True
+
+    def _refresh_color_monitor(self, clip_id: str) -> None:
+        """Aligne le moniteur sur l'étalonnage courant du projet."""
         self.update_color_effect()
         try:
             self._invalidate_preview_for_clip(clip_id)
             self._sync_preview_to_timeline()
         except Exception:
             pass
-        return True
+
+    def _schedule_color_history(self, label: str, clip_id: str) -> None:
+        """Regroupe une rafale de curseur couleur dans une seule étape."""
+        first = not getattr(self, "_color_session_active", False)
+        self._color_session_active = True
+        self._color_session_clip_id = clip_id
+        if first:
+            self._color_session_label = label
+        if not hasattr(self, "_color_session_timer"):
+            self._color_session_timer = QTimer(self)
+            self._color_session_timer.setSingleShot(True)
+            self._color_session_timer.timeout.connect(self._finalize_color_history)
+        self._color_session_timer.start(400)
+        self._mark_dirty()
+
+    def _finalize_color_history(self) -> None:
+        """Enregistre l'état final d'une rafale d'étalonnage."""
+        if not getattr(self, "_color_session_active", False):
+            return
+        timer = getattr(self, "_color_session_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._color_session_active = False
+        label = getattr(self, "_color_session_label", "Étalonnage")
+        clip_id = getattr(self, "_color_session_clip_id", None)
+        self._record_history(label)
+        if clip_id:
+            self._reload_timeline_preserving_selection(clip_id)
 
     def on_color_grade_field_changed(
         self, clip_id: str, field: str, value: float
@@ -689,7 +730,7 @@ class MainWindow(QMainWindow):
         except ColorGradingError as exc:
             print(f"[MainWindow] Paramètre couleur invalide : {exc}")
             return
-        self._commit_color_grade(clip_id, updated, f"Couleur : {field}")
+        self._commit_color_grade(clip_id, updated, f"Couleur : {field}", coalesce=True)
 
     def on_color_grade_enabled_changed(self, clip_id: str, enabled: bool) -> None:
         try:
@@ -711,7 +752,7 @@ class MainWindow(QMainWindow):
         except (ColorGradingError, TypeError, ValueError) as exc:
             print(f"[MainWindow] Courbe couleur invalide : {exc}")
             return
-        self._commit_color_grade(clip_id, updated, f"Courbe {channel}")
+        self._commit_color_grade(clip_id, updated, f"Courbe {channel}", coalesce=True)
 
     def on_color_grade_replaced(
         self, clip_id: str, grade_dict: dict | None
@@ -747,6 +788,7 @@ class MainWindow(QMainWindow):
         clip, track = self._find_clip_and_track(clip_id)
         if clip is None or track is None or track.locked:
             return
+        self._finalize_color_history()
         service = ColorGradingService()
         try:
             service.reset_grade(self.project, clip_id)
@@ -754,8 +796,8 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] Reset étalonnage refusé : {exc}")
             return
         self._record_history("Réinitialiser l'étalonnage")
-        self._mark_dirty()
         self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_color_monitor(clip_id)
 
     def on_color_preset_applied(
         self, clip_id: str, preset_id: str
@@ -770,6 +812,7 @@ class MainWindow(QMainWindow):
         clip, track = self._find_clip_and_track(clip_id)
         if clip is None or track is None or track.locked:
             return
+        self._finalize_color_history()
         store = self.properties_panel.color_preset_store
         preset = store.get_preset(preset_id)
         if preset is None:
@@ -781,10 +824,11 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] Preset étalonnage refusé : {exc}")
             return
         self._record_history("Appliquer un preset d'étalonnage")
-        self._mark_dirty()
         self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_color_monitor(clip_id)
 
     def on_color_preset_save_requested(self, clip_id: str, name: str) -> None:
+        self._finalize_color_history()
         try:
             grade = ColorGradingService().get_grade(self.project, clip_id)
             preset = make_user_color_preset(name=name, description="", grade=grade)
@@ -812,6 +856,7 @@ class MainWindow(QMainWindow):
         clip, track = self._find_clip_and_track(clip_id)
         if clip is None or track is None or track.locked:
             return
+        self._finalize_color_history()
         try:
             parsed = parse_cube_lut(lut_path)
         except LUTImportError as exc:
@@ -842,8 +887,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "LUT", str(exc))
             return
         self._record_history("Importer un LUT")
-        self._mark_dirty()
         self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_color_monitor(clip_id)
 
     def on_color_lut_removed(self, clip_id: str) -> None:
         try:
@@ -1176,8 +1221,7 @@ class MainWindow(QMainWindow):
         """Enregistre une modification audio dans l'historique."""
         if self.project is None:
             return
-        self.history.record(self.project, label)
-        self._mark_dirty()
+        self._record_history(label)
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
 
@@ -1198,7 +1242,12 @@ class MainWindow(QMainWindow):
             self.timeline_timer.stop()
         recorder = getattr(self, "_audio_recorder", None)
         if recorder is not None and recorder.is_recording:
-            recorder.stop()
+            pcm, rate, channels = recorder.stop()
+            self._place_recording(pcm, rate, channels, quiet=True)
+        self._flush_subtitle_history_record()
+        self._finalize_transform_session()
+        self._finalize_color_history()
+        self._write_autosave()
         if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
             self._autosave_timer.stop()
         if hasattr(self, "_debug_timer") and self._debug_timer is not None:
@@ -1687,6 +1736,7 @@ class MainWindow(QMainWindow):
     def _mark_clean(self) -> None:
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         self.project_dirty = False
         self.history.mark_saved()
         self._refresh_undo_redo_state()
@@ -1702,6 +1752,13 @@ class MainWindow(QMainWindow):
                 timer.stop()
             self._subtitle_edit_pending = None
             self._subtitle_edit_history_before = None
+        # Une rafale d'étalonnage encore ouverte est déjà dans le projet :
+        # elle est incluse dans ce snapshot, sans étape supplémentaire.
+        if getattr(self, "_color_session_active", False):
+            timer = getattr(self, "_color_session_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._color_session_active = False
         self.history.record(self.project, label)
         self._refresh_undo_redo_state()
 
@@ -1773,6 +1830,7 @@ class MainWindow(QMainWindow):
         """Annule la dernière opération enregistrée."""
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         snapshot = self.history.undo()
         if snapshot is None:
             return
@@ -1782,6 +1840,7 @@ class MainWindow(QMainWindow):
         """Rétablit la dernière opération annulée."""
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         snapshot = self.history.redo()
         if snapshot is None:
             return
@@ -2482,6 +2541,7 @@ class MainWindow(QMainWindow):
         """Crée un nouveau projet vierge via ``create_default_project()``."""
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         self._release_open_project()
         self.project = create_default_project()
         self.current_project_path = None
@@ -2575,6 +2635,7 @@ class MainWindow(QMainWindow):
         """
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         try:
             loaded = load_project(path)
         except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
@@ -2584,6 +2645,7 @@ class MainWindow(QMainWindow):
                 f"Le fichier {path} n'a pas pu être ouvert :\n\n{exc}",
             )
             return
+        restored_autosave = False
         if autosave_is_newer(path):
             answer = QMessageBox.question(
                 self,
@@ -2596,6 +2658,7 @@ class MainWindow(QMainWindow):
             if answer == QMessageBox.Yes:
                 try:
                     loaded = load_project(str(sidecar_path(path)))
+                    restored_autosave = True
                 except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
                     QMessageBox.critical(
                         self,
@@ -2606,6 +2669,9 @@ class MainWindow(QMainWindow):
         self.project = loaded
         self.current_project_path = path
         self.history.reset(self.project)
+        if restored_autosave:
+            # Le fichier .kut est plus ancien que ce qui est à l'écran.
+            self.history.mark_unsaved()
         self._refresh_undo_redo_state()
         self.timeline_panel.set_project(self.project)
         self.playhead_seconds = 0.0
@@ -2619,7 +2685,10 @@ class MainWindow(QMainWindow):
         self._reset_selection_and_inspector()
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
-        self._mark_clean()
+        if restored_autosave:
+            self._refresh_undo_redo_state()
+        else:
+            self._mark_clean()
 
     def launch_export(self):
         default_dir = os.path.expanduser("~/Movies")
@@ -2648,7 +2717,11 @@ class MainWindow(QMainWindow):
         ordre des pistes, clips activés). C'est désormais l'entrée
         unique du moteur d'export.
         """
-        return build_render_plan(self.project)
+        return build_render_plan(
+            self.project,
+            master_gain_db=self._master_gain_db,
+            master_muted=self._master_muted,
+        )
 
     def cancel_export(self):
         self.export_engine.cancel()
@@ -3076,6 +3149,7 @@ class MainWindow(QMainWindow):
             language=i18n.current_language(),
             performance_profile=self.runtime.requested_profile,
             preview_quality=self.runtime.requested_quality,
+            render_quality=self._render_quality,
             master_gain_db=self._master_gain_db,
             master_muted=self._master_muted,
         )
@@ -3092,6 +3166,7 @@ class MainWindow(QMainWindow):
     def on_clip_selected(self, clip_id):
         self._flush_subtitle_history_record()
         self._finalize_transform_session()
+        self._finalize_color_history()
         view = self.timeline_panel.find_view_by_id(clip_id)
         if view is None:
             return
@@ -3703,6 +3778,7 @@ class MainWindow(QMainWindow):
                 )
             except (ValueError, KeyError):
                 active_clips = []
+        active_clips = apply_solo(self.project, active_clips)
         subtitle_clips = [c for c in active_clips if c.track_type == "subtitle"]
         if not subtitle_clips:
             self.preview_panel.clear_subtitle()
@@ -3733,14 +3809,25 @@ class MainWindow(QMainWindow):
         if not cues:
             return []
         created_clips: list[Clip] = []
-        for cue in cues:
-            clip = add_subtitle_clip(
-                self.project,
-                text=cue.text,
-                timeline_start=cue.start,
-                duration=cue.end - cue.start,
-            )
-            created_clips.append(clip)
+        try:
+            for cue in cues:
+                clip = add_subtitle_clip(
+                    self.project,
+                    text=cue.text,
+                    timeline_start=cue.start,
+                    duration=cue.end - cue.start,
+                )
+                created_clips.append(clip)
+        except (KeyError, ValueError):
+            if created_clips:
+                self._record_history(
+                    f"Importer le SRT ({len(created_clips)} sous-titres)"
+                )
+                self._reload_timeline_preserving_selection()
+                self._update_timeline_duration()
+                self._refresh_project_library()
+                self._mark_dirty()
+            raise
         self._record_history(f"Importer le SRT ({len(cues)} sous-titres)")
         self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
@@ -3782,7 +3869,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self.import_subtitles_from_path(path)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, KeyError) as exc:
             QMessageBox.critical(
                 self,
                 "Import SRT impossible",
@@ -3823,7 +3910,14 @@ class MainWindow(QMainWindow):
 
     def update_color_effect(self, *_):
         panel = self.properties_panel
-        grade = getattr(panel, "_current_color_grade", ColorGrade.identity())
+        grade = None
+        selected = getattr(panel, "selected_clip", None)
+        clip_id = getattr(selected, "id", None)
+        if clip_id:
+            clip, _track = self._find_clip_and_track(clip_id)
+            grade = getattr(clip, "color_grade", None) if clip is not None else None
+        if grade is None:
+            grade = getattr(panel, "_current_color_grade", ColorGrade.identity())
         color_effect = getattr(self.preview_panel, "color_effect", None)
         if color_effect is None:
             return
@@ -4197,13 +4291,19 @@ class MainWindow(QMainWindow):
         clip.text = content
         self._schedule_subtitle_history_record(clip_id)
         self._mark_dirty()
-        # La projection de timeline porte le texte : on la reconstruit
-        # sans perdre la sélection courante.
+        # ``set_project`` efface la sélection. On la repose sans
+        # ``show_clip`` : recharger l'inspecteur pendant la frappe
+        # remettrait le curseur de l'éditeur au début.
+        playhead = self.playhead_seconds
         self.timeline_panel.set_project(self.project)
-        if self.active_subtitle_clip is not None:
-            self.timeline_panel.selected_clip_id = self.active_subtitle_clip.id
-        self.timeline_panel.refresh_clip_widgets()
-        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+        if self.timeline_panel.find_view_by_id(clip_id) is not None:
+            self.timeline_panel._set_selection([clip_id], clip_id, announce=False)
+            view = self.timeline_panel.find_view_by_id(clip_id)
+            if getattr(view, "track_type", None) == "subtitle":
+                self.active_subtitle_clip = view
+        if self.playhead_seconds != playhead:
+            self.playhead_seconds = playhead
+        self.update_subtitle_overlay(self.playhead_seconds)
 
     def on_subtitle_style_changed(self, clip_id: str, style: TextStyle) -> None:
         """Applique immédiatement le style (Undo/Redo friendly)."""
@@ -4489,7 +4589,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] suppression keyframe refusée : {exc}")
             return
         clip = find_clip(self.project, clip_id)
-        self.history.record(self.project, "Supprimer une image-clé")
+        self._record_history("Supprimer une image-clé")
         self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(
@@ -4508,7 +4608,7 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] reset transform refusé : {exc}")
             return
         clip = find_clip(self.project, clip_id)
-        self.history.record(self.project, "Réinitialiser le mouvement")
+        self._record_history("Réinitialiser le mouvement")
         self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(
@@ -4757,17 +4857,20 @@ class MainWindow(QMainWindow):
         button.setChecked(checked)
         button.blockSignals(False)
 
-    def _place_recording(self, pcm: bytes, sample_rate: int, channels: int) -> None:
+    def _place_recording(
+        self, pcm: bytes, sample_rate: int, channels: int, *, quiet: bool = False
+    ) -> None:
         import uuid
         from pathlib import Path
 
         duration = pcm_duration(pcm, sample_rate, channels)
         if duration < 0.05:
-            QMessageBox.information(
-                self,
-                "Enregistrement",
-                "L'enregistrement est trop court pour devenir un clip.",
-            )
+            if not quiet:
+                QMessageBox.information(
+                    self,
+                    "Enregistrement",
+                    "L'enregistrement est trop court pour devenir un clip.",
+                )
             return
         if self.current_project_path:
             folder = Path(self.current_project_path).parent / "enregistrements"
@@ -4777,7 +4880,8 @@ class MainWindow(QMainWindow):
         try:
             write_wav(str(target), pcm, sample_rate, channels)
         except OSError as exc:
-            QMessageBox.critical(self, "Enregistrement", str(exc))
+            if not quiet:
+                QMessageBox.critical(self, "Enregistrement", str(exc))
             return
         asset = MediaAsset(
             id=f"rec-{uuid.uuid4().hex[:8]}",
@@ -5113,9 +5217,7 @@ class MainWindow(QMainWindow):
             current_language_code=i18n.current_language(),
             current_performance=self.runtime.requested_profile,
             current_preview_quality=self.runtime.requested_quality,
-            current_render_quality=getattr(
-                self._settings_snapshot(), "render_quality", "standard"
-            ),
+            current_render_quality=self._render_quality,
             parent=self,
         )
         dialog.theme_changed.connect(self.on_user_setting_changed)
@@ -5225,7 +5327,7 @@ class MainWindow(QMainWindow):
             return []
         if not plan.video_layers:
             return []
-        quality = getattr(self._settings_snapshot(), "render_quality", "standard")
+        quality = self._render_quality
         params = fingerprint_plan(
             plan, width=self.project.width, height=self.project.height,
             fps=self.project.fps, quality=quality,
@@ -5294,6 +5396,7 @@ class MainWindow(QMainWindow):
         self.theme_manager.apply_to(QApplication.instance())
         self.runtime.set_requested_profile(settings.performance_profile)
         self.runtime.set_preview_quality(settings.preview_quality)
+        self._render_quality = settings.render_quality
         self._apply_runtime_hints()
         # État Master : preference de session, jamais du projet.
         self._master_gain_db = float(settings.master_gain_db)

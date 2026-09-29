@@ -1,9 +1,48 @@
-"""Moteur d'apercu non destructif (tache 30) : partie 1/3."""
+"""Moteur d'apercu non destructif (tache 30) : partie 1/3.
+
+Le moteur ne fait aucun travail lui-meme : il planifie des segments dans
+une :class:`~core.task_queue.TaskQueue`, lit et ecrit le cache disque de
+:mod:`core.preview_cache`, et publie son etat aux panneaux Qt. Le rendu
+utilise le meme graphe de filtres que l'export
+(:mod:`core.filter_graph`), donc le moniteur montre ce que l'export
+produira.
+
+Invariants garantis ici :
+
+- un segment deja en cache n'est jamais re-rendu ;
+- un rendu en vol qui n'est plus d'actualite (invalidation d'un clip,
+  ``cancel_all``) se jette lui-meme au lieu d'ecrire dans le cache :
+  une invalidation ne peut donc pas etre « ressuscitee » ;
+- une demande identique (meme cle : clip, plage, qualite, empreinte des
+  parametres) ne relance rien tant qu'elle est deja planifiee ou en
+  cours, sinon chaque tick de l'interface annulerait le rendu precedent ;
+- aucun fichier temporaire (segment ou sous-titres) ne survit a un
+  rendu, qu'il reussisse, echoue ou soit jete ;
+- l'etat publie est toujours relu sous verrou, jamais partage en direct.
+"""
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass
+
+
+# Nombre de segments pre-rendus autour de la tete de lecture.
+PREFETCH_SEGMENTS = 4
+
+# Cles de clip utilisees pour les segments qui ne dependent pas d'un clip
+# unique (trou de timeline). Comme ils peuvent etre touches par n'importe
+# quel clip, toute invalidation de clip les concerne aussi : sinon un
+# rendu en vol reecrirait un segment devenu faux.
+UNATTRIBUTED_CLIP_IDS = ("timeline", "")
+
+# Message unique quand la build FFmpeg ne peut pas incruster les
+# sous-titres (le meme diagnostic que l'export).
+SUBTITLES_UNSUPPORTED = (
+    "La build FFmpeg ne supporte pas le filtre 'subtitles' (libass requis). "
+    "Installez un FFmpeg avec libass pour incruster les sous-titres."
+)
 
 
 @dataclass
@@ -29,6 +68,8 @@ class PreviewEngineState:
 
 
 class PreviewEngine:
+    """Planificateur de segments d'apercu fideles, mis en cache et annulable."""
+
     def __init__(self, task_queue=None, cache=None, **kwargs):
         from .preview_cache import DiskPreviewCache
         from .task_queue import TaskQueue
@@ -37,27 +78,65 @@ class PreviewEngine:
         self.tasks = task_queue or TaskQueue()
         self.cache = cache or DiskPreviewCache()
         self.render_fn = render or self._default_render
+        # Le diagnostic libass ne concerne que le rendu FFmpeg par defaut :
+        # un ``render_fn`` injecte gere ses entrees comme il l'entend.
+        self._uses_default_render = render is None
+        self._subtitles_supported = None
         self._lock = threading.RLock()
-        self._generations = {}
+        # token_key -> generation courante ; un rendu dont la generation
+        # a change est perime et se jette sans ecrire.
+        self._generations: dict[str, int] = {}
+        # token_key -> clip proprietaire (invalidation chirurgicale).
+        self._key_clips: dict[str, str] = {}
+        # token_key -> jeton de la derniere soumission (annulation ciblee).
+        self._tokens: dict[str, object] = {}
+        # Fichiers produits par le rendu par defaut : seuls ceux-la
+        # peuvent etre supprimes par le moteur (jamais ceux d'un
+        # ``render_fn`` injecte par l'appelant).
+        self._temp_outputs: set[str] = set()
+        # Invalidation globale (``cancel_all``) : incremente l'epoque.
+        self._epoch = 0
+        # Compteur de generations monotone (jamais remis a zero).
+        self._generation_seq = 0
         self._running_count = 0
         self._max_concurrent = max(1, int(kwargs.get("max_concurrent", 1)))
         self._paused = False
-        self._state = PreviewEngineState()
+        self._last_error = ""
         self._listeners = []
+        self._cached_segments = self._count_cached()
+
+    # ------------------------------------------------------------------
+    # Etat publie aux panneaux
+    # ------------------------------------------------------------------
 
     def subscribe(self, callback):
+        """Abonne un rappel ``callback(state)``."""
         with self._lock:
             self._listeners.append(callback)
 
+    def _count_cached(self):
+        """Nombre de segments actuellement sur disque (0 si inconnu)."""
+        stats = getattr(self.cache, "stats", None)
+        if not callable(stats):
+            return 0
+        try:
+            return max(0, int(stats().get("entries", 0)))
+        except Exception:
+            return 0
+
+    def _snapshot(self):
+        """Vue coherente de l'etat (a appeler verrou tenu)."""
+        return PreviewEngineState(
+            pending=len(self.tasks),
+            running=self._running_count,
+            cached_segments=self._cached_segments,
+            last_error=self._last_error,
+            paused_for_playback=self._paused,
+        )
+
     def _notify(self):
         with self._lock:
-            state = PreviewEngineState(
-                pending=len(self.tasks),
-                running=self._running_count,
-                cached_segments=self._state.cached_segments,
-                last_error=self._state.last_error,
-                paused_for_playback=self._paused,
-            )
+            state = self._snapshot()
             listeners = list(self._listeners)
         for callback in listeners:
             try:
@@ -66,106 +145,315 @@ class PreviewEngine:
                 pass
 
     def set_playing(self, playing):
+        """Suspend les rendus d'arriere-plan pendant la lecture.
+
+        Rien n'est perdu : les segments restent en file et repartiront
+        au premier ``set_playing(False)``.
+        """
+        playing = bool(playing)
         with self._lock:
-            self._paused = bool(playing)
+            if self._paused == playing:
+                return
+            self._paused = playing
         self._notify()
 
     def request(self, job):
+        """Planifie le rendu d'un segment.
+
+        Returns:
+            ``{"status": "cached", "path": ...}`` si le segment est deja
+            sur disque, ``{"status": "unavailable", "reason": ...}`` si
+            le rendu est impossible sur cette machine (par ex. plan
+            sous-titre et FFmpeg sans libass), sinon
+            ``{"status": "pending", "key": ...}``. Une demande identique
+            deja planifiee ou en cours ne cree aucun doublon (sinon
+            chaque tick de l'interface annulerait le rendu precedent,
+            qui n'avancerait jamais).
+        """
         from .preview_cache import segment_key_string
         from .task_queue import PRIORITY_BACKGROUND
 
         key = job.key
         cached = self.cache.lookup(key)
         if cached is not None:
-            with self._lock:
-                self._state.cached_segments += 1
-            self._notify()
             return {"status": "cached", "path": str(cached)}
+        if self._needs_unsupported_subtitles(job):
+            with self._lock:
+                self._last_error = SUBTITLES_UNSUPPORTED
+            self._notify()
+            return {"status": "unavailable", "reason": "subtitles"}
         token_key = "preview:" + segment_key_string(key)
         with self._lock:
-            self._generations[token_key] = self._generations.get(token_key, 0) + 1
-            generation = self._generations[token_key]
+            if token_key in self._generations:
+                # Meme cle : deja en file ou en cours de rendu.
+                return {"status": "pending", "key": token_key}
+            # Compteur monotone global : meme apres un oubli de la cle,
+            # un rendu plus ancien ne peut pas se croire encore actuel.
+            self._generation_seq += 1
+            generation = self._generation_seq
+            self._generations[token_key] = generation
+            self._key_clips[token_key] = str(getattr(key, "clip_id", ""))
+            epoch = self._epoch
 
         def _run(token):
-            if token.cancelled:
+            if not self._claim(token, token_key, epoch, generation):
                 return None
-            if self._is_obsolete(token_key, generation):
-                return None
-            with self._lock:
-                if self._running_count >= self._max_concurrent:
-                    return None
-                self._running_count += 1
-            self._notify()
+            output = None
             try:
-                if self._is_obsolete(token_key, generation):
-                    return None
-                if token.cancelled:
-                    return None
                 output = self.render_fn(job, token)
                 if output is None:
                     return None
-                if self._is_obsolete(token_key, generation):
-                    try:
-                        import os
-
-                        os.remove(str(output))
-                    except OSError:
-                        pass
+                if self._stale(token, token_key, epoch, generation):
                     return None
-                self.cache.store(key, str(output))
+                path = self.cache.store(key, str(output))
                 with self._lock:
-                    self._state.cached_segments += 1
-                return str(output)
+                    self._cached_segments += 1
+                    # Une erreur transitoire ne doit pas rester collee a
+                    # l'etat publie une fois le rendu reparti.
+                    self._last_error = ""
+                return str(path)
             except Exception as exc:
                 with self._lock:
-                    self._state.last_error = str(exc)
+                    self._last_error = str(exc)
                 return None
             finally:
-                with self._lock:
-                    self._running_count = max(0, self._running_count - 1)
-                self._notify()
+                self._release(token_key, generation, output)
 
-        self.tasks.submit(token_key, _run, priority=PRIORITY_BACKGROUND)
+        token = self.tasks.submit(token_key, _run, priority=PRIORITY_BACKGROUND)
+        with self._lock:
+            self._tokens[token_key] = token
         self._notify()
         return {"status": "pending", "key": token_key}
 
+    # ------------------------------------------------------------------
+    # Cycle de vie d'un rendu
+    # ------------------------------------------------------------------
+
+    def _needs_unsupported_subtitles(self, job):
+        """Le plan exige-t-il des sous-titres que FFmpeg ne sait pas incruster ?
+
+        Sans ce garde-fou, chaque tick de l'interface relancerait un
+        rendu condamne a l'echec sur une build sans libass. Le diagnostic
+        est mis en cache : une seule sonde FFmpeg par moteur.
+        """
+        if not self._uses_default_render:
+            return False
+        if getattr(job, "srt_path", None):
+            return False
+        if getattr(job, "plan", None) is None:
+            return False
+        if not getattr(job.plan, "subtitle_cues", ()):
+            return False
+        with self._lock:
+            known = self._subtitles_supported
+        if known is None:
+            from .filter_graph import ffmpeg_supports_subtitles
+
+            try:
+                known = bool(ffmpeg_supports_subtitles())
+            except Exception:
+                # Build inconnue : on laisse FFmpeg trancher au rendu.
+                known = True
+            with self._lock:
+                self._subtitles_supported = known
+        return not known
+
+    def _claim(self, token, token_key, epoch, generation):
+        """Reserve un creneau ; ``False`` si le rendu n'est plus d'actualite.
+
+        Le nombre de rendus simultanes est borne en amont par
+        :meth:`pump` : une tache qui arrive ici est toujours rendue,
+        jamais silencieusement abandonnee.
+        """
+        with self._lock:
+            stale = self._stale_locked(token, token_key, epoch, generation)
+            if stale:
+                self._forget_locked(token_key)
+            else:
+                self._running_count += 1
+        self._notify()
+        return not stale
+
+    def _release(self, token_key, generation, output):
+        """Nettoie le temporaire, libere le creneau et publie l'etat."""
+        if output is not None:
+            self._discard_output(output)
+        with self._lock:
+            self._running_count = max(0, self._running_count - 1)
+            if self._generations.get(token_key) == generation:
+                self._forget_locked(token_key)
+        self._notify()
+
+    def _forget_locked(self, token_key):
+        """Oublie une cle terminee / annulee (a appeler verrou tenu)."""
+        self._generations.pop(token_key, None)
+        self._key_clips.pop(token_key, None)
+        self._tokens.pop(token_key, None)
+
+    def _stale(self, token, token_key, epoch, generation):
+        """Le rendu a-t-il ete remplace, annule ou invalide ?"""
+        with self._lock:
+            return self._stale_locked(token, token_key, epoch, generation)
+
+    def _stale_locked(self, token, token_key, epoch, generation):
+        """Version verrou tenu de :meth:`_stale`."""
+        if token is not None and getattr(token, "cancelled", False):
+            return True
+        if self._epoch != epoch:
+            return True
+        return self._generations.get(token_key) != generation
+
+    def _discard_output(self, path):
+        """Supprime un temporaire produit par le rendu par defaut.
+
+        Un ``render_fn`` injecte par l'appelant garde la propriete de ses
+        fichiers : seuls les chemins crees ici sont supprimables.
+        """
+        name = str(path)
+        with self._lock:
+            owned = name in self._temp_outputs
+            self._temp_outputs.discard(name)
+        if not owned:
+            return False
+        self._remove_file(name)
+        return True
+
+    @staticmethod
+    def _remove_file(path):
+        """Suppression au mieux d'un fichier temporaire."""
+        if not path:
+            return False
+        try:
+            os.remove(str(path))
+            return True
+        except OSError:
+            return False
+
     def fallback_source(self, job):
-        layers = getattr(job.plan, "video_layers", ())
+        """Media source a afficher tant que le segment n'est pas pret.
+
+        ``plan.video_layers`` est ordonne de bas en haut : la derniere
+        couche couvrante est donc celle qui apparait au-dessus a cet
+        instant (et non la premiere, qui peut etre cachee).
+        """
+        layers = tuple(getattr(job.plan, "video_layers", ()) or ())
+        if not layers:
+            return ""
+        start = float(job.start)
+        covering = []
         for layer in layers:
-            start = float(getattr(layer, "timeline_start", 0.0))
-            end = float(getattr(layer, "timeline_end", 0.0))
-            if start <= float(job.start) < end:
-                path = getattr(layer, "source_path", "") or ""
-                if path:
-                    return path
-                return "source://%s" % getattr(layer, "clip_id", "clip")
-        if layers:
-            path = getattr(layers[0], "source_path", "") or ""
-            if path:
-                return path
-            return "source://%s" % getattr(layers[0], "clip_id", "clip")
-        return ""
+            low = float(getattr(layer, "timeline_start", 0.0))
+            high = float(getattr(layer, "timeline_end", 0.0))
+            if low <= start < high:
+                covering.append(layer)
+        if covering:
+            return self._layer_source(covering[-1])
+        # Aucune couche a cet instant : la derniere commencee avant la
+        # tete de lecture, sinon la premiere du plan.
+        started = [
+            layer
+            for layer in layers
+            if float(getattr(layer, "timeline_start", 0.0)) <= start
+        ]
+        if started:
+            latest = max(
+                started,
+                key=lambda layer: float(getattr(layer, "timeline_start", 0.0)),
+            )
+            return self._layer_source(latest)
+        return self._layer_source(layers[0])
+
+    @staticmethod
+    def _layer_source(layer):
+        """Chemin du media d'une couche, sinon un identifiant de repli."""
+        path = getattr(layer, "source_path", "") or ""
+        if path:
+            return str(path)
+        clip_id = getattr(layer, "clip_id", "")
+        return "source://%s" % clip_id if clip_id else ""
 
     def prefetch_around(self, center, jobs):
+        """Planifie les segments les plus proches de ``center``.
+
+        Les demandes deja en file ou en cours sont ignorees par
+        :meth:`request` : appeler cette methode a chaque tick de
+        l'interface ne relance donc jamais un rendu en vol.
+        """
         ordered = sorted(jobs, key=lambda j: abs(float(j.start) - float(center)))
-        results = []
-        for job in ordered[:4]:
-            results.append(self.request(job))
-        return results
+        return [self.request(job) for job in ordered[:PREFETCH_SEGMENTS]]
 
     def invalidate_clip(self, clip_id):
-        removed = self.cache.invalidate_clip(clip_id)
+        """Invalide les segments d'un clip et arrete leur rendu en cours.
+
+        Les fichiers du clip sont supprimes et les rendus en vol
+        deviennent perimes : ils se jettent d'eux-memes au lieu de
+        reecrire le disque juste apres l'invalidation. Les segments non
+        attribues a un clip (cle ``timeline``) sont traites comme
+        dependants de ce clip, donc invalides eux aussi. Un ``clip_id``
+        vide invalide tout le cache d'apercu.
+
+        Returns:
+            Le nombre de fichiers supprimes.
+        """
+        clip = str(clip_id or "")
+        removed = 0
+        if clip:
+            invalidate = getattr(self.cache, "invalidate_clip", None)
+            if callable(invalidate):
+                for bucket in [clip] + [
+                    name for name in UNATTRIBUTED_CLIP_IDS if name and name != clip
+                ]:
+                    try:
+                        removed += int(invalidate(bucket))
+                    except Exception:
+                        pass
+        else:
+            invalidate_all = getattr(self.cache, "invalidate_all", None)
+            if callable(invalidate_all):
+                try:
+                    removed = int(invalidate_all())
+                except Exception:
+                    removed = 0
         with self._lock:
-            victims = [k for k in list(self._generations)]
-        for key in victims:
+            victims = [
+                token_key
+                for token_key, owner in list(self._key_clips.items())
+                if not clip or owner == clip or owner in UNATTRIBUTED_CLIP_IDS
+            ]
+            tokens = [
+                self._tokens[token_key]
+                for token_key in victims
+                if token_key in self._tokens
+            ]
+            for token_key in victims:
+                self._forget_locked(token_key)
+            self._cached_segments = max(0, self._cached_segments - removed)
+        # Hors verrou : TaskQueue appelle le corps d'une tache sans tenir
+        # le sien, donc annuler ici ne peut pas interbloquer. La methode
+        # est ``cancel_key`` (un nom errone levait un AttributeError
+        # silencieux : l'annulation ciblee ne faisait rien).
+        cancel_key = getattr(self.tasks, "cancel_key", None)
+        if callable(cancel_key):
+            for token_key in victims:
+                try:
+                    cancel_key(token_key)
+                except Exception:
+                    pass
+        for token in tokens:
             try:
-                self.tasks.cancel(key)
+                token.cancel()
             except Exception:
                 pass
         self._notify()
         return removed
 
     def cancel_all(self):
+        """Arrete tout rendu d'apercu et perime les rendus en cours."""
+        with self._lock:
+            self._epoch += 1
+            self._generations.clear()
+            self._key_clips.clear()
+            self._tokens.clear()
         try:
             self.tasks.cancel_all()
         except Exception:
@@ -173,26 +461,37 @@ class PreviewEngine:
         self._notify()
 
     def pump(self, limit=1):
-        if self._paused:
+        """Execute des segments en file, sans depasser la concurrence.
+
+        Les creneaux disponibles bornent le lot : une tache en file
+        n'est jamais abandonnee, elle attend son tour. Deux threads qui
+        pompent (l'interface et un ``QueueWorker``) ne lancent donc
+        jamais plus de ``max_concurrent`` rendus a la fois.
+        """
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 1
+        with self._lock:
+            if self._paused or limit <= 0:
+                return 0
+            slots = self._max_concurrent - self._running_count
+        if slots <= 0:
             return 0
-        return self.tasks.pump(limit=limit)
+        return self.tasks.pump(limit=min(limit, slots))
 
     def state(self):
+        """Etat courant : file, creneaux, cache, derniere erreur."""
         with self._lock:
-            return PreviewEngineState(
-                pending=len(self.tasks),
-                running=self._running_count,
-                cached_segments=self._state.cached_segments,
-                last_error=self._state.last_error,
-                paused_for_playback=self._paused,
-            )
-
-    def _is_obsolete(self, token_key, generation):
-        with self._lock:
-            return self._generations.get(token_key, 0) != generation
+            return self._snapshot()
 
     def _default_render(self, job, token):
-        import os
+        """Rend un segment via FFmpeg, graphe de filtres identique a l'export.
+
+        Les sous-titres du plan sont ecrits dans un fichier temporaire
+        (meme format que l'export) quand l'appelant n'en fournit pas :
+        sans cela, tout projet sous-titre echouerait ici.
+        """
         import subprocess
         import tempfile
 
@@ -200,32 +499,55 @@ class PreviewEngine:
 
         if token is not None and getattr(token, "cancelled", False):
             return None
+        subtitle_path = job.srt_path or self._write_subtitles(job.plan)
         fd, tmp_path = tempfile.mkstemp(prefix="kut-preview-", suffix=".mp4")
         os.close(fd)
-        command = build_preview_command(
-            job.plan,
-            width=job.width,
-            height=job.height,
-            fps=job.fps,
-            quality=job.quality,
-            start=job.start,
-            duration=job.duration,
-            output_path=tmp_path,
-            srt_path=job.srt_path,
-        )
         try:
+            command = build_preview_command(
+                job.plan,
+                width=job.width,
+                height=job.height,
+                fps=job.fps,
+                quality=job.quality,
+                start=job.start,
+                duration=job.duration,
+                output_path=tmp_path,
+                srt_path=subtitle_path,
+            )
             completed = subprocess.run(
                 command, capture_output=True, timeout=120, check=False
             )
         except Exception as exc:
+            self._remove_file(tmp_path)
             raise RuntimeError("Echec du rendu d'apercu : %s" % exc)
+        except BaseException:
+            # Interruption (fermeture de l'application, Ctrl-C) : meme
+            # nettoyage, aucun temporaire ne doit survivre.
+            self._remove_file(tmp_path)
+            raise
+        finally:
+            # Le fichier de sous-titres n'a servi qu'au filtre libass.
+            if subtitle_path and subtitle_path != job.srt_path:
+                self._remove_file(subtitle_path)
         if completed.returncode != 0:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-            raise RuntimeError("FFmpeg apercu a echoue.")
+            self._remove_file(tmp_path)
+            detail = (completed.stderr or b"").decode("utf-8", "replace").strip()
+            raise RuntimeError(
+                "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
+            )
+        # Le segment ne sera supprimable qu'une fois recopie dans le
+        # cache : on l'enregistre comme appartenant au moteur.
+        with self._lock:
+            self._temp_outputs.add(str(tmp_path))
         return tmp_path
+
+    def _write_subtitles(self, plan):
+        """Ecrit le SRT/ASS du plan ; ``None`` s'il n'y a aucun sous-titre."""
+        if not getattr(plan, "subtitle_cues", ()):
+            return None
+        from .filter_graph import write_subtitle_file
+
+        return write_subtitle_file(plan)
 
 
 __all__ = ["PreviewEngine", "PreviewEngineState", "PreviewJob"]

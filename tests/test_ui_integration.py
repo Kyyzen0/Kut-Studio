@@ -2412,18 +2412,64 @@ def test_settings_changes_preserve_master_and_runtime_preferences(
     monkeypatch.setattr("ui.main_window.save_user_settings", saved.append)
     window._master_gain_db = -6.0
     window._master_muted = True
+    window._render_quality = "high"
     window.runtime.set_requested_profile("high")
     window.runtime.set_preview_quality("half")
 
     window._save_master_state()
     assert saved[-1].performance_profile == "high"
     assert saved[-1].preview_quality == "half"
+    assert saved[-1].render_quality == "high"
 
     window.on_user_setting_changed("light")
     assert window._master_gain_db == pytest.approx(-6.0)
     assert window._master_muted is True
+    assert window._render_quality == "high"
     assert saved[-1].master_gain_db == pytest.approx(-6.0)
     assert saved[-1].master_muted is True
+    assert saved[-1].render_quality == "high"
+
+
+def test_audio_edit_enables_undo(qtbot, monkeypatch) -> None:
+    """Un réglage de mixage doit pouvoir s'annuler tout de suite."""
+    window = _build_window(qtbot, monkeypatch)
+    track = next(item for item in window.project.tracks if item.type == "audio")
+    window.on_track_volume_changed(track.id, -3.0)
+
+    assert window.undo_action.isEnabled() is True
+    window.undo_last()
+    restored = next(item for item in window.project.tracks if item.id == track.id)
+    assert restored.volume_db == pytest.approx(0.0)
+
+
+def test_render_plan_uses_session_master(qtbot, monkeypatch) -> None:
+    window = _build_window(qtbot, monkeypatch)
+    window._master_gain_db = -4.0
+    window._master_muted = True
+    plan = window.get_render_plan()
+    assert plan.master_gain_db == pytest.approx(-4.0)
+    assert plan.master_muted is True
+
+
+def test_restored_autosave_stays_unsaved(qtbot, tmp_path, monkeypatch) -> None:
+    """Restaurer un autosave ne doit pas faire croire que le .kut est à jour."""
+    import os
+    import time
+
+    window = _build_window(qtbot, monkeypatch)
+    target = tmp_path / "projet.kut"
+    window.project.name = "original"
+    save_project(window.project, str(target))
+    window.project.name = "recupere"
+    save_project(window.project, str(target) + ".autosave")
+    later = time.time() + 5
+    os.utime(str(target) + ".autosave", (later, later))
+
+    window._load_project_from_path(str(target))
+
+    assert window.project.name == "recupere"
+    assert window.project_dirty is True
+    assert window.history.can_undo is False
 
 
 def test_retranslation_keeps_menu_titles_and_translates_known_menus(

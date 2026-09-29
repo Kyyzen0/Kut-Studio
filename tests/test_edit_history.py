@@ -202,6 +202,19 @@ def test_history_limit_is_100():
 # ---------------------------------------------------------------------------
 
 
+def test_mark_unsaved_keeps_restored_state_dirty_without_undo_step():
+    history = ProjectHistory()
+    project = _make_project()
+    history.reset(project)
+    history.mark_unsaved()
+
+    assert history.is_dirty is True
+    assert history.can_undo is False
+
+    history.mark_saved()
+    assert history.is_dirty is False
+
+
 def test_mark_saved_clears_dirty_flag():
     history = ProjectHistory()
     project = _make_project()
