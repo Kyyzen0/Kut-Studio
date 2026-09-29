@@ -46,10 +46,33 @@ from core.effects_library import (
     builtin_presets,
     filter_presets,
 )
+from core.library_organization import (
+    AssetUsage,
+    LibraryOrganization,
+    collect_missing_assets,
+    is_asset_missing,
+    usage_map,
+)
 from core.project_model import MediaAsset
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName, make_icon
+from ui.library_organization_widgets import (
+    FILTER_ALL,
+    FILTER_AUDIO,
+    FILTER_IMAGE,
+    FILTER_MISSING,
+    FILTER_UNUSED,
+    FILTER_USED,
+    FILTER_VIDEO,
+    AssetContextMenuBuilder,
+    AssetUsageBadge,
+    FilterChipBar,
+    FolderTreeWidget,
+    TagManagerDialog,
+    compute_badges,
+    prompt_for_folder_name,
+)
 from ui.theme import COLORS, label_style
 
 
@@ -78,6 +101,34 @@ class ProjectPanel(QWidget):
     preset_new_clip_requested = Signal(str)  # preset_id
     preset_save_requested = Signal(str, object, object, str)
     preset_delete_requested = Signal(str)  # preset_id
+    # --- Organisation avancée de la bibliothèque (tâche 25) ---
+    # Dossiers
+    folder_create_requested = Signal(str, object, str)
+    # (name, parent_id_or_none, color)
+    folder_rename_requested = Signal(str, str)
+    # (folder_id, new_name)
+    folder_recolor_requested = Signal(str, str)
+    # (folder_id, color)
+    folder_delete_requested = Signal(str)
+    # (folder_id,)
+    # Tags
+    tag_manager_requested = Signal()
+    # Affectations
+    asset_move_to_folder_requested = Signal(str, object)
+    # (asset_id, folder_id_or_none)
+    asset_tag_toggled = Signal(str, str, bool)
+    # (asset_id, tag_id, assign)
+    asset_relink_requested = Signal(str)
+    # (asset_id,)
+    asset_rename_requested = Signal(str, str)
+    # (asset_id, new_name)
+    asset_remove_requested = Signal(str)
+    # (asset_id,)
+    asset_occurrences_requested = Signal(str)
+    # (asset_id,) — MainWindow sélectionne le premier clip dans la timeline
+    library_changed = Signal()
+    # émis après chaque mutation pour permettre au MainWindow de
+    # rafraîchir l'état global (titre sale, autosave, ...).
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -92,6 +143,24 @@ class ProjectPanel(QWidget):
         # La section active est choisie par le rail global ou la barre
         # supérieure. Le panneau ne duplique pas cette navigation.
         self._active_page_index = 0
+        # --- Organisation de la bibliothèque (tâche 25) ---
+        # Le panneau consomme une référence à ``LibraryOrganization``
+        # injectée par le MainWindow via :meth:`set_library`. La
+        # valeur est ``None`` tant que le MainWindow n'a pas eu
+        # l'occasion d'attacher le projet courant.
+        self._organization: LibraryOrganization | None = None
+        # Filtres rapides : un seul actif à la fois.
+        self._active_filter: str = FILTER_ALL
+        # Dossier / portée de navigation courante (sélection dans
+        # l'arborescence). ``None`` signifie « Tous » ou équivalent
+        # synthétique (Racine / Manquants).
+        self._selected_folder_id: str | None = None
+        self._selected_kind: str = FILTER_ALL
+        # Cache local des badges (usage + missing + tags) pour ne pas
+        # recalculer à chaque mutation mineure de la vue.
+        self._badges: dict[str, AssetUsageBadge] = {}
+        # Compteurs par dossier pour l'arborescence.
+        self._folder_counts: dict[str, int] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -184,7 +253,7 @@ class ProjectPanel(QWidget):
         )
         browse_layout.setSpacing(0)
 
-        # -- Arborescence de dossiers (aplatie) --
+        # -- Arborescence de dossiers (tâche 25) --
         folders_sep = QWidget()
         folders_sep.setFixedHeight(1)
         folders_sep.setStyleSheet(f"background: {COLORS['border']};")
@@ -192,32 +261,53 @@ class ProjectPanel(QWidget):
         browse_layout.addWidget(folders_sep)
         browse_layout.addSpacing(Spacing.xs)
 
-        self.folder_list = QListWidget()
-        self.folder_list.setObjectName("folderList")
-        self.folder_list.setFocusPolicy(Qt.NoFocus)
-        self.folder_list.setFixedHeight(70)
-        self.folder_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.folder_list.setStyleSheet(
-            f"QListWidget {{ background: transparent; border: none;"
-            f" outline: 0; }}"
-            f"QListWidget::item {{ color: {COLORS['muted']};"
-            f" padding: 2px 6px; border-radius: 4px;"
-            f" font-size: 11px; }}"
-            f"QListWidget::item:hover {{ color: {COLORS['text']}; }}"
-            f"QListWidget::item:selected {{ color: {COLORS['accent']};"
-            f" background: transparent; }}"
+        # L'arborescence remplace l'ancien QListWidget à 3 entrées.
+        # Elle supporte les dossiers personnalisés (création,
+        # renommage, suppression via menu contextuel) et expose
+        # trois racines synthétiques : Tous, Racine, Manquants.
+        self.folder_tree = FolderTreeWidget()
+        self.folder_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.folder_tree.setMinimumHeight(110)
+        self.folder_tree.folder_selected.connect(self._on_folder_selected)
+        self.folder_tree.folder_create_requested.connect(
+            self._on_folder_create_requested
         )
-        folders = (
-            ("▶  Vidéos du projet", "videos"),
-            ("▶  Audio", "audios"),
-            ("▶  Sous-titres", "subtitles"),
+        self.folder_tree.folder_rename_requested.connect(
+            self.folder_rename_requested.emit
         )
-        for label, folder_id in folders:
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, folder_id)
-            self.folder_list.addItem(item)
-        self.folder_list.itemClicked.connect(self._open_folder)
-        browse_layout.addWidget(self.folder_list)
+        self.folder_tree.folder_delete_requested.connect(
+            self.folder_delete_requested.emit
+        )
+        browse_layout.addWidget(self.folder_tree)
+
+        # --- Filtres rapides (chips) ---
+        self.filter_chips = FilterChipBar()
+        self.filter_chips.filter_changed.connect(self._on_filter_changed)
+        browse_layout.addWidget(self.filter_chips)
+
+        # --- Bouton "Gérer les tags" ---
+        tags_row = QWidget()
+        tags_layout = QHBoxLayout(tags_row)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
+        tags_layout.setSpacing(Spacing.xs)
+        tags_layout.addStretch(1)
+        self.manage_tags_button = QPushButton("Gérer les tags…")
+        self.manage_tags_button.setObjectName("manageTagsButton")
+        self.manage_tags_button.setCursor(Qt.PointingHandCursor)
+        self.manage_tags_button.setFocusPolicy(Qt.NoFocus)
+        self.manage_tags_button.setStyleSheet(
+            f"QPushButton#manageTagsButton {{ background: transparent;"
+            f" color: {COLORS['accent']}; border: 1px solid {COLORS['border']};"
+            f" border-radius: 6px; padding: 4px 10px;"
+            f" font-size: 11px; font-weight: 600; }}"
+            f"QPushButton#manageTagsButton:hover {{"
+            f" background: {COLORS['accent_dark']};"
+            f" border: 1px solid {COLORS['accent']}; }}"
+        )
+        self.manage_tags_button.clicked.connect(self.tag_manager_requested.emit)
+        tags_layout.addWidget(self.manage_tags_button)
+        browse_layout.addWidget(tags_row)
+
         browse_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout.addWidget(browse_content, 0)
 
@@ -336,13 +426,177 @@ class ProjectPanel(QWidget):
         self._refresh_grids()
 
     def _open_folder(self, item: QListWidgetItem) -> None:
-        """Ouvre le contenu associé à un dossier de la bibliothèque."""
+        """Compatibilité ascendante : redirige vers les onglets historiques."""
         folder_sections = {
             "videos": "media",
             "audios": "audio",
             "subtitles": "text",
         }
         self.select_section(folder_sections.get(item.data(Qt.UserRole), "media"))
+
+    # ------------------------------------------------------------------
+    # Organisation de la bibliothèque (tâche 25)
+    # ------------------------------------------------------------------
+
+    def set_library(self, organization: LibraryOrganization | None) -> None:
+        """Attache l'organisation de la bibliothèque au panneau.
+
+        Le MainWindow appelle cette méthode après chaque mutation
+        affectant ``project.library_folders`` / ``library_tags`` /
+        ``library_assignments``. Le panneau reconstruit l'arborescence
+        des dossiers et rafraîchit les badges sans toucher aux
+        grilles de médias.
+        """
+        self._organization = organization
+        has_missing = bool(organization) and bool(
+            collect_missing_assets(organization.project)
+        )
+        self.folder_tree.set_organization(organization, has_missing=has_missing)
+        self._refresh_folder_counts()
+        self._refresh_badges()
+        self._refresh_grids()
+
+    def set_usage_for_assets(self) -> None:
+        """Recalcule les compteurs d'occurrences et les badges.
+
+        À appeler après toute opération modifiant les clips (ajout,
+        suppression, déplacement) : les compteurs ``×3`` sur les
+        cartes et le filtre « Utilisés » en dépendent.
+        """
+        self._refresh_badges()
+        self._refresh_grids()
+
+    def _refresh_badges(self) -> None:
+        if self._organization is None:
+            self._badges = {}
+            return
+        self._badges = compute_badges(
+            self._organization.project, self._organization
+        )
+        # Met à jour les cartes déjà affichées.
+        for bin_widget in (self.bin_videos, self.bin_audios):
+            bin_widget.apply_badges(self._badges)
+
+    def _refresh_folder_counts(self) -> None:
+        if self._organization is None:
+            self._folder_counts = {}
+            self.folder_tree.set_folder_counts({})
+            return
+        project = self._organization.project
+        all_count = len(project.media_assets)
+        root_count = 0
+        missing_count = 0
+        per_folder: dict[str, int] = {}
+        for asset in project.media_assets:
+            assignment = self._organization.get_assignment(asset.id)
+            if assignment.folder_id is None:
+                root_count += 1
+            else:
+                per_folder[assignment.folder_id] = (
+                    per_folder.get(assignment.folder_id, 0) + 1
+                )
+            if is_asset_missing(asset):
+                missing_count += 1
+        counts = {
+            "__all__": all_count,
+            "__root__": root_count,
+            "__missing__": missing_count,
+        }
+        counts.update(per_folder)
+        self._folder_counts = counts
+        self.folder_tree.set_folder_counts(counts)
+
+    def _on_folder_selected(self, folder_id_or_none: object) -> None:
+        """Réagit au changement de sélection dans l'arborescence."""
+        self._selected_folder_id = (
+            str(folder_id_or_none) if folder_id_or_none is not None else None
+        )
+        self._selected_kind = self.folder_tree.selected_kind()
+        self._refresh_grids()
+
+    def _on_filter_changed(self, filter_id: str) -> None:
+        """Réagit au changement de chip de filtre rapide."""
+        self._active_filter = filter_id
+        self._refresh_grids()
+
+    def _on_folder_create_requested(self, parent_id: object) -> None:
+        """Ouvre un dialogue pour créer un dossier."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryNameError,
+        )
+
+        result = prompt_for_folder_name(
+            title="Nouveau dossier",
+            label="Nom du dossier :",
+            parent=self,
+        )
+        if result is None:
+            return
+        name, color = result
+        parent_id_str = str(parent_id) if parent_id is not None else None
+        try:
+            self.folder_create_requested.emit(name, parent_id_str, color)
+        except (LibraryError, LibraryNameError) as exc:
+            self._show_warning(str(exc))
+
+    def show_event_for_asset(self, asset_id: str) -> None:
+        """Slot public : demande à la timeline de sélectionner l'asset."""
+        self.asset_occurrences_requested.emit(asset_id)
+
+    def _show_warning(self, message: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(self, "Bibliothèque", message)
+
+    def selected_asset_usage(self) -> AssetUsageBadge | None:
+        """Retourne le badge du média sélectionné (``None`` si rien)."""
+        asset_id = self.selected_asset_id
+        if asset_id is None:
+            return None
+        return self._badges.get(asset_id)
+
+    def request_asset_context_menu(
+        self,
+        asset_id: str,
+        global_pos,
+    ) -> None:
+        """Construit et affiche le menu contextuel d'un asset."""
+        if self._organization is None:
+            return
+        # Trouve le média et son badge.
+        project = self._organization.project
+        asset = next((a for a in project.media_assets if a.id == asset_id), None)
+        if asset is None:
+            return
+        badge = self._badges.get(asset_id) or AssetUsageBadge(asset_id=asset_id)
+        assignment = self._organization.get_assignment(asset_id)
+        builder = AssetContextMenuBuilder(
+            asset_id=asset_id,
+            asset_name=asset.name,
+            is_missing=badge.is_missing,
+            usage_count=badge.usage_count,
+            folders=self._organization.all_folders(),
+            tags=self._organization.list_tags(),
+            assigned_folder_id=assignment.folder_id,
+            assigned_tag_ids=set(assignment.tag_ids),
+            parent=self,
+        )
+        menu = builder.build(self)
+        # Connecte les signaux du builder à des re-émissions vers le
+        # MainWindow. Les callbacks ne sont pas appelés si l'utilisateur
+        # ferme le menu sans choisir.
+        builder.rename_requested.connect(self.asset_rename_requested.emit)
+        builder.remove_requested.connect(self.asset_remove_requested.emit)
+        builder.relink_requested.connect(self.asset_relink_requested.emit)
+        builder.show_in_timeline_requested.connect(
+            self.asset_occurrences_requested.emit
+        )
+        builder.move_to_folder_requested.connect(
+            self.asset_move_to_folder_requested.emit
+        )
+        builder.tag_toggled.connect(self.asset_tag_toggled.emit)
+        builder.manage_tags_requested.connect(self.tag_manager_requested.emit)
+        menu.exec(global_pos)
 
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
@@ -361,28 +615,108 @@ class ProjectPanel(QWidget):
         self._sync_add_button_for_active_tab()
 
     def _filter_assets(self, assets: list[MediaAsset]) -> list[MediaAsset]:
-        """Applique le filtre de recherche courant."""
-        if not self._search_text:
+        """Applique les filtres actifs (recherche, dossier, type, statut).
+
+        L'ordre d'application est : recherche textuelle → restriction
+        par dossier / portée → filtres rapides (Vidéo, Audio,
+        Utilisés, Manquants). Les filtres sont additifs : un média
+        qui passe le filtre Vidéo ET Utilisés reste visible. Une
+        sélection sur « Manquants » (kind) force la conservation des
+        seuls médias sans fichier source.
+        """
+        filtered = list(assets)
+        if self._search_text:
+            needle = self._search_text
+            filtered = [a for a in filtered if needle in a.name.lower()]
+        # --- Filtre de portée (dossier / Tous / Racine / Manquants) ---
+        filtered = self._apply_scope(filtered)
+        # --- Filtre rapide par type ou statut ---
+        filtered = self._apply_quick_filter(filtered)
+        return filtered
+
+    def _apply_scope(self, assets: list[MediaAsset]) -> list[MediaAsset]:
+        """Filtre ``assets`` selon la sélection dans l'arborescence."""
+        if self._organization is None:
             return assets
-        needle = self._search_text
-        return [a for a in assets if needle in a.name.lower()]
+        kind = self._selected_kind
+        if kind == "all" or self._selected_folder_id is not None and kind == "folder":
+            if kind == "all":
+                return assets
+            # ``kind == "folder"`` : on garde les médias rangés dans
+            # ce dossier (la racine « Racine » est gérée séparément
+            # car ``folder_id is None``).
+            folder_id = self._selected_folder_id
+            return [
+                a for a in assets
+                if self._organization.get_assignment(a.id).folder_id == folder_id
+            ]
+        if kind == "root":
+            return [
+                a for a in assets
+                if self._organization.get_assignment(a.id).folder_id is None
+            ]
+        if kind == "missing":
+            return [a for a in assets if is_asset_missing(a)]
+        return assets
+
+    def _apply_quick_filter(self, assets: list[MediaAsset]) -> list[MediaAsset]:
+        """Applique le chip de filtre rapide sélectionné."""
+        from core.library_organization import (
+            filter_assets_by_type,
+            filter_assets_missing,
+            filter_assets_unused,
+            filter_assets_used,
+        )
+
+        f = self._active_filter
+        if f == FILTER_VIDEO:
+            return filter_assets_by_type(assets, "video")
+        if f == FILTER_AUDIO:
+            return filter_assets_by_type(assets, "audio")
+        if f == FILTER_IMAGE:
+            return filter_assets_by_type(assets, "image")
+        if f == FILTER_USED:
+            return filter_assets_used(assets, self._badges_to_usage())
+        if f == FILTER_UNUSED:
+            return filter_assets_unused(assets, self._badges_to_usage())
+        if f == FILTER_MISSING:
+            return filter_assets_missing(assets)
+        return assets
+
+    def _badges_to_usage(self) -> dict[str, AssetUsage]:
+        """Convertit le mapping de badges en mapping d'usage."""
+        result: dict[str, AssetUsage] = {}
+        for asset_id, badge in self._badges.items():
+            usage = AssetUsage(asset_id=asset_id)
+            usage.clip_count = badge.usage_count
+            result[asset_id] = usage
+        return result
 
     def _refresh_grids(self) -> None:
-        """Réaffiche les assets visibles selon le scope et la recherche."""
-        # On garde la sélection courante si possible.
+        """Réaffiche les assets visibles selon le scope et la recherche.
+
+        Le filtrage s'applique sur la liste de référence du projet
+        (et non sur le contenu actuel des bins) : cela évite qu'un
+        filtre actif efface définitivement un média des bins après
+        un changement de portée.
+        """
         selected = self.selected_asset_id
-        videos = self.bin_videos.all_assets()
-        audios = self.bin_audios.all_assets()
+        if self._organization is None:
+            videos = self.bin_videos.all_assets()
+            audios = self.bin_audios.all_assets()
+        else:
+            all_assets = list(self._organization.project.media_assets)
+            videos = [a for a in all_assets if a.media_type == "video"]
+            audios = [a for a in all_assets if a.media_type == "audio"]
         if self._active_scope == "favorites":
-            # Pour l'instant, le projet ne gère pas de favoris : on
-            # montre un placeholder honnête plutôt que de simuler des
-            # données.
             self.bin_videos.set_assets([])
             self.bin_audios.set_assets([])
             self.media_count.setText("Aucun favori")
             return
         self.bin_videos.set_assets(self._filter_assets(videos))
+        self.bin_videos.apply_badges(self._badges)
         self.bin_audios.set_assets(self._filter_assets(audios))
+        self.bin_audios.apply_badges(self._badges)
         self._refresh_count()
         if selected:
             for bin_widget in (self.bin_videos, self.bin_audios):
@@ -424,10 +758,16 @@ class ProjectPanel(QWidget):
     def set_assets(self, assets: list[MediaAsset]) -> None:
         videos = [a for a in assets if a.media_type == "video"]
         audios = [a for a in assets if a.media_type == "audio"]
+        # On remplit d'abord les bins avec la liste *brute* (tous
+        # les assets), puis on ré-applique les filtres via
+        # :meth:`_refresh_grids`. Cette séparation évite qu'un filtre
+        # actif écrase la liste de référence pendant la mise à jour.
         self._populate_bin(self.bin_videos, videos)
         self._populate_bin(self.bin_audios, audios)
         self._refresh_count()
         self._sync_add_button_for_active_tab()
+        if self._organization is not None:
+            self._refresh_grids()
 
     def set_subtitle_clips(self, clips: list) -> None:
         sorted_clips = sorted(clips, key=lambda c: c.timeline_start)
@@ -539,10 +879,22 @@ class ProjectPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _make_grid_bin(self) -> "AssetBin":
-        return AssetBin(
+        bin_widget = AssetBin(
             on_item_clicked=lambda asset_id: self.asset_selected.emit(asset_id),
             on_selection_changed=lambda asset_id: self._on_bin_selection_changed(asset_id),
         )
+        bin_widget.asset_context_menu_requested.connect(
+            self._on_asset_context_menu_requested
+        )
+        return bin_widget
+
+    def _on_asset_context_menu_requested(
+        self,
+        asset_id: str,
+        global_pos,
+    ) -> None:
+        """Délègue au panneau principal qui connaît ``LibraryOrganization``."""
+        self.request_asset_context_menu(asset_id, global_pos)
 
     def _make_bin(self) -> "AssetBin":
         # Conservé pour compatibilité ascendante : la grille utilise
@@ -622,16 +974,24 @@ class AssetBin(QWidget):
 
     - une miniature générée à partir de l'icône du type de média ;
     - le nom court ;
-    - la durée formatée.
+    - la durée formatée ;
+    - un badge « ×N » (occurrences sur la timeline) et un point rouge
+      pour les fichiers manquants (tâche 25) ;
+    - un clic droit ouvre un menu contextuel (renommer, déplacer,
+      taguer, relier, supprimer).
 
     La sélection est marquée par un filet turquoise fin et un fond
     vert foncé subtil — fidèle à la direction artistique premium.
 
     L'implémentation repose sur un ``QListWidget`` en mode ``ListMode``
     avec un délégué custom qui peint chaque ligne comme une carte
-    horizontale (poster + nom + durée). C'est plus simple et plus
-    prévisible que ``IconMode``.
+    horizontale (poster + nom + durée + badges). C'est plus simple et
+    plus prévisible que ``IconMode``.
     """
+
+    # Signal émis quand l'utilisateur fait un clic droit sur une carte.
+    asset_context_menu_requested = Signal(str, object)
+    # (asset_id, global_pos)
 
     # Délégué custom : dessine une carte horizontale par ligne.
     class _CardDelegate(QStyledItemDelegate):
@@ -704,11 +1064,86 @@ class AssetBin(QWidget):
             painter.drawText(duration_rect, Qt.AlignVCenter | Qt.AlignLeft,
                              str(duration))
 
+            # --- Badges (tâche 25) ------------------------------------
+            # Lecture des données portées par l'item : badge usage +
+            # drapeau manquant + couleurs de tags.
+            badge = index.data(Qt.UserRole + 3)
+            if badge is not None:
+                self._paint_badges(painter, rect, badge)
+
             painter.restore()
+
+        def _paint_badges(self, painter, rect, badge) -> None:
+            """Dessine les badges (compteur d'usage, manquant, tags)."""
+            # Compteur d'occurrences (« ×N ») à droite de la durée.
+            usage_count = getattr(badge, "usage_count", 0)
+            is_missing = getattr(badge, "is_missing", False)
+            tag_colors = list(getattr(badge, "tag_colors", []) or [])
+            right_edge = rect.right() - self.PADDING
+            font = painter.font()
+            font.setPointSize(9)
+            font.setBold(True)
+            painter.setFont(font)
+            # Badge « ×N » : collé à droite. On n'affiche rien si 0
+            # pour ne pas surcharger la carte.
+            if usage_count > 0:
+                label = f"×{usage_count}"
+                fm = painter.fontMetrics()
+                width = fm.horizontalAdvance(label) + 10
+                height = 16
+                badge_rect = QRect(
+                    right_edge - width,
+                    rect.top() + (rect.height() - height) // 2,
+                    width,
+                    height,
+                )
+                right_edge = badge_rect.left() - 4
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(COLORS["accent"]))
+                painter.drawRoundedRect(badge_rect, 8, 8)
+                painter.setPen(QColor("#ffffff"))
+                painter.drawText(badge_rect, Qt.AlignCenter, label)
+            # Pastilles de tags : 6 px de diamètre, à droite du badge
+            # d'usage. On n'en affiche que 3 maximum.
+            if tag_colors:
+                chip_size = 8
+                spacing = 4
+                chips_total = min(3, len(tag_colors))
+                chip_row = QRect(
+                    0,
+                    rect.top() + (rect.height() - chip_size) // 2,
+                    chips_total * (chip_size + spacing) - spacing,
+                    chip_size,
+                )
+                chip_row.moveRight(right_edge)
+                painter.setPen(Qt.NoPen)
+                x = chip_row.left()
+                for color in tag_colors[:chips_total]:
+                    painter.setBrush(QColor(color))
+                    painter.drawEllipse(x, chip_row.top(), chip_size, chip_size)
+                    x += chip_size + spacing
+            # Point d'avertissement « manquant » : à droite de la
+            # ligne, plus visible que les pastilles.
+            if is_missing:
+                warn_size = 10
+                warn_rect = QRect(
+                    0,
+                    rect.top() + (rect.height() - warn_size) // 2,
+                    warn_size,
+                    warn_size,
+                )
+                warn_rect.moveRight(rect.right() - self.PADDING)
+                painter.setBrush(QColor(COLORS["danger"]))
+                painter.setPen(QPen(QColor("#ffffff"), 1))
+                painter.drawEllipse(warn_rect)
 
     def __init__(self, on_item_clicked, on_selection_changed, parent=None) -> None:
         super().__init__(parent)
         self._assets: dict[str, MediaAsset] = {}
+        # Mapping ``asset_id -> AssetUsageBadge`` consommé par le
+        # délégué pour peindre les badges (compteur d'usage, tags,
+        # fichier manquant). Réinjecté via ``apply_badges``.
+        self._badges: dict[str, AssetUsageBadge] = {}
         # Sans cette politique, le QStackedWidget plafonne la page à sa
         # taille naturelle et la grille n'affiche qu'une vignette.
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -736,6 +1171,9 @@ class AssetBin(QWidget):
         )
         self._list.mousePressEvent = self._wrap_mouse_press(self._list.mousePressEvent)
         self._list.mouseMoveEvent = self._wrap_mouse_move(self._list.mouseMoveEvent)
+        # Clic droit : on l'attrape pour ouvrir le menu contextuel.
+        self._list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._list.currentRowChanged.connect(
             lambda row: on_selection_changed(
                 self._list.item(row).data(Qt.UserRole)
@@ -751,12 +1189,7 @@ class AssetBin(QWidget):
 
     def add_asset(self, asset: MediaAsset) -> None:
         self._assets[asset.id] = asset
-        item = QListWidgetItem()
-        item.setData(Qt.UserRole, asset.id)
-        item.setData(Qt.UserRole + 1, asset)
-        item.setData(Qt.UserRole + 2, _format_duration(asset.duration))
-        item.setData(Qt.DisplayRole, asset.name)
-        item.setToolTip(f"{asset.name}\n{_format_duration(asset.duration)}")
+        item = self._make_item(asset)
         self._list.addItem(item)
 
     def set_assets(self, assets: list[MediaAsset]) -> None:
@@ -764,13 +1197,46 @@ class AssetBin(QWidget):
         self._list.clear()
         self._assets = {a.id: a for a in assets}
         for asset in assets:
-            item = QListWidgetItem()
-            item.setData(Qt.UserRole, asset.id)
-            item.setData(Qt.UserRole + 1, asset)
-            item.setData(Qt.UserRole + 2, _format_duration(asset.duration))
-            item.setData(Qt.DisplayRole, asset.name)
-            item.setToolTip(f"{asset.name}\n{_format_duration(asset.duration)}")
-            self._list.addItem(item)
+            self._list.addItem(self._make_item(asset))
+
+    def _make_item(self, asset: MediaAsset) -> QListWidgetItem:
+        item = QListWidgetItem()
+        item.setData(Qt.UserRole, asset.id)
+        item.setData(Qt.UserRole + 1, asset)
+        item.setData(Qt.UserRole + 2, _format_duration(asset.duration))
+        item.setData(Qt.UserRole + 3, self._badges.get(asset.id))
+        item.setData(Qt.DisplayRole, asset.name)
+        item.setToolTip(self._make_tooltip(asset))
+        return item
+
+    def _make_tooltip(self, asset: MediaAsset) -> str:
+        """Tooltip enrichi : nom + durée + statut manquant."""
+        base = f"{asset.name}\n{_format_duration(asset.duration)}"
+        badge = self._badges.get(asset.id)
+        if badge is None:
+            return base
+        extras: list[str] = []
+        if badge.usage_count > 0:
+            extras.append(f"Utilisé {badge.usage_count}× sur la timeline")
+        if badge.is_missing:
+            extras.append("⚠ Fichier source introuvable — utilisez Relier")
+        if extras:
+            base += "\n" + "\n".join(extras)
+        return base
+
+    def apply_badges(self, badges: dict[str, AssetUsageBadge]) -> None:
+        """Réinjecte les badges et repeint les cartes (tâche 25)."""
+        self._badges = dict(badges)
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            asset_id = item.data(Qt.UserRole)
+            item.setData(Qt.UserRole + 3, self._badges.get(asset_id))
+            asset = item.data(Qt.UserRole + 1)
+            if asset is not None:
+                item.setToolTip(self._make_tooltip(asset))
+        # ``viewport().update()`` force le délégué à repeindre même
+        # sans changement de géométrie.
+        self._list.viewport().update()
 
     def all_assets(self) -> list[MediaAsset]:
         """Retourne tous les assets connus (sans filtre)."""
@@ -798,6 +1264,20 @@ class AssetBin(QWidget):
         if not (0 <= row < self._list.count()):
             return None
         return self._list.item(row).data(Qt.UserRole)
+
+    # ------------------------------------------------------------------
+    # Menu contextuel
+    # ------------------------------------------------------------------
+
+    def _on_context_menu(self, position) -> None:
+        item = self._list.itemAt(position)
+        if item is None:
+            return
+        asset_id = item.data(Qt.UserRole)
+        if asset_id is None:
+            return
+        global_pos = self._list.viewport().mapToGlobal(position)
+        self.asset_context_menu_requested.emit(asset_id, global_pos)
 
     # ------------------------------------------------------------------
     # Drag & drop

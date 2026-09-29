@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction, QCursor
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -194,6 +195,40 @@ class MainWindow(QMainWindow):
         self.project_panel.export_subtitles_requested.connect(self.export_subtitles_via_dialog)
         self.project_panel.subtitle_selected.connect(self.on_subtitle_clip_selected)
         self.project_panel.add_transition_requested.connect(self.add_transition_from_library)
+        # --- Organisation avancée de la bibliothèque (tâche 25) ---
+        # Dossiers
+        self.project_panel.folder_create_requested.connect(
+            self._on_folder_create_requested
+        )
+        self.project_panel.folder_rename_requested.connect(
+            self._on_folder_rename_requested
+        )
+        self.project_panel.folder_delete_requested.connect(
+            self._on_folder_delete_requested
+        )
+        # Tags
+        self.project_panel.tag_manager_requested.connect(
+            self._on_tag_manager_requested
+        )
+        # Affectations
+        self.project_panel.asset_move_to_folder_requested.connect(
+            self._on_asset_move_to_folder
+        )
+        self.project_panel.asset_tag_toggled.connect(
+            self._on_asset_tag_toggled
+        )
+        self.project_panel.asset_relink_requested.connect(
+            self._on_asset_relink_requested
+        )
+        self.project_panel.asset_rename_requested.connect(
+            self._on_asset_rename_requested
+        )
+        self.project_panel.asset_remove_requested.connect(
+            self._on_asset_remove_requested
+        )
+        self.project_panel.asset_occurrences_requested.connect(
+            self._on_asset_occurrences_requested
+        )
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
         self.timeline_panel = TimelinePanel(self.project)
         # La timeline peint ses fonds et ses clips à la main : elle doit
@@ -2576,6 +2611,277 @@ class MainWindow(QMainWindow):
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     # ------------------------------------------------------------------
+    # Organisation avancée de la bibliothèque (tâche 25)
+    # ------------------------------------------------------------------
+
+    def _on_folder_create_requested(
+        self,
+        name: str,
+        parent_id: object,
+        color: str,
+    ) -> None:
+        """Crée un dossier (à la racine ou sous un parent)."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryNameError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        try:
+            parent_id_str = (
+                str(parent_id) if parent_id not in (None, "") else None
+            )
+            folder = org.create_folder(
+                name,
+                parent_id=parent_id_str,
+                color=color or "",
+            )
+        except (LibraryError, LibraryNameError) as exc:
+            QMessageBox.warning(self, "Dossier", str(exc))
+            return
+        self._record_history(
+            f"Créer le dossier « {folder.name} »"
+        )
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_folder_rename_requested(
+        self,
+        folder_id: str,
+        new_name: str,
+    ) -> None:
+        """Renomme un dossier (déclenché via menu contextuel)."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryNameError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        try:
+            folder = org.rename_folder(folder_id, new_name)
+        except (LibraryError, LibraryNameError) as exc:
+            QMessageBox.warning(self, "Dossier", str(exc))
+            return
+        self._record_history(
+            f"Renommer le dossier en « {folder.name} »"
+        )
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_folder_delete_requested(self, folder_id: str) -> None:
+        """Supprime un dossier et rattache ses médias à la racine."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        folder = org.get_folder(folder_id)
+        if folder is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Supprimer le dossier",
+            f"Supprimer le dossier « {folder.name} » et ramener ses "
+            "médias à la racine ?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            org.delete_folder(folder_id, cascade=True)
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Dossier", str(exc))
+            return
+        self._record_history(
+            f"Supprimer le dossier « {folder.name} »"
+        )
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_tag_manager_requested(self) -> None:
+        """Ouvre le dialogue de gestion des tags."""
+        from core.library_organization import LibraryOrganization
+        from ui.library_organization_widgets import TagManagerDialog
+
+        org = LibraryOrganization(self.project)
+        dialog = TagManagerDialog(org, parent=self)
+        result = dialog.exec()
+        if result == QDialog.Accepted:
+            # Le dialogue n'utilise pas Accept ; tout est appliqué en
+            # place. On enregistre l'historique dès qu'il y a au moins
+            # une modification.
+            self._record_history("Modifier les tags de la bibliothèque")
+            self._refresh_project_library()
+            self._mark_dirty()
+        # Même sur rejet, le dialogue peut avoir été modifié : on
+        # rafraîchit pour rester cohérent avec le projet.
+        self._refresh_project_library()
+
+    def _on_asset_move_to_folder(
+        self,
+        asset_id: str,
+        folder_id: object,
+    ) -> None:
+        """Range un média dans un dossier (ou remet à la racine)."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        folder_id_str = str(folder_id) if folder_id not in (None, "") else None
+        try:
+            org.move_asset(asset_id, folder_id_str)
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Bibliothèque", str(exc))
+            return
+        # On n'enregistre l'historique que si le déplacement est
+        # effectif (le service est idempotent).
+        self._record_history(
+            "Déplacer le média dans un dossier"
+        )
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_asset_tag_toggled(
+        self,
+        asset_id: str,
+        tag_id: str,
+        assign: bool,
+    ) -> None:
+        """Ajoute ou retire un tag sur un média."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        try:
+            if assign:
+                org.add_tag_to_asset(asset_id, tag_id)
+                self._record_history("Tagger un média")
+            else:
+                org.remove_tag_from_asset(asset_id, tag_id)
+                self._record_history("Retirer un tag d'un média")
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Bibliothèque", str(exc))
+            return
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_asset_relink_requested(self, asset_id: str) -> None:
+        """Ouvre un dialogue de sélection de fichier pour relier."""
+        from core.library_organization import LibraryError
+
+        asset = next(
+            (a for a in self.project.media_assets if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            return
+        start_path = (
+            os.path.dirname(asset.path) if asset.path
+            else os.path.expanduser("~")
+        )
+        if not os.path.isdir(start_path):
+            start_path = os.path.expanduser("~")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Relier le média…",
+            start_path,
+            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg *.png *.jpg *.jpeg)",
+        )
+        if not path:
+            return
+        from core.library_organization import LibraryOrganization
+        org = LibraryOrganization(self.project)
+        try:
+            org.relink_asset(asset_id, path)
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Bibliothèque", str(exc))
+            return
+        self._record_history("Relier le fichier d'un média")
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_asset_rename_requested(
+        self,
+        asset_id: str,
+        new_name: str,
+    ) -> None:
+        """Renomme un média (déclenché via menu contextuel)."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryNameError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        try:
+            org.rename_asset(asset_id, new_name)
+        except (LibraryError, LibraryNameError) as exc:
+            QMessageBox.warning(self, "Bibliothèque", str(exc))
+            return
+        self._record_history("Renommer un média")
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_asset_remove_requested(self, asset_id: str) -> None:
+        """Supprime un média du projet (les clips restent par défaut)."""
+        from core.library_organization import (
+            LibraryError,
+            LibraryOrganization,
+        )
+
+        org = LibraryOrganization(self.project)
+        asset = next(
+            (a for a in self.project.media_assets if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Supprimer le média",
+            f"Supprimer « {asset.name} » de la bibliothèque ?\n"
+            "Les clips qui l'utilisent resteront sur la timeline "
+            "(ils pointeront vers un média absent).",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            org.remove_asset(asset_id, keep_orphan_clips=True)
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Bibliothèque", str(exc))
+            return
+        self._record_history("Supprimer un média")
+        self._refresh_project_library()
+        self._mark_dirty()
+
+    def _on_asset_occurrences_requested(self, asset_id: str) -> None:
+        """Sélectionne la première occurrence du média dans la timeline."""
+        from core.library_organization import compute_usage
+        usage = compute_usage(self.project, asset_id)
+        if not usage.clip_ids:
+            return
+        clip_id = usage.clip_ids[0]
+        # On cherche la piste du clip.
+        for track in self.project.tracks:
+            for clip in track.clips:
+                if clip.id == clip_id:
+                    self.playhead_seconds = clip.timeline_start
+                    self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
+                    self.timeline_panel.select_clip(clip_id)
+                    self._sync_preview_to_timeline()
+                    return
+
+    # ------------------------------------------------------------------
     # Import de médias (vidéo et audio)
     # ------------------------------------------------------------------
 
@@ -2732,7 +3038,9 @@ class MainWindow(QMainWindow):
         """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``.
 
         Met également à jour la bibliothèque de sous-titres de l'onglet
-        Texte avec les clips activés des pistes ``subtitle``.
+        Texte avec les clips activés des pistes ``subtitle``, l'organisation
+        de la bibliothèque (dossiers / tags / affectations) et les badges
+        d'utilisation des médias (tâche 25).
         """
         self.project_panel.set_assets(list(self.project.media_assets))
         subtitle_clips = [
@@ -2743,6 +3051,19 @@ class MainWindow(QMainWindow):
             if clip.enabled and (clip.text or "").strip()
         ]
         self.project_panel.set_subtitle_clips(subtitle_clips)
+        # Organisation de la bibliothèque (tâche 25) : on attache le
+        # service au panneau et on rafraîchit les badges d'usage.
+        if not hasattr(self, "_library_organization") or (
+            self._library_organization is not None
+            and self._library_organization.project is not self.project
+        ):
+            from core.library_organization import LibraryOrganization
+            self._library_organization = LibraryOrganization(self.project)
+        else:
+            from core.library_organization import LibraryOrganization
+            self._library_organization = LibraryOrganization(self.project)
+        self.project_panel.set_library(self._library_organization)
+        self.project_panel.set_usage_for_assets()
         # La bibliothèque d'effets suit la sélection courante.
         self._sync_effects_library_context()
 

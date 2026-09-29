@@ -478,6 +478,15 @@ class Project:
         media_assets: Liste des médias importés dans le projet.
         tracks: Liste des pistes composant la timeline.
         markers: Repères de la règle, triés par l'éditeur à l'insertion.
+        library_folders: Dossiers personnalisés de la bibliothèque
+            (tâche 25). Vide pour un projet créé avant la v11.
+        library_tags: Tags (couleur / étiquette) de la bibliothèque
+            (tâche 25). Vide pour un projet créé avant la v11.
+        library_assignments: Position et tags de chaque média, indexés
+            par ``asset_id``. Une affectation est créée à la demande
+            par :class:`~core.library_organization.LibraryOrganization`
+            — les médias non mentionnés sont implicitement à la racine
+            sans tag.
     """
 
     name: str
@@ -488,6 +497,10 @@ class Project:
     tracks: list[Track] = field(default_factory=list)
     markers: list[Marker] = field(default_factory=list)
     transitions: list["Transition"] = field(default_factory=list)
+    # --- Organisation de la bibliothèque (tâche 25, ajout v11) ----
+    library_folders: list = field(default_factory=list)
+    library_tags: list = field(default_factory=list)
+    library_assignments: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Vérifie que les paramètres de rendu du projet sont cohérents."""
@@ -497,3 +510,11 @@ class Project:
             raise ValueError("La hauteur du projet doit être strictement positive.")
         if self.fps <= 0.0:
             raise ValueError("Le fps du projet doit être strictement positif.")
+        # Les trois champs d'organisation acceptent ``None`` (rétrocompat
+        # chargement depuis ancien snapshot) en retombant sur du vide.
+        if self.library_folders is None:
+            self.library_folders = []
+        if self.library_tags is None:
+            self.library_tags = []
+        if self.library_assignments is None:
+            self.library_assignments = {}

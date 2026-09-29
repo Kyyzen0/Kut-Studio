@@ -27,11 +27,13 @@ La version 7 ajoute le remappage temporel (``speed``, ``reverse``,
 ``freeze_mode``...). La version 9 ajoute les effets visuels non
 destructifs portés par chaque clip vidéo (``effects``). La version 10
 ajoute le style non destructif des sous-titres (``text_style`` par
-clip).
+clip). La version 11 ajoute l'organisation de la bibliothèque :
+``library_folders``, ``library_tags`` et ``library_assignments`` (par
+média : ``folder_id`` et liste de ``tag_ids``).
 Les versions précédentes restent lisibles : ces champs prennent leurs
-valeurs par défaut (liste d'effets vide ou style standard pour
-``text_style``). La version 4 avait ajouté
-``locked`` / ``visible`` / ``muted``.
+valeurs par défaut (liste d'effets vide, style standard pour
+``text_style``, organisation de bibliothèque vide). La version 4
+avait ajouté ``locked`` / ``visible`` / ``muted``.
 
 Une entrée d'effet invalide ou inconnue est ignorée sans empêcher
 l'ouverture du projet : seule l'entrée fautive est écartée, les autres
@@ -57,6 +59,9 @@ from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
+# ``library_organization`` est importé paresseusement dans les helpers
+# de sérialisation pour éviter une boucle d'imports (les modèles du
+# module ``project_model`` n'en dépendent pas).
 
 
 # ---------------------------------------------------------------------------
@@ -66,10 +71,10 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 10
+CURRENT_VERSION = 11
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
 Les versions 1 à 8 restent prises en charge ; les champs spécifiques
@@ -85,6 +90,9 @@ _VERSION_ADDED_TIME_REMAPPING: int = 7
 
 _VERSION_ADDED_EFFECTS: int = 9
 """Première version sérialisant les effets visuels d'un clip vidéo."""
+
+_VERSION_ADDED_LIBRARY_ORGANIZATION: int = 11
+"""Première version sérialisant les dossiers, tags et affectations de la bibliothèque."""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -249,6 +257,22 @@ def _build_payload(project: Project) -> dict[str, Any]:
                 }
                 for transition in project.transitions
             ],
+            # --- Organisation de la bibliothèque (tâche 25, v11) ---
+            # On sérialise uniquement les champs utiles à la
+            # reconstruction. Les listes vides restent sérialisées
+            # (``[]``) pour rendre explicite l'intention « pas de
+            # dossier / tag ». Les affectations manquantes sont
+            # implicitement à la racine (``folder_id=None``).
+            "library_folders": [
+                _folder_to_dict(folder) for folder in project.library_folders
+            ],
+            "library_tags": [
+                _tag_to_dict(tag) for tag in project.library_tags
+            ],
+            "library_assignments": [
+                _assignment_to_dict(assignment)
+                for assignment in project.library_assignments.values()
+            ],
             "tracks": [
                 {
                     "id": track.id,
@@ -327,6 +351,11 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
     conservé) plutôt que de perdre silencieusement du contenu. Seuls
     les sous-objets décoratifs (transitions, effets) sont ignorés à
     l'unité, sans bloquer le fichier.
+
+    L'organisation de la bibliothèque (dossiers, tags, affectations)
+    ajoutée en v11 est reconstruite après la création du ``Project`` :
+    un fichier plus ancien ne porte simplement pas ces clés et on
+    retombe sur des collections vides (rétrocompatibilité stricte).
     """
     assets: list[MediaAsset] = []
     raw_assets = data.get("media_assets", [])
@@ -365,6 +394,22 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
         **{key: value for key, value in data.items() if key in _PROJECT_FIELDS},
     )
     project.transitions = _deserialize_transitions(data.get("transitions", []), project)
+    # Organisation de la bibliothèque (v11+). Une version antérieure
+    # ne porte simplement pas ces clés : on conserve des collections
+    # vides, ce qui correspond au comportement historique où tout
+    # était implicitement à la racine sans tag.
+    project.library_folders = _deserialize_library_folders(
+        data.get("library_folders", [])
+    )
+    project.library_tags = _deserialize_library_tags(
+        data.get("library_tags", [])
+    )
+    project.library_assignments = _deserialize_library_assignments(
+        data.get("library_assignments", []),
+        valid_asset_ids={asset.id for asset in project.media_assets},
+        valid_folder_ids={folder.id for folder in project.library_folders},
+        valid_tag_ids={tag.id for tag in project.library_tags},
+    )
     return project
 
 
@@ -589,6 +634,222 @@ def _deserialize_clip_effects(raw: Any) -> list[ClipEffect]:
         seen_ids.add(effect.id)
         effects.append(effect)
     return effects
+
+
+# ---------------------------------------------------------------------------
+# Organisation de la bibliothèque (tâche 25, v11)
+# ---------------------------------------------------------------------------
+
+
+def _folder_to_dict(folder) -> dict[str, Any]:
+    """Sérialise un :class:`LibraryFolder` en dict JSON."""
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "parent_id": folder.parent_id,
+        "color": folder.color,
+    }
+
+
+def _tag_to_dict(tag) -> dict[str, Any]:
+    """Sérialise un :class:`LibraryTag` en dict JSON."""
+    return {
+        "id": tag.id,
+        "name": tag.name,
+        "color": tag.color,
+    }
+
+
+def _assignment_to_dict(assignment) -> dict[str, Any]:
+    """Sérialise une :class:`AssetAssignment` en dict JSON."""
+    return {
+        "asset_id": assignment.asset_id,
+        "folder_id": assignment.folder_id,
+        "tag_ids": list(assignment.tag_ids),
+    }
+
+
+def _deserialize_library_folders(raw: Any) -> list:
+    """Reconstruit les dossiers de bibliothèque, en ignorant les invalides.
+
+    Une entrée invalide (dict manquant, identifiant dupliqué, couleur
+    mal formée, cycle) n'est pas traitée comme fatale : on l'ignore
+    et on conserve les dossiers sains, comme on le fait déjà pour
+    les transitions / effets. Les dossiers invalides qui créeraient
+    une boucle sont purgés par construction de l'arbre final.
+    """
+    from .library_organization import (
+        LibraryCycleError,
+        LibraryError,
+        LibraryFolder,
+        LibraryOrganization,
+    )
+
+    if not isinstance(raw, list):
+        return []
+
+    folders: list[LibraryFolder] = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        folder_id = item.get("id")
+        name = item.get("name", "")
+        parent_id = item.get("parent_id")
+        color = item.get("color", "") or ""
+        try:
+            folder = LibraryFolder(
+                id=str(folder_id or ""),
+                name=str(name or ""),
+                parent_id=(str(parent_id) if parent_id is not None else None),
+                color=str(color),
+            )
+        except LibraryError:
+            continue
+        if folder.id in seen_ids:
+            # Doublon : on saute pour éviter l'ambiguïté.
+            continue
+        seen_ids.add(folder.id)
+        folders.append(folder)
+
+    # Seconde passe : on retire les dossiers dont le parent n'existe
+    # pas ou qui créeraient un cycle. Le filtre s'applique tant qu'on
+    # trouve une réduction (un dossier racine fantôme peut faire tomber
+    # ses descendants).
+    parent_map = {f.id: f.parent_id for f in folders}
+    changed = True
+    while changed:
+        changed = False
+        kept: list[LibraryFolder] = []
+        kept_ids: set[str] = set()
+        for folder in folders:
+            parent = parent_map.get(folder.id)
+            if parent is None:
+                kept.append(folder)
+                kept_ids.add(folder.id)
+                continue
+            if parent not in kept_ids:
+                # Parent pas encore gardé : on attend la prochaine passe.
+                kept.append(folder)
+                continue
+            # Vérifier qu'on n'introduit pas un cycle en se basant
+            # sur les parents *déjà gardés*.
+            walker: str | None = parent
+            cycle = False
+            visited_local: set[str] = set()
+            while walker is not None and walker not in visited_local:
+                visited_local.add(walker)
+                if walker == folder.id:
+                    cycle = True
+                    break
+                walker = parent_map.get(walker)
+            if cycle:
+                continue
+            kept.append(folder)
+            kept_ids.add(folder.id)
+        if len(kept) != len(folders):
+            changed = True
+        folders = kept
+        parent_map = {f.id: f.parent_id for f in folders}
+
+    # Dernier filet : un parent toujours manquant est rattaché à la
+    # racine (organisation logique sans crash). On fait cela *après*
+    # la purge pour ne pas recréer de cycle.
+    valid_ids = {f.id for f in folders}
+    for folder in folders:
+        if folder.parent_id is not None and folder.parent_id not in valid_ids:
+            folder.parent_id = None
+
+    # Tri déterministe : les dossiers sont stockés tels quels ; c'est
+    # :meth:`LibraryOrganization.list_folders` qui se charge du tri
+    # à l'affichage.
+    return folders
+
+
+def _deserialize_library_tags(raw: Any) -> list:
+    """Reconstruit les tags en ignorant les entrées invalides / doublons."""
+    from .library_organization import LibraryError, LibraryTag
+
+    if not isinstance(raw, list):
+        return []
+    tags: list[LibraryTag] = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        tag_id = item.get("id")
+        name = item.get("name", "")
+        color = item.get("color") or "#3498db"
+        try:
+            tag = LibraryTag(
+                id=str(tag_id or ""),
+                name=str(name or ""),
+                color=str(color),
+            )
+        except LibraryError:
+            continue
+        if tag.id in seen_ids:
+            continue
+        seen_ids.add(tag.id)
+        tags.append(tag)
+    return tags
+
+
+def _deserialize_library_assignments(
+    raw: Any,
+    *,
+    valid_asset_ids: set[str],
+    valid_folder_ids: set[str],
+    valid_tag_ids: set[str],
+) -> dict[str, "AssetAssignment"]:
+    """Reconstruit les affectations média→dossier/tags.
+
+    On *ignore* une affectation dont l'asset_id n'existe pas dans le
+    projet (un média a été supprimé entre deux versions, par exemple),
+    dont le dossier ou un tag a disparu (purge ci-dessus) ou qui
+    n'est pas une liste JSON valide. Les affectations valides sont
+    dédoublonnées par ``asset_id`` : la première occurrence gagne.
+    """
+    from .library_organization import AssetAssignment
+
+    if not isinstance(raw, list):
+        return {}
+    assignments: dict[str, AssetAssignment] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        asset_id = item.get("asset_id")
+        if not asset_id or asset_id not in valid_asset_ids:
+            continue
+        if asset_id in assignments:
+            # Doublon : on garde la première affectation pour rester
+            # déterministe.
+            continue
+        folder_id = item.get("folder_id")
+        if folder_id is not None and folder_id not in valid_folder_ids:
+            folder_id = None
+        raw_tag_ids = item.get("tag_ids", []) or []
+        if not isinstance(raw_tag_ids, list):
+            raw_tag_ids = []
+        # On dédoublonne les tag_ids et on retire les tags invalides,
+        # en conservant l'ordre de première apparition.
+        seen_tags: set[str] = set()
+        tag_ids: list[str] = []
+        for tid in raw_tag_ids:
+            if not isinstance(tid, str):
+                continue
+            if tid not in valid_tag_ids:
+                continue
+            if tid in seen_tags:
+                continue
+            seen_tags.add(tid)
+            tag_ids.append(tid)
+        assignments[str(asset_id)] = AssetAssignment(
+            asset_id=str(asset_id),
+            folder_id=folder_id if folder_id is None else str(folder_id),
+            tag_ids=tag_ids,
+        )
+    return assignments
 
 
 # ---------------------------------------------------------------------------

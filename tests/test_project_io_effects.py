@@ -122,10 +122,13 @@ def _legacy_payload(version: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_format_version_is_ten() -> None:
-    """Version 10 : ajout du style texte par clip (tâche 24)."""
-    assert CURRENT_VERSION == 10
-    # La version des effets (9) reste lisible.
+def test_format_version_is_eleven() -> None:
+    """Version 11 : ajout de l'organisation de la bibliothèque (tâche 25).
+
+    La version des styles texte (10) et des effets (9) reste lisible.
+    """
+    assert CURRENT_VERSION == 11
+    assert 10 in SUPPORTED_VERSIONS
     assert 9 in SUPPORTED_VERSIONS
 
 
