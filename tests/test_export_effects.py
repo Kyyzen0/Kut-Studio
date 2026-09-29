@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from core.effects_model import EffectType, create_effect
+from core.color_grading import ColorGrade
 from core.export_engine import _build_layer_filter
 from core.render_plan import RenderLayer
 
@@ -43,3 +46,17 @@ def test_video_filter_applies_enabled_effects_in_model_order():
     assert positions == sorted(positions)
     assert "gblur=sigma=2.0" not in filter_graph
     assert positions[-1] < filter_graph.index("format=rgba")
+
+
+def test_color_grade_runs_after_existing_visual_effects_deterministically():
+    base = _layer_with_effects()
+    layer = replace(
+        base, color_grade=ColorGrade(exposure=0.5, saturation=1.2)
+    )
+
+    filter_graph = _build_layer_filter(0, layer, 0, 1280, 720, 30)
+
+    visual_effect = filter_graph.index("gblur=sigma=4.0")
+    color_grade = filter_graph.index("eq=contrast=1.0:saturation=1.2:gamma=")
+    alpha_format = filter_graph.index("format=rgba")
+    assert visual_effect < color_grade < alpha_format

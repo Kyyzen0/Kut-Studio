@@ -11,12 +11,14 @@ Refonte UI/UX :
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter, QColor, QPolygonF
+from PySide6.QtGui import QPainter, QColor, QPolygonF, QPainterPath, QPen
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QInputDialog,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -37,6 +40,12 @@ from core.audio_effects_model import (
     AudioEffect,
     AudioEffectType,
     parameter_specs as audio_parameter_specs,
+)
+from core.color_grading import (
+    CHANNELS,
+    ColorCurve,
+    ColorGrade,
+    ColorPresetStore,
 )
 from core.effects_model import (
     ClipEffect,
@@ -113,6 +122,101 @@ class _DiamondButton(QToolButton):
         painter.drawPolygon(polygon)
 
 
+class ColorCurveEditor(QWidget):
+    """Éditeur compact de courbe à points, sans dépendance externe."""
+
+    points_changed = Signal(str, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.channel = "master"
+        self._curve = ColorCurve.identity()
+        self._drag_index: int | None = None
+        self.setMinimumHeight(155)
+        self.setMinimumWidth(190)
+        self.setCursor(Qt.CrossCursor)
+
+    def set_curve(self, channel: str, curve: ColorCurve) -> None:
+        self.channel = channel if channel in CHANNELS else "master"
+        self._curve = curve if isinstance(curve, ColorCurve) else ColorCurve.identity()
+        self._drag_index = None
+        self.update()
+
+    @property
+    def curve(self) -> ColorCurve:
+        return self._curve
+
+    def _plot_rect(self) -> QRectF:
+        return QRectF(10.0, 10.0, max(1.0, self.width() - 20.0), max(1.0, self.height() - 20.0))
+
+    def _point_pos(self, point: tuple[float, float]) -> QPointF:
+        rect = self._plot_rect()
+        return QPointF(rect.left() + point[0] * rect.width(), rect.bottom() - point[1] * rect.height())
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self._plot_rect()
+        painter.fillRect(rect, QColor(COLORS["panel_alt"]))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1))
+        for index in range(1, 4):
+            x = rect.left() + rect.width() * index / 4.0
+            y = rect.top() + rect.height() * index / 4.0
+            painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+            painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+        path = QPainterPath()
+        first = self._point_pos(self._curve.points[0])
+        path.moveTo(first)
+        for point in self._curve.points[1:]:
+            path.lineTo(self._point_pos(point))
+        channel_colors = {
+            "master": COLORS["accent"],
+            "red": "#ef4444",
+            "green": "#22c55e",
+            "blue": "#3b82f6",
+        }
+        painter.setPen(QPen(QColor(channel_colors[self.channel]), 2))
+        painter.drawPath(path)
+        painter.setBrush(QColor(channel_colors[self.channel]))
+        painter.setPen(QPen(QColor(COLORS["text"]), 1))
+        for point in self._curve.points:
+            painter.drawEllipse(self._point_pos(point), 3.5, 3.5)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.LeftButton:
+            return
+        pos = event.position()
+        distances = [
+            (self._point_pos(point) - pos).manhattanLength()
+            for point in self._curve.points
+        ]
+        self._drag_index = min(range(len(distances)), key=distances.__getitem__)
+        self._update_dragged_point(pos, emit=False)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_index is not None:
+            self._update_dragged_point(event.position(), emit=False)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self._drag_index is not None:
+            self._update_dragged_point(event.position(), emit=True)
+            self._drag_index = None
+
+    def _update_dragged_point(self, pos: QPointF, *, emit: bool) -> None:
+        if self._drag_index is None:
+            return
+        rect = self._plot_rect()
+        output = 1.0 - (pos.y() - rect.top()) / rect.height()
+        output = max(0.0, min(1.0, output))
+        points = list(self._curve.points)
+        x = points[self._drag_index][0]
+        points[self._drag_index] = (x, output)
+        self._curve = ColorCurve(points=tuple(points))
+        self.update()
+        if emit:
+            self.points_changed.emit(self.channel, self._curve.points)
+
+
 class PropertiesPanel(QWidget):
     transform_changed = Signal(str, str, float)
     keyframe_added = Signal(str, str, float, float)
@@ -149,6 +253,15 @@ class PropertiesPanel(QWidget):
     # (clip_id, effect_id, enabled)
     audio_effect_parameter_changed = Signal(str, str, str, float)
     # (clip_id, effect_id, name, value)
+    # Étalonnage couleur non destructif (tâche 29)
+    color_grade_field_changed = Signal(str, str, float)
+    color_grade_enabled_changed = Signal(str, bool)
+    color_curve_changed = Signal(str, str, object)
+    color_preset_applied = Signal(str, str)
+    color_preset_save_requested = Signal(str, str)
+    color_lut_import_requested = Signal(str, str)
+    color_lut_remove_requested = Signal(str)
+    color_grade_reset_requested = Signal(str)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -174,6 +287,9 @@ class PropertiesPanel(QWidget):
         self._selected_audio_effect_id: str | None = None
         self._audio_effect_param_widgets: dict[str, QDoubleSpinBox] = {}
         self._allow_audio_effect_signals = True
+        self._current_color_grade = ColorGrade.identity()
+        self._allow_color_signals = True
+        self.color_preset_store = ColorPresetStore()
         self.setObjectName("properties_panel")
         self.setStyleSheet(
             f"QWidget#properties_panel {{ background: {COLORS['panel']}; "
@@ -338,32 +454,9 @@ class PropertiesPanel(QWidget):
         self.remove_transition_button.clicked.connect(self._on_transition_remove)
         layout.addWidget(self.transition_group)
 
-        # ----- Couleur --------------------------------------------------
-        color_group = QGroupBox("Couleur")
-        color_group.setStyleSheet(self.group_style())
-        color_form = QFormLayout(color_group)
-        color_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
-        color_form.setSpacing(Spacing.xs)
-        self.brightness_slider, brightness_row, self.brightness_value = self.make_slider(
-            -100, 100, 0
-        )
-        self.contrast_slider, contrast_row, self.contrast_value = self.make_slider(
-            -100, 100, 0
-        )
-        self.saturation_slider, saturation_row, self.saturation_value = self.make_slider(
-            -100, 100, 0
-        )
-        color_form.addRow("Luminosité", brightness_row)
-        color_form.addRow("Contraste", contrast_row)
-        color_form.addRow("Saturation", saturation_row)
-        layout.addWidget(color_group)
-        for slider in (
-            self.brightness_slider,
-            self.contrast_slider,
-            self.saturation_slider,
-        ):
-            slider.valueChanged.connect(self.update_color_values)
-            slider.valueChanged.connect(update_color_effect)
+        # ----- Couleur (tâche 29) --------------------------------------
+        self.color_group = self._build_color_group()
+        layout.addWidget(self.color_group)
 
         # ----- Audio ---------------------------------------------------
         audio_group = QGroupBox("Audio")
@@ -625,7 +718,7 @@ class PropertiesPanel(QWidget):
                 project_group,
                 clip_group,
                 self.transition_group,
-                color_group,
+                self.color_group,
                 self.movement_group,
                 self.speed_group,
                 audio_group,
@@ -634,7 +727,7 @@ class PropertiesPanel(QWidget):
                 self.effects_group,
                 self.audio_effects_group,
             ],
-            1: [project_group, color_group],  # Couleur
+            1: [project_group, clip_group, self.color_group],  # Couleur
             2: [project_group, self.movement_group,
                 self.transition_group, self.speed_group,
                 self.effects_group],  # Effets
@@ -642,9 +735,9 @@ class PropertiesPanel(QWidget):
                 self.audio_effects_group],  # Audio
         }
         all_groups = [project_group, clip_group, self.transition_group,
-                      color_group, self.movement_group, self.speed_group,
+                      self.color_group, self.movement_group, self.speed_group,
                       audio_group, self.audio_group, self.subtitle_group,
-                      self.effects_group]
+                      self.effects_group, self.audio_effects_group]
         self._all_inspector_groups = all_groups
         # Certains groupes ont en plus une visibilité *conditionnelle*
         # pilotée par la sélection (``show_clip`` / ``show_transition``) :
@@ -692,6 +785,219 @@ class PropertiesPanel(QWidget):
         """Filtre les groupes visibles selon l'onglet choisi."""
         self._active_inspector_tab = row
         self._apply_group_visibility()
+
+    def _build_color_group(self) -> QGroupBox:
+        group = QGroupBox("Étalonnage couleur")
+        group.setObjectName("colorGradingGroup")
+        group.setStyleSheet(self.group_style())
+        root = QVBoxLayout(group)
+        root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
+        root.setSpacing(Spacing.sm)
+
+        self.color_enabled_check = QCheckBox("Activer l’étalonnage")
+        self.color_enabled_check.setChecked(True)
+        self.color_enabled_check.toggled.connect(self._on_color_enabled_toggled)
+        root.addWidget(self.color_enabled_check)
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(Spacing.xs)
+        specs = (
+            ("exposure", "Exposition", -2.0, 2.0, 0.05, " EV"),
+            ("contrast", "Contraste", -1.0, 1.0, 0.05, ""),
+            ("saturation", "Saturation", 0.0, 2.0, 0.05, "×"),
+            ("temperature", "Température", -100.0, 100.0, 1.0, ""),
+            ("hue", "Teinte", -180.0, 180.0, 1.0, "°"),
+            ("shadows", "Ombres", -1.0, 1.0, 0.05, ""),
+            ("highlights", "Hautes lumières", -1.0, 1.0, 0.05, ""),
+        )
+        self.color_field_spins: dict[str, QDoubleSpinBox] = {}
+        for name, label, minimum, maximum, step, suffix in specs:
+            spin = QDoubleSpinBox()
+            spin.setRange(minimum, maximum)
+            spin.setDecimals(2)
+            spin.setSingleStep(step)
+            spin.setSuffix(suffix)
+            spin.valueChanged.connect(
+                lambda value, field=name: self._on_color_field_changed(field, value)
+            )
+            self.color_field_spins[name] = spin
+            form.addRow(label, spin)
+        root.addLayout(form)
+
+        curves_title = QLabel("Courbes")
+        curves_title.setStyleSheet(label_style(11, "muted", 700))
+        root.addWidget(curves_title)
+        self.color_curve_channel = QComboBox()
+        self.color_curve_channel.addItem("Globale", "master")
+        self.color_curve_channel.addItem("Rouge", "red")
+        self.color_curve_channel.addItem("Verte", "green")
+        self.color_curve_channel.addItem("Bleue", "blue")
+        self.color_curve_channel.currentIndexChanged.connect(
+            self._on_color_curve_channel_changed
+        )
+        root.addWidget(self.color_curve_channel)
+        self.color_curve_editor = ColorCurveEditor()
+        self.color_curve_editor.points_changed.connect(self._on_color_curve_points_changed)
+        root.addWidget(self.color_curve_editor)
+        self.color_curve_reset_button = self._make_action_button(
+            IconName.RESET, "Réinitialiser cette courbe", "Courbe linéaire"
+        )
+        self.color_curve_reset_button.clicked.connect(self._reset_active_color_curve)
+        root.addWidget(self.color_curve_reset_button)
+
+        preset_title = QLabel("Grades prêts à l’emploi")
+        preset_title.setStyleSheet(label_style(11, "muted", 700))
+        root.addWidget(preset_title)
+        preset_row = QWidget()
+        preset_layout = QHBoxLayout(preset_row)
+        preset_layout.setContentsMargins(0, 0, 0, 0)
+        preset_layout.setSpacing(Spacing.xs)
+        self.color_preset_combo = QComboBox()
+        self._refresh_color_presets()
+        self.color_preset_apply_button = self._make_action_button(
+            None, "Appliquer", "Appliquer le grade sélectionné"
+        )
+        self.color_preset_apply_button.clicked.connect(self._apply_selected_color_preset)
+        preset_layout.addWidget(self.color_preset_combo, 1)
+        preset_layout.addWidget(self.color_preset_apply_button)
+        root.addWidget(preset_row)
+        self.color_preset_save_button = self._make_action_button(
+            None, "Enregistrer comme preset…", "Sauvegarder les réglages actuels"
+        )
+        self.color_preset_save_button.clicked.connect(self._request_save_color_preset)
+        root.addWidget(self.color_preset_save_button)
+
+        lut_title = QLabel("LUT 3D (.cube)")
+        lut_title.setStyleSheet(label_style(11, "muted", 700))
+        root.addWidget(lut_title)
+        self.color_lut_label = QLabel("Aucune LUT")
+        self.color_lut_label.setWordWrap(True)
+        self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+        root.addWidget(self.color_lut_label)
+        lut_row = QWidget()
+        lut_layout = QHBoxLayout(lut_row)
+        lut_layout.setContentsMargins(0, 0, 0, 0)
+        lut_layout.setSpacing(Spacing.xs)
+        self.color_lut_import_button = self._make_action_button(
+            None, "Importer…", "Importer une LUT Adobe .cube"
+        )
+        self.color_lut_remove_button = self._make_action_button(
+            IconName.REMOVE, "Retirer", "Retirer la LUT du clip"
+        )
+        self.color_lut_import_button.clicked.connect(self._request_color_lut_import)
+        self.color_lut_remove_button.clicked.connect(self._request_color_lut_remove)
+        lut_layout.addWidget(self.color_lut_import_button)
+        lut_layout.addWidget(self.color_lut_remove_button)
+        root.addWidget(lut_row)
+
+        self.color_reset_button = self._make_action_button(
+            IconName.RESET, "Tout réinitialiser", "Retirer réglages, courbes et LUT"
+        )
+        self.color_reset_button.clicked.connect(self._request_color_reset)
+        root.addWidget(self.color_reset_button)
+        group.setEnabled(False)
+        return group
+
+    def _refresh_color_presets(self) -> None:
+        current = self.color_preset_combo.currentData() if hasattr(self, "color_preset_combo") else None
+        if not hasattr(self, "color_preset_combo"):
+            return
+        self.color_preset_combo.clear()
+        for preset in self.color_preset_store.all_presets():
+            label = preset.name if preset.builtin else f"{preset.name} · Personnel"
+            self.color_preset_combo.addItem(label, preset.id)
+        if current is not None:
+            index = self.color_preset_combo.findData(current)
+            if index >= 0:
+                self.color_preset_combo.setCurrentIndex(index)
+
+    def set_project_color_presets(self, presets: object) -> None:
+        """Recharge les presets globaux puis fusionne ceux du projet courant."""
+        self.color_preset_store = ColorPresetStore()
+        self.color_preset_store.merge_user_presets(list(presets or []))
+        self._refresh_color_presets()
+
+    def update_color_grade_from_clip(self, grade: object) -> None:
+        self._current_color_grade = grade if isinstance(grade, ColorGrade) else ColorGrade.identity()
+        self._allow_color_signals = False
+        try:
+            self.color_enabled_check.setChecked(self._current_color_grade.enabled)
+            for name, spin in self.color_field_spins.items():
+                spin.setValue(float(getattr(self._current_color_grade, name)))
+            self._sync_color_curve_editor()
+            lut = self._current_color_grade.lut
+            if lut is None:
+                self.color_lut_label.setText("Aucune LUT")
+                self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
+                self.color_lut_remove_button.setEnabled(False)
+            elif lut.missing:
+                self.color_lut_label.setText(f"⚠ LUT manquante : {lut.title}\n{lut.path}")
+                self.color_lut_label.setStyleSheet(label_style(11, "danger", 600))
+                self.color_lut_remove_button.setEnabled(True)
+            else:
+                self.color_lut_label.setText(f"{lut.title}\n{lut.path}")
+                self.color_lut_label.setStyleSheet(label_style(11, "text", 500))
+                self.color_lut_remove_button.setEnabled(True)
+        finally:
+            self._allow_color_signals = True
+
+    def _sync_color_curve_editor(self) -> None:
+        channel = str(self.color_curve_channel.currentData() or "master")
+        self.color_curve_editor.set_curve(channel, self._current_color_grade.curves.curve(channel))
+
+    def _on_color_enabled_toggled(self, enabled: bool) -> None:
+        if self._allow_color_signals and self.selected_clip is not None:
+            self.color_grade_enabled_changed.emit(self.selected_clip.id, bool(enabled))
+
+    def _on_color_field_changed(self, field: str, value: float) -> None:
+        if self._allow_color_signals and self.selected_clip is not None:
+            self.color_grade_field_changed.emit(self.selected_clip.id, field, float(value))
+
+    def _on_color_curve_channel_changed(self, _index: int) -> None:
+        self._sync_color_curve_editor()
+
+    def _on_color_curve_points_changed(self, channel: str, points: object) -> None:
+        if self._allow_color_signals and self.selected_clip is not None:
+            self.color_curve_changed.emit(self.selected_clip.id, channel, points)
+
+    def _reset_active_color_curve(self) -> None:
+        if self.selected_clip is None:
+            return
+        channel = str(self.color_curve_channel.currentData() or "master")
+        points = ColorCurve.identity().points
+        self.color_curve_editor.set_curve(channel, ColorCurve.identity())
+        self.color_curve_changed.emit(self.selected_clip.id, channel, points)
+
+    def _apply_selected_color_preset(self) -> None:
+        if self.selected_clip is not None and self.color_preset_combo.currentData():
+            self.color_preset_applied.emit(
+                self.selected_clip.id, str(self.color_preset_combo.currentData())
+            )
+
+    def _request_save_color_preset(self) -> None:
+        if self.selected_clip is None:
+            return
+        name, accepted = QInputDialog.getText(self, "Preset couleur", "Nom du preset :")
+        if accepted and name.strip():
+            self.color_preset_save_requested.emit(self.selected_clip.id, name.strip())
+
+    def _request_color_lut_import(self) -> None:
+        if self.selected_clip is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importer une LUT", "", "LUT 3D (*.cube)"
+        )
+        if path:
+            self.color_lut_import_requested.emit(self.selected_clip.id, path)
+
+    def _request_color_lut_remove(self) -> None:
+        if self.selected_clip is not None:
+            self.color_lut_remove_requested.emit(self.selected_clip.id)
+
+    def _request_color_reset(self) -> None:
+        if self.selected_clip is not None:
+            self.color_grade_reset_requested.emit(self.selected_clip.id)
 
     def _build_audio_group(self) -> QGroupBox:
         """Groupe de mixage du clip sélectionné.
@@ -1816,9 +2122,8 @@ class PropertiesPanel(QWidget):
         return slider, container, value_label
 
     def update_color_values(self):
-        self.brightness_value.setText(str(self.brightness_slider.value()))
-        self.contrast_value.setText(str(self.contrast_slider.value()))
-        self.saturation_value.setText(str(self.saturation_slider.value()))
+        """Compatibilité avec l'ancien aperçu couleur (désormais modèle-first)."""
+        return None
 
     def show_clip(self, view):
         pending_transform = None
@@ -1837,6 +2142,8 @@ class PropertiesPanel(QWidget):
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
                 self._set_group_condition(self.subtitle_group, False)
+                self.color_group.setEnabled(False)
+                self.update_color_grade_from_clip(None)
                 self.movement_group.setEnabled(False)
                 for name, spin in self._spin_boxes.items():
                     spin.setEnabled(False)
@@ -1874,6 +2181,9 @@ class PropertiesPanel(QWidget):
                 self.subtitle_editor.set_state(getattr(view, "text", ""), style)
 
             is_video_clip = getattr(view, "track_type", None) == "video"
+            color_editable = is_video_clip and not bool(getattr(view, "locked", False))
+            self.color_group.setEnabled(color_editable)
+            self.update_color_grade_from_clip(getattr(view, "color_grade", None))
             self.movement_group.setEnabled(is_video_clip)
             for spin in self._spin_boxes.values():
                 spin.setEnabled(is_video_clip)

@@ -86,6 +86,8 @@ class TimelineClipView:
     source_duration: float = 0.0
     time_remapping: object = None
     effects: tuple = ()
+    color_grade: object = None
+    locked: bool = False
     # Style texte non destructif (tâche 24) : ``None`` pour les clips
     # non textuels, un :class:`~core.text_style.TextStyle` pour les
     # sous-titres.
@@ -131,6 +133,8 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     source_duration=clip.source_duration,
                     time_remapping=clip.time_remapping,
                     effects=tuple(clip.effects),
+                    color_grade=getattr(clip, "color_grade", None),
+                    locked=bool(track.locked),
                     text_style=(
                         getattr(clip, "text_style", None)
                         if track.type == "subtitle"

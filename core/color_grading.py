@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import uuid
@@ -350,6 +351,10 @@ class LUTResource:
     sha1: str
     size: int = 0
     missing: bool = False
+    # Chemin absolu de travail, volontairement non sérialisé. Il permet
+    # de retrouver le fichier source lors d'un « Enregistrer sous… » alors
+    # que ``path`` reste portable et relatif au projet.
+    source_path: str | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.path, str) or not self.path:
@@ -403,7 +408,60 @@ class LUTResource:
             sha1=digest,
             size=len(data),
             missing=False,
+            source_path=str(file_path.resolve()),
         )
+
+
+def copy_lut_into_project(
+    lut: LUTResource,
+    project_root: str | os.PathLike[str],
+) -> LUTResource:
+    """Copie un LUT dans ``luts/`` et retourne une référence portable.
+
+    Le nom inclut le début du hash afin d'éviter qu'un autre LUT portant le
+    même nom écrase silencieusement le premier. Une référence déjà copiée est
+    réutilisée. Si la source est absente, aucune copie factice n'est créée et
+    la ressource retournée est marquée manquante.
+    """
+    root = Path(project_root).resolve()
+    candidates: list[Path] = []
+    if lut.source_path:
+        candidates.append(Path(lut.source_path))
+    stored = Path(lut.path)
+    if stored.is_absolute():
+        candidates.append(stored)
+    else:
+        candidates.append(root / stored)
+    source = next((path for path in candidates if path.is_file()), None)
+    if source is None:
+        return LUTResource(
+            path=lut.path,
+            title=lut.title,
+            sha1=lut.sha1,
+            size=lut.size,
+            missing=True,
+            source_path=lut.source_path,
+        )
+
+    if not stored.is_absolute() and (root / stored).resolve() == source.resolve():
+        relative = stored
+    else:
+        suffix = source.suffix.lower() or ".cube"
+        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._")
+        safe_stem = safe_stem or "lut"
+        relative = Path("luts") / f"{lut.sha1[:12]}-{safe_stem}{suffix}"
+    destination = root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.resolve() != destination.resolve():
+        shutil.copy2(source, destination)
+    return LUTResource(
+        path=relative.as_posix(),
+        title=lut.title,
+        sha1=lut.sha1,
+        size=destination.stat().st_size,
+        missing=False,
+        source_path=str(destination.resolve()),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -948,7 +1006,10 @@ def _grade_to_dict(grade: ColorGrade) -> dict[str, object]:
         },
         "lut": (
             {
-                "path": grade.lut.path,
+                # Les presets globaux ne connaissent pas le dossier d'un
+                # projet : conserver le chemin de travail absolu évite une
+                # référence relative ambiguë lors d'une prochaine session.
+                "path": grade.lut.source_path or grade.lut.path,
                 "title": grade.lut.title,
                 "sha1": grade.lut.sha1,
                 "size": int(grade.lut.size),
@@ -978,12 +1039,15 @@ def _dict_to_grade(raw: object) -> ColorGrade:
     lut: LUTResource | None = None
     if isinstance(lut_raw, dict):
         try:
+            path = str(lut_raw.get("path", ""))
+            exists = bool(path) and Path(path).is_file()
             lut = LUTResource(
-                path=str(lut_raw.get("path", "")),
+                path=path,
                 title=str(lut_raw.get("title", "") or "LUT"),
                 sha1=str(lut_raw.get("sha1", "")),
                 size=int(lut_raw.get("size", 0)),
-                missing=bool(lut_raw.get("missing", False)),
+                missing=bool(lut_raw.get("missing", False)) or not exists,
+                source_path=str(Path(path).resolve()) if exists else None,
             )
         except (ColorGradingError, ValueError, TypeError):
             lut = None
@@ -1170,6 +1234,17 @@ class ColorPresetStore:
         library.extend(self._user_presets.values())
         return library
 
+    def merge_user_presets(self, presets: Sequence[ColorPreset]) -> None:
+        """Ajoute des presets embarqués sans écrire la configuration globale."""
+        changed = False
+        for preset in presets:
+            if preset.builtin or preset.id in self._user_presets:
+                continue
+            self._user_presets[preset.id] = preset
+            changed = True
+        if changed:
+            self._notify_changed()
+
     def add_user_preset(self, preset: ColorPreset) -> ColorPreset:
         if preset.builtin:
             raise ValueError("Les préréglages intégrés ne peuvent pas être ajoutés.")
@@ -1216,11 +1291,16 @@ class ColorPresetStore:
     # ----- Persistance ---------------------------------------------------
 
     def _persist(self) -> None:
-        save_color_preset_data(
-            list(self._user_presets.values()),
-            list(self._favorites),
-            self._settings_dir,
-        )
+        try:
+            save_color_preset_data(
+                list(self._user_presets.values()),
+                list(self._favorites),
+                self._settings_dir,
+            )
+        except OSError:
+            # Un environnement lecture seule ne doit pas empêcher l'édition
+            # en mémoire (tests sandboxés, poste géré, volume démonté).
+            pass
 
     def _notify_changed(self) -> None:
         for callback in list(self._listeners):
@@ -1263,6 +1343,8 @@ class ColorGradingService:
     def get_grade(self, project, clip_id: str) -> ColorGrade:
         """Retourne l'étalonnage du clip (neutre si manquant)."""
         clip = self._find_clip(project, clip_id)
+        if clip is None:
+            raise ColorGradingError(f"Clip '{clip_id}' introuvable.")
         return _color_grade_or_default(getattr(clip, "color_grade", None))
 
     def set_grade(
@@ -1289,9 +1371,10 @@ class ColorGradingService:
         """Applique un preset au clip (en gardant le LUT s'il y en a un)."""
         if preset is None:
             raise ColorGradingError("Le preset est obligatoire.")
-        # On préserve un éventuel LUT déjà attaché au clip.
+        # Les presets intégrés n'embarquent pas de LUT et préservent donc
+        # celui du clip. Un preset utilisateur qui en contient un l'applique.
         current = self.get_grade(project, clip_id)
-        merged = preset.grade.with_lut(current.lut)
+        merged = preset.grade.with_lut(preset.grade.lut or current.lut)
         return self.set_grade(project, clip_id, merged)
 
     def _find_clip(self, project, clip_id: str):
@@ -1347,6 +1430,7 @@ __all__ = [
     "builtin_color_preset_ids",
     "builtin_color_presets",
     "color_presets_path",
+    "copy_lut_into_project",
     "filter_color_presets",
     "load_color_preset_data",
     "make_color_preset",

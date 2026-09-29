@@ -534,6 +534,10 @@ class Project:
     # association lie une piste musique à une piste voix qui la pilote.
     # Vide par défaut, rétrocompatible avec les anciens snapshots.
     ducking_sidechains: list = field(default_factory=list)
+    # Presets couleur personnels embarqués dans le projet (tâche 29).
+    # Le type concret est ``ColorPreset`` ; ``list`` évite un cycle
+    # d'import avec :mod:`core.color_grading`.
+    color_presets: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Vérifie que les paramètres de rendu du projet sont cohérents."""
@@ -551,3 +555,5 @@ class Project:
             self.library_tags = []
         if self.library_assignments is None:
             self.library_assignments = {}
+        if self.color_presets is None:
+            self.color_presets = []

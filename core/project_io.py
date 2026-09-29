@@ -167,7 +167,32 @@ def save_project(project: Project, file_path: str) -> None:
     un échec (disque plein, permissions, JSON non sérialisable...) ne
     laisse ni fichier cible tronqué, ni fichier temporaire résiduel.
     """
+    target = Path(file_path)
+    _materialize_project_luts(project, target.parent)
     write_project_payload(project_payload(project), file_path)
+
+
+def _materialize_project_luts(project: Project, project_root: Path) -> None:
+    """Rend les LUTs d'un projet portables avant la sauvegarde."""
+    from .color_grading import ColorGrade, copy_lut_into_project
+
+    for track in project.tracks:
+        for clip in track.clips:
+            grade = getattr(clip, "color_grade", None)
+            if not isinstance(grade, ColorGrade) or grade.lut is None:
+                continue
+            portable = copy_lut_into_project(grade.lut, project_root)
+            clip.color_grade = grade.with_lut(portable)
+    portable_presets = []
+    for preset in getattr(project, "color_presets", []) or []:
+        grade = getattr(preset, "grade", None)
+        if isinstance(grade, ColorGrade) and grade.lut is not None:
+            grade = grade.with_lut(copy_lut_into_project(grade.lut, project_root))
+            from dataclasses import replace
+
+            preset = replace(preset, grade=grade)
+        portable_presets.append(preset)
+    project.color_presets = portable_presets
 
 
 def load_project(file_path: str) -> Project:
@@ -283,6 +308,10 @@ def _build_payload(project: Project) -> dict[str, Any]:
             "ducking_sidechains": [
                 _ducking_sidechain_to_dict(sidechain)
                 for sidechain in getattr(project, "ducking_sidechains", []) or []
+            ],
+            "color_presets": [
+                _color_preset_to_dict(preset)
+                for preset in getattr(project, "color_presets", []) or []
             ],
             "tracks": [
                 {
@@ -478,6 +507,9 @@ def _deserialize_project(
         data.get("ducking_sidechains", []),
         valid_music_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
         valid_voice_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
+    )
+    project.color_presets = _deserialize_color_presets(
+        data.get("color_presets", []), project_root=project_root
     )
     return project
 
@@ -837,6 +869,49 @@ def _color_grade_to_dict(grade) -> dict[str, Any] | None:
     }
 
 
+def _color_preset_to_dict(preset) -> dict[str, Any]:
+    return {
+        "id": preset.id,
+        "name": preset.name,
+        "description": preset.description,
+        "category": preset.category.value,
+        "grade": _color_grade_to_dict(preset.grade),
+    }
+
+
+def _deserialize_color_presets(
+    raw: Any, *, project_root: Path | None = None,
+) -> list:
+    if not isinstance(raw, list):
+        return []
+    from .color_grading import ColorPresetCategory, make_color_preset
+
+    loaded = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        grade = _deserialize_color_grade(item.get("grade"), project_root=project_root)
+        if grade is None:
+            continue
+        try:
+            preset = make_color_preset(
+                preset_id=str(item["id"]),
+                name=str(item["name"]),
+                description=str(item.get("description", "")),
+                category=ColorPresetCategory(item.get("category", "vintage")),
+                grade=grade,
+                builtin=False,
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if preset.id in seen:
+            continue
+        seen.add(preset.id)
+        loaded.append(preset)
+    return loaded
+
+
 def _deserialize_color_grade(
     raw: Any, *, project_root: Path | None = None,
 ):
@@ -923,6 +998,10 @@ def _deserialize_color_grade(
                 sha1=str(lut_raw.get("sha1", "")),
                 size=int(lut_raw.get("size", 0)),
                 missing=computed_missing,
+                source_path=(
+                    str(candidate.resolve())
+                    if path and not computed_missing else None
+                ),
             )
         except (ColorGradingError, ValueError, TypeError):
             lut = None

@@ -16,6 +16,9 @@ Couvre :
 from __future__ import annotations
 
 import textwrap
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -529,6 +532,20 @@ def test_service_apply_preset_preserves_lut() -> None:
     assert applied.saturation == preset.grade.saturation
 
 
+def test_service_apply_user_preset_uses_its_lut() -> None:
+    project = _project_with_video_clip()
+    preset_lut = LUTResource(
+        path="preset.cube", title="Preset", sha1="1" * 40, size=10
+    )
+    preset = make_user_color_preset(
+        "Avec LUT", "", ColorGrade(exposure=0.2, lut=preset_lut)
+    )
+
+    applied = ColorGradingService().apply_preset(project, "c1", preset)
+
+    assert applied.lut is preset_lut
+
+
 def test_service_apply_preset_rejects_none() -> None:
     project = _project_with_video_clip()
     service = ColorGradingService()
@@ -647,6 +664,44 @@ def test_missing_lut_marked_after_load(tmp_path) -> None:
     assert loaded_grade.lut is not None
     assert loaded_grade.lut.missing is True
     assert loaded_grade.lut.path == "luts/ghost.cube"
+
+
+def test_save_copies_external_lut_next_to_project(tmp_path) -> None:
+    project = _project_with_video_clip()
+    source_dir = tmp_path / "external"
+    source_dir.mkdir()
+    source = source_dir / "look.cube"
+    source.write_text(_cube_text(), encoding="utf-8")
+    ColorGradingService().set_grade(
+        project,
+        "c1",
+        ColorGrade(lut=LUTResource.from_path(source)),
+    )
+
+    target = tmp_path / "project" / "portable.kut"
+    save_project(project, str(target))
+    loaded = load_project(str(target))
+    lut = loaded.tracks[0].clips[0].color_grade.lut
+
+    assert not Path(lut.path).is_absolute()
+    assert (target.parent / lut.path).is_file()
+    assert lut.missing is False
+
+
+def test_project_color_presets_roundtrip_in_kut(tmp_path) -> None:
+    project = _project_with_video_clip()
+    preset = make_user_color_preset(
+        "Mon look", "Embarqué", ColorGrade(exposure=0.4, saturation=0.8)
+    )
+    project.color_presets.append(preset)
+    target = tmp_path / "presets.kut"
+
+    save_project(project, str(target))
+    loaded = load_project(str(target))
+
+    assert len(loaded.color_presets) == 1
+    assert loaded.color_presets[0].name == "Mon look"
+    assert loaded.color_presets[0].grade.exposure == pytest.approx(0.4)
 
 
 # ---------------------------------------------------------------------------
@@ -804,6 +859,50 @@ def test_grade_filters_identity_only_emits_eq() -> None:
     assert "colorbalance=" not in filters
     assert "curves=" not in filters
     assert "lut3d=" not in filters
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
+def test_generated_color_chain_is_accepted_by_real_ffmpeg(tmp_path) -> None:
+    cube = tmp_path / "identity.cube"
+    cube.write_text(_cube_text(), encoding="utf-8")
+    points = list(ColorCurve.identity().points)
+    points[8] = (points[8][0], 0.7)
+    grade = ColorGrade(
+        exposure=0.25,
+        contrast=0.2,
+        saturation=1.1,
+        temperature=15.0,
+        shadows=-0.1,
+        highlights=0.15,
+        curves=ColorCurves(red=ColorCurve(tuple(points))),
+        lut=LUTResource.from_path(cube),
+    )
+    filters = _build_color_grade_filters(grade)
+
+    base_command = [
+        shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc2=s=32x32:d=0.1",
+    ]
+    completed = subprocess.run(
+        base_command + [
+            "-vf", filters, "-frames:v", "1", "-f", "framemd5", "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    baseline = subprocess.run(
+        base_command + ["-frames:v", "1", "-f", "framemd5", "-"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert baseline.returncode == 0, baseline.stderr
+    rendered_hash = [line for line in completed.stdout.splitlines() if not line.startswith("#")][-1]
+    baseline_hash = [line for line in baseline.stdout.splitlines() if not line.startswith("#")][-1]
+    assert rendered_hash != baseline_hash
 
 
 # ---------------------------------------------------------------------------

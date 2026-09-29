@@ -905,38 +905,36 @@ def _build_color_grade_filters(grade) -> str:
     # (cf. note dans la docstring). On continue à optimiser les autres
     # filtres.
     filters: list[str] = []
-    # 1. eq : exposition (en EV, brightness linéaire), contraste
-    # (1.0 = neutre), saturation (1.0 = neutre). FFmpeg accepte les
-    # valeurs hors des bornes 0-1 et les convertit correctement.
-    eq_brightness = _format_seconds(float(grade.exposure))
+    # 1. eq : l'exposition en stops est traduite en gamma (2**EV),
+    # ce qui reste dans les bornes réelles du filtre même à ±2 EV.
+    # Contraste et saturation sont des multiplicateurs centrés sur 1.
     eq_contrast = _format_seconds(1.0 + float(grade.contrast))
     eq_saturation = _format_seconds(float(grade.saturation))
+    eq_gamma = _format_seconds(2.0 ** float(grade.exposure))
     filters.append(
-        f"eq=brightness={eq_brightness}:contrast={eq_contrast}:"
-        f"saturation={eq_saturation}"
+        f"eq=contrast={eq_contrast}:saturation={eq_saturation}:"
+        f"gamma={eq_gamma}"
     )
-    # 2. colorbalance : températures (rs / gs / bs) et teintes (rm / gm / bm)
-    # sont laissées à 0 par défaut ; on module les hautes lumières /
-    # ombres via ``b`` (shadow) et ``h`` (highlight). FFmpeg supporte
-    # aussi ``rs`` / ``gs`` / ``bs`` pour la balance des blancs ; on
-    # les utilise pour traduire la température et la teinte.
-    rs, gs, bs = _compute_colorbalance_offsets(
+    # 2. colorbalance : température/teinte agissent sur les tons moyens ;
+    # ombres et hautes lumières utilisent leurs options FFmpeg dédiées.
+    rm, gm, bm = _compute_colorbalance_offsets(
         float(grade.temperature), float(grade.hue)
     )
-    rh, gh, bh = _compute_colorbalance_highlights_shadows(
-        float(grade.shadows), float(grade.highlights)
-    )
+    shadow = max(-1.0, min(1.0, float(grade.shadows)))
+    highlight = max(-1.0, min(1.0, float(grade.highlights)))
     if (
-        any(abs(v) > 1e-3 for v in (rs, gs, bs, rh, gh, bh))
-        or abs(grade.shadows) > 1e-3
-        or abs(grade.highlights) > 1e-3
+        any(abs(v) > 1e-3 for v in (rm, gm, bm))
+        or abs(shadow) > 1e-3
+        or abs(highlight) > 1e-3
     ):
         filters.append(
             "colorbalance="
-            f"rs={_format_seconds(rs)}:gs={_format_seconds(gs)}:"
-            f"bs={_format_seconds(bs)}:"
-            f"rm={_format_seconds(rh)}:gm={_format_seconds(gh)}:"
-            f"bm={_format_seconds(bh)}"
+            f"rs={_format_seconds(shadow)}:gs={_format_seconds(shadow)}:"
+            f"bs={_format_seconds(shadow)}:"
+            f"rm={_format_seconds(rm)}:gm={_format_seconds(gm)}:"
+            f"bm={_format_seconds(bm)}:"
+            f"rh={_format_seconds(highlight)}:gh={_format_seconds(highlight)}:"
+            f"bh={_format_seconds(highlight)}:pl=1"
         )
     # 3. courbes par canal : on émet un filtre ``curves`` par canal
     # actif (s'écarte de l'identité). Les courbes master / R / V / B
@@ -973,15 +971,15 @@ def _build_curves_filter(channel: str, curve) -> str:
     """Émet un filtre ``curves`` pour un canal donné.
 
     La syntaxe FFmpeg ``curves=`` accepte des presets (``preset=darker``)
-    ou une suite de points ``x0 y0 x1 y1 ...``. On choisit la seconde
+    ou une suite de points ``x0/y0 x1/y1 ...``. On choisit la seconde
     forme pour traduire fidèlement les 16 points de notre modèle.
     """
-    parts: list[str] = []
-    for x, y in curve.points:
-        parts.append(f"{_format_seconds(x)}")
-        parts.append(f"{_format_seconds(y)}")
+    parts = [
+        f"{_format_seconds(x)}/{_format_seconds(y)}"
+        for x, y in curve.points
+    ]
     expr = " ".join(parts)
-    return f"curves=preset=manual:{channel}='{expr}'"
+    return f"curves={channel}='{expr}'"
 
 
 def _build_lut3d_filter(lut) -> str | None:
@@ -993,10 +991,13 @@ def _build_lut3d_filter(lut) -> str | None:
     on émet le chemin tel quel, avec une séquence d'échappement
     minimale (caractères non‑ASCII protégés par ``_escape_filter_path``).
     """
-    if not getattr(lut, "path", ""):
+    if getattr(lut, "missing", False):
         return None
-    safe = _escape_filter_path(lut.path)
-    return f"lut3d=file={safe}"
+    path = getattr(lut, "source_path", None) or getattr(lut, "path", "")
+    if not path:
+        return None
+    safe = _escape_filter_path(path)
+    return f"lut3d=file='{safe}'"
 
 
 def _compute_colorbalance_offsets(

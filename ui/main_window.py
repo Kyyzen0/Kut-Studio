@@ -37,6 +37,14 @@ from core.effects_library import (
     snapshot_clip_preset,
 )
 from core.edit_history import ProjectHistory
+from core.color_grading import (
+    ColorCurve,
+    ColorGrade,
+    ColorGradingError,
+    ColorGradingService,
+    LUTResource,
+    make_user_color_preset,
+)
 from core.transition_presets import (
     TransitionPreset,
     TransitionPresetStore,
@@ -230,6 +238,9 @@ class MainWindow(QMainWindow):
             self._on_asset_occurrences_requested
         )
         self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
+        self.properties_panel.set_project_color_presets(
+            getattr(self.project, "color_presets", [])
+        )
         self.timeline_panel = TimelinePanel(self.project)
         # La timeline peint ses fonds et ses clips à la main : elle doit
         # suivre les changements de palette du gestionnaire de thème.
@@ -339,6 +350,31 @@ class MainWindow(QMainWindow):
         )
         self.properties_panel.audio_effect_parameter_changed.connect(
             self.on_clip_audio_effect_parameter_changed
+        )
+        # Tâche 29 : étalonnage couleur, courbes, presets et LUTs.
+        self.properties_panel.color_grade_field_changed.connect(
+            self.on_color_grade_field_changed
+        )
+        self.properties_panel.color_grade_enabled_changed.connect(
+            self.on_color_grade_enabled_changed
+        )
+        self.properties_panel.color_curve_changed.connect(
+            self.on_color_curve_changed
+        )
+        self.properties_panel.color_preset_applied.connect(
+            self.on_color_preset_applied
+        )
+        self.properties_panel.color_preset_save_requested.connect(
+            self.on_color_preset_save_requested
+        )
+        self.properties_panel.color_lut_import_requested.connect(
+            self.on_lut_loaded
+        )
+        self.properties_panel.color_lut_remove_requested.connect(
+            self.on_color_lut_removed
+        )
+        self.properties_panel.color_grade_reset_requested.connect(
+            self.on_color_grade_reset
         )
         # Tâche 22 : bibliothèque d'effets et presets.
         # ``UserPresetStore`` conserve la liste des presets utilisateur
@@ -604,7 +640,7 @@ class MainWindow(QMainWindow):
         retourne le dossier du fichier de projet courant s'il est
         connu, sinon ``None`` (les chemins absolus restent valides).
         """
-        path = getattr(self, "_current_project_path", None)
+        path = getattr(self, "current_project_path", None)
         if not path:
             return None
         from pathlib import Path
@@ -623,6 +659,54 @@ class MainWindow(QMainWindow):
     # Étalonnage couleur (tâche 29)
     # ------------------------------------------------------------------
 
+    def _commit_color_grade(self, clip_id: str, grade: ColorGrade, label: str) -> bool:
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.type != "video" or track.locked:
+            return False
+        try:
+            ColorGradingService().set_grade(self.project, clip_id, grade)
+        except ColorGradingError as exc:
+            print(f"[MainWindow] Étalonnage refusé : {exc}")
+            return False
+        self._record_history(label)
+        self._mark_dirty()
+        self._reload_timeline_preserving_selection(clip_id)
+        self.update_color_effect()
+        return True
+
+    def on_color_grade_field_changed(
+        self, clip_id: str, field: str, value: float
+    ) -> None:
+        try:
+            current = ColorGradingService().get_grade(self.project, clip_id)
+            updated = current.with_field(field, float(value))
+        except ColorGradingError as exc:
+            print(f"[MainWindow] Paramètre couleur invalide : {exc}")
+            return
+        self._commit_color_grade(clip_id, updated, f"Couleur : {field}")
+
+    def on_color_grade_enabled_changed(self, clip_id: str, enabled: bool) -> None:
+        try:
+            current = ColorGradingService().get_grade(self.project, clip_id)
+        except ColorGradingError:
+            return
+        self._commit_color_grade(
+            clip_id, current.with_enabled(enabled), "Activer l’étalonnage"
+        )
+
+    def on_color_curve_changed(
+        self, clip_id: str, channel: str, points: object
+    ) -> None:
+        try:
+            current = ColorGradingService().get_grade(self.project, clip_id)
+            curve = ColorCurve(points=tuple(tuple(point) for point in points))
+            curves = current.curves._replace(channel, curve)
+            updated = current.with_curves(curves)
+        except (ColorGradingError, TypeError, ValueError) as exc:
+            print(f"[MainWindow] Courbe couleur invalide : {exc}")
+            return
+        self._commit_color_grade(clip_id, updated, f"Courbe {channel}")
+
     def on_color_grade_replaced(
         self, clip_id: str, grade_dict: dict | None
     ) -> None:
@@ -633,48 +717,19 @@ class MainWindow(QMainWindow):
         garantir la validation des bornes et la cohérence des
         champs.
         """
-        from core.color_grading import (
-            ColorCurve,
-            ColorCurves,
-            ColorGrade,
-            ColorGradingError,
-            ColorGradingService,
+        from core.project_io import _deserialize_color_grade
+
+        grade = (
+            ColorGrade.identity()
+            if grade_dict is None
+            else _deserialize_color_grade(
+                grade_dict, project_root=self.project_io_root()
+            )
         )
-
-        if grade_dict is None:
-            grade = ColorGrade.identity()
-        else:
-            try:
-                curves_raw = grade_dict.get("curves") or {}
-                grade = ColorGrade(
-                    exposure=float(grade_dict.get("exposure", 0.0)),
-                    contrast=float(grade_dict.get("contrast", 0.0)),
-                    saturation=float(grade_dict.get("saturation", 1.0)),
-                    temperature=float(grade_dict.get("temperature", 0.0)),
-                    hue=float(grade_dict.get("hue", 0.0)),
-                    shadows=float(grade_dict.get("shadows", 0.0)),
-                    highlights=float(grade_dict.get("highlights", 0.0)),
-                    curves=ColorCurves(
-                        master=ColorCurve.identity(),
-                        red=ColorCurve.identity(),
-                        green=ColorCurve.identity(),
-                        blue=ColorCurve.identity(),
-                    ),
-                    enabled=bool(grade_dict.get("enabled", True)),
-                )
-            except (ColorGradingError, ValueError, TypeError) as exc:
-                print(f"[MainWindow] Étalonnage invalide : {exc}")
-                return
-
-        clip = self._find_clip_anywhere(clip_id)
-        if clip is None:
+        if grade is None:
+            print("[MainWindow] Étalonnage invalide")
             return
-        if clip.locked:
-            return
-        service = ColorGradingService()
-        service.set_grade(self.project, clip_id, grade)
-        self._record_history("Étalonner le clip")
-        self._mark_dirty()
+        self._commit_color_grade(clip_id, grade, "Étalonner le clip")
 
     def on_color_grade_reset(self, clip_id: str) -> None:
         """Réinitialise l'étalonnage d'un clip."""
@@ -683,8 +738,8 @@ class MainWindow(QMainWindow):
             ColorGradingService,
         )
 
-        clip = self._find_clip_anywhere(clip_id)
-        if clip is None or clip.locked:
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.locked:
             return
         service = ColorGradingService()
         try:
@@ -694,6 +749,7 @@ class MainWindow(QMainWindow):
             return
         self._record_history("Réinitialiser l'étalonnage")
         self._mark_dirty()
+        self._reload_timeline_preserving_selection(clip_id)
 
     def on_color_preset_applied(
         self, clip_id: str, preset_id: str
@@ -705,10 +761,10 @@ class MainWindow(QMainWindow):
             ColorPresetStore,
         )
 
-        clip = self._find_clip_anywhere(clip_id)
-        if clip is None or clip.locked:
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.locked:
             return
-        store = ColorPresetStore()
+        store = self.properties_panel.color_preset_store
         preset = store.get_preset(preset_id)
         if preset is None:
             return
@@ -720,6 +776,20 @@ class MainWindow(QMainWindow):
             return
         self._record_history("Appliquer un preset d'étalonnage")
         self._mark_dirty()
+        self._reload_timeline_preserving_selection(clip_id)
+
+    def on_color_preset_save_requested(self, clip_id: str, name: str) -> None:
+        try:
+            grade = ColorGradingService().get_grade(self.project, clip_id)
+            preset = make_user_color_preset(name=name, description="", grade=grade)
+            self.properties_panel.color_preset_store.add_user_preset(preset)
+        except (ColorGradingError, OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Preset couleur", str(exc))
+            return
+        self.project.color_presets.append(preset)
+        self._record_history("Enregistrer un preset couleur")
+        self._mark_dirty()
+        self.properties_panel._refresh_color_presets()
 
     def on_lut_loaded(self, clip_id: str, lut_path: str) -> None:
         """Importe un LUT et l'attache au clip sélectionné."""
@@ -733,8 +803,8 @@ class MainWindow(QMainWindow):
             parse_cube_lut,
         )
 
-        clip = self._find_clip_anywhere(clip_id)
-        if clip is None or clip.locked:
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.locked:
             return
         try:
             parsed = parse_cube_lut(lut_path)
@@ -744,6 +814,7 @@ class MainWindow(QMainWindow):
         try:
             resource = LUTResource.from_path(
                 lut_path,
+                title=parsed.title,
                 project_root=self.project_io_root()
                 if hasattr(self, "project_io_root")
                 else None,
@@ -766,6 +837,14 @@ class MainWindow(QMainWindow):
             return
         self._record_history("Importer un LUT")
         self._mark_dirty()
+        self._reload_timeline_preserving_selection(clip_id)
+
+    def on_color_lut_removed(self, clip_id: str) -> None:
+        try:
+            current = ColorGradingService().get_grade(self.project, clip_id)
+        except ColorGradingError:
+            return
+        self._commit_color_grade(clip_id, current.with_lut(None), "Retirer le LUT")
 
     # ------------------------------------------------------------------
     # Automation audio et ducking (tâche 28)
@@ -1675,6 +1754,9 @@ class MainWindow(QMainWindow):
         self.playhead_seconds = self.timeline_panel.playhead_seconds
         self._sync_preview_to_timeline()
         self._refresh_project_library()
+        self.properties_panel.set_project_color_presets(
+            getattr(self.project, "color_presets", [])
+        )
         mixer = getattr(self, "mixer_panel", None)
         if mixer is not None:
             mixer.set_project(self.project)
@@ -2396,6 +2478,9 @@ class MainWindow(QMainWindow):
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
         self._refresh_project_library()
+        self.properties_panel.set_project_color_presets(
+            getattr(self.project, "color_presets", [])
+        )
         self._reset_selection_and_inspector()
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
@@ -2513,6 +2598,9 @@ class MainWindow(QMainWindow):
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
         self._refresh_project_library()
+        self.properties_panel.set_project_color_presets(
+            getattr(self.project, "color_presets", [])
+        )
         self._reset_selection_and_inspector()
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
@@ -3713,11 +3801,15 @@ class MainWindow(QMainWindow):
 
     def update_color_effect(self, *_):
         panel = self.properties_panel
+        grade = getattr(panel, "_current_color_grade", ColorGrade.identity())
+        color_effect = getattr(self.preview_panel, "color_effect", None)
+        if color_effect is None:
+            return
         apply_color_effect(
-            self.preview_panel.color_effect,
-            panel.brightness_slider.value(),
-            panel.contrast_slider.value(),
-            panel.saturation_slider.value(),
+            color_effect,
+            int(max(-100, min(100, grade.exposure * 50.0))),
+            int(max(-100, min(100, grade.contrast * 100.0))),
+            int(max(-100, min(100, (grade.saturation - 1.0) * 100.0))),
         )
 
     def update_volume(self, value):
