@@ -42,6 +42,16 @@ from core.transition_presets import (
     builtin_transition_presets,
     make_user_transition_preset,
 )
+from core.text_presets import (
+    TextPreset,
+    TextPresetStore,
+    builtin_text_presets,
+    make_user_text_preset,
+)
+from core.text_style import (
+    TextStyle,
+    default_text_style,
+)
 from core.export_engine import ExportEngine
 from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError, probe_media, probe_video
@@ -254,7 +264,9 @@ class MainWindow(QMainWindow):
         self.timeline_panel.toggle_track_muted_requested.connect(self.on_toggle_track_muted)
         self.timeline_panel.move_track_up_requested.connect(self.on_move_track_up)
         self.timeline_panel.move_track_down_requested.connect(self.on_move_track_down)
-        self.properties_panel.subtitle_editor.textChanged.connect(self.update_subtitle_from_editor)
+        self.properties_panel.subtitle_editor.content_changed.connect(
+            self.update_subtitle_from_editor
+        )
         # Tâche 13 : opérations visuelles.
         self.properties_panel.transform_changed.connect(self.on_transform_property_changed)
         self.properties_panel.keyframe_added.connect(self.on_transform_keyframe_added)
@@ -312,6 +324,33 @@ class MainWindow(QMainWindow):
         )
         self.project_panel.transition_favorite_toggled.connect(
             self.on_transition_favorite_toggled
+        )
+        # Tâche 24 : modèles de texte et édition du style.
+        self.text_preset_store = TextPresetStore()
+        self.project_panel.subtitle_view.set_presets(
+            self.text_preset_store.all_presets()
+        )
+        self.text_preset_store.subscribe(self._on_text_presets_changed)
+        self.project_panel.preset_apply_requested.connect(
+            self.on_text_preset_apply_requested
+        )
+        self.project_panel.preset_new_clip_requested.connect(
+            self.on_text_preset_new_clip_requested
+        )
+        self.project_panel.preset_save_requested.connect(
+            self.on_text_preset_save_requested
+        )
+        self.project_panel.preset_delete_requested.connect(
+            self.on_text_preset_delete_requested
+        )
+        self.properties_panel.subtitle_content_changed.connect(
+            self.on_subtitle_content_changed
+        )
+        self.properties_panel.subtitle_style_changed.connect(
+            self.on_subtitle_style_changed
+        )
+        self.properties_panel.subtitle_style_reset.connect(
+            self.on_subtitle_style_reset
         )
 
         # Initialisation de l'horloge de programme (tâche 8).
@@ -1804,7 +1843,9 @@ class MainWindow(QMainWindow):
     # Debounce pour la modification de texte des sous-titres
     # ------------------------------------------------------------------
 
-    def _schedule_subtitle_history_record(self, clip_id: str, new_text: str) -> None:
+    def _schedule_subtitle_history_record(
+        self, clip_id: str, new_text: str | None = None
+    ) -> None:
         """Programme l'enregistrement d'un snapshot après 500 ms d'inactivité.
 
         ``history_before_text`` capture l'état du projet juste avant la
@@ -2749,35 +2790,18 @@ class MainWindow(QMainWindow):
         self._update_timeline_duration()
         self._mark_dirty()
 
-    def update_subtitle_from_editor(self):
+    def update_subtitle_from_editor(self, new_text: str | None = None):
+        """Applique le texte saisi dans l'éditeur de l'inspecteur.
+
+        Delegue à :meth:`on_subtitle_content_changed` qui porte la
+        logique d'historique (debounce) — ce handler reste pour la
+        compatibilité avec les appels historiques.
+        """
         if self.active_subtitle_clip is None:
             return
-        new_text = self.properties_panel.subtitle_editor.toPlainText()
-        try:
-            clip = find_clip(self.project, self.active_subtitle_clip.id)
-        except KeyError:
-            return
-
-        if clip.text == new_text:
-            return
-
-        # Démarrer le groupe avant de modifier le modèle. Le snapshot
-        # final contiendra ainsi le texte complet, pas la première frappe.
-        self._schedule_subtitle_history_record(clip.id, new_text)
-
-        # 1. Mettre à jour le modèle métier.
-        clip.text = new_text
-        self._mark_dirty()
-
-        # 2. Rafraîchir immédiatement la projection de timeline.
-        #    ``set_project`` réinitialise ``selected_clip_id`` ; on le
-        #    restaure juste après et on repeint le widget pour le border.
-        self.timeline_panel.set_project(self.project)
-        self.timeline_panel.selected_clip_id = self.active_subtitle_clip.id
-        self.timeline_panel.refresh_clip_widgets()
-
-        # 3. Mettre à jour l'overlay de preview.
-        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+        if new_text is None:
+            new_text = self.properties_panel.subtitle_editor.content()
+        self.on_subtitle_content_changed(self.active_subtitle_clip.id, new_text)
 
 
     def update_subtitle_overlay(self, seconds, active_clips=None):
@@ -2796,12 +2820,18 @@ class MainWindow(QMainWindow):
             except (ValueError, KeyError):
                 active_clips = []
         subtitle_clips = [c for c in active_clips if c.track_type == "subtitle"]
-        text = subtitle_clips[-1].text.strip() if subtitle_clips else ""
-        if text:
-            self.preview_panel.preview_subtitle_overlay.setText(text)
-            self.preview_panel.preview_subtitle_overlay.show()
-        else:
-            self.preview_panel.preview_subtitle_overlay.hide()
+        if not subtitle_clips:
+            self.preview_panel.clear_subtitle()
+            return
+        view = subtitle_clips[-1]
+        text = view.text.strip() if view.text else ""
+        if not text:
+            self.preview_panel.clear_subtitle()
+            return
+        # La vue de timeline porte le style du clip : on l'applique tel
+        # quel pour que le preview reflète l'inspecteur sans relance.
+        style = getattr(view, "text_style", None) or default_text_style()
+        self.preview_panel.set_subtitle(text, style)
 
     def export_subtitles_to_path(self, file_path: str) -> None:
         """Exporte tous les sous-titres actifs vers ``file_path`` (.srt)."""
@@ -2904,6 +2934,8 @@ class MainWindow(QMainWindow):
         # On rafraîchit la sélection dans le panneau Propriétés.
         self.timeline_panel.select_clip(clip_id)
         self.on_clip_selected(clip_id)
+        # Synchronise l'overlay du preview avec le style du clip.
+        self._refresh_subtitle_overlay()
 
     def update_color_effect(self, *_):
         panel = self.properties_panel
@@ -3106,6 +3138,252 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(str(exc), 5000)
             return
         self.statusBar().showMessage("Transition ajoutée.", 3000)
+
+    # ------------------------------------------------------------------
+    # Tâche 24 : gestion des modèles de texte + édition du style
+    # ------------------------------------------------------------------
+
+    def _on_text_presets_changed(self) -> None:
+        """Répercute les mutations du store vers la bibliothèque."""
+        self.project_panel.subtitle_view.set_presets(
+            self.text_preset_store.all_presets()
+        )
+
+    def _resolve_text_preset(self, preset_id: str) -> TextPreset | None:
+        """Cherche un modèle dans la bibliothèque complète."""
+        for preset in builtin_text_presets():
+            if preset.id == preset_id:
+                return preset
+        return self.text_preset_store.get(preset_id)
+
+    def _apply_text_preset_to_clip(
+        self, clip_id: str, preset: TextPreset
+    ) -> bool:
+        """Applique ``preset.style`` (et son texte par défaut si vide) au clip."""
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return False
+        clip.text_style = preset.style
+        if not (clip.text or "").strip() and preset.default_text:
+            clip.text = preset.default_text
+        self._record_history("Appliquer un modèle de sous-titre")
+        self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_subtitle_overlay()
+        return True
+
+    def _restore_clip_style(self, clip_id: str, style: TextStyle) -> None:
+        """Restaure le style ``style`` sur ``clip_id`` (Undo / Redo)."""
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        clip.text_style = style
+        self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_subtitle_overlay()
+
+    def on_text_preset_apply_requested(self, preset_id: str) -> None:
+        """Applique un modèle au clip sélectionné (sélection timeline)."""
+        preset = self._resolve_text_preset(preset_id)
+        if preset is None:
+            return
+        # Cible = clip sélectionné, ou clip actif si le sous-titre
+        # actif est connu.
+        target_clip_id = self._resolve_subtitle_target_clip_id()
+        if target_clip_id is None:
+            self.statusBar().showMessage(
+                i18n.translate("effects.library.apply_hint"), 5000
+            )
+            return
+        self._apply_text_preset_to_clip(target_clip_id, preset)
+
+    def on_text_preset_new_clip_requested(self, preset_id: str) -> None:
+        """Crée un nouveau clip de sous-titre au playhead avec le modèle."""
+        preset = self._resolve_text_preset(preset_id)
+        if preset is None:
+            return
+        text = preset.default_text or preset.name
+        self.add_subtitle_at_playhead(text, 3.0)
+        # Si un clip vient d'être créé, on lui applique le style du modèle.
+        from core.timeline_operations import find_clip
+
+        subtitle_track = next(
+            (t for t in self.project.tracks if t.type == "subtitle"), None
+        )
+        if subtitle_track is None:
+            return
+        for clip in reversed(subtitle_track.clips):
+            if (clip.text or "").strip() == text:
+                self._apply_text_preset_to_clip(clip.id, preset)
+                break
+
+    def on_text_preset_save_requested(
+        self,
+        name: str,
+        description: str,
+        style: TextStyle,
+        default_text: str,
+    ) -> None:
+        """Ouvre un dialogue d'enregistrement d'un modèle utilisateur."""
+        from PySide6.QtWidgets import QInputDialog
+
+        new_name, accepted = QInputDialog.getText(
+            self,
+            i18n.translate("text.library.save_dialog.title"),
+            i18n.translate("text.library.save_dialog.name"),
+            text=name,
+        )
+        if not accepted or not new_name.strip():
+            return
+        try:
+            preset = make_user_text_preset(
+                name=new_name,
+                description=description,
+                style=style,
+                default_text=default_text,
+            )
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        try:
+            self.text_preset_store.add(preset)
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        self.statusBar().showMessage(
+            f"Modèle « {preset.name} » enregistré.", 3000
+        )
+
+    def on_text_preset_delete_requested(self, preset_id: str) -> None:
+        """Supprime un modèle utilisateur après confirmation."""
+        from PySide6.QtWidgets import QMessageBox
+
+        preset = self.text_preset_store.get(preset_id)
+        if preset is None:
+            return
+        if preset.builtin:
+            QMessageBox.information(
+                self,
+                i18n.translate("text.library.delete"),
+                i18n.translate("text.library.user_builtin_lock"),
+            )
+            return
+        confirm = QMessageBox.question(
+            self,
+            i18n.translate("text.library.delete"),
+            i18n.translate("text.library.delete_confirm").format(
+                name=preset.name
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            self.text_preset_store.remove(preset_id)
+        except KeyError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+
+    # ----- Édition du style via l'inspecteur --------------------------
+
+    def on_subtitle_content_changed(self, clip_id: str, content: str) -> None:
+        """Capture le contenu du sous-titre dans l'historique.
+
+        Le regroupement des frappes est assuré par le debounce existant
+        (``_schedule_subtitle_history_record``) : une session de saisie
+        ne produit qu'une entrée d'historique.
+        """
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if clip.text == content:
+            return
+        clip.text = content
+        self._schedule_subtitle_history_record(clip_id)
+        self._mark_dirty()
+        # La projection de timeline porte le texte : on la reconstruit
+        # sans perdre la sélection courante.
+        self.timeline_panel.set_project(self.project)
+        if self.active_subtitle_clip is not None:
+            self.timeline_panel.selected_clip_id = self.active_subtitle_clip.id
+        self.timeline_panel.refresh_clip_widgets()
+        self.update_subtitle_overlay(self.timeline_panel.playhead_seconds)
+
+    def on_subtitle_style_changed(self, clip_id: str, style: TextStyle) -> None:
+        """Applique immédiatement le style (Undo/Redo friendly)."""
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if clip.text_style == style:
+            return
+        clip.text_style = style
+        self._record_history("Modifier le style du sous-titre")
+        self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_subtitle_overlay()
+
+    def on_subtitle_style_reset(self, clip_id: str) -> None:
+        """Réinitialise le style au standard (Undo/Redo friendly)."""
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        if clip.text_style == default_text_style():
+            return
+        clip.text_style = default_text_style()
+        self._record_history("Réinitialiser le style du sous-titre")
+        self._reload_timeline_preserving_selection(clip_id)
+        self._refresh_subtitle_overlay()
+        self.statusBar().showMessage(
+            i18n.translate("text.library.reset_style"), 3000
+        )
+
+    def _refresh_subtitle_overlay(self) -> None:
+        """Synchronise l'overlay preview avec le sous-titre courant."""
+        preview = getattr(self, "preview_panel", None)
+        if preview is None:
+            return
+        clip = self.active_subtitle_clip
+        if clip is None:
+            preview.clear_subtitle()
+            return
+        from core.timeline_operations import find_clip
+
+        try:
+            model_clip = find_clip(self.project, clip.id)
+        except KeyError:
+            preview.clear_subtitle()
+            return
+        text = (model_clip.text or "").strip()
+        if not text:
+            preview.clear_subtitle()
+            return
+        preview.set_subtitle(text, model_clip.text_style)
+
+    def _resolve_subtitle_target_clip_id(self) -> str | None:
+        """Identifiant du clip cible pour appliquer un modèle."""
+        if self.active_subtitle_clip is not None:
+            return self.active_subtitle_clip.id
+        # Sinon, premier clip de sous-titre visible.
+        for track in self.project.tracks:
+            if track.type != "subtitle" or not track.visible:
+                continue
+            for clip in track.clips:
+                if clip.enabled:
+                    return clip.id
+        return None
 
     def on_transition_selected(self, transition_id: str) -> None:
         """Affiche les réglages de la transition choisie sur la timeline."""

@@ -184,6 +184,7 @@ class RenderPlan:
     video_layers: tuple[RenderLayer, ...] = field(default_factory=tuple)
     audio_layers: tuple[AudioLayer, ...] = field(default_factory=tuple)
     subtitle_cues: tuple[SubtitleCue, ...] = field(default_factory=tuple)
+    subtitle_styles: tuple["TextStyle", ...] = field(default_factory=tuple)
     master_gain_db: float = 0.0
     master_muted: bool = False
     transitions: tuple[RenderTransition, ...] = field(default_factory=tuple)
@@ -316,6 +317,7 @@ def build_render_plan(
         for transition in project.transitions
         if transition.from_clip_id in layer_ids and transition.to_clip_id in layer_ids
     )
+    _subtitle_entries = _subtitle_cues_for_export(project)
     return RenderPlan(
         width=project.width,
         height=project.height,
@@ -323,7 +325,8 @@ def build_render_plan(
         duration=timeline_duration(project),
         video_layers=tuple(video_layers),
         audio_layers=tuple(audio_layers),
-        subtitle_cues=tuple(_subtitle_cues_for_export(project)),
+        subtitle_cues=tuple(cue for cue, _style in _subtitle_entries),
+        subtitle_styles=tuple(style for _cue, style in _subtitle_entries),
         master_gain_db=float(master_gain_db),
         master_muted=bool(master_muted),
         transitions=transitions,
@@ -331,11 +334,19 @@ def build_render_plan(
 
 
 def _subtitle_cues_for_export(project: Project):
-    """Sous-titres exportés, en respectant visibilité et solo."""
+    """Sous-titres exportés, en respectant visibilité et solo.
+
+    Renvoie une liste de tuples ``(SubtitleCue, TextStyle)`` alignés sur
+    l'ordre de tri ``(start, end)``. Les clips qui n'ont pas de style
+    personnalisé portent le :class:`TextStyle` standard (cf.
+    :mod:`core.text_style`).
+    """
     from .subtitle_io import SubtitleCue
+    from .text_style import default_text_style
 
     solo = {track.id for track in project.tracks if track.type == "subtitle" and track.solo}
-    cues = []
+    fallback = default_text_style()
+    cues: list = []
     for track in project.tracks:
         if track.type != "subtitle" or not track.visible:
             continue
@@ -345,13 +356,17 @@ def _subtitle_cues_for_export(project: Project):
             if not clip.enabled or not (clip.text or "").strip():
                 continue
             cues.append(
-                SubtitleCue(
-                    start=float(clip.timeline_start),
-                    end=float(clip.timeline_start + clip.duration),
-                    text=clip.text.strip(),
+                (
+                    SubtitleCue(
+                        start=float(clip.timeline_start),
+                        end=float(clip.timeline_start + clip.duration),
+                        text=clip.text.strip(),
+                    ),
+                    getattr(clip, "text_style", fallback),
                 )
             )
-    return sorted(cues, key=lambda cue: (cue.start, cue.end))
+    cues.sort(key=lambda pair: (pair[0].start, pair[0].end))
+    return cues
 
 
 def _build_audio_layer(

@@ -1,4 +1,4 @@
-"""Lecture et écriture de sous-titres au format SRT.
+"""Lecture et écriture de sous-titres au format SRT et ASS (tâche 24).
 
 Ce module implémente un sous-ensemble strict du format SubRip :
 
@@ -11,7 +11,9 @@ Les fonctions exposées sont volontairement minimales :
 
 - :func:`parse_srt` : parse une chaîne SRT en :class:`SubtitleCue` ;
 - :func:`format_srt` : reconstruit une chaîne SRT à partir des cues ;
-- :func:`load_srt` / :func:`save_srt` : lecture et écriture de fichiers.
+- :func:`load_srt` / :func:`save_srt` : lecture et écriture de fichiers ;
+- :func:`format_ass` : génère un sous-titre ASS pour préserver les
+  styles typographiques au moment de l'export FFmpeg.
 
 Aucune dépendance PySide6 ni FFmpeg : ce module est utilisable hors
 d'un contexte Qt, en CLI ou dans les tests.
@@ -197,3 +199,196 @@ def save_srt(cues: list[SubtitleCue], file_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     content = format_srt(cues)
     path.write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# ASS : préservation des styles typographiques
+# ---------------------------------------------------------------------------
+
+
+# Nom logique du style ASS par défaut. Limite ASS : « Alphanumeric only »,
+# ce qui exclut les espaces et les tirets dans le nom de style.
+_DEFAULT_ASS_STYLE_NAME = "Default"
+
+
+def _escape_ass_text(text: str) -> str:
+    """Échapper le texte pour un fichier ASS.
+
+    Les sauts de ligne sont transformés en ``\\N`` (la séquence ASS pour
+    passer à la ligne suivante). Les retours chariots Windows sont
+    normalisés avant l'échappement.
+    """
+    if not text:
+        return ""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return normalized.replace("\n", r"\N")
+
+
+def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME) -> str:
+    """Formate une ligne ``Style:`` ASS pour un :class:`TextStyle`.
+
+    L'ordre des colonnes est celui imposé par le bloc ``[V4+ Styles]`` :
+
+    ``Name, Fontname, Fontsize, PrimaryColour, SecondaryColour,
+    OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut,
+    ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow,
+    Alignment, MarginL, MarginR, MarginV, Encoding``
+
+    Points de correspondance avec :class:`~core.text_style.TextStyle` :
+
+    - ``PrimaryColour`` porte la couleur **et** l'opacité du texte ;
+    - ``BackColour`` porte le fond et son opacité (0 si aucun fond) ;
+    - ``Outline`` / ``Shadow`` reprennent l'épaisseur du contour et le
+      décalage de l'ombre ;
+    - ``Alignment`` reprend notre grille 3×3 via
+      :func:`~core.text_style.alignment_to_ass` ;
+    - ``MarginL/R`` reprennent la marge horizontale, ``MarginV`` la
+      marge verticale ;
+    - ``BorderStyle`` vaut 1 (« outline + shadow ») quand le style
+      demande un contour ou une ombre, 0 sinon.
+    """
+    from .text_style import alignment_to_ass, ass_color
+
+    alignment_value = alignment_to_ass(style.alignment)
+    primary = ass_color(style.color, style.opacity)
+    secondary = ass_color(style.outline_color, 1.0)
+    outline_colour = ass_color(style.outline_color, 1.0)
+    if style.background_color is not None:
+        back = ass_color(style.background_color, style.background_opacity)
+    else:
+        back = ass_color("#000000", 0.0)
+    border_style = 1 if (style.outline_width > 0 or style.shadow_offset > 0) else 0
+    return (
+        f"Style: {name},{style.font_family},{int(round(style.font_size))},"
+        f"{primary},{secondary},{outline_colour},{back},"
+        # Bold, Italic, Underline, StrikeOut : non utilisés par Kut-Studio.
+        "0,0,0,0,"
+        # ScaleX, ScaleY, Spacing, Angle.
+        "100,100,0,0,"
+        f"{border_style},"
+        f"{style.outline_width:.1f},"
+        f"{style.shadow_offset:.1f},"
+        f"{alignment_value},"
+        f"{int(round(style.margin_x))},"
+        f"{int(round(style.margin_x))},"
+        f"{int(round(style.margin_y))},"
+        "1"
+    )
+
+
+def _ass_dialogue_line(
+    cue,
+    style_name: str = _DEFAULT_ASS_STYLE_NAME,
+    style=None,
+) -> str:
+    """Formate une ligne ``Dialogue:`` ASS pour un :class:`SubtitleCue`.
+
+    Les marges de la ligne reprennent celles du style (libass lit les
+    marges de la ligne *et* celles du style ; les reporter ici évite
+    toute ambiguïté selon la version de libass).
+    """
+    start = _format_ass_timecode(cue.start)
+    end = _format_ass_timecode(cue.end)
+    text = _escape_ass_text(cue.text)
+    if style is None:
+        margin_l = margin_r = margin_v = 0
+    else:
+        margin_l = margin_r = int(round(style.margin_x))
+        margin_v = int(round(style.margin_y))
+    return (
+        f"Dialogue: 0,{start},{end},{style_name},,"
+        f"{margin_l},{margin_r},{margin_v},,{text}"
+    )
+
+
+def _format_ass_timecode(seconds: float) -> str:
+    """Formate ``seconds`` en timecode ``H:MM:SS.cc`` (centièmes ASS)."""
+    if seconds < 0:
+        raise ValueError(
+            f"Impossible de formater un timecode ASS négatif : {seconds}."
+        )
+    total_cs = int(round(seconds * 100))
+    hours, remainder = divmod(total_cs, 360_000)
+    minutes, remainder = divmod(remainder, 6_000)
+    secs, centiseconds = divmod(remainder, 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
+
+
+def format_ass(cues: list[SubtitleCue], style) -> str:
+    """Génère un sous-titre ASS qui applique ``style`` à tous les cues.
+
+    Tous les sous-titres partagent le même style ASS nommé ``Default`` :
+    c'est la limite du filtre ``subtitles=`` de FFmpeg, qui ne
+    référence qu'un fichier unique. Pour des styles *par cue*, on
+    s'appuiera sur ``force_style`` côté export (voir
+    :mod:`core.export_engine`).
+    """
+    style_lines = [_ass_style_line(style)]
+    dialogue_lines = [
+        _ass_dialogue_line(cue, style=style) for cue in cues
+    ]
+    return _ass_template(style_lines, dialogue_lines)
+
+
+def format_ass_with_styles(
+    entries: list, default_style
+) -> str:
+    """Génère un ASS où chaque :class:`SubtitleCue` porte son propre style.
+
+    Args:
+        entries: liste de tuples ``(SubtitleCue, TextStyle)`` triés.
+        default_style: :class:`TextStyle` de repli pour les entrées
+            dont le style est ``None``. Les clips sans style utilisent
+    explicitement le style nommé ``Default`` dans l'ASS produit.
+    """
+    style_lines: list[str] = []
+    dialogues: list[str] = []
+    # Le style par défaut est inséré tel quel, sous le nom ``Default``.
+    style_lines.append(_ass_style_line(default_style, name=_DEFAULT_ASS_STYLE_NAME))
+    counter = 0
+    for cue, style in entries:
+        if style is None or style == default_style:
+            # Style inchangé : on réutilise ``Default`` sans dupliquer
+            # une ligne ``Style:`` identique.
+            style_name = _DEFAULT_ASS_STYLE_NAME
+        else:
+            counter += 1
+            style_name = f"S{counter}"
+            style_lines.append(_ass_style_line(style, name=style_name))
+        dialogues.append(
+            _ass_dialogue_line(cue, style_name=style_name, style=style or default_style)
+        )
+    return _ass_template(style_lines, dialogues)
+
+
+def _ass_template(style_lines: list[str], dialogue_lines: list[str]) -> str:
+    """Génère le contenu complet d'un fichier ASS avec styles + dialogues."""
+    header: list[str] = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "Collisions: Normal",
+        "PlayResX: 1920",
+        "PlayResY: 1080",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        (
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding"
+        ),
+    ]
+    header.extend(style_lines)
+    header.extend(
+        [
+            "",
+            "[Events]",
+            (
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, "
+                "MarginV, Effect, Text"
+            ),
+        ]
+    )
+    header.extend(dialogue_lines)
+    return "\n".join(header).rstrip() + "\n"

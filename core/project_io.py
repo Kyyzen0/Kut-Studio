@@ -25,9 +25,12 @@ ajoute le mixage audio non destructif : ``volume_db`` / ``pan`` sur les
 pistes, ``gain_db`` / ``pan`` / ``fade_in`` / ``fade_out`` sur les clips.
 La version 7 ajoute le remappage temporel (``speed``, ``reverse``,
 ``freeze_mode``...). La version 9 ajoute les effets visuels non
-destructifs portés par chaque clip vidéo (``effects``).
+destructifs portés par chaque clip vidéo (``effects``). La version 10
+ajoute le style non destructif des sous-titres (``text_style`` par
+clip).
 Les versions précédentes restent lisibles : ces champs prennent leurs
-valeurs par défaut (liste d'effets vide). La version 4 avait ajouté
+valeurs par défaut (liste d'effets vide ou style standard pour
+``text_style``). La version 4 avait ajouté
 ``locked`` / ``visible`` / ``muted``.
 
 Une entrée d'effet invalide ou inconnue est ignorée sans empêcher
@@ -63,10 +66,10 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 9
+CURRENT_VERSION = 10
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
 Les versions 1 à 8 restent prises en charge ; les champs spécifiques
@@ -119,6 +122,7 @@ _CLIP_KNOWN_FIELDS = frozenset(
         "enabled",
         "label",
         "text",
+        "text_style",
     }
 ) | _CLIP_AUDIO_FIELDS | _CLIP_TIME_REMAPPING_FIELDS
 
@@ -282,6 +286,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "effects": [
                                 _effect_to_dict(effect) for effect in clip.effects
                             ],
+                            "text_style": clip.text_style.to_dict(),
                         }
                         for clip in track.clips
                     ],
@@ -447,6 +452,13 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
             )
         else:
             clip_kwargs["effects"] = []
+        # Style texte (tâche 24) : rétrocompatible — un clip sans la
+        # clé ``text_style`` reçoit le style standard par défaut, ce
+        # qui correspond exactement au rendu historique.
+        from .text_style import TextStyle
+
+        raw_style = raw_clip.get("text_style")
+        clip_kwargs["text_style"] = TextStyle.from_dict(raw_style)
         clips.append(Clip(**clip_kwargs))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS

@@ -221,6 +221,8 @@ class Clip:
     )
     # --- Effets visuels (tâche 21, clips vidéo uniquement) ---
     effects: list["ClipEffect"] = field(default_factory=list)
+    # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
+    text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -354,6 +356,13 @@ def _default_time_remapping():  # pragma: no cover - import deferred
     from .time_remapping import TimeRemapping
 
     return TimeRemapping()
+
+
+def _default_text_style():  # pragma: no cover - import deferred
+    """Retourne un :class:`TextStyle` par défaut (import paresseux)."""
+    from .text_style import default_text_style
+
+    return default_text_style()
 
 
 @dataclass

@@ -827,6 +827,155 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Select two video clips to apply a transition.",
         "es": "Selecciona dos clips de vídeo para aplicar una transición.",
     },
+
+    # --- Bibliothèque de modèles de texte (tâche 24) -----------------
+    "text.library.search": {
+        "fr": "Rechercher un modèle…",
+        "en": "Search a preset…",
+        "es": "Buscar un modelo…",
+    },
+    "text.library.section.builtin": {
+        "fr": "Préréglages",
+        "en": "Presets",
+        "es": "Preajustes",
+    },
+    "text.library.section.user": {
+        "fr": "Mes modèles",
+        "en": "My presets",
+        "es": "Mis modelos",
+    },
+    "text.library.no_results": {
+        "fr": "Aucun modèle ne correspond à votre recherche.",
+        "en": "No preset matches your search.",
+        "es": "Ningún modelo coincide con tu búsqueda.",
+    },
+    "text.library.user_empty": {
+        "fr": "Aucun modèle enregistré. Cliquez sur « Enregistrer comme modèle » après avoir appliqué des effets.",
+        "en": "No preset saved yet. Click “Save as preset” after applying effects.",
+        "es": "Sin modelos guardados. Pulsa «Guardar como modelo» tras aplicar efectos.",
+    },
+    "text.library.apply_to_clip": {
+        "fr": "Appliquer au clip",
+        "en": "Apply to clip",
+        "es": "Aplicar al clip",
+    },
+    "text.library.new_clip": {
+        "fr": "Nouveau clip au playhead",
+        "en": "New clip at playhead",
+        "es": "Nuevo clip en el cabezal",
+    },
+    "text.library.save": {
+        "fr": "Enregistrer comme modèle",
+        "en": "Save as preset",
+        "es": "Guardar como modelo",
+    },
+    "text.library.delete": {
+        "fr": "Supprimer ce modèle",
+        "en": "Delete this preset",
+        "es": "Eliminar este modelo",
+    },
+    "text.library.new_subtitle": {
+        "fr": "Nouveau sous-titre",
+        "en": "New subtitle",
+        "es": "Nuevo subtítulo",
+    },
+    "text.library.user_builtin_lock": {
+        "fr": "Les préréglages ne peuvent pas être supprimés.",
+        "en": "Built-in presets cannot be deleted.",
+        "es": "Los preajustes no se pueden eliminar.",
+    },
+    "text.library.save_dialog.title": {
+        "fr": "Enregistrer un modèle de texte",
+        "en": "Save text preset",
+        "es": "Guardar modelo de texto",
+    },
+    "text.library.save_dialog.name": {
+        "fr": "Nom du modèle",
+        "en": "Preset name",
+        "es": "Nombre del modelo",
+    },
+    "text.library.save_dialog.description": {
+        "fr": "Description (optionnelle)",
+        "en": "Description (optional)",
+        "es": "Descripción (opcional)",
+    },
+    "text.library.save_dialog.text": {
+        "fr": "Texte par défaut",
+        "en": "Default text",
+        "es": "Texto por defecto",
+    },
+    "text.library.delete_confirm": {
+        "fr": "Supprimer le modèle « {name} » ?",
+        "en": "Delete preset “{name}”?",
+        "es": "¿Eliminar el modelo «{name}»?",
+    },
+    "text.library.reset_style": {
+        "fr": "Style réinitialisé.",
+        "en": "Style reset.",
+        "es": "Estilo reiniciado.",
+    },
+
+    # --- Présets de texte intégrés (tâche 24) -------------------------
+    "text.preset.standard_subtitle.name": {
+        "fr": "Sous-titre standard",
+        "en": "Standard subtitle",
+        "es": "Subtítulo estándar",
+    },
+    "text.preset.standard_subtitle.description": {
+        "fr": "Sous-titre par défaut en bas, centré, lisible sur tout fond.",
+        "en": "Default bottom-centered subtitle, readable on any background.",
+        "es": "Subtítulo por defecto abajo, centrado, legible en cualquier fondo.",
+    },
+    "text.preset.title.name": {
+        "fr": "Titre",
+        "en": "Title",
+        "es": "Título",
+    },
+    "text.preset.title.description": {
+        "fr": "Titre d'ouverture haut centré avec fond sombre translucide.",
+        "en": "Top-centered opening title with dark translucent background.",
+        "es": "Título superior centrado con fondo oscuro translúcido.",
+    },
+    "text.preset.centered_title.name": {
+        "fr": "Titre centré",
+        "en": "Centered title",
+        "es": "Título centrado",
+    },
+    "text.preset.centered_title.description": {
+        "fr": "Titre plein cadre, contour prononcé pour ressortir.",
+        "en": "Full-frame title with strong outline.",
+        "es": "Título a pantalla completa con contorno marcado.",
+    },
+    "text.preset.lower_third.name": {
+        "fr": "Carton inférieur",
+        "en": "Lower third",
+        "es": "Cartel inferior",
+    },
+    "text.preset.lower_third.description": {
+        "fr": "Carton bas-gauche typique des reportages, fond coloré.",
+        "en": "Lower-left banner typical of news reports, colored background.",
+        "es": "Cartel inferior izquierdo típico de reportajes, fondo de color.",
+    },
+    "text.preset.quote.name": {
+        "fr": "Citation",
+        "en": "Quote",
+        "es": "Cita",
+    },
+    "text.preset.quote.description": {
+        "fr": "Citation milieu-centré avec fond doux translucide.",
+        "en": "Centered quote with a soft translucent background.",
+        "es": "Cita centrada con fondo suave translúcido.",
+    },
+    "text.preset.credits_simple.name": {
+        "fr": "Générique simple",
+        "en": "Simple credits",
+        "es": "Créditos simples",
+    },
+    "text.preset.credits_simple.description": {
+        "fr": "Bloc générique haut centré, petit, marges généreuses.",
+        "en": "Top-centered small credits block with generous margins.",
+        "es": "Bloque de créditos superior centrado, pequeño, márgenes amplios.",
+    },
 }
 
 

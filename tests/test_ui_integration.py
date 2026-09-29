@@ -7,6 +7,7 @@ supprimer, éditer un sous-titre) sont propagées au modèle métier.
 
 import json
 import pathlib
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
@@ -26,6 +27,19 @@ def _build_window(qtbot, monkeypatch):
     """Construit une MainWindow configurée pour les tests offscreen."""
     from ui.main_window import MainWindow
     from PySide6.QtWidgets import QMessageBox
+
+    # Isolation des préférences : sans cela, les presets utilisateur
+    # écrits par un test réapparaissent dans les suivants (et dans la
+    # config réelle du développeur). Un test qui veut explicitly cibler
+    # un répertoire fixe son ``KUT_STUDIO_CONFIG_DIR`` avant l'appel.
+    import os
+    import tempfile
+
+    if "KUT_STUDIO_CONFIG_DIR" not in os.environ:
+        monkeypatch.setenv(
+            "KUT_STUDIO_CONFIG_DIR",
+            tempfile.mkdtemp(prefix="kut-studio-test-"),
+        )
 
     # On neutralise les boîtes de dialogue pour ne pas bloquer les tests.
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
@@ -265,6 +279,332 @@ def test_transition_favorite_toggle_roundtrip(qtbot, monkeypatch, tmp_path) -> N
     assert window.transition_preset_store.is_favorite("crossfade") is False
 
 
+def test_text_library_lists_the_six_builtin_presets(
+    qtbot, monkeypatch
+) -> None:
+    """La bibliothèque Texte propose les six modèles documentés."""
+    window = _build_window(qtbot, monkeypatch)
+    view = window.project_panel.subtitle_view.preset_view
+    ids = {card.preset_id for card in view._cards.values()}
+    assert ids == {
+        "standard_subtitle",
+        "title",
+        "centered_title",
+        "lower_third",
+        "quote",
+        "credits_simple",
+    }
+
+
+def test_text_preset_apply_updates_clip_style_and_preview(
+    qtbot, monkeypatch
+) -> None:
+    """Appliquer un modèle pose le style sur le clip et l'overlay du preview."""
+    from core.text_style import TextAlignment
+    from core.timeline_operations import add_subtitle_clip, find_clip
+    from core.track_operations import add_track
+
+    window = _build_window(qtbot, monkeypatch)
+    track = add_track(window.project, "subtitle")
+    clip = add_subtitle_clip(
+        window.project, "Contenu", 0.0, 3.0, track_id=track.id
+    )
+    window.timeline_panel.set_project(window.project)
+    window.on_clip_selected(clip.id)
+    window.seek_to_position(1.0)
+
+    window.on_text_preset_apply_requested("title")
+
+    updated = find_clip(window.project, clip.id)
+    assert updated.text_style.alignment is TextAlignment.TOP_CENTER
+    assert updated.text_style.font_size == 64.0
+    # Le preview affiche le texte avec le nouveau style.
+    overlay = window.preview_panel.preview_subtitle_overlay
+    assert overlay.isVisibleTo(window.preview_panel) is True
+    assert overlay.text() == "Contenu"
+
+
+def test_text_preset_new_clip_creates_a_subtitle_at_playhead(
+    qtbot, monkeypatch
+) -> None:
+    """« Nouveau clip au playhead » crée un clip stylé au bon instant."""
+    from core.text_style import TextAlignment
+    from core.timeline_operations import find_clip
+
+    window = _build_window(qtbot, monkeypatch)
+    window.seek_to_position(2.0)
+    before = len(window.project.tracks[-1].clips) if window.project.tracks else 0
+
+    window.on_text_preset_new_clip_requested("lower_third")
+
+    subtitle_tracks = [
+        t for t in window.project.tracks if t.type == "subtitle"
+    ]
+    clips = [c for track in subtitle_tracks for c in track.clips]
+    assert len(clips) > before
+    new_clip = clips[-1]
+    assert new_clip.timeline_start == pytest.approx(2.0)
+    assert new_clip.text_style.alignment is TextAlignment.BOTTOM_LEFT
+    assert find_clip(window.project, new_clip.id).text == new_clip.text
+
+
+def test_subtitle_style_edit_is_undoable(qtbot, monkeypatch) -> None:
+    """Un changement de style depuis l'inspecteur est annulable."""
+    from core.text_style import TextAlignment, default_text_style
+    from core.timeline_operations import add_subtitle_clip, find_clip
+    from core.track_operations import add_track
+
+    window = _build_window(qtbot, monkeypatch)
+    track = add_track(window.project, "subtitle")
+    clip = add_subtitle_clip(
+        window.project, "Sous-titre", 0.0, 2.0, track_id=track.id
+    )
+    window.timeline_panel.set_project(window.project)
+    window.on_clip_selected(clip.id)
+    # L'ajout du clip doit être dans l'historique : sinon l'undo du
+    # style ramène au projet d'avant la création du clip.
+    window._record_history("Ajouter un sous-titre")
+    before = len(window.history)
+
+    new_style = default_text_style().with_updates(
+        alignment=TextAlignment.MIDDLE_CENTER, font_size=48.0
+    )
+    window.on_subtitle_style_changed(clip.id, new_style)
+
+    assert find_clip(window.project, clip.id).text_style == new_style
+    assert len(window.history) == before + 1
+
+    window.undo_last()
+    assert (
+        find_clip(window.project, clip.id).text_style == default_text_style()
+    )
+
+    window.redo_last()
+    assert find_clip(window.project, clip.id).text_style == new_style
+
+
+def test_subtitle_style_reset_restores_default_and_is_undoable(
+    qtbot, monkeypatch
+) -> None:
+    """Le bouton « Réinitialiser » revient au style standard, undoable."""
+    from core.text_style import (
+        TextAlignment,
+        default_text_style,
+    )
+    from core.timeline_operations import add_subtitle_clip, find_clip
+    from core.track_operations import add_track
+
+    window = _build_window(qtbot, monkeypatch)
+    track = add_track(window.project, "subtitle")
+    clip = add_subtitle_clip(
+        window.project, "Sous-titre", 0.0, 2.0, track_id=track.id
+    )
+    custom = default_text_style().with_updates(
+        alignment=TextAlignment.TOP_LEFT,
+    )
+    find_clip(window.project, clip.id).text_style = custom
+    window.timeline_panel.set_project(window.project)
+    window.on_clip_selected(clip.id)
+    window._record_history("Ajouter un sous-titre")
+    before = len(window.history)
+
+    window.on_subtitle_style_reset(clip.id)
+
+    assert (
+        find_clip(window.project, clip.id).text_style == default_text_style()
+    )
+    assert len(window.history) == before + 1
+    window.undo_last()
+    assert find_clip(window.project, clip.id).text_style == custom
+
+
+def test_text_preset_user_model_persists_across_restart(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    """Un modèle utilisateur survit au redémarrage (persistance préférences)."""
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path))
+    window = _build_window(qtbot, monkeypatch)
+    from core.text_presets import TextPresetStore
+
+    preset = window.text_preset_store.all()  # liste vide au départ
+    assert preset == []
+
+    from core.text_presets import make_user_text_preset
+    from core.text_style import TextAlignment, default_text_style
+
+    new_preset = make_user_text_preset(
+        name="Mon modèle",
+        description="Test",
+        style=default_text_style().with_updates(
+            alignment=TextAlignment.MIDDLE_RIGHT
+        ),
+        default_text="Bandeau",
+    )
+    window.text_preset_store.add(new_preset)
+
+    # Un store neuf recharge la donnée depuis le disque.
+    fresh = TextPresetStore()
+    reloaded = fresh.all()
+    assert len(reloaded) == 1
+    assert reloaded[0].name == "Mon modèle"
+    assert reloaded[0].style.alignment is TextAlignment.MIDDLE_RIGHT
+
+
+def test_text_builtin_preset_cannot_be_deleted(qtbot, monkeypatch) -> None:
+    """Les modèles intégrés ne sont pas supprimables."""
+    window = _build_window(qtbot, monkeypatch)
+    window.on_text_preset_delete_requested("title")
+    # Le modèle intégré est toujours présent dans la bibliothèque.
+    ids = {
+        card.preset_id
+        for card in window.project_panel.subtitle_view.preset_view._cards.values()
+    }
+    assert "title" in ids
+
+
+def test_text_preset_user_delete_removes_it(qtbot, monkeypatch, tmp_path) -> None:
+    """Un modèle utilisateur est supprimable après confirmation."""
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path))
+    window = _build_window(qtbot, monkeypatch)
+    from core.text_presets import make_user_text_preset
+    from core.text_style import default_text_style
+
+    preset = make_user_text_preset(
+        name="Perso",
+        description="",
+        style=default_text_style(),
+    )
+    window.text_preset_store.add(preset)
+
+    window.on_text_preset_delete_requested(preset.id)
+
+    assert window.text_preset_store.get(preset.id) is None
+    ids = {
+        card.preset_id
+        for card in window.project_panel.subtitle_view.preset_view._cards.values()
+    }
+    assert preset.id not in ids
+
+
+def test_srt_export_keeps_text_and_timing_only(qtbot, monkeypatch, tmp_path) -> None:
+    """L'export SRT ignore les styles mais garde texte + timing."""
+    from core.timeline_operations import add_subtitle_clip
+    from core.track_operations import add_track
+    from core.text_style import TextAlignment, default_text_style
+
+    window = _build_window(qtbot, monkeypatch)
+    track = add_track(window.project, "subtitle")
+    clip = add_subtitle_clip(
+        window.project, "Bonjour", 1.0, 2.0, track_id=track.id
+    )
+    clip.text_style = default_text_style().with_updates(
+        alignment=TextAlignment.TOP_CENTER, font_size=99.0
+    )
+
+    target = tmp_path / "out.srt"
+    window.export_subtitles_to_path(str(target))
+    content = target.read_text(encoding="utf-8")
+
+    assert "00:00:01,000 --> 00:00:03,000" in content
+    assert "Bonjour" in content
+    # Aucune trace du style dans le SRT.
+    assert "Arial" not in content
+    assert "99" not in content.split("Bonjour")[0].split("-->")[0]
+
+
+def test_export_uses_ass_when_a_custom_style_is_present(tmp_path) -> None:
+    """Un style personnalisé fait basculer l'export vers un fichier ASS."""
+    from core.export_engine import ExportEngine
+    from core.render_plan import build_render_plan
+
+    window_project = _project_with_styled_subtitle()
+    plan = build_render_plan(window_project)
+
+    engine = ExportEngine()
+    engine._prepare_temporary_files(plan)
+    try:
+        produced = list(engine._temporary_files)
+        assert len(produced) == 1
+        assert produced[0].endswith(".ass")
+        content = Path(produced[0]).read_text(encoding="utf-8")
+        assert "[V4+ Styles]" in content
+        assert "Style: Default," in content
+    finally:
+        engine._cleanup_temporary_files()
+
+
+def test_export_uses_srt_when_all_styles_are_default(tmp_path) -> None:
+    """Sans style personnalisé, on conserve le SRT historique."""
+    from core.export_engine import ExportEngine
+    from core.render_plan import build_render_plan
+
+    window_project = _project_with_styled_subtitle(default_style_only=True)
+    plan = build_render_plan(window_project)
+
+    engine = ExportEngine()
+    engine._prepare_temporary_files(plan)
+    try:
+        produced = list(engine._temporary_files)
+        assert len(produced) == 1
+        assert produced[0].endswith(".srt")
+    finally:
+        engine._cleanup_temporary_files()
+
+
+def _project_with_styled_subtitle(default_style_only: bool = False):
+    """Projet avec un sous-titre, stylé ou non."""
+    from core.project_model import (
+        Clip,
+        MediaAsset,
+        Project,
+        Track,
+    )
+    from core.text_style import (
+        TextAlignment,
+        default_text_style,
+    )
+
+    style = default_text_style()
+    if not default_style_only:
+        style = style.with_updates(
+            alignment=TextAlignment.TOP_CENTER, font_size=72.0
+        )
+    track = Track(
+        id="T1",
+        name="Titres",
+        type="subtitle",
+        clips=[
+            Clip(
+                id="sub-1",
+                asset_id="sub-asset",
+                track_id="T1",
+                timeline_start=0.0,
+                source_in=0.0,
+                source_out=2.0,
+                label="Titre",
+                text="Bonjour",
+                text_style=style,
+            )
+        ],
+    )
+    return Project(
+        name="Styled",
+        media_assets=[
+            MediaAsset(
+                id="sub-asset",
+                path="/tmp/s.srt",
+                name="Sous-titres",
+                duration=10.0,
+                width=0,
+                height=0,
+                fps=0,
+                media_type="subtitle",
+            )
+        ],
+        tracks=[track],
+    )
+
+
 def test_transition_marker_inspector_edit_and_removal(qtbot, monkeypatch) -> None:
     """Un marqueur sélectionne, modifie puis supprime la transition seule."""
     window = _build_window(qtbot, monkeypatch)
@@ -305,7 +645,7 @@ def test_main_window_subtitle_editor_updates_project(qtbot, tmp_path, monkeypatc
     window.on_clip_selected("subtitle_01")
 
     new_text = "Bienvenue dans la nouvelle version"
-    window.properties_panel.subtitle_editor.setPlainText(new_text)
+    window.properties_panel.subtitle_editor.content_editor.setPlainText(new_text)
 
     # Clip.text dans le Project est mis à jour.
     updated = find_clip(window.project, "subtitle_01")
@@ -330,7 +670,7 @@ def test_main_window_subtitle_export_failure_does_not_break_ui(
     # L'édition du sous-titre ne doit lever aucune exception Qt et
     # n'écrit rien automatiquement sur le disque.
     new_text = "Sauvegarde explicite uniquement"
-    window.properties_panel.subtitle_editor.setPlainText(new_text)
+    window.properties_panel.subtitle_editor.content_editor.setPlainText(new_text)
 
     # Le modèle et la vue reflètent la modification.
     updated = find_clip(window.project, "subtitle_01")
@@ -694,7 +1034,7 @@ def test_subtitle_edit_marks_project_dirty(qtbot, tmp_path, monkeypatch) -> None
     window.on_clip_selected("subtitle_01")
 
     assert window.project_dirty is False
-    window.properties_panel.subtitle_editor.setPlainText("Nouveau texte")
+    window.properties_panel.subtitle_editor.content_editor.setPlainText("Nouveau texte")
     assert window.project_dirty is True
 
 
@@ -2265,7 +2605,7 @@ def test_subtitle_text_edit_groups_into_single_history_entry(
 
     # Plusieurs frappes rapides dans l'éditeur.
     for char in "ABC":
-        window.properties_panel.subtitle_editor.setPlainText(f"Hello {char}")
+        window.properties_panel.subtitle_editor.content_editor.setPlainText(f"Hello {char}")
         # Le MainWindow écoute ``textChanged`` : il met à jour le clip
         # et programme un debounce.
         window.update_subtitle_from_editor()

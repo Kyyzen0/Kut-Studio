@@ -106,6 +106,7 @@ class PreviewPanel(QWidget):
             f"border-radius: 6px; padding: 8px 14px; font-size: 16px; font-weight: 700;"
         )
         self.preview_subtitle_overlay.hide()
+        self._current_subtitle_alignment = Qt.AlignCenter | Qt.AlignBottom
 
         self.preview_effects_overlay = QLabel()
         self.preview_effects_overlay.setAlignment(Qt.AlignCenter)
@@ -315,6 +316,32 @@ class PreviewPanel(QWidget):
         except Exception:  # pragma: no cover - cosmetic
             pass
 
+    # ----- Sous-titre (tâche 24) -------------------------------------
+
+    def set_subtitle(self, text: str, style) -> None:
+        """Affiche un sous-titre ``text`` sur le preview en appliquant ``style``.
+
+        Un texte vide (ou un clip sans contenu) masque l'overlay.
+        """
+        if not text or text.strip() == "":
+            self.preview_subtitle_overlay.hide()
+            return
+        self.preview_subtitle_overlay.setText(text)
+        self.preview_subtitle_overlay.setStyleSheet(
+            _subtitle_overlay_style_sheet(style)
+        )
+        self.preview_subtitle_overlay.setAlignment(
+            _subtitle_alignment_to_qt(style.alignment)
+        )
+        self.preview_subtitle_overlay.setMaximumWidth(
+            _subtitle_max_width(self.preview_subtitle_overlay.parentWidget())
+        )
+        self.preview_subtitle_overlay.show()
+
+    def clear_subtitle(self) -> None:
+        """Cache le sous-titre courant."""
+        self.preview_subtitle_overlay.hide()
+
     def release_media(self) -> None:
         """Lâche la source décodée.
 
@@ -421,3 +448,117 @@ def _format_duration(seconds: float) -> str:
     minutes = (total % 3600) // 60
     secs = total % 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+# ---------------------------------------------------------------------------
+# Sous-titre : application d'un :class:`TextStyle` au QLabel overlay
+# ---------------------------------------------------------------------------
+
+
+def _subtitle_overlay_style_sheet(style) -> str:
+    """Construit la feuille de style Qt pour l'overlay sous-titre."""
+    color = style.color
+    opacity = max(0.0, min(1.0, style.opacity))
+    text_alpha = int(round(opacity * 255))
+    bg = style.background_color
+    if bg:
+        bg_alpha = int(round(max(0.0, min(1.0, style.background_opacity)) * 255))
+        bg_rule = f"background: {bg}; opacity: 1;"
+        bg_alpha_rule = (
+            f"background-color: rgba({_hex_to_rgb(bg)}, {style.background_opacity});"
+        )
+    else:
+        bg_rule = ""
+        bg_alpha_rule = ""
+    text_rule = f"color: rgba({_hex_to_rgb(color)}, {opacity});"
+    outline = style.outline_width
+    shadow = style.shadow_offset
+    padding_x = int(round(style.padding_x))
+    padding_y = int(round(style.padding_y))
+    font_family = style.font_family
+    font_size = int(round(style.font_size))
+    font_weight = 700 if style.font_size >= 36 else 500
+    border_radius = 6
+    return (
+        "QLabel { "
+        f"{text_rule} "
+        f"{bg_alpha_rule} "
+        f"border: {outline:.1f}px solid {style.outline_color}; "
+        f"border-radius: {border_radius}px; "
+        f"padding: {padding_y}px {padding_x}px; "
+        f"font-family: '{font_family}'; "
+        f"font-size: {font_size}px; "
+        f"font-weight: {font_weight}; "
+        f"{bg_rule} "
+        "}"
+    )
+
+
+def _subtitle_alignment_to_qt(alignment) -> Qt.Alignment:
+    """Convertit un :class:`TextAlignment` en flag Qt d'alignement."""
+    from core.text_style import TextAlignment
+
+    row, col = alignment_to_qt_row_col(TextAlignment(alignment))
+    vertical = {
+        0: Qt.AlignTop,
+        1: Qt.AlignVCenter,
+        2: Qt.AlignBottom,
+    }[row]
+    horizontal = {
+        0: Qt.AlignLeft,
+        1: Qt.AlignHCenter,
+        2: Qt.AlignRight,
+    }[col]
+    return vertical | horizontal
+
+
+def alignment_to_qt_row_col(alignment) -> tuple[int, int]:
+    """Retourne la position (row, col) dans la grille 3×3."""
+    from core.text_style import TextAlignment
+
+    if alignment in (
+        TextAlignment.TOP_LEFT,
+        TextAlignment.TOP_CENTER,
+        TextAlignment.TOP_RIGHT,
+    ):
+        row = 0
+    elif alignment in (
+        TextAlignment.MIDDLE_LEFT,
+        TextAlignment.MIDDLE_CENTER,
+        TextAlignment.MIDDLE_RIGHT,
+    ):
+        row = 1
+    else:
+        row = 2
+    if alignment in (
+        TextAlignment.TOP_LEFT,
+        TextAlignment.MIDDLE_LEFT,
+        TextAlignment.BOTTOM_LEFT,
+    ):
+        col = 0
+    elif alignment in (
+        TextAlignment.TOP_CENTER,
+        TextAlignment.MIDDLE_CENTER,
+        TextAlignment.BOTTOM_CENTER,
+    ):
+        col = 1
+    else:
+        col = 2
+    return row, col
+
+
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convertit ``#rrggbb`` en chaîne ``r, g, b`` pour CSS Qt."""
+    if not hex_color.startswith("#") or len(hex_color) != 7:
+        return "255, 255, 255"
+    return f"{int(hex_color[1:3], 16)}, {int(hex_color[3:5], 16)}, {int(hex_color[5:7], 16)}"
+
+
+def _subtitle_max_width(parent: QWidget | None) -> int:
+    """Calcule une largeur max relative au conteneur du preview."""
+    if parent is None:
+        return 720
+    width = parent.width()
+    if width <= 0:
+        return 720
+    return max(280, int(width * 0.85))

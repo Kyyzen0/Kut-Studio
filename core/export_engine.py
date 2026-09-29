@@ -44,7 +44,8 @@ from PySide6.QtCore import QObject, QProcess, Signal
 
 from .effects_model import ClipEffect, EffectType
 from .render_plan import AudioLayer, RenderLayer, RenderPlan, RenderTransition
-from .subtitle_io import format_srt
+from .subtitle_io import format_ass_with_styles, format_srt
+from .text_style import default_text_style, is_default_style as _is_default_style
 from .transitions import TransitionType
 from .time_remapping import (
     MAX_REVERSE_DURATION_SECONDS,
@@ -347,22 +348,36 @@ class ExportEngine(QObject):
     # ------------------------------------------------------------------
 
     def _prepare_temporary_files(self, plan: RenderPlan) -> None:
-        """Écrit un SRT temporaire si le projet porte des sous-titres actifs."""
+        """Écrit un fichier temporaire (SRT ou ASS) si le projet porte des sous-titres.
+
+        L'ASS est privilégié dès qu'au moins un clip porte un style non
+        standard ; sinon on conserve le SRT historique pour préserver la
+        compatibilité avec les builds FFmpeg sans libass.
+        """
         self._cleanup_temporary_files()
         if not plan.subtitle_cues:
             return
+        has_custom_style = any(
+            not _is_default_style(style) for style in plan.subtitle_styles
+        )
+        if has_custom_style:
+            suffix = ".ass"
+            content = format_ass_with_styles(
+                list(zip(plan.subtitle_cues, plan.subtitle_styles)),
+                default_style=default_text_style(),
+            )
+        else:
+            suffix = ".srt"
+            content = format_srt(list(plan.subtitle_cues))
         fd, tmp_path = tempfile.mkstemp(
             prefix="kut-studio-subtitles-",
-            suffix=".srt",
+            suffix=suffix,
         )
         # Enregistrer le chemin avant l'écriture afin que le nettoyage
         # du gestionnaire couvre aussi un échec d'écriture sur disque.
         self._temporary_files.append(tmp_path)
         os.close(fd)
-        Path(tmp_path).write_text(
-            format_srt(list(plan.subtitle_cues)),
-            encoding="utf-8",
-        )
+        Path(tmp_path).write_text(content, encoding="utf-8")
 
     def _cleanup_temporary_files(self) -> None:
         """Supprime tous les fichiers temporaires créés pour cet export."""
@@ -375,9 +390,9 @@ class ExportEngine(QObject):
 
     @property
     def _current_srt_path(self) -> str | None:
-        """Retourne le SRT temporaire courant (pour la commande FFmpeg)."""
+        """Retourne le chemin du fichier de sous-titres courant (SRT ou ASS)."""
         for path in self._temporary_files:
-            if path.endswith(".srt"):
+            if path.endswith((".srt", ".ass")):
                 return path
         return None
 

@@ -50,6 +50,7 @@ from core.visual_effects import (
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
+from ui.text_style_editor import TextStyleEditor
 from ui.theme import COLORS, label_style
 
 
@@ -562,27 +563,24 @@ class PropertiesPanel(QWidget):
         layout.addWidget(self.audio_group)
         self.audio_group.setEnabled(False)
 
-        # ----- Sous-titre ----------------------------------------------
+        # ----- Sous-titre (style + contenu, tâche 24) ------------------
         self.subtitle_group = QGroupBox("Sous-titre")
         self.subtitle_group.setStyleSheet(self.group_style())
         subtitle_layout = QVBoxLayout(self.subtitle_group)
         subtitle_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md
         )
-        self.subtitle_editor = QTextEdit()
-        self.subtitle_editor.setPlaceholderText(
-            "Texte affiché sur le preview…"
-        )
-        self.subtitle_editor.setFixedHeight(96)
-        self.subtitle_editor.setStyleSheet(
-            f"QTextEdit {{ background: {COLORS['panel_alt']}; color: {COLORS['text']}; "
-            f"border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 6px; }}"
-        )
-        save_button = QPushButton("Enregistrer le .srt")
-        save_button.setEnabled(False)
-        save_button.setVisible(False)
+        self.subtitle_editor = TextStyleEditor(self)
         subtitle_layout.addWidget(self.subtitle_editor)
-        subtitle_layout.addWidget(save_button)
+        self.subtitle_editor.content_changed.connect(
+            self._on_subtitle_content_changed
+        )
+        self.subtitle_editor.style_changed.connect(
+            self._on_subtitle_style_changed
+        )
+        self.subtitle_editor.reset_requested.connect(
+            self._on_subtitle_style_reset
+        )
         # La visibilité initiale est pilotée par la sélection de clip :
         # voir ``_set_group_condition`` / ``_apply_group_visibility``.
         layout.addWidget(self.subtitle_group)
@@ -1500,9 +1498,8 @@ class PropertiesPanel(QWidget):
             is_subtitle = getattr(view, "track_type", None) == "subtitle"
             self._set_group_condition(self.subtitle_group, is_subtitle)
             if is_subtitle:
-                self.subtitle_editor.blockSignals(True)
-                self.subtitle_editor.setPlainText(view.text)
-                self.subtitle_editor.blockSignals(False)
+                style = getattr(view, "text_style", None)
+                self.subtitle_editor.set_state(getattr(view, "text", ""), style)
 
             is_video_clip = getattr(view, "track_type", None) == "video"
             self.movement_group.setEnabled(is_video_clip)
@@ -1636,6 +1633,30 @@ class PropertiesPanel(QWidget):
     def _on_transition_remove(self) -> None:
         if self.selected_transition_id is not None:
             self.transition_remove_requested.emit(self.selected_transition_id)
+
+    # ----- Sous-titre (tâche 24) --------------------------------------
+
+    subtitle_content_changed = Signal(str, str)  # clip_id, content
+    subtitle_style_changed = Signal(str, object)  # clip_id, TextStyle
+    subtitle_style_reset = Signal(str)  # clip_id
+
+    def _on_subtitle_content_changed(self, content: str) -> None:
+        """Émet le signal ``subtitle_content_changed`` avec l'id du clip."""
+        if self.selected_clip is None:
+            return
+        self.subtitle_content_changed.emit(self.selected_clip.id, content)
+
+    def _on_subtitle_style_changed(self, style) -> None:
+        """Émet le signal ``subtitle_style_changed`` avec l'id du clip."""
+        if self.selected_clip is None:
+            return
+        self.subtitle_style_changed.emit(self.selected_clip.id, style)
+
+    def _on_subtitle_style_reset(self) -> None:
+        """Émet le signal ``subtitle_style_reset`` pour réinitialiser le style."""
+        if self.selected_clip is None:
+            return
+        self.subtitle_style_reset.emit(self.selected_clip.id)
 
     def _on_speed_changed(self, value: float) -> None:
         if self.selected_clip is None or self._signal_block_depth > 0:
