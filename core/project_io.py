@@ -310,6 +310,16 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "effects": [
                                 _effect_to_dict(effect) for effect in clip.effects
                             ],
+                            # Effets audio non destructifs (tâche 27).
+                            # Sérialisés comme liste vide pour les
+                            # projets anciens ou les clips sans effets
+                            # audio. La désérialisation reste stricte
+                            # : un effet invalide est ignoré à l'unité,
+                            # sans casser le chargement du clip.
+                            "audio_effects": [
+                                _audio_effect_to_dict(effect)
+                                for effect in clip.audio_effects
+                            ],
                             "text_style": clip.text_style.to_dict(),
                         }
                         for clip in track.clips
@@ -497,6 +507,16 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
             )
         else:
             clip_kwargs["effects"] = []
+        # Effets audio (tâche 27, v11+) : acceptés sur les pistes
+        # vidéo (qui peuvent porter de l'audio) et audio. Les
+        # versions antérieures à la v11 n'ont pas la clé : la liste
+        # reste vide, comportement historique préservé.
+        if track_type in ("video", "audio"):
+            clip_kwargs["audio_effects"] = _deserialize_audio_effects(
+                raw_clip.get("audio_effects")
+            )
+        else:
+            clip_kwargs["audio_effects"] = []
         # Style texte (tâche 24) : rétrocompatible — un clip sans la
         # clé ``text_style`` reçoit le style standard par défaut, ce
         # qui correspond exactement au rendu historique.
@@ -630,6 +650,57 @@ def _deserialize_clip_effects(raw: Any) -> list[ClipEffect]:
             continue
         if effect.id in seen_ids:
             # Un identifiant dupliqué rendrait les opérations ambiguës.
+            continue
+        seen_ids.add(effect.id)
+        effects.append(effect)
+    return effects
+
+
+# ---------------------------------------------------------------------------
+# Effets audio non destructifs (tâche 27, v11)
+# ---------------------------------------------------------------------------
+
+
+def _audio_effect_to_dict(effect) -> dict[str, Any]:
+    """Sérialise un :class:`AudioEffect` en dict JSON."""
+    return {
+        "id": effect.id,
+        "type": effect.type.value,
+        "enabled": bool(effect.enabled),
+        "params": {name: float(value) for name, value in effect.params.items()},
+    }
+
+
+def _deserialize_audio_effects(raw: Any) -> list:
+    """Désérialise la liste d'effets audio d'un clip.
+
+    Une entrée non-dict, un identifiant/type manquant, un type inconnu ou
+    des paramètres invalides ne font pas échouer le chargement : seule
+    l'entrée fautive est ignorée, les autres sont conservées dans
+    l'ordre du fichier. Une version antérieure (clé absente ou
+    ``None``) donne une liste vide.
+    """
+    # Import paresseux pour éviter une dépendance circulaire lors des
+    # tests CLI qui n'instancient pas l'audio_effects_model.
+    from .audio_effects_model import AudioEffect, AudioEffectType
+
+    if not isinstance(raw, list):
+        return []
+    effects: list = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            effect = AudioEffect(
+                id=str(item["id"]),
+                type=AudioEffectType(item["type"]),
+                enabled=bool(item.get("enabled", True)),
+                params=item.get("params", {}),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if effect.id in seen_ids:
             continue
         seen_ids.add(effect.id)
         effects.append(effect)

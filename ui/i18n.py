@@ -265,6 +265,215 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "es": "Fundido demasiado largo para un clip de {duration}s.",
     },
 
+    # --- Effets audio non destructifs (tâche 27) -----------------------
+    "audio_effects.section": {
+        "fr": "Effets audio",
+        "en": "Audio effects",
+        "es": "Efectos de audio",
+    },
+    "audio_effects.no_clip": {
+        "fr": "Sélectionnez un clip audio ou vidéo pour gérer ses effets.",
+        "en": "Select an audio or video clip to manage its effects.",
+        "es": "Selecciona un clip de audio o vídeo para gestionar sus efectos.",
+    },
+    "audio_effects.empty": {
+        "fr": "Aucun effet audio sur ce clip.",
+        "en": "No audio effects on this clip.",
+        "es": "Este clip no tiene efectos de audio.",
+    },
+    "audio_effects.add": {
+        "fr": "Ajouter",
+        "en": "Add",
+        "es": "Añadir",
+    },
+    "audio_effects.disable": {
+        "fr": "Désactiver",
+        "en": "Disable",
+        "es": "Desactivar",
+    },
+    "audio_effects.enable": {
+        "fr": "Activer",
+        "en": "Enable",
+        "es": "Activar",
+    },
+    "audio_effects.remove": {
+        "fr": "Supprimer",
+        "en": "Remove",
+        "es": "Eliminar",
+    },
+    "audio_effects.move_up": {
+        "fr": "Monter",
+        "en": "Move up",
+        "es": "Subir",
+    },
+    "audio_effects.move_down": {
+        "fr": "Descendre",
+        "en": "Move down",
+        "es": "Bajar",
+    },
+    # Noms courts des presets (utilisés dans le combo d'ajout).
+    "audio_effects.preset.normalize.name": {
+        "fr": "Normalisation",
+        "en": "Normalize",
+        "es": "Normalización",
+    },
+    "audio_effects.preset.voice_enhance.name": {
+        "fr": "Amélioration de voix",
+        "en": "Voice enhance",
+        "es": "Mejora de voz",
+    },
+    "audio_effects.preset.noise_reduce.name": {
+        "fr": "Réduction de bruit",
+        "en": "Noise reduction",
+        "es": "Reducción de ruido",
+    },
+    "audio_effects.preset.compressor.name": {
+        "fr": "Compresseur",
+        "en": "Compressor",
+        "es": "Compresor",
+    },
+    "audio_effects.preset.limiter.name": {
+        "fr": "Limiteur anti-saturation",
+        "en": "Limiter",
+        "es": "Limitador",
+    },
+    "audio_effects.preset.bass_boost.name": {
+        "fr": "Renforcement des basses",
+        "en": "Bass boost",
+        "es": "Refuerzo de graves",
+    },
+    "audio_effects.preset.treble_boost.name": {
+        "fr": "Clarté des aigus",
+        "en": "Treble boost",
+        "es": "Claridad de agudos",
+    },
+    "audio_effects.preset.phone_effect.name": {
+        "fr": "Effet téléphone",
+        "en": "Phone effect",
+        "es": "Efecto teléfono",
+    },
+    "audio_effects.preset.reverb_light.name": {
+        "fr": "Réverbération légère",
+        "en": "Light reverb",
+        "es": "Reverberación ligera",
+    },
+    "audio_effects.preset.echo_light.name": {
+        "fr": "Écho léger",
+        "en": "Light echo",
+        "es": "Eco ligero",
+    },
+    # Paramètres (utilisés dans le rack).
+    "audio_effects.param.integrated_loudness": {
+        "fr": "Loudness cible (LUFS)",
+        "en": "Target loudness (LUFS)",
+        "es": "Loudness objetivo (LUFS)",
+    },
+    "audio_effects.param.loudness_range": {
+        "fr": "Plage dynamique (LU)",
+        "en": "Loudness range (LU)",
+        "es": "Rango dinámico (LU)",
+    },
+    "audio_effects.param.true_peak": {
+        "fr": "Plafond crête (dB)",
+        "en": "True peak (dB)",
+        "es": "Pico real (dB)",
+    },
+    "audio_effects.param.frequency": {
+        "fr": "Fréquence (Hz)",
+        "en": "Frequency (Hz)",
+        "es": "Frecuencia (Hz)",
+    },
+    "audio_effects.param.intensity": {
+        "fr": "Intensité",
+        "en": "Intensity",
+        "es": "Intensidad",
+    },
+    "audio_effects.param.noise_floor_db": {
+        "fr": "Plancher de bruit (dB)",
+        "en": "Noise floor (dB)",
+        "es": "Piso de ruido (dB)",
+    },
+    "audio_effects.param.strength": {
+        "fr": "Force",
+        "en": "Strength",
+        "es": "Fuerza",
+    },
+    "audio_effects.param.threshold_db": {
+        "fr": "Seuil (dB)",
+        "en": "Threshold (dB)",
+        "es": "Umbral (dB)",
+    },
+    "audio_effects.param.ratio": {
+        "fr": "Ratio",
+        "en": "Ratio",
+        "es": "Ratio",
+    },
+    "audio_effects.param.attack_ms": {
+        "fr": "Attaque (ms)",
+        "en": "Attack (ms)",
+        "es": "Ataque (ms)",
+    },
+    "audio_effects.param.release_ms": {
+        "fr": "Relâchement (ms)",
+        "en": "Release (ms)",
+        "es": "Soltura (ms)",
+    },
+    "audio_effects.param.makeup_db": {
+        "fr": "Maquillage (dB)",
+        "en": "Make-up (dB)",
+        "es": "Maquillaje (dB)",
+    },
+    "audio_effects.param.limit_db": {
+        "fr": "Plafond (dB)",
+        "en": "Limit (dB)",
+        "es": "Límite (dB)",
+    },
+    "audio_effects.param.gain_db": {
+        "fr": "Gain (dB)",
+        "en": "Gain (dB)",
+        "es": "Ganancia (dB)",
+    },
+    "audio_effects.param.frequency_hz": {
+        "fr": "Fréquence centrale (Hz)",
+        "en": "Center frequency (Hz)",
+        "es": "Frecuencia central (Hz)",
+    },
+    "audio_effects.param.center_hz": {
+        "fr": "Fréquence centrale (Hz)",
+        "en": "Center frequency (Hz)",
+        "es": "Frecuencia central (Hz)",
+    },
+    "audio_effects.param.bandwidth_hz": {
+        "fr": "Largeur de bande (Hz)",
+        "en": "Bandwidth (Hz)",
+        "es": "Ancho de banda (Hz)",
+    },
+    "audio_effects.param.mix": {
+        "fr": "Mix",
+        "en": "Mix",
+        "es": "Mezcla",
+    },
+    "audio_effects.param.in_gain": {
+        "fr": "Gain d'entrée",
+        "en": "Input gain",
+        "es": "Ganancia de entrada",
+    },
+    "audio_effects.param.out_gain": {
+        "fr": "Gain de sortie",
+        "en": "Output gain",
+        "es": "Ganancia de salida",
+    },
+    "audio_effects.param.delays_ms": {
+        "fr": "Retards (ms)",
+        "en": "Delays (ms)",
+        "es": "Retardos (ms)",
+    },
+    "audio_effects.param.decays": {
+        "fr": "Décroissance",
+        "en": "Decay",
+        "es": "Decaimiento",
+    },
+
     # --- Enregistrement audio -----------------------------------------
     "record.start": {"fr": "Enregistrer", "en": "Record", "es": "Grabar"},
     "record.stop": {"fr": "Arrêter l'enregistrement", "en": "Stop recording", "es": "Detener la grabación"},

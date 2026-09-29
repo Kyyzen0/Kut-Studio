@@ -124,6 +124,10 @@ class AudioLayer:
     track_volume_db: float = 0.0
     track_pan: float = 0.0
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    # Effets audio non destructifs (tâche 27). Tuple pour respecter le
+    # caractère immuable de l'AudioLayer. Les effets sont appliqués
+    # dans l'ordre de la séquence au moment du rendu.
+    audio_effects: tuple = field(default_factory=tuple)
 
     @property
     def duration(self) -> float:
@@ -390,4 +394,5 @@ def _build_audio_layer(
         track_volume_db=float(getattr(track, "volume_db", 0.0)),
         track_pan=float(getattr(track, "pan", 0.0)),
         time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
+        audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
     )

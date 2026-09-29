@@ -197,6 +197,11 @@ class Clip:
             d'application. Reste vide pour les clips audio et de
             sous-titres : les opérations de :mod:`core.effects_model`
             refusent ces pistes.
+        audio_effects: Effets audio non destructifs du clip (tâche 27),
+            dans leur ordre d'application. Acceptés sur les pistes
+            ``video`` (qui peuvent porter une piste audio) et ``audio``.
+            Les pistes ``subtitle`` sont rejetées par les opérations de
+            :mod:`core.audio_effects_model`.
     """
 
     id: str
@@ -221,6 +226,8 @@ class Clip:
     )
     # --- Effets visuels (tâche 21, clips vidéo uniquement) ---
     effects: list["ClipEffect"] = field(default_factory=list)
+    # --- Effets audio non destructifs (tâche 27) ---
+    audio_effects: list = field(default_factory=list)
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
 

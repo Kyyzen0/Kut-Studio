@@ -962,11 +962,14 @@ def _build_audio_filter(
     2. ``asetpts=PTS-STARTPTS`` pour recaler les PTS à 0 ;
     3. ``aformat`` en stéréo 48 kHz (avant tout traitement de gain, pour
        que ``pan`` et ``afade``/opèrent sur un format connu) ;
-    4. ``volume`` : gain du clip **et** volume de piste, additionnés en
+    4. Effets audio non destructifs du clip (tâche 27) : chaque
+       effet activé est appliqué dans l'ordre de sa liste, ce qui
+       correspond à l'ordre choisi par l'utilisateur dans le rack ;
+    5. ``volume`` : gain du clip **et** volume de piste, additionnés en
        décibels ;
-    5. ``afade`` d'entrée puis de sortie, seulement si non nuls ;
-    6. ``pan`` stéréo, seulement si le panoramique n'est pas centré ;
-    7. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
+    6. ``afade`` d'entrée puis de sortie, seulement si non nuls ;
+    7. ``pan`` stéréo, seulement si le panoramique n'est pas centré ;
+    8. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
        position sur la timeline.
 
     Chaque filtre est **omis** s'il n'a rien à faire : une chaîne
@@ -993,6 +996,14 @@ def _build_audio_filter(
         # Appliquer le time_remapping avant les effets audio
         steps.append(time_remapping_filter)
 
+    # Effets audio non destructifs du clip (tâche 27). On les applique
+    # *avant* le volume / panoramique / fondus, conformément à la
+    # spécification : les effets traitent le signal brut, puis le mix
+    # (gain, pan, fade) finalise la couche.
+    audio_effect_filters = _build_clip_audio_effect_filters(layer.audio_effects)
+    if audio_effect_filters:
+        steps.extend(audio_effect_filters)
+
     total_db = _clamp_db(layer.total_gain_db)
     if abs(total_db) > 1e-6:
         steps.append(f"volume={_format_db(total_db)}dB")
@@ -1018,6 +1029,141 @@ def _build_audio_filter(
 
     steps.append(f"asetpts=PTS+{timeline_start}/TB")
     return f"[{input_index}:a]" + ",".join(steps) + f"[a{audio_index}]"
+
+
+def _build_clip_audio_effect_filters(effects: tuple) -> list[str]:
+    """Construit la liste de filtres FFmpeg pour les effets audio activés.
+
+    Chaque effet traduit sa catégorie en un filtre dédié
+    (``loudnorm``, ``afftdn``, ``acompressor``, ``alimiter``, ``bass``,
+    ``treble``, ``highpass``, ``bandpass``, ``aecho``). Tous les
+    paramètres numériques viennent du modèle validé : on ne concatène
+    donc jamais d'expression fournie par l'utilisateur.
+
+    L'ordre des filtres suit l'ordre de la liste du clip, ce qui
+    reflète l'ordre choisi dans le rack par l'utilisateur. La couche
+    d'export ne réordonne pas : la sémantique d'un compresseur suivi
+    d'un limiteur n'est pas la même que celle d'un limiteur suivi
+    d'un compresseur.
+    """
+    filters: list[str] = []
+    for effect in effects:
+        if not effect.enabled:
+            continue
+        params = effect.params
+        ftype = effect.type
+        # ``loudnorm`` : on utilise les paramètres I / LRA / TP
+        # directement ; un mode two-pass n'est pas nécessaire ici car
+        # la cible reste intra-clip.
+        if ftype.value == "normalize":
+            filters.append(
+                "loudnorm="
+                f"I={_format_db(params['integrated_loudness'])}:"
+                f"LRA={_format_seconds(params['loudness_range'])}:"
+                f"TP={_format_db(params['true_peak'])}"
+            )
+        elif ftype.value == "voice_enhance":
+            # Renforce la voix en supprimant les basses fréquences
+            # parasites sous la fréquence déclarée, avec une intensité
+            # proportionnelle (0 = neutre, 1 = coupe haute).
+            cutoff = _format_seconds(params["frequency"])
+            intensity = float(params["intensity"])
+            pole = max(1, int(round(1 + intensity * 5)))
+            filters.append(
+                f"highpass=frequency={cutoff}:poles={pole}"
+            )
+        elif ftype.value == "noise_reduce":
+            filters.append(
+                "afftdn="
+                f"nf={_format_db(params['noise_floor_db'])}:"
+                f"w={_format_seconds(params['strength'])}"
+            )
+        elif ftype.value == "compressor":
+            filters.append(
+                "acompressor="
+                f"threshold={_format_db(params['threshold_db'])}:"
+                f"ratio={_format_seconds(params['ratio'])}:"
+                f"attack={_format_seconds(params['attack_ms'])}:"
+                f"release={_format_seconds(params['release_ms'])}:"
+                f"makeup={_format_db(params['makeup_db'])}"
+            )
+        elif ftype.value == "limiter":
+            filters.append(
+                f"alimiter=limit={_format_db(params['limit_db'])}"
+            )
+        elif ftype.value == "bass_boost":
+            filters.append(
+                "bass="
+                f"gain={_format_db(params['gain_db'])}:"
+                f"frequency={_format_seconds(params['frequency_hz'])}"
+            )
+        elif ftype.value == "treble_boost":
+            filters.append(
+                "treble="
+                f"gain={_format_db(params['gain_db'])}:"
+                f"frequency={_format_seconds(params['frequency_hz'])}"
+            )
+        elif ftype.value == "phone_effect":
+            center = _format_seconds(params["center_hz"])
+            width = _format_seconds(params["bandwidth_hz"])
+            mix = _format_seconds(params["mix"])
+            filters.append(
+                f"bandpass=frequency={center}:width_type=h:"
+                f"width={width}:mix={mix}"
+            )
+        elif ftype.value == "reverb_light":
+            # ``aecho`` est utilisé pour une réverbération légère en
+            # empilant trois retards courts et décroissants.
+            filters.append(
+                _build_aecho_filter(
+                    params, delays=(0.06, 0.04, 0.025), decays=(0.3, 0.25, 0.18)
+                )
+            )
+        elif ftype.value == "echo_light":
+            # Écho plus marqué : un seul retard plus long.
+            filters.append(
+                _build_aecho_filter(params, delays=(0.3,), decays=(0.4,))
+            )
+        # Les types inconnus sont silencieusement ignorés : le projet
+        # a déjà été validé à la désérialisation, on reste robuste si
+        # une future version ajoute un type non encore câblé ici.
+    return filters
+
+
+def _build_aecho_filter(
+    params: dict[str, float], *, delays: tuple[float, ...], decays: tuple[float, ...]
+) -> str:
+    """Construit un filtre ``aecho`` à retards multiples pour réverb/écho.
+
+    ``aecho`` ne supporte officiellement qu'un seul couple ``d / s``
+    par filtre : on empile donc N filtres successifs en réutilisant
+    ``in_gain`` et ``out_gain`` (l'entrée du premier est le signal
+    brut, la sortie du dernier est le signal traité final).
+    """
+    in_gain = _format_seconds(params["in_gain"])
+    out_gain = _format_seconds(params["out_gain"])
+    user_delay_ms = float(params["delays_ms"])
+    user_decay = float(params["decays"])
+    parts: list[str] = []
+    for index, (delay, decay) in enumerate(zip(delays, decays)):
+        # On met à l'échelle le retard et la décroissance utilisateur
+        # par le ratio ``delay / index_max_delay`` pour conserver une
+        # sensation homogène entre un seul écho et trois.
+        scale = delay / max(delays)
+        d_ms = user_delay_ms * scale
+        d_decay = user_decay * (decay / max(decays))
+        parts.append(
+            f"aecho="
+            f"in_gain={in_gain}:"
+            f"out_gain={out_gain}:"
+            f"delays={_format_seconds(d_ms / 1000.0)}:"
+            f"decays={_format_seconds(d_decay)}"
+        )
+        # À partir du 2e écho, ``in_gain`` / ``out_gain`` valent 1 pour
+        # ne pas atténuer / amplifier plusieurs fois.
+        in_gain = "1"
+        out_gain = "1"
+    return ",".join(parts)
 
 
 def _clamp_db(value: float) -> float:

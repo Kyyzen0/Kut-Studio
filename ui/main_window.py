@@ -324,6 +324,22 @@ class MainWindow(QMainWindow):
         self.properties_panel.effect_parameter_changed.connect(
             self.on_clip_effect_parameter_changed
         )
+        # --- Effets audio non destructifs (tâche 27) ---
+        self.properties_panel.audio_effect_add_requested.connect(
+            self.on_clip_audio_effect_added
+        )
+        self.properties_panel.audio_effect_removed.connect(
+            self.on_clip_audio_effect_removed
+        )
+        self.properties_panel.audio_effect_moved.connect(
+            self.on_clip_audio_effect_moved
+        )
+        self.properties_panel.audio_effect_enabled_changed.connect(
+            self.on_clip_audio_effect_enabled_changed
+        )
+        self.properties_panel.audio_effect_parameter_changed.connect(
+            self.on_clip_audio_effect_parameter_changed
+        )
         # Tâche 22 : bibliothèque d'effets et presets.
         # ``UserPresetStore`` conserve la liste des presets utilisateur
         # en mémoire et persiste à chaque mutation.
@@ -1631,15 +1647,32 @@ class MainWindow(QMainWindow):
             clip = find_clip(self.project, clip_id)
         except KeyError:
             self.properties_panel.update_effects_from_clip([], None)
+            self.properties_panel.update_audio_effects_from_clip([], None)
+            track_type_for_audio = None
         else:
             self.properties_panel.update_effects_from_clip(
                 list(clip.effects), "video"
+            )
+            # Le rack d'effets audio accepte les pistes ``video`` (si le
+            # média porte de l'audio) et ``audio``. On détermine le type
+            # de piste à partir du clip, qui le connaît via ``track_id``.
+            track_type_for_audio = self._track_type_for_clip(clip_id)
+            self.properties_panel.update_audio_effects_from_clip(
+                list(clip.audio_effects), track_type_for_audio
             )
         # La bibliothèque d'effets se contente d'être notifiée de
         # l'état du clip sélectionné ; l'inspecteur, lui, garde la
         # responsabilité de l'édition fine.
         self._sync_effects_library_context()
         self._mark_dirty()
+
+    def _track_type_for_clip(self, clip_id: str) -> str | None:
+        """Retourne le type de piste (``"video"``, ``"audio"``...) du clip."""
+        for track in self.project.tracks:
+            for clip in track.clips:
+                if clip.id == clip_id:
+                    return track.type
+        return None
 
     def _sync_effects_library_context(self) -> None:
         """Synchronise la bibliothèque d'effets avec le clip sélectionné."""
@@ -1843,6 +1876,93 @@ class MainWindow(QMainWindow):
             print(f"[MainWindow] paramètre d'effet refusé : {exc}")
             return
         self._record_history("Modifier un effet")
+        self._refresh_effects_after_change(clip_id)
+
+    # ------------------------------------------------------------------
+    # Effets audio non destructifs (tâche 27)
+    # ------------------------------------------------------------------
+
+    def on_clip_audio_effect_added(
+        self, clip_id: str, effect_type: str
+    ) -> None:
+        """Ajoute un effet audio choisi dans l'inspecteur au clip."""
+        from core.audio_effects_model import (
+            AudioEffectType,
+            add_audio_effect_to_clip,
+        )
+
+        try:
+            add_audio_effect_to_clip(
+                self.project, clip_id, AudioEffectType(effect_type)
+            )
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] ajout d'effet audio refusé : {exc}")
+            return
+        self._record_history("Ajouter un effet audio")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_audio_effect_removed(
+        self, clip_id: str, effect_id: str
+    ) -> None:
+        """Supprime un effet audio depuis l'inspecteur."""
+        from core.audio_effects_model import remove_audio_effect_from_clip
+        try:
+            remove_audio_effect_from_clip(
+                self.project, clip_id, effect_id
+            )
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] suppression d'effet audio refusée : {exc}")
+            return
+        self._record_history("Supprimer un effet audio")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_audio_effect_moved(
+        self, clip_id: str, effect_id: str, delta: int
+    ) -> None:
+        """Réordonne un effet audio depuis l'inspecteur."""
+        from core.audio_effects_model import move_clip_audio_effect
+        try:
+            move_clip_audio_effect(
+                self.project, clip_id, effect_id, int(delta)
+            )
+        except (KeyError, ValueError) as exc:
+            print(
+                f"[MainWindow] réordonnancement d'effet audio refusé : {exc}"
+            )
+            return
+        self._record_history("Réordonner un effet audio")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_audio_effect_enabled_changed(
+        self, clip_id: str, effect_id: str, enabled: bool
+    ) -> None:
+        """Active ou désactive un effet audio."""
+        from core.audio_effects_model import set_clip_audio_effect_enabled
+        try:
+            set_clip_audio_effect_enabled(
+                self.project, clip_id, effect_id, bool(enabled)
+            )
+        except (KeyError, ValueError) as exc:
+            print(
+                f"[MainWindow] activation d'effet audio refusée : {exc}"
+            )
+            return
+        self._record_history("Modifier un effet audio")
+        self._refresh_effects_after_change(clip_id)
+
+    def on_clip_audio_effect_parameter_changed(
+        self, clip_id: str, effect_id: str, name: str, value: float
+    ) -> None:
+        """Met à jour un paramètre d'effet audio depuis l'inspecteur."""
+        from core.audio_effects_model import update_clip_audio_effect_parameters
+        try:
+            update_clip_audio_effect_parameters(
+                self.project, clip_id, effect_id, {name: value}
+            )
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] paramètre d'effet audio refusé : {exc}")
+            return
+        self._record_history("Modifier un effet audio")
         self._refresh_effects_after_change(clip_id)
 
     # ------------------------------------------------------------------
