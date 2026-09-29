@@ -172,13 +172,25 @@ def test_filter_by_category_returns_only_matching() -> None:
         library, category=TransitionPresetCategory.FADE
     )
     assert all(p.category is TransitionPresetCategory.FADE for p in fade_presets)
-    assert {p.id for p in fade_presets} == {"crossfade", "fade_black"}
+    # Tâche 26 : la catégorie ``fade`` accueille désormais ``fade_white``
+    # en plus des deux transitions historiques.
+    assert {p.id for p in fade_presets} == {
+        "crossfade",
+        "fade_black",
+        "fade_white",
+    }
 
 
 def test_filter_by_search_matches_name_and_id() -> None:
     library = builtin_transition_presets()
     matches = filter_transition_presets(library, search="wipe")
-    assert {p.id for p in matches} == {"wipe_left", "wipe_right"}
+    # Tâche 26 : 4 balayages (haut, bas, gauche, droite) au lieu de 2.
+    assert {p.id for p in matches} == {
+        "wipe_left",
+        "wipe_right",
+        "wipe_up",
+        "wipe_down",
+    }
 
 
 def test_filter_combines_search_and_category() -> None:

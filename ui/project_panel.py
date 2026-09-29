@@ -1957,11 +1957,26 @@ class TransitionLibraryView(QWidget):
         filter_layout.setContentsMargins(0, 0, 0, 0)
         filter_layout.setSpacing(Spacing.xs)
         self.filter_buttons: list[QPushButton] = []
-        self._filter_keys: list[str] = ["all", "fade", "wipe", "favorites"]
+        # Catalogue étendu (tâche 26) : trois catégories supplémentaires
+        # (« Formes », « Dissolutions », « Glissements fluides ») viennent
+        # s'ajouter aux deux catégories historiques « Fondus » et
+        # « Balayages ». Les favoris restent un filtre transverse.
+        self._filter_keys: list[str] = [
+            "all",
+            "fade",
+            "wipe",
+            "shape",
+            "dissolve",
+            "smooth",
+            "favorites",
+        ]
         labels = {
             "all": translate("transitions.category.all").upper(),
             "fade": translate("transitions.category.fade").upper(),
             "wipe": translate("transitions.category.wipe").upper(),
+            "shape": translate("transitions.category.shape").upper(),
+            "dissolve": translate("transitions.category.dissolve").upper(),
+            "smooth": translate("transitions.category.smooth").upper(),
             "favorites": translate("transitions.category.favorites").upper(),
         }
         for key in self._filter_keys:
@@ -2198,6 +2213,12 @@ class TransitionLibraryView(QWidget):
             category = TransitionPresetCategory.FADE
         elif self._active_filter == "wipe":
             category = TransitionPresetCategory.WIPE
+        elif self._active_filter == "shape":
+            category = TransitionPresetCategory.SHAPE
+        elif self._active_filter == "dissolve":
+            category = TransitionPresetCategory.DISSOLVE
+        elif self._active_filter == "smooth":
+            category = TransitionPresetCategory.SMOOTH
         elif self._active_filter == "favorites":
             favorites_only = True
 

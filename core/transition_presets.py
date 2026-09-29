@@ -52,10 +52,21 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
 
 
 class TransitionPresetCategory(str, Enum):
-    """Catégories visibles dans la bibliothèque de transitions."""
+    """Catégories visibles dans la bibliothèque de transitions.
+
+    Les 18 transitions natives sont réparties en cinq familles pour
+    faciliter la navigation : ``fade`` (fondus), ``wipe`` (balayages
+    et glissements), ``shape`` (formes géométriques), ``dissolve``
+    (dissolutions), ``smooth`` (glissements fluides). Les catégories
+    ``fade`` et ``wipe`` existaient avant la tâche 26 ; les trois
+    autres sont introduites par cette tâche.
+    """
 
     FADE = "fade"
     WIPE = "wipe"
+    SHAPE = "shape"
+    DISSOLVE = "dissolve"
+    SMOOTH = "smooth"
 
 
 # Libellé court + description longue par catégorie. Les libellés
@@ -64,12 +75,18 @@ class TransitionPresetCategory(str, Enum):
 CATEGORY_LABELS: dict[TransitionPresetCategory, str] = {
     TransitionPresetCategory.FADE: "Fondus",
     TransitionPresetCategory.WIPE: "Balayages",
+    TransitionPresetCategory.SHAPE: "Formes",
+    TransitionPresetCategory.DISSOLVE: "Dissolutions",
+    TransitionPresetCategory.SMOOTH: "Glissements fluides",
 }
 
 
 CATEGORY_DESCRIPTIONS: dict[TransitionPresetCategory, str] = {
-    TransitionPresetCategory.FADE: "Fondu enchaîné et fondu au noir.",
-    TransitionPresetCategory.WIPE: "Balayages latéraux entre deux clips.",
+    TransitionPresetCategory.FADE: "Fondu enchaîné, fondu au noir, fondu au blanc.",
+    TransitionPresetCategory.WIPE: "Balayages et glissements entre deux clips.",
+    TransitionPresetCategory.SHAPE: "Cercles, radial et formes géométriques.",
+    TransitionPresetCategory.DISSOLVE: "Dissolutions, pixellisation et effets associés.",
+    TransitionPresetCategory.SMOOTH: "Glissements fluides gauche/droite.",
 }
 
 
@@ -212,13 +229,253 @@ def _wipe_right_preset() -> TransitionPreset:
     )
 
 
+# ---------------------------------------------------------------------------
+# Catalogue étendu (tâche 26) — 14 transitions supplémentaires
+# ---------------------------------------------------------------------------
+
+
+def _wipe_up_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="wipe_up",
+        name="Balayage haut",
+        description=(
+            "Le nouveau clip balaie l'ancien vers le haut, révélant "
+            "le contenu entrant par le bas."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.WIPE_UP,
+        default_duration=0.5,
+        builtin=True,
+    )
+
+
+def _wipe_down_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="wipe_down",
+        name="Balayage bas",
+        description=(
+            "Le nouveau clip balaie l'ancien vers le bas, révélant "
+            "le contenu entrant par le haut."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.WIPE_DOWN,
+        default_duration=0.5,
+        builtin=True,
+    )
+
+
+def _slide_left_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="slide_left",
+        name="Glissement gauche",
+        description=(
+            "Le nouveau clip glisse depuis la droite et pousse "
+            "l'ancien clip hors du cadre par la gauche."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.SLIDE_LEFT,
+        default_duration=0.6,
+        builtin=True,
+    )
+
+
+def _slide_right_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="slide_right",
+        name="Glissement droite",
+        description=(
+            "Le nouveau clip glisse depuis la gauche et pousse "
+            "l'ancien clip hors du cadre par la droite."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.SLIDE_RIGHT,
+        default_duration=0.6,
+        builtin=True,
+    )
+
+
+def _slide_up_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="slide_up",
+        name="Glissement haut",
+        description=(
+            "Le nouveau clip glisse depuis le bas et pousse l'ancien "
+            "hors du cadre par le haut."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.SLIDE_UP,
+        default_duration=0.6,
+        builtin=True,
+    )
+
+
+def _slide_down_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="slide_down",
+        name="Glissement bas",
+        description=(
+            "Le nouveau clip glisse depuis le haut et pousse l'ancien "
+            "hors du cadre par le bas."
+        ),
+        category=TransitionPresetCategory.WIPE,
+        transition_type=TransitionType.SLIDE_DOWN,
+        default_duration=0.6,
+        builtin=True,
+    )
+
+
+def _circle_open_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="circle_open",
+        name="Cercle ouverture",
+        description=(
+            "Un cercle s'ouvre depuis le centre, révélant "
+            "progressivement le clip entrant."
+        ),
+        category=TransitionPresetCategory.SHAPE,
+        transition_type=TransitionType.CIRCLE_OPEN,
+        default_duration=0.75,
+        builtin=True,
+    )
+
+
+def _circle_close_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="circle_close",
+        name="Cercle fermeture",
+        description=(
+            "Un cercle se referme depuis les bords du cadre vers le "
+            "centre, faisant disparaître le clip sortant."
+        ),
+        category=TransitionPresetCategory.SHAPE,
+        transition_type=TransitionType.CIRCLE_CLOSE,
+        default_duration=0.75,
+        builtin=True,
+    )
+
+
+def _dissolve_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="dissolve",
+        name="Dissolution",
+        description=(
+            "Le clip sortant se décompose en particules qui "
+            "révèlent progressivement le clip entrant."
+        ),
+        category=TransitionPresetCategory.DISSOLVE,
+        transition_type=TransitionType.DISSOLVE,
+        default_duration=0.75,
+        builtin=True,
+    )
+
+
+def _pixelize_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="pixelize",
+        name="Pixellisation",
+        description=(
+            "L'image se décompose en gros pixels puis se "
+            "recompose avec le clip entrant."
+        ),
+        category=TransitionPresetCategory.DISSOLVE,
+        transition_type=TransitionType.PIXELIZE,
+        default_duration=0.85,
+        builtin=True,
+    )
+
+
+def _radial_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="radial",
+        name="Transition radiale",
+        description=(
+            "Un balayage radial part du centre vers les bords, "
+            "entrainant le clip entrant comme une vague circulaire."
+        ),
+        category=TransitionPresetCategory.SHAPE,
+        transition_type=TransitionType.RADIAL,
+        default_duration=0.85,
+        builtin=True,
+    )
+
+
+def _fade_white_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="fade_white",
+        name="Fondu au blanc",
+        description=(
+            "Bascule via un écran blanc : le clip sortant se fond au "
+            "blanc, puis le clip entrant remonte du blanc. Idéal pour "
+            "les rêves, les souvenirs ou les scènes très lumineuses."
+        ),
+        category=TransitionPresetCategory.FADE,
+        transition_type=TransitionType.FADE_WHITE,
+        default_duration=0.75,
+        builtin=True,
+    )
+
+
+def _smooth_left_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="smooth_left",
+        name="Glissement fluide gauche",
+        description=(
+            "Glissement doux vers la gauche avec un léger "
+            "fondu enchaîné, pour des transitions cinématiques."
+        ),
+        category=TransitionPresetCategory.SMOOTH,
+        transition_type=TransitionType.SMOOTH_LEFT,
+        default_duration=0.7,
+        builtin=True,
+    )
+
+
+def _smooth_right_preset() -> TransitionPreset:
+    return make_transition_preset(
+        preset_id="smooth_right",
+        name="Glissement fluide droite",
+        description=(
+            "Glissement doux vers la droite avec un léger "
+            "fondu enchaîné, pour des transitions cinématiques."
+        ),
+        category=TransitionPresetCategory.SMOOTH,
+        transition_type=TransitionType.SMOOTH_RIGHT,
+        default_duration=0.7,
+        builtin=True,
+    )
+
+
 def builtin_transition_presets() -> tuple[TransitionPreset, ...]:
-    """Retourne la bibliothèque livrée avec l'application."""
+    """Retourne la bibliothèque livrée avec l'application.
+
+    Le catalogue natif comprend désormais 18 transitions (4 historiques
+    + 14 ajoutées par la tâche 26) : fondu enchaîné, fondu au noir,
+    fondu au blanc, quatre balayages (haut, bas, gauche, droite),
+    quatre glissements (haut, bas, gauche, droite), cercle ouverture /
+    fermeture, dissolution, pixellisation, transition radiale, et deux
+    glissements fluides (gauche, droite).
+    """
     return (
+        # Historiques (tâche 23)
         _crossfade_preset(),
         _fade_black_preset(),
         _wipe_left_preset(),
         _wipe_right_preset(),
+        # Tâche 26 : catalogue étendu
+        _wipe_up_preset(),
+        _wipe_down_preset(),
+        _slide_left_preset(),
+        _slide_right_preset(),
+        _slide_up_preset(),
+        _slide_down_preset(),
+        _circle_open_preset(),
+        _circle_close_preset(),
+        _dissolve_preset(),
+        _pixelize_preset(),
+        _radial_preset(),
+        _fade_white_preset(),
+        _smooth_left_preset(),
+        _smooth_right_preset(),
     )
 
 
@@ -332,9 +589,49 @@ def make_user_transition_preset(
 
 
 def _infer_category(transition_type: TransitionType) -> TransitionPresetCategory:
-    """Détermine la catégorie implicite d'un type de transition."""
-    if transition_type in (TransitionType.CROSSFADE, TransitionType.FADE_BLACK):
+    """Détermine la catégorie implicite d'un type de transition.
+
+    La taxonomie reflète les familles introduites par la tâche 26 :
+    les cinq catégories ``fade``, ``wipe``, ``shape``, ``dissolve`` et
+    ``smooth`` couvrent la totalité des 18 types natifs. Les types
+    historiques (``CROSSFADE``, ``FADE_BLACK``, ``WIPE_LEFT``,
+    ``WIPE_RIGHT``) sont rangés dans leurs catégories d'origine pour
+    ne pas bouleverser les favoris déjà enregistrés par les utilisateurs.
+    """
+    if transition_type in (
+        TransitionType.CROSSFADE,
+        TransitionType.FADE_BLACK,
+        TransitionType.FADE_WHITE,
+    ):
         return TransitionPresetCategory.FADE
+    if transition_type in (
+        TransitionType.WIPE_LEFT,
+        TransitionType.WIPE_RIGHT,
+        TransitionType.WIPE_UP,
+        TransitionType.WIPE_DOWN,
+        TransitionType.SLIDE_LEFT,
+        TransitionType.SLIDE_RIGHT,
+        TransitionType.SLIDE_UP,
+        TransitionType.SLIDE_DOWN,
+    ):
+        return TransitionPresetCategory.WIPE
+    if transition_type in (
+        TransitionType.CIRCLE_OPEN,
+        TransitionType.CIRCLE_CLOSE,
+        TransitionType.RADIAL,
+    ):
+        return TransitionPresetCategory.SHAPE
+    if transition_type in (
+        TransitionType.DISSOLVE,
+        TransitionType.PIXELIZE,
+    ):
+        return TransitionPresetCategory.DISSOLVE
+    if transition_type in (
+        TransitionType.SMOOTH_LEFT,
+        TransitionType.SMOOTH_RIGHT,
+    ):
+        return TransitionPresetCategory.SMOOTH
+    # Filet de sécurité pour un éventuel type futur.
     return TransitionPresetCategory.WIPE
 
 
@@ -646,6 +943,7 @@ class TransitionPresetStore:
 
 
 __all__ = [
+    "BUILTIN_TRANSITION_PRESETS_COUNT",
     "CATEGORY_DESCRIPTIONS",
     "CATEGORY_LABELS",
     "MAX_DURATION",
@@ -664,3 +962,8 @@ __all__ = [
     "save_transition_preset_data",
     "transition_presets_path",
 ]
+
+
+# Nombre de presets natifs à la livraison : utilisé par les tests pour
+# détecter une régression silencieuse (ajout / retrait accidentel).
+BUILTIN_TRANSITION_PRESETS_COUNT: int = 18

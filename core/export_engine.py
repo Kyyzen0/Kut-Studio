@@ -640,12 +640,60 @@ def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[s
 
 
 def _ffmpeg_transition_name(transition: RenderTransition) -> str:
-    return {
+    """Convertit un :class:`TransitionType` en nom de filtre ``xfade``.
+
+    Le mapping suit la nomenclature officielle de FFmpeg (``fade``,
+    ``fadeblack``, ``wipeleft``, ``wiperight``, ``wipeup``, ``wipedown``,
+    ``slideleft``, ``slideright``, ``slideup``, ``slidedown``, etc.). Les
+    transitions qui ne sont pas couvertes par ``xfade`` (``pixelize``,
+    ``radial``, ``smooth_left`` / ``smooth_right``, ``circle_open`` /
+    ``circle_close``) sont émulées par un fondu enchaîné standard — un
+    filtre dédié serait possible mais nécessiterait un ``geq`` /
+    ``vstack`` coûteux. À ce niveau, le rendu reste visuellement proche
+    d'un fondu doux, ce qui est acceptable pour la prévisualisation.
+
+    Les types inconnus retombent sur ``fade`` plutôt que de planter :
+    un projet corrompu ou une future valeur doit produire un export
+    lisible, pas une exception.
+    """
+    # Le mapping est volontairement *explicite* : aucune magie sur la
+    # valeur enum. Les futures ajouts n'ont qu'à ajouter une entrée.
+    mapping: dict[TransitionType, str] = {
+        # Historiques (tâche 23)
         TransitionType.CROSSFADE: "fade",
         TransitionType.FADE_BLACK: "fadeblack",
         TransitionType.WIPE_LEFT: "wipeleft",
         TransitionType.WIPE_RIGHT: "wiperight",
-    }[transition.type]
+        # Balayages verticaux (tâche 26)
+        TransitionType.WIPE_UP: "wipeup",
+        TransitionType.WIPE_DOWN: "wipedown",
+        # Glissements (tâche 26) : le second clip « pousse » l'ancien.
+        TransitionType.SLIDE_UP: "slideup",
+        TransitionType.SLIDE_DOWN: "slidedown",
+        TransitionType.SLIDE_LEFT: "slideleft",
+        TransitionType.SLIDE_RIGHT: "slideright",
+        # Dissolutions (tâche 26)
+        TransitionType.DISSOLVE: "dissolve",
+        TransitionType.FADE_WHITE: "fadewhite",
+    }
+    name = mapping.get(transition.type)
+    if name is not None:
+        return name
+    # Types non couverts nativement par ``xfade`` : repli sur ``fade``.
+    # On garde la liste à jour pour faciliter la maintenance future.
+    fallback = {
+        TransitionType.PIXELIZE,
+        TransitionType.RADIAL,
+        TransitionType.CIRCLE_OPEN,
+        TransitionType.CIRCLE_CLOSE,
+        TransitionType.SMOOTH_LEFT,
+        TransitionType.SMOOTH_RIGHT,
+    }
+    if transition.type in fallback:
+        return "fade"
+    # Type totalement inconnu : on retombe sur ``fade`` par sécurité
+    # pour ne pas casser l'export d'un fichier corrompu.
+    return "fade"
 
 
 def _build_layer_filter(

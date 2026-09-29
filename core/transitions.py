@@ -12,10 +12,99 @@ if TYPE_CHECKING:
 
 
 class TransitionType(str, Enum):
+    """Catalogue des types de transitions vidéo supportés (tâche 26).
+
+    Les valeurs historiques (``crossfade``, ``fade_black``, ``wipe_left``,
+    ``wipe_right``) sont conservées telles quelles pour garantir la
+    rétro‑compatibilité avec les fichiers ``.kut`` et les snapshots
+    d'historique existants : tout projet enregistré avant la tâche 26
+    se charge sans perte. Les 14 nouveaux types complètent le
+    catalogue à 18 transitions natives.
+
+    Le mapping vers les filtres ``xfade`` FFmpeg correspondants est
+    défini dans :func:`core.export_engine._ffmpeg_transition_name`.
+    """
+
     CROSSFADE = "crossfade"
     FADE_BLACK = "fade_black"
     WIPE_LEFT = "wipe_left"
     WIPE_RIGHT = "wipe_right"
+    # --- Tâche 26 : catalogue étendu ---
+    # Balayages
+    WIPE_UP = "wipe_up"
+    WIPE_DOWN = "wipe_down"
+    SLIDE_UP = "slide_up"
+    SLIDE_DOWN = "slide_down"
+    SLIDE_LEFT = "slide_left"
+    SLIDE_RIGHT = "slide_right"
+    # Ouvertures / fermetures
+    CIRCLE_OPEN = "circle_open"
+    CIRCLE_CLOSE = "circle_close"
+    # Dissolutions
+    DISSOLVE = "dissolve"
+    PIXELIZE = "pixelize"
+    # Radial
+    RADIAL = "radial"
+    # Fondus au blanc
+    FADE_WHITE = "fade_white"
+    # Glissements fluides
+    SMOOTH_LEFT = "smooth_left"
+    SMOOTH_RIGHT = "smooth_right"
+
+
+# Catégorie large (utilisée par les filtres de la bibliothèque et par
+# ``_infer_category``). On regroupe les 18 types en cinq familles pour
+# faciliter la navigation : ``fade`` (fondus), ``wipe`` (balayages et
+# glissements), ``shape`` (cercle, radial, pixelisation), ``dissolve``
+# (dissolutions), ``smooth`` (glissements fluides). Cette taxonomie est
+# stable : elle ne sert qu'à organiser la bibliothèque, pas à filtrer
+# l'export FFmpeg.
+TRANSITION_FAMILIES: dict[str, tuple[TransitionType, ...]] = {
+    "fade": (
+        TransitionType.CROSSFADE,
+        TransitionType.FADE_BLACK,
+        TransitionType.FADE_WHITE,
+    ),
+    "wipe": (
+        TransitionType.WIPE_LEFT,
+        TransitionType.WIPE_RIGHT,
+        TransitionType.WIPE_UP,
+        TransitionType.WIPE_DOWN,
+        TransitionType.SLIDE_LEFT,
+        TransitionType.SLIDE_RIGHT,
+        TransitionType.SLIDE_UP,
+        TransitionType.SLIDE_DOWN,
+    ),
+    "shape": (
+        TransitionType.CIRCLE_OPEN,
+        TransitionType.CIRCLE_CLOSE,
+        TransitionType.RADIAL,
+    ),
+    "dissolve": (
+        TransitionType.DISSOLVE,
+        TransitionType.PIXELIZE,
+    ),
+    "smooth": (
+        TransitionType.SMOOTH_LEFT,
+        TransitionType.SMOOTH_RIGHT,
+    ),
+}
+
+
+def transition_family(transition_type: TransitionType | str) -> str:
+    """Famille d'un type de transition (clé de :data:`TRANSITION_FAMILIES`).
+
+    Les types inconnus retombent sur ``"wipe"`` (choix conservateur,
+    cohérent avec la catégorie historique de la tâche 23).
+    """
+    try:
+        ttype = TransitionType(transition_type)
+    except ValueError:
+        return "wipe"
+    for family, members in TRANSITION_FAMILIES.items():
+        if ttype in members:
+            return family
+    return "wipe"
 
 
 @dataclass(frozen=True)

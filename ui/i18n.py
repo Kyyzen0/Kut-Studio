@@ -684,6 +684,148 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "es": "El clip nuevo barre el antiguo hacia la derecha.",
     },
 
+    # --- Présets de transitions : catalogue étendu (tâche 26) -----------
+    "transitions.preset.wipe_up.name": {
+        "fr": "Balayage haut",
+        "en": "Wipe up",
+        "es": "Barrido hacia arriba",
+    },
+    "transitions.preset.wipe_up.description": {
+        "fr": "Le nouveau clip balaie l'ancien vers le haut.",
+        "en": "The new clip wipes the old one upward.",
+        "es": "El clip nuevo barre el antiguo hacia arriba.",
+    },
+    "transitions.preset.wipe_down.name": {
+        "fr": "Balayage bas",
+        "en": "Wipe down",
+        "es": "Barrido hacia abajo",
+    },
+    "transitions.preset.wipe_down.description": {
+        "fr": "Le nouveau clip balaie l'ancien vers le bas.",
+        "en": "The new clip wipes the old one downward.",
+        "es": "El clip nuevo barre el antiguo hacia abajo.",
+    },
+    "transitions.preset.slide_left.name": {
+        "fr": "Glissement gauche",
+        "en": "Slide left",
+        "es": "Deslizamiento a la izquierda",
+    },
+    "transitions.preset.slide_left.description": {
+        "fr": "Le nouveau clip glisse depuis la droite et pousse l'ancien.",
+        "en": "The new clip slides in from the right, pushing the old one out.",
+        "es": "El clip nuevo entra deslizándose desde la derecha y empuja al antiguo.",
+    },
+    "transitions.preset.slide_right.name": {
+        "fr": "Glissement droite",
+        "en": "Slide right",
+        "es": "Deslizamiento a la derecha",
+    },
+    "transitions.preset.slide_right.description": {
+        "fr": "Le nouveau clip glisse depuis la gauche et pousse l'ancien.",
+        "en": "The new clip slides in from the left, pushing the old one out.",
+        "es": "El clip nuevo entra deslizándose desde la izquierda y empuja al antiguo.",
+    },
+    "transitions.preset.slide_up.name": {
+        "fr": "Glissement haut",
+        "en": "Slide up",
+        "es": "Deslizamiento hacia arriba",
+    },
+    "transitions.preset.slide_up.description": {
+        "fr": "Le nouveau clip glisse depuis le bas et pousse l'ancien.",
+        "en": "The new clip slides in from the bottom, pushing the old one up.",
+        "es": "El clip nuevo entra deslizándose desde abajo y empuja al antiguo hacia arriba.",
+    },
+    "transitions.preset.slide_down.name": {
+        "fr": "Glissement bas",
+        "en": "Slide down",
+        "es": "Deslizamiento hacia abajo",
+    },
+    "transitions.preset.slide_down.description": {
+        "fr": "Le nouveau clip glisse depuis le haut et pousse l'ancien.",
+        "en": "The new clip slides in from the top, pushing the old one down.",
+        "es": "El clip nuevo entra deslizándose desde arriba y empuja al antiguo hacia abajo.",
+    },
+    "transitions.preset.circle_open.name": {
+        "fr": "Cercle ouverture",
+        "en": "Circle open",
+        "es": "Apertura circular",
+    },
+    "transitions.preset.circle_open.description": {
+        "fr": "Un cercle s'ouvre depuis le centre vers les bords.",
+        "en": "A circle opens from the center to the edges.",
+        "es": "Un círculo se abre desde el centro hacia los bordes.",
+    },
+    "transitions.preset.circle_close.name": {
+        "fr": "Cercle fermeture",
+        "en": "Circle close",
+        "es": "Cierre circular",
+    },
+    "transitions.preset.circle_close.description": {
+        "fr": "Un cercle se referme depuis les bords vers le centre.",
+        "en": "A circle closes from the edges to the center.",
+        "es": "Un círculo se cierra desde los bordes hacia el centro.",
+    },
+    "transitions.preset.dissolve.name": {
+        "fr": "Dissolution",
+        "en": "Dissolve",
+        "es": "Disolución",
+    },
+    "transitions.preset.dissolve.description": {
+        "fr": "Le clip sortant se décompose en particules pour révéler l'entrant.",
+        "en": "The outgoing clip dissolves into particles to reveal the incoming one.",
+        "es": "El clip saliente se disuelve en partículas para revelar al entrante.",
+    },
+    "transitions.preset.pixelize.name": {
+        "fr": "Pixellisation",
+        "en": "Pixelize",
+        "es": "Pixelización",
+    },
+    "transitions.preset.pixelize.description": {
+        "fr": "L'image se pixellise puis se recompose avec le clip entrant.",
+        "en": "The image pixelizes and re-composes with the incoming clip.",
+        "es": "La imagen se pixela y se recompone con el clip entrante.",
+    },
+    "transitions.preset.radial.name": {
+        "fr": "Transition radiale",
+        "en": "Radial transition",
+        "es": "Transición radial",
+    },
+    "transitions.preset.radial.description": {
+        "fr": "Balayage circulaire du centre vers les bords du cadre.",
+        "en": "A radial sweep from the center toward the edges of the frame.",
+        "es": "Barrido circular del centro hacia los bordes del cuadro.",
+    },
+    "transitions.preset.fade_white.name": {
+        "fr": "Fondu au blanc",
+        "en": "Fade to white",
+        "es": "Fundido a blanco",
+    },
+    "transitions.preset.fade_white.description": {
+        "fr": "Bascule via un écran blanc entre les deux clips.",
+        "en": "Switches through a white screen between the two clips.",
+        "es": "Cambia a través de una pantalla blanca entre los dos clips.",
+    },
+    "transitions.preset.smooth_left.name": {
+        "fr": "Glissement fluide gauche",
+        "en": "Smooth slide left",
+        "es": "Deslizamiento suave a la izquierda",
+    },
+    "transitions.preset.smooth_left.description": {
+        "fr": "Glissement doux vers la gauche avec un léger fondu.",
+        "en": "Soft slide to the left with a gentle dissolve.",
+        "es": "Deslizamiento suave hacia la izquierda con un ligero fundido.",
+    },
+    "transitions.preset.smooth_right.name": {
+        "fr": "Glissement fluide droite",
+        "en": "Smooth slide right",
+        "es": "Deslizamiento suave a la derecha",
+    },
+    "transitions.preset.smooth_right.description": {
+        "fr": "Glissement doux vers la droite avec un léger fondu.",
+        "en": "Soft slide to the right with a gentle dissolve.",
+        "es": "Deslizamiento suave hacia la derecha con un ligero fundido.",
+    },
+
     # --- Catégories de la bibliothèque de transitions --------------------
     "transitions.category.fade": {
         "fr": "Fondus",
@@ -694,6 +836,21 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "fr": "Balayages",
         "en": "Wipes",
         "es": "Barridos",
+    },
+    "transitions.category.shape": {
+        "fr": "Formes",
+        "en": "Shapes",
+        "es": "Formas",
+    },
+    "transitions.category.dissolve": {
+        "fr": "Dissolutions",
+        "en": "Dissolves",
+        "es": "Disoluciones",
+    },
+    "transitions.category.smooth": {
+        "fr": "Glissements fluides",
+        "en": "Smooth slides",
+        "es": "Deslizamientos suaves",
     },
     "transitions.category.all": {
         "fr": "Toutes catégories",

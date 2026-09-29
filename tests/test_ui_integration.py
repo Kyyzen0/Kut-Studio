@@ -153,12 +153,27 @@ def test_transition_library_renders_four_builtin_cards(qtbot, monkeypatch) -> No
     """La bibliothèque affiche les quatre préréglages sans combinatoire cachée."""
     window = _build_window(qtbot, monkeypatch)
     view = window.project_panel.transition_view
-    assert view.preset_count() == 4
+    # Tâche 26 : 18 transitions natives (4 historiques + 14 ajoutées).
+    assert view.preset_count() == 18
     assert {card.preset_id for card in view._cards.values()} == {
         "crossfade",
         "fade_black",
+        "fade_white",
         "wipe_left",
         "wipe_right",
+        "wipe_up",
+        "wipe_down",
+        "slide_left",
+        "slide_right",
+        "slide_up",
+        "slide_down",
+        "circle_open",
+        "circle_close",
+        "dissolve",
+        "pixelize",
+        "radial",
+        "smooth_left",
+        "smooth_right",
     }
 
 
