@@ -374,7 +374,32 @@ class ClipWidget(QWidget):
             "color: rgba(255, 255, 255, 0.78); font-size: 11px; background: transparent;"
         )
         self.duration_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._cache_dot = None
         self.refresh_style()
+
+    def set_cache_state(self, state: str) -> None:
+        """Etat du cache sur la timeline : 'cached' / 'pending' / 'none'."""
+        self._cache_state = state
+        if state == "cached":
+            color = "#36E6C3"
+        elif state == "pending":
+            color = "#E6A536"
+        else:
+            color = "transparent"
+        try:
+            from PySide6.QtWidgets import QLabel
+
+            if self._cache_dot is None:
+                self._cache_dot = QLabel("●", self)
+                self._cache_dot.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self._cache_dot.setStyleSheet(
+                "color: %s; font-size: 10px; background: transparent;" % color
+            )
+            self._cache_dot.move(max(0, self.width() - 18), 2)
+            self._cache_dot.resize(16, 14)
+            self._cache_dot.setVisible(state in ("cached", "pending"))
+        except Exception:
+            pass
 
     def refresh_style(self) -> None:
         parent = self.parent_timeline

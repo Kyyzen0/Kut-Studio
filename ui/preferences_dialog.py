@@ -37,6 +37,7 @@ class PreferencesDialog(QDialog):
     language_changed = Signal(str)
     performance_changed = Signal(str)
     preview_quality_changed = Signal(str)
+    render_quality_changed = Signal(str)
     restore_defaults_requested = Signal()
 
     def __init__(
@@ -45,6 +46,7 @@ class PreferencesDialog(QDialog):
         current_language_code: str | None = None,
         current_performance: str = "auto",
         current_preview_quality: str = "auto",
+        current_render_quality: str = "standard",
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -52,6 +54,7 @@ class PreferencesDialog(QDialog):
         self.current_language_code = current_language_code or current_language()
         self.current_performance = current_performance
         self.current_preview_quality = current_preview_quality
+        self.current_render_quality = current_render_quality
         self.setWindowTitle(translate("prefs.title"))
         self.setModal(True)
         self._build_ui()
@@ -147,6 +150,28 @@ class PreferencesDialog(QDialog):
         self.preview_group.buttonClicked.connect(self._on_preview_chosen)
         layout.addWidget(preview_group)
 
+        render_group = QGroupBox(translate("prefs.render"))
+        render_layout = QVBoxLayout(render_group)
+        render_layout.setSpacing(6)
+        render_layout.setContentsMargins(14, 12, 14, 12)
+        self.render_group = QButtonGroup(self)
+        self._render_radios = {}
+        for code, key in (
+            ("draft", "prefs.render.draft"),
+            ("standard", "prefs.render.standard"),
+            ("high", "prefs.render.high"),
+        ):
+            radio = QRadioButton(translate(key))
+            radio.setProperty("render_code", code)
+            self.render_group.addButton(radio)
+            self._render_radios[code] = radio
+            render_layout.addWidget(radio)
+        current_render = getattr(self, "current_render_quality", "standard")
+        if current_render in self._render_radios:
+            self._render_radios[current_render].setChecked(True)
+        self.render_group.buttonClicked.connect(self._on_render_chosen)
+        layout.addWidget(render_group)
+
         # ----- Bouton "Restaurer les réglages par défaut" -------------------
         actions_row = QHBoxLayout()
         actions_row.addStretch()
@@ -184,14 +209,24 @@ class PreferencesDialog(QDialog):
             self.current_preview_quality = code
             self.preview_quality_changed.emit(code)
 
+    def _on_render_chosen(self, button) -> None:
+        code = button.property("render_code")
+        if code and code != self.current_render_quality:
+            self.current_render_quality = code
+            self.render_quality_changed.emit(code)
+
     def _on_restore_defaults(self) -> None:
         # Restaure thème, langue, profil et qualité d'aperçu.
         self._theme_radios.get("dark", None) and self._theme_radios["dark"].setChecked(True)
         self._language_radios.get("fr", None) and self._language_radios["fr"].setChecked(True)
         self._performance_radios.get("auto", None) and self._performance_radios["auto"].setChecked(True)
         self._preview_radios.get("auto", None) and self._preview_radios["auto"].setChecked(True)
+        render_radios = getattr(self, "_render_radios", {})
+        if "standard" in render_radios:
+            render_radios["standard"].setChecked(True)
         self.current_theme = "dark"
         self.current_language_code = "fr"
         self.current_performance = "auto"
         self.current_preview_quality = "auto"
+        self.current_render_quality = "standard"
         self.restore_defaults_requested.emit()

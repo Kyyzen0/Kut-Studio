@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         self._record_origin = 0.0
         self._record_tracks: list[str] = []
         self._apply_runtime_hints()
+        self._init_faithful_preview()
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
@@ -672,6 +673,11 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
         self._reload_timeline_preserving_selection(clip_id)
         self.update_color_effect()
+        try:
+            self._invalidate_preview_for_clip(clip_id)
+            self._sync_preview_to_timeline()
+        except Exception:
+            pass
         return True
 
     def on_color_grade_field_changed(
@@ -2057,6 +2063,15 @@ class MainWindow(QMainWindow):
         # Les badges font partie des projections ``TimelineClipView`` :
         # les reconstruire est plus sûr qu'une mutation visuelle locale.
         self._reload_timeline_preserving_selection(clip_id)
+        # Tâche 30 : effet/transform/grade/LUT modifié → le résultat doit
+        # être visible dans le moniteur sans export manuel. On synchronise
+        # l'aperçu (repli source immédiat) et on invalide uniquement les
+        # segments du clip affecté.
+        try:
+            self._invalidate_preview_for_clip(clip_id)
+            self._sync_preview_to_timeline()
+        except Exception:
+            pass
         self._update_timeline_duration()
         try:
             clip = find_clip(self.project, clip_id)
@@ -2929,6 +2944,13 @@ class MainWindow(QMainWindow):
             # la lecture native pour qu'elle démarre à ``source_time``.
             if self.preview_panel.player.playbackState() != QMediaPlayer.PlayingState:
                 self.preview_panel.player.play()
+        # Tâche 30 : le média source reste le repli affiché pendant que
+        # les segments fidèles (même graphe que l'export) se rendent en
+        # arrière-plan sans bloquer l'interface.
+        try:
+            self._schedule_preview_around(float(self.playhead_seconds))
+        except Exception:
+            pass
         return active_clips
 
     def _update_timeline_duration(self) -> None:
@@ -4368,6 +4390,10 @@ class MainWindow(QMainWindow):
             playhead_seconds=self.playhead_seconds,
         )
         self._sync_preview_to_timeline()
+        try:
+            self._invalidate_preview_for_clip(clip_id)
+        except Exception:
+            pass
         self._mark_dirty()
 
     def _ensure_transform_session_capture(self) -> None:
@@ -5087,12 +5113,16 @@ class MainWindow(QMainWindow):
             current_language_code=i18n.current_language(),
             current_performance=self.runtime.requested_profile,
             current_preview_quality=self.runtime.requested_quality,
+            current_render_quality=getattr(
+                self._settings_snapshot(), "render_quality", "standard"
+            ),
             parent=self,
         )
         dialog.theme_changed.connect(self.on_user_setting_changed)
         dialog.language_changed.connect(self.on_user_setting_changed)
         dialog.performance_changed.connect(self.on_performance_setting_changed)
         dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
+        dialog.render_quality_changed.connect(self.on_render_quality_changed)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         dialog.exec()
 
@@ -5113,6 +5143,150 @@ class MainWindow(QMainWindow):
 
     def on_preview_quality_changed(self, value: str) -> None:
         self._apply_settings(replace(self._settings_snapshot(), preview_quality=value))
+
+    def on_render_quality_changed(self, value: str) -> None:
+        """Qualité de rendu d'aperçu (tache 30) : persiste + invalide."""
+        from core.preview_render import coerce_render_quality
+
+        quality = coerce_render_quality(value)
+        self._apply_settings(replace(self._settings_snapshot(), render_quality=quality))
+        engine = getattr(self, "preview_engine", None)
+        if engine is not None:
+            try:
+                engine.cancel_all()
+            except Exception:
+                pass
+        self._refresh_preview_cache_state()
+
+    def _init_faithful_preview(self) -> None:
+        """Moteur d'aperçu fidèle : cache disque hors .kut + rendus bg."""
+        import os as _os
+
+        try:
+            from core.preview_cache import DiskPreviewCache
+            from core.preview_engine import PreviewEngine
+            from core.task_queue import TaskQueue
+
+            cache_dir = _os.environ.get("KUT_STUDIO_CACHE_DIR")
+            self.preview_engine = PreviewEngine(
+                task_queue=TaskQueue(), cache=DiskPreviewCache(directory=cache_dir)
+            )
+            try:
+                self.preview_engine.cache.evict_if_needed()
+            except Exception:
+                pass
+            self.preview_engine.subscribe(self._on_preview_engine_state)
+            self._preview_pump_timer = QTimer(self)
+            self._preview_pump_timer.setInterval(150)
+            self._preview_pump_timer.timeout.connect(self._pump_preview_queue)
+            self._preview_pump_timer.start()
+        except Exception:
+            self.preview_engine = None
+
+    def _pump_preview_queue(self) -> None:
+        """Vide la file d'aperçu sans bloquer l'interface (1 tâche/tick)."""
+        engine = getattr(self, "preview_engine", None)
+        if engine is None:
+            return
+        try:
+            engine.pump(1)
+        except Exception:
+            pass
+
+    def _on_preview_engine_state(self, state) -> None:
+        """Indicateur 'Calcul de l'aperçu' + état du cache sur le moniteur."""
+        panel = getattr(self, "preview_panel", None)
+        if panel is None:
+            return
+        computing = bool(getattr(state, "pending", 0) or getattr(state, "running", 0))
+        try:
+            if computing:
+                panel.set_render_state(True, i18n.translate("preview.computing"))
+            else:
+                panel.set_render_state(False)
+                cached = int(getattr(state, "cached_segments", 0) or 0)
+                if cached > 0:
+                    panel.set_cache_state(True, i18n.translate("preview.cached"))
+        except Exception:
+            pass
+
+    def _preview_segment_jobs(self, center: float) -> list:
+        """Segments proches de la tête de lecture (préchargement)."""
+        try:
+            from core.filter_graph import fingerprint_plan
+            from core.preview_cache import PreviewSegmentKey, SEGMENT_SECONDS
+            from core.preview_engine import PreviewJob
+            from core.render_plan import build_render_plan
+        except Exception:
+            return []
+        try:
+            plan = build_render_plan(self.project)
+        except Exception:
+            return []
+        if not plan.video_layers:
+            return []
+        quality = getattr(self._settings_snapshot(), "render_quality", "standard")
+        params = fingerprint_plan(
+            plan, width=self.project.width, height=self.project.height,
+            fps=self.project.fps, quality=quality,
+        )
+        jobs = []
+        cursor = max(0.0, float(center) - SEGMENT_SECONDS)
+        end = float(center) + 2 * SEGMENT_SECONDS
+        while cursor < end:
+            seg_end = min(end, cursor + SEGMENT_SECONDS)
+            clip_id = "timeline"
+            for layer in plan.video_layers:
+                start = float(layer.timeline_start)
+                stop = float(layer.timeline_end)
+                if start <= cursor < stop:
+                    clip_id = layer.clip_id
+                    break
+            key = PreviewSegmentKey(
+                clip_id=clip_id, start=cursor, end=seg_end,
+                quality=quality, params_hash=params,
+            )
+            jobs.append(
+                PreviewJob(
+                    key=key, plan=plan, width=self.project.width,
+                    height=self.project.height, fps=int(self.project.fps),
+                    quality=quality, start=cursor, duration=seg_end - cursor,
+                )
+            )
+            cursor = seg_end
+        return jobs
+
+    def _schedule_preview_around(self, center: float) -> None:
+        """Précharge les segments proches de la tête de lecture."""
+        engine = getattr(self, "preview_engine", None)
+        if engine is None:
+            return
+        try:
+            engine.set_playing(bool(self.is_playing))
+        except Exception:
+            pass
+        if bool(self.is_playing):
+            return  # lecture : on limite le travail CPU/GPU
+        jobs = self._preview_segment_jobs(center)
+        if jobs:
+            try:
+                engine.prefetch_around(float(center), jobs)
+            except Exception:
+                pass
+
+    def _refresh_preview_cache_state(self) -> None:
+        """Invalide/actualise l'état du cache après une modification."""
+        self._schedule_preview_around(float(getattr(self, "playhead_seconds", 0.0)))
+
+    def _invalidate_preview_for_clip(self, clip_id: str) -> None:
+        """Invalide uniquement les segments affectés + annule l'obsolète."""
+        engine = getattr(self, "preview_engine", None)
+        if engine is None:
+            return
+        try:
+            engine.invalidate_clip(str(clip_id))
+        except Exception:
+            pass
 
     def _apply_settings(self, settings: UserSettings) -> None:
         # Application du thème dans Qt.

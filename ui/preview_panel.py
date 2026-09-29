@@ -293,6 +293,67 @@ class PreviewPanel(QWidget):
         """Mémorise le niveau d'aperçu demandé par le profil."""
         self.preview_divisor = max(1, int(divisor))
 
+    def set_render_state(self, computing: bool, label: str = "") -> None:
+        """Indicateur 'Calcul de l'aperçu' (tache 30, non bloquant)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QLabel
+
+        from ui.theme import COLORS
+
+        badge = getattr(self, "preview_render_badge", None)
+        if badge is None:
+            container = self.graphics_view.parentWidget() or self
+            badge = QLabel("", container)
+            badge.setObjectName("preview_render_badge")
+            badge.setStyleSheet(
+                "background: %s; color: %s; border-radius: 6px; padding: 4px 10px;"
+                % (COLORS.get("accent_soft", "#1c2b2b"), COLORS.get("accent", "#36E6C3"))
+            )
+            badge.hide()
+            self.preview_render_badge = badge
+            try:
+                layout = container.layout()
+                if layout is not None:
+                    layout.addWidget(badge, 0, 0, Qt.AlignTop | Qt.AlignHCenter)
+            except Exception:
+                pass
+        if computing:
+            badge.setText(label or "Calcul de l'aperçu…")
+            badge.show()
+            badge.raise_()
+        else:
+            badge.hide()
+
+    def set_cache_state(self, cached: bool, label: str = "") -> None:
+        """Etat du cache sur le moniteur (tache 30)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QLabel
+
+        from ui.theme import COLORS
+
+        pill = getattr(self, "preview_cache_pill", None)
+        if pill is None:
+            container = self.graphics_view.parentWidget() or self
+            pill = QLabel("", container)
+            pill.setObjectName("preview_cache_pill")
+            pill.setStyleSheet(
+                "color: %s; padding: 2px 8px;" % COLORS.get("muted", "#888888")
+            )
+            pill.hide()
+            self.preview_cache_pill = pill
+            try:
+                layout = container.layout()
+                if layout is not None:
+                    layout.addWidget(pill, 0, 0, Qt.AlignBottom | Qt.AlignHCenter)
+            except Exception:
+                pass
+        pill.setText(label or ("Aperçu en cache" if cached else ""))
+        if label or cached:
+            pill.show()
+            pill.raise_()
+        else:
+            pill.hide()
+
     def set_effects(self, effects) -> None:
         """Affiche l'état des effets actifs du clip prévisualisé.
 
