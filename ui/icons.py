@@ -77,6 +77,7 @@ class IconName(str, Enum):
     SUBTITLE = "subtitle"
     TEXT = "text"
     EFFECTS = "effects"
+    COLOR = "color"
     TRANSITIONS = "transitions"
     LIBRARY = "library"
 
@@ -357,6 +358,19 @@ _SVG_TEMPLATES: dict[str, str] = {
         'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="m12 3 1.9 4.5 4.9.4-3.7 3.2 1.2 4.7L12 13.6l-4.3 2.2 1.2-4.7L5.2 7.9l4.9-.4z"/></svg>'
+    ),
+    IconName.COLOR: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="12" cy="12" r="8.5"/>'
+        '<path d="M12 3.5a8.5 8.5 0 0 1 7.36 12.75L12 12Z" '
+        'fill="currentColor" fill-opacity=".2"/>'
+        '<path d="M4.64 16.25A8.5 8.5 0 0 1 12 3.5V12Z" '
+        'fill="currentColor" fill-opacity=".35"/>'
+        '<path d="M19.36 16.25A8.5 8.5 0 0 1 4.64 16.25L12 12Z" '
+        'fill="currentColor" fill-opacity=".55"/>'
+        '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>'
     ),
     IconName.TRANSITIONS: (
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '

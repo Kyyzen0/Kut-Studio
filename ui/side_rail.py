@@ -1,11 +1,11 @@
 """Rail vertical d'icônes de Kut‑Studio.
 
-Rail fin (~64 px) inspiré de DaVinci Resolve et Final Cut Pro. Il
+Rail compact inspiré de DaVinci Resolve et Final Cut Pro. Il
 donne accès aux sections globales (Médias, Éditer, Effets, Texte,
 Transitions, Audio, Graphiques, Modèles) sans alourdir la barre
-supérieure. Chaque bouton est une simple icône, avec une infobulle au
-survol et un état actif matérialisé par un fond vert foncé arrondi et
-une icône turquoise.
+supérieure. Chaque bouton associe une icône à un libellé lisible, avec
+une infobulle au survol et un état actif matérialisé par un fond vert
+foncé arrondi et une icône turquoise.
 
 Aucune logique métier ici : le rail expose un signal ``section_changed``
 que la fenêtre principale traduit en bascule de panneau / d'onglet.
@@ -39,6 +39,7 @@ DEFAULT_SECTIONS: tuple[RailSection, ...] = (
     RailSection("media", "Médias", IconName.MEDIA),
     RailSection("edit", "Éditer", IconName.SCISSORS),
     RailSection("effects", "Effets", IconName.EFFECTS),
+    RailSection("color", "Couleur", IconName.COLOR),
     RailSection("text", "Texte", IconName.TEXT),
     RailSection("transitions", "Transitions", IconName.TRANSITIONS),
     RailSection("audio", "Audio", IconName.AUDIO),
@@ -60,6 +61,7 @@ class SideRail(QWidget):
         super().__init__(parent)
         self._sections = sections
         self._buttons: dict[str, IconButton] = {}
+        self._icons = {section.id: section.icon for section in sections}
         self._active: str | None = None
 
         self.setObjectName("side_rail")
@@ -82,11 +84,19 @@ class SideRail(QWidget):
 
             button = IconButton(
                 icon=section.icon,
+                text=section.label,
                 tooltip=section.label,
                 size=Sizes.icon_button + 2,
-                square=True,
+                square=False,
             )
-            button.setIcon(make_icon(section.icon, size=Iconography.lg))
+            button.setIcon(make_icon(
+                section.icon,
+                size=Iconography.lg,
+                color=QColor(COLORS["muted_strong"]),
+            ))
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            button.setFixedWidth(Sizes.side_rail_width - 2 * Spacing.sm)
+            button.setMinimumHeight(Sizes.button_md)
             button.setCheckable(True)
             button.setObjectName("railButton")
             button.setToolTip(section.label)
@@ -147,20 +157,30 @@ class SideRail(QWidget):
         accent = COLORS["accent"]
         accent_dark = COLORS["accent_dark"]
         text = COLORS["text"]
-        muted = COLORS["muted"]
         surface_hover = COLORS["surface_hover"]
         for sid, button in self._buttons.items():
             if sid == self._active:
+                button.setIcon(make_icon(
+                    self._icons[sid], size=Iconography.lg,
+                    color=QColor(accent),
+                ))
                 button.setStyleSheet(
                     f"QToolButton {{ background: {accent_dark};"
                     f" color: {accent}; border: 1px solid {accent};"
-                    f" border-radius: 8px; }}"
+                    f" border-radius: 8px; padding: 4px 8px;"
+                    f" font-size: 11px; font-weight: 700; text-align: left; }}"
                 )
             else:
+                button.setIcon(make_icon(
+                    self._icons[sid], size=Iconography.lg,
+                    color=QColor(COLORS["muted_strong"]),
+                ))
                 button.setStyleSheet(
                     f"QToolButton {{ background: transparent;"
-                    f" color: {muted}; border: 1px solid transparent;"
-                    f" border-radius: 8px; }}"
+                    f" color: {COLORS['muted_strong']};"
+                    f" border: 1px solid transparent; border-radius: 8px;"
+                    f" padding: 4px 8px; font-size: 11px;"
+                    f" font-weight: 600; text-align: left; }}"
                     f"QToolButton:hover {{ background: {surface_hover};"
                     f" color: {text}; }}"
                 )

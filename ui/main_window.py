@@ -634,11 +634,34 @@ class MainWindow(QMainWindow):
         - ``media`` : on affiche le panneau Médias ;
         - ``audio`` / ``text`` / ``effects`` / ``transitions`` : on rend
           le panneau Médias visible et on y affiche le contenu demandé ;
+        - ``color`` : on ouvre directement l'onglet Couleur de
+          l'inspecteur ;
         - ``edit`` / ``graphics`` / ``templates`` :
           aucune action concrète disponible aujourd'hui — on laisse
           l'état actif visuellement et on affiche un message discret
           pour rester honnête vis-à-vis de l'utilisateur.
         """
+        # Le rail et la navigation supérieure représentent les mêmes
+        # espaces de travail. La synchronisation est bidirectionnelle :
+        # cliquer à gauche doit donc aussi déplacer l'état actif en haut.
+        top_nav_index = {
+            "edit": 0,
+            "media": 1,
+            "effects": 2,
+            "color": 3,
+            "audio": 4,
+            "graphics": 5,
+        }.get(section_id)
+        if top_nav_index is not None and hasattr(self, "top_nav_buttons"):
+            for index, button in enumerate(self.top_nav_buttons):
+                button.setChecked(index == top_nav_index)
+
+        if section_id == "color":
+            if not self.workspace.is_visible(PanelId.INSPECTOR):
+                self.workspace.set_panel_visible(PanelId.INSPECTOR, True)
+            self.properties_panel._select_inspector_tab(1)
+            return
+
         if section_id in ("media", "audio", "text", "effects", "transitions"):
             # S'assurer que le panneau Médias est visible.
             if not self.workspace.is_visible(PanelId.MEDIA):
@@ -1797,9 +1820,8 @@ class MainWindow(QMainWindow):
         for i, button in enumerate(self.top_nav_buttons):
             button.setChecked(i == index)
         # Synchronise le rail latéral.
-        rail_sections = ("edit", "media", "effects", "graphics", "audio", "graphics")
         section_map = {0: "edit", 1: "media", 2: "effects",
-                       3: "graphics", 4: "audio", 5: "graphics"}
+                       3: "color", 4: "audio", 5: "graphics"}
         target = section_map.get(index, "edit")
         if hasattr(self, "side_rail") and self.side_rail.active() != target:
             self.side_rail.set_active(target)

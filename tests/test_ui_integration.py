@@ -2181,6 +2181,42 @@ def test_global_navigation_changes_library_without_duplicate_local_tabs(qtbot, m
     assert panel.content_stack.currentWidget() is panel.effects_view
 
 
+def test_color_navigation_is_synchronised_between_top_bar_and_left_rail(
+    qtbot, monkeypatch
+) -> None:
+    """Les deux accès Couleur ouvrent le même onglet de l'inspecteur."""
+    window = _build_window(qtbot, monkeypatch)
+
+    window._select_top_nav(3)
+    assert window.side_rail.active() == "color"
+    assert window.top_nav_buttons[3].isChecked()
+    assert window.properties_panel._active_inspector_tab == 1
+
+    window._select_top_nav(4)
+    window.side_rail._on_clicked("color")
+    assert window.side_rail.active() == "color"
+    assert window.top_nav_buttons[3].isChecked()
+    assert not window.top_nav_buttons[4].isChecked()
+    assert window.properties_panel._active_inspector_tab == 1
+
+
+def test_left_navigation_uses_readable_labels(qtbot, monkeypatch) -> None:
+    """Le rail ne dépend plus d'icônes ambiguës pour identifier ses menus."""
+    window = _build_window(qtbot, monkeypatch)
+
+    assert window.side_rail._buttons["color"].text() == "Couleur"
+    assert all(button.text() for button in window.side_rail._buttons.values())
+
+
+def test_track_creation_buttons_show_a_single_plus(qtbot, monkeypatch) -> None:
+    """L'icône porte le plus ; le libellé ne le répète pas."""
+    window = _build_window(qtbot, monkeypatch)
+
+    assert window.timeline_panel.add_video_btn.text().strip() == "Vidéo"
+    assert window.timeline_panel.add_audio_btn.text().strip() == "Audio"
+    assert window.timeline_panel.add_subtitle_btn.text().strip() == "Sous-titres"
+
+
 def test_effect_can_be_added_from_the_inspector(qtbot, monkeypatch) -> None:
     """Un effet choisi par l'utilisateur est ajouté au clip vidéo sélectionné."""
     from core.effects_model import EffectType

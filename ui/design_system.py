@@ -78,8 +78,9 @@ class _Sizes:
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.
     top_bar: int = 50
-    # Rail vertical d'icônes (Médias / Éditer / Effets…)
-    side_rail_width: int = 64
+    # Rail vertical principal. La largeur inclut un libellé court à côté
+    # de chaque icône pour que les sections restent identifiables.
+    side_rail_width: int = 112
     panel_min_width: int = 240
     panel_default_width: int = 300
     timeline_track_min_height: int = 56
