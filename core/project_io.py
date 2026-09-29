@@ -52,7 +52,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .effects_model import ClipEffect, EffectType
 from .project_model import Clip, Marker, MediaAsset, Project, Track
@@ -113,6 +113,10 @@ _TRACK_FIELDS = frozenset(
         "collapsed",
         "volume_db",
         "pan",
+        # --- Tâche 28 : automation audio / ducking ---
+        "audio_role",
+        "automation",
+        "ducking_config",
     }
 )
 _CLIP_AUDIO_FIELDS = frozenset({"gain_db", "pan", "fade_in", "fade_out"})
@@ -273,6 +277,13 @@ def _build_payload(project: Project) -> dict[str, Any]:
                 _assignment_to_dict(assignment)
                 for assignment in project.library_assignments.values()
             ],
+            # --- Ducking automatique (tâche 28) ---
+            # Liste des associations musique ← voix au niveau projet.
+            # Une liste vide signifie : aucun ducking automatique.
+            "ducking_sidechains": [
+                _ducking_sidechain_to_dict(sidechain)
+                for sidechain in getattr(project, "ducking_sidechains", []) or []
+            ],
             "tracks": [
                 {
                     "id": track.id,
@@ -287,6 +298,30 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "collapsed": track.collapsed,
                     "volume_db": float(track.volume_db),
                     "pan": float(track.pan),
+                    # --- Automation audio et ducking (tâche 28) ---
+                    # ``audio_role`` reste une chaîne pour rester
+                    # compatible avec les snapshots plus anciens.
+                    "audio_role": getattr(track, "audio_role", "other"),
+                    # ``automation`` est sérialisée comme une liste de
+                    # points ``{time_seconds, gain_db, fade_seconds}``.
+                    # Une liste vide correspond à ``pas d'automation``
+                    # et reste le comportement par défaut.
+                    "automation": [
+                        {
+                            "time_seconds": float(point.time_seconds),
+                            "gain_db": float(point.gain_db),
+                            "fade_seconds": float(point.fade_seconds),
+                        }
+                        for point in _iter_automation_points(
+                            getattr(track, "automation", None)
+                        )
+                    ],
+                    # ``ducking_config`` est sérialisé comme un dict
+                    # ``{threshold_db, reduction_db, attack_seconds,
+                    # release_seconds}`` ou ``None``.
+                    "ducking_config": _ducking_config_to_dict(
+                        getattr(track, "ducking_config", None)
+                    ),
                     "clips": [
                         {
                             "id": clip.id,
@@ -420,6 +455,15 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
         valid_folder_ids={folder.id for folder in project.library_folders},
         valid_tag_ids={tag.id for tag in project.library_tags},
     )
+    # --- Ducking automatique (tâche 28) ---
+    # Une version antérieure (avant v11.1) ne porte pas cette clé :
+    # on retombe sur une liste vide. Les entrées invalides sont
+    # silencieusement écartées.
+    project.ducking_sidechains = _deserialize_ducking_sidechains(
+        data.get("ducking_sidechains", []),
+        valid_music_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
+        valid_voice_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
+    )
     return project
 
 
@@ -534,6 +578,19 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
         track_kwargs["volume_db"] = 0.0
     if "pan" not in track_kwargs:
         track_kwargs["pan"] = 0.0
+    # Automation audio et ducking (tâche 28). Une version antérieure
+    # à v11.1 ne porte pas ces clés : on retombe sur les valeurs
+    # neutres (rôle ``other``, automation vide, ducking_config None).
+    if "audio_role" not in track_kwargs:
+        track_kwargs["audio_role"] = "other"
+    elif track_kwargs["audio_role"] not in {"voice", "music", "sfx", "other"}:
+        track_kwargs["audio_role"] = "other"
+    track_kwargs["automation"] = _deserialize_automation_points(
+        track_kwargs.get("automation") or []
+    )
+    track_kwargs["ducking_config"] = _deserialize_ducking_config(
+        track_kwargs.get("ducking_config")
+    )
     return Track(clips=clips, **track_kwargs)
 
 
@@ -921,6 +978,191 @@ def _deserialize_library_assignments(
             tag_ids=tag_ids,
         )
     return assignments
+
+
+# ---------------------------------------------------------------------------
+# Automation audio et ducking (tâche 28)
+# ---------------------------------------------------------------------------
+
+
+def _iter_automation_points(value) -> Iterable[AutomationPoint]:
+    """Normalise l'accès aux points d'automation d'une piste.
+
+    Le champ ``track.automation`` peut être :
+
+    - une liste de :class:`AutomationPoint` (cas historique et cas
+      ``track.automation == []``) ;
+    - une instance de :class:`TrackAutomation` (cas où le service
+      :class:`AudioAutomationService` l'a enrichie, avec un attribut
+      ``.points``). On détecte ce cas via ``hasattr(value, "points")``.
+    """
+    if value is None:
+        return []
+    if hasattr(value, "points"):
+        return list(getattr(value, "points", []) or [])
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _ducking_config_to_dict(config) -> dict[str, Any] | None:
+    """Sérialise un :class:`DuckingConfig` ou retourne ``None``."""
+    if config is None:
+        return None
+    # On accepte aussi un dict (mode ``raw``) pour les projets qui
+    # n'ont pas encore migré : on convertit alors à la volée.
+    if isinstance(config, dict):
+        return {
+            "threshold_db": float(config.get("threshold_db", -20.0)),
+            "reduction_db": float(config.get("reduction_db", 12.0)),
+            "attack_seconds": float(config.get("attack_seconds", 0.05)),
+            "release_seconds": float(config.get("release_seconds", 0.4)),
+        }
+    return {
+        "threshold_db": float(getattr(config, "threshold_db", -20.0)),
+        "reduction_db": float(getattr(config, "reduction_db", 12.0)),
+        "attack_seconds": float(getattr(config, "attack_seconds", 0.05)),
+        "release_seconds": float(getattr(config, "release_seconds", 0.4)),
+    }
+
+
+def _deserialize_ducking_config(raw: Any):
+    """Reconstruit un :class:`DuckingConfig` ou retourne ``None``."""
+    if raw is None or not isinstance(raw, dict):
+        return None
+    # Import paresseux pour éviter les cycles d'imports.
+    from .audio_automation import (
+        AudioAutomationRangeError,
+        DuckingConfig,
+    )
+    try:
+        return DuckingConfig(
+            threshold_db=float(raw.get("threshold_db", -20.0)),
+            reduction_db=float(raw.get("reduction_db", 12.0)),
+            attack_seconds=float(raw.get("attack_seconds", 0.05)),
+            release_seconds=float(raw.get("release_seconds", 0.4)),
+        )
+    except (AudioAutomationRangeError, ValueError, TypeError):
+        return None
+
+
+def _ducking_sidechain_to_dict(sidechain) -> dict[str, Any]:
+    """Sérialise un :class:`DuckingSidechain`."""
+    return {
+        "id": sidechain.id,
+        "music_track_id": sidechain.music_track_id,
+        "voice_track_id": sidechain.voice_track_id,
+        "config": _ducking_config_to_dict(sidechain.config),
+        "enabled": bool(sidechain.enabled),
+    }
+
+
+def _deserialize_ducking_sidechains(
+    raw: Any,
+    *,
+    valid_music_ids: set[str],
+    valid_voice_ids: set[str],
+) -> list:
+    """Reconstruit la liste des :class:`DuckingSidechain`.
+
+    Les entrées invalides sont silencieusement écartées. Les
+    associations qui pointent vers une piste voix / musique
+    inconnue sont supprimées : on veut qu'un fichier modifié
+    ailleurs ne plante pas à l'ouverture.
+    """
+    # Import paresseux pour éviter les cycles d'imports.
+    from .audio_automation import (
+        AudioAutomationError,
+        DuckingConfig,
+        DuckingSidechain,
+    )
+
+    if not isinstance(raw, list):
+        return []
+    result: list = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        sidechain_id = item.get("id")
+        music_id = item.get("music_track_id")
+        voice_id = item.get("voice_track_id")
+        if (
+            not sidechain_id
+            or not music_id
+            or not voice_id
+            or music_id not in valid_music_ids
+            or voice_id not in valid_voice_ids
+            or music_id == voice_id
+        ):
+            continue
+        if sidechain_id in seen_ids:
+            continue
+        config_raw = item.get("config")
+        if isinstance(config_raw, dict):
+            try:
+                config = DuckingConfig(
+                    threshold_db=float(config_raw.get("threshold_db", -20.0)),
+                    reduction_db=float(config_raw.get("reduction_db", 12.0)),
+                    attack_seconds=float(config_raw.get("attack_seconds", 0.05)),
+                    release_seconds=float(config_raw.get("release_seconds", 0.4)),
+                )
+            except (AudioAutomationError, ValueError, TypeError):
+                config = DuckingConfig()
+        else:
+            config = DuckingConfig()
+        try:
+            sidechain = DuckingSidechain(
+                id=str(sidechain_id),
+                music_track_id=str(music_id),
+                voice_track_id=str(voice_id),
+                config=config,
+                enabled=bool(item.get("enabled", True)),
+            )
+        except AudioAutomationError:
+            continue
+        seen_ids.add(sidechain_id)
+        result.append(sidechain)
+    return result
+
+
+def _deserialize_automation_points(raw: Any) -> list:
+    """Reconstruit la liste des points d'automation d'une piste.
+
+    Les points invalides sont silencieusement écartés ; la liste
+    retournée est triée par ``time_seconds`` croissant. Les valeurs
+    hors bornes (temps négatif, fade > limite) sont également
+    rejetées : on préfère un projet sans point douteux à un projet
+    qui crashe au rendu.
+    """
+    # Import paresseux pour éviter les cycles d'imports.
+    from .audio_automation import (
+        AudioAutomationError,
+        AutomationPoint,
+    )
+
+    if not isinstance(raw, list):
+        return []
+    points: list = []
+    for item in raw:
+        if isinstance(item, AutomationPoint):
+            # Au cas où la sérialisation future passe directement les
+            # objets : on garde la cohérence.
+            points.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        try:
+            point = AutomationPoint(
+                time_seconds=float(item.get("time_seconds", 0.0)),
+                gain_db=float(item.get("gain_db", 0.0)),
+                fade_seconds=float(item.get("fade_seconds", 0.0)),
+            )
+        except (AudioAutomationError, ValueError, TypeError):
+            continue
+        points.append(point)
+    points.sort(key=lambda p: p.time_seconds)
+    return points
 
 
 # ---------------------------------------------------------------------------

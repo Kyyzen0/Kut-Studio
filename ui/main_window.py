@@ -589,6 +589,161 @@ class MainWindow(QMainWindow):
         track.set_volume_db(value)
         self._record_audio_change(i18n.translate("mixer.volume"))
 
+    # ------------------------------------------------------------------
+    # Automation audio et ducking (tâche 28)
+    # ------------------------------------------------------------------
+
+    def on_track_role_changed(
+        self, track_id: str, role: str
+    ) -> None:
+        """Définit le rôle sémantique d'une piste audio."""
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+            TrackRole,
+        )
+        track = self._find_audio_track(track_id)
+        if track is None:
+            return
+        if track.locked:
+            self.mixer_panel.refresh_track(track)
+            return
+        service = AudioAutomationService()
+        try:
+            service.set_track_role(self.project, track.id, TrackRole(role))
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            self.mixer_panel.refresh_track(track)
+            return
+        self._record_audio_change("Modifier le rôle de la piste")
+
+    def on_track_automation_point_added(
+        self, track_id: str, time_seconds: float,
+        gain_db: float, fade_seconds: float,
+    ) -> None:
+        """Ajoute un point-clé d'automation sur une piste."""
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+        )
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            return
+        service = AudioAutomationService()
+        try:
+            service.add_automation_point(
+                self.project, track.id, time_seconds, gain_db, fade_seconds
+            )
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Ajouter un point d'automation")
+
+    def on_track_automation_point_removed(
+        self, track_id: str, time_seconds: float
+    ) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            return
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+        )
+        service = AudioAutomationService()
+        try:
+            service.remove_automation_point(
+                self.project, track.id, time_seconds
+            )
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Supprimer un point d'automation")
+
+    def on_track_automation_point_updated(
+        self, track_id: str, time_seconds: float,
+        gain_db: float, fade_seconds: float,
+    ) -> None:
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            return
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+        )
+        service = AudioAutomationService()
+        try:
+            service.update_automation_point(
+                self.project, track.id, time_seconds,
+                gain_db=gain_db, fade_seconds=fade_seconds,
+            )
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Modifier un point d'automation")
+
+    def on_ducking_sidechain_added(
+        self, music_track_id: str, voice_track_id: str,
+    ) -> None:
+        """Crée une association de ducking musique ← voix."""
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+            DuckingConfig,
+        )
+        music = self._find_audio_track(music_track_id)
+        voice = self._find_audio_track(voice_track_id)
+        if music is None or voice is None:
+            return
+        if music.locked or voice.locked:
+            return
+        service = AudioAutomationService()
+        try:
+            service.add_ducking_sidechain(
+                self.project, music.id, voice.id,
+                config=DuckingConfig(),
+            )
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Ajouter un ducking")
+
+    def on_ducking_sidechain_removed(self, sidechain_id: str) -> None:
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+        )
+        service = AudioAutomationService()
+        try:
+            service.remove_ducking_sidechain(self.project, sidechain_id)
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Supprimer un ducking")
+
+    def on_ducking_config_changed(
+        self, sidechain_id: str,
+        threshold_db: float, reduction_db: float,
+        attack_seconds: float, release_seconds: float,
+    ) -> None:
+        from core.audio_automation import (
+            AudioAutomationError,
+            AudioAutomationService,
+            DuckingConfig,
+        )
+        service = AudioAutomationService()
+        try:
+            config = DuckingConfig(
+                threshold_db=threshold_db,
+                reduction_db=reduction_db,
+                attack_seconds=attack_seconds,
+                release_seconds=release_seconds,
+            )
+            service.update_ducking_config(self.project, sidechain_id, config)
+        except AudioAutomationError as exc:
+            QMessageBox.warning(self, "Mixage", str(exc))
+            return
+        self._record_audio_change("Modifier le ducking")
+
     def on_track_pan_changed(self, track_id: str, value: float) -> None:
         track = self._find_audio_track(track_id)
         if track is None or track.locked:

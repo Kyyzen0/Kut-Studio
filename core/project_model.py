@@ -418,12 +418,28 @@ class Track:
     # --- Mixage audio (non destructif, ignoré par la vidéo) ---
     volume_db: float = 0.0
     pan: float = 0.0
+    # --- Automation audio et ducking (tâche 28) ---
+    # ``audio_role`` est une chaîne (``"voice"``, ``"music"``, ``"sfx"``
+    # ou ``"other"``) pour rester rétro-compatible avec les snapshots
+    # d'historique (la sérialisation JSON ne touche pas au champ).
+    audio_role: str = "other"
+    # ``automation`` est la liste ordonnée des points-clés (gain / fade)
+    # de la piste. Vide par défaut pour préserver le comportement
+    # historique (gain constant).
+    automation: list = field(default_factory=list)
+    # ``ducking_config`` est soit ``None`` soit une instance de
+    # :class:`DuckingConfig` ; on garde un type ``object`` pour ne pas
+    # coupler le modèle au module :mod:`core.audio_automation`.
+    ducking_config: object = None
 
     def __post_init__(self) -> None:
         if self.height_mode not in {"compact", "normal", "large"}:
             self.height_mode = "normal"
         self.volume_db = clamp_gain_db(self.volume_db)
         self.pan = clamp_pan(self.pan)
+        # Rôle par défaut ``other`` si la valeur n'est pas reconnue.
+        if self.audio_role not in {"voice", "music", "sfx", "other"}:
+            self.audio_role = "other"
 
     def set_volume_db(self, value: float) -> float:
         """Règle le volume de piste, borné, et retourne la valeur appliquée."""
@@ -508,6 +524,11 @@ class Project:
     library_folders: list = field(default_factory=list)
     library_tags: list = field(default_factory=list)
     library_assignments: dict = field(default_factory=dict)
+    # --- Ducking automatique (tâche 28) ---
+    # Liste d'associations ``DuckingSidechain`` au niveau projet. Une
+    # association lie une piste musique à une piste voix qui la pilote.
+    # Vide par défaut, rétrocompatible avec les anciens snapshots.
+    ducking_sidechains: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Vérifie que les paramètres de rendu du projet sont cohérents."""

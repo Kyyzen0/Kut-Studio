@@ -128,6 +128,13 @@ class AudioLayer:
     # caractère immuable de l'AudioLayer. Les effets sont appliqués
     # dans l'ordre de la séquence au moment du rendu.
     audio_effects: tuple = field(default_factory=tuple)
+    # Automation de volume par piste (tâche 28). Liste ordonnée de
+    # :class:`AutomationPoint` ; ``gain_at`` est appelé pour appliquer
+    # une enveloppe de gain à l'export. Vide par défaut.
+    track_automation: tuple = field(default_factory=tuple)
+    # Liste des :class:`DuckingSidechain` qui ciblent cette piste.
+    # Vide par défaut : pas de ducking automatique.
+    ducking_sidechains: tuple = field(default_factory=tuple)
 
     @property
     def duration(self) -> float:
@@ -302,12 +309,28 @@ def build_render_plan(
                 if asset.has_audio and not track.muted and not audio_solo:
                     audio_layers.append(
                         _build_audio_layer(
-                            clip, asset, track.id, track_index, track
+                            clip, asset, track.id, track_index, track,
+                            ducking_sidechains=[
+                                s
+                                for s in getattr(
+                                    project, "ducking_sidechains", []
+                                ) or []
+                                if getattr(s, "music_track_id", None) == track.id
+                            ],
                         )
                     )
             else:  # track.type == "audio"
                 audio_layers.append(
-                    _build_audio_layer(clip, asset, track.id, track_index, track)
+                    _build_audio_layer(
+                        clip, asset, track.id, track_index, track,
+                        ducking_sidechains=[
+                            s
+                            for s in getattr(
+                                project, "ducking_sidechains", []
+                            ) or []
+                            if getattr(s, "music_track_id", None) == track.id
+                        ],
+                    )
                 )
     layer_ids = {layer.clip_id for layer in video_layers}
     transitions = tuple(
@@ -374,8 +397,22 @@ def _subtitle_cues_for_export(project: Project):
 
 
 def _build_audio_layer(
-    clip, asset: MediaAsset, track_id: str, track_index: int, track=None
+    clip, asset: MediaAsset, track_id: str, track_index: int, track=None,
+    *,
+    ducking_sidechains: list | None = None,
 ) -> AudioLayer:
+    # Automation de volume (tâche 28) : on la récupère depuis le track
+    # parent. L'automation peut être soit une liste (cas historique),
+    # soit une instance de :class:`TrackAutomation` (cas enrichi par
+    # :class:`AudioAutomationService`). On normalise dans les deux cas
+    # vers une liste ordonnée de :class:`AutomationPoint`.
+    track_automation = getattr(track, "automation", None)
+    if hasattr(track_automation, "points"):
+        track_automation_points = list(getattr(track_automation, "points", []) or [])
+    elif isinstance(track_automation, list):
+        track_automation_points = list(track_automation)
+    else:
+        track_automation_points = []
     return AudioLayer(
         clip_id=clip.id,
         asset_id=clip.asset_id,
@@ -395,4 +432,6 @@ def _build_audio_layer(
         track_pan=float(getattr(track, "pan", 0.0)),
         time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
         audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
+        track_automation=tuple(track_automation_points),
+        ducking_sidechains=tuple(ducking_sidechains or []),
     )
