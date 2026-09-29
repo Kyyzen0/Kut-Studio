@@ -581,6 +581,36 @@ class MainWindow(QMainWindow):
                 return track
         return None
 
+    def _find_clip_anywhere(self, clip_id: str):
+        """Recherche un clip dans toutes les pistes du projet courant.
+
+        Retourne le clip ou ``None``. Utilisé par les handlers
+        d'étalonnage / LUT qui n'ont pas besoin de connaître la
+        piste parente (l'étalonnage est strictement lié au clip).
+        """
+        if self.project is None:
+            return None
+        for track in self.project.tracks:
+            for clip in track.clips:
+                if clip.id == clip_id:
+                    return clip
+        return None
+
+    def project_io_root(self):
+        """Répertoire de sauvegarde du projet courant (pour les LUTs).
+
+        L'inspecteur Couleur a besoin du ``project_root`` pour
+        résoudre les chemins relatifs des LUTs ``.cube``. On
+        retourne le dossier du fichier de projet courant s'il est
+        connu, sinon ``None`` (les chemins absolus restent valides).
+        """
+        path = getattr(self, "_current_project_path", None)
+        if not path:
+            return None
+        from pathlib import Path
+
+        return Path(path).parent
+
     def on_track_volume_changed(self, track_id: str, value: float) -> None:
         track = self._find_audio_track(track_id)
         if track is None or track.locked:
@@ -588,6 +618,154 @@ class MainWindow(QMainWindow):
             return
         track.set_volume_db(value)
         self._record_audio_change(i18n.translate("mixer.volume"))
+
+    # ------------------------------------------------------------------
+    # Étalonnage couleur (tâche 29)
+    # ------------------------------------------------------------------
+
+    def on_color_grade_replaced(
+        self, clip_id: str, grade_dict: dict | None
+    ) -> None:
+        """Remplace l'étalonnage d'un clip par un nouveau :class:`ColorGrade`.
+
+        ``grade_dict`` est la représentation JSON-ready du grade ;
+        on reconstruit un :class:`ColorGrade` côté métier pour
+        garantir la validation des bornes et la cohérence des
+        champs.
+        """
+        from core.color_grading import (
+            ColorCurve,
+            ColorCurves,
+            ColorGrade,
+            ColorGradingError,
+            ColorGradingService,
+        )
+
+        if grade_dict is None:
+            grade = ColorGrade.identity()
+        else:
+            try:
+                curves_raw = grade_dict.get("curves") or {}
+                grade = ColorGrade(
+                    exposure=float(grade_dict.get("exposure", 0.0)),
+                    contrast=float(grade_dict.get("contrast", 0.0)),
+                    saturation=float(grade_dict.get("saturation", 1.0)),
+                    temperature=float(grade_dict.get("temperature", 0.0)),
+                    hue=float(grade_dict.get("hue", 0.0)),
+                    shadows=float(grade_dict.get("shadows", 0.0)),
+                    highlights=float(grade_dict.get("highlights", 0.0)),
+                    curves=ColorCurves(
+                        master=ColorCurve.identity(),
+                        red=ColorCurve.identity(),
+                        green=ColorCurve.identity(),
+                        blue=ColorCurve.identity(),
+                    ),
+                    enabled=bool(grade_dict.get("enabled", True)),
+                )
+            except (ColorGradingError, ValueError, TypeError) as exc:
+                print(f"[MainWindow] Étalonnage invalide : {exc}")
+                return
+
+        clip = self._find_clip_anywhere(clip_id)
+        if clip is None:
+            return
+        if clip.locked:
+            return
+        service = ColorGradingService()
+        service.set_grade(self.project, clip_id, grade)
+        self._record_history("Étalonner le clip")
+        self._mark_dirty()
+
+    def on_color_grade_reset(self, clip_id: str) -> None:
+        """Réinitialise l'étalonnage d'un clip."""
+        from core.color_grading import (
+            ColorGradingError,
+            ColorGradingService,
+        )
+
+        clip = self._find_clip_anywhere(clip_id)
+        if clip is None or clip.locked:
+            return
+        service = ColorGradingService()
+        try:
+            service.reset_grade(self.project, clip_id)
+        except ColorGradingError as exc:
+            print(f"[MainWindow] Reset étalonnage refusé : {exc}")
+            return
+        self._record_history("Réinitialiser l'étalonnage")
+        self._mark_dirty()
+
+    def on_color_preset_applied(
+        self, clip_id: str, preset_id: str
+    ) -> None:
+        """Applique un preset d'étalonnage au clip."""
+        from core.color_grading import (
+            ColorGradingError,
+            ColorGradingService,
+            ColorPresetStore,
+        )
+
+        clip = self._find_clip_anywhere(clip_id)
+        if clip is None or clip.locked:
+            return
+        store = ColorPresetStore()
+        preset = store.get_preset(preset_id)
+        if preset is None:
+            return
+        service = ColorGradingService()
+        try:
+            service.apply_preset(self.project, clip_id, preset)
+        except ColorGradingError as exc:
+            print(f"[MainWindow] Preset étalonnage refusé : {exc}")
+            return
+        self._record_history("Appliquer un preset d'étalonnage")
+        self._mark_dirty()
+
+    def on_lut_loaded(self, clip_id: str, lut_path: str) -> None:
+        """Importe un LUT et l'attache au clip sélectionné."""
+        from core.color_grading import (
+            ColorGrade,
+            ColorGradingError,
+            ColorGradingService,
+        )
+        from core.lut_importer import (
+            LUTImportError,
+            parse_cube_lut,
+        )
+
+        clip = self._find_clip_anywhere(clip_id)
+        if clip is None or clip.locked:
+            return
+        try:
+            parsed = parse_cube_lut(lut_path)
+        except LUTImportError as exc:
+            QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            return
+        try:
+            resource = LUTResource.from_path(
+                lut_path,
+                project_root=self.project_io_root()
+                if hasattr(self, "project_io_root")
+                else None,
+            )
+        except (ColorGradingError, OSError) as exc:
+            QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            return
+        # On préserve les réglages existants du clip ; seul le LUT
+        # est remplacé.
+        service = ColorGradingService()
+        current = service.get_grade(self.project, clip_id)
+        # On reconstruit en s'assurant que le hash / la taille
+        # reflètent le contenu lu (la valeur ``_from_path`` a déjà
+        # re-calculé ces champs).
+        try:
+            updated = current.with_lut(resource)
+            service.set_grade(self.project, clip_id, updated)
+        except ColorGradingError as exc:
+            QMessageBox.warning(self, "LUT", str(exc))
+            return
+        self._record_history("Importer un LUT")
+        self._mark_dirty()
 
     # ------------------------------------------------------------------
     # Automation audio et ducking (tâche 28)

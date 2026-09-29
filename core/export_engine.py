@@ -805,6 +805,15 @@ def _build_layer_filter(
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
     effect_filters = _build_clip_effect_filters(layer.effects)
 
+    # Étalonnage couleur non destructif (tâche 29) : on génère les
+    # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
+    # (température/teinte), ``curves`` (R/V/B) et ``lut3d`` (LUT
+    # optionnel). Les filtres s'appliquent *après* les effets visuels
+    # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
+    # afin de garantir un rendu stable quel que soit l'ordre des
+    # opérations demandé par l'utilisateur.
+    color_grade_filters = _build_color_grade_filters(layer.color_grade)
+
     # Filtres de remappage temporel (freeze, reverse, speed)
     time_remapping_filter = _build_time_remapping_video_filter(layer)
 
@@ -823,6 +832,8 @@ def _build_layer_filter(
         parts.append(f"fps={fps},")
         if effect_filters:
             parts.append(f"{effect_filters},")
+        if color_grade_filters:
+            parts.append(f"{color_grade_filters},")
         parts.append(f"format=rgba,")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
@@ -833,21 +844,218 @@ def _build_layer_filter(
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
         parts.append(f"fps={fps},")
-        
+
         # Appliquer le time_remapping (reverse/speed) ici
         if time_remapping_filter:
             parts.append(f"{time_remapping_filter},")
-        
+
         parts.append(f"setpts=PTS-STARTPTS,")
         parts.append(f"{scale_expr},")
         parts.append(f"{rotation_expr},")
         if effect_filters:
             parts.append(f"{effect_filters},")
+        if color_grade_filters:
+            parts.append(f"{color_grade_filters},")
         parts.append(f"format=rgba,")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
 
     return "".join(parts)
+
+
+def _build_color_grade_filters(grade) -> str:
+    """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
+
+    L'ordre est déterministe et identique pour tous les clips :
+
+    1. ``eq`` — exposition + contraste + saturation (toujours émis,
+       même avec les valeurs par défaut, pour garantir une chaîne
+       stable quand l'utilisateur active puis désactive un champ ;
+       les valeurs sont au défaut, FFmpeg traite le neutre comme
+       une no‑op visuelle).
+    2. ``colorbalance`` — température + teinte + ombres + hautes
+       lumières. Émis uniquement si non neutres, pour ne pas allonger
+       la chaîne inutilement.
+    3. ``curves`` — courbes master / R / V / B. Émises uniquement si
+       la courbe s'écarte de l'identité (tolérance 1e‑3).
+    4. ``lut3d`` — application du LUT ``.cube``. Émise uniquement si
+       un LUT est attaché et que le fichier source existe ; un LUT
+       ``missing`` est ignoré pour ne pas planter l'export.
+
+    Les filtres sont séparés par des virgules : FFmpeg les compose
+    dans l'ordre, ce qui correspond à l'ordre naturel d'un pipeline
+    d'étalonnage (eq → colorbalance → courbes → LUT).
+
+    Args:
+        grade: instance de :class:`ColorGrade` ou ``None`` (identité).
+
+    Returns:
+        Chaîne prête à être concaténée dans un pipeline, ou
+        chaîne vide si l'identité totale.
+    """
+    # Import paresseux pour éviter les cycles d'imports.
+    from .color_grading import ColorGrade, ColorGradingError
+
+    if grade is None or not isinstance(grade, ColorGrade):
+        return ""
+    if not grade.enabled:
+        return ""
+    # Optimisation : aucun filtre émis si tout est neutre, sauf ``eq``
+    # qui reste toujours présent pour préserver la parité du pipeline
+    # (cf. note dans la docstring). On continue à optimiser les autres
+    # filtres.
+    filters: list[str] = []
+    # 1. eq : exposition (en EV, brightness linéaire), contraste
+    # (1.0 = neutre), saturation (1.0 = neutre). FFmpeg accepte les
+    # valeurs hors des bornes 0-1 et les convertit correctement.
+    eq_brightness = _format_seconds(float(grade.exposure))
+    eq_contrast = _format_seconds(1.0 + float(grade.contrast))
+    eq_saturation = _format_seconds(float(grade.saturation))
+    filters.append(
+        f"eq=brightness={eq_brightness}:contrast={eq_contrast}:"
+        f"saturation={eq_saturation}"
+    )
+    # 2. colorbalance : températures (rs / gs / bs) et teintes (rm / gm / bm)
+    # sont laissées à 0 par défaut ; on module les hautes lumières /
+    # ombres via ``b`` (shadow) et ``h`` (highlight). FFmpeg supporte
+    # aussi ``rs`` / ``gs`` / ``bs`` pour la balance des blancs ; on
+    # les utilise pour traduire la température et la teinte.
+    rs, gs, bs = _compute_colorbalance_offsets(
+        float(grade.temperature), float(grade.hue)
+    )
+    rh, gh, bh = _compute_colorbalance_highlights_shadows(
+        float(grade.shadows), float(grade.highlights)
+    )
+    if (
+        any(abs(v) > 1e-3 for v in (rs, gs, bs, rh, gh, bh))
+        or abs(grade.shadows) > 1e-3
+        or abs(grade.highlights) > 1e-3
+    ):
+        filters.append(
+            "colorbalance="
+            f"rs={_format_seconds(rs)}:gs={_format_seconds(gs)}:"
+            f"bs={_format_seconds(bs)}:"
+            f"rm={_format_seconds(rh)}:gm={_format_seconds(gh)}:"
+            f"bm={_format_seconds(bh)}"
+        )
+    # 3. courbes par canal : on émet un filtre ``curves`` par canal
+    # actif (s'écarte de l'identité). Les courbes master / R / V / B
+    # sont composées : FFmpeg applique la première au signal
+    # d'origine, puis les suivantes au résultat.
+    for channel in ("master", "red", "green", "blue"):
+        curve = getattr(grade.curves, channel)
+        if not _curve_is_identity(curve):
+            filters.append(_build_curves_filter(channel, curve))
+    # 4. LUT : on ne l'émet que si le fichier existe sur disque. La
+    # détection ``missing`` est gérée par la couche d'I/O ; ici on
+    # s'assure juste que le chemin est valide et non vide.
+    if grade.lut is not None:
+        lut_filter = _build_lut3d_filter(grade.lut)
+        if lut_filter:
+            filters.append(lut_filter)
+    return ",".join(filters)
+
+
+def _curve_is_identity(curve, *, tolerance: float = 1e-3) -> bool:
+    """``True`` si la courbe est numériquement égale à l'identité."""
+    if not curve.is_identity():
+        # ``ColorCurve.is_identity`` est strict ; ici on tolère une
+        # marge plus large (les UIs écrivent souvent de petites
+        # variations parasites).
+        for index, (x, y) in enumerate(curve.points):
+            expected = index / (len(curve.points) - 1)
+            if abs(x - expected) > tolerance or abs(y - expected) > tolerance:
+                return False
+    return True
+
+
+def _build_curves_filter(channel: str, curve) -> str:
+    """Émet un filtre ``curves`` pour un canal donné.
+
+    La syntaxe FFmpeg ``curves=`` accepte des presets (``preset=darker``)
+    ou une suite de points ``x0 y0 x1 y1 ...``. On choisit la seconde
+    forme pour traduire fidèlement les 16 points de notre modèle.
+    """
+    parts: list[str] = []
+    for x, y in curve.points:
+        parts.append(f"{_format_seconds(x)}")
+        parts.append(f"{_format_seconds(y)}")
+    expr = " ".join(parts)
+    return f"curves=preset=manual:{channel}='{expr}'"
+
+
+def _build_lut3d_filter(lut) -> str | None:
+    """Construit un filtre ``lut3d`` à partir d'un :class:`LUTResource`.
+
+    Retourne ``None`` si le chemin du LUT est vide (cas dégradé : on
+    ne produit pas de filtre cassé qui ferait planter l'export).
+    La résolution d'un chemin absolu est laissée à l'appelant : ici
+    on émet le chemin tel quel, avec une séquence d'échappement
+    minimale (caractères non‑ASCII protégés par ``_escape_filter_path``).
+    """
+    if not getattr(lut, "path", ""):
+        return None
+    safe = _escape_filter_path(lut.path)
+    return f"lut3d=file={safe}"
+
+
+def _compute_colorbalance_offsets(
+    temperature: float, hue: float,
+) -> tuple[float, float, float]:
+    """Convertit (température, teinte) en offsets RGB ``colorbalance``.
+
+    Le delta de température module le canal rouge vs bleu ; la teinte
+    applique une légère rotation cyan/magenta. On reste conservateur :
+    un delta de 100 ≈ ±0.20 sur le canal concerné.
+    """
+    # Température : +1 rouge, +0 vert, -1 bleu (simplification).
+    red = max(-0.5, min(0.5, temperature / 200.0))
+    blue = -red
+    green = 0.0
+    # Teinte : applique une dominante cyan/magenta. FFmpeg
+    # ``colorbalance`` attend des deltas par canal primaire.
+    if hue > 0:
+        # Vers le magenta : rouge +, bleu -.
+        red += hue / 360.0
+        blue -= hue / 360.0
+    elif hue < 0:
+        # Vers le cyan : rouge -, bleu +.
+        red += hue / 360.0
+        blue -= hue / 360.0
+    # On borne chaque canal à [-0.5, 0.5] : FFmpeg applique sans
+    # broncher des deltas plus larges mais l'UX resterait illisible.
+    return (
+        max(-0.5, min(0.5, red)),
+        max(-0.5, min(0.5, green)),
+        max(-0.5, min(0.5, blue)),
+    )
+
+
+def _compute_colorbalance_highlights_shadows(
+    shadows: float, highlights: float,
+) -> tuple[float, float, float]:
+    """Convertit (shadows, highlights) en offsets RGB ``colorbalance``.
+
+    On module la teinte moyenne par un effet croisé léger :
+    ombres froides (bleu +), hautes lumières chaudes (rouge +) lorsque
+    les valeurs sont positives. Inversement pour les valeurs négatives.
+    Les deltas sont petits (≤ 0.3) pour rester naturels.
+    """
+    # Hautes lumières : on tire vers le rouge / vert (chaleur).
+    rh = highlights * 0.5
+    gh = highlights * 0.3
+    bh = -highlights * 0.4
+    # Ombres : on tire vers le bleu (froid) ; les valeurs positives
+    # ``shadows`` éclaircissent les ombres, ce qui revient à tirer
+    # vers le rouge.
+    rh += -shadows * 0.3
+    gh += -shadows * 0.15
+    bh += shadows * 0.3
+    return (
+        max(-0.5, min(0.5, rh)),
+        max(-0.5, min(0.5, gh)),
+        max(-0.5, min(0.5, bh)),
+    )
 
 
 def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:

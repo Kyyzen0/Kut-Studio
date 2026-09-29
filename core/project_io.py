@@ -210,7 +210,7 @@ def load_project(file_path: str) -> Project:
             f"Section '{_PROJECT_KEY}' manquante ou invalide dans {source}."
         )
 
-    return _deserialize_project(project_data)
+    return _deserialize_project(project_data, project_root=source.parent)
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +355,17 @@ def _build_payload(project: Project) -> dict[str, Any]:
                                 _audio_effect_to_dict(effect)
                                 for effect in clip.audio_effects
                             ],
+                            # Étalonnage couleur non destructif (tâche 29).
+                            # ``None`` si l'identité ou si le clip n'a
+                            # jamais été étalonné : on évite de
+                            # polluer le ``.kut`` avec une copie
+                            # identique au défaut. Les versions
+                            # antérieures à v11.2 ne portent pas
+                            # cette clé, ce qui donne ``None`` après
+                            # chargement (rendu sans filtre couleur).
+                            "color_grade": _color_grade_to_dict(
+                                getattr(clip, "color_grade", None)
+                            ),
                             "text_style": clip.text_style.to_dict(),
                         }
                         for clip in track.clips
@@ -387,7 +398,9 @@ def _validate_envelope(data: dict[str, Any], source: Path) -> None:
         )
 
 
-def _deserialize_project(data: dict[str, Any]) -> Project:
+def _deserialize_project(
+    data: dict[str, Any], *, project_root: Path | None = None,
+) -> Project:
     """Reconstruit un ``Project`` à partir de la section ``project`` du JSON.
 
     Le chargement reste strict pour les clips, pistes, assets et
@@ -421,7 +434,9 @@ def _deserialize_project(data: dict[str, Any]) -> Project:
     for item in raw_tracks:
         if not isinstance(item, dict):
             raise ValueError("Piste invalide : objet JSON attendu.")
-        tracks.append(_deserialize_track(item))
+        tracks.append(
+            _deserialize_track(item, project_root=project_root)
+        )
     markers: list[Marker] = []
     raw_markers = data.get("markers", [])
     if raw_markers is None:
@@ -500,7 +515,9 @@ def _deserialize_marker(data: dict[str, Any]) -> Marker:
     )
 
 
-def _deserialize_track(data: dict[str, Any]) -> Track:
+def _deserialize_track(
+    data: dict[str, Any], *, project_root: Path | None = None,
+) -> Track:
     """Reconstruit une ``Track`` (et ses ``Clip``) à partir d'un dict JSON.
 
     Le chargement reste strict : un clip incomplet ou incohérent fait
@@ -561,6 +578,13 @@ def _deserialize_track(data: dict[str, Any]) -> Track:
             )
         else:
             clip_kwargs["audio_effects"] = []
+        # Étalonnage couleur (tâche 29) : si la clé manque (projet
+        # v10‑ ou v11.0/11.1), ``None`` ; les projets neufs portent
+        # toujours une clé, potentiellement nulle (identité).
+        clip_kwargs["color_grade"] = _deserialize_color_grade(
+            raw_clip.get("color_grade"),
+            project_root=project_root,
+        )
         # Style texte (tâche 24) : rétrocompatible — un clip sans la
         # clé ``text_style`` reçoit le style standard par défaut, ce
         # qui correspond exactement au rendu historique.
@@ -762,6 +786,162 @@ def _deserialize_audio_effects(raw: Any) -> list:
         seen_ids.add(effect.id)
         effects.append(effect)
     return effects
+
+
+# ---------------------------------------------------------------------------
+# Étalonnage couleur non destructif (tâche 29)
+# ---------------------------------------------------------------------------
+
+
+def _color_grade_to_dict(grade) -> dict[str, Any] | None:
+    """Sérialise un :class:`ColorGrade` ou retourne ``None`` si neutre."""
+    if grade is None:
+        return None
+    # Import paresseux pour éviter les cycles d'imports.
+    from .color_grading import ColorGrade
+    if not isinstance(grade, ColorGrade):
+        return None
+    return {
+        "exposure": float(grade.exposure),
+        "contrast": float(grade.contrast),
+        "saturation": float(grade.saturation),
+        "temperature": float(grade.temperature),
+        "hue": float(grade.hue),
+        "shadows": float(grade.shadows),
+        "highlights": float(grade.highlights),
+        "curves": {
+            "master": [
+                [float(x), float(y)] for x, y in grade.curves.master.points
+            ],
+            "red": [
+                [float(x), float(y)] for x, y in grade.curves.red.points
+            ],
+            "green": [
+                [float(x), float(y)] for x, y in grade.curves.green.points
+            ],
+            "blue": [
+                [float(x), float(y)] for x, y in grade.curves.blue.points
+            ],
+        },
+        "lut": (
+            {
+                "path": grade.lut.path,
+                "title": grade.lut.title,
+                "sha1": grade.lut.sha1,
+                "size": int(grade.lut.size),
+                "missing": bool(grade.lut.missing),
+            }
+            if grade.lut is not None else None
+        ),
+        "enabled": bool(grade.enabled),
+    }
+
+
+def _deserialize_color_grade(
+    raw: Any, *, project_root: Path | None = None,
+):
+    """Reconstruit un :class:`ColorGrade` ou retourne ``None``.
+
+    Les entrées invalides (paramètres hors bornes, points de courbe
+    invalides, LUT corrompu) sont silencieusement ramenées à
+    l'identité : on préfère un clip étalonné neut à un clip qui
+    crash au chargement.
+    """
+    if raw is None:
+        return None
+    # Import paresseux.
+    from .color_grading import (
+        ColorCurve,
+        ColorCurves,
+        ColorGrade,
+        ColorGradingError,
+        LUTResource,
+    )
+
+    if not isinstance(raw, dict):
+        return None
+
+    def _curve(points_raw) -> ColorCurve:
+        if not isinstance(points_raw, list):
+            return ColorCurve.identity()
+        pairs: list[tuple[float, float]] = []
+        for entry in points_raw:
+            if (
+                not isinstance(entry, (list, tuple))
+                or len(entry) != 2
+            ):
+                continue
+            try:
+                pairs.append((float(entry[0]), float(entry[1])))
+            except (TypeError, ValueError):
+                continue
+        if not pairs:
+            return ColorCurve.identity()
+        try:
+            return ColorCurve(points=tuple(pairs))
+        except ColorGradingError:
+            return ColorCurve.identity()
+
+    curves_raw = raw.get("curves")
+    if not isinstance(curves_raw, dict):
+        curves = ColorCurves()
+    else:
+        curves = ColorCurves(
+            master=_curve(curves_raw.get("master")),
+            red=_curve(curves_raw.get("red")),
+            green=_curve(curves_raw.get("green")),
+            blue=_curve(curves_raw.get("blue")),
+        )
+
+    lut_raw = raw.get("lut")
+    lut: LUTResource | None = None
+    if isinstance(lut_raw, dict):
+        try:
+            stored_missing = bool(lut_raw.get("missing", False))
+            path = str(lut_raw.get("path", ""))
+            # Détection d'un LUT manquant : on relit la valeur
+            # ``missing`` du fichier si elle est fausse, puis on
+            # vérifie la présence du chemin sur disque. On tente
+            # d'abord le chemin tel quel (absolu), puis le chemin
+            # résolu relativement au dossier du projet. C'est la
+            # combinaison qui couvre la majorité des cas
+            # d'utilisation sans coupler le module ``project_io`` à
+            # ``LUTResource``.
+            computed_missing = stored_missing
+            if path and not stored_missing:
+                from pathlib import Path
+
+                candidate = Path(path)
+                if not candidate.exists():
+                    if project_root is not None:
+                        candidate = project_root / candidate
+                if not candidate.exists():
+                    computed_missing = True
+            lut = LUTResource(
+                path=path,
+                title=str(lut_raw.get("title", "") or "LUT"),
+                sha1=str(lut_raw.get("sha1", "")),
+                size=int(lut_raw.get("size", 0)),
+                missing=computed_missing,
+            )
+        except (ColorGradingError, ValueError, TypeError):
+            lut = None
+
+    try:
+        return ColorGrade(
+            exposure=float(raw.get("exposure", 0.0)),
+            contrast=float(raw.get("contrast", 0.0)),
+            saturation=float(raw.get("saturation", 1.0)),
+            temperature=float(raw.get("temperature", 0.0)),
+            hue=float(raw.get("hue", 0.0)),
+            shadows=float(raw.get("shadows", 0.0)),
+            highlights=float(raw.get("highlights", 0.0)),
+            curves=curves,
+            lut=lut,
+            enabled=bool(raw.get("enabled", True)),
+        )
+    except ColorGradingError:
+        return None
 
 
 # ---------------------------------------------------------------------------

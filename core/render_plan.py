@@ -73,6 +73,10 @@ class RenderLayer:
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
+    # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
+    # ``None`` si l'identité. On garde un type ``object`` pour ne
+    # pas coupler le plan de rendu au module ``color_grading``.
+    color_grade: object = None
 
 
 @dataclass(frozen=True)
@@ -302,6 +306,11 @@ def build_render_plan(
                         transform_keyframes=tuple(clip.transform_keyframes),
                         time_remapping=clip.time_remapping,
                         effects=tuple(clip.effects),
+                        # Étalonnage couleur (tâche 29) : si le clip ne
+                        # porte pas de ``ColorGrade``, on garde ``None``
+                        # pour signaler l'identité et économiser du
+                        # travail au moteur d'export.
+                        color_grade=getattr(clip, "color_grade", None),
                     )
                 )
                 # Un solo audio ne laisse passer que les pistes audio armées
