@@ -25,10 +25,15 @@ from core.timeline_view_model import build_clip_views
 def _build_window(qtbot, monkeypatch):
     """Construit une MainWindow configurée pour les tests offscreen."""
     from ui.main_window import MainWindow
+    from PySide6.QtWidgets import QMessageBox
 
     # On neutralise les boîtes de dialogue pour ne pas bloquer les tests.
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.question",
+        lambda *_, **__: QMessageBox.Yes,
+    )
     window = MainWindow()
     qtbot.addWidget(window)
     # Le timer interne de l'horloge de timeline continue à émettre des
@@ -128,6 +133,136 @@ def test_main_window_adds_persistent_transition_from_library(qtbot, monkeypatch)
     transition = window.project.transitions[0]
     assert transition.type.value == "wipe_right"
     assert incoming.timeline_start == pytest.approx(3.5)
+
+
+def test_transition_library_renders_four_builtin_cards(qtbot, monkeypatch) -> None:
+    """La bibliothèque affiche les quatre préréglages sans combinatoire cachée."""
+    window = _build_window(qtbot, monkeypatch)
+    view = window.project_panel.transition_view
+    assert view.preset_count() == 4
+    assert {card.preset_id for card in view._cards.values()} == {
+        "crossfade",
+        "fade_black",
+        "wipe_left",
+        "wipe_right",
+    }
+
+
+def test_transition_library_apply_uses_preset_type_and_duration(
+    qtbot, monkeypatch
+) -> None:
+    """Le preset applique le bon type et la durée préremplie."""
+    window = _build_window(qtbot, monkeypatch)
+    incoming = find_clip(window.project, "plan_a")
+    incoming.timeline_start = 4.0
+    window.timeline_panel.set_project(window.project)
+    window.timeline_panel.selected_clip_ids = {"intro", "plan_a"}
+
+    # On simule la sélection du preset « Fondu au noir » dans la bibliothèque.
+    view = window.project_panel.transition_view
+    assert view.select_preset("fade_black") is True
+    # La durée par défaut du preset doit pré-remplir le spin.
+    assert view.duration_spin.value() == pytest.approx(0.75)
+
+    view.add_requested.emit("fade_black", float(view.duration_spin.value()))
+
+    transition = window.project.transitions[0]
+    assert transition.type.value == "fade_black"
+    assert transition.duration == pytest.approx(0.75)
+
+
+def test_transition_library_apply_keeps_user_duration_override(
+    qtbot, monkeypatch
+) -> None:
+    """L'utilisateur peut ajuster la durée avant l'ajout."""
+    window = _build_window(qtbot, monkeypatch)
+    incoming = find_clip(window.project, "plan_a")
+    incoming.timeline_start = 4.0
+    window.timeline_panel.set_project(window.project)
+    window.timeline_panel.selected_clip_ids = {"intro", "plan_a"}
+
+    view = window.project_panel.transition_view
+    view.select_preset("wipe_left")
+    view.duration_spin.setValue(0.6)
+    view.add_requested.emit("wipe_left", float(view.duration_spin.value()))
+
+    transition = window.project.transitions[0]
+    assert transition.type.value == "wipe_left"
+    assert transition.duration == pytest.approx(0.6)
+
+
+def test_transition_library_rejects_partial_selection(qtbot, monkeypatch) -> None:
+    """Aucun preset n'est posé sans deux clips vidéo sélectionnés."""
+    window = _build_window(qtbot, monkeypatch)
+    view = window.project_panel.transition_view
+    view.select_preset("crossfade")
+    # Sans sélection timeline : le bouton est désactivé.
+    assert view.add_button.isEnabled() is False
+
+    # Une sélection à un seul clip ne suffit pas non plus.
+    window.timeline_panel.selected_clip_ids = {"intro"}
+    window._sync_transitions_library_context()
+    assert view.add_button.isEnabled() is False
+
+    window.timeline_panel.selected_clip_ids = {"intro", "plan_a"}
+    window._sync_transitions_library_context()
+    assert view.add_button.isEnabled() is True
+
+
+def test_transition_library_adds_user_preset_and_persists(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    """Un preset utilisateur ajouté via le store survit à un redémarrage simulé."""
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path))
+    window = _build_window(qtbot, monkeypatch)
+    store = window.transition_preset_store
+
+    preset = store.all_presets()[0]  # crossfade
+    new_preset = type(preset)(
+        id=preset.id,
+        name=preset.name,
+        description=preset.description,
+        category=preset.category,
+        transition_type=preset.transition_type,
+        default_duration=preset.default_duration,
+        builtin=False,
+    )
+    # On simule une capture côté MainWindow : on construit un preset
+    # utilisateur avec un id user-*.
+    from core.transition_presets import (
+        TransitionPreset,
+        TransitionPresetCategory,
+    )
+
+    user_preset = TransitionPreset(
+        id="user-test",
+        name="Perso",
+        description="",
+        category=TransitionPresetCategory.FADE,
+        transition_type=preset.transition_type,
+        default_duration=0.42,
+        builtin=False,
+    )
+    store.add_user_preset(user_preset)
+    # Persistance : un store neuf recharge la même donnée.
+    from core.transition_presets import TransitionPresetStore
+
+    fresh = TransitionPresetStore()
+    assert any(p.id == "user-test" for p in fresh.all_user_presets())
+
+
+def test_transition_favorite_toggle_roundtrip(qtbot, monkeypatch, tmp_path) -> None:
+    """Le toggle favori est observable côté bibliothèque et persiste."""
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path))
+    window = _build_window(qtbot, monkeypatch)
+    view = window.project_panel.transition_view
+
+    view.favorite_toggled.emit("crossfade")
+    assert window.transition_preset_store.is_favorite("crossfade") is True
+    assert "crossfade" in view._favorites
+
+    view.favorite_toggled.emit("crossfade")
+    assert window.transition_preset_store.is_favorite("crossfade") is False
 
 
 def test_transition_marker_inspector_edit_and_removal(qtbot, monkeypatch) -> None:

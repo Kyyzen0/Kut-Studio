@@ -36,6 +36,12 @@ from core.effects_library import (
     snapshot_clip_preset,
 )
 from core.edit_history import ProjectHistory
+from core.transition_presets import (
+    TransitionPreset,
+    TransitionPresetStore,
+    builtin_transition_presets,
+    make_user_transition_preset,
+)
 from core.export_engine import ExportEngine
 from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError, probe_media, probe_video
@@ -102,7 +108,7 @@ from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
-from ui.project_panel import ProjectPanel, SavePresetDialog
+from ui.project_panel import ProjectPanel, SavePresetDialog, SaveTransitionPresetDialog
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
@@ -285,6 +291,27 @@ class MainWindow(QMainWindow):
         )
         self.project_panel.effect_preset_delete_requested.connect(
             self.on_effect_preset_delete_requested
+        )
+        # Tâche 23 : bibliothèque de transitions et presets.
+        # ``TransitionPresetStore`` conserve favoris + presets utilisateur
+        # en mémoire et persiste à chaque mutation.
+        self.transition_preset_store = TransitionPresetStore()
+        self.project_panel.set_transition_presets(
+            self.transition_preset_store.all_presets(),
+            favorites=self.transition_preset_store.favorites(),
+        )
+        self.transition_preset_store.subscribe(self._on_transition_presets_changed)
+        self.project_panel.transition_apply_requested.connect(
+            self.on_transition_preset_apply_requested
+        )
+        self.project_panel.transition_preset_save_requested.connect(
+            self.on_transition_preset_save_requested
+        )
+        self.project_panel.transition_preset_delete_requested.connect(
+            self.on_transition_preset_delete_requested
+        )
+        self.project_panel.transition_favorite_toggled.connect(
+            self.on_transition_favorite_toggled
         )
 
         # Initialisation de l'horloge de programme (tâche 8).
@@ -1554,11 +1581,28 @@ class MainWindow(QMainWindow):
             has_video_clip=clip_id is not None,
             clip_has_effects=clip_has_effects,
         )
+        # La bibliothèque de transitions partage la même notion de
+        # sélection : on l'aligne dans la foulée.
+        self._sync_transitions_library_context()
 
     def _on_user_presets_changed(self) -> None:
         """Répercute les mutations du store vers la bibliothèque."""
         self.project_panel.set_user_effect_presets(
             self.user_preset_store.all()
+        )
+
+    def _sync_transitions_library_context(self) -> None:
+        """Synchronise la bibliothèque de transitions avec la sélection."""
+        selected = [
+            view for view in self.timeline_panel.clip_views
+            if view.id in self.timeline_panel.selected_clip_ids
+            and view.track_type == "video"
+        ]
+        has_two_video_clips = (
+            len(selected) == 2 and selected[0].track_id == selected[1].track_id
+        )
+        self.project_panel.update_transitions_clip_context(
+            has_two_video_clips=has_two_video_clips,
         )
 
     # ------------------------------------------------------------------
@@ -2883,8 +2927,37 @@ class MainWindow(QMainWindow):
             self.transition_seconds = transition_time
             self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
 
-    def add_transition_from_library(self, transition_type: str, duration: float) -> None:
-        """Ajoute une transition entre les deux clips actuellement sélectionnés."""
+    def add_transition_from_library(self, preset_id: str, duration: float) -> None:
+        """Pose un preset de transition entre les deux clips sélectionnés.
+
+        Conservé comme façade de compatibilité : la nouvelle
+        bibliothèque publie ``transition_apply_requested(preset_id, duration)``
+        qui aboutit ici. On garde aussi l'ancien nom ``add_transition_from_library``
+        pour ne pas casser d'éventuels appels externes (tests).
+        """
+        self.on_transition_preset_apply_requested(preset_id, duration)
+
+    # ------------------------------------------------------------------
+    # Tâche 23 : gestion des presets de transitions
+    # ------------------------------------------------------------------
+
+    def _on_transition_presets_changed(self) -> None:
+        """Répercute les mutations du store vers la bibliothèque."""
+        self.project_panel.set_transition_presets(
+            self.transition_preset_store.all_presets(),
+            favorites=self.transition_preset_store.favorites(),
+        )
+
+    def on_transition_preset_apply_requested(
+        self, preset_id: str, duration: float
+    ) -> None:
+        """Applique un preset (intégré ou utilisateur) entre les deux clips sélectionnés."""
+        preset = self.transition_preset_store.get_preset(preset_id)
+        if preset is None:
+            self.statusBar().showMessage(
+                i18n.translate("transitions.library.no_results"), 5000
+            )
+            return
         selected = [
             view for view in self.timeline_panel.clip_views
             if view.id in self.timeline_panel.selected_clip_ids
@@ -2892,7 +2965,8 @@ class MainWindow(QMainWindow):
         ]
         if len(selected) != 2:
             self.statusBar().showMessage(
-                "Sélectionnez deux clips vidéo pour créer une transition.", 5000
+                i18n.translate("transitions.library.two_clips_required"),
+                5000,
             )
             return
         selected.sort(key=lambda view: view.start)
@@ -2901,20 +2975,136 @@ class MainWindow(QMainWindow):
                 "Les clips doivent être placés sur la même piste.", 5000
             )
             return
-        from core.transitions import TransitionType, add_transition
+        from core.transitions import add_transition
         try:
             transition = add_transition(
-                self.project, selected[0].id, selected[1].id,
-                TransitionType(transition_type), duration,
+                self.project,
+                selected[0].id,
+                selected[1].id,
+                preset.transition_type,
+                float(duration),
             )
         except (KeyError, ValueError) as error:
-            self.statusBar().showMessage(f"Transition refusée : {error}", 6000)
+            self.statusBar().showMessage(
+                f"Transition refusée : {error}", 6000
+            )
             return
         self._record_history("Ajouter une transition")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
         self.timeline_panel.select_transition(transition.id)
+        self.statusBar().showMessage(
+            f"Transition « {preset.name} » ajoutée.", 3000
+        )
+
+    def on_transition_preset_save_requested(self) -> None:
+        """Ouvre le dialogue d'enregistrement d'un preset utilisateur."""
+        selected = [
+            view for view in self.timeline_panel.clip_views
+            if view.id in self.timeline_panel.selected_clip_ids
+            and view.track_type == "video"
+        ]
+        if len(selected) != 2:
+            self.statusBar().showMessage(
+                i18n.translate("transitions.library.two_clips_required"),
+                5000,
+            )
+            return
+        selected.sort(key=lambda view: view.start)
+        if selected[0].track_id != selected[1].track_id:
+            self.statusBar().showMessage(
+                "Les clips doivent être placés sur la même piste.", 5000
+            )
+            return
+        from core.timeline_operations import find_clip
+
+        # Si une transition existe déjà entre ces deux clips, on en
+        # capture le type et la durée pour pré-remplir le dialogue.
+        existing_type = "crossfade"
+        existing_duration = 0.5
+        for transition in self.project.transitions:
+            if (
+                transition.from_clip_id == selected[0].id
+                and transition.to_clip_id == selected[1].id
+            ):
+                existing_type = transition.type.value
+                existing_duration = float(transition.duration)
+                break
+        try:
+            from_clip = find_clip(self.project, selected[0].id)
+            to_clip = find_clip(self.project, selected[1].id)
+        except (KeyError, ValueError) as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        default_name = (
+            f"{from_clip.label or 'Plan'} → {to_clip.label or 'Plan'}"
+        )
+        dialog = SaveTransitionPresetDialog(
+            self,
+            default_name=default_name,
+            default_type=existing_type,
+            default_duration=existing_duration,
+        )
+        if dialog.exec() != dialog.Accepted:
+            return
+        name, description, transition_type, duration = dialog.result_data()
+        if not name:
+            return
+        try:
+            preset = make_user_transition_preset(
+                name=name,
+                description=description,
+                transition_type=transition_type,
+                default_duration=duration,
+            )
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        try:
+            self.transition_preset_store.add_user_preset(preset)
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        self._record_history("Enregistrer une transition personnalisée")
+
+    def on_transition_preset_delete_requested(self, preset_id: str) -> None:
+        """Supprime un preset utilisateur après confirmation."""
+        preset = self.transition_preset_store.get_preset(preset_id)
+        if preset is None:
+            return
+        if preset.builtin:
+            QMessageBox.information(
+                self,
+                i18n.translate("transitions.library.delete"),
+                i18n.translate("transitions.library.user_builtin_lock"),
+            )
+            return
+        confirm = QMessageBox.question(
+            self,
+            i18n.translate("transitions.library.delete"),
+            i18n.translate(
+                "transitions.library.delete_confirm"
+            ).format(name=preset.name),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            self.transition_preset_store.remove_user_preset(preset_id)
+        except KeyError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
+        self._record_history("Supprimer une transition personnalisée")
+
+    def on_transition_favorite_toggled(self, preset_id: str) -> None:
+        """Bascule l'état favori d'un preset (intégré ou utilisateur)."""
+        try:
+            self.transition_preset_store.toggle_favorite(preset_id)
+        except KeyError as exc:
+            self.statusBar().showMessage(str(exc), 5000)
+            return
         self.statusBar().showMessage("Transition ajoutée.", 3000)
 
     def on_transition_selected(self, transition_id: str) -> None:

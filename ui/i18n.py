@@ -641,6 +641,192 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Delete preset “{name}”?",
         "es": "¿Eliminar el preset «{name}»?",
     },
+
+    # --- Présets de transitions (tâche 23) -------------------------------
+    "transitions.preset.crossfade.name": {
+        "fr": "Fondu enchaîné",
+        "en": "Crossfade",
+        "es": "Encadenado",
+    },
+    "transitions.preset.crossfade.description": {
+        "fr": "Mixe les deux clips : sortie qui s'estompe, entrée qui apparaît.",
+        "en": "Blends the two clips: fading out while fading in.",
+        "es": "Mezcla los dos clips: salida que se desvanece, entrada que aparece.",
+    },
+    "transitions.preset.fade_black.name": {
+        "fr": "Fondu au noir",
+        "en": "Fade to black",
+        "es": "Fundido a negro",
+    },
+    "transitions.preset.fade_black.description": {
+        "fr": "Bascule via un écran noir entre les deux clips.",
+        "en": "Switches through a black screen between the two clips.",
+        "es": "Cambia a través de una pantalla negra entre los dos clips.",
+    },
+    "transitions.preset.wipe_left.name": {
+        "fr": "Balayage gauche",
+        "en": "Wipe left",
+        "es": "Barrido a la izquierda",
+    },
+    "transitions.preset.wipe_left.description": {
+        "fr": "Le nouveau clip balaie l'ancien vers la gauche.",
+        "en": "The new clip wipes the old one to the left.",
+        "es": "El clip nuevo barre el antiguo hacia la izquierda.",
+    },
+    "transitions.preset.wipe_right.name": {
+        "fr": "Balayage droite",
+        "en": "Wipe right",
+        "es": "Barrido a la derecha",
+    },
+    "transitions.preset.wipe_right.description": {
+        "fr": "Le nouveau clip balaie l'ancien vers la droite.",
+        "en": "The new clip wipes the old one to the right.",
+        "es": "El clip nuevo barre el antiguo hacia la derecha.",
+    },
+
+    # --- Catégories de la bibliothèque de transitions --------------------
+    "transitions.category.fade": {
+        "fr": "Fondus",
+        "en": "Fades",
+        "es": "Fundidos",
+    },
+    "transitions.category.wipe": {
+        "fr": "Balayages",
+        "en": "Wipes",
+        "es": "Barridos",
+    },
+    "transitions.category.all": {
+        "fr": "Toutes catégories",
+        "en": "All categories",
+        "es": "Todas las categorías",
+    },
+    "transitions.category.favorites": {
+        "fr": "Favoris",
+        "en": "Favorites",
+        "es": "Favoritos",
+    },
+
+    # --- Bibliothèque de transitions : actions & libellés UI -------------
+    "transitions.library.title": {
+        "fr": "Bibliothèque de transitions",
+        "en": "Transitions library",
+        "es": "Biblioteca de transiciones",
+    },
+    "transitions.library.search": {
+        "fr": "Rechercher une transition…",
+        "en": "Search a transition…",
+        "es": "Buscar una transición…",
+    },
+    "transitions.library.section.builtin": {
+        "fr": "Préréglages",
+        "en": "Presets",
+        "es": "Preajustes",
+    },
+    "transitions.library.section.user": {
+        "fr": "Mes transitions",
+        "en": "My transitions",
+        "es": "Mis transiciones",
+    },
+    "transitions.library.apply": {
+        "fr": "Ajouter la transition",
+        "en": "Add transition",
+        "es": "Añadir transición",
+    },
+    "transitions.library.apply_hint": {
+        "fr": "Sélectionnez deux clips vidéo consécutifs, puis choisissez un preset.",
+        "en": "Select two consecutive video clips, then pick a preset.",
+        "es": "Selecciona dos clips de vídeo consecutivos y elige un preset.",
+    },
+    "transitions.library.no_results": {
+        "fr": "Aucun preset ne correspond à votre recherche.",
+        "en": "No preset matches your search.",
+        "es": "Ningún preset coincide con tu búsqueda.",
+    },
+    "transitions.library.user_empty": {
+        "fr": "Aucune transition personnalisée. Cliquez sur « Enregistrer comme preset » pour capturer la sélection actuelle.",
+        "en": "No custom transition. Click “Save as preset” to capture the current selection.",
+        "es": "Sin transiciones personalizadas. Pulsa «Guardar como preset» para capturar la selección actual.",
+    },
+    "transitions.library.favorites_empty": {
+        "fr": "Aucun favori. Cliquez sur l'étoile d'un preset pour le retrouver ici.",
+        "en": "No favorite yet. Click the star on a preset to add it here.",
+        "es": "Sin favoritos. Pulsa la estrella de un preset para añadirlo aquí.",
+    },
+    "transitions.library.favorite_add": {
+        "fr": "Ajouter aux favoris",
+        "en": "Add to favorites",
+        "es": "Añadir a favoritos",
+    },
+    "transitions.library.favorite_remove": {
+        "fr": "Retirer des favoris",
+        "en": "Remove from favorites",
+        "es": "Quitar de favoritos",
+    },
+    "transitions.library.save": {
+        "fr": "Enregistrer comme preset",
+        "en": "Save as preset",
+        "es": "Guardar como preset",
+    },
+    "transitions.library.delete": {
+        "fr": "Supprimer ce preset",
+        "en": "Delete this preset",
+        "es": "Eliminar este preset",
+    },
+    "transitions.library.save_dialog.title": {
+        "fr": "Enregistrer une transition",
+        "en": "Save transition",
+        "es": "Guardar transición",
+    },
+    "transitions.library.save_dialog.name": {
+        "fr": "Nom de la transition",
+        "en": "Transition name",
+        "es": "Nombre de la transición",
+    },
+    "transitions.library.save_dialog.description": {
+        "fr": "Description (optionnelle)",
+        "en": "Description (optional)",
+        "es": "Descripción (opcional)",
+    },
+    "transitions.library.save_dialog.type": {
+        "fr": "Type",
+        "en": "Type",
+        "es": "Tipo",
+    },
+    "transitions.library.save_dialog.duration": {
+        "fr": "Durée par défaut",
+        "en": "Default duration",
+        "es": "Duración por defecto",
+    },
+    "transitions.library.save_dialog.save": {
+        "fr": "Enregistrer",
+        "en": "Save",
+        "es": "Guardar",
+    },
+    "transitions.library.save_dialog.cancel": {
+        "fr": "Annuler",
+        "en": "Cancel",
+        "es": "Cancelar",
+    },
+    "transitions.library.delete_confirm": {
+        "fr": "Supprimer la transition « {name} » ?",
+        "en": "Delete transition “{name}”?",
+        "es": "¿Eliminar la transición «{name}»?",
+    },
+    "transitions.library.duration_label": {
+        "fr": "Durée",
+        "en": "Duration",
+        "es": "Duración",
+    },
+    "transitions.library.user_builtin_lock": {
+        "fr": "Les préréglages ne peuvent pas être supprimés.",
+        "en": "Built-in presets cannot be deleted.",
+        "es": "Los preajustes no se pueden eliminar.",
+    },
+    "transitions.library.two_clips_required": {
+        "fr": "Sélectionnez deux clips vidéo pour appliquer une transition.",
+        "en": "Select two video clips to apply a transition.",
+        "es": "Selecciona dos clips de vídeo para aplicar una transición.",
+    },
 }
 
 
