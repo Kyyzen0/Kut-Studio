@@ -313,6 +313,64 @@ class ExportEngine(QObject):
     # Construction de la commande FFmpeg
     # ------------------------------------------------------------------
 
+    def build_frame_command(
+        self, request: ExportRequest, playhead: float,
+    ) -> list[str]:
+        """Construit une commande FFmpeg rendant **une seule frame**.
+
+        La commande réutilise exactement le même graphe de filtres que
+        l'export (effets, étalonnage couleur, LUT, courbes, sous-titres)
+        : c'est ce qui permet aux scopes de lire l'image réellement
+        composée, et pas une approximation.
+
+        Différences avec :meth:`_build_command` :
+
+        - ``-ss <playhead>`` est inséré **avant** les entrées, donc le
+          décodage est.seeké et non la sortie ;
+        - un seul flux est mappé (le vidéo) ;
+        - la sortie est un PNG unique écrit sur ``stdout``
+          (``-f image2pipe``), ce qui évite tout fichier temporaire.
+
+        Args:
+            request: la requête d'export, pour sa résolution / son fps ;
+            playhead: position à extraire, en secondes.
+
+        Returns:
+            La commande FFmpeg complète.
+        """
+        plan = request.render_plan
+        width, height = request.preset.resolution
+        self._prepare_temporary_files(plan)
+        filter_complex, video_label, _audio_label, input_paths = (
+            self._build_filter_complex(
+                plan, width, height, request.fps, self._current_srt_path
+            )
+        )
+        command: list[str] = [
+            require_ffmpeg(),
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+        ]
+        for path in input_paths:
+            command.extend(["-i", path])
+        # Le seek se place juste avant la première entrée : FFmpeg
+        # décode alors uniquement ce qui précède la position demandée.
+        first_input = command.index("-i")
+        command[first_input:first_input] = [
+            "-ss", f"{max(0.0, float(playhead)):.3f}",
+        ]
+        command.extend(["-filter_complex", filter_complex])
+        command.extend(["-map", f"[{video_label}]"])
+        command.extend([
+            "-frames:v", "1",
+            "-f", "image2pipe",
+            "-vcodec", "png",
+            "-",
+        ])
+        return command
+
     def _build_command(self, request: ExportRequest) -> list[str]:
         """Construit la commande FFmpeg pour un export basé ``RenderPlan``."""
         plan = request.render_plan

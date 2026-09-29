@@ -69,6 +69,70 @@ FILE_NAME: str = "user_settings.json"
 """Nom du fichier de préférences à l'intérieur du répertoire de config."""
 
 
+# --- Scopes video / monitoring couleur (tache 31) -------------------------
+#
+# Les preferences de scopes sont stockees a plat dans le meme fichier
+# JSON que le reste des reglages utilisateur : on evite ainsi un
+# second fichier pour deux preferences mineures, et on beneficie de
+# l'ecriture atomique deja en place.
+
+
+DEFAULT_SCOPES_LAYOUT: str = "quad"
+"""Disposition par defaut du panneau de scopes (4 vues)."""
+
+VALID_SCOPES_LAYOUTS: tuple[str, ...] = ("quad", "single")
+"""Dispositions acceptees par le panneau de scopes."""
+
+DEFAULT_SCOPES_VIEW: str = "waveform"
+"""Scope affiche en mode « vue unique » par defaut."""
+
+VALID_SCOPES_VIEWS: tuple[str, ...] = (
+    "histogram",
+    "waveform",
+    "parade",
+    "vectorscope",
+)
+"""Scopes individuels acceptes."""
+
+DEFAULT_SCOPES_LEVELS: str = "video"
+"""Niveaux par defaut (16-235)."""
+
+VALID_SCOPES_LEVELS: tuple[str, ...] = ("video", "full")
+"""Modes de niveaux acceptes (limites / complets)."""
+
+
+def _coerce_scopes_layout(value: object) -> str:
+    """Filtre la disposition des scopes ; ``quad`` si invalide."""
+    if isinstance(value, str) and value in VALID_SCOPES_LAYOUTS:
+        return value
+    return DEFAULT_SCOPES_LAYOUT
+
+
+def _coerce_scopes_view(value: object) -> str:
+    """Filtre le scope individuel ; ``waveform`` si invalide."""
+    if isinstance(value, str) and value in VALID_SCOPES_VIEWS:
+        return value
+    return DEFAULT_SCOPES_VIEW
+
+
+def _coerce_scopes_levels(value: object) -> str:
+    """Filtre le mode de niveaux ; ``video`` si invalide."""
+    if isinstance(value, str) and value in VALID_SCOPES_LEVELS:
+        return value
+    return DEFAULT_SCOPES_LEVELS
+
+
+def _coerce_bool(value: object) -> bool:
+    """Coerce un booleen de facon tolerante (JSON peut donner 0/1)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Modèle
 # ---------------------------------------------------------------------------
@@ -93,6 +157,12 @@ class UserSettings:
     render_quality: str = DEFAULT_RENDER_QUALITY
     master_gain_db: float = 0.0
     master_muted: bool = False
+    # --- Scopes video (tache 31) ---
+    scopes_visible: bool = True
+    scopes_layout: str = DEFAULT_SCOPES_LAYOUT
+    scopes_view: str = DEFAULT_SCOPES_VIEW
+    scopes_levels: str = DEFAULT_SCOPES_LEVELS
+    scopes_alerts_enabled: bool = False
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -263,6 +333,16 @@ def load_user_settings(
         render_quality=_coerce_render_quality(data.get("render_quality")),
         master_gain_db=_coerce_master_gain(data.get("master_gain_db")),
         master_muted=bool(data.get("master_muted", False)),
+        # Scopes (tache 31) : absents sur les reglages ecrits avant
+        # cette tache, les defauts s'appliquent (4 vues, waveform,
+        # niveaux video, alertes desactivees).
+        scopes_visible=_coerce_bool(data.get("scopes_visible", True)),
+        scopes_layout=_coerce_scopes_layout(data.get("scopes_layout")),
+        scopes_view=_coerce_scopes_view(data.get("scopes_view")),
+        scopes_levels=_coerce_scopes_levels(data.get("scopes_levels")),
+        scopes_alerts_enabled=_coerce_bool(
+            data.get("scopes_alerts_enabled", False)
+        ),
     )
 
 
@@ -299,6 +379,14 @@ def save_user_settings(
             render_quality=_coerce_render_quality(settings.render_quality),
             master_gain_db=_coerce_master_gain(settings.master_gain_db),
             master_muted=bool(settings.master_muted),
+            # Scopes (tache 31).
+            scopes_visible=_coerce_bool(settings.scopes_visible),
+            scopes_layout=_coerce_scopes_layout(settings.scopes_layout),
+            scopes_view=_coerce_scopes_view(settings.scopes_view),
+            scopes_levels=_coerce_scopes_levels(settings.scopes_levels),
+            scopes_alerts_enabled=_coerce_bool(
+                settings.scopes_alerts_enabled
+            ),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -327,12 +415,18 @@ __all__ = [
     "DEFAULT_PERFORMANCE_PROFILE",
     "DEFAULT_PREVIEW_QUALITY",
     "DEFAULT_RENDER_QUALITY",
+    "DEFAULT_SCOPES_LAYOUT",
+    "DEFAULT_SCOPES_LEVELS",
+    "DEFAULT_SCOPES_VIEW",
     "DEFAULT_THEME",
     "UserSettings",
     "VALID_LANGUAGES",
     "VALID_PERFORMANCE_PROFILES",
     "VALID_PREVIEW_QUALITIES",
     "VALID_RENDER_QUALITIES",
+    "VALID_SCOPES_LAYOUTS",
+    "VALID_SCOPES_LEVELS",
+    "VALID_SCOPES_VIEWS",
     "VALID_THEME_MODES",
     "default_settings_dir",
     "load_user_settings",

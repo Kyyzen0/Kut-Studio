@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 from dataclasses import replace
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -69,6 +71,13 @@ from core.project_io import load_project, save_project
 from core.project_model import MediaAsset, Project
 from core.subtitle_io import load_srt, parse_srt, save_srt
 from core.shortcuts import resolve_shortcut
+from core.scopes import ColorSpace, ScopeResult, VideoLevels
+from core.scopes_analyzer import (
+    ScopeAnalysis,
+    ScopeAnalyzer,
+    ScopeExtractionError,
+    png_to_scope_frame,
+)
 from core.studio_runtime import StudioRuntime, peak_rss_bytes
 from core.audio_recorder import AudioRecorder, AudioRecorderError, pcm_duration, write_wav
 from core.timeline_editing import (
@@ -128,6 +137,7 @@ from ui.mixer_panel import MixerPanel
 from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel, SavePresetDialog, SaveTransitionPresetDialog
+from ui.scopes_panel import ScopeLayout, ScopeView, ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
@@ -143,6 +153,24 @@ from core.track_operations import (
     set_track_visible,
 )
 from ui.theme import COLORS, ThemeManager, global_stylesheet, label_style
+
+
+# --- Scopes vidéo / monitoring couleur (tâche 31) -------------------------
+#
+# Ces trois constantes bornent le coût CPU de l'analyse : pendant la
+# lecture, on ne veut pas analyser plus de 10 images / s (au‑delà, la
+# scope n'est pas lisible à l'œil et on sature le CPU au détriment de
+# la lecture).
+
+
+SCOPES_MIN_INTERVAL: float = 0.1
+"""Intervalle minimal (secondes) entre deux analyses pendant la lecture."""
+
+SCOPES_COLUMNS: int = 320
+"""Nombre de colonnes des waveform / parade."""
+
+SCOPES_VECTORSCOPE_BINS: int = 128
+"""Résolution du vectorscope (côté en bins)."""
 
 
 class MainWindow(QMainWindow):
@@ -193,6 +221,60 @@ class MainWindow(QMainWindow):
             self.cut_at_playhead,
             self.import_media_via_dialog,
         )
+        # --- Scopes vidéo / monitoring couleur (tâche 31) ---------------
+        # La visibilité par défaut vient des préférences utilisateur
+        # déjà chargées ; sinon les scopes restent repliés : on ne
+        # rogne pas le viewer sans que l'utilisateur l'ait demandé.
+        self._scopes_visible: bool = bool(loaded_settings.scopes_visible)
+        self._scopes_layout_pref: str = loaded_settings.scopes_layout
+        self._scopes_view_pref: str = loaded_settings.scopes_view
+        self._scopes_levels_pref: str = loaded_settings.scopes_levels
+        self._scopes_alerts_pref: bool = bool(
+            loaded_settings.scopes_alerts_enabled
+        )
+        self._last_scopes_playhead = -1.0
+        # L'analyseur s'exécute hors du thread Qt : le panneau reçoit
+        # les résultats via un signal Qt émis depuis le thread de
+        # travail (voir ``_on_scopes_analysis_ready``).
+        self.scopes_analyzer = ScopeAnalyzer(
+            on_result=self._on_scopes_analysis_ready,
+            on_error=self._on_scopes_analysis_failed,
+            # 10 analyses / s maximum pendant la lecture : au‑delà,
+            # on saturerait le CPU sans gain de lisibilité.
+            min_interval=SCOPES_MIN_INTERVAL,
+        )
+        self.scopes_panel = ScopesPanel()
+        self.scopes_panel.refresh_requested.connect(
+            self._request_scopes_analysis
+        )
+        self.scopes_panel.layout_changed.connect(
+            self._persist_scopes_preferences
+        )
+        self.scopes_panel.levels_changed.connect(
+            self._persist_scopes_preferences
+        )
+        # Application des préférences (sans émettre de signal : on ne
+        # veut pas réécrire le fichier qu'on vient de lire).
+        self.scopes_panel.set_layout_mode(self._scopes_layout_pref)
+        self.scopes_panel.set_single_view(self._scopes_view_pref)
+        self.scopes_panel.set_levels(self._scopes_levels_pref)
+        self.scopes_panel.set_alerts_enabled(self._scopes_alerts_pref)
+        self.scopes_panel.setVisible(self._scopes_visible)
+        # Le viewer et les scopes partagent un splitter vertical : les
+        # scopes sont redimensionnables et escamotables sans toucher
+        # au dock de la zone centrale.
+        self._viewer_host = QSplitter(Qt.Vertical)
+        self._viewer_host.setObjectName("viewer_with_scopes")
+        self._viewer_host.setChildrenCollapsible(False)
+        self._viewer_host.setHandleWidth(6)
+        self._viewer_host.addWidget(self.preview_panel)
+        self._viewer_host.addWidget(self.scopes_panel)
+        self._viewer_host.setStretchFactor(0, 3)
+        self._viewer_host.setStretchFactor(1, 2)
+        # Par défaut, les scopes restent repliés pour ne pas rogner le
+        # viewer ; l'utilisateur les ouvre via le menu Affichage.
+        self._viewer_host.setSizes([520, 0])
+
         self.project_panel = ProjectPanel()
         self.project_panel.asset_selected.connect(self.preview_media_asset)
         self.project_panel.add_to_timeline_requested.connect(
@@ -459,7 +541,10 @@ class MainWindow(QMainWindow):
         self.mixer_panel = MixerPanel()
         self.workspace = WorkspaceManager(self)
         self.workspace.register(PanelId.MEDIA, self.project_panel)
-        self.workspace.register(PanelId.VIEWER, self.preview_panel)
+        # Le dock « viewer » contient le viewer **et** le panneau de
+        # scopes dans un splitter vertical (tâche 31) : c'est ce
+        # host qu'on enregistre, pas le seul ``preview_panel``.
+        self.workspace.register(PanelId.VIEWER, self._viewer_host)
         self.workspace.register(PanelId.INSPECTOR, self.properties_panel)
         self.workspace.register(PanelId.TIMELINE, self.timeline_panel)
         self.workspace.register(PanelId.MIXER, self.mixer_panel)
@@ -692,6 +777,13 @@ class MainWindow(QMainWindow):
             self._sync_preview_to_timeline()
         except Exception:
             pass
+        # Scopes (tâche 31) : un changement d'exposition, de contraste,
+        # de saturation, de courbe ou de LUT doit être visible
+        # immédiatement. En pause on force l'analyse (pas de
+        # limitation de fréquence) car l'utilisateur juge son réglage
+        # en direct ; pendant la lecture on laisse l'analyseur
+        # borner la fréquence.
+        self._request_scopes_analysis(force=not self.is_playing)
 
     def _schedule_color_history(self, label: str, clip_id: str) -> None:
         """Regroupe une rafale de curseur couleur dans une seule étape."""
@@ -1258,6 +1350,12 @@ class MainWindow(QMainWindow):
         preview = getattr(self, "preview_panel", None)
         if preview is not None:
             preview.release_media()
+        # Le thread de travail des scopes est un daemon, mais on le
+        # ferme proprement : un FFmpeg en cours ne doit pas survivre à
+        # la fenêtre.
+        scopes_analyzer = getattr(self, "scopes_analyzer", None)
+        if scopes_analyzer is not None:
+            scopes_analyzer.close()
         autosave = getattr(self, "_autosave", None)
         if autosave is not None:
             autosave.close()
@@ -2835,6 +2933,17 @@ class MainWindow(QMainWindow):
         reset_action = QAction("Réinitialiser la disposition", self)
         reset_action.triggered.connect(self.reset_workspace_layout)
         window_menu.addAction(reset_action)
+        window_menu.addSeparator()
+        # Scopes de monitoring couleur (tâche 31). L'action reste
+        # checkable pour refléter l'état du splitter sans qu'on ait à
+        # le relire à chaque ouverture de menu.
+        self.scopes_action = QAction("Afficher les scopes", self)
+        self.scopes_action.setCheckable(True)
+        self.scopes_action.setChecked(True)
+        self.scopes_action.setShortcut("Ctrl+Shift+S")
+        self.scopes_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.scopes_action.triggered.connect(self.toggle_scopes_visible)
+        window_menu.addAction(self.scopes_action)
 
         # Menu Séquence : opérations de piste.
         track_add_video_action = QAction(i18n.translate("tracks.add_video_long"), self)
@@ -2919,6 +3028,142 @@ class MainWindow(QMainWindow):
             return
         self._set_preview_play_icon(state == QMediaPlayer.PlayingState)
 
+    # ------------------------------------------------------------------
+    # Scopes vidéo / monitoring couleur (tâche 31)
+    # ------------------------------------------------------------------
+
+    def _on_scopes_analysis_ready(self, analysis: ScopeAnalysis) -> None:
+        """Reçoit un résultat d'analyse **depuis le thread de travail**.
+
+        On ne fait que programmer la mise à jour du panneau Qt : le
+        repaint et le calcul des courbes doivent rester dans le thread
+        GUI. Un résultat marqué ``stale`` (la tête de lecture a bougé
+        pendant l'analyse) est ignoré pour ne pas faire clignoter les
+        scopes avec une image obsolète.
+        """
+        if getattr(analysis, "stale", False):
+            return
+        result = analysis.result
+        # ``QTimer.singleShot(0, ...)``rebascule dans le thread GUI
+        # sans bloquer le thread de travail.
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, lambda: self.scopes_panel.set_result(result))
+
+    def _on_scopes_analysis_failed(
+        self, request, error: BaseException,
+    ) -> None:
+        """Trace une erreur d'analyse sans interrompre la lecture."""
+        # Une erreur d'extraction est banale quand aucune image n'est
+        # compositionnée (tête de lecture hors media) : on reste
+        # silencieux, sinon on sature la console pendant la lecture.
+        if isinstance(error, ScopeExtractionError):
+            return
+        print(f"[MainWindow] analyse de scopes échouée : {error!r}")
+
+    def _request_scopes_analysis(self, force: bool = False) -> None:
+        """Déclenche une analyse de l'image composée à la tête de lecture.
+
+        Pendant la lecture, la fréquence est bornée par
+        :data:`SCOPES_MIN_INTERVAL` ; en pause (ou avec
+        ``force=True``), l'analyse est immédiate pour que les scopes
+        réagissent tout de suite à un changement d'exposition, de
+        contraste, de courbes ou de LUT.
+        """
+        if not self._scopes_visible:
+            return
+        if self.project is None:
+            return
+        playhead = float(getattr(self, "playhead_seconds", 0.0))
+        # On ignore les requêtes quasi identiques : inutile de
+        # réanalyser la même image 10 fois par seconde.
+        if not force and abs(playhead - self._last_scopes_playhead) < 1e-3:
+            return
+        self._last_scopes_playhead = playhead
+        command = self._build_scopes_ffmpeg_command(playhead)
+        if command is None:
+            return
+        self.scopes_analyzer.submit(
+            playhead=playhead,
+            ffmpeg_command=command,
+            color_space=self.scopes_panel._color_space,
+            levels=self.scopes_panel.levels(),
+            columns=SCOPES_COLUMNS,
+            vectorscope_bins=SCOPES_VECTORSCOPE_BINS,
+            source="timeline",
+            force=force,
+        )
+
+    def _build_scopes_ffmpeg_command(
+        self, playhead: float,
+    ) -> list[str] | None:
+        """Construit la commande ``ffmpeg`` qui rend **une** frame composée.
+
+        On réutilise le graphe de filtres de l'export (effets,
+        étalonnage, LUT, courbes) via
+        :meth:`core.export_engine.ExportEngine.build_frame_command`, afin
+        que les scopes reflètent exactement ce que le moniteur affiche.
+        La commande est volontairement limitée à une seule image PNG
+        sur stdout : l'analyse doit rester peu coûteuse, y compris
+        pendant la lecture.
+        """
+        try:
+            render_plan = self.get_render_plan()
+        except Exception:
+            # Projet sans média, plan incomplet : rien à analyser.
+            return None
+        if not getattr(render_plan, "video_layers", ()):
+            return None
+        try:
+            # Le chemin de sortie n'est jamais écrit (la sortie est un
+            # PNG sur stdout) mais ``ExportRequest`` en exige un : on
+            # pointe donc vers un dossier toujours présent.
+            request = self.export_panel.build_request(
+                render_plan, os.path.join(tempfile.gettempdir(), "kut-frame.png")
+            )
+            return self.export_engine.build_frame_command(request, playhead)
+        except Exception:
+            return None
+
+    def _persist_scopes_preferences(self) -> None:
+        """Enregistre la disposition / les niveaux des scopes.
+
+        ``UserSettings`` est immuable : on reconstruit un instantané
+        complet via :meth:`_settings_snapshot` plutôt que de muter
+        l'instance chargée (ce qui lèverait une ``FrozenInstanceError``).
+        """
+        try:
+            save_user_settings(self._settings_snapshot())
+        except OSError:
+            # Un échec d'écriture des préférences ne doit pas
+            # interrompre l'édition.
+            pass
+
+    def toggle_scopes_visible(self) -> None:
+        """Affiche / masque le panneau de scopes."""
+        self._scopes_visible = not self._scopes_visible
+        self.scopes_panel.setVisible(self._scopes_visible)
+        # L'action de menu reflète toujours l'état réel du splitter.
+        action = getattr(self, "scopes_action", None)
+        if action is not None:
+            action.blockSignals(True)
+            action.setChecked(self._scopes_visible)
+            action.blockSignals(False)
+        # Le redimensionnement suit la visibilité : replié quand masqué,
+        # il reprend sa hauteur quand affiché.
+        host = getattr(self, "_viewer_host", None)
+        if host is not None:
+            if self._scopes_visible:
+                host.setSizes([420, 260])
+            else:
+                host.setSizes([680, 0])
+        self._persist_scopes_preferences()
+        if self._scopes_visible:
+            # On analyse immédiatement : l'utilisateur veut voir les
+            # scopes tout de suite.
+            self._request_scopes_analysis(force=True)
+
+
     def _set_preview_play_icon(self, playing: bool) -> None:
         from ui.design_system import Iconography
         from ui.icons import IconName, make_icon
@@ -2958,6 +3203,14 @@ class MainWindow(QMainWindow):
         self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
         active = self._sync_preview_to_timeline()
         self.update_subtitle_overlay(self.playhead_seconds, active)
+        # Scopes (tâche 31) : pendant la lecture, on demande une
+        # analyse à chaque tick, mais l'analyseur borne lui‑même la
+        # fréquence à ``SCOPES_MIN_INTERVAL`` (10 img/s) : le tick
+        # est à 25 Hz, on jette donc ~60 % des requêtes sans rien
+        # calculer. En pause, on ne demande rien ici : le refresh
+        # immédiat passe par ``_refresh_color_monitor``.
+        if self.is_playing:
+            self._request_scopes_analysis()
 
     def _sync_preview_to_timeline(self) -> list:
         """Évalue la timeline à ``playhead_seconds`` et synchronise l'aperçu.
@@ -3144,6 +3397,22 @@ class MainWindow(QMainWindow):
         self._debug_overlay.present(lines)
 
     def _settings_snapshot(self) -> UserSettings:
+        # L'état des scopes est lu depuis le panneau : c'est lui qui
+        # fait foi, comme le thème ou la qualité d'aperçu pour le
+        # reste. Les attributs sont lus de façon défensive car
+        # l'instantané est aussi pris avant la construction du
+        # panneau (au démarrage de la fenêtre).
+        scopes_panel = getattr(self, "scopes_panel", None)
+        if scopes_panel is None:
+            scopes_layout = "quad"
+            scopes_view = "waveform"
+            scopes_levels = "video"
+            scopes_alerts = False
+        else:
+            scopes_layout = scopes_panel.layout_mode().value
+            scopes_view = scopes_panel.single_view().value
+            scopes_levels = scopes_panel.levels().value
+            scopes_alerts = scopes_panel.alerts_enabled()
         return UserSettings(
             theme_mode=self.theme_manager.requested_mode,
             language=i18n.current_language(),
@@ -3152,6 +3421,11 @@ class MainWindow(QMainWindow):
             render_quality=self._render_quality,
             master_gain_db=self._master_gain_db,
             master_muted=self._master_muted,
+            scopes_visible=bool(getattr(self, "_scopes_visible", False)),
+            scopes_layout=scopes_layout,
+            scopes_view=scopes_view,
+            scopes_levels=scopes_levels,
+            scopes_alerts_enabled=scopes_alerts,
         )
 
     def _pause_internal(self) -> None:

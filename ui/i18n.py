@@ -1191,6 +1191,68 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Duration",
         "es": "Duración",
     },
+
+    # --- Scopes vidéo / monitoring couleur (tâche 31) ------------------
+    "scopes.placeholder": {
+        "fr": "Aucune image analysée",
+        "en": "No frame analyzed",
+        "es": "Ningún fotograma analizado",
+    },
+    "scopes.layout.quad": {
+        "fr": "4 vues",
+        "en": "4 views",
+        "es": "4 vistas",
+    },
+    "scopes.layout.single": {
+        "fr": "Vue unique",
+        "en": "Single view",
+        "es": "Vista única",
+    },
+    "scopes.view.histogram": {
+        "fr": "Histogramme",
+        "en": "Histogram",
+        "es": "Histograma",
+    },
+    "scopes.view.waveform": {
+        "fr": "Waveform",
+        "en": "Waveform",
+        "es": "Forma de onda",
+    },
+    "scopes.view.parade": {
+        "fr": "Parade",
+        "en": "Parade",
+        "es": "Parada",
+    },
+    "scopes.view.vectorscope": {
+        "fr": "Vectorscope",
+        "en": "Vectorscope",
+        "es": "Vectorscopio",
+    },
+    "scopes.levels.video": {
+        "fr": "Niveaux vidéo (16‑235)",
+        "en": "Video levels (16‑235)",
+        "es": "Niveles de vídeo (16‑235)",
+    },
+    "scopes.levels.full": {
+        "fr": "Niveaux complets (0‑255)",
+        "en": "Full levels (0‑255)",
+        "es": "Niveles completos (0‑255)",
+    },
+    "scopes.refresh": {
+        "fr": "Analyser",
+        "en": "Analyze",
+        "es": "Analizar",
+    },
+    "scopes.alert.black": {
+        "fr": "⚠ Noirs écrêtés",
+        "en": "⚠ Blacks clipped",
+        "es": "⚠ Negros recortados",
+    },
+    "scopes.alert.white": {
+        "fr": "⚠ Hautes lumières écrêtées",
+        "en": "⚠ Highlights clipped",
+        "es": "⚠ Altas luces recortadas",
+    },
     "transitions.library.user_builtin_lock": {
         "fr": "Les préréglages ne peuvent pas être supprimés.",
         "en": "Built-in presets cannot be deleted.",
