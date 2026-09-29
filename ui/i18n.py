@@ -177,6 +177,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "prefs.language.en": {"fr": "Anglais", "en": "English", "es": "Inglés"},
     "prefs.language.es": {"fr": "Espagnol", "en": "Spanish", "es": "Español"},
     "prefs.restore_defaults": {"fr": "Restaurer les réglages par défaut", "en": "Restore default settings", "es": "Restablecer ajustes por defecto"},
+    "prefs.close": {"fr": "Fermer", "en": "Close", "es": "Cerrar"},
     "prefs.performance": {"fr": "Performance", "en": "Performance", "es": "Rendimiento"},
     "prefs.performance.auto": {"fr": "Auto (selon la machine)", "en": "Auto (this computer)", "es": "Auto (este equipo)"},
     "prefs.performance.low": {"fr": "Léger", "en": "Light", "es": "Ligero"},

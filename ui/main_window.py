@@ -5229,7 +5229,22 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _restore_default_preferences(self) -> None:
-        self._apply_settings(UserSettings())
+        """Restaure les réglages affichés par la boîte Préférences.
+
+        Seuls les réglages visibles par l'utilisateur sont
+        réinitialisés : le Master (gain/muet) est un réglage de session
+        qui n'apparaît pas dans le dialogue — le reconstruire depuis
+        ``UserSettings()`` ferait sauter un gain que l'utilisateur
+        n'avait pas demandé de restaurer.
+        """
+        snapshot = self._settings_snapshot()
+        self._apply_settings(
+            replace(
+                UserSettings(),
+                master_gain_db=snapshot.master_gain_db,
+                master_muted=snapshot.master_muted,
+            )
+        )
 
     def on_user_setting_changed(self, value: str) -> None:
         """Applique un thème ou une langue sans oublier les autres préférences."""
