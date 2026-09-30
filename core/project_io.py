@@ -83,7 +83,7 @@ l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
