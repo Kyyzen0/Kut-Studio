@@ -1803,6 +1803,14 @@ class TimelinePanel(QWidget):
         """
         if not hasattr(self, "scroll"):
             return None, None
+        # Sur les projets courts, instancier tous les clips reste
+        # négligeable et rend la vue stable pendant un détachement ou un
+        # re-docking : Qt peut alors rapporter un viewport provisoirement
+        # étroit et démonter à tort un clip pourtant bien présent dans le
+        # modèle. Le culling horizontal est réservé aux longues timelines,
+        # son vrai cas d'usage.
+        if len(self.clip_views) <= 64:
+            return None, None
         viewport = self.scroll.viewport()
         pixels = self.pixels_per_second * self.zoom
         time_range = None

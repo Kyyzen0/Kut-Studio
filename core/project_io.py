@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -1474,7 +1475,21 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
             json.dump(payload, tmp_file, indent=2, ensure_ascii=False, allow_nan=False)
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
-        os.replace(tmp_path, target)
+        try:
+            os.replace(tmp_path, target)
+        except PermissionError:
+            # Windows interdit de remplacer un fichier qui est encore
+            # ouvert, même avec ``delete=False`` (cas courant d'un fichier
+            # temporaire créé par un appelant). Si le fichier reste
+            # accessible en écriture, on conserve la sauvegarde plutôt que
+            # d'échouer inutilement. Le chemin normal reste atomique ; ce
+            # repli n'est employé que lorsque le renommage Windows est
+            # explicitement refusé.
+            with tmp_path.open("rb") as source, target.open("wb") as destination:
+                shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
+            tmp_path.unlink()
     except Exception:
         # Best-effort cleanup : on ne veut pas masquer l'erreur d'origine.
         try:

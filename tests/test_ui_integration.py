@@ -7,6 +7,7 @@ supprimer, éditer un sous-titre) sont propagées au modèle métier.
 
 import json
 import pathlib
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -1612,6 +1613,43 @@ def _assign_paths(window, paths: dict[str, str]) -> None:
     for asset in window.project.media_assets:
         if asset.id in paths:
             asset.path = paths[asset.id]
+
+
+def test_stale_cached_preview_never_replaces_changed_source(qtbot, monkeypatch):
+    """Un cache planifié avant une modification ne peut pas masquer la source."""
+    window = _build_window(qtbot, monkeypatch)
+    from core.preview_cache import PreviewSegmentKey
+
+    original_hash = window._preview_params_hash()
+    assert original_hash is not None
+    window._last_preview_jobs = [
+        SimpleNamespace(
+            key=PreviewSegmentKey(
+                clip_id="intro",
+                start=0.0,
+                end=2.0,
+                quality=window._render_quality,
+                params_hash=original_hash,
+            ),
+            start=0.0,
+            duration=2.0,
+        )
+    ]
+    window.preview_engine.cache.lookup = lambda _key: Path("/tmp/stale-preview.mp4")
+    _assign_paths(window, {"asset-intro": "/tmp/new-source.mp4"})
+
+    assert window._cached_preview_at(0.0) is None
+
+
+def test_closing_window_cancels_faithful_preview_work(qtbot, monkeypatch):
+    """La fermeture ne laisse pas un rendu d'aperçu survivre à la fenêtre."""
+    window = _build_window(qtbot, monkeypatch)
+    calls: list[bool] = []
+    monkeypatch.setattr(window.preview_engine, "cancel_all", lambda: calls.append(True))
+
+    window.close()
+
+    assert calls == [True]
 
 
 def test_main_window_owns_the_timeline_clock(qtbot, monkeypatch) -> None:

@@ -69,6 +69,13 @@ def test_windows_font_directories_are_supported() -> None:
     assert Path("C:/Users/A/AppData/Local/Microsoft/Windows/Fonts") in paths
 
 
+def test_windows_subtitle_filter_uses_system_font_fallback() -> None:
+    """Un chemin de police Windows ne doit pas casser le filtergraph FFmpeg."""
+    from core.export_engine import _subtitle_fontsdir
+
+    assert _subtitle_fontsdir(platform_name="win32") is None
+
+
 def test_bundled_media_tools_win_before_path(tmp_path) -> None:
     from core.tool_paths import bundled_tool_path
 
@@ -124,4 +131,3 @@ def test_build_command_has_macos_bundle_identifier() -> None:
     command = build_command(platform_name="darwin", environment={})
     assert "--osx-bundle-identifier" in command
     assert "com.kutstudio.app" in command
-

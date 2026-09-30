@@ -36,6 +36,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
@@ -686,10 +687,15 @@ class ExportEngine(QObject):
                     "Le plan contient des sous-titres actifs mais aucun "
                     "fichier SRT temporaire n'a été préparé."
                 )
+            fonts_dir = _subtitle_fontsdir()
+            fonts_option = (
+                f":fontsdir={_escape_filter_path(fonts_dir)}"
+                if fonts_dir
+                else ""
+            )
             parts.append(
                 f"[{video_label}]subtitles={_escape_filter_path(srt_path)}"
-                f":fontsdir={_escape_filter_path(_subtitle_fontsdir())}"
-                f":force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
+                f"{fonts_option}:force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
             )
             video_label = "vfinal"
 
@@ -1990,17 +1996,22 @@ def _escape_filter_path(path: str) -> str:
     return escaped
 
 
-def _subtitle_fontsdir() -> str:
+def _subtitle_fontsdir(*, platform_name: str | None = None) -> str | None:
     """Chemin d'un dossier de polices générique disponible partout.
 
     On pointe sur ``/System/Library/Fonts`` sur macOS et sur
-    ``/usr/share/fonts/truetype/dejavu`` sur Linux ; ``/etc`` est un
-    fallback inoffensif qui n'existe pas. Le ``fontsdir`` est fourni à
-    libass pour qu'il résolve les familles de polices génériques.
+    ``/usr/share/fonts/truetype/dejavu`` sur Linux. Sous Windows,
+    ``fontsdir`` est volontairement omis : les chemins avec lettre de
+    lecteur nécessitent un double niveau d'échappement dans le filtre
+    ``subtitles`` et échouent selon les builds FFmpeg. Libass y utilise
+    alors son fournisseur de polices système, ce qui est plus fiable.
     """
     from .platform_paths import system_font_dirs
 
-    for path in system_font_dirs():
+    active_platform = platform_name or sys.platform
+    if active_platform.startswith("win"):
+        return None
+    for path in system_font_dirs(platform_name=active_platform):
         if path.is_dir():
             return str(path)
     # Libass conserve son fournisseur système si aucun dossier usuel

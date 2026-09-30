@@ -1378,6 +1378,15 @@ class MainWindow(QMainWindow):
             self._autosave_timer.stop()
         if hasattr(self, "_debug_timer") and self._debug_timer is not None:
             self._debug_timer.stop()
+        preview_pump = getattr(self, "_preview_pump_timer", None)
+        if preview_pump is not None:
+            preview_pump.stop()
+        preview_engine = getattr(self, "preview_engine", None)
+        if preview_engine is not None:
+            try:
+                preview_engine.cancel_all()
+            except Exception:
+                pass
         timeline = getattr(self, "timeline_panel", None)
         if timeline is not None:
             timeline.unsubscribe_from_theme()
@@ -3894,6 +3903,16 @@ class MainWindow(QMainWindow):
             )
             return False
 
+        # La sonde réelle fournit déjà le nom de fichier, mais les
+        # intégrations externes peuvent retourner un ``MediaAsset`` avec
+        # le chemin complet comme libellé. Le nom affiché ne dépend jamais
+        # du séparateur POSIX : sous Windows, ``split('/')`` laisserait le
+        # chemin complet dans la bibliothèque et dans les .kut.
+        display_name = os.path.basename(str(asset.path).replace("\\", "/"))
+        if not display_name:
+            display_name = os.path.basename(str(path).replace("\\", "/"))
+        if display_name:
+            asset.name = display_name
         self.project.media_assets.append(asset)
         self._refresh_project_library()
         self.project_panel.select_asset(asset.id)
@@ -5911,8 +5930,16 @@ class MainWindow(QMainWindow):
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return None
+        current_params = self._preview_params_hash()
+        if current_params is None:
+            return None
         jobs = getattr(self, "_last_preview_jobs", ())
         for job in jobs:
+            if getattr(getattr(job, "key", None), "params_hash", None) != current_params:
+                # Les média, trims ou effets ont changé depuis la
+                # planification. Un segment de cache antérieur ne doit
+                # jamais remplacer la source courante.
+                continue
             start = float(getattr(job, "start", 0.0))
             duration = float(getattr(job, "duration", 0.0))
             if start <= timeline_time < start + duration:
@@ -5923,6 +5950,23 @@ class MainWindow(QMainWindow):
                 if path is not None:
                     return str(path), start
         return None
+
+    def _preview_params_hash(self) -> str | None:
+        """Empreinte du plan courant, pour refuser un cache devenu obsolète."""
+        try:
+            from core.filter_graph import fingerprint_plan
+            from core.render_plan import build_render_plan
+
+            plan = build_render_plan(self.project)
+            return fingerprint_plan(
+                plan,
+                width=self.project.width,
+                height=self.project.height,
+                fps=self.project.fps,
+                quality=self._render_quality,
+            )
+        except Exception:
+            return None
 
     def _present_cached_preview_at(self, timeline_time: float) -> bool:
         """Affiche directement un segment composé, sans réévaluer la timeline."""

@@ -329,13 +329,17 @@ MAX_VECTORSCOPE_BINS = 512
 
 # Budget d'échantillons par analyse. Au-delà, l'image est
 # sous-échantillonnée régulièrement : un scope n'affiche que
-# quelques centaines de points, et 131 072 échantillons restent
-# très représentatifs d'une image 1080p (≈ 410 échantillons par
-# colonne de waveform), pour un coût CPU divisé par seize. Le
+# quelques centaines de points, et 98 304 échantillons restent très
+# représentatifs d'une image 1080p (≈ 307 échantillons par colonne de
+# waveform), pour un coût CPU divisé par plus de vingt. Ce plafond laisse
+# une marge réelle sur les machines portables et les runners CI, où une
+# analyse Python pure à 131 072 échantillons pouvait dépasser le budget
+# d'interactivité. Le
 # vecteur du vectorscope utilise un quart de ce budget. Une image
-# HD passe ainsi de ~3,6 s à ~90 ms en Python pur, ce qui tient la
+# HD reste ainsi confortablement sous le budget de 250 ms en Python pur,
+# ce qui tient la
 # cadence de 10 analyses / s visée pendant la lecture.
-MAX_SCOPE_SAMPLES = 131_072
+MAX_SCOPE_SAMPLES = 98_304
 
 
 def _coerce_columns(columns: int) -> int:

@@ -524,6 +524,29 @@ def test_atomic_write_does_not_corrupt_target_on_failure(
     assert list(tmp_path.iterdir()) == [target]
 
 
+def test_atomic_write_falls_back_when_windows_blocks_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Une cible encore ouverte sous Windows reste sauvegardable.
+
+    ``MoveFileEx``/``os.replace`` refuse ce cas, alors que l'écriture du
+    fichier déjà ouvert reste permise. Le repli doit conserver un .kut
+    relisible et ne laisser aucun temporaire.
+    """
+    target = tmp_path / "opened.kut"
+    target.write_text("ancien contenu", encoding="utf-8")
+
+    def blocked_replace(*_args, **_kwargs):
+        raise PermissionError("target is open")
+
+    monkeypatch.setattr("core.project_io.os.replace", blocked_replace)
+    project = _empty_project()
+    save_project(project, str(target))
+
+    assert load_project(str(target)).name == project.name
+    assert list(tmp_path.iterdir()) == [target]
+
+
 def test_save_project_creates_missing_parent_directory(tmp_path: Path) -> None:
     """Les dossiers intermédiaires manquants sont créés automatiquement."""
     target = tmp_path / "subdir" / "nested" / "project.kut"
