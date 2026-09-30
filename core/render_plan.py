@@ -76,6 +76,7 @@ class RenderLayer:
     # ``None`` si l'identité. On garde un type ``object`` pour ne
     # pas coupler le plan de rendu au module ``color_grading``.
     color_grade: object = None
+    compositing: object = None
 
 
 @dataclass(frozen=True)
@@ -352,6 +353,7 @@ def build_render_plan(
                         # pour signaler l'identité et économiser du
                         # travail au moteur d'export.
                         color_grade=getattr(clip, "color_grade", None),
+                        compositing=getattr(clip, "compositing", None),
                     )
                 )
                 # Un solo audio ne laisse passer que les pistes audio armées

@@ -575,10 +575,20 @@ class ExportEngine(QObject):
                 is_last = layer_index == len(display_layers) - 1
                 next_label = "vout" if is_last else f"o{layer_index}"
                 overlay_args = _build_overlay_args(layer, width, height)
-                parts.append(
-                    f"[{previous_label}][{label}]"
-                    f"overlay={overlay_args}[{next_label}]"
-                )
+                blend_mode = getattr(getattr(layer, "compositing", None), "blend_mode", "normal")
+                blend_mode = getattr(blend_mode, "value", blend_mode)
+                if blend_mode != "normal":
+                    ffmpeg_mode = {"addition": "addition"}.get(str(blend_mode), str(blend_mode))
+                    parts.append(
+                        f"[{previous_label}][{label}]blend=all_mode={ffmpeg_mode}:"
+                        f"enable='between(t,{_format_seconds(layer.timeline_start)},"
+                        f"{_format_seconds(layer.timeline_end)})'[{next_label}]"
+                    )
+                else:
+                    parts.append(
+                        f"[{previous_label}][{label}]"
+                        f"overlay={overlay_args}[{next_label}]"
+                    )
                 previous_label = next_label
             video_label = "vout"
         else:
@@ -996,6 +1006,8 @@ def _build_layer_filter(
     # afin de garantir un rendu stable quel que soit l'ordre des
     # opérations demandé par l'utilisateur.
     color_grade_filters = _build_color_grade_filters(layer.color_grade)
+    from .compositing import build_ffmpeg_filters
+    compositing_filters = build_ffmpeg_filters(layer.compositing, width, height) if layer.compositing is not None else ["format=rgba"]
 
     # Filtres de remappage temporel (freeze, reverse, speed)
     time_remapping_filter = _build_time_remapping_video_filter(layer)
@@ -1017,7 +1029,7 @@ def _build_layer_filter(
             parts.append(f"{effect_filters},")
         if color_grade_filters:
             parts.append(f"{color_grade_filters},")
-        parts.append(f"format=rgba,")
+        parts.append(f"{','.join(compositing_filters)},")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
     else:
@@ -1039,7 +1051,7 @@ def _build_layer_filter(
             parts.append(f"{effect_filters},")
         if color_grade_filters:
             parts.append(f"{color_grade_filters},")
-        parts.append(f"format=rgba,")
+        parts.append(f"{','.join(compositing_filters)},")
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
 
