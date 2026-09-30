@@ -86,10 +86,10 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
 DEFAULT_SIZE: dict[PanelId, int] = {
-    PanelId.MEDIA: 264,
+    PanelId.MEDIA: 270,
     PanelId.VIEWER: 720,
     PanelId.INSPECTOR: 300,
-    PanelId.TIMELINE: 390,
+    PanelId.TIMELINE: 300,
     PanelId.MIXER: 320,
 }
 

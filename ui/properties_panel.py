@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QInputDialog,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -313,9 +314,11 @@ class PropertiesPanel(QWidget):
         header_layout.setSpacing(Spacing.sm)
         title = QLabel("INSPECTEUR")
         title.setStyleSheet(label_style(10, "muted", 800))
-        header_layout.addWidget(title)
+        title.hide()
 
-        # Onglets : Inspecteur / Couleur / Effets / Audio / Graphiques.
+        # Onglets principaux : Clip / Couleur / Audio / Effets. Les outils
+        # spécialisés restent disponibles dans un menu compact afin que
+        # l'inspecteur conserve une vraie largeur de travail.
         # Utilisation de QPushButton ``checkable`` plutôt que
         # ``QListWidget`` pour garantir un affichage horizontal compact.
         self.inspector_tabs_row = QWidget()
@@ -323,9 +326,8 @@ class PropertiesPanel(QWidget):
         self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
         self.inspector_tabs_layout.setSpacing(Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
-        for index, label in enumerate(
-            ("Inspecteur", "Couleur", "Effets", "Audio", "Graphiques", "Compositing")
-        ):
+        labels = ("Clip", "Couleur", "Effets", "Audio", "Graphiques", "Compositing")
+        for index, label in enumerate(labels):
             button = QPushButton(label)
             button.setObjectName("inspectorTab")
             button.setCheckable(True)
@@ -335,19 +337,48 @@ class PropertiesPanel(QWidget):
             button.setStyleSheet(
                 f"QPushButton#inspectorTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid transparent;"
-                f" border-radius: 6px; padding: 5px 6px;"
+                f" border-radius: 0; padding: 7px 7px;"
                 f" font-weight: 600; font-size: 11px; }}"
                 f"QPushButton#inspectorTab:hover {{ color: {COLORS['text']};"
-                f" background: {COLORS['surface_hover']}; }}"
+                f" background: transparent; }}"
                 f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
-                f" background: {COLORS['accent_dark']};"
-                f" border: 1px solid {COLORS['accent']}; }}"
+                f" background: transparent; border: none;"
+                f" border-bottom: 2px solid {COLORS['accent']}; }}"
             )
             button.clicked.connect(
                 lambda _checked=False, idx=index: self._select_inspector_tab(idx)
             )
             self.inspector_tab_buttons.append(button)
-            self.inspector_tabs_layout.addWidget(button)
+
+        # L'ordre visuel suit le geste attendu dans la maquette tout en
+        # conservant les indices historiques utilisés par le contrôleur.
+        for index in (0, 1, 3, 2):
+            self.inspector_tabs_layout.addWidget(self.inspector_tab_buttons[index])
+
+        self.inspector_more_button = QToolButton()
+        self.inspector_more_button.setObjectName("inspectorMore")
+        self.inspector_more_button.setText("•••")
+        self.inspector_more_button.setToolTip("Outils spécialisés")
+        self.inspector_more_button.setAccessibleName("Outils spécialisés")
+        self.inspector_more_button.setStyleSheet(
+            f"QToolButton {{ color: {COLORS['muted']}; background: transparent;"
+            f" border: none; border-radius: 4px; padding: 5px 6px; }}"
+            f"QToolButton:hover {{ color: {COLORS['text']};"
+            f" background: {COLORS['surface_hover']}; }}"
+            f"QToolButton[active='true'] {{ color: {COLORS['accent']}; }}"
+        )
+        self.inspector_more_button.setPopupMode(QToolButton.InstantPopup)
+        more_menu = QMenu(self.inspector_more_button)
+        graphics_action = more_menu.addAction("Graphiques")
+        graphics_action.triggered.connect(
+            lambda _checked=False: self._select_inspector_tab(4)
+        )
+        compositing_action = more_menu.addAction("Compositing")
+        compositing_action.triggered.connect(
+            lambda _checked=False: self._select_inspector_tab(5)
+        )
+        self.inspector_more_button.setMenu(more_menu)
+        self.inspector_tabs_layout.addWidget(self.inspector_more_button)
         self.inspector_tabs_layout.addStretch(1)
         header_layout.addWidget(self.inspector_tabs_row)
         outer_layout.addWidget(header)
@@ -783,6 +814,13 @@ class PropertiesPanel(QWidget):
         """Bascule l'onglet actif de l'inspecteur."""
         for i, button in enumerate(self.inspector_tab_buttons):
             button.setChecked(i == index)
+        specialized = index in {4, 5}
+        self.inspector_more_button.setText(
+            "Graphiques" if index == 4 else "Compositing" if index == 5 else "•••"
+        )
+        self.inspector_more_button.setProperty("active", specialized)
+        self.inspector_more_button.style().unpolish(self.inspector_more_button)
+        self.inspector_more_button.style().polish(self.inspector_more_button)
         self._on_inspector_tab_changed(index)
 
     def _set_group_condition(self, group: QWidget, allowed: bool) -> None:

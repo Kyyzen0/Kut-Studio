@@ -182,14 +182,22 @@ class ProjectPanel(QWidget):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.sm)
-        title = QLabel("BIBLIOTHÈQUE")
-        title.setStyleSheet(label_style(10, "muted", 800))
+        title = QLabel("Médias")
+        title.setStyleSheet(label_style(13, "text", 700))
         title_row.addWidget(title)
         title_row.addStretch(1)
         # Compteur global (mis à jour à chaque mutation).
         self.media_count = QLabel("0 média")
         self.media_count.setStyleSheet(label_style(10, "muted", 500))
         title_row.addWidget(self.media_count)
+        quick_import = IconButton(
+            icon=IconName.PLUS,
+            tooltip="Importer un média",
+            size=Sizes.icon_button_sm,
+        )
+        quick_import.setAccessibleName("Importer un média")
+        quick_import.clicked.connect(self.import_requested.emit)
+        title_row.addWidget(quick_import)
         header_layout.addLayout(title_row)
 
         # Onglets Projet / Favoris : boutons ``checkable`` dans une

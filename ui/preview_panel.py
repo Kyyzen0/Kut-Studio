@@ -91,12 +91,17 @@ class PreviewPanel(QWidget):
         self.preview_transition_overlay.hide()
 
         self.empty_state = QLabel(
-            "Votre histoire commence ici\n\n"
-            "Importez vos médias, puis déposez-les sur la timeline."
+            "Aucun clip sous la tête de lecture\n"
+            "Déplacez la tête de lecture ou sélectionnez un clip dans la timeline."
         )
         self.empty_state.setAlignment(Qt.AlignCenter)
-        self.empty_state.setStyleSheet(label_style(14, "muted", 500))
+        self.empty_state.setStyleSheet(
+            f"color: {COLORS['muted_strong']}; background: {COLORS['panel']};"
+            f" border: 1px solid {COLORS['border_strong']}; border-radius: 8px;"
+            f" padding: 18px 24px; font-size: 12px; font-weight: 600;"
+        )
         self.empty_state.setWordWrap(True)
+        self.empty_state.setMaximumWidth(390)
 
         self.preview_subtitle_overlay = QLabel()
         self.preview_subtitle_overlay.setAlignment(Qt.AlignCenter)
@@ -133,14 +138,14 @@ class PreviewPanel(QWidget):
         title_icon = IconLabel(IconName.MEDIA, size=Iconography.md)
         title_icon.set_color(QColor(COLORS["muted_strong"]))
         title_layout.addWidget(title_icon)
-        title = QLabel("VIEWER")
+        title = QLabel("VISIONNEUSE")
         title.setStyleSheet(label_style(10, "muted", 800))
         title_layout.addWidget(title)
         header_layout.addWidget(title_box)
 
         header_layout.addStretch()
 
-        status = QLabel("1920 × 1080 · 30 fps")
+        status = QLabel("1920 × 1080 · 30 fps · 16:9")
         status.setStyleSheet(label_style(11, "muted", 600))
         status.setAlignment(Qt.AlignRight)
         header_layout.addWidget(status)
@@ -427,6 +432,23 @@ class PreviewPanel(QWidget):
             pass
         self.empty_state.show()
         self.preview_effects_overlay.hide()
+
+    def show_missing_media(self, clip_name: str = "") -> None:
+        """Distingue un média absent d'un trou réel dans la timeline."""
+        self.show_empty()
+        name = clip_name.strip() or "Le clip sélectionné"
+        self.empty_state.setText(
+            f"{name} n’a pas encore de média source\n"
+            "Importez ou reliez le fichier pour l’afficher dans la visionneuse."
+        )
+
+    def show_no_active_clip(self) -> None:
+        """Restaure le message destiné aux espaces vides de la timeline."""
+        self.show_empty()
+        self.empty_state.setText(
+            "Aucun clip sous la tête de lecture\n"
+            "Déplacez la tête de lecture ou sélectionnez un clip dans la timeline."
+        )
 
     # ------------------------------------------------------------------
     # Application du transform courant (tâche 13)

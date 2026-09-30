@@ -28,6 +28,11 @@ def main() -> int:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.resize(1440, 900)
+    # La capture de référence représente l'espace de montage principal.
+    # Elle ne dépend pas de la préférence utilisateur persistée des scopes.
+    window._scopes_visible = False
+    window.scopes_panel.hide()
+    window._viewer_host.setSizes([680, 0])
     window.show()
 
     def shoot_and_quit() -> None:

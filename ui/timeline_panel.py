@@ -70,7 +70,7 @@ _TRACK_TYPE_LABELS = {
     "graphics": "Graphiques",
 }
 _CONTENT_TOP = 8
-_HEIGHTS = {"compact": 40, "normal": 68, "large": 112}
+_HEIGHTS = {"compact": 34, "normal": 48, "large": 88}
 _COLLAPSED_HEIGHT = 28
 
 
@@ -127,11 +127,9 @@ class TrackRowHeader(QFrame):
         self.setObjectName("trackHeader")
 
         from PySide6.QtWidgets import QHBoxLayout
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(
-            Spacing.md, Spacing.sm, Spacing.md, Spacing.sm
-        )
-        outer.setSpacing(Spacing.xs)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(Spacing.md, Spacing.xs, Spacing.sm, Spacing.xs)
+        outer.setSpacing(Spacing.sm)
 
         # ----- Ligne 1 : pastille + nom + état ------------------------
         title_row = QWidget()
@@ -154,8 +152,14 @@ class TrackRowHeader(QFrame):
         name_layout.setSpacing(0)
 
         prefix = self._prefix_for_type(track.type)
-        title = QLabel(f"{prefix} · {track.name}")
-        title.setStyleSheet(label_style(13, "text", 700))
+        type_label = {
+            "video": "VIDÉO",
+            "audio": "AUDIO",
+            "subtitle": "TEXTE",
+            "graphics": "GRAPHISME",
+        }.get(track.type, track.type.upper())
+        title = QLabel(f"{track.id}  {type_label}")
+        title.setStyleSheet(label_style(11, "text", 800))
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         name_layout.addWidget(title)
 
@@ -170,12 +174,12 @@ class TrackRowHeader(QFrame):
             state_parts.append("Solo")
         if getattr(track, "collapsed", False):
             state_parts.append("Réduite")
-        state_label = QLabel(" · ".join(state_parts) or "Active")
-        state_label.setStyleSheet(label_style(10, "muted", 500))
+        state_label = QLabel(" · ".join(state_parts) or track.name)
+        state_label.setStyleSheet(label_style(9, "muted", 500))
         name_layout.addWidget(state_label)
         title_layout.addWidget(name_box, 1)
 
-        outer.addWidget(title_row)
+        outer.addWidget(title_row, 1)
 
         # ----- Ligne 2 : boutons d'action -----------------------------
         button_row = QWidget()
@@ -184,7 +188,7 @@ class TrackRowHeader(QFrame):
         button_layout.setSpacing(Spacing.xs)
         button_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._add_action_buttons(button_layout, track)
-        outer.addWidget(button_row)
+        outer.addWidget(button_row, 0)
 
     def _add_action_buttons(self, layout, track) -> None:
         """Ajoute les boutons d'action dans ``layout`` (horizontal)."""
@@ -266,54 +270,32 @@ class TrackRowHeader(QFrame):
                 checked=bool(getattr(track, "armed", False)),
             )
             layout.addWidget(arm_btn)
-        layout.addWidget(
-            _btn(
-                IconName.HEIGHT,
-                "Hauteur de piste",
-                lambda: self.height_cycle_requested.emit(track.id),
-            )
-        )
-        layout.addWidget(
-            _btn(
-                IconName.ARROW_DOWN if not getattr(track, "collapsed", False) else IconName.ARROW_UP,
+
+        # Les commandes moins fréquentes restent disponibles sans saturer
+        # chaque en-tête de piste.
+        more_btn = _btn(IconName.MORE, "Actions de la piste", lambda: None)
+        menu = QMenu(more_btn)
+        actions = (
+            ("Hauteur de piste", lambda: self.height_cycle_requested.emit(track.id)),
+            (
                 "Réduire ou développer",
                 lambda: self.collapse_toggled.emit(
                     track.id, not bool(getattr(track, "collapsed", False))
                 ),
+            ),
+            (translate("tracks.up_tooltip"), lambda: self.move_up_requested.emit(track.id)),
+            (translate("tracks.down_tooltip"), lambda: self.move_down_requested.emit(track.id)),
+            (translate("tracks.rename_tooltip"), lambda: self.rename_requested.emit(track.id)),
+            (translate("tracks.delete_tooltip"), lambda: self.remove_requested.emit(track.id)),
+        )
+        for label, callback in actions:
+            action = menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, cb=callback: cb()
             )
-        )
-
-        layout.addSpacing(Spacing.sm)
-
-        # Boutons de réorganisation (haut / bas).
-        up_btn = _btn(
-            IconName.ARROW_UP,
-            translate("tracks.up_tooltip"),
-            lambda: self.move_up_requested.emit(track.id),
-        )
-        down_btn = _btn(
-            IconName.ARROW_DOWN,
-            translate("tracks.down_tooltip"),
-            lambda: self.move_down_requested.emit(track.id),
-        )
-        layout.addWidget(up_btn)
-        layout.addWidget(down_btn)
-
-        layout.addSpacing(Spacing.sm)
-
-        # Renommer + supprimer (boutons secondaires).
-        rename_btn = _btn(
-            IconName.EDIT,
-            translate("tracks.rename_tooltip"),
-            lambda: self.rename_requested.emit(track.id),
-        )
-        remove_btn = _btn(
-            IconName.TRASH,
-            translate("tracks.delete_tooltip"),
-            lambda: self.remove_requested.emit(track.id),
-        )
-        layout.addWidget(rename_btn)
-        layout.addWidget(remove_btn)
+        more_btn.setMenu(menu)
+        more_btn.setPopupMode(IconButton.ToolButtonPopupMode.InstantPopup)
+        layout.addWidget(more_btn)
 
     @staticmethod
     def _prefix_for_type(track_type: str) -> str:
@@ -1171,7 +1153,7 @@ class TimelinePanel(QWidget):
         self.header_height = Sizes.timeline_header_height
         self.ruler_height = Sizes.timeline_ruler_height
         self.track_height = Sizes.timeline_track_height
-        self.track_gap = 6
+        self.track_gap = 0
         self.left_margin = Sizes.timeline_left_margin
         self.zoom = 1.0
         self.duration_seconds = 30.0
@@ -1271,7 +1253,7 @@ class TimelinePanel(QWidget):
         palette = _current_palette()
 
         bar = QWidget()
-        bar.setFixedHeight(56)
+        bar.setFixedHeight(Sizes.timeline_header_height)
         bar.setObjectName("timeline_toolbar")
         bar.setStyleSheet(
             f"QWidget#timeline_toolbar {{ background: {palette.panel}; "
@@ -1279,8 +1261,8 @@ class TimelinePanel(QWidget):
         )
         # Layout principal : horizontal. Une rangée unique, dense et lisible.
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(Spacing.lg, Spacing.sm, Spacing.lg, Spacing.sm)
-        layout.setSpacing(Spacing.md)
+        layout.setContentsMargins(Spacing.md, Spacing.xs, Spacing.md, Spacing.xs)
+        layout.setSpacing(Spacing.sm)
         layout.setAlignment(Qt.AlignVCenter)
 
         # --- Bloc gauche : transport + horloge -------------------------
@@ -1298,6 +1280,7 @@ class TimelinePanel(QWidget):
         )
         self.play_button.clicked.connect(self._on_play_clicked)
         left_layout.addWidget(self.play_button)
+        self.play_button.hide()
 
         time_box = QWidget()
         time_layout = QVBoxLayout(time_box)
@@ -1329,6 +1312,7 @@ class TimelinePanel(QWidget):
         time_layout.addWidget(self.time_label)
         time_layout.addWidget(time_row)
         left_layout.addWidget(time_box)
+        time_box.hide()
 
         # Petit séparateur vertical pour aérer visuellement.
         left_layout.addSpacing(Spacing.sm)
@@ -1374,6 +1358,9 @@ class TimelinePanel(QWidget):
         left_layout.addWidget(self.roll_button)
         left_layout.addWidget(self.slip_button)
         left_layout.addWidget(self.slide_button)
+        self.roll_button.hide()
+        self.slip_button.hide()
+        self.slide_button.hide()
         self.record_button = IconButton(
             # Icône distincte de ``marker_button`` : les deux boutons sont
             # voisins dans la barre d'outils et partageaient auparavant le
@@ -1385,6 +1372,7 @@ class TimelinePanel(QWidget):
         )
         self.record_button.toggled.connect(self.record_requested.emit)
         left_layout.addWidget(self.record_button)
+        self.record_button.hide()
         self.ripple_button = IconButton(
             icon=IconName.FORWARD,
             tooltip="Ripple (N) : referme le trou après un trim droit ou une suppression",
@@ -1393,6 +1381,7 @@ class TimelinePanel(QWidget):
         )
         self.ripple_button.toggled.connect(self._on_ripple_toggled)
         left_layout.addWidget(self.ripple_button)
+        self.ripple_button.hide()
         self.marker_button = IconButton(
             icon=IconName.MARKER,
             tooltip="Marqueur au playhead (M)",
@@ -1402,8 +1391,7 @@ class TimelinePanel(QWidget):
             lambda: self.marker_add_requested.emit(self.playhead_seconds)
         )
         left_layout.addWidget(self.marker_button)
-
-        layout.addWidget(left_block)
+        self.marker_button.hide()
 
         # --- Bloc central : ajout de pistes ------------------------------
         center_block = QWidget()
@@ -1441,6 +1429,7 @@ class TimelinePanel(QWidget):
         center_layout.addWidget(self.add_audio_btn)
         center_layout.addWidget(self.add_subtitle_btn)
         layout.addWidget(center_block)
+        layout.addWidget(left_block)
 
         # --- Bloc extensible (vide pour l'instant) ----------------------
         layout.addStretch(1)
@@ -1465,6 +1454,7 @@ class TimelinePanel(QWidget):
         self.version_label.setStyleSheet(label_style(10, "muted", 700))
         self.version_label.setAlignment(Qt.AlignRight)
         status_layout.addWidget(self.version_label)
+        self.version_label.hide()
         right_layout.addWidget(status_box)
 
         zoom_box = QWidget()

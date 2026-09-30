@@ -3,8 +3,8 @@
 Rail compact inspiré de DaVinci Resolve et Final Cut Pro. Il
 donne accès aux sections globales (Médias, Éditer, Effets, Texte,
 Transitions, Audio, Graphiques, Modèles) sans alourdir la barre
-supérieure. Chaque bouton associe une icône à un libellé lisible, avec
-une infobulle au survol et un état actif matérialisé par un fond vert
+supérieure. Les boutons sont icon-only ; leur nom reste disponible dans
+une infobulle et comme nom accessible. L'état actif utilise un fond vert
 foncé arrondi et une icône turquoise.
 
 Aucune logique métier ici : le rail expose un signal ``section_changed``
@@ -86,20 +86,19 @@ class SideRail(QWidget):
                 icon=section.icon,
                 text=section.label,
                 tooltip=section.label,
-                size=Sizes.icon_button + 2,
-                square=False,
+                size=Sizes.icon_button_lg,
             )
             button.setIcon(make_icon(
                 section.icon,
                 size=Iconography.lg,
                 color=QColor(COLORS["muted_strong"]),
             ))
-            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            button.setFixedWidth(Sizes.side_rail_width - 2 * Spacing.sm)
-            button.setMinimumHeight(Sizes.button_md)
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            button.setFixedSize(Sizes.icon_button_lg, Sizes.icon_button_lg)
             button.setCheckable(True)
             button.setObjectName("railButton")
             button.setToolTip(section.label)
+            button.setAccessibleName(section.label)
             button.clicked.connect(
                 lambda _checked=False, sid=section.id: self._on_clicked(sid)
             )
@@ -167,8 +166,7 @@ class SideRail(QWidget):
                 button.setStyleSheet(
                     f"QToolButton {{ background: {accent_dark};"
                     f" color: {accent}; border: 1px solid {accent};"
-                    f" border-radius: 8px; padding: 4px 8px;"
-                    f" font-size: 11px; font-weight: 700; text-align: left; }}"
+                    f" border-radius: 8px; padding: 0; }}"
                 )
             else:
                 button.setIcon(make_icon(
@@ -179,8 +177,7 @@ class SideRail(QWidget):
                     f"QToolButton {{ background: transparent;"
                     f" color: {COLORS['muted_strong']};"
                     f" border: 1px solid transparent; border-radius: 8px;"
-                    f" padding: 4px 8px; font-size: 11px;"
-                    f" font-weight: 600; text-align: left; }}"
+                    f" padding: 0; }}"
                     f"QToolButton:hover {{ background: {surface_hover};"
                     f" color: {text}; }}"
                 )

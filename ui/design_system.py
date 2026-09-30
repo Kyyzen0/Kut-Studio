@@ -78,17 +78,17 @@ class _Sizes:
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.
     top_bar: int = 50
-    # Rail vertical principal. La largeur inclut un libellé court à côté
-    # de chaque icône pour que les sections restent identifiables.
-    side_rail_width: int = 112
+    # Rail vertical principal, volontairement icon-only. Les libellés
+    # restent disponibles dans les infobulles et via l'accessibilité Qt.
+    side_rail_width: int = 52
     panel_min_width: int = 240
     panel_default_width: int = 300
     timeline_track_min_height: int = 56
-    timeline_track_height: int = 68
-    timeline_left_margin: int = 248
-    timeline_ruler_height: int = 30
-    timeline_header_height: int = 44
-    timeline_min_height: int = 320
+    timeline_track_height: int = 46
+    timeline_left_margin: int = 220
+    timeline_ruler_height: int = 22
+    timeline_header_height: int = 38
+    timeline_min_height: int = 270
 
 
 Sizes = _Sizes()
