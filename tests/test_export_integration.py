@@ -858,10 +858,16 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     # de polices (fontconfig), très lent sur les runners Windows de la CI.
     finished, failed = _wait_for_export(engine, timeout_ms=180000)
 
+    if not finished and not failed:
+        # Délai dépassé : on capture l'état pour diagnostiquer la CI.
+        diagnostic = (
+            f"état QProcess={engine._process.state().name}, "
+            f"stderr={engine._error_output!r}, commande={command!r}"
+        )
+        engine.cancel()
+        pytest.fail(f"aucun signal d'export reçu : {diagnostic}")
     assert not failed, f"ffmpeg a échoué : {failed}"
-    assert finished, (
-        "finished_ok aurait dû être émis (aucun signal reçu : délai dépassé)"
-    )
+    assert finished, "finished_ok aurait dû être émis"
     assert output_path.exists()
 
     # 4. Le SRT temporaire est nettoyé après succès.

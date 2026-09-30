@@ -421,6 +421,7 @@ class ExportEngine(QObject):
         command: list[str] = [
             *_ffmpeg_command_prefix(),
             "-y",
+            "-nostdin",
             "-hide_banner",
             "-loglevel",
             "error",
