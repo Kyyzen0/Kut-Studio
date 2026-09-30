@@ -94,6 +94,10 @@ class PreviewEngine:
         # peuvent etre supprimes par le moteur (jamais ceux d'un
         # ``render_fn`` injecte par l'appelant).
         self._temp_outputs: set[str] = set()
+        # Fichiers SRT/ASS créés par le rendu par défaut et encore en cours
+        # d'utilisation. Les enregistrer permet à ``cancel_all`` de les
+        # supprimer aussi quand une fenêtre se ferme pendant un rendu.
+        self._temporary_subtitles: set[str] = set()
         # Invalidation globale (``cancel_all``) : incremente l'epoque.
         self._epoch = 0
         # Compteur de generations monotone (jamais remis a zero).
@@ -454,10 +458,14 @@ class PreviewEngine:
             self._generations.clear()
             self._key_clips.clear()
             self._tokens.clear()
+            subtitles = tuple(self._temporary_subtitles)
+            self._temporary_subtitles.clear()
         try:
             self.tasks.cancel_all()
         except Exception:
             pass
+        for path in subtitles:
+            self._remove_file(path)
         self._notify()
 
     def pump(self, limit=1):
@@ -497,12 +505,19 @@ class PreviewEngine:
 
         from .filter_graph import build_preview_command
 
-        if token is not None and getattr(token, "cancelled", False):
-            return None
-        subtitle_path = job.srt_path or self._write_subtitles(job.plan)
-        fd, tmp_path = tempfile.mkstemp(prefix="kut-preview-", suffix=".mp4")
-        os.close(fd)
+        subtitle_path = None
+        owns_subtitle = False
+        tmp_path = None
         try:
+            if token is not None and getattr(token, "cancelled", False):
+                return None
+            subtitle_path = job.srt_path or self._write_subtitles(job.plan)
+            owns_subtitle = bool(subtitle_path and subtitle_path != job.srt_path)
+            if owns_subtitle:
+                with self._lock:
+                    self._temporary_subtitles.add(str(subtitle_path))
+            fd, tmp_path = tempfile.mkstemp(prefix="kut-preview-", suffix=".mp4")
+            os.close(fd)
             command = build_preview_command(
                 job.plan,
                 width=job.width,
@@ -527,7 +542,9 @@ class PreviewEngine:
             raise
         finally:
             # Le fichier de sous-titres n'a servi qu'au filtre libass.
-            if subtitle_path and subtitle_path != job.srt_path:
+            if owns_subtitle and subtitle_path:
+                with self._lock:
+                    self._temporary_subtitles.discard(str(subtitle_path))
                 self._remove_file(subtitle_path)
         if completed.returncode != 0:
             self._remove_file(tmp_path)
@@ -551,4 +568,3 @@ class PreviewEngine:
 
 
 __all__ = ["PreviewEngine", "PreviewEngineState", "PreviewJob"]
-

@@ -27,7 +27,7 @@ from core.project_model import Clip, MediaAsset, Project, Track  # noqa: E402
 from core.render_plan import build_render_plan  # noqa: E402
 
 
-FAKE_FFMPEG = ROOT / "tests" / "fixtures" / "fake_ffmpeg.sh"
+FAKE_FFMPEG_PYTHON = ROOT / "tests" / "fixtures" / "fake_ffmpeg.py"
 
 
 # ---------------------------------------------------------------------------
@@ -37,9 +37,10 @@ FAKE_FFMPEG = ROOT / "tests" / "fixtures" / "fake_ffmpeg.sh"
 
 @pytest.fixture
 def fake_ffmpeg_path(monkeypatch):
-    """Force le module ``export_engine`` à utiliser notre faux ffmpeg."""
-    monkeypatch.setattr("core.export_engine._ffmpeg_path", str(FAKE_FFMPEG))
-    return FAKE_FFMPEG
+    """Force le module ``export_engine`` à utiliser un faux portable."""
+    command = (sys.executable, str(FAKE_FFMPEG_PYTHON))
+    monkeypatch.setattr("core.export_engine._ffmpeg_path", command)
+    return command
 
 
 def _make_video_asset(path: str, asset_id: str = "asset_1") -> MediaAsset:

@@ -666,6 +666,61 @@ def test_analyzer_reports_extraction_error_without_raising() -> None:
     analyzer.close()
 
 
+def test_analyzer_cleans_request_temporary_paths(tmp_path) -> None:
+    """Un SRT généré pour les scopes ne survit jamais à son analyse."""
+    temporary_subtitle = tmp_path / "scope-subtitle.srt"
+    temporary_subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest\n")
+    analyzer = ScopeAnalyzer(
+        min_interval=0.0,
+        extractor=lambda _request: _solid_frame(2, 2, (10, 20, 30)),
+    )
+    analyzer.submit(
+        playhead=0.0,
+        ffmpeg_command=["fake"],
+        temporary_paths=[str(temporary_subtitle)],
+        force=True,
+    )
+    _drain(analyzer)
+    assert not temporary_subtitle.exists()
+    analyzer.close()
+
+
+def test_analyzer_cleans_pending_temporary_paths_on_cancel(tmp_path) -> None:
+    """Une requête de scopes annulée libère aussi son fichier SRT."""
+    entered = threading.Event()
+    release = threading.Event()
+
+    def slow_extractor(_request):
+        entered.set()
+        assert release.wait(timeout=2.0)
+        return _solid_frame(2, 2, (10, 20, 30))
+
+    active = tmp_path / "active.srt"
+    pending = tmp_path / "pending.srt"
+    active.write_text("active")
+    pending.write_text("pending")
+    analyzer = ScopeAnalyzer(min_interval=0.0, extractor=slow_extractor)
+    analyzer.submit(
+        playhead=0.0,
+        ffmpeg_command=["fake"],
+        temporary_paths=[str(active)],
+        force=True,
+    )
+    assert entered.wait(timeout=2.0)
+    analyzer.submit(
+        playhead=1.0,
+        ffmpeg_command=["fake"],
+        temporary_paths=[str(pending)],
+        force=True,
+    )
+    analyzer.cancel_all()
+    assert not pending.exists()
+    release.set()
+    _drain(analyzer)
+    assert not active.exists()
+    analyzer.close()
+
+
 def test_analyzer_error_does_not_break_later_requests() -> None:
     frame = _solid_frame(4, 4, (70, 70, 70))
     results: list[ScopeAnalysis] = []
@@ -1436,7 +1491,7 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
     def fake_plan():
         return _Plan()
 
-    def fake_build_frame_command(request, playhead):
+    def fake_build_frame_command(_engine, request, playhead):
         captured["playhead"] = playhead
         captured["request"] = request
         return [
@@ -1447,7 +1502,7 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
 
     monkeypatch.setattr(window, "get_render_plan", fake_plan)
     monkeypatch.setattr(
-        window.export_engine, "build_frame_command", fake_build_frame_command
+        "ui.main_window.ExportEngine.build_frame_command", fake_build_frame_command
     )
 
     command = window._build_scopes_ffmpeg_command(12.5)

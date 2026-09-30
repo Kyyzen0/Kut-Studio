@@ -61,7 +61,7 @@ def ffmpeg_supports_subtitles():
 
 def build_preview_command(plan, **kwargs):
     """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export."""
-    from .export_engine import require_ffmpeg
+    from .export_engine import _ffmpeg_command_prefix
     from .preview_render import preview_crf, preview_preset
 
     width = int(kwargs.get("width", 1920))
@@ -75,7 +75,7 @@ def build_preview_command(plan, **kwargs):
     out_w, out_h = preview_output_size(width, height, quality)
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path)
     filter_complex, video_label, audio_label, input_paths = result
-    command = [require_ffmpeg(), "-y", "-hide_banner", "-loglevel", "error"]
+    command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     for path in input_paths:
         command.extend(["-i", path])
     command.extend(["-filter_complex", filter_complex])

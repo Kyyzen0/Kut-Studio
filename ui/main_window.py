@@ -76,6 +76,7 @@ from core.scopes_analyzer import (
     ScopeAnalysis,
     ScopeAnalyzer,
     ScopeExtractionError,
+    cleanup_temporary_paths,
     png_to_scope_frame,
 )
 from core.studio_runtime import StudioRuntime, peak_rss_bytes
@@ -233,6 +234,9 @@ class MainWindow(QMainWindow):
             loaded_settings.scopes_alerts_enabled
         )
         self._last_scopes_playhead = -1.0
+        # Les SRT/ASS créés pour une commande de scopes n'appartiennent pas
+        # à l'export en cours : l'analyseur les reçoit puis les supprime.
+        self._scope_temporary_paths: tuple[str, ...] = ()
         # L'analyseur s'exécute hors du thread Qt : le panneau reçoit
         # les résultats via un signal Qt émis depuis le thread de
         # travail (voir ``_on_scopes_analysis_ready``).
@@ -1399,6 +1403,8 @@ class MainWindow(QMainWindow):
         scopes_analyzer = getattr(self, "scopes_analyzer", None)
         if scopes_analyzer is not None:
             scopes_analyzer.close()
+        cleanup_temporary_paths(getattr(self, "_scope_temporary_paths", ()))
+        self._scope_temporary_paths = ()
         autosave = getattr(self, "_autosave", None)
         if autosave is not None:
             autosave.close()
@@ -3127,10 +3133,13 @@ class MainWindow(QMainWindow):
         if not force and abs(playhead - self._last_scopes_playhead) < 1e-3:
             return
         self._last_scopes_playhead = playhead
+        self._scope_temporary_paths = ()
         command = self._build_scopes_ffmpeg_command(playhead)
         if command is None:
             return
-        self.scopes_analyzer.submit(
+        temporary_paths = self._scope_temporary_paths
+        self._scope_temporary_paths = ()
+        accepted = self.scopes_analyzer.submit(
             playhead=playhead,
             ffmpeg_command=command,
             color_space=self.scopes_panel._color_space,
@@ -3138,8 +3147,11 @@ class MainWindow(QMainWindow):
             columns=SCOPES_COLUMNS,
             vectorscope_bins=SCOPES_VECTORSCOPE_BINS,
             source="timeline",
+            temporary_paths=temporary_paths,
             force=force,
         )
+        if accepted is None:
+            cleanup_temporary_paths(temporary_paths)
 
     def _build_scopes_ffmpeg_command(
         self, playhead: float,
@@ -3161,6 +3173,7 @@ class MainWindow(QMainWindow):
             return None
         if not getattr(render_plan, "video_layers", ()):
             return None
+        frame_engine: ExportEngine | None = None
         try:
             # Le chemin de sortie n'est jamais écrit (la sortie est un
             # PNG sur stdout) mais ``ExportRequest`` en exige un : on
@@ -3168,8 +3181,17 @@ class MainWindow(QMainWindow):
             request = self.export_panel.build_request(
                 render_plan, os.path.join(tempfile.gettempdir(), "kut-frame.png")
             )
-            return self.export_engine.build_frame_command(request, playhead)
+            # Une instance dédiée évite qu'une analyse de scopes ne remplace
+            # le SRT temporaire d'un export déjà en cours.
+            frame_engine = ExportEngine()
+            command = frame_engine.build_frame_command(request, playhead)
+            self._scope_temporary_paths = frame_engine.take_temporary_files()
+            return command
         except Exception:
+            if frame_engine is not None:
+                cleanup_temporary_paths(frame_engine.take_temporary_files())
+            cleanup_temporary_paths(self._scope_temporary_paths)
+            self._scope_temporary_paths = ()
             return None
 
     def _persist_scopes_preferences(self) -> None:

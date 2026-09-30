@@ -210,6 +210,18 @@ def test_default_render_caches_segment_without_temp_leak(tmp_path):
     assert engine.request(job)["status"] == "cached"
 
 
+def test_cancel_all_removes_owned_subtitle_temporary(tmp_path):
+    """La fermeture ne laisse pas un SRT de rendu d'aperçu en attente."""
+    from core.preview_engine import PreviewEngine
+
+    subtitle = tmp_path / "preview-subtitle.srt"
+    subtitle.write_text("temporary")
+    engine = PreviewEngine()
+    engine._temporary_subtitles.add(str(subtitle))
+    engine.cancel_all()
+    assert not subtitle.exists()
+
+
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
 def test_default_render_incruste_les_sous_titres(tmp_path):
     """Avec libass, un projet sous-titre se rend aussi en apercu."""
@@ -244,4 +256,3 @@ def test_default_render_incruste_les_sous_titres(tmp_path):
     assert engine.state().last_error == ""
     assert engine.cache.lookup(job.key) is not None
     assert set(temp_root.glob("kut-studio-subtitles-*")) == before_subtitles
-

@@ -76,6 +76,15 @@ def test_windows_subtitle_filter_uses_system_font_fallback() -> None:
     assert _subtitle_fontsdir(platform_name="win32") is None
 
 
+def test_windows_filter_path_is_safe_in_a_quoted_filename_value() -> None:
+    """Les chemins Windows deviennent compatibles avec ``filename='…'``."""
+    from core.export_engine import _escape_filter_path
+
+    assert _escape_filter_path(r"C:\Users\Runner\subtitle.srt") == (
+        "C:/Users/Runner/subtitle.srt"
+    )
+
+
 def test_bundled_media_tools_win_before_path(tmp_path) -> None:
     from core.tool_paths import bundled_tool_path
 

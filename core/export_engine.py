@@ -75,6 +75,29 @@ from .visual_effects import (
 _ffmpeg_path = find_media_tool("ffmpeg")
 
 
+def _ffmpeg_command_prefix() -> list[str]:
+    """Retourne la commande qui lance FFmpeg.
+
+    En production il s'agit d'un seul chemin. Accepter une séquence rend
+    aussi le moteur testable sur Windows : le faux FFmpeg Python est alors
+    lancé via ``sys.executable`` au lieu d'un script shell non exécutable.
+    """
+    path = _ffmpeg_path or find_media_tool("ffmpeg")
+    if path is None:
+        raise ImportError(
+            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
+        )
+    if isinstance(path, (tuple, list)):
+        command = [str(item) for item in path if str(item)]
+    else:
+        command = [str(path)]
+    if not command:
+        raise ImportError(
+            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
+        )
+    return command
+
+
 def require_ffmpeg() -> str:
     """Retourne le chemin FFmpeg ou lève un :class:`ImportError` explicite.
 
@@ -82,12 +105,7 @@ def require_ffmpeg() -> str:
     ouvrir l'application) ne doit jamais planter sur une machine sans
     FFmpeg — seul le démarrage d'un export l'exige.
     """
-    path = _ffmpeg_path or find_media_tool("ffmpeg")
-    if path is None:
-        raise ImportError(
-            "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
-        )
-    return path
+    return _ffmpeg_command_prefix()[0]
 
 
 def _ffmpeg_supports_subtitles() -> bool:
@@ -99,13 +117,14 @@ def _ffmpeg_supports_subtitles() -> bool:
     """
     if hasattr(_ffmpeg_supports_subtitles, "_cached"):
         return _ffmpeg_supports_subtitles._cached  # type: ignore[attr-defined]
-    ffmpeg = _ffmpeg_path or find_media_tool("ffmpeg")
-    if ffmpeg is None:
+    try:
+        command_prefix = _ffmpeg_command_prefix()
+    except ImportError:
         _ffmpeg_supports_subtitles._cached = False  # type: ignore[attr-defined]
         return False
     try:
         completed = subprocess.run(
-            [ffmpeg, "-hide_banner", "-filters"],
+            [*command_prefix, "-hide_banner", "-filters"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -359,7 +378,7 @@ class ExportEngine(QObject):
             )
         )
         command: list[str] = [
-            require_ffmpeg(),
+            *_ffmpeg_command_prefix(),
             "-y",
             "-hide_banner",
             "-loglevel",
@@ -400,7 +419,7 @@ class ExportEngine(QObject):
         )
 
         command: list[str] = [
-            require_ffmpeg(),
+            *_ffmpeg_command_prefix(),
             "-y",
             "-hide_banner",
             "-loglevel",
@@ -488,6 +507,18 @@ class ExportEngine(QObject):
             except OSError:
                 pass
         self._temporary_files.clear()
+
+    def take_temporary_files(self) -> tuple[str, ...]:
+        """Transfère la responsabilité des temporaires à un appelant.
+
+        L'analyse des scopes utilise une instance courte durée de ce moteur
+        pour bâtir sa commande. Elle doit pouvoir supprimer son SRT une fois
+        la frame extraite, sans qu'un export régulier puisse toucher ce
+        fichier entre-temps.
+        """
+        files = tuple(self._temporary_files)
+        self._temporary_files.clear()
+        return files
 
     @property
     def _current_srt_path(self) -> str | None:
@@ -689,12 +720,12 @@ class ExportEngine(QObject):
                 )
             fonts_dir = _subtitle_fontsdir()
             fonts_option = (
-                f":fontsdir={_escape_filter_path(fonts_dir)}"
+                f":fontsdir='{_escape_filter_path(fonts_dir)}'"
                 if fonts_dir
                 else ""
             )
             parts.append(
-                f"[{video_label}]subtitles={_escape_filter_path(srt_path)}"
+                f"[{video_label}]subtitles=filename='{_escape_filter_path(srt_path)}'"
                 f"{fonts_option}:force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
             )
             video_label = "vfinal"
@@ -1986,14 +2017,14 @@ def _build_time_remapping_audio_filter(layer: AudioLayer) -> str:
 
 
 def _escape_filter_path(path: str) -> str:
-    """Échappe les caractères spéciaux d'un chemin pour un filtre FFmpeg.
+    """Prépare un chemin pour une valeur de filtre FFmpeg entre apostrophes.
 
-    La syntaxe des filtres FFmpeg considère ``:`` et ``\\`` comme
-    séparateurs ; on les neutralise par échappement ``\\`` puis on
-    échappe les apostrophes pour les expressions ``force_style``.
+    Le nom explicite ``filename='…'`` du filtre ``subtitles`` est important
+    sous Windows : sans guillemets, la lettre de lecteur est traitée comme
+    l'option positionnelle ``original_size``. Les slashs sont acceptés par
+    les trois plateformes et évitent aussi un double niveau d'échappement.
     """
-    escaped = path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    return escaped
+    return str(path).replace("\\", "/").replace("'", "\\'")
 
 
 def _subtitle_fontsdir(*, platform_name: str | None = None) -> str | None:

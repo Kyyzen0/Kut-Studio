@@ -758,6 +758,7 @@ def test_filter_complex_includes_subtitles_filter(engine, tmp_path):
 
     filter_complex = command[command.index("-filter_complex") + 1]
     assert "subtitles=" in filter_complex
+    assert "subtitles=filename='" in filter_complex
     assert "force_style=" in filter_complex
     assert "[vfinal]" in filter_complex
 

@@ -165,6 +165,8 @@ class ScopeRequest:
         vectorscope_bins: Résolution du vectorscope.
         clip_tolerance: Tolérance d'écrêtage (niveaux 0‑255).
         source: Étiquette du clip source (diagnostic).
+        temporary_paths: Fichiers créés exclusivement pour cette demande,
+            supprimés dès que l'analyse se termine ou est abandonnée.
     """
 
     request_id: int
@@ -176,6 +178,16 @@ class ScopeRequest:
     vectorscope_bins: int = 128
     clip_tolerance: int = 0
     source: str = ""
+    temporary_paths: tuple[str, ...] = ()
+
+
+def cleanup_temporary_paths(paths: tuple[str, ...] | list[str]) -> None:
+    """Supprime au mieux les fichiers possédés par une demande de scopes."""
+    for path in paths:
+        try:
+            os.remove(str(path))
+        except OSError:
+            pass
 
 
 @dataclass
@@ -290,7 +302,11 @@ class ScopeAnalyzer:
         """Arrête le thread de travail (fermeture de l'application)."""
         with self._lock:
             self._closed = True
+            pending = self._pending
             self._pending = None
+            self._pending_frame = None
+        if pending is not None:
+            cleanup_temporary_paths(pending.temporary_paths)
         self._wake.set()
         thread = self._thread
         if thread is not None and thread.is_alive():
@@ -328,6 +344,7 @@ class ScopeAnalyzer:
         vectorscope_bins: int = 128,
         clip_tolerance: int = 0,
         source: str = "",
+        temporary_paths: tuple[str, ...] | list[str] = (),
         force: bool = False,
     ) -> Optional[ScopeRequest]:
         """Soumet une demande d'analyse.
@@ -364,6 +381,7 @@ class ScopeAnalyzer:
                 vectorscope_bins=int(vectorscope_bins),
                 clip_tolerance=int(clip_tolerance),
                 source=str(source),
+                temporary_paths=tuple(str(path) for path in temporary_paths),
             )
             self._next_id += 1
             # La nouvelle demande invalide tout ce qui est en cours.
@@ -422,9 +440,12 @@ class ScopeAnalyzer:
         """Annule toute analyse en cours ou en attente."""
         with self._lock:
             self._cancelled += 1
+            pending = self._pending
             self._pending = None
             self._pending_frame = None
             self._current_id = 0
+        if pending is not None:
+            cleanup_temporary_paths(pending.temporary_paths)
 
     def reset_rate_limit(self) -> None:
         """Réinitialise l'horloge de limitation de fréquence."""
@@ -453,6 +474,7 @@ class ScopeAnalyzer:
         """
         if self._pending is not None:
             self._cancelled += 1
+            cleanup_temporary_paths(self._pending.temporary_paths)
         self._pending = request
         self._pending_frame = frame
         self._idle.clear()
@@ -513,6 +535,7 @@ class ScopeAnalyzer:
             if self._on_error is not None:
                 self._on_error(request, exc)
         finally:
+            cleanup_temporary_paths(request.temporary_paths)
             with self._lock:
                 self._current_id = 0
                 if self._pending is None:
