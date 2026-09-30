@@ -354,6 +354,12 @@ class PropertiesPanel(QWidget):
         # conservant les indices historiques utilisés par le contrôleur.
         for index in (0, 1, 3, 2):
             self.inspector_tabs_layout.addWidget(self.inspector_tab_buttons[index])
+        # Graphiques et Compositing passent par le menu « ••• » : leurs
+        # boutons gardent l'état coché mais restent rattachés au panneau
+        # pour ne pas devenir des fenêtres orphelines.
+        for index in (4, 5):
+            self.inspector_tab_buttons[index].setParent(self.inspector_tabs_row)
+            self.inspector_tab_buttons[index].hide()
 
         self.inspector_more_button = QToolButton()
         self.inspector_more_button.setObjectName("inspectorMore")

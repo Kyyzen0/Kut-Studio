@@ -90,8 +90,10 @@ class TimelineRuler(QWidget):
         if scale <= 0:
             painter.end()
             return
-        start = (self.scroll_x - self.origin) / scale
-        end = (self.scroll_x + self.width() - self.origin) / scale
+        # La zone avant ``origin`` recouvre les en-têtes de pistes : aucun
+        # repère n'y a de sens (le temps négatif s'y afficherait « 00:00 »).
+        start = max(0.0, (self.scroll_x - self.origin) / scale)
+        end = max(start, (self.scroll_x + self.width() - self.origin) / scale)
         painter.setPen(QPen(QColor(self._tick), 1))
         for tick in ruler_ticks(start, end, scale, self.fps):
             x = int(self._x_of(tick.seconds))
@@ -126,9 +128,16 @@ class TimelineRuler(QWidget):
             ]
         )
         label = format_timecode(self.playhead, self.fps)
+        metrics = painter.fontMetrics()
+        text_w = metrics.horizontalAdvance(label)
+        text_x = min(max(4, play_x + 8), max(4, self.width() - text_w - 8))
+        # Fond opaque derrière le timecode : sans lui, il se superpose au
+        # libellé de la graduation voisine et devient illisible.
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(self._background))
+        painter.drawRect(text_x - 3, 0, text_w + 6, metrics.height() + 2)
         painter.setPen(QPen(QColor(self._playhead), 1))
-        text_x = min(max(4, play_x + 8), max(4, self.width() - 78))
-        painter.drawText(text_x, 12, label)
+        painter.drawText(text_x, metrics.ascent() + 1, label)
         painter.end()
 
     @staticmethod

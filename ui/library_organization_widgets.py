@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLayout,
     QLineEdit,
     QMenu,
     QPushButton,
@@ -518,6 +519,67 @@ FILTER_UNUSED = "unused"
 FILTER_MISSING = "missing"
 
 
+class _ChipFlowLayout(QLayout):
+    """Layout qui aligne ses widgets à leur taille naturelle et passe à la ligne."""
+
+    def __init__(self, parent: QWidget | None = None, *, spacing: int = 4) -> None:
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+
+    def addItem(self, item) -> None:  # noqa: N802 - API Qt
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):  # noqa: N802 - API Qt
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int):  # noqa: N802 - API Qt
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):  # noqa: N802 - API Qt
+        return Qt.Orientation(0)
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - API Qt
+        return self._do_layout(QRect(0, 0, width, 0), apply=False)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - API Qt
+        super().setGeometry(rect)
+        self._do_layout(rect, apply=True)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - API Qt
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802 - API Qt
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+
+    def _do_layout(self, rect: QRect, *, apply: bool) -> int:
+        margins = self.contentsMargins()
+        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x, y, line_height = area.x(), area.y(), 0
+        spacing = self.spacing()
+        for item in self._items:
+            if item.widget() is not None and item.widget().isHidden():
+                continue
+            hint = item.sizeHint()
+            if x > area.x() and x + hint.width() > area.right() + 1:
+                x = area.x()
+                y += line_height + spacing
+                line_height = 0
+            if apply:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + spacing
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + margins.bottom()
+
+
 class FilterChipBar(QWidget):
     """Barre de chips horizontale pour les filtres rapides.
 
@@ -543,24 +605,34 @@ class FilterChipBar(QWidget):
         self._active_id: str = FILTER_ALL
         self._buttons: dict[str, QToolButton] = {}
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(Spacing.xs)
+        # Les chips passent à la ligne quand la colonne est étroite : dans
+        # une rangée horizontale simple, Qt les écrase jusqu'à masquer
+        # leur libellé.
+        layout = _ChipFlowLayout(self, spacing=Spacing.xs)
+        # Largeur plancher : celle de la colonne Médias la plus étroite.
+        # La hauteur suit la largeur réelle via ``resizeEvent`` plutôt que
+        # ``heightForWidth``, qui ferait réclamer au panneau parent la
+        # hauteur préférée de tous ses voisins.
+        self.setMinimumWidth(Sizes.panel_min_width - 2 * Spacing.xs)
 
         self.header_label = QLabel("FILTRES")
         self.header_label.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(self.header_label)
-        layout.addSpacing(Spacing.xs)
 
-        # Le wrapping est laissé à un QScrollArea horizontal en cas
-        # de colonne étroite : un FlowLayout aurait été plus
-        # naturel mais ajoute une dépendance. On conserve donc un
-        # défilement horizontal pour rester simple.
         for chip_id, label in self._CHIPS:
             button = self._make_chip(chip_id, label)
             self._buttons[chip_id] = button
             layout.addWidget(button)
-        layout.addStretch(1)
+        self._fit_height(self.minimumWidth())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
+        super().resizeEvent(event)
+        self._fit_height(event.size().width())
+
+    def _fit_height(self, width: int) -> None:
+        height = self.layout().heightForWidth(max(width, self.minimumWidth()))
+        if height != self.minimumHeight():
+            self.setMinimumHeight(height)
 
     def _make_chip(self, chip_id: str, label: str) -> QToolButton:
         button = QToolButton()

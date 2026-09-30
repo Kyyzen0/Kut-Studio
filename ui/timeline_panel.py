@@ -1358,9 +1358,6 @@ class TimelinePanel(QWidget):
         left_layout.addWidget(self.roll_button)
         left_layout.addWidget(self.slip_button)
         left_layout.addWidget(self.slide_button)
-        self.roll_button.hide()
-        self.slip_button.hide()
-        self.slide_button.hide()
         self.record_button = IconButton(
             # Icône distincte de ``marker_button`` : les deux boutons sont
             # voisins dans la barre d'outils et partageaient auparavant le
@@ -1372,7 +1369,6 @@ class TimelinePanel(QWidget):
         )
         self.record_button.toggled.connect(self.record_requested.emit)
         left_layout.addWidget(self.record_button)
-        self.record_button.hide()
         self.ripple_button = IconButton(
             icon=IconName.FORWARD,
             tooltip="Ripple (N) : referme le trou après un trim droit ou une suppression",
@@ -1381,7 +1377,6 @@ class TimelinePanel(QWidget):
         )
         self.ripple_button.toggled.connect(self._on_ripple_toggled)
         left_layout.addWidget(self.ripple_button)
-        self.ripple_button.hide()
         self.marker_button = IconButton(
             icon=IconName.MARKER,
             tooltip="Marqueur au playhead (M)",
@@ -1391,7 +1386,6 @@ class TimelinePanel(QWidget):
             lambda: self.marker_add_requested.emit(self.playhead_seconds)
         )
         left_layout.addWidget(self.marker_button)
-        self.marker_button.hide()
 
         # --- Bloc central : ajout de pistes ------------------------------
         center_block = QWidget()

@@ -1643,7 +1643,7 @@ class MainWindow(QMainWindow):
         # Les objets de navigation restent disponibles pour les raccourcis,
         # la synchronisation du rail et la compatibilité de l'API, sans
         # dupliquer la navigation à l'écran.
-        top_nav_row = QWidget()
+        top_nav_row = QWidget(bar)
         top_nav_layout = QHBoxLayout(top_nav_row)
         top_nav_layout.setContentsMargins(0, 0, 0, 0)
         top_nav_layout.setSpacing(2)
@@ -1706,7 +1706,9 @@ class MainWindow(QMainWindow):
         base_pixmap = make_icon(IconName.RESET, size=Sizes.icon_button_sm - 4).pixmap(64, 64)
         self.redo_button.setIcon(
             QIcon(base_pixmap.transformed(
-                QTransform().rotate(180), QtCore.SmoothTransformation
+                # Miroir horizontal : une rotation de 180° garderait le
+                # sens antihoraire de la flèche « Annuler ».
+                QTransform().scale(-1, 1), QtCore.SmoothTransformation
             ))
         )
         self.undo_button.clicked.connect(self.undo_last)

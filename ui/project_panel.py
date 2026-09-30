@@ -282,6 +282,10 @@ class ProjectPanel(QWidget):
         self.folder_tree = FolderTreeWidget()
         self.folder_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.folder_tree.setMinimumHeight(110)
+        # Le bloc de navigation est à hauteur fixe (``sizeHint``) : sans
+        # plafond, l'arbre réclame ~210 px, surtout vides, et repousse la
+        # timeline sous le bord d'une fenêtre 1440 × 900. Au-delà, il défile.
+        self.folder_tree.setMaximumHeight(156)
         self.folder_tree.folder_selected.connect(self._on_folder_selected)
         self.folder_tree.folder_create_requested.connect(
             self._on_folder_create_requested
