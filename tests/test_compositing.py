@@ -1,7 +1,9 @@
+import json
+
 from core.compositing import (BlendMode, ChromaKey, Compositing, Mask, MaskKeyframe,
                               MaskShape, build_ffmpeg_filters, evaluate_mask)
 from core.project_model import Project
-from core.project_io import save_project, load_project
+from core.project_io import CURRENT_VERSION, load_project, save_project
 from core.project_model import Clip, MediaAsset, Track
 from core.render_plan import build_render_plan
 
@@ -22,6 +24,11 @@ def test_compositing_kut_round_trip_and_old_default(tmp_path):
     clip = Clip("c", "a", "V1", 0, 0, 1, compositing=comp)
     project.media_assets.append(asset); project.tracks.append(Track("V1", "V1", "video", clips=[clip]))
     path = tmp_path / "x.kut"; save_project(project, str(path))
+    # Le compositing est un ajout rétrocompatible au schéma v12. Éviter une
+    # hausse de version protège les lecteurs de la tâche 32 et constitue une
+    # régression explicitement couverte par les suites graphics/project_io.
+    assert CURRENT_VERSION == 12
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 12
     restored = load_project(str(path)).tracks[0].clips[0]
     assert restored.compositing == comp
     assert build_render_plan(load_project(str(path))).video_layers[0].compositing == comp

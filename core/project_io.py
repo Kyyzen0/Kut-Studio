@@ -75,8 +75,12 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 13
-"""Version courante du format. À incrémenter lors de changements incompatibles."""
+CURRENT_VERSION = 12
+"""Version courante du format public ``.kut``.
+
+Le compositing reste un champ optionnel du schéma v12 : son absence produit
+l'état neutre, donc il ne justifie pas une rupture de format.
+"""
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
