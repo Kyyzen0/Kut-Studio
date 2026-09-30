@@ -311,7 +311,7 @@ class PropertiesPanel(QWidget):
         title.setStyleSheet(label_style(10, "muted", 800))
         header_layout.addWidget(title)
 
-        # Onglets : Inspecteur / Couleur / Effets / Audio.
+        # Onglets : Inspecteur / Couleur / Effets / Audio / Graphiques.
         # Utilisation de QPushButton ``checkable`` plutôt que
         # ``QListWidget`` pour garantir un affichage horizontal compact.
         self.inspector_tabs_row = QWidget()
@@ -319,7 +319,9 @@ class PropertiesPanel(QWidget):
         self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
         self.inspector_tabs_layout.setSpacing(Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
-        for index, label in enumerate(("Inspecteur", "Couleur", "Effets", "Audio")):
+        for index, label in enumerate(
+            ("Inspecteur", "Couleur", "Effets", "Audio", "Graphiques")
+        ):
             button = QPushButton(label)
             button.setObjectName("inspectorTab")
             button.setCheckable(True)
@@ -329,7 +331,7 @@ class PropertiesPanel(QWidget):
             button.setStyleSheet(
                 f"QPushButton#inspectorTab {{ background: transparent;"
                 f" color: {COLORS['muted']}; border: 1px solid transparent;"
-                f" border-radius: 6px; padding: 5px 10px;"
+                f" border-radius: 6px; padding: 5px 6px;"
                 f" font-weight: 600; font-size: 11px; }}"
                 f"QPushButton#inspectorTab:hover {{ color: {COLORS['text']};"
                 f" background: {COLORS['surface_hover']}; }}"
@@ -712,7 +714,7 @@ class PropertiesPanel(QWidget):
         # Le panneau gagne une barre d'onglets : Inspecteur (par
         # défaut, tout visible), Couleur (color_group + project),
         # Effets (transition + mouvement), Audio (audio_group +
-        # volume).
+        # volume), Graphiques (géométrie + sous-titres).
         self._tab_groups: dict[int, list[QWidget]] = {
             0: [
                 project_group,
@@ -733,6 +735,8 @@ class PropertiesPanel(QWidget):
                 self.effects_group],  # Effets
             3: [project_group, audio_group, self.audio_group,
                 self.audio_effects_group],  # Audio
+            4: [project_group, clip_group, self.movement_group,
+                self.subtitle_group],  # Graphiques
         }
         all_groups = [project_group, clip_group, self.transition_group,
                       self.color_group, self.movement_group, self.speed_group,

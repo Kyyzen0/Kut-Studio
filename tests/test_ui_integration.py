@@ -2200,6 +2200,24 @@ def test_color_navigation_is_synchronised_between_top_bar_and_left_rail(
     assert window.properties_panel._active_inspector_tab == 1
 
 
+def test_audio_and_graphics_top_navigation_select_the_right_inspector_tabs(
+    qtbot, monkeypatch
+) -> None:
+    """Audio et Graphiques pilotent aussi le panneau de droite."""
+    window = _build_window(qtbot, monkeypatch)
+
+    window._select_top_nav(4)
+    assert window.side_rail.active() == "audio"
+    assert window.properties_panel._active_inspector_tab == 3
+    assert window.properties_panel.inspector_tab_buttons[3].isChecked()
+
+    window._select_top_nav(5)
+    assert window.side_rail.active() == "graphics"
+    assert window.properties_panel._active_inspector_tab == 4
+    assert window.properties_panel.inspector_tab_buttons[4].isChecked()
+    assert window.properties_panel.inspector_tab_buttons[4].text() == "Graphiques"
+
+
 def test_left_navigation_uses_readable_labels(qtbot, monkeypatch) -> None:
     """Le rail ne dépend plus d'icônes ambiguës pour identifier ses menus."""
     window = _build_window(qtbot, monkeypatch)

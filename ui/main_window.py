@@ -634,9 +634,9 @@ class MainWindow(QMainWindow):
         - ``media`` : on affiche le panneau Médias ;
         - ``audio`` / ``text`` / ``effects`` / ``transitions`` : on rend
           le panneau Médias visible et on y affiche le contenu demandé ;
-        - ``color`` : on ouvre directement l'onglet Couleur de
-          l'inspecteur ;
-        - ``edit`` / ``graphics`` / ``templates`` :
+        - ``color`` / ``graphics`` : on ouvre directement l'onglet
+          correspondant de l'inspecteur ;
+        - ``edit`` / ``templates`` :
           aucune action concrète disponible aujourd'hui — on laisse
           l'état actif visuellement et on affiche un message discret
           pour rester honnête vis-à-vis de l'utilisateur.
@@ -656,11 +656,13 @@ class MainWindow(QMainWindow):
             for index, button in enumerate(self.top_nav_buttons):
                 button.setChecked(index == top_nav_index)
 
-        if section_id == "color":
+        inspector_tab = {"color": 1, "audio": 3, "graphics": 4}.get(section_id)
+        if inspector_tab is not None:
             if not self.workspace.is_visible(PanelId.INSPECTOR):
                 self.workspace.set_panel_visible(PanelId.INSPECTOR, True)
-            self.properties_panel._select_inspector_tab(1)
-            return
+            self.properties_panel._select_inspector_tab(inspector_tab)
+            if section_id in ("color", "graphics"):
+                return
 
         if section_id in ("media", "audio", "text", "effects", "transitions"):
             # S'assurer que le panneau Médias est visible.
