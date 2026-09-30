@@ -123,6 +123,36 @@ def test_preview_window_schedules_segments(qtbot, tmp_path, monkeypatch):
     window.close()
 
 
+def test_preview_cache_completion_refreshes_monitor_only_once(
+    qtbot, tmp_path, monkeypatch
+):
+    """Les notifications idle répétées ne doivent pas resynchroniser toute l'UI."""
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "preview"))
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    calls = []
+    monkeypatch.setattr(
+        window,
+        "_present_cached_preview_at",
+        lambda timeline_time: calls.append(timeline_time) or True,
+    )
+    window._on_preview_engine_state(
+        SimpleNamespace(pending=1, running=0, cached_segments=0)
+    )
+    window._on_preview_engine_state(
+        SimpleNamespace(pending=0, running=0, cached_segments=1)
+    )
+    window._on_preview_engine_state(
+        SimpleNamespace(pending=0, running=0, cached_segments=1)
+    )
+    assert calls == [window.playhead_seconds]
+    window.close()
+
+
 def test_preferences_has_render_quality(qtbot):
     from ui.preferences_dialog import PreferencesDialog
 

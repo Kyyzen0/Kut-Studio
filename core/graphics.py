@@ -99,7 +99,16 @@ def graphic_defaults(
 
 
 def ensure_graphics_track(project: Project) -> Track:
-    existing = next((track for track in project.tracks if track.type == "graphics"), None)
+    # Ne jamais injecter silencieusement un nouveau clip dans une piste que
+    # l'utilisateur a verrouillée ou masquée. Une nouvelle piste G visible est
+    # moins surprenante et respecte les mêmes garanties d'édition que l'UI.
+    existing = next(
+        (
+            track for track in project.tracks
+            if track.type == "graphics" and not track.locked and track.visible
+        ),
+        None,
+    )
     if existing is not None:
         return existing
     numbers = []
@@ -179,7 +188,10 @@ def update_graphic(clip: Clip, field_name: str, value: object) -> GraphicOverlay
         raise ValueError("Ce clip ne porte pas de calque graphique.")
     if field_name not in GraphicOverlay.__dataclass_fields__ or field_name == "type":
         raise ValueError(f"Propriété graphique inconnue : {field_name!r}.")
-    graphic = replace(clip.graphic, **{field_name: value})
+    current = clip.graphic
+    graphic = replace(current, **{field_name: value})
+    if graphic == current:
+        return current
     clip.graphic = graphic
     if field_name == "text":
         clip.text = graphic.text

@@ -1372,9 +1372,7 @@ class MainWindow(QMainWindow):
         if recorder is not None and recorder.is_recording:
             pcm, rate, channels = recorder.stop()
             self._place_recording(pcm, rate, channels, quiet=True)
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         self._write_autosave()
         if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
             self._autosave_timer.stop()
@@ -1867,9 +1865,7 @@ class MainWindow(QMainWindow):
         self._schedule_autosave()
 
     def _mark_clean(self) -> None:
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         self.project_dirty = False
         self.history.mark_saved()
         self._refresh_undo_redo_state()
@@ -1892,8 +1888,23 @@ class MainWindow(QMainWindow):
             if timer is not None:
                 timer.stop()
             self._color_session_active = False
+        # Même principe pour une saisie graphique encore ouverte : l'action
+        # courante capture son état final sans laisser un timer enregistrer un
+        # snapshot obsolète plus tard.
+        if getattr(self, "_graphic_session_active", False):
+            timer = getattr(self, "_graphic_session_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._graphic_session_active = False
         self.history.record(self.project, label)
         self._refresh_undo_redo_state()
+
+    def _finalize_pending_edit_sessions(self) -> None:
+        """Ferme les éditions différées avant sauvegarde ou navigation."""
+        self._flush_subtitle_history_record()
+        self._finalize_transform_session()
+        self._finalize_color_history()
+        self._finalize_graphic_history()
 
     def _refresh_undo_redo_state(self) -> None:
         """Synchronise les actions et indicateurs undo/redo."""
@@ -1961,9 +1972,7 @@ class MainWindow(QMainWindow):
 
     def undo_last(self) -> None:
         """Annule la dernière opération enregistrée."""
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         snapshot = self.history.undo()
         if snapshot is None:
             return
@@ -1971,9 +1980,7 @@ class MainWindow(QMainWindow):
 
     def redo_last(self) -> None:
         """Rétablit la dernière opération annulée."""
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         snapshot = self.history.redo()
         if snapshot is None:
             return
@@ -2672,9 +2679,7 @@ class MainWindow(QMainWindow):
 
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         self._release_open_project()
         self.project = create_default_project()
         self.current_project_path = None
@@ -2766,9 +2771,7 @@ class MainWindow(QMainWindow):
         d'erreur est affiché et l'état courant de l'application reste
         intact.
         """
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         try:
             loaded = load_project(path)
         except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
@@ -3276,23 +3279,10 @@ class MainWindow(QMainWindow):
         # composition complète (effets, couleur, graphiques, sous-titres et
         # transforms). En pause, ils deviennent donc la source prioritaire du
         # moniteur dès qu'ils sont disponibles.
-        if not self.is_playing:
-            cached_preview = self._cached_preview_at(float(self.playhead_seconds))
-            if cached_preview is not None:
-                cached_path, segment_start = cached_preview
-                self.preview_panel.preview_at(
-                    cached_path,
-                    max(0.0, float(self.playhead_seconds) - segment_start),
-                )
-                self.preview_panel.apply_transform(
-                    position_x=0.0,
-                    position_y=0.0,
-                    scale=1.0,
-                    rotation=0.0,
-                    opacity=1.0,
-                )
-                self.preview_panel.set_effects(())
-                return active_clips
+        if not self.is_playing and self._present_cached_preview_at(
+            float(self.playhead_seconds)
+        ):
+            return active_clips
 
         video_clips = [c for c in active_clips if c.track_type == "video"]
         if not video_clips:
@@ -3501,9 +3491,7 @@ class MainWindow(QMainWindow):
         self._set_preview_play_icon(False)
 
     def on_clip_selected(self, clip_id):
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
+        self._finalize_pending_edit_sessions()
         view = self.timeline_panel.find_view_by_id(clip_id)
         if view is None:
             return
@@ -4294,17 +4282,72 @@ class MainWindow(QMainWindow):
         """Applique une propriété intrinsèque du calque avec Undo/Redo."""
         from core.graphics import update_graphic
 
+        if not bool(getattr(self, "_graphic_session_active", False)):
+            self._finalize_transform_session()
+        clip, track = self._find_clip_and_track(clip_id)
+        if (
+            clip is None
+            or track is None
+            or track.type != "graphics"
+            or bool(track.locked)
+        ):
+            return
         try:
-            clip = find_clip(self.project, clip_id)
-            update_graphic(clip, field_name, value)
-        except (KeyError, TypeError, ValueError) as exc:
+            before = clip.graphic
+            updated = update_graphic(clip, field_name, value)
+        except (TypeError, ValueError) as exc:
             self.statusBar().showMessage(f"Modification graphique refusée : {exc}", 5000)
             return
-        self._record_history("Modifier un calque graphique")
-        self._reload_timeline_preserving_selection(clip_id)
+        if updated is before:
+            return
+        self._schedule_graphic_history(clip_id)
         self._invalidate_preview_for_clip(clip_id)
-        self._sync_preview_to_timeline()
+        self._schedule_graphic_preview_refresh()
+
+    def _schedule_graphic_history(self, clip_id: str) -> None:
+        """Regroupe une saisie ou une rafale de spinbox en un seul Undo."""
+        active = bool(getattr(self, "_graphic_session_active", False))
+        previous_clip = getattr(self, "_graphic_session_clip_id", None)
+        if active and previous_clip != clip_id:
+            self._finalize_graphic_history()
+            active = False
+        self._graphic_session_active = True
+        self._graphic_session_clip_id = clip_id
+        if not active:
+            self._graphic_session_label = "Modifier un calque graphique"
+        timer = getattr(self, "_graphic_session_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._finalize_graphic_history)
+            self._graphic_session_timer = timer
+        timer.start(400)
         self._mark_dirty()
+
+    def _finalize_graphic_history(self) -> None:
+        if not bool(getattr(self, "_graphic_session_active", False)):
+            return
+        timer = getattr(self, "_graphic_session_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._graphic_session_active = False
+        clip_id = getattr(self, "_graphic_session_clip_id", None)
+        label = getattr(
+            self, "_graphic_session_label", "Modifier un calque graphique"
+        )
+        self._record_history(label)
+        if clip_id:
+            self._reload_timeline_preserving_selection(clip_id)
+
+    def _schedule_graphic_preview_refresh(self) -> None:
+        """Évite de relancer FFmpeg à chaque caractère saisi."""
+        timer = getattr(self, "_graphic_preview_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._sync_preview_to_timeline)
+            self._graphic_preview_timer = timer
+        timer.start(120)
 
     def import_subtitles_via_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -4892,6 +4935,8 @@ class MainWindow(QMainWindow):
         fin d'une rafale (debounce ~400 ms), pour ne pas polluer
         l'historique avec des dizaines d'entrées par seconde.
         """
+        if not bool(getattr(self, "_transform_session_active", False)):
+            self._finalize_graphic_history()
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
@@ -5005,6 +5050,8 @@ class MainWindow(QMainWindow):
         clip_local_time: float,
         value: float,
     ):
+        if not bool(getattr(self, "_transform_session_active", False)):
+            self._finalize_graphic_history()
         try:
             set_transform_keyframe(
                 self.project, clip_id, property_name, clip_local_time, value
@@ -5031,6 +5078,7 @@ class MainWindow(QMainWindow):
     def on_transform_keyframe_removed(
         self, clip_id: str, property_name: str, clip_local_time: float
     ):
+        self._finalize_graphic_history()
         self._finalize_transform_session()
         try:
             remove_transform_keyframe(
@@ -5052,6 +5100,7 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
 
     def on_transform_reset(self, clip_id: str) -> None:
+        self._finalize_graphic_history()
         self._finalize_transform_session()
         try:
             reset_clip_transform(self.project, clip_id)
@@ -5767,6 +5816,8 @@ class MainWindow(QMainWindow):
         if panel is None:
             return
         computing = bool(getattr(state, "pending", 0) or getattr(state, "running", 0))
+        was_computing = bool(getattr(self, "_preview_was_computing", False))
+        self._preview_was_computing = computing
         try:
             if computing:
                 panel.set_render_state(True, i18n.translate("preview.computing"))
@@ -5778,8 +5829,10 @@ class MainWindow(QMainWindow):
                     # Le rendu vient de se terminer : remplace immédiatement
                     # le média source par le segment composé, sans attendre un
                     # mouvement de la tête de lecture.
-                    if not bool(getattr(self, "is_playing", False)):
-                        self._sync_preview_to_timeline()
+                    if was_computing and not bool(getattr(self, "is_playing", False)):
+                        self._present_cached_preview_at(
+                            float(getattr(self, "playhead_seconds", 0.0))
+                        )
         except Exception:
             pass
 
@@ -5870,6 +5923,27 @@ class MainWindow(QMainWindow):
                 if path is not None:
                     return str(path), start
         return None
+
+    def _present_cached_preview_at(self, timeline_time: float) -> bool:
+        """Affiche directement un segment composé, sans réévaluer la timeline."""
+        cached_preview = self._cached_preview_at(timeline_time)
+        if cached_preview is None:
+            return False
+        cached_path, segment_start = cached_preview
+        self.preview_panel.preview_at(
+            cached_path, max(0.0, timeline_time - segment_start)
+        )
+        # Le segment inclut déjà transform et effets : les réappliquer dans
+        # QGraphicsVideoItem doublerait le traitement.
+        self.preview_panel.apply_transform(
+            position_x=0.0,
+            position_y=0.0,
+            scale=1.0,
+            rotation=0.0,
+            opacity=1.0,
+        )
+        self.preview_panel.set_effects(())
+        return True
 
     def _refresh_preview_cache_state(self) -> None:
         """Invalide/actualise l'état du cache après une modification."""

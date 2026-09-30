@@ -52,6 +52,25 @@ def test_generated_graphic_is_not_reported_as_missing() -> None:
     assert collect_missing_assets(project) == []
 
 
+def test_add_graphic_never_mutates_a_locked_or_hidden_track() -> None:
+    project = _project()
+    first = add_graphic_clip(project, "text", timeline_start=0.0)
+    original_track = project.tracks[0]
+    original_track.locked = True
+    second = add_graphic_clip(project, "rectangle", timeline_start=1.0)
+
+    assert [clip.id for clip in original_track.clips] == [first.id]
+    assert len(project.tracks) == 2
+    assert project.tracks[1].id == "G2"
+    assert project.tracks[1].clips == [second]
+
+    project.tracks[1].visible = False
+    third = add_graphic_clip(project, "solid", timeline_start=2.0)
+    assert len(project.tracks) == 3
+    assert project.tracks[2].id == "G3"
+    assert project.tracks[2].clips == [third]
+
+
 def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
     from core.project_io import CURRENT_VERSION, load_project, save_project
 
@@ -171,6 +190,85 @@ def test_graphics_ui_creation_edit_and_undo(qtbot, tmp_path, monkeypatch) -> Non
         if item.id == clip.id
     )
     assert restored.graphic.fill_color == "#FF5500"
+    window.close()
+
+
+def test_graphic_edits_are_coalesced_and_noop_is_ignored(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Une saisie continue ne doit ni copier ni reconstruire le projet en boucle."""
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "preview"))
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.add_graphic_at_playhead("text")
+    clip = next(
+        item for track in window.project.tracks if track.type == "graphics"
+        for item in track.clips
+    )
+    initial_steps = len(window.history._undo_stack)
+
+    window.on_graphic_property_changed(clip.id, "text", "B")
+    window.on_graphic_property_changed(clip.id, "text", "Bo")
+    window.on_graphic_property_changed(clip.id, "text", "Bonjour")
+    assert len(window.history._undo_stack) == initial_steps
+    qtbot.wait(450)
+    assert len(window.history._undo_stack) == initial_steps + 1
+
+    # Réappliquer la même valeur ne crée aucune nouvelle session d'historique.
+    window.on_graphic_property_changed(clip.id, "text", "Bonjour")
+    qtbot.wait(450)
+    assert len(window.history._undo_stack) == initial_steps + 1
+    window.undo_last()
+    restored = next(
+        item for track in window.project.tracks if track.type == "graphics"
+        for item in track.clips if item.id == clip.id
+    )
+    assert restored.graphic.text == "Votre titre"
+    window.close()
+
+
+def test_graphic_and_transform_edits_keep_separate_undo_steps(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "preview"))
+    from core.timeline_operations import find_clip
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.add_graphic_at_playhead("text")
+    clip = next(
+        item for track in window.project.tracks if track.type == "graphics"
+        for item in track.clips
+    )
+    window.on_graphic_property_changed(clip.id, "text", "Titre propre")
+    window.on_transform_property_changed(clip.id, "position_x", 0.4)
+
+    window.undo_last()
+    after_transform_undo = find_clip(window.project, clip.id)
+    assert after_transform_undo.graphic.text == "Titre propre"
+    assert after_transform_undo.transform.position_x == pytest.approx(0.0)
+    window.undo_last()
+    after_graphic_undo = find_clip(window.project, clip.id)
+    assert after_graphic_undo.graphic.text == "Votre titre"
+    window.close()
+
+
+def test_locked_graphic_rejects_property_edits(qtbot, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "preview"))
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.add_graphic_at_playhead("rectangle")
+    track = next(track for track in window.project.tracks if track.type == "graphics")
+    clip = track.clips[0]
+    original = clip.graphic.fill_color
+    track.locked = True
+    window.on_graphic_property_changed(clip.id, "fill_color", "#FF0000")
+    assert clip.graphic.fill_color == original
     window.close()
 
 

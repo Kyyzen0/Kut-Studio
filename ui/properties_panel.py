@@ -24,15 +24,12 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QInputDialog,
     QPushButton,
     QScrollArea,
     QSlider,
-    QSpinBox,
-    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -66,6 +63,7 @@ from core.visual_effects import (
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
+from ui.graphics_editor import GraphicsEditor
 from ui.text_style_editor import TextStyleEditor
 from ui.theme import COLORS, label_style
 
@@ -293,7 +291,6 @@ class PropertiesPanel(QWidget):
         self._allow_audio_effect_signals = True
         self._current_color_grade = ColorGrade.identity()
         self._allow_color_signals = True
-        self._allow_graphic_signals = True
         self.color_preset_store = ColorPresetStore()
         self.setObjectName("properties_panel")
         self.setStyleSheet(
@@ -680,7 +677,8 @@ class PropertiesPanel(QWidget):
         self.movement_group.setEnabled(False)
 
         # ----- Calque graphique (tâche 32) ----------------------------
-        self.graphics_group = self._build_graphics_group()
+        self.graphics_group = GraphicsEditor(self.group_style())
+        self.graphics_group.field_changed.connect(self._emit_graphic_property)
         layout.insertWidget(layout.indexOf(self.movement_group), self.graphics_group)
 
         # ----- Audio (mixage non destructif) ---------------------------
@@ -1015,115 +1013,9 @@ class PropertiesPanel(QWidget):
         if self.selected_clip is not None:
             self.color_grade_reset_requested.emit(self.selected_clip.id)
 
-    def _build_graphics_group(self) -> QGroupBox:
-        group = QGroupBox("Calque graphique")
-        group.setObjectName("graphicsGroup")
-        group.setStyleSheet(self.group_style())
-        form = QFormLayout(group)
-        form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
-        form.setSpacing(Spacing.xs)
-
-        self.graphic_type_label = QLabel("--")
-        self.graphic_type_label.setStyleSheet(label_style(12, "text", 700))
-        form.addRow("Type", self.graphic_type_label)
-
-        self.graphic_text_edit = QTextEdit()
-        self.graphic_text_edit.setFixedHeight(64)
-        self.graphic_text_edit.setPlaceholderText("Texte du titre")
-        self.graphic_text_edit.textChanged.connect(
-            lambda: self._emit_graphic_property(
-                "text", self.graphic_text_edit.toPlainText()
-            )
-        )
-        form.addRow("Texte", self.graphic_text_edit)
-
-        self.graphic_source_label = QLabel("--")
-        self.graphic_source_label.setWordWrap(True)
-        self.graphic_source_label.setStyleSheet(label_style(10, "muted", 500))
-        form.addRow("Source", self.graphic_source_label)
-
-        self.graphic_width_spin = QSpinBox()
-        self.graphic_width_spin.setRange(2, 8192)
-        self.graphic_width_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("width", int(value))
-        )
-        self.graphic_height_spin = QSpinBox()
-        self.graphic_height_spin.setRange(2, 8192)
-        self.graphic_height_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("height", int(value))
-        )
-        size_row = QWidget()
-        size_layout = QHBoxLayout(size_row)
-        size_layout.setContentsMargins(0, 0, 0, 0)
-        size_layout.setSpacing(Spacing.xs)
-        size_layout.addWidget(self.graphic_width_spin)
-        size_layout.addWidget(QLabel("×"))
-        size_layout.addWidget(self.graphic_height_spin)
-        form.addRow("Taille", size_row)
-
-        self.graphic_color_edits: dict[str, QLineEdit] = {}
-        for field_name, label, default in (
-            ("fill_color", "Couleur", "#FFFFFF"),
-            ("stroke_color", "Contour", "#000000"),
-            ("shadow_color", "Ombre", "#000000AA"),
-        ):
-            edit = QLineEdit(default)
-            edit.setMaxLength(9)
-            edit.editingFinished.connect(
-                lambda name=field_name, widget=edit: self._emit_graphic_property(
-                    name, widget.text()
-                )
-            )
-            self.graphic_color_edits[field_name] = edit
-            form.addRow(label, edit)
-
-        self.graphic_stroke_width_spin = QSpinBox()
-        self.graphic_stroke_width_spin.setRange(0, 64)
-        self.graphic_stroke_width_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("stroke_width", int(value))
-        )
-        form.addRow("Épaisseur", self.graphic_stroke_width_spin)
-
-        self.graphic_font_family_edit = QLineEdit("Sans Serif")
-        self.graphic_font_family_edit.editingFinished.connect(
-            lambda: self._emit_graphic_property(
-                "font_family", self.graphic_font_family_edit.text()
-            )
-        )
-        form.addRow("Police", self.graphic_font_family_edit)
-        self.graphic_font_size_spin = QSpinBox()
-        self.graphic_font_size_spin.setRange(6, 512)
-        self.graphic_font_size_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("font_size", int(value))
-        )
-        form.addRow("Corps", self.graphic_font_size_spin)
-
-        self.graphic_shadow_x_spin = QSpinBox()
-        self.graphic_shadow_x_spin.setRange(-256, 256)
-        self.graphic_shadow_x_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("shadow_offset_x", int(value))
-        )
-        self.graphic_shadow_y_spin = QSpinBox()
-        self.graphic_shadow_y_spin.setRange(-256, 256)
-        self.graphic_shadow_y_spin.valueChanged.connect(
-            lambda value: self._emit_graphic_property("shadow_offset_y", int(value))
-        )
-        shadow_row = QWidget()
-        shadow_layout = QHBoxLayout(shadow_row)
-        shadow_layout.setContentsMargins(0, 0, 0, 0)
-        shadow_layout.setSpacing(Spacing.xs)
-        shadow_layout.addWidget(QLabel("X"))
-        shadow_layout.addWidget(self.graphic_shadow_x_spin)
-        shadow_layout.addWidget(QLabel("Y"))
-        shadow_layout.addWidget(self.graphic_shadow_y_spin)
-        form.addRow("Décalage ombre", shadow_row)
-        group.setEnabled(False)
-        return group
-
     def _emit_graphic_property(self, field_name: str, value: object) -> None:
         if (
-            self._allow_graphic_signals
-            and self.selected_clip is not None
+            self.selected_clip is not None
             and self.selected_clip_track_type == "graphics"
         ):
             self.graphic_property_changed.emit(
@@ -1131,40 +1023,7 @@ class PropertiesPanel(QWidget):
             )
 
     def update_graphic_from_clip(self, graphic: object) -> None:
-        from core.graphics import GraphicOverlay, GraphicType
-
-        self._allow_graphic_signals = False
-        try:
-            if not isinstance(graphic, GraphicOverlay):
-                self.graphics_group.setEnabled(False)
-                self.graphic_type_label.setText("--")
-                self.graphic_text_edit.clear()
-                self.graphic_source_label.setText("--")
-                return
-            names = {
-                GraphicType.TEXT: "Titre",
-                GraphicType.RECTANGLE: "Rectangle",
-                GraphicType.SOLID: "Aplat",
-                GraphicType.IMAGE: "Image",
-            }
-            self.graphic_type_label.setText(names[graphic.type])
-            self.graphic_text_edit.setPlainText(graphic.text)
-            self.graphic_text_edit.setVisible(graphic.type == GraphicType.TEXT)
-            self.graphic_source_label.setText(graphic.source_path or "Généré")
-            self.graphic_width_spin.setValue(graphic.width)
-            self.graphic_height_spin.setValue(graphic.height)
-            for name, edit in self.graphic_color_edits.items():
-                edit.setText(str(getattr(graphic, name)))
-            self.graphic_stroke_width_spin.setValue(graphic.stroke_width)
-            self.graphic_font_family_edit.setText(graphic.font_family)
-            self.graphic_font_size_spin.setValue(graphic.font_size)
-            self.graphic_shadow_x_spin.setValue(graphic.shadow_offset_x)
-            self.graphic_shadow_y_spin.setValue(graphic.shadow_offset_y)
-            is_text = graphic.type == GraphicType.TEXT
-            self.graphic_font_family_edit.setEnabled(is_text)
-            self.graphic_font_size_spin.setEnabled(is_text)
-        finally:
-            self._allow_graphic_signals = True
+        self.graphics_group.set_graphic(graphic)
 
     def _build_audio_group(self) -> QGroupBox:
         """Groupe de mixage du clip sélectionné.
