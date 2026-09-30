@@ -2020,11 +2020,18 @@ def _escape_filter_path(path: str) -> str:
     """Prépare un chemin pour une valeur de filtre FFmpeg entre apostrophes.
 
     Le nom explicite ``filename='…'`` du filtre ``subtitles`` est important
-    sous Windows : sans guillemets, la lettre de lecteur est traitée comme
-    l'option positionnelle ``original_size``. Les slashs sont acceptés par
-    les trois plateformes et évitent aussi un double niveau d'échappement.
+    sous Windows : sans lui, la lettre de lecteur est traitée comme l'option
+    positionnelle ``original_size``. Même dans une valeur entre apostrophes,
+    FFmpeg sépare ses options sur ``:`` : le ``C:`` doit donc rester
+    ``C\\:``. Les slashs sont acceptés par les trois plateformes et évitent
+    aussi un double niveau d'échappement.
     """
-    return str(path).replace("\\", "/").replace("'", "\\'")
+    return (
+        str(path)
+        .replace("\\", "/")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+    )
 
 
 def _subtitle_fontsdir(*, platform_name: str | None = None) -> str | None:

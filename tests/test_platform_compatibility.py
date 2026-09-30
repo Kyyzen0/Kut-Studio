@@ -81,7 +81,7 @@ def test_windows_filter_path_is_safe_in_a_quoted_filename_value() -> None:
     from core.export_engine import _escape_filter_path
 
     assert _escape_filter_path(r"C:\Users\Runner\subtitle.srt") == (
-        "C:/Users/Runner/subtitle.srt"
+        r"C\:/Users/Runner/subtitle.srt"
     )
 
 

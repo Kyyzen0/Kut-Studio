@@ -15,9 +15,10 @@ Couvre :
 
 from __future__ import annotations
 
-import textwrap
+import os
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -863,7 +864,14 @@ def test_grade_filters_identity_only_emits_eq() -> None:
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
 def test_generated_color_chain_is_accepted_by_real_ffmpeg(tmp_path) -> None:
-    cube = tmp_path / "identity.cube"
+    # Sous Windows, le chemin absolu porte déjà une lettre de lecteur ``C:``.
+    # Sous POSIX on injecte un ``:`` dans un composant pour couvrir le même
+    # séparateur FFmpeg sans fabriquer un chemin Windows invalide.
+    cube_directory = tmp_path
+    if os.name != "nt":
+        cube_directory = tmp_path / "path:with-colon"
+        cube_directory.mkdir()
+    cube = cube_directory / "identity.cube"
     cube.write_text(_cube_text(), encoding="utf-8")
     points = list(ColorCurve.identity().points)
     points[8] = (points[8][0], 0.7)
