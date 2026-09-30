@@ -237,6 +237,8 @@ class Clip:
     # ``GraphicOverlay`` pour les clips de piste ``graphics`` ; ``None``
     # pour tous les projets historiques et les autres types de clips.
     graphic: object = None
+    # Masques, incrustation et mode de fusion (tâche 33).
+    compositing: object = field(default_factory=lambda: _default_compositing())
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
 
@@ -561,3 +563,8 @@ class Project:
             self.library_assignments = {}
         if self.color_presets is None:
             self.color_presets = []
+
+
+def _default_compositing():
+    from .compositing import Compositing
+    return Compositing()
