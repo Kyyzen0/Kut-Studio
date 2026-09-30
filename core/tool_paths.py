@@ -48,8 +48,21 @@ def bundled_tool_path(
 
 
 def find_media_tool(name: str) -> str | None:
-    """Résout d'abord le binaire embarqué, puis le ``PATH`` système."""
-    return bundled_tool_path(name) or shutil.which(name)
+    """Résout les overrides/bundles, Homebrew complet, puis le PATH.
+
+    Sur macOS, ``ffmpeg-full`` est keg-only et fournit libass, absent
+    du paquet Homebrew minimal. Aucun changement du PATH utilisateur
+    n'est nécessaire. Windows et Linux gardent la résolution habituelle.
+    """
+    bundled = bundled_tool_path(name)
+    if bundled:
+        return bundled
+    if sys.platform == "darwin" and name in {"ffmpeg", "ffprobe"}:
+        for prefix in ("/opt/homebrew", "/usr/local"):
+            full = shutil.which(name, path=f"{prefix}/opt/ffmpeg-full/bin")
+            if full:
+                return full
+    return shutil.which(name)
 
 
 __all__ = ["bundled_tool_path", "find_media_tool"]

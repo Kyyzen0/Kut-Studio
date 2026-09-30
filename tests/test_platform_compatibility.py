@@ -4,6 +4,52 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.parametrize("name", ["ffmpeg", "ffprobe"])
+@pytest.mark.parametrize("prefix", ["/opt/homebrew", "/usr/local"])
+def test_macos_prefers_full_homebrew_tools(monkeypatch, name, prefix):
+    from core import tool_paths
+
+    monkeypatch.setattr(tool_paths.sys, "platform", "darwin")
+    monkeypatch.setattr(tool_paths, "bundled_tool_path", lambda name: None)
+    expected = f"{prefix}/opt/ffmpeg-full/bin/{name}"
+    monkeypatch.setattr(
+        tool_paths.shutil, "which",
+        lambda name, path=None: expected if path == f"{prefix}/opt/ffmpeg-full/bin"
+        else (f"/system/{name}" if path is None else None),
+    )
+    assert tool_paths.find_media_tool(name) == expected
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+def test_media_tools_keep_explicit_override_priority(monkeypatch, platform):
+    from core import tool_paths
+
+    monkeypatch.setattr(tool_paths.sys, "platform", platform)
+    monkeypatch.setattr(tool_paths, "bundled_tool_path", lambda name: "configured-tool")
+    def unexpected_lookup(*args, **kwargs):
+        pytest.fail("An explicit/bundled tool must not be replaced")
+    monkeypatch.setattr(tool_paths.shutil, "which", unexpected_lookup)
+    assert tool_paths.find_media_tool("ffmpeg") == "configured-tool"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+def test_media_tools_fall_back_to_system_path(monkeypatch, platform):
+    from core import tool_paths
+
+    monkeypatch.setattr(tool_paths.sys, "platform", platform)
+    monkeypatch.setattr(tool_paths, "bundled_tool_path", lambda name: None)
+    calls = []
+    def lookup(name, path=None):
+        calls.append(path)
+        return "system-tool" if path is None else None
+    monkeypatch.setattr(tool_paths.shutil, "which", lookup)
+    assert tool_paths.find_media_tool("ffmpeg") == "system-tool"
+    if platform != "darwin":
+        assert calls == [None]
+
 
 def test_native_config_directories_for_all_platforms() -> None:
     from core.platform_paths import user_config_dir

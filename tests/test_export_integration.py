@@ -268,8 +268,10 @@ def test_export_request_validates_fps_and_resolution(qtbot, tmp_path, fake_ffmpe
 
 def _require_ffmpeg() -> tuple[str, str]:
     """Retourne les chemins de ffmpeg et ffprobe, ou skip le test."""
-    ffmpeg = shutil.which("ffmpeg")
-    ffprobe = shutil.which("ffprobe")
+    from core.tool_paths import find_media_tool
+
+    ffmpeg = find_media_tool("ffmpeg")
+    ffprobe = find_media_tool("ffprobe")
     if not ffmpeg or not ffprobe:
         pytest.skip("ffmpeg/ffprobe introuvables dans le PATH")
     return ffmpeg, ffprobe
@@ -854,18 +856,18 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     )
 
     engine.start(request)
+    subtitle_files = [Path(path) for path in engine._temporary_files]
+    assert subtitle_files, "L'export doit créer un fichier de sous-titres"
+    assert all(path.is_file() for path in subtitle_files)
     finished, failed = _wait_for_export(engine, timeout_ms=30000)
 
     assert not failed, f"ffmpeg a échoué : {failed}"
     assert finished, "finished_ok aurait dû être émis"
     assert output_path.exists()
 
-    # 4. Le SRT temporaire est nettoyé après succès.
-    import glob as _glob
-
-    leftover_post = _glob.glob("/tmp/kut-studio-subtitles-*.srt") + _glob.glob(
-        "/var/folders/**/kut-studio-subtitles-*.srt", recursive=True
-    )
+    # 4. Seuls les temporaires de cet export (SRT ou ASS) sont contrôlés.
+    # Aucun chemin système imposé ni dépendance aux anciennes sessions.
+    leftover_post = [path for path in subtitle_files if path.exists()]
     assert leftover_post == [], (
         f"SRT temporaires non nettoyés : {leftover_post}"
     )

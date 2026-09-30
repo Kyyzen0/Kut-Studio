@@ -3,26 +3,23 @@
 from __future__ import annotations
 
 
-def test_preview_command_uses_same_graph_as_export():
-    import tempfile
-
+def test_preview_command_uses_same_graph_as_export(tmp_path):
     from core.export_engine import ExportEngine
     from core.filter_graph import build_filter_complex, build_preview_command
 
     from tests.test_preview_fidelity import _project_with_clip
 
     _project, plan = _project_with_clip()
-    tmp = tempfile.NamedTemporaryFile(suffix=".srt", delete=False)
-    tmp.write(b"1\n00:00:00,000 --> 00:00:01,000\nHi\n")
-    tmp.close()
+    subtitle = tmp_path / "subtitle.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nHi\n", encoding="utf-8")
     out_w, out_h = 960, 540
     expected_complex = ExportEngine._build_filter_complex(
-        plan, out_w, out_h, 30, tmp.name
+        plan, out_w, out_h, 30, str(subtitle)
     )[0]
     command = build_preview_command(
         plan, width=1920, height=1080, fps=30, quality="standard",
-        start=0.0, duration=2.0, output_path="/tmp/seg.mp4",
-        srt_path=tmp.name,
+        start=0.0, duration=2.0, output_path=str(tmp_path / "seg.mp4"),
+        srt_path=str(subtitle),
     )
     idx = command.index("-filter_complex")
     assert command[idx + 1] == expected_complex
@@ -55,12 +52,20 @@ def test_no_preview_cache_inside_kut(tmp_path):
     """Le .kut ne doit jamais contenir de chemin de cache d'apercu."""
     from core.project_factory import create_default_project
     from core.project_io import load_project, save_project
+    from core.preview_cache import DiskPreviewCache, PreviewSegmentKey
 
     project = create_default_project()
+    cache = DiskPreviewCache(directory=tmp_path / "preview-cache")
+    key = PreviewSegmentKey("intro", 0.0, 2.0, "standard", "test")
+    segment = cache.path_for(key)
+    segment.write_bytes(b"cached preview")
+    assert cache.lookup(key) == segment
     target = tmp_path / "film.kut"
     save_project(project, str(target))
     raw = target.read_text(encoding="utf-8")
-    assert "preview" not in raw.lower() or "preview" in raw.lower() and True
+    assert "preview" not in raw.lower()
+    assert segment.name not in raw
+    assert str(cache.directory) not in raw
     # Le rechargement reste valide, sans champ parasite.
     loaded = load_project(str(target))
     assert loaded.name == project.name
@@ -76,8 +81,9 @@ def test_preview_panel_indicators(qtbot):
     panel.show()
     panel.set_render_state(True, "Calcul de l'aperçu…")
     assert panel.preview_render_badge.text() != ""
+    assert not panel.preview_render_badge.isHidden()
     panel.set_render_state(False)
-    assert panel.preview_render_badge.text() == "" or True
+    assert panel.preview_render_badge.isHidden()
     panel.set_cache_state(True, "Aperçu en cache")
     assert panel.preview_cache_pill.text() != ""
 

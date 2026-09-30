@@ -44,6 +44,12 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
   faithful preview, scopes and export)
 - A platform supported by PySide6: macOS, Windows, or Linux
 
+Subtitle burn-in requires FFmpeg's `subtitles` filter (libass).
+Kut-Studio automatically finds Homebrew's `ffmpeg-full` on Apple Silicon
+and Intel Macs. Explicit overrides and bundled tools take priority.
+Windows and Linux use the configured tools or system `PATH`; CI checks
+libass support on all three systems.
+
 To build a standalone application, install PyInstaller as well.
 
 ## 🚀 Installation
@@ -62,7 +68,7 @@ python -m pip install -r requirements.txt
 Install FFmpeg with your platform package manager, for example:
 
 ```bash
-brew install ffmpeg             # macOS with Homebrew
+brew install ffmpeg-full        # macOS with Homebrew (includes libass)
 # winget install Gyan.FFmpeg    # Windows
 # sudo apt install ffmpeg       # Debian / Ubuntu
 ```
@@ -233,10 +239,16 @@ source .venv/bin/activate      # macOS / Linux
 python -m pip install -r requirements.txt
 ```
 
+L'incrustation des sous-titres nécessite le filtre `subtitles` de FFmpeg
+(libass). Kut-Studio détecte automatiquement `ffmpeg-full` de Homebrew
+sur Mac Apple Silicon et Intel. Les binaires configurés ou embarqués
+restent prioritaires. Sous Windows et Linux, les outils configurés ou
+le `PATH` système sont utilisés ; la CI vérifie libass sur les trois systèmes.
+
 Installez ensuite FFmpeg avec le gestionnaire de paquets de votre système :
 
 ```bash
-brew install ffmpeg             # macOS avec Homebrew
+brew install ffmpeg-full        # macOS avec Homebrew (inclut libass)
 # winget install Gyan.FFmpeg    # Windows
 # sudo apt install ffmpeg       # Debian / Ubuntu
 ```

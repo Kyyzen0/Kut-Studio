@@ -33,7 +33,9 @@ jobs:
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
-        run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+        run: |
+          brew list ffmpeg-full >/dev/null 2>&1 || brew install ffmpeg-full
+          echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
 
       - name: Install FFmpeg and Qt runtime (Linux)
         if: runner.os == 'Linux'
@@ -53,6 +55,12 @@ jobs:
         run: |
           ffmpeg -version
           ffprobe -version
+
+      - name: Verify subtitle rendering support (libass)
+        run: >-
+          python -c "from core.export_engine import require_ffmpeg, _ffmpeg_supports_subtitles;
+          print('FFmpeg:', require_ffmpeg());
+          assert _ffmpeg_supports_subtitles(), 'FFmpeg must include the subtitles filter (libass)'"
 
       - name: Run test suite
         run: python -m pytest -q
