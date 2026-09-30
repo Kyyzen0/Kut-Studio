@@ -68,7 +68,7 @@ from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError, probe_media, probe_video
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
-from core.project_model import MediaAsset, Project
+from core.project_model import Clip, MediaAsset, Project
 from core.subtitle_io import load_srt, parse_srt, save_srt
 from core.shortcuts import resolve_shortcut
 from core.scopes import ColorSpace, ScopeResult, VideoLevels
