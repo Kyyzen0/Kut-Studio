@@ -61,6 +61,7 @@ from .time_remapping import (
     get_ffmpeg_reverse_filter,
     get_ffmpeg_speed_filter,
 )
+from .tool_paths import find_media_tool
 from .visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
@@ -70,7 +71,7 @@ from .visual_effects import (
 )
 
 
-_ffmpeg_path = shutil.which("ffmpeg")
+_ffmpeg_path = find_media_tool("ffmpeg")
 
 
 def require_ffmpeg() -> str:
@@ -80,7 +81,7 @@ def require_ffmpeg() -> str:
     ouvrir l'application) ne doit jamais planter sur une machine sans
     FFmpeg — seul le démarrage d'un export l'exige.
     """
-    path = _ffmpeg_path or shutil.which("ffmpeg")
+    path = _ffmpeg_path or find_media_tool("ffmpeg")
     if path is None:
         raise ImportError(
             "ffmpeg est requis pour l'export Kut-Studio mais est introuvable dans le PATH."
@@ -97,7 +98,7 @@ def _ffmpeg_supports_subtitles() -> bool:
     """
     if hasattr(_ffmpeg_supports_subtitles, "_cached"):
         return _ffmpeg_supports_subtitles._cached  # type: ignore[attr-defined]
-    ffmpeg = _ffmpeg_path or shutil.which("ffmpeg")
+    ffmpeg = _ffmpeg_path or find_media_tool("ffmpeg")
     if ffmpeg is None:
         _ffmpeg_supports_subtitles._cached = False  # type: ignore[attr-defined]
         return False
@@ -1997,17 +1998,14 @@ def _subtitle_fontsdir() -> str:
     fallback inoffensif qui n'existe pas. Le ``fontsdir`` est fourni à
     libass pour qu'il résolve les familles de polices génériques.
     """
-    candidates = [
-        "/System/Library/Fonts",
-        "/Library/Fonts",
-        "/usr/share/fonts/truetype/dejavu",
-        "/usr/share/fonts",
-        "/etc",
-    ]
-    for path in candidates:
-        if os.path.isdir(path):
-            return path
-    return "/"
+    from .platform_paths import system_font_dirs
+
+    for path in system_font_dirs():
+        if path.is_dir():
+            return str(path)
+    # Libass conserve son fournisseur système si aucun dossier usuel
+    # n'existe (installation Windows/Linux minimale).
+    return str(Path.home())
 
 
 _SUBTITLE_FORCE_STYLE_RAW = (

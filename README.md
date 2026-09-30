@@ -40,7 +40,8 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 
 - Python **3.10+**
 - `pip`
-- **FFmpeg** available from your `PATH` (required to launch the application and export videos)
+- **FFmpeg + ffprobe** available from your `PATH` (required for media import,
+  faithful preview, scopes and export)
 - A platform supported by PySide6: macOS, Windows, or Linux
 
 To build a standalone application, install PyInstaller as well.
@@ -82,10 +83,25 @@ python main.py
 
 ```bash
 python -m pip install pyinstaller
-.venv/bin/python build.py
+python build.py
 ```
 
 The build creates a windowed `Kut-Studio` application in `dist/`.
+
+PyInstaller builds are native: run the command separately on macOS, Windows
+and Linux. The CI workflow does this automatically on all three systems.
+
+To embed local FFmpeg binaries in a build, set `KUT_STUDIO_FFMPEG_DIR` to a
+folder containing `ffmpeg` and `ffprobe` (`.exe` on Windows) before running
+`build.py`. At runtime Kut-Studio checks the embedded `bin/` folder first,
+then the configured folder, then the system `PATH`.
+
+## 🖥️ Platform compatibility
+
+Every push and pull request runs the complete tests, an offscreen UI smoke
+test, a native PyInstaller build and a packaged-app smoke test on macOS,
+Windows and Ubuntu. Configuration, cache, font and executable paths follow
+each operating system's conventions.
 
 ## 🗺️ Interface overview
 
@@ -198,7 +214,8 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 
 - Python **3.10+**
 - `pip`
-- **FFmpeg** accessible dans le `PATH` — il est nécessaire au lancement de l’application et à l’export.
+- **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
+  l’import, l’aperçu fidèle, les scopes et l’export.
 - macOS, Windows ou Linux compatible avec PySide6
 
 PyInstaller est aussi nécessaire pour créer une application autonome.
@@ -240,10 +257,25 @@ python main.py
 
 ```bash
 python -m pip install pyinstaller
-.venv/bin/python build.py
+python build.py
 ```
 
 Le build produit une application graphique `Kut-Studio` dans `dist/`.
+
+Un build PyInstaller est natif : la commande doit être exécutée séparément
+sur macOS, Windows et Linux. La CI le fait automatiquement sur les trois OS.
+
+Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
+contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
+`build.py`. Kut-Studio cherche d’abord dans son dossier `bin/`, puis dans le
+dossier configuré, puis dans le `PATH` système.
+
+## 🖥️ Compatibilité des plateformes
+
+Chaque push et pull request exécute les tests complets, un smoke test UI, un
+build PyInstaller natif et un smoke test de l’application empaquetée sur
+macOS, Windows et Ubuntu. Les chemins de configuration, cache, polices et
+outils sont adaptés à chaque système.
 
 ## ⌨️ Raccourcis clavier
 

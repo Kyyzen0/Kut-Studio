@@ -9,6 +9,11 @@ def main():
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+    if "--smoke-test" in sys.argv:
+        app.processEvents()
+        window.close()
+        app.processEvents()
+        return 0
     return app.exec()
 
 

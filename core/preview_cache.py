@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .platform_paths import user_cache_dir
+
 
 SEGMENT_SECONDS = 2.0
 DEFAULT_BUDGET_BYTES = 512 * 1024 * 1024
@@ -32,18 +34,13 @@ def default_cache_dir(custom=None):
     """Dossier de cache (jamais dans le projet .kut)."""
     if custom:
         return Path(custom)
+    # Compatibilité : cette variable a toujours désigné directement le
+    # dossier des segments, contrairement au cache système qui porte un
+    # sous-dossier ``preview``.
     env = os.environ.get("KUT_STUDIO_CACHE_DIR")
     if env:
         return Path(env)
-    base = os.environ.get("XDG_CACHE_HOME")
-    if base:
-        return Path(base) / "kut-studio" / "preview"
-    home = Path.home()
-    import sys
-
-    if sys.platform == "darwin":
-        return home / "Library" / "Caches" / "Kut-Studio" / "preview"
-    return home / ".cache" / "kut-studio" / "preview"
+    return user_cache_dir() / "preview"
 
 
 def _quantize(value, step=0.001):

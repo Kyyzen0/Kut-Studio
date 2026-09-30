@@ -17,6 +17,8 @@ import os
 import shutil
 import subprocess
 
+from .tool_paths import bundled_tool_path
+
 
 def waveform_bins(pixel_width: int, height_mode: str) -> int:
     """Nombre de colonnes, quantifié pour ne pas recalculer à chaque pixel."""
@@ -104,7 +106,7 @@ def extract_waveform_peaks(path: str, bins: int) -> tuple[float, ...] | None:
     Le décodage est borné par un timeout. Il doit être appelé hors du
     thread d'interface.
     """
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
     if ffmpeg is None or not os.path.isfile(path):
         return None
     try:
@@ -145,7 +147,7 @@ def extract_waveform_peaks(path: str, bins: int) -> tuple[float, ...] | None:
 
 def extract_thumbnail(path: str, time_seconds: float, width: int = 160) -> bytes | None:
     """Extrait une image PNG à ``time_seconds``. À appeler hors de l'interface."""
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
     if ffmpeg is None or not os.path.isfile(path):
         return None
     safe_width = max(32, min(320, int(width)))

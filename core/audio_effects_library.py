@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Iterable, Sequence
+
+from .platform_paths import user_config_dir
 
 from .audio_effects_model import (
     AudioEffect,
@@ -417,23 +418,7 @@ def _user_presets_dir(
     settings_dir: str | os.PathLike[str] | None = None,
 ) -> Path:
     """Répertoire de stockage des préférences utilisateur."""
-    if settings_dir is not None:
-        return Path(settings_dir)
-    env = os.environ.get("KUT_STUDIO_CONFIG_DIR")
-    if env:
-        return Path(env)
-    home = Path.home()
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "Kut-Studio"
-        return home / "Kut-Studio"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Kut-Studio"
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / "kut-studio"
-    return home / ".config" / "kut-studio"
+    return user_config_dir(settings_dir)
 
 
 def audio_effect_presets_path(

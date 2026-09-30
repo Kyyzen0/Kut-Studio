@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -37,6 +36,7 @@ from .text_style import (
     TextStyle,
     default_text_style,
 )
+from .platform_paths import user_config_dir
 
 
 # ---------------------------------------------------------------------------
@@ -353,23 +353,7 @@ TEXT_PRESETS_FILE: str = "text_presets.json"
 def _user_presets_dir(
     settings_dir: str | os.PathLike[str] | None = None,
 ) -> Path:
-    if settings_dir is not None:
-        return Path(settings_dir)
-    env = os.environ.get("KUT_STUDIO_CONFIG_DIR")
-    if env:
-        return Path(env)
-    home = Path.home()
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "Kut-Studio"
-        return home / "Kut-Studio"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Kut-Studio"
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / "kut-studio"
-    return home / ".config" / "kut-studio"
+    return user_config_dir(settings_dir)
 
 
 def text_presets_path(

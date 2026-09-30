@@ -23,6 +23,8 @@ import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+from .platform_paths import user_config_dir
+
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -244,25 +246,7 @@ def _default_settings_dir() -> Path:
     Aucune exception : ce helper ne lève jamais en utilisation normale
     (la cible peut toujours être créée).
     """
-    env = os.environ.get("KUT_STUDIO_CONFIG_DIR")
-    if env:
-        return Path(env)
-    home = Path.home()
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "Kut-Studio"
-        return home / "Kut-Studio"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Kut-Studio"
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / "kut-studio"
-    return home / ".config" / "kut-studio"
-
-
-# ``sys`` est importé paresseusement pour rendre la fonction pure en CLI.
-import sys  # noqa: E402  - import local pour isoler le helper.
+    return user_config_dir()
 
 
 # ---------------------------------------------------------------------------

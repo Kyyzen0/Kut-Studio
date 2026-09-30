@@ -45,6 +45,7 @@ from .effects_model import (
     default_parameters,
     validate_parameters,
 )
+from .platform_paths import user_config_dir
 
 if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
     from .project_model import Clip, Project
@@ -580,26 +581,7 @@ def _user_presets_dir(
        ``~/Library/Application Support/Kut-Studio`` (macOS),
        ``%APPDATA%/Kut-Studio`` (Windows).
     """
-    if settings_dir is not None:
-        return Path(settings_dir)
-    env = os.environ.get("KUT_STUDIO_CONFIG_DIR")
-    if env:
-        return Path(env)
-    home = Path.home()
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "Kut-Studio"
-        return home / "Kut-Studio"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Kut-Studio"
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    if xdg:
-        return Path(xdg) / "kut-studio"
-    return home / ".config" / "kut-studio"
-
-
-import sys  # noqa: E402  - import paresseux pour isoler le helper.
+    return user_config_dir(settings_dir)
 
 
 def user_presets_path(

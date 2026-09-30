@@ -30,6 +30,7 @@ import uuid
 from pathlib import Path
 
 from .project_model import MediaAsset
+from .tool_paths import bundled_tool_path
 
 
 class MediaProbeError(Exception):
@@ -63,7 +64,7 @@ def probe_media(path: str) -> MediaAsset:
     if not os.path.isfile(path):
         raise MediaProbeError(f"Fichier média introuvable : {path}")
 
-    ffprobe_path = shutil.which("ffprobe")
+    ffprobe_path = bundled_tool_path("ffprobe") or shutil.which("ffprobe")
     if ffprobe_path is None:
         raise MediaProbeError(
             "ffprobe est introuvable dans le PATH. "

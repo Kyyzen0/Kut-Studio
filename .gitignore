@@ -6,3 +6,8 @@ venv/
 
 # Artifactes runtime générés par Kut-Studio.
 subtitles.srt
+
+# Builds multiplateformes PyInstaller.
+build/
+dist/
+*.spec
