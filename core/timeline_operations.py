@@ -859,12 +859,18 @@ def snap_timeline_position(
 
 
 def _require_video_clip(project: Project, clip_id: str) -> Clip:
-    """Retourne le clip après avoir vérifié qu'il appartient à une piste vidéo."""
+    """Retourne un clip visuel (vidéo ou graphique).
+
+    Le nom historique est conservé pour éviter de casser les imports
+    externes, mais les calques ``graphics`` partagent désormais le même
+    modèle de transform et d'images-clés que la vidéo.
+    """
     track, index = _find_track_for_clip(project, clip_id)
-    if track.type != "video":
+    if track.type not in {"video", "graphics"}:
         raise ValueError(
             f"Le clip '{clip_id}' est sur une piste '{track.type}' ; "
-            "les transformations visuelles ne s'appliquent qu'aux pistes vidéo."
+            "les transformations visuelles ne s'appliquent qu'aux pistes "
+            "vidéo ou graphiques."
         )
     return track.clips[index]
 

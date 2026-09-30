@@ -101,6 +101,9 @@ class ProjectPanel(QWidget):
     preset_new_clip_requested = Signal(str)  # preset_id
     preset_save_requested = Signal(str, object, object, str)
     preset_delete_requested = Signal(str)  # preset_id
+    # Bibliothèque de calques graphiques (tâche 32)
+    graphic_create_requested = Signal(str)  # text / rectangle / solid
+    graphic_import_requested = Signal()  # image overlay
     # --- Organisation avancée de la bibliothèque (tâche 25) ---
     # Dossiers
     folder_create_requested = Signal(str, object, str)
@@ -224,6 +227,7 @@ class ProjectPanel(QWidget):
 
         # ----- Champ de recherche --------------------------------------
         search_row = QWidget()
+        self.library_search_row = search_row
         search_row.setStyleSheet(f"background: {COLORS['panel']};")
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
@@ -242,6 +246,7 @@ class ProjectPanel(QWidget):
         # vivent déjà dans le rail et les menus du haut : les répéter ici
         # encombrait la colonne sans offrir d'action supplémentaire.
         browse_content = QWidget()
+        self.library_browse_content = browse_content
         browse_content.setObjectName("libraryBrowse")
         browse_content.setStyleSheet(
             f"background: {COLORS['panel']};"
@@ -334,6 +339,9 @@ class ProjectPanel(QWidget):
 
         self.transition_view = TransitionLibraryView(self)
         self.content_stack.addWidget(self.transition_view)
+
+        self.graphics_view = GraphicsLibraryView(self)
+        self.content_stack.addWidget(self.graphics_view)
         # Chaque page est faite pour défiler : on neutralise leur
         # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
         # sinon la pile réserve cette hauteur et la grille de vignettes
@@ -342,6 +350,7 @@ class ProjectPanel(QWidget):
         for page in (
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
+            self.graphics_view,
         ):
             page.setMinimumHeight(0)
             page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -352,6 +361,7 @@ class ProjectPanel(QWidget):
         # qui revient à la grille de vignettes. L'action primaire garde
         # l'accent turquoise, l'import reste secondaire.
         actions = QWidget()
+        self.library_actions = actions
         actions.setStyleSheet(
             f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
         )
@@ -403,6 +413,12 @@ class ProjectPanel(QWidget):
         self.effects_view.apply_requested.connect(self.effect_apply_requested)
         self.effects_view.save_requested.connect(self.effect_preset_save_requested)
         self.effects_view.delete_requested.connect(self.effect_preset_delete_requested)
+        self.graphics_view.create_requested.connect(
+            self.graphic_create_requested.emit
+        )
+        self.graphics_view.import_requested.connect(
+            self.graphic_import_requested.emit
+        )
 
     # ------------------------------------------------------------------
     # Filtres et scopes
@@ -606,11 +622,16 @@ class ProjectPanel(QWidget):
             "text": 2,
             "effects": 3,
             "transitions": 4,
+            "graphics": 5,
         }.get(section_id)
         if page_index is None:
             return
         self._active_page_index = page_index
         self.content_stack.setCurrentIndex(page_index)
+        show_asset_chrome = page_index in {0, 1}
+        self.library_search_row.setVisible(show_asset_chrome)
+        self.library_browse_content.setVisible(show_asset_chrome)
+        self.library_actions.setVisible(show_asset_chrome)
         self._refresh_count()
         self._sync_add_button_for_active_tab()
 
@@ -2882,6 +2903,76 @@ class EffectPresetCard(QFrame):
         self._badge.setText(
             translate(f"effects.category.{preset.category.value}").upper()
         )
+
+
+class GraphicsLibraryView(QWidget):
+    """Bibliothèque compacte de générateurs de calques graphiques."""
+
+    create_requested = Signal(str)
+    import_requested = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+        layout.setSpacing(Spacing.sm)
+
+        title = QLabel("CALQUES GRAPHIQUES")
+        title.setStyleSheet(label_style(11, "muted_strong", 800))
+        layout.addWidget(title)
+        intro = QLabel(
+            "Ajoutez un titre, une forme, un aplat ou une image à la tête "
+            "de lecture. Chaque élément devient un clip animable sur G1."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet(label_style(11, "muted", 500))
+        layout.addWidget(intro)
+
+        entries = (
+            ("Titre", "Texte éditable avec contour et ombre", "text", IconName.TEXT),
+            ("Rectangle", "Forme colorée redimensionnable", "rectangle", IconName.COLOR),
+            ("Aplat", "Fond de couleur plein cadre", "solid", IconName.FILM),
+        )
+        self.create_buttons: dict[str, IconButton] = {}
+        for name, description, kind, icon in entries:
+            card = QFrame()
+            card.setObjectName("graphicCard")
+            card.setStyleSheet(
+                f"QFrame#graphicCard {{ background: {COLORS['panel_alt']};"
+                f" border: 1px solid {COLORS['border']}; border-radius: 8px; }}"
+            )
+            row = QHBoxLayout(card)
+            row.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
+            labels = QVBoxLayout()
+            heading = QLabel(name)
+            heading.setStyleSheet(label_style(12, "text", 700))
+            detail = QLabel(description)
+            detail.setWordWrap(True)
+            detail.setStyleSheet(label_style(10, "muted", 500))
+            labels.addWidget(heading)
+            labels.addWidget(detail)
+            row.addLayout(labels, 1)
+            button = IconButton(
+                icon=icon, text="Ajouter", tooltip=f"Ajouter : {name}",
+                square=False, size=Sizes.icon_button,
+            )
+            button.clicked.connect(
+                lambda _checked=False, value=kind: self.create_requested.emit(value)
+            )
+            self.create_buttons[kind] = button
+            row.addWidget(button)
+            layout.addWidget(card)
+
+        self.import_image_button = IconButton(
+            icon=IconName.IMPORT,
+            text="Importer une image…",
+            tooltip="Créer un calque graphique depuis une image",
+            square=False,
+            size=Sizes.icon_button,
+        )
+        self.import_image_button.clicked.connect(self.import_requested.emit)
+        layout.addWidget(self.import_image_button)
+        layout.addStretch(1)
 
 
 class EffectsLibraryView(QWidget):

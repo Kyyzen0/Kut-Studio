@@ -30,6 +30,8 @@ ajoute le style non destructif des sous-titres (``text_style`` par
 clip). La version 11 ajoute l'organisation de la bibliothèque :
 ``library_folders``, ``library_tags`` et ``library_assignments`` (par
 média : ``folder_id`` et liste de ``tag_ids``).
+La version 12 ajoute les pistes et clips graphiques non destructifs
+(``graphic`` : texte, forme, aplat ou image).
 Les versions précédentes restent lisibles : ces champs prennent leurs
 valeurs par défaut (liste d'effets vide, style standard pour
 ``text_style``, organisation de bibliothèque vide). La version 4
@@ -71,10 +73,12 @@ from .visual_effects import ClipTransform, TransformKeyframe
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 11
+CURRENT_VERSION = 12
 """Version courante du format. À incrémenter lors de changements incompatibles."""
 
-SUPPORTED_VERSIONS: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11})
+SUPPORTED_VERSIONS: frozenset[int] = frozenset(
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+)
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
 Les versions 1 à 8 restent prises en charge ; les champs spécifiques
@@ -395,6 +399,9 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "color_grade": _color_grade_to_dict(
                                 getattr(clip, "color_grade", None)
                             ),
+                            "graphic": _graphic_to_dict(
+                                getattr(clip, "graphic", None)
+                            ),
                             "text_style": clip.text_style.to_dict(),
                         }
                         for clip in track.clips
@@ -572,7 +579,10 @@ def _deserialize_track(
         clip_kwargs = {
             key: value
             for key, value in raw_clip.items()
-            if key not in {"transform", "transform_keyframes", "time_remapping", "effects"}
+            if key not in {
+                "transform", "transform_keyframes", "time_remapping", "effects",
+                "graphic",
+            }
             and key in _CLIP_KNOWN_FIELDS
         }
         clip_kwargs["transform"] = _dict_to_transform(
@@ -617,6 +627,7 @@ def _deserialize_track(
             raw_clip.get("color_grade"),
             project_root=project_root,
         )
+        clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
         # Style texte (tâche 24) : rétrocompatible — un clip sans la
         # clé ``text_style`` reçoit le style standard par défaut, ce
         # qui correspond exactement au rendu historique.
@@ -658,6 +669,18 @@ def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:
         "rotation": float(transform.rotation),
         "opacity": float(transform.opacity),
     }
+
+
+def _graphic_to_dict(graphic: object) -> dict[str, Any] | None:
+    from .graphics import graphic_to_dict
+
+    return graphic_to_dict(graphic)
+
+
+def _dict_to_graphic(raw: object):
+    from .graphics import graphic_from_dict
+
+    return graphic_from_dict(raw)
 
 
 def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:

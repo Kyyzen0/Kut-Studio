@@ -286,6 +286,12 @@ class MainWindow(QMainWindow):
         self.project_panel.export_subtitles_requested.connect(self.export_subtitles_via_dialog)
         self.project_panel.subtitle_selected.connect(self.on_subtitle_clip_selected)
         self.project_panel.add_transition_requested.connect(self.add_transition_from_library)
+        self.project_panel.graphic_create_requested.connect(
+            self.add_graphic_at_playhead
+        )
+        self.project_panel.graphic_import_requested.connect(
+            self.import_graphic_image
+        )
         # --- Organisation avancée de la bibliothèque (tâche 25) ---
         # Dossiers
         self.project_panel.folder_create_requested.connect(
@@ -459,6 +465,9 @@ class MainWindow(QMainWindow):
         )
         self.properties_panel.color_grade_reset_requested.connect(
             self.on_color_grade_reset
+        )
+        self.properties_panel.graphic_property_changed.connect(
+            self.on_graphic_property_changed
         )
         # Tâche 22 : bibliothèque d'effets et presets.
         # ``UserPresetStore`` conserve la liste des presets utilisateur
@@ -661,10 +670,12 @@ class MainWindow(QMainWindow):
             if not self.workspace.is_visible(PanelId.INSPECTOR):
                 self.workspace.set_panel_visible(PanelId.INSPECTOR, True)
             self.properties_panel._select_inspector_tab(inspector_tab)
-            if section_id in ("color", "graphics"):
+            if section_id == "color":
                 return
 
-        if section_id in ("media", "audio", "text", "effects", "transitions"):
+        if section_id in (
+            "media", "audio", "text", "effects", "transitions", "graphics"
+        ):
             # S'assurer que le panneau Médias est visible.
             if not self.workspace.is_visible(PanelId.MEDIA):
                 self.workspace.set_panel_visible(PanelId.MEDIA, True)
@@ -3260,9 +3271,37 @@ class MainWindow(QMainWindow):
             len(active_clips),
         )
         active_clips = apply_solo(self.project, active_clips)
+
+        # Les segments produits par le moteur fidèle contiennent déjà la
+        # composition complète (effets, couleur, graphiques, sous-titres et
+        # transforms). En pause, ils deviennent donc la source prioritaire du
+        # moniteur dès qu'ils sont disponibles.
+        if not self.is_playing:
+            cached_preview = self._cached_preview_at(float(self.playhead_seconds))
+            if cached_preview is not None:
+                cached_path, segment_start = cached_preview
+                self.preview_panel.preview_at(
+                    cached_path,
+                    max(0.0, float(self.playhead_seconds) - segment_start),
+                )
+                self.preview_panel.apply_transform(
+                    position_x=0.0,
+                    position_y=0.0,
+                    scale=1.0,
+                    rotation=0.0,
+                    opacity=1.0,
+                )
+                self.preview_panel.set_effects(())
+                return active_clips
+
         video_clips = [c for c in active_clips if c.track_type == "video"]
         if not video_clips:
             self.preview_panel.show_empty()
+            if any(c.track_type == "graphics" for c in active_clips):
+                try:
+                    self._schedule_preview_around(float(self.playhead_seconds))
+                except Exception:
+                    pass
             return active_clips
         top_clip = video_clips[-1]
         self.preview_panel.preview_at(top_clip.source_path, top_clip.source_time)
@@ -3978,7 +4017,15 @@ class MainWindow(QMainWindow):
         de la bibliothèque (dossiers / tags / affectations) et les badges
         d'utilisation des médias (tâche 25).
         """
-        self.project_panel.set_assets(list(self.project.media_assets))
+        # Les médias techniques des calques G vivent dans le projet pour
+        # garantir l'intégrité des clips, mais leurs modèles se choisissent
+        # dans la bibliothèque Graphiques : ne pas les dupliquer dans Médias.
+        self.project_panel.set_assets(
+            [
+                asset for asset in self.project.media_assets
+                if asset.media_type != "graphic"
+            ]
+        )
         subtitle_clips = [
             clip
             for track in self.project.tracks
@@ -4154,6 +4201,109 @@ class MainWindow(QMainWindow):
         self._update_timeline_duration()
         self._refresh_project_library()
         self.timeline_panel.select_clip(clip.id)
+        self._mark_dirty()
+
+    # ------------------------------------------------------------------
+    # Tâche 32 : calques graphiques
+    # ------------------------------------------------------------------
+
+    def add_graphic_at_playhead(self, graphic_type: str) -> None:
+        """Ajoute un calque généré sur G1 et ouvre son inspecteur."""
+        from core.graphics import add_graphic_clip
+
+        try:
+            clip = add_graphic_clip(
+                self.project,
+                graphic_type,
+                timeline_start=self.playhead_seconds,
+                duration=5.0,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            QMessageBox.warning(self, "Graphique", str(exc))
+            return
+        self._record_history("Ajouter un calque graphique")
+        self._reload_timeline_preserving_selection(clip.id)
+        self._update_timeline_duration()
+        self._refresh_project_library()
+        self.timeline_panel.select_clip(clip.id)
+        self.on_clip_selected(clip.id)
+        self.properties_panel._select_inspector_tab(4)
+        self._invalidate_preview_for_clip(clip.id)
+        self._mark_dirty()
+
+    def import_graphic_image(self) -> None:
+        """Importe une image comme calque graphique animable."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importer une image graphique",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)",
+        )
+        if not path:
+            return
+        from core.graphics import add_graphic_clip
+
+        try:
+            clip = add_graphic_clip(
+                self.project,
+                "image",
+                timeline_start=self.playhead_seconds,
+                duration=5.0,
+                source_path=path,
+            )
+            # Conserve le ratio et la taille intrinsèque de l'image, sans
+            # dépasser le cadre du projet. Le modèle reste indépendant de Qt ;
+            # cette lecture de métadonnées appartient donc à la couche UI.
+            from PySide6.QtGui import QImageReader
+
+            image_size = QImageReader(path).size()
+            if image_size.isValid():
+                source_width = max(1, image_size.width())
+                source_height = max(1, image_size.height())
+                ratio = min(
+                    1.0,
+                    self.project.width / source_width,
+                    self.project.height / source_height,
+                )
+                from core.graphics import update_graphic
+
+                update_graphic(clip, "width", round(source_width * ratio))
+                update_graphic(clip, "height", round(source_height * ratio))
+                asset = next(
+                    item for item in self.project.media_assets
+                    if item.id == clip.asset_id
+                )
+                asset.width = clip.graphic.width
+                asset.height = clip.graphic.height
+        except (FileNotFoundError, ValueError) as exc:
+            QMessageBox.warning(self, "Graphique", str(exc))
+            return
+        self._record_history("Importer une image graphique")
+        self._reload_timeline_preserving_selection(clip.id)
+        self._update_timeline_duration()
+        self._refresh_project_library()
+        self.timeline_panel.select_clip(clip.id)
+        self.on_clip_selected(clip.id)
+        self.properties_panel._select_inspector_tab(4)
+        self._invalidate_preview_for_clip(clip.id)
+        self._mark_dirty()
+
+    def on_graphic_property_changed(
+        self, clip_id: str, field_name: str, value: object
+    ) -> None:
+        """Applique une propriété intrinsèque du calque avec Undo/Redo."""
+        from core.graphics import update_graphic
+
+        try:
+            clip = find_clip(self.project, clip_id)
+            update_graphic(clip, field_name, value)
+        except (KeyError, TypeError, ValueError) as exc:
+            self.statusBar().showMessage(f"Modification graphique refusée : {exc}", 5000)
+            return
+        self._record_history("Modifier un calque graphique")
+        self._reload_timeline_preserving_selection(clip_id)
+        self._invalidate_preview_for_clip(clip_id)
+        self._sync_preview_to_timeline()
         self._mark_dirty()
 
     def import_subtitles_via_dialog(self) -> None:
@@ -4833,7 +4983,10 @@ class MainWindow(QMainWindow):
         """Aligne l'inspecteur Mouvement sur le clip sélectionné et la tête de lecture."""
         panel = self.properties_panel
         selected = panel.selected_clip
-        if selected is None or getattr(selected, "track_type", None) != "video":
+        if (
+            selected is None
+            or getattr(selected, "track_type", None) not in {"video", "graphics"}
+        ):
             return
         try:
             clip = find_clip(self.project, selected.id)
@@ -5622,6 +5775,11 @@ class MainWindow(QMainWindow):
                 cached = int(getattr(state, "cached_segments", 0) or 0)
                 if cached > 0:
                     panel.set_cache_state(True, i18n.translate("preview.cached"))
+                    # Le rendu vient de se terminer : remplace immédiatement
+                    # le média source par le segment composé, sans attendre un
+                    # mouvement de la tête de lecture.
+                    if not bool(getattr(self, "is_playing", False)):
+                        self._sync_preview_to_timeline()
         except Exception:
             pass
 
@@ -5638,7 +5796,7 @@ class MainWindow(QMainWindow):
             plan = build_render_plan(self.project)
         except Exception:
             return []
-        if not plan.video_layers:
+        if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
             return []
         quality = self._render_quality
         params = fingerprint_plan(
@@ -5657,6 +5815,11 @@ class MainWindow(QMainWindow):
                 if start <= cursor < stop:
                     clip_id = layer.clip_id
                     break
+            if clip_id == "timeline":
+                for layer in getattr(plan, "graphics_layers", ()):
+                    if layer.timeline_start <= cursor < layer.timeline_end:
+                        clip_id = layer.clip_id
+                        break
             key = PreviewSegmentKey(
                 clip_id=clip_id, start=cursor, end=seg_end,
                 quality=quality, params_hash=params,
@@ -5683,11 +5846,30 @@ class MainWindow(QMainWindow):
         if bool(self.is_playing):
             return  # lecture : on limite le travail CPU/GPU
         jobs = self._preview_segment_jobs(center)
+        self._last_preview_jobs = list(jobs)
         if jobs:
             try:
                 engine.prefetch_around(float(center), jobs)
             except Exception:
                 pass
+
+    def _cached_preview_at(self, timeline_time: float):
+        """Retourne ``(chemin, début)`` pour le segment fidèle actif."""
+        engine = getattr(self, "preview_engine", None)
+        if engine is None:
+            return None
+        jobs = getattr(self, "_last_preview_jobs", ())
+        for job in jobs:
+            start = float(getattr(job, "start", 0.0))
+            duration = float(getattr(job, "duration", 0.0))
+            if start <= timeline_time < start + duration:
+                try:
+                    path = engine.cache.lookup(job.key)
+                except Exception:
+                    path = None
+                if path is not None:
+                    return str(path), start
+        return None
 
     def _refresh_preview_cache_state(self) -> None:
         """Invalide/actualise l'état du cache après une modification."""

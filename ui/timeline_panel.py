@@ -67,6 +67,7 @@ _TRACK_TYPE_LABELS = {
     "video": "Vidéo",
     "audio": "Audio",
     "subtitle": "Sous-titres",
+    "graphics": "Graphiques",
 }
 _CONTENT_TOP = 8
 _HEIGHTS = {"compact": 40, "normal": 68, "large": 112}
@@ -79,6 +80,7 @@ def _color_for_track_type(track_type: str, palette: ThemePalette) -> str:
         "video": palette.track_video,
         "audio": palette.track_audio,
         "subtitle": palette.track_subtitle,
+        "graphics": palette.clip_adjustment,
     }
     return mapping.get(track_type, palette.accent)
 
@@ -206,9 +208,15 @@ class TrackRowHeader(QFrame):
             return button
 
         # Bouton "état" du type de piste (œil / son / sous-titre).
-        if track.type == "video":
+        if track.type in {"video", "graphics"}:
             state_btn = _btn(
-                IconName.EYE if getattr(track, "visible", True) else IconName.EYE_OFF,
+                (
+                    IconName.COLOR
+                    if track.type == "graphics" and getattr(track, "visible", True)
+                    else IconName.EYE
+                    if getattr(track, "visible", True)
+                    else IconName.EYE_OFF
+                ),
                 translate("tracks.visible_tooltip"),
                 lambda checked: self.visible_toggled.emit(track.id, checked),
                 checkable=True,
@@ -309,7 +317,9 @@ class TrackRowHeader(QFrame):
 
     @staticmethod
     def _prefix_for_type(track_type: str) -> str:
-        return {"video": "V", "audio": "A", "subtitle": "S"}.get(track_type, "T")
+        return {
+            "video": "V", "audio": "A", "subtitle": "S", "graphics": "G"
+        }.get(track_type, "T")
 
     def refresh_state(self, palette: ThemePalette) -> None:
         """Met à jour la pastille de type si la palette change."""
@@ -840,7 +850,7 @@ class ClipWidget(QWidget):
         if not keyframes:
             return
         track_type = getattr(self.view, "track_type", None)
-        if track_type not in {"video", None} and not self.view.track_id.startswith("V"):
+        if track_type not in {"video", "graphics", None} and not self.view.track_id.startswith(("V", "G")):
             return
         duration = max(self.view.end - self.view.start, 1e-6)
         parent = self.parent_timeline

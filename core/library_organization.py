@@ -749,6 +749,10 @@ def _is_asset_missing(asset: MediaAsset) -> bool:
     volontaire se limite à ces deux conditions : on ne tente pas de
     tester une permission, un partage réseau ou un volume démonté.
     """
+    # Les titres, formes et aplats sont des médias techniques générés au
+    # rendu. Ils n'ont volontairement aucun fichier source à relier.
+    if asset.media_type == "graphic" and not asset.path:
+        return False
     if not asset.path:
         return True
     return not os.path.exists(asset.path)

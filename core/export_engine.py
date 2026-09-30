@@ -3,7 +3,7 @@
 Le moteur construit un ``-filter_complex`` complet qui décrit la
 timeline :
 
-1. **Vidéo** : un fond noir de la taille d'export et de durée
+1. **Vidéo et graphiques** : un fond noir de la taille d'export et de durée
    ``timeline_duration``, puis pour chaque :class:`RenderLayer` :
    ``trim``, ``setpts=PTS-STARTPTS``, ``scale`` qui préserve le ratio,
    ``pad``, ``fps``, ``setpts=PTS+timeline_start/TB`` ; chaînage des
@@ -19,8 +19,9 @@ timeline :
 
 Le résultat est un fichier ``mp4`` / ``mov`` contenant à la fois la
 vidéo H.264 / ProRes et une piste audio AAC stéréo 48 kHz. Si le
-projet ne porte aucun média vidéo, l'export échoue avec un message
-clair. S'il porte uniquement de la vidéo sans flux audio exploitable,
+projet ne porte aucun média visuel (vidéo ou graphique), l'export échoue
+avec un message clair. S'il porte uniquement de la vidéo ou des graphiques
+sans flux audio exploitable,
 la sortie contient néanmoins une piste audio silencieuse pour respecter
 la cohérence du conteneur.
 
@@ -43,7 +44,13 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, Signal
 
 from .effects_model import ClipEffect, EffectType
-from .render_plan import AudioLayer, RenderLayer, RenderPlan, RenderTransition
+from .render_plan import (
+    AudioLayer,
+    GraphicLayer,
+    RenderLayer,
+    RenderPlan,
+    RenderTransition,
+)
 from .subtitle_io import format_ass_with_styles, format_srt
 from .text_style import default_text_style, is_default_style as _is_default_style
 from .transitions import TransitionType
@@ -266,7 +273,7 @@ class ExportEngine(QObject):
 
         Lève (via le signal ``failed``) si :
         - un export est déjà en cours ;
-        - le plan de rendu ne contient aucun clip vidéo ;
+        - le plan de rendu ne contient aucun clip visuel ;
         - le dossier de sortie est introuvable ;
         - la build FFmpeg ne supporte pas ``subtitles`` (libass requis).
         """
@@ -276,7 +283,10 @@ class ExportEngine(QObject):
 
         try:
             self._duration_seconds = request.render_plan.duration
-            if not request.render_plan.video_layers:
+            if not (
+                request.render_plan.video_layers
+                or getattr(request.render_plan, "graphics_layers", ())
+            ):
                 raise ValueError("Aucun média vidéo à exporter.")
             if request.render_plan.subtitle_cues and not _ffmpeg_supports_subtitles():
                 raise RuntimeError(
@@ -357,10 +367,11 @@ class ExportEngine(QObject):
             command.extend(["-i", path])
         # Le seek se place juste avant la première entrée : FFmpeg
         # décode alors uniquement ce qui précède la position demandée.
-        first_input = command.index("-i")
-        command[first_input:first_input] = [
-            "-ss", f"{max(0.0, float(playhead)):.3f}",
-        ]
+        if "-i" in command:
+            first_input = command.index("-i")
+            command[first_input:first_input] = [
+                "-ss", f"{max(0.0, float(playhead)):.3f}",
+            ]
         command.extend(["-filter_complex", filter_complex])
         command.extend(["-map", f"[{video_label}]"])
         command.extend([
@@ -539,6 +550,31 @@ class ExportEngine(QObject):
             video_label = "vout"
         else:
             video_label = "bg"
+
+        # ---------------- Graphiques (tâche 32) ----------------
+        # Les calques graphiques sont composés après les pistes vidéo et
+        # avant les sous-titres. Ils partagent les mêmes expressions de
+        # transform que les clips vidéo, donc aperçu et export restent
+        # strictement identiques.
+        for graphic_index, layer in enumerate(
+            getattr(plan, "graphics_layers", ())
+        ):
+            source_label = f"g{graphic_index}"
+            input_index = None
+            source_path = _graphic_input_path(layer.graphic)
+            if source_path:
+                input_index = path_to_index[source_path]
+            parts.append(
+                _build_graphic_layer_filter(
+                    graphic_index, layer, input_index, width, height, fps
+                )
+            )
+            next_label = f"gout{graphic_index}"
+            parts.append(
+                f"[{video_label}][{source_label}]overlay="
+                f"{_build_overlay_args(layer, width, height)}[{next_label}]"
+            )
+            video_label = next_label
 
         # ---------------- Audio ----------------
         silent_base_filter = (
@@ -753,7 +789,28 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
             continue
         path_to_index[layer.source_path] = len(input_paths)
         input_paths.append(layer.source_path)
+    for layer in getattr(plan, "graphics_layers", ()):
+        path = _graphic_input_path(layer.graphic)
+        if not path or path in path_to_index:
+            continue
+        path_to_index[path] = len(input_paths)
+        input_paths.append(path)
     return input_paths, path_to_index
+
+
+def _graphic_input_path(graphic: object) -> str:
+    """Source fichier d'un calque image ou titre rasterisé."""
+    from .graphics import GraphicOverlay, GraphicType
+
+    if not isinstance(graphic, GraphicOverlay):
+        return ""
+    if graphic.type == GraphicType.IMAGE:
+        return graphic.source_path
+    if graphic.type == GraphicType.TEXT:
+        from .graphics_raster import rasterize_text_graphic
+
+        return rasterize_text_graphic(graphic)
+    return ""
 
 
 def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[str, RenderLayer]]:
@@ -1275,8 +1332,107 @@ def _build_animated_opacity_expr(
     )
 
 
+def _ffmpeg_graphic_color(value: str) -> str:
+    """Convertit ``#RRGGBB[AA]`` vers une couleur acceptée par FFmpeg."""
+    text = str(value or "#FFFFFF").lstrip("#")
+    if len(text) not in (6, 8):
+        text = "FFFFFF"
+    rgb = text[:6]
+    if len(text) == 8:
+        alpha = int(text[6:8], 16) / 255.0
+        return f"0x{rgb}@{_format_seconds(alpha)}"
+    return f"0x{rgb}"
+
+
+def _build_graphic_opacity_expr(layer: GraphicLayer) -> str:
+    """Applique l'opacité tout en préservant l'alpha du texte/image."""
+    keyframes = [
+        kf for kf in layer.transform_keyframes
+        if kf.property_name == "opacity"
+    ]
+    if not keyframes:
+        return f"colorchannelmixer=aa={_format_seconds(layer.transform.opacity)}"
+    expr = build_ffmpeg_expression(
+        "opacity", layer.transform.opacity, keyframes, time_var="T"
+    )
+    escaped = escape_filter_complex_commas(expr)
+    return (
+        "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':"
+        f"a='alpha(X\\,Y)*({escaped})'"
+    )
+
+
+def _build_graphic_layer_filter(
+    layer_index: int,
+    layer: GraphicLayer,
+    input_index: int | None,
+    width: int,
+    height: int,
+    fps: int,
+) -> str:
+    """Construit le flux RGBA d'un texte, rectangle, aplat ou image."""
+    from .graphics import GraphicType
+
+    graphic = layer.graphic
+    kind = GraphicType(graphic.type)
+    duration = max(0.001, layer.timeline_end - layer.timeline_start)
+    size = f"{int(graphic.width)}x{int(graphic.height)}"
+    filters: list[str] = []
+    if kind in {GraphicType.IMAGE, GraphicType.TEXT}:
+        if input_index is None:
+            raise ValueError("Le calque image/texte n'a pas d'entrée FFmpeg.")
+        prefix = f"[{input_index}:v]"
+        filters.extend(
+            [
+                "loop=loop=-1:size=1:start=0",
+                f"trim=duration={_format_seconds(duration)}",
+                "setpts=PTS-STARTPTS",
+                f"scale={int(graphic.width)}:{int(graphic.height)}",
+                "format=rgba",
+            ]
+        )
+    else:
+        prefix = ""
+        fill = _ffmpeg_graphic_color(graphic.fill_color)
+        filters.extend(
+            [
+                f"color=c={fill}:s={size}:r={fps}:d={_format_seconds(duration)}",
+                "format=rgba",
+            ]
+        )
+        if int(graphic.stroke_width) > 0:
+            filters.append(
+                "drawbox=x=0:y=0:w=iw:h=ih:"
+                f"color={_ffmpeg_graphic_color(graphic.stroke_color)}:"
+                f"t={int(graphic.stroke_width)}"
+            )
+
+    scale_expr = build_ffmpeg_expression(
+        "scale",
+        layer.transform.scale,
+        [kf for kf in layer.transform_keyframes if kf.property_name == "scale"],
+        time_var="t",
+    )
+    scale_expr = escape_filter_complex_commas(scale_expr)
+    filters.append(
+        "scale="
+        f"w='max(2\\,iw*({scale_expr}))':"
+        f"h='max(2\\,ih*({scale_expr}))':eval=frame"
+    )
+    filters.append(
+        _build_animated_rotation_expr(
+            layer.transform, layer.transform_keyframes
+        )
+    )
+    filters.append(_build_graphic_opacity_expr(layer))
+    filters.append(
+        f"setpts=PTS+{_format_seconds(layer.timeline_start)}/TB"
+    )
+    return prefix + ",".join(filters) + f"[g{layer_index}]"
+
+
 def _build_overlay_args(
-    layer: RenderLayer,
+    layer: RenderLayer | GraphicLayer,
     canvas_width: int,
     canvas_height: int,
 ) -> str:

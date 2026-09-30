@@ -233,6 +233,10 @@ class Clip:
     # ``None`` pour les clips anciens / non étalonnés : la couche
     # d'I/O et l'export retombent sur l'identité (aucun effet).
     color_grade: object = None
+    # --- Calque graphique non destructif (tâche 32) ---
+    # ``GraphicOverlay`` pour les clips de piste ``graphics`` ; ``None``
+    # pour tous les projets historiques et les autres types de clips.
+    graphic: object = None
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
 

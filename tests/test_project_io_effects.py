@@ -127,7 +127,7 @@ def test_format_version_is_eleven() -> None:
 
     La version des styles texte (10) et des effets (9) reste lisible.
     """
-    assert CURRENT_VERSION == 11
+    assert CURRENT_VERSION == 12
     assert 10 in SUPPORTED_VERSIONS
     assert 9 in SUPPORTED_VERSIONS
 
@@ -325,4 +325,3 @@ def test_failed_write_keeps_the_previous_project_intact(tmp_path: Path) -> None:
 
     assert target.read_text(encoding="utf-8") == original
     assert load_project(str(target)).tracks[0].clips[0].effects
-

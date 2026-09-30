@@ -92,6 +92,7 @@ class TimelineClipView:
     # non textuels, un :class:`~core.text_style.TextStyle` pour les
     # sous-titres.
     text_style: object = None
+    graphic: object = None
 
 
 def color_key_for_clip(clip: Clip) -> str:
@@ -137,9 +138,10 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     locked=bool(track.locked),
                     text_style=(
                         getattr(clip, "text_style", None)
-                        if track.type == "subtitle"
+                        if track.type in {"subtitle", "graphics"}
                         else None
                     ),
+                    graphic=getattr(clip, "graphic", None),
                 )
             )
     return views

@@ -175,6 +175,17 @@ def fingerprint_plan(plan, **kwargs):
             }
             for t in getattr(plan, "transitions", ())
         ],
+        "graphics": [
+            {
+                "clip_id": layer.clip_id,
+                "start": layer.timeline_start,
+                "end": layer.timeline_end,
+                "graphic": repr(layer.graphic),
+                "transform": repr(layer.transform),
+                "keyframes": repr(layer.transform_keyframes),
+            }
+            for layer in getattr(plan, "graphics_layers", ())
+        ],
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

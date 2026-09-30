@@ -6,8 +6,7 @@ timeline :
 
 - position et durée des clips ;
 - trims ``source_in`` / ``source_out`` ;
-- pistes vidéo uniquement (audio et sous-titres sont ignorés pour
-  cette itération) ;
+- pistes vidéo, audio, sous-titres et graphiques ;
 - ordre des pistes : les pistes les plus basses dans ``project.tracks``
   sont visuellement au-dessus (overlay successif) ;
 - clips activés (``enabled=True``) uniquement ;
@@ -165,6 +164,20 @@ class RenderTransition:
     duration: float
 
 
+@dataclass(frozen=True)
+class GraphicLayer:
+    """Calque graphique généré ou image, composé au-dessus de la vidéo."""
+
+    clip_id: str
+    track_id: str
+    track_index: int
+    timeline_start: float
+    timeline_end: float
+    graphic: object
+    transform: ClipTransform = field(default_factory=ClipTransform)
+    transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
+
+
 # ---------------------------------------------------------------------------
 # Plan complet
 # ---------------------------------------------------------------------------
@@ -190,6 +203,8 @@ class RenderPlan:
             ``(start, end)``. Vides si le projet n'a aucun sous-titre
             actif ; le moteur d'export les utilise pour générer un
             fichier SRT temporaire et appliquer le filtre ``subtitles``.
+        graphics_layers: Titres, formes, aplats et images à composer après
+            les pistes vidéo et avant les sous-titres.
     """
 
     width: int
@@ -203,6 +218,7 @@ class RenderPlan:
     master_gain_db: float = 0.0
     master_muted: bool = False
     transitions: tuple[RenderTransition, ...] = field(default_factory=tuple)
+    graphics_layers: tuple[GraphicLayer, ...] = field(default_factory=tuple)
 
     @property
     def is_audio_silent(self) -> bool:
@@ -270,9 +286,34 @@ def build_render_plan(
     """
     video_layers: list[RenderLayer] = []
     audio_layers: list[AudioLayer] = []
+    graphics_layers: list[GraphicLayer] = []
     video_solo = {track.id for track in project.tracks if track.type == "video" and track.solo}
     audio_solo = {track.id for track in project.tracks if track.type == "audio" and track.solo}
+    graphics_solo = {
+        track.id for track in project.tracks
+        if track.type == "graphics" and track.solo
+    }
     for track_index, track in enumerate(project.tracks):
+        if track.type == "graphics":
+            if not track.visible or (graphics_solo and track.id not in graphics_solo):
+                continue
+            for clip in track.clips:
+                graphic = getattr(clip, "graphic", None)
+                if not clip.enabled or graphic is None:
+                    continue
+                graphics_layers.append(
+                    GraphicLayer(
+                        clip_id=clip.id,
+                        track_id=track.id,
+                        track_index=track_index,
+                        timeline_start=clip.timeline_start,
+                        timeline_end=clip.timeline_start + clip.duration,
+                        graphic=graphic,
+                        transform=clip.transform,
+                        transform_keyframes=tuple(clip.transform_keyframes),
+                    )
+                )
+            continue
         if track.type not in {"video", "audio"}:
             continue
         if track.type == "video" and not track.visible:
@@ -366,6 +407,7 @@ def build_render_plan(
         master_gain_db=float(master_gain_db),
         master_muted=bool(master_muted),
         transitions=transitions,
+        graphics_layers=tuple(graphics_layers),
     )
 
 

@@ -21,7 +21,8 @@ Convention d'identifiants automatique :
 
 - ``V{n}`` pour les pistes vidéo (``n`` commence à 1) ;
 - ``A{n}`` pour les pistes audio ;
-- ``S{n}`` pour les pistes de sous-titres.
+- ``S{n}`` pour les pistes de sous-titres ;
+- ``G{n}`` pour les pistes graphiques.
 
 Si l'utilisateur renomme une piste, son identifiant technique
 (``Track.id``) reste inchangé : seul le libellé humain (``Track.name``)
@@ -46,13 +47,14 @@ if False:  # pragma: no cover - dépendance typée uniquement
 # ---------------------------------------------------------------------------
 
 
-_VALID_TYPES: frozenset[str] = frozenset({"video", "audio", "subtitle"})
+_VALID_TYPES: frozenset[str] = frozenset({"video", "audio", "subtitle", "graphics"})
 """Types de pistes acceptés par les opérations de pistes."""
 
 _TYPE_PREFIX: dict[str, str] = {
     "video": "V",
     "audio": "A",
     "subtitle": "S",
+    "graphics": "G",
 }
 """Préfixe automatique de l'identifiant selon le type de piste."""
 
@@ -86,7 +88,7 @@ def _coerce_track_type(track_type: str) -> str:
     if normalized not in _VALID_TYPES:
         raise ValueError(
             f"Type de piste inconnu : {track_type!r}. "
-            f"Attendu : 'video', 'audio' ou 'subtitle'."
+            f"Attendu : 'video', 'audio', 'subtitle' ou 'graphics'."
         )
     return normalized
 
