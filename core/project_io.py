@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .effects_model import ClipEffect, EffectType
+from .compositing import compositing_from_dict, compositing_to_dict
 from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
@@ -403,6 +404,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
                             "graphic": _graphic_to_dict(
                                 getattr(clip, "graphic", None)
                             ),
+                            "compositing": compositing_to_dict(clip.compositing),
                             "text_style": clip.text_style.to_dict(),
                         }
                         for clip in track.clips
@@ -582,7 +584,7 @@ def _deserialize_track(
             for key, value in raw_clip.items()
             if key not in {
                 "transform", "transform_keyframes", "time_remapping", "effects",
-                "graphic",
+                "graphic", "compositing",
             }
             and key in _CLIP_KNOWN_FIELDS
         }
@@ -629,6 +631,7 @@ def _deserialize_track(
             project_root=project_root,
         )
         clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
+        clip_kwargs["compositing"] = compositing_from_dict(raw_clip.get("compositing"))
         # Style texte (tâche 24) : rétrocompatible — un clip sans la
         # clé ``text_style`` reçoit le style standard par défaut, ce
         # qui correspond exactement au rendu historique.

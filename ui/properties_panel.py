@@ -64,6 +64,7 @@ from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.graphics_editor import GraphicsEditor
+from ui.compositing_editor import CompositingEditor
 from ui.text_style_editor import TextStyleEditor
 from ui.theme import COLORS, label_style
 
@@ -264,6 +265,7 @@ class PropertiesPanel(QWidget):
     color_grade_reset_requested = Signal(str)
     # Calques graphiques (tâche 32)
     graphic_property_changed = Signal(str, str, object)
+    compositing_changed = Signal(str, object)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -322,7 +324,7 @@ class PropertiesPanel(QWidget):
         self.inspector_tabs_layout.setSpacing(Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
         for index, label in enumerate(
-            ("Inspecteur", "Couleur", "Effets", "Audio", "Graphiques")
+            ("Inspecteur", "Couleur", "Effets", "Audio", "Graphiques", "Compositing")
         ):
             button = QPushButton(label)
             button.setObjectName("inspectorTab")
@@ -681,6 +683,12 @@ class PropertiesPanel(QWidget):
         self.graphics_group.field_changed.connect(self._emit_graphic_property)
         layout.insertWidget(layout.indexOf(self.movement_group), self.graphics_group)
 
+        # ----- Compositing (tâche 33) -------------------------------
+        self.compositing_group = CompositingEditor(self.group_style())
+        self.compositing_group.value_changed.connect(
+            lambda value: self.selected_clip is not None and self.compositing_changed.emit(self.selected_clip.id, value))
+        layout.addWidget(self.compositing_group)
+
         # ----- Audio (mixage non destructif) ---------------------------
         self.audio_group = self._build_audio_group()
         layout.addWidget(self.audio_group)
@@ -736,6 +744,7 @@ class PropertiesPanel(QWidget):
                 self.subtitle_group,
                 self.effects_group,
                 self.audio_effects_group,
+                self.compositing_group,
             ],
             1: [project_group, clip_group, self.color_group],  # Couleur
             2: [project_group, self.movement_group,
@@ -745,12 +754,14 @@ class PropertiesPanel(QWidget):
                 self.audio_effects_group],  # Audio
             4: [project_group, clip_group, self.movement_group,
                 self.graphics_group, self.subtitle_group],  # Graphiques
+            5: [project_group, clip_group, self.compositing_group],
         }
         all_groups = [project_group, clip_group, self.transition_group,
                       self.color_group, self.movement_group, self.speed_group,
                       self.graphics_group, audio_group, self.audio_group,
                       self.subtitle_group,
-                      self.effects_group, self.audio_effects_group]
+                      self.effects_group, self.audio_effects_group,
+                      self.compositing_group]
         self._all_inspector_groups = all_groups
         # Certains groupes ont en plus une visibilité *conditionnelle*
         # pilotée par la sélection (``show_clip`` / ``show_transition``) :
@@ -2170,6 +2181,7 @@ class PropertiesPanel(QWidget):
                 self._set_group_condition(self.subtitle_group, False)
                 self._set_group_condition(self.graphics_group, False)
                 self.update_graphic_from_clip(None)
+                self.compositing_group.set_value(None)
                 self.color_group.setEnabled(False)
                 self.update_color_grade_from_clip(None)
                 self.movement_group.setEnabled(False)
@@ -2213,6 +2225,7 @@ class PropertiesPanel(QWidget):
             is_visual_clip = is_video_clip or is_graphic_clip
             self._set_group_condition(self.graphics_group, is_graphic_clip)
             self.update_graphic_from_clip(getattr(view, "graphic", None))
+            self.compositing_group.set_value(getattr(view, "compositing", None))
             self.graphics_group.setEnabled(
                 is_graphic_clip and not bool(getattr(view, "locked", False))
             )
