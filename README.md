@@ -160,6 +160,15 @@ Kut-Studio/
 | `Ctrl + E` | Enable / disable clip |
 | `Ctrl + ,` | Preferences |
 
+Every shortcut can be changed in **Preferences → Shortcuts** (search, conflict detection, secondary shortcut, per-command or global reset). Changes apply immediately and are saved with your preferences; `Ctrl` is `⌘` on macOS. Multi-step chords such as `Ctrl+K, B` are supported.
+
+**Adding a command (developers).** All shortcuts live in `core/shortcuts.py`.
+1. Add `_cmd("my_id", Category.X, "Ctrl+Alt+M")` to `COMMANDS` (omit the shortcut to leave it unbound). Use `scope=Scope.ACTION` for a menu item, then create it with `self.shortcuts.create_action("my_id", text, self)`.
+2. Add `shortcuts.command.my_id` (fr/en/es) in `ui/i18n.py`.
+3. Map its function in `MainWindow._shortcut_handlers`.
+
+Tests fail if a command has no translation, no handler, or a default that conflicts with another. A new command with a *default* shortcut must also be added to the expected set in `test_defaults_have_no_extra_shortcut_beyond_legacy_ones`.
+
 ## 🧪 Tests
 
 ```bash
@@ -177,7 +186,6 @@ headless machine, set `QT_QPA_PLATFORM=offscreen`.
 
 - Split the largest UI modules (`main_window`, `project_panel`, `timeline_panel`)
 - Linting and type checking in CI, and a faster test suite
-- Configurable keyboard shortcuts
 - Export presets, render queue and hardware acceleration
 - Preview and timeline performance on large projects
 - Signed installers and automated releases
@@ -310,6 +318,15 @@ outils sont adaptés à chaque système.
 | `Ctrl + E` | Activer / désactiver le clip |
 | `Ctrl + ,` | Préférences |
 
+Tous les raccourcis se modifient dans **Préférences → Raccourcis** (recherche, détection des conflits, raccourci secondaire, réinitialisation par commande ou globale). Les changements sont appliqués immédiatement et sauvegardés avec vos préférences ; `Ctrl` correspond à `⌘` sur macOS. Les accords en plusieurs étapes, comme `Ctrl+K, B`, sont pris en charge.
+
+**Ajouter une commande (développeurs).** Tous les raccourcis sont dans `core/shortcuts.py`.
+1. Ajouter `_cmd("mon_id", Category.X, "Ctrl+Alt+M")` à `COMMANDS` (sans raccourci : la commande reste libre). Pour un élément de menu, ajouter `scope=Scope.ACTION` puis créer l'action avec `self.shortcuts.create_action("mon_id", texte, self)`.
+2. Ajouter `shortcuts.command.mon_id` (fr/en/es) dans `ui/i18n.py`.
+3. Associer sa fonction dans `MainWindow._shortcut_handlers`.
+
+Les tests échouent si une commande n'a ni traduction, ni fonction, ou si son défaut est en conflit. Une commande avec un raccourci *par défaut* doit aussi être ajoutée à l'ensemble attendu de `test_defaults_have_no_extra_shortcut_beyond_legacy_ones`.
+
 ## 🧪 Tests
 
 ```bash
@@ -324,7 +341,6 @@ La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S
 
 - Découper les plus gros modules d’interface (`main_window`, `project_panel`, `timeline_panel`)
 - Linter et vérification de types en CI, suite de tests plus rapide
-- Raccourcis clavier configurables
 - Presets d’export, file de rendu et accélération matérielle
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées

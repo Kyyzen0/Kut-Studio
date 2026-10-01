@@ -49,6 +49,7 @@ class PreferencesMixin:
             scopes_view=scopes_view,
             scopes_levels=scopes_levels,
             scopes_alerts_enabled=scopes_alerts,
+            shortcuts=self.shortcuts.overrides(),
         )
 
     def show_preferences(self) -> None:
@@ -59,6 +60,7 @@ class PreferencesMixin:
             current_performance=self.runtime.requested_profile,
             current_preview_quality=self.runtime.requested_quality,
             current_render_quality=self._render_quality,
+            shortcut_manager=self.shortcuts,
             parent=self,
         )
         dialog.theme_changed.connect(self.on_user_setting_changed)
@@ -84,6 +86,8 @@ class PreferencesMixin:
                 UserSettings(),
                 master_gain_db=snapshot.master_gain_db,
                 master_muted=snapshot.master_muted,
+                # Les raccourcis ont leur propre réinitialisation.
+                shortcuts=snapshot.shortcuts,
             )
         )
 

@@ -267,18 +267,6 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         super().resizeEvent(event)
 
 
-    def keyPressEvent(self, event) -> None:
-        if event.key() in (Qt.Key_Plus, Qt.Key_Equal):
-            self.zoom_in()
-            event.accept()
-            return
-        if event.key() == Qt.Key_Minus:
-            self.zoom_out()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-
     def eventFilter(self, watched, event) -> bool:
         if watched is getattr(self.scroll, "viewport", lambda: None)() and event.type() == QEvent.Wheel:
             modifiers = event.modifiers()

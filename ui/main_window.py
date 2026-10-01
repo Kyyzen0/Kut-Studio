@@ -34,7 +34,7 @@ from core.media_probe import probe_video
 from core.project_factory import create_default_project
 from core.project_model import Project
 from core.subtitle_io import parse_srt
-from core.shortcuts import resolve_shortcut
+from core.shortcuts import ShortcutMap
 from core.scopes import ColorSpace, ScopeResult, VideoLevels
 from core.scopes_analyzer import (
     ScopeAnalyzer,
@@ -65,6 +65,7 @@ from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
+from ui.shortcut_manager import ShortcutManager
 from ui.scopes_panel import ScopeLayout, ScopeView, ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
@@ -171,6 +172,15 @@ class MainWindow(
         self._i18n_callback = self.on_language_changed
         i18n.subscribe(self._i18n_callback)
 
+        # Raccourcis clavier : une seule table (core.shortcuts), appliquée
+        # par le gestionnaire, qui se persiste à chaque modification.
+        self.shortcuts = ShortcutManager(
+            ShortcutMap.from_overrides(loaded_settings.shortcuts), parent=self
+        )
+        self._translated_actions: list[tuple[QAction, str]] = []
+        self._translated_menus: list[tuple[QMenu, str]] = []
+        self.shortcuts.register_handlers(self._shortcut_handlers())
+        self.shortcuts.overrides_changed.connect(self._on_shortcuts_changed)
         self._build_menu_bar()
 
         self.preview_panel = PreviewPanel(
@@ -602,6 +612,8 @@ class MainWindow(
         # opération doit suivre ``_build_top_bar`` qui crée
         # ``project_label``.
         self._refresh_undo_redo_state()
+        self.shortcuts.changed.connect(self._refresh_shortcut_tooltips)
+        self._refresh_shortcut_tooltips()
         if os.environ.get("KUT_STUDIO_DEBUG") == "1":
             self.diagnostics_action.setChecked(True)
 
@@ -1218,154 +1230,122 @@ class MainWindow(
         # Fichier
         file_menu = QMenu(i18n.translate("menu.file"), self)
         file_menu.setObjectName("file_menu")
-        new_action = QAction("Nouveau", self)
-        new_action.setShortcut("Ctrl+N")
-        new_action.triggered.connect(self.new_project)
-        open_action = QAction("Ouvrir...", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.open_project_file)
-        save_action = QAction("Enregistrer", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(self.save_project_file)
-        save_as_action = QAction("Enregistrer sous...", self)
-        save_as_action.setShortcut("Ctrl+Shift+S")
-        save_as_action.triggered.connect(self.save_project_as)
+        new_action = self._command_action("project_new", "menu.item.new")
+        open_action = self._command_action("project_open", "menu.item.open")
+        save_action = self._command_action("project_save", "menu.item.save")
+        save_as_action = self._command_action("project_save_as", "menu.item.save_as")
         file_menu.addAction(new_action)
         file_menu.addAction(open_action)
         file_menu.addSeparator()
         file_menu.addAction(save_action)
         file_menu.addAction(save_as_action)
         file_menu.addSeparator()
-        import_subs_action = QAction("Importer des sous-titres SRT…", self)
+        import_subs_action = self._labelled_action("menu.item.import_srt")
         import_subs_action.triggered.connect(self.import_subtitles_via_dialog)
         file_menu.addAction(import_subs_action)
-        export_subs_action = QAction("Exporter les sous-titres SRT…", self)
+        export_subs_action = self._labelled_action("menu.item.export_srt")
         export_subs_action.triggered.connect(self.export_subtitles_via_dialog)
         file_menu.addAction(export_subs_action)
         file_menu.addSeparator()
-        exit_action = QAction("Quitter", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
+        exit_action = self._command_action("quit", "action.quit")
         file_menu.addAction(exit_action)
 
         # Édition
         edit_menu = QMenu(i18n.translate("menu.edit"), self)
         edit_menu.setObjectName("edit_menu")
-        self.undo_action = QAction("Annuler", self)
-        self.undo_action.setShortcut("Ctrl+Z")
-        self.undo_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.undo_action.triggered.connect(self.undo_last)
+        self.undo_action = self._command_action("undo", "action.undo")
         edit_menu.addAction(self.undo_action)
 
-        self.redo_action = QAction("Rétablir", self)
-        self.redo_action.setShortcuts(["Ctrl+Shift+Z", "Ctrl+Y"])
-        self.redo_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.redo_action.triggered.connect(self.redo_last)
+        self.redo_action = self._command_action("redo", "action.redo")
         edit_menu.addAction(self.redo_action)
 
         edit_menu.addSeparator()
 
-        duplicate_action = QAction("Dupliquer le clip", self)
-        duplicate_action.setShortcut("Ctrl+D")
-        duplicate_action.setShortcutContext(Qt.ApplicationShortcut)
-        duplicate_action.triggered.connect(self.duplicate_selected_clip)
+        duplicate_action = self._command_action("duplicate_clip", "menu.item.duplicate_clip")
         edit_menu.addAction(duplicate_action)
 
-        self.delete_action = QAction("Supprimer le clip", self)
-        self.delete_action.setShortcuts(["Delete", "Backspace"])
-        self.delete_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.delete_action.triggered.connect(self.delete_selected_clip_with_check)
+        self.delete_action = self._command_action("delete_clip", "menu.item.delete_clip")
         edit_menu.addAction(self.delete_action)
 
-        ripple_action = QAction("Supprimer avec ripple", self)
-        ripple_action.setShortcut("Ctrl+Backspace")
-        ripple_action.setShortcutContext(Qt.ApplicationShortcut)
-        ripple_action.triggered.connect(self.ripple_delete_selected_clip)
+        ripple_action = self._command_action("ripple_delete", "action.ripple_delete")
         edit_menu.addAction(ripple_action)
 
-        enable_action = QAction("Activer / Désactiver le clip", self)
-        enable_action.setShortcut("Ctrl+E")
-        enable_action.setShortcutContext(Qt.ApplicationShortcut)
-        enable_action.triggered.connect(self.toggle_selected_clip_enabled)
+        enable_action = self._command_action("toggle_clip_enabled", "action.toggle_clip")
         edit_menu.addAction(enable_action)
 
         edit_menu.addSeparator()
 
-        for label in ("Couper", "Copier", "Coller"):
-            action = QAction(label, self)
-            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
+        for key in ("action.cut", "menu.item.copy", "menu.item.paste"):
+            action = self._labelled_action(key)
+            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
             edit_menu.addAction(action)
 
         # Séquence
         sequence_menu = QMenu(i18n.translate("menu.timeline"), self)
         sequence_menu.setObjectName("timeline_menu")
-        for label in ("Ajouter un clip", "Couper / Réduire", "Marqueur"):
-            action = QAction(label, self)
-            action.triggered.connect(lambda checked=False, l=label: self._notify_placeholder(l))
+        for key in ("menu.item.add_clip", "menu.item.trim", "menu.item.marker"):
+            action = self._labelled_action(key)
+            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
             sequence_menu.addAction(action)
 
         # Fenêtre — le contenu dépend du gestionnaire d'espace de
         # travail, créé plus bas ; on ne garde que la partie fixe ici.
-        window_menu = QMenu("Fenêtre", self)
+        window_menu = QMenu(i18n.translate("menu.window"), self)
         window_menu.setObjectName("window_menu")
         self.window_menu = window_menu
-        reset_action = QAction("Réinitialiser la disposition", self)
+        reset_action = self._labelled_action("menu.item.reset_layout")
         reset_action.triggered.connect(self.reset_workspace_layout)
         window_menu.addAction(reset_action)
         window_menu.addSeparator()
         # Scopes de monitoring couleur (tâche 31). L'action reste
         # checkable pour refléter l'état du splitter sans qu'on ait à
         # le relire à chaque ouverture de menu.
-        self.scopes_action = QAction("Afficher les scopes", self)
-        self.scopes_action.setCheckable(True)
+        self.scopes_action = self._command_action(
+            "toggle_scopes", "menu.item.show_scopes", checkable=True
+        )
         self.scopes_action.setChecked(True)
-        self.scopes_action.setShortcut("Ctrl+Alt+S")
-        self.scopes_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.scopes_action.triggered.connect(self.toggle_scopes_visible)
         window_menu.addAction(self.scopes_action)
 
         # Menu Séquence : opérations de piste.
-        track_add_video_action = QAction(i18n.translate("tracks.add_video_long"), self)
+        track_add_video_action = self._labelled_action("tracks.add_video_long")
         track_add_video_action.triggered.connect(
             lambda: self.on_add_track_requested("video")
         )
         sequence_menu.addAction(track_add_video_action)
-        track_add_audio_action = QAction(i18n.translate("tracks.add_audio_long"), self)
+        track_add_audio_action = self._labelled_action("tracks.add_audio_long")
         track_add_audio_action.triggered.connect(
             lambda: self.on_add_track_requested("audio")
         )
         sequence_menu.addAction(track_add_audio_action)
-        track_add_subtitle_action = QAction(
-            i18n.translate("tracks.add_subtitle_long"), self
-        )
+        track_add_subtitle_action = self._labelled_action("tracks.add_subtitle_long")
         track_add_subtitle_action.triggered.connect(
             lambda: self.on_add_track_requested("subtitle")
         )
         sequence_menu.addAction(track_add_subtitle_action)
         sequence_menu.addSeparator()
-        track_remove_action = QAction(i18n.translate("tracks.remove"), self)
+        track_remove_action = self._labelled_action("tracks.remove")
         track_remove_action.triggered.connect(self.remove_selected_track)
         sequence_menu.addAction(track_remove_action)
-        track_move_up_action = QAction(i18n.translate("tracks.move_up"), self)
+        track_move_up_action = self._labelled_action("tracks.move_up")
         track_move_up_action.triggered.connect(
             lambda: self._move_selected_track(direction=-1)
         )
         sequence_menu.addAction(track_move_up_action)
-        track_move_down_action = QAction(i18n.translate("tracks.move_down"), self)
+        track_move_down_action = self._labelled_action("tracks.move_down")
         track_move_down_action.triggered.connect(
             lambda: self._move_selected_track(direction=1)
         )
         sequence_menu.addAction(track_move_down_action)
-        track_rename_action = QAction(i18n.translate("tracks.rename"), self)
+        track_rename_action = self._labelled_action("tracks.rename")
         track_rename_action.triggered.connect(self.rename_selected_track)
         sequence_menu.addAction(track_rename_action)
-        track_lock_action = QAction(i18n.translate("tracks.toggle_lock"), self)
+        track_lock_action = self._labelled_action("tracks.toggle_lock")
         track_lock_action.triggered.connect(self.toggle_selected_track_lock)
         sequence_menu.addAction(track_lock_action)
-        track_visible_action = QAction(i18n.translate("tracks.toggle_visible"), self)
+        track_visible_action = self._labelled_action("tracks.toggle_visible")
         track_visible_action.triggered.connect(self.toggle_selected_track_visible)
         sequence_menu.addAction(track_visible_action)
-        track_mute_action = QAction(i18n.translate("tracks.toggle_mute"), self)
+        track_mute_action = self._labelled_action("tracks.toggle_mute")
         track_mute_action.triggered.connect(self.toggle_selected_track_muted)
         sequence_menu.addAction(track_mute_action)
 
@@ -1373,17 +1353,30 @@ class MainWindow(
             menu_bar.addMenu(menu)
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
-        preferences_action = QAction(i18n.translate("action.preferences"), self)
-        preferences_action.setShortcut("Ctrl+,")
-        preferences_action.setShortcutContext(Qt.ApplicationShortcut)
-        preferences_action.triggered.connect(self.show_preferences)
+        preferences_action = self._command_action("preferences", "action.preferences")
         # On insère l'entrée dans la barre ``Fenêtre`` pour rester
         # accessible sans modifier l'ordre établi.
         window_menu.addAction(preferences_action)
-        self.diagnostics_action = QAction(i18n.translate("debug.toggle"), self)
+        self.diagnostics_action = self._labelled_action("debug.toggle")
         self.diagnostics_action.setCheckable(True)
         self.diagnostics_action.toggled.connect(self.set_diagnostics_visible)
         window_menu.addAction(self.diagnostics_action)
+
+    def _labelled_action(self, text_key: str) -> QAction:
+        """``QAction`` dont le libellé suit la langue (retraduite à chaud)."""
+        action = QAction(i18n.translate(text_key), self)
+        self._translated_actions.append((action, text_key))
+        return action
+
+    def _command_action(
+        self, command_id: str, text_key: str, *, checkable: bool = False
+    ) -> QAction:
+        """Action d'une commande clavier, avec un libellé traduit à chaud."""
+        action = self.shortcuts.create_action(
+            command_id, i18n.translate(text_key), self, checkable=checkable
+        )
+        self._translated_actions.append((action, text_key))
+        return action
 
     def _notify_placeholder(self, feature_name):
         """Affiche un message discret pour les features à venir."""
@@ -1773,107 +1766,138 @@ class MainWindow(
         self.seek_to_position(self.playhead_seconds + delta_seconds)
 
     def keyPressEvent(self, event):
-        focus = QApplication.focusWidget()
-        if focus is not None and (
-            focus.inherits("QLineEdit")
-            or focus.inherits("QTextEdit")
-            or focus.inherits("QPlainTextEdit")
-        ):
-            super().keyPressEvent(event)
-            return
-        modifiers = set()
-        if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
-            modifiers.add("ctrl")
-        if event.modifiers() & Qt.ShiftModifier:
-            modifiers.add("shift")
-        if event.modifiers() & Qt.AltModifier:
-            modifiers.add("alt")
-        key_name = self._key_name(event.key())
-        action = resolve_shortcut(key_name, modifiers) if key_name else None
-        if action and self._run_editor_shortcut(action):
+        # Un champ texte garde ses frappes : la garde vit dans le gestionnaire.
+        if self.shortcuts.handle_key_event(event, QApplication.focusWidget()):
             event.accept()
             return
         super().keyPressEvent(event)
 
-    @staticmethod
-    def _key_name(key: int) -> str | None:
-        names = {
-            Qt.Key_Space: "space",
-            Qt.Key_Left: "left",
-            Qt.Key_Right: "right",
-            Qt.Key_J: "j",
-            Qt.Key_K: "k",
-            Qt.Key_L: "l",
-            Qt.Key_B: "b",
-            Qt.Key_R: "r",
-            Qt.Key_Y: "y",
-            Qt.Key_U: "u",
-            Qt.Key_V: "v",
-            Qt.Key_S: "s",
-            Qt.Key_N: "n",
-            Qt.Key_M: "m",
-            Qt.Key_Equal: "equal",
-            Qt.Key_Plus: "plus",
-            Qt.Key_Minus: "minus",
-            Qt.Key_0: "0",
-            Qt.Key_Z: "z",
-            Qt.Key_A: "a",
-            Qt.Key_BracketLeft: "bracketleft",
-            Qt.Key_BracketRight: "bracketright",
-        }
-        return names.get(key)
+    def _shortcut_handlers(self) -> dict:
+        """Fonction associée à chaque commande de ``core.shortcuts.COMMANDS``.
 
-    def _run_editor_shortcut(self, action: str) -> bool:
+        Seul endroit où une commande clavier est reliée à son effet. Les
+        lambdas lisent ``timeline_panel`` à l'appel : le gestionnaire est
+        créé avant les panneaux.
+        """
+
+        def timeline():
+            return self.timeline_panel
+
+        def toggle_tool(name):
+            def run():
+                tl = timeline()
+                tl.set_tool("select" if tl.tool == name else name)
+
+            return run
+
+        def toggle_button(attribute):
+            def run():
+                button = getattr(timeline(), attribute)
+                button.setChecked(not button.isChecked())
+
+            return run
+
+        def step(frames):
+            return lambda: self.seek_to_position(
+                step_frames(self.playhead_seconds, frames, self.project.fps)
+            )
+
+        return {
+            # Projet
+            "project_new": self.new_project,
+            "project_open": self.open_project_file,
+            "project_save": self.save_project_file,
+            "project_save_as": self.save_project_as,
+            "quit": self.close,
+            # Édition
+            "undo": self.undo_last,
+            "redo": self.redo_last,
+            "duplicate_clip": self.duplicate_selected_clip,
+            "delete_clip": self.delete_selected_clip_with_check,
+            "ripple_delete": self.ripple_delete_selected_clip,
+            "toggle_clip_enabled": self.toggle_selected_clip_enabled,
+            "cut_at_playhead": self.cut_at_playhead,
+            "select_all": self._select_all_clips,
+            # Lecture
+            "play_pause": self.toggle_play,
+            "shuttle_back": lambda: self.seek_relative(-2),
+            "shuttle_forward": lambda: self.seek_relative(2),
+            # Navigation
+            "frame_back": step(-1),
+            "frame_forward": step(1),
+            "second_back": lambda: self.seek_relative(-1),
+            "second_forward": lambda: self.seek_relative(1),
+            # Timeline
+            "toggle_snap": toggle_button("snap_button"),
+            "toggle_ripple": toggle_button("ripple_button"),
+            # Outils
+            "tool_select": lambda: timeline().set_tool("select"),
+            "tool_blade": toggle_tool("blade"),
+            "tool_roll": toggle_tool("roll"),
+            "tool_slip": toggle_tool("slip"),
+            "tool_slide": toggle_tool("slide"),
+            # Affichage
+            "zoom_in": lambda: timeline().zoom_in(),
+            "zoom_out": lambda: timeline().zoom_out(),
+            "zoom_fit": lambda: timeline().fit_timeline(),
+            "toggle_scopes": self.toggle_scopes_visible,
+            "preferences": self.show_preferences,
+            # Audio
+            "audio_record_toggle": lambda: timeline().record_button.click(),
+            "audio_master_mute": self.toggle_master_mute,
+            "track_toggle_mute": self.toggle_selected_track_muted,
+            # Marqueurs
+            "marker_add": lambda: self.add_marker_at(self.playhead_seconds),
+            "marker_previous": lambda: self.goto_marker(-1),
+            "marker_next": lambda: self.goto_marker(1),
+        }
+
+    def _select_all_clips(self) -> None:
         timeline = self.timeline_panel
-        if action == "play_pause":
-            self.toggle_play()
-        elif action == "frame_back":
-            self.seek_to_position(step_frames(self.playhead_seconds, -1, self.project.fps))
-        elif action == "frame_forward":
-            self.seek_to_position(step_frames(self.playhead_seconds, 1, self.project.fps))
-        elif action == "second_back":
-            self.seek_relative(-1)
-        elif action == "second_forward":
-            self.seek_relative(1)
-        elif action == "shuttle_back":
-            self.seek_relative(-2)
-        elif action == "shuttle_forward":
-            self.seek_relative(2)
-        elif action == "zoom_in":
-            timeline.zoom_in()
-        elif action == "zoom_out":
-            timeline.zoom_out()
-        elif action == "zoom_fit":
-            timeline.fit_timeline()
-        elif action == "tool_blade":
-            timeline.set_tool("select" if timeline.tool == "blade" else "blade")
-        elif action == "tool_roll":
-            timeline.set_tool("select" if timeline.tool == "roll" else "roll")
-        elif action == "tool_slip":
-            timeline.set_tool("select" if timeline.tool == "slip" else "slip")
-        elif action == "tool_slide":
-            timeline.set_tool("select" if timeline.tool == "slide" else "slide")
-        elif action == "tool_select":
-            timeline.set_tool("select")
-        elif action == "toggle_snap":
-            timeline.snap_button.setChecked(not timeline.snap_button.isChecked())
-        elif action == "toggle_ripple":
-            timeline.ripple_button.setChecked(not timeline.ripple_button.isChecked())
-        elif action == "marker_add":
-            self.add_marker_at(self.playhead_seconds)
-        elif action == "marker_previous":
-            self.goto_marker(-1)
-        elif action == "marker_next":
-            self.goto_marker(1)
-        elif action == "cut_at_playhead":
-            self.cut_at_playhead()
-        elif action == "select_all":
-            ids = [view.id for view in timeline.clip_views]
-            if ids:
-                timeline._set_selection(ids, ids[0], announce=True)
-        else:
-            return False
-        return True
+        ids = [view.id for view in timeline.clip_views]
+        if ids:
+            timeline._set_selection(ids, ids[0], announce=True)
+
+    def toggle_master_mute(self) -> None:
+        """Coupe / rétablit la sortie Master (commande clavier)."""
+        self._master_muted = not self._master_muted
+        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
+        self._save_master_state()
+
+    # (bouton de la timeline, commande, gabarit) : ``{hint}`` devient
+    # `` (B)`` selon le raccourci courant, ou rien si la commande n'en a plus.
+    _SHORTCUT_TOOLTIPS = (
+        ("blade_button", "tool_blade", "Outil lame{hint}"),
+        ("roll_button", "tool_roll", "Roll{hint} : déplace la coupe entre deux clips"),
+        ("slip_button", "tool_slip", "Slip{hint} : change le contenu sans bouger le clip"),
+        ("slide_button", "tool_slide", "Slide{hint} : glisse le clip et ajuste ses voisins"),
+        (
+            "ripple_button",
+            "toggle_ripple",
+            "Ripple{hint} : referme le trou après un trim droit ou une suppression",
+        ),
+        ("marker_button", "marker_add", "Marqueur au playhead{hint}"),
+    )
+
+    def _refresh_shortcut_tooltips(self) -> None:
+        """Garde les info-bulles de la timeline fidèles aux raccourcis courants."""
+        timeline = getattr(self, "timeline_panel", None)
+        if timeline is None:
+            return
+        for attribute, command_id, template in self._SHORTCUT_TOOLTIPS:
+            button = getattr(timeline, attribute, None)
+            if button is None:
+                continue
+            hint = self.shortcuts.hint(command_id)
+            button.setToolTip(template.format(hint=f" ({hint})" if hint else ""))
+
+    def _on_shortcuts_changed(self, _overrides: dict) -> None:
+        """Persiste la configuration des raccourcis dès qu'elle change."""
+        try:
+            save_user_settings(self._settings_snapshot())
+        except OSError:
+            # Un échec d'écriture ne doit pas gêner l'édition.
+            pass
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -1909,6 +1933,10 @@ class MainWindow(
             translated_title = self._translate_menu_title(menu.objectName())
             if translated_title:
                 menu.setTitle(translated_title)
+        for action, text_key in self._translated_actions:
+            action.setText(i18n.translate(text_key))
+        for submenu, title_key in self._translated_menus:
+            submenu.setTitle(i18n.translate(title_key))
         # Mise à jour des widgets traduisibles les plus visibles.
         if hasattr(self.preview_panel, "update_translations"):
             self.preview_panel.update_translations()
@@ -1926,6 +1954,7 @@ class MainWindow(
             "edit_menu": "menu.edit",
             "view_menu": "menu.view",
             "timeline_menu": "menu.timeline",
+            "window_menu": "menu.window",
             "help_menu": "menu.help",
         }
         key = mapping.get(object_name or "")

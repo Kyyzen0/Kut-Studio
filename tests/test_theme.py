@@ -40,3 +40,12 @@ def test_apply_to_replaces_stylesheet_when_theme_changes() -> None:
 
     assert len(app.stylesheet_calls) == 2
     assert app.stylesheet_calls[0] != app.stylesheet_calls[1]
+
+
+def test_dialogs_get_an_explicit_themed_background():
+    """Le fond d'un dialogue ne doit pas dépendre du thème natif de l'OS."""
+    from ui.theme import THEMES, global_stylesheet
+
+    for palette in THEMES.values():
+        sheet = global_stylesheet(palette)
+        assert f"QDialog {{ background: {palette.background}; }}" in sheet

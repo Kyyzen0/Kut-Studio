@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from core.timeline_evaluator import timeline_duration
+from ui import i18n
 
 
 class HistoryMixin:
@@ -60,25 +61,25 @@ class HistoryMixin:
         if hasattr(self, "undo_action"):
             self.undo_action.setEnabled(self.history.can_undo)
             label = self.history.undo_label
-            self.undo_action.setText(
-                f"Annuler : {label}" if label else "Annuler"
-            )
+            undo_text = i18n.translate("action.undo")
+            self.undo_action.setText(f"{undo_text} : {label}" if label else undo_text)
         if hasattr(self, "redo_action"):
             self.redo_action.setEnabled(self.history.can_redo)
             label = self.history.redo_label
-            self.redo_action.setText(
-                f"Rétablir : {label}" if label else "Rétablir"
-            )
+            redo_text = i18n.translate("action.redo")
+            self.redo_action.setText(f"{redo_text} : {label}" if label else redo_text)
         # Boutons rapides de la top-bar.
         if hasattr(self, "undo_button"):
             self.undo_button.setEnabled(self.history.can_undo)
+            undo_text = i18n.translate("action.undo")
             self.undo_button.setToolTip(
-                f"Annuler : {self.history.undo_label}" if self.history.undo_label else "Annuler"
+                f"{undo_text} : {self.history.undo_label}" if self.history.undo_label else undo_text
             )
         if hasattr(self, "redo_button"):
             self.redo_button.setEnabled(self.history.can_redo)
+            redo_text = i18n.translate("action.redo")
             self.redo_button.setToolTip(
-                f"Rétablir : {self.history.redo_label}" if self.history.redo_label else "Rétablir"
+                f"{redo_text} : {self.history.redo_label}" if self.history.redo_label else redo_text
             )
         # Synchronise le flag ``project_dirty`` avec l'historique.
         self.project_dirty = self.history.is_dirty

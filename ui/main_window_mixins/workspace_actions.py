@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMenu
 from core.workspace_state import PanelId, workspace_display_name
+from ui import i18n
 
 
 def _main_window():
@@ -33,7 +34,10 @@ class WorkspaceActionsMixin:
         (:meth:`WorkspaceManager.build_actions`), donc aucune logique
         n'est dupliquée.
         """
-        panels_menu = menu.addMenu("Panneaux")
+        panels_menu = menu.addMenu(i18n.translate("menu.item.panels"))
+        # Retrouvé par son nom, jamais par son titre (qui change avec la langue).
+        panels_menu.setObjectName("panels_menu")
+        self._translated_menus.append((panels_menu, "menu.item.panels"))
         for panel in PanelId:
             action = QAction(panel.label(), self)
             action.setCheckable(True)
@@ -59,14 +63,15 @@ class WorkspaceActionsMixin:
                     panel_menu.addMenu(action)
                 else:
                     panel_menu.addAction(action)
-        restore_action = QAction("Restaurer la disposition", self)
+        restore_action = self._labelled_action("menu.item.restore_layout")
         restore_action.setIcon(self._workspace_icon("PANEL_RESTORE"))
         restore_action.triggered.connect(self.restore_workspace_layout)
         menu.addSeparator()
         menu.addAction(restore_action)
 
         # Espaces de travail nommés (§8) : appliqués ou enregistrés.
-        spaces = menu.addMenu("Espaces de travail")
+        spaces = menu.addMenu(i18n.translate("menu.item.workspaces"))
+        self._translated_menus.append((spaces, "menu.item.workspaces"))
         for name in self.workspace.list_workspaces():
             action = QAction(workspace_display_name(name), self)
             action.triggered.connect(
@@ -74,7 +79,7 @@ class WorkspaceActionsMixin:
             )
             spaces.addAction(action)
         spaces.addSeparator()
-        save_space = QAction("Enregistrer la disposition sous…", spaces)
+        save_space = self._labelled_action("menu.item.save_layout_as")
         save_space.triggered.connect(self.save_workspace_as)
         spaces.addAction(save_space)
 
@@ -131,20 +136,10 @@ class WorkspaceActionsMixin:
 
     def _sync_workspace_menu(self) -> None:
         """Recalcule l'état coché du menu « Panneaux »."""
-        menu = self.menuBar()
-        window_menu = None
-        for candidate in menu.actions():
-            if candidate.menu() is not None and candidate.text() == "Fenêtre":
-                window_menu = candidate.menu()
-                break
+        window_menu = getattr(self, "window_menu", None)
         if window_menu is None:
             return
-        panels_menu = None
-        for action in window_menu.actions():
-            sub = action.menu()
-            if sub is not None and sub.title() == "Panneaux":
-                panels_menu = sub
-                break
+        panels_menu = window_menu.findChild(QMenu, "panels_menu")
         if panels_menu is None:
             return
         for action, panel in zip(panels_menu.actions(), PanelId):

@@ -41,7 +41,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.user_settings import (
@@ -62,6 +65,8 @@ from ui.i18n import (
     translate,
     unsubscribe,
 )
+from ui.shortcut_manager import ShortcutManager
+from ui.shortcuts_editor import ShortcutsEditor
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +197,7 @@ class PreferencesDialog(QDialog):
         current_preview_quality: str = "auto",
         current_render_quality: str = "standard",
         parent=None,
+        shortcut_manager: ShortcutManager | None = None,
     ) -> None:
         """Construit le dialogue sur l'état courant de l'application.
 
@@ -202,6 +208,9 @@ class PreferencesDialog(QDialog):
         sans aucun bouton coché.
         """
         super().__init__(parent)
+        self._shortcut_manager = shortcut_manager
+        self.shortcuts_editor: ShortcutsEditor | None = None
+        self.tabs: QTabWidget | None = None
         self.current_theme = current_theme
         self.current_language_code = current_language_code
         self.current_performance = current_performance
@@ -229,9 +238,43 @@ class PreferencesDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(14)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 18)
+        root.setSpacing(14)
+
+        # Sans gestionnaire de raccourcis, le dialogue garde sa forme
+        # historique (pas d'onglets).
+        if self._shortcut_manager is None:
+            layout = root
+        else:
+            self.tabs = QTabWidget()
+            general_page = QWidget()
+            layout = QVBoxLayout(general_page)
+            layout.setContentsMargins(0, 12, 0, 0)
+            layout.setSpacing(14)
+            self.shortcuts_editor = ShortcutsEditor(self._shortcut_manager)
+            shortcuts_page = QWidget()
+            shortcuts_layout = QVBoxLayout(shortcuts_page)
+            shortcuts_layout.setContentsMargins(0, 12, 0, 0)
+            shortcuts_layout.addWidget(self.shortcuts_editor)
+            # Défilement : les cinq groupes ne tiennent pas toujours dans
+            # la hauteur de l'onglet, et ne doivent jamais être écrasés.
+            general_scroll = QScrollArea()
+            general_scroll.setWidgetResizable(True)
+            general_scroll.setFrameShape(QScrollArea.NoFrame)
+            # Le viewport prendrait le fond natif de l'OS : on le laisse
+            # transparent pour garder le fond du thème du dialogue.
+            general_scroll.setObjectName("preferencesScroll")
+            general_scroll.setStyleSheet(
+                "QScrollArea#preferencesScroll,"
+                " QScrollArea#preferencesScroll > QWidget > QWidget"
+                " { background: transparent; }"
+            )
+            general_scroll.setWidget(general_page)
+            self.tabs.addTab(general_scroll, "")
+            self.tabs.addTab(shortcuts_page, "")
+            root.addWidget(self.tabs, 1)
+            self.setMinimumSize(680, 680)
 
         for choice in _CHOICE_GROUPS:
             layout.addWidget(self._build_choice_group(choice))
@@ -243,6 +286,8 @@ class PreferencesDialog(QDialog):
         self.restore_button.clicked.connect(self._on_restore_defaults)
         actions_row.addWidget(self.restore_button)
         layout.addLayout(actions_row)
+        if self.tabs is not None:
+            layout.addStretch(1)
 
         # ----- Bouton de fermeture ----------------------------------------
         # Le libellé d'un bouton standard vient de Qt (donc de sa
@@ -250,7 +295,7 @@ class PreferencesDialog(QDialog):
         self.buttons_box = QDialogButtonBox(QDialogButtonBox.Close)
         self.close_button = self.buttons_box.button(QDialogButtonBox.Close)
         self.buttons_box.rejected.connect(self.reject)
-        layout.addWidget(self.buttons_box)
+        root.addWidget(self.buttons_box)
 
     # ------------------------------------------------------------------
     # Construction des groupes de radios
@@ -327,6 +372,10 @@ class PreferencesDialog(QDialog):
                 radio = buttons.get(code)
                 if radio is not None:
                     radio.setText(translate(key))
+        if self.tabs is not None and self.shortcuts_editor is not None:
+            self.tabs.setTabText(0, translate("shortcuts.tab.general"))
+            self.tabs.setTabText(1, translate("shortcuts.tab.shortcuts"))
+            self.shortcuts_editor.retranslate()
         self.restore_button.setText(translate("prefs.restore_defaults"))
         self.close_button.setText(translate("prefs.close"))
 
