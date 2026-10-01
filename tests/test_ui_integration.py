@@ -2796,3 +2796,28 @@ def test_transform_edit_is_one_undoable_history_entry(qtbot, monkeypatch) -> Non
     )
     window.redo_last()
     assert find_clip(window.project, "intro").transform.scale == pytest.approx(2.0)
+
+
+def test_single_instance_video_effect_duplicate_is_reported_in_ui(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    """Un effet vidéo à instance unique déjà présent est signalé à l'écran."""
+    window = _build_window(qtbot, monkeypatch)
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"\x00")
+    monkeypatch.setattr("ui.main_window.probe_media", _fake_probe(duration=15.0))
+    assert window.import_video_to_project(str(video_path)) is True
+    window.add_asset_to_v1(window.project.media_assets[-1].id)
+    clip_id = window.timeline_panel.selected_clip_id
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.warning",
+        lambda _parent, _title, text, *a, **k: warnings.append(text),
+    )
+    window.on_clip_effect_added(clip_id, "sepia")
+    assert not warnings
+    window.on_clip_effect_added(clip_id, "sepia")
+    assert len(warnings) == 1
+    clip = next(c for t in window.project.tracks for c in t.clips if c.id == clip_id)
+    assert len(clip.effects) == 1

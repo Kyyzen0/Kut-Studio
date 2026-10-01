@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.autosave import AutosaveCoordinator
 from core.effects import apply_color_effect, set_volume
+from core.audio_effects_library import AudioEffectPresetStore
 from core.effects_library import EffectPreset, UserPresetStore
 from core.edit_history import ProjectHistory
 from core.color_grading import ColorGrade
@@ -444,6 +445,29 @@ class MainWindow(
         )
         self.project_panel.effect_preset_delete_requested.connect(
             self.on_effect_preset_delete_requested
+        )
+        # Bibliothèque d'effets audio (section Audio du panneau).
+        self.audio_effect_preset_store = AudioEffectPresetStore()
+        self.project_panel.set_user_audio_effect_presets(
+            self.audio_effect_preset_store.all_user_presets()
+        )
+        self.project_panel.set_audio_effect_favorites(
+            self.audio_effect_preset_store.favorites()
+        )
+        self.audio_effect_preset_store.subscribe(
+            self._on_audio_effect_presets_changed
+        )
+        self.project_panel.audio_effect_apply_requested.connect(
+            self.on_audio_effect_preset_apply_requested
+        )
+        self.project_panel.audio_effect_preset_save_requested.connect(
+            self.on_audio_effect_preset_save_requested
+        )
+        self.project_panel.audio_effect_preset_delete_requested.connect(
+            self.on_audio_effect_preset_delete_requested
+        )
+        self.project_panel.audio_effect_favorite_toggled.connect(
+            self.audio_effect_preset_store.toggle_favorite
         )
         # Tâche 23 : bibliothèque de transitions et presets.
         # ``TransitionPresetStore`` conserve favoris + presets utilisateur

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PySide6.QtWidgets import QMessageBox
+
 from core.timeline_operations import (
     find_clip,
     remove_transform_keyframe,
@@ -113,7 +115,7 @@ class TransformEffectsMixin:
         try:
             add_effect_to_clip(self.project, clip_id, effect_type)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] ajout d'effet refusé : {exc}")
+            QMessageBox.warning(self, "Effets", str(exc))
             return
         self._record_history("Ajouter un effet")
         self._refresh_effects_after_change(clip_id)

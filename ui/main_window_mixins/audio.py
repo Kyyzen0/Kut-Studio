@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+
+from PySide6.QtWidgets import QMessageBox
+
 from ui import i18n
 
 
@@ -395,7 +398,7 @@ class AudioMixin:
                 self.project, clip_id, AudioEffectType(effect_type)
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] ajout d'effet audio refusé : {exc}")
+            QMessageBox.warning(self, "Effet audio", str(exc))
             return
         self._record_history("Ajouter un effet audio")
         self._refresh_effects_after_change(clip_id)

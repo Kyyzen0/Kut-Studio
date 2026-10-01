@@ -21,7 +21,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - ⚙️ **Inspector** — Clip, Color, Effects and Audio tabs, plus Graphics and Compositing (masks, chroma key, blend modes).
 - 🎨 **Color grading and scopes** — Color controls, `.cube` 3D LUT import, and waveform / histogram / vectorscope monitoring.
 - 🔀 **Transitions and effects** — Transition presets (including crossfade), an effects library and time remapping.
-- 🔊 **Audio** — Mixer, audio effects, automation and voice-over recording.
+- 🔊 **Audio** — Mixer, audio effects with a preset library (favorites and your own presets), automation and voice-over recording.
 - 🔤 **Text and graphics** — Styled titles, text presets, and SRT subtitle import and export.
 - 💾 **Projects** — Native `.kut` save and load with autosave and backward-compatible loading of older format versions.
 - 📤 **Export** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg.
@@ -204,7 +204,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - ⚙️ **Inspecteur** — Onglets Clip, Couleur, Effets et Audio, plus Graphiques et Compositing (masques, chroma key, modes de fusion).
 - 🎨 **Étalonnage et scopes** — Réglages couleur, import de LUT 3D `.cube`, et monitoring waveform / histogramme / vectorscope.
 - 🔀 **Transitions et effets** — Presets de transitions (dont fondu enchaîné), bibliothèque d’effets et remapping temporel.
-- 🔊 **Audio** — Mixeur, effets audio, automation et enregistrement de voix off.
+- 🔊 **Audio** — Mixeur, effets audio avec bibliothèque de préréglages (favoris et presets personnels), automation et enregistrement de voix off.
 - 🔤 **Texte et graphiques** — Titres stylés, presets de texte, import et export de sous-titres SRT.
 - 💾 **Projets** — Sauvegarde et chargement `.kut` natifs, avec autosave et chargement rétrocompatible des anciennes versions du format.
 - 📤 **Export** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg.
