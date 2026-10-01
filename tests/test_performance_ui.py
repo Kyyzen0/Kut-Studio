@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, Slot
 from PySide6.QtWidgets import QMenu, QMessageBox
 
 from core.cache_keys import SignatureMemo
@@ -79,6 +79,9 @@ def _window(qtbot, monkeypatch, tmp_path, *, project=True, answer=QMessageBox.Ye
     window = MainWindow()
     qtbot.addWidget(window)
     window.timeline_timer.stop()
+    window._played_sources = _mute_media_player(window.preview_panel.player)
+    window._proxy_log = _ProxyEventLog(window)
+    window._proxy_events.changed.connect(window._proxy_log.record)
     if project:
         window.project = _project(tmp_path)
         window.timeline_panel.set_project(window.project)
@@ -87,9 +90,50 @@ def _window(qtbot, monkeypatch, tmp_path, *, project=True, answer=QMessageBox.Ye
     return window
 
 
+def _mute_media_player(player):
+    """Le lecteur Qt n'ouvre jamais les faux médias de ces tests ; retourne les sources demandées.
+
+    Un faux MP4 fait journaliser le décodeur FFmpeg de Qt depuis son propre
+    thread : sous forte charge, le gestionnaire de messages de pytest-qt
+    plante alors le worker (« worker crashed »). ``preview_at`` garde toute
+    sa logique (choix proxy / original) : seule l'ouverture du fichier est coupée.
+    """
+    sources = []
+    player.setSource = sources.append
+    player.setPosition = lambda _ms: None
+    player.play = lambda: None
+    return sources
+
+
+class _ProxyEventLog(QObject):
+    """Dernier état de proxy **livré au thread Qt**, par ``(source, profil)``.
+
+    Connecté après ``MainWindow._on_proxy_changed`` : quand un état arrive
+    ici, la fenêtre l'a déjà traité (aperçu resynchronisé, budget appliqué).
+    """
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.last = {}
+
+    @Slot(str, object)
+    def record(self, source, info):
+        self.last[(os.path.abspath(source), info.profile_id)] = info.state
+
+
 def _wait_state(qtbot, window, asset_index, state, profile=None):
+    """Attend que la fenêtre ait **reçu et traité** ``state``, pas seulement que le disque le montre.
+
+    L'état disque passe à ``READY`` avant la notification finale du thread de
+    génération : sans cela, l'événement arrivait plus tard, au milieu du test.
+    """
     asset = window.project.media_assets[asset_index]
-    qtbot.waitUntil(lambda: window.proxies.info(asset.path, profile).state is state, timeout=TIMEOUT)
+    key = (os.path.abspath(asset.path), profile or window.proxies.profile.id)
+    qtbot.waitUntil(
+        lambda: window._proxy_log.last.get(key) is state
+        and window.proxies.info(asset.path, profile).state is state,
+        timeout=TIMEOUT,
+    )
     return window.proxies.info(asset.path, profile)
 
 
@@ -198,7 +242,8 @@ def test_preview_switches_to_the_proxy_and_back_to_the_original(qtbot, monkeypat
     window.generate_proxy_for_asset("v0")
     info = _wait_state(qtbot, window, 0, ProxyState.READY)
     qtbot.waitUntil(lambda: window.preview_panel._timeline_preview_path == info.proxy_path, timeout=TIMEOUT)
-    Path(info.proxy_path).unlink()                                           # supprimé à la main
+    assert Path(window._played_sources[-1].toLocalFile()) == Path(info.proxy_path)  # le lecteur lit le proxy
+    Path(info.proxy_path).unlink()                                          # supprimé à la main
     window.seek_to_position(1.2)
     assert window.preview_panel._timeline_preview_path == original           # retour propre à l'original
     assert Path(original).is_file()
@@ -675,8 +720,6 @@ def test_regenerating_a_proxy_changes_the_segment_key_even_though_its_path_is_st
     qtbot, monkeypatch, tmp_path, fake_proxies
 ):
     window = _window(qtbot, monkeypatch, tmp_path)
-    # Le faux proxy n'est pas un vrai média : ne jamais le donner au lecteur Qt (plantage possible en CI).
-    monkeypatch.setattr(window.preview_panel, "preview_at", lambda *_a, **_k: None)
     window.generate_proxy_for_asset("v0")
     info = _wait_state(qtbot, window, 0, ProxyState.READY)
     before = window._preview_segment_jobs(1.0)[0]
