@@ -57,6 +57,7 @@ from core.project_model import MediaAsset
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName, make_icon
+from ui.audio_effects_library import AudioEffectsLibraryView
 from ui.graphics_library import GraphicsLibraryView
 from ui.library_organization_widgets import (
     FILTER_ALL,
@@ -90,6 +91,7 @@ class ProjectPanel(QWidget):
     add_transition_requested = Signal(str, float)
     # Bibliothèque d'effets (tâche 22)
     effect_apply_requested = Signal(str)  # preset_id
+    audio_effect_apply_requested = Signal(str)  # preset_id
     effect_preset_save_requested = Signal()  # MainWindow ouvre le dialogue
     effect_preset_delete_requested = Signal(str)  # preset_id
     # Bibliothèque de transitions (tâche 23)
@@ -147,6 +149,8 @@ class ProjectPanel(QWidget):
         # La section active est choisie par le rail global ou la barre
         # supérieure. Le panneau ne duplique pas cette navigation.
         self._active_page_index = 0
+        # Sous-mode de la section Audio : fichiers (page 1) ou effets (page 6).
+        self._audio_mode = "files"
         # --- Organisation de la bibliothèque (tâche 25) ---
         # Le panneau consomme une référence à ``LibraryOrganization``
         # injectée par le MainWindow via :meth:`set_library`. La
@@ -332,6 +336,39 @@ class ProjectPanel(QWidget):
         # ----- Contenu empilé (grilles + placeholders) ----------------
         # Seule zone élastique du panneau : elle absorbe toute la
         # hauteur restante, les blocs au-dessus étant figés.
+        # Bascule Fichiers / Effets, visible uniquement dans la section Audio.
+        self.audio_mode_row = QWidget()
+        audio_mode_layout = QHBoxLayout(self.audio_mode_row)
+        audio_mode_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, 0)
+        audio_mode_layout.setSpacing(Spacing.xs)
+        self.audio_mode_buttons: dict[str, QPushButton] = {}
+        for mode, label in (("files", "Fichiers"), ("effects", "Effets audio")):
+            button = QPushButton(label)
+            button.setObjectName("scopeTab")
+            button.setCheckable(True)
+            button.setChecked(mode == "files")
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet(
+                f"QPushButton#scopeTab {{ background: transparent;"
+                f" color: {COLORS['muted']}; border: 1px solid {COLORS['border']};"
+                f" border-radius: 6px; padding: 4px 12px;"
+                f" font-weight: 600; font-size: 11px; }}"
+                f"QPushButton#scopeTab:hover {{ color: {COLORS['text']};"
+                f" background: {COLORS['surface_hover']}; }}"
+                f"QPushButton#scopeTab:checked {{ color: {COLORS['accent']};"
+                f" background: {COLORS['accent_dark']};"
+                f" border: 1px solid {COLORS['accent']}; }}"
+            )
+            button.clicked.connect(
+                lambda _checked=False, m=mode: self.set_audio_mode(m)
+            )
+            self.audio_mode_buttons[mode] = button
+            audio_mode_layout.addWidget(button)
+        audio_mode_layout.addStretch(1)
+        self.audio_mode_row.setVisible(False)
+        layout.addWidget(self.audio_mode_row)
+
         self.content_stack = QStackedWidget()
         self.content_stack.setMinimumHeight(120)
         self.content_stack.setSizePolicy(
@@ -355,6 +392,9 @@ class ProjectPanel(QWidget):
 
         self.graphics_view = GraphicsLibraryView(self)
         self.content_stack.addWidget(self.graphics_view)
+
+        self.audio_effects_view = AudioEffectsLibraryView(self)
+        self.content_stack.addWidget(self.audio_effects_view)
         # Chaque page est faite pour défiler : on neutralise leur
         # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
         # sinon la pile réserve cette hauteur et la grille de vignettes
@@ -363,11 +403,14 @@ class ProjectPanel(QWidget):
         for page in (
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
-            self.graphics_view,
+            self.graphics_view, self.audio_effects_view,
         ):
             page.setMinimumHeight(0)
             page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         layout.addWidget(self.content_stack, 1)
+        self.audio_effects_view.apply_requested.connect(
+            self.audio_effect_apply_requested
+        )
 
         # ----- Boutons d'action principaux -----------------------------
         # Une seule rangée : empilés, ils consommaient ~90 px de hauteur
@@ -627,6 +670,25 @@ class ProjectPanel(QWidget):
         builder.manage_tags_requested.connect(self.tag_manager_requested.emit)
         menu.exec(global_pos)
 
+    def set_audio_mode(self, mode: str) -> None:
+        """Bascule la section Audio entre fichiers et préréglages d'effets."""
+        if mode not in self.audio_mode_buttons:
+            return
+        self._audio_mode = mode
+        for key, button in self.audio_mode_buttons.items():
+            button.setChecked(key == mode)
+        self.select_section("audio")
+
+    def set_user_audio_effect_presets(self, presets: list) -> None:
+        """Met à jour les presets d'effets audio utilisateur."""
+        self.audio_effects_view.set_user_presets(list(presets or []))
+        if self._active_page_index == 6:
+            self._refresh_count()
+
+    def update_audio_effects_clip_context(self, *, has_audio_clip: bool) -> None:
+        """Synchronise l'état « clip audio sélectionné » avec la bibliothèque."""
+        self.audio_effects_view.set_clip_context(has_audio_clip=has_audio_clip)
+
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
         page_index = {
@@ -639,8 +701,11 @@ class ProjectPanel(QWidget):
         }.get(section_id)
         if page_index is None:
             return
+        if page_index == 1 and self._audio_mode == "effects":
+            page_index = 6
         self._active_page_index = page_index
         self.content_stack.setCurrentIndex(page_index)
+        self.audio_mode_row.setVisible(page_index in {1, 6})
         show_asset_chrome = page_index in {0, 1}
         self.library_search_row.setVisible(show_asset_chrome)
         self.library_browse_content.setVisible(show_asset_chrome)
@@ -987,6 +1052,9 @@ class ProjectPanel(QWidget):
         elif self._active_page_index == 4:
             # Bibliothèque de transitions : on annonce le total.
             count = self.transition_view.preset_count()
+            label_word = "preset" if count <= 1 else "presets"
+        elif self._active_page_index == 6:
+            count = self.audio_effects_view.preset_count()
             label_word = "preset" if count <= 1 else "presets"
         else:
             count = 0

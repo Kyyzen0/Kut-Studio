@@ -29,6 +29,7 @@ from core.autosave import (
     discard_autosave,
     sidecar_path,
 )
+from core.audio_effects_library import AudioEffectPresetStore
 from core.effects import apply_color_effect, play_crossfade_preview, set_volume
 from core.effects_library import (
     EffectCategory,
@@ -487,6 +488,19 @@ class MainWindow(QMainWindow):
         )
         self.project_panel.effect_preset_delete_requested.connect(
             self.on_effect_preset_delete_requested
+        )
+        # Bibliothèque d'effets audio (section Audio du panneau).
+        self.audio_effect_preset_store = AudioEffectPresetStore()
+        self.project_panel.set_user_audio_effect_presets(
+            self.audio_effect_preset_store.all_user_presets()
+        )
+        self.audio_effect_preset_store.subscribe(
+            lambda: self.project_panel.set_user_audio_effect_presets(
+                self.audio_effect_preset_store.all_user_presets()
+            )
+        )
+        self.project_panel.audio_effect_apply_requested.connect(
+            self.on_audio_effect_preset_apply_requested
         )
         # Tâche 23 : bibliothèque de transitions et presets.
         # ``TransitionPresetStore`` conserve favoris + presets utilisateur
@@ -2188,6 +2202,41 @@ class MainWindow(QMainWindow):
             self.playhead_seconds = playhead
             panel.set_playhead_seconds(playhead)
 
+    def _selected_audio_capable_clip_id(self) -> str | None:
+        """Clip sélectionné pouvant porter de l'audio (piste vidéo ou audio)."""
+        view = getattr(self.properties_panel, "selected_clip", None)
+        clip_id = getattr(view, "id", None)
+        if clip_id is None or getattr(view, "track_type", None) not in {
+            "video",
+            "audio",
+        }:
+            return None
+        return clip_id
+
+    def on_audio_effect_preset_apply_requested(self, preset_id: str) -> None:
+        """Applique un préréglage d'effet audio au clip sélectionné."""
+        from core.audio_effects_model import add_audio_effect_to_clip
+
+        clip_id = self._selected_audio_capable_clip_id()
+        if clip_id is None:
+            return
+        preset = self.audio_effect_preset_store.get_preset(preset_id)
+        if preset is None:
+            print(f"[MainWindow] preset audio inconnu : {preset_id!r}")
+            return
+        try:
+            add_audio_effect_to_clip(
+                self.project,
+                clip_id,
+                preset.effect_type,
+                params=preset.resolved_params(),
+            )
+        except (KeyError, ValueError) as exc:
+            print(f"[MainWindow] application du preset audio refusée : {exc}")
+            return
+        self._record_history("Appliquer un preset d'effet audio")
+        self._refresh_effects_after_change(clip_id)
+
     def _selected_video_clip_id(self) -> str | None:
         """Identifiant du clip vidéo actuellement sélectionné, ou ``None``."""
         view = getattr(self.properties_panel, "selected_clip", None)
@@ -2261,6 +2310,9 @@ class MainWindow(QMainWindow):
         # La bibliothèque de transitions partage la même notion de
         # sélection : on l'aligne dans la foulée.
         self._sync_transitions_library_context()
+        self.project_panel.update_audio_effects_clip_context(
+            has_audio_clip=self._selected_audio_capable_clip_id() is not None
+        )
 
     def _on_user_presets_changed(self) -> None:
         """Répercute les mutations du store vers la bibliothèque."""

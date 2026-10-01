@@ -16,7 +16,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 ## ✨ Features
 
 - 📁 **Project library** — Import, browse, and select project media from the **Media** bin.
-- 🗂️ **Library navigation** — Dedicated sections for Media, Audio, Text, Effects, and Transitions. Text, Effects, and Transitions provide searchable preset libraries with built-in and user presets.
+- 🗂️ **Library navigation** — Dedicated sections for Media, Audio, Text, Effects, and Transitions. Audio offers imported files and a library of audio effect presets; Text, Effects, and Transitions provide searchable preset libraries with built-in and user presets.
 - 🎥 **Preview monitor** — `QMediaPlayer` playback with play, pause, stop, and seek controls.
 - ⚙️ **Properties inspector** — Live brightness, contrast, saturation, and volume controls, plus a subtitle editor synchronized with the playhead.
 - 🎞️ **Multi-track timeline** — Video (V1 / V2), audio (A1) and subtitle (S1) tracks, with cut-at-playhead, delete-clip, markers, snapping and ripple editing.
@@ -192,7 +192,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 ## ✨ Fonctionnalités
 
 - 📁 **Bibliothèque de projet** — Importez, parcourez et sélectionnez les médias du bin **Médias**.
-- 🗂️ **Navigation de bibliothèque** — Cinq sections : Médias, Audio, Texte, Effets et Transitions. Texte, Effets et Transitions proposent des bibliothèques de préréglages avec recherche, presets intégrés et presets utilisateur.
+- 🗂️ **Navigation de bibliothèque** — Cinq sections : Médias, Audio, Texte, Effets et Transitions. Audio propose les fichiers importés et une bibliothèque de préréglages d’effets audio ; Texte, Effets et Transitions proposent des bibliothèques de préréglages avec recherche, presets intégrés et presets utilisateur.
 - 🎥 **Moniteur de prévisualisation** — Lecture via `QMediaPlayer`, avec lecture, pause, arrêt et déplacement dans la vidéo.
 - ⚙️ **Inspecteur de propriétés** — Réglages en direct de luminosité, contraste, saturation et volume, avec éditeur de sous-titres synchronisé à la tête de lecture.
 - 🎞️ **Timeline multi-pistes** — Pistes vidéo (V1 / V2), audio (A1) et sous-titres (S1), avec coupe à la tête de lecture, suppression de clip, marqueurs, magnétisme et montage ripple.
