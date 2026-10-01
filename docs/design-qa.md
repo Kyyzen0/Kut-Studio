@@ -3,7 +3,7 @@
 ## Evidence
 
 - Source visual truth: `/Users/audrykchesse/Desktop/Capture d’écran 2026-09-30 à 21.57.33.png`
-- Implementation screenshot: `/Users/audrykchesse/Kut-Studio/kut_studio_redesign_1440x900.png`
+- Implementation screenshot: `docs/kut_studio_redesign_1440x900.png`
 - Full-view comparison: `/tmp/kut-design-compare-final.png`
 - Viewport: 1440 × 900 logical pixels, device scale factor 1.
 - Source pixels: 4096 × 2304. The app region was cropped to 2780 × 1840 at `+570+250`, then normalized to 1440 × 900 for comparison.
@@ -32,7 +32,7 @@ Findings: the original implementation had a 112 px labeled rail, duplicated top 
 
 Fixes: compact icon rail, sequence-focused top bar, four primary inspector tabs plus overflow, reduced timeline chrome, single-row track headers with an actions menu, and separate missing-media/empty-timeline states.
 
-Post-fix evidence: `kut_studio_redesign_1440x900.png` shows the corrected proportions and states. The full test suite passes with 1648 passed and 2 skipped.
+Post-fix evidence: `docs/kut_studio_redesign_1440x900.png` shows the corrected proportions and states. The full test suite passes with 1648 passed and 2 skipped.
 
 ### Iteration 2
 
