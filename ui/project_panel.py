@@ -92,6 +92,9 @@ class ProjectPanel(QWidget):
     # Bibliothèque d'effets (tâche 22)
     effect_apply_requested = Signal(str)  # preset_id
     audio_effect_apply_requested = Signal(str)  # preset_id
+    audio_effect_preset_save_requested = Signal()
+    audio_effect_preset_delete_requested = Signal(str)
+    audio_effect_favorite_toggled = Signal(str)
     effect_preset_save_requested = Signal()  # MainWindow ouvre le dialogue
     effect_preset_delete_requested = Signal(str)  # preset_id
     # Bibliothèque de transitions (tâche 23)
@@ -411,6 +414,15 @@ class ProjectPanel(QWidget):
         self.audio_effects_view.apply_requested.connect(
             self.audio_effect_apply_requested
         )
+        self.audio_effects_view.save_requested.connect(
+            self.audio_effect_preset_save_requested
+        )
+        self.audio_effects_view.delete_requested.connect(
+            self.audio_effect_preset_delete_requested
+        )
+        self.audio_effects_view.favorite_toggled.connect(
+            self.audio_effect_favorite_toggled
+        )
 
         # ----- Boutons d'action principaux -----------------------------
         # Une seule rangée : empilés, ils consommaient ~90 px de hauteur
@@ -685,9 +697,18 @@ class ProjectPanel(QWidget):
         if self._active_page_index == 6:
             self._refresh_count()
 
-    def update_audio_effects_clip_context(self, *, has_audio_clip: bool) -> None:
+    def set_audio_effect_favorites(self, favorites: list) -> None:
+        """Met à jour les favoris de la bibliothèque d'effets audio."""
+        self.audio_effects_view.set_favorites(list(favorites or []))
+
+    def update_audio_effects_clip_context(
+        self, *, has_audio_clip: bool, clip_has_audio_effects: bool = False
+    ) -> None:
         """Synchronise l'état « clip audio sélectionné » avec la bibliothèque."""
-        self.audio_effects_view.set_clip_context(has_audio_clip=has_audio_clip)
+        self.audio_effects_view.set_clip_context(
+            has_audio_clip=has_audio_clip,
+            clip_has_audio_effects=clip_has_audio_effects,
+        )
 
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""

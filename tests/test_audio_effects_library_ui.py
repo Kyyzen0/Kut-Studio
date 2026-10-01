@@ -51,3 +51,45 @@ def test_audio_section_toggles_between_files_and_effects(qtbot) -> None:
     assert panel.audio_mode_row.isHidden()
     panel.select_section("audio")
     assert panel.content_stack.currentWidget() is panel.audio_effects_view
+
+
+def test_favorites_toggle_and_filter(qtbot) -> None:
+    view = AudioEffectsLibraryView()
+    qtbot.addWidget(view)
+    preset_id = builtin_audio_effect_presets()[0].id
+    with qtbot.waitSignal(view.favorite_toggled) as blocker:
+        view._cards[preset_id].favorite_button.click()
+    assert blocker.args == [preset_id]
+
+    view.set_favorites([preset_id])
+    view.favorites_button.click()
+    assert view.favorites_only()
+    assert set(view._cards) == {preset_id}
+    view.favorites_button.click()
+    assert len(view._cards) == view.preset_count()
+
+
+def test_save_button_needs_clip_with_audio_effects(qtbot) -> None:
+    view = AudioEffectsLibraryView()
+    qtbot.addWidget(view)
+    view.set_clip_context(has_audio_clip=True, clip_has_audio_effects=False)
+    assert not view.save_button.isEnabled()
+    view.set_clip_context(has_audio_clip=True, clip_has_audio_effects=True)
+    assert view.save_button.isEnabled()
+    with qtbot.waitSignal(view.save_requested):
+        view.save_button.click()
+
+
+def test_user_preset_has_delete_button_and_emits(qtbot) -> None:
+    from core.audio_effects_library import make_user_audio_effect_preset
+    from core.audio_effects_model import AudioEffectType
+
+    view = AudioEffectsLibraryView()
+    qtbot.addWidget(view)
+    user = make_user_audio_effect_preset("Mon preset", "", AudioEffectType.NORMALIZE, {})
+    view.set_user_presets([user])
+    builtin_id = builtin_audio_effect_presets()[0].id
+    assert view._cards[builtin_id].delete_button.isHidden()
+    with qtbot.waitSignal(view.delete_requested) as blocker:
+        view._cards[user.id].delete_button.click()
+    assert blocker.args == [user.id]

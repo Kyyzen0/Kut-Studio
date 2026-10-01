@@ -29,7 +29,7 @@ from core.audio_effects_library import (
     filter_audio_effect_presets,
 )
 from ui.design_system import Sizes, Spacing
-from ui.icons import IconButton, IconName
+from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
 
 
@@ -37,11 +37,17 @@ class AudioEffectPresetCard(QFrame):
     """Carte compacte d'un préréglage audio ; un clic le sélectionne."""
 
     clicked = Signal(str)
+    favorite_toggled = Signal(str)
+    delete_requested = Signal(str)
 
     CARD_HEIGHT = 64
 
     def __init__(
-        self, preset: AudioEffectPreset, parent: QWidget | None = None
+        self,
+        preset: AudioEffectPreset,
+        parent: QWidget | None = None,
+        *,
+        favorite: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("audioEffectPresetCard")
@@ -61,9 +67,13 @@ class AudioEffectPresetCard(QFrame):
         )
         self.setStyleSheet(self._base_style)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.sm, 6, Spacing.sm, 6)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(Spacing.sm, 6, Spacing.sm, 6)
+        outer.setSpacing(Spacing.sm)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
+        outer.addLayout(layout, 1)
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.xs)
@@ -85,6 +95,45 @@ class AudioEffectPresetCard(QFrame):
         label.setWordWrap(True)
         label.setStyleSheet(label_style(10, "muted", 500))
         layout.addWidget(label)
+
+        self.favorite_button = QPushButton("★" if favorite else "☆")
+        self.favorite_button.setObjectName("audioPresetFavorite")
+        self.favorite_button.setCheckable(True)
+        self.favorite_button.setChecked(favorite)
+        self.favorite_button.setCursor(Qt.PointingHandCursor)
+        self.favorite_button.setFocusPolicy(Qt.NoFocus)
+        self.favorite_button.setFixedSize(22, 22)
+        self.favorite_button.setToolTip("Ajouter aux favoris")
+        self.favorite_button.setStyleSheet(
+            f"QPushButton#audioPresetFavorite {{ background: transparent;"
+            f" border: none; color: {COLORS['muted']}; font-size: 15px; }}"
+            f"QPushButton#audioPresetFavorite:checked {{"
+            f" color: {COLORS['accent']}; }}"
+        )
+        self.favorite_button.clicked.connect(
+            lambda _checked=False, pid=preset.id: self.favorite_toggled.emit(pid)
+        )
+        outer.addWidget(self.favorite_button, 0, Qt.AlignVCenter)
+
+        self.delete_button = QPushButton()
+        self.delete_button.setObjectName("audioPresetDelete")
+        self.delete_button.setCursor(Qt.PointingHandCursor)
+        self.delete_button.setFocusPolicy(Qt.NoFocus)
+        self.delete_button.setFixedSize(22, 22)
+        self.delete_button.setToolTip("Supprimer ce preset")
+        self.delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
+        self.delete_button.setStyleSheet(
+            f"QPushButton#audioPresetDelete {{ background: transparent;"
+            f" border: 1px solid {COLORS['border']}; border-radius: 11px; }}"
+            f"QPushButton#audioPresetDelete:hover {{"
+            f" background: {COLORS['danger_dark']};"
+            f" border: 1px solid {COLORS['danger']}; }}"
+        )
+        self.delete_button.clicked.connect(
+            lambda _checked=False, pid=preset.id: self.delete_requested.emit(pid)
+        )
+        self.delete_button.setVisible(not preset.builtin)
+        outer.addWidget(self.delete_button, 0, Qt.AlignVCenter)
 
     @staticmethod
     def _style(background: str, border: str, accent: str) -> str:
@@ -125,6 +174,9 @@ class AudioEffectsLibraryView(QWidget):
     """Recherche, catégories et préréglages d'effets audio."""
 
     apply_requested = Signal(str)  # preset_id (clip résolu par MainWindow)
+    save_requested = Signal()  # MainWindow ouvre le dialogue
+    delete_requested = Signal(str)  # preset_id
+    favorite_toggled = Signal(str)  # preset_id
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -135,6 +187,9 @@ class AudioEffectsLibraryView(QWidget):
         self._cards: dict[str, AudioEffectPresetCard] = {}
         self._selected_preset_id: str | None = None
         self._has_audio_clip = False
+        self._clip_has_audio_effects = False
+        self._favorites: set[str] = set()
+        self._favorites_only = False
         self._search_text = ""
         self._active_category: AudioEffectPresetCategory | None = None
 
@@ -166,6 +221,18 @@ class AudioEffectsLibraryView(QWidget):
                 cat_layout, CATEGORY_LABELS[category].upper(), category
             )
         self.category_buttons[0].setChecked(True)
+        self.favorites_button = QPushButton("★ FAVORIS")
+        self.favorites_button.setObjectName("audioEffectsFavoritesTab")
+        self.favorites_button.setCheckable(True)
+        self.favorites_button.setCursor(Qt.PointingHandCursor)
+        self.favorites_button.setFocusPolicy(Qt.NoFocus)
+        self.favorites_button.setStyleSheet(
+            self.category_buttons[0].styleSheet().replace(
+                "audioEffectsCategoryTab", "audioEffectsFavoritesTab"
+            )
+        )
+        self.favorites_button.clicked.connect(self._on_favorites_filter_clicked)
+        cat_layout.addWidget(self.favorites_button)
         cat_layout.addStretch(1)
         header_layout.addWidget(category_row)
         layout.addWidget(header)
@@ -220,6 +287,20 @@ class AudioEffectsLibraryView(QWidget):
         self.apply_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.apply_button.clicked.connect(self._emit_apply_requested)
         actions_layout.addWidget(self.apply_button)
+
+        self.save_button = IconButton(
+            icon=IconName.SAVE,
+            tooltip="Enregistrer l'effet audio du clip comme preset",
+            size=Sizes.icon_button,
+            accent=False,
+            square=False,
+        )
+        self.save_button.setText("  Enregistrer comme preset")
+        self.save_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.save_button.setMinimumHeight(Sizes.button_md)
+        self.save_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.save_button.clicked.connect(self._emit_save_requested)
+        actions_layout.addWidget(self.save_button)
         layout.addWidget(actions)
 
         self._rebuild_cards()
@@ -230,9 +311,19 @@ class AudioEffectsLibraryView(QWidget):
         self._user_presets = list(presets or [])
         self._rebuild_cards()
 
-    def set_clip_context(self, *, has_audio_clip: bool) -> None:
-        """Active l'action quand un clip portant de l'audio est sélectionné."""
+    def set_favorites(self, favorites: list[str]) -> None:
+        self._favorites = set(favorites or [])
+        self._rebuild_cards()
+
+    def favorites_only(self) -> bool:
+        return self._favorites_only
+
+    def set_clip_context(
+        self, *, has_audio_clip: bool, clip_has_audio_effects: bool = False
+    ) -> None:
+        """Active les actions selon le clip audio sélectionné."""
         self._has_audio_clip = has_audio_clip
+        self._clip_has_audio_effects = clip_has_audio_effects
         self._refresh_buttons()
 
     def selected_preset_id(self) -> str | None:
@@ -278,12 +369,24 @@ class AudioEffectsLibraryView(QWidget):
         self._category_buttons_data.append(category)
         layout.addWidget(button)
 
+    def _on_favorites_filter_clicked(self) -> None:
+        self._favorites_only = self.favorites_button.isChecked()
+        if self._favorites_only:
+            self._active_category = None
+            for button in self.category_buttons:
+                button.setChecked(False)
+        else:
+            self.category_buttons[0].setChecked(True)
+        self._rebuild_cards()
+
     def _on_search_changed(self, text: str) -> None:
         self._search_text = text.strip()
         self._rebuild_cards()
 
     def _select_category(self, category: AudioEffectPresetCategory | None) -> None:
         self._active_category = category
+        self._favorites_only = False
+        self.favorites_button.setChecked(False)
         index = self._category_buttons_data.index(category)
         for position, button in enumerate(self.category_buttons):
             button.setChecked(position == index)
@@ -307,6 +410,8 @@ class AudioEffectsLibraryView(QWidget):
             self._builtin_presets + self._user_presets,
             search=self._search_text,
             category=self._active_category,
+            favorites=list(self._favorites),
+            favorites_only=self._favorites_only,
         )
         builtin_visible = [p for p in visible if p.builtin]
         user_visible = [p for p in visible if not p.builtin]
@@ -344,8 +449,14 @@ class AudioEffectsLibraryView(QWidget):
         )
         self._insert(label)
         for preset in presets:
-            card = AudioEffectPresetCard(preset, parent=self.cards_host)
+            card = AudioEffectPresetCard(
+                preset,
+                parent=self.cards_host,
+                favorite=preset.id in self._favorites,
+            )
             card.clicked.connect(self._select_preset)
+            card.favorite_toggled.connect(self.favorite_toggled)
+            card.delete_requested.connect(self.delete_requested)
             self._cards[preset.id] = card
             self._insert(card)
 
@@ -368,7 +479,14 @@ class AudioEffectsLibraryView(QWidget):
         self.apply_button.setEnabled(
             self._has_audio_clip and self._selected_preset_id is not None
         )
+        self.save_button.setEnabled(
+            self._has_audio_clip and self._clip_has_audio_effects
+        )
 
     def _emit_apply_requested(self) -> None:
         if self._has_audio_clip and self._selected_preset_id:
             self.apply_requested.emit(self._selected_preset_id)
+
+    def _emit_save_requested(self) -> None:
+        if self._has_audio_clip and self._clip_has_audio_effects:
+            self.save_requested.emit()

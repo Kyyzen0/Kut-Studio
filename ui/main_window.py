@@ -494,10 +494,20 @@ class MainWindow(QMainWindow):
         self.project_panel.set_user_audio_effect_presets(
             self.audio_effect_preset_store.all_user_presets()
         )
+        self.project_panel.set_audio_effect_favorites(
+            self.audio_effect_preset_store.favorites()
+        )
         self.audio_effect_preset_store.subscribe(
-            lambda: self.project_panel.set_user_audio_effect_presets(
-                self.audio_effect_preset_store.all_user_presets()
-            )
+            self._on_audio_effect_presets_changed
+        )
+        self.project_panel.audio_effect_preset_save_requested.connect(
+            self.on_audio_effect_preset_save_requested
+        )
+        self.project_panel.audio_effect_preset_delete_requested.connect(
+            self.on_audio_effect_preset_delete_requested
+        )
+        self.project_panel.audio_effect_favorite_toggled.connect(
+            self.audio_effect_preset_store.toggle_favorite
         )
         self.project_panel.audio_effect_apply_requested.connect(
             self.on_audio_effect_preset_apply_requested
@@ -2213,6 +2223,64 @@ class MainWindow(QMainWindow):
             return None
         return clip_id
 
+    def _on_audio_effect_presets_changed(self) -> None:
+        """Répercute presets utilisateur et favoris vers la bibliothèque."""
+        store = self.audio_effect_preset_store
+        self.project_panel.set_user_audio_effect_presets(store.all_user_presets())
+        self.project_panel.set_audio_effect_favorites(store.favorites())
+
+    def on_audio_effect_preset_save_requested(self) -> None:
+        """Enregistre l'effet audio sélectionné du clip comme preset."""
+        from core.audio_effects_library import make_user_audio_effect_preset
+
+        clip_id = self._selected_audio_capable_clip_id()
+        if clip_id is None:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        effects = list(clip.audio_effects)
+        if not effects:
+            QMessageBox.information(
+                self, "Effet audio", "Ce clip n'a aucun effet audio à enregistrer."
+            )
+            return
+        selected_id = getattr(
+            self.properties_panel, "_selected_audio_effect_id", None
+        )
+        effect = next((e for e in effects if e.id == selected_id), effects[0])
+        name, accepted = QInputDialog.getText(
+            self, "Enregistrer un preset audio", "Nom du preset :"
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        try:
+            preset = make_user_audio_effect_preset(
+                name, "", effect.type, dict(effect.params)
+            )
+            self.audio_effect_preset_store.add_user_preset(preset)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Effet audio", str(exc))
+
+    def on_audio_effect_preset_delete_requested(self, preset_id: str) -> None:
+        """Supprime un preset audio utilisateur après confirmation."""
+        preset = self.audio_effect_preset_store.get_preset(preset_id)
+        if preset is None or preset.builtin:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Supprimer le preset",
+            f"Supprimer le preset « {preset.name} » ?",
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            self.audio_effect_preset_store.remove_user_preset(preset_id)
+        except KeyError:
+            return
+
     def on_audio_effect_preset_apply_requested(self, preset_id: str) -> None:
         """Applique un préréglage d'effet audio au clip sélectionné."""
         from core.audio_effects_model import add_audio_effect_to_clip
@@ -2232,7 +2300,7 @@ class MainWindow(QMainWindow):
                 params=preset.resolved_params(),
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] application du preset audio refusée : {exc}")
+            QMessageBox.warning(self, "Effet audio", str(exc))
             return
         self._record_history("Appliquer un preset d'effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -2310,8 +2378,18 @@ class MainWindow(QMainWindow):
         # La bibliothèque de transitions partage la même notion de
         # sélection : on l'aligne dans la foulée.
         self._sync_transitions_library_context()
+        audio_clip_id = self._selected_audio_capable_clip_id()
+        audio_clip_has_effects = False
+        if audio_clip_id is not None:
+            try:
+                audio_clip_has_effects = bool(
+                    find_clip(self.project, audio_clip_id).audio_effects
+                )
+            except KeyError:
+                pass
         self.project_panel.update_audio_effects_clip_context(
-            has_audio_clip=self._selected_audio_capable_clip_id() is not None
+            has_audio_clip=audio_clip_id is not None,
+            clip_has_audio_effects=audio_clip_has_effects,
         )
 
     def _on_user_presets_changed(self) -> None:
@@ -2356,7 +2434,7 @@ class MainWindow(QMainWindow):
         try:
             apply_preset_to_clip(self.project, clip_id, preset)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] application du preset refusée : {exc}")
+            QMessageBox.warning(self, "Preset d'effets", str(exc))
             return
         self._record_history("Appliquer un preset d'effets")
         self._refresh_effects_after_change(clip_id)
@@ -2456,7 +2534,7 @@ class MainWindow(QMainWindow):
         try:
             add_effect_to_clip(self.project, clip_id, effect_type)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] ajout d'effet refusé : {exc}")
+            QMessageBox.warning(self, "Effets", str(exc))
             return
         self._record_history("Ajouter un effet")
         self._refresh_effects_after_change(clip_id)
@@ -2518,7 +2596,7 @@ class MainWindow(QMainWindow):
                 self.project, clip_id, AudioEffectType(effect_type)
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] ajout d'effet audio refusé : {exc}")
+            QMessageBox.warning(self, "Effet audio", str(exc))
             return
         self._record_history("Ajouter un effet audio")
         self._refresh_effects_after_change(clip_id)
