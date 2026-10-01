@@ -51,6 +51,7 @@ remplacé par un contenu partiel.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -63,7 +64,7 @@ from .compositing import compositing_from_dict, compositing_to_dict
 from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
-from .visual_effects import ClipTransform, TransformKeyframe
+from .visual_effects import ClipTransform, TransformKeyframe, migrate_legacy_keyframes
 
 if TYPE_CHECKING:
     from .audio_automation import AutomationPoint
@@ -80,8 +81,13 @@ if TYPE_CHECKING:
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 12
+CURRENT_VERSION = 13
 """Version courante du format public ``.kut``.
+
+La version 13 ajoute aux images-clés l'interpolation, les pentes Bézier, le
+mode des tangentes et un identifiant (voir ``docs/animation.md``). Les
+images-clés d'un fichier antérieur sont converties sans changer le rendu
+(:func:`core.visual_effects.migrate_legacy_keyframes`).
 
 Le compositing reste un champ optionnel du schéma v12 : son absence produit
 l'état neutre, donc il ne justifie pas une rupture de format.
@@ -644,9 +650,12 @@ def _deserialize_track(
         keyframes_raw = raw_clip.get("transform_keyframes", [])
         if not isinstance(keyframes_raw, list):
             raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
-        clip_kwargs["transform_keyframes"] = [
-            _dict_to_keyframe(raw) for raw in keyframes_raw
-        ]
+        keyframes = [_dict_to_keyframe(raw) for raw in keyframes_raw]
+        if _is_legacy_keyframe_list(keyframes_raw):
+            # Ancien moteur : valeur de base jusqu'au premier keyframe. On
+            # garde exactement ce rendu (keyframe ``hold`` à 0 si nécessaire).
+            keyframes = migrate_legacy_keyframes(clip_kwargs["transform"], keyframes)
+        clip_kwargs["transform_keyframes"] = keyframes
         # Gérer le time_remapping (version 7+)
         if "time_remapping" in raw_clip:
             clip_kwargs["time_remapping"] = _dict_to_time_remapping(
@@ -751,11 +760,30 @@ def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
 
 
 def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "property_name": keyframe.property_name,
         "time_seconds": float(keyframe.time_seconds),
         "value": float(keyframe.value),
+        "interpolation": keyframe.interpolation.value,
+        "tangent_mode": keyframe.tangent_mode.value,
+        "id": keyframe.id,
     }
+    # Pentes Bézier : seulement si fixées (``None`` = automatique).
+    if keyframe.in_slope is not None:
+        data["in_slope"] = keyframe.in_slope
+    if keyframe.out_slope is not None:
+        data["out_slope"] = keyframe.out_slope
+    return data
+
+
+def _optional_slope(raw: object) -> float | None:
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
@@ -765,6 +793,19 @@ def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
         property_name=str(raw["property_name"]),
         time_seconds=float(raw["time_seconds"]),
         value=float(raw["value"]),
+        # Champs v13 : absents d'un ancien fichier → linéaire, pentes automatiques.
+        interpolation=raw.get("interpolation", "linear"),
+        in_slope=_optional_slope(raw.get("in_slope")),
+        out_slope=_optional_slope(raw.get("out_slope")),
+        tangent_mode=raw.get("tangent_mode", "linked"),
+        id=str(raw.get("id") or ""),
+    )
+
+
+def _is_legacy_keyframe_list(raw_keyframes: list) -> bool:
+    """Images-clés écrites par l'ancien moteur (avant le format 13) ?"""
+    return bool(raw_keyframes) and all(
+        isinstance(raw, dict) and "interpolation" not in raw for raw in raw_keyframes
     )
 
 

@@ -580,6 +580,7 @@ class PreviewEngine:
         subtitle_path = None
         owns_subtitle = False
         tmp_path = None
+        graph_files: list[str] = []
         try:
             if token is not None and getattr(token, "cancelled", False):
                 return None
@@ -600,6 +601,7 @@ class PreviewEngine:
                 duration=job.duration,
                 output_path=tmp_path,
                 srt_path=subtitle_path,
+                temporary_files=graph_files,
             )
             completed = subprocess.run(
                 command, capture_output=True, timeout=120, check=False
@@ -613,6 +615,8 @@ class PreviewEngine:
             self._remove_file(tmp_path)
             raise
         finally:
+            for graph_file in graph_files:  # graphe trop long passé par fichier
+                self._remove_file(graph_file)
             # Le fichier de sous-titres n'a servi qu'au filtre libass.
             if owns_subtitle and subtitle_path:
                 with self._lock:

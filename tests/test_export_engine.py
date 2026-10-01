@@ -8,6 +8,7 @@ aucun processus : les binaires FFmpeg sont mockés via ``monkeypatch``.
 from pathlib import Path
 
 import pytest
+from ffmpeg_expr import evaluate as evaluate_expression
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication
 
@@ -192,8 +193,11 @@ def test_animated_transform_uses_filter_specific_time_variables(engine, tmp_path
     clip = project.tracks[0].clips[0]
     clip.transform = ClipTransform(scale=1.0, rotation=0.0, opacity=1.0)
     clip.transform_keyframes = [
+        TransformKeyframe("scale", 0.0, 1.0),
         TransformKeyframe("scale", 1.0, 1.5),
+        TransformKeyframe("rotation", 0.0, 0.0),
         TransformKeyframe("rotation", 1.0, 45.0),
+        TransformKeyframe("opacity", 0.0, 1.0),
         TransformKeyframe("opacity", 1.0, 0.5),
     ]
     request = make_request(build_render_plan(project), tmp_path, ExportFormat.MP4_H264)
@@ -201,10 +205,14 @@ def test_animated_transform_uses_filter_specific_time_variables(engine, tmp_path
     command = engine._build_command(request)
     filter_complex = command[command.index("-filter_complex") + 1]
 
-    assert filter_complex.count("lt(t,1.0)") >= 2
-    assert "rotate=a='if(lt(t,1.0)" in filter_complex
-    assert "geq=" in filter_complex
-    assert "lt(T\\," in filter_complex
+    # Chaque filtre reçoit la courbe exprimée dans SA variable de temps, et
+    # l'expression calcule la même valeur que le moteur Python.
+    rotation = filter_complex.split("rotate=a='", 1)[1].split("*0.0174", 1)[0]
+    assert "T" not in rotation and evaluate_expression(rotation, t=0.5) == pytest.approx(22.5)
+    scale = filter_complex.split("scale=w='trunc(iw*(", 1)[1].split(")*1920.0/iw", 1)[0]
+    assert evaluate_expression(scale, t=0.5) == pytest.approx(1.25)
+    opacity = filter_complex.split("geq=", 1)[1].split("a='", 1)[1].split("'", 1)[0]
+    assert "t," not in opacity and evaluate_expression(opacity, T=0.5) == pytest.approx(0.75)
 
 
 def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_path):
@@ -214,6 +222,7 @@ def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_pat
     clip.timeline_start = 2.0
     clip.transform = ClipTransform(position_x=0.0, position_y=0.0)
     clip.transform_keyframes = [
+        TransformKeyframe("position_x", 0.0, 0.0),
         TransformKeyframe("position_x", 1.0, 0.5),
     ]
     plan = build_render_plan(project)
@@ -228,7 +237,11 @@ def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_pat
     command = engine._build_command(request)
     filter_complex = command[command.index("-filter_complex") + 1]
 
-    assert "lt((t-2.0),1.0)" in filter_complex
+    # Calque centré (comme l'aperçu), puis décalé de position × largeur d'export.
+    assert "x='(W-w)/2+(" in filter_complex and "y='(H-h)/2+(" in filter_complex
+    x_expression = filter_complex.split("x='(W-w)/2+(", 1)[1].split(")*320.0", 1)[0]
+    assert "(t-2.0)" in x_expression                                # temps local au clip
+    assert evaluate_expression(x_expression, t=2.5) == pytest.approx(0.25)
     assert "*320.0" in filter_complex
     assert "*1920.0" not in filter_complex
 

@@ -464,7 +464,12 @@ def test_cut_clip_preserves_audio_and_transform_metadata() -> None:
     assert (left.pan, right.pan) == pytest.approx((0.25, 0.25))
     assert (left.fade_in, left.fade_out) == pytest.approx((1.0, 0.0))
     assert (right.fade_in, right.fade_out) == pytest.approx((0.0, 1.0))
-    assert [keyframe.time_seconds for keyframe in left.transform_keyframes] == [1.0]
+    # La coupe ne change pas l'animation : la partie gauche finit sur la valeur
+    # interpolée à la coupe au lieu de rester figée sur son dernier keyframe.
+    assert [keyframe.time_seconds for keyframe in left.transform_keyframes] == [1.0, 2.0]
+    assert evaluate_transform(
+        left.transform, left.transform_keyframes, 2.0, left.duration
+    ).scale == pytest.approx(0.65)
     assert [keyframe.time_seconds for keyframe in right.transform_keyframes] == [0.0, 1.0]
     assert evaluate_transform(
         right.transform, right.transform_keyframes, 0.0, right.duration

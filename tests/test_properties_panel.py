@@ -87,7 +87,8 @@ def test_fields_show_evaluated_value_and_follow_the_playhead(qtbot) -> None:
     keyframes = [TransformKeyframe("scale", 1.0, 0.5)]
 
     panel.update_transform_from_clip(transform, keyframes, playhead_seconds=10.0)
-    assert panel._spin_boxes["scale"].value() == pytest.approx(1.0)
+    # Avant le premier keyframe : la valeur de ce keyframe (moteur d'animation).
+    assert panel._spin_boxes["scale"].value() == pytest.approx(0.5)
     assert panel._diamonds["scale"].isChecked() is False
 
     panel.refresh_keyframe_diamonds(keyframes, 11.0, transform=transform)
@@ -117,7 +118,8 @@ def test_editing_near_a_keyframe_rewrites_its_stored_time(qtbot) -> None:
     assert added == [("clip", "scale", pytest.approx(1.0), pytest.approx(0.25))]
 
 
-def test_editing_before_the_first_keyframe_changes_the_base(qtbot) -> None:
+def test_editing_an_animated_property_before_its_first_keyframe_adds_one(qtbot) -> None:
+    """Propriété animée : toute saisie crée une image-clé à la tête de lecture."""
     panel = _panel(qtbot)
     panel.show_clip(_view())
     panel.update_transform_from_clip(
@@ -132,8 +134,8 @@ def test_editing_before_the_first_keyframe_changes_the_base(qtbot) -> None:
 
     panel._spin_boxes["scale"].setValue(1.2)
 
-    assert added == []
-    assert changed == [("clip", "scale", pytest.approx(1.2))]
+    assert added == [("clip", "scale", pytest.approx(0.5), pytest.approx(1.2))]
+    assert changed == []
 
 
 def test_editing_between_keyframes_inserts_one_at_the_playhead(qtbot) -> None:

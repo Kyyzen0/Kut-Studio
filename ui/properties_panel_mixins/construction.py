@@ -402,6 +402,7 @@ class ConstructionMixin:
         movement_layout.setSpacing(Spacing.xs)
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
         self._diamonds: dict[str, _DiamondButton] = {}
+        self._keyframe_nav_buttons: dict[str, tuple[QToolButton, QToolButton]] = {}
         self._slider_widgets: dict[str, QSlider] = {}
         for property_name in ANIMATABLE_PROPERTIES:
             low, high, step = _PROPERTY_RANGES[property_name]
@@ -437,13 +438,42 @@ class ConstructionMixin:
                 self._slider_widgets[property_name] = slider
                 row_layout.addWidget(slider, 1)
 
+            # Animation : ‹ ◆ › — précédent, ajouter / retirer, suivant. Le
+            # reste (interpolation, copier/coller, courbes) est au clic droit.
+            animation_row = QHBoxLayout()
+            animation_row.setContentsMargins(0, 0, 0, 0)
+            animation_row.setSpacing(2)
+            previous_button = QToolButton()
+            previous_button.setObjectName("iconOnly")  # padding nul : sinon le thème rogne la flèche
+            previous_button.setText("‹")
+            previous_button.setFixedSize(18, 22)
+            previous_button.setEnabled(False)
+            previous_button.clicked.connect(
+                lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, -1)
+            )
             diamond = _DiamondButton(property_name)
             diamond.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_diamond_clicked(name)
             )
+            diamond.setContextMenuPolicy(Qt.CustomContextMenu)
+            diamond.customContextMenuRequested.connect(
+                lambda position, name=property_name: self._open_animation_menu(name, position)
+            )
             diamond.setEnabled(False)
+            next_button = QToolButton()
+            next_button.setObjectName("iconOnly")
+            next_button.setText("›")
+            next_button.setFixedSize(18, 22)
+            next_button.setEnabled(False)
+            next_button.clicked.connect(
+                lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, 1)
+            )
             self._diamonds[property_name] = diamond
-            row_layout.addWidget(diamond)
+            self._keyframe_nav_buttons[property_name] = (previous_button, next_button)
+            for widget in (previous_button, diamond, next_button):
+                animation_row.addWidget(widget)
+            animation_row.addStretch(1)
+            row_layout.addLayout(animation_row)
             movement_layout.addWidget(row)
 
         reset_button = IconButton(

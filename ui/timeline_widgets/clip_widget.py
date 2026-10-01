@@ -428,6 +428,19 @@ class ClipWidget(QWidget):
                 parent.blade_cut_requested.emit(self.view.id, instant)
             event.accept()
             return
+        hit = None if locked or parent.tool != "select" else self._keyframe_hit(event.position())
+        if hit:
+            if parent.selected_clip_id != self.view.id:
+                parent._select_from_pointer(self.view.id, Qt.NoModifier, drag=False)
+            additive = bool(event.modifiers() & Qt.ShiftModifier)
+            parent.press_keyframes(self._keyframe_refs(hit), additive)
+            self.drag_mode = "keyframes"
+            self.drag_start_x = int(event.globalPosition().x())
+            self._keyframe_anchor_time = self.view.start + hit[0].time_seconds
+            event.accept()
+            return
+        if getattr(parent, "selected_keyframes", None):
+            parent.keyframes_selected.emit([], False)
         parent._select_from_pointer(self.view.id, event.modifiers(), drag=not locked)
         if locked:
             event.accept()
@@ -457,6 +470,10 @@ class ClipWidget(QWidget):
         if scale <= 0:
             return
         delta_seconds = (event.globalPos().x() - self.drag_start_x) / scale
+        if self.drag_mode == "keyframes":
+            parent.preview_keyframe_drag(self._keyframe_anchor_time, delta_seconds, self.view.id)
+            event.accept()
+            return
         if self.drag_mode in {"fade-in", "fade-out"}:
             which = self.drag_mode.split("-", 1)[1]
             parent.preview_fade(self, which, self.drag_original_fade + delta_seconds)
@@ -496,7 +513,9 @@ class ClipWidget(QWidget):
             return super().mouseReleaseEvent(event)
         parent = self.parent_timeline
         if parent is not None and self.drag_mode is not None:
-            if self.drag_mode == "move":
+            if self.drag_mode == "keyframes":
+                parent.finish_keyframe_drag()
+            elif self.drag_mode == "move":
                 parent.finish_group_move(self.view.id)
             elif self.drag_mode == "trim-right":
                 parent.trim_clip_right_requested.emit(self.view.id, self.pending_end)
@@ -532,48 +551,83 @@ class ClipWidget(QWidget):
         self._paint_fade_handles()
         self._paint_effect_badge()
         self._paint_time_remapping_badges()
+        self._paint_keyframes()
+
+    # ------------------------------------------------------------------
+    # Images-clés (affichage, sélection, glisser temporel)
+    # ------------------------------------------------------------------
+
+    _KEYFRAME_SIZE = 10
+    _KEYFRAME_MARGIN = 5
+
+    def _keyframe_items(self) -> list[tuple[QRectF, list]]:
+        """Losanges dessinés : ``(rectangle, images-clés)``, un par instant et propriété."""
         keyframes = getattr(self.view, "keyframes", None) or []
-        if not keyframes:
-            return
+        parent = self.parent_timeline
+        if not keyframes or parent is None:
+            return []
         track_type = getattr(self.view, "track_type", None)
         if track_type not in {"video", "graphics", None} and not self.view.track_id.startswith(("V", "G")):
-            return
+            return []
         duration = max(self.view.end - self.view.start, 1e-6)
-        parent = self.parent_timeline
-        if parent is None:
-            return
         pixels_per_second = parent.pixels_per_second * parent.zoom
         grouped: dict[float, list] = {}
         for kf in keyframes:
             grouped.setdefault(round(kf.time_seconds, 4), []).append(kf)
+        size, margin = self._KEYFRAME_SIZE, self._KEYFRAME_MARGIN
+        items: list[tuple[QRectF, list]] = []
+        for time_seconds, frames in grouped.items():
+            local = max(0.0, min(duration, time_seconds))
+            x = local * pixels_per_second
+            if x < margin - size or x > self.width() - margin + size:
+                continue
+            for index, kf in enumerate(sorted(frames, key=lambda k: k.property_name)):
+                y = self.height() - margin - size - index * (size - 2)
+                items.append((QRectF(x - size / 2, y, size, size), [kf]))
+        return items
+
+    def _keyframe_refs(self, frames) -> list:
+        from core.keyframe_editing import KeyframeRef
+
+        return [KeyframeRef(self.view.id, kf.property_name, kf.id) for kf in frames]
+
+    def _keyframe_hit(self, position) -> list | None:
+        """Losange sous le pointeur ; le plus proche quand des losanges se chevauchent."""
+        best, best_distance = None, None
+        for rect, frames in self._keyframe_items():
+            if rect.adjusted(-3, -3, 3, 3).contains(position):
+                center = rect.center()
+                distance = (center.x() - position.x()) ** 2 + (center.y() - position.y()) ** 2
+                if best_distance is None or distance < best_distance:
+                    best, best_distance = frames, distance
+        return best
+
+    def _paint_keyframes(self) -> None:
+        items = self._keyframe_items()
+        if not items:
+            return
+        parent = self.parent_timeline
+        pixels_per_second = parent.pixels_per_second * parent.zoom
+        palette = _current_palette()
+        drag = getattr(parent, "keyframe_drag_delta", 0.0)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        margin = 5
-        diamond_size = 10
-        palette = _current_palette()
-        for time_seconds, items in grouped.items():
-            local = max(0.0, min(duration, time_seconds))
-            x = int(local * pixels_per_second)
-            if x < margin or x > self.width() - margin:
-                continue
-            for index, kf in enumerate(sorted(items, key=lambda k: k.property_name)):
-                y = (
-                    self.height()
-                    - margin
-                    - diamond_size
-                    - index * (diamond_size - 2)
-                )
-                polygon = QPolygonF(
-                    [
-                        QPointF(x, y),
-                        QPointF(x + diamond_size / 2, y + diamond_size / 2),
-                        QPointF(x, y + diamond_size),
-                        QPointF(x - diamond_size / 2, y + diamond_size / 2),
-                    ]
-                )
-                painter.setBrush(QColor(palette.diamond_filled))
-                painter.setPen(QPen(QColor(palette.diamond_border), 1))
-                painter.drawPolygon(polygon)
+        for rect, frames in items:
+            ref = self._keyframe_refs(frames)[0]
+            selected = parent.keyframe_selected(ref)
+            offset = drag * pixels_per_second if selected else 0.0
+            x, y, size = rect.center().x() + offset, rect.top(), rect.width()
+            polygon = QPolygonF(
+                [
+                    QPointF(x, y),
+                    QPointF(x + size / 2, y + size / 2),
+                    QPointF(x, y + size),
+                    QPointF(x - size / 2, y + size / 2),
+                ]
+            )
+            painter.setBrush(QColor(palette.diamond_filled if not selected else "#FFFFFF"))
+            painter.setPen(QPen(QColor(palette.diamond_filled if selected else palette.diamond_border), 2 if selected else 1))
+            painter.drawPolygon(polygon)
         painter.end()
 
     def _paint_media_preview(self) -> None:

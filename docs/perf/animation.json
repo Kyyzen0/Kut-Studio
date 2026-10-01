@@ -1,0 +1,23 @@
+{
+  "10": {
+    "evaluate_us": 0.75,
+    "evaluate_transform_5_props_us": 8.42,
+    "build_curve_us": 10.2,
+    "ffmpeg_expression_us": 26.5,
+    "ffmpeg_expression_chars": 899
+  },
+  "100": {
+    "evaluate_us": 0.791,
+    "evaluate_transform_5_props_us": 16.33,
+    "build_curve_us": 118.2,
+    "ffmpeg_expression_us": 290.1,
+    "ffmpeg_expression_chars": 10098
+  },
+  "1000": {
+    "evaluate_us": 0.834,
+    "evaluate_transform_5_props_us": 92.42,
+    "build_curve_us": 1149.7,
+    "ffmpeg_expression_us": 2895.2,
+    "ffmpeg_expression_chars": 105011
+  }
+}

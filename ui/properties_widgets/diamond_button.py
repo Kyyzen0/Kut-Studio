@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter, QColor, QPolygonF
+from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import (
     QToolButton,
@@ -15,9 +15,10 @@ from ui.theme import COLORS
 class _DiamondButton(QToolButton):
     """Petit bouton losange pour ajouter / retirer une image-clé.
 
-    État ``checked`` : image-clé présente au playhead courant.
-    Clic simple : ajoute ou remplace l'image-clé.
-    Maj+clic : retire l'image-clé présente sous la tête de lecture.
+    État ``checked`` : image-clé présente au playhead courant (losange plein).
+    État ``animated`` : la propriété est animée, sans image-clé ici (contour
+    accentué). Clic : ajoute l'image-clé (et active l'animation) ou retire
+    celle présente sous la tête de lecture. Clic droit : menu d'animation.
     """
 
     def __init__(self, property_name: str, parent=None):
@@ -27,10 +28,16 @@ class _DiamondButton(QToolButton):
         self.setChecked(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(22, 22)
+        self.animated = False
         self.setToolTip(
-            f"Image-clé « {property_name} » : clic pour ajouter ou remplacer, "
-            "Maj+clic pour retirer"
+            f"Image-clé « {property_name} » : clic pour ajouter ou retirer, "
+            "clic droit pour plus d'options"
         )
+
+    def set_animated(self, animated: bool) -> None:
+        if animated != self.animated:
+            self.animated = animated
+            self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -50,5 +57,6 @@ class _DiamondButton(QToolButton):
             painter.setBrush(QColor(COLORS["diamond_filled"]))
         else:
             painter.setBrush(QColor(COLORS["surface"]))
-        painter.setPen(QColor(COLORS["diamond_outline"]))
+        outline = QColor(COLORS["diamond_filled"] if self.animated else COLORS["diamond_outline"])
+        painter.setPen(QPen(outline, 2 if self.animated else 1))
         painter.drawPolygon(polygon)

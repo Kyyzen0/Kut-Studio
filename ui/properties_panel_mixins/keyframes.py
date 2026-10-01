@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QMenu,
 )
+
+from core.animation import InterpolationType
+from ui import i18n
 
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
@@ -97,6 +102,7 @@ class KeyframesMixin:
         local = self._display_local_time()
         mode, time_seconds = self._edit_target(property_name, local)
         clip_id = self.selected_clip.id
+        self.active_property_changed.emit(property_name)
         if mode == "base":
             self.transform_changed.emit(clip_id, property_name, value)
             return
@@ -120,14 +126,20 @@ class KeyframesMixin:
         self._apply_diamond_action(property_name, shift=shift)
 
     def _apply_diamond_action(self, property_name: str, *, shift: bool) -> None:
+        """Clic sur le losange : retire l'image-clé sous la tête, sinon en ajoute une.
+
+        Le premier clic d'une propriété non animée **active l'animation**
+        (image-clé à la valeur actuelle). Maj+clic retire seulement.
+        """
         if self.selected_clip is None:
             return
         if not self._playhead_inside_clip():
             self._restore_diamond(property_name)
             return
+        self.active_property_changed.emit(property_name)
         local = self._display_local_time()
         matched = self._matching_keyframe(property_name, local)
-        if shift:
+        if shift or matched is not None:
             if matched is None:
                 self._restore_diamond(property_name)
                 return
@@ -137,6 +149,10 @@ class KeyframesMixin:
                 property_name,
                 float(matched.time_seconds),
             )
+            return
+        if not self._is_animated(property_name):
+            self._set_diamond_checked(property_name, True)
+            self.animation_toggled.emit(self.selected_clip.id, property_name, True)
             return
         spin = self._spin_boxes.get(property_name)
         if spin is None:
@@ -216,16 +232,19 @@ class KeyframesMixin:
                 best_distance = distance
         return best
 
+    def _is_animated(self, property_name: str) -> bool:
+        return any(k.property_name == property_name for k in self._current_keyframes)
+
     def _edit_target(self, property_name: str, local_time: float) -> tuple[str, float]:
+        """Où va une valeur saisie : base (non animée) ou image-clé au temps courant.
+
+        Propriété animée : la saisie crée (ou met à jour) une image-clé à la tête
+        de lecture — « activer, déplacer la tête, modifier » suffit à animer.
+        """
         matched = self._matching_keyframe(property_name, local_time)
         if matched is not None:
             return "keyframe", float(matched.time_seconds)
-        keyed = [
-            keyframe.time_seconds
-            for keyframe in self._current_keyframes
-            if keyframe.property_name == property_name
-        ]
-        if not keyed or local_time < min(keyed) - 1e-9:
+        if not self._is_animated(property_name):
             return "base", local_time
         duration = self._clip_duration()
         if local_time > duration:
@@ -289,13 +308,74 @@ class KeyframesMixin:
 
     def _sync_diamonds(self) -> None:
         local = self._display_local_time()
+        enabled = self.selected_clip is not None and self.movement_group.isEnabled()
         for property_name, diamond in self._diamonds.items():
             diamond.blockSignals(True)
             diamond.setChecked(
                 self._matching_keyframe(property_name, local) is not None
             )
             diamond.blockSignals(False)
+            times = [k.time_seconds for k in self._current_keyframes if k.property_name == property_name]
+            diamond.set_animated(bool(times))
+            buttons = getattr(self, "_keyframe_nav_buttons", {}).get(property_name)
+            if buttons is not None:
+                previous_button, next_button = buttons
+                previous_button.setEnabled(enabled and any(t < local - 1e-3 for t in times))
+                next_button.setEnabled(enabled and any(t > local + 1e-3 for t in times))
         self._sync_diamond_state_memory()
+
+    # ------------------------------------------------------------------
+    # Navigation et menu d'animation
+    # ------------------------------------------------------------------
+
+    def _on_keyframe_navigation(self, property_name: str, direction: int) -> None:
+        """Flèches ‹ › d'une ligne : image-clé précédente / suivante de la propriété."""
+        if self.selected_clip is not None:
+            self.keyframe_navigation_requested.emit(property_name, int(direction))
+
+    def animation_menu(self, property_name: str) -> QMenu:
+        """Menu du losange : activer / désactiver, interpolation, copier / coller, courbes."""
+        menu = QMenu(self)
+        clip = self.selected_clip
+        if clip is None:
+            return menu
+        animated = self._is_animated(property_name)
+        toggle = QAction(i18n.translate("animation.menu.disable" if animated else "animation.menu.enable"), menu)
+        toggle.triggered.connect(
+            lambda: self.animation_toggled.emit(clip.id, property_name, not animated)
+        )
+        menu.addAction(toggle)
+        matched = self._matching_keyframe(property_name, self._display_local_time())
+        interpolation_menu = menu.addMenu(i18n.translate("animation.menu.interpolation"))
+        interpolation_menu.setEnabled(matched is not None)
+        for kind in InterpolationType:
+            action = QAction(i18n.translate(f"animation.interpolation.{kind.value}"), interpolation_menu)
+            action.setCheckable(True)
+            action.setChecked(matched is not None and matched.interpolation is kind)
+            action.triggered.connect(
+                lambda _checked=False, value=kind.value: self.interpolation_requested.emit(property_name, value)
+            )
+            interpolation_menu.addAction(action)
+        menu.addSeparator()
+        copy = QAction(i18n.translate("animation.menu.copy"), menu)
+        copy.setEnabled(animated)
+        copy.triggered.connect(lambda: self.animation_copy_requested.emit(property_name))
+        menu.addAction(copy)
+        paste = QAction(i18n.translate("animation.menu.paste"), menu)
+        paste.triggered.connect(lambda: self.animation_paste_requested.emit(property_name))
+        menu.addAction(paste)
+        menu.addSeparator()
+        graph = QAction(i18n.translate("animation.menu.graph"), menu)
+        graph.triggered.connect(lambda: self.graph_editor_requested.emit(property_name))
+        menu.addAction(graph)
+        return menu
+
+    def _open_animation_menu(self, property_name: str, position) -> None:
+        diamond = self._diamonds.get(property_name)
+        if diamond is None or self.selected_clip is None:
+            return
+        self.active_property_changed.emit(property_name)
+        self.animation_menu(property_name).exec(diamond.mapToGlobal(position))
 
     def refresh_keyframe_diamonds(
         self,

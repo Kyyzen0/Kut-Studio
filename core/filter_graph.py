@@ -60,8 +60,12 @@ def ffmpeg_supports_subtitles():
 
 
 def build_preview_command(plan, **kwargs):
-    """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export."""
-    from .export_engine import _ffmpeg_command_prefix
+    """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export.
+
+    ``temporary_files`` (liste) recoit le fichier du graphe quand il est trop
+    long pour la ligne de commande : l'appelant le supprime apres le rendu.
+    """
+    from .export_engine import _ffmpeg_command_prefix, filter_graph_arguments
     from .preview_render import preview_crf, preview_preset
 
     width = int(kwargs.get("width", 1920))
@@ -78,7 +82,8 @@ def build_preview_command(plan, **kwargs):
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     for path in input_paths:
         command.extend(["-i", path])
-    command.extend(["-filter_complex", filter_complex])
+    temporary_files = kwargs.get("temporary_files")
+    command.extend(filter_graph_arguments(filter_complex, temporary_files if temporary_files is not None else []))
     command.extend(["-map", "[" + video_label + "]"])
     command.extend(["-map", "[" + audio_label + "]"])
     # Reglages x264 propres a la qualite d'apercu (brouillon rapide,

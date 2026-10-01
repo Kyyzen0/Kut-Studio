@@ -1175,12 +1175,12 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
     # Quand l'opacité est animée, ``geq`` doit apparaître (le
     # ``colorchannelmixer`` standard n'accepte pas ``T``).
     assert "geq=" in filter_complex
-    # L'expression d'opacité animée utilise ``if(lt(T\\,t)\\,A\\,B)``
-    # (forme avec virgules échappées pour passer -filter_complex).
+    # L'expression d'opacité animée (somme de segments ``gte(T\\,t0)*lt(T\\,t1)*…``)
+    # a ses virgules échappées pour passer -filter_complex.
     assert "lt(T\\," in filter_complex
     assert "scale=w=" in filter_complex
     assert "rotate=" in filter_complex
-    assert "lt(t,4.0)" in filter_complex
+    assert "lt(t,3.9999995)" in filter_complex  # fin de segment au dernier keyframe (4 s)
     assert "overlay=" in filter_complex
 
     # 5. Exécution réelle de l'engine (sans sous-titre → engine finit

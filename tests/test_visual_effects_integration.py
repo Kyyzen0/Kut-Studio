@@ -29,6 +29,7 @@ from core.export_engine import (
 from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
+from core.visual_effects import evaluate_transform
 from core.timeline_operations import (
     duplicate_clip,
     find_clip,
@@ -278,12 +279,15 @@ def test_trim_left_shifts_keyframes_in_place():
     project = _make_project_with_video()
     set_transform_keyframe(project, "vclip", "scale", 1.0, 0.4)
     set_transform_keyframe(project, "vclip", "scale", 2.0, 0.6)
-    # Trim gauche : timeline_start = 1.0 → source_in = 1.0, delta = +1.0
-    # Les keyframes locales 1.0s et 2.0s deviennent 2.0s et 3.0s.
+    # Trim gauche : timeline_start = 1.0 → source_in = 1.0, delta = +1.0.
+    # Les keyframes suivent le média : 1.0s et 2.0s deviennent 0.0s et 1.0s
+    # (l'ancien moteur les décalait dans le mauvais sens, à 2.0s et 3.0s).
+    before = evaluate_transform(ClipTransform(), find_clip(project, "vclip").transform_keyframes, 1.5).scale
     trim_clip_left(project, "vclip", 1.0)
     clip = find_clip(project, "vclip")
     times = sorted(kf.time_seconds for kf in clip.transform_keyframes if kf.property_name == "scale")
-    assert times == [2.0, 3.0]
+    assert times == [0.0, 1.0]
+    assert evaluate_transform(ClipTransform(), clip.transform_keyframes, 0.5).scale == pytest.approx(before)
 
 
 def test_trim_right_drops_keyframes_beyond_new_duration():
@@ -365,7 +369,10 @@ def test_export_engine_includes_animated_rotation_and_position(engine, tmp_path)
         "vclip",
         ClipTransform(position_x=0.3, rotation=90.0, opacity=0.6, scale=1.5),
     )
+    # Une animation = au moins deux keyframes (un seul keyframe est une valeur constante).
+    set_transform_keyframe(project, "vclip", "rotation", 0.0, 90.0)
     set_transform_keyframe(project, "vclip", "rotation", 2.0, 180.0)
+    set_transform_keyframe(project, "vclip", "position_x", 0.0, 0.3)
     set_transform_keyframe(project, "vclip", "position_x", 1.0, 0.6)
     plan = build_render_plan(project)
     request = ExportRequest(
@@ -387,7 +394,7 @@ def test_export_engine_includes_animated_rotation_and_position(engine, tmp_path)
     assert "rotate=" in filter_complex
     # ``rotate`` et ``overlay`` exposent le temps via ``t``. ``T`` ne
     # fonctionnerait que dans ``geq`` pour l'opacité.
-    assert "if(lt(t," in filter_complex
+    assert "lt(t," in filter_complex
     assert "overlay=" in filter_complex
 
 

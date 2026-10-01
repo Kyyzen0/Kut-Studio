@@ -512,7 +512,9 @@ class PreviewPanel(QWidget):
         delta_y = float(position_y) * scene_h
         transform = QTransform()
         transform.translate(center_x + delta_x, center_y + delta_y)
-        transform.rotate(-float(rotation))
+        # Sens horaire pour un angle positif, comme le filtre ``rotate`` de
+        # FFmpeg : l'aperçu et l'export tournent dans le même sens.
+        transform.rotate(float(rotation))
         transform.translate(-target_w / 2.0, -target_h / 2.0)
         self.video_item.setTransform(transform)
         self.video_item.setOpacity(opacity)
