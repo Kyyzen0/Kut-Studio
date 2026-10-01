@@ -22,6 +22,8 @@ Trois changements par rapport à l'ancienne construction (qui était dans
 
 from __future__ import annotations
 
+import hashlib
+import os
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -81,6 +83,25 @@ def segment_plan(
     return apply_path_resolver(plan, resolver)
 
 
+def media_identity(plan: RenderPlan) -> str:
+    """Identité (mtime, taille) des fichiers réellement lus par le segment.
+
+    Le chemin d'un proxy est stable (clé de cache) alors que son contenu
+    change quand il est régénéré (source modifiée, profil reconstruit) : le
+    chemin seul ne suffit pas à invalider les segments déjà rendus. Un
+    ``stat`` par couche, sans mémo : le coût est négligeable face à un rendu.
+    """
+    parts: list[str] = []
+    for layer in (*plan.video_layers, *plan.audio_layers):
+        path = layer.source_path
+        try:
+            stat = os.stat(path)
+            parts.append(f"{path}:{stat.st_mtime_ns}:{stat.st_size}")
+        except OSError:
+            parts.append(f"{path}:missing")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
 def segment_params_hash(
     plan: RenderPlan, project, quality: str, window_end: float | None = None
 ) -> str:
@@ -94,13 +115,14 @@ def segment_params_hash(
     """
     if window_end is not None:
         plan = replace(plan, duration=min(plan.duration, float(window_end)))
-    return fingerprint_plan(
+    base = fingerprint_plan(
         plan,
         width=project.width,
         height=project.height,
         fps=project.fps,
         quality=quality,
     )
+    return f"{base}-{media_identity(plan)}"
 
 
 def _owner_clip_id(plan: RenderPlan, cursor: float) -> str:
@@ -161,6 +183,7 @@ def build_segment_job(
 __all__ = [
     "apply_path_resolver",
     "build_segment_job",
+    "media_identity",
     "segment_params_hash",
     "segment_plan",
 ]

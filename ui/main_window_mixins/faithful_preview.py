@@ -59,6 +59,8 @@ class FaithfulPreviewMixin:
                 panel.set_render_state(False)
                 cached = int(getattr(state, "cached_segments", 0) or 0)
                 if cached > 0:
+                    if was_computing:
+                        self._enforce_cache_budget()  # des segments viennent d'être écrits
                     panel.set_cache_state(True, i18n.translate("preview.cached"))
                     # Le rendu vient de se terminer : remplace immédiatement
                     # le média source par le segment composé, sans attendre un

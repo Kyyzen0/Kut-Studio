@@ -621,3 +621,74 @@ def test_a_far_edit_keeps_the_cached_segment_under_the_playhead_valid(qtbot, mon
     window.project.tracks[0].clips[0].source_out = 3.5                       # on retaille CELUI-CI
     assert window._cached_preview_at(1.0) is None                            # là, il est périmé
     assert isinstance(Qt.AlignLeft, object) and QMenu is not None
+
+
+# --- Retours de revue : budget de cache, identité du proxy, qualité adaptative ------------------
+
+
+def test_a_finished_proxy_is_checked_against_the_cache_budget_right_away(
+    qtbot, monkeypatch, tmp_path, fake_proxies
+):
+    from core.preview_cache import PreviewSegmentKey
+
+    window = _window(qtbot, monkeypatch, tmp_path)
+    cache = window.preview_engine.cache
+    for n in range(4):
+        source = tmp_path / f"seg{n}.mp4"
+        source.write_bytes(b"x" * 1_000_000)
+        cache.store(PreviewSegmentKey(f"c{n}", 0.0, 2.0, "standard", "h"), source)
+    window.cache_manager._max_bytes = 1_500_000        # budget dépassé sans passer par set_max_bytes
+    assert window.cache_manager.disk_bytes() > 3_000_000
+    window.generate_proxy_for_asset("v0")
+    _wait_state(qtbot, window, 0, ProxyState.READY)
+    qtbot.waitUntil(lambda: window.cache_manager.disk_bytes() <= 2_000_000, timeout=TIMEOUT)
+    # Le proxy du projet ouvert est épinglé : seuls les aperçus ont été évincés.
+    assert window.proxies.info(window.project.media_assets[0].path).state is ProxyState.READY
+
+
+def test_segment_rendering_triggers_a_throttled_budget_check(qtbot, monkeypatch, tmp_path, fake_proxies):
+    window = _window(qtbot, monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(window.cache_manager, "enforce", lambda: calls.append(1) or 0)
+    window._last_cache_enforce = 0.0
+    window._enforce_cache_budget()
+    window._enforce_cache_budget()                     # dans la fenêtre de 5 s : ignoré
+    assert len(calls) == 1
+    window._enforce_cache_budget(force=True)
+    assert len(calls) == 2
+
+
+def test_regenerating_a_proxy_changes_the_segment_key_even_though_its_path_is_stable(
+    qtbot, monkeypatch, tmp_path, fake_proxies
+):
+    window = _window(qtbot, monkeypatch, tmp_path)
+    window.generate_proxy_for_asset("v0")
+    info = _wait_state(qtbot, window, 0, ProxyState.READY)
+    before = window._preview_segment_jobs(1.0)[0]
+    assert before.plan.video_layers[0].source_path == info.proxy_path
+    mtime = os.stat(info.proxy_path).st_mtime_ns
+    os.utime(info.proxy_path, ns=(mtime - 10**9, mtime - 10**9))  # le fichier d'avant a un autre âge
+    before = window._preview_segment_jobs(1.0)[0]
+    asset = window.project.media_assets[0]
+    window.proxies.regenerate(asset.path, duration=2.0)         # même chemin, fichier réécrit
+    _wait_state(qtbot, window, 0, ProxyState.READY)
+    after = window._preview_segment_jobs(1.0)[0]
+    assert after.plan.video_layers[0].source_path == before.plan.video_layers[0].source_path
+    assert after.key != before.key
+
+
+def test_degraded_quality_asks_for_a_lighter_proxy_of_the_active_media(
+    qtbot, monkeypatch, tmp_path, fake_proxies
+):
+    window = _window(qtbot, monkeypatch, tmp_path)
+    requested = []
+    monkeypatch.setattr(
+        window.proxies, "request_lighter",
+        lambda path, divisor, duration=0.0: requested.append((path, divisor)),
+    )
+    window.runtime.set_preview_quality("auto")
+    window.playhead_seconds = 0.5
+    _slow_ticks(window, 160)
+    assert window.runtime.preview.degraded
+    assert requested and requested[0][0] == window.project.media_assets[0].path
+    assert requested[0][1] == window.runtime.preview_divisor() or requested[0][1] > 1

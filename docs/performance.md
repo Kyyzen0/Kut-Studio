@@ -203,11 +203,18 @@ lecture** (cible 25 Hz) : une lecture trop lourde retarde les ticks.
   machine) ; pause ou arrêt : retour immédiat au niveau de base ;
 - **un niveau forcé par l'utilisateur** (Plein, 1/2, 1/4, 1/8) n'est jamais modifié.
 
-Leviers réels quand le niveau baisse : source plus légère (proxy prêt), pas de
-recalcul des scopes (un FFmpeg par analyse) pendant la lecture, et un avis discret
-« Aperçu réduit » sur le moniteur. Sans proxy, le décodage du média original reste
-le coût dominant et ne peut pas être réduit par Qt : c'est pourquoi proxies et
-qualité Auto vont ensemble.
+Leviers réels quand le niveau baisse :
+
+- **source plus légère** : un proxy plus léger déjà prêt est utilisé ; sinon la
+  génération du profil léger est **demandée en tâche de fond** pour les médias
+  actifs (jamais bloquant) et sert dès qu'elle est terminée ;
+- pas de recalcul des scopes (un FFmpeg par analyse) pendant la lecture ;
+- un avis discret « Aperçu réduit » sur le moniteur.
+
+Limite assumée : tant qu'aucun proxy plus léger n'est prêt, le décodage du média
+original n'est **pas** réduit (Qt ne sait pas décoder moins cher) ; le niveau
+baissé n'allège alors que les scopes. C'est pourquoi proxies et qualité Auto vont
+ensemble.
 
 ## 7. Résultats
 

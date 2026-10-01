@@ -9,6 +9,7 @@ mixin ne contient que le **câblage** : la logique vit dans
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import replace
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -20,6 +21,7 @@ from core.proxy_manager import ProxyInfo, ProxyManager, ProxyState
 from ui import i18n
 
 GIB = 1024 ** 3
+CACHE_ENFORCE_INTERVAL = 5.0  # secondes entre deux contrôles de budget non forcés
 
 
 def _main_window():
@@ -78,6 +80,24 @@ class PerformanceMixin:
         except OSError:
             pass
 
+    def _enforce_cache_budget(self, *, force: bool = False) -> None:
+        """Ramène le cache sous son budget ; limité à un passage toutes les 5 s sauf ``force``.
+
+        Appelé après chaque proxy terminé et chaque rendu de segment : sans cela
+        le budget n'était vérifié qu'au démarrage et au changement de réglage.
+        """
+        manager = getattr(self, "cache_manager", None)
+        if manager is None or getattr(self, "_proxies_closed", False):
+            return
+        now = time.monotonic()
+        if not force and now - getattr(self, "_last_cache_enforce", 0.0) < CACHE_ENFORCE_INTERVAL:
+            return
+        self._last_cache_enforce = now
+        try:
+            manager.enforce()
+        except OSError:
+            pass
+
     def _project_source_paths(self) -> list[str]:
         return [a.path for a in self.project.media_assets if a.path]
 
@@ -120,6 +140,9 @@ class PerformanceMixin:
         self._proxy_badge_timer.start()  # regroupe les rafales de progression
         if info.state in (ProxyState.GENERATING, ProxyState.PENDING):
             return
+        if info.state == ProxyState.READY:
+            # Un proxy vient de s'ajouter au disque : respecter le budget tout de suite.
+            self._enforce_cache_budget(force=True)
         # Le proxy vient d'arriver, de partir ou d'échouer : l'aperçu en pause
         # doit relire la bonne source (original ou proxy).
         if not getattr(self, "is_playing", False):
@@ -289,8 +312,31 @@ class PerformanceMixin:
             if preview is not None:
                 preview.set_quality_notice(None)
 
+    def _request_lighter_proxies(self) -> None:
+        """Qualité réduite : prépare (en tâche de fond) un proxy plus léger des médias actifs.
+
+        Sans proxy plus léger prêt, la réduction ne diminue pas le décodage ; on
+        le génère donc pour que la lecture suivante en profite. Jamais bloquant.
+        """
+        try:
+            divisor = int(self.runtime.preview_divisor())
+            active = self._ensure_timeline_index().active_at(
+                self.project, float(self.playhead_seconds)
+            )
+        except Exception:
+            return
+        asset_by_path = {a.path: a for a in self.project.media_assets if a.path}
+        for clip in active:
+            if clip.track_type != "video" or not clip.source_path:
+                continue
+            asset = asset_by_path.get(clip.source_path)
+            duration = float(getattr(asset, "duration", 0.0) or 0.0)
+            self.proxies.request_lighter(clip.source_path, divisor, duration=duration)
+
     def _on_adaptive_quality_changed(self) -> None:
         self._apply_runtime_hints()
+        if self.runtime.preview.degraded:
+            self._request_lighter_proxies()
         preview = getattr(self, "preview_panel", None)
         if preview is None:
             return

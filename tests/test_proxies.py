@@ -654,3 +654,16 @@ def test_real_ffmpeg_generates_a_smaller_playable_proxy(tmp_path):
     assert video["height"] == 480 and video["codec_name"] == "h264" and audio["codec_name"] == "aac"
     assert manager.resolve(str(media)) == info.proxy_path
     assert manager.shutdown()
+
+
+def test_request_lighter_generates_the_lighter_profile_only_and_never_when_disabled(manager, source):
+    current = manager.profile
+    lighter = manager.lighter_profile(2)
+    assert lighter is not None and lighter.max_height < current.max_height
+    assert manager.lighter_profile(1) is None
+    manager.request_lighter(source, 2, duration=2.0)
+    assert _wait(lambda: manager.info(source, lighter.id).state is ProxyState.READY)
+    assert manager.info(source, current.id).state is ProxyState.NONE
+    assert manager.resolve(source, divisor=2) == manager.info(source, lighter.id).proxy_path
+    manager.set_enabled(False)
+    assert manager.request_lighter(source, 2, duration=2.0) is None

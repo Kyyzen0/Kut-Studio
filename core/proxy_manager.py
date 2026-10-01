@@ -400,6 +400,26 @@ class ProxyManager:
         lighter = [p for p in available_profiles() if target <= p.max_height < current.max_height]
         return [*lighter, current]
 
+    def lighter_profile(self, divisor: int) -> ProxyProfile | None:
+        """Profil le plus léger encore assez net pour ``divisor``, ``None`` s'il n'y en a pas."""
+        if int(divisor) <= 1:
+            return None
+        current = self.profile
+        target = max(2, current.max_height // int(divisor))
+        lighter = [p for p in available_profiles() if target <= p.max_height < current.max_height]
+        return lighter[0] if lighter else None
+
+    def request_lighter(self, path: str, divisor: int, *, duration: float = 0.0) -> ProxyState | None:
+        """Planifie (sans bloquer) le proxy léger adapté à une qualité réduite.
+
+        Sans effet (``None``) si les proxies sont coupés ou s'il n'existe pas de
+        profil plus léger ; un proxy léger déjà prêt n'est pas régénéré.
+        """
+        profile = self.lighter_profile(divisor)
+        if not self._enabled or profile is None or not path:
+            return None
+        return self.request(path, profile_id=profile.id, duration=duration)
+
     def _touch_last_used(self, info: ProxyInfo) -> None:
         now = self._clock()
         if now - self._touched.get(info.source_path, 0.0) < LAST_USED_REFRESH_SECONDS:
