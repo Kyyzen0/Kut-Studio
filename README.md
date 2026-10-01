@@ -1,6 +1,6 @@
 # 🎬 Kut-Studio
 
-> A lightweight non-linear video editor prototype built with **Python** and **PySide6**.
+> A lightweight non-linear video editor built with **Python** and **PySide6**.
 
 Kut-Studio is a desktop video editor with a clean dark interface and a focused workflow: a project library, preview monitor, properties inspector, and multi-track timeline.
 
@@ -15,15 +15,18 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 
 ## ✨ Features
 
-- 📁 **Project library** — Import, browse, and select project media from the **Media** bin.
-- 🗂️ **Library navigation** — Dedicated sections for Media, Audio, Text, Effects, and Transitions. Audio, Text, Effects, and Transitions are currently interface placeholders.
-- 🎥 **Preview monitor** — `QMediaPlayer` playback with play, pause, stop, and seek controls.
-- ⚙️ **Properties inspector** — Live brightness, contrast, saturation, and volume controls, plus a subtitle editor synchronized with the playhead.
-- 🎞️ **Multi-track timeline** — Two video tracks (V1 / V2) and a subtitle track (S1), with cut-at-playhead and delete-clip actions.
-- 🔀 **Transition preview** — One-click crossfade preview between clips.
-- 📤 **Export engine** — Export the timeline to `.mp4` or `.mov` using FFmpeg.
-- ⌨️ **Keyboard shortcuts** — `Space` / `K` for play-pause, `J` / `←` for back 2 seconds, and `L` / `→` for forward 2 seconds.
-- 🎨 **Custom dark theme** — Centralized colors and styles in `ui/theme.py`.
+- 📁 **Project library** — Import media, organize it in folders, mark favorites and browse clip metadata.
+- 🎞️ **Multi-track timeline** — Video (V1 / V2), audio (A1) and subtitle (S1) tracks, with blade, roll, slip and slide tools, snapping, ripple edits, markers and undo / redo.
+- 🎥 **Preview monitor** — Faithful FFmpeg-based preview with a render cache and quality levels.
+- ⚙️ **Inspector** — Clip, Color, Effects and Audio tabs, plus Graphics and Compositing (masks, chroma key, blend modes).
+- 🎨 **Color grading and scopes** — Color controls, `.cube` 3D LUT import, and waveform / histogram / vectorscope monitoring.
+- 🔀 **Transitions and effects** — Transition presets (including crossfade), an effects library and time remapping.
+- 🔊 **Audio** — Mixer, audio effects, automation and voice-over recording.
+- 🔤 **Text and graphics** — Styled titles, text presets, and SRT / ASS subtitle import and export.
+- 💾 **Projects** — Native `.kut` save and load with autosave and backward-compatible loading of older format versions.
+- 📤 **Export** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg.
+- 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
+- ⌨️ **Keyboard shortcuts** — Playback, tools, snapping, markers and zoom (see below).
 
 ## 🧰 Tech stack
 
@@ -107,40 +110,33 @@ each operating system's conventions.
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
-│  K  KUT-STUDIO   Mon montage / Projet sans titre    [Exporter] │
-├──────────────┬──────────────────────────────┬──────────────────┤
-│  Bibliothèque│                              │  Propriétés      │
-│  Médias      │        [Aperçu vidéo]        │  Effets couleur  │
-│  Audio       │                              │  Volume          │
-│  Texte       │                              │  Sous-titres     │
-│  Effets      │                              │                  │
-│  Transitions │                              │                  │
-├──────────────┴──────────────────────────────┴──────────────────┤
-│  Timeline: V1 / V2 / S1                                        │
+│  K  KUT-STUDIO   Sequence / Untitled project       [Export]    │
+├────┬─────────────────────────┬─────────────────┬───────────────┤
+│Rail│  Library (media bin)    │ Preview monitor │  Inspector    │
+│    │                         │ + scopes        │               │
+├────┴─────────────────────────┴─────────────────┴───────────────┤
+│  Timeline: V1 / V2 / A1 / S1                                   │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+The side rail switches between Media, Edit, Effects, Color, Text,
+Transitions, Audio, Graphics and Templates.
 
 ## 📁 Project layout
 
 ```text
 Kut-Studio/
-├── main.py                  # Application entry point
-├── build.py                 # PyInstaller packaging script
-├── requirements.txt         # Runtime dependencies
-├── assets/                  # Bundled assets
-├── core/
-│   ├── effects.py           # Color effects, subtitles, crossfade preview
-│   ├── export_engine.py     # FFmpeg export pipeline
-│   └── timeline_model.py    # Timeline operations
-├── ui/
-│   ├── main_window.py       # Main window and keyboard shortcuts
-│   ├── project_panel.py     # Library navigation and media bin
-│   ├── preview_panel.py     # Video preview
-│   ├── timeline_panel.py    # Multi-track timeline
-│   ├── properties_panel.py  # Effects, volume, subtitles
-│   ├── export_panel.py      # Export screen
-│   └── theme.py             # Theme and shared styles
-└── tests/                   # pytest suite
+├── main.py              # Application entry point (--smoke-test supported)
+├── build.py             # PyInstaller packaging script
+├── core/                # UI-independent logic: project model, .kut I/O,
+│                        # timeline operations, render plan, export engine,
+│                        # color grading, scopes, audio, effects, subtitles
+├── ui/                  # PySide6 interface: main window, panels, theme,
+│   └── workspace/       # i18n, icons; dockable workspace manager
+├── tests/               # pytest suite
+├── tools/               # Developer tools (UI capture)
+├── docs/                # Design QA notes and screenshots
+└── assets/              # Bundled assets
 ```
 
 ## ⌨️ Keyboard shortcuts
@@ -148,164 +144,39 @@ Kut-Studio/
 | Shortcut | Action |
 | --- | --- |
 | `Space` / `K` | Play / pause |
-| `←` / `J` | Seek back 2 seconds |
-| `→` / `L` | Seek forward 2 seconds |
-| `Ctrl + O` | Open a video |
-| `Ctrl + N` | New project *(placeholder)* |
-| `Ctrl + S` | Save project *(placeholder)* |
+| `←` / `→` | Previous / next frame |
+| `Shift + ←` / `Shift + →` | Back / forward 1 second |
+| `J` / `L` | Shuttle back / forward |
+| `V` / `B` / `R` / `Y` / `U` | Select / blade / roll / slip / slide tool |
+| `S` / `N` | Toggle snapping / ripple |
+| `M` / `[` / `]` | Add marker / previous / next marker |
+| `Ctrl + K` | Cut at playhead |
+| `Ctrl + A` | Select all |
+| `+` / `-` / `Ctrl + 0` | Zoom in / out / fit |
+| `Ctrl + N` / `Ctrl + O` / `Ctrl + S` | New / open / save project |
+| `Ctrl + Z` / `Ctrl + Shift + Z` | Undo / redo |
+| `Ctrl + D` | Duplicate |
+| `Delete` / `Ctrl + Backspace` | Delete / ripple delete |
+| `Ctrl + E` | Enable / disable clip |
+| `Ctrl + ,` | Preferences |
 
 ## 🧪 Tests
 
 ```bash
-python -m pip install pytest pytest-qt
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-The suite covers timeline operations and the FFmpeg export pipeline, including integration tests using a fake FFmpeg fixture.
-
-## 🛣️ Roadmap
-
-- Functional audio, text, effect, and transition libraries
-- Audio tracks
-- Native `.kut` project save and load
-- More export, transition, and effect options
-- Markers, chapters, magnetic timeline, and snapping
-- Configurable keyboard shortcuts
-- Continuous integration
-
-## 🤝 Contributing
-
-Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request.
-
----
-
-<a id="-version-française"></a>
-
-# 🇫🇷 Version française
-
-> Un prototype d’éditeur vidéo non linéaire léger, construit avec **Python** et **PySide6**.
-
-Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de travail s’organise autour d’une bibliothèque de projet, d’un moniteur de prévisualisation, d’un inspecteur de propriétés et d’une timeline multi-pistes.
-
-## ✨ Fonctionnalités
-
-- 📁 **Bibliothèque de projet** — Importez, parcourez et sélectionnez les médias du bin **Médias**.
-- 🗂️ **Navigation de bibliothèque** — Cinq sections : Médias, Audio, Texte, Effets et Transitions. Les quatre dernières sont actuellement des placeholders d’interface.
-- 🎥 **Moniteur de prévisualisation** — Lecture via `QMediaPlayer`, avec lecture, pause, arrêt et déplacement dans la vidéo.
-- ⚙️ **Inspecteur de propriétés** — Réglages en direct de luminosité, contraste, saturation et volume, avec éditeur de sous-titres synchronisé à la tête de lecture.
-- 🎞️ **Timeline multi-pistes** — Deux pistes vidéo (V1 / V2) et une piste de sous-titres (S1), avec coupe à la tête de lecture et suppression de clip.
-- 🔀 **Prévisualisation de transition** — Fondu enchaîné entre deux clips.
-- 📤 **Moteur d’export** — Exporte la timeline en `.mp4` ou `.mov` via FFmpeg.
-- ⌨️ **Raccourcis clavier** — `Espace` / `K` pour lecture-pause, `J` / `←` pour revenir de 2 s et `L` / `→` pour avancer de 2 s.
-- 🎨 **Thème sombre** — Couleurs et styles centralisés dans `ui/theme.py`.
-
-## 🧰 Stack technique
-
-| Composant | Technologie |
-| --- | --- |
-| Langage | Python 3 |
-| Interface | PySide6 (Qt 6, ≥ 6.6) |
-| Multimédia | Qt Multimedia (`QMediaPlayer`) |
-| Export | FFmpeg |
-| Packaging | PyInstaller |
-| Tests | pytest + pytest-qt |
-
-## 📋 Pré-requis
-
-- Python **3.10+**
-- `pip`
-- **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
-  l’import, l’aperçu fidèle, les scopes et l’export.
-- macOS, Windows ou Linux compatible avec PySide6
-
-PyInstaller est aussi nécessaire pour créer une application autonome.
-
-## 🚀 Installation
-
-```bash
-git clone https://github.com/Kyyzen0/kut-studio.git
-cd kut-studio
-
-python3 -m venv .venv
-source .venv/bin/activate      # macOS / Linux
-# .venv\Scripts\activate       # Windows
-
-python -m pip install -r requirements.txt
-```
-
-Installez ensuite FFmpeg avec le gestionnaire de paquets de votre système :
-
-```bash
-brew install ffmpeg             # macOS avec Homebrew
-# winget install Gyan.FFmpeg    # Windows
-# sudo apt install ffmpeg       # Debian / Ubuntu
-```
-
-## ▶️ Lancer l’application
-
-```bash
-.venv/bin/python main.py
-```
-
-Ou, avec l’environnement virtuel activé :
-
-```bash
-python main.py
-```
-
-## 📦 Construire une application autonome
-
-```bash
-python -m pip install pyinstaller
-python build.py
-```
-
-Le build produit une application graphique `Kut-Studio` dans `dist/`.
-
-Un build PyInstaller est natif : la commande doit être exécutée séparément
-sur macOS, Windows et Linux. La CI le fait automatiquement sur les trois OS.
-
-Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
-contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
-`build.py`. Kut-Studio cherche d’abord dans son dossier `bin/`, puis dans le
-dossier configuré, puis dans le `PATH` système.
-
-## 🖥️ Compatibilité des plateformes
-
-Chaque push et pull request exécute les tests complets, un smoke test UI, un
-build PyInstaller natif et un smoke test de l’application empaquetée sur
-macOS, Windows et Ubuntu. Les chemins de configuration, cache, polices et
-outils sont adaptés à chaque système.
-
-## ⌨️ Raccourcis clavier
-
-| Raccourci | Action |
-| --- | --- |
-| `Espace` / `K` | Lecture / pause |
-| `←` / `J` | Reculer de 2 secondes |
-| `→` / `L` | Avancer de 2 secondes |
-| `Ctrl + O` | Ouvrir une vidéo |
-| `Ctrl + N` | Nouveau projet *(placeholder)* |
-| `Ctrl + S` | Enregistrer le projet *(placeholder)* |
-
-## 🧪 Tests
-
-```bash
-python -m pip install pytest pytest-qt
-python -m pytest -q
-```
-
-La suite couvre les opérations de timeline et le pipeline d’export FFmpeg, y compris des tests d’intégration avec un faux exécutable FFmpeg.
+La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests d’intégration avec un faux et un vrai FFmpeg. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`.
 
 ## 🛣️ Feuille de route
 
-- Bibliothèques Audio, Texte, Effets et Transitions fonctionnelles
-- Pistes audio
-- Sauvegarde et chargement de projets `.kut`
-- Plus d’options d’export, de transitions et d’effets
-- Marqueurs, chapitres, timeline magnétique et snap
+- Découper les plus gros modules d’interface (`main_window`, `project_panel`, `timeline_panel`)
+- Linter et vérification de types en CI, suite de tests plus rapide
 - Raccourcis clavier configurables
-- Intégration continue
+- Presets d’export, file de rendu et accélération matérielle
+- Performances de l’aperçu et de la timeline sur les gros projets
+- Installateurs signés et publications automatisées
 
 ## 🤝 Contribution
 
