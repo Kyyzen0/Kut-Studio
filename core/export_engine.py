@@ -64,7 +64,7 @@ from .time_remapping import (
     get_ffmpeg_speed_filter,
 )
 from .tool_paths import find_media_tool
-from .hardware_encoding import redact_command
+from .hardware_encoding import looks_like_encoder_failure, redact_command
 from .video_encoders import (
     EncoderChoice,
     EncoderUnavailableError,
@@ -854,6 +854,7 @@ class ExportEngine(QObject):
 
     def _process_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         """Traite la fin normale ou anormale du processus FFmpeg."""
+        self._read_error()  # sortie d'erreur restante : la classification de l'échec en dépend
         request = self._request
         self._request = None
         if self._cancel_requested:
@@ -951,6 +952,7 @@ class ExportEngine(QObject):
             choice is not None
             and choice.is_hardware
             and choice.requested not in (HardwareEncoder.AUTO, HardwareEncoder.CPU)
+            and looks_like_encoder_failure(self._error_output, choice.encoder, choice.args)
         ):
             self.last_error_kind = "encoder"
             self.last_diagnostics = self._error_output[-800:]

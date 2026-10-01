@@ -455,6 +455,31 @@ def parse_version(text: str) -> str:
     return match.group(1) if match else ""
 
 
+_ENCODER_EVIDENCE = (
+    "encoder", "hwupload", "hardware", "device", "cuda", "nvenc", "videotoolbox",
+    "qsv", "amf", "vaapi", "libmfx", "vpl",
+)
+
+
+def looks_like_encoder_failure(stderr: str, encoder: str = "", args: Sequence[str] = ()) -> bool:
+    """``True`` si la sortie d'erreur de FFmpeg évoque l'encodeur ou le matériel.
+
+    Un échec sans rapport (média illisible, filtre invalide, disque plein) ne
+    doit pas être présenté comme un problème d'encodeur : relancer en CPU n'y
+    changerait rien.
+    """
+    text = (stderr or "").lower()
+    if encoder and encoder.lower() in text:
+        return True
+    # Un encodeur absent du build refuse ses options privées (« Unrecognized option 'rc' »)
+    # avant même de signaler qu'il est inconnu.
+    for argument in args:
+        name = str(argument).lstrip("-").lower()
+        if name and str(argument).startswith("-") and f"option '{name}'" in text:
+            return True
+    return any(word in text for word in _ENCODER_EVIDENCE)
+
+
 def validation_command(
     command: Sequence[str], capability: EncoderCapability
 ) -> list[str]:
@@ -595,6 +620,7 @@ __all__ = [
     "backend_video_filter",
     "coerce_hardware",
     "default_runner",
+    "looks_like_encoder_failure",
     "detect_capabilities",
     "parse_encoder_list",
     "parse_version",

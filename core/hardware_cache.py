@@ -103,7 +103,8 @@ class CapabilityService:
         self._validate = validate
         self._environment = environment
         self._clock = clock
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()  # état mémoire seulement : jamais tenu pendant un scan
+        self._scan_lock = threading.Lock()  # un seul scan à la fois
         self._memory: HardwareCapabilities | None = None
         self.scan_count = 0
         """Nombre de détections réellement exécutées (tests, diagnostics)."""
@@ -138,9 +139,15 @@ class CapabilityService:
 
     def capabilities(self, *, refresh: bool = False) -> HardwareCapabilities:
         """Capacités valables ; détecte (et mémorise) si le cache est absent ou périmé."""
-        with self._lock:
+        if not refresh:
+            known = self.cached()
+            if known is not None:
+                return known
+        # Le verrou d'état n'est pas tenu pendant les processus FFmpeg : ``cached()``
+        # (utilisé par l'interface) ne bloque donc jamais derrière une détection.
+        with self._scan_lock:
             if not refresh:
-                known = self.cached()
+                known = self.cached()  # un autre appelant vient peut-être de terminer
                 if known is not None:
                     return known
             return self._scan()
@@ -174,15 +181,18 @@ class CapabilityService:
             result = HardwareCapabilities(error="disabled", validated=False, **base)
         elif not command:
             result = HardwareCapabilities(error="ffmpeg_missing", **base)
-            self._memory = result  # FFmpeg absent : rien à mémoriser sur disque
+            with self._lock:
+                self._memory = result  # FFmpeg absent : rien à mémoriser sur disque
             return result
         else:
-            self.scan_count += 1
+            with self._lock:
+                self.scan_count += 1
             result = detect_capabilities(
                 command, runner=self._runner, validate=self._validate,
                 fingerprint=fingerprint, now=self._clock(),
             )
-        self._memory = result
+        with self._lock:
+            self._memory = result
         self._write_disk(result)
         return result
 

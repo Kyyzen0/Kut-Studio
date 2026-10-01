@@ -95,6 +95,9 @@ class EncodingMixin:
         if value == getattr(self, "_export_encoder", "auto"):
             return
         self._export_encoder = value
+        panel = getattr(self, "export_panel", None)
+        if panel is not None and panel.current_encoder() != value:
+            panel.set_default_encoder(value)  # le sélecteur Export suit la préférence
         self._apply_settings(replace(self._settings_snapshot(), export_encoder=value))
 
     def encoding_diagnostics_text(self) -> str:

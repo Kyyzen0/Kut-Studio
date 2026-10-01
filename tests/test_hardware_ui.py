@@ -290,3 +290,17 @@ def test_every_new_translation_exists_in_all_languages():
     for key in keys:
         entry = i18n._TRANSLATIONS[key]
         assert set(entry) >= {"fr", "en", "es"} and all(entry.values()), key
+
+
+def test_changing_the_encoder_in_preferences_updates_the_export_selector(qtbot, monkeypatch, tmp_path, fake_proxies):
+    set_default_service(_service(tmp_path, "videotoolbox"))
+    window = _window(qtbot, monkeypatch, tmp_path)
+    qtbot.waitUntil(lambda: "videotoolbox" in _options(window.export_panel.encoder_combo), timeout=8000)
+    _dialog, tab = _prefs(qtbot, window)
+    tab.encoder_combo.setCurrentIndex(tab.encoder_combo.findData("videotoolbox"))
+    tab.encoder_combo.activated.emit(tab.encoder_combo.currentIndex())
+    assert window.export_panel.current_encoder() == "videotoolbox"
+    assert window.export_panel.current_spec().hardware == "videotoolbox"   # les prochains jobs l'utilisent
+    tab.encoder_combo.setCurrentIndex(tab.encoder_combo.findData("cpu"))
+    tab.encoder_combo.activated.emit(tab.encoder_combo.currentIndex())
+    assert window.export_panel.current_spec().hardware == "cpu"

@@ -523,3 +523,48 @@ def test_validation_command_matches_the_encoder_and_is_bounded():
     assert command[0] == "ffmpeg" and "h264_nvenc" in command and command[-3:] == ["-f", "null", "-"]
     assert "3" == command[command.index("-frames:v") + 1]
     assert Path(command[0]).name == "ffmpeg"
+
+
+# --- Retours de revue : verrou de détection, classification des échecs ---------------------------------------
+
+
+def test_cached_never_blocks_behind_a_running_detection(tmp_path):
+    import threading
+    import time
+
+    gate, started = threading.Event(), threading.Event()
+    inner = FakeFFmpeg("videotoolbox")
+
+    def slow(command, timeout):
+        started.set()
+        gate.wait(10)
+        return inner(command, timeout)
+
+    service, _ = make_service(tmp_path, slow)
+    results = []
+    worker = threading.Thread(target=lambda: results.append(service.capabilities()))
+    worker.start()
+    assert started.wait(5)
+    begin = time.monotonic()
+    assert service.cached() is None                               # l'interface ne reste pas bloquée
+    assert time.monotonic() - begin < 1.0
+    waiter = threading.Thread(target=lambda: results.append(service.capabilities()))
+    waiter.start()                                                # un export attend le résultat…
+    gate.set()
+    worker.join(10)
+    waiter.join(10)
+    assert len(results) == 2 and results[0] == results[1]
+    assert service.scan_count == 1                                # …sans relancer FFmpeg
+
+
+def test_unrelated_ffmpeg_errors_are_not_encoder_failures():
+    from core.hardware_encoding import looks_like_encoder_failure
+
+    assert looks_like_encoder_failure("Error initializing the encoder h264_nvenc", "h264_nvenc")
+    assert looks_like_encoder_failure("Cannot load libcuda.so.1")
+    assert looks_like_encoder_failure("hwupload: failed", "")
+    assert not looks_like_encoder_failure("Error opening input file media.mp4: Invalid data", "h264_nvenc")
+    assert not looks_like_encoder_failure("Invalid filtergraph: unknown filter", "h264_nvenc")
+    assert not looks_like_encoder_failure("", "h264_nvenc")
+    assert looks_like_encoder_failure("Unrecognized option 'rc'.", "h264_nvenc", ("-c:v", "h264_nvenc", "-rc", "vbr"))
+    assert not looks_like_encoder_failure("Unrecognized option 'foo'.", "h264_nvenc", ("-rc", "vbr"))

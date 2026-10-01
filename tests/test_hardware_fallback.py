@@ -312,3 +312,14 @@ def test_command_log_never_contains_user_paths(qtbot, queue, tmp_path, with_vide
     text = "\n".join(record.getMessage() for record in caplog.records)
     assert "Encodeur : H.264 · VideoToolbox" in text and "Commande FFmpeg" in text
     assert str(tmp_path) not in text
+
+
+def test_an_unrelated_failure_with_an_explicit_encoder_is_not_labelled_an_encoder_error(
+    qtbot, queue, tmp_path, with_videotoolbox, launches, monkeypatch
+):
+    monkeypatch.setenv("FAKE_FFMPEG_FAIL", "Error opening input file media.mp4: Invalid data")
+    job = _job(queue, tmp_path, "videotoolbox")
+    queue.start_all()
+    _wait_idle(qtbot, queue)
+    assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.FFMPEG
+    assert not job.can_retry_on_cpu                               # changer d'encodeur n'y changerait rien
