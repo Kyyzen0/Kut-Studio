@@ -243,10 +243,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
             callback()
 
     def find_view_by_id(self, clip_id: str) -> TimelineClipView | None:
-        for view in self.clip_views:
-            if view.id == clip_id:
-                return view
-        return None
+        return self._views_by_id().get(clip_id)
 
     def select_clip(self, clip_id: str) -> None:
         self._set_selection([clip_id], clip_id, announce=True)

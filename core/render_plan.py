@@ -259,6 +259,8 @@ def build_render_plan(
     *,
     master_gain_db: float = 0.0,
     master_muted: bool = False,
+    window: tuple[float, float] | None = None,
+    window_index=None,
 ) -> RenderPlan:
     """Construit un :class:`RenderPlan` à partir d'un :class:`Project`.
 
@@ -282,10 +284,29 @@ def build_render_plan(
 
     Args:
         project: projet source (jamais muté).
+        window: ``(début, fin)`` en secondes de timeline. Si fourni, le
+            plan ne contient que les couches (vidéo, audio, graphiques,
+            sous-titres) qui **chevauchent** cette fenêtre ; ``duration``
+            reste celle du projet entier. C'est le plan d'un segment
+            d'aperçu : un segment de 2 s ne doit ni ouvrir les milliers
+            de médias d'un gros montage ni dépendre de leurs
+            modifications (empreinte du segment). L'export n'utilise
+            jamais ce paramètre.
+
+        window_index: :class:`core.timeline_index.TimelineIndex` du projet.
+            Avec ``window``, il évite de parcourir tous les clips de chaque
+            piste : le coût devient O(log n + clips de la fenêtre).
 
     Returns:
         Le :class:`RenderPlan` correspondant au projet.
     """
+    if window is None:
+        low, high = float("-inf"), float("inf")
+    else:
+        low, high = float(window[0]), float(window[1])
+    # Une table id -> média évite un balayage de toute la bibliothèque
+    # pour chaque clip (coût O(clips × médias) auparavant).
+    assets_by_id = {asset.id: asset for asset in project.media_assets}
     video_layers: list[RenderLayer] = []
     audio_layers: list[AudioLayer] = []
     graphics_layers: list[GraphicLayer] = []
@@ -295,13 +316,22 @@ def build_render_plan(
         track.id for track in project.tracks
         if track.type == "graphics" and track.solo
     }
+    def clips_of(track_index: int, track):
+        if window is not None and window_index is not None:
+            found = window_index.clips_overlapping(track_index, low, high, track)
+            if found is not None:
+                return found
+        return track.clips
+
     for track_index, track in enumerate(project.tracks):
         if track.type == "graphics":
             if not track.visible or (graphics_solo and track.id not in graphics_solo):
                 continue
-            for clip in track.clips:
+            for clip in clips_of(track_index, track):
                 graphic = getattr(clip, "graphic", None)
                 if not clip.enabled or graphic is None:
+                    continue
+                if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                     continue
                 graphics_layers.append(
                     GraphicLayer(
@@ -328,10 +358,16 @@ def build_render_plan(
             continue
         if audio_solo and track.type == "audio" and track.id not in audio_solo:
             continue
-        for clip in track.clips:
+        for clip in clips_of(track_index, track):
             if not clip.enabled:
                 continue
-            asset = _find_asset(project, clip.asset_id)
+            if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
+                continue
+            asset = assets_by_id.get(clip.asset_id)
+            if asset is None:
+                raise KeyError(
+                    f"Média '{clip.asset_id}' introuvable dans le projet '{project.name}'."
+                )
             if track.type == "video":
                 video_layers.append(
                     RenderLayer(
@@ -398,11 +434,22 @@ def build_render_plan(
         if transition.from_clip_id in layer_ids and transition.to_clip_id in layer_ids
     )
     _subtitle_entries = _subtitle_cues_for_export(project)
+    if window is not None:
+        _subtitle_entries = [
+            entry for entry in _subtitle_entries
+            if entry[0].start < high and entry[0].end > low
+        ]
     return RenderPlan(
         width=project.width,
         height=project.height,
         fps=float(project.fps),
-        duration=timeline_duration(project),
+        # Avec l'index de lecture (plan d'un segment), la durée est déjà connue :
+        # inutile de reparcourir tous les clips pour chaque segment.
+        duration=(
+            window_index.duration
+            if window is not None and window_index is not None
+            else timeline_duration(project)
+        ),
         video_layers=tuple(video_layers),
         audio_layers=tuple(audio_layers),
         subtitle_cues=tuple(cue for cue, _style in _subtitle_entries),

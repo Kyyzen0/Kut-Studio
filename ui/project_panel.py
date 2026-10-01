@@ -131,6 +131,7 @@ class ProjectPanel(QWidget):
     asset_tag_toggled = Signal(str, str, bool)
     # (asset_id, tag_id, assign)
     asset_relink_requested = Signal(str)
+    proxy_action_requested = Signal(str, str)
     # (asset_id,)
     asset_rename_requested = Signal(str, str)
     # (asset_id, new_name)
@@ -173,6 +174,8 @@ class ProjectPanel(QWidget):
         # Cache local des badges (usage + missing + tags) pour ne pas
         # recalculer à chaque mutation mineure de la vue.
         self._badges: dict[str, AssetUsageBadge] = {}
+        # ``asset -> (état, progression)`` : fourni par la fenêtre principale.
+        self.proxy_state_provider = None
         # Compteurs par dossier pour l'arborescence.
         self._folder_counts: dict[str, int] = {}
 
@@ -558,7 +561,9 @@ class ProjectPanel(QWidget):
             self._badges = {}
             return
         self._badges = compute_badges(
-            self._organization.project, self._organization
+            self._organization.project,
+            self._organization,
+            proxy_state_for=self.proxy_state_provider,
         )
         # Met à jour les cartes déjà affichées.
         for bin_widget in (self.bin_videos, self.bin_audios):
@@ -658,6 +663,8 @@ class ProjectPanel(QWidget):
         badge = self._badges.get(asset_id) or AssetUsageBadge(asset_id=asset_id)
         assignment = self._organization.get_assignment(asset_id)
         builder = AssetContextMenuBuilder(
+            proxy_state=badge.proxy_state,
+            proxy_progress=badge.proxy_progress,
             asset_id=asset_id,
             asset_name=asset.name,
             is_missing=badge.is_missing,
@@ -675,6 +682,7 @@ class ProjectPanel(QWidget):
         builder.rename_requested.connect(self.asset_rename_requested.emit)
         builder.remove_requested.connect(self.asset_remove_requested.emit)
         builder.relink_requested.connect(self.asset_relink_requested.emit)
+        builder.proxy_action_requested.connect(self.proxy_action_requested.emit)
         builder.show_in_timeline_requested.connect(
             self.asset_occurrences_requested.emit
         )

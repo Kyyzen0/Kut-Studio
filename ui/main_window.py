@@ -85,6 +85,7 @@ from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMix
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
+from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
@@ -121,6 +122,7 @@ class MainWindow(
     AudioMixin,
     TrackManagementMixin,
     PresetsMixin,
+    PerformanceMixin,
     FaithfulPreviewMixin,
     LibraryOrganizationMixin,
     SubtitlesGraphicsMixin,
@@ -164,6 +166,8 @@ class MainWindow(
             profile=loaded_settings.performance_profile,
             preview_quality=loaded_settings.preview_quality,
         )
+        # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
+        self._init_proxies(loaded_settings)
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
         self._autosave = AutosaveCoordinator()
@@ -249,6 +253,8 @@ class MainWindow(
         self._viewer_host.setSizes([520, 0])
 
         self.project_panel = ProjectPanel()
+        self.project_panel.proxy_state_provider = self._proxy_state_for_asset
+        self.project_panel.proxy_action_requested.connect(self._on_proxy_action_requested)
         self.project_panel.asset_selected.connect(self.preview_media_asset)
         self.project_panel.add_to_timeline_requested.connect(
             self.add_asset_to_timeline
@@ -335,6 +341,7 @@ class MainWindow(
         self._record_tracks: list[str] = []
         self._apply_runtime_hints()
         self._init_faithful_preview()
+        self._init_cache_manager(loaded_settings)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
         self.export_panel.export_requested.connect(self.launch_export)
@@ -763,6 +770,9 @@ class MainWindow(
             event.ignore()
             return
         self.render_queue.shutdown()
+        # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
+        if getattr(self, "proxies", None) is not None:
+            self._shutdown_proxies()
         workspace = getattr(self, "workspace", None)
         if workspace is not None:
             workspace.shutdown()
@@ -1316,6 +1326,12 @@ class MainWindow(
         )
         self.scopes_action.setChecked(True)
         window_menu.addAction(self.scopes_action)
+        # Proxies : bascule rapide (l'export lit toujours les originaux).
+        self.proxies_action = self._labelled_action("menu.item.use_proxies")
+        self.proxies_action.setCheckable(True)
+        self.proxies_action.setChecked(self.proxies.enabled)
+        self.proxies_action.toggled.connect(self.set_proxies_enabled)
+        window_menu.addAction(self.proxies_action)
 
         # Menu Séquence : opérations de piste.
         track_add_video_action = self._labelled_action("tracks.add_video_long")
@@ -1359,6 +1375,10 @@ class MainWindow(
         track_mute_action = self._labelled_action("tracks.toggle_mute")
         track_mute_action.triggered.connect(self.toggle_selected_track_muted)
         sequence_menu.addAction(track_mute_action)
+        sequence_menu.addSeparator()
+        proxies_selection_action = self._labelled_action("proxy.action.generate_selection")
+        proxies_selection_action.triggered.connect(self.generate_proxies_for_selection)
+        sequence_menu.addAction(proxies_selection_action)
 
         for menu in (file_menu, edit_menu, sequence_menu, window_menu):
             menu_bar.addMenu(menu)
@@ -1442,7 +1462,9 @@ class MainWindow(
         synchronisation.
         """
         if self.is_playing:
-            self.runtime.diagnostics.note_playback_tick(time.perf_counter())
+            tick_time = time.perf_counter()
+            self.runtime.diagnostics.note_playback_tick(tick_time)
+            self._observe_playback_quality(tick_time)
             duration = self._ensure_timeline_index().duration
             # 40 ms = intervalle du timer ; on consomme un delta fixe
             # pour rester stable face aux variations de wall-clock.
@@ -1461,7 +1483,10 @@ class MainWindow(
         # est à 25 Hz, on jette donc ~60 % des requêtes sans rien
         # calculer. En pause, on ne demande rien ici : le refresh
         # immédiat passe par ``_refresh_color_monitor``.
-        if self.is_playing:
+        # Sous charge (aperçu réduit par le mode Auto), les scopes — un
+        # FFmpeg par analyse — ne sont pas recalculés pendant la lecture :
+        # ils se rafraîchissent à l'arrêt.
+        if self.is_playing and not self.runtime.preview.degraded:
             self._request_scopes_analysis()
 
     def _sync_preview_to_timeline(self) -> list:
@@ -1513,7 +1538,14 @@ class MainWindow(
             clip_name = getattr(clip_obj, "label", "") if clip_obj is not None else ""
             self.preview_panel.show_missing_media(clip_name)
             return active_clips
-        self.preview_panel.preview_at(top_clip.source_path, top_clip.source_time)
+        # Aperçu : proxy valide si disponible, sinon média original (retour
+        # silencieux si le proxy est absent, supprimé ou obsolète).
+        self.preview_panel.preview_at(
+            self.proxies.resolve(
+                top_clip.source_path, divisor=self.runtime.preview_divisor()
+            ),
+            top_clip.source_time,
+        )
         # Tâche 13 : applique le transform animé du clip supérieur si
         # la timeline contient au moins un clip vidéo. On évalue le
         # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité
@@ -1638,6 +1670,7 @@ class MainWindow(
         self.preview_panel.player.pause()
         self.timeline_panel.setPlayState(False)
         self._set_preview_play_icon(False)
+        self._reset_adaptive_quality()
 
     def on_clip_selected(self, clip_id):
         self._finalize_pending_edit_sessions()
@@ -1718,7 +1751,9 @@ class MainWindow(
         Met à jour le playhead, synchronise la timeline puis l'aperçu,
         et rafraîchit l'overlay de sous-titres.
         """
-        duration = timeline_duration(self.project)
+        # La durée vient de l'index (reconstruit à chaque modification
+        # structurelle) : plus de parcours de tous les clips à chaque seek.
+        duration = self._ensure_timeline_index().duration
         if duration > 0.0:
             seconds = max(0.0, min(float(seconds), duration))
         else:
@@ -1743,6 +1778,7 @@ class MainWindow(
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.stop()
+        self._reset_adaptive_quality()
         self.playhead_seconds = 0.0
         self.timeline_panel.set_playhead_seconds(0.0)
         self._sync_preview_to_timeline()

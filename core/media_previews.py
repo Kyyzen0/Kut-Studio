@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 
+from .cache_keys import thumbnail_key, waveform_key
 from .tool_paths import bundled_tool_path
 
 
@@ -81,23 +82,14 @@ def peaks_from_samples(samples, bins: int) -> tuple[float, ...]:
     return tuple(peaks)
 
 
-def _media_stamp(path: str) -> str:
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return "missing"
-    return f"{stat.st_mtime_ns}:{stat.st_size}"
-
-
 def waveform_cache_key(path: str, bins: int) -> str:
     """Clé stable tant que le fichier et le nombre de colonnes ne changent pas."""
-    return f"wave:{os.path.abspath(path)}:{_media_stamp(path)}:{int(bins)}"
+    return waveform_key(path, bins)
 
 
 def thumbnail_cache_key(path: str, time_seconds: float, width: int) -> str:
     """Clé stable d'une vignette. Le temps est quantifié au dixième."""
-    quantized = round(float(time_seconds), 1)
-    return f"thumb:{os.path.abspath(path)}:{_media_stamp(path)}:{quantized}:{int(width)}"
+    return thumbnail_key(path, time_seconds, width)
 
 
 def extract_waveform_peaks(path: str, bins: int) -> tuple[float, ...] | None:

@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass, field
 
 from .cache_store import MemoryCache
-from .preview_quality import PreviewQualityController, quality_label, resolve_divisor
+from .preview_quality import PreviewQualityController, quality_label
 from .runtime_profile import (
     MachineResources,
     PerformanceProfile,
@@ -233,5 +233,6 @@ class StudioRuntime:
             self.weight,
         )
         self.cache.set_budget(self._profile.cache_budget_bytes)
-        # La qualité explicite reste prioritaire ; Auto suit le profil.
-        self.preview.divisor = resolve_divisor(self.requested_quality, self._profile)
+        # La qualité explicite reste prioritaire ; Auto suit le profil. Un
+        # changement de budget remet aussi l'adaptation temporaire à zéro.
+        self.preview.apply(self.requested_quality, self._profile)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 
 
+from core.cache_keys import file_exists
+from core.timeline_spatial import SnapIndex, SpanIndex
 from core.timeline_view_model import (
     TimelineClipView,
 )
@@ -23,8 +25,79 @@ from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.track_header import TrackRowHeader
 from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 
+# Qt refuse une taille minimale supérieure à ce plafond (avertissement et
+# géométrie incohérente). Un montage de plusieurs milliers de clips au zoom
+# par défaut le dépasserait.
+_QT_MAX_WIDGET_SIZE = 16_000_000
+
+
 class LayoutMixin:
     """Mixin de ``TimelinePanel`` : géométrie des pistes, en-têtes, culling des clips et projection du modèle."""
+
+    # ------------------------------------------------------------------
+    # Vues des clips et index dérivés
+    # ------------------------------------------------------------------
+    #
+    # ``clip_views`` est la projection du modèle. Les index (par
+    # identifiant, par intervalle de temps, bords d'aimantation) sont
+    # construits à la demande et **jetés dès que la liste est remplacée** :
+    # la timeline les recrée donc après chaque ``set_project`` et jamais
+    # ailleurs. Aucun parcours de tous les clips n'est nécessaire pendant
+    # le défilement, le zoom, la sélection ou un glisser.
+
+    @property
+    def clip_views(self) -> list[TimelineClipView]:
+        return self._clip_views
+
+    @clip_views.setter
+    def clip_views(self, views: list[TimelineClipView]) -> None:
+        self._clip_views = views
+        self._view_by_id: dict[str, TimelineClipView] | None = None
+        self._view_order: dict[str, int] | None = None
+        self._span_index: SpanIndex | None = None
+        self._clip_by_id: dict | None = None
+        self._snap_indexes: dict[bool, SnapIndex] = {}
+
+    def _views_by_id(self) -> dict[str, TimelineClipView]:
+        if self._view_by_id is None:
+            self._view_by_id = {view.id: view for view in self._clip_views}
+        return self._view_by_id
+
+    def _view_positions(self) -> dict[str, int]:
+        """Rang de chaque clip dans ``clip_views`` (ordre d'empilement stable)."""
+        if self._view_order is None:
+            self._view_order = {view.id: index for index, view in enumerate(self._clip_views)}
+        return self._view_order
+
+    def _spans(self) -> SpanIndex:
+        if self._span_index is None:
+            self._span_index = SpanIndex(
+                (view.id, view.track_index, view.start, view.end)
+                for view in self._clip_views
+            )
+        return self._span_index
+
+    def snap_index(self, *, with_keyframes: bool) -> SnapIndex | None:
+        """Index des bords de clips pour l'aimantation (``None`` sans projet)."""
+        if self.project is None:
+            return None
+        index = self._snap_indexes.get(with_keyframes)
+        if index is None:
+            index = SnapIndex(self.project, with_keyframes=with_keyframes)
+            self._snap_indexes[with_keyframes] = index
+        return index
+
+    def clips_overlapping(
+        self,
+        t0: float,
+        t1: float,
+        rows: tuple[int, int] | None = None,
+    ) -> list[TimelineClipView]:
+        """Vues des clips qui recouvrent ``[t0, t1]`` (et ces rangées), en ordre d'origine."""
+        by_id = self._views_by_id()
+        order = self._view_positions()
+        ids = sorted(self._spans().query(t0, t1, rows), key=order.__getitem__)
+        return [by_id[clip_id] for clip_id in ids]
 
     def set_culling_overscan(self, pixels: int) -> None:
         """Règle la marge de montage des clips autour de la zone visible.
@@ -149,7 +222,9 @@ class LayoutMixin:
         viewport = self.scroll.viewport().width() if hasattr(self, "scroll") else 0
         self._cull_guard = True
         try:
-            self.timeline_grid.setMinimumWidth(max(width, viewport, 400))
+            self.timeline_grid.setMinimumWidth(
+                min(max(width, viewport, 400), _QT_MAX_WIDGET_SIZE)
+            )
         finally:
             self._cull_guard = False
 
@@ -254,12 +329,21 @@ class LayoutMixin:
         if self._cull_guard:
             return False
         time_range, row_range = self._visibility_window()
-        wanted: dict[str, TimelineClipView] = {}
-        for view in self.clip_views:
-            widget = self.clip_widgets.get(view.id)
-            dragging = widget is not None and widget.drag_mode is not None
-            if dragging or self._clip_in_window(view, time_range, row_range):
-                wanted[view.id] = view
+        by_id = self._views_by_id()
+        if time_range is None and row_range is None:
+            wanted = dict(by_id)
+        else:
+            # Requête d'intervalle : O(log n + clips visibles), pas O(n).
+            t0, t1 = time_range if time_range is not None else (float("-inf"), float("inf"))
+            ids = set(self._spans().query(t0, t1, row_range))
+            # Un clip en cours de glisser reste monté, sinon le geste serait
+            # coupé dès qu'il sort de l'écran.
+            ids.update(
+                clip_id for clip_id, widget in self.clip_widgets.items()
+                if widget.drag_mode is not None and clip_id in by_id
+            )
+            order = self._view_positions()
+            wanted = {clip_id: by_id[clip_id] for clip_id in sorted(ids, key=order.__getitem__)}
         previous_ids = set(self.clip_widgets)
         changed = previous_ids != set(wanted)
         if not changed and not refresh_views:
@@ -271,6 +355,7 @@ class LayoutMixin:
             widget.deleteLater()
         for view in wanted.values():
             widget = self.clip_widgets.get(view.id)
+            is_new = widget is None
             if widget is None:
                 widget = ClipWidget(view, self.timeline_grid)
                 self.clip_widgets[view.id] = widget
@@ -280,8 +365,11 @@ class LayoutMixin:
                 widget.view = view
                 widget.pending_start = view.start
                 widget.pending_end = view.end
-            widget.refresh_style()
-            widget.show()
+            if is_new or refresh_views:
+                # Un widget déjà monté et inchangé n'est ni restylé ni
+                # ré-affiché à chaque cran de défilement.
+                widget.refresh_style()
+                widget.show()
         return changed
 
     def _on_timeline_scrolled(self, _value: int = 0) -> None:
@@ -331,7 +419,7 @@ class LayoutMixin:
     def _layout_transition_widgets(self) -> None:
         if self.project is None:
             return
-        views = {view.id: view for view in self.clip_views}
+        views = self._views_by_id()
         pixels = self.pixels_per_second * self.zoom
         for transition in self.project.transitions:
             widget = self.transition_widgets.get(transition.id)
@@ -358,9 +446,13 @@ class LayoutMixin:
             height = self.row_height_of(self.project.tracks[index])
             header.setFixedHeight(height)
             header.setGeometry(0, int(self.row_top(index)), self.left_margin, height)
-        for view in self.clip_views:
-            widget = self.clip_widgets.get(view.id)
-            if widget is None or widget.drag_mode is not None:
+        # Seuls les widgets montés sont repositionnés (pas les milliers de
+        # clips hors écran), dans l'ordre d'origine pour garder l'empilement.
+        order = self._view_positions()
+        for clip_id in sorted(self.clip_widgets, key=lambda key: order.get(key, 0)):
+            widget = self.clip_widgets[clip_id]
+            view = self._views_by_id().get(clip_id)
+            if view is None or widget.drag_mode is not None:
                 continue
             widget.setGeometry(*self.clip_rect(view, view.start, view.end))
             widget.raise_()
@@ -448,12 +540,21 @@ class LayoutMixin:
         return getattr(track, "height_mode", "normal") if track else "normal"
 
     def clip_model(self, clip_id: str):
+        """Clip du modèle par identifiant (table reconstruite avec ``clip_views``)."""
         if self.project is None:
             return None
+        if self._clip_by_id is None:
+            self._clip_by_id = {
+                clip.id: clip for track in self.project.tracks for clip in track.clips
+            }
+        clip = self._clip_by_id.get(clip_id)
+        if clip is not None:
+            return clip
+        # Absent de la table (clip ajouté sans ``set_project`` ?) : repli exact.
         for track in self.project.tracks:
-            for clip in track.clips:
-                if clip.id == clip_id:
-                    return clip
+            for candidate in track.clips:
+                if candidate.id == clip_id:
+                    return candidate
         return None
 
     def _track_index_at_global_y(self, global_y: int, track_type: str) -> int | None:

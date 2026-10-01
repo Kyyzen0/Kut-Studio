@@ -136,6 +136,33 @@ def _coerce_bool(value: object) -> bool:
     return False
 
 
+DEFAULT_PROXY_PROFILE: str = "medium"
+"""Profil de proxy par défaut (voir :mod:`core.proxy_profiles`)."""
+
+DEFAULT_CACHE_MAX_GB: float = 4.0
+"""Budget disque global des caches (segments d'aperçu + proxies), en Go."""
+
+MIN_CACHE_MAX_GB: float = 0.5
+MAX_CACHE_MAX_GB: float = 512.0
+
+
+def _coerce_proxy_profile(value: object) -> str:
+    """Filtre le profil de proxy ; ``medium`` si inconnu (ex. profil retiré)."""
+    from .proxy_profiles import get_profile
+
+    return get_profile(value if isinstance(value, str) else None).id
+
+
+def _coerce_cache_max_gb(value: object) -> float:
+    """Borne le budget de cache ; valeur absente ou corrompue → défaut."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return DEFAULT_CACHE_MAX_GB
+    number = float(value)
+    if number != number:  # NaN
+        return DEFAULT_CACHE_MAX_GB
+    return max(MIN_CACHE_MAX_GB, min(MAX_CACHE_MAX_GB, number))
+
+
 def _coerce_shortcuts(value: object) -> dict[str, list[str]]:
     """Filtre les raccourcis relus du disque.
 
@@ -162,6 +189,10 @@ class UserSettings:
         performance_profile: ``"auto"``, ``"low"``, ``"balanced"`` ou ``"high"``.
         preview_quality: ``"auto"``, ``"full"``, ``"half"``, ``"quarter"``
             ou ``"eighth"``.
+        proxies_enabled: utilise les proxies pour l'**aperçu** (jamais pour
+            l'export, qui lit toujours les médias originaux).
+        proxy_profile: profil de proxy utilisé pour générer / lire.
+        cache_max_gb: budget disque global des caches, en Go.
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
             retire volontairement le raccourci de la commande.
@@ -181,6 +212,10 @@ class UserSettings:
     scopes_levels: str = DEFAULT_SCOPES_LEVELS
     scopes_alerts_enabled: bool = False
     shortcuts: dict[str, list[str]] = field(default_factory=dict)
+    # --- Performance (proxies, cache) ---
+    proxies_enabled: bool = True
+    proxy_profile: str = DEFAULT_PROXY_PROFILE
+    cache_max_gb: float = DEFAULT_CACHE_MAX_GB
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -346,6 +381,10 @@ def load_user_settings(
         # Raccourcis : absents des fichiers antérieurs, ce qui redonne
         # les valeurs par défaut sans migration explicite.
         shortcuts=_coerce_shortcuts(data.get("shortcuts")),
+        # Absents des fichiers antérieurs : les défauts s'appliquent.
+        proxies_enabled=_coerce_bool(data.get("proxies_enabled", True)),
+        proxy_profile=_coerce_proxy_profile(data.get("proxy_profile")),
+        cache_max_gb=_coerce_cache_max_gb(data.get("cache_max_gb")),
     )
 
 
@@ -391,6 +430,9 @@ def save_user_settings(
                 settings.scopes_alerts_enabled
             ),
             shortcuts=_coerce_shortcuts(settings.shortcuts),
+            proxies_enabled=_coerce_bool(settings.proxies_enabled),
+            proxy_profile=_coerce_proxy_profile(settings.proxy_profile),
+            cache_max_gb=_coerce_cache_max_gb(settings.cache_max_gb),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -415,6 +457,8 @@ def save_user_settings(
 
 
 __all__ = [
+    "DEFAULT_CACHE_MAX_GB",
+    "DEFAULT_PROXY_PROFILE",
     "DEFAULT_LANGUAGE",
     "DEFAULT_PERFORMANCE_PROFILE",
     "DEFAULT_PREVIEW_QUALITY",

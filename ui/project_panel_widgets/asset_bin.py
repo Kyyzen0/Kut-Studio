@@ -157,6 +157,32 @@ class AssetBin(QWidget):
                 painter.drawRoundedRect(badge_rect, 8, 8)
                 painter.setPen(QColor("#ffffff"))
                 painter.drawText(badge_rect, Qt.AlignCenter, label)
+            # Pastille « PX » : état du proxy (prêt, en cours, erreur…).
+            proxy_state = getattr(badge, "proxy_state", "")
+            if proxy_state and proxy_state != "none":
+                progress = int(getattr(badge, "proxy_progress", 0))
+                label, color = {
+                    "ready": ("PX", COLORS["accent"]),
+                    "generating": (f"PX {progress}%", COLORS["warning"]),
+                    "pending": ("PX…", COLORS["muted"]),
+                    "error": ("PX!", COLORS["danger"]),
+                    "stale": ("PX↻", COLORS["warning"]),
+                }.get(proxy_state, ("", COLORS["muted"]))
+                if label:
+                    fm = painter.fontMetrics()
+                    width = fm.horizontalAdvance(label) + 8
+                    proxy_rect = QRect(
+                        right_edge - width,
+                        rect.top() + (rect.height() - 14) // 2,
+                        width,
+                        14,
+                    )
+                    right_edge = proxy_rect.left() - 4
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(color))
+                    painter.drawRoundedRect(proxy_rect, 6, 6)
+                    painter.setPen(QColor("#ffffff"))
+                    painter.drawText(proxy_rect, Qt.AlignCenter, label)
             # Pastilles de tags : 6 px de diamètre, à droite du badge
             # d'usage. On n'en affiche que 3 maximum.
             if tag_colors:
@@ -274,6 +300,13 @@ class AssetBin(QWidget):
             extras.append(f"Utilisé {badge.usage_count}× sur la timeline")
         if badge.is_missing:
             extras.append("⚠ Fichier source introuvable — utilisez Relier")
+        if badge.proxy_state and badge.proxy_state != "none":
+            from ui.i18n import translate
+
+            line = translate(f"proxy.state.{badge.proxy_state}", progress=badge.proxy_progress)
+            if badge.proxy_state == "error" and badge.proxy_error:
+                line += f" — {badge.proxy_error}"
+            extras.append(line)
         if extras:
             base += "\n" + "\n".join(extras)
         return base

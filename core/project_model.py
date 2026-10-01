@@ -9,7 +9,9 @@ manipulés hors d'un contexte Qt (tests, scripts, futurs services).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import enum
+from copy import deepcopy
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,6 +77,50 @@ def clamp_fade(value: object) -> float:
     if number in (float("inf"), float("-inf")):
         return 0.0
     return max(0.0, number)
+
+
+# ---------------------------------------------------------------------------
+# Copie profonde rapide d'un clip (historique d'annulation)
+# ---------------------------------------------------------------------------
+
+_ATOMIC_TYPES = (str, int, float, bool, type(None))
+_ATOMIC_SET = frozenset(_ATOMIC_TYPES)
+_VERDICTS_KEY = "kut-immutable-verdicts"
+
+
+def _is_immutable(value, verdicts: dict) -> bool:
+    """``True`` si ``value`` ne peut pas changer : le partager entre copies est sûr.
+
+    Vrai pour les scalaires, les énumérations, les tuples d'immuables et
+    les dataclasses **gelées** dont tous les champs sont immuables. Une
+    dataclass gelée qui contient une liste n'est PAS immuable : elle est
+    copiée normalement. Le verdict d'une instance est mémorisé (des
+    milliers de clips partagent la même ``TextStyle``).
+    """
+    kind = type(value)
+    if kind in _ATOMIC_TYPES or isinstance(value, enum.Enum):
+        return True
+    if kind is tuple:
+        return all(_is_immutable(item, verdicts) for item in value)
+    if is_dataclass(value) and kind.__dataclass_params__.frozen:
+        key = id(value)
+        verdict = verdicts.get(key)
+        if verdict is None:
+            verdict = all(
+                _is_immutable(getattr(value, f.name), verdicts) for f in fields(value)
+            )
+            verdicts[key] = verdict
+        return verdict
+    return False
+
+
+def _copy_field(value, memo: dict, verdicts: dict):
+    if _is_immutable(value, verdicts):
+        return value
+    if type(value) is list:
+        return [item if _is_immutable(item, verdicts) else deepcopy(item, memo) for item in value]
+    return deepcopy(value, memo)
+
 
 
 @dataclass
@@ -325,6 +371,26 @@ class Clip:
             scale = duration / total
             self.fade_in *= scale
             self.fade_out *= scale
+
+    def __deepcopy__(self, memo):
+        """Copie profonde qui **partage** les valeurs immuables.
+
+        ``copy.deepcopy`` reconstruit récursivement chaque dataclass gelée
+        (transformation, remappage, composition, style) de chaque clip :
+        c'était l'essentiel du coût d'un snapshot d'historique, payé à
+        *chaque* modification (≈ 150 ms pour 10 000 clips). Les objets
+        immuables sont ici partagés ; les listes et objets modifiables
+        sont, eux, bien copiés : une copie reste indépendante de l'original.
+        """
+        clone = self.__class__.__new__(self.__class__)
+        memo[id(self)] = clone
+        verdicts = memo.setdefault(_VERDICTS_KEY, {})
+        copied = {}
+        for name, value in self.__dict__.items():
+            # Chemin rapide : la majorité des champs sont des scalaires.
+            copied[name] = value if type(value) in _ATOMIC_SET else _copy_field(value, memo, verdicts)
+        clone.__dict__.update(copied)
+        return clone
 
     def reset_fades(self) -> None:
         """Remet les deux fondus à zéro (double-clic / bouton Réinitialiser)."""

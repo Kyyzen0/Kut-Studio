@@ -98,7 +98,24 @@ class SelectionMixin:
             self._set_selection([], None, announce=True)
             return
         ids = []
-        for view in self.clip_views:
+        # Candidats par requête d'intervalle (temps du rectangle, rangées
+        # touchées), puis test géométrique exact : même résultat qu'un
+        # balayage complet, sans parcourir les clips hors du rectangle.
+        scale = self.pixels_per_second * self.zoom
+        if scale > 0 and self.project is not None:
+            margin = 40 / scale  # largeur minimale d'un clip (40 px)
+            t0 = (rect.left() - self.left_margin) / scale - margin
+            t1 = (rect.right() - self.left_margin) / scale
+            rows = [
+                index for index, track in enumerate(self.project.tracks)
+                if self.row_top(index) <= rect.bottom()
+                and self.row_top(index) + self.row_height_of(track) >= rect.top()
+            ]
+            row_range = (min(rows), max(rows)) if rows else (0, -1)
+            candidates = self.clips_overlapping(t0, t1, row_range)
+        else:
+            candidates = self.clip_views
+        for view in candidates:
             x, y, width, height = self.clip_rect(view, view.start, view.end)
             if rect.intersects(QRect(x, y, width, height)):
                 ids.append(view.id)

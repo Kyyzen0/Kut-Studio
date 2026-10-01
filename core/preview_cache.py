@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,7 +89,17 @@ def segment_key_string(key):
 
 
 class DiskPreviewCache:
-    """Cache disque borne avec invalidation chirurgicale et LRU."""
+    """Cache disque borné : invalidation chirurgicale, LRU, index en mémoire.
+
+    L'ancienne version parcourait **tout** le dossier à chaque ``store``
+    (``glob`` + ``stat`` de chaque segment) pour appliquer le budget :
+    un coût proportionnel au nombre de segments, payé à chaque rendu.
+    Un index ``nom -> (taille, dernier usage)`` est maintenant construit
+    une fois (``scandir``) puis tenu à jour ; ``store`` et l'éviction sont
+    en O(1) amorti pour l'index. Un fichier supprimé à la main est
+    détecté à la première lecture (``lookup`` le retire de l'index) ou
+    par :meth:`rescan`.
+    """
 
     def __init__(self, directory=None, **kwargs):
         budget = kwargs.get("budget_bytes", DEFAULT_BUDGET_BYTES)
@@ -99,6 +110,61 @@ class DiskPreviewCache:
         self.ttl_seconds = float(ttl) if ttl else 0.0
         self.hits = 0
         self.misses = 0
+        self._lock = threading.RLock()
+        self._index = None  # nom -> [taille, dernier usage en ns] ; chargé à la demande
+        self._total = 0
+        self._dir_mtime = None  # date du dossier à la dernière synchronisation
+
+    # -- index -----------------------------------------------------------------
+
+    def rescan(self):
+        """Reconstruit l'index depuis le disque (après une modification externe)."""
+        index = {}
+        total = 0
+        try:
+            with os.scandir(self.directory) as entries:
+                for entry in entries:
+                    if not entry.name.endswith(".mp4"):
+                        continue
+                    try:
+                        stat = entry.stat()
+                    except OSError:
+                        continue
+                    index[entry.name] = [stat.st_size, stat.st_mtime_ns]
+                    total += stat.st_size
+        except OSError:
+            pass
+        with self._lock:
+            self._index = index
+            self._total = total
+            self._dir_mtime = self._read_dir_mtime()
+
+    def _read_dir_mtime(self):
+        try:
+            return os.stat(self.directory).st_mtime_ns
+        except OSError:
+            return None
+
+    def _sync_if_changed(self):
+        """Relit le disque si un autre processus a modifié le dossier.
+
+        Détecté par la date du dossier, mise à jour après chacune de nos
+        propres écritures : un seul ``stat``, pas un parcours.
+        """
+        if self._index is not None and self._read_dir_mtime() != self._dir_mtime:
+            self.rescan()
+
+    def _ensure_index(self):
+        if self._index is None:
+            self.rescan()
+        return self._index
+
+    def _forget(self, name):
+        entry = self._index.pop(name, None) if self._index is not None else None
+        if entry is not None:
+            self._total -= entry[0]
+
+    # -- API ---------------------------------------------------------------------
 
     def path_for(self, key):
         """Chemin deterministe du segment (sans le creer)."""
@@ -107,28 +173,36 @@ class DiskPreviewCache:
     def lookup(self, key):
         """Retourne le chemin si le segment existe et est frais."""
         path = self.path_for(key)
-        if not path.is_file():
-            self.misses += 1
-            return None
-        if self.ttl_seconds > 0:
-            try:
-                age = time.time() - path.stat().st_mtime
-            except OSError:
+        with self._lock:
+            index = self._ensure_index()
+            if not path.is_file():
+                self._forget(path.name)
                 self.misses += 1
                 return None
-            if age > self.ttl_seconds:
+            if self.ttl_seconds > 0:
                 try:
-                    path.unlink()
+                    age = time.time() - path.stat().st_mtime
                 except OSError:
-                    pass
-                self.misses += 1
-                return None
-        self.hits += 1
-        try:
-            path.touch()
-        except OSError:
-            pass
-        return path
+                    self._forget(path.name)
+                    self.misses += 1
+                    return None
+                if age > self.ttl_seconds:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                    self._forget(path.name)
+                    self.misses += 1
+                    return None
+            self.hits += 1
+            try:
+                path.touch()
+            except OSError:
+                pass
+            entry = index.get(path.name)
+            if entry is not None:
+                entry[1] = time.time_ns()
+            return path
 
     def store(self, key, source_path):
         """Copie atomique d'un segment rendu vers le cache."""
@@ -136,6 +210,9 @@ class DiskPreviewCache:
         import tempfile
 
         target = self.path_for(key)
+        # Le dossier a pu être supprimé en cours de session (nettoyage manuel) :
+        # on le recrée plutôt que d'échouer à chaque rendu suivant.
+        self.directory.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
             prefix=target.name + ".", suffix=".tmp", dir=str(self.directory)
         )
@@ -149,7 +226,17 @@ class DiskPreviewCache:
                     os.remove(tmp_name)
             except OSError:
                 pass
-        self.evict_if_needed()
+        try:
+            size = target.stat().st_size
+        except OSError:
+            size = 0
+        with self._lock:
+            index = self._ensure_index()
+            self._forget(target.name)
+            index[target.name] = [size, time.time_ns()]
+            self._total += size
+            self._evict_indexed()
+            self._dir_mtime = self._read_dir_mtime()
         return target
 
     def invalidate_clip(self, clip_id):
@@ -157,57 +244,117 @@ class DiskPreviewCache:
         safe = "".join(
             c if (c.isalnum() or c in ("-", "_")) else "_" for c in str(clip_id)
         )[:48] or "clip"
+        prefix = safe + "_"
         removed = 0
-        for path in list(self.directory.glob(safe + "_*.mp4")):
-            try:
-                path.unlink()
-                removed += 1
-            except OSError:
-                pass
+        with self._lock:
+            index = self._ensure_index()
+            for name in [n for n in index if n.startswith(prefix)]:
+                try:
+                    (self.directory / name).unlink()
+                    removed += 1
+                except OSError:
+                    pass
+                self._forget(name)
+            self._dir_mtime = self._read_dir_mtime()
+        return removed
+
+    def invalidate_clips(self, clip_ids):
+        """Supprime les segments de **plusieurs** clips en un seul passage.
+
+        ``invalidate_clip`` en boucle coûterait un parcours de l'index par
+        clip ; ici un seul (purge d'un projet entier).
+        """
+        prefixes = tuple(
+            "".join(c if (c.isalnum() or c in ("-", "_")) else "_" for c in str(clip))[:48]
+            + "_"
+            for clip in clip_ids
+        )
+        if not prefixes:
+            return 0
+        removed = 0
+        with self._lock:
+            index = self._ensure_index()
+            for name in [n for n in index if n.startswith(prefixes)]:
+                try:
+                    (self.directory / name).unlink()
+                    removed += 1
+                except OSError:
+                    pass
+                self._forget(name)
+            self._dir_mtime = self._read_dir_mtime()
         return removed
 
     def invalidate_all(self):
         """Vide tout le cache disque."""
         removed = 0
-        for path in list(self.directory.glob("*.mp4")):
-            try:
-                path.unlink()
-                removed += 1
-            except OSError:
-                pass
+        with self._lock:
+            index = self._ensure_index()
+            for name in list(index):
+                try:
+                    (self.directory / name).unlink()
+                    removed += 1
+                except OSError:
+                    pass
+                self._forget(name)
+            self._dir_mtime = self._read_dir_mtime()
         return removed
 
-    def evict_if_needed(self):
-        """Eviction LRU (mtime) jusqu'au budget."""
-        import os as _os
+    def purge(self):
+        """Alias de :meth:`invalidate_all` (vocabulaire du gestionnaire de cache)."""
+        return self.invalidate_all()
 
-        files = []
-        total = 0
-        for path in self.directory.glob("*.mp4"):
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            files.append((stat.st_mtime_ns, stat.st_size, path))
-            total += stat.st_size
-        files.sort(key=lambda item: item[0])
+    def _evict_indexed(self):
+        """Éviction LRU jusqu'au budget, d'après l'index (aucun accès disque de scan)."""
         evicted = 0
-        index = 0
-        # Si un seul segment depasse deja le budget, on le garde
-        # (mieux vaut un apercu que rien) ; l'eviction ne s'applique
-        # qu'a partir de 2 fichiers.
-        while total > self.budget_bytes and len(files) - evicted > 1:
-            if index >= len(files):
-                break
-            _mtime, size, path = files[index]
-            index += 1
+        # Un segment unique plus gros que le budget est conservé : mieux
+        # vaut un aperçu que rien ; l'éviction ne vaut qu'à partir de 2 fichiers.
+        while self._total > self.budget_bytes and len(self._index) > 1:
+            name = min(self._index, key=lambda n: self._index[n][1])
             try:
-                _os.remove(path)
-                total -= size
-                evicted += 1
+                (self.directory / name).unlink()
             except OSError:
                 pass
+            self._forget(name)
+            evicted += 1
         return evicted
+
+    def evict_if_needed(self):
+        """Resynchronise l'index avec le disque puis applique le budget."""
+        self.rescan()
+        with self._lock:
+            return self._evict_indexed()
+
+    def evict_bytes(self, target_bytes):
+        """Libère au moins ``target_bytes`` en retirant les plus anciens segments.
+
+        Sert au budget global (:class:`core.cache_manager.CacheManager`).
+        Retourne le nombre d'octets réellement libérés.
+        """
+        freed = 0
+        with self._lock:
+            index = self._ensure_index()
+            while freed < target_bytes and index:
+                name = min(index, key=lambda n: index[n][1])
+                size = index[name][0]
+                try:
+                    (self.directory / name).unlink()
+                except OSError:
+                    pass
+                self._forget(name)
+                freed += size
+            self._dir_mtime = self._read_dir_mtime()
+        return freed
+
+    def entries_info(self):
+        """Liste ``(chemin, taille, dernier usage en ns)`` des segments connus."""
+        with self._lock:
+            self._ensure_index()
+            self._sync_if_changed()
+            index = self._index
+            return [
+                (self.directory / name, entry[0], entry[1])
+                for name, entry in index.items()
+            ]
 
     def status_for_range(self, keys):
         """Etat du cache pour une liste de cles : cached/pending."""
@@ -220,19 +367,15 @@ class DiskPreviewCache:
         return states
 
     def stats(self):
-        """Compteurs + occupation disque."""
-        total = 0
-        count = 0
-        for path in self.directory.glob("*.mp4"):
-            try:
-                total += path.stat().st_size
-                count += 1
-            except OSError:
-                pass
-        return {
-            "entries": count,
-            "bytes": total,
-            "hits": self.hits,
-            "misses": self.misses,
-            "budget_bytes": self.budget_bytes,
-        }
+        """Compteurs + occupation disque (depuis l'index : sans parcours du dossier)."""
+        with self._lock:
+            self._ensure_index()
+            self._sync_if_changed()
+            index = self._index
+            return {
+                "entries": len(index),
+                "bytes": self._total,
+                "hits": self.hits,
+                "misses": self.misses,
+                "budget_bytes": self.budget_bytes,
+            }
