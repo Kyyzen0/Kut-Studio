@@ -1,20 +1,15 @@
 import os
-import tempfile
 import time
-from dataclasses import replace
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
-    QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -22,13 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.autosave import (
-    AutosaveCoordinator,
-    autosave_is_newer,
-    discard_autosave,
-    sidecar_path,
-)
-from core.effects import apply_color_effect, play_crossfade_preview, set_volume
+from core.autosave import AutosaveCoordinator
+from core.effects import apply_color_effect, set_volume
 from core.effects_library import EffectPreset, UserPresetStore
 from core.edit_history import ProjectHistory
 from core.color_grading import ColorGrade
@@ -39,72 +29,39 @@ from core.transition_presets import (
 )
 from core.text_presets import TextPresetStore
 from core.export_engine import ExportEngine
-from core.media_cache import cached_probe
-from core.media_probe import MediaProbeError, probe_media, probe_video
+from core.media_probe import probe_video
 from core.project_factory import create_default_project
-from core.project_io import load_project, save_project
-from core.project_model import MediaAsset, Project
+from core.project_model import Project
 from core.subtitle_io import parse_srt
 from core.shortcuts import resolve_shortcut
 from core.scopes import ColorSpace, ScopeResult, VideoLevels
 from core.scopes_analyzer import (
-    ScopeAnalysis,
     ScopeAnalyzer,
-    ScopeExtractionError,
     cleanup_temporary_paths,
     png_to_scope_frame,
 )
 from core.studio_runtime import StudioRuntime, peak_rss_bytes
-from core.audio_recorder import AudioRecorder, AudioRecorderError, pcm_duration, write_wav
-from core.timeline_editing import (
-    add_marker,
-    apply_solo,
-    delete_clips,
-    move_clips,
-    neighbor_marker,
-    remove_marker,
-    ripple_trim_left,
-    roll_edit,
-    shift_track_after,
-    slide_clip,
-    slip_clip,
-)
+from core.audio_recorder import AudioRecorder
+from core.timeline_editing import apply_solo, remove_marker
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
-from core.workspace_state import PanelId, workspace_display_name
-from core.timeline_operations import (
-    add_clip_to_track,
-    cut_clip,
-    delete_clip,
-    duplicate_clip,
-    find_clip,
-    move_clip,
-    ripple_delete_clip,
-    set_clip_enabled,
-    snap_timeline_position,
-    trim_clip_left,
-    trim_clip_right,
-)
+from core.workspace_state import PanelId
+from core.timeline_operations import find_clip, snap_timeline_position
 from core.timeline_evaluator import (
     ActiveClip,
     timeline_duration,
 )
-from core.render_plan import RenderPlan, build_render_plan
 from core.timeline_view_model import build_export_clips
 from core.user_settings import (
     DEFAULT_LANGUAGE,
     DEFAULT_THEME,
-    VALID_LANGUAGES,
-    VALID_THEME_MODES,
     UserSettings,
     load_user_settings,
-    save_user_settings,
 )
 from core.visual_effects import evaluate_transform
 from ui import i18n
 from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
-from ui.preferences_dialog import PreferencesDialog
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.scopes_panel import ScopeLayout, ScopeView, ScopesPanel
@@ -113,6 +70,14 @@ from ui.timeline_panel import TimelinePanel
 from ui.export_panel import ExportPanel
 from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
+from ui.main_window_mixins.history import HistoryMixin
+from ui.main_window_mixins.preferences import PreferencesMixin
+from ui.main_window_mixins.recording import RecordingMixin
+from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
+from ui.main_window_mixins.media_import import MediaImportMixin
+from ui.main_window_mixins.project_files import ProjectFilesMixin
+from ui.main_window_mixins.workspace_actions import WorkspaceActionsMixin
+from ui.main_window_mixins.scopes import ScopesMixin
 from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMixin
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
@@ -121,6 +86,12 @@ from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
+
+# Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
+# remplacent sur ce module (``ui.main_window.QMessageBox``, etc.).
+from PySide6.QtWidgets import QFileDialog, QMessageBox  # noqa: E402,F401
+from core.media_probe import probe_media  # noqa: E402,F401
+from core.user_settings import save_user_settings  # noqa: E402,F401
 from ui.theme import COLORS, ThemeManager, global_stylesheet, label_style
 
 
@@ -151,6 +122,14 @@ class MainWindow(
     LibraryOrganizationMixin,
     SubtitlesGraphicsMixin,
     TransformEffectsMixin,
+    ScopesMixin,
+    WorkspaceActionsMixin,
+    ProjectFilesMixin,
+    MediaImportMixin,
+    TimelineEditingMixin,
+    RecordingMixin,
+    PreferencesMixin,
+    HistoryMixin,
     QMainWindow,
 ):
     def __init__(self):
@@ -792,13 +771,6 @@ class MainWindow(
 
         super().closeEvent(event)
 
-    def _workspace_icon(self, name: str):
-        """Icône du registre d'icônes pour les menus de workspace."""
-        from ui.design_system import Iconography
-        from ui.icons import IconName, make_icon
-
-        return make_icon(getattr(IconName, name), size=Iconography.md)
-
     @property
     def playhead_seconds(self) -> float:
         """Position de la tête de lecture, en secondes.
@@ -841,135 +813,9 @@ class MainWindow(
         if preview is not None:
             preview.set_timecode(position, timeline.duration_seconds)
 
-    def _build_workspace_menu(self, menu: QMenu) -> None:
-        """Remplit le menu « Fenêtre » avec les actions de panneaux.
-
-        Ce menu est la voie *principale* et découvrable : la barre
-        d'options au survol reste un raccourci discret. Les deux
-        partagent la même source d'actions
-        (:meth:`WorkspaceManager.build_actions`), donc aucune logique
-        n'est dupliquée.
-        """
-        panels_menu = menu.addMenu("Panneaux")
-        for panel in PanelId:
-            action = QAction(panel.label(), self)
-            action.setCheckable(True)
-            action.setChecked(self.workspace.is_visible(panel))
-            action.setIcon(self._workspace_icon("PANEL_MAXIMIZE"))
-            action.triggered.connect(
-                lambda _checked, p=panel: self.toggle_panel(p)
-            )
-            panels_menu.addAction(action)
-
-        menu.addSeparator()
-        for panel in PanelId:
-            # Un sous-menu par panneau : sans étiquette, quatre groupes
-            # d'actions identiques seraient ambiguës.
-            panel_menu = menu.addMenu(panel.label())
-            for action in self.workspace.build_actions(panel):
-                if isinstance(action, QMenu):
-                    # ``addMenu`` gère l'action associée au sous-menu.
-                    # Reparenté ici, le QMenu devient un enfant visuel du
-                    # parent et Qt calcule son popup en coordonnées locales,
-                    # ce qui le faisait se chevaucher au lieu de s'ouvrir
-                    # à droite.
-                    panel_menu.addMenu(action)
-                else:
-                    panel_menu.addAction(action)
-        restore_action = QAction("Restaurer la disposition", self)
-        restore_action.setIcon(self._workspace_icon("PANEL_RESTORE"))
-        restore_action.triggered.connect(self.restore_workspace_layout)
-        menu.addSeparator()
-        menu.addAction(restore_action)
-
-        # Espaces de travail nommés (§8) : appliqués ou enregistrés.
-        spaces = menu.addMenu("Espaces de travail")
-        for name in self.workspace.list_workspaces():
-            action = QAction(workspace_display_name(name), self)
-            action.triggered.connect(
-                lambda _c=False, n=name: self.apply_workspace(n)
-            )
-            spaces.addAction(action)
-        spaces.addSeparator()
-        save_space = QAction("Enregistrer la disposition sous…", spaces)
-        save_space.triggered.connect(self.save_workspace_as)
-        spaces.addAction(save_space)
-
     # -- Espaces de travail --------------------------------------------
 
-    def apply_workspace(self, name: str) -> None:
-        """Applique un espace de travail nommé."""
-        if not self.workspace.apply_workspace(name):
-            return
-        self._sync_workspace_menu()
-
-    def save_workspace_as(self) -> None:
-        """Enregistre la disposition courante sous un nom choisi."""
-        name, accepted = QInputDialog.getText(
-            self, "Espace de travail", "Nom de l'espace de travail :"
-        )
-        if not accepted or not name.strip():
-            return
-        if self.workspace.save_workspace_as(name):
-            QMessageBox.information(
-                self,
-                "Espace de travail",
-                f"Disposition enregistrée sous « {name.strip()} ».",
-            )
-        else:
-            QMessageBox.warning(
-                self,
-                "Espace de travail",
-                "Impossible d'enregistrer cet espace de travail.",
-            )
-
     # -- Actions de workspace ------------------------------------------
-
-    def toggle_panel(self, panel: PanelId) -> None:
-        """Ouvre ou ferme un panneau depuis le menu."""
-        if self.workspace.state.is_visible(panel) and self.workspace.is_visible(
-            panel
-        ):
-            self.workspace.set_panel_visible(panel, False)
-        else:
-            self.workspace.set_panel_visible(panel, True)
-        self._sync_workspace_menu()
-
-    def maximize_panel(self, panel: PanelId) -> None:
-        """Maximise temporairement un panneau."""
-        self.workspace.maximize_panel(panel)
-        self._sync_workspace_menu()
-
-    def restore_workspace_layout(self) -> None:
-        """Restaure la disposition précédant une maximisation."""
-        self.workspace.restore_layout()
-        self._sync_workspace_menu()
-
-    def reset_workspace_layout(self) -> None:
-        """Rétablit la disposition et la taille par défaut."""
-        self.workspace.reset_layout()
-        self._sync_workspace_menu()
-
-    def _sync_workspace_menu(self) -> None:
-        """Recalcule l'état coché du menu « Panneaux »."""
-        menu = self.menuBar()
-        window_menu = None
-        for candidate in menu.actions():
-            if candidate.menu() is not None and candidate.text() == "Fenêtre":
-                window_menu = candidate.menu()
-                break
-        if window_menu is None:
-            return
-        panels_menu = None
-        for action in window_menu.actions():
-            sub = action.menu()
-            if sub is not None and sub.title() == "Panneaux":
-                panels_menu = sub
-                break
-        if panels_menu is None:
-            return
-        for action, panel in zip(panels_menu.actions(), PanelId):
-            action.setChecked(self.workspace.is_visible(panel))
 
     def _build_top_bar(self):
         """Barre d'application compacte centrée sur le montage courant.
@@ -1170,203 +1016,9 @@ class MainWindow(
             self.saved_indicator.setToolTip("Projet enregistré")
             self.saved_indicator.setStyleSheet(label_style(11, "success", 700))
 
-    def _mark_dirty(self) -> None:
-        self.project_dirty = True
-        self._update_top_bar()
-        self._schedule_autosave()
-
-    def _mark_clean(self) -> None:
-        self._finalize_pending_edit_sessions()
-        self.project_dirty = False
-        self.history.mark_saved()
-        self._refresh_undo_redo_state()
-        self._update_top_bar()
-
-    def _record_history(self, label: str) -> None:
-        """Enregistre l'état courant du projet dans l'historique."""
-        # Une autre action clôt la saisie de sous-titre en cours et son
-        # état final est inclus dans ce snapshot d'action.
-        if getattr(self, "_subtitle_edit_pending", None) is not None:
-            timer = getattr(self, "_subtitle_edit_timer", None)
-            if timer is not None:
-                timer.stop()
-            self._subtitle_edit_pending = None
-            self._subtitle_edit_history_before = None
-        # Une rafale d'étalonnage encore ouverte est déjà dans le projet :
-        # elle est incluse dans ce snapshot, sans étape supplémentaire.
-        if getattr(self, "_color_session_active", False):
-            timer = getattr(self, "_color_session_timer", None)
-            if timer is not None:
-                timer.stop()
-            self._color_session_active = False
-        # Même principe pour une saisie graphique encore ouverte : l'action
-        # courante capture son état final sans laisser un timer enregistrer un
-        # snapshot obsolète plus tard.
-        if getattr(self, "_graphic_session_active", False):
-            timer = getattr(self, "_graphic_session_timer", None)
-            if timer is not None:
-                timer.stop()
-            self._graphic_session_active = False
-        self.history.record(self.project, label)
-        self._refresh_undo_redo_state()
-
-    def _finalize_pending_edit_sessions(self) -> None:
-        """Ferme les éditions différées avant sauvegarde ou navigation."""
-        self._flush_subtitle_history_record()
-        self._finalize_transform_session()
-        self._finalize_color_history()
-        self._finalize_graphic_history()
-
-    def _refresh_undo_redo_state(self) -> None:
-        """Synchronise les actions et indicateurs undo/redo."""
-        if hasattr(self, "undo_action"):
-            self.undo_action.setEnabled(self.history.can_undo)
-            label = self.history.undo_label
-            self.undo_action.setText(
-                f"Annuler : {label}" if label else "Annuler"
-            )
-        if hasattr(self, "redo_action"):
-            self.redo_action.setEnabled(self.history.can_redo)
-            label = self.history.redo_label
-            self.redo_action.setText(
-                f"Rétablir : {label}" if label else "Rétablir"
-            )
-        # Boutons rapides de la top-bar.
-        if hasattr(self, "undo_button"):
-            self.undo_button.setEnabled(self.history.can_undo)
-            self.undo_button.setToolTip(
-                f"Annuler : {self.history.undo_label}" if self.history.undo_label else "Annuler"
-            )
-        if hasattr(self, "redo_button"):
-            self.redo_button.setEnabled(self.history.can_redo)
-            self.redo_button.setToolTip(
-                f"Rétablir : {self.history.redo_label}" if self.history.redo_label else "Rétablir"
-            )
-        # Synchronise le flag ``project_dirty`` avec l'historique.
-        self.project_dirty = self.history.is_dirty
-        self._update_top_bar()
-        if self.project_dirty:
-            self._schedule_autosave()
-        else:
-            timer = getattr(self, "_autosave_timer", None)
-            if timer is not None:
-                timer.stop()
-
     # ------------------------------------------------------------------
     # Undo / Redo / Duplicate / Ripple / Enable
     # ------------------------------------------------------------------
-
-    def _apply_history_snapshot(self, snapshot_project, label: str) -> None:
-        """Ré-installe ``snapshot_project`` partout dans l'interface."""
-        self.project = snapshot_project
-        # La durée affichée vaut au moins une seconde : on borne la tête
-        # avec la durée réelle du projet, puis on la repousse au widget.
-        duration = timeline_duration(self.project)
-        if duration > 0.0:
-            self.playhead_seconds = min(max(self.playhead_seconds, 0.0), duration)
-        else:
-            self.playhead_seconds = max(0.0, self.playhead_seconds)
-        self._reload_timeline_preserving_selection()
-        self._update_timeline_duration()
-        self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
-        self.playhead_seconds = self.timeline_panel.playhead_seconds
-        self._sync_preview_to_timeline()
-        self._refresh_project_library()
-        self.properties_panel.set_project_color_presets(
-            getattr(self.project, "color_presets", [])
-        )
-        mixer = getattr(self, "mixer_panel", None)
-        if mixer is not None:
-            mixer.set_project(self.project)
-        self._sync_audio_inspector()
-        self._refresh_undo_redo_state()
-
-    def undo_last(self) -> None:
-        """Annule la dernière opération enregistrée."""
-        self._finalize_pending_edit_sessions()
-        snapshot = self.history.undo()
-        if snapshot is None:
-            return
-        self._apply_history_snapshot(snapshot, self.history.undo_label or "")
-
-    def redo_last(self) -> None:
-        """Rétablit la dernière opération annulée."""
-        self._finalize_pending_edit_sessions()
-        snapshot = self.history.redo()
-        if snapshot is None:
-            return
-        self._apply_history_snapshot(snapshot, self.history.redo_label or "")
-
-    def duplicate_selected_clip(self) -> None:
-        """Duplique le clip sélectionné juste après sa fin."""
-        clip_id = self.timeline_panel.selected_clip_id
-        if clip_id is None:
-            return
-        try:
-            new_clip = duplicate_clip(self.project, clip_id)
-        except (KeyError, ValueError) as exc:
-            QMessageBox.critical(
-                self,
-                "Duplication impossible",
-                f"Impossible de dupliquer le clip :\n\n{exc}",
-            )
-            return
-        self._record_history("Dupliquer le clip")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self.timeline_panel.select_clip(new_clip.id)
-        self._mark_dirty()
-
-    def ripple_delete_selected_clip(self) -> None:
-        """Supprime le clip sélectionné et ramène à gauche les clips suivants."""
-        clip_id = self.timeline_panel.selected_clip_id
-        if clip_id is None:
-            return
-        try:
-            moved_ids = ripple_delete_clip(self.project, clip_id)
-        except KeyError as exc:
-            QMessageBox.critical(
-                self,
-                "Suppression impossible",
-                f"Impossible de supprimer le clip :\n\n{exc}",
-            )
-            return
-        self._record_history("Supprimer avec ripple")
-        self.timeline_panel.selected_clip_id = None
-        self.active_subtitle_clip = None
-        self.properties_panel.set_clip(None, "")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        # Sélectionner le clip précédent sur V1 s'il existe.
-        previous_clip = self._find_previous_v1_clip()
-        if previous_clip is not None:
-            self.timeline_panel.select_clip(previous_clip.id)
-            self.on_clip_selected(previous_clip.id)
-        self._mark_dirty()
-
-    def delete_selected_clip_with_check(self) -> None:
-        """Supprime la sélection. En mode ripple, les clips suivants se rapprochent."""
-        ids = list(self.timeline_panel.selected_clip_ids)
-        if not ids and self.timeline_panel.selected_clip_id:
-            ids = [self.timeline_panel.selected_clip_id]
-        if not ids:
-            return
-        if len(ids) == 1 and not self.timeline_panel.ripple_enabled:
-            self.delete_selected_clip(ids[0])
-            return
-        try:
-            delete_clips(self.project, ids, ripple=self.timeline_panel.ripple_enabled)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] suppression groupée refusée : {exc}")
-            return
-        self._record_history("Supprimer la sélection")
-        self.timeline_panel.selected_clip_id = None
-        self.timeline_panel.selected_clip_ids = set()
-        self.active_subtitle_clip = None
-        self.properties_panel.set_clip(None, "")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._mark_dirty()
 
     def _find_previous_v1_clip(self):
         """Retourne le dernier clip V1 (par timeline_start) ou ``None``."""
@@ -1375,27 +1027,6 @@ class MainWindow(
             if view.track_id == "V1":
                 return view
         return None
-
-    def toggle_selected_clip_enabled(self) -> None:
-        """Bascule l'état ``enabled`` du clip sélectionné."""
-        clip_id = self.timeline_panel.selected_clip_id
-        if clip_id is None:
-            return
-        try:
-            clip = find_clip(self.project, clip_id)
-        except KeyError:
-            return
-        was_enabled = clip.enabled
-        try:
-            set_clip_enabled(self.project, clip_id, not was_enabled)
-        except KeyError:
-            return
-        self._record_history(
-            "Désactiver le clip" if was_enabled else "Activer le clip"
-        )
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
 
     def _restore_clip_selection(self, clip_id: str) -> None:
         """Resélectionne ``clip_id`` et rafraîchit l'inspecteur sans seek.
@@ -1543,31 +1174,6 @@ class MainWindow(
     # Drag & drop
     # ------------------------------------------------------------------
 
-    def on_asset_dropped(self, asset_id: str, track_id: str, timeline_start: float) -> None:
-        """Ajoute le média glissé sur la piste ciblée à la position donnée.
-
-        La compatibilité asset / piste est vérifiée ; un dépôt invalide
-        n'est pas appliqué au projet.
-        """
-        asset = next(
-            (a for a in self.project.media_assets if a.id == asset_id),
-            None,
-        )
-        if asset is None:
-            return
-        try:
-            clip = add_clip_to_track(self.project, asset_id, track_id, timeline_start)
-        except (KeyError, ValueError):
-            return
-        self._record_history(
-            f"Déposer « {asset.name} » sur {track_id}"
-        )
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._refresh_project_library()
-        self.timeline_panel.select_clip(clip.id)
-        self._mark_dirty()
-
     # ------------------------------------------------------------------
     # Debounce pour la modification de texte des sous-titres
     # ------------------------------------------------------------------
@@ -1580,199 +1186,6 @@ class MainWindow(
         self.properties_panel.set_clip(None, "")
         # La bibliothèque d'effets perd son contexte de clip.
         self._sync_effects_library_context()
-
-    def new_project(self) -> None:
-        """Crée un nouveau projet vierge via ``create_default_project()``."""
-        self._finalize_pending_edit_sessions()
-        self._release_open_project()
-        self.project = create_default_project()
-        self.current_project_path = None
-        self.history.reset(self.project)
-        self._refresh_undo_redo_state()
-        self.timeline_panel.set_project(self.project)
-        self.playhead_seconds = 0.0
-        self.is_playing = False
-        self._update_timeline_duration()
-        self._sync_preview_to_timeline()
-        self._refresh_project_library()
-        self.properties_panel.set_project_color_presets(
-            getattr(self.project, "color_presets", [])
-        )
-        self._reset_selection_and_inspector()
-        self.mixer_panel.set_project(self.project)
-        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
-        self._mark_clean()
-
-    def save_project_file(self) -> None:
-        """Enregistre le projet courant. Délègue à ``save_project_as`` si aucun chemin."""
-        self._flush_subtitle_history_record()
-        if self.current_project_path is None:
-            self.save_project_as()
-            return
-        try:
-            save_project(self.project, self.current_project_path)
-            discard_autosave(self.current_project_path)
-        except OSError as exc:
-            QMessageBox.critical(
-                self,
-                "Enregistrement impossible",
-                f"Impossible d'enregistrer le projet :\n\n{exc}",
-            )
-            return
-        self._mark_clean()
-
-    def save_project_as(self) -> None:
-        """Ouvre un dialogue pour choisir un chemin ``.kut`` et enregistre le projet."""
-        self._flush_subtitle_history_record()
-        if self.current_project_path is not None:
-            default_path = self.current_project_path
-        else:
-            safe_name = (self.project.name or "projet").strip() or "projet"
-            default_path = os.path.join(os.path.expanduser("~"), f"{safe_name}.kut")
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Enregistrer le projet sous...",
-            default_path,
-            "Projets Kut-Studio (*.kut)",
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".kut"):
-            path = path + ".kut"
-        try:
-            save_project(self.project, path)
-            discard_autosave(path)
-        except OSError as exc:
-            QMessageBox.critical(
-                self,
-                "Enregistrement impossible",
-                f"Impossible d'enregistrer le projet :\n\n{exc}",
-            )
-            return
-        self.current_project_path = path
-        self._mark_clean()
-
-    def open_project_file(self) -> None:
-        """Ouvre un dialogue et charge un projet ``.kut`` sélectionné."""
-        default_dir = os.path.expanduser("~")
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Ouvrir un projet Kut-Studio",
-            default_dir,
-            "Projets Kut-Studio (*.kut)",
-        )
-        if not path:
-            return
-        self._load_project_from_path(path)
-
-    def _load_project_from_path(self, path: str) -> None:
-        """Charge ``path`` et remplace ``self.project`` uniquement en cas de succès.
-
-        Toutes les erreurs de chargement (fichier absent, JSON invalide,
-        format/version non supportés, **ou structure interne incomplète
-        qui lèverait un ``TypeError`` lors de la désérialisation des
-        dataclasses**) sont traitées de la même façon : un message
-        d'erreur est affiché et l'état courant de l'application reste
-        intact.
-        """
-        self._finalize_pending_edit_sessions()
-        try:
-            loaded = load_project(path)
-        except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
-            QMessageBox.critical(
-                self,
-                "Impossible d'ouvrir le projet",
-                f"Le fichier {path} n'a pas pu être ouvert :\n\n{exc}",
-            )
-            return
-        restored_autosave = False
-        if autosave_is_newer(path):
-            answer = QMessageBox.question(
-                self,
-                "Récupération",
-                "Une sauvegarde automatique plus récente que ce projet "
-                "a été trouvée.\n\nVoulez-vous la restaurer ?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if answer == QMessageBox.Yes:
-                try:
-                    loaded = load_project(str(sidecar_path(path)))
-                    restored_autosave = True
-                except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
-                    QMessageBox.critical(
-                        self,
-                        "Récupération impossible",
-                        f"La sauvegarde automatique n'a pas pu être lue :\n\n{exc}",
-                    )
-        self._release_open_project()
-        self.project = loaded
-        self.current_project_path = path
-        self.history.reset(self.project)
-        if restored_autosave:
-            # Le fichier .kut est plus ancien que ce qui est à l'écran.
-            self.history.mark_unsaved()
-        self._refresh_undo_redo_state()
-        self.timeline_panel.set_project(self.project)
-        self.playhead_seconds = 0.0
-        self.is_playing = False
-        self._update_timeline_duration()
-        self._sync_preview_to_timeline()
-        self._refresh_project_library()
-        self.properties_panel.set_project_color_presets(
-            getattr(self.project, "color_presets", [])
-        )
-        self._reset_selection_and_inspector()
-        self.mixer_panel.set_project(self.project)
-        self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
-        if restored_autosave:
-            self._refresh_undo_redo_state()
-        else:
-            self._mark_clean()
-
-    def launch_export(self):
-        default_dir = os.path.expanduser("~/Movies")
-        os.makedirs(default_dir, exist_ok=True)
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Enregistrer l'export",
-            os.path.join(default_dir, "kut-studio-export.mp4"),
-            "Vidéos (*.mp4 *.mov)",
-        )
-        if not path:
-            return
-        try:
-            render_plan = self.get_render_plan()
-            request = self.export_panel.build_request(render_plan, path)
-        except Exception as exc:
-            self.export_panel.mark_export_error(f"Paramètres invalides : {exc}")
-            return
-        self.export_panel.mark_export_started()
-        self.export_engine.start(request)
-
-    def get_render_plan(self) -> RenderPlan:
-        """Construit le :class:`RenderPlan` du projet courant.
-
-        Le plan décrit fidèlement la timeline (positions, trims, trous,
-        ordre des pistes, clips activés). C'est désormais l'entrée
-        unique du moteur d'export.
-        """
-        return build_render_plan(
-            self.project,
-            master_gain_db=self._master_gain_db,
-            master_muted=self._master_muted,
-        )
-
-    def cancel_export(self):
-        self.export_engine.cancel()
-
-    def _on_export_finished(self, output_path):
-        self.export_panel.mark_export_finished()
-        QMessageBox.information(
-            self,
-            "Export terminé",
-            f"L'export est terminé avec succès.\n\nFichier : {output_path}",
-        )
 
     def _build_menu_bar(self):
         menu_bar = self.menuBar()
@@ -1974,153 +1387,6 @@ class MainWindow(
     # Scopes vidéo / monitoring couleur (tâche 31)
     # ------------------------------------------------------------------
 
-    def _on_scopes_analysis_ready(self, analysis: ScopeAnalysis) -> None:
-        """Reçoit un résultat d'analyse **depuis le thread de travail**.
-
-        On ne fait que programmer la mise à jour du panneau Qt : le
-        repaint et le calcul des courbes doivent rester dans le thread
-        GUI. Un résultat marqué ``stale`` (la tête de lecture a bougé
-        pendant l'analyse) est ignoré pour ne pas faire clignoter les
-        scopes avec une image obsolète.
-        """
-        if getattr(analysis, "stale", False):
-            return
-        result = analysis.result
-        # ``QTimer.singleShot(0, ...)``rebascule dans le thread GUI
-        # sans bloquer le thread de travail.
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(0, lambda: self.scopes_panel.set_result(result))
-
-    def _on_scopes_analysis_failed(
-        self, request, error: BaseException,
-    ) -> None:
-        """Trace une erreur d'analyse sans interrompre la lecture."""
-        # Une erreur d'extraction est banale quand aucune image n'est
-        # compositionnée (tête de lecture hors media) : on reste
-        # silencieux, sinon on sature la console pendant la lecture.
-        if isinstance(error, ScopeExtractionError):
-            return
-        print(f"[MainWindow] analyse de scopes échouée : {error!r}")
-
-    def _request_scopes_analysis(self, force: bool = False) -> None:
-        """Déclenche une analyse de l'image composée à la tête de lecture.
-
-        Pendant la lecture, la fréquence est bornée par
-        :data:`SCOPES_MIN_INTERVAL` ; en pause (ou avec
-        ``force=True``), l'analyse est immédiate pour que les scopes
-        réagissent tout de suite à un changement d'exposition, de
-        contraste, de courbes ou de LUT.
-        """
-        if not self._scopes_visible:
-            return
-        if self.project is None:
-            return
-        playhead = float(getattr(self, "playhead_seconds", 0.0))
-        # On ignore les requêtes quasi identiques : inutile de
-        # réanalyser la même image 10 fois par seconde.
-        if not force and abs(playhead - self._last_scopes_playhead) < 1e-3:
-            return
-        self._last_scopes_playhead = playhead
-        self._scope_temporary_paths = ()
-        command = self._build_scopes_ffmpeg_command(playhead)
-        if command is None:
-            return
-        temporary_paths = self._scope_temporary_paths
-        self._scope_temporary_paths = ()
-        accepted = self.scopes_analyzer.submit(
-            playhead=playhead,
-            ffmpeg_command=command,
-            color_space=self.scopes_panel._color_space,
-            levels=self.scopes_panel.levels(),
-            columns=SCOPES_COLUMNS,
-            vectorscope_bins=SCOPES_VECTORSCOPE_BINS,
-            source="timeline",
-            temporary_paths=temporary_paths,
-            force=force,
-        )
-        if accepted is None:
-            cleanup_temporary_paths(temporary_paths)
-
-    def _build_scopes_ffmpeg_command(
-        self, playhead: float,
-    ) -> list[str] | None:
-        """Construit la commande ``ffmpeg`` qui rend **une** frame composée.
-
-        On réutilise le graphe de filtres de l'export (effets,
-        étalonnage, LUT, courbes) via
-        :meth:`core.export_engine.ExportEngine.build_frame_command`, afin
-        que les scopes reflètent exactement ce que le moniteur affiche.
-        La commande est volontairement limitée à une seule image PNG
-        sur stdout : l'analyse doit rester peu coûteuse, y compris
-        pendant la lecture.
-        """
-        try:
-            render_plan = self.get_render_plan()
-        except Exception:
-            # Projet sans média, plan incomplet : rien à analyser.
-            return None
-        if not getattr(render_plan, "video_layers", ()):
-            return None
-        frame_engine: ExportEngine | None = None
-        try:
-            # Le chemin de sortie n'est jamais écrit (la sortie est un
-            # PNG sur stdout) mais ``ExportRequest`` en exige un : on
-            # pointe donc vers un dossier toujours présent.
-            request = self.export_panel.build_request(
-                render_plan, os.path.join(tempfile.gettempdir(), "kut-frame.png")
-            )
-            # Une instance dédiée évite qu'une analyse de scopes ne remplace
-            # le SRT temporaire d'un export déjà en cours.
-            frame_engine = ExportEngine()
-            command = frame_engine.build_frame_command(request, playhead)
-            self._scope_temporary_paths = frame_engine.take_temporary_files()
-            return command
-        except Exception:
-            if frame_engine is not None:
-                cleanup_temporary_paths(frame_engine.take_temporary_files())
-            cleanup_temporary_paths(self._scope_temporary_paths)
-            self._scope_temporary_paths = ()
-            return None
-
-    def _persist_scopes_preferences(self) -> None:
-        """Enregistre la disposition / les niveaux des scopes.
-
-        ``UserSettings`` est immuable : on reconstruit un instantané
-        complet via :meth:`_settings_snapshot` plutôt que de muter
-        l'instance chargée (ce qui lèverait une ``FrozenInstanceError``).
-        """
-        try:
-            save_user_settings(self._settings_snapshot())
-        except OSError:
-            # Un échec d'écriture des préférences ne doit pas
-            # interrompre l'édition.
-            pass
-
-    def toggle_scopes_visible(self) -> None:
-        """Affiche / masque le panneau de scopes."""
-        self._scopes_visible = not self._scopes_visible
-        self.scopes_panel.setVisible(self._scopes_visible)
-        # L'action de menu reflète toujours l'état réel du splitter.
-        action = getattr(self, "scopes_action", None)
-        if action is not None:
-            action.blockSignals(True)
-            action.setChecked(self._scopes_visible)
-            action.blockSignals(False)
-        # Le redimensionnement suit la visibilité : replié quand masqué,
-        # il reprend sa hauteur quand affiché.
-        host = getattr(self, "_viewer_host", None)
-        if host is not None:
-            if self._scopes_visible:
-                host.setSizes([420, 260])
-            else:
-                host.setSizes([680, 0])
-        self._persist_scopes_preferences()
-        if self._scopes_visible:
-            # On analyse immédiatement : l'utilisateur veut voir les
-            # scopes tout de suite.
-            self._request_scopes_analysis(force=True)
-
 
     def _set_preview_play_icon(self, playing: bool) -> None:
         from ui.design_system import Iconography
@@ -2298,44 +1564,6 @@ class MainWindow(
         if preview is not None:
             preview.set_preview_divisor(self.runtime.preview_divisor())
 
-    def _release_open_project(self) -> None:
-        """Coupe la lecture, le décodeur et le travail du projet quitté."""
-        recorder = getattr(self, "_audio_recorder", None)
-        if recorder is not None and recorder.is_recording:
-            recorder.stop()
-        timeline = getattr(self, "timeline_panel", None)
-        if timeline is not None and hasattr(timeline, "record_button"):
-            self._set_record_button(False)
-        self.is_playing = False
-        timer = getattr(self, "timeline_timer", None)
-        if timer is not None and timer.isActive():
-            timer.stop()
-        if timeline is not None:
-            timeline.setPlayState(False)
-        preview = getattr(self, "preview_panel", None)
-        if preview is not None:
-            self._set_preview_play_icon(False)
-            preview.release_media()
-        self._timeline_index = None
-        self._timeline_index_project_id = None
-        runtime = getattr(self, "runtime", None)
-        if runtime is not None:
-            runtime.begin_project()
-
-    def _schedule_autosave(self) -> None:
-        timer = getattr(self, "_autosave_timer", None)
-        if timer is None or not self.current_project_path or not self.project_dirty:
-            return
-        timer.start()
-
-    def _write_autosave(self) -> None:
-        if not self.project_dirty or not self.current_project_path:
-            return
-        try:
-            self._autosave.submit(self.project, self.current_project_path)
-        except (OSError, TypeError, ValueError):
-            return
-
     def set_diagnostics_visible(self, visible: bool) -> None:
         """Affiche ou cache l'overlay de performance."""
         if visible:
@@ -2374,38 +1602,6 @@ class MainWindow(
             lines.append(f"Mémoire max {rss / (1024 * 1024):.0f} Mo")
         self._debug_overlay.present(lines)
 
-    def _settings_snapshot(self) -> UserSettings:
-        # L'état des scopes est lu depuis le panneau : c'est lui qui
-        # fait foi, comme le thème ou la qualité d'aperçu pour le
-        # reste. Les attributs sont lus de façon défensive car
-        # l'instantané est aussi pris avant la construction du
-        # panneau (au démarrage de la fenêtre).
-        scopes_panel = getattr(self, "scopes_panel", None)
-        if scopes_panel is None:
-            scopes_layout = "quad"
-            scopes_view = "waveform"
-            scopes_levels = "video"
-            scopes_alerts = False
-        else:
-            scopes_layout = scopes_panel.layout_mode().value
-            scopes_view = scopes_panel.single_view().value
-            scopes_levels = scopes_panel.levels().value
-            scopes_alerts = scopes_panel.alerts_enabled()
-        return UserSettings(
-            theme_mode=self.theme_manager.requested_mode,
-            language=i18n.current_language(),
-            performance_profile=self.runtime.requested_profile,
-            preview_quality=self.runtime.requested_quality,
-            render_quality=self._render_quality,
-            master_gain_db=self._master_gain_db,
-            master_muted=self._master_muted,
-            scopes_visible=bool(getattr(self, "_scopes_visible", False)),
-            scopes_layout=scopes_layout,
-            scopes_view=scopes_view,
-            scopes_levels=scopes_levels,
-            scopes_alerts_enabled=scopes_alerts,
-        )
-
     def _pause_internal(self) -> None:
         """Met la lecture en pause sans toucher au playhead."""
         self.is_playing = False
@@ -2440,64 +1636,6 @@ class MainWindow(
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
 
-    def on_move_clip_requested(self, clip_id: str, new_timeline_start: float) -> None:
-        """Applique un déplacement demandé par la timeline."""
-        try:
-            move_clip(self.project, clip_id, new_timeline_start)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] move refusé : {exc}")
-            return
-        self._record_history("Déplacer le clip")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_trim_left_requested(self, clip_id: str, new_timeline_start: float) -> None:
-        try:
-            if self.timeline_panel.ripple_enabled:
-                ripple_trim_left(self.project, clip_id, new_timeline_start)
-            else:
-                trim_clip_left(self.project, clip_id, new_timeline_start)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] trim gauche refusé : {exc}")
-            return
-        self._record_history("Trim gauche")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_trim_right_requested(self, clip_id: str, new_timeline_end: float) -> None:
-        try:
-            clip = find_clip(self.project, clip_id)
-        except KeyError:
-            clip = None
-        old_end = None if clip is None else clip.timeline_start + clip.duration
-        track_id = None if clip is None else clip.track_id
-        try:
-            trim_clip_right(self.project, clip_id, new_timeline_end)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] trim droit refusé : {exc}")
-            return
-        if self.timeline_panel.ripple_enabled and old_end is not None and track_id:
-            shift_track_after(
-                self.project,
-                track_id,
-                old_end,
-                new_timeline_end - old_end,
-                exclude_ids={clip_id},
-            )
-        self._record_history("Trim droit")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def cut_at_playhead(self):
-        clip_id = self.timeline_panel.selected_clip_id
-        if clip_id is None:
-            print("[MainWindow] Cut : aucun clip sélectionné")
-            return
-        self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
-
     # ------------------------------------------------------------------
     # Organisation avancée de la bibliothèque (tâche 25)
     # ------------------------------------------------------------------
@@ -2506,250 +1644,9 @@ class MainWindow(
     # Import de médias (vidéo et audio)
     # ------------------------------------------------------------------
 
-    def import_media_via_dialog(self) -> None:
-        """Ouvre un dialogue d'import et importe chaque fichier sélectionné.
-
-        Les filtres du dialogue couvrent les formats vidéo et audio
-        acceptés par ``probe_media``. Chaque fichier est analysé pour
-        déterminer son type (vidéo, audio) avant d'être ajouté au projet.
-        """
-        paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Importer des médias",
-            os.path.expanduser("~/Movies"),
-            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg)",
-        )
-        if not paths:
-            return
-        for path in paths:
-            self.import_media_to_project(path)
-
-    def import_media_to_project(self, path: str) -> bool:
-        """Importe ``path`` comme ``MediaAsset`` réel (vidéo ou audio).
-
-        L'opération est idempotente pour un même chemin normalisé : un
-        doublon est ignoré silencieusement. En cas d'échec de la sonde,
-        ni le projet ni la bibliothèque ne sont modifiés ; une boîte de
-        dialogue claire est affichée à l'utilisateur.
-        """
-        normalized = os.path.normpath(os.path.abspath(path))
-        for asset in self.project.media_assets:
-            if os.path.normpath(os.path.abspath(asset.path)) == normalized:
-                # Doublon silencieux : on conserve le projet intact et on
-                # met le focus sur l'asset existant dans la bibliothèque.
-                self.project_panel.select_asset(asset.id)
-                if asset.media_type == "video":
-                    self.preview_panel.load_video(asset.path)
-                return False
-
-        try:
-            asset = cached_probe(self.runtime.cache, path, probe_media)
-        except MediaProbeError as exc:
-            QMessageBox.critical(
-                self,
-                "Import impossible",
-                f"Impossible d'importer le média :\n\n{path}\n\n{exc}",
-            )
-            return False
-
-        # La sonde réelle fournit déjà le nom de fichier, mais les
-        # intégrations externes peuvent retourner un ``MediaAsset`` avec
-        # le chemin complet comme libellé. Le nom affiché ne dépend jamais
-        # du séparateur POSIX : sous Windows, ``split('/')`` laisserait le
-        # chemin complet dans la bibliothèque et dans les .kut.
-        display_name = os.path.basename(str(asset.path).replace("\\", "/"))
-        if not display_name:
-            display_name = os.path.basename(str(path).replace("\\", "/"))
-        if display_name:
-            asset.name = display_name
-        self.project.media_assets.append(asset)
-        self._refresh_project_library()
-        self.project_panel.select_asset(asset.id)
-        if asset.media_type == "video":
-            self.preview_panel.load_video(asset.path)
-        self._record_history(f"Importer le média « {asset.name} »")
-        self._mark_dirty()
-        return True
-
     # Compatibilité ascendante : les anciens tests/appels peuvent continuer
     # d'utiliser ``import_video_to_project``.
-    def import_video_to_project(self, path: str) -> bool:
-        """Délègue à :meth:`import_media_to_project` (alias historique)."""
-        return self.import_media_to_project(path)
-
-    def preview_media_asset(self, asset_id: str) -> None:
-        """Prévisualise le ``MediaAsset`` identifié par ``asset_id``.
-
-        Les assets audio ne déclenchent pas de prévisualisation vidéo.
-        """
-        asset = next(
-            (a for a in self.project.media_assets if a.id == asset_id),
-            None,
-        )
-        if asset is None:
-            return
-        if asset.media_type == "video":
-            self.preview_panel.load_video(asset.path)
-
-    def add_asset_to_timeline(self, asset_id: str) -> None:
-        """Ajoute le média sélectionné à la piste adaptée à son type.
-
-        Routing :
-
-        - asset ``video`` → piste ``V1`` (créée si absente) ;
-        - asset ``audio`` → piste ``A1`` (créée si absente) ;
-        - autres types → erreur claire.
-
-        Le clip est créé à la position du playhead ; si le playhead est
-        hors limites (typiquement après un reset à zéro sur un projet
-        vide), il est ramené à ``0.0``.
-        """
-        asset = next(
-            (a for a in self.project.media_assets if a.id == asset_id),
-            None,
-        )
-        if asset is None:
-            QMessageBox.critical(
-                self,
-                "Ajout impossible",
-                f"Média '{asset_id}' introuvable dans le projet.",
-            )
-            return
-
-        if asset.media_type == "video":
-            target_track_id = "V1"
-        elif asset.media_type == "audio":
-            target_track_id = "A1"
-        else:
-            QMessageBox.critical(
-                self,
-                "Ajout impossible",
-                f"Le type de média '{asset.media_type}' ne peut pas être "
-                "ajouté à la timeline depuis le panneau de bibliothèque.",
-            )
-            return
-
-        if not any(track.id == target_track_id for track in self.project.tracks):
-            QMessageBox.critical(
-                self,
-                "Ajout impossible",
-                f"La piste '{target_track_id}' est absente du projet courant.",
-            )
-            return
-
-        timeline_start = self.timeline_panel.playhead_seconds
-        try:
-            new_clip = add_clip_to_track(
-                self.project,
-                asset_id,
-                target_track_id,
-                timeline_start,
-            )
-        except (KeyError, ValueError) as exc:
-            QMessageBox.critical(
-                self,
-                "Ajout impossible",
-                f"Impossible d'ajouter le média à la timeline :\n\n{exc}",
-            )
-            return
-
-        # Rafraîchit la projection (qui inclut le nouveau clip).
-        self._record_history(f"Ajouter le clip « {new_clip.label or new_clip.id} »")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self.timeline_panel.select_clip(new_clip.id)
-        self._mark_dirty()
-
     # Compatibilité ascendante : anciens appels.
-    def add_asset_to_v1(self, asset_id: str) -> None:
-        """Délègue à :meth:`add_asset_to_timeline` (alias historique)."""
-        self.add_asset_to_timeline(asset_id)
-
-    def _refresh_project_library(self) -> None:
-        """Synchronise ``ProjectPanel`` avec ``self.project.media_assets``.
-
-        Met également à jour la bibliothèque de sous-titres de l'onglet
-        Texte avec les clips activés des pistes ``subtitle``, l'organisation
-        de la bibliothèque (dossiers / tags / affectations) et les badges
-        d'utilisation des médias (tâche 25).
-        """
-        # Les médias techniques des calques G vivent dans le projet pour
-        # garantir l'intégrité des clips, mais leurs modèles se choisissent
-        # dans la bibliothèque Graphiques : ne pas les dupliquer dans Médias.
-        self.project_panel.set_assets(
-            [
-                asset for asset in self.project.media_assets
-                if asset.media_type != "graphic"
-            ]
-        )
-        subtitle_clips = [
-            clip
-            for track in self.project.tracks
-            if track.type == "subtitle"
-            for clip in track.clips
-            if clip.enabled and (clip.text or "").strip()
-        ]
-        self.project_panel.set_subtitle_clips(subtitle_clips)
-        # Organisation de la bibliothèque (tâche 25) : on attache le
-        # service au panneau et on rafraîchit les badges d'usage.
-        if not hasattr(self, "_library_organization") or (
-            self._library_organization is not None
-            and self._library_organization.project is not self.project
-        ):
-            from core.library_organization import LibraryOrganization
-            self._library_organization = LibraryOrganization(self.project)
-        else:
-            from core.library_organization import LibraryOrganization
-            self._library_organization = LibraryOrganization(self.project)
-        self.project_panel.set_library(self._library_organization)
-        self.project_panel.set_usage_for_assets()
-        # La bibliothèque d'effets suit la sélection courante.
-        self._sync_effects_library_context()
-
-    def cut_selected_clip(self, clip_id, playhead_pos):
-        try:
-            cut_clip(self.project, clip_id, playhead_pos)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] cut refusé : {exc}")
-            return
-        self._record_history("Couper le clip")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._mark_dirty()
-        # Tenter de conserver la sélection : si l'ancien id existe encore
-        # (clip gauche de la coupe), on le re-sélectionne, sinon on prend
-        # le clip V1 actif autour du playhead.
-        new_id = clip_id
-        if self.timeline_panel.find_view_by_id(new_id) is None:
-            view_at_playhead = next(
-                (
-                    v
-                    for v in self.timeline_panel.clip_views
-                    if v.track_id == "V1" and v.start <= playhead_pos <= v.end
-                ),
-                None,
-            )
-            new_id = view_at_playhead.id if view_at_playhead is not None else None
-        if new_id is not None:
-            self._restore_clip_selection(new_id)
-        else:
-            self.properties_panel.set_clip(None, "")
-            self.timeline_panel.selected_clip_id = None
-
-    def delete_selected_clip(self, clip_id):
-        try:
-            delete_clip(self.project, clip_id)
-        except KeyError as exc:
-            print(f"[MainWindow] delete refusé : {exc}")
-            return
-        self._record_history("Supprimer le clip")
-        self.timeline_panel.selected_clip_id = None
-        self.active_subtitle_clip = None
-        self.properties_panel.set_clip(None, "")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
 
     # ------------------------------------------------------------------
     # Tâche 32 : calques graphiques
@@ -2779,15 +1676,6 @@ class MainWindow(
         self.properties_panel.volume_value.setText(f"{value} %")
         set_volume(self.preview_panel.audio_output, value)
 
-    def offer_transition(self, transition_time):
-        menu = QMenu(self)
-        menu.addAction(f"Jonction à {transition_time:.2f}s")
-        menu.addSeparator()
-        crossfade = menu.addAction("Fondu enchaîné · 0.5 s")
-        if menu.exec(QCursor.pos()) is crossfade:
-            self.transition_seconds = transition_time
-            self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
-
     # ------------------------------------------------------------------
     # Tâche 23 : gestion des presets de transitions
     # ------------------------------------------------------------------
@@ -2795,67 +1683,6 @@ class MainWindow(
     # ------------------------------------------------------------------
     # Tâche 24 : gestion des modèles de texte + édition du style
     # ------------------------------------------------------------------
-
-    def on_transition_selected(self, transition_id: str) -> None:
-        """Affiche les réglages de la transition choisie sur la timeline."""
-        transition = next(
-            (item for item in self.project.transitions if item.id == transition_id), None
-        )
-        if transition is None:
-            self.properties_panel.clear_transition()
-            return
-        outgoing = self.timeline_panel.find_view_by_id(transition.from_clip_id)
-        incoming = self.timeline_panel.find_view_by_id(transition.to_clip_id)
-        if outgoing is None or incoming is None:
-            self.properties_panel.clear_transition()
-            return
-        track = next((item for item in self.project.tracks if item.id == outgoing.track_id), None)
-        self.properties_panel.show_transition(
-            transition, outgoing, incoming, track.name if track is not None else outgoing.track_id
-        )
-
-    def on_transition_type_changed(self, transition_id: str, transition_type: str) -> None:
-        self._update_transition(transition_id, transition_type=transition_type)
-
-    def on_transition_duration_changed(self, transition_id: str, duration: float) -> None:
-        self._update_transition(transition_id, duration=duration)
-
-    def _update_transition(
-        self, transition_id: str, *, transition_type: str | None = None,
-        duration: float | None = None,
-    ) -> None:
-        from core.transitions import TransitionType, update_transition
-
-        try:
-            update_transition(
-                self.project,
-                transition_id,
-                transition_type=TransitionType(transition_type) if transition_type else None,
-                duration=duration,
-            )
-        except (KeyError, ValueError) as error:
-            self.statusBar().showMessage(f"Modification refusée : {error}", 6000)
-            self.on_transition_selected(transition_id)
-            return
-        self._record_history("Modifier une transition")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._mark_dirty()
-        self.timeline_panel.select_transition(transition_id)
-
-    def remove_selected_transition(self, transition_id: str) -> None:
-        from core.transitions import remove_transition
-
-        try:
-            remove_transition(self.project, transition_id)
-        except KeyError:
-            return
-        self._record_history("Supprimer une transition")
-        self.timeline_panel.set_project(self.project)
-        self._update_timeline_duration()
-        self._mark_dirty()
-        self.properties_panel.clear_transition()
-        self.statusBar().showMessage("Transition supprimée.", 3000)
 
     def seek_to_position(self, seconds):
         """Seek sur la timeline (et non plus sur le média source).
@@ -3024,170 +1851,6 @@ class MainWindow(
             return False
         return True
 
-    def on_slip_requested(self, clip_id: str, delta: float) -> None:
-        try:
-            slip_clip(self.project, clip_id, delta)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] slip refusé : {exc}")
-            self._reload_timeline_preserving_selection()
-            return
-        self._record_history("Slip")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._mark_dirty()
-
-    def on_slide_requested(self, clip_id: str, new_start: float) -> None:
-        try:
-            slide_clip(self.project, clip_id, new_start)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] slide refusé : {exc}")
-            self._reload_timeline_preserving_selection()
-            return
-        self._record_history("Slide")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_roll_requested(self, clip_id: str, edge: str, new_time: float) -> None:
-        try:
-            roll_edit(self.project, clip_id, edge, new_time)
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] roll refusé : {exc}")
-            self._reload_timeline_preserving_selection()
-            return
-        self._record_history("Roll")
-        self._reload_timeline_preserving_selection(clip_id)
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_record_toggled(self, checked: bool) -> None:
-        """Démarre ou arrête le microphone sur les pistes audio armées."""
-        if checked:
-            armed = [
-                track.id
-                for track in self.project.tracks
-                if track.type == "audio" and track.armed and not track.locked
-            ]
-            if not armed:
-                self._set_record_button(False)
-                QMessageBox.information(
-                    self,
-                    "Enregistrement",
-                    "Armez une piste audio avant d'enregistrer.",
-                )
-                return
-            try:
-                self._audio_recorder.start()
-            except AudioRecorderError as exc:
-                self._set_record_button(False)
-                QMessageBox.critical(self, "Enregistrement", str(exc))
-                return
-            self._record_origin = float(self.playhead_seconds)
-            self._record_tracks = armed
-            return
-        if not self._audio_recorder.is_recording:
-            return
-        pcm, rate, channels = self._audio_recorder.stop()
-        self._place_recording(pcm, rate, channels)
-
-    def _set_record_button(self, checked: bool) -> None:
-        button = self.timeline_panel.record_button
-        button.blockSignals(True)
-        button.setChecked(checked)
-        button.blockSignals(False)
-
-    def _place_recording(
-        self, pcm: bytes, sample_rate: int, channels: int, *, quiet: bool = False
-    ) -> None:
-        import uuid
-        from pathlib import Path
-
-        duration = pcm_duration(pcm, sample_rate, channels)
-        if duration < 0.05:
-            if not quiet:
-                QMessageBox.information(
-                    self,
-                    "Enregistrement",
-                    "L'enregistrement est trop court pour devenir un clip.",
-                )
-            return
-        if self.current_project_path:
-            folder = Path(self.current_project_path).parent / "enregistrements"
-        else:
-            folder = Path.home() / "Movies" / "Kut-Studio"
-        target = folder / f"prise-{uuid.uuid4().hex[:8]}.wav"
-        try:
-            write_wav(str(target), pcm, sample_rate, channels)
-        except OSError as exc:
-            if not quiet:
-                QMessageBox.critical(self, "Enregistrement", str(exc))
-            return
-        asset = MediaAsset(
-            id=f"rec-{uuid.uuid4().hex[:8]}",
-            path=str(target),
-            name=target.stem,
-            duration=duration,
-            width=0,
-            height=0,
-            fps=0.0,
-            media_type="audio",
-            has_audio=True,
-        )
-        self.project.media_assets.append(asset)
-        for track_id in self._record_tracks:
-            try:
-                add_clip_to_track(self.project, asset.id, track_id, self._record_origin)
-            except (KeyError, ValueError) as exc:
-                print(f"[MainWindow] prise non placée sur {track_id} : {exc}")
-        self._record_history("Enregistrer une prise")
-        self._refresh_project_library()
-        self._reload_timeline_preserving_selection()
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_clips_move_requested(self, placements) -> None:
-        try:
-            move_clips(self.project, list(placements))
-        except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] déplacement refusé : {exc}")
-            self._reload_timeline_preserving_selection()
-            return
-        self._record_history("Déplacer les clips")
-        self._reload_timeline_preserving_selection()
-        self._update_timeline_duration()
-        self._mark_dirty()
-
-    def on_blade_cut_requested(self, clip_id: str, instant: float) -> None:
-        self.cut_selected_clip(clip_id, instant)
-
-    def add_marker_at(self, seconds: float) -> None:
-        marker = add_marker(self.project, seconds)
-        self._record_history("Ajouter un marqueur")
-        self._reload_timeline_preserving_selection()
-        self._mark_dirty()
-        del marker
-
-    def rename_marker(self, marker_id: str) -> None:
-        marker = next((item for item in self.project.markers if item.id == marker_id), None)
-        if marker is None:
-            return
-        name, accepted = QInputDialog.getText(
-            self,
-            "Marqueur",
-            "Nom du marqueur",
-            text=marker.name,
-        )
-        if not accepted:
-            return
-        marker.name = name.strip()
-        self._record_history("Renommer un marqueur")
-        self._reload_timeline_preserving_selection()
-        self._mark_dirty()
-
-    def goto_marker(self, direction: int) -> None:
-        marker = neighbor_marker(self.project, self.playhead_seconds, direction)
-        if marker is not None:
-            self.seek_to_position(marker.time_seconds)
-
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.accept()
@@ -3209,101 +1872,6 @@ class MainWindow(
     # ------------------------------------------------------------------
     # Tâche 14 : préférences utilisateur (thème + langue)
     # ------------------------------------------------------------------
-
-    def show_preferences(self) -> None:
-        """Ouvre la fenêtre ``Préférences``."""
-        dialog = PreferencesDialog(
-            current_theme=self.theme_manager.requested_mode,
-            current_language_code=i18n.current_language(),
-            current_performance=self.runtime.requested_profile,
-            current_preview_quality=self.runtime.requested_quality,
-            current_render_quality=self._render_quality,
-            parent=self,
-        )
-        dialog.theme_changed.connect(self.on_user_setting_changed)
-        dialog.language_changed.connect(self.on_user_setting_changed)
-        dialog.performance_changed.connect(self.on_performance_setting_changed)
-        dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
-        dialog.render_quality_changed.connect(self.on_render_quality_changed)
-        dialog.restore_defaults_requested.connect(self._restore_default_preferences)
-        dialog.exec()
-
-    def _restore_default_preferences(self) -> None:
-        """Restaure les réglages affichés par la boîte Préférences.
-
-        Seuls les réglages visibles par l'utilisateur sont
-        réinitialisés : le Master (gain/muet) est un réglage de session
-        qui n'apparaît pas dans le dialogue — le reconstruire depuis
-        ``UserSettings()`` ferait sauter un gain que l'utilisateur
-        n'avait pas demandé de restaurer.
-        """
-        snapshot = self._settings_snapshot()
-        self._apply_settings(
-            replace(
-                UserSettings(),
-                master_gain_db=snapshot.master_gain_db,
-                master_muted=snapshot.master_muted,
-            )
-        )
-
-    def on_user_setting_changed(self, value: str) -> None:
-        """Applique un thème ou une langue sans oublier les autres préférences."""
-        settings = self._settings_snapshot()
-        if value in VALID_THEME_MODES:
-            settings = replace(settings, theme_mode=value)
-        elif value in VALID_LANGUAGES:
-            settings = replace(settings, language=value)
-        self._apply_settings(settings)
-
-    def on_performance_setting_changed(self, value: str) -> None:
-        self._apply_settings(replace(self._settings_snapshot(), performance_profile=value))
-
-    def on_preview_quality_changed(self, value: str) -> None:
-        self._apply_settings(replace(self._settings_snapshot(), preview_quality=value))
-
-    def on_render_quality_changed(self, value: str) -> None:
-        """Qualité de rendu d'aperçu (tache 30) : persiste + invalide."""
-        from core.preview_render import coerce_render_quality
-
-        quality = coerce_render_quality(value)
-        self._apply_settings(replace(self._settings_snapshot(), render_quality=quality))
-        engine = getattr(self, "preview_engine", None)
-        if engine is not None:
-            try:
-                engine.cancel_all()
-            except Exception:
-                pass
-        self._refresh_preview_cache_state()
-
-    def _apply_settings(self, settings: UserSettings) -> None:
-        # Application du thème dans Qt.
-        self.theme_manager.set_mode(settings.theme_mode)
-        self.theme_manager.apply_to(QApplication.instance())
-        self.runtime.set_requested_profile(settings.performance_profile)
-        self.runtime.set_preview_quality(settings.preview_quality)
-        self._render_quality = settings.render_quality
-        self._apply_runtime_hints()
-        # État Master : preference de session, jamais du projet.
-        self._master_gain_db = float(settings.master_gain_db)
-        self._master_muted = bool(settings.master_muted)
-        mixer = getattr(self, "mixer_panel", None)
-        if mixer is not None:
-            mixer.set_master(self._master_gain_db, self._master_muted)
-        # Application de la langue.
-        if i18n.current_language() != settings.language:
-            i18n.set_language(settings.language)
-        # Persistance (écriture atomique dans le répertoire de
-        # configuration, jamais dans le dépôt du projet).
-        save_user_settings(settings)
-        # Mise à jour des libellés dépendant de la langue.
-        self._retranslate_ui()
-
-    def on_language_changed(self, code: str) -> None:
-        """Callback i18n : retraduit l'interface à chaud."""
-        self._retranslate_ui()
-        # Persistance immédiate : la langue doit suivre les changements
-        # sans effacer le profil de performance ni la qualité d'aperçu.
-        save_user_settings(replace(self._settings_snapshot(), language=code))
 
     def _retranslate_ui(self) -> None:
         """Force la mise à jour des textes dépendant de la langue."""
