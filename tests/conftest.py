@@ -1,6 +1,7 @@
 """Shared pytest configuration for Kut-Studio."""
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -13,6 +14,27 @@ if str(ROOT) not in sys.path:
 
 # The tests build Qt widgets but do not require an on-screen desktop session.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+def pytest_configure(config):
+    """Donne à chaque worker xdist son propre dossier temporaire.
+
+    Plusieurs tests vérifient qu'aucun fichier ``kut-preview-*`` ou
+    ``kut-studio-subtitles-*`` ne traîne dans le dossier temporaire du
+    système : avec des workers parallèles, ils verraient les fichiers
+    légitimes d'un autre worker.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker:
+        return
+    import tempfile
+
+    base = Path(tempfile.gettempdir()) / f"kut-studio-pytest-{os.getpid()}-{worker}"
+    base.mkdir(parents=True, exist_ok=True)
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        os.environ[name] = str(base)
+    tempfile.tempdir = str(base)
+    config.add_cleanup(lambda: shutil.rmtree(base, ignore_errors=True))
 
 
 @pytest.fixture(autouse=True)

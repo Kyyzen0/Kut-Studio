@@ -892,8 +892,10 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     # 4. Le SRT temporaire est nettoyé après succès.
     import glob as _glob
 
-    leftover_post = _glob.glob("/tmp/kut-studio-subtitles-*.srt") + _glob.glob(
-        "/var/folders/**/kut-studio-subtitles-*.srt", recursive=True
+    import tempfile as _tempfile
+
+    leftover_post = _glob.glob(
+        str(Path(_tempfile.gettempdir()) / "kut-studio-subtitles-*.srt")
     )
     assert leftover_post == [], (
         f"SRT temporaires non nettoyés : {leftover_post}"
@@ -1203,5 +1205,7 @@ def test_real_ffmpeg_export_with_animated_transform(qtbot, tmp_path):
     # dans le dossier du test ou le /tmp système.
     import glob as _glob
 
-    leftover = _glob.glob("/tmp/kut-studio-subtitles-*.srt")
+    leftover = _glob.glob(
+        str(Path(__import__("tempfile").gettempdir()) / "kut-studio-subtitles-*.srt")
+    )
     assert leftover == [], f"SRT temporaires non nettoyés : {leftover}"
