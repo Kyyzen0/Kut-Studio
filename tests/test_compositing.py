@@ -27,8 +27,8 @@ def test_compositing_kut_round_trip_and_old_default(tmp_path):
     # Le compositing est un ajout rétrocompatible au schéma v12. Éviter une
     # hausse de version protège les lecteurs de la tâche 32 et constitue une
     # régression explicitement couverte par les suites graphics/project_io.
-    assert CURRENT_VERSION == 12
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 12
+    assert CURRENT_VERSION == 13
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 13
     restored = load_project(str(path)).tracks[0].clips[0]
     assert restored.compositing == comp
     assert build_render_plan(load_project(str(path))).video_layers[0].compositing == comp

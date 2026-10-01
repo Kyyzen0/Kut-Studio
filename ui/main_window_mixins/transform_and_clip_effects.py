@@ -276,6 +276,12 @@ class TransformEffectsMixin:
             self.playhead_seconds,
             transform=clip.transform,
         )
+        editor = getattr(self, "graph_editor", None)
+        if editor is not None and editor.isVisible():
+            if editor.clip_id != clip.id:
+                editor.refresh()
+            else:
+                editor.update_playhead()
 
     def on_transform_keyframe_added(
         self,

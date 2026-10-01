@@ -127,7 +127,7 @@ def test_format_version_is_eleven() -> None:
 
     La version des styles texte (10) et des effets (9) reste lisible.
     """
-    assert CURRENT_VERSION == 12
+    assert CURRENT_VERSION == 13
     assert 10 in SUPPORTED_VERSIONS
     assert 9 in SUPPORTED_VERSIONS
 

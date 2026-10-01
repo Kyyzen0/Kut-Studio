@@ -38,6 +38,7 @@ from ui.timeline_panel_mixins.zoom_playhead import ZoomPlayheadMixin
 from ui.timeline_panel_mixins.selection import SelectionMixin
 from ui.timeline_panel_mixins.drag_tools import DragToolsMixin
 from ui.timeline_panel_mixins.previews import PreviewsMixin
+from ui.timeline_panel_mixins.keyframes import KeyframesTimelineMixin
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.common import (  # noqa: F401 - réexports de compatibilité
     _COLLAPSED_HEIGHT,
@@ -59,7 +60,7 @@ from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 # ---------------------------------------------------------------------------
 
 
-class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, PreviewsMixin, QWidget):
+class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, PreviewsMixin, KeyframesTimelineMixin, QWidget):
     """Timeline de Kut-Studio, pilotée par un ``Project``.
 
     Le panneau orchestre :
@@ -113,6 +114,8 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     fade_changed_requested = Signal(str, str, float)
     reset_clip_fades_requested = Signal(str)
     record_requested = Signal(bool)
+    keyframes_selected = Signal(object, bool)
+    keyframes_move_requested = Signal(object, float)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -159,6 +162,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         self.dragging_playhead = False
         self.selected_clip_id: str | None = None
         self.selected_clip_ids: set[str] = set()
+        self._init_keyframe_state()
         self._selection_anchor: str | None = None
         self.tool = "select"
         self.ripple_enabled = False

@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from ffmpeg_expr import evaluate as evaluate_expression
 
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
@@ -133,12 +134,12 @@ def test_replacing_keyframe_at_same_instant_keeps_latest_value():
 # ---------------------------------------------------------------------------
 
 
-def test_evaluate_uses_base_before_first_keyframe():
+def test_evaluate_holds_the_first_keyframe_value_before_it():
     transform = ClipTransform(scale=1.0)
     kfs = [TransformKeyframe(property_name="scale", time_seconds=2.0, value=0.5)]
-    # Avant la première keyframe (t < 2.0) : valeur de base 1.0.
+    # Avant la première keyframe (t < 2.0) : sa valeur (moteur d'animation standard).
     result = evaluate_transform(transform, kfs, clip_local_time=0.5)
-    assert result.scale == pytest.approx(1.0)
+    assert result.scale == pytest.approx(0.5)
     # À exactement t == 2.0 : la keyframe s'applique (valeur 0.5).
     result_at_first = evaluate_transform(transform, kfs, clip_local_time=2.0)
     assert result_at_first.scale == pytest.approx(0.5)
@@ -206,9 +207,8 @@ def test_evaluate_clamps_clip_local_time_below_zero():
     transform = ClipTransform(scale=0.5)
     kfs = [TransformKeyframe(property_name="scale", time_seconds=1.0, value=2.0)]
     result = evaluate_transform(transform, kfs, clip_local_time=-1.0, clip_duration=2.0)
-    # Clampé à 0s : strictement avant la première keyframe (t=1.0) →
-    # valeur de base 0.5.
-    assert result.scale == pytest.approx(0.5)
+    # Clampé à 0s : avant la première keyframe (t=1.0) → sa valeur 2.0.
+    assert result.scale == pytest.approx(2.0)
 
 
 def test_evaluate_drops_keyframes_beyond_duration():
@@ -253,11 +253,10 @@ def test_ffmpeg_expression_with_single_keyframe():
         1.0,
         [TransformKeyframe(property_name="scale", time_seconds=0.5, value=2.0)],
     )
-    # Forme ``if(lt(T, t0), A, B)`` attendue.
-    assert "lt(T,0.5)" in expr
-    assert "if(" in expr
-    assert "1.0" in expr
-    assert "2" in expr
+    # Un seul keyframe : valeur constante, bornée comme dans l'aperçu.
+    assert "T" not in expr
+    for t in (0.0, 0.5, 3.0):
+        assert evaluate_expression(expr, T=t) == pytest.approx(2.0)
 
 
 def test_ffmpeg_expression_with_multiple_segments():
@@ -267,12 +266,10 @@ def test_ffmpeg_expression_with_multiple_segments():
         TransformKeyframe(property_name="scale", time_seconds=2.0, value=0.5),
     ]
     expr = build_ffmpeg_expression("scale", 1.0, kfs)
-    # Au moins deux ``if(lt(`` (un par segment).
-    assert expr.count("if(lt(T,") >= 2
-    # Interpolation linéaire présente : ``((T)-t)/span``.
-    assert "((T)-" in expr
-    # Une virgule par segment (entre les branches du ``if``).
-    assert expr.count(",") >= 2
+    # Somme plate : un terme par segment, sans ``if`` imbriqués.
+    assert expr.count("gte(T,") == 3 and "if(" not in expr
+    for t in (0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0):
+        assert evaluate_expression(expr, T=t) == pytest.approx(evaluate_transform(ClipTransform(), kfs, t).scale)
 
 
 def test_ffmpeg_expression_no_scientific_notation():
@@ -284,7 +281,6 @@ def test_ffmpeg_expression_no_scientific_notation():
     # Aucune notation scientifique.
     assert "e-" not in expr
     assert "e+" not in expr
-    assert "if(" in expr
 
 
 def test_ffmpeg_expression_filters_irrelevant_keyframes():
@@ -317,7 +313,8 @@ def test_ffmpeg_expression_uses_time_var_for_referencing_t():
     expr = build_ffmpeg_expression(
         "scale",
         1.0,
-        [TransformKeyframe(property_name="scale", time_seconds=1.0, value=2.0)],
+        [TransformKeyframe(property_name="scale", time_seconds=1.0, value=2.0),
+         TransformKeyframe(property_name="scale", time_seconds=2.0, value=3.0)],
     )
     # L'expression contient ``T`` (variable de temps standard FFmpeg).
     assert "T" in expr

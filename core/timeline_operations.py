@@ -278,51 +278,10 @@ def _split_time_remapping(
 def _split_transform_keyframes(
     clip: Clip, cut_local_time: float
 ) -> tuple[list[TransformKeyframe], list[TransformKeyframe]]:
-    """Répartit les keyframes sans faire repartir l'animation à la coupe."""
-    epsilon = 1e-9
-    left_keyframes: list[TransformKeyframe] = []
-    right_keyframes: list[TransformKeyframe] = []
-
-    for keyframe in clip.transform_keyframes:
-        if keyframe.time_seconds <= cut_local_time + epsilon:
-            left_keyframes.append(
-                TransformKeyframe(
-                    property_name=keyframe.property_name,
-                    time_seconds=keyframe.time_seconds,
-                    value=keyframe.value,
-                )
-            )
-        if keyframe.time_seconds >= cut_local_time - epsilon:
-            right_keyframes.append(
-                TransformKeyframe(
-                    property_name=keyframe.property_name,
-                    time_seconds=max(0.0, keyframe.time_seconds - cut_local_time),
-                    value=keyframe.value,
-                )
-            )
-
-    # Le second clip doit démarrer avec la valeur interpolée à la coupe. Sans
-    # cette image-clé synthétique, il repartirait de son transform de base.
-    evaluated = evaluate_transform(
-        clip.transform,
-        clip.transform_keyframes,
-        cut_local_time,
-        clip.duration,
+    """Répartit les keyframes sans changer l'animation de part et d'autre de la coupe."""
+    return split_transform_keyframes(
+        clip.transform, clip.transform_keyframes, cut_local_time, clip.duration
     )
-    right_at_start = {keyframe.property_name for keyframe in right_keyframes if keyframe.time_seconds <= epsilon}
-    animated_properties = {keyframe.property_name for keyframe in clip.transform_keyframes}
-    for property_name in animated_properties - right_at_start:
-        right_keyframes.append(
-            TransformKeyframe(
-                property_name=property_name,
-                time_seconds=0.0,
-                value=getattr(evaluated, property_name),
-            )
-        )
-
-    left_keyframes.sort(key=lambda keyframe: (keyframe.property_name, keyframe.time_seconds))
-    right_keyframes.sort(key=lambda keyframe: (keyframe.property_name, keyframe.time_seconds))
-    return left_keyframes, right_keyframes
 
 
 def _split_fades(clip: Clip, cut_local_time: float) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -572,7 +531,10 @@ from .visual_effects import (  # noqa: E402  (import local pour cycle)
     ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
+    copy_keyframe,
     evaluate_transform,
+    retime_transform_keyframes,
+    split_transform_keyframes,
 )
 
 
@@ -745,14 +707,7 @@ def duplicate_clip(
         label=source_clip.label,
         text=source_clip.text,
         transform=source_clip.transform,
-        transform_keyframes=[
-            TransformKeyframe(
-                property_name=kf.property_name,
-                time_seconds=kf.time_seconds,
-                value=kf.value,
-            )
-            for kf in source_clip.transform_keyframes
-        ],
+        transform_keyframes=[copy_keyframe(kf) for kf in source_clip.transform_keyframes],
         time_remapping=source_clip.time_remapping,
     )
     source_track.clips.append(duplicate)
@@ -920,23 +875,13 @@ def set_transform_keyframe(
             f"L'image-clé ({clip_local_time}s) dépasse la durée du clip "
             f"({duration}s)."
         )
-    new_kf = TransformKeyframe(
-        property_name=property_name,
-        time_seconds=float(clip_local_time),
-        value=float(value),
-    )
-    # Filtre les keyframes existantes : remplace si même couple.
-    kept = [
-        kf
-        for kf in clip.transform_keyframes
-        if not (
-            kf.property_name == new_kf.property_name
-            and abs(kf.time_seconds - new_kf.time_seconds) < 1e-9
-        )
-    ]
-    kept.append(new_kf)
-    kept.sort(key=lambda kf: (kf.property_name, kf.time_seconds))
-    clip.transform_keyframes = kept
+    # Validation (propriété, bornes, temps) avant toute modification.
+    TransformKeyframe(property_name=property_name, time_seconds=float(clip_local_time), value=float(value))
+    # Un keyframe existant à cet instant garde son interpolation, ses
+    # tangentes et son identifiant : seule sa valeur change.
+    from .keyframe_editing import add_keyframe
+
+    add_keyframe(project, clip_id, property_name, float(clip_local_time), float(value))
     return clip
 
 
@@ -991,26 +936,11 @@ def clip_keyframes_remain_valid_after_trim(
     if new_source_in > new_source_out:
         raise ValueError("Les nouvelles bornes de source sont invalides.")
 
-    delta_left = float(new_source_in - old_source_in)
-    new_duration = float(new_source_out - new_source_in)
-    new_kfs: list[TransformKeyframe] = []
-    for kf in clip.transform_keyframes:
-        # Conversion temps local : on conserve la position dans le
-        # nouveau clip, en supprimant ce qui dépasse la durée.
-        new_local = float(kf.time_seconds) + delta_left
-        if new_local < 0.0:
-            continue
-        if new_local > new_duration + 1e-6:
-            continue
-        new_kfs.append(
-            TransformKeyframe(
-                property_name=kf.property_name,
-                time_seconds=new_local,
-                value=float(kf.value),
-            )
-        )
-    new_kfs.sort(key=lambda kf: (kf.property_name, kf.time_seconds))
-    return new_kfs
+    return retime_transform_keyframes(
+        clip.transform_keyframes,
+        start_offset=float(new_source_in - old_source_in),
+        new_duration=float(new_source_out - new_source_in),
+    )
 
 
 def apply_clip_transform_on_move(
@@ -1061,14 +991,7 @@ def duplicate_clip_preserving_transform(
 
     # Clonage profond des keyframes (les TransformKeyframe sont frozen,
     # donc une shallow copy suffit).
-    new_keyframes = [
-        TransformKeyframe(
-            property_name=kf.property_name,
-            time_seconds=kf.time_seconds,
-            value=kf.value,
-        )
-        for kf in source_clip.transform_keyframes
-    ]
+    new_keyframes = [copy_keyframe(kf) for kf in source_clip.transform_keyframes]
 
     duplicate = Clip(
         id=f"clip-{uuid.uuid4().hex[:12]}",

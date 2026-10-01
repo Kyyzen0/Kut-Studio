@@ -119,6 +119,53 @@ def require_ffmpeg() -> str:
     return _ffmpeg_command_prefix()[0]
 
 
+FILTER_SCRIPT_THRESHOLD = 20_000
+"""Au-delà (en caractères), le graphe de filtres passe par un fichier.
+
+Une animation de plusieurs centaines d'images-clés produit des expressions
+longues ; Windows limite une ligne de commande à 32 767 caractères."""
+
+
+def _ffmpeg_major_version() -> int | None:
+    """Version majeure du FFmpeg utilisé (``None`` si inconnue, ex. build Git)."""
+    prefix = tuple(_ffmpeg_command_prefix())
+    cache = _ffmpeg_major_version.__dict__.setdefault("_cache", {})
+    if prefix in cache:
+        return cache[prefix]
+    major: int | None = None
+    try:
+        completed = subprocess.run(
+            [*prefix, "-hide_banner", "-version"], capture_output=True, text=True, timeout=10, check=False,
+        )
+        from .hardware_encoding import parse_version
+
+        head = parse_version(completed.stdout).lstrip("n").split(".")[0]
+        major = int(head) if head.isdigit() else None
+    except (OSError, subprocess.TimeoutExpired):
+        major = None
+    cache[prefix] = major
+    return major
+
+
+def filter_graph_arguments(filter_complex: str, temporary_files: list[str]) -> list[str]:
+    """Arguments FFmpeg du graphe : en ligne, ou via un fichier s'il est trop long.
+
+    FFmpeg ≥ 7 lit un fichier avec ``-/filter_complex`` (``-filter_complex_script``
+    a disparu des versions récentes) ; les versions antérieures n'ont que
+    ``-filter_complex_script``. Le fichier est ajouté à ``temporary_files``
+    (supprimé avec les autres temporaires de l'export).
+    """
+    if len(filter_complex) <= FILTER_SCRIPT_THRESHOLD:
+        return ["-filter_complex", filter_complex]
+    descriptor, path = tempfile.mkstemp(prefix="kut-studio-graph-", suffix=".txt")
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(filter_complex)
+    temporary_files.append(path)
+    major = _ffmpeg_major_version()
+    option = "-filter_complex_script" if major is not None and major < 7 else "-/filter_complex"
+    return [option, path]
+
+
 def _ffmpeg_supports_subtitles() -> bool:
     """Retourne ``True`` si le binaire ``ffmpeg`` supporte le filtre ``subtitles``.
 
@@ -468,7 +515,7 @@ class ExportEngine(QObject):
             command[first_input:first_input] = [
                 "-ss", f"{max(0.0, float(playhead)):.3f}",
             ]
-        command.extend(["-filter_complex", filter_complex])
+        command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
         command.extend(["-map", f"[{video_label}]"])
         command.extend([
             "-frames:v", "1",
@@ -526,7 +573,7 @@ class ExportEngine(QObject):
         if encoder.video_filter:
             filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
             video_label = "vencoded"
-        command.extend(["-filter_complex", filter_complex])
+        command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
         command.extend(["-map", f"[{video_label}]"])
         command.extend(["-map", f"[{audio_label}]"])
         command.extend(encoder.args)
@@ -1529,10 +1576,13 @@ def _build_animated_opacity_expr(
     )
     escaped = escape_filter_complex_commas(expr)
     # ``geq`` doit voir l'expression de l'alpha ; on garde les
-    # composantes RGB identiques au pixel d'origine.
+    # composantes RGB identiques au pixel d'origine. L'alpha est sur
+    # 0–255 : l'opacité (0–1) **multiplie** l'alpha du pixel, comme
+    # ``colorchannelmixer=aa`` dans le cas statique (avant : ``a=opacité``,
+    # soit un clip presque transparent dès que l'opacité était animée).
     return (
         "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':"
-        f"a='{escaped}'"
+        f"a='alpha(X\\,Y)*({escaped})'"
     )
 
 
@@ -1644,6 +1694,13 @@ def _build_overlay_args(
 
     - ``x`` et ``y`` expriment la position animée, normalisée par
       rapport au canvas.
+    - Clip vidéo : le calque transformé est **centré** (``(W-w)/2``), puis
+      décalé de ``position × canvas`` — le modèle de l'aperçu. Le filtre
+      ``rotate`` agrandit le calque à ``hypot(w, h)`` pour ne rien rogner ;
+      poser ce calque par son coin décalait tout l'export (un clip plein
+      cadre n'en couvrait que la moitié). ``w``/``h`` sont relus à chaque
+      image : une échelle animée reste centrée.
+    - Calque graphique : coin supérieur gauche, comme dans l'éditeur.
     - ``eof_action=pass`` permet à la couche sous-jacente de rester
       visible après la fin du clip courant.
     """
@@ -1666,6 +1723,9 @@ def _build_overlay_args(
     )
     x_expr = f"({px_expr})*{_format_seconds(canvas_width)}"
     y_expr = f"({py_expr})*{_format_seconds(canvas_height)}"
+    if isinstance(layer, RenderLayer):
+        x_expr = f"(W-w)/2+{x_expr}"
+        y_expr = f"(H-h)/2+{y_expr}"
     return (
         f"x='{x_expr}':y='{y_expr}':eval=frame:eof_action=pass"
     )

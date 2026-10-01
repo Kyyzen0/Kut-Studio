@@ -70,6 +70,7 @@ class Category(str, Enum):
     VIEW = "view"
     AUDIO = "audio"
     MARKERS = "markers"
+    ANIMATION = "animation"
 
 
 class Scope(str, Enum):
@@ -456,6 +457,21 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("marker_add", Category.MARKERS, "M"),
     _cmd("marker_previous", Category.MARKERS, "["),
     _cmd("marker_next", Category.MARKERS, "]"),
+    # --- Animation (images-clés) -------------------------------------------
+    _cmd("keyframe_add", Category.ANIMATION, "Alt+K"),
+    _cmd("keyframe_remove", Category.ANIMATION, "Alt+Shift+K"),
+    _cmd("keyframe_previous", Category.ANIMATION, "Alt+J"),
+    _cmd("keyframe_next", Category.ANIMATION, "Alt+L"),
+    _cmd("keyframe_select_all", Category.ANIMATION, "Ctrl+Alt+A"),
+    _cmd("keyframe_copy", Category.ANIMATION),
+    _cmd("keyframe_paste", Category.ANIMATION),
+    _cmd("keyframe_interpolation_hold", Category.ANIMATION),
+    _cmd("keyframe_interpolation_linear", Category.ANIMATION),
+    _cmd("keyframe_interpolation_ease_in", Category.ANIMATION),
+    _cmd("keyframe_interpolation_ease_out", Category.ANIMATION),
+    _cmd("keyframe_interpolation_ease_in_out", Category.ANIMATION),
+    _cmd("keyframe_interpolation_bezier", Category.ANIMATION),
+    _cmd("graph_editor", Category.ANIMATION, "Ctrl+Alt+G", scope=_A, application_wide=True),
 )
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}

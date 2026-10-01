@@ -85,6 +85,7 @@ from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMix
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
+from ui.main_window_mixins.animation import AnimationMixin
 from ui.main_window_mixins.encoding import EncodingMixin
 from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
@@ -125,6 +126,7 @@ class MainWindow(
     PresetsMixin,
     PerformanceMixin,
     EncodingMixin,
+    AnimationMixin,
     FaithfulPreviewMixin,
     LibraryOrganizationMixin,
     SubtitlesGraphicsMixin,
@@ -171,6 +173,7 @@ class MainWindow(
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)
+        self._init_animation()
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
         self._autosave = AutosaveCoordinator()
@@ -401,6 +404,16 @@ class MainWindow(
         self.properties_panel.keyframe_added.connect(self.on_transform_keyframe_added)
         self.properties_panel.keyframe_removed.connect(self.on_transform_keyframe_removed)
         self.properties_panel.transform_reset.connect(self.on_transform_reset)
+        # Animation : losanges, navigation, interpolation, copier/coller, courbes.
+        self.properties_panel.animation_toggled.connect(self.on_animation_toggled)
+        self.properties_panel.keyframe_navigation_requested.connect(self.on_keyframe_navigation)
+        self.properties_panel.interpolation_requested.connect(self.on_keyframe_interpolation_requested)
+        self.properties_panel.animation_copy_requested.connect(self.copy_animation)
+        self.properties_panel.animation_paste_requested.connect(self.paste_animation)
+        self.properties_panel.graph_editor_requested.connect(self.open_graph_editor)
+        self.properties_panel.active_property_changed.connect(self.set_active_animation_property)
+        self.timeline_panel.keyframes_selected.connect(self.on_timeline_keyframes_selected)
+        self.timeline_panel.keyframes_move_requested.connect(self.on_keyframes_move_requested)
         # Tâche 18 : time remapping
         self.properties_panel.speed_changed.connect(self.on_speed_changed)
         self.properties_panel.reverse_toggled.connect(self.on_reverse_toggled)
@@ -1341,6 +1354,9 @@ class MainWindow(
         self.proxies_action.setChecked(self.proxies.enabled)
         self.proxies_action.toggled.connect(self.set_proxies_enabled)
         window_menu.addAction(self.proxies_action)
+        # Animation : éditeur de courbes (outil avancé, jamais obligatoire).
+        self.graph_editor_action = self._command_action("graph_editor", "menu.item.graph_editor")
+        window_menu.addAction(self.graph_editor_action)
 
         # Menu Séquence : opérations de piste.
         track_add_video_action = self._labelled_action("tracks.add_video_long")
@@ -1564,10 +1580,13 @@ class MainWindow(
         if clip_obj is None:
             clip_obj = find_clip(self.project, top_clip.clip_id)
         if clip_obj is not None:
+            # Les images-clés sont locales au clip (0 = début du clip sur la
+            # timeline), comme dans l'export : jamais le temps du média source,
+            # qui diffère dès que le clip est rogné ou accéléré.
             evaluated = evaluate_transform(
                 clip_obj.transform,
                 clip_obj.transform_keyframes,
-                clip_local_time=top_clip.source_time,
+                clip_local_time=float(self.playhead_seconds) - float(top_clip.timeline_start),
                 clip_duration=clip_obj.duration,
             )
             self.preview_panel.apply_transform(
@@ -1869,7 +1888,7 @@ class MainWindow(
             "undo": self.undo_last,
             "redo": self.redo_last,
             "duplicate_clip": self.duplicate_selected_clip,
-            "delete_clip": self.delete_selected_clip_with_check,
+            "delete_clip": self.delete_selection_or_clip,
             "ripple_delete": self.ripple_delete_selected_clip,
             "toggle_clip_enabled": self.toggle_selected_clip_enabled,
             "cut_at_playhead": self.cut_at_playhead,
@@ -1906,6 +1925,8 @@ class MainWindow(
             "marker_add": lambda: self.add_marker_at(self.playhead_seconds),
             "marker_previous": lambda: self.goto_marker(-1),
             "marker_next": lambda: self.goto_marker(1),
+            # Animation (images-clés)
+            **self._animation_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

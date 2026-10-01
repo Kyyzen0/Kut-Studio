@@ -4,12 +4,13 @@ Ce module encapsule toute la logique métier pure liée à la
 composition visuelle :
 
 - :class:`ClipTransform` — position, échelle, rotation, opacité ;
-- :class:`TransformKeyframe` — image-clé d'une propriété ;
+- :class:`TransformKeyframe` — :class:`~core.animation.Keyframe` d'une
+  propriété de transform (bornes validées) ;
 - :class:`EvaluatedTransform` — résultat figé de l'évaluation ;
-- :func:`evaluate_transform` — interpolation linéaire d'un
-  :class:`ClipTransform` le long d'une liste d'images-clés ;
-- :func:`build_ffmpeg_expression` — génération d'une expression
-  compatible avec la syntaxe du filtergraph du moteur de rendu.
+- :func:`evaluate_transform` — évaluation des courbes d'animation
+  (:mod:`core.animation`, toutes interpolations) ;
+- :func:`build_ffmpeg_expression` — la même courbe en expression FFmpeg
+  (:mod:`core.animation_ffmpeg`), pour un export identique à l'aperçu.
 
 Le module est volontairement pur : aucune dépendance à une
 bibliothèque graphique ou à un binaire externe. Il peut être
@@ -19,8 +20,18 @@ outils d'aperçu, scripts).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import dataclass, replace
 from typing import Iterable
+
+from .animation import (
+    AnimatableProperty,
+    AnimationCurve,
+    InterpolationType,
+    Keyframe,
+    ValueKind,
+)
+from .animation_ffmpeg import curve_expression
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +66,20 @@ _PROPERTY_BOUNDS: dict[str, tuple[float, float]] = {
     "opacity": (_OPACITY_MIN, _OPACITY_MAX),
 }
 """Bornes acceptées pour chaque propriété animable."""
+
+TRANSFORM_PROPERTIES: dict[str, AnimatableProperty] = {
+    "position_x": AnimatableProperty("position_x", "animation.property.position_x", ValueKind.FLOAT,
+                                     0.0, _POSITION_MIN, _POSITION_MAX, 0.01),
+    "position_y": AnimatableProperty("position_y", "animation.property.position_y", ValueKind.FLOAT,
+                                     0.0, _POSITION_MIN, _POSITION_MAX, 0.01),
+    "scale": AnimatableProperty("scale", "animation.property.scale", ValueKind.FLOAT,
+                                1.0, _SCALE_MIN, _SCALE_MAX, 0.01),
+    "rotation": AnimatableProperty("rotation", "animation.property.rotation", ValueKind.FLOAT,
+                                   0.0, _ROTATION_MIN, _ROTATION_MAX, 1.0),
+    "opacity": AnimatableProperty("opacity", "animation.property.opacity", ValueKind.FLOAT,
+                                  1.0, _OPACITY_MIN, _OPACITY_MAX, 0.01),
+}
+"""Description générique (:class:`~core.animation.AnimatableProperty`) du transform."""
 
 
 # ---------------------------------------------------------------------------
@@ -99,16 +124,8 @@ class ClipTransform:
         """
         if name not in ANIMATABLE_PROPERTIES:
             raise ValueError(f"Propriété inconnue : {name!r}.")
-        current = getattr(self, name)
         new_value = _coerce_value(name, value)
-        return ClipTransform(
-            position_x=self.position_x,
-            position_y=self.position_y,
-            scale=self.scale,
-            rotation=self.rotation,
-            opacity=self.opacity,
-            **{name: new_value},
-        )
+        return replace(self, **{name: new_value})
 
 
 # ---------------------------------------------------------------------------
@@ -117,18 +134,14 @@ class ClipTransform:
 
 
 @dataclass(frozen=True)
-class TransformKeyframe:
-    """Image-clé d'une propriété d'un :class:`ClipTransform`.
+class TransformKeyframe(Keyframe):
+    """:class:`~core.animation.Keyframe` d'une propriété de :class:`ClipTransform`.
 
-    Le temps ``time_seconds`` est local au clip : ``0.0`` correspond
-    au début du clip, ``clip.duration`` à sa fin. Une image-clé ne
-    peut pas dépasser la durée du clip ; une seule image-clé est
-    autorisée par couple ``(property_name, time_seconds)``.
+    Le temps ``time_seconds`` est local au clip : ``0.0`` correspond au
+    début du clip. La propriété et la valeur sont validées (bornes de
+    :data:`TRANSFORM_PROPERTIES`) ; interpolation et tangentes viennent du
+    moteur générique (linéaire par défaut).
     """
-
-    property_name: str
-    time_seconds: float
-    value: float
 
     def __post_init__(self) -> None:
         """Valide l'image-clé."""
@@ -136,18 +149,9 @@ class TransformKeyframe:
             raise ValueError(
                 f"Propriété de keyframe inconnue : {self.property_name!r}."
             )
-        if self.time_seconds != self.time_seconds:  # NaN
-            raise ValueError("time_seconds ne peut pas être NaN.")
-        if self.time_seconds in (float("inf"), float("-inf")):
-            raise ValueError(
-                f"time_seconds doit être fini (reçu : {self.time_seconds})."
-            )
-        if self.time_seconds < 0.0:
-            raise ValueError(
-                f"time_seconds doit être positif ou nul "
-                f"(reçu : {self.time_seconds})."
-            )
+        super().__post_init__()
         _validate_value(self.property_name, self.value)
+        object.__setattr__(self, "value", float(self.value))
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +180,65 @@ class EvaluatedTransform:
         )
 
 
+_CURVE_CACHE: OrderedDict[tuple, dict[str, AnimationCurve]] = OrderedDict()
+_CURVE_CACHE_SIZE = 256
+_LAST_BY_LIST: OrderedDict[int, tuple] = OrderedDict()
+"""``id(liste) -> (liste, durée, éléments, courbes)`` : la liste est retenue,
+son identifiant ne peut donc pas être réutilisé par une autre liste."""
+
+
+def _remember_list(keyframes: list, clip_duration, frames: tuple, curves) -> None:
+    _LAST_BY_LIST[id(keyframes)] = (keyframes, clip_duration, frames, curves)
+    _LAST_BY_LIST.move_to_end(id(keyframes))
+    if len(_LAST_BY_LIST) > _CURVE_CACHE_SIZE:
+        _LAST_BY_LIST.popitem(last=False)
+
+
+def transform_curves(
+    keyframes: Iterable[TransformKeyframe], clip_duration: float | None = None
+) -> dict[str, AnimationCurve]:
+    """Courbes par propriété (seules les propriétés animées sont présentes).
+
+    Les keyframes situées après la fin du clip sont ignorées. Le résultat
+    est mis en cache (les keyframes sont immuables) : la lecture évalue la
+    même courbe à chaque image sans la reconstruire.
+    """
+    # Chemin rapide (lecture) : la même liste, aux mêmes éléments, que la
+    # dernière fois. Comparer des identités évite de hacher chaque keyframe.
+    if isinstance(keyframes, list):
+        recent = _LAST_BY_LIST.get(id(keyframes))
+        if (
+            recent is not None
+            and recent[0] is keyframes
+            and recent[1] == clip_duration
+            and len(recent[2]) == len(keyframes)
+            and all(a is b for a, b in zip(recent[2], keyframes))
+        ):
+            return recent[3]
+    frames = tuple(keyframes)
+    key = (frames, clip_duration)
+    cached = _CURVE_CACHE.get(key)
+    if cached is not None:
+        _CURVE_CACHE.move_to_end(key)
+        if isinstance(keyframes, list):
+            _remember_list(keyframes, clip_duration, frames, cached)
+        return cached
+    grouped: dict[str, list[TransformKeyframe]] = {}
+    for kf in frames:
+        if kf.property_name not in TRANSFORM_PROPERTIES:
+            continue
+        if clip_duration is not None and kf.time_seconds > clip_duration + 1e-6:
+            continue  # Keyframe située après la fin du clip.
+        grouped.setdefault(kf.property_name, []).append(kf)
+    curves = {name: AnimationCurve(items) for name, items in grouped.items()}
+    _CURVE_CACHE[key] = curves
+    if isinstance(keyframes, list):
+        _remember_list(keyframes, clip_duration, frames, curves)
+    if len(_CURVE_CACHE) > _CURVE_CACHE_SIZE:
+        _CURVE_CACHE.popitem(last=False)
+    return curves
+
+
 def evaluate_transform(
     transform: ClipTransform,
     keyframes: Iterable[TransformKeyframe],
@@ -184,65 +247,23 @@ def evaluate_transform(
 ) -> EvaluatedTransform:
     """Évalue ``transform`` à ``clip_local_time`` en tenant compte des keyframes.
 
-    Règles d'interpolation :
-
-    - avant la première keyframe : valeur de base du transform ;
-    - après la dernière keyframe : dernière valeur des keyframes ;
-    - entre deux keyframes : interpolation linéaire.
-
-    ``clip_local_time`` est clampé dans ``[0, clip_duration]`` si
-    ``clip_duration`` est fourni. Ni ``transform`` ni ``keyframes``
-    ne sont mutés.
+    Une propriété sans keyframe garde sa valeur de base ; une propriété
+    animée suit sa courbe (:mod:`core.animation` : avant le premier keyframe,
+    sa valeur ; après le dernier, sa valeur ; entre deux, l'interpolation du
+    segment), bornée aux limites de la propriété. ``clip_local_time`` est
+    clampé dans ``[0, clip_duration]`` si ``clip_duration`` est fourni.
     """
     if clip_duration is not None and clip_duration > 0.0:
         if clip_local_time < 0.0:
             clip_local_time = 0.0
         elif clip_local_time > clip_duration:
             clip_local_time = float(clip_duration)
-
-    # Indexation des keyframes par propriété, triées par temps croissant.
-    by_property: dict[str, list[TransformKeyframe]] = {
-        name: [] for name in ANIMATABLE_PROPERTIES
-    }
-    for kf in keyframes:
-        if kf.property_name not in by_property:
-            # La validation est faite dans le dataclass, mais on double-
-            # check ici pour rester robuste aux itérations arbitraires.
-            continue
-        if clip_duration is not None and kf.time_seconds > clip_duration + 1e-6:
-            continue  # Keyframe située après la fin du clip.
-        by_property[kf.property_name].append(kf)
-    for name in by_property:
-        by_property[name].sort(key=lambda k: k.time_seconds)
-        # Suppression des doublons (ne garde que la dernière valeur
-        # pour un temps donné).
-        deduped: list[TransformKeyframe] = []
-        for kf in by_property[name]:
-            if deduped and abs(deduped[-1].time_seconds - kf.time_seconds) < 1e-9:
-                deduped[-1] = kf
-            else:
-                deduped.append(kf)
-        by_property[name] = deduped
+    curves = transform_curves(keyframes, clip_duration)
 
     def _resolve(name: str) -> float:
-        base = getattr(transform, name)
-        kfs = by_property.get(name, [])
-        if not kfs:
-            return base
-        # Avant la première keyframe : valeur de base du transform.
-        if clip_local_time < kfs[0].time_seconds:
-            return base
-        # Après la dernière keyframe : sa valeur.
-        if clip_local_time >= kfs[-1].time_seconds:
-            return kfs[-1].value
-        for prev, nxt in zip(kfs, kfs[1:]):
-            if prev.time_seconds <= clip_local_time <= nxt.time_seconds:
-                span = nxt.time_seconds - prev.time_seconds
-                if span <= 1e-9:
-                    return nxt.value
-                alpha = (clip_local_time - prev.time_seconds) / span
-                return prev.value + (nxt.value - prev.value) * alpha
-        return kfs[-1].value
+        return float(
+            TRANSFORM_PROPERTIES[name].evaluate(curves.get(name), getattr(transform, name), clip_local_time)
+        )
 
     return EvaluatedTransform(
         position_x=_resolve("position_x"),
@@ -251,6 +272,103 @@ def evaluate_transform(
         rotation=_resolve("rotation"),
         opacity=_resolve("opacity"),
     )
+
+
+def migrate_legacy_keyframes(
+    transform: ClipTransform, keyframes: Iterable[TransformKeyframe]
+) -> list[TransformKeyframe]:
+    """Convertit des keyframes de l'ancien moteur (avant le format 13) sans changer le rendu.
+
+    L'ancien moteur gardait la valeur **de base** jusqu'au premier keyframe,
+    puis sautait à sa valeur. Le moteur actuel tient la valeur du premier
+    keyframe. Un keyframe ``hold`` à ``t = 0`` portant la valeur de base
+    reproduit exactement l'ancien rendu.
+    """
+    result = list(keyframes)
+    first: dict[str, TransformKeyframe] = {}
+    for kf in result:
+        current = first.get(kf.property_name)
+        if current is None or kf.time_seconds < current.time_seconds:
+            first[kf.property_name] = kf
+    for name, kf in first.items():
+        base = float(getattr(transform, name))
+        if kf.time_seconds > 0.0 and abs(base - float(kf.value)) > 1e-12:
+            result.append(TransformKeyframe(name, 0.0, base, InterpolationType.HOLD))
+    result.sort(key=lambda k: (k.property_name, k.time_seconds))
+    return result
+
+
+def _curve_keyframes(curves: dict[str, AnimationCurve]) -> list[TransformKeyframe]:
+    result = [kf for curve in curves.values() for kf in curve.keyframes]
+    result.sort(key=lambda k: (k.property_name, k.time_seconds))
+    return result
+
+
+def split_transform_keyframes(
+    transform: ClipTransform,
+    keyframes: Iterable[TransformKeyframe],
+    cut_local_time: float,
+    clip_duration: float | None = None,
+) -> tuple[list[TransformKeyframe], list[TransformKeyframe]]:
+    """Coupe l'animation en deux **sans en changer le rendu**.
+
+    Chaque courbe est coupée par :meth:`AnimationCurve.split` (segments
+    polynomiaux scindés exactement) ; la partie droite est recalée à 0.
+    """
+    left: dict[str, AnimationCurve] = {}
+    right: dict[str, AnimationCurve] = {}
+    for name, curve in transform_curves(keyframes, clip_duration).items():
+        try:
+            left[name], right[name] = curve.split(cut_local_time)
+        except ValueError:
+            # Dépassement de bornes au point de coupe (Bézier très tendue) :
+            # on borne la valeur, la forme reste fidèle au millième près.
+            value = TRANSFORM_PROPERTIES[name].clamp(curve.evaluate(cut_local_time))
+            before = [k for k in curve.keyframes if k.time_seconds < cut_local_time]
+            after = [
+                copy_keyframe(k, time_seconds=k.time_seconds - cut_local_time)
+                for k in curve.keyframes if k.time_seconds > cut_local_time
+            ]
+            boundary = TransformKeyframe(name, cut_local_time, value)
+            left[name] = AnimationCurve([*before, boundary])
+            right[name] = AnimationCurve([TransformKeyframe(name, 0.0, value), *after])
+    return _curve_keyframes(left), _curve_keyframes(right)
+
+
+def retime_transform_keyframes(
+    keyframes: Iterable[TransformKeyframe],
+    *,
+    start_offset: float,
+    new_duration: float,
+    clip_duration: float | None = None,
+) -> list[TransformKeyframe]:
+    """Keyframes après un trim, en gardant l'animation **visible** inchangée.
+
+    ``start_offset`` > 0 : le début du clip avance (trim gauche) ; < 0 : il
+    recule. Les segments coupés par les nouvelles bornes sont scindés
+    exactement plutôt que supprimés.
+    """
+    curves: dict[str, AnimationCurve] = {}
+    for name, curve in transform_curves(keyframes, clip_duration).items():
+        if start_offset > 0:
+            curve = split_transform_keyframes(ClipTransform(), curve.keyframes, start_offset)[1]
+            curve = AnimationCurve(curve)
+        elif start_offset < 0:
+            curve = AnimationCurve(
+                copy_keyframe(k, time_seconds=k.time_seconds - start_offset) for k in curve.keyframes
+            )
+        if curve and curve.times[-1] > new_duration + 1e-6:
+            curve = AnimationCurve(
+                split_transform_keyframes(ClipTransform(), curve.keyframes, new_duration)[0]
+            )
+        curves[name] = curve
+    return _curve_keyframes(curves)
+
+
+def copy_keyframe(kf: TransformKeyframe, **changes) -> TransformKeyframe:
+    """Copie d'un keyframe en conservant interpolation, tangentes et identifiant."""
+    changes.setdefault("id", kf.id)
+    return replace(kf, **changes)
 
 
 # ---------------------------------------------------------------------------
@@ -265,122 +383,22 @@ def build_ffmpeg_expression(
     *,
     time_var: str = "T",
 ) -> str:
-    """Génère une expression FFmpeg interpolant ``base_value`` sur ``keyframes``.
+    """Expression FFmpeg de la valeur de ``property_name`` au temps ``time_var``.
 
-    L'expression retournée utilise ``time_var`` comme variable de
-    temps local du clip (en secondes, par convention). Le résultat
-    est syntaxiquement compatible avec les filtres ``geq``
-    (notamment pour l'opacité animée), ``fade`` et tout filtre qui
-    interprète une expression arithmétique FFmpeg complète.
-
-    Conventions :
-    - avant la première keyframe : ``base_value`` ;
-    - après la dernière keyframe : dernière valeur ;
-    - entre deux keyframes : interpolation linéaire ;
-    - si une seule keyframe : retour à la valeur de base avant
-      l'image-clé, puis valeur de l'image-clé ensuite ;
-    - notation décimale simple, jamais scientifique.
-
-    Structure produite (n keyframes, base = b) :
-
-        if(lt(T,t_1), b,
-            if(lt(T,t_2), linear(v_1, v_2, t_1, t_2),
-                if(lt(T,t_3), linear(v_2, v_3, t_2, t_3),
-                    ...
-                    if(lt(T,t_n), linear(v_{n-1}, v_n, t_{n-1}, t_n), v_n))))
-
-    Note d'intégration : ``,`` est le séparateur d'options de la
-    couche ``-filter_complex`` de FFmpeg. Le consommateur doit donc
-    échapper les virgules de l'expression en ``\\,`` (par
-    :func:`escape_filter_complex_commas`) avant injection dans un
-    filtre FFmpeg.
+    Sans keyframe : ``base_value``. Sinon, la courbe de :mod:`core.animation`
+    traduite par :func:`core.animation_ffmpeg.curve_expression` — mêmes
+    polynômes que :func:`evaluate_transform`, bornés de la même façon. Le
+    consommateur échappe les virgules (:func:`escape_filter_complex_commas`)
+    avant injection dans ``-filter_complex``.
     """
     _validate_value(property_name, base_value)
-    sorted_kfs: list[TransformKeyframe] = []
-    for kf in keyframes:
-        if kf.property_name != property_name:
-            continue
-        sorted_kfs.append(kf)
-    sorted_kfs.sort(key=lambda k: k.time_seconds)
-
-    if not sorted_kfs:
+    frames = [kf for kf in keyframes if kf.property_name == property_name]
+    if not frames:
         return _format_number(base_value)
-
-    def _v(value: float) -> str:
-        return _format_number(float(value))
-
-    if len(sorted_kfs) == 1:
-        single = sorted_kfs[0]
-        before = _v(base_value)
-        after = _v(single.value)
-        t0 = _v(single.time_seconds)
-        return f"if(lt({time_var},{t0}),{before},{after})"
-
-    def _linear(
-        prev_value: float,
-        t_start: float,
-        nxt_value: float,
-        t_end: float,
-    ) -> str:
-        """``v_prev + ((T - t_start)/(t_end - t_start)) * (v_nxt - v_prev)``."""
-        span = t_end - t_start
-        if span <= 1e-9:
-            return _v(nxt_value)
-        alpha = f"(({time_var})-{_v(t_start)})/{_v(span)}"
-        return f"{_v(prev_value)}+{alpha}*({_v(nxt_value)}-{_v(prev_value)})"
-
-    # Construction : chaîne de ``if(lt(...))`` imbriqués.
-    #
-    # Schéma cible (n keyframes, base = b) :
-    #   if(lt(T,t_1), b,
-    #     if(lt(T,t_2), linear(v_1, v_2, t_1, t_2),
-    #       ...
-    #         if(lt(T,t_n), linear(v_{n-1}, v_n, t_{n-1}, t_n), v_n)))
-    #
-    # Une imbrication ``if`` par keyframe (n imbrications au total).
-    pieces: list[str] = []
-    opens = 0
-    last_index = len(sorted_kfs) - 1
-
-    for index in range(len(sorted_kfs)):
-        kf = sorted_kfs[index]
-        if index == 0:
-            # Première keyframe : la branche « vrai » du premier ``if``
-            # est la valeur de base.
-            pieces.append(
-                f"if(lt({time_var},{_v(kf.time_seconds)}),"
-                f"{_v(base_value)},"
-            )
-            opens += 1
-            continue
-        prev = sorted_kfs[index - 1]
-        linear_expr = _linear(
-            prev.value, prev.time_seconds, kf.value, kf.time_seconds
-        )
-        # Chaque keyframe i ≥ 1 ouvre (en plus) un ``if(lt(T, t_i),
-        # linear_{i-1, i}, ...)``. Le ``if`` ouvert a :
-        # - branche « vrai » : interp linéaire entre la kf précédente et la courante ;
-        # - branche « faux » : soit la valeur ``v_n`` (dernière kf),
-        #   soit un nouveau ``if`` récursif (kf intermédiaire).
-        if index == last_index:
-            # Dernière keyframe : on émet un ``if`` complet et
-            # auto-fermé, qui n'augmente pas le compteur ``opens``.
-            pieces.append(
-                f"if(lt({time_var},{_v(kf.time_seconds)}),"
-                f"{linear_expr},{_v(kf.value)})"
-            )
-        else:
-            # Kf intermédiaire : on ouvre un ``if`` qui sera fermé
-            # par le ``if`` de la dernière kf ou par les fermetures
-            # globales à la fin.
-            pieces.append(
-                f"{linear_expr},if(lt({time_var},{_v(kf.time_seconds)}),"
-                f"{_v(kf.value)},"
-            )
-            opens += 1
-    # Ferme toutes les ``if(lt(`` ouvertes.
-    pieces.append(")" * opens)
-    return "".join(pieces)
+    spec = TRANSFORM_PROPERTIES[property_name]
+    return curve_expression(
+        AnimationCurve(frames), time_var=time_var, minimum=spec.minimum, maximum=spec.maximum
+    )
 
 
 def escape_filter_complex_commas(expression: str) -> str:
