@@ -11,3 +11,4 @@ subtitles.srt
 build/
 dist/
 *.spec
+graphify-out/
