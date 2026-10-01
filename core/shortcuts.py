@@ -444,10 +444,9 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("zoom_out", Category.VIEW, "-", lenient_modifiers=True),
     _cmd("zoom_fit", Category.VIEW, "Ctrl+0", "Shift+Z"),
     # « Afficher les scopes » partageait Ctrl+Shift+S avec « Enregistrer
-    # sous » : Qt jugeait le raccourci ambigu et ne déclenchait ni l'un
-    # ni l'autre. « Enregistrer sous » le conserve ; les scopes restent
-    # accessibles par le menu et reassignables ici.
-    _cmd("toggle_scopes", Category.VIEW, scope=_A, application_wide=True),
+    # sous » (ambigu pour Qt : aucun ne se déclenchait) ; il est passé à
+    # Ctrl+Alt+S, « Enregistrer sous » garde Ctrl+Shift+S.
+    _cmd("toggle_scopes", Category.VIEW, "Ctrl+Alt+S", scope=_A, application_wide=True),
     _cmd("preferences", Category.VIEW, "Ctrl+,", scope=_A, application_wide=True),
     # --- Audio (sans raccourci par défaut) ---------------------------------
     _cmd("audio_record_toggle", Category.AUDIO),

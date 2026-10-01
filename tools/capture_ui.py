@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from ui.main_window import MainWindow  # noqa: E402
 
-OUTPUT = os.path.join(_ROOT, "kut_studio_redesign_1440x900.png")
+OUTPUT = os.path.join(_ROOT, "docs", "kut_studio_redesign_1440x900.png")
 
 
 def main() -> int:

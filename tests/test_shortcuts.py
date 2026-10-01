@@ -61,6 +61,7 @@ LEGACY_ACTION_TABLE = {
     "Ctrl+O": "project_open",
     "Ctrl+S": "project_save",
     "Ctrl+Shift+S": "project_save_as",
+    "Ctrl+Alt+S": "toggle_scopes",
     "Ctrl+Q": "quit",
     "Ctrl+Z": "undo",
     "Ctrl+Shift+Z": "redo",
@@ -103,12 +104,12 @@ def test_command_ids_are_unique_and_every_category_is_declared():
     assert all(len(c.default) <= MAX_SEQUENCES_PER_COMMAND for c in COMMANDS)
 
 
-def test_save_as_keeps_ctrl_shift_s_and_scopes_is_unbound():
+def test_save_as_keeps_ctrl_shift_s_and_scopes_uses_ctrl_alt_s():
     # Les deux partageaient Ctrl+Shift+S : Qt jugeait le raccourci
     # ambigu et ne déclenchait ni l'un ni l'autre.
     shortcuts = ShortcutMap()
     assert shortcuts.sequences("project_save_as") == ("Ctrl+Shift+S",)
-    assert shortcuts.sequences("toggle_scopes") == ()
+    assert shortcuts.sequences("toggle_scopes") == ("Ctrl+Alt+S",)
 
 
 # --- normalisation, validité ---------------------------------------------------

@@ -356,7 +356,7 @@ def test_main_window_defaults_match_the_previous_menu_shortcuts(qtbot, monkeypat
         "ripple_delete": ["Ctrl+Backspace"],
         "toggle_clip_enabled": ["Ctrl+E"],
         "preferences": ["Ctrl+,"],
-        "toggle_scopes": [],
+        "toggle_scopes": ["Ctrl+Alt+S"],
     }
     for command_id, shortcuts in expected.items():
         action = window.shortcuts.action(command_id)
@@ -658,5 +658,62 @@ def test_preferences_dialog_retranslates_live_including_the_shortcuts_tab(qtbot)
         i18n.set_language("es")
         assert dialog.tabs.tabText(1) == "Atajos"
         assert editor._items["tool_blade"].text(0) == "Herramienta Cuchilla"
+    finally:
+        i18n.set_language(original)
+
+
+# --- menu Fenêtre : indépendant de la langue ------------------------------------------
+
+
+def _set_language(window, monkeypatch, code: str) -> None:
+    monkeypatch.setattr("ui.main_window.save_user_settings", lambda *_: None)
+    window._apply_settings(replace(window._settings_snapshot(), language=code))
+
+
+def test_workspace_menu_sync_does_not_depend_on_the_language(qtbot, monkeypatch):
+    from ui import i18n
+    from core.workspace_state import PanelId
+
+    original = i18n.current_language()
+    window = _window(qtbot, monkeypatch)
+    try:
+        for code in ("en", "es"):
+            _set_language(window, monkeypatch, code)
+            panels = window.window_menu.findChild(type(window.window_menu), "panels_menu")
+            assert panels is not None
+            panel = next(iter(PanelId))
+            window.workspace.set_panel_visible(panel, False)
+            window._sync_workspace_menu()
+            checked = {a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel}
+            assert checked == {False}
+            window.workspace.set_panel_visible(panel, True)
+            window._sync_workspace_menu()
+            assert {a.isChecked() for a, p in zip(panels.actions(), PanelId) if p is panel} == {True}
+    finally:
+        i18n.set_language(original)
+
+
+def _all_actions(menu):
+    for action in menu.actions():
+        yield action
+        if action.menu() is not None:
+            yield from _all_actions(action.menu())
+
+
+def test_workspace_submenus_and_actions_are_retranslated_live(qtbot, monkeypatch):
+    from ui import i18n
+
+    original = i18n.current_language()
+    window = _window(qtbot, monkeypatch)
+    try:
+        titles_fr = {m.title() for m in window.window_menu.findChildren(type(window.window_menu))}
+        assert {"Panneaux", "Espaces de travail"} <= titles_fr
+        _set_language(window, monkeypatch, "en")
+        titles_en = {m.title() for m in window.window_menu.findChildren(type(window.window_menu))}
+        assert {"Panels", "Workspaces"} <= titles_en
+        assert not ({"Panneaux", "Espaces de travail"} & titles_en)
+        texts = {a.text() for a in _all_actions(window.window_menu)}
+        assert {"Restore layout", "Save layout as…"} <= texts
+        assert not ({"Restaurer la disposition", "Enregistrer la disposition sous…"} & texts)
     finally:
         i18n.set_language(original)

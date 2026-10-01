@@ -54,8 +54,11 @@ jobs:
           ffmpeg -version
           ffprobe -version
 
+      - name: Lint (ruff)
+        run: python -m ruff check .
+
       - name: Run test suite
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto
 
       - name: Source UI smoke test
         run: python main.py --smoke-test

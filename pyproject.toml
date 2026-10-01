@@ -1,0 +1,7 @@
+[tool.ruff]
+extend-exclude = [".venv", "build", "dist", "graphify-out"]
+
+[tool.ruff.lint]
+# Règles de correction uniquement (noms indéfinis, erreurs de syntaxe) :
+# elles ne produisent aucun bruit de style sur le code existant.
+select = ["E9", "F63", "F7", "F82"]
