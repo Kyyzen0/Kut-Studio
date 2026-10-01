@@ -30,6 +30,7 @@ from core.transition_presets import (
 )
 from core.text_presets import TextPresetStore
 from core.export_engine import ExportEngine
+from core.render_queue import RenderQueue
 from core.media_probe import probe_video
 from core.project_factory import create_default_project
 from core.project_model import Project
@@ -342,12 +343,17 @@ class MainWindow(
         # Synchroniser la bibliothèque de médias avec le Project initial.
         self._refresh_project_library()
 
+        # Moteur d'export unique, partagé avec la file de rendu : un seul
+        # FFmpeg à la fois. La file persiste ses jobs et reprend au démarrage
+        # (un rendu interrompu par un arrêt brutal est marqué « échoué »).
         self.export_engine = ExportEngine(self)
-        self.export_engine.progress_changed.connect(self.export_panel.progress_bar.setValue)
-        self.export_engine.status_changed.connect(self.export_panel.set_status)
-        self.export_engine.finished_ok.connect(self._on_export_finished)
-        self.export_engine.failed.connect(self.export_panel.mark_export_error)
-        self.export_engine.cancelled.connect(self.export_panel.mark_export_cancelled)
+        self.render_queue = RenderQueue(self.export_engine, parent=self)
+        self.render_queue.restore()
+        self.export_panel.set_queue(self.render_queue)
+        self.export_panel.add_to_queue_requested.connect(self.enqueue_export)
+        self.render_queue.run_finished.connect(self._on_render_run_finished)
+        # Dernier filet : aucun FFmpeg ne survit à la fin de l'application.
+        QApplication.instance().aboutToQuit.connect(self.render_queue.shutdown)
 
         # La timeline est désormais l'horloge principale : on ne lit plus
         # ``QMediaPlayer.positionChanged`` pour piloter ``TimelinePanel``.
@@ -752,6 +758,11 @@ class MainWindow(
 
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
+        # Un rendu en cours demande confirmation : refuser garde tout ouvert.
+        if not self._confirm_close_during_render():
+            event.ignore()
+            return
+        self.render_queue.shutdown()
         workspace = getattr(self, "workspace", None)
         if workspace is not None:
             workspace.shutdown()

@@ -63,6 +63,7 @@ from .time_remapping import (
     get_ffmpeg_speed_filter,
 )
 from .tool_paths import find_media_tool
+from .video_encoders import resolve_video_encoder
 from .visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
@@ -239,6 +240,10 @@ class ExportRequest:
         format: Format / codec cible.
         preset: Préréglage de résolution et de qualité.
         fps: Fréquence d'images cible de la sortie.
+        hardware: famille d'encodeur demandée (``"cpu"``, ``"auto"``,
+            ``"nvenc"``…, voir :mod:`core.video_encoders`). Les valeurs
+            matérielles retombent sur le CPU tant qu'elles ne sont pas
+            implémentées.
     """
 
     render_plan: RenderPlan
@@ -246,6 +251,7 @@ class ExportRequest:
     format: ExportFormat
     preset: ExportPreset
     fps: int = 30
+    hardware: str = "cpu"
 
     def __post_init__(self) -> None:
         """Rejette les paramètres invalides avant le lancement de FFmpeg."""
@@ -284,10 +290,38 @@ class ExportEngine(QObject):
         self._duration_seconds = 0.0
         self._cancel_requested = False
         self._temporary_files: list[str] = []
+        self.last_encoder_choice = None
+        """Dernier :class:`~core.video_encoders.EncoderChoice` construit."""
 
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
+
+    @property
+    def is_running(self) -> bool:
+        """``True`` tant qu'un processus FFmpeg tourne pour cet export."""
+        return self._process.state() != QProcess.NotRunning
+
+    @property
+    def process_id(self) -> int:
+        """PID du FFmpeg en cours (``0`` s'il n'y en a pas)."""
+        return int(self._process.processId()) if self.is_running else 0
+
+    def shutdown(self, timeout_ms: int = 3000) -> bool:
+        """Arrête FFmpeg de façon synchrone et libère les fichiers temporaires.
+
+        Destiné à la fermeture de l'application : après l'appel aucun
+        processus FFmpeg ne reste en vie. Retourne ``False`` si le
+        processus n'a pas pu être confirmé comme terminé.
+        """
+        if self._process.state() == QProcess.NotRunning:
+            self._cleanup_temporary_files()
+            return True
+        self._cancel_requested = True
+        self._process.kill()
+        stopped = self._process.waitForFinished(timeout_ms)
+        self._cleanup_temporary_files()
+        return bool(stopped)
 
     def start(self, request: ExportRequest) -> None:
         """Démarre un export asynchrone pour ``request``.
@@ -437,26 +471,17 @@ class ExportEngine(QObject):
         command.extend(["-map", f"[{video_label}]"])
         command.extend(["-map", f"[{audio_label}]"])
 
-        if request.format.codec == "h264":
-            command.extend(
-                [
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    request.format.preset,
-                    "-crf",
-                    str(request.preset.crf),
-                ]
-            )
-        else:
-            command.extend(
-                [
-                    "-c:v",
-                    request.format.codec,
-                    "-profile:v",
-                    str(request.format.quality_value),
-                ]
-            )
+        # Les arguments d'encodage vidéo viennent de ``core.video_encoders`` :
+        # c'est le point d'insertion des encodeurs matériels.
+        is_h264 = request.format.codec == "h264"
+        encoder = resolve_video_encoder(
+            request.format.codec,
+            speed_preset=request.format.preset,
+            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            hardware=request.hardware,
+        )
+        self.last_encoder_choice = encoder
+        command.extend(encoder.args)
 
         # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
         # ``ExportPreset`` porte toujours ce champ, mais le moteur reste

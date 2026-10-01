@@ -5,16 +5,26 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QProgressBar,
+    QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from core.export_engine import ExportFormat, ExportPreset, ExportRequest
+from core.export_engine import ExportFormat, ExportRequest
+from core.render_job import JobStatus
 from core.render_plan import RenderPlan
+from core.render_presets import (
+    CUSTOM_PRESET_ID,
+    RenderPresetSpec,
+    builtin_presets,
+    custom_preset,
+    default_preset,
+    get_preset,
+)
+from ui import i18n
 from ui.theme import COLORS, label_style
-
 
 _FORMAT_LABELS = {
     ExportFormat.MP4_H264: "MP4 · H.264",
@@ -25,18 +35,31 @@ _FORMAT_LABELS = {
 _RESOLUTION_CHOICES = [
     ("1920 × 1080 (Full HD)", (1920, 1080)),
     ("1280 × 720 (HD)", (1280, 720)),
+    ("2560 × 1440 (QHD)", (2560, 1440)),
     ("3840 × 2160 (4K UHD)", (3840, 2160)),
+    ("1080 × 1920 (Vertical)", (1080, 1920)),
 ]
 
+# Qualité du preset « Custom » : (CRF, débit audio).
 _QUALITY_PRESETS = {
-    "Élevée": ExportPreset(name="Élevée", resolution=(1920, 1080), crf=18, audio_bitrate="192k"),
-    "Standard": ExportPreset(name="Standard", resolution=(1920, 1080), crf=23, audio_bitrate="128k"),
-    "Basse": ExportPreset(name="Basse", resolution=(1280, 720), crf=28, audio_bitrate="96k"),
+    "Élevée": (18, "192k"),
+    "Standard": (23, "128k"),
+    "Basse": (28, "96k"),
 }
 
 
 class ExportPanel(QWidget):
+    """Page Export : choisir un preset, puis lancer ou ajouter à la file.
+
+    ``LANCER L'EXPORT`` demande le fichier de sortie, ajoute le job à la
+    file de rendu et le lance aussitôt : le parcours Projet → Export →
+    preset → lancer reste en une étape. ``Ajouter à la file`` prépare un
+    export sans le lancer ; la file (en dessous) permet ensuite de
+    réordonner, lancer, annuler ou relancer.
+    """
+
     export_requested = Signal()
+    add_to_queue_requested = Signal()
     cancel_requested = Signal()
     close_requested = Signal()
 
@@ -46,26 +69,43 @@ class ExportPanel(QWidget):
         self.setStyleSheet(
             f"QWidget#export_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
         )
-        layout = QVBoxLayout(self)
+        self._queue = None
+        # Le contenu défile : avec la file de rendu, la page dépasse la
+        # hauteur d'une petite fenêtre et ne doit jamais être écrasée.
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setObjectName("exportScroll")
+        scroll.setStyleSheet(
+            "QScrollArea#exportScroll, QScrollArea#exportScroll > QWidget > QWidget"
+            " { background: transparent; }"
+        )
+        content = QWidget()
+        scroll.setWidget(content)
+        root.addWidget(scroll)
+        self._layout = QVBoxLayout(content)
+        layout = self._layout
         layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(18)
+        layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = QLabel("EXPORT DU PROJET")
-        title.setStyleSheet(label_style(13, "muted", 700))
+        self.title_label = QLabel("EXPORT DU PROJET")
+        self.title_label.setStyleSheet(label_style(13, "muted", 700))
         close_button = QPushButton("×")
         close_button.setFixedSize(30, 30)
         close_button.setToolTip("Fermer l'export")
         close_button.clicked.connect(self.close_requested)
-        header.addWidget(title)
+        header.addWidget(self.title_label)
         header.addStretch()
         header.addWidget(close_button)
         layout.addLayout(header)
 
-        subtitle = QLabel("Préparez les paramètres de sortie de votre montage.")
-        subtitle.setStyleSheet(label_style(13, "text", 500))
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        self.subtitle_label = QLabel("Préparez les paramètres de sortie de votre montage.")
+        self.subtitle_label.setStyleSheet(label_style(13, "text", 500))
+        self.subtitle_label.setWordWrap(True)
+        layout.addWidget(self.subtitle_label)
 
         settings = QFrame()
         settings.setStyleSheet(
@@ -73,31 +113,46 @@ class ExportPanel(QWidget):
         )
         form = QFormLayout(settings)
         form.setContentsMargins(16, 16, 16, 16)
-        form.setVerticalSpacing(14)
+        form.setVerticalSpacing(12)
+        self.preset_label = QLabel()
+        self.preset_combo = QComboBox()
+        for spec in builtin_presets():
+            self.preset_combo.addItem("", userData=spec.id)
+        self.preset_combo.addItem("", userData=CUSTOM_PRESET_ID)
+        form.addRow(self.preset_label, self.preset_combo)
+        self.preset_summary = QLabel()
+        self.preset_summary.setWordWrap(True)
+        self.preset_summary.setStyleSheet(label_style(12, "muted", 500))
+        form.addRow(self.preset_summary)
 
+        # Réglages libres : visibles seulement pour « Custom ».
+        self.custom_frame = QWidget()
+        custom_form = QFormLayout(self.custom_frame)
+        custom_form.setContentsMargins(0, 0, 0, 0)
+        custom_form.setVerticalSpacing(12)
         self.format_combo = QComboBox()
         for export_format in ExportFormat:
             self.format_combo.addItem(_FORMAT_LABELS[export_format], userData=export_format)
-        form.addRow("Format", self.format_combo)
-
         self.resolution_combo = QComboBox()
         for label, resolution in _RESOLUTION_CHOICES:
             self.resolution_combo.addItem(label, userData=resolution)
-        form.addRow("Résolution", self.resolution_combo)
-
         self.quality_combo = QComboBox()
         self.quality_combo.addItems(list(_QUALITY_PRESETS.keys()))
         self.quality_combo.setCurrentText("Standard")
-        form.addRow("Qualité", self.quality_combo)
-
         self.fps_combo = QComboBox()
         self.fps_combo.addItems(["24", "25", "30", "60"])
         self.fps_combo.setCurrentText("30")
-        form.addRow("Images/seconde", self.fps_combo)
-
+        self._custom_labels = {
+            "format": QLabel(), "resolution": QLabel(), "quality": QLabel(), "fps": QLabel(),
+        }
+        custom_form.addRow(self._custom_labels["format"], self.format_combo)
+        custom_form.addRow(self._custom_labels["resolution"], self.resolution_combo)
+        custom_form.addRow(self._custom_labels["quality"], self.quality_combo)
+        custom_form.addRow(self._custom_labels["fps"], self.fps_combo)
+        form.addRow(self.custom_frame)
         layout.addWidget(settings)
 
-        self.status_label = QLabel("Prêt à exporter")
+        self.status_label = QLabel()
         self.status_label.setStyleSheet(label_style(12, "success", 600))
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -108,7 +163,7 @@ class ExportPanel(QWidget):
 
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(10)
-        self.cancel_button = QPushButton("Annuler")
+        self.cancel_button = QPushButton()
         self.cancel_button.setCursor(Qt.PointingHandCursor)
         self.cancel_button.setStyleSheet(
             f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; padding: 11px; font-weight: 600; }}"
@@ -118,7 +173,12 @@ class ExportPanel(QWidget):
         self.cancel_button.clicked.connect(self.cancel_requested)
         self.cancel_button.setEnabled(False)
 
-        self.launch_button = QPushButton("LANCER L'EXPORT")
+        self.add_button = QPushButton()
+        self.add_button.setCursor(Qt.PointingHandCursor)
+        self.add_button.setStyleSheet(self.cancel_button.styleSheet())
+        self.add_button.clicked.connect(self.add_to_queue_requested)
+
+        self.launch_button = QPushButton()
         self.launch_button.setCursor(Qt.PointingHandCursor)
         self.launch_button.setStyleSheet(
             f"QPushButton {{ background: {COLORS['accent']}; border: none; font-weight: 700; padding: 11px; }}"
@@ -128,36 +188,124 @@ class ExportPanel(QWidget):
         self.launch_button.clicked.connect(self.export_requested)
 
         actions_layout.addWidget(self.cancel_button, 1)
+        actions_layout.addWidget(self.add_button, 2)
         actions_layout.addWidget(self.launch_button, 2)
         layout.addLayout(actions_layout)
-        layout.addStretch()
+
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        self.preset_combo.setCurrentIndex(self.preset_combo.findData(default_preset().id))
+        callback = self._on_language_changed
+        i18n.subscribe(callback)
+        self.destroyed.connect(lambda *_: i18n.unsubscribe(callback))
+        self.retranslate()
+        self._on_preset_changed()
+        self.set_status(i18n.translate("render.export.ready"), "ready")
+
+    # ------------------------------------------------------------------
+    # File de rendu
+    # ------------------------------------------------------------------
+
+    def set_queue(self, queue) -> None:
+        """Branche la file de rendu : panneau intégré et état synchronisé."""
+        from ui.render_queue_panel import RenderQueuePanel
+
+        self._queue = queue
+        self.queue_panel = RenderQueuePanel(queue)
+        self._layout.addWidget(self.queue_panel, 1)
+        queue.job_updated.connect(self._on_queue_changed)
+        queue.jobs_changed.connect(self._on_queue_changed)
+
+    def _on_queue_changed(self, *_args) -> None:
+        """Reflète le job en cours dans le statut et la barre de progression."""
+        queue = self._queue
+        if queue is None:
+            return
+        job = queue.current_job
+        if job is not None:
+            self.set_status(
+                i18n.translate("render.export.running", name=job.name), "running"
+            )
+            self.progress_bar.setValue(job.progress)
+            self.progress_bar.show()
+            self.cancel_button.setEnabled(True)
+            return
+        self.cancel_button.setEnabled(False)
+        self.progress_bar.setVisible(False)
+
+    # ------------------------------------------------------------------
+    # Texte et preset courant
+    # ------------------------------------------------------------------
+
+    def _on_language_changed(self, _code: str) -> None:
+        self.retranslate()
+
+    def retranslate(self) -> None:
+        tr = i18n.translate
+        self.preset_label.setText(tr("render.export.preset"))
+        for index in range(self.preset_combo.count()):
+            self.preset_combo.setItemText(
+                index, tr(f"render.preset.{self.preset_combo.itemData(index)}")
+            )
+        for key, label in self._custom_labels.items():
+            label.setText(tr(f"render.export.{key}"))
+        self.cancel_button.setText(tr("render.export.cancel"))
+        self.add_button.setText(tr("render.export.add"))
+        self.launch_button.setText(tr("render.export.launch"))
+        self._update_summary()
+
+    def current_preset_id(self) -> str:
+        return self.preset_combo.currentData() or default_preset().id
+
+    def current_spec(self) -> RenderPresetSpec:
+        """Preset choisi ; pour « Custom », construit depuis les réglages libres."""
+        preset_id = self.current_preset_id()
+        if preset_id != CUSTOM_PRESET_ID:
+            return get_preset(preset_id) or default_preset()
+        export_format = self.format_combo.currentData()
+        width, height = self.resolution_combo.currentData()
+        crf, audio_bitrate = _QUALITY_PRESETS[self.quality_combo.currentText()]
+        return custom_preset(
+            container=export_format.container,
+            video_codec=export_format.codec,
+            width=width,
+            height=height,
+            fps=int(self.fps_combo.currentText()),
+            quality=crf,
+            audio_bitrate=audio_bitrate,
+        )
+
+    def _on_preset_changed(self, *_args) -> None:
+        self.custom_frame.setVisible(self.current_preset_id() == CUSTOM_PRESET_ID)
+        self._update_summary()
+
+    def _update_summary(self) -> None:
+        preset_id = self.current_preset_id()
+        spec = self.current_spec()
+        description = i18n.translate(f"render.preset.desc.{preset_id}")
+        self.preset_summary.setText(f"{spec.summary()}\n{description}")
 
     def build_request(self, render_plan: RenderPlan, output_path: str):
         """Construit un :class:`ExportRequest` à partir d'un :class:`RenderPlan`.
 
         ``render_plan`` doit provenir de
-        :func:`core.render_plan.build_render_plan`. Le panneau reste
-        responsable des paramètres UI (format, résolution, qualité,
-        fps) ; la composition vidéo est désormais entièrement décrite
-        par le plan de rendu.
+        :func:`core.render_plan.build_render_plan`. Le preset courant
+        décrit la sortie (voir :mod:`core.render_presets`) ; la
+        composition vidéo est entièrement décrite par le plan de rendu.
         """
-        export_format = self.format_combo.currentData()
-        resolution = self.resolution_combo.currentData()
-        base_preset = _QUALITY_PRESETS[self.quality_combo.currentText()]
-        preset = ExportPreset(
-            name=base_preset.name,
-            resolution=resolution,
-            crf=base_preset.crf,
-            audio_bitrate=base_preset.audio_bitrate,
-        )
-        fps = int(self.fps_combo.currentText())
+        spec = self.current_spec()
+        export_format, preset, fps = spec.export_parts()
         return ExportRequest(
             render_plan=render_plan,
             output_path=output_path,
             format=export_format,
             preset=preset,
             fps=fps,
+            hardware=spec.hardware,
         )
+
+    # ------------------------------------------------------------------
+    # Statut (API historique conservée)
+    # ------------------------------------------------------------------
 
     def set_status(self, message, state="ready"):
         color_map = {"ready": "success", "running": "accent", "done": "success", "error": "danger"}
@@ -166,20 +314,25 @@ class ExportPanel(QWidget):
         self.status_label.setStyleSheet(label_style(12, color, 600))
         is_running = state == "running"
         self.progress_bar.setVisible(is_running)
-        self.launch_button.setEnabled(not is_running)
         self.cancel_button.setEnabled(is_running)
 
     def mark_export_started(self):
         self.progress_bar.setValue(0)
-        self.set_status("Export en cours...", "running")
+        self.set_status(i18n.translate("render.export.running", name=""), "running")
 
     def mark_export_finished(self):
         self.progress_bar.setValue(100)
         self.progress_bar.show()
-        self.set_status("Export terminé", "done")
+        self.set_status(i18n.translate("render.export.done"), "done")
 
     def mark_export_error(self, message):
         self.set_status(message, "error")
 
     def mark_export_cancelled(self):
-        self.set_status("Export annulé", "ready")
+        self.set_status(i18n.translate("render.export.cancelled"), "ready")
+
+    def mark_job_failed(self, name: str) -> None:
+        self.set_status(i18n.translate("render.export.failed", name=name), "error")
+
+    def job_status_text(self, status: JobStatus) -> str:
+        return i18n.translate(f"render.status.{status.value}")

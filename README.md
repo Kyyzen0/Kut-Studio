@@ -24,7 +24,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - 🔊 **Audio** — Mixer, audio effects with a preset library (favorites and your own presets), automation and voice-over recording.
 - 🔤 **Text and graphics** — Styled titles, text presets, and SRT subtitle import and export.
 - 💾 **Projects** — Native `.kut` save and load with autosave and backward-compatible loading of older format versions.
-- 📤 **Export** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg.
+- 📤 **Export and render queue** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg, with presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) and a persistent, reorderable render queue. See [docs/render-queue.md](docs/render-queue.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
 - ⌨️ **Keyboard shortcuts** — Playback, tools, snapping, markers and zoom (see below).
 
@@ -186,7 +186,7 @@ headless machine, set `QT_QPA_PLATFORM=offscreen`.
 
 - Split the largest UI modules (`main_window`, `project_panel`, `timeline_panel`)
 - Linting and type checking in CI, and a faster test suite
-- Export presets, render queue and hardware acceleration
+- Hardware-accelerated encoding (the model and extension point are ready)
 - Preview and timeline performance on large projects
 - Signed installers and automated releases
 
@@ -215,7 +215,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - 🔊 **Audio** — Mixeur, effets audio avec bibliothèque de préréglages (favoris et presets personnels), automation et enregistrement de voix off.
 - 🔤 **Texte et graphiques** — Titres stylés, presets de texte, import et export de sous-titres SRT.
 - 💾 **Projets** — Sauvegarde et chargement `.kut` natifs, avec autosave et chargement rétrocompatible des anciennes versions du format.
-- 📤 **Export** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg.
+- 📤 **Export et file de rendu** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg, avec des presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) et une file de rendu persistante et réordonnable. Voir [docs/render-queue.md](docs/render-queue.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
 - ⌨️ **Raccourcis clavier** — Lecture, outils, snap, marqueurs et zoom (voir plus bas).
 
@@ -341,7 +341,7 @@ La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S
 
 - Découper les plus gros modules d’interface (`main_window`, `project_panel`, `timeline_panel`)
 - Linter et vérification de types en CI, suite de tests plus rapide
-- Presets d’export, file de rendu et accélération matérielle
+- Encodage avec accélération matérielle (modèle et point d’extension prêts)
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées
 
