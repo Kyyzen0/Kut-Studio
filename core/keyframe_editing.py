@@ -141,7 +141,7 @@ def add_keyframe(
         if existing is not None:
             return existing
         if curve:
-            curve = curve.inserted_preserving_shape(t)
+            curve = curve.inserted_preserving_shape(t, clamp=target.spec.clamp)
             if interpolation is not None:
                 inserted = curve.keyframe_at(t)
                 curve = curve.replaced({inserted.id: replace(

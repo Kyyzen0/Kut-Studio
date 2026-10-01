@@ -247,3 +247,47 @@ def test_evaluation_cost_does_not_grow_with_the_number_of_keyframes():
         return best
 
     assert cost(1000) < cost(10) * 10
+
+
+# --- Retours de revue : bornes et insertion hors de la courbe ------------------------------------
+
+
+def test_inserting_where_a_bounded_curve_overshoots_uses_the_displayed_value():
+    from core.visual_effects import TRANSFORM_PROPERTIES, TransformKeyframe
+
+    spec = TRANSFORM_PROPERTIES["opacity"]
+    c = AnimationCurve([
+        TransformKeyframe("opacity", 0.0, 0.0, I.BEZIER, out_slope=10.0),
+        TransformKeyframe("opacity", 1.0, 1.0, in_slope=10.0),
+    ])
+    peak = max(range(101), key=lambda i: c.evaluate(i / 100)) / 100
+    assert c.evaluate(peak) > 1.0                                      # la courbe brute déborde
+    inserted = c.inserted_preserving_shape(peak, clamp=spec.clamp)     # pas de ValueError
+    assert inserted.keyframe_at(peak).value == 1.0
+    left, right = c.split(peak, clamp=spec.clamp)
+    assert left.keyframes[-1].value == 1.0 and right.keyframes[0].value == 1.0
+
+
+@pytest.mark.parametrize("interpolation", list(I))
+def test_inserting_before_the_first_or_after_the_last_keyframe_stays_flat(interpolation):
+    c = curve(
+        kf(1.0, 5.0, interpolation, out_slope=10.0),
+        kf(2.0, 8.0, interpolation, in_slope=-4.0, out_slope=10.0),
+        kf(3.0, 2.0, interpolation),
+    )
+    expected = [c.evaluate(t / 20) for t in range(81)]
+    for t in (0.4, 3.6):
+        inserted = c.inserted_preserving_shape(t)
+        assert len(inserted) == 4
+        assert [inserted.evaluate(x / 20) for x in range(81)] == pytest.approx(expected, abs=1e-9)
+    # Les deux à la fois (découpe hors de l'intervalle animé).
+    both = c.inserted_preserving_shape(0.4).inserted_preserving_shape(3.6)
+    assert [both.evaluate(x / 20) for x in range(81)] == pytest.approx(expected, abs=1e-9)
+
+
+def test_inserting_next_to_linked_and_automatic_tangents_keeps_neighbouring_segments():
+    c = curve(kf(0.0, 0.0, I.BEZIER), kf(1.0, 4.0, I.BEZIER, out_slope=9.0), kf(2.0, 1.0, I.BEZIER), kf(3.0, 3.0))
+    expected = [c.evaluate(t / 20) for t in range(61)]
+    for t in (0.3, 1.5, 2.6):
+        inserted = c.inserted_preserving_shape(t)
+        assert [inserted.evaluate(x / 20) for x in range(61)] == pytest.approx(expected, abs=1e-9)

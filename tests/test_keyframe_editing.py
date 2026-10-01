@@ -423,3 +423,16 @@ def test_transform_keyframe_is_a_generic_keyframe_with_validation():
     with pytest.raises(ValueError):
         TransformKeyframe("inconnue", 1.0, 0.5)
     assert register_target is not None
+
+
+def test_adding_a_keyframe_on_an_overshooting_bezier_does_not_fail():
+    project = _project()
+    add_keyframe(project, "c", "opacity", 0.0, 0.0, interpolation=I.BEZIER)
+    add_keyframe(project, "c", "opacity", 1.0, 1.0)
+    set_tangents(project, _ref(project, "opacity", 0.0), out_slope=10.0)
+    set_tangents(project, _ref(project, "opacity", 1.0), in_slope=10.0, mode="broken")
+    shown = value_at(_clip(project), "opacity", 0.8)
+    raw = get_target("opacity").curve(_clip(project)).evaluate(0.8)
+    assert not 0.0 <= raw <= 1.0                                       # la courbe brute déborde ici
+    added = add_keyframe(project, "c", "opacity", 0.8)                # sans ValueError
+    assert added.value == shown and value_at(_clip(project), "opacity", 0.8) == shown

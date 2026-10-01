@@ -62,7 +62,7 @@ from __future__ import annotations
 import bisect
 import math
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
@@ -479,12 +479,18 @@ class AnimationCurve:
         """Remplace les keyframes par identifiant (déplacements, valeurs, interpolation)."""
         return AnimationCurve([updates.get(k.id, k) for k in self._keyframes], self.kind)
 
-    def inserted_preserving_shape(self, time_seconds: float, *, keyframe_id: str = "") -> AnimationCurve:
+    def inserted_preserving_shape(
+        self, time_seconds: float, *, keyframe_id: str = "", clamp: Callable[[Any], Any] | None = None
+    ) -> AnimationCurve:
         """Insère un keyframe à ``time_seconds`` **sans changer l'animation**.
 
         Un segment polynomial coupé en deux reste deux cubiques : les deux
         moitiés deviennent des segments Bézier dont les pentes reproduisent
         exactement la courbe d'origine. Linéaire et Hold restent tels quels.
+        Avant le premier / après le dernier keyframe, le nouveau segment est
+        explicitement plat. ``clamp`` (bornes de la propriété) : si la courbe
+        déborde à cet instant, le keyframe prend la valeur **affichée** (bornée)
+        avec une tangente nulle, comme le rendu borné.
         """
         t = normalize_time(time_seconds)
         if not self._keyframes:
@@ -495,12 +501,26 @@ class AnimationCurve:
         name = self._keyframes[0].property_name
         make = type(self._keyframes[0])  # garde la classe (TransformKeyframe valide ses bornes)
         value = self.evaluate(t)
+        clamped = False
+        if clamp is not None:
+            bounded = clamp(value)
+            clamped = bounded != value
+            value = bounded
         index = self.segment_index(t)
         if index is None:  # avant le premier ou après le dernier : valeur constante
-            template = self._keyframes[0] if t < self._times[0] else self._keyframes[-1]
-            return self.with_keyframe(
-                make(name, t, value, template.interpolation, id=keyframe_id or new_keyframe_id())
-            )
+            new_id = keyframe_id or new_keyframe_id()
+            if t < self._times[0]:
+                first = self._keyframes[0]
+                # Segment ajouté entre deux valeurs égales : linéaire = plat. Les
+                # pentes de l'ancien premier keyframe sont figées (sinon ses pentes
+                # automatiques changeraient avec son nouveau voisin).
+                pinned = self._pinned(0)
+                added = make(name, t, value, InterpolationType.LINEAR, id=new_id)
+                return AnimationCurve([added, pinned, *self._keyframes[1:]], self.kind)
+            last = self._keyframes[-1]
+            pinned = replace(self._pinned(len(self._keyframes) - 1), interpolation=InterpolationType.LINEAR, id=last.id)
+            added = make(name, t, value, last.interpolation, id=new_id)
+            return AnimationCurve([*self._keyframes[:-1], pinned, added], self.kind)
         segment = self._segments[index]
         interpolation = segment.interpolation
         if interpolation in (InterpolationType.LINEAR, InterpolationType.HOLD):
@@ -512,19 +532,19 @@ class AnimationCurve:
         end_slope = _poly_slopes(segment, 1.0)
         k1_in = _scalar_or_tuple(end_slope, k1.value)
         k0_out = _scalar_or_tuple(start_slope, k0.value)
+        if clamped:
+            middle_slope = tuple(0.0 for _ in middle_slope)
         mid = _scalar_or_tuple(middle_slope, value)
+        # Pentes effectives figées des deux côtés : les segments voisins ne
+        # bougent pas (pentes liées ou automatiques comprises).
         updated_k0 = replace(
             k0, interpolation=InterpolationType.BEZIER, out_slope=k0_out,
-            in_slope=k0.in_slope if k0.in_slope is not None else (
-                _scalar_or_tuple(self.resolved_slopes(index)[0], k0.value)
-            ),
+            in_slope=_scalar_or_tuple(self.resolved_slopes(index)[0], k0.value),
             tangent_mode=TangentMode.BROKEN, id=k0.id,
         )
         updated_k1 = replace(
             k1, in_slope=k1_in,
-            out_slope=k1.out_slope if k1.out_slope is not None else (
-                _scalar_or_tuple(self.resolved_slopes(index + 1)[1], k1.value)
-            ),
+            out_slope=_scalar_or_tuple(self.resolved_slopes(index + 1)[1], k1.value),
             tangent_mode=TangentMode.BROKEN, id=k1.id,
         )
         middle = make(
@@ -534,12 +554,24 @@ class AnimationCurve:
         others = [k for k in self._keyframes if k.id not in (k0.id, k1.id)]
         return AnimationCurve([*others, updated_k0, middle, updated_k1], self.kind)
 
-    def split(self, time_seconds: float) -> tuple[AnimationCurve, AnimationCurve]:
+    def _pinned(self, index: int) -> Keyframe:
+        """Keyframe ``index`` avec ses pentes effectives fixées (mode séparé)."""
+        keyframe = self._keyframes[index]
+        incoming, outgoing = self.resolved_slopes(index)
+        return replace(
+            keyframe, in_slope=_scalar_or_tuple(incoming, keyframe.value),
+            out_slope=_scalar_or_tuple(outgoing, keyframe.value),
+            tangent_mode=TangentMode.BROKEN, id=keyframe.id,
+        )
+
+    def split(
+        self, time_seconds: float, *, clamp: Callable[[Any], Any] | None = None
+    ) -> tuple[AnimationCurve, AnimationCurve]:
         """Coupe la courbe : (partie ``≤ t``, partie ``≥ t`` recalée à 0), sans changer l'animation."""
         if not self._keyframes:
             return AnimationCurve((), self.kind), AnimationCurve((), self.kind)
         t = normalize_time(time_seconds)
-        whole = self.inserted_preserving_shape(t)
+        whole = self.inserted_preserving_shape(t, clamp=clamp)
         left = [k for k in whole.keyframes if k.time_seconds <= t]
         right = [
             replace(k, time_seconds=normalize_time(k.time_seconds - t), id=new_keyframe_id())

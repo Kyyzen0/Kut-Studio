@@ -319,7 +319,7 @@ def split_transform_keyframes(
     right: dict[str, AnimationCurve] = {}
     for name, curve in transform_curves(keyframes, clip_duration).items():
         try:
-            left[name], right[name] = curve.split(cut_local_time)
+            left[name], right[name] = curve.split(cut_local_time, clamp=TRANSFORM_PROPERTIES[name].clamp)
         except ValueError:
             # Dépassement de bornes au point de coupe (Bézier très tendue) :
             # on borne la valeur, la forme reste fidèle au millième près.
