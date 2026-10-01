@@ -508,7 +508,7 @@ def test_cancelling_a_running_render_kills_ffmpeg_and_cleans_up(qtbot, queue, tm
     job = _enqueue(queue, tmp_path, "keep.mp4")
     queue.start_all()
     qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
-                    and pid_file.read_text().strip(), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
+                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert queue.cancel(job.id)
     _wait_idle(qtbot, queue)
@@ -689,7 +689,7 @@ def test_shutdown_kills_ffmpeg_and_leaves_no_orphan(qtbot, queue, tmp_path, monk
     running, waiting = _enqueue(queue, tmp_path, "r.mp4"), _enqueue(queue, tmp_path, "w.mp4")
     queue.start_all()
     qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
-                    and pid_file.read_text().strip(), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
+                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # fichier créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert queue.shutdown() is True
     assert not queue._engine.is_running and not _pid_alive(pid)
