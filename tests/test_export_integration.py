@@ -125,12 +125,23 @@ def _create_dummy_input_files(tmp_path: Path) -> list[str]:
     return files
 
 
-def _wait_for_export(engine, timeout_ms: int = 10000) -> tuple[list[str], list[str]]:
-    """Bloque jusqu'à la fin de l'export, retourne (finished_ok, failed)."""
+def _wait_for_export(
+    engine, timeout_ms: int = 10000, *, start=None
+) -> tuple[list[str], list[str]]:
+    """Bloque jusqu'à la fin de l'export, retourne (finished_ok, failed).
+
+    Si ``start`` est fourni, il est appelé après la connexion des signaux :
+    ``ExportEngine.start`` peut émettre ``failed`` de façon synchrone.
+    """
     finished: list[str] = []
     failed: list[str] = []
     engine.finished_ok.connect(finished.append)
     engine.failed.connect(failed.append)
+
+    if start is not None:
+        start()
+        if finished or failed:
+            return finished, failed
 
     loop = QEventLoop()
     engine.finished_ok.connect(loop.quit)
@@ -853,15 +864,29 @@ def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
         "Aucun SRT temporaire de Kut-Studio ne doit exister avant l'export."
     )
 
-    engine.start(request)
-    # Marge large : la première utilisation de libass initialise le cache
-    # de polices (fontconfig), très lent sur les runners Windows de la CI.
-    finished, failed = _wait_for_export(engine, timeout_ms=180000)
+    # Le résultat de la détection de libass est mis en cache : on l'oublie
+    # pour ne pas hériter d'un faux négatif laissé par un test précédent.
+    from core import export_engine as _export_engine
 
-    assert not failed, f"ffmpeg a échoué : {failed}"
-    assert finished, (
-        "finished_ok aurait dû être émis (aucun signal reçu : délai dépassé)"
+    if hasattr(_export_engine._ffmpeg_supports_subtitles, "_cached"):
+        del _export_engine._ffmpeg_supports_subtitles._cached
+
+    # Marge large : la première utilisation de libass initialise le cache
+    # de polices (fontconfig), lent sur les runners Windows de la CI.
+    finished, failed = _wait_for_export(
+        engine, timeout_ms=180000, start=lambda: engine.start(request)
     )
+
+    if not finished and not failed:
+        # Délai dépassé : on capture l'état pour diagnostiquer la CI.
+        diagnostic = (
+            f"état QProcess={engine._process.state().name}, "
+            f"stderr={engine._error_output!r}, commande={command!r}"
+        )
+        engine.cancel()
+        pytest.fail(f"aucun signal d'export reçu : {diagnostic}")
+    assert not failed, f"ffmpeg a échoué : {failed}"
+    assert finished, "finished_ok aurait dû être émis"
     assert output_path.exists()
 
     # 4. Le SRT temporaire est nettoyé après succès.
