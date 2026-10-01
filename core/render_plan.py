@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project
 from .subtitle_io import SubtitleCue
+from .text_style import TextStyle
 from .time_remapping import TimeRemapping
 from .transitions import TransitionType
 from .timeline_evaluator import timeline_duration

@@ -459,3 +459,17 @@ def test_hiding_center_collapses_the_zone(window):
     assert manager._top_splitter.sizes()[1] == 0
     manager.set_panel_visible(PanelId.VIEWER, True)
     assert manager._top_splitter.sizes()[1] > 0
+
+
+def test_no_two_actions_share_the_same_shortcut(window):
+    """Deux actions sur le même raccourci le rendent ambigu : aucune ne part."""
+    from collections import defaultdict
+
+    from PySide6.QtGui import QAction
+
+    by_shortcut: dict[str, list[str]] = defaultdict(list)
+    for action in window.findChildren(QAction):
+        for sequence in action.shortcuts():
+            by_shortcut[sequence.toString()].append(action.text())
+    duplicates = {key: names for key, names in by_shortcut.items() if len(names) > 1}
+    assert duplicates == {}

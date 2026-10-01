@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .effects_model import ClipEffect
+    from .text_style import TextStyle
+    from .transitions import Transition
     from .time_remapping import TimeRemapping
     from .visual_effects import ClipTransform, TransformKeyframe
 
