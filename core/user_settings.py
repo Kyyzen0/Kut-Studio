@@ -142,6 +142,9 @@ DEFAULT_PROXY_PROFILE: str = "medium"
 DEFAULT_CACHE_MAX_GB: float = 4.0
 """Budget disque global des caches (segments d'aperçu + proxies), en Go."""
 
+DEFAULT_EXPORT_ENCODER: str = "auto"
+"""Encodeur d'export par défaut : ``auto``, ``cpu`` ou une famille matérielle détectée."""
+
 MIN_CACHE_MAX_GB: float = 0.5
 MAX_CACHE_MAX_GB: float = 512.0
 
@@ -151,6 +154,16 @@ def _coerce_proxy_profile(value: object) -> str:
     from .proxy_profiles import get_profile
 
     return get_profile(value if isinstance(value, str) else None).id
+
+
+def _coerce_export_encoder(value: object) -> str:
+    """Filtre l'encodeur d'export par défaut ; ``auto`` si absent ou inconnu."""
+    from .hardware_encoding import HardwareEncoder
+
+    try:
+        return HardwareEncoder(str(value).strip().lower()).value
+    except ValueError:
+        return DEFAULT_EXPORT_ENCODER
 
 
 def _coerce_cache_max_gb(value: object) -> float:
@@ -192,6 +205,7 @@ class UserSettings:
         proxies_enabled: utilise les proxies pour l'**aperçu** (jamais pour
             l'export, qui lit toujours les médias originaux).
         proxy_profile: profil de proxy utilisé pour générer / lire.
+        export_encoder: encodeur d'export proposé par défaut (voir :mod:`core.video_encoders`).
         cache_max_gb: budget disque global des caches, en Go.
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
@@ -216,6 +230,8 @@ class UserSettings:
     proxies_enabled: bool = True
     proxy_profile: str = DEFAULT_PROXY_PROFILE
     cache_max_gb: float = DEFAULT_CACHE_MAX_GB
+    # --- Export ---
+    export_encoder: str = DEFAULT_EXPORT_ENCODER
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -385,6 +401,7 @@ def load_user_settings(
         proxies_enabled=_coerce_bool(data.get("proxies_enabled", True)),
         proxy_profile=_coerce_proxy_profile(data.get("proxy_profile")),
         cache_max_gb=_coerce_cache_max_gb(data.get("cache_max_gb")),
+        export_encoder=_coerce_export_encoder(data.get("export_encoder")),
     )
 
 
@@ -433,6 +450,7 @@ def save_user_settings(
             proxies_enabled=_coerce_bool(settings.proxies_enabled),
             proxy_profile=_coerce_proxy_profile(settings.proxy_profile),
             cache_max_gb=_coerce_cache_max_gb(settings.cache_max_gb),
+            export_encoder=_coerce_export_encoder(settings.export_encoder),
         )
     )
     fd, tmp_name = tempfile.mkstemp(

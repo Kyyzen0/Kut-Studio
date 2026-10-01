@@ -22,7 +22,10 @@ from core.render_presets import (
     custom_preset,
     default_preset,
     get_preset,
+    with_hardware,
 )
+from core.hardware_encoding import HardwareCapabilities, HardwareEncoder
+from core.video_encoders import encoder_options
 from ui import i18n
 from ui.theme import COLORS, label_style
 
@@ -63,8 +66,13 @@ class ExportPanel(QWidget):
     cancel_requested = Signal()
     close_requested = Signal()
 
+    encoder_changed = Signal(str)
+    """L'utilisateur a choisi un autre encodeur (valeur sérialisable)."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._capabilities: HardwareCapabilities | None = None
+        self._encoder_choice = HardwareEncoder.AUTO.value
         self.setObjectName("export_panel")
         self.setStyleSheet(
             f"QWidget#export_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
@@ -124,6 +132,10 @@ class ExportPanel(QWidget):
         self.preset_summary.setWordWrap(True)
         self.preset_summary.setStyleSheet(label_style(12, "muted", 500))
         form.addRow(self.preset_summary)
+        self.encoder_label = QLabel()
+        self.encoder_combo = QComboBox()
+        self.encoder_combo.setObjectName("exportEncoderCombo")
+        form.addRow(self.encoder_label, self.encoder_combo)
 
         # Réglages libres : visibles seulement pour « Custom ».
         self.custom_frame = QWidget()
@@ -193,6 +205,7 @@ class ExportPanel(QWidget):
         layout.addLayout(actions_layout)
 
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        self.encoder_combo.activated.connect(self._on_encoder_activated)
         self.preset_combo.setCurrentIndex(self.preset_combo.findData(default_preset().id))
         callback = self._on_language_changed
         i18n.subscribe(callback)
@@ -242,6 +255,8 @@ class ExportPanel(QWidget):
     def retranslate(self) -> None:
         tr = i18n.translate
         self.preset_label.setText(tr("render.export.preset"))
+        self.encoder_label.setText(tr("render.export.encoder"))
+        self._rebuild_encoder_options()
         for index in range(self.preset_combo.count()):
             self.preset_combo.setItemText(
                 index, tr(f"render.preset.{self.preset_combo.itemData(index)}")
@@ -257,6 +272,10 @@ class ExportPanel(QWidget):
         return self.preset_combo.currentData() or default_preset().id
 
     def current_spec(self) -> RenderPresetSpec:
+        """Preset choisi, avec l'encodeur sélectionné (Automatique, CPU ou matériel)."""
+        return with_hardware(self._base_spec(), self.current_encoder())
+
+    def _base_spec(self) -> RenderPresetSpec:
         """Preset choisi ; pour « Custom », construit depuis les réglages libres."""
         preset_id = self.current_preset_id()
         if preset_id != CUSTOM_PRESET_ID:
@@ -276,6 +295,7 @@ class ExportPanel(QWidget):
 
     def _on_preset_changed(self, *_args) -> None:
         self.custom_frame.setVisible(self.current_preset_id() == CUSTOM_PRESET_ID)
+        self._rebuild_encoder_options()
         self._update_summary()
 
     def _update_summary(self) -> None:
@@ -283,6 +303,48 @@ class ExportPanel(QWidget):
         spec = self.current_spec()
         description = i18n.translate(f"render.preset.desc.{preset_id}")
         self.preset_summary.setText(f"{spec.summary()}\n{description}")
+
+    # ------------------------------------------------------------------
+    # Encodeur (Automatique, CPU, matériel détecté)
+    # ------------------------------------------------------------------
+
+    def set_capabilities(self, capabilities: HardwareCapabilities | None) -> None:
+        """Capacités détectées : seules les options réellement disponibles sont proposées."""
+        self._capabilities = capabilities
+        self._rebuild_encoder_options()
+
+    def set_default_encoder(self, value: str) -> None:
+        """Choix mémorisé dans les préférences (sans émettre ``encoder_changed``)."""
+        self._encoder_choice = value
+        self._rebuild_encoder_options()
+
+    def current_encoder(self) -> str:
+        """Valeur sérialisable de l'encodeur sélectionné (``auto``, ``cpu``, ``videotoolbox``…)."""
+        data = self.encoder_combo.currentData()
+        return data if isinstance(data, str) else self._encoder_choice
+
+    def _codec_family(self) -> str:
+        codec = self._base_spec().video_codec
+        return "prores_ks" if codec == "prores_ks" else "h264"
+
+    def _rebuild_encoder_options(self) -> None:
+        options = encoder_options(self._codec_family(), self._capabilities or HardwareCapabilities())
+        wanted = self._encoder_choice
+        if wanted not in {backend.value for backend, _label in options}:
+            # Choix indisponible pour ce format (ex. ProRes : CPU seulement) : on affiche
+            # une valeur valable sans modifier la préférence enregistrée.
+            wanted = HardwareEncoder.AUTO.value if options[0][0] is HardwareEncoder.AUTO else HardwareEncoder.CPU.value
+        self.encoder_combo.blockSignals(True)
+        self.encoder_combo.clear()
+        for backend, label in options:
+            text = i18n.translate("render.encoder.auto") if backend is HardwareEncoder.AUTO else label
+            self.encoder_combo.addItem(text, userData=backend.value)
+        self.encoder_combo.setCurrentIndex(max(0, self.encoder_combo.findData(wanted)))
+        self.encoder_combo.blockSignals(False)
+
+    def _on_encoder_activated(self, _index: int) -> None:
+        self._encoder_choice = self.encoder_combo.currentData()
+        self.encoder_changed.emit(self._encoder_choice)
 
     def build_request(self, render_plan: RenderPlan, output_path: str):
         """Construit un :class:`ExportRequest` à partir d'un :class:`RenderPlan`.

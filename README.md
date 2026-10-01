@@ -25,6 +25,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - 🔤 **Text and graphics** — Styled titles, text presets, and SRT subtitle import and export.
 - 💾 **Projects** — Native `.kut` save and load with autosave and backward-compatible loading of older format versions.
 - 📤 **Export and render queue** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg, with presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) and a persistent, reorderable render queue. See [docs/render-queue.md](docs/render-queue.md).
+- 🎞️ **Hardware encoding** — export with VideoToolbox, NVENC, Quick Sync, AMF or VAAPI when your FFmpeg really supports it (detected and validated at runtime), automatic CPU fallback, and an always-available CPU path. See [docs/hardware-encoding.md](docs/hardware-encoding.md).
 - ⚡ **Performance layer** — media proxies for preview (export always uses the originals), a unified cache with disk budget and purge, smart prefetching, timeline indexes for 10,000-clip projects and an adaptive *Auto* preview quality. See [docs/performance.md](docs/performance.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
 - ⌨️ **Keyboard shortcuts** — Playback, tools, snapping, markers and zoom (see below).
@@ -217,6 +218,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - 🔤 **Texte et graphiques** — Titres stylés, presets de texte, import et export de sous-titres SRT.
 - 💾 **Projets** — Sauvegarde et chargement `.kut` natifs, avec autosave et chargement rétrocompatible des anciennes versions du format.
 - 📤 **Export et file de rendu** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg, avec des presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) et une file de rendu persistante et réordonnable. Voir [docs/render-queue.md](docs/render-queue.md).
+- 🎞️ **Encodage matériel** — export avec VideoToolbox, NVENC, Quick Sync, AMF ou VAAPI lorsque votre FFmpeg le permet réellement (détecté et validé à l’exécution), repli CPU automatique et chemin CPU toujours disponible. Voir [docs/hardware-encoding.md](docs/hardware-encoding.md).
 - ⚡ **Couche de performance** — proxies média pour l’aperçu (l’export utilise toujours les originaux), cache unifié avec budget disque et purge, préchargement intelligent, index de timeline pour des projets de 10 000 clips et qualité d’aperçu *Auto* adaptative. Voir [docs/performance.md](docs/performance.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
 - ⌨️ **Raccourcis clavier** — Lecture, outils, snap, marqueurs et zoom (voir plus bas).
@@ -343,7 +345,7 @@ La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S
 
 - Découper les plus gros modules d’interface (`main_window`, `project_panel`, `timeline_panel`)
 - Linter et vérification de types en CI, suite de tests plus rapide
-- Encodage avec accélération matérielle (modèle et point d’extension prêts)
+- Décodage matériel, aperçu et effets accélérés par le GPU (l’encodage matériel de l’export est en place : voir `docs/hardware-encoding.md`)
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées
 

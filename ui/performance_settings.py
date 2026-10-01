@@ -10,6 +10,7 @@ délègue à :class:`core.proxy_manager.ProxyManager` et
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,14 +19,17 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from core.hardware_encoding import HardwareCapabilities, HardwareEncoder
 from core.proxy_profiles import available_profiles
 from core.tool_paths import find_media_tool
 from core.user_settings import MAX_CACHE_MAX_GB, MIN_CACHE_MAX_GB
+from core.video_encoders import encoder_options
 from ui import i18n
 from ui.render_queue_panel import format_size
 from ui.theme import label_style
@@ -106,6 +110,32 @@ class PerformanceSettingsTab(QWidget):
         cache_layout.addWidget(self.status_label)
         layout.addWidget(self.cache_box)
 
+        # --- Encodage matériel (export) -------------------------------------------
+        self.encoding_box = QGroupBox()
+        encoding_layout = QVBoxLayout(self.encoding_box)
+        encoding_form = QFormLayout()
+        self.encoder_label = QLabel()
+        self.encoder_combo = QComboBox()
+        self.encoder_combo.setObjectName("defaultEncoderCombo")
+        self.encoder_combo.activated.connect(self._on_encoder_changed)
+        encoding_form.addRow(self.encoder_label, self.encoder_combo)
+        encoding_layout.addLayout(encoding_form)
+        self.diagnostics_view = QPlainTextEdit()
+        self.diagnostics_view.setObjectName("encodingDiagnostics")
+        self.diagnostics_view.setReadOnly(True)
+        self.diagnostics_view.setFixedHeight(130)
+        encoding_layout.addWidget(self.diagnostics_view)
+        encoding_row = QHBoxLayout()
+        self.redetect_button = QPushButton()
+        self.redetect_button.clicked.connect(self._on_redetect)
+        self.copy_diagnostics_button = QPushButton()
+        self.copy_diagnostics_button.clicked.connect(self._on_copy_diagnostics)
+        encoding_row.addWidget(self.redetect_button)
+        encoding_row.addWidget(self.copy_diagnostics_button)
+        encoding_row.addStretch(1)
+        encoding_layout.addLayout(encoding_row)
+        layout.addWidget(self.encoding_box)
+
         self.hint_label = QLabel()
         self.hint_label.setWordWrap(True)
         self.hint_label.setStyleSheet(label_style(12, "muted", 500))
@@ -131,6 +161,7 @@ class PerformanceSettingsTab(QWidget):
             self.max_spin.setValue(host.cache_manager.max_bytes / (1024 ** 3))
         finally:
             self._loading = False
+        self.refresh_encoding()
         self.refresh()
 
     def refresh(self) -> None:
@@ -149,6 +180,34 @@ class PerformanceSettingsTab(QWidget):
         missing = not find_media_tool("ffmpeg")
         self.ffmpeg_warning.setVisible(missing)
         self.generate_button.setEnabled(not missing)
+
+    def refresh_encoding(self) -> None:
+        """Options d'encodeur (seulement celles réellement disponibles) et diagnostics."""
+        host = self._host
+        capabilities = host.hardware_capabilities()
+        detecting = capabilities is None or getattr(host, "_detecting_hardware", False)
+        options = encoder_options("h264", capabilities or HardwareCapabilities())
+        wanted = getattr(host, "_export_encoder", HardwareEncoder.AUTO.value)
+        self.encoder_combo.blockSignals(True)
+        self.encoder_combo.clear()
+        for backend, label in options:
+            text = i18n.translate("render.encoder.auto") if backend is HardwareEncoder.AUTO else label
+            self.encoder_combo.addItem(text, userData=backend.value)
+        self.encoder_combo.setCurrentIndex(max(0, self.encoder_combo.findData(wanted)))
+        self.encoder_combo.blockSignals(False)
+        self.diagnostics_view.setPlainText(host.encoding_diagnostics_text())
+        self.redetect_button.setEnabled(not detecting)
+
+    def _on_encoder_changed(self, _index: int) -> None:
+        self._host.set_export_encoder(self.encoder_combo.currentData())
+
+    def _on_redetect(self) -> None:
+        if self._host.redetect_hardware_capabilities():
+            self.diagnostics_view.setPlainText(i18n.translate("encoding.detecting"))
+            self.redetect_button.setEnabled(False)
+
+    def _on_copy_diagnostics(self) -> None:
+        QGuiApplication.clipboard().setText(self.diagnostics_view.toPlainText())
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt
         super().showEvent(event)
@@ -211,4 +270,8 @@ class PerformanceSettingsTab(QWidget):
         self.purge_proxies_button.setText(tr("perf.cache.purge_proxies"))
         self.purge_project_button.setText(tr("perf.cache.purge_project"))
         self.purge_all_button.setText(tr("perf.cache.purge_all"))
+        self.encoding_box.setTitle(tr("perf.encoding.title"))
+        self.encoder_label.setText(tr("perf.encoding.default"))
+        self.redetect_button.setText(tr("perf.encoding.redetect"))
+        self.copy_diagnostics_button.setText(tr("perf.encoding.copy"))
         self.hint_label.setText(tr("perf.quality_hint"))

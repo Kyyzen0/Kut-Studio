@@ -43,6 +43,7 @@ from .render_job import ErrorKind, JobStatus, RenderJob, RenderResult
 from .render_plan import build_render_plan
 from .render_presets import RenderPresetSpec
 from .render_queue_store import RenderQueueStore
+from .video_encoders import HardwareEncoder
 
 MAX_ERROR_CHARS = 4000
 """Longueur conservée d'un message d'erreur FFmpeg (la fin est la plus utile)."""
@@ -78,6 +79,8 @@ class RenderQueue(QObject):
     overall_progress_changed = Signal(int)
     run_state_changed = Signal()
     run_finished = Signal(dict)
+    encoder_fallback = Signal(str, str)
+    """``(job_id, raison)`` : le mode Auto a basculé ce job de l'encodeur matériel vers le CPU."""
 
     def __init__(
         self,
@@ -104,6 +107,8 @@ class RenderQueue(QObject):
         engine.finished_ok.connect(self._on_finished)
         engine.failed.connect(self._on_failed)
         engine.cancelled.connect(self._on_cancelled)
+        engine.encoder_selected.connect(self._on_encoder_selected)
+        engine.encoder_fallback.connect(self._on_encoder_fallback)
 
     # ------------------------------------------------------------------
     # Lecture
@@ -306,6 +311,19 @@ class RenderQueue(QObject):
         self.jobs_changed.emit()
         self._emit_overall()
         return True
+
+    def retry_on_cpu(self, job_id: str) -> bool:
+        """Relance un job dont l'encodeur explicite a échoué, avec l'encodeur CPU.
+
+        Le choix de l'utilisateur n'est jamais modifié en silence : cette
+        action est proposée par l'interface après l'échec et ne change que ce
+        job. Retourne ``False`` si le job n'est pas relançable.
+        """
+        job = self.job(job_id)
+        if job is None or not job.can_retry:
+            return False
+        job.hardware = HardwareEncoder.CPU.value
+        return self.retry(job_id)
 
     def retry(self, job_id: str) -> bool:
         """Remet un job échoué, annulé ou terminé en attente.
@@ -554,13 +572,44 @@ class RenderQueue(QObject):
         self._finish_current(finish)
         self._schedule_next()
 
+    def _on_encoder_selected(self, choice) -> None:
+        """Mémorise l'encodeur réellement lancé (visible dès le début du rendu)."""
+        if not self._owns_engine_event():
+            return
+        job = self._current
+        assert job is not None
+        job.encoder = getattr(choice, "encoder", "")
+        job.hardware_used = getattr(getattr(choice, "used", None), "value", "cpu")
+        job.fallback_reason = getattr(choice, "fallback_reason", None) or job.fallback_reason
+        self.job_updated.emit(job.id)
+
+    def _on_encoder_fallback(self, reason: str) -> None:
+        if not self._owns_engine_event():
+            return
+        job = self._current
+        assert job is not None
+        job.fallback_reason = reason
+        job.diagnostics = getattr(self._engine, "last_diagnostics", "")[-800:]
+        self.encoder_fallback.emit(job.id, reason)
+
     def _on_failed(self, message: str) -> None:
         if not self._owns_engine_event():
             return
         job = self._current
         assert job is not None
         text = (message or "Le rendu a échoué.").strip()[-MAX_ERROR_CHARS:]
-        self._finish_current(lambda: job.mark_failed(text, ErrorKind.FFMPEG))
+        kind = (
+            ErrorKind.ENCODER
+            if getattr(self._engine, "last_error_kind", "") == "encoder"
+            else ErrorKind.FFMPEG
+        )
+        diagnostics = getattr(self._engine, "last_diagnostics", "") or job.diagnostics
+
+        def fail() -> None:
+            job.mark_failed(text, kind)
+            job.diagnostics = diagnostics[-800:]
+
+        self._finish_current(fail)
         self._schedule_next()
 
     def _on_cancelled(self) -> None:

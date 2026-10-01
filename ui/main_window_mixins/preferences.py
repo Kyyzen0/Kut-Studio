@@ -63,6 +63,7 @@ class PreferencesMixin:
             fields["proxy_profile"] = proxies.profile.id
         if manager is not None:
             fields["cache_max_gb"] = manager.max_bytes / (1024 ** 3)
+        fields["export_encoder"] = getattr(self, "_export_encoder", "auto")
         return fields
 
     def show_preferences(self) -> None:
@@ -83,7 +84,11 @@ class PreferencesMixin:
         dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
         dialog.render_quality_changed.connect(self.on_render_quality_changed)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
-        dialog.exec()
+        self._preferences_dialog = dialog
+        try:
+            dialog.exec()
+        finally:
+            self._preferences_dialog = None
 
     def _restore_default_preferences(self) -> None:
         """Restaure les réglages affichés par la boîte Préférences.

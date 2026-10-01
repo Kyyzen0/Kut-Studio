@@ -34,7 +34,7 @@ from ui import i18n
 from ui.theme import COLORS, label_style
 
 _JOB_ID_ROLE = Qt.UserRole
-_COLUMNS = ("name", "preset", "status", "progress", "output")
+_COLUMNS = ("name", "preset", "status", "progress", "output", "encoder")
 _STATUS_COLORS = {
     JobStatus.WAITING: "muted",
     JobStatus.RENDERING: "accent",
@@ -144,6 +144,7 @@ class RenderQueuePanel(QWidget):
         self.down_button = _button("render.btn.down")
         self.cancel_button = _button("render.btn.cancel")
         self.retry_button = _button("render.btn.retry")
+        self.retry_cpu_button = _button("render.btn.retry_cpu")
         self.remove_button = _button("render.btn.remove")
         self.clear_button = _button("render.btn.clear")
         for widget in (self.start_all_button, self.start_button, self.stop_button):
@@ -152,7 +153,8 @@ class RenderQueuePanel(QWidget):
         for widget in (self.up_button, self.down_button):
             controls.addWidget(widget)
         controls.addSpacing(8)
-        for widget in (self.cancel_button, self.retry_button, self.remove_button, self.clear_button):
+        for widget in (self.cancel_button, self.retry_button, self.retry_cpu_button,
+                       self.remove_button, self.clear_button):
             controls.addWidget(widget)
         controls.addStretch(1)
         layout.addLayout(controls)
@@ -194,6 +196,7 @@ class RenderQueuePanel(QWidget):
         self.down_button.clicked.connect(lambda: self._move(1))
         self.cancel_button.clicked.connect(self._on_cancel)
         self.retry_button.clicked.connect(self._on_retry)
+        self.retry_cpu_button.clicked.connect(self._on_retry_cpu)
         self.remove_button.clicked.connect(self._on_remove)
         self.clear_button.clicked.connect(lambda: self._queue.clear_finished())
         self.open_file_button.clicked.connect(self._on_open_file)
@@ -283,6 +286,8 @@ class RenderQueuePanel(QWidget):
         item.setText(2, i18n.translate(f"render.status.{job.status.value}"))
         item.setText(4, job.file_name)
         item.setToolTip(4, job.output_path)
+        item.setText(5, job.encoder_label)  # discret : vide tant que le job n'a pas été lancé
+        item.setToolTip(5, job.fallback_reason)
         if job.status is JobStatus.FAILED and job.error_message:
             item.setToolTip(2, job.error_message[-600:])
         bar.setValue(job.progress)
@@ -341,6 +346,7 @@ class RenderQueuePanel(QWidget):
         self.down_button.setEnabled(job is not None and job.status is JobStatus.WAITING)
         self.cancel_button.setEnabled(job is not None and not job.is_finished)
         self.retry_button.setEnabled(job is not None and job.can_retry)
+        self.retry_cpu_button.setVisible(job is not None and job.can_retry_on_cpu)
         self.remove_button.setEnabled(job is not None and job.status is not JobStatus.RENDERING)
         self.clear_button.setEnabled(
             any(j.status in (JobStatus.COMPLETED, JobStatus.CANCELLED) for j in jobs)
@@ -361,13 +367,13 @@ class RenderQueuePanel(QWidget):
             spec.summary() if spec is not None
             else f"{job.container.upper()} · {job.width}×{job.height} · {job.fps} fps"
         )
+        if job.encoder_label:
+            lines.append(i18n.translate("render.detail.encoder", encoder=job.encoder_label))
+        if job.fallback_reason:
+            lines.append(job.fallback_reason)
         if job.status is JobStatus.COMPLETED and job.result is not None:
             lines.append(i18n.translate("render.detail.render_time", time=format_duration(job.result.render_seconds)))
             lines.append(i18n.translate("render.detail.size", size=format_size(job.result.output_bytes)))
-            if job.result.encoder:
-                lines.append(i18n.translate("render.detail.encoder", encoder=job.result.encoder))
-            if job.result.fallback_reason:
-                lines.append(job.result.fallback_reason)
             if not os.path.isfile(job.output_path):
                 lines.append(i18n.translate("render.detail.missing_file"))
         if job.error_message:
@@ -398,6 +404,11 @@ class RenderQueuePanel(QWidget):
         job = self.selected_job()
         if job is not None:
             self._queue.cancel(job.id)
+
+    def _on_retry_cpu(self) -> None:
+        job = self.selected_job()
+        if job is not None and self._queue.retry_on_cpu(job.id):
+            self._queue.start_job(job.id)
 
     def _on_retry(self) -> None:
         job = self.selected_job()
@@ -433,7 +444,10 @@ class RenderQueuePanel(QWidget):
     def _on_copy_error(self) -> None:
         job = self.selected_job()
         if job is not None and job.error_message:
-            QGuiApplication.clipboard().setText(job.error_message)
+            text = job.error_message
+            if job.diagnostics:
+                text += "\n\n" + job.diagnostics
+            QGuiApplication.clipboard().setText(text)
 
 
 def _tail(message: str, limit: int = 600) -> str:

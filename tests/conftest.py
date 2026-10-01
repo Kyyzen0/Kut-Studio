@@ -43,6 +43,15 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
     monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path / "config"))
     # Les proxies générés par un test ne doivent jamais aller dans le vrai cache de l'utilisateur.
     monkeypatch.setenv("KUT_STUDIO_PROXY_DIR", str(tmp_path / "proxies"))
+    # Reproductibilité : jamais de détection GPU réelle, ni de cache de capacités partagé.
+    # Les tests d'encodage matériel construisent leur propre ``CapabilityService``.
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path.parent / f"{tmp_path.name}-cache"))
+    monkeypatch.setenv("KUT_STUDIO_HARDWARE_ENCODING", "off")
+    from core.hardware_cache import set_default_service
+
+    set_default_service(None)
+    yield
+    set_default_service(None)
 
 
 @pytest.fixture(scope="session", autouse=True)

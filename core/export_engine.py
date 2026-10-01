@@ -33,12 +33,13 @@ et ``cancelled``.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
@@ -63,7 +64,14 @@ from .time_remapping import (
     get_ffmpeg_speed_filter,
 )
 from .tool_paths import find_media_tool
-from .video_encoders import resolve_video_encoder
+from .hardware_encoding import looks_like_encoder_failure, redact_command
+from .video_encoders import (
+    EncoderChoice,
+    EncoderUnavailableError,
+    HardwareEncoder,
+    cpu_choice,
+    resolve_video_encoder,
+)
 from .visual_effects import (
     ANIMATABLE_PROPERTIES,
     ClipTransform,
@@ -72,6 +80,8 @@ from .visual_effects import (
     escape_filter_complex_commas,
 )
 
+
+LOGGER = logging.getLogger("kut_studio.encoding")
 
 _ffmpeg_path = find_media_tool("ffmpeg")
 
@@ -241,9 +251,9 @@ class ExportRequest:
         preset: Préréglage de résolution et de qualité.
         fps: Fréquence d'images cible de la sortie.
         hardware: famille d'encodeur demandée (``"cpu"``, ``"auto"``,
-            ``"nvenc"``…, voir :mod:`core.video_encoders`). Les valeurs
-            matérielles retombent sur le CPU tant qu'elles ne sont pas
-            implémentées.
+            ``"videotoolbox"``…, voir :mod:`core.video_encoders`). ``auto``
+            retombe sur le CPU si l'encodeur matériel échoue au lancement ;
+            un encodeur explicite qui échoue est signalé, jamais masqué.
     """
 
     render_plan: RenderPlan
@@ -275,6 +285,10 @@ class ExportEngine(QObject):
     finished_ok = Signal(str)
     failed = Signal(str)
     cancelled = Signal()
+    encoder_selected = Signal(object)
+    """Émis à chaque lancement (et après un repli) avec l'``EncoderChoice`` utilisé."""
+    encoder_fallback = Signal(str)
+    """Émis quand ``auto`` abandonne l'encodeur matériel pour le CPU (raison lisible)."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -292,6 +306,13 @@ class ExportEngine(QObject):
         self._temporary_files: list[str] = []
         self.last_encoder_choice = None
         """Dernier :class:`~core.video_encoders.EncoderChoice` construit."""
+        self.last_error_kind = ""
+        """``"encoder"`` si le dernier échec vient d'un encodeur choisi explicitement."""
+        self.last_diagnostics = ""
+        """Fin de la sortie d'erreur du dernier essai matériel abandonné (support)."""
+        self._launch_request: ExportRequest | None = None
+        self._fallback_used = False
+        self._progress_seen = False
 
     # ------------------------------------------------------------------
     # API publique
@@ -351,17 +372,37 @@ class ExportEngine(QObject):
                 )
             self._prepare_temporary_files(request.render_plan)
             command = self._build_command(request)
+        except EncoderUnavailableError as error:
+            self._cleanup_temporary_files()
+            self.last_error_kind = "encoder"
+            LOGGER.warning("Export refusé : %s", error)
+            self.failed.emit(str(error))
+            return
         except (ImportError, OSError, ValueError, RuntimeError) as error:
             self._cleanup_temporary_files()
             self.failed.emit(str(error))
             return
 
         self._request = request
+        self._launch_request = request
         self._error_output = ""
         self._progress_buffer = ""
         self._cancel_requested = False
+        self._fallback_used = False
+        self._progress_seen = False
+        self.last_error_kind = ""
+        self.last_diagnostics = ""
         self.progress_changed.emit(0)
         self.status_changed.emit("Export en cours...")
+        self._launch(command)
+
+    def _launch(self, command: list[str]) -> None:
+        """Démarre FFmpeg ; l'encodeur choisi est annoncé et journalisé."""
+        choice = self.last_encoder_choice
+        if choice is not None:
+            LOGGER.info("Encodeur : %s (demandé : %s)", choice.label, choice.requested.value)
+            self.encoder_selected.emit(choice)
+        LOGGER.info("Commande FFmpeg : %s", redact_command(command))
         self._process.start(command[0], command[1:])
 
     def cancel(self) -> None:
@@ -464,23 +505,30 @@ class ExportEngine(QObject):
             "-nostats",
         ]
 
-        for path in input_paths:
-            command.extend(["-i", path])
-
-        command.extend(["-filter_complex", filter_complex])
-        command.extend(["-map", f"[{video_label}]"])
-        command.extend(["-map", f"[{audio_label}]"])
-
-        # Les arguments d'encodage vidéo viennent de ``core.video_encoders`` :
-        # c'est le point d'insertion des encodeurs matériels.
+        # L'encodeur est choisi avant les entrées : certains (VAAPI) demandent une
+        # initialisation matérielle placée avant ``-i`` et un filtre final.
         is_h264 = request.format.codec == "h264"
         encoder = resolve_video_encoder(
             request.format.codec,
             speed_preset=request.format.preset,
             quality=request.preset.crf if is_h264 else request.format.quality_value,
             hardware=request.hardware,
+            width=width,
+            height=height,
+            fps=request.fps,
         )
         self.last_encoder_choice = encoder
+        command.extend(encoder.pre_input_args)
+
+        for path in input_paths:
+            command.extend(["-i", path])
+
+        if encoder.video_filter:
+            filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
+            video_label = "vencoded"
+        command.extend(["-filter_complex", filter_complex])
+        command.extend(["-map", f"[{video_label}]"])
+        command.extend(["-map", f"[{audio_label}]"])
         command.extend(encoder.args)
 
         # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
@@ -793,6 +841,8 @@ class ExportEngine(QObject):
         for line in lines:
             progress = self._parse_progress(line.strip())
             if progress is not None:
+                if progress > 0:
+                    self._progress_seen = True
                 self.progress_changed.emit(min(99, progress))
 
     def _read_error(self) -> None:
@@ -804,6 +854,7 @@ class ExportEngine(QObject):
 
     def _process_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         """Traite la fin normale ou anormale du processus FFmpeg."""
+        self._read_error()  # sortie d'erreur restante : la classification de l'échec en dépend
         request = self._request
         self._request = None
         if self._cancel_requested:
@@ -812,6 +863,10 @@ class ExportEngine(QObject):
             self._cleanup_temporary_files()
             return
         if exit_status != QProcess.NormalExit or exit_code != 0:
+            if request is not None and self._should_fall_back():
+                self._fall_back_to_cpu(request)
+                return
+            self._mark_encoder_failure()
             self.failed.emit(self._error_output or "L'export ffmpeg a échoué.")
             self._cleanup_temporary_files()
             return
@@ -831,13 +886,86 @@ class ExportEngine(QObject):
         if error == QProcess.FailedToStart:
             self._cleanup_temporary_files()
             self.failed.emit("Impossible de démarrer ffmpeg.")
-        else:
+        elif not self._should_fall_back():  # sinon ``_process_finished`` bascule en CPU
+            self._mark_encoder_failure()
             self.failed.emit(f"Erreur ffmpeg ({error.name}) : voir logs.")
+
+    # ------------------------------------------------------------------
+    # Repli sur le CPU (mode Auto uniquement)
+    # ------------------------------------------------------------------
+
+    def _should_fall_back(self) -> bool:
+        """``True`` si l'échec est celui d'un encodeur matériel choisi par ``auto``.
+
+        Un seul repli par export (pas de boucle entre encodeurs) et seulement
+        tant qu'aucune image n'a été encodée : une initialisation matérielle
+        qui échoue se voit au lancement, pas à 90 % du rendu.
+        """
+        choice = self.last_encoder_choice
+        return (
+            choice is not None
+            and choice.is_hardware
+            and choice.requested is HardwareEncoder.AUTO
+            and not self._fallback_used
+            and not self._progress_seen
+            and not self._cancel_requested
+        )
+
+    def _fall_back_to_cpu(self, request: ExportRequest) -> None:
+        choice = self.last_encoder_choice
+        detail = _last_line(self._error_output)
+        reason = (
+            f"{choice.label} n'a pas pu démarrer"
+            + (f" ({detail})" if detail else "")
+            + " : rendu CPU utilisé."
+        )
+        LOGGER.warning("Repli CPU : %s", reason)
+        self.last_diagnostics = self._error_output[-800:]
+        self._fallback_used = True
+        is_h264 = request.format.codec == "h264"
+        cpu = cpu_choice(
+            request.format.codec,
+            speed_preset=request.format.preset,
+            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            requested=choice.requested,
+            fallback_reason=reason,
+        )
+        cpu_request = replace(request, hardware=HardwareEncoder.CPU.value)
+        self._request = request  # le rendu CPU se termine comme l'export demandé
+        self._error_output = ""
+        self._progress_buffer = ""
+        try:
+            command = self._build_command(cpu_request)
+        except (ImportError, OSError, ValueError, RuntimeError) as error:
+            self.failed.emit(str(error))
+            self._cleanup_temporary_files()
+            return
+        self.last_encoder_choice = cpu
+        self.status_changed.emit(reason)
+        self.encoder_fallback.emit(reason)
+        self._launch(command)
+
+    def _mark_encoder_failure(self) -> None:
+        """Un encodeur matériel demandé explicitement a échoué : le signaler comme tel."""
+        choice = self.last_encoder_choice
+        if (
+            choice is not None
+            and choice.is_hardware
+            and choice.requested not in (HardwareEncoder.AUTO, HardwareEncoder.CPU)
+            and looks_like_encoder_failure(self._error_output, choice.encoder, choice.args)
+        ):
+            self.last_error_kind = "encoder"
+            self.last_diagnostics = self._error_output[-800:]
 
 
 # ---------------------------------------------------------------------------
 # Helpers de construction du filter_complex
 # ---------------------------------------------------------------------------
+
+
+def _last_line(text: str) -> str:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[-1][:160] if lines else ""
 
 
 def _format_seconds(value: float) -> str:
