@@ -11,3 +11,8 @@ subtitles.srt
 build/
 dist/
 *.spec
+
+# Environnement virtuel et artefacts de test.
+.venv/
+.coverage
+.pytest_cache/
