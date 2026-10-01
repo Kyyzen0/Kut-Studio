@@ -2919,7 +2919,7 @@ class MainWindow(QMainWindow):
         self.scopes_action = QAction("Afficher les scopes", self)
         self.scopes_action.setCheckable(True)
         self.scopes_action.setChecked(True)
-        self.scopes_action.setShortcut("Ctrl+Shift+S")
+        self.scopes_action.setShortcut("Ctrl+Alt+S")
         self.scopes_action.setShortcutContext(Qt.ApplicationShortcut)
         self.scopes_action.triggered.connect(self.toggle_scopes_visible)
         window_menu.addAction(self.scopes_action)
