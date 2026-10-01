@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
+from core.cache_keys import file_exists
 from core.media_previews import (
     extract_thumbnail,
     extract_waveform_peaks,
@@ -75,9 +74,13 @@ class PreviewsMixin:
         if runtime is None or self.project is None:
             return
         filmstrips = runtime.resolved_profile().filmstrips
-        for view in self.clip_views:
-            widget = self.clip_widgets.get(view.id)
-            if widget is None or not view.source_path or not os.path.isfile(view.source_path):
+        # Uniquement les clips **montés** (visibles) : planifier des
+        # vignettes pour des milliers de clips hors écran serait du travail
+        # perdu. L'existence du fichier est mémorisée (``file_exists``) :
+        # un appel système par clip à chaque défilement était le coût dominant.
+        for widget in list(self.clip_widgets.values()):
+            view = widget.view
+            if not view.source_path or not file_exists(view.source_path):
                 continue
             if self.track_is_collapsed(view.track_id):
                 continue

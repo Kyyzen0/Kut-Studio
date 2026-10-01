@@ -1,21 +1,18 @@
 """Niveaux de qualité d'aperçu.
 
 Les niveaux sont des diviseurs de résolution, pas des scores de
-fluidité. ``auto`` reprend le diviseur du profil machine. Aucune
-fonction ici ne prétend détecter des images perdues : ce détecteur
-n'existe pas encore, et un seuil inventé ferait varier l'image sans
-raison vérifiable.
-
-Quand un vrai compteur d'images existera, il pourra appeler
-:meth:`PreviewQualityController.suggest` et proposer un niveau. Tant
-que cette méthode retourne ``None``, l'interface ne change rien toute
-seule.
+fluidité. ``auto`` part du diviseur du profil machine et peut, **pendant
+la lecture seulement**, le monter temporairement quand la cadence réelle
+des ticks de lecture ne tient pas (voir :mod:`core.preview_adaptive`),
+puis le ramener progressivement. Un niveau choisi explicitement par
+l'utilisateur n'est jamais modifié.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .preview_adaptive import AdaptiveQuality
 from .runtime_profile import PerformanceProfile
 
 
@@ -71,26 +68,72 @@ def quality_label(divisor: int) -> str:
 
 @dataclass
 class PreviewQualityController:
-    """Garde le choix utilisateur et le diviseur résolu.
+    """Garde le choix utilisateur, le diviseur de base et le diviseur effectif.
 
-    :meth:`suggest` est le point d'extension du futur mode Auto réactif.
-    Il retourne ``None`` tant qu'on ne lui a pas fourni de mesure réelle.
+    - ``requested`` : choix de l'utilisateur (``auto``, ``full``, ``half``…) ;
+    - ``baseline`` : diviseur de ce choix (pour ``auto``, celui du profil
+      machine) ;
+    - ``divisor`` : diviseur **effectif**. Il vaut ``baseline`` sauf en mode
+      ``auto`` pendant une lecture trop lourde, où
+      :class:`core.preview_adaptive.AdaptiveQuality` peut le monter
+      temporairement (jamais au-delà de 1/4 tout seul) puis le ramener
+      progressivement.
+
+    Un niveau **forcé** par l'utilisateur n'est jamais modifié.
     """
 
     requested: str = QUALITY_AUTO
     divisor: int = 1
+    baseline: int = 1
+    adaptive: AdaptiveQuality = field(default_factory=AdaptiveQuality, repr=False)
 
     def apply(self, quality: str, profile: PerformanceProfile) -> int:
         self.requested = coerce_quality(quality)
-        self.divisor = resolve_divisor(self.requested, profile)
+        self.baseline = resolve_divisor(self.requested, profile)
+        self.adaptive.set_baseline(self.baseline)
+        self.divisor = self.baseline
         return self.divisor
 
-    def suggest(self, measured_frame_ms: float | None = None) -> str | None:
-        """Proposition de qualité, ou ``None`` sans mesure exploitable.
+    @property
+    def adaptive_enabled(self) -> bool:
+        return self.requested == QUALITY_AUTO
 
-        ``measured_frame_ms`` est accepté pour figer la signature.
-        L'ignorer est voulu : aucune heuristique de chute d'images
-        n'est branchée dans cette passe.
+    @property
+    def degraded(self) -> bool:
+        return self.adaptive_enabled and self.divisor > self.baseline
+
+    def observe_tick(self, now: float) -> int | None:
+        """Signale un tick de lecture ; retourne le nouveau diviseur s'il change.
+
+        Sans effet hors du mode ``auto`` : un niveau choisi par
+        l'utilisateur est respecté.
+        """
+        if not self.adaptive_enabled:
+            return None
+        changed = self.adaptive.observe(now)
+        if changed is not None:
+            self.divisor = changed
+        return changed
+
+    def reset_adaptation(self) -> bool:
+        """Retour au niveau de base (pause, arrêt). ``True`` si le diviseur a changé."""
+        self.adaptive.reset()
+        changed = self.divisor != self.baseline
+        self.divisor = self.baseline
+        return changed
+
+    def suggest(self, measured_frame_ms: float | None = None) -> str | None:
+        """Qualité conseillée, ou ``None`` tant que rien ne justifie un changement.
+
+        ``measured_frame_ms`` est un intervalle entre images : il est
+        rapporté à la cadence cible, mais **une seule mesure ne suffit
+        jamais** à proposer un changement (voir :class:`AdaptiveQuality`,
+        qui exige des fenêtres de mesures).
         """
         del measured_frame_ms
+        if not self.degraded:
+            return None
+        for name, divisor in _DIVISORS.items():
+            if divisor == self.divisor:
+                return name
         return None

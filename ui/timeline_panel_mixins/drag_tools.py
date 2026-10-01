@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
 from core.timeline_editing import (
     ClipPlacement,
     shifted_track_index,
-    snap_edit_position,
 )
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.clip_widget import ClipWidget
@@ -33,20 +32,23 @@ class DragToolsMixin:
         proposed_position: float,
         excluded_clip_id: str | None = None,
     ) -> tuple[float, float | None]:
-        from core.timeline_operations import snap_timeline_position
-
         self.snap_line_x = None
         if not self.snap_enabled:
             return proposed_position, None
         threshold_seconds = self.snap_threshold_pixels / (
             self.pixels_per_second * self.zoom
         )
-        snapped = snap_timeline_position(
-            self.project,
+        # Index des bords de clips : le coût suit les bords dans le seuil,
+        # pas le nombre total de clips (même résultat que
+        # ``snap_timeline_position``, vérifié par les tests).
+        index = self.snap_index(with_keyframes=False)
+        if index is None:
+            return proposed_position, None
+        snapped = index.nearest(
             proposed_position,
             threshold_seconds,
-            excluded_clip_id=excluded_clip_id,
-            playhead_seconds=self.playhead_seconds,
+            excluded_ids=(excluded_clip_id,) if excluded_clip_id is not None else (),
+            playhead=self.playhead_seconds,
         )
         if abs(snapped - proposed_position) > 1e-6:
             self.snap_line_x = (
@@ -66,12 +68,15 @@ class DragToolsMixin:
         threshold = self.snap_threshold_pixels / scale if scale else 0.0
         excluded = set(self.selected_clip_ids)
         excluded.add(anchor_id)
-        snapped = snap_edit_position(
-            self.project,
+        # ``excluded`` n'est jamais vide ici : comme ``snap_edit_position``,
+        # les images-clés et les marqueurs sont des points d'aimantation.
+        index = self.snap_index(with_keyframes=True)
+        snapped = index.nearest(
             seconds,
             threshold,
-            excluded_clip_ids=excluded,
-            playhead_seconds=self.playhead_seconds,
+            excluded_ids=excluded,
+            extra_points=[marker.time_seconds for marker in self.project.markers],
+            playhead=self.playhead_seconds,
         )
         if abs(snapped - seconds) > 1e-6:
             self.snap_line_x = self.left_margin + snapped * scale

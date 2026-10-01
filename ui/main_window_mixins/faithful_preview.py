@@ -70,59 +70,65 @@ class FaithfulPreviewMixin:
         except Exception:
             pass
 
-    def _preview_segment_jobs(self, center: float) -> list:
-        """Segments proches de la tête de lecture (préchargement)."""
+    def _prefetch_planner(self):
+        """Planificateur de préchargement (vitesse de la tête, grille de segments)."""
+        planner = getattr(self, "_prefetch", None)
+        if planner is None:
+            from core.prefetch import PrefetchPlanner
+            from core.preview_cache import SEGMENT_SECONDS
+
+            planner = PrefetchPlanner(segment_seconds=SEGMENT_SECONDS)
+            self._prefetch = planner
+        return planner
+
+    def _preview_resolver(self):
+        """Résolveur de chemins pour l'aperçu (proxys), ``None`` sans gestionnaire."""
+        manager = getattr(self, "proxies", None)
+        return manager.preview_resolver() if manager is not None else None
+
+    def _preview_segment_jobs(self, center: float, velocity: float | None = None) -> list:
+        """Segments à pré-rendre autour de la tête de lecture (grille alignée).
+
+        Le choix des segments (courant, devant, derrière) dépend de la
+        vitesse de la tête : voir :class:`core.prefetch.PrefetchPlanner`.
+        Chaque job porte la priorité de son rang. Le coût est celui d'un
+        plan *fenêtré* par segment, pas du projet entier.
+        """
         try:
-            from core.filter_graph import fingerprint_plan
-            from core.preview_cache import PreviewSegmentKey, SEGMENT_SECONDS
-            from core.preview_engine import PreviewJob
-            from core.render_plan import build_render_plan
+            from core.preview_segments import build_segment_job
         except Exception:
             return []
+        planner = self._prefetch_planner()
         try:
-            plan = build_render_plan(self.project)
+            duration = float(self._ensure_timeline_index().duration)
+            requests = planner.plan(center, duration=duration, velocity=velocity)
         except Exception:
             return []
-        if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
-            return []
-        quality = self._render_quality
-        params = fingerprint_plan(
-            plan, width=self.project.width, height=self.project.height,
-            fps=self.project.fps, quality=quality,
-        )
+        resolver = self._preview_resolver()
         jobs = []
-        cursor = max(0.0, float(center) - SEGMENT_SECONDS)
-        end = float(center) + 2 * SEGMENT_SECONDS
-        while cursor < end:
-            seg_end = min(end, cursor + SEGMENT_SECONDS)
-            clip_id = "timeline"
-            for layer in plan.video_layers:
-                start = float(layer.timeline_start)
-                stop = float(layer.timeline_end)
-                if start <= cursor < stop:
-                    clip_id = layer.clip_id
-                    break
-            if clip_id == "timeline":
-                for layer in getattr(plan, "graphics_layers", ()):
-                    if layer.timeline_start <= cursor < layer.timeline_end:
-                        clip_id = layer.clip_id
-                        break
-            key = PreviewSegmentKey(
-                clip_id=clip_id, start=cursor, end=seg_end,
-                quality=quality, params_hash=params,
-            )
-            jobs.append(
-                PreviewJob(
-                    key=key, plan=plan, width=self.project.width,
-                    height=self.project.height, fps=int(self.project.fps),
-                    quality=quality, start=cursor, duration=seg_end - cursor,
+        for request in requests:
+            try:
+                job = build_segment_job(
+                    self.project, request.index,
+                    quality=self._render_quality, resolver=resolver,
+                    timeline_index=self._ensure_timeline_index(),
                 )
-            )
-            cursor = seg_end
+            except Exception:
+                continue
+            if job is not None:
+                job.priority = request.priority
+                jobs.append(job)
         return jobs
 
     def _schedule_preview_around(self, center: float) -> None:
-        """Précharge les segments proches de la tête de lecture."""
+        """Précharge les segments utiles autour de la tête de lecture.
+
+        Pendant la lecture, rien n'est lancé (le CPU sert à la lecture).
+        En pause, la vitesse récente de la tête décide de ce qui vaut la
+        peine d'être rendu ; les demandes devenues lointaines sont
+        abandonnées pour que la file ne se remplisse pas de segments qui
+        ne serviront jamais.
+        """
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return
@@ -130,41 +136,84 @@ class FaithfulPreviewMixin:
             engine.set_playing(bool(self.is_playing))
         except Exception:
             pass
+        planner = self._prefetch_planner()
         if bool(self.is_playing):
+            planner.reset()
             return  # lecture : on limite le travail CPU/GPU
-        jobs = self._preview_segment_jobs(center)
+        velocity = planner.note_position(float(center))
+        jobs = self._preview_segment_jobs(center, velocity)
         self._last_preview_jobs = list(jobs)
-        if jobs:
+        try:
+            duration = float(self._ensure_timeline_index().duration)
+            low, high = planner.keep_range(center, duration=duration, velocity=velocity)
+            span = planner.segment_seconds
+            engine.cancel_outside(low * span - 1e-6, (high + 1) * span)
+        except Exception:
+            pass
+        for job in jobs:
             try:
-                engine.prefetch_around(float(center), jobs)
+                engine.request(job, job.priority)
             except Exception:
                 pass
 
     def _cached_preview_at(self, timeline_time: float):
-        """Retourne ``(chemin, début)`` pour le segment fidèle actif."""
+        """Retourne ``(chemin, début)`` pour le segment fidèle actif.
+
+        Un segment planifié reste utilisable tant que l'empreinte de **ses**
+        couches n'a pas changé ; une modification ailleurs dans le montage
+        ne l'invalide pas. Un instant qui n'est couvert par aucun segment
+        planifié (balayage) retombe sur le segment de la grille : s'il est
+        déjà en cache, il est montré sans nouveau rendu.
+        """
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return None
-        current_params = self._preview_params_hash()
-        if current_params is None:
+        try:
+            from core.preview_segments import (
+                build_segment_job,
+                segment_params_hash,
+                segment_plan,
+            )
+        except Exception:
             return None
-        jobs = getattr(self, "_last_preview_jobs", ())
-        for job in jobs:
-            if getattr(getattr(job, "key", None), "params_hash", None) != current_params:
-                # Les média, trims ou effets ont changé depuis la
-                # planification. Un segment de cache antérieur ne doit
-                # jamais remplacer la source courante.
-                continue
-            start = float(getattr(job, "start", 0.0))
-            duration = float(getattr(job, "duration", 0.0))
+        resolver = self._preview_resolver()
+        job = None
+        for candidate in getattr(self, "_last_preview_jobs", ()):
+            start = float(getattr(candidate, "start", 0.0))
+            duration = float(getattr(candidate, "duration", 0.0))
             if start <= timeline_time < start + duration:
-                try:
-                    path = engine.cache.lookup(job.key)
-                except Exception:
-                    path = None
-                if path is not None:
-                    return str(path), start
-        return None
+                job = candidate
+                break
+        try:
+            if job is not None:
+                end = job.start + job.duration
+                fresh = segment_params_hash(
+                    segment_plan(self.project, job.start, end, resolver=resolver,
+                                 timeline_index=self._ensure_timeline_index()),
+                    self.project, self._render_quality, end,
+                )
+                if getattr(getattr(job, "key", None), "params_hash", None) != fresh:
+                    # Les média, trims ou effets du segment ont changé depuis
+                    # la planification : jamais remplacer la source courante.
+                    return None
+            else:
+                planner = self._prefetch_planner()
+                job = build_segment_job(
+                    self.project, planner.index_of(timeline_time),
+                    quality=self._render_quality, resolver=resolver,
+                    timeline_index=self._ensure_timeline_index(),
+                )
+                if job is None:
+                    return None
+        except Exception:
+            return None
+        try:
+            path = engine.cache.lookup(job.key)
+        except Exception:
+            path = None
+        if path is None:
+            return None
+        return str(path), float(job.start)
 
     def _preview_params_hash(self) -> str | None:
         """Empreinte du plan courant, pour refuser un cache devenu obsolète."""

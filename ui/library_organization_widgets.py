@@ -88,24 +88,35 @@ class AssetUsageBadge:
         is_missing: ``True`` si le fichier source a disparu.
         tag_colors: Couleurs hexadécimales des tags appliqués, dans
             l'ordre de la bibliothèque.
+        proxy_state: état du proxy (``"ready"``, ``"generating"``,
+            ``"pending"``, ``"error"``, ``"stale"``, ``"none"``), ou ``""``
+            pour un média sans proxy possible (audio, image).
+        proxy_progress: avancement 0–100 pendant la génération.
+        proxy_error: message lisible si le proxy est en erreur.
     """
 
     asset_id: str
     usage_count: int = 0
     is_missing: bool = False
     tag_colors: list[str] = field(default_factory=list)
+    proxy_state: str = ""
+    proxy_progress: int = 0
+    proxy_error: str = ""
 
 
 def compute_badges(
     project,
     organization: LibraryOrganization | None = None,
+    proxy_state_for=None,
 ) -> dict[str, AssetUsageBadge]:
     """Calcule les badges pour chaque média du projet.
 
     Cette fonction encapsule le couplage entre
     :class:`LibraryOrganization` et l'analyse d'usage : on importe
     :func:`usage_map` paresseusement pour éviter les boucles
-    d'imports.
+    d'imports. ``proxy_state_for(asset) -> (état, progression) | None``
+    renseigne l'état des proxies sans que ce module connaisse le
+    gestionnaire.
     """
     from core.library_organization import usage_map
 
@@ -120,11 +131,15 @@ def compute_badges(
             tag = organization.get_tag(tag_id)
             if tag is not None:
                 tag_colors.append(tag.color)
+        proxy = proxy_state_for(asset) if proxy_state_for is not None else None
         badges[asset.id] = AssetUsageBadge(
             asset_id=asset.id,
             usage_count=usage_count,
             is_missing=is_asset_missing(asset),
             tag_colors=tag_colors,
+            proxy_state=proxy[0] if proxy else "",
+            proxy_progress=int(proxy[1]) if proxy else 0,
+            proxy_error=str(proxy[2]) if proxy and len(proxy) > 2 else "",
         )
     return badges
 
@@ -722,6 +737,9 @@ class AssetContextMenuBuilder(QWidget):
     move_to_folder_requested = Signal(str, object)
     tag_toggled = Signal(str, str, bool)
     manage_tags_requested = Signal()
+    # (identifiant du média, action) : ``generate``, ``regenerate``,
+    # ``delete``, ``cancel`` ou ``generate_project``.
+    proxy_action_requested = Signal(str, str)
 
     def __init__(
         self,
@@ -735,8 +753,12 @@ class AssetContextMenuBuilder(QWidget):
         assigned_folder_id: str | None,
         assigned_tag_ids: set[str],
         parent: QWidget | None = None,
+        proxy_state: str = "",
+        proxy_progress: int = 0,
     ) -> None:
         super().__init__(parent)
+        self.proxy_state = proxy_state
+        self.proxy_progress = proxy_progress
         self.asset_id = asset_id
         self.asset_name = asset_name
         self.is_missing = is_missing
@@ -803,6 +825,7 @@ class AssetContextMenuBuilder(QWidget):
             )
 
         menu.addSeparator()
+        self._populate_proxy_menu(menu)
 
         # Supprimer.
         action_remove = menu.addAction("Supprimer de la bibliothèque")
@@ -820,6 +843,38 @@ class AssetContextMenuBuilder(QWidget):
         prefix = "⚠ " if self.is_missing else ""
         usage = f"  ·  ×{self.usage_count}" if self.usage_count > 0 else "  ·  inutilisé"
         return f"{prefix}{self.asset_name}{usage}"
+
+    def _populate_proxy_menu(self, menu: QMenu) -> None:
+        """Sous-menu « Proxy » : actions selon l'état (vidéo uniquement)."""
+        if not self.proxy_state:
+            return
+        from ui.i18n import translate
+
+        proxy_menu = menu.addMenu(translate("proxy.menu.title"))
+        status = proxy_menu.addAction(
+            translate(f"proxy.state.{self.proxy_state}", progress=self.proxy_progress)
+        )
+        status.setEnabled(False)
+        proxy_menu.addSeparator()
+        state = self.proxy_state
+
+        def add(label_key: str, action: str) -> None:
+            entry = proxy_menu.addAction(translate(label_key))
+            entry.triggered.connect(
+                lambda _checked=False, a=action: self.proxy_action_requested.emit(self.asset_id, a)
+            )
+
+        if state in ("pending", "generating"):
+            add("proxy.action.cancel", "cancel")
+        elif state == "ready":
+            add("proxy.action.regenerate", "regenerate")
+            add("proxy.action.delete", "delete")
+        else:  # none, error, stale
+            add("proxy.action.generate", "generate")
+            if state == "stale":
+                add("proxy.action.delete", "delete")
+        proxy_menu.addSeparator()
+        add("proxy.action.generate_project", "generate_project")
 
     def _populate_move_menu(self, menu: QMenu) -> None:
         # Option racine : « Pas de dossier ».

@@ -56,6 +56,8 @@ class PreviewJob:
     start: float = 0.0
     duration: float = 2.0
     srt_path: str | None = None
+    priority: int = 100
+    """Urgence dans la file (plus petit = plus urgent), voir :mod:`core.prefetch`."""
 
 
 @dataclass
@@ -90,6 +92,12 @@ class PreviewEngine:
         self._key_clips: dict[str, str] = {}
         # token_key -> jeton de la derniere soumission (annulation ciblee).
         self._tokens: dict[str, object] = {}
+        # token_key -> debut du segment (timeline) : sert a abandonner les
+        # demandes devenues lointaines quand la tete de lecture bouge.
+        self._key_starts: dict[str, float] = {}
+        # token_key des rendus deja demarres : seuls les rendus encore
+        # en file peuvent etre abandonnes sans gaspiller un travail entame.
+        self._started: set[str] = set()
         # Fichiers produits par le rendu par defaut : seuls ceux-la
         # peuvent etre supprimes par le moteur (jamais ceux d'un
         # ``render_fn`` injecte par l'appelant).
@@ -161,8 +169,13 @@ class PreviewEngine:
             self._paused = playing
         self._notify()
 
-    def request(self, job):
+    def request(self, job, priority=None):
         """Planifie le rendu d'un segment.
+
+        ``priority`` (plus petit = plus urgent, voir :mod:`core.task_queue`)
+        place le segment courant devant le travail de fond. Une demande
+        deja en file est **remontee** si on la redemande avec une
+        priorite plus urgente (la tete de lecture s'est rapprochee).
 
         Returns:
             ``{"status": "cached", "path": ...}`` si le segment est deja
@@ -178,6 +191,8 @@ class PreviewEngine:
         from .task_queue import PRIORITY_BACKGROUND
 
         key = job.key
+        if priority is None:
+            priority = PRIORITY_BACKGROUND
         cached = self.cache.lookup(key)
         if cached is not None:
             return {"status": "cached", "path": str(cached)}
@@ -190,6 +205,9 @@ class PreviewEngine:
         with self._lock:
             if token_key in self._generations:
                 # Meme cle : deja en file ou en cours de rendu.
+                reprioritize = getattr(self.tasks, "reprioritize", None)
+                if callable(reprioritize) and token_key not in self._started:
+                    reprioritize(token_key, priority)
                 return {"status": "pending", "key": token_key}
             # Compteur monotone global : meme apres un oubli de la cle,
             # un rendu plus ancien ne peut pas se croire encore actuel.
@@ -197,6 +215,7 @@ class PreviewEngine:
             generation = self._generation_seq
             self._generations[token_key] = generation
             self._key_clips[token_key] = str(getattr(key, "clip_id", ""))
+            self._key_starts[token_key] = float(getattr(job, "start", 0.0))
             epoch = self._epoch
 
         def _run(token):
@@ -223,7 +242,7 @@ class PreviewEngine:
             finally:
                 self._release(token_key, generation, output)
 
-        token = self.tasks.submit(token_key, _run, priority=PRIORITY_BACKGROUND)
+        token = self.tasks.submit(token_key, _run, priority=priority)
         with self._lock:
             self._tokens[token_key] = token
         self._notify()
@@ -275,6 +294,7 @@ class PreviewEngine:
                 self._forget_locked(token_key)
             else:
                 self._running_count += 1
+                self._started.add(token_key)
         self._notify()
         return not stale
 
@@ -293,6 +313,56 @@ class PreviewEngine:
         self._generations.pop(token_key, None)
         self._key_clips.pop(token_key, None)
         self._tokens.pop(token_key, None)
+        self._key_starts.pop(token_key, None)
+        self._started.discard(token_key)
+
+    def cancel_outside(self, low, high):
+        """Abandonne les segments **en file** dont le debut est hors de ``[low, high]``.
+
+        Appele quand la tete de lecture se deplace vite : les segments
+        planifies pour l'ancienne position ne serviront plus et ne
+        doivent ni occuper la file ni remplir le cache. Un rendu deja
+        demarre n'est pas interrompu (le travail est entame, le resultat
+        pourra resservir). Retourne le nombre de demandes abandonnees.
+        """
+        low, high = float(low), float(high)
+        with self._lock:
+            victims = [
+                token_key
+                for token_key, start in self._key_starts.items()
+                if token_key not in self._started and not (low <= start <= high)
+            ]
+            tokens = [
+                self._tokens[token_key]
+                for token_key in victims
+                if token_key in self._tokens
+            ]
+            for token_key in victims:
+                self._forget_locked(token_key)
+        cancel_key = getattr(self.tasks, "cancel_key", None)
+        if callable(cancel_key):
+            for token_key in victims:
+                try:
+                    cancel_key(token_key)
+                except Exception:
+                    pass
+        for token in tokens:
+            try:
+                token.cancel()
+            except Exception:
+                pass
+        if victims:
+            self._notify()
+        return len(victims)
+
+    def pending_starts(self):
+        """Debuts (timeline) des segments encore en file, tries (diagnostic, tests)."""
+        with self._lock:
+            return sorted(
+                start
+                for token_key, start in self._key_starts.items()
+                if token_key not in self._started
+            )
 
     def _stale(self, token, token_key, epoch, generation):
         """Le rendu a-t-il ete remplace, annule ou invalide ?"""
@@ -458,6 +528,8 @@ class PreviewEngine:
             self._generations.clear()
             self._key_clips.clear()
             self._tokens.clear()
+            self._key_starts.clear()
+            self._started.clear()
             subtitles = tuple(self._temporary_subtitles)
             self._temporary_subtitles.clear()
         try:

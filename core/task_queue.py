@@ -107,6 +107,26 @@ class TaskQueue:
             self._by_key[key] = task
         return token
 
+    def contains(self, key: str) -> bool:
+        """``True`` si une tâche de cette clé est encore **en attente**."""
+        with self._lock:
+            return key in self._by_key
+
+    def reprioritize(self, key: str, priority: int) -> bool:
+        """Change la priorité d'une tâche encore en attente.
+
+        Retourne ``False`` si la tâche n'existe plus (déjà démarrée,
+        annulée) : l'appelant n'a alors rien à faire. Sert au
+        préchargement : quand la tête de lecture se rapproche d'un
+        segment déjà planifié, il passe devant le travail lointain.
+        """
+        with self._lock:
+            task = self._by_key.get(key)
+            if task is None:
+                return False
+            task.priority = int(priority)
+            return True
+
     def cancel_key(self, key: str) -> None:
         with self._lock:
             task = self._by_key.pop(key, None)

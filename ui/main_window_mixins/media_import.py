@@ -124,7 +124,8 @@ class MediaImportMixin:
         if asset is None:
             return
         if asset.media_type == "video":
-            self.preview_panel.load_video(asset.path)
+            # Aperçu libre de la bibliothèque : proxy valide si disponible.
+            self.preview_panel.load_video(self.proxies.resolve(asset.path))
 
     def add_asset_to_timeline(self, asset_id: str) -> None:
         """Ajoute le média sélectionné à la piste adaptée à son type.

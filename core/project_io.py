@@ -54,6 +54,7 @@ import json
 import os
 import shutil
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
@@ -565,6 +566,47 @@ def _deserialize_marker(data: dict[str, Any]) -> Marker:
     )
 
 
+@lru_cache(maxsize=256)
+def _text_style_from_key(key: tuple):
+    from .text_style import TextStyle
+
+    return TextStyle.from_dict(dict(key))
+
+
+def _shared_text_style(raw):
+    """``TextStyle`` partagé entre clips au style identique.
+
+    Presque tous les clips portent le même style (le style standard) :
+    le valider et le construire pour chacun des milliers de clips d'un
+    montage coûtait ~40 % du chargement. ``TextStyle`` est **immuable**
+    (dataclass gelée) : plusieurs clips peuvent donc référencer la même
+    instance sans risque d'effet de bord.
+    """
+    from .text_style import TextStyle
+
+    if isinstance(raw, dict):
+        try:
+            return _text_style_from_key(tuple(sorted(raw.items())))
+        except TypeError:  # valeur non hashable (liste, dict imbriqué) : pas de partage
+            pass
+    return TextStyle.from_dict(raw)
+
+
+@lru_cache(maxsize=256)
+def _compositing_from_json(text: str):
+    return compositing_from_dict(json.loads(text))
+
+
+def _shared_compositing(raw):
+    """``Compositing`` partagé (immuable) entre clips à la composition identique."""
+    if isinstance(raw, dict):
+        try:
+            return _compositing_from_json(json.dumps(raw, sort_keys=True))
+        except (TypeError, ValueError):
+            pass
+    return compositing_from_dict(raw)
+
+
 def _deserialize_track(
     data: dict[str, Any], *, project_root: Path | None = None,
 ) -> Track:
@@ -639,14 +681,11 @@ def _deserialize_track(
             project_root=project_root,
         )
         clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
-        clip_kwargs["compositing"] = compositing_from_dict(raw_clip.get("compositing"))
+        clip_kwargs["compositing"] = _shared_compositing(raw_clip.get("compositing"))
         # Style texte (tâche 24) : rétrocompatible — un clip sans la
         # clé ``text_style`` reçoit le style standard par défaut, ce
         # qui correspond exactement au rendu historique.
-        from .text_style import TextStyle
-
-        raw_style = raw_clip.get("text_style")
-        clip_kwargs["text_style"] = TextStyle.from_dict(raw_style)
+        clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
         clips.append(Clip(**clip_kwargs))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS

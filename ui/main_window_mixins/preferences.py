@@ -50,7 +50,20 @@ class PreferencesMixin:
             scopes_levels=scopes_levels,
             scopes_alerts_enabled=scopes_alerts,
             shortcuts=self.shortcuts.overrides(),
+            **self._performance_settings_fields(),
         )
+
+    def _performance_settings_fields(self) -> dict:
+        """Réglages de performance courants (défauts avant la création des gestionnaires)."""
+        proxies = getattr(self, "proxies", None)
+        manager = getattr(self, "cache_manager", None)
+        fields: dict = {}
+        if proxies is not None:
+            fields["proxies_enabled"] = proxies.enabled
+            fields["proxy_profile"] = proxies.profile.id
+        if manager is not None:
+            fields["cache_max_gb"] = manager.max_bytes / (1024 ** 3)
+        return fields
 
     def show_preferences(self) -> None:
         """Ouvre la fenêtre ``Préférences``."""
@@ -61,6 +74,7 @@ class PreferencesMixin:
             current_preview_quality=self.runtime.requested_quality,
             current_render_quality=self._render_quality,
             shortcut_manager=self.shortcuts,
+            performance_host=self,
             parent=self,
         )
         dialog.theme_changed.connect(self.on_user_setting_changed)
@@ -88,6 +102,10 @@ class PreferencesMixin:
                 master_muted=snapshot.master_muted,
                 # Les raccourcis ont leur propre réinitialisation.
                 shortcuts=snapshot.shortcuts,
+                # Proxies et cache ont leur onglet et leurs propres purges.
+                proxies_enabled=snapshot.proxies_enabled,
+                proxy_profile=snapshot.proxy_profile,
+                cache_max_gb=snapshot.cache_max_gb,
             )
         )
 
@@ -134,6 +152,8 @@ class PreferencesMixin:
         mixer = getattr(self, "mixer_panel", None)
         if mixer is not None:
             mixer.set_master(self._master_gain_db, self._master_muted)
+        # Proxies et cache (aperçu seulement : l'export lit toujours les originaux).
+        self._apply_performance_settings(settings)
         # Application de la langue.
         if i18n.current_language() != settings.language:
             i18n.set_language(settings.language)

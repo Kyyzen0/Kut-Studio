@@ -65,6 +65,7 @@ from ui.i18n import (
     translate,
     unsubscribe,
 )
+from ui.performance_settings import PerformanceSettingsTab
 from ui.shortcut_manager import ShortcutManager
 from ui.shortcuts_editor import ShortcutsEditor
 
@@ -198,6 +199,7 @@ class PreferencesDialog(QDialog):
         current_render_quality: str = "standard",
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
+        performance_host=None,
     ) -> None:
         """Construit le dialogue sur l'état courant de l'application.
 
@@ -209,6 +211,8 @@ class PreferencesDialog(QDialog):
         """
         super().__init__(parent)
         self._shortcut_manager = shortcut_manager
+        self._performance_host = performance_host
+        self.performance_tab: PerformanceSettingsTab | None = None
         self.shortcuts_editor: ShortcutsEditor | None = None
         self.tabs: QTabWidget | None = None
         self.current_theme = current_theme
@@ -244,7 +248,7 @@ class PreferencesDialog(QDialog):
 
         # Sans gestionnaire de raccourcis, le dialogue garde sa forme
         # historique (pas d'onglets).
-        if self._shortcut_manager is None:
+        if self._shortcut_manager is None and self._performance_host is None:
             layout = root
         else:
             self.tabs = QTabWidget()
@@ -252,11 +256,13 @@ class PreferencesDialog(QDialog):
             layout = QVBoxLayout(general_page)
             layout.setContentsMargins(0, 12, 0, 0)
             layout.setSpacing(14)
-            self.shortcuts_editor = ShortcutsEditor(self._shortcut_manager)
-            shortcuts_page = QWidget()
-            shortcuts_layout = QVBoxLayout(shortcuts_page)
-            shortcuts_layout.setContentsMargins(0, 12, 0, 0)
-            shortcuts_layout.addWidget(self.shortcuts_editor)
+            shortcuts_page = None
+            if self._shortcut_manager is not None:
+                self.shortcuts_editor = ShortcutsEditor(self._shortcut_manager)
+                shortcuts_page = QWidget()
+                shortcuts_layout = QVBoxLayout(shortcuts_page)
+                shortcuts_layout.setContentsMargins(0, 12, 0, 0)
+                shortcuts_layout.addWidget(self.shortcuts_editor)
             # Défilement : les cinq groupes ne tiennent pas toujours dans
             # la hauteur de l'onglet, et ne doivent jamais être écrasés.
             general_scroll = QScrollArea()
@@ -271,8 +277,15 @@ class PreferencesDialog(QDialog):
                 " { background: transparent; }"
             )
             general_scroll.setWidget(general_page)
+            self._tab_order: list[str] = ["general"]
             self.tabs.addTab(general_scroll, "")
-            self.tabs.addTab(shortcuts_page, "")
+            if shortcuts_page is not None:
+                self.tabs.addTab(shortcuts_page, "")
+                self._tab_order.append("shortcuts")
+            if self._performance_host is not None:
+                self.performance_tab = PerformanceSettingsTab(self._performance_host)
+                self.tabs.addTab(self.performance_tab, "")
+                self._tab_order.append("performance")
             root.addWidget(self.tabs, 1)
             self.setMinimumSize(680, 680)
 
@@ -372,10 +385,18 @@ class PreferencesDialog(QDialog):
                 radio = buttons.get(code)
                 if radio is not None:
                     radio.setText(translate(key))
-        if self.tabs is not None and self.shortcuts_editor is not None:
-            self.tabs.setTabText(0, translate("shortcuts.tab.general"))
-            self.tabs.setTabText(1, translate("shortcuts.tab.shortcuts"))
-            self.shortcuts_editor.retranslate()
+        if self.tabs is not None:
+            titles = {
+                "general": "shortcuts.tab.general",
+                "shortcuts": "shortcuts.tab.shortcuts",
+                "performance": "perf.tab",
+            }
+            for index, name in enumerate(self._tab_order):
+                self.tabs.setTabText(index, translate(titles[name]))
+            if self.shortcuts_editor is not None:
+                self.shortcuts_editor.retranslate()
+            if self.performance_tab is not None:
+                self.performance_tab.retranslate()
         self.restore_button.setText(translate("prefs.restore_defaults"))
         self.close_button.setText(translate("prefs.close"))
 

@@ -121,6 +121,15 @@ class PreviewPanel(QWidget):
         )
         self.preview_effects_overlay.hide()
 
+        # Avis discret quand l'aperçu a été réduit temporairement (qualité Auto).
+        self.preview_quality_notice = QLabel()
+        self.preview_quality_notice.setAlignment(Qt.AlignCenter)
+        self.preview_quality_notice.setStyleSheet(
+            f"background: rgba(120, 80, 0, 200); color: {COLORS['text']};"
+            " border-radius: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600;"
+        )
+        self.preview_quality_notice.hide()
+
         # Entête ---------------------------------------------------------------
         top_header = QWidget()
         top_header.setFixedHeight(40)
@@ -248,6 +257,11 @@ class PreviewPanel(QWidget):
             0, 0,
             Qt.AlignRight | Qt.AlignTop,
         )
+        preview_layout.addWidget(
+            self.preview_quality_notice,
+            0, 0,
+            Qt.AlignLeft | Qt.AlignTop,
+        )
 
         # Layout principal ------------------------------------------------------
         layout = QVBoxLayout(self)
@@ -295,8 +309,17 @@ class PreviewPanel(QWidget):
         self.player.setPosition(int(source_time_seconds * 1000))
 
     def set_preview_divisor(self, divisor: int) -> None:
-        """Mémorise le niveau d'aperçu demandé par le profil."""
+        """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""
         self.preview_divisor = max(1, int(divisor))
+
+    def set_quality_notice(self, text: str | None) -> None:
+        """Affiche (ou masque) l'avis « aperçu réduit » du mode Auto."""
+        if text:
+            self.preview_quality_notice.setText(text)
+            self.preview_quality_notice.show()
+            self.preview_quality_notice.raise_()
+        else:
+            self.preview_quality_notice.hide()
 
     def set_render_state(self, computing: bool, label: str = "") -> None:
         """Indicateur 'Calcul de l'aperçu' (tache 30, non bloquant)."""
