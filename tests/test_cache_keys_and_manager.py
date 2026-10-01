@@ -214,7 +214,9 @@ def test_files_added_by_another_process_are_picked_up_by_stats(tmp_path):
     cache = DiskPreviewCache(directory=tmp_path / "c", budget_bytes=10 ** 9)
     _store(cache, 0)
     cache.path_for(_key(9)).write_bytes(b"z" * 40)   # écrit hors du cache
-    os.utime(cache.directory, None)
+    before = os.stat(cache.directory).st_mtime_ns
+    # Date explicitement différente : la résolution des horodatages (Windows) peut masquer un ajout immédiat.
+    os.utime(cache.directory, ns=(before + 10**9, before + 10**9))
     stats = cache.stats()
     assert stats["entries"] == 2 and stats["bytes"] == 140
 

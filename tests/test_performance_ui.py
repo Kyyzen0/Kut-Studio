@@ -675,6 +675,8 @@ def test_regenerating_a_proxy_changes_the_segment_key_even_though_its_path_is_st
     qtbot, monkeypatch, tmp_path, fake_proxies
 ):
     window = _window(qtbot, monkeypatch, tmp_path)
+    # Le faux proxy n'est pas un vrai média : ne jamais le donner au lecteur Qt (plantage possible en CI).
+    monkeypatch.setattr(window.preview_panel, "preview_at", lambda *_a, **_k: None)
     window.generate_proxy_for_asset("v0")
     info = _wait_state(qtbot, window, 0, ProxyState.READY)
     before = window._preview_segment_jobs(1.0)[0]

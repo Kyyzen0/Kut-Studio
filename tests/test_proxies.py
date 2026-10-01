@@ -588,13 +588,13 @@ def test_cancel_and_shutdown_really_kill_the_ffmpeg_process(tmp_path, source, mo
     manager = ProxyManager(tmp_path / "proxies", ffmpeg_command=lambda: [sys.executable, str(FAKE_FFMPEG)],
                            memo=SignatureMemo(ttl=0.0), disk_ttl=0.0)
     manager.request(source, duration=60.0)
-    assert _wait(lambda: pid_file.exists() and manager.active_process_ids())
+    assert _wait(lambda: pid_file.exists() and pid_file.read_text().strip() and manager.active_process_ids())
     pid = int(pid_file.read_text())
     assert manager.cancel(source)
     assert _wait(lambda: not _pid_alive(pid)) and _wait(lambda: manager.info(source).state is ProxyState.NONE)
     pid_file.unlink()
     manager.request(source, duration=60.0, force=True)
-    assert _wait(lambda: pid_file.exists() and manager.active_process_ids())
+    assert _wait(lambda: pid_file.exists() and pid_file.read_text().strip() and manager.active_process_ids())
     pid = int(pid_file.read_text())
     assert manager.shutdown(timeout=10.0) is True
     assert not _pid_alive(pid)
