@@ -16,13 +16,13 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 ## ✨ Features
 
 - 📁 **Project library** — Import, browse, and select project media from the **Media** bin.
-- 🗂️ **Library navigation** — Dedicated sections for Media, Audio, Text, Effects, and Transitions. Audio, Text, Effects, and Transitions are currently interface placeholders.
+- 🗂️ **Library navigation** — Dedicated sections for Media, Audio, Text, Effects, and Transitions. Text, Effects, and Transitions provide searchable preset libraries with built-in and user presets.
 - 🎥 **Preview monitor** — `QMediaPlayer` playback with play, pause, stop, and seek controls.
 - ⚙️ **Properties inspector** — Live brightness, contrast, saturation, and volume controls, plus a subtitle editor synchronized with the playhead.
-- 🎞️ **Multi-track timeline** — Two video tracks (V1 / V2) and a subtitle track (S1), with cut-at-playhead and delete-clip actions.
+- 🎞️ **Multi-track timeline** — Video (V1 / V2), audio (A1) and subtitle (S1) tracks, with cut-at-playhead, delete-clip, markers, snapping and ripple editing.
 - 🔀 **Transition preview** — One-click crossfade preview between clips.
 - 📤 **Export engine** — Export the timeline to `.mp4` or `.mov` using FFmpeg.
-- ⌨️ **Keyboard shortcuts** — `Space` / `K` for play-pause, `J` / `←` for back 2 seconds, and `L` / `→` for forward 2 seconds.
+- ⌨️ **Keyboard shortcuts** — `Space` / `K` for play-pause, `←` / `→` to step one frame, `Shift + ←` / `Shift + →` to jump one second, and tools on `V`, `B`, `R`, `Y`, `U`.
 - 🎨 **Custom dark theme** — Centralized colors and styles in `ui/theme.py`.
 
 ## 🧰 Tech stack
@@ -148,11 +148,17 @@ Kut-Studio/
 | Shortcut | Action |
 | --- | --- |
 | `Space` / `K` | Play / pause |
-| `←` / `J` | Seek back 2 seconds |
-| `→` / `L` | Seek forward 2 seconds |
+| `←` / `→` | Step one frame back / forward |
+| `Shift + ←` / `Shift + →` | Jump one second back / forward |
+| `J` / `L` | Shuttle back / forward |
+| `V` / `B` / `R` / `Y` / `U` | Select / blade / roll / slip / slide tool |
+| `S` / `N` | Toggle snapping / ripple |
+| `M` / `[` / `]` | Add marker / previous / next marker |
+| `Ctrl + K` | Cut at playhead |
+| `+` / `-` / `Ctrl + 0` | Zoom in / out / fit |
 | `Ctrl + O` | Open a video |
-| `Ctrl + N` | New project *(placeholder)* |
-| `Ctrl + S` | Save project *(placeholder)* |
+| `Ctrl + N` | New project |
+| `Ctrl + S` | Save project (`.kut`) |
 
 ## 🧪 Tests
 
@@ -165,13 +171,9 @@ The suite covers timeline operations and the FFmpeg export pipeline, including i
 
 ## 🛣️ Roadmap
 
-- Functional audio, text, effect, and transition libraries
-- Audio tracks
-- Native `.kut` project save and load
 - More export, transition, and effect options
-- Markers, chapters, magnetic timeline, and snapping
+- Chapters
 - Configurable keyboard shortcuts
-- Continuous integration
 
 ## 🤝 Contributing
 
@@ -190,13 +192,13 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 ## ✨ Fonctionnalités
 
 - 📁 **Bibliothèque de projet** — Importez, parcourez et sélectionnez les médias du bin **Médias**.
-- 🗂️ **Navigation de bibliothèque** — Cinq sections : Médias, Audio, Texte, Effets et Transitions. Les quatre dernières sont actuellement des placeholders d’interface.
+- 🗂️ **Navigation de bibliothèque** — Cinq sections : Médias, Audio, Texte, Effets et Transitions. Texte, Effets et Transitions proposent des bibliothèques de préréglages avec recherche, presets intégrés et presets utilisateur.
 - 🎥 **Moniteur de prévisualisation** — Lecture via `QMediaPlayer`, avec lecture, pause, arrêt et déplacement dans la vidéo.
 - ⚙️ **Inspecteur de propriétés** — Réglages en direct de luminosité, contraste, saturation et volume, avec éditeur de sous-titres synchronisé à la tête de lecture.
-- 🎞️ **Timeline multi-pistes** — Deux pistes vidéo (V1 / V2) et une piste de sous-titres (S1), avec coupe à la tête de lecture et suppression de clip.
+- 🎞️ **Timeline multi-pistes** — Pistes vidéo (V1 / V2), audio (A1) et sous-titres (S1), avec coupe à la tête de lecture, suppression de clip, marqueurs, magnétisme et montage ripple.
 - 🔀 **Prévisualisation de transition** — Fondu enchaîné entre deux clips.
 - 📤 **Moteur d’export** — Exporte la timeline en `.mp4` ou `.mov` via FFmpeg.
-- ⌨️ **Raccourcis clavier** — `Espace` / `K` pour lecture-pause, `J` / `←` pour revenir de 2 s et `L` / `→` pour avancer de 2 s.
+- ⌨️ **Raccourcis clavier** — `Espace` / `K` pour lecture-pause, `←` / `→` pour avancer d’une image, `Maj + ←` / `Maj + →` pour sauter d’une seconde, et les outils sur `V`, `B`, `R`, `Y`, `U`.
 - 🎨 **Thème sombre** — Couleurs et styles centralisés dans `ui/theme.py`.
 
 ## 🧰 Stack technique
@@ -282,11 +284,17 @@ outils sont adaptés à chaque système.
 | Raccourci | Action |
 | --- | --- |
 | `Espace` / `K` | Lecture / pause |
-| `←` / `J` | Reculer de 2 secondes |
-| `→` / `L` | Avancer de 2 secondes |
+| `←` / `→` | Reculer / avancer d’une image |
+| `Maj + ←` / `Maj + →` | Reculer / avancer d’une seconde |
+| `J` / `L` | Navette arrière / avant |
+| `V` / `B` / `R` / `Y` / `U` | Outil sélection / lame / roll / slip / slide |
+| `S` / `N` | Activer le magnétisme / le ripple |
+| `M` / `[` / `]` | Ajouter un marqueur / marqueur précédent / suivant |
+| `Ctrl + K` | Couper à la tête de lecture |
+| `+` / `-` / `Ctrl + 0` | Zoom avant / arrière / ajusté |
 | `Ctrl + O` | Ouvrir une vidéo |
-| `Ctrl + N` | Nouveau projet *(placeholder)* |
-| `Ctrl + S` | Enregistrer le projet *(placeholder)* |
+| `Ctrl + N` | Nouveau projet |
+| `Ctrl + S` | Enregistrer le projet (`.kut`) |
 
 ## 🧪 Tests
 
@@ -299,13 +307,9 @@ La suite couvre les opérations de timeline et le pipeline d’export FFmpeg, y 
 
 ## 🛣️ Feuille de route
 
-- Bibliothèques Audio, Texte, Effets et Transitions fonctionnelles
-- Pistes audio
-- Sauvegarde et chargement de projets `.kut`
 - Plus d’options d’export, de transitions et d’effets
-- Marqueurs, chapitres, timeline magnétique et snap
+- Chapitres
 - Raccourcis clavier configurables
-- Intégration continue
 
 ## 🤝 Contribution
 
