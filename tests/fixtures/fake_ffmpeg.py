@@ -11,11 +11,17 @@ Comportement réglable par variables d'environnement (héritées par le
 - ``FAKE_FFMPEG_FAIL`` : si défini, quitte en erreur avec ce message ;
 - ``FAKE_FFMPEG_FAIL_ON`` : sous-chaîne ; échoue si elle figure dans le
   chemin de sortie (permet de faire échouer un seul job d'une file) ;
-- ``FAKE_FFMPEG_PID_FILE`` : y écrit son PID (vérification d'orphelins).
+- ``FAKE_FFMPEG_PID_FILE`` : y écrit son PID (vérification d'orphelins) ;
+- ``FAKE_FFMPEG_FAIL_ENCODER`` : sous-chaîne ; échoue **au lancement** (aucune image
+  encodée) si un argument la contient, comme un encodeur matériel qui ne s'initialise
+  pas (``videotoolbox``…) ;
+- ``FAKE_FFMPEG_FAIL_ENCODER_LATE`` : idem mais après quelques images de progression ;
+- ``FAKE_FFMPEG_ARGS_FILE`` : ajoute une ligne JSON avec les arguments de chaque lancement.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -23,6 +29,16 @@ from pathlib import Path
 
 
 def main(arguments: list[str]) -> int:
+    args_file = os.environ.get("FAKE_FFMPEG_ARGS_FILE")
+    if args_file:
+        with open(args_file, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(arguments) + "\n")
+    fail_encoder = os.environ.get("FAKE_FFMPEG_FAIL_ENCODER")
+    if fail_encoder and any(fail_encoder in argument for argument in arguments):
+        print(f"Error initializing the encoder {fail_encoder}", file=sys.stderr, flush=True)
+        return 1
+    late_encoder = os.environ.get("FAKE_FFMPEG_FAIL_ENCODER_LATE")
+    late_failure = bool(late_encoder and any(late_encoder in argument for argument in arguments))
     output_path = ""
     for argument in arguments:
         if argument.startswith("FAIL"):
@@ -50,6 +66,9 @@ def main(arguments: list[str]) -> int:
         print(f"out_time_us={elapsed_us}", flush=True)
         print(f"out_time_ms={elapsed_us}", flush=True)
         time.sleep(0.05)
+        if late_failure and step >= 3:
+            print("Encoder stopped unexpectedly", file=sys.stderr, flush=True)
+            return 1
 
     if output_path:
         destination = Path(output_path)

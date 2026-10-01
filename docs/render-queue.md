@@ -83,20 +83,13 @@ plateformes. Annuler puis relancer est le comportement honnête.
 Signaux : `jobs_changed`, `job_updated(id)`, `overall_progress_changed`,
 `run_state_changed`, `run_finished(summary)`.
 
-## Accélération matérielle (préparée, non implémentée)
+## Accélération matérielle
 
-`HardwareEncoder` (`cpu`, `auto`, `videotoolbox`, `nvenc`, `qsv`, `amf`, `vaapi`)
-est déjà accepté et sérialisé par `RenderPresetSpec.hardware`,
-`RenderJob.hardware` et `ExportRequest.hardware`. Toute valeur autre que CPU
-retombe aujourd'hui sur `libx264` / `prores_ks`, avec la raison dans
-`RenderResult.fallback_reason`.
-
-Pour brancher un encodeur, **un seul fichier** : `core/video_encoders.py`.
-
-1. écrire un constructeur `_build_<encodeur>(codec, speed_preset, quality)` ;
-2. l'enregistrer dans `_BUILDERS[(codec, HardwareEncoder.X)]` ;
-3. déclarer sa disponibilité (`AVAILABLE_BY_DEFAULT` ou détection via
-   `ffmpeg -encoders` dans `is_available`) ;
-4. traiter `AUTO` dans `_auto_choice`.
+Voir [`hardware-encoding.md`](hardware-encoding.md) : détection réelle des
+encodeurs (VideoToolbox, NVENC, QSV, AMF, VAAPI), mode Auto, repli CPU,
+intention de qualité, diagnostics et procédure pour ajouter un backend.
+`RenderJob` mémorise l'encodeur réellement utilisé (`encoder`, `hardware_used`,
+`fallback_reason`, `diagnostics`) ; `RenderQueue.retry_on_cpu(id)` relance en CPU
+un job dont l'encodeur explicite a échoué (`ErrorKind.ENCODER`).
 
 L'interface (sélecteur d'encodeur dans les presets) viendra avec ce chantier.

@@ -17,9 +17,10 @@ Proxy sont fournis ; en ajouter un (DNxHR LB, MJPEG…) = une entrée de
 table, sans toucher au gestionnaire.
 
 Les arguments d'encodage vidéo passent par
-:func:`core.video_encoders.resolve_video_encoder` : le futur encodage
-matériel des proxies sera donc branché au même endroit que celui de
-l'export (voir ``docs/render-queue.md``).
+:func:`core.video_encoders.resolve_video_encoder`. Les proxies restent
+**toujours encodés en CPU** : l'accélération matérielle ne concerne pour
+l'instant que l'export (le champ ``hardware`` du profil est conservé et
+sérialisé pour un futur chantier, mais ne change pas la commande).
 
 Ajouter un profil
 -----------------
@@ -63,7 +64,7 @@ def _h264_args(profile: ProxyProfile) -> list[str]:
         "h264",
         speed_preset=profile.speed_preset,
         quality=profile.quality,
-        hardware=profile.hardware,
+        hardware=HardwareEncoder.CPU,  # proxies : CPU uniquement (voir le module)
     )
     # GOP court : le déplacement dans le proxy (scrubbing) ne doit pas
     # décoder des dizaines d'images depuis la dernière image clé.
@@ -72,7 +73,7 @@ def _h264_args(profile: ProxyProfile) -> list[str]:
 
 def _prores_proxy_args(profile: ProxyProfile) -> list[str]:
     choice = resolve_video_encoder(
-        "prores_ks", quality=profile.quality, hardware=profile.hardware
+        "prores_ks", quality=profile.quality, hardware=HardwareEncoder.CPU
     )
     return list(choice.args)
 

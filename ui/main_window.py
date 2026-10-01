@@ -85,6 +85,7 @@ from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMix
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
+from ui.main_window_mixins.encoding import EncodingMixin
 from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
@@ -123,6 +124,7 @@ class MainWindow(
     TrackManagementMixin,
     PresetsMixin,
     PerformanceMixin,
+    EncodingMixin,
     FaithfulPreviewMixin,
     LibraryOrganizationMixin,
     SubtitlesGraphicsMixin,
@@ -168,6 +170,7 @@ class MainWindow(
         )
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
+        self._init_encoding(loaded_settings)
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
         self._autosave = AutosaveCoordinator()
@@ -359,6 +362,11 @@ class MainWindow(
         self.export_panel.set_queue(self.render_queue)
         self.export_panel.add_to_queue_requested.connect(self.enqueue_export)
         self.render_queue.run_finished.connect(self._on_render_run_finished)
+        self.render_queue.encoder_fallback.connect(self._on_encoder_fallback)
+        # Encodeurs matériels : options du panneau Export, détection en tâche de fond.
+        self.export_panel.set_default_encoder(self._export_encoder)
+        self.export_panel.encoder_changed.connect(self.set_export_encoder)
+        self._start_hardware_detection()
         # Dernier filet : aucun FFmpeg ne survit à la fin de l'application.
         QApplication.instance().aboutToQuit.connect(self.render_queue.shutdown)
 
@@ -770,6 +778,7 @@ class MainWindow(
             event.ignore()
             return
         self.render_queue.shutdown()
+        self._shutdown_encoding()
         # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
         if getattr(self, "proxies", None) is not None:
             self._shutdown_proxies()

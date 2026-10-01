@@ -62,6 +62,7 @@ class ErrorKind:
     INTERRUPTED = "interrupted"  # application arrêtée pendant le rendu
     SNAPSHOT_MISSING = "snapshot_missing"
     IO = "io"  # écriture ou renommage du fichier final
+    ENCODER = "encoder"  # encodeur matériel choisi explicitement indisponible ou en échec
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,10 @@ class RenderResult:
                 str(data["fallback_reason"]) if data.get("fallback_reason") else None
             ),
         )
+
+
+def _codec_family(video_codec: str) -> str:
+    return {"libx264": "h264", "prores": "prores_ks"}.get(str(video_codec).lower(), str(video_codec))
 
 
 def _int(value: object, default: int = 0) -> int:
@@ -184,6 +189,14 @@ class RenderJob:
     error_message: str = ""
     error_kind: str = ""
     result: RenderResult | None = None
+    encoder: str = ""
+    """Encodeur FFmpeg réellement lancé (``h264_videotoolbox``…), connu dès le démarrage."""
+    hardware_used: str = ""
+    """Famille réellement utilisée (``cpu``, ``videotoolbox``…) ; vide avant le lancement."""
+    fallback_reason: str = ""
+    """Raison d'un repli automatique sur le CPU, s'il a eu lieu."""
+    diagnostics: str = ""
+    """Fin de la sortie d'erreur FFmpeg d'un essai matériel échoué (support)."""
 
     # -- Création -------------------------------------------------------------------
 
@@ -249,6 +262,29 @@ class RenderJob:
         return self.is_finished
 
     @property
+    def encoder_label(self) -> str:
+        """Libellé discret de l'encodeur : ``H.264 · VideoToolbox``, ``H.264 · CPU``.
+
+        Vide tant que le job n'a jamais été lancé (aucun encodeur n'est encore
+        connu : afficher celui *demandé* laisserait croire qu'il est utilisé).
+        """
+        from .video_encoders import encoder_label
+
+        used = self.hardware_used or (self.result.hardware_used if self.result else "")
+        if not used:
+            return ""
+        return encoder_label(_codec_family(self.video_codec), coerce_hardware(used))
+
+    @property
+    def can_retry_on_cpu(self) -> bool:
+        """Échec d'un encodeur explicite : relancer en CPU est proposé."""
+        return (
+            self.status is JobStatus.FAILED
+            and self.error_kind == ErrorKind.ENCODER
+            and coerce_hardware(self.hardware) is not HardwareEncoder.CPU
+        )
+
+    @property
     def elapsed_seconds(self) -> float | None:
         """Durée de rendu connue (en cours ou terminé), ``None`` avant le début."""
         if self.started_at is None:
@@ -289,6 +325,13 @@ class RenderJob:
         self.error_message = ""
         self.error_kind = ""
         self.result = None
+        self._clear_encoder_info()
+
+    def _clear_encoder_info(self) -> None:
+        self.encoder = ""
+        self.hardware_used = ""
+        self.fallback_reason = ""
+        self.diagnostics = ""
 
     def mark_rendering(self, now: float | None = None) -> None:
         self.status = JobStatus.RENDERING
@@ -298,6 +341,7 @@ class RenderJob:
         self.error_message = ""
         self.error_kind = ""
         self.result = None
+        self._clear_encoder_info()
 
     def mark_completed(self, result: RenderResult, now: float | None = None) -> None:
         self.status = JobStatus.COMPLETED
@@ -349,6 +393,10 @@ class RenderJob:
             "error_message": self.error_message,
             "error_kind": self.error_kind,
             "result": self.result.to_dict() if self.result else None,
+            "encoder": self.encoder,
+            "hardware_used": self.hardware_used,
+            "fallback_reason": self.fallback_reason,
+            "diagnostics": self.diagnostics,
         }
 
     @classmethod
@@ -406,6 +454,12 @@ class RenderJob:
             error_message=str(data.get("error_message") or ""),
             error_kind=str(data.get("error_kind") or ""),
             result=RenderResult.from_dict(data.get("result")),
+            encoder=str(data.get("encoder") or ""),
+            hardware_used=(
+                coerce_hardware(data["hardware_used"]).value if data.get("hardware_used") else ""
+            ),
+            fallback_reason=str(data.get("fallback_reason") or ""),
+            diagnostics=str(data.get("diagnostics") or "")[-800:],
         )
 
 

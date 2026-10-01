@@ -255,13 +255,12 @@ def test_every_planned_hardware_family_is_accepted_by_the_data_model():
     assert coerce_hardware("garbage") is HardwareEncoder.CPU
 
 
-def test_hardware_request_falls_back_to_cpu_with_a_reason_today():
+def test_cpu_choice_is_unchanged_and_unknown_codecs_are_rejected():
     cpu = resolve_video_encoder("h264", speed_preset="medium", quality=20)
     assert cpu.args == ("-c:v", "libx264", "-preset", "medium", "-crf", "20")
     assert cpu.fallback_reason is None
-    nvenc = resolve_video_encoder("h264", quality=20, hardware="nvenc")
-    assert nvenc.used is HardwareEncoder.CPU and nvenc.requested is HardwareEncoder.NVENC
-    assert nvenc.encoder == "libx264" and "nvenc" in nvenc.fallback_reason
+    # Sans capacités matérielles (ici : désactivées par la configuration des tests),
+    # ``auto`` retombe sur le CPU sans bruit, et un encodeur explicite est refusé.
     auto = resolve_video_encoder("h264", quality=20, hardware="auto")
     assert auto.used is HardwareEncoder.CPU and auto.fallback_reason is None
     with pytest.raises(ValueError):

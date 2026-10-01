@@ -15,7 +15,13 @@ from PySide6.QtWidgets import QMessageBox
 from core.export_engine import ExportEngine
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_job import JobStatus
-from core.render_presets import CUSTOM_PRESET_ID, builtin_presets, default_preset, get_preset
+from core.render_presets import (
+    CUSTOM_PRESET_ID,
+    builtin_presets,
+    default_preset,
+    get_preset,
+    with_hardware,
+)
 from core.render_queue import RenderQueue, partial_path_for
 from core.render_queue_store import RenderQueueStore
 from ui import i18n
@@ -304,7 +310,8 @@ def export_panel(qtbot):
 def test_export_panel_offers_every_required_preset_and_custom(export_panel):
     ids = [export_panel.preset_combo.itemData(i) for i in range(export_panel.preset_combo.count())]
     assert ids == [s.id for s in builtin_presets()] + [CUSTOM_PRESET_ID]
-    assert export_panel.current_spec() == default_preset()
+    # Le sélecteur d'encodeur est « Automatique » par défaut ; le reste du preset est inchangé.
+    assert export_panel.current_spec() == with_hardware(default_preset(), "auto")
 
 
 def test_choosing_a_preset_changes_the_request_the_engine_receives(export_panel, tmp_path):
@@ -316,7 +323,9 @@ def test_choosing_a_preset_changes_the_request_the_engine_receives(export_panel,
         spec = get_preset(preset_id)
         request = export_panel.build_request(plan, str(tmp_path / "x.mp4"))
         assert request.preset.resolution == spec.resolution and request.fps == spec.fps
-        assert request.format.container == spec.container and request.hardware == "cpu"
+        assert request.format.container == spec.container
+        # ProRes n'a que l'encodeur CPU : « Automatique » n'y est pas proposé.
+        assert request.hardware == ("cpu" if spec.video_codec == "prores_ks" else "auto")
 
 
 def test_custom_controls_only_show_for_the_custom_preset(export_panel):
