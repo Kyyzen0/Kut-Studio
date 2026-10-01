@@ -316,7 +316,7 @@ class ProxyManager:
             if error is not None:
                 return ProxyInfo(source, profile.id, ProxyState.ERROR, error=error)
             cached = self._disk_cache.get(key)
-            if cached is not None and self._clock() - cached[0] <= self._disk_ttl:
+            if cached is not None and self._clock() - cached[0] < self._disk_ttl:
                 return cached[1]
         info = self._read_disk(source, profile)
         with self._lock:

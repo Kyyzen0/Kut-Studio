@@ -195,7 +195,8 @@ def test_a_proxy_goes_through_pending_generating_ready_and_leaves_no_partial_fil
     info = _generate(manager, source)
     assert info.state is ProxyState.READY and info.valid and info.size_bytes == 64
     assert info.proxy_path and Path(info.proxy_path).is_file() and info.created_at
-    assert states[0] is ProxyState.PENDING and ProxyState.GENERATING in states
+    # L'ordre PENDING/GENERATING n'est pas garanti : le worker peut notifier avant le demandeur.
+    assert ProxyState.PENDING in states and ProxyState.GENERATING in states
     assert states[-1] is ProxyState.READY
     files = sorted(p.name for p in (tmp_path / "proxies").iterdir())
     assert len(files) == 2 and any(n.endswith(".json") for n in files)

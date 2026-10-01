@@ -79,7 +79,7 @@ class SignatureMemo:
         now = self._clock()
         with self._lock:
             entry = self._entries.get(key)
-            if entry is not None and now - entry[0] <= self._ttl:
+            if entry is not None and now - entry[0] < self._ttl:
                 return entry[1]
         try:
             stat = self._stat(key)

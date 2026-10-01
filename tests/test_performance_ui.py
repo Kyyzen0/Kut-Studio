@@ -503,6 +503,16 @@ def test_every_new_translation_exists_in_all_languages():
 # --- qualité d'aperçu adaptative dans la fenêtre ------------------------------------------------------------------
 
 
+SEGMENT = Path("/tmp/segment.mp4")
+SEGMENT_STR = str(SEGMENT)  # séparateurs propres à la plateforme (Windows : \\tmp\\segment.mp4)
+
+
+def _high_baseline(window):
+    """Niveau de base 1/1 : les machines de CI ont un profil « léger » (1/4) qui ne peut plus baisser."""
+    window.on_performance_setting_changed("high")
+    window.runtime.set_preview_quality("auto")
+
+
 def _slow_ticks(window, count, interval=0.065, start=500.0):
     now = start
     for _ in range(count):
@@ -515,6 +525,7 @@ def test_auto_quality_degrades_under_load_shows_a_notice_and_returns_on_pause(
     qtbot, monkeypatch, tmp_path, fake_proxies
 ):
     window = _window(qtbot, monkeypatch, tmp_path)
+    _high_baseline(window)
     window.runtime.set_preview_quality("auto")
     baseline = window.runtime.preview_divisor()
     window.show()
@@ -538,6 +549,7 @@ def test_a_forced_quality_is_never_changed_by_the_load(qtbot, monkeypatch, tmp_p
 
 def test_changing_the_quality_or_profile_resets_the_adaptation(qtbot, monkeypatch, tmp_path, fake_proxies):
     window = _window(qtbot, monkeypatch, tmp_path)
+    _high_baseline(window)
     window.runtime.set_preview_quality("auto")
     _slow_ticks(window, 160)
     assert window.runtime.preview.degraded
@@ -549,6 +561,7 @@ def test_scopes_are_not_analysed_during_playback_while_the_preview_is_reduced(
     qtbot, monkeypatch, tmp_path, fake_proxies
 ):
     window = _window(qtbot, monkeypatch, tmp_path)
+    _high_baseline(window)
     requests = []
     monkeypatch.setattr(window, "_request_scopes_analysis", lambda: requests.append(1))
     monkeypatch.setattr(window, "_sync_preview_to_timeline", lambda: [])
@@ -613,11 +626,11 @@ def test_a_far_edit_keeps_the_cached_segment_under_the_playhead_valid(qtbot, mon
     window.project.tracks[0].clips[0].source_out = 3.0
     window.timeline_panel.set_project(window.project)
     job = window._preview_segment_jobs(1.0, velocity=0.0)[0]
-    window.preview_engine.cache.lookup = lambda key: Path("/tmp/segment.mp4") if key == job.key else None
+    window.preview_engine.cache.lookup = lambda key: SEGMENT if key == job.key else None
     window._last_preview_jobs = [job]
-    assert window._cached_preview_at(1.0) == ("/tmp/segment.mp4", 0.0)
+    assert window._cached_preview_at(1.0) == (SEGMENT_STR, 0.0)
     window.project.tracks[0].clips[1].source_out = 2.0                       # on retaille l'AUTRE clip (4–8 s)
-    assert window._cached_preview_at(1.0) == ("/tmp/segment.mp4", 0.0)        # le segment de 0–2 s reste valide
+    assert window._cached_preview_at(1.0) == (SEGMENT_STR, 0.0)        # le segment de 0–2 s reste valide
     window.project.tracks[0].clips[0].source_out = 3.5                       # on retaille CELUI-CI
     assert window._cached_preview_at(1.0) is None                            # là, il est périmé
     assert isinstance(Qt.AlignLeft, object) and QMenu is not None
@@ -681,6 +694,7 @@ def test_degraded_quality_asks_for_a_lighter_proxy_of_the_active_media(
     qtbot, monkeypatch, tmp_path, fake_proxies
 ):
     window = _window(qtbot, monkeypatch, tmp_path)
+    _high_baseline(window)
     requested = []
     monkeypatch.setattr(
         window.proxies, "request_lighter",
