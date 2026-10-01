@@ -167,6 +167,155 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
+The suite (about 1,650 tests) covers the project model, timeline, `.kut`
+I/O, render plan, color, scopes, audio, UI integration and the FFmpeg export
+pipeline, including integration tests with a fake and a real FFmpeg. On a
+headless machine, set `QT_QPA_PLATFORM=offscreen`.
+
+## 🛣️ Roadmap
+
+- Split the largest UI modules (`main_window`, `project_panel`, `timeline_panel`)
+- Linting and type checking in CI, and a faster test suite
+- Configurable keyboard shortcuts
+- Export presets, render queue and hardware acceleration
+- Preview and timeline performance on large projects
+- Signed installers and automated releases
+
+## 🤝 Contributing
+
+Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request.
+
+---
+
+<a id="-version-française"></a>
+
+# 🇫🇷 Version française
+
+> Un éditeur vidéo non linéaire léger, construit avec **Python** et **PySide6**.
+
+Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de travail s’organise autour d’une bibliothèque de projet, d’un moniteur de prévisualisation, d’un inspecteur de propriétés et d’une timeline multi-pistes.
+
+## ✨ Fonctionnalités
+
+- 📁 **Bibliothèque de projet** — Importez vos médias, organisez-les en dossiers, marquez des favoris et consultez les métadonnées des clips.
+- 🎞️ **Timeline multi-pistes** — Pistes vidéo (V1 / V2), audio (A1) et sous-titres (S1), avec outils lame, roll, slip et slide, snap, montage ripple, marqueurs et annuler / rétablir.
+- 🎥 **Moniteur de prévisualisation** — Aperçu fidèle basé sur FFmpeg, avec cache de rendu et niveaux de qualité.
+- ⚙️ **Inspecteur** — Onglets Clip, Couleur, Effets et Audio, plus Graphiques et Compositing (masques, chroma key, modes de fusion).
+- 🎨 **Étalonnage et scopes** — Réglages couleur, import de LUT 3D `.cube`, et monitoring waveform / histogramme / vectorscope.
+- 🔀 **Transitions et effets** — Presets de transitions (dont fondu enchaîné), bibliothèque d’effets et remapping temporel.
+- 🔊 **Audio** — Mixeur, effets audio, automation et enregistrement de voix off.
+- 🔤 **Texte et graphiques** — Titres stylés, presets de texte, import et export de sous-titres SRT / ASS.
+- 💾 **Projets** — Sauvegarde et chargement `.kut` natifs, avec autosave et chargement rétrocompatible des anciennes versions du format.
+- 📤 **Export** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg.
+- 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
+- ⌨️ **Raccourcis clavier** — Lecture, outils, snap, marqueurs et zoom (voir plus bas).
+
+## 🧰 Stack technique
+
+| Composant | Technologie |
+| --- | --- |
+| Langage | Python 3 |
+| Interface | PySide6 (Qt 6, ≥ 6.6) |
+| Multimédia | Qt Multimedia (`QMediaPlayer`) |
+| Export | FFmpeg |
+| Packaging | PyInstaller |
+| Tests | pytest + pytest-qt |
+
+## 📋 Pré-requis
+
+- Python **3.10+**
+- `pip`
+- **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
+  l’import, l’aperçu fidèle, les scopes et l’export.
+- macOS, Windows ou Linux compatible avec PySide6
+
+PyInstaller est aussi nécessaire pour créer une application autonome.
+
+## 🚀 Installation
+
+```bash
+git clone https://github.com/Kyyzen0/kut-studio.git
+cd kut-studio
+
+python3 -m venv .venv
+source .venv/bin/activate      # macOS / Linux
+# .venv\Scripts\activate       # Windows
+
+python -m pip install -r requirements.txt
+```
+
+Installez ensuite FFmpeg avec le gestionnaire de paquets de votre système :
+
+```bash
+brew install ffmpeg             # macOS avec Homebrew
+# winget install Gyan.FFmpeg    # Windows
+# sudo apt install ffmpeg       # Debian / Ubuntu
+```
+
+## ▶️ Lancer l’application
+
+```bash
+.venv/bin/python main.py
+```
+
+Ou, avec l’environnement virtuel activé :
+
+```bash
+python main.py
+```
+
+## 📦 Construire une application autonome
+
+```bash
+python -m pip install pyinstaller
+python build.py
+```
+
+Le build produit une application graphique `Kut-Studio` dans `dist/`.
+
+Un build PyInstaller est natif : la commande doit être exécutée séparément
+sur macOS, Windows et Linux. La CI le fait automatiquement sur les trois OS.
+
+Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
+contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
+`build.py`. Kut-Studio cherche d’abord dans son dossier `bin/`, puis dans le
+dossier configuré, puis dans le `PATH` système.
+
+## 🖥️ Compatibilité des plateformes
+
+Chaque push et pull request exécute les tests complets, un smoke test UI, un
+build PyInstaller natif et un smoke test de l’application empaquetée sur
+macOS, Windows et Ubuntu. Les chemins de configuration, cache, polices et
+outils sont adaptés à chaque système.
+
+## ⌨️ Raccourcis clavier
+
+| Raccourci | Action |
+| --- | --- |
+| `Espace` / `K` | Lecture / pause |
+| `←` / `→` | Image précédente / suivante |
+| `Maj + ←` / `Maj + →` | Reculer / avancer d’1 seconde |
+| `J` / `L` | Shuttle arrière / avant |
+| `V` / `B` / `R` / `Y` / `U` | Outil sélection / lame / roll / slip / slide |
+| `S` / `N` | Activer le snap / le ripple |
+| `M` / `[` / `]` | Ajouter un marqueur / marqueur précédent / suivant |
+| `Ctrl + K` | Couper à la tête de lecture |
+| `Ctrl + A` | Tout sélectionner |
+| `+` / `-` / `Ctrl + 0` | Zoom avant / arrière / ajusté |
+| `Ctrl + N` / `Ctrl + O` / `Ctrl + S` | Nouveau / ouvrir / enregistrer le projet |
+| `Ctrl + Z` / `Ctrl + Maj + Z` | Annuler / rétablir |
+| `Ctrl + D` | Dupliquer |
+| `Suppr` / `Ctrl + Retour arrière` | Supprimer / supprimer avec ripple |
+| `Ctrl + E` | Activer / désactiver le clip |
+| `Ctrl + ,` | Préférences |
+
+## 🧪 Tests
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests d’intégration avec un faux et un vrai FFmpeg. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`.
 
 ## 🛣️ Feuille de route
