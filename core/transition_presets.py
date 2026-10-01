@@ -44,6 +44,7 @@ from .platform_paths import user_config_dir
 
 if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
     from .project_model import Project
+    from .transitions import Transition
 
 
 # ---------------------------------------------------------------------------
