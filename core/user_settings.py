@@ -24,6 +24,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 from .platform_paths import user_config_dir
+from .shortcuts import ShortcutMap
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +136,17 @@ def _coerce_bool(value: object) -> bool:
     return False
 
 
+def _coerce_shortcuts(value: object) -> dict[str, list[str]]:
+    """Filtre les raccourcis relus du disque.
+
+    Seuls les écarts par rapport aux valeurs par défaut sont conservés,
+    déjà validés et sans conflit. Une valeur absente (fichier écrit
+    avant l'existence des raccourcis configurables), corrompue ou
+    entièrement invalide redonne ``{}`` : les raccourcis par défaut.
+    """
+    return ShortcutMap.from_overrides(value).overrides()
+
+
 # ---------------------------------------------------------------------------
 # Modèle
 # ---------------------------------------------------------------------------
@@ -150,6 +162,9 @@ class UserSettings:
         performance_profile: ``"auto"``, ``"low"``, ``"balanced"`` ou ``"high"``.
         preview_quality: ``"auto"``, ``"full"``, ``"half"``, ``"quarter"``
             ou ``"eighth"``.
+        shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
+            [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
+            retire volontairement le raccourci de la commande.
     """
 
     theme_mode: str = DEFAULT_THEME
@@ -165,6 +180,7 @@ class UserSettings:
     scopes_view: str = DEFAULT_SCOPES_VIEW
     scopes_levels: str = DEFAULT_SCOPES_LEVELS
     scopes_alerts_enabled: bool = False
+    shortcuts: dict[str, list[str]] = field(default_factory=dict)
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -327,6 +343,9 @@ def load_user_settings(
         scopes_alerts_enabled=_coerce_bool(
             data.get("scopes_alerts_enabled", False)
         ),
+        # Raccourcis : absents des fichiers antérieurs, ce qui redonne
+        # les valeurs par défaut sans migration explicite.
+        shortcuts=_coerce_shortcuts(data.get("shortcuts")),
     )
 
 
@@ -371,6 +390,7 @@ def save_user_settings(
             scopes_alerts_enabled=_coerce_bool(
                 settings.scopes_alerts_enabled
             ),
+            shortcuts=_coerce_shortcuts(settings.shortcuts),
         )
     )
     fd, tmp_name = tempfile.mkstemp(

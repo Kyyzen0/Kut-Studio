@@ -2,7 +2,7 @@
 
 from core.project_factory import create_default_project
 from core.project_model import Clip, MediaAsset, Project, Track
-from core.shortcuts import resolve_shortcut
+from core.shortcuts import ShortcutMap
 from core.timeline_editing import (
     add_marker,
     clip_ids_in_range,
@@ -240,12 +240,13 @@ def test_synthetic_waveform_exists_without_a_media_file():
 
 
 def test_shortcuts_are_resolved_in_one_place():
-    assert resolve_shortcut("r", set()) == "tool_roll"
-    assert resolve_shortcut("y", set()) == "tool_slip"
-    assert resolve_shortcut("u", set()) == "tool_slide"
-    assert resolve_shortcut("left", set()) == "frame_back"
-    assert resolve_shortcut("left", {"shift"}) == "second_back"
-    assert resolve_shortcut("b", set()) == "tool_blade"
-    assert resolve_shortcut("k", {"ctrl"}) == "cut_at_playhead"
-    assert resolve_shortcut("k", set()) == "play_pause"
-    assert resolve_shortcut("s", {"ctrl"}) is None
+    shortcuts = ShortcutMap()
+    assert shortcuts.command_for("R") == "tool_roll"
+    assert shortcuts.command_for("Y") == "tool_slip"
+    assert shortcuts.command_for("U") == "tool_slide"
+    assert shortcuts.command_for("Left") == "frame_back"
+    assert shortcuts.command_for("Shift+Left") == "second_back"
+    assert shortcuts.command_for("B") == "tool_blade"
+    assert shortcuts.command_for("Ctrl+K") == "cut_at_playhead"
+    assert shortcuts.command_for("K") == "play_pause"
+    assert shortcuts.command_for("Ctrl+S") == "project_save"

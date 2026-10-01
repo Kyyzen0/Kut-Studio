@@ -293,6 +293,9 @@ def _stylesheet(palette: ThemePalette) -> str:
         font-size: 13px;
     }}
     QMainWindow {{ background: {palette.background}; }}
+    /* Dialogues : sans fond explicite ils prennent celui de l'OS, et le texte
+       du thème devenait illisible quand les deux ne s'accordent pas. */
+    QDialog {{ background: {palette.background}; }}
     QToolTip {{
         background: {palette.tooltip_bg}; color: {palette.text};
         border: 1px solid {palette.border_strong}; padding: 5px 8px;
@@ -382,6 +385,22 @@ def _stylesheet(palette: ThemePalette) -> str:
     }}
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
         border-color: {palette.accent};
+    }}
+    /* Tableau des raccourcis (Préférences) : lisible quel que soit le
+       fond natif du dialogue. */
+    QTreeWidget#shortcutsTree {{
+        background: {palette.panel_alt}; color: {palette.text};
+        alternate-background-color: {palette.panel};
+        border: 1px solid {palette.border}; border-radius: 6px; outline: 0;
+    }}
+    QTreeWidget#shortcutsTree::item {{ padding: 3px 4px; }}
+    QTreeWidget#shortcutsTree::item:selected {{
+        background: {palette.accent_dark}; color: {palette.text};
+    }}
+    QTreeWidget#shortcutsTree QHeaderView::section {{
+        background: {palette.surface}; color: {palette.muted};
+        border: none; border-bottom: 1px solid {palette.border};
+        padding: 4px 8px; font-weight: 600;
     }}
     QComboBox {{ padding: 5px 10px; }}
     QComboBox::drop-down {{ border: none; width: 18px; }}

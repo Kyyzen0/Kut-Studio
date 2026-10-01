@@ -2038,17 +2038,6 @@ class TimelinePanel(QWidget):
     def _update_zoom_label(self) -> None:
         self.zoom_label.setText(f"{int(self.zoom * 100)}%")
 
-    def keyPressEvent(self, event) -> None:
-        if event.key() in (Qt.Key_Plus, Qt.Key_Equal):
-            self.zoom_in()
-            event.accept()
-            return
-        if event.key() == Qt.Key_Minus:
-            self.zoom_out()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
     def setDuration(self, duration_ms):
         self.set_timeline_duration(float(duration_ms))
 

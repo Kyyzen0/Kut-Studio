@@ -2584,7 +2584,9 @@ def test_retranslation_keeps_menu_titles_and_translates_known_menus(
         assert menus["file_menu"].title() == i18n.translate("menu.file")
         assert menus["edit_menu"].title() == i18n.translate("menu.edit")
         assert menus["timeline_menu"].title() == i18n.translate("menu.timeline")
-        assert window.window_menu.title() == "Fenêtre"
+        # Le menu Fenêtre est désormais traduit lui aussi (il restait figé en français).
+        assert window.window_menu.title() == i18n.translate("menu.window")
+        assert window.window_menu.title() != ""
     finally:
         i18n.set_language(previous_language)
 
