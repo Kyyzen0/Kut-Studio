@@ -7,6 +7,7 @@ from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.render_plan import RenderPlan, build_render_plan
+from ui import i18n
 
 
 def _main_window():
@@ -169,24 +170,56 @@ class ProjectFilesMixin:
             self._mark_clean()
 
     def launch_export(self):
+        """Export en une étape : choisir le fichier, ajouter à la file, lancer."""
+        self._enqueue_current_export(start=True)
+
+    def enqueue_export(self):
+        """Ajoute l'export courant à la file de rendu sans le lancer."""
+        self._enqueue_current_export(start=False)
+
+    def _enqueue_current_export(self, *, start: bool):
+        """Ajoute le preset courant à la file ; retourne le job, ou ``None``.
+
+        Le projet est copié dans un instantané au moment de l'ajout : on
+        peut continuer à monter (ou fermer le projet) pendant que la file
+        rend la version ajoutée.
+        """
+        spec = self.export_panel.current_spec()
+        path = self._ask_export_path(spec)
+        if not path:
+            return None
+        try:
+            job = self.render_queue.enqueue(
+                self.project,
+                spec,
+                path,
+                master_gain_db=self._master_gain_db,
+                master_muted=self._master_muted,
+            )
+        except (ValueError, OSError, KeyError) as exc:
+            self.export_panel.mark_export_error(
+                i18n.translate("render.export.invalid", error=exc)
+            )
+            return None
+        if start:
+            self.render_queue.start_job(job.id)
+        else:
+            self.export_panel.set_status(
+                i18n.translate("render.added", name=job.name), "ready"
+            )
+        return job
+
+    def _ask_export_path(self, spec) -> str:
         default_dir = os.path.expanduser("~/Movies")
         os.makedirs(default_dir, exist_ok=True)
+        name = (getattr(self.project, "name", "") or "kut-studio-export").strip()
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
-            "Enregistrer l'export",
-            os.path.join(default_dir, "kut-studio-export.mp4"),
-            "Vidéos (*.mp4 *.mov)",
+            i18n.translate("render.export.save_title"),
+            os.path.join(default_dir, f"{name}.{spec.container}"),
+            f"Vidéos (*.{spec.container})",
         )
-        if not path:
-            return
-        try:
-            render_plan = self.get_render_plan()
-            request = self.export_panel.build_request(render_plan, path)
-        except Exception as exc:
-            self.export_panel.mark_export_error(f"Paramètres invalides : {exc}")
-            return
-        self.export_panel.mark_export_started()
-        self.export_engine.start(request)
+        return path
 
     def get_render_plan(self) -> RenderPlan:
         """Construit le :class:`RenderPlan` du projet courant.
@@ -202,15 +235,56 @@ class ProjectFilesMixin:
         )
 
     def cancel_export(self):
-        self.export_engine.cancel()
+        """Annule le rendu en cours (file de rendu ou export direct du moteur)."""
+        current = self.render_queue.current_job
+        if current is not None:
+            self.render_queue.cancel(current.id)
+        else:
+            self.export_engine.cancel()
 
-    def _on_export_finished(self, output_path):
-        self.export_panel.mark_export_finished()
+    def _on_render_run_finished(self, summary: dict) -> None:
+        """Résumé de fin d'exécution : statut du panneau et message à l'utilisateur."""
+        completed = int(summary.get("completed", 0))
+        failed = int(summary.get("failed", 0))
+        cancelled = int(summary.get("cancelled", 0))
+        if failed:
+            failed_job = next(
+                (j for j in reversed(self.render_queue.jobs) if j.error_message), None
+            )
+            self.export_panel.mark_job_failed(failed_job.name if failed_job else "")
+        elif completed:
+            self.export_panel.mark_export_finished()
+        else:
+            self.export_panel.mark_export_cancelled()
+        total = completed + failed + cancelled
+        if not completed and total <= 1:
+            return  # l'échec ou l'annulation d'un job unique est déjà visible dans la file
+        if total == 1:
+            text = i18n.translate("render.summary.one", path=summary["outputs"][0])
+        else:
+            text = i18n.translate(
+                "render.summary.many", completed=completed, failed=failed, cancelled=cancelled
+            )
         _main_window().QMessageBox.information(
-            self,
-            "Export terminé",
-            f"L'export est terminé avec succès.\n\nFichier : {output_path}",
+            self, i18n.translate("render.summary.title"), text
         )
+
+    def _confirm_close_during_render(self) -> bool:
+        """Demande confirmation si un rendu est en cours ; ``False`` annule la fermeture."""
+        queue = getattr(self, "render_queue", None)
+        if queue is None or not queue.is_busy:
+            return True
+        from core.render_job import JobStatus
+
+        waiting = sum(1 for job in queue.jobs if job.status is JobStatus.WAITING)
+        text = i18n.translate("render.close.text")
+        if waiting:
+            text += i18n.translate("render.close.waiting", count=waiting)
+        text += i18n.translate("render.close.question")
+        answer = _main_window().QMessageBox.question(
+            self, i18n.translate("render.close.title"), text
+        )
+        return answer == _main_window().QMessageBox.Yes
 
     def _release_open_project(self) -> None:
         """Coupe la lecture, le décodeur et le travail du projet quitté."""
