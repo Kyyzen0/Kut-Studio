@@ -164,7 +164,8 @@ Kut-Studio/
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest -q
+python -m pytest -q -n auto   # parallel; drop -n auto to run serially
+python -m ruff check .
 ```
 
 The suite (about 1,650 tests) covers the project model, timeline, `.kut`
@@ -313,7 +314,8 @@ outils sont adaptés à chaque système.
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest -q
+python -m pytest -q -n auto   # en parallèle ; retirez -n auto pour l’exécution séquentielle
+python -m ruff check .
 ```
 
 La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests d’intégration avec un faux et un vrai FFmpeg. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`.

@@ -55,7 +55,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 from .effects_model import ClipEffect, EffectType
 from .compositing import compositing_from_dict, compositing_to_dict
@@ -63,6 +63,10 @@ from .project_model import Clip, Marker, MediaAsset, Project, Track
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
+
+if TYPE_CHECKING:
+    from .audio_automation import AutomationPoint
+    from .library_organization import AssetAssignment
 # ``library_organization`` est importé paresseusement dans les helpers
 # de sérialisation pour éviter une boucle d'imports (les modèles du
 # module ``project_model`` n'en dépendent pas).
