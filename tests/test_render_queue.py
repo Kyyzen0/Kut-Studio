@@ -796,3 +796,44 @@ def test_real_ffmpeg_error_is_reported_readably(qtbot, make_queue, tmp_path):
     assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.FFMPEG
     assert job.error_message.strip() and not Path(job.output_path).exists()
     assert not Path(partial_path_for(job)).exists()
+
+
+# --- correctifs de revue ---------------------------------------------------------------------
+
+
+def test_start_job_during_a_single_run_also_runs_the_promoted_job(qtbot, queue, tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_FFMPEG_SECONDS", "0.5")
+    a, b, c = (_enqueue(queue, tmp_path, f"{n}.mp4") for n in "abc")
+    log = _status_log(queue)
+    queue.start_job(a.id)
+    qtbot.waitUntil(lambda: a.status is JobStatus.RENDERING, timeout=TIMEOUT)
+    assert queue.start_job(c.id)  # pendant le rendu de « a »
+    _wait_idle(qtbot, queue)
+    assert a.status is JobStatus.COMPLETED and c.status is JobStatus.COMPLETED
+    assert b.status is JobStatus.WAITING  # jamais demandé : reste en attente
+    assert [i for i, s in log if s is JobStatus.RENDERING] == [a.id, c.id]
+
+
+@pytest.mark.parametrize("bad_id", ["../../victime", "/tmp/victime", "a/b", "..", "", "x" * 65, "a b"])
+def test_unsafe_job_ids_are_rejected_on_load(bad_id):
+    with pytest.raises(ValueError):
+        RenderJob.from_dict({"id": bad_id, "snapshot_path": "s", "output_path": "o.mp4"})
+
+
+def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path):
+    victim = tmp_path / "victime"
+    victim.mkdir()
+    (victim / "important.txt").write_text("à garder", encoding="utf-8")
+    store = RenderQueueStore(tmp_path / "q")
+    good = RenderJob.create(spec=default_preset(), snapshot_path="s", output_path="o.mp4")
+    store.save([good])
+    data = json.loads(store.queue_file.read_text(encoding="utf-8"))
+    for bad in ("../../victime", str(victim)):
+        data["jobs"].append({**good.to_dict(), "id": bad})
+    store.queue_file.write_text(json.dumps(data), encoding="utf-8")
+    assert [j.id for j in store.load()] == [good.id]  # les identifiants piégés sont ignorés
+    for bad in ("../../victime", str(victim), ".."):
+        with pytest.raises(ValueError):
+            store.snapshot_dir(bad)
+        store.delete_snapshot(bad)  # sans effet
+    assert (victim / "important.txt").read_text(encoding="utf-8") == "à garder"

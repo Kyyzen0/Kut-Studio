@@ -93,7 +93,7 @@ class RenderQueue(QObject):
         self._launched = False  # le moteur a-t-il été démarré pour _current ?
         self._partial: str | None = None
         self._mode: str | None = None  # None, "all" ou "single"
-        self._single_target: str | None = None
+        self._targets: set[str] = set()  # jobs d'une exécution « single »
         self._batch: set[str] = set()
         self._counts = {"completed": 0, "failed": 0, "cancelled": 0}
         self._outputs: list[str] = []
@@ -256,12 +256,18 @@ class RenderQueue(QObject):
             self._begin_run("single", job_id)
             return True
         self._promote(job_id)
+        if self._mode == "single":
+            # Le job promu fait partie de l'exécution : sans cela elle
+            # s'arrêterait après la cible initiale et le laisserait en attente.
+            self._targets.add(job_id)
+            self._batch.add(job_id)
+            self._emit_overall()
         return True
 
     def stop(self) -> None:
         """Arrête l'exécution : annule le rendu en cours, laisse les autres en attente."""
         self._mode = None
-        self._single_target = None
+        self._targets.clear()
         self.run_state_changed.emit()
         if self._current is not None:
             self.cancel(self._current.id)
@@ -375,7 +381,7 @@ class RenderQueue(QObject):
 
     def _begin_run(self, mode: str, target: str | None) -> None:
         self._mode = mode
-        self._single_target = target
+        self._targets = {target} if (mode == "single" and target) else set()
         self._counts = {"completed": 0, "failed": 0, "cancelled": 0}
         self._outputs = []
         if mode == "all":
@@ -396,9 +402,11 @@ class RenderQueue(QObject):
             self._emit_summary()
             return
         if self._mode == "single":
-            job = self.job(self._single_target or "")
-            if job is not None and job.status is not JobStatus.WAITING:
-                job = None
+            job = next(
+                (j for j in self._jobs
+                 if j.id in self._targets and j.status is JobStatus.WAITING),
+                None,
+            )
         else:
             job = next((j for j in self._jobs if j.status is JobStatus.WAITING), None)
         if job is None:
@@ -471,7 +479,7 @@ class RenderQueue(QObject):
 
     def _finish_run(self) -> None:
         self._mode = None
-        self._single_target = None
+        self._targets.clear()
         self._emit_overall()
         self.run_state_changed.emit()
         self._emit_summary()
@@ -607,7 +615,7 @@ class RenderQueue(QObject):
         """
         self._closing = True
         self._mode = None
-        self._single_target = None
+        self._targets.clear()
         stopped = True
         if self._launched:
             stopped = self._engine.shutdown(timeout_ms)

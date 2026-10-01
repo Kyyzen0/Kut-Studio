@@ -27,7 +27,7 @@ from pathlib import Path
 from .platform_paths import user_config_dir
 from .project_io import save_project
 from .project_model import Project
-from .render_job import SCHEMA_VERSION, RenderJob
+from .render_job import SCHEMA_VERSION, RenderJob, is_safe_job_id
 
 QUEUE_FILE = "queue.json"
 SNAPSHOT_NAME = "project.kut"
@@ -115,7 +115,17 @@ class RenderQueueStore:
     # -- Instantanés ----------------------------------------------------------------------------
 
     def snapshot_dir(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id
+        """Dossier d'instantané d'un job, toujours **sous** ``jobs_dir``.
+
+        Lève ``ValueError`` pour un identifiant qui s'en échapperait
+        (chemin absolu, ``..``) : ce dossier est supprimé récursivement.
+        """
+        if not is_safe_job_id(job_id):
+            raise ValueError(f"Identifiant de job non sûr : {job_id!r}")
+        target = self.jobs_dir / job_id
+        if target.resolve().parent != self.jobs_dir.resolve():
+            raise ValueError(f"Identifiant de job non sûr : {job_id!r}")
+        return target
 
     def snapshot_file(self, job_id: str) -> Path:
         return self.snapshot_dir(job_id) / SNAPSHOT_NAME
@@ -136,7 +146,11 @@ class RenderQueueStore:
         return target
 
     def delete_snapshot(self, job_id: str) -> None:
-        shutil.rmtree(self.snapshot_dir(job_id), ignore_errors=True)
+        try:
+            target = self.snapshot_dir(job_id)
+        except ValueError:
+            return  # identifiant suspect : on ne supprime rien
+        shutil.rmtree(target, ignore_errors=True)
 
     def prune_orphans(self, known_ids: set[str]) -> int:
         """Supprime les instantanés qu'aucun job ne référence plus."""

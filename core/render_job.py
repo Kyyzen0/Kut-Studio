@@ -27,6 +27,7 @@ relu comme ``FAILED`` avec ``error_kind == "interrupted"`` (jamais
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -130,6 +131,19 @@ def _float(value: object, default: float = 0.0) -> float:
 
 def _optional_float(value: object) -> float | None:
     return None if value is None else _float(value)
+
+
+_SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def is_safe_job_id(value: object) -> bool:
+    """``True`` si ``value`` peut servir de nom de dossier sans sortir de la file.
+
+    Les identifiants générés (12 caractères hexadécimaux) le respectent ;
+    un fichier de file abîmé ou fabriqué ne doit jamais pouvoir désigner
+    un chemin absolu ou remonter l'arborescence.
+    """
+    return isinstance(value, str) and _SAFE_ID.fullmatch(value) is not None
 
 
 def new_job_id() -> str:
@@ -351,6 +365,8 @@ class RenderJob:
         output = str(data.get("output_path") or "").strip()
         if not job_id or not snapshot or not output:
             raise ValueError("Job de rendu invalide : id, instantané ou sortie manquant.")
+        if not is_safe_job_id(job_id):
+            raise ValueError("Job de rendu invalide : identifiant non sûr.")
         try:
             status = JobStatus(str(data.get("status")))
         except ValueError:
@@ -399,5 +415,6 @@ __all__ = [
     "JobStatus",
     "RenderJob",
     "RenderResult",
+    "is_safe_job_id",
     "new_job_id",
 ]
