@@ -37,13 +37,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .platform_paths import user_cache_dir
 from .tracking_frames import (
     AnalysisGeometry,
     FrameReader,
@@ -153,8 +153,7 @@ class TrackingResult:
 
 
 def cache_directory() -> Path:
-    configured = os.environ.get("KUT_STUDIO_CACHE_DIR")
-    root = Path(configured).expanduser() if configured else Path(tempfile.gettempdir()) / "kut-studio-cache"
+    root = user_cache_dir()
     directory = root / CACHE_KIND
     directory.mkdir(parents=True, exist_ok=True)
     return directory

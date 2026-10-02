@@ -28,9 +28,10 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
+
+from .platform_paths import user_cache_dir
 
 CACHE_KIND = "mograph"
 
@@ -38,8 +39,7 @@ _BLANK = "blank"
 
 
 def cache_directory() -> Path:
-    configured = os.environ.get("KUT_STUDIO_CACHE_DIR")
-    root = Path(configured).expanduser() if configured else Path(tempfile.gettempdir()) / "kut-studio-cache"
+    root = user_cache_dir()
     directory = root / CACHE_KIND
     directory.mkdir(parents=True, exist_ok=True)
     return directory
