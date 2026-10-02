@@ -133,6 +133,10 @@ class ProjectHistory:
             raise ValueError("Impossible d'enregistrer un projet None.")
         previous = self._undo_stack[-1].project if self._undo_stack else None
         snapshot = _Snapshot(label=label or "", project=_snapshot_project(project, previous))
+        # L'état enregistré sur disque vivait dans la branche « redo » qu'on va jeter (annuler puis
+        # éditer) : son index serait réutilisé par la nouvelle entrée, qui passerait pour « enregistrée ».
+        if self._saved_index is not None and self._saved_index > len(self._undo_stack) - 1:
+            self._saved_index = -1
         self._undo_stack.append(snapshot)
         # Limite la taille de la pile ``undo``.
         if len(self._undo_stack) > MAX_HISTORY:
@@ -140,11 +144,12 @@ class ProjectHistory:
             # minimum de 1 entrée pour préserver la base.
             overflow = len(self._undo_stack) - MAX_HISTORY
             del self._undo_stack[:overflow]
-            # L'index sauvegardé doit être ajusté s'il pointait sur
-            # une entrée supprimée. Une marque négative signifie
-            # « jamais enregistré sur disque » et doit le rester.
+            # L'index sauvegardé doit suivre le décalage. Si l'entrée enregistrée est évincée, plus
+            # aucun état de la pile n'est celui du fichier : marque négative (« jamais enregistré »),
+            # et non ``max(0, …)`` qui désignait à tort la plus ancienne entrée restante.
             if self._saved_index is not None and self._saved_index >= 0:
-                self._saved_index = max(0, self._saved_index - overflow)
+                shifted = self._saved_index - overflow
+                self._saved_index = shifted if shifted >= 0 else -1
         # Toute nouvelle action après ``undo`` vide le ``redo``.
         self._redo_stack = []
         self._project = project

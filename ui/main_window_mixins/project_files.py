@@ -52,7 +52,7 @@ class ProjectFilesMixin:
         try:
             save_project(self.project, self.current_project_path)
             discard_autosave(self.current_project_path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
                 "Enregistrement impossible",
@@ -82,7 +82,7 @@ class ProjectFilesMixin:
         try:
             save_project(self.project, path)
             discard_autosave(path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
                 "Enregistrement impossible",
@@ -118,7 +118,7 @@ class ProjectFilesMixin:
         self._finalize_pending_edit_sessions()
         try:
             loaded = load_project(path)
-        except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
+        except Exception as exc:  # noqa: BLE001 - quoi qu'il arrive, un fichier abîmé ne doit rien casser
             _main_window().QMessageBox.critical(
                 self,
                 "Impossible d'ouvrir le projet",
@@ -139,7 +139,7 @@ class ProjectFilesMixin:
                 try:
                     loaded = load_project(str(sidecar_path(path)))
                     restored_autosave = True
-                except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
+                except Exception as exc:  # noqa: BLE001 - idem pour la sauvegarde automatique
                     _main_window().QMessageBox.critical(
                         self,
                         "Récupération impossible",

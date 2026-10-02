@@ -286,11 +286,13 @@ def load_project(file_path: str) -> Project:
         ) from error
 
     try:
-        data = json.loads(raw)
+        data = json.loads(raw, parse_constant=_reject_non_finite, parse_float=_finite_float)
     except json.JSONDecodeError as error:
         raise ValueError(
             f"Le fichier {source} n'est pas un JSON valide ({error.msg})."
         ) from error
+    except RecursionError as error:
+        raise ValueError(f"Le fichier {source} est trop profondément imbriqué pour être un projet.") from error
 
     if not isinstance(data, dict):
         raise ValueError(
@@ -305,7 +307,27 @@ def load_project(file_path: str) -> Project:
             f"Section '{_PROJECT_KEY}' manquante ou invalide dans {source}."
         )
 
-    return _deserialize_project(project_data, project_root=source.parent)
+    try:
+        return _deserialize_project(project_data, project_root=source.parent)
+    except (KeyError, IndexError, AttributeError, ArithmeticError, RecursionError) as error:
+        # Contrat : un fichier abîmé est refusé par ValueError, jamais par une exception interne
+        # (clé manquante, nombre énorme...) que l'interface ne sait pas présenter.
+        raise ValueError(
+            f"Le fichier {source} est endommagé ({type(error).__name__} : {error})."
+        ) from error
+
+
+def _reject_non_finite(name: str) -> float:
+    """``NaN`` / ``Infinity`` : JSON ne les définit pas, Python les accepte. Un projet n'en contient jamais."""
+    raise ValueError(f"valeur non finie « {name} » : un projet ne peut contenir ni NaN ni infini")
+
+
+def _finite_float(text: str) -> float:
+    """Réel JSON fini ; « 1e999 » est lu comme l'infini par Python."""
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"nombre hors limites « {text} » : un projet ne peut contenir ni NaN ni infini")
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -1782,7 +1804,13 @@ def _atomic_write_json(payload: dict[str, Any], target: Path) -> None:
             # allow_nan=False : un NaN/Inf (ex. fade corrompu) doit faire
             # échouer la sauvegarde plutôt que d'écrire du JSON invalide
             # ("Infinity") qu'aucun lecteur strict ne peut relire.
-            json.dump(payload, tmp_file, indent=2, ensure_ascii=False, allow_nan=False)
+            try:
+                json.dump(payload, tmp_file, indent=2, ensure_ascii=False, allow_nan=False)
+            except ValueError as error:
+                raise ValueError(
+                    "Le projet contient une valeur non finie (NaN ou infinie) : il ne peut pas être "
+                    f"enregistré tel quel ({error})."
+                ) from error
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
         try:
