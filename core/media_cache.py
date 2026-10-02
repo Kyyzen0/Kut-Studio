@@ -18,6 +18,9 @@ projet vivent dans l'espace ``project`` et sont vidés à la fermeture.
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import replace
+
 from .cache_keys import probe_key
 from .cache_store import MemoryCache
 from .media_probe import probe_media
@@ -48,8 +51,16 @@ def cached_probe(cache: MemoryCache, path: str, probe=None) -> MediaAsset:
     if key is not None:
         cached = cache.get(key)
         if isinstance(cached, MediaAsset):
-            return cached
+            return _fresh_copy(cached)
     asset = probe_fn(path)
     if key is not None:
-        cache.put(key, asset, size_bytes=512, namespace=PROBE_NAMESPACE)
+        # Le cache garde SA copie : le média rendu à l'appelant devient un objet du projet, que le
+        # relink (``asset.path = …``) modifie sur place. Partagé, il aurait corrompu l'entrée du cache,
+        # et avec elle le prochain import de l'ancien chemin, dans ce projet comme dans un autre.
+        cache.put(key, replace(asset), size_bytes=512, namespace=PROBE_NAMESPACE)
     return asset
+
+
+def _fresh_copy(asset: MediaAsset) -> MediaAsset:
+    """Copie indépendante avec un identifiant neuf (deux projets ne partagent jamais un média)."""
+    return replace(asset, id=f"asset-{uuid.uuid4().hex[:12]}")
