@@ -135,8 +135,8 @@ class TransitionLibraryView(QWidget):
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet(
-            f"QScrollArea {{ background: transparent; border: none; }}"
-            f"QScrollArea > QWidget > QWidget {{ background: transparent; }}"
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
         self.cards_host = QWidget()
         self.cards_host.setObjectName("transitionsCardsHost")

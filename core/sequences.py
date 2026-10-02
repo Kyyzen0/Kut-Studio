@@ -438,6 +438,33 @@ def rename_sequence(project: Project, sequence_id: str, name: str) -> Sequence:
     return sequence
 
 
+def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
+    """Réécrit, dans une copie de séquence, les références d'un clip à un autre clip.
+
+    Les clips d'une copie reçoivent de nouveaux identifiants ; sans cette réécriture, le parentage
+    et le groupe d'un calque, comme la source d'une liaison de tracking, pointaient encore vers les
+    clips de l'**original** : le parentage disparaissait en silence et la liaison devenait
+    « source introuvable ». Une référence vers un clip hors de la séquence (absente de ``renamed``)
+    est laissée telle quelle.
+    """
+    for track in sequence.tracks:
+        for clip in track.clips:
+            graphic = clip.graphic
+            if graphic is not None and (graphic.parent_id in renamed or graphic.group_id in renamed):
+                clip.graphic = replace(
+                    graphic,
+                    parent_id=renamed.get(graphic.parent_id, graphic.parent_id),
+                    group_id=renamed.get(graphic.group_id, graphic.group_id),
+                )
+            tracking = clip.tracking
+            links = getattr(tracking, "links", ())
+            if any(link.source_clip_id in renamed for link in links):
+                clip.tracking = replace(tracking, links=tuple(
+                    replace(link, source_clip_id=renamed.get(link.source_clip_id, link.source_clip_id))
+                    for link in links
+                ))
+
+
 def duplicate_sequence(
     project: Project, sequence_id: str, name: str | None = None
 ) -> Sequence:
@@ -457,6 +484,7 @@ def duplicate_sequence(
             new_id = _new_clip_id()
             renamed[clip.id] = new_id
             clip.id = new_id
+    _remap_clip_references(clone, renamed)
     clone.transitions = [
         replace(
             transition,
@@ -587,6 +615,38 @@ def insert_sequence_clip(
 # ---------------------------------------------------------------------------
 
 
+def _clip_references(clip: Clip) -> list[tuple[str, str]]:
+    """Clips (de la même séquence) dont ``clip`` dépend : ``(nature, identifiant)``."""
+    references: list[tuple[str, str]] = []
+    graphic = getattr(clip, "graphic", None)
+    if graphic is not None:
+        references += [("parent", getattr(graphic, "parent_id", "")), ("groupe", getattr(graphic, "group_id", ""))]
+    tracking = getattr(clip, "tracking", None)
+    for link in getattr(tracking, "links", ()) or ():
+        references.append(("tracking", link.source_clip_id))
+    return [(kind, target) for kind, target in references if target]
+
+
+def _refuse_split_dependencies(sequence: Sequence, selected: set[str]) -> None:
+    """Refuse d'imbriquer une sélection qui sépare un clip de celui dont il dépend.
+
+    Un calque dont le parent ou le groupe resterait dehors perdrait sa hiérarchie (les identifiants ne
+    portent que dans une séquence), et un tracking dont la source reste dehors ne suivrait plus rien :
+    mieux vaut le dire que de casser le rendu sans rien signaler.
+    """
+    clips = {clip.id: clip for track in sequence.tracks for clip in track.clips}
+    broken: list[str] = []
+    for clip in clips.values():
+        for kind, target in _clip_references(clip):
+            if target in clips and (clip.id in selected) != (target in selected):
+                broken.append(f"« {clip.label or clip.id} » dépend de « {clips[target].label or target} » ({kind})")
+    if broken:
+        shown = "; ".join(broken[:3]) + ("…" if len(broken) > 3 else "")
+        raise SequenceError(
+            f"La sélection sépare des clips liés : {shown}. Sélectionnez-les ensemble pour les imbriquer."
+        )
+
+
 def create_sequence_from_selection(
     project: Project, clip_ids, name: str | None = None
 ) -> NestResult:
@@ -613,6 +673,9 @@ def create_sequence_from_selection(
 
     Toute la modification est faite sur le projet passé : l'appelant
     enregistre ensuite **une** entrée d'historique (annulable en une fois).
+
+    Refusée (``SequenceError``, rien n'est modifié) si la sélection sépare un calque de son parent ou de
+    son groupe, ou un clip du clip qui porte son tracking.
     """
     wanted = [clip_id for clip_id in dict.fromkeys(clip_ids or ())]
     if not wanted:
@@ -633,6 +696,7 @@ def create_sequence_from_selection(
     end = max(clip.timeline_start + clip.duration for _i, _t, clip in located)
     if end - start <= _EPSILON:
         raise SequenceError("La sélection n'a pas de durée.")
+    _refuse_split_dependencies(parent, {clip.id for _i, _t, clip in located})
 
     # Piste hôte du clip imbriqué : la piste vidéo sélectionnée la plus
     # basse (rendue en dessous des autres), sinon audio, sinon la première
@@ -778,9 +842,28 @@ def clamp_nested_clips(
     - au chargement d'un projet, rien n'est modifié : le rendu borne de
       lui-même les clips qui débordent.
 
+    Raccourcir une séquence raccourcit aussi ses parents : le recadrage **se propage** jusqu'à ce que plus
+    rien ne dépasse (un seul appel suffit, les appels suivants ne changent plus rien).
+
     Args:
-        sequence_ids: séquences sources à considérer (toutes par défaut).
+        sequence_ids: séquences sources à considérer (toutes par défaut) ; celles qui raccourcissent par
+            propagation sont ajoutées d'elles-mêmes.
     """
+    adjustments: list[ClampAdjustment] = []
+    considered = None if sequence_ids is None else set(sequence_ids)
+    # Au plus une passe par niveau d'imbrication (la borne protège d'un fichier retouché à la main).
+    for _level in range(len(project.sequences) + 1):
+        changed = _clamp_nested_pass(project, considered)
+        if not changed:
+            break
+        adjustments.extend(changed)
+        if considered is not None:
+            considered.update(adjustment.sequence_id for adjustment in changed)
+    return adjustments
+
+
+def _clamp_nested_pass(project: Project, sequence_ids: set[str] | None) -> list[ClampAdjustment]:
+    """Une passe de :func:`clamp_nested_clips` (durées des sources relues à chaque passe)."""
     durations: dict[str, float] = {}
     adjustments: list[ClampAdjustment] = []
     for parent in project.sequences:

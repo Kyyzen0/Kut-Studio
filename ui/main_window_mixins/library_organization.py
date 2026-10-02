@@ -199,7 +199,11 @@ class LibraryOrganizationMixin:
         )
         if not path:
             return
-        from core.library_organization import LibraryOrganization
+        from dataclasses import replace
+
+        from core.library_organization import LibraryOrganization, relink_differences
+
+        before = replace(asset)
         org = LibraryOrganization(self.project)
         try:
             org.relink_asset(asset_id, path)
@@ -209,6 +213,12 @@ class LibraryOrganizationMixin:
         self._record_history("Relier le fichier d'un média")
         self._refresh_project_library()
         self._mark_dirty()
+        changes = relink_differences(before, asset)
+        if changes:
+            # Le nouveau fichier n'est pas identique à l'ancien : les clips (trims, tracking) en dépendent.
+            self.statusBar().showMessage(
+                "Média relié, mais le fichier est différent : " + ", ".join(changes) + ".", 10000
+            )
 
     def _on_asset_rename_requested(
         self,

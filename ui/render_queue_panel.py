@@ -317,7 +317,6 @@ class RenderQueuePanel(QWidget):
 
     def _refresh_overall(self, value: int | None = None) -> None:
         percent = self._queue.overall_progress() if value is None else value
-        jobs = self._queue.jobs
         batch = [j for j in self._queue.run_jobs if j.status is not JobStatus.CANCELLED]
         self.overall_bar.setValue(percent)
         if self._queue.is_running and batch:

@@ -884,3 +884,18 @@ def test_cancel_during_graphics_preparation_never_starts_ffmpeg(qtbot, queue, tm
     qtbot.wait(200)
     assert job.status is JobStatus.CANCELLED and started == []
 
+
+
+def test_an_unexpected_error_while_preparing_fails_the_job_instead_of_blocking_the_queue(
+    qtbot, queue, tmp_path, monkeypatch
+):
+    """Régression : seules quelques exceptions étaient prévues ; toute autre laissait le job « RENDERING »."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("plan impossible")
+
+    job = _enqueue(queue, tmp_path)                    # enqueue construit déjà un plan : la panne vient après
+    monkeypatch.setattr("core.render_queue.build_render_plan", explode)
+    queue.start_all()
+    _wait_idle(qtbot, queue)
+    assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.INVALID
+    assert "plan impossible" in job.error_message

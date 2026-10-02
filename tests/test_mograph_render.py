@@ -239,6 +239,14 @@ def _solid_background(project, color):
     return background
 
 
+# Écart toléré (niveaux 8 bits) entre le rastériseur Qt et l'export FFmpeg.
+# ``overlay`` passe par le ``hardlight`` de FFmpeg, dont la formule entière tronque avant de doubler
+# (``2 * (a * b / 255)`` : jusqu'à −2 face à la formule W3C de Qt), auquel s'ajoutent les aller-retours
+# yuv420p → gbrp du fond. Mesuré : 5 avec FFmpeg 6.1 (Ubuntu), 6 avec FFmpeg 7.1 (Windows), moins de 4 avec
+# le FFmpeg récent de macOS. Les autres modes n'ont pas ce terme : ils gardent la borne stricte de 4.
+BLEND_TOLERANCE = {BlendMode.OVERLAY: 8}
+
+
 @needs_ffmpeg
 @pytest.mark.parametrize("mode", list(BLEND_MODES))
 def test_blend_modes_match_between_qt_and_ffmpeg(mode, tmp_path):
@@ -249,7 +257,7 @@ def test_blend_modes_match_between_qt_and_ffmpeg(mode, tmp_path):
     # Référence Qt : la pile complète composée par le rastériseur.
     expected = _rgba(_render(project), 80, 45)[:3]
     actual = _rgba(_ffmpeg_frame(project, 0.5, tmp_path), 80, 45)[:3]
-    assert actual == pytest.approx(expected, abs=4), mode
+    assert actual == pytest.approx(expected, abs=BLEND_TOLERANCE.get(mode, 4)), mode
 
 
 @needs_ffmpeg
@@ -267,14 +275,15 @@ def test_preview_segment_and_export_compose_graphics_identically(tmp_path):
     ]
     assert max(differences) <= 40  # sous-échantillonnage 4:2:0 sur les bords de lettres
     assert sum(differences) / len(differences) < 3
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, with_output_color_stage
     from core.filter_graph import build_preview_command
 
     plan = build_render_plan(project)
     command = build_preview_command(plan, width=W, height=H, fps=10, quality="high",
                                     start=0.0, duration=1.0, output_path=str(tmp_path / "s.mp4"))
-    assert command[command.index("-filter_complex") + 1] == ExportEngine._build_filter_complex(
-        plan, W, H, 10, None, quality="high")[0]
+    common, video_label, *_rest = ExportEngine._build_filter_complex(plan, W, H, 10, None, quality="high")
+    # Même graphe que l'export, dernière étape comprise (conversion de couleur BT.709).
+    assert command[command.index("-filter_complex") + 1] == with_output_color_stage(common, video_label)[0]
 
 
 @needs_ffmpeg

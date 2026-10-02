@@ -164,6 +164,21 @@ class DiskPreviewCache:
         if entry is not None:
             self._total -= entry[0]
 
+    def _unlink(self, name) -> bool:
+        """Supprime un segment du disque ; ``False`` s'il est toujours là.
+
+        Un fichier tenu ouvert (lecteur en cours de lecture, antivirus : fréquent sous Windows) ne se supprime
+        pas. L'index ne doit alors rien oublier et l'appelant ne doit rien compter comme libéré : sinon le
+        budget se croit respecté alors que le disque ne l'est pas.
+        """
+        try:
+            (self.directory / name).unlink()
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        return True
+
     # -- API ---------------------------------------------------------------------
 
     def path_for(self, key):
@@ -187,11 +202,8 @@ class DiskPreviewCache:
                     self.misses += 1
                     return None
                 if age > self.ttl_seconds:
-                    try:
-                        path.unlink()
-                    except OSError:
-                        pass
-                    self._forget(path.name)
+                    if self._unlink(path.name):
+                        self._forget(path.name)
                     self.misses += 1
                     return None
             self.hits += 1
@@ -209,6 +221,9 @@ class DiskPreviewCache:
         import shutil
         import tempfile
 
+        if os.path.getsize(str(source_path)) <= 0:
+            # Un segment vide resservi pendant la durée de vie du cache (sept jours) ne serait jamais refait.
+            raise ValueError("Segment d'aperçu vide : il n'est pas mis en cache.")
         target = self.path_for(key)
         # Le dossier a pu être supprimé en cours de session (nettoyage manuel) :
         # on le recrée plutôt que d'échouer à chaque rendu suivant.
@@ -249,12 +264,9 @@ class DiskPreviewCache:
         with self._lock:
             index = self._ensure_index()
             for name in [n for n in index if n.startswith(prefix)]:
-                try:
-                    (self.directory / name).unlink()
+                if self._unlink(name):
                     removed += 1
-                except OSError:
-                    pass
-                self._forget(name)
+                    self._forget(name)
             self._dir_mtime = self._read_dir_mtime()
         return removed
 
@@ -275,12 +287,9 @@ class DiskPreviewCache:
         with self._lock:
             index = self._ensure_index()
             for name in [n for n in index if n.startswith(prefixes)]:
-                try:
-                    (self.directory / name).unlink()
+                if self._unlink(name):
                     removed += 1
-                except OSError:
-                    pass
-                self._forget(name)
+                    self._forget(name)
             self._dir_mtime = self._read_dir_mtime()
         return removed
 
@@ -290,12 +299,9 @@ class DiskPreviewCache:
         with self._lock:
             index = self._ensure_index()
             for name in list(index):
-                try:
-                    (self.directory / name).unlink()
+                if self._unlink(name):
                     removed += 1
-                except OSError:
-                    pass
-                self._forget(name)
+                    self._forget(name)
             self._dir_mtime = self._read_dir_mtime()
         return removed
 
@@ -308,14 +314,14 @@ class DiskPreviewCache:
         evicted = 0
         # Un segment unique plus gros que le budget est conservé : mieux
         # vaut un aperçu que rien ; l'éviction ne vaut qu'à partir de 2 fichiers.
-        while self._total > self.budget_bytes and len(self._index) > 1:
-            name = min(self._index, key=lambda n: self._index[n][1])
-            try:
-                (self.directory / name).unlink()
-            except OSError:
-                pass
-            self._forget(name)
-            evicted += 1
+        stuck: set[str] = set()                      # segments impossibles à supprimer pour l'instant
+        while self._total > self.budget_bytes and len(self._index) - len(stuck) > 1:
+            name = min((n for n in self._index if n not in stuck), key=lambda n: self._index[n][1])
+            if self._unlink(name):
+                self._forget(name)
+                evicted += 1
+            else:
+                stuck.add(name)
         return evicted
 
     def evict_if_needed(self):
@@ -333,15 +339,15 @@ class DiskPreviewCache:
         freed = 0
         with self._lock:
             index = self._ensure_index()
-            while freed < target_bytes and index:
-                name = min(index, key=lambda n: index[n][1])
+            stuck: set[str] = set()
+            while freed < target_bytes and len(index) > len(stuck):
+                name = min((n for n in index if n not in stuck), key=lambda n: index[n][1])
                 size = index[name][0]
-                try:
-                    (self.directory / name).unlink()
-                except OSError:
-                    pass
-                self._forget(name)
-                freed += size
+                if self._unlink(name):
+                    self._forget(name)
+                    freed += size
+                else:
+                    stuck.add(name)
             self._dir_mtime = self._read_dir_mtime()
         return freed
 

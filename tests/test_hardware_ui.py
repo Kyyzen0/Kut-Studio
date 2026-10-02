@@ -15,6 +15,7 @@ from core.render_queue_store import RenderQueueStore
 from core.user_settings import load_user_settings
 from ui import i18n
 from ui.export_panel import ExportPanel
+from ui.preferences_dialog import PreferencesDialog
 from ui.render_queue_panel import RenderQueuePanel
 
 
@@ -251,6 +252,25 @@ def test_redetect_button_runs_a_fresh_detection(qtbot, monkeypatch, tmp_path, fa
     qtbot.waitUntil(lambda: service.scan_count == 2 and not window._detecting_hardware, timeout=8000)
     assert _options(tab.encoder_combo) == ["auto", "cpu"]
     assert "videotoolbox" not in tab.diagnostics_view.toPlainText().split("Auto pour")[0].lower()
+
+
+def test_a_detection_result_arriving_after_the_preferences_closed_is_harmless(
+    qtbot, monkeypatch, tmp_path, fake_proxies
+):
+    """Régression : la boîte (WA_DeleteOnClose) était détruite, la fenêtre gardait sa référence."""
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    set_default_service(_service(tmp_path, "videotoolbox"))
+    window = _window(qtbot, monkeypatch, tmp_path)
+    qtbot.waitUntil(lambda: window.hardware_capabilities() is not None, timeout=8000)
+    # Pas de qtbot.addWidget : le test détruit lui-même la boîte, qtbot ne doit pas la refermer.
+    dialog = PreferencesDialog(shortcut_manager=window.shortcuts, performance_host=window)
+    window._preferences_dialog = dialog
+    dialog.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert not shiboken6.isValid(dialog)
+    window._refresh_encoding_settings_tab()          # ne doit rien lever : la boîte n'existe plus
 
 
 def test_diagnostics_can_be_copied(qtbot, monkeypatch, tmp_path, fake_proxies):

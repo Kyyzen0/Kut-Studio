@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
+from core.export_paths import default_export_directory, export_file_name
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.render_plan import RenderPlan, build_render_plan
@@ -20,8 +21,35 @@ def _main_window():
 class ProjectFilesMixin:
     """Mixin de ``MainWindow`` (project_files)."""
 
+    def _confirm_discard_changes(self) -> bool:
+        """Propose d'enregistrer un projet modifié avant de le quitter.
+
+        ``False`` annule l'action en cours (fermer, nouveau, ouvrir) : l'utilisateur a refusé, ou
+        l'enregistrement a échoué / été annulé, et rien ne doit être perdu.
+        """
+        if not getattr(self, "project_dirty", False):
+            return True
+        self._finalize_pending_edit_sessions()
+        box = _main_window().QMessageBox
+        name = (getattr(self.project, "name", "") or "").strip() or i18n.translate("project.untitled")
+        answer = box.question(
+            self,
+            i18n.translate("project.unsaved.title"),
+            i18n.translate("project.unsaved.text", name=name),
+            box.Save | box.Discard | box.Cancel,
+            box.Save,
+        )
+        if answer == box.Cancel:
+            return False
+        if answer == box.Save:
+            self.save_project_file()
+            return not self.project_dirty
+        return True
+
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
+        if not self._confirm_discard_changes():
+            return
         self._finalize_pending_edit_sessions()
         self._release_open_project()
         self.project = create_default_project()
@@ -52,7 +80,7 @@ class ProjectFilesMixin:
         try:
             save_project(self.project, self.current_project_path)
             discard_autosave(self.current_project_path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
                 "Enregistrement impossible",
@@ -67,8 +95,9 @@ class ProjectFilesMixin:
         if self.current_project_path is not None:
             default_path = self.current_project_path
         else:
-            safe_name = (self.project.name or "projet").strip() or "projet"
-            default_path = os.path.join(os.path.expanduser("~"), f"{safe_name}.kut")
+            default_path = os.path.join(
+                os.path.expanduser("~"), export_file_name(self.project.name, "kut", fallback="projet")
+            )
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
             "Enregistrer le projet sous...",
@@ -82,7 +111,7 @@ class ProjectFilesMixin:
         try:
             save_project(self.project, path)
             discard_autosave(path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
                 "Enregistrement impossible",
@@ -115,10 +144,12 @@ class ProjectFilesMixin:
         d'erreur est affiché et l'état courant de l'application reste
         intact.
         """
+        if not self._confirm_discard_changes():
+            return
         self._finalize_pending_edit_sessions()
         try:
             loaded = load_project(path)
-        except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
+        except Exception as exc:  # noqa: BLE001 - quoi qu'il arrive, un fichier abîmé ne doit rien casser
             _main_window().QMessageBox.critical(
                 self,
                 "Impossible d'ouvrir le projet",
@@ -139,7 +170,7 @@ class ProjectFilesMixin:
                 try:
                     loaded = load_project(str(sidecar_path(path)))
                     restored_autosave = True
-                except (FileNotFoundError, ValueError, OSError, TypeError) as exc:
+                except Exception as exc:  # noqa: BLE001 - idem pour la sauvegarde automatique
                     _main_window().QMessageBox.critical(
                         self,
                         "Récupération impossible",
@@ -214,26 +245,31 @@ class ProjectFilesMixin:
         return job
 
     def _ask_export_path(self, spec) -> str:
-        default_dir = os.path.expanduser("~/Movies")
-        os.makedirs(default_dir, exist_ok=True)
-        name = (getattr(self.project, "name", "") or "kut-studio-export").strip()
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
             i18n.translate("render.export.save_title"),
-            os.path.join(default_dir, f"{name}.{spec.container}"),
+            os.path.join(
+                default_export_directory(), export_file_name(getattr(self.project, "name", ""), spec.container)
+            ),
             f"Vidéos (*.{spec.container})",
         )
         return path
 
-    def get_render_plan(self) -> RenderPlan:
+    def get_render_plan(self, at: float | None = None) -> RenderPlan:
         """Construit le :class:`RenderPlan` du projet courant.
 
         Le plan décrit fidèlement la timeline (positions, trims, trous,
         ordre des pistes, clips activés). C'est désormais l'entrée
         unique du moteur d'export.
+
+        ``at`` : instant de la timeline ramené à l'origine du plan (voir
+        :func:`core.playhead_snapshot.project_at_playhead`), pour n'extraire qu'une image
+        sans payer le coût de tout ce qui précède.
         """
+        from core.playhead_snapshot import project_at_playhead
+
         return build_render_plan(
-            self.project,
+            self.project if at is None else project_at_playhead(self.project, at),
             master_gain_db=self._master_gain_db,
             master_muted=self._master_muted,
         )

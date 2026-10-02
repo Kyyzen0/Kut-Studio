@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def test_native_config_directories_for_all_platforms() -> None:
@@ -83,6 +87,42 @@ def test_windows_filter_path_is_safe_in_a_quoted_filename_value() -> None:
     assert _escape_filter_path(r"C:\Users\Runner\subtitle.srt") == (
         r"C\:/Users/Runner/subtitle.srt"
     )
+
+
+def test_an_apostrophe_in_a_filter_path_closes_and_reopens_the_quoted_value() -> None:
+    from core.export_engine import _escape_filter_path
+
+    assert _escape_filter_path("/home/Jean d'Arc/s.srt") == "/home/Jean d'\\\\\\''Arc/s.srt"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
+@pytest.mark.parametrize("folder", ["plain dir", "Jean d'Arc", "O'Brien's cut", "café été", "a,b[c];d"])
+@pytest.mark.parametrize("kind", ["subtitles", "lut3d"])
+def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(tmp_path, folder, kind) -> None:
+    """Régression : un dossier avec apostrophe (profil Windows « O'Brien ») cassait sous-titres et LUT."""
+    from core.export_engine import _escape_filter_path, _ffmpeg_supports_subtitles
+
+    if kind == "subtitles" and not _ffmpeg_supports_subtitles():
+        # Environnement, pas régression : l'application le détecte aussi et refuse avec un message clair
+        # (build FFmpeg sans libass, ex. celle du runner macOS de la CI).
+        pytest.skip("Cette build FFmpeg n'a pas le filtre « subtitles » (libass absent).")
+    directory = tmp_path / folder
+    directory.mkdir()
+    if kind == "subtitles":
+        path = directory / "s.srt"
+        path.write_text("1\n00:00:00,000 --> 00:00:00,500\nHi\n", encoding="utf-8")
+        video_filter = f"subtitles=filename='{_escape_filter_path(str(path))}'"
+    else:
+        path = directory / "id.cube"
+        rows = "\n".join(f"{r} {g} {b}" for b in (0, 1) for g in (0, 1) for r in (0, 1))
+        path.write_text(f"LUT_3D_SIZE 2\n{rows}\n", encoding="utf-8")
+        video_filter = f"lut3d=file='{_escape_filter_path(str(path))}'"
+    completed = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.2",
+         "-vf", video_filter, "-f", "null", "-"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_bundled_media_tools_win_before_path(tmp_path) -> None:

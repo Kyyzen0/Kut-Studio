@@ -18,6 +18,7 @@ Module pur (aucun Qt) : la partie Qt est ``ui/gpu_preview.py``.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import statistics
@@ -29,6 +30,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from .platform_paths import user_cache_dir
 
 LOGGER = logging.getLogger("kut_studio.gpu")
 
@@ -135,6 +138,74 @@ class GpuHealth:
             self.failures = self.device_lost = self.fallbacks = 0
 
 
+class GpuCrashGuard:
+    """Mémoire d'un plantage du **processus** pendant que le moniteur GPU était actif.
+
+    ``GpuHealth`` ne voit que les échecs que Qt rapporte. Un pilote qui fait tomber l'application (erreur fatale,
+    écran noir puis arrêt) ne laisse aucune trace de ce genre : à chaque démarrage le GPU était retenté, donc
+    l'application replantait à chaque démarrage. Un marqueur est posé quand le GPU est activé et retiré à l'arrêt
+    propre ; s'il subsiste au démarrage suivant, la session précédente s'est terminée brutalement avec le GPU
+    actif. Le mode Auto reste alors sur le CPU jusqu'à ce que l'utilisateur choisisse lui-même le rendu de
+    l'aperçu (:meth:`reset`) : un choix explicite redonne sa chance au GPU.
+
+    Tout est tolérant : un fichier illisible ou un disque en lecture seule se comportent comme « aucun plantage ».
+    """
+
+    FILE_NAME = "gpu-guard.json"
+
+    def __init__(self, directory: Path | str | None = None) -> None:
+        self.path = Path(directory) / self.FILE_NAME if directory is not None else user_cache_dir() / self.FILE_NAME
+
+    def _read(self) -> dict:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _write(self, data: dict) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_name(self.path.name + ".tmp")
+            temporary.write_text(json.dumps(data), encoding="utf-8")
+            os.replace(temporary, self.path)
+        except OSError:
+            LOGGER.debug("Garde GPU : écriture impossible (%s)", self.path)
+
+    @staticmethod
+    def _count(data: dict) -> int:
+        try:
+            return max(0, int(data.get("crashes", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    def begin_session(self) -> None:
+        """À appeler une fois au démarrage : un marqueur resté en place est un plantage de la session précédente."""
+        data = self._read()
+        if data.get("armed") is True:
+            LOGGER.warning("La session précédente s'est terminée brutalement avec le GPU actif")
+            self._write({"armed": False, "crashes": self._count(data) + 1})
+
+    @property
+    def suspended(self) -> bool:
+        """Un plantage avec GPU actif est connu : le mode Auto n'y retourne pas de lui-même."""
+        return self._count(self._read()) >= 1
+
+    def arm(self) -> None:
+        """Le moniteur GPU vient d'être activé."""
+        self._write({"armed": True, "crashes": self._count(self._read())})
+
+    def disarm(self) -> None:
+        """Le GPU n'est plus actif (arrêt propre, repli CPU) : un plantage ultérieur n'est pas le sien."""
+        data = self._read()
+        if data.get("armed"):
+            self._write({"armed": False, "crashes": self._count(data)})
+
+    def reset(self) -> None:
+        """Choix explicite de l'utilisateur : le GPU retrouve sa chance."""
+        self._write({"armed": False, "crashes": 0})
+
+
 @dataclass(frozen=True)
 class ResolvedBackend:
     """Rendu retenu pour le moniteur."""
@@ -160,6 +231,7 @@ def resolve_preview_backend(
     requested: object,
     *,
     health: GpuHealth | None = None,
+    guard: GpuCrashGuard | None = None,
     environment: Mapping[str, str] | None = None,
     platform_name: str | None = None,
     platform_plugin: str = "",
@@ -180,6 +252,12 @@ def resolve_preview_backend(
         detail = f" ({event.kind} : {event.detail})" if event is not None and event.detail else ""
         return ResolvedBackend(wanted, "cpu", reason="gpu_failed",
                                fallback_reason=f"Le rendu GPU a échoué{detail} : aperçu CPU.")
+    if not explicit and guard is not None and guard.suspended:
+        return ResolvedBackend(
+            wanted, "cpu", reason="previous_crash",
+            fallback_reason="La session précédente s'est terminée brutalement avec le GPU actif : aperçu CPU. "
+                            "Choisissez « GPU » dans les préférences pour réessayer.",
+        )
     return ResolvedBackend(wanted, "gpu", api=graphics_api(platform_name), reason="gpu")
 
 
@@ -276,6 +354,7 @@ __all__ = [
     "GRAPHICS_APIS",
     "SHADER_NAMES",
     "FrameStats",
+    "GpuCrashGuard",
     "GpuEvent",
     "GpuHealth",
     "PreviewBackend",

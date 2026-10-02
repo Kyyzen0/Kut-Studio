@@ -27,7 +27,7 @@ import os
 from collections.abc import Callable
 from dataclasses import replace
 
-from .filter_graph import fingerprint_plan
+from .filter_graph import fingerprint_plan, normalize_fps
 from .preview_cache import SEGMENT_SECONDS, PreviewSegmentKey
 from .preview_engine import PreviewJob
 from .render_plan import RenderPlan, build_render_plan
@@ -187,7 +187,7 @@ def build_segment_job(
         plan=plan,
         width=project.width,
         height=project.height,
-        fps=int(project.fps),
+        fps=normalize_fps(project.fps),
         quality=quality,
         start=start,
         duration=segment_seconds,

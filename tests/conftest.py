@@ -55,6 +55,25 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _widgets_application():
+    """Une vraie ``QApplication`` avant le premier test, quel que soit l'ordre d'exécution.
+
+    Le code de rendu (graphes d'export, motion graphics) crée une ``QGuiApplication`` nue quand aucune
+    application n'existe (:func:`core.mograph_stream.ensure_qt_gui`). Si un test sans fixture ``qapp``
+    passait en premier dans un worker, les tests d'interface suivants héritaient de cette application sans
+    widgets : plantage du worker ou échec selon la répartition des tests, donc selon le nombre de cœurs.
+    (Créée directement, sans passer par ``qapp`` : certains modules redéfinissent cette fixture.)
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:  # pragma: no cover - Qt absent
+        yield None
+        return
+    application = QApplication.instance() or QApplication([])
+    yield application
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _release_media_players_at_exit():
     """Arrête les ``QMediaPlayer`` encore vivants avant la fin du processus.
 
@@ -80,3 +99,13 @@ def _release_media_players_at_exit():
             except RuntimeError:  # objet C++ déjà détruit
                 pass
     QCoreApplication.processEvents()
+
+
+@pytest.fixture(autouse=True)
+def _no_unsaved_changes_prompt(monkeypatch):
+    """La boîte « enregistrer avant de quitter ? » est modale : sans réponse elle bloquerait tout test qui
+    ferme une fenêtre modifiée (qtbot ferme les fenêtres à la fin du test). Par défaut on abandonne les
+    modifications ; ``test_unsaved_changes_prompt`` réactive la vraie boîte."""
+    from ui.main_window_mixins.project_files import ProjectFilesMixin
+
+    monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)

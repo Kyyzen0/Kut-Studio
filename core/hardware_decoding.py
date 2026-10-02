@@ -197,7 +197,13 @@ def codec_class(codec_name: str, pix_fmt: str = "") -> DecodeCodec | None:
     décoderait en logiciel sans le dire.
     """
     name = str(codec_name or "").strip().lower()
-    depth, chroma = _PIX_FMT_DEPTH.get(str(pix_fmt or "").strip().lower(), (0, ""))
+    fmt = str(pix_fmt or "").strip().lower()
+    depth, chroma = _PIX_FMT_DEPTH.get(fmt, (0, ""))
+    if fmt and not depth:
+        # Format connu du flux mais hors de la table (12 bits, niveaux de gris...) : aucun décodage matériel
+        # validé ne le couvre. Le traiter en 8 bits 4:2:0 faisait échouer le matériel, puis bannir le HEVC
+        # 8 bits sain de la session. Seul un pix_fmt VIDE (sonde incomplète) garde le profil par défaut.
+        return None
     for codec in DECODE_CODECS:
         if name not in codec.codec_names:
             continue

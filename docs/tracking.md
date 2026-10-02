@@ -207,6 +207,8 @@ Les résultats frais sont quantifiés comme ceux du cache : ils sont identiques.
 
 ## Format `.kut` (version 16)
 
+*Version courante du format.*
+
 Clé `tracking` d'un clip, **absente** sans tracking (un fichier v15 s'ouvre
 tel quel, un projet sans tracking s'écrit comme avant) :
 
@@ -332,6 +334,12 @@ rendu, aperçu et export suivent.
   rotation est appliquée telle quelle (approximation ; exact en échelle
   uniforme).
 - **Clips imbriqués** : ni source ni cible de liaison.
+- **Couper la source d'un tracking** : la partie droite reçoit un nouvel identifiant, les clips qui suivent la source
+  restent liés à la partie gauche et leur mouvement reste figé sur sa dernière image. La coupe l'annonce dans la
+  barre d'état ; il faut relier les clips à la partie droite (`core.tracking_ops.tracking_dependents` les liste).
+- **Relier un média différent** (autre résolution, autre cadence) : les positions suivies sont en pixels du média
+  d'origine ; le relink relit maintenant les métadonnées du nouveau fichier et annonce les différences, mais un
+  nouveau suivi reste nécessaire si l'image n'est plus la même.
 - Le suivi est **2D** (similitude) : pas de perspective, pas de déformation
   du contour d'un masque, pas de suivi planar.
 - La **confiance** est le score de corrélation : elle peut rester haute sur

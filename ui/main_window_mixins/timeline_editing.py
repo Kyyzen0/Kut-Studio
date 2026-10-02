@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QInputDialog, QMenu
 from core.effects import play_crossfade_preview
@@ -27,6 +29,9 @@ from core.timeline_operations import (
     trim_clip_left,
     trim_clip_right,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _main_window():
@@ -59,19 +64,33 @@ class TimelineEditingMixin:
         self.timeline_panel.select_clip(new_clip.id)
         self._mark_dirty()
 
+    def _report_edit_refused(self, reason: object) -> None:
+        """Dit à l'utilisateur qu'une opération est refusée (barre d'état) et la journalise.
+
+        Un ``print`` ne se voit pas dans l'application empaquetée (sans console) : l'action semblait alors
+        simplement ne rien faire. Utilisée par tous les gestionnaires d'édition de la fenêtre principale.
+        """
+        LOGGER.info("Opération refusée : %s", reason)
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            bar.showMessage(str(reason), 5000)
+
     def ripple_delete_selected_clip(self) -> None:
         """Supprime le clip sélectionné et ramène à gauche les clips suivants."""
         clip_id = self.timeline_panel.selected_clip_id
         if clip_id is None:
             return
         try:
-            moved_ids = ripple_delete_clip(self.project, clip_id)
+            ripple_delete_clip(self.project, clip_id)
         except KeyError as exc:
             _main_window().QMessageBox.critical(
                 self,
                 "Suppression impossible",
                 f"Impossible de supprimer le clip :\n\n{exc}",
             )
+            return
+        except ValueError as exc:  # piste verrouillée : refus normal, pas une panne
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer avec ripple")
         self.timeline_panel.selected_clip_id = None
@@ -99,7 +118,7 @@ class TimelineEditingMixin:
         try:
             delete_clips(self.project, ids, ripple=self.timeline_panel.ripple_enabled)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] suppression groupée refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer la sélection")
         self.timeline_panel.selected_clip_id = None
@@ -124,6 +143,9 @@ class TimelineEditingMixin:
             set_clip_enabled(self.project, clip_id, not was_enabled)
         except KeyError:
             return
+        except ValueError as exc:  # piste verrouillée
+            self._report_edit_refused(exc)
+            return
         self._record_history(
             "Désactiver le clip" if was_enabled else "Activer le clip"
         )
@@ -136,7 +158,7 @@ class TimelineEditingMixin:
         try:
             move_clip(self.project, clip_id, new_timeline_start)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] move refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Déplacer le clip")
         self._reload_timeline_preserving_selection(clip_id)
@@ -150,7 +172,7 @@ class TimelineEditingMixin:
             else:
                 trim_clip_left(self.project, clip_id, new_timeline_start)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] trim gauche refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Trim gauche")
         self._reload_timeline_preserving_selection(clip_id)
@@ -167,7 +189,7 @@ class TimelineEditingMixin:
         try:
             trim_clip_right(self.project, clip_id, new_timeline_end)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] trim droit refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         if self.timeline_panel.ripple_enabled and old_end is not None and track_id:
             shift_track_after(
@@ -185,17 +207,27 @@ class TimelineEditingMixin:
     def cut_at_playhead(self):
         clip_id = self.timeline_panel.selected_clip_id
         if clip_id is None:
-            print("[MainWindow] Cut : aucun clip sélectionné")
+            self._report_edit_refused("Aucun clip sélectionné à couper")
             return
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
+        from core.tracking_ops import tracking_dependents
+
+        followers = tracking_dependents(self.project, clip_id)
         try:
             cut_clip(self.project, clip_id, playhead_pos)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] cut refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Couper le clip")
+        if followers:
+            # Honnête plutôt que silencieux : la partie droite a un nouvel identifiant, leur suivi s'arrête ici.
+            self.statusBar().showMessage(
+                f"Ce clip porte le tracking de {len(followers)} autre(s) clip(s) : leur suivi s'arrête à la "
+                "coupe. Reliez-les à la partie droite pour qu'il continue.",
+                10000,
+            )
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -223,7 +255,7 @@ class TimelineEditingMixin:
         try:
             delete_clip(self.project, clip_id)
         except KeyError as exc:
-            print(f"[MainWindow] delete refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer le clip")
         self.timeline_panel.selected_clip_id = None
@@ -307,7 +339,7 @@ class TimelineEditingMixin:
         try:
             slip_clip(self.project, clip_id, delta)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] slip refusé : {exc}")
+            self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
         self._record_history("Slip")
@@ -318,7 +350,7 @@ class TimelineEditingMixin:
         try:
             slide_clip(self.project, clip_id, new_start)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] slide refusé : {exc}")
+            self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
         self._record_history("Slide")
@@ -330,7 +362,7 @@ class TimelineEditingMixin:
         try:
             roll_edit(self.project, clip_id, edge, new_time)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] roll refusé : {exc}")
+            self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
         self._record_history("Roll")
@@ -342,7 +374,7 @@ class TimelineEditingMixin:
         try:
             move_clips(self.project, list(placements))
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] déplacement refusé : {exc}")
+            self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
         self._record_history("Déplacer les clips")

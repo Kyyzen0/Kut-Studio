@@ -279,8 +279,12 @@ def test_layers_are_emitted_in_track_order_v1_then_v2():
 # ---------------------------------------------------------------------------
 
 
-def test_active_clip_with_missing_asset_raises_key_error():
-    """Un clip actif dont l'asset est absent lève une ``KeyError`` claire."""
+def test_active_clip_with_missing_asset_is_rendered_empty_and_reported():
+    """Un clip actif dont l'asset est absent est « hors ligne » : plan sans couche, signalé, sans exception.
+
+    Avant : ``KeyError``, qui faisait échouer le seek, l'aperçu, l'annulation et la réouverture du projet.
+    Un export, lui, refuse ce plan (``test_orphan_clips``).
+    """
     project = Project(
         name="Orphan",
         tracks=[
@@ -297,8 +301,10 @@ def test_active_clip_with_missing_asset_raises_key_error():
         ],
         media_assets=[_make_asset()],  # ghost-asset absent
     )
-    with pytest.raises(KeyError, match="ghost-asset"):
-        build_render_plan(project)
+    plan = build_render_plan(project)
+    assert plan.video_layers == ()
+    assert plan.missing_media == ("ghost-asset",)
+    assert any("ghost-asset" in warning for warning in plan.warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -523,8 +529,8 @@ def test_audio_layers_track_order_matches_project_tracks():
     assert [layer.clip_id for layer in plan.audio_layers] == ["first", "second"]
 
 
-def test_audio_layers_raise_for_missing_asset():
-    """Un clip audio actif sans asset lève une ``KeyError``."""
+def test_audio_layers_skip_a_missing_asset_and_report_it():
+    """Un clip audio actif sans asset est ignoré et signalé (plus de ``KeyError``)."""
     project = Project(
         name="Orphan",
         tracks=[
@@ -535,8 +541,8 @@ def test_audio_layers_raise_for_missing_asset():
         ],
         media_assets=[],
     )
-    with pytest.raises(KeyError, match="ghost-audio"):
-        build_render_plan(project)
+    plan = build_render_plan(project)
+    assert plan.audio_layers == () and plan.missing_media == ("ghost-audio",)
 
 
 # ---------------------------------------------------------------------------

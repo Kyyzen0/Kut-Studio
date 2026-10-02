@@ -482,10 +482,10 @@ def test_store_persistence_roundtrip(tmp_path) -> None:
         description="",
         grade=ColorGrade.identity(),
     )
-    target = tmp_path / COLOR_PRESETS_FILE
     save_color_preset_data(
         [preset], ["cinema"], settings_dir=tmp_path
     )
+    assert (tmp_path / COLOR_PRESETS_FILE).exists()
     user, favs = load_color_preset_data(settings_dir=tmp_path)
     assert any(p.id == preset.id for p in user)
     assert "cinema" in favs

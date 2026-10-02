@@ -313,6 +313,11 @@ class FaithfulPreviewMixin:
             opacity=1.0,
         )
         self.preview_panel.set_effects(())
+        # Idem pour la fusion, le masque et les calques d'effets du moniteur GPU : le segment les contient
+        # déjà. Ceux du clip précédemment affiché (multiply, overlay, masque...) étaient redessinés par-dessus,
+        # et un fond noir sous un « multiply » donnait du noir.
+        self.preview_panel.set_layer_compositing(None, None)
+        self.preview_panel.set_adjustments(())
         return True
 
     def _refresh_preview_cache_state(self) -> None:

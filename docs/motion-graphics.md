@@ -178,9 +178,10 @@ fusion est faite en RVB planaire, puis l'alpha du calque est réappliqué : le
   de flux `.ffconcat` (images PNG + durées) produits par le rastériseur Qt.
 - **Viewer interactif** (avant que le segment fidèle soit prêt, et pendant
   la lecture) : le même rastériseur dessine les calques au-dessus du lecteur
-  vidéo. Approximations : pas d'effets FFmpeg ni d'adjustment layers, fusion
+  vidéo. Approximations (moniteur CPU) : pas d'effets FFmpeg ni d'adjustment layers, fusion
   calculée contre un fond transparent, demi-résolution sans flou pendant la
-  lecture. Dès que le segment fidèle est en cache, il remplace cet aperçu.
+  lecture ; le moniteur GPU, lui, les montre en temps réel (voir
+  [gpu-preview.md](gpu-preview.md)). Dès que le segment fidèle est en cache, il remplace cet aperçu.
 - **Préparation de l'export** : les images des calques sont rendues dans un
   fil séparé (`RenderQueue._prepare_then_start`), puis FFmpeg démarre et les
   relit dans le cache. L'interface reste fluide.
@@ -212,6 +213,8 @@ sur l'image, moyennés. Un calque immobile n'est rendu qu'une fois.
   flou de mouvement : un segment ne se recalcule que si ce qu'il montre change.
 
 ## Format `.kut` (version 15)
+
+*Cette section décrit les clés introduites en version 15 ; le format courant est la **version 16** (voir [architecture.md](architecture.md#format-kut)).*
 
 Nouveaux champs, tous optionnels à la lecture :
 
@@ -322,4 +325,5 @@ traiter comme un élément à part dans `graphics_program`
   fidèle fait foi.
 - Contour adouci et ombre floue : flou approché (réduction / agrandissement
   lissés), identique dans l'aperçu et l'export mais pas strictement gaussien.
-- Pas de tracking, rotoscopie, système nodal, expressions, 3D ni caméra.
+- Pas de rotoscopie, système nodal, expressions, 3D ni caméra. Le suivi 2D d'un point (position, ancrage,
+  masque) existe : voir [tracking.md](tracking.md).

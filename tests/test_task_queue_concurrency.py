@@ -134,8 +134,6 @@ def test_session_cancel_only_touches_that_session():
 def test_submit_and_pump_from_two_threads_are_safe():
     queue = TaskQueue()
     errors: list[BaseException] = []
-    executed: list[str] = []
-    lock = threading.Lock()
     start = threading.Barrier(2)
 
     def producer() -> None:

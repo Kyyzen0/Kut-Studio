@@ -51,7 +51,7 @@ class PreviewJob:
     plan: object
     width: int = 1920
     height: int = 1080
-    fps: int = 30
+    fps: float = 30
     quality: str = "standard"
     start: float = 0.0
     duration: float = 2.0
@@ -527,6 +527,7 @@ class PreviewEngine:
             self._epoch += 1
             self._generations.clear()
             self._key_clips.clear()
+            tokens = list(self._tokens.values())
             self._tokens.clear()
             self._key_starts.clear()
             self._started.clear()
@@ -536,6 +537,13 @@ class PreviewEngine:
             self.tasks.cancel_all()
         except Exception:
             pass
+        # Les jetons des rendus déjà lancés : sans eux FFmpeg continuait jusqu'à son délai (120 s)
+        # après la fermeture ou le changement de projet, et laissait son fichier temporaire.
+        for token in tokens:
+            try:
+                token.cancel()
+            except Exception:
+                pass
         for path in subtitles:
             self._remove_file(path)
         self._notify()
@@ -631,7 +639,7 @@ class PreviewEngine:
             )
         except Exception as exc:
             self._remove_file(tmp_path)
-            raise RuntimeError("Echec du rendu d'apercu : %s" % exc)
+            raise RuntimeError("Echec du rendu d'apercu : %s" % exc) from exc
         except BaseException:
             # Interruption (fermeture de l'application, Ctrl-C) : meme
             # nettoyage, aucun temporaire ne doit survivre.
@@ -654,6 +662,15 @@ class PreviewEngine:
             raise RuntimeError(
                 "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
             )
+        try:
+            produced = os.path.getsize(tmp_path)
+        except OSError:
+            produced = 0
+        if produced <= 0:
+            # Code de sortie 0 mais rien d'ecrit (le fichier temporaire vient de ``mkstemp``) : mis en cache, ce
+            # segment vide serait servi tel quel pendant sept jours sans jamais etre refait.
+            self._remove_file(tmp_path)
+            raise RuntimeError("FFmpeg apercu n'a produit aucun fichier.")
         # Le segment ne sera supprimable qu'une fois recopie dans le
         # cache : on l'enregistre comme appartenant au moteur.
         with self._lock:

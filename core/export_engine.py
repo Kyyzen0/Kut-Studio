@@ -33,6 +33,7 @@ et ``cancelled``.
 
 from __future__ import annotations
 
+import math
 import logging
 import os
 import shutil
@@ -61,6 +62,7 @@ from .transitions import TransitionType
 from .time_remapping import (
     MAX_REVERSE_DURATION_SECONDS,
     FreezeFrameMode,
+    clamp_speed,
     get_ffmpeg_freeze_filter,
     get_ffmpeg_reverse_filter,
     get_ffmpeg_speed_filter,
@@ -86,6 +88,30 @@ from .visual_effects import (
 LOGGER = logging.getLogger("kut_studio.encoding")
 
 _ffmpeg_path = find_media_tool("ffmpeg")
+
+
+OUTPUT_COLOR_STAGE = (
+    "scale=out_color_matrix=bt709:out_range=tv,"
+    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+)
+"""Dernière étape du graphe vidéo : conversion RVB → YUV en BT.709, plage limitée, puis propriétés des images.
+
+``setparams`` pose primaires et transfert sur les images elles-mêmes : selon la version de FFmpeg, les
+options de ligne de commande (:data:`OUTPUT_COLOR_TAGS`) ne suffisent pas (le flux sortait balisé
+« bt709 » pour la matrice seulement, primaires et transfert « unknown », sous macOS)."""
+
+OUTPUT_COLOR_TAGS = (
+    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+)
+"""Balises posées sur le flux encodé : un lecteur décode alors avec la matrice utilisée à l'encodage."""
+
+
+def with_output_color_stage(filter_complex: str, video_label: str) -> tuple[str, str]:
+    """Ajoute au graphe l'étape de conversion BT.709 ; renvoie ``(graphe, nouvelle étiquette vidéo)``.
+
+    Partagée par l'export et l'aperçu : les deux restent « le même graphe », y compris pour la couleur.
+    """
+    return f"{filter_complex};[{video_label}]{OUTPUT_COLOR_STAGE}[vcolor]", "vcolor"
 
 
 def _ffmpeg_command_prefix() -> list[str]:
@@ -480,15 +506,22 @@ class ExportEngine(QObject):
 
         Différences avec :meth:`_build_command` :
 
-        - ``-ss <playhead>`` est inséré **avant** les entrées, donc le
-          décodage est.seeké et non la sortie ;
+        - la sortie du graphe est rognée à ``playhead`` (``trim`` sur le flux
+          composé : c'est le seul moyen exact, un ``-ss`` posé sur une entrée
+          ignore la position du clip, sa vitesse et son point d'entrée) ;
         - un seul flux est mappé (le vidéo) ;
         - la sortie est un PNG unique écrit sur ``stdout``
           (``-f image2pipe``), ce qui évite tout fichier temporaire.
 
+        Tout ce qui précède ``playhead`` traverse le graphe avant d'être jeté
+        (coût O(playhead)) : pour une image rapide, passer un plan déjà ramené
+        à l'origine (:func:`core.playhead_snapshot.project_at_playhead`) et
+        ``playhead=0``.
+
         Args:
             request: la requête d'export, pour sa résolution / son fps ;
-            playhead: position à extraire, en secondes.
+            playhead: position à extraire dans le plan, en secondes. L'image
+                retenue est celle qui contient cet instant.
 
         Returns:
             La commande FFmpeg complète.
@@ -504,6 +537,16 @@ class ExportEngine(QObject):
         # Seule l'image est extraite : l'audio du graphe est consommé par un
         # puits, sinon FFmpeg refuse un graphe dont une sortie n'est pas reliée.
         filter_complex = f"{filter_complex};[{audio_label}]anullsink"
+        position = max(0.0, float(playhead))
+        mapped = video_label
+        if position > 0.0:
+            # L'image qui contient l'instant : on vise une demi-image avant son horodatage, pour que
+            # l'arrondi des timestamps ne retienne jamais sa voisine.
+            rate = max(1.0, float(request.fps))
+            index = math.floor(position * rate + 1e-6)
+            start = max(0.0, (index - 0.5) / rate)
+            mapped = "kut_frame"
+            filter_complex += f";[{video_label}]trim=start={start:.6f},setpts=PTS-STARTPTS[{mapped}]"
         command: list[str] = [
             *_ffmpeg_command_prefix(),
             "-y",
@@ -511,22 +554,10 @@ class ExportEngine(QObject):
             "-loglevel",
             "error",
         ]
-        from .mograph_stream import still_playlist
-
-        seek = f"{max(0.0, float(playhead)):.3f}"
-        for index, path in enumerate(input_paths):
-            if path.endswith(".ffconcat"):
-                # Flux de calques (temps de timeline) : on lit directement
-                # l'image valable à la tête de lecture, sans recherche.
-                command.extend(["-i", still_playlist(path, float(playhead))])
-                continue
-            # Le seek se place juste avant la première entrée : FFmpeg
-            # décode alors uniquement ce qui précède la position demandée.
-            if index == 0:
-                command.extend(["-ss", seek])
+        for path in input_paths:
             command.extend(["-i", path])
         command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
-        command.extend(["-map", f"[{video_label}]"])
+        command.extend(["-map", f"[{mapped}]"])
         command.extend([
             "-frames:v", "1",
             "-f", "image2pipe",
@@ -539,6 +570,13 @@ class ExportEngine(QObject):
         """Construit la commande FFmpeg pour un export basé ``RenderPlan``."""
         plan = request.render_plan
         width, height = request.preset.resolution
+        if plan.missing_media:
+            # À l'écran un clip sans média est simplement vide ; dans un fichier exporté ce serait un
+            # trou muet que personne ne verrait avant la livraison : on refuse, clairement.
+            raise ValueError(
+                "Média introuvable : " + ", ".join(plan.missing_media)
+                + ". Reconnectez ou supprimez les clips concernés avant d'exporter."
+            )
         output_path = Path(request.output_path).expanduser()
         if not output_path.parent.exists():
             raise ValueError(
@@ -580,6 +618,10 @@ class ExportEngine(QObject):
         for path in input_paths:
             command.extend(["-i", path])
 
+        # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
+        # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
+        # un fichier HD comme du 709 affichait des couleurs décalées (rouge +11 niveaux mesurés).
+        filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
         if encoder.video_filter:
             filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
             video_label = "vencoded"
@@ -587,6 +629,7 @@ class ExportEngine(QObject):
         command.extend(["-map", f"[{video_label}]"])
         command.extend(["-map", f"[{audio_label}]"])
         command.extend(encoder.args)
+        command.extend(OUTPUT_COLOR_TAGS)
 
         # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
         # ``ExportPreset`` porte toujours ce champ, mais le moteur reste
@@ -1093,7 +1136,7 @@ def _compose_plan_graph(
                     )
                     blend_onto(
                         parts, previous_label, f"{p}bt{layer_index}", blend_mode, next_label,
-                        f"{p}vb{layer_index}",
+                        f"{p}vb{layer_index}", transparent_bottom=nested,
                     )
                 else:
                     parts.append(
@@ -1110,7 +1153,7 @@ def _compose_plan_graph(
         bg_seconds = duration if duration > 0 else 1.0 / float(fps or 30)
         video_label = compose_graphics(
             parts, plan, width, height, fps, video_label, add_input,
-            prefix=p, quality=quality, duration=bg_seconds,
+            prefix=p, quality=quality, duration=bg_seconds, nested=nested,
         )
 
     if not want_audio:
@@ -1482,56 +1525,52 @@ def _build_layer_filter(
         )
 
     # Filtres de remappage temporel (freeze, reverse, speed)
-    time_remapping_filter = _build_time_remapping_video_filter(layer)
+    time_remapping_filter = _build_time_remapping_video_filter(layer, fps)
 
     parts = [
         f"[{source_label}]",
         f"trim=start={source_in}:end={source_out},",
-        f"setpts=PTS-STARTPTS,",
+        "setpts=PTS-STARTPTS,",
     ]
 
-    # Freeze frame: appliqué immédiatement après trim/setpts
-    # car il sélectionne une frame spécifique
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        # Une seule image est retenue (avant tout traitement : un seul calcul),
+        # mise au format du cadre, puis tenue pendant la durée du freeze.
+        hold = float(layer.time_remapping.freeze_duration)
+        if hold <= 0.0:
+            hold = max(0.0, float(layer.timeline_end - layer.timeline_start))
+        hold = max(hold, 1.0 / float(fps))
         parts.append(f"{time_remapping_filter},")
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
+        parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
         parts.append(f"fps={fps},")
-        parts.append(apply_matte())
-        if flip_filters:
-            parts.append(f"{flip_filters},")
-        if effect_filters:
-            parts.append(f"{effect_filters},")
-        if color_grade_filters:
-            parts.append(f"{color_grade_filters},")
-        parts.append(f"{','.join(compositing_filters)},")
-        parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
+        parts.append(f"trim=duration={hold:.6f},")
+        parts.append("setpts=PTS-STARTPTS,")
     else:
-        # Cas normal: appliquer scale/pad/fps avant le time_remapping
-        # Le time_remapping (reverse/speed) doit être appliqué AVANT setpts
-        # pour que le décalage timeline soit correct
+        # Cas normal : scale/pad/fps avant le time_remapping, qui (reverse/speed)
+        # doit précéder le dernier setpts pour que le décalage timeline soit correct.
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
         parts.append(f"fps={fps},")
-
-        # Appliquer le time_remapping (reverse/speed) ici
         if time_remapping_filter:
             parts.append(f"{time_remapping_filter},")
+        parts.append("setpts=PTS-STARTPTS,")
 
-        parts.append(f"setpts=PTS-STARTPTS,")
-        parts.append(apply_matte())
-        parts.append(f"{scale_expr},")
-        if flip_filters:
-            parts.append(f"{flip_filters},")
-        parts.append(f"{rotation_expr},")
-        if effect_filters:
-            parts.append(f"{effect_filters},")
-        if color_grade_filters:
-            parts.append(f"{color_grade_filters},")
-        parts.append(f"{','.join(compositing_filters)},")
-        parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
+    # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
+    # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
+    parts.append(apply_matte())
+    parts.append(f"{scale_expr},")
+    if flip_filters:
+        parts.append(f"{flip_filters},")
+    parts.append(f"{rotation_expr},")
+    if effect_filters:
+        parts.append(f"{effect_filters},")
+    if color_grade_filters:
+        parts.append(f"{color_grade_filters},")
+    parts.append(f"{','.join(compositing_filters)},")
+    parts.append(f"{opacity_expr},")
+    parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
 
     return ";".join([*matte_parts, "".join(parts)])
 
@@ -2497,13 +2536,20 @@ def _build_master_filter(plan) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
+def _build_time_remapping_video_filter(layer: RenderLayer, fps: float | None = None) -> str:
     """Construit les filtres de remappage temporel pour une couche vidéo.
 
     Applique dans l'ordre :
-    1. Freeze frame (si activé) - sélectionne une seule image
-    2. Reverse (si activé) - inverse la lecture
-    3. Speed (si != 1.0) - change la vitesse via atempo
+    1. Freeze frame (si activé) : ne garde qu'une image (``trim`` sans virgule
+       interne) ; l'appelant la tient pendant ``freeze_duration``
+    2. Reverse (si activé) : inverse la lecture
+    3. Speed (si != 1.0) : ``setpts=PTS/vitesse`` puis ``fps`` pour revenir à
+       la cadence de sortie. ``atempo`` est un filtre **audio** : dans la chaîne
+       vidéo FFmpeg refuse le graphe (« Media type mismatch »).
+
+    Args:
+        layer: Couche vidéo.
+        fps: Cadence de sortie, pour rééchantillonner après un changement de vitesse.
 
     Returns:
         Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
@@ -2512,16 +2558,15 @@ def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
     tr = layer.time_remapping
     parts: list[str] = []
 
-    # Freeze frame: on sélectionne une seule image
+    # Freeze frame : on ne garde qu'une image, celle de l'instant figé.
     if tr.freeze_mode == FreezeFrameMode.FREEZE:
-        # Freeze: on utilise select pour garder une seule frame
-        # L'audio est silencieux, géré séparément
-        # Calculer le frame number à partir du temps source et du FPS source
-        freeze_filters = get_ffmpeg_freeze_filter(
-            tr.freeze_source_time,
-            layer.source_fps if layer.source_fps > 0 else 30.0,
+        parts.extend(
+            get_ffmpeg_freeze_filter(
+                tr.freeze_source_time,
+                layer.source_fps if layer.source_fps > 0 else 30.0,
+                source_in=layer.source_in,
+            )
         )
-        parts.extend(freeze_filters)
         # Après un freeze, on n'applique ni reverse ni speed
         return ",".join(parts)
 
@@ -2537,10 +2582,11 @@ def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
             )
         parts.append("reverse")
 
-    # Speed: on applique les filtres atempo
+    # Speed : on resserre ou on étire les timestamps, puis on rééchantillonne.
     if tr.speed != 1.0:
-        speed_filters = get_ffmpeg_speed_filter(tr.speed)
-        parts.extend(speed_filters)
+        parts.append(f"setpts=PTS/{clamp_speed(tr.speed):.9g}")
+        if fps:
+            parts.append(f"fps={fps}")
 
     return ",".join(parts)
 
@@ -2604,12 +2650,17 @@ def _escape_filter_path(path: str) -> str:
     FFmpeg sépare ses options sur ``:`` : le ``C:`` doit donc rester
     ``C\\:``. Les slashs sont acceptés par les trois plateformes et évitent
     aussi un double niveau d'échappement.
+
+    Une apostrophe ne peut pas être échappée *dans* une chaîne entre apostrophes :
+    ``\\'`` y est lu comme une apostrophe qui se ferme puis un caractère perdu, et
+    FFmpeg ouvrait ``Jean dArc/…``. Il faut fermer la chaîne, écrire l'apostrophe
+    échappée, puis la rouvrir (``'\\\\\\''``), comme en shell.
     """
     return (
         str(path)
         .replace("\\", "/")
         .replace(":", "\\:")
-        .replace("'", "\\'")
+        .replace("'", "'\\\\\\''")
     )
 
 

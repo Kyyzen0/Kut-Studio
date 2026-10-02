@@ -405,6 +405,18 @@ Après une perte de périphérique, un seul nouvel essai GPU est tenté. Après 
 échecs, le GPU n'est plus retenté avant le prochain démarrage, ou avant que
 l'utilisateur rechoisisse « GPU ». Aucun clignotement entre GPU et CPU.
 
+Trois cas ne sont **pas** des pannes du GPU :
+
+- une image dont `map()` échoue (surface matérielle, tampon repris par le décodeur) est convertie par Qt
+  (copie CPU) et comptée (`RhiExecutor.unmappable_frames`) au lieu de condamner le moniteur ;
+- quand Qt libère les ressources du widget (masqué, détaché, déplacé), la dernière image de chaque source est
+  renvoyée à la recréation : en pause, le moniteur ne reste pas noir. Un relâchement explicite (changement de projet,
+  pression mémoire) abandonne tout, images décodées comprises ;
+- un **plantage du processus** pendant que le GPU était actif (erreur fatale du pilote) ne laisse aucune trace que
+  `GpuHealth` puisse voir. `GpuCrashGuard` pose un marqueur à l'activation du GPU et le retire à l'arrêt propre ou au
+  repli CPU ; resté en place au démarrage suivant, il garde le mode Auto sur le CPU (avec l'explication) jusqu'à ce que
+  l'utilisateur choisisse lui-même le rendu de l'aperçu. Un choix explicite « GPU » est toujours honoré.
+
 ## Diagnostic et journaux
 
 Le diagnostic (Préférences > Performance > Matériel, bouton « Copier le

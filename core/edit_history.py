@@ -28,6 +28,8 @@ séquence d'un projet qui en compte vingt ne duplique donc qu'elle. Un
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Optional
 
@@ -57,11 +59,14 @@ class ProjectHistory:
     où cette copie se voit dans l'interface.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._undo_stack: list[_Snapshot] = []
         self._redo_stack: list[_Snapshot] = []
         self._saved_index: Optional[int] = None
         self._project: Optional[Project] = None
+        self._clock = clock
+        self._merge_key: Optional[str] = None
+        self._merge_time = 0.0
 
     # ------------------------------------------------------------------
     # API publique
@@ -116,9 +121,18 @@ class ProjectHistory:
         self._undo_stack = [snapshot]
         self._redo_stack = []
         self._saved_index = 0
+        self._merge_key = None
 
-    def record(self, project: Project, label: str) -> None:
+    def record(
+        self, project: Project, label: str, *, merge_key: Optional[str] = None, merge_window: float = 1.0
+    ) -> None:
         """Enregistre ``project`` dans l'historique sous ``label``.
+
+        ``merge_key`` : regroupe une rafale d'un même geste (glissement d'un fader, d'un curseur) en **une**
+        entrée. Un enregistrement qui suit le précédent, de même clé, dans les ``merge_window`` secondes et sans
+        undo / redo / autre enregistrement entre-temps, remplace l'entrée du sommet au lieu d'en ajouter une :
+        dix crans de fader s'annulent d'un coup, et ne chassent pas dix vraies éditions de la pile. Jamais
+        fusionné avec l'état initial, ni avec l'état enregistré sur disque (l'indicateur « modifié » mentirait).
 
         Comportements :
 
@@ -131,8 +145,29 @@ class ProjectHistory:
         """
         if project is None:
             raise ValueError("Impossible d'enregistrer un projet None.")
+        now = self._clock()
+        top = len(self._undo_stack) - 1
+        if (
+            merge_key is not None
+            and merge_key == self._merge_key
+            and now - self._merge_time <= merge_window
+            and top >= 1
+            and self._saved_index != top
+            and not self._redo_stack
+        ):
+            before = self._undo_stack[top - 1].project
+            self._undo_stack[top] = _Snapshot(label=label or "", project=_snapshot_project(project, before))
+            self._merge_time = now
+            self._project = project
+            return
+        self._merge_key = merge_key
+        self._merge_time = now
         previous = self._undo_stack[-1].project if self._undo_stack else None
         snapshot = _Snapshot(label=label or "", project=_snapshot_project(project, previous))
+        # L'état enregistré sur disque vivait dans la branche « redo » qu'on va jeter (annuler puis
+        # éditer) : son index serait réutilisé par la nouvelle entrée, qui passerait pour « enregistrée ».
+        if self._saved_index is not None and self._saved_index > len(self._undo_stack) - 1:
+            self._saved_index = -1
         self._undo_stack.append(snapshot)
         # Limite la taille de la pile ``undo``.
         if len(self._undo_stack) > MAX_HISTORY:
@@ -140,11 +175,12 @@ class ProjectHistory:
             # minimum de 1 entrée pour préserver la base.
             overflow = len(self._undo_stack) - MAX_HISTORY
             del self._undo_stack[:overflow]
-            # L'index sauvegardé doit être ajusté s'il pointait sur
-            # une entrée supprimée. Une marque négative signifie
-            # « jamais enregistré sur disque » et doit le rester.
+            # L'index sauvegardé doit suivre le décalage. Si l'entrée enregistrée est évincée, plus
+            # aucun état de la pile n'est celui du fichier : marque négative (« jamais enregistré »),
+            # et non ``max(0, …)`` qui désignait à tort la plus ancienne entrée restante.
             if self._saved_index is not None and self._saved_index >= 0:
-                self._saved_index = max(0, self._saved_index - overflow)
+                shifted = self._saved_index - overflow
+                self._saved_index = shifted if shifted >= 0 else -1
         # Toute nouvelle action après ``undo`` vide le ``redo``.
         self._redo_stack = []
         self._project = project
@@ -158,6 +194,7 @@ class ProjectHistory:
         """
         if not self.can_undo:
             return None
+        self._merge_key = None                      # un undo clôt le geste en cours
         current = self._undo_stack.pop()
         self._redo_stack.append(current)
         restored = _deepcopy_project(self._undo_stack[-1].project)
@@ -175,6 +212,7 @@ class ProjectHistory:
         """
         if not self._redo_stack:
             return None
+        self._merge_key = None
         next_snapshot = self._redo_stack.pop()
         self._undo_stack.append(next_snapshot)
         restored = _deepcopy_project(next_snapshot.project)

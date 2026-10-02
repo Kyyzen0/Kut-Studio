@@ -104,6 +104,8 @@ luminance suit la courbe.
 
 ## Format `.kut` (version 13)
 
+*Cette section décrit les clés introduites en version 13 ; le format courant est la **version 16** (voir [architecture.md](architecture.md#format-kut)).*
+
 Dans chaque clip, `transform_keyframes` :
 
 ```json

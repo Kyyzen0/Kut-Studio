@@ -170,8 +170,6 @@ class _ScopeCanvas(QWidget):
     def _paint_histogram(self, painter: QPainter, rect, low, high) -> None:
         result = self._result
         assert result is not None
-        width = rect.width()
-        height = rect.height()
         span = max(high - low, 1.0)
         # Traces RGB en arrière-plan, luminance au premier plan.
         traces = (

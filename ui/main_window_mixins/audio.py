@@ -61,7 +61,7 @@ class AudioMixin:
             self.mixer_panel.refresh_track(track) if track else None
             return
         track.set_volume_db(value)
-        self._record_audio_change(i18n.translate("mixer.volume"))
+        self._record_audio_change(i18n.translate("mixer.volume"), merge_key=f"track-volume:{track_id}")
 
     def on_track_role_changed(
         self, track_id: str, role: str
@@ -221,7 +221,7 @@ class AudioMixin:
                 self.mixer_panel.refresh_track(track)
             return
         track.set_pan(value)
-        self._record_audio_change(i18n.translate("mixer.pan"))
+        self._record_audio_change(i18n.translate("mixer.pan"), merge_key=f"track-pan:{track_id}")
 
     def on_track_mute_toggled(self, track_id: str, muted: bool) -> None:
         track = self._find_audio_track(track_id)
@@ -319,7 +319,7 @@ class AudioMixin:
             self._sync_audio_inspector()
             return
         clip.gain_db = float(value)
-        self._record_audio_change(i18n.translate("audio.gain"))
+        self._record_audio_change(i18n.translate("audio.gain"), merge_key=f"clip-gain:{clip.id}")
 
     def on_clip_pan_changed(self, value: float) -> None:
         clip, track = self._selected_audio_clip()
@@ -327,7 +327,7 @@ class AudioMixin:
             self._sync_audio_inspector()
             return
         clip.pan = float(value)
-        self._record_audio_change(i18n.translate("mixer.pan"))
+        self._record_audio_change(i18n.translate("mixer.pan"), merge_key=f"clip-pan:{clip.id}")
 
     def on_clip_fade_changed(self, which: str, value: float) -> None:
         clip, track = self._selected_audio_clip()
@@ -340,7 +340,8 @@ class AudioMixin:
             clip.set_fade_out(float(value))
         self.timeline_panel.refresh_clip_widgets()
         self._record_audio_change(
-            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out")
+            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out"),
+            merge_key=f"clip-fade-{which}:{clip.id}",
         )
 
     def on_clip_fade_from_timeline(self, clip_id: str, which: str, value: float) -> None:
@@ -354,7 +355,8 @@ class AudioMixin:
             clip.set_fade_out(float(value))
         self._sync_audio_inspector()
         self._record_audio_change(
-            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out")
+            i18n.translate("audio.fade_in" if which == "in" else "audio.fade_out"),
+            merge_key=f"clip-fade-{which}:{clip_id}",
         )
 
     def on_clip_fades_reset(self, *args) -> None:
@@ -368,11 +370,11 @@ class AudioMixin:
         self._sync_audio_inspector()
         self._record_audio_change(i18n.translate("audio.reset_fades"))
 
-    def _record_audio_change(self, label: str) -> None:
-        """Enregistre une modification audio dans l'historique."""
+    def _record_audio_change(self, label: str, *, merge_key: str | None = None) -> None:
+        """Enregistre une modification audio dans l'historique (``merge_key`` : geste continu, une seule entrée)."""
         if self.project is None:
             return
-        self._record_history(label)
+        self._record_history(label, merge_key=merge_key)
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
 
@@ -413,7 +415,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] suppression d'effet audio refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -428,9 +430,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, int(delta)
             )
         except (KeyError, ValueError) as exc:
-            print(
-                f"[MainWindow] réordonnancement d'effet audio refusé : {exc}"
-            )
+            self._report_edit_refused(exc)
             return
         self._record_history("Réordonner un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -445,9 +445,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, bool(enabled)
             )
         except (KeyError, ValueError) as exc:
-            print(
-                f"[MainWindow] activation d'effet audio refusée : {exc}"
-            )
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -462,7 +460,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, {name: value}
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] paramètre d'effet audio refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier un effet audio")
         self._refresh_effects_after_change(clip_id)

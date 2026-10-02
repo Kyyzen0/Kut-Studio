@@ -32,6 +32,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - 🎯 **2D tracking and stabilisation** — track one or several points of a video clip forward or backward in the background (progress, stop, resume, partial recompute), with confidence, uncertain / lost frames flagged, manual corrections and a drawn path in the viewer; drive a layer's or clip's position (and rotation / scale with two points), an anchor point or a mask, either **linked** (updates with the track) or **baked** to keyframes; stabilise a clip (position, + rotation, + scale; low / medium / high / custom smoothing or locked shot) with black edges, automatic zoom or a fixed crop. One animation engine: preview and export compute the same values. See [docs/tracking.md](docs/tracking.md).
 - 🗂️ **Multiple and nested sequences** — several timelines per project; use a sequence as a clip inside another (rendered once however many times it is used, with its own transform, effects, keyframes and audio), nest a selection in one step, open nested sequences by double-click and navigate with breadcrumbs (`Master › Scene 01 › Intro`), back/forward and parent. Cycles are refused, older single-timeline projects open unchanged. See [docs/nested-sequences.md](docs/nested-sequences.md).
 - ⚡ **Performance layer** — media proxies for preview (export always uses the originals), a unified cache with disk budget and purge, smart prefetching, timeline indexes for 10,000-clip projects and an adaptive *Auto* preview quality. See [docs/performance.md](docs/performance.md).
+- 🛡️ **Reliability** — Asks before discarding unsaved work, refuses damaged or non-finite `.kut` files with a clear message, tells you in the status bar when an edit is refused, writes uncaught errors to a rotating diagnostic log, and keeps preview, scopes and export on the same render graph. See [docs/architecture.md](docs/architecture.md) and [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
 - ⌨️ **Keyboard shortcuts** — Playback, tools, snapping, markers and zoom (see below).
 
@@ -40,20 +41,22 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 | Component | Technology |
 | --- | --- |
 | Language | Python 3 |
-| GUI | PySide6 (Qt 6, ≥ 6.6) |
+| GUI | PySide6 (Qt 6, ≥ 6.6; ≥ 6.7 for the optional GPU monitor) |
 | Multimedia | Qt Multimedia (`QMediaPlayer`) |
 | Export | FFmpeg |
 | Tracking analysis | numpy (FFT normalised cross-correlation) |
 | GPU preview | Qt QRhi (Metal / Direct3D 11 / OpenGL), shaders compiled with `qsb` |
 | Packaging | PyInstaller |
-| Tests | pytest + pytest-qt |
+| Tests | pytest + pytest-qt (+ xdist, timeout) |
+| Quality | ruff, mypy (`core/`) |
 
 ## 📋 Requirements
 
 - Python **3.10+**
 - `pip`
 - **FFmpeg + ffprobe** available from your `PATH` (required for media import,
-  faithful preview, scopes and export)
+  faithful preview, scopes and export). Burned-in subtitles need an FFmpeg built
+  with **libass** (the app detects its absence and says so instead of failing).
 - A platform supported by PySide6: macOS, Windows, or Linux
 
 To build a standalone application, install PyInstaller as well.
@@ -143,8 +146,9 @@ Kut-Studio/
 ├── ui/                  # PySide6 interface: main window, panels, theme,
 │   └── workspace/       # i18n, icons; dockable workspace manager
 ├── tests/               # pytest suite
-├── tools/               # Developer tools (UI capture)
-├── docs/                # Design QA notes and screenshots
+├── tools/               # Developer tools (UI capture, perf benchmarks)
+├── docs/                # Feature docs, architecture, stabilization report
+├── .github/workflows/   # CI: macOS, Windows, Linux
 └── assets/              # Bundled assets
 ```
 
@@ -161,11 +165,17 @@ Kut-Studio/
 | `M` / `[` / `]` | Add marker / previous / next marker |
 | `Ctrl + K` | Cut at playhead |
 | `Ctrl + A` | Select all |
-| `+` / `-` / `Ctrl + 0` | Zoom in / out / fit |
+| `+` / `-` / `Ctrl + 0` (or `Shift + Z`) | Zoom in / out / fit |
+| `Ctrl + Alt + S` | Show / hide the scopes |
+| `Alt + K` / `Alt + Shift + K` | Add / remove a keyframe |
+| `Alt + J` / `Alt + L` | Previous / next keyframe |
+| `Ctrl + Alt + A` | Select all keyframes |
+| `Ctrl + Alt + G` | Graph Editor |
 | `Ctrl + N` / `Ctrl + O` / `Ctrl + S` | New / open / save project |
-| `Ctrl + Z` / `Ctrl + Shift + Z` | Undo / redo |
+| `Ctrl + Shift + S` / `Ctrl + Q` | Save as / quit |
+| `Ctrl + Z` / `Ctrl + Shift + Z` (or `Ctrl + Y`) | Undo / redo |
 | `Ctrl + D` | Duplicate |
-| `Delete` / `Ctrl + Backspace` | Delete / ripple delete |
+| `Delete` (or `Backspace`) / `Ctrl + Backspace` | Delete / ripple delete |
 | `Ctrl + E` | Enable / disable clip |
 | `Ctrl + ,` | Preferences |
 | `Ctrl + Shift + N` | Nest selection into a sequence |
@@ -187,19 +197,23 @@ Tests fail if a command has no translation, no handler, or a default that confli
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest -q -n auto   # parallel; drop -n auto to run serially
+python -m pytest -q -n auto --timeout=600   # parallel; drop -n auto to run serially
 python -m ruff check .
+python -m mypy                              # core/ ; known debt is listed in pyproject.toml
 ```
 
-The suite (about 1,650 tests) covers the project model, timeline, `.kut`
+The suite (nearly 3,000 tests) covers the project model, timeline, `.kut`
 I/O, render plan, color, scopes, audio, UI integration and the FFmpeg export
-pipeline, including integration tests with a fake and a real FFmpeg. On a
-headless machine, set `QT_QPA_PLATFORM=offscreen`.
+pipeline, including parity tests that render with a real FFmpeg and read back
+pixels, and a fake FFmpeg for failure paths. On a headless machine, set
+`QT_QPA_PLATFORM=offscreen`. Where each piece of information lives, and which
+test guards it: [docs/architecture.md](docs/architecture.md).
 
 ## 🛣️ Roadmap
 
 - Split the largest UI modules (`main_window`, `project_panel`, `timeline_panel`)
-- Linting and type checking in CI, and a faster test suite
+- Extend type checking beyond the clean modules of `core/` (the debt list is in `pyproject.toml`), and a faster test suite
+- Open items from the stabilization pass: see [docs/stabilization-report.md](docs/stabilization-report.md)
 - More GPU effects (LUTs, colour grading, scopes) on top of the GPU preview
 - Preview and timeline performance on large projects
 - Signed installers and automated releases
@@ -238,6 +252,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - 🎯 **Tracking 2D et stabilisation** — suivi d'un ou plusieurs points d'un clip vidéo, en avant ou en arrière et en tâche de fond (progression, arrêt, reprise, recalcul partiel), avec confiance, images incertaines / perdues signalées, corrections manuelles et trajectoire dans le viewer ; pilotage de la position d'un calque ou d'un clip (et de la rotation / échelle avec deux points), d'un point d'ancrage ou d'un masque, en **liaison dynamique** (suit le tracking) ou **converti en images-clés** ; stabilisation (position, + rotation, + échelle ; lissage faible / moyen / fort / personnalisé ou plan fixe) avec bords noirs, zoom automatique ou recadrage fixe. Un seul moteur d'animation : l'aperçu et l'export calculent les mêmes valeurs. Voir [docs/tracking.md](docs/tracking.md).
 - 🗂️ **Séquences multiples et imbriquées** — plusieurs timelines par projet ; une séquence s'utilise comme un clip dans une autre (rendue une seule fois quel que soit le nombre d'instances, avec ses propres transform, effets, images-clés et audio), une sélection s'imbrique en une étape, double-clic pour ouvrir une séquence imbriquée et navigation par fil d'Ariane (`Master › Scene 01 › Intro`), précédent/suivant et parent. Les cycles sont refusés, les anciens projets à timeline unique s'ouvrent sans changement. Voir [docs/nested-sequences.md](docs/nested-sequences.md).
 - ⚡ **Couche de performance** — proxies média pour l’aperçu (l’export utilise toujours les originaux), cache unifié avec budget disque et purge, préchargement intelligent, index de timeline pour des projets de 10 000 clips et qualité d’aperçu *Auto* adaptative. Voir [docs/performance.md](docs/performance.md).
+- 🛡️ **Fiabilité** — Demande avant d’abandonner un travail non enregistré, refuse un `.kut` abîmé ou contenant des valeurs non finies avec un message clair, dit dans la barre d’état quand une édition est refusée, écrit les erreurs non rattrapées dans un journal tournant, et garde aperçu, scopes et export sur le même graphe de rendu. Voir [docs/architecture.md](docs/architecture.md) et [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
 - ⌨️ **Raccourcis clavier** — Lecture, outils, snap, marqueurs et zoom (voir plus bas).
 
@@ -246,20 +261,23 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 | Composant | Technologie |
 | --- | --- |
 | Langage | Python 3 |
-| Interface | PySide6 (Qt 6, ≥ 6.6) |
+| Interface | PySide6 (Qt 6, ≥ 6.6 ; ≥ 6.7 pour le moniteur GPU optionnel) |
 | Multimédia | Qt Multimedia (`QMediaPlayer`) |
 | Export | FFmpeg |
 | Analyse de tracking | numpy (corrélation croisée normalisée par FFT) |
 | Aperçu GPU | QRhi de Qt (Metal / Direct3D 11 / OpenGL), shaders compilés par `qsb` |
 | Packaging | PyInstaller |
-| Tests | pytest + pytest-qt |
+| Tests | pytest + pytest-qt (+ xdist, timeout) |
+| Qualité | ruff, mypy (`core/`) |
 
 ## 📋 Pré-requis
 
 - Python **3.10+**
 - `pip`
 - **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
-  l’import, l’aperçu fidèle, les scopes et l’export.
+  l’import, l’aperçu fidèle, les scopes et l’export. L’incrustation de
+  sous-titres exige un FFmpeg compilé avec **libass** (l’application détecte
+  son absence et le dit au lieu d’échouer).
 - macOS, Windows ou Linux compatible avec PySide6
 
 PyInstaller est aussi nécessaire pour créer une application autonome.
@@ -334,11 +352,17 @@ outils sont adaptés à chaque système.
 | `M` / `[` / `]` | Ajouter un marqueur / marqueur précédent / suivant |
 | `Ctrl + K` | Couper à la tête de lecture |
 | `Ctrl + A` | Tout sélectionner |
-| `+` / `-` / `Ctrl + 0` | Zoom avant / arrière / ajusté |
+| `+` / `-` / `Ctrl + 0` (ou `Maj + Z`) | Zoom avant / arrière / ajusté |
+| `Ctrl + Alt + S` | Afficher / masquer les scopes |
+| `Alt + K` / `Alt + Maj + K` | Ajouter / supprimer une image-clé |
+| `Alt + J` / `Alt + L` | Image-clé précédente / suivante |
+| `Ctrl + Alt + A` | Sélectionner toutes les images-clés |
+| `Ctrl + Alt + G` | Éditeur de courbes |
 | `Ctrl + N` / `Ctrl + O` / `Ctrl + S` | Nouveau / ouvrir / enregistrer le projet |
-| `Ctrl + Z` / `Ctrl + Maj + Z` | Annuler / rétablir |
+| `Ctrl + Maj + S` / `Ctrl + Q` | Enregistrer sous / quitter |
+| `Ctrl + Z` / `Ctrl + Maj + Z` (ou `Ctrl + Y`) | Annuler / rétablir |
 | `Ctrl + D` | Dupliquer |
-| `Suppr` / `Ctrl + Retour arrière` | Supprimer / supprimer avec ripple |
+| `Suppr` (ou `Retour arrière`) / `Ctrl + Retour arrière` | Supprimer / supprimer avec ripple |
 | `Ctrl + E` | Activer / désactiver le clip |
 | `Ctrl + ,` | Préférences |
 | `Ctrl + Maj + N` | Créer une séquence à partir de la sélection |
@@ -360,16 +384,18 @@ Les tests échouent si une commande n'a ni traduction, ni fonction, ou si son d�
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest -q -n auto   # en parallèle ; retirez -n auto pour l’exécution séquentielle
+python -m pytest -q -n auto --timeout=600   # en parallèle ; retirez -n auto pour l’exécution séquentielle
 python -m ruff check .
+python -m mypy                              # core/ ; la dette connue est listée dans pyproject.toml
 ```
 
-La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests d’intégration avec un faux et un vrai FFmpeg. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`.
+La suite (près de 3 000 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).
 
 ## 🛣️ Feuille de route
 
 - Découper les plus gros modules d’interface (`main_window`, `project_panel`, `timeline_panel`)
-- Linter et vérification de types en CI, suite de tests plus rapide
+- Étendre la vérification de types au-delà des modules propres de `core/` (la liste de la dette est dans `pyproject.toml`), suite de tests plus rapide
+- Points ouverts de la phase de stabilisation : voir [docs/stabilization-report.md](docs/stabilization-report.md)
 - Plus d'effets sur GPU (LUT, étalonnage, scopes) au-dessus de l'aperçu GPU (voir `docs/gpu-preview.md`)
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées

@@ -14,6 +14,7 @@ Toutes les fonctions sont pures et testables sans dépendance à Qt.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -531,20 +532,32 @@ def get_ffmpeg_reverse_filter(has_audio: bool, has_video: bool) -> list[str]:
 def get_ffmpeg_freeze_filter(
     freeze_source_time: float,
     asset_fps: float,
+    source_in: float = 0.0,
 ) -> list[str]:
-    """Génère les filtres FFmpeg pour un arrêt sur image.
+    """Filtres FFmpeg qui ne gardent qu'**une** image : celle qui contient l'instant du freeze.
+
+    Le flux entrant est déjà rogné à ``source_in`` (PTS remis à zéro) : l'instant
+    est donc compté depuis ``source_in``. ``trim=start`` retient la première image
+    dont le PTS est au moins ``start`` ; on vise le milieu de l'intervalle précédent
+    (une demi-image avant l'image voulue) pour que l'arrondi des timestamps ne
+    choisisse jamais l'image voisine. Les filtres ne contiennent aucune virgule
+    interne : ils tiennent dans un ``filter_complex`` sans échappement.
+
+    La durée d'affichage (tenir l'image) est ajoutée par l'appelant.
 
     Args:
-        freeze_source_time: Instant source pour l'arrêt sur image.
-        asset_fps: FPS du média source.
+        freeze_source_time: Instant source de l'arrêt sur image (secondes, média).
+        asset_fps: FPS du média source (``<= 0`` : 30 par défaut).
+        source_in: Point d'entrée du clip dans le média (secondes).
 
     Returns:
-        Liste des filtres FFmpeg.
-        Ex: ['select=eq(n,125)', 'setpts=N/FRAME_RATE/TB']
+        ``['trim=start=…', 'setpts=PTS-STARTPTS', 'trim=end_frame=1']``.
     """
-    # Calculer le frame number à partir du temps
-    frame_number = int(freeze_source_time * asset_fps)
-    return [f"select=eq(n,{frame_number})", "setpts=N/FRAME_RATE/TB"]
+    fps = asset_fps if asset_fps and asset_fps > 0 else 30.0
+    relative = max(0.0, float(freeze_source_time) - float(source_in))
+    index = math.floor(relative * fps + 1e-6)
+    start = max(0.0, (index - 0.5) / fps)
+    return [f"trim=start={start:.6f}", "setpts=PTS-STARTPTS", "trim=end_frame=1"]
 
 
 def estimate_ffmpeg_memory_usage(

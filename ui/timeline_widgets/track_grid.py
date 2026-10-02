@@ -62,7 +62,6 @@ class _TrackGrid(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), QColor(palette.timeline_grid))
 
-        base = palette.timeline_grid
         alt = palette.track_alt_bg
         divider = palette.track_divider
         pitch = self.track_height + self.track_gap

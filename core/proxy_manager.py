@@ -38,6 +38,7 @@ import queue
 import subprocess
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -57,6 +58,13 @@ from .tool_paths import find_media_tool
 SIDECAR_VERSION = 1
 LAST_USED_REFRESH_SECONDS = 60.0
 DISK_STATE_TTL_SECONDS = 2.0
+REPLACE_ATTEMPTS = 6
+REPLACE_DELAY_SECONDS = 0.05
+"""Sous Windows, deux ``os.replace`` simultanés vers la même destination (deux instances qui promeuvent le même
+proxy), ou un antivirus qui inspecte le fichier, échouent de façon transitoire avec ``PermissionError``."""
+PARTIAL_STALE_SECONDS = 600.0
+"""Âge au-delà duquel un fichier partiel est considéré abandonné. FFmpeg qui écrit le met à jour en continu : un
+fichier récent peut appartenir à une génération en cours dans **une autre instance** de l'application."""
 
 
 class ProxyState(str, Enum):
@@ -552,7 +560,13 @@ class ProxyManager:
     def _generate(self, key: tuple[str, str], job: _Job) -> None:
         source, profile = job.source, job.profile
         final, partial, sidecar = self._paths(source, profile)
+        # Fichier partiel propre à CETTE génération : deux instances de l'application (ou un FFmpeg survivant d'un
+        # plantage) qui produisent le même proxy ne doivent pas écrire dans le même fichier.
+        partial = partial.with_name(
+            partial.name.replace(".partial.", f".partial.{os.getpid()}-{uuid.uuid4().hex[:8]}.", 1)
+        )
         error = ""
+        promoted = False        # ce proxy-ci est-il passé de partiel à final ? (seul ce cas autorise à nettoyer final)
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
             signature = self._memo.get(source)
@@ -603,7 +617,14 @@ class ProxyManager:
                 error = "FFmpeg n'a produit aucun fichier."
             else:
                 size = partial.stat().st_size
-                os.replace(partial, final)
+                try:
+                    _replace_with_retry(partial, final)
+                    promoted = True
+                except PermissionError:
+                    if not (final.is_file() and final.stat().st_size > 0):
+                        raise
+                    # Une autre instance vient de produire ce même proxy : le nôtre est redondant.
+                    self._remove(partial)
                 self._write_sidecar(sidecar, source, signature.token, profile, size)
         except FileNotFoundError as exc:
             error = str(exc)
@@ -613,8 +634,12 @@ class ProxyManager:
             error = f"Génération du proxy impossible : {exc}"
         if error:
             self._remove(partial)
-            self._remove(final)
-            self._remove(sidecar)
+            if promoted:
+                # Demi-promotion (le marqueur n'a pas pu être écrit) : on ne laisse pas un proxy sans marqueur.
+                # Sans promotion, ``final`` et le marqueur sont peut-être ceux d'une AUTRE instance qui vient de
+                # réussir : on n'y touche pas.
+                self._remove(final)
+                self._remove(sidecar)
             with self._lock:
                 self._errors[key] = error
 
@@ -630,16 +655,22 @@ class ProxyManager:
             "created_at": self._clock(),
             "size_bytes": size,
         }
-        temporary = sidecar.with_suffix(".json.tmp")
+        # Temporaire propre à cet appel : deux instances qui terminent en même temps ne se disputent pas le même
+        # fichier (sous Windows le second remplacement échouait, et l'erreur supprimait le proxy tout juste produit).
+        temporary = sidecar.with_name(f"{sidecar.stem}.{os.getpid()}-{uuid.uuid4().hex[:8]}.json.tmp")
         temporary.write_text(json.dumps(payload), encoding="utf-8")
-        os.replace(temporary, sidecar)
+        _replace_with_retry(temporary, sidecar)
 
     @staticmethod
-    def _remove(path: Path) -> None:
+    def _remove(path: Path) -> bool:
+        """Supprime un fichier ; ``False`` s'il est toujours là (tenu ouvert, droits)."""
         try:
             path.unlink()
+        except FileNotFoundError:
+            return True
         except OSError:
-            pass
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Suppression, inventaire
@@ -715,15 +746,24 @@ class ProxyManager:
                         pass
         return total
 
-    def evict_path(self, proxy_file: Path) -> None:
-        """Retire un proxy (et son marqueur) sur demande du gestionnaire de cache."""
-        for target in (proxy_file, proxy_file.with_suffix(".json")):
-            self._remove(target)
+    def evict_path(self, proxy_file: Path) -> bool:
+        """Retire un proxy (et son marqueur) sur demande du gestionnaire de cache.
+
+        ``False`` si le proxy est toujours sur le disque : l'appelant ne doit pas le compter comme libéré.
+        """
+        # Le marqueur d'abord : sans lui, un proxy qui resterait n'est plus jamais servi (il est « sans marqueur »).
+        self._remove(proxy_file.with_suffix(".json"))
+        removed = self._remove(proxy_file)
         with self._lock:
             self._disk_cache.clear()
+        return removed
 
     def cleanup_orphans(self) -> int:
-        """Supprime fichiers partiels et proxies sans marqueur (reste d'un arrêt brutal)."""
+        """Supprime fichiers partiels **abandonnés** et proxies sans marqueur (reste d'un arrêt brutal).
+
+        Un fichier partiel récent est laissé : il peut appartenir à une génération en cours dans une autre
+        instance de l'application (voir :data:`PARTIAL_STALE_SECONDS`).
+        """
         removed = 0
         if not self.directory.is_dir():
             return 0
@@ -734,7 +774,7 @@ class ProxyManager:
         for entry in list(self.directory.iterdir()):
             if not entry.name.startswith("proxy-") or not entry.is_file():
                 continue
-            incomplete = ".partial." in entry.name or entry.name.endswith(".tmp")
+            incomplete = (".partial." in entry.name or entry.name.endswith(".tmp")) and self._is_stale(entry)
             orphan = (
                 entry.suffix in (".mp4", ".mov")
                 and ".partial." not in entry.name
@@ -744,6 +784,13 @@ class ProxyManager:
                 self._remove(entry)
                 removed += 1
         return removed
+
+    def _is_stale(self, entry: Path) -> bool:
+        """Fichier non modifié depuis longtemps (ou illisible) : abandonné, sans propriétaire vivant."""
+        try:
+            return time.time() - entry.stat().st_mtime > PARTIAL_STALE_SECONDS
+        except OSError:
+            return True
 
     def active_process_ids(self) -> list[int]:
         """PID des FFmpeg de génération en cours (diagnostic, tests)."""
@@ -778,6 +825,18 @@ class ProxyManager:
         for thread in list(self._threads):
             thread.join(timeout=max(0.0, deadline - time.monotonic()))
         return not any(thread.is_alive() for thread in self._threads)
+
+
+def _replace_with_retry(source: Path, target: Path) -> None:
+    """``os.replace`` qui réessaie quelques fois sur un refus d'accès transitoire (Windows)."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_DELAY_SECONDS * (attempt + 1))
 
 
 def _explain_ffmpeg_error(stderr: str) -> str:

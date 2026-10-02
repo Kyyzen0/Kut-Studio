@@ -161,8 +161,8 @@ class CacheManager:
                 break
             if self._is_pinned(path, pinned):
                 continue
-            self.proxies.evict_path(path)
-            freed += size
+            if self.proxies.evict_path(path) is not False:   # ``False`` : toujours sur le disque
+                freed += size
         return freed
 
     def _is_pinned(self, proxy_file, pinned: set[str]) -> bool:

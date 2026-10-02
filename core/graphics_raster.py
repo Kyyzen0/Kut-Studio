@@ -9,9 +9,8 @@ recréé à tout moment.
 from __future__ import annotations
 
 import hashlib
-import os
-import tempfile
-from pathlib import Path
+
+from .platform_paths import user_cache_dir
 
 
 def _qcolor(value: str):
@@ -27,8 +26,7 @@ def rasterize_text_graphic(graphic) -> str:
     """Retourne le PNG RGBA en cache correspondant exactement au titre."""
     payload = repr(graphic).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()[:24]
-    configured = os.environ.get("KUT_STUDIO_CACHE_DIR")
-    root = Path(configured).expanduser() if configured else Path(tempfile.gettempdir()) / "kut-studio-cache"
+    root = user_cache_dir()
     directory = root / "graphics"
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"text-{digest}.png"

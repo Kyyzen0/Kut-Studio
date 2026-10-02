@@ -92,7 +92,7 @@ class PresetsMixin:
         if preset is None:
             preset = self.user_preset_store.get(preset_id)
         if preset is None:
-            print(f"[MainWindow] preset inconnu : {preset_id!r}")
+            self._report_edit_refused("Preset introuvable")
             return
         try:
             apply_preset_to_clip(self.project, clip_id, preset)
@@ -128,7 +128,7 @@ class PresetsMixin:
             return
         preset = self.audio_effect_preset_store.get_preset(preset_id)
         if preset is None:
-            print(f"[MainWindow] preset audio inconnu : {preset_id!r}")
+            self._report_edit_refused("Preset audio introuvable")
             return
         try:
             add_audio_effect_to_clip(
@@ -232,12 +232,12 @@ class PresetsMixin:
                 category=category,
             )
         except ValueError as exc:
-            print(f"[MainWindow] capture de preset refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         try:
             self.user_preset_store.add(preset)
         except ValueError as exc:
-            print(f"[MainWindow] ajout du preset refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Enregistrer un preset utilisateur")
 
@@ -265,7 +265,7 @@ class PresetsMixin:
         try:
             self.user_preset_store.remove(preset_id)
         except KeyError as exc:
-            print(f"[MainWindow] suppression du preset refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer un preset utilisateur")
 

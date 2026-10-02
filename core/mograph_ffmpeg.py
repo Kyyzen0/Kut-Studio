@@ -87,11 +87,40 @@ def _apply_chain(parts: list[str], source: str, chain: list[str], tag: str) -> s
     return current
 
 
-def blend_onto(parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str) -> None:
-    """Fusionne le flux RGBA ``top`` (taille du cadre) sur ``bottom``."""
+def blend_onto(
+    parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str, *, transparent_bottom: bool = False
+) -> None:
+    """Fusionne le flux RGBA ``top`` (taille du cadre) sur ``bottom``.
+
+    ``transparent_bottom`` : le dessous est le cadre **transparent** d'une séquence imbriquée. Un mode de fusion
+    n'a rien à fusionner là où il n'y a rien : le calque s'y affiche tel quel (comme en mode Normal), et le
+    mélange n'agit qu'à proportion de l'opacité du dessous (formule W3C : ``(1-αb)·Cs + αb·B(Cb, Cs)``).
+    Sans cela, un Produit sur du vide donnait du noir.
+    """
     mode = coerce_blend_mode(mode)
     if mode is BlendMode.NORMAL:
         parts.append(f"[{bottom}][{top}]overlay=0:0:eof_action=pass[{out}]")
+        return
+    if transparent_bottom:
+        parts.append(
+            f"[{top}]format=rgba,split=3[{tag}t1][{tag}t2][{tag}t3];"
+            f"[{tag}t2]alphaextract[{tag}ta];"
+            f"[{bottom}]split=4[{tag}b1][{tag}b2][{tag}b3][{tag}b4];"
+            f"[{tag}b2]format=gbrp[{tag}bp];"
+            f"[{tag}t1]format=gbrp[{tag}tp];"
+            f"[{tag}tp][{tag}bp]blend=all_mode={ffmpeg_blend_mode(mode)}:shortest=0:repeatlast=1,"
+            f"format=gbrap[{tag}f];"
+            f"[{tag}f][{tag}ta]alphamerge[{tag}fa];"
+            f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass[{tag}mix];"      # résultat fusionné
+            f"[{tag}b3][{tag}t3]overlay=0:0:eof_action=pass[{tag}plain];"    # résultat en mode Normal
+            f"[{tag}b4]alphaextract,format=gbrp[{tag}ab];"                   # opacité du dessous, comme pondération
+            f"[{tag}plain]split[{tag}n1][{tag}n2];"
+            f"[{tag}n2]alphaextract[{tag}na];"
+            f"[{tag}n1]format=gbrp[{tag}np];"
+            f"[{tag}mix]format=gbrp[{tag}mp];"
+            f"[{tag}np][{tag}mp][{tag}ab]maskedmerge,format=gbrp[{tag}mm];"
+            f"[{tag}mm][{tag}na]alphamerge[{out}]"
+        )
         return
     parts.append(
         f"[{top}]format=rgba,split[{tag}t1][{tag}t2];"
@@ -124,8 +153,12 @@ def compose_graphics(
     prefix: str = "",
     quality: str = "export",
     duration: float,
+    nested: bool = False,
 ) -> str:
-    """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``."""
+    """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``.
+
+    ``nested`` : le dessous est le cadre **transparent** d'une séquence imbriquée (et non un fond opaque).
+    """
     layers = getattr(plan, "graphics_layers", ()) or ()
     if not any(getattr(layer, "role", "draw") == "draw" for layer in layers):
         return video_label
@@ -144,7 +177,9 @@ def compose_graphics(
         tag = f"{p}mg{index}"
         out = f"{p}mgout{index}"
         if element.kind == "adjustment":
-            current = _compose_adjustment(parts, renderer, element, current, add_input, fps, duration, tag, out)
+            current = _compose_adjustment(
+                parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested
+            )
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
@@ -158,13 +193,14 @@ def compose_graphics(
         label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s")
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True)
         label = _apply_chain(parts, label, chain, tag)
-        blend_onto(parts, current, label, element.blend, out, tag)
+        blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested)
         current = out
     return current
 
 
 def _compose_adjustment(
-    parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out
+    parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out,
+    *, nested: bool = False,
 ) -> str:
     clip_id = element.clip_id
     path = write_stream(
@@ -176,6 +212,21 @@ def _compose_adjustment(
     )
     coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov")
     chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False)
+    if nested:
+        # Le dessous est transparent là où la séquence imbriquée est vide : l'ajustement ne doit rien créer
+        # à cet endroit (sinon le noir des effets opaques masquerait la piste parente). Sa couverture est
+        # donc multipliée par l'alpha du dessous.
+        parts.append(f"[{current}]split=3[{tag}a][{tag}b][{tag}c]")
+        parts.append(f"[{tag}c]alphaextract[{tag}ba]")
+        processed = _apply_chain(parts, f"{tag}b", chain, tag) if chain else f"{tag}b"
+        parts.append(
+            f"[{coverage}]alphaextract[{tag}ca];"
+            f"[{tag}ca][{tag}ba]blend=all_mode=multiply:shortest=0:repeatlast=1[{tag}al];"
+            f"[{processed}]format=rgba[{tag}pr];"
+            f"[{tag}pr][{tag}al]alphamerge[{tag}pa];"
+            f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass[{out}]"
+        )
+        return out
     parts.append(f"[{current}]split[{tag}a][{tag}b]")
     processed = _apply_chain(parts, f"{tag}b", chain, tag) if chain else f"{tag}b"
     parts.append(

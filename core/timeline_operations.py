@@ -21,6 +21,7 @@ pas de transitions.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 
 from .project_model import Clip, MediaAsset, Project, Track
 from .time_remapping import (
@@ -175,9 +176,10 @@ def trim_clip_left(
     """Rogne la partie gauche du clip en avançant son point d'entrée.
 
     Le clip ne peut que se raccourcir par la gauche : ``timeline_start``
-    doit être supérieur ou égal à la valeur actuelle, et ``source_in``
-    est augmenté de la même quantité (la durée diminue d'autant,
-    ``source_out`` reste fixe).
+    doit être supérieur ou égal à la valeur actuelle. La fin du clip sur
+    la timeline ne bouge pas. Le point de source consommé est ``delta *
+    vitesse`` : ``source_in`` avance, ou ``source_out`` recule si le clip
+    est lu à l'envers ; un arrêt sur image raccourcit sa durée.
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas dans le projet.
@@ -192,31 +194,29 @@ def trim_clip_left(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
-    delta = new_timeline_start - clip.timeline_start
+    delta = new_timeline_start - clip.timeline_start  # secondes de timeline
     if delta < 0.0:
         raise ValueError(
             f"Le trim gauche ne peut que reculer la position de début "
             f"vers l'avant : timeline_start actuel = {clip.timeline_start}, "
             f"demandé = {new_timeline_start}."
         )
-    new_source_in = clip.source_in + delta
-    if new_source_in >= clip.source_out:
+    new_duration = clip.duration - delta
+    if new_duration <= 1e-9:
         raise ValueError(
             f"Le trim gauche produirait une durée nulle ou négative pour "
-            f"le clip '{clip_id}' (source_in={new_source_in}, "
-            f"source_out={clip.source_out})."
+            f"le clip '{clip_id}' (durée={new_duration})."
         )
-    old_source_in = clip.source_in
-    old_source_out = clip.source_out
+    if clip.is_frozen:
+        # Un arrêt sur image garde ses bornes source : seule sa durée change.
+        _set_freeze_duration(clip, new_duration)
+    elif clip.is_reversed:
+        # Lu à l'envers, le début de la timeline montre la fin de la source.
+        clip.source_out -= delta * clip.speed
+    else:
+        clip.source_in += delta * clip.speed
     clip.timeline_start = new_timeline_start
-    clip.source_in = new_source_in
-    apply_clip_transform_on_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=new_source_in,
-        new_source_out=clip.source_out,
-    )
+    apply_clip_transform_on_trim(clip, start_offset=delta, new_duration=new_duration)
     return clip
 
 
@@ -225,9 +225,10 @@ def trim_clip_right(
 ) -> Clip:
     """Rogne ou étend la partie droite du clip.
 
-    Seule la valeur ``source_out`` est modifiée ; ``timeline_start`` et
-    ``source_in`` restent inchangés. La nouvelle position de fin ne doit
-    pas dépasser la durée du ``MediaAsset`` référencé par le clip.
+    ``timeline_start`` ne change pas. La durée demandée est convertie en
+    durée de source selon la vitesse : ``source_out`` bouge (``source_in``
+    si le clip est lu à l'envers) ; un arrêt sur image change sa durée.
+    La source ne peut pas dépasser la durée du ``MediaAsset`` référencé.
 
     Raises:
         KeyError: si ``clip_id`` ou le ``MediaAsset`` associé est introuvable.
@@ -240,41 +241,70 @@ def trim_clip_right(
     clip = track.clips[index]
     source_name, source_limit = _source_bounds(project, clip)
 
-    current_timeline_end = clip.timeline_start + clip.duration
-    delta = new_timeline_end - current_timeline_end
-    new_source_out = clip.source_out + delta
-
     if new_timeline_end <= clip.timeline_start:
         raise ValueError(
             f"Le trim droit produirait une durée nulle ou négative pour "
             f"le clip '{clip_id}' (timeline_start={clip.timeline_start}, "
             f"timeline_end demandé={new_timeline_end})."
         )
-    if new_source_out <= clip.source_in:
+    new_duration = new_timeline_end - clip.timeline_start
+    if clip.is_frozen:
+        # Un arrêt sur image garde ses bornes source : seule sa durée change.
+        _set_freeze_duration(clip, new_duration)
+        apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
+        return clip
+
+    # Durée de timeline -> durée de source : la vitesse change le rapport entre les deux.
+    new_source_span = new_duration * clip.speed
+    if clip.is_reversed:
+        # Lu à l'envers, la fin de la timeline montre le début de la source.
+        new_source_in = clip.source_out - new_source_span
+        if new_source_in < -1e-9:
+            raise ValueError(
+                f"Le trim droit dépasserait le début de {source_name} "
+                f"(source_in={new_source_in})."
+            )
+        new_source_in = max(0.0, new_source_in)
+        new_source_out = clip.source_out
+    else:
+        new_source_in = clip.source_in
+        new_source_out = clip.source_in + new_source_span
+        # Raccourcir reste toujours permis, même pour un clip imbriqué qui
+        # déborde déjà d'une séquence source raccourcie.
+        if new_source_out > max(source_limit, clip.source_out) + 1e-9:
+            raise ValueError(
+                f"Le trim droit dépasserait la durée de {source_name} "
+                f"(source={source_limit}s, source_out={new_source_out})."
+            )
+    if new_source_out - new_source_in <= 1e-9:
         raise ValueError(
             f"Le trim droit produirait une durée nulle ou négative pour "
-            f"le clip '{clip_id}' (source_in={clip.source_in}, "
+            f"le clip '{clip_id}' (source_in={new_source_in}, "
             f"source_out={new_source_out})."
         )
-    # Raccourcir reste toujours permis, même pour un clip imbriqué qui
-    # déborde déjà d'une séquence source raccourcie.
-    if new_source_out > max(source_limit, clip.source_out) + 1e-9:
-        raise ValueError(
-            f"Le trim droit dépasserait la durée de {source_name} "
-            f"(source={source_limit}s, source_out={new_source_out})."
-        )
-
-    old_source_in = clip.source_in
-    old_source_out = clip.source_out
+    clip.source_in = new_source_in
     clip.source_out = new_source_out
-    apply_clip_transform_on_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=clip.source_in,
-        new_source_out=new_source_out,
-    )
+    apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
     return clip
+
+
+def _fit_animation_to_duration(clip: Clip) -> None:
+    """Garde l'invariant « aucun keyframe après la fin du clip » après un changement de durée.
+
+    Changer la vitesse ou la durée d'un arrêt sur image raccourcit le clip sans toucher à ses
+    keyframes : l'aperçu et l'inspecteur ignoraient alors ceux d'après la fin, le Graph Editor et l'export
+    les gardaient, et une même image avait deux valeurs. C'est un trim droit pour l'animation : les
+    keyframes au-delà sont découpés de façon que l'animation visible ne bouge pas (sans effet si rien ne
+    dépasse).
+    """
+    apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=float(clip.duration))
+
+
+def _set_freeze_duration(clip: Clip, duration: float) -> None:
+    """Nouvelle durée de timeline d'un arrêt sur image (``TimeRemapping`` est immuable)."""
+    from dataclasses import replace
+
+    clip.time_remapping = replace(clip.time_remapping, freeze_duration=float(duration))
 
 
 # ---------------------------------------------------------------------------
@@ -355,20 +385,36 @@ def _split_fades(clip: Clip, cut_local_time: float) -> tuple[tuple[float, float]
     )
 
 
+def _free_clip_id(project: Project, prefix: str, first: int = 2) -> str:
+    """Premier ``prefix + n`` (n >= ``first``) libre dans **toutes** les séquences du projet.
+
+    Chercher seulement dans la séquence active laissait deux clips de même identifiant dans deux
+    séquences (par exemple après « créer une séquence à partir de la sélection »), ce qui rend
+    ambigu tout ce qui retrouve un clip par son id (tracking, liaisons, parentage).
+    """
+    taken = {clip.id for track in project.all_tracks() for clip in track.clips}
+    number = first
+    while f"{prefix}{number}" in taken:
+        number += 1
+    return f"{prefix}{number}"
+
+
 def cut_clip(
     project: Project, clip_id: str, cut_timeline_position: float
 ) -> tuple[Clip, Clip]:
     """Coupe un clip en deux à la position de timeline indiquée.
 
     Le clip de gauche conserve l'identifiant d'origine ; le clip de
-    droite reçoit l'identifiant ``"{clip_id}-split-2"``. Les deux clips
+    droite reçoit ``"{clip_id}-split-2"``, ou le premier suffixe libre
+    (``-split-3``…) si ce nom est déjà pris dans une séquence du projet :
+    couper deux fois la moitié gauche est donc permis. Les deux clips
     restent sur la même piste et la somme de leurs durées est égale à
     la durée d'origine du clip.
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
         ValueError: si la position n'est pas strictement à l'intérieur
-            du clip, ou si l'identifiant généré est déjà utilisé.
+            du clip.
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
@@ -385,14 +431,7 @@ def cut_clip(
             f"[{clip.timeline_start}, {timeline_end}]."
         )
 
-    right_id = f"{clip_id}-split-2"
-    for existing_track in project.tracks:
-        for existing_clip in existing_track.clips:
-            if existing_clip.id == right_id:
-                raise ValueError(
-                    f"Impossible de couper : l'identifiant '{right_id}' "
-                    f"existe déjà dans le projet."
-                )
+    right_id = _free_clip_id(project, f"{clip_id}-split-")
 
     cut_local_time = cut_timeline_position - clip.timeline_start
     left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
@@ -477,6 +516,29 @@ def cut_clip(
 # ---------------------------------------------------------------------------
 
 
+def _release_clip_references(project: Project, clip: Clip) -> None:
+    """Après le retrait d'un clip : plus rien ne doit pointer vers lui ni vers son média technique.
+
+    - un calque dont le parent (transform) ou le groupe était ce clip devient autonome ;
+    - le média technique d'un calque (``media_type == "graphic"``) disparaît avec son dernier clip : sans
+      cela il resterait, invisible, dans chaque enregistrement. Les médias de la bibliothèque (vidéo,
+      audio, image) ne sont jamais supprimés ici.
+    """
+    clips = [other for track in project.all_tracks() for other in track.clips]
+    for other in clips:
+        graphic = getattr(other, "graphic", None)
+        if graphic is None:
+            continue
+        changes = {name: "" for name in ("parent_id", "group_id") if getattr(graphic, name, "") == clip.id}
+        if changes:
+            other.graphic = replace(graphic, **changes)
+    if getattr(clip, "graphic", None) is not None and not any(other.asset_id == clip.asset_id for other in clips):
+        project.media_assets[:] = [
+            asset for asset in project.media_assets
+            if not (asset.id == clip.asset_id and asset.media_type == "graphic")
+        ]
+
+
 def delete_clip(project: Project, clip_id: str) -> Clip:
     """Retire le clip de sa piste et le retourne.
 
@@ -489,6 +551,7 @@ def delete_clip(project: Project, clip_id: str) -> Clip:
     clip = track.clips[index]
     del track.clips[index]
     remove_transitions_for_clips(project, {clip_id})
+    _release_clip_references(project, clip)
     return clip
 
 
@@ -795,8 +858,14 @@ def set_clip_enabled(
     clip_id: str,
     enabled: bool,
 ) -> Clip:
-    """Active ou désactive ``clip_id`` et retourne le clip modifié."""
+    """Active ou désactive ``clip_id`` et retourne le clip modifié.
+
+    Raises:
+        KeyError: si ``clip_id`` n'existe pas.
+        ValueError: si la piste du clip est verrouillée.
+    """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     clip.enabled = bool(enabled)
     return clip
@@ -805,10 +874,11 @@ def set_clip_enabled(
 def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     """Supprime ``clip_id`` et ramène à gauche tous les clips suivants.
 
-    Tous les clips (vidéo, audio, sous-titres) dont le début est
-    strictement postérieur à la fin du clip supprimé sont déplacés
-    vers la gauche de ``delta``, où ``delta`` est la durée du clip
-    supprimé. Aucun clip ne se retrouve avec une position négative.
+    Tous les clips (vidéo, audio, sous-titres) des pistes **non verrouillées**
+    dont le début est postérieur ou égal à la fin du clip supprimé sont
+    déplacés vers la gauche de ``delta``, où ``delta`` est la durée du clip
+    supprimé. Aucun clip ne se retrouve avec une position négative. Les
+    transitions qui touchaient le clip supprimé sont retirées avec lui.
 
     Returns:
         Liste des identifiants effectivement déplacés.
@@ -818,10 +888,14 @@ def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     deleted_clip = track.clips.pop(index)
+    remove_transitions_for_clips(project, {clip_id})
+    _release_clip_references(project, deleted_clip)
     delta = float(deleted_clip.duration)
     boundary = float(deleted_clip.timeline_start + deleted_clip.duration)
     moved: list[str] = []
     for other_track in project.tracks:
+        if getattr(other_track, "locked", False):
+            continue  # une piste verrouillée ne bouge pas, même en ripple
         for other in list(other_track.clips):
             if other is deleted_clip:
                 continue
@@ -994,28 +1068,25 @@ def reset_clip_transform(
 def clip_keyframes_remain_valid_after_trim(
     clip: Clip,
     *,
-    old_source_in: float,
-    old_source_out: float,
-    new_source_in: float,
-    new_source_out: float,
+    start_offset: float,
+    new_duration: float,
 ) -> list[TransformKeyframe]:
     """Filtre les keyframes devenues invalides après un trim.
 
-    - Trim gauche : ``source_in`` augmente, donc le temps local 0
-      correspond à un point de source plus avancé. Les keyframes
-      situées au-delà du nouveau ``source_in`` doivent être décalées
-      de ``new_source_in - old_source_in`` pour rester cohérentes.
-    - Trim droit : ``source_out`` diminue, donc la durée effective
-      du clip diminue. Les keyframes situées au-delà de la nouvelle
-      durée sont supprimées.
+    Les temps des keyframes sont locaux au clip, donc en secondes de
+    **timeline** (jamais de source : la vitesse et le reverse n'y changent rien).
+
+    - Trim gauche : le temps local 0 avance de ``start_offset`` ; les keyframes
+      sont décalées d'autant pour que l'animation visible ne bouge pas.
+    - Trim droit : les keyframes au-delà de ``new_duration`` sont supprimées.
     """
-    if new_source_in > new_source_out:
-        raise ValueError("Les nouvelles bornes de source sont invalides.")
+    if new_duration < 0.0:
+        raise ValueError("La nouvelle durée du clip est invalide.")
 
     return retime_transform_keyframes(
         clip.transform_keyframes,
-        start_offset=float(new_source_in - old_source_in),
-        new_duration=float(new_source_out - new_source_in),
+        start_offset=float(start_offset),
+        new_duration=float(new_duration),
     )
 
 
@@ -1036,26 +1107,23 @@ def apply_clip_transform_on_move(
 def apply_clip_transform_on_trim(
     clip: Clip,
     *,
-    old_source_in: float,
-    old_source_out: float,
-    new_source_in: float,
-    new_source_out: float,
+    start_offset: float,
+    new_duration: float,
 ) -> None:
-    """Filtre les keyframes devenues invalides suite à un trim, en place."""
+    """Retime les keyframes (transform et animation) après un trim, en place.
+
+    ``start_offset`` et ``new_duration`` sont en secondes de timeline.
+    """
     clip.transform_keyframes = clip_keyframes_remain_valid_after_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=new_source_in,
-        new_source_out=new_source_out,
+        clip, start_offset=start_offset, new_duration=new_duration
     )
     if clip.animation:
         from .animation_targets import retime_animation
 
         clip.animation = retime_animation(
             clip.animation,
-            start_offset=float(new_source_in - old_source_in),
-            new_duration=float(new_source_out - new_source_in),
+            start_offset=float(start_offset),
+            new_duration=float(new_duration),
         )
 
 
@@ -1145,6 +1213,7 @@ def set_clip_speed(
         raise ValueError(f"Vitesse invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1240,6 +1309,7 @@ def set_clip_freeze_frame(
         raise ValueError(f"Arrêt sur image invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1260,6 +1330,7 @@ def remove_clip_freeze_frame(
     
     # Réinitialiser le time remapping
     clip.time_remapping = TimeRemapping.default()
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1308,6 +1379,7 @@ def set_clip_freeze_duration(
         raise ValueError(f"Durée d'arrêt sur image invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1327,4 +1399,5 @@ def reset_clip_time_remapping(
     clip = track.clips[index]
     
     clip.time_remapping = TimeRemapping.default()
+    _fit_animation_to_duration(clip)
     return clip

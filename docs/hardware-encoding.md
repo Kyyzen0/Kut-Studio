@@ -175,6 +175,11 @@ toucher à l'encodage.
 
 ## Limites connues
 
+- **Balises de couleur** : l'export convertit en BT.709 (plage limitée) et pose matrice, primaires, transfert et plage
+  à la fois sur les images (`setparams`, dernière étape du graphe) et sur la ligne de commande. C'est testé avec
+  l'encodeur CPU (H.264 et ProRes) sur trois plateformes ; **les encodeurs matériels ne sont pas testés** avec ces
+  balises (VideoToolbox, NVENC, Quick Sync, AMF, VAAPI : il faut les machines correspondantes).
+
 - NVENC, QSV, AMF et VAAPI sont validés par la logique et par des sorties FFmpeg
   simulées, mais n'ont pas pu être exécutés sur du vrai matériel pendant le
   développement (seul VideoToolbox l'a été, sur Apple Silicon) : la validation

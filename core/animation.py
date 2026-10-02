@@ -510,7 +510,6 @@ class AnimationCurve:
         if index is None:  # avant le premier ou après le dernier : valeur constante
             new_id = keyframe_id or new_keyframe_id()
             if t < self._times[0]:
-                first = self._keyframes[0]
                 # Segment ajouté entre deux valeurs égales : linéaire = plat. Les
                 # pentes de l'ancien premier keyframe sont figées (sinon ses pentes
                 # automatiques changeraient avec son nouveau voisin).

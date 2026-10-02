@@ -115,18 +115,15 @@ def png_to_scope_frame(
             n'est disponible.
     """
     try:
-        from PySide6.QtCore import QBuffer, QByteArray
         from PySide6.QtGui import QImage
     except ImportError as exc:  # pragma: no cover - PySide6 toujours là
         raise ScopeExtractionError(
             "Le décodage PNG nécessite PySide6 (QtGui.QImage)."
         ) from exc
 
-    buffer_data = QByteArray(png_bytes)
-    buffer = QBuffer(buffer_data)
-    buffer.open(QBuffer.ReadOnly)
     image = QImage()
-    if not image.loadFromData(buffer, "PNG"):
+    # Les octets, pas un QBuffer : PySide6 refuse (TypeError) un QBuffer ici, et toute analyse échouait.
+    if not image.loadFromData(png_bytes, "PNG"):
         raise ScopeExtractionError("Impossible de décoder la frame PNG.")
     if width is None or height is None:
         width = image.width()

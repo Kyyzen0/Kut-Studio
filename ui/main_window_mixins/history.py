@@ -21,8 +21,12 @@ class HistoryMixin:
         self._refresh_undo_redo_state()
         self._update_top_bar()
 
-    def _record_history(self, label: str) -> None:
-        """Enregistre l'état courant du projet dans l'historique."""
+    def _record_history(self, label: str, *, merge_key: str | None = None) -> None:
+        """Enregistre l'état courant du projet dans l'historique.
+
+        ``merge_key`` : les enregistrements successifs d'un même geste continu (glissement d'un curseur) ne
+        forment qu'une entrée annulable (voir :meth:`core.edit_history.ProjectHistory.record`).
+        """
         # Une autre action clôt la saisie de sous-titre en cours et son
         # état final est inclus dans ce snapshot d'action.
         if getattr(self, "_subtitle_edit_pending", None) is not None:
@@ -51,7 +55,7 @@ class HistoryMixin:
         clamp = getattr(self, "_with_nested_clamp", None)
         if callable(clamp):
             label = clamp(label)
-        self.history.record(self.project, label)
+        self.history.record(self.project, label, merge_key=merge_key)
         invalidate = getattr(self, "_invalidate_nested_dependents", None)
         if callable(invalidate):
             invalidate()
@@ -63,6 +67,21 @@ class HistoryMixin:
         self._finalize_transform_session()
         self._finalize_color_history()
         self._finalize_graphic_history()
+
+    def _refresh_history_tooltips(self) -> None:
+        """Infobulles Annuler/Rétablir : libellé de l'opération et raccourci *actuel* (jamais figé en dur)."""
+        shortcuts = getattr(self, "shortcuts", None)
+        for button_name, text_key, command_id, label in (
+            ("undo_button", "action.undo", "undo", self.history.undo_label),
+            ("redo_button", "action.redo", "redo", self.history.redo_label),
+        ):
+            button = getattr(self, button_name, None)
+            if button is None:
+                continue
+            text = i18n.translate(text_key)
+            tooltip = f"{text} : {label}" if label else text
+            hint = shortcuts.hint(command_id) if shortcuts is not None else ""
+            button.setToolTip(f"{tooltip} ({hint})" if hint else tooltip)
 
     def _refresh_undo_redo_state(self) -> None:
         """Synchronise les actions et indicateurs undo/redo."""
@@ -79,16 +98,9 @@ class HistoryMixin:
         # Boutons rapides de la top-bar.
         if hasattr(self, "undo_button"):
             self.undo_button.setEnabled(self.history.can_undo)
-            undo_text = i18n.translate("action.undo")
-            self.undo_button.setToolTip(
-                f"{undo_text} : {self.history.undo_label}" if self.history.undo_label else undo_text
-            )
         if hasattr(self, "redo_button"):
             self.redo_button.setEnabled(self.history.can_redo)
-            redo_text = i18n.translate("action.redo")
-            self.redo_button.setToolTip(
-                f"{redo_text} : {self.history.redo_label}" if self.history.redo_label else redo_text
-            )
+        self._refresh_history_tooltips()
         # Synchronise le flag ``project_dirty`` avec l'historique.
         self.project_dirty = self.history.is_dirty
         self._update_top_bar()

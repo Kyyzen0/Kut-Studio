@@ -491,8 +491,8 @@ class RenderQueue(QObject):
             )
             self._schedule_next()
             return
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            message = str(error)
+        except Exception as error:  # noqa: BLE001 - slot de QTimer : sinon le job restait « RENDERING » et la file bloquée
+            message = str(error) or type(error).__name__
             self._finish_current(lambda: job.mark_failed(message, ErrorKind.INVALID))
             self._schedule_next()
             return

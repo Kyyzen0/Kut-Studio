@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -80,7 +81,7 @@ from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
 from ui.main_window_mixins.media_import import MediaImportMixin
 from ui.main_window_mixins.project_files import ProjectFilesMixin
 from ui.main_window_mixins.workspace_actions import WorkspaceActionsMixin
-from ui.main_window_mixins.scopes import ScopesMixin
+from ui.main_window_mixins.scopes import ScopesMixin, _ScopeEvents
 from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMixin
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
@@ -229,7 +230,9 @@ class MainWindow(
         self._scope_temporary_paths: tuple[str, ...] = ()
         # L'analyseur s'exécute hors du thread Qt : le panneau reçoit
         # les résultats via un signal Qt émis depuis le thread de
-        # travail (voir ``_on_scopes_analysis_ready``).
+        # travail (voir ``_on_scopes_analysis_ready``). Le QObject pont vit
+        # dans le thread Qt : il doit exister avant le premier résultat.
+        self._scope_events = _ScopeEvents(self)
         self.scopes_analyzer = ScopeAnalyzer(
             on_result=self._on_scopes_analysis_ready,
             on_error=self._on_scopes_analysis_failed,
@@ -238,6 +241,7 @@ class MainWindow(
             min_interval=SCOPES_MIN_INTERVAL,
         )
         self.scopes_panel = ScopesPanel()
+        self._scope_events.ready.connect(self.scopes_panel.set_result)
         self.scopes_panel.refresh_requested.connect(
             self._request_scopes_analysis
         )
@@ -804,71 +808,89 @@ class MainWindow(
 
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
+        # Rien ne se ferme sans que l'utilisateur ait pu sauver son travail.
+        if not self._confirm_discard_changes():
+            event.ignore()
+            return
         # Un rendu en cours demande confirmation : refuser garde tout ouvert.
         if not self._confirm_close_during_render():
             event.ignore()
             return
-        self.render_queue.shutdown()
-        self._shutdown_encoding()
-        self._shutdown_hardware_preview()
-        self._stop_preview_pump()
-        # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
-        if getattr(self, "proxies", None) is not None:
-            self._shutdown_proxies()
-        workspace = getattr(self, "workspace", None)
-        if workspace is not None:
-            workspace.shutdown()
-        if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
-            self.timeline_timer.stop()
-        recorder = getattr(self, "_audio_recorder", None)
-        if recorder is not None and recorder.is_recording:
-            pcm, rate, channels = recorder.stop()
-            self._place_recording(pcm, rate, channels, quiet=True)
-        self._finalize_pending_edit_sessions()
-        self._write_autosave()
-        if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
-            self._autosave_timer.stop()
-        if hasattr(self, "_debug_timer") and self._debug_timer is not None:
-            self._debug_timer.stop()
-        preview_pump = getattr(self, "_preview_pump_timer", None)
-        if preview_pump is not None:
-            preview_pump.stop()
-        preview_engine = getattr(self, "preview_engine", None)
-        if preview_engine is not None:
+        # Chaque étape est protégée : si l'une échoue (file de rendu, proxy...), les suivantes
+        # doivent quand même s'exécuter, sinon FFmpeg, l'autosave ou les threads survivent à la fenêtre.
+        for name, step in self._shutdown_steps():
             try:
-                preview_engine.cancel_all()
-            except Exception:
-                pass
-        timeline = getattr(self, "timeline_panel", None)
-        if timeline is not None:
-            timeline.unsubscribe_from_theme()
-        preview = getattr(self, "preview_panel", None)
-        if preview is not None:
-            preview.release_media()
-        # Le thread de travail des scopes est un daemon, mais on le
-        # ferme proprement : un FFmpeg en cours ne doit pas survivre à
-        # la fenêtre.
-        scopes_analyzer = getattr(self, "scopes_analyzer", None)
-        if scopes_analyzer is not None:
-            scopes_analyzer.close()
-        cleanup_temporary_paths(getattr(self, "_scope_temporary_paths", ()))
-        self._scope_temporary_paths = ()
-        autosave = getattr(self, "_autosave", None)
-        if autosave is not None:
-            autosave.close()
-        runtime = getattr(self, "runtime", None)
-        if runtime is not None:
-            runtime.shutdown()
-        subtitle_timer = getattr(self, "_subtitle_edit_timer", None)
-        if subtitle_timer is not None:
-            subtitle_timer.stop()
-
-        callback = getattr(self, "_i18n_callback", None)
-        if callback is not None:
-            i18n.unsubscribe(callback)
-            self._i18n_callback = None
-
+                step()
+            except Exception:  # noqa: BLE001 - l'arrêt ne s'interrompt jamais
+                logging.getLogger(__name__).exception("Arrêt : l'étape « %s » a échoué", name)
         super().closeEvent(event)
+
+    def _shutdown_steps(self):
+        """Étapes de fermeture dans l'ordre : ``(nom, fonction)``."""
+        def attr(name):
+            return getattr(self, name, None)
+
+        def stop_timer(name):
+            timer = attr(name)
+            if timer is not None:
+                timer.stop()
+
+        def stop_recording():
+            recorder = attr("_audio_recorder")
+            if recorder is not None and recorder.is_recording:
+                pcm, rate, channels = recorder.stop()
+                self._place_recording(pcm, rate, channels, quiet=True)
+
+        def shutdown_proxies():
+            # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
+            if attr("proxies") is not None:
+                self._shutdown_proxies()
+
+        def call(owner_name, method):
+            owner = attr(owner_name)
+            if owner is not None:
+                getattr(owner, method)()
+
+        def cancel_previews():
+            engine = attr("preview_engine")
+            if engine is not None:
+                engine.cancel_all()
+
+        def clean_scope_files():
+            cleanup_temporary_paths(attr("_scope_temporary_paths") or ())
+            self._scope_temporary_paths = ()
+
+        def release_i18n():
+            callback = attr("_i18n_callback")
+            if callback is not None:
+                i18n.unsubscribe(callback)
+                self._i18n_callback = None
+
+        return [
+            ("file de rendu", self.render_queue.shutdown),
+            ("encodage", self._shutdown_encoding),
+            ("aperçu matériel", self._shutdown_hardware_preview),
+            ("pompe d'aperçu", self._stop_preview_pump),
+            ("proxies", shutdown_proxies),
+            ("espaces de travail", lambda: call("workspace", "shutdown")),
+            ("minuteur timeline", lambda: stop_timer("timeline_timer")),
+            ("enregistrement audio", stop_recording),
+            ("sessions d'édition", self._finalize_pending_edit_sessions),
+            ("autosave final", self._write_autosave),
+            ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
+            ("minuteur debug", lambda: stop_timer("_debug_timer")),
+            ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
+            ("rendus d'aperçu", cancel_previews),
+            ("pistage", self._cancel_tracking_jobs),
+            ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
+            ("média du viewer", lambda: call("preview_panel", "release_media")),
+            ("scopes", lambda: call("scopes_analyzer", "close")),
+            ("fichiers de scopes", clean_scope_files),
+            ("autosave", lambda: call("_autosave", "close")),
+            ("runtime", lambda: call("runtime", "shutdown")),
+            ("minuteur sous-titres", lambda: stop_timer("_subtitle_edit_timer")),
+            ("traductions", release_i18n),
+        ]
 
     @property
     def playhead_seconds(self) -> float:
@@ -1008,12 +1030,12 @@ class MainWindow(
         # --- Historique, disposition, réglages et export ---------------
         self.undo_button = IconButton(
             icon=IconName.RESET,
-            tooltip="Annuler (Ctrl+Z)",
+            tooltip=i18n.translate("action.undo"),
             size=Sizes.icon_button_sm,
         )
         self.redo_button = IconButton(
             icon=IconName.RESET,
-            tooltip="Rétablir (Ctrl+Y)",
+            tooltip=i18n.translate("action.redo"),
             size=Sizes.icon_button_sm,
         )
         from PySide6.QtGui import QTransform, QIcon
@@ -1053,7 +1075,7 @@ class MainWindow(
 
         self.export_button = IconButton(
             icon=IconName.EXPORT,
-            tooltip="Exporter le montage (⌘E)",
+            tooltip="Exporter le montage",       # aucun raccourci : Ctrl+E est « activer/désactiver le clip »
             size=Sizes.button_md,
             square=False,
             accent=True,
@@ -1346,8 +1368,10 @@ class MainWindow(
         edit_menu.addSeparator()
 
         for key in ("action.cut", "menu.item.copy", "menu.item.paste"):
+            # Pas de presse-papiers de clips pour l'instant : l'entrée est désactivée plutôt que de
+            # rester active et muette (un print invisible dans l'application empaquetée).
             action = self._labelled_action(key)
-            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
+            self._disable_unavailable(action)
             edit_menu.addAction(action)
 
         # Séquence
@@ -1375,9 +1399,16 @@ class MainWindow(
         delete_sequence_action.triggered.connect(lambda: self.delete_sequence_command())
         sequence_menu.addAction(delete_sequence_action)
         sequence_menu.addSeparator()
-        for key in ("menu.item.add_clip", "menu.item.trim", "menu.item.marker"):
+        for key, handler in (
+            ("menu.item.add_clip", None),
+            ("menu.item.trim", lambda: self.cut_at_playhead()),                         # Ctrl+K
+            ("menu.item.marker", lambda: self.add_marker_at(self.playhead_seconds)),    # M
+        ):
             action = self._labelled_action(key)
-            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
+            if handler is None:
+                self._disable_unavailable(action)
+            else:
+                action.triggered.connect(lambda checked=False, run=handler: run())
             sequence_menu.addAction(action)
 
         # Fenêtre — le contenu dépend du gestionnaire d'espace de
@@ -1486,8 +1517,16 @@ class MainWindow(
         return action
 
     def _notify_placeholder(self, feature_name):
-        """Affiche un message discret pour les features à venir."""
-        print(f"[MainWindow] {feature_name} : à implémenter")
+        """Zone du rail sans panneau : le dit dans la barre d'état (un print ne se voit pas une fois empaqueté)."""
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            bar.showMessage(i18n.translate("status.unavailable"), 4000)
+
+    @staticmethod
+    def _disable_unavailable(action) -> None:
+        """Entrée de menu sans fonction pour l'instant : grisée, avec l'explication en infobulle."""
+        action.setEnabled(False)
+        action.setToolTip(i18n.translate("status.unavailable"))
 
     @staticmethod
     def global_style():
@@ -2042,6 +2081,7 @@ class MainWindow(
 
     def _refresh_shortcut_tooltips(self) -> None:
         """Garde les info-bulles de la timeline fidèles aux raccourcis courants."""
+        self._refresh_history_tooltips()
         timeline = getattr(self, "timeline_panel", None)
         if timeline is None:
             return

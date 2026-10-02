@@ -217,22 +217,33 @@ class TestBuildTimeRemappingVideoFilter:
         assert filter_str == ""
 
     def test_speed_2x(self):
-        """Un clip avec speed=2x a un filtre atempo=2.0."""
+        """La vitesse vidéo passe par setpts : atempo est un filtre audio (FFmpeg refuse le graphe)."""
         layer = _make_render_layer(time_remapping=TimeRemapping(speed=2.0))
-        filter_str = _build_time_remapping_video_filter(layer)
-        assert "atempo=2.0" in filter_str
+        filter_str = _build_time_remapping_video_filter(layer, fps=30)
+        assert filter_str == "setpts=PTS/2,fps=30"
 
     def test_speed_0_5x(self):
-        """Un clip avec speed=0.5x a un filtre atempo=0.5."""
         layer = _make_render_layer(time_remapping=TimeRemapping(speed=0.5))
-        filter_str = _build_time_remapping_video_filter(layer)
-        assert "atempo=0.5" in filter_str
+        filter_str = _build_time_remapping_video_filter(layer, fps=30)
+        assert filter_str == "setpts=PTS/0.5,fps=30"
 
     def test_speed_4x(self):
-        """Un clip avec speed=4x a deux filtres atempo=2.0."""
+        """Une vitesse hors de [0,5 ; 2] n'a pas besoin d'être chaînée : setpts n'a pas cette limite."""
         layer = _make_render_layer(time_remapping=TimeRemapping(speed=4.0))
-        filter_str = _build_time_remapping_video_filter(layer)
-        assert filter_str.count("atempo=2.0") == 2
+        filter_str = _build_time_remapping_video_filter(layer, fps=30)
+        assert filter_str == "setpts=PTS/4,fps=30"
+
+    @pytest.mark.parametrize("remapping", [
+        TimeRemapping(speed=2.0), TimeRemapping(speed=0.25), TimeRemapping(speed=4.0),
+        TimeRemapping(reverse=True), TimeRemapping(speed=2.0, reverse=True),
+        TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=3.0),
+    ])
+    def test_a_video_chain_never_contains_an_audio_only_filter(self, remapping):
+        """Régression : « Media type mismatch between fps and atempo » faisait échouer tout l'export."""
+        layer = _make_render_layer(source_fps=30.0, time_remapping=remapping)
+        filter_str = _build_time_remapping_video_filter(layer, fps=30)
+        assert not any(name in filter_str for name in ("atempo", "areverse", "asetpts", "aresample"))
+        assert "select=eq(n," not in filter_str         # la virgule interne cassait le filter_complex
 
     def test_reverse(self):
         """Un clip en reverse a un filtre reverse."""
@@ -241,16 +252,15 @@ class TestBuildTimeRemappingVideoFilter:
         assert "reverse" in filter_str
 
     def test_speed_and_reverse(self):
-        """Un clip avec speed et reverse a les deux filtres."""
+        """Reverse d'abord, puis la vitesse sur le flux déjà inversé."""
         layer = _make_render_layer(
             time_remapping=TimeRemapping(speed=2.0, reverse=True)
         )
-        filter_str = _build_time_remapping_video_filter(layer)
-        assert "atempo=2.0" in filter_str
-        assert "reverse" in filter_str
+        filter_str = _build_time_remapping_video_filter(layer, fps=30)
+        assert filter_str == "reverse,setpts=PTS/2,fps=30"
 
     def test_freeze_frame(self):
-        """Un clip en freeze a un filtre select."""
+        """Un freeze ne garde qu'une image : celle qui contient l'instant, comptée depuis source_in."""
         layer = _make_render_layer(
             source_fps=30.0,
             time_remapping=TimeRemapping(
@@ -260,9 +270,8 @@ class TestBuildTimeRemappingVideoFilter:
             ),
         )
         filter_str = _build_time_remapping_video_filter(layer)
-        # Frame 150 = 5.0 * 30.0
-        assert "select=eq(n,150)" in filter_str
-        assert "setpts" in filter_str
+        # Image 150 (5,0 s × 30 i/s) : on vise une demi-image avant elle, (150 − 0,5) / 30.
+        assert filter_str == "trim=start=4.983333,setpts=PTS-STARTPTS,trim=end_frame=1"
 
     def test_freeze_no_reverse_no_speed(self):
         """Un clip en freeze n'a ni reverse ni speed."""
@@ -356,13 +365,14 @@ class TestBuildLayerFilterIntegration:
         assert "[v0]" in filter_str
 
     def test_speed_clip_filter_chain(self):
-        """Un clip avec speed a le filtre atempo inséré."""
+        """Un clip avec speed a setpts (pas atempo) puis un retour à la cadence de sortie."""
         layer = _make_render_layer(time_remapping=TimeRemapping(speed=2.0))
         filter_str = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
-        assert "atempo=2.0" in filter_str
+        assert "setpts=PTS/2,fps=30" in filter_str
+        assert "atempo" not in filter_str
 
     def test_freeze_clip_filter_chain(self):
-        """Un clip en freeze a le filtre select inséré."""
+        """Un clip en freeze garde une image (trim), la tient (tpad) et reste valide dans un filter_complex."""
         layer = _make_render_layer(
             source_fps=30.0,
             time_remapping=TimeRemapping(
@@ -372,7 +382,10 @@ class TestBuildLayerFilterIntegration:
             ),
         )
         filter_str = _build_layer_filter(0, layer, 0, 1920, 1080, 30)
-        assert "select=eq(n,150)" in filter_str
+        assert "trim=start=4.983333,setpts=PTS-STARTPTS,trim=end_frame=1" in filter_str
+        assert "tpad=stop_mode=clone:stop_duration=3.000000" in filter_str
+        assert "trim=duration=3.000000" in filter_str
+        assert "select=eq" not in filter_str
 
 
 # ---------------------------------------------------------------------------

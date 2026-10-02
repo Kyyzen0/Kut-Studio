@@ -73,6 +73,30 @@ def user_cache_dir(
     return Path(env.get("XDG_CACHE_HOME", home_path / ".cache")) / "kut-studio"
 
 
+def user_log_dir(
+    custom: str | os.PathLike[str] | None = None,
+    *,
+    platform_name: str | None = None,
+    environment: Mapping[str, str] | None = None,
+    home: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Répertoire des journaux natif, sans le créer."""
+    if custom is not None:
+        return Path(custom)
+    platform_name, env, home_path = _context(
+        platform_name=platform_name, environment=environment, home=home
+    )
+    override = env.get("KUT_STUDIO_LOG_DIR")
+    if override:
+        return Path(override)
+    if platform_name.startswith("win"):
+        base = Path(env.get("LOCALAPPDATA", home_path / "AppData" / "Local"))
+        return base / "Kut-Studio" / "Logs"
+    if platform_name == "darwin":
+        return home_path / "Library" / "Logs" / "Kut-Studio"
+    return Path(env.get("XDG_STATE_HOME", home_path / ".local" / "state")) / "kut-studio"
+
+
 def system_font_dirs(
     *,
     platform_name: str | None = None,
@@ -102,4 +126,4 @@ def system_font_dirs(
     )
 
 
-__all__ = ["system_font_dirs", "user_cache_dir", "user_config_dir"]
+__all__ = ["system_font_dirs", "user_cache_dir", "user_config_dir", "user_log_dir"]

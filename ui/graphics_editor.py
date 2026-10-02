@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.graphics import GraphicOverlay, GraphicType, ShapeKind
+from ui import i18n
 from ui.design_system import Spacing
 from ui.theme import label_style
 
@@ -91,6 +92,8 @@ class _ColorField(QWidget):
         layout.setSpacing(Spacing.xs)
         self.swatch = QPushButton()
         self.swatch.setFixedSize(22, 22)
+        self.swatch.setToolTip(i18n.translate("graphics.color.pick"))
+        self.swatch.setAccessibleName(i18n.translate("graphics.color.pick"))
         self.swatch.clicked.connect(self._pick)
         self.edit = QLineEdit(default)
         self.edit.setMaxLength(9)

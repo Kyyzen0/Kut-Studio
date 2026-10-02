@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
+
+from PySide6.QtCore import QObject, Signal
+
 from core.scopes_analyzer import (
     ScopeAnalysis,
     ScopeExtractionError,
     cleanup_temporary_paths,
 )
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+class _ScopeEvents(QObject):
+    """Pont thread d'analyse → thread Qt (connexion en file automatique)."""
+
+    ready = Signal(object)
 
 
 def _main_window():
@@ -32,12 +45,10 @@ class ScopesMixin:
         """
         if getattr(analysis, "stale", False):
             return
-        result = analysis.result
-        # ``QTimer.singleShot(0, ...)``rebascule dans le thread GUI
-        # sans bloquer le thread de travail.
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(0, lambda: self.scopes_panel.set_result(result))
+        # Appelé depuis le thread d'analyse : un signal d'un QObject du thread Qt est mis en file et
+        # livré dans la boucle principale. ``QTimer.singleShot`` posté depuis un thread sans boucle
+        # d'événements n'exécutait jamais son rappel : les scopes ne s'affichaient jamais.
+        self._scope_events.ready.emit(analysis.result)
 
     def _on_scopes_analysis_failed(
         self, request, error: BaseException,
@@ -48,7 +59,7 @@ class ScopesMixin:
         # silencieux, sinon on sature la console pendant la lecture.
         if isinstance(error, ScopeExtractionError):
             return
-        print(f"[MainWindow] analyse de scopes échouée : {error!r}")
+        LOGGER.warning("Analyse des scopes échouée : %r", error)
 
     def _request_scopes_analysis(self, force: bool = False) -> None:
         """Déclenche une analyse de l'image composée à la tête de lecture.
@@ -103,7 +114,9 @@ class ScopesMixin:
         pendant la lecture.
         """
         try:
-            render_plan = self.get_render_plan()
+            # Le plan est ramené à l'origine à la tête de lecture : l'image voulue est la première du
+            # rendu (voir ``build_frame_command``), quel que soit l'endroit de la timeline.
+            render_plan = self.get_render_plan(at=playhead)
         except Exception:
             # Projet sans média, plan incomplet : rien à analyser.
             return None
@@ -120,7 +133,7 @@ class ScopesMixin:
             # Une instance dédiée évite qu'une analyse de scopes ne remplace
             # le SRT temporaire d'un export déjà en cours.
             frame_engine = _main_window().ExportEngine()
-            command = frame_engine.build_frame_command(request, playhead)
+            command = frame_engine.build_frame_command(request, 0.0)
             self._scope_temporary_paths = frame_engine.take_temporary_files()
             return command
         except Exception:

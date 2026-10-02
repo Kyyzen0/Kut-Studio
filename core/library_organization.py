@@ -40,8 +40,9 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 
+from .media_probe import MediaProbeError, probe_media
 from .project_model import MediaAsset, Project
 
 
@@ -94,6 +95,23 @@ _ID_PATTERN = re.compile(r"^[A-Za-z0-9._:\-]+$")
 # ---------------------------------------------------------------------------
 # Erreurs
 # ---------------------------------------------------------------------------
+
+
+_TYPE_NAMES = {"audio": "un fichier audio", "video": "une vidéo"}
+
+
+def relink_differences(before: MediaAsset, after: MediaAsset) -> list[str]:
+    """Ce qui a changé entre l'ancien et le nouveau fichier d'un média relié (phrases lisibles)."""
+    changes: list[str] = []
+    if abs(before.duration - after.duration) > 0.04:
+        changes.append(f"durée {before.duration:.2f} s → {after.duration:.2f} s")
+    if (before.width, before.height) != (after.width, after.height):
+        changes.append(f"résolution {before.width}×{before.height} → {after.width}×{after.height}")
+    if abs(before.fps - after.fps) > 0.01:
+        changes.append(f"cadence {before.fps:g} → {after.fps:g} i/s")
+    if before.has_audio != after.has_audio:
+        changes.append("avec audio" if after.has_audio else "sans audio")
+    return changes
 
 
 class LibraryError(ValueError):
@@ -650,12 +668,23 @@ class LibraryOrganization:
             )
         asset.name = cleaned
 
-    def relink_asset(self, asset_id: str, new_path: str) -> MediaAsset:
-        """Re-lie un média à un nouveau chemin sur disque.
+    def relink_asset(
+        self,
+        asset_id: str,
+        new_path: str,
+        *,
+        probe: Callable[[str], MediaAsset] = probe_media,
+    ) -> MediaAsset:
+        """Re-lie un média à un nouveau fichier et **relit ses métadonnées**.
 
-        Met à jour ``MediaAsset.path`` (et donc le statut manquant).
-        Le chemin est normalisé via ``os.path.normpath`` ; un chemin
-        vide est rejeté pour éviter de masquer une disparition.
+        Le fichier relié peut n'avoir ni la même durée, ni la même résolution, ni la même cadence, ni
+        les mêmes pistes que l'ancien : sans relecture, le rendu travaillerait avec des valeurs fausses
+        (un ``has_audio`` périmé fait échouer l'export, les données de tracking sont rapportées à
+        l'ancienne taille). Le chemin est normalisé via ``os.path.normpath``.
+
+        Raises:
+            LibraryError: chemin vide, fichier illisible (le média garde alors son ancien chemin), ou
+                fichier d'un autre type (vidéo à la place d'un audio, et inversement).
         """
         asset = self._get_asset(asset_id)
         if asset is None:
@@ -668,7 +697,22 @@ class LibraryOrganization:
                 "Le nouveau chemin ne peut pas être vide : "
                 "la disparition resterait silencieuse."
             )
-        asset.path = os.path.normpath(cleaned)
+        path = os.path.normpath(cleaned)
+        try:
+            fresh = probe(path)
+        except MediaProbeError as exc:
+            raise LibraryError(f"Ce fichier ne peut pas être relié : {exc}") from exc
+        if {asset.media_type, fresh.media_type} == {"audio", "video"}:
+            raise LibraryError(
+                f"Ce fichier est {_TYPE_NAMES.get(fresh.media_type, fresh.media_type)}, "
+                f"le média d'origine est {_TYPE_NAMES.get(asset.media_type, asset.media_type)}."
+            )
+        asset.path = path
+        asset.duration = fresh.duration
+        asset.width = fresh.width
+        asset.height = fresh.height
+        asset.fps = fresh.fps
+        asset.has_audio = fresh.has_audio
         return asset
 
     def remove_asset(self, asset_id: str, *, keep_orphan_clips: bool = True) -> None:

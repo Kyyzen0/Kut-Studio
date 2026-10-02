@@ -350,7 +350,6 @@ class TestTimeRemappingRoundTrip:
         try:
             loaded = load_project(f.name)
 
-            original_clips = {c.id: c for c in project.tracks[0].clips}
             loaded_clips = {c.id: c for c in loaded.tracks[0].clips}
 
             # Clip normal: durée = 10.0

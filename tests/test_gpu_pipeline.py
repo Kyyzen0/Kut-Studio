@@ -7,6 +7,7 @@ elle-même comparée aux filtres FFmpeg de l'export ici, et au vrai GPU dans
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
@@ -160,8 +161,8 @@ def _yuv_frame(width, height):
                E(EffectType.BLUR, intensity=2.0), E(EffectType.VIGNETTE, intensity=0.6), E(EffectType.SEPIA)],
      1.2, 7.0),
 ])
-def test_gpu_effects_match_the_ffmpeg_filters_of_the_export(name, effects, mean_limit, p99_limit):
-    """Cohérence effet par effet : formule GPU (référence) contre filtre FFmpeg de l'export."""
+def _ffmpeg_vs_reference(effects):
+    """``(moyenne, p99)`` de l'écart, en niveaux 8 bits, entre le filtre FFmpeg de l'export et la formule GPU."""
     np = pytest.importorskip("numpy")
     from core.export_engine import _build_clip_effect_filters
     from core.gpu_effects import reference_layer
@@ -179,7 +180,50 @@ def test_gpu_effects_match_the_ffmpeg_filters_of_the_export(name, effects, mean_
     full = codes.astype(float) / 255.0  # chroma 2×2 dupliquée, comme la conversion de FFmpeg ici
     got = reference_layer(full, program_for(effects), yuv_to_rgb=yuv_to_rgb_matrix())
     diff = np.abs(got - expected) * 255
-    assert diff.mean() <= mean_limit and np.percentile(diff, 99) <= p99_limit, (diff.mean(), np.percentile(diff, 99))
+    return float(diff.mean()), float(np.percentile(diff, 99))
+
+
+@functools.lru_cache(maxsize=None)
+def _swscale_conversion_error():
+    """Écart du cas « sans effet » : l'arrondi à virgule fixe de swscale propre à CE FFmpeg.
+
+    Il s'ajoute à chaque cas. Mesuré : 0,87 de moyenne / 2,4 de p99 / 3 au maximum avec FFmpeg 6.1 et 7.1
+    (Ubuntu, Windows), moins de 0,5 / 2 avec le FFmpeg récent de macOS. Les seuils ci-dessous ne portaient
+    que sur ce dernier : ils faisaient échouer la CI sur les deux autres systèmes sans qu'aucune formule
+    ne diffère. L'écart reste sous un niveau de gris en moyenne : invisible, mais mesuré plutôt qu'ignoré.
+    """
+    return _ffmpeg_vs_reference(())
+
+
+@needs_ffmpeg
+def test_the_ffmpeg_conversion_alone_stays_within_one_grey_level():
+    """Garde-fou du calibrage : sans effet, aucune version de swscale ne doit s'écarter de la référence."""
+    mean, p99 = _swscale_conversion_error()
+    assert mean <= 1.0 and p99 <= 3.0, (mean, p99)
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("name, effects, mean_limit, p99_limit", [
+    ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 0.5, 2.0),
+    ("vignette", [E(EffectType.VIGNETTE, intensity=0.8)], 1.0, 4.0),
+    ("black_and_white", [E(EffectType.BLACK_AND_WHITE)], 1.2, 3.0),
+    ("sepia", [E(EffectType.SEPIA)], 0.6, 2.0),
+    ("sharpen", [E(EffectType.SHARPEN, intensity=1.5)], 0.6, 3.0),
+    # Bords de l'image : le filtre récursif de gblur y gère la frontière autrement (p99 seulement).
+    ("blur", [E(EffectType.BLUR, intensity=12.0)], 2.0, 14.0),
+    ("chain", [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.3),
+               E(EffectType.BLUR, intensity=2.0), E(EffectType.VIGNETTE, intensity=0.6), E(EffectType.SEPIA)],
+     1.2, 7.0),
+])
+def test_gpu_effects_match_the_ffmpeg_filters_of_the_export(name, effects, mean_limit, p99_limit):
+    """Cohérence effet par effet : formule GPU (référence) contre filtre FFmpeg de l'export.
+
+    Les limites sont le budget de la formule ; l'erreur de conversion de ce FFmpeg, mesurée sans effet,
+    s'y ajoute (bornes de la somme : les deux erreurs sont indépendantes).
+    """
+    mean, p99 = _ffmpeg_vs_reference(effects)
+    base_mean, base_p99 = _swscale_conversion_error()
+    assert mean <= mean_limit + base_mean and p99 <= p99_limit + base_p99, (name, mean, p99, base_mean, base_p99)
 
 
 # --- Plan de passes ------------------------------------------------------------------------------------------

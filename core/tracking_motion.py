@@ -37,6 +37,7 @@ linéairement entre images valides, et lissés pour la stabilisation.
 from __future__ import annotations
 
 import math
+import threading
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -301,17 +302,21 @@ class MotionSeries:
 
 _SERIES_CACHE: OrderedDict = OrderedDict()
 _CACHE_SIZE = 64
+_SERIES_LOCK = threading.RLock()    # séries évaluées par l'interface et par les threads de rendu
 
 
 def _cached(key, compute):
-    value = _SERIES_CACHE.get(key)
+    with _SERIES_LOCK:
+        value = _SERIES_CACHE.get(key)
+        if value is not None:
+            _SERIES_CACHE.move_to_end(key)
     if value is not None:
-        _SERIES_CACHE.move_to_end(key)
         return value
-    value = compute()
-    _SERIES_CACHE[key] = value
-    if len(_SERIES_CACHE) > _CACHE_SIZE:
-        _SERIES_CACHE.popitem(last=False)
+    value = compute()                # hors verrou : un calcul long ne bloque pas les autres threads
+    with _SERIES_LOCK:
+        _SERIES_CACHE[key] = value
+        if len(_SERIES_CACHE) > _CACHE_SIZE:
+            _SERIES_CACHE.popitem(last=False)
     return value
 
 

@@ -64,6 +64,20 @@ def ffmpeg_supports_subtitles():
     return bool(_ffmpeg_supports_subtitles())
 
 
+def normalize_fps(value, default=30):
+    """Cadence propre : entière si elle l'est (``30``, pas ``30.0``), sinon flottante (``29.97``).
+
+    ``int(29.97)`` valait 29 : l'aperçu était rendu à une cadence qui n'est pas celle du projet.
+    """
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not rate > 0.0 or rate != rate:
+        return default
+    return int(rate) if rate.is_integer() else rate
+
+
 def build_preview_command(plan, **kwargs):
     """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export.
 
@@ -75,12 +89,17 @@ def build_preview_command(plan, **kwargs):
     :mod:`core.decode_policy`). Les images decodees sont telechargees en
     memoire systeme : le graphe, lui, ne change pas.
     """
-    from .export_engine import _ffmpeg_command_prefix, filter_graph_arguments
+    from .export_engine import (
+        OUTPUT_COLOR_TAGS,
+        _ffmpeg_command_prefix,
+        filter_graph_arguments,
+        with_output_color_stage,
+    )
     from .preview_render import preview_crf, preview_preset
 
     width = int(kwargs.get("width", 1920))
     height = int(kwargs.get("height", 1080))
-    fps = int(kwargs.get("fps", 30))
+    fps = normalize_fps(kwargs.get("fps", 30))
     quality = str(kwargs.get("quality", "standard"))
     start = float(kwargs.get("start", 0.0) or 0.0)
     duration = kwargs.get("duration", None)
@@ -89,6 +108,8 @@ def build_preview_command(plan, **kwargs):
     out_w, out_h = preview_output_size(width, height, quality)
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality)
     filter_complex, video_label, audio_label, input_paths = result
+    # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
+    filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     input_args = kwargs.get("input_args")
     for path in input_paths:
@@ -110,6 +131,7 @@ def build_preview_command(plan, **kwargs):
             preview_preset(quality),
             "-crf",
             str(preview_crf(quality)),
+            *OUTPUT_COLOR_TAGS,
         ]
     )
     command.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k"])
@@ -131,6 +153,10 @@ def _graphic_source_key(graphic) -> str:
     except OSError:
         return "missing"
     return f"{stat.st_mtime_ns}:{stat.st_size}"
+
+
+RENDER_ENGINE_VERSION = 2
+"""Version du rendu d'aperçu, incluse dans toute empreinte de segment."""
 
 
 def fingerprint_plan(plan, **kwargs):
@@ -158,6 +184,9 @@ def fingerprint_plan(plan, **kwargs):
     quality = str(kwargs.get("quality", "standard"))
     extra = str(kwargs.get("extra", ""))
     payload = {
+        # À incrémenter quand le rendu change sans que le plan change : le cache d'aperçu est persistant
+        # (7 jours) et resservirait sinon des segments produits par l'ancien rendu.
+        "engine": RENDER_ENGINE_VERSION,
         "width": width,
         "height": height,
         "fps": fps,
@@ -193,13 +222,19 @@ def fingerprint_plan(plan, **kwargs):
                 "gain_db": getattr(layer, "gain_db", 0.0),
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
                 "nested": getattr(layer, "nested_key", ""),
+                # Tout le mixage (pan, fondus, volume / pan de piste, effets, automation, ducking) :
+                # la liste à la main avait oublié ces champs et le cache resservait un son périmé.
+                # Le repr de la couche suit aussi les champs qu'on ajoutera ; au pire il invalide trop.
+                "mix": repr(layer),
             }
             for layer in getattr(plan, "audio_layers", ())
         ],
+        "master": [float(getattr(plan, "master_gain_db", 0.0)), bool(getattr(plan, "master_muted", False))],
         "subtitles": [
             {"start": float(c.start), "end": float(c.end), "text": c.text}
             for c in getattr(plan, "subtitle_cues", ())
         ],
+        "subtitle_styles": [repr(style) for style in getattr(plan, "subtitle_styles", ())],
         "transitions": [
             {
                 "from": t.from_clip_id,

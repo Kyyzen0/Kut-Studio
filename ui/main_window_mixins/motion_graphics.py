@@ -9,8 +9,13 @@ relâchement.
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MotionGraphicsMixin:
@@ -260,7 +265,7 @@ class MotionGraphicsMixin:
                 if panel.gpu_active:
                     self._sync_gpu_adjustments(plan, scene, t)
             except Exception as exc:  # un calque fautif ne bloque jamais le viewer
-                print(f"[MainWindow] aperçu des calques indisponible : {exc}")
+                LOGGER.warning("Aperçu des calques indisponible : %s", exc)
                 panel.set_mograph_image(None)
             panel.set_mograph_visible(True)
         else:
@@ -473,7 +478,7 @@ class MotionGraphicsMixin:
                     target.set_static(clip, value)
                 changed = True
             except (KeyError, ValueError) as exc:
-                print(f"[MainWindow] valeur refusée ({name}) : {exc}")
+                self._report_edit_refused(exc)
         return changed
 
     def _after_live_change(self, clip_id: str) -> None:
@@ -800,7 +805,7 @@ class MotionGraphicsMixin:
         try:
             presets = all_presets()
         except Exception as exc:
-            print(f"[MainWindow] presets indisponibles : {exc}")
+            LOGGER.warning("Presets de motion graphics indisponibles : %s", exc)
             presets = []
         self.layers_panel.set_presets(presets)
 

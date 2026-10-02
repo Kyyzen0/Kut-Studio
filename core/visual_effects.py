@@ -20,6 +20,7 @@ outils d'aperçu, scripts).
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Iterable
@@ -261,16 +262,20 @@ class EvaluatedTransform:
 
 _CURVE_CACHE: OrderedDict[tuple, dict[str, AnimationCurve]] = OrderedDict()
 _CURVE_CACHE_SIZE = 256
+_CACHE_LOCK = threading.RLock()
+"""Les courbes sont évaluées par l'interface **et** par les threads de rendu (graphe d'aperçu, images de calques) :
+sans verrou, ``get`` puis ``move_to_end`` pouvaient croiser l'éviction d'un autre thread (``KeyError``)."""
 _LAST_BY_LIST: OrderedDict[int, tuple] = OrderedDict()
 """``id(liste) -> (liste, durée, éléments, courbes)`` : la liste est retenue,
 son identifiant ne peut donc pas être réutilisé par une autre liste."""
 
 
 def _remember_list(keyframes: list, clip_duration, frames: tuple, curves) -> None:
-    _LAST_BY_LIST[id(keyframes)] = (keyframes, clip_duration, frames, curves)
-    _LAST_BY_LIST.move_to_end(id(keyframes))
-    if len(_LAST_BY_LIST) > _CURVE_CACHE_SIZE:
-        _LAST_BY_LIST.popitem(last=False)
+    with _CACHE_LOCK:
+        _LAST_BY_LIST[id(keyframes)] = (keyframes, clip_duration, frames, curves)
+        _LAST_BY_LIST.move_to_end(id(keyframes))
+        if len(_LAST_BY_LIST) > _CURVE_CACHE_SIZE:
+            _LAST_BY_LIST.popitem(last=False)
 
 
 def transform_curves(
@@ -285,7 +290,8 @@ def transform_curves(
     # Chemin rapide (lecture) : la même liste, aux mêmes éléments, que la
     # dernière fois. Comparer des identités évite de hacher chaque keyframe.
     if isinstance(keyframes, list):
-        recent = _LAST_BY_LIST.get(id(keyframes))
+        with _CACHE_LOCK:
+            recent = _LAST_BY_LIST.get(id(keyframes))
         if (
             recent is not None
             and recent[0] is keyframes
@@ -296,9 +302,11 @@ def transform_curves(
             return recent[3]
     frames = tuple(keyframes)
     key = (frames, clip_duration)
-    cached = _CURVE_CACHE.get(key)
+    with _CACHE_LOCK:
+        cached = _CURVE_CACHE.get(key)
+        if cached is not None:
+            _CURVE_CACHE.move_to_end(key)
     if cached is not None:
-        _CURVE_CACHE.move_to_end(key)
         if isinstance(keyframes, list):
             _remember_list(keyframes, clip_duration, frames, cached)
         return cached
@@ -312,11 +320,12 @@ def transform_curves(
     curves = {
         name: AnimationCurve(items, TRANSFORM_PROPERTIES[name].kind) for name, items in grouped.items()
     }
-    _CURVE_CACHE[key] = curves
+    with _CACHE_LOCK:
+        _CURVE_CACHE[key] = curves
+        if len(_CURVE_CACHE) > _CURVE_CACHE_SIZE:
+            _CURVE_CACHE.popitem(last=False)
     if isinstance(keyframes, list):
         _remember_list(keyframes, clip_duration, frames, curves)
-    if len(_CURVE_CACHE) > _CURVE_CACHE_SIZE:
-        _CURVE_CACHE.popitem(last=False)
     return curves
 
 

@@ -248,15 +248,6 @@ def test_transition_library_adds_user_preset_and_persists(
     store = window.transition_preset_store
 
     preset = store.all_presets()[0]  # crossfade
-    new_preset = type(preset)(
-        id=preset.id,
-        name=preset.name,
-        description=preset.description,
-        category=preset.category,
-        transition_type=preset.transition_type,
-        default_duration=preset.default_duration,
-        builtin=False,
-    )
     # On simule une capture côté MainWindow : on construit un preset
     # utilisateur avec un id user-*.
     from core.transition_presets import (

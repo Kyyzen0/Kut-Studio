@@ -213,7 +213,7 @@ peuvent ni bloquer l'application ni dépasser la pile.
 | Cas | Comportement |
 | --- | --- |
 | Séquence source **rallongée** | Rien ne change : le clip garde son in/out. Étendez-le (trim) pour voir la suite. |
-| Séquence source **raccourcie** par une action | Les clips imbriqués qui dépassent la nouvelle fin sont ramenés à cette fin (`clamp_nested_clips`) **dans la même entrée d'historique** que l'action. L'entrée l'indique (« +N clip(s) imbriqué(s) ajusté(s) ») et la barre d'état l'annonce. Un seul `Ctrl+Z` restaure les deux. |
+| Séquence source **raccourcie** par une action | Les clips imbriqués qui dépassent la nouvelle fin sont ramenés à cette fin (`clamp_nested_clips`), **à tous les niveaux** (la séquence parente raccourcie raccourcit à son tour ses propres parents, en un seul appel), **dans la même entrée d'historique** que l'action. L'entrée l'indique (« +N clip(s) imbriqué(s) ajusté(s) ») et la barre d'état l'annonce. Un seul `Ctrl+Z` restaure les deux. |
 | Clip entièrement au-delà de la nouvelle fin | Conservé (jamais supprimé), rendu vide, signalé « hors source ». |
 | Clip imbriqué **trimé** dans le parent | Borné par la durée de la séquence ; raccourcir reste toujours permis. |
 | Projet chargé avec des clips qui débordent | Rien n'est modifié ; la zone sans source est hachurée et rendue transparente. |
@@ -221,6 +221,8 @@ peuvent ni bloquer l'application ni dépasser la pile.
 ---
 
 ## Format `.kut` (v14)
+
+*Cette section décrit les clés introduites en version 14 ; le format courant est la **version 16** (voir [architecture.md](architecture.md#format-kut)).*
 
 ```json
 {
@@ -346,6 +348,11 @@ peuvent ni bloquer l'application ni dépasser la pile.
   les réglages des autres pistes sont recopiés dans la séquence.
 - Les transitions qui relient un clip sélectionné à un clip non sélectionné
   sont retirées lors d'une conversion.
+- Une conversion qui **sépare des clips liés** est refusée (rien n'est modifié) : un calque dont le parent ou le
+  groupe resterait dehors, ou un clip dont la source de tracking resterait dehors. Sélectionnez-les ensemble.
+- Dans une séquence imbriquée, le fond est **transparent** : un *adjustment layer* n'agit que là où il y a du contenu
+  et ne masque pas la piste parente ; un mode de fusion (Produit, Incrustation…) affiche le calque tel quel sur le
+  vide et ne se mélange qu'avec le contenu de la séquence (formule W3C pondérée par l'opacité du dessous).
 - `core.audio_mixer.mix_at` (mesures, sans usage de rendu) ignore les clips
   imbriqués ; l'audio rendu passe par le plan de rendu.
 - Le partage de structure de l'historique compare les séquences inactives à

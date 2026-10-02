@@ -14,9 +14,12 @@ travail pur peut être pompé par un worker plus tard.
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from typing import Callable
+
+LOGGER = logging.getLogger(__name__)
 
 
 # Plus petit nombre = plus urgent. Les vignettes à l'écran passent
@@ -190,8 +193,12 @@ class TaskQueue:
                 break
             if task.token.cancelled:
                 continue
-            # Exécution délibérément hors du verrou.
-            task.fn(task.token)
+            # Exécution délibérément hors du verrou. Une tâche qui lève ne doit ni tuer le thread
+            # worker (plus aucune tâche exécutée) ni faire échouer le slot de l'interface qui pompe.
+            try:
+                task.fn(task.token)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Tâche en échec (clé %r)", getattr(task, "key", None))
             ran += 1
         return ran
 

@@ -828,9 +828,14 @@ def run_with_decode_fallback(
         for choice in hardware:
             ctx.health.record_success(choice)
         return code, stderr, False
-    for choice in hardware:
-        ctx.health.record_failure(choice, purpose, stderr)
+    hardware_stderr = stderr
     code, stderr = run(build(lambda _path: ()))
+    # Le matériel n'est fautif que si le même rendu réussit sans lui, ou si l'erreur parle de décodage matériel.
+    # Avant, tout code de retour non nul le bannissait pour la session : un filtre invalide ou un second média
+    # hors ligne suffisait à désactiver un décodeur pourtant sain.
+    if code == 0 or looks_like_decode_failure(hardware_stderr):
+        for choice in hardware:
+            ctx.health.record_failure(choice, purpose, hardware_stderr)
     return code, stderr, True
 
 

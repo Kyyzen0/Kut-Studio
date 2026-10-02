@@ -505,7 +505,10 @@ class AudioAutomationService:
         track = self._find_audio_track(project, track_id)
         automation = getattr(track, "automation", None)
         if not isinstance(automation, TrackAutomation):
-            automation = TrackAutomation(track_id=track.id)
+            # Un projet chargé porte une simple liste de points : il faut l'envelopper, pas
+            # la jeter (le premier réglage après l'ouverture effaçait toute la courbe).
+            points = list(automation) if isinstance(automation, (list, tuple)) else []
+            automation = TrackAutomation(track_id=track.id, points=points)
             object.__setattr__(track, "automation", automation)
         return automation
 
