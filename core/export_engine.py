@@ -563,6 +563,13 @@ class ExportEngine(QObject):
         """Construit la commande FFmpeg pour un export basé ``RenderPlan``."""
         plan = request.render_plan
         width, height = request.preset.resolution
+        if plan.missing_media:
+            # À l'écran un clip sans média est simplement vide ; dans un fichier exporté ce serait un
+            # trou muet que personne ne verrait avant la livraison : on refuse, clairement.
+            raise ValueError(
+                "Média introuvable : " + ", ".join(plan.missing_media)
+                + ". Reconnectez ou supprimez les clips concernés avant d'exporter."
+            )
         output_path = Path(request.output_path).expanduser()
         if not output_path.parent.exists():
             raise ValueError(

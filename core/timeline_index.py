@@ -176,13 +176,9 @@ class TimelineIndex:
                         )
                     )
                     continue
-                try:
-                    asset = assets[clip.asset_id]
-                except KeyError as error:
-                    raise KeyError(
-                        f"Média '{clip.asset_id}' introuvable dans le projet "
-                        f"'{project.name}'."
-                    ) from error
+                asset = assets.get(clip.asset_id)
+                if asset is None:
+                    continue  # média supprimé : clip hors ligne, rien à montrer (jamais d'exception)
                 active.append(
                     _build_active_clip(
                         clip=clip,

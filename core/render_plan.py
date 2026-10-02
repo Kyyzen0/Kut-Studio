@@ -282,6 +282,9 @@ class RenderPlan:
     # Problèmes rencontrés (référence cassée, cycle, profondeur) : les
     # clips concernés sont rendus vides au lieu de faire échouer le rendu.
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    # Identifiants des médias introuvables (supprimés de la bibliothèque) dont un clip actif dépend :
+    # l'interface les tolère (clip hors ligne), mais un export refuse un plan qui en porte.
+    missing_media: tuple[str, ...] = field(default_factory=tuple)
     # Flou de mouvement de la séquence (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = None
 
@@ -424,6 +427,7 @@ def build_render_plan(
         plan,
         nested_sequences=builder.registry(),
         warnings=tuple(dict.fromkeys(builder.warnings)),
+        missing_media=tuple(dict.fromkeys(builder.missing_media)),
     )
 
 
@@ -447,6 +451,7 @@ class _PlanBuilder:
         self.entries: dict[str, NestedSequencePlan] = {}
         self.required: dict[str, float] = {}
         self.warnings: list[str] = []
+        self.missing_media: list[str] = []
         self._tracking_contexts: dict[str, object] = {}
 
     def tracking_context(self, sequence):
@@ -621,9 +626,14 @@ class _PlanBuilder:
                     continue
                 asset = assets_by_id.get(clip.asset_id)
                 if asset is None:
-                    raise KeyError(
-                        f"Média '{clip.asset_id}' introuvable dans le projet '{self.project.name}'."
+                    # Média supprimé de la bibliothèque (les clips sont conservés, hors ligne) ou
+                    # fichier retouché à la main : le clip ne montre rien, il ne fait pas échouer le plan
+                    # (avant : KeyError au seek, à l'aperçu, à l'annulation, à l'export et à la réouverture).
+                    self.warnings.append(
+                        f"Média introuvable ({clip.asset_id}) : clip « {clip.label or clip.id} » rendu vide."
                     )
+                    self.missing_media.append(clip.asset_id)
+                    continue
                 if track.type == "video":
                     state = self.effective(clip, sequence)
                     video_layers.append(
