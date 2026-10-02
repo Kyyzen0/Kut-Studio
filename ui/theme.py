@@ -285,11 +285,33 @@ SYSTEM_THEME_NAMES: tuple[str, ...] = ("system", "dark", "light")
 # ---------------------------------------------------------------------------
 
 
+_UI_FONT_FAMILIES = ("SF Pro Text", "Helvetica Neue", "Segoe UI", "Arial")
+
+
+def _installed_families(candidates: tuple[str, ...]) -> str:
+    """Liste ``font-family`` limitée aux polices réellement installées.
+
+    Qt reconstruit ses alias de polices (~300 ms) dès qu'une feuille de
+    style nomme une famille absente : on retire donc celles qui manquent
+    (ex. « SF Pro Text » sur macOS). Sans application Qt, la liste est
+    renvoyée telle quelle.
+    """
+    from PySide6.QtGui import QFontDatabase, QGuiApplication
+
+    names = list(candidates)
+    if QGuiApplication.instance() is not None:
+        installed = set(QFontDatabase.families())
+        names = [name for name in candidates if name in installed] or [
+            QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
+        ]
+    return ", ".join(f"'{name}'" for name in names)
+
+
 def _stylesheet(palette: ThemePalette) -> str:
     return f"""
     QWidget {{
         color: {palette.text};
-        font-family: 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', Arial;
+        font-family: {_installed_families(_UI_FONT_FAMILIES)};
         font-size: 13px;
     }}
     QMainWindow {{ background: {palette.background}; }}
@@ -618,6 +640,20 @@ def label_style(
         palette = active_palette()
     hex_color = getattr(palette, color, color) if isinstance(color, str) else color
     return f"color: {hex_color}; font-size: {size}px; font-weight: {weight};"
+
+
+def monospace_font_family() -> str:
+    """Déclaration ``font-family`` à chasse fixe pour les timecodes.
+
+    Utilise la police monospace du système (Menlo, Consolas, DejaVu Sans
+    Mono…) : nommer une famille absente (ex. « SF Mono », non installée
+    globalement sur macOS) force Qt à reconstruire ses alias de polices,
+    ce qui coûte ~300 ms au démarrage.
+    """
+    from PySide6.QtGui import QFontDatabase
+
+    family = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+    return f"font-family: '{family}', monospace;"
 
 
 def colors_dict(palette: ThemePalette | None = None) -> dict:

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
-from ui.theme import label_style
+from ui.theme import label_style, monospace_font_family
 from ui.timeline_widgets.common import (
     _current_palette,
     _minus_icon,
@@ -69,18 +69,18 @@ class ToolbarMixin:
         self.time_label = QLabel("00:00")
         self.time_label.setStyleSheet(
             f"color: {palette.accent}; font-weight: 800; font-size: 14px;"
-            f" font-family: 'SF Mono', 'Menlo', monospace; letter-spacing: 1px;"
+            f" {monospace_font_family()} letter-spacing: 1px;"
         )
         # Rangée combinée : timecode + durée totale séparées par un slash.
         self.timecode_label = QLabel("00:00:00")
         self.timecode_label.setStyleSheet(
             f"color: {palette.muted}; font-size: 11px;"
-            f" font-family: 'SF Mono', 'Menlo', monospace;"
+            f" {monospace_font_family()}"
         )
         self.total_time_label = QLabel("/ 00:00")
         self.total_time_label.setStyleSheet(
             f"color: {palette.muted}; font-size: 11px;"
-            f" font-family: 'SF Mono', 'Menlo', monospace;"
+            f" {monospace_font_family()}"
         )
         time_row = QWidget()
         time_row_layout = QHBoxLayout(time_row)
