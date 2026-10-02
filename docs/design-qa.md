@@ -1,5 +1,8 @@
 # Design QA — Kut-Studio UI evolution
 
+> **Document historique** (revue de design du 30 septembre 2026). Les chemins, captures et le nombre de tests ci-dessous
+> sont ceux de ce jour : l'état actuel de la qualité est dans [stabilization-report.md](stabilization-report.md).
+
 ## Evidence
 
 - Source visual truth: `/Users/audrykchesse/Desktop/Capture d’écran 2026-09-30 à 21.57.33.png`

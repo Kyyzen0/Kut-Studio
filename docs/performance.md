@@ -229,7 +229,9 @@ déplacé, projet d'une autre machine, FFmpeg indisponible (puis installé), dis
 plein (code `ENOSPC` et message FFmpeg), dossier de cache inaccessible, génération
 annulée (en file et en cours), fermeture pendant une génération (processus tué,
 aucun fichier partiel), proxies absents du fichier projet, cache de segments
-supprimé pendant la session.
+supprimé pendant la session, **fichier de cache tenu ouvert** (non supprimable : ni oublié ni compté comme
+libéré), **deux instances sur le même dossier de proxies** (chaque génération a son fichier partiel ; le nettoyage ne
+retire un partiel qu'au bout de dix minutes sans écriture), **segment d'aperçu vide** (jamais mis en cache).
 
 ## 9. Limites connues et pistes
 
@@ -244,5 +246,5 @@ supprimé pendant la session.
   non modifiées est la suite logique.
 - Les marqueurs de transition sont encore un widget par transition (pas de
   culling).
-- Accélération matérielle : seules les abstractions sont prêtes
-  (`core/video_encoders.py`), conformément au périmètre du chantier.
+- Accélération matérielle : réalisée depuis (encodage : [hardware-encoding.md](hardware-encoding.md) ; décodage et
+  aperçu GPU : [gpu-preview.md](gpu-preview.md)).
