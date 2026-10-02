@@ -221,6 +221,9 @@ class DiskPreviewCache:
         import shutil
         import tempfile
 
+        if os.path.getsize(str(source_path)) <= 0:
+            # Un segment vide resservi pendant la durée de vie du cache (sept jours) ne serait jamais refait.
+            raise ValueError("Segment d'aperçu vide : il n'est pas mis en cache.")
         target = self.path_for(key)
         # Le dossier a pu être supprimé en cours de session (nettoyage manuel) :
         # on le recrée plutôt que d'échouer à chaque rendu suivant.

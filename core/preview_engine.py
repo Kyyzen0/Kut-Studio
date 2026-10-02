@@ -662,6 +662,15 @@ class PreviewEngine:
             raise RuntimeError(
                 "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
             )
+        try:
+            produced = os.path.getsize(tmp_path)
+        except OSError:
+            produced = 0
+        if produced <= 0:
+            # Code de sortie 0 mais rien d'ecrit (le fichier temporaire vient de ``mkstemp``) : mis en cache, ce
+            # segment vide serait servi tel quel pendant sept jours sans jamais etre refait.
+            self._remove_file(tmp_path)
+            raise RuntimeError("FFmpeg apercu n'a produit aucun fichier.")
         # Le segment ne sera supprimable qu'une fois recopie dans le
         # cache : on l'enregistre comme appartenant au moteur.
         with self._lock:
