@@ -22,7 +22,7 @@ class TransformEffectsMixin:
         try:
             clip = set_clip_speed(self.project, clip_id, speed)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] vitesse refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier la vitesse")
         self._reload_timeline_preserving_selection(clip_id)
@@ -35,7 +35,7 @@ class TransformEffectsMixin:
         try:
             clip = set_clip_reverse(self.project, clip_id, reverse)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] reverse refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Inverser le clip" if reverse else "Désinverser le clip")
         self._reload_timeline_preserving_selection(clip_id)
@@ -48,7 +48,7 @@ class TransformEffectsMixin:
         try:
             clip = set_clip_freeze_frame(self.project, clip_id, freeze_source_time, freeze_duration)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] arrêt sur image refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Créer un arrêt sur image")
         self._reload_timeline_preserving_selection(clip_id)
@@ -61,7 +61,7 @@ class TransformEffectsMixin:
         try:
             clip = remove_clip_freeze_frame(self.project, clip_id)
         except KeyError as exc:
-            print(f"[MainWindow] suppression arrêt sur image refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer l'arrêt sur image")
         self._reload_timeline_preserving_selection(clip_id)
@@ -74,7 +74,7 @@ class TransformEffectsMixin:
         try:
             clip = set_clip_freeze_duration(self.project, clip_id, freeze_duration)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] durée arrêt sur image refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier la durée de l'arrêt sur image")
         self._reload_timeline_preserving_selection(clip_id)
@@ -87,7 +87,7 @@ class TransformEffectsMixin:
         try:
             clip = reset_clip_time_remapping(self.project, clip_id)
         except KeyError as exc:
-            print(f"[MainWindow] réinitialisation remappage temporel refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Réinitialiser la vitesse et le remappage temporel")
         self._reload_timeline_preserving_selection(clip_id)
@@ -102,7 +102,7 @@ class TransformEffectsMixin:
         try:
             set_clip_effect_enabled(self.project, clip_id, effect_id, enabled)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] effet refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history(
             "Activer un effet" if enabled else "Désactiver un effet"
@@ -126,7 +126,7 @@ class TransformEffectsMixin:
         try:
             remove_effect_from_clip(self.project, clip_id, effect_id)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] suppression d'effet refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer un effet")
         self._refresh_effects_after_change(clip_id)
@@ -139,7 +139,7 @@ class TransformEffectsMixin:
         try:
             move_clip_effect(self.project, clip_id, effect_id, delta)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] réordonnancement d'effet refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Réordonner un effet")
         self._refresh_effects_after_change(clip_id)
@@ -154,7 +154,7 @@ class TransformEffectsMixin:
                 self.project, clip_id, effect_id, {name: value}
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] paramètre d'effet refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier un effet")
         self._refresh_effects_after_change(clip_id)
@@ -185,12 +185,12 @@ class TransformEffectsMixin:
             # ``with_property`` garde les autres champs (ancrage, miroirs…).
             new_transform = clip.transform.with_property(property_name, value)
         except ValueError as exc:
-            print(f"[MainWindow] valeur transform refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         try:
             set_clip_transform(self.project, clip_id, new_transform)
         except ValueError as exc:
-            print(f"[MainWindow] set_clip_transform refusé : {exc}")
+            self._report_edit_refused(exc)
             return
 
         # Le snapshot courant de l'historique est l'état avant la rafale.
@@ -287,7 +287,7 @@ class TransformEffectsMixin:
                 self.project, clip_id, property_name, clip_local_time, value
             )
         except ValueError as exc:
-            print(f"[MainWindow] keyframe refusée : {exc}")
+            self._report_edit_refused(exc)
             self._refresh_motion_inspector()
             return
         try:
@@ -315,7 +315,7 @@ class TransformEffectsMixin:
                 self.project, clip_id, property_name, clip_local_time
             )
         except ValueError as exc:
-            print(f"[MainWindow] suppression keyframe refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         clip = find_clip(self.project, clip_id)
         self._record_history("Supprimer une image-clé")
@@ -335,7 +335,7 @@ class TransformEffectsMixin:
         try:
             reset_clip_transform(self.project, clip_id)
         except ValueError as exc:
-            print(f"[MainWindow] reset transform refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         clip = find_clip(self.project, clip_id)
         self._record_history("Réinitialiser le mouvement")

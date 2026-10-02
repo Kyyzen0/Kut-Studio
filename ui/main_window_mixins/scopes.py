@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 
@@ -12,6 +13,9 @@ from core.scopes_analyzer import (
     ScopeExtractionError,
     cleanup_temporary_paths,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class _ScopeEvents(QObject):
@@ -55,7 +59,7 @@ class ScopesMixin:
         # silencieux, sinon on sature la console pendant la lecture.
         if isinstance(error, ScopeExtractionError):
             return
-        print(f"[MainWindow] analyse de scopes échouée : {error!r}")
+        LOGGER.warning("Analyse des scopes échouée : %r", error)
 
     def _request_scopes_analysis(self, force: bool = False) -> None:
         """Déclenche une analyse de l'image composée à la tête de lecture.

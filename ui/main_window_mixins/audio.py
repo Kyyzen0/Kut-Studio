@@ -413,7 +413,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] suppression d'effet audio refusée : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -428,9 +428,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, int(delta)
             )
         except (KeyError, ValueError) as exc:
-            print(
-                f"[MainWindow] réordonnancement d'effet audio refusé : {exc}"
-            )
+            self._report_edit_refused(exc)
             return
         self._record_history("Réordonner un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -445,9 +443,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, bool(enabled)
             )
         except (KeyError, ValueError) as exc:
-            print(
-                f"[MainWindow] activation d'effet audio refusée : {exc}"
-            )
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier un effet audio")
         self._refresh_effects_after_change(clip_id)
@@ -462,7 +458,7 @@ class AudioMixin:
                 self.project, clip_id, effect_id, {name: value}
             )
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] paramètre d'effet audio refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Modifier un effet audio")
         self._refresh_effects_after_change(clip_id)

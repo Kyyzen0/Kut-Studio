@@ -111,7 +111,7 @@ class TrackManagementMixin:
         try:
             set_track_locked(self.project, track_id, locked)
         except KeyError as exc:
-            print(f"[MainWindow] lock : {exc}")
+            self._report_edit_refused(exc)
             return
         self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_lock")))
         self._refresh_after_track_change()
@@ -121,7 +121,7 @@ class TrackManagementMixin:
         try:
             set_track_visible(self.project, track_id, visible)
         except KeyError as exc:
-            print(f"[MainWindow] visible : {exc}")
+            self._report_edit_refused(exc)
             return
         self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_visible")))
         self._refresh_after_track_change()
@@ -135,7 +135,7 @@ class TrackManagementMixin:
         try:
             set_track_muted(self.project, track_id, muted)
         except KeyError as exc:
-            print(f"[MainWindow] muted : {exc}")
+            self._report_edit_refused(exc)
             return
         self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_mute")))
         self._refresh_after_track_change()

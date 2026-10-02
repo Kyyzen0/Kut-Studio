@@ -97,3 +97,40 @@ def test_the_export_tooltip_does_not_promise_a_shortcut_that_does_not_exist(qtbo
     assert "⌘" not in tooltip and "Ctrl" not in tooltip
     # Si un jour une commande d'export existe, l'infobulle devra la citer ; en attendant, Ctrl+E fait autre chose.
     assert window.shortcuts.shortcut_map.sequences("toggle_clip_enabled") == ("Ctrl+E",)
+
+
+# --- un refus se dit dans la barre d'état -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda w: w.on_speed_changed("clip-inconnu", 2.0),
+        lambda w: w.on_reverse_toggled("clip-inconnu", True),
+        lambda w: w.on_clip_audio_effect_parameter_changed("clip-inconnu", "fx", "gain", 1.0),
+        lambda w: w.cut_at_playhead(),                       # aucun clip sélectionné
+    ],
+    ids=["speed", "reverse", "audio-effect", "cut-without-selection"],
+)
+def test_a_refused_operation_is_reported_in_the_status_bar(qtbot, monkeypatch, call):
+    window = _window(qtbot, monkeypatch)
+    window.statusBar().clearMessage()
+    window.timeline_panel.selected_clip_id = None
+    call(window)
+    assert window.statusBar().currentMessage() != ""
+
+
+def test_the_application_never_prints_to_standard_output():
+    """Sans console (application empaquetée), un ``print`` se perd : on journalise ou on affiche à l'écran."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    offenders = []
+    for folder in ("ui", "core"):
+        for path in sorted((root / folder).rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"
+                        and not any(keyword.arg == "file" for keyword in node.keywords)):
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert not offenders, offenders

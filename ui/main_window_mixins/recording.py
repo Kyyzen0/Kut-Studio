@@ -95,7 +95,7 @@ class RecordingMixin:
             try:
                 add_clip_to_track(self.project, asset.id, track_id, self._record_origin)
             except (KeyError, ValueError) as exc:
-                print(f"[MainWindow] prise non placée sur {track_id} : {exc}")
+                self._report_edit_refused(exc)
         self._record_history("Enregistrer une prise")
         self._refresh_project_library()
         self._reload_timeline_preserving_selection()

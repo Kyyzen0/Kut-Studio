@@ -36,7 +36,7 @@ class ColorGradingMixin:
         try:
             ColorGradingService().set_grade(self.project, clip_id, grade)
         except ColorGradingError as exc:
-            print(f"[MainWindow] Étalonnage refusé : {exc}")
+            self._report_edit_refused(exc)
             return False
         if coalesce:
             self._schedule_color_history(label, clip_id)
@@ -97,7 +97,7 @@ class ColorGradingMixin:
             current = ColorGradingService().get_grade(self.project, clip_id)
             updated = current.with_field(field, float(value))
         except ColorGradingError as exc:
-            print(f"[MainWindow] Paramètre couleur invalide : {exc}")
+            self._report_edit_refused(exc)
             return
         self._commit_color_grade(clip_id, updated, f"Couleur : {field}", coalesce=True)
 
@@ -119,7 +119,7 @@ class ColorGradingMixin:
             curves = current.curves._replace(channel, curve)
             updated = current.with_curves(curves)
         except (ColorGradingError, TypeError, ValueError) as exc:
-            print(f"[MainWindow] Courbe couleur invalide : {exc}")
+            self._report_edit_refused(exc)
             return
         self._commit_color_grade(clip_id, updated, f"Courbe {channel}", coalesce=True)
 
@@ -143,7 +143,7 @@ class ColorGradingMixin:
             )
         )
         if grade is None:
-            print("[MainWindow] Étalonnage invalide")
+            self._report_edit_refused("Étalonnage invalide")
             return
         self._commit_color_grade(clip_id, grade, "Étalonner le clip")
 
@@ -162,7 +162,7 @@ class ColorGradingMixin:
         try:
             service.reset_grade(self.project, clip_id)
         except ColorGradingError as exc:
-            print(f"[MainWindow] Reset étalonnage refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Réinitialiser l'étalonnage")
         self._reload_timeline_preserving_selection(clip_id)
@@ -190,7 +190,7 @@ class ColorGradingMixin:
         try:
             service.apply_preset(self.project, clip_id, preset)
         except ColorGradingError as exc:
-            print(f"[MainWindow] Preset étalonnage refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Appliquer un preset d'étalonnage")
         self._reload_timeline_preserving_selection(clip_id)
