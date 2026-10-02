@@ -254,15 +254,21 @@ class ProjectFilesMixin:
         )
         return path
 
-    def get_render_plan(self) -> RenderPlan:
+    def get_render_plan(self, at: float | None = None) -> RenderPlan:
         """Construit le :class:`RenderPlan` du projet courant.
 
         Le plan décrit fidèlement la timeline (positions, trims, trous,
         ordre des pistes, clips activés). C'est désormais l'entrée
         unique du moteur d'export.
+
+        ``at`` : instant de la timeline ramené à l'origine du plan (voir
+        :func:`core.playhead_snapshot.project_at_playhead`), pour n'extraire qu'une image
+        sans payer le coût de tout ce qui précède.
         """
+        from core.playhead_snapshot import project_at_playhead
+
         return build_render_plan(
-            self.project,
+            self.project if at is None else project_at_playhead(self.project, at),
             master_gain_db=self._master_gain_db,
             master_muted=self._master_muted,
         )

@@ -110,7 +110,9 @@ class ScopesMixin:
         pendant la lecture.
         """
         try:
-            render_plan = self.get_render_plan()
+            # Le plan est ramené à l'origine à la tête de lecture : l'image voulue est la première du
+            # rendu (voir ``build_frame_command``), quel que soit l'endroit de la timeline.
+            render_plan = self.get_render_plan(at=playhead)
         except Exception:
             # Projet sans média, plan incomplet : rien à analyser.
             return None
@@ -127,7 +129,7 @@ class ScopesMixin:
             # Une instance dédiée évite qu'une analyse de scopes ne remplace
             # le SRT temporaire d'un export déjà en cours.
             frame_engine = _main_window().ExportEngine()
-            command = frame_engine.build_frame_command(request, playhead)
+            command = frame_engine.build_frame_command(request, 0.0)
             self._scope_temporary_paths = frame_engine.take_temporary_files()
             return command
         except Exception:

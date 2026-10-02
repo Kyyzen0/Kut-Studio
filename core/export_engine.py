@@ -33,6 +33,7 @@ et ``cancelled``.
 
 from __future__ import annotations
 
+import math
 import logging
 import os
 import shutil
@@ -481,15 +482,22 @@ class ExportEngine(QObject):
 
         Différences avec :meth:`_build_command` :
 
-        - ``-ss <playhead>`` est inséré **avant** les entrées, donc le
-          décodage est.seeké et non la sortie ;
+        - la sortie du graphe est rognée à ``playhead`` (``trim`` sur le flux
+          composé : c'est le seul moyen exact, un ``-ss`` posé sur une entrée
+          ignore la position du clip, sa vitesse et son point d'entrée) ;
         - un seul flux est mappé (le vidéo) ;
         - la sortie est un PNG unique écrit sur ``stdout``
           (``-f image2pipe``), ce qui évite tout fichier temporaire.
 
+        Tout ce qui précède ``playhead`` traverse le graphe avant d'être jeté
+        (coût O(playhead)) : pour une image rapide, passer un plan déjà ramené
+        à l'origine (:func:`core.playhead_snapshot.project_at_playhead`) et
+        ``playhead=0``.
+
         Args:
             request: la requête d'export, pour sa résolution / son fps ;
-            playhead: position à extraire, en secondes.
+            playhead: position à extraire dans le plan, en secondes. L'image
+                retenue est celle qui contient cet instant.
 
         Returns:
             La commande FFmpeg complète.
@@ -505,6 +513,16 @@ class ExportEngine(QObject):
         # Seule l'image est extraite : l'audio du graphe est consommé par un
         # puits, sinon FFmpeg refuse un graphe dont une sortie n'est pas reliée.
         filter_complex = f"{filter_complex};[{audio_label}]anullsink"
+        position = max(0.0, float(playhead))
+        mapped = video_label
+        if position > 0.0:
+            # L'image qui contient l'instant : on vise une demi-image avant son horodatage, pour que
+            # l'arrondi des timestamps ne retienne jamais sa voisine.
+            rate = max(1.0, float(request.fps))
+            index = math.floor(position * rate + 1e-6)
+            start = max(0.0, (index - 0.5) / rate)
+            mapped = "kut_frame"
+            filter_complex += f";[{video_label}]trim=start={start:.6f},setpts=PTS-STARTPTS[{mapped}]"
         command: list[str] = [
             *_ffmpeg_command_prefix(),
             "-y",
@@ -512,22 +530,10 @@ class ExportEngine(QObject):
             "-loglevel",
             "error",
         ]
-        from .mograph_stream import still_playlist
-
-        seek = f"{max(0.0, float(playhead)):.3f}"
-        for index, path in enumerate(input_paths):
-            if path.endswith(".ffconcat"):
-                # Flux de calques (temps de timeline) : on lit directement
-                # l'image valable à la tête de lecture, sans recherche.
-                command.extend(["-i", still_playlist(path, float(playhead))])
-                continue
-            # Le seek se place juste avant la première entrée : FFmpeg
-            # décode alors uniquement ce qui précède la position demandée.
-            if index == 0:
-                command.extend(["-ss", seek])
+        for path in input_paths:
             command.extend(["-i", path])
         command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
-        command.extend(["-map", f"[{video_label}]"])
+        command.extend(["-map", f"[{mapped}]"])
         command.extend([
             "-frames:v", "1",
             "-f", "image2pipe",

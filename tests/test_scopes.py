@@ -1508,7 +1508,8 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
     class _Plan:
         video_layers = (object(),)
 
-    def fake_plan():
+    def fake_plan(at=None):
+        captured["plan_at"] = at
         return _Plan()
 
     def fake_build_frame_command(_engine, request, playhead):
@@ -1527,7 +1528,9 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
 
     command = window._build_scopes_ffmpeg_command(12.5)
     assert command is not None
-    assert captured["playhead"] == 12.5
+    # Le plan est ramené à l'origine à la tête de lecture : l'image voulue est la première du rendu.
+    assert captured["plan_at"] == 12.5
+    assert captured["playhead"] == 0.0
     # La commande analyse une image unique sur stdout, sans audio.
     assert "-map" in command
     assert command[-7:] == [
@@ -1545,7 +1548,7 @@ def test_scopes_ffmpeg_command_returns_none_without_video(
     class _EmptyPlan:
         video_layers = ()
 
-    monkeypatch.setattr(window, "get_render_plan", lambda: _EmptyPlan())
+    monkeypatch.setattr(window, "get_render_plan", lambda at=None: _EmptyPlan())
     called = []
     monkeypatch.setattr(
         window.export_engine,
@@ -1561,7 +1564,7 @@ def test_scopes_ffmpeg_command_returns_none_without_plan(
 ) -> None:
     window = _window(qtbot, monkeypatch)
 
-    def boom():
+    def boom(at=None):
         raise RuntimeError("projet non exportable")
 
     monkeypatch.setattr(window, "get_render_plan", boom)
@@ -1620,13 +1623,17 @@ def test_build_frame_command_matches_export_filter_graph(tmp_path) -> None:
         return command[command.index("-filter_complex") + 1]
 
     # Même graphe ; l'audio, inutile pour une image, part dans un puits
-    # (FFmpeg refuse une sortie de graphe non reliée).
-    assert graph(single) == graph(full) + ";[aout]anullsink"
-    # Le seek est avant l'entrée, la sortie est un PNG sur stdout.
-    assert single.index("-ss") < single.index("-i")
-    assert single[single.index("-ss") + 1] == "5.000"
+    # (FFmpeg refuse une sortie de graphe non reliée), puis la sortie composée est rognée à la tête de
+    # lecture : une image à 5 s à 30 i/s est la n° 150, visée une demi-image avant son horodatage.
+    assert graph(single).startswith(graph(full) + ";[aout]anullsink;")
+    assert graph(single).endswith("trim=start=4.983333,setpts=PTS-STARTPTS[kut_frame]")
+    # Plus de ``-ss`` sur une entrée : il ignorait la position, la vitesse et le point d'entrée du clip.
+    assert "-ss" not in single
+    assert single[single.index("-map") + 1] == "[kut_frame]"
     assert single[-1] == "-"
     assert "-c:v" not in single
+    # À l'origine du plan (cas des scopes) : aucun rognage, la première image est la bonne.
+    assert "kut_frame" not in graph(engine.build_frame_command(request, 0.0))
 
 
 def test_closing_window_stops_the_scopes_worker(qtbot, monkeypatch) -> None:
