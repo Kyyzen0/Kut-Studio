@@ -409,6 +409,9 @@ def test_orphans_from_a_crash_are_cleaned_but_valid_proxies_are_kept(manager, so
     (folder / "proxy-nomarker.mp4").write_bytes(b"x" * 10)           # promu mais sans marqueur
     (folder / "proxy-half.json.tmp").write_bytes(b"{")
     (folder / "autre-fichier.txt").write_text("à moi", encoding="utf-8")
+    long_ago = time.time() - 3600                                    # abandonnés depuis longtemps
+    for name in ("proxy-dead.partial.mp4", "proxy-half.json.tmp"):
+        os.utime(folder / name, (long_ago, long_ago))
     assert manager.cleanup_orphans() == 3
     assert Path(info.proxy_path).is_file() and (folder / "autre-fichier.txt").exists()
 

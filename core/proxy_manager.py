@@ -38,6 +38,7 @@ import queue
 import subprocess
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -57,6 +58,9 @@ from .tool_paths import find_media_tool
 SIDECAR_VERSION = 1
 LAST_USED_REFRESH_SECONDS = 60.0
 DISK_STATE_TTL_SECONDS = 2.0
+PARTIAL_STALE_SECONDS = 600.0
+"""Âge au-delà duquel un fichier partiel est considéré abandonné. FFmpeg qui écrit le met à jour en continu : un
+fichier récent peut appartenir à une génération en cours dans **une autre instance** de l'application."""
 
 
 class ProxyState(str, Enum):
@@ -552,6 +556,11 @@ class ProxyManager:
     def _generate(self, key: tuple[str, str], job: _Job) -> None:
         source, profile = job.source, job.profile
         final, partial, sidecar = self._paths(source, profile)
+        # Fichier partiel propre à CETTE génération : deux instances de l'application (ou un FFmpeg survivant d'un
+        # plantage) qui produisent le même proxy ne doivent pas écrire dans le même fichier.
+        partial = partial.with_name(
+            partial.name.replace(".partial.", f".partial.{os.getpid()}-{uuid.uuid4().hex[:8]}.", 1)
+        )
         error = ""
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -732,7 +741,11 @@ class ProxyManager:
         return removed
 
     def cleanup_orphans(self) -> int:
-        """Supprime fichiers partiels et proxies sans marqueur (reste d'un arrêt brutal)."""
+        """Supprime fichiers partiels **abandonnés** et proxies sans marqueur (reste d'un arrêt brutal).
+
+        Un fichier partiel récent est laissé : il peut appartenir à une génération en cours dans une autre
+        instance de l'application (voir :data:`PARTIAL_STALE_SECONDS`).
+        """
         removed = 0
         if not self.directory.is_dir():
             return 0
@@ -743,7 +756,7 @@ class ProxyManager:
         for entry in list(self.directory.iterdir()):
             if not entry.name.startswith("proxy-") or not entry.is_file():
                 continue
-            incomplete = ".partial." in entry.name or entry.name.endswith(".tmp")
+            incomplete = (".partial." in entry.name or entry.name.endswith(".tmp")) and self._is_stale(entry)
             orphan = (
                 entry.suffix in (".mp4", ".mov")
                 and ".partial." not in entry.name
@@ -753,6 +766,13 @@ class ProxyManager:
                 self._remove(entry)
                 removed += 1
         return removed
+
+    def _is_stale(self, entry: Path) -> bool:
+        """Fichier non modifié depuis longtemps (ou illisible) : abandonné, sans propriétaire vivant."""
+        try:
+            return time.time() - entry.stat().st_mtime > PARTIAL_STALE_SECONDS
+        except OSError:
+            return True
 
     def active_process_ids(self) -> list[int]:
         """PID des FFmpeg de génération en cours (diagnostic, tests)."""
