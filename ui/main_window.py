@@ -1030,12 +1030,12 @@ class MainWindow(
         # --- Historique, disposition, réglages et export ---------------
         self.undo_button = IconButton(
             icon=IconName.RESET,
-            tooltip="Annuler (Ctrl+Z)",
+            tooltip=i18n.translate("action.undo"),
             size=Sizes.icon_button_sm,
         )
         self.redo_button = IconButton(
             icon=IconName.RESET,
-            tooltip="Rétablir (Ctrl+Y)",
+            tooltip=i18n.translate("action.redo"),
             size=Sizes.icon_button_sm,
         )
         from PySide6.QtGui import QTransform, QIcon
@@ -1075,7 +1075,7 @@ class MainWindow(
 
         self.export_button = IconButton(
             icon=IconName.EXPORT,
-            tooltip="Exporter le montage (⌘E)",
+            tooltip="Exporter le montage",       # aucun raccourci : Ctrl+E est « activer/désactiver le clip »
             size=Sizes.button_md,
             square=False,
             accent=True,
@@ -2081,6 +2081,7 @@ class MainWindow(
 
     def _refresh_shortcut_tooltips(self) -> None:
         """Garde les info-bulles de la timeline fidèles aux raccourcis courants."""
+        self._refresh_history_tooltips()
         timeline = getattr(self, "timeline_panel", None)
         if timeline is None:
             return

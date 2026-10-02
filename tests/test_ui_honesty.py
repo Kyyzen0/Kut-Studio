@@ -76,3 +76,24 @@ def test_a_colour_swatch_is_named():
     field = _ColorField("#336699")
     assert field.swatch.accessibleName() == i18n.translate("graphics.color.pick")
     assert field.swatch.toolTip() == i18n.translate("graphics.color.pick")
+
+
+def test_undo_redo_tooltips_show_the_real_shortcut_and_follow_a_rebinding(qtbot, monkeypatch):
+    window = _window(qtbot, monkeypatch)
+    undo_hint = window.shortcuts.hint("undo")
+    assert undo_hint and undo_hint in window.undo_button.toolTip()
+    assert window.shortcuts.hint("redo") in window.redo_button.toolTip()
+    window.shortcuts.assign("undo", 0, "F7")
+    assert "F7" in window.undo_button.toolTip()
+    assert undo_hint not in window.undo_button.toolTip()
+    window.shortcuts.assign("undo", 0, None)                      # plus de raccourci : plus de parenthèse
+    assert window.shortcuts.hint("undo") == ""
+    assert window.undo_button.toolTip() == i18n.translate("action.undo")
+
+
+def test_the_export_tooltip_does_not_promise_a_shortcut_that_does_not_exist(qtbot, monkeypatch):
+    window = _window(qtbot, monkeypatch)
+    tooltip = window.export_button.toolTip()
+    assert "⌘" not in tooltip and "Ctrl" not in tooltip
+    # Si un jour une commande d'export existe, l'infobulle devra la citer ; en attendant, Ctrl+E fait autre chose.
+    assert window.shortcuts.shortcut_map.sequences("toggle_clip_enabled") == ("Ctrl+E",)
