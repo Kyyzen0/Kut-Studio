@@ -171,8 +171,9 @@ class PerformanceSettingsTab(QWidget):
 
         def size(kind: str) -> str:
             total = int(stats.get(kind, {}).get("bytes", 0))
-            if kind == "preview":  # les images de calques sont des dérivés d'aperçu
+            if kind == "preview":  # images de calques et analyses : dérivés recalculables
                 total += int(stats.get("mograph", {}).get("bytes", 0))
+                total += int(stats.get("tracking", {}).get("bytes", 0))
             return format_size(total)
 
         self.usage_label.setText(

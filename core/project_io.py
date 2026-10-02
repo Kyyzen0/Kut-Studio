@@ -107,8 +107,13 @@ if TYPE_CHECKING:
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 15
+CURRENT_VERSION = 16
 """Version courante du format public ``.kut``.
+
+La version 16 ajoute le tracking 2D (voir ``docs/tracking.md``) : clé
+``tracking`` d'un clip (trackers et leurs données compressées, liaisons
+dynamiques reçues, stabilisation). Absente pour un clip sans tracking ; un
+fichier v15 ou antérieur s'ouvre donc sans changement.
 
 La version 15 ajoute le moteur motion graphics (voir
 ``docs/motion-graphics.md``) : transform avancé (ancrage, échelle X/Y,
@@ -134,7 +139,7 @@ l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -413,7 +418,15 @@ def _clip_to_dict(clip: Clip) -> dict[str, Any]:
         # Clip imbriqué (v14) : clé présente uniquement
         # quand le clip référence une séquence.
         **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
+        # Tracking (v16) : présent seulement si le clip en porte.
+        **_tracking_entry(getattr(clip, "tracking", None)),
     }
+
+
+def _tracking_entry(tracking) -> dict[str, Any]:
+    if tracking is None or getattr(tracking, "is_empty", True):
+        return {}
+    return {"tracking": tracking.to_dict()}
 
 
 def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
@@ -760,7 +773,7 @@ def _deserialize_clip(
         for key, value in raw_clip.items()
         if key not in {
             "transform", "transform_keyframes", "time_remapping", "effects",
-            "graphic", "compositing", "animation",
+            "graphic", "compositing", "animation", "tracking",
         }
         and key in _CLIP_KNOWN_FIELDS
     }
@@ -827,6 +840,11 @@ def _deserialize_clip(
     # clé ``text_style`` reçoit le style standard par défaut, ce
     # qui correspond exactement au rendu historique.
     clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
+    # Tracking (v16) : lecture tolérante, un tracker corrompu est ignoré seul.
+    if track_type == "video" or raw_clip.get("tracking") is not None:
+        from .tracking_model import ClipTracking
+
+        clip_kwargs["tracking"] = ClipTracking.from_dict(raw_clip.get("tracking"))
     return Clip(**clip_kwargs)
 
 

@@ -310,6 +310,9 @@ class ProjectFilesMixin:
             preview.release_media()
         self._timeline_index = None
         self._timeline_index_project_id = None
+        cancel_tracking = getattr(self, "_cancel_tracking_jobs", None)
+        if cancel_tracking is not None:
+            cancel_tracking()
         runtime = getattr(self, "runtime", None)
         if runtime is not None:
             runtime.begin_project()

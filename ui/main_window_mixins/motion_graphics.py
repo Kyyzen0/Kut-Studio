@@ -144,6 +144,10 @@ class MotionGraphicsMixin:
         settings = self._labelled_action("menu.item.motion_blur_settings")
         settings.triggered.connect(self._edit_motion_blur_settings)
         menu.addAction(settings)
+        menu.addSeparator()
+        tracking = self._labelled_action("menu.item.tracking_panel")
+        tracking.triggered.connect(lambda: self.show_tracking_panel())
+        menu.addAction(tracking)
         menu_bar.addMenu(menu)
         self._translated_menus.append((menu, "menu.layers"))
         return menu
@@ -211,6 +215,9 @@ class MotionGraphicsMixin:
         self.layers_panel.set_playhead(float(self.playhead_seconds))
         self._refresh_mograph_inspector()
         self._schedule_viewer_graphics()
+        refresh_tracking = getattr(self, "_refresh_tracking_ui", None)
+        if refresh_tracking is not None:
+            refresh_tracking()
 
     def _schedule_viewer_graphics(self) -> None:
         timer = getattr(self, "_viewer_timer", None)
@@ -283,6 +290,10 @@ class MotionGraphicsMixin:
         overlay.set_layer_boxes(boxes)
         selected = getattr(self.properties_panel, "selected_clip", None)
         clip_id = getattr(selected, "id", None)
+        tracking_mode = getattr(self, "_tracking_mode_active", None)
+        if tracking_mode is not None and tracking_mode():
+            overlay.set_selection(None)  # les trackers remplacent les poignées du clip
+            return
         if (
             clip_id is None
             or getattr(selected, "track_type", None) not in ("video", "graphics")
@@ -303,12 +314,33 @@ class MotionGraphicsMixin:
         from core.visual_effects import TRANSFORM_PROPERTY_NAMES
 
         values = {name: getattr(evaluated.transform, name) for name in TRANSFORM_PROPERTY_NAMES}
+        values.update(self._user_transform_values(clip_id, t))
         editable = not bool(getattr(selected, "locked", False))
         overlay.set_selection(SelectionGeometry(
             clip_id=clip_id, world=evaluated.world, parent_world=parent_world, box=evaluated.box,
             values=values, editable=editable,
             anchor_editable=graphic is None or graphic.layout is LayerLayout.ANCHOR,
         ))
+
+    def _user_transform_values(self, clip_id: str, t: float) -> dict:
+        """Valeurs **saisies** d'un clip dont le tracking pilote le transform.
+
+        Le cadre du viewer suit le rendu (liaisons, stabilisation), mais un
+        glisser modifie la saisie : partir des valeurs rendues ajouterait le
+        mouvement suivi une seconde fois. Vide pour un clip sans tracking.
+        """
+        from core.timeline_operations import find_clip
+        from core.visual_effects import TRANSFORM_PROPERTY_NAMES, evaluate_transform
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return {}
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None or not tracking.drives_rendering:
+            return {}
+        user = evaluate_transform(clip.transform, clip.transform_keyframes, t - clip.timeline_start, clip.duration)
+        return {name: getattr(user, name) for name in TRANSFORM_PROPERTY_NAMES}
 
     def _refresh_layers_panel(self) -> None:
         if not hasattr(self, "project_panel"):

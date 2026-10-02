@@ -1,1 +1,3 @@
 PySide6>=6.6,<7
+# Tracking 2D (analyse uniquement, importé à la demande) : corrélation par FFT.
+numpy>=1.26

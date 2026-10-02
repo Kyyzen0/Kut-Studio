@@ -1,0 +1,174 @@
+{
+  "machine": "Darwin arm64",
+  "python": "3.14.7",
+  "scenarios": {
+    "analysis:720p:fast": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.109,
+      "fps": 1373.1,
+      "ms_per_frame_per_tracker": 0.728,
+      "peak_rss_mb": 40.6,
+      "rss_growth_mb": 12.0
+    },
+    "analysis:720p:auto": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.124,
+      "fps": 1201.8,
+      "ms_per_frame_per_tracker": 0.832,
+      "peak_rss_mb": 42.5,
+      "rss_growth_mb": 14.1
+    },
+    "analysis:720p:full": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.122,
+      "fps": 1221.4,
+      "ms_per_frame_per_tracker": 0.819,
+      "peak_rss_mb": 42.5,
+      "rss_growth_mb": 14.0
+    },
+    "analysis:1080p:fast": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.152,
+      "fps": 981.1,
+      "ms_per_frame_per_tracker": 1.019,
+      "peak_rss_mb": 40.5,
+      "rss_growth_mb": 12.0
+    },
+    "analysis:1080p:auto": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.209,
+      "fps": 712.6,
+      "ms_per_frame_per_tracker": 1.403,
+      "peak_rss_mb": 48.5,
+      "rss_growth_mb": 20.1
+    },
+    "analysis:1080p:full": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.209,
+      "fps": 711.6,
+      "ms_per_frame_per_tracker": 1.405,
+      "peak_rss_mb": 48.1,
+      "rss_growth_mb": 19.9
+    },
+    "analysis:4k:fast": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.412,
+      "fps": 361.5,
+      "ms_per_frame_per_tracker": 2.766,
+      "peak_rss_mb": 40.2,
+      "rss_growth_mb": 11.9
+    },
+    "analysis:4k:auto": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.44,
+      "fps": 339.0,
+      "ms_per_frame_per_tracker": 2.95,
+      "peak_rss_mb": 48.3,
+      "rss_growth_mb": 19.9
+    },
+    "analysis:4k:full": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.728,
+      "fps": 204.7,
+      "ms_per_frame_per_tracker": 4.885,
+      "peak_rss_mb": 64.4,
+      "rss_growth_mb": 35.9
+    },
+    "trackers:1": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.213,
+      "fps": 700.9,
+      "ms_per_frame_per_tracker": 1.427,
+      "peak_rss_mb": 48.4,
+      "rss_growth_mb": 20.0
+    },
+    "trackers:4": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.209,
+      "fps": 713.6,
+      "ms_per_frame_per_tracker": 0.35,
+      "peak_rss_mb": 48.7,
+      "rss_growth_mb": 20.1
+    },
+    "trackers:8": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.253,
+      "fps": 589.4,
+      "ms_per_frame_per_tracker": 0.212,
+      "peak_rss_mb": 46.2,
+      "rss_growth_mb": 17.9
+    },
+    "trackers:16": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.32,
+      "fps": 465.8,
+      "ms_per_frame_per_tracker": 0.134,
+      "peak_rss_mb": 46.2,
+      "rss_growth_mb": 18.0
+    },
+    "proxy:original": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.474,
+      "fps": 314.0,
+      "ms_per_frame_per_tracker": 3.185,
+      "peak_rss_mb": 48.2,
+      "rss_growth_mb": 19.9
+    },
+    "proxy:proxy_1080p": {
+      "state": "finished",
+      "frames": 149,
+      "seconds": 0.163,
+      "fps": 915.6,
+      "ms_per_frame_per_tracker": 1.092,
+      "peak_rss_mb": 48.4,
+      "rss_growth_mb": 19.9
+    },
+    "cancel": {
+      "cancel_ms": 2.3,
+      "frames_before_cancel": 53
+    },
+    "bindings": {
+      "track_frames": 18000,
+      "plan_cold_ms": 270.0,
+      "plan_cached_ms": 0.084,
+      "derived_keyframes": 26630,
+      "kut_bytes_per_frame": 5.24
+    }
+  },
+  "real_case": {
+    "media": "3840x2160 @ 240 i/s",
+    "frames": 480,
+    "trackers": 2,
+    "analysis_fps": 205.8,
+    "reasons": [
+      "range_end"
+    ],
+    "mean_confidence": 0.991,
+    "forward_backward_error_px": [
+      0.16,
+      2.9
+    ],
+    "stabilization_zoom": 1.0027,
+    "plan_with_link_ms": 3.5,
+    "shaky": {
+      "source": "3 s du plan réel, 1080p, secousse de ±85 px ajoutée",
+      "jitter_before_px": 39.76,
+      "jitter_after_px": 0.56,
+      "zoom": 1.149
+    }
+  }
+}

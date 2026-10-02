@@ -299,6 +299,8 @@ def _carried_properties(clip: Clip, *, copy: bool = False) -> dict:
         "compositing": clip.compositing,
         "text_style": clip.text_style,
         "sequence_id": clip.sequence_id,
+        # Tracking : données en temps source, valables pour les deux moitiés.
+        "tracking": getattr(clip, "tracking", None),
     }
 
 

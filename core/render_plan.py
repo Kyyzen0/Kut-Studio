@@ -447,6 +447,27 @@ class _PlanBuilder:
         self.entries: dict[str, NestedSequencePlan] = {}
         self.required: dict[str, float] = {}
         self.warnings: list[str] = []
+        self._tracking_contexts: dict[str, object] = {}
+
+    def tracking_context(self, sequence):
+        """Contexte de tracking de ``sequence`` (construit au premier clip suivi)."""
+        context = self._tracking_contexts.get(sequence.id)
+        if context is None:
+            from .tracking_bindings import TrackingContext
+
+            context = TrackingContext(self.project, sequence)
+            self._tracking_contexts[sequence.id] = context
+        return context
+
+    def effective(self, clip, sequence):
+        """Animation rendue du clip : liaisons de tracking et stabilisation appliquées."""
+        if getattr(clip, "tracking", None) is None:
+            return None
+        from .tracking_bindings import effective_clip_state
+
+        state = effective_clip_state(clip, self.tracking_context(sequence))
+        self.warnings.extend(f"{clip.label or clip.id} : {w}" for w in state.warnings)
+        return state
 
     def registry(self) -> tuple[NestedSequencePlan, ...]:
         """Sous-plans, enfants avant parents, durée étendue aux besoins."""
@@ -569,7 +590,9 @@ class _PlanBuilder:
                         continue
                     if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                         continue
-                    graphics_layers.append(_graphic_layer(clip, track, track_index))
+                    graphics_layers.append(
+                        _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))
+                    )
                 continue
             if track.type not in {"video", "audio"}:
                 continue
@@ -602,6 +625,7 @@ class _PlanBuilder:
                         f"Média '{clip.asset_id}' introuvable dans le projet '{self.project.name}'."
                     )
                 if track.type == "video":
+                    state = self.effective(clip, sequence)
                     video_layers.append(
                         RenderLayer(
                             clip_id=clip.id,
@@ -615,7 +639,10 @@ class _PlanBuilder:
                             timeline_end=clip.timeline_start + clip.duration,
                             source_fps=float(asset.fps),
                             transform=clip.transform,
-                            transform_keyframes=tuple(clip.transform_keyframes),
+                            transform_keyframes=(
+                                state.transform_keyframes if state is not None
+                                else tuple(clip.transform_keyframes)
+                            ),
                             time_remapping=clip.time_remapping,
                             effects=tuple(clip.effects),
                             # Étalonnage couleur (tâche 29) : si le clip ne
@@ -623,8 +650,14 @@ class _PlanBuilder:
                             # pour signaler l'identité et économiser du
                             # travail au moteur d'export.
                             color_grade=getattr(clip, "color_grade", None),
-                            compositing=getattr(clip, "compositing", None),
-                            animation=tuple(getattr(clip, "animation", ()) or ()),
+                            compositing=(
+                                state.compositing if state is not None
+                                else getattr(clip, "compositing", None)
+                            ),
+                            animation=(
+                                state.animation if state is not None
+                                else tuple(getattr(clip, "animation", ()) or ())
+                            ),
                         )
                     )
                     # Un solo audio ne laisse passer que les pistes audio armées
@@ -643,7 +676,9 @@ class _PlanBuilder:
                             ducking_sidechains=sidechains_for(track.id),
                         )
                     )
-        graphics_layers.extend(_rig_layers(tracks, graphics_layers))
+        graphics_layers.extend(
+            _rig_layers(tracks, graphics_layers, effective=lambda clip: self.effective(clip, sequence))
+        )
         layer_ids = {layer.clip_id for layer in video_layers}
         transitions = tuple(
             RenderTransition(
@@ -749,7 +784,10 @@ class _PlanBuilder:
             )
 
 
-def _graphic_layer(clip: Clip, track, track_index: int, *, role: str = "draw") -> GraphicLayer:
+def _graphic_layer(
+    clip: Clip, track, track_index: int, *, role: str = "draw", state=None,
+) -> GraphicLayer:
+    """Calque de la scène motion graphics ; ``state`` : animation rendue (tracking)."""
     return GraphicLayer(
         clip_id=clip.id,
         track_id=track.id,
@@ -758,9 +796,13 @@ def _graphic_layer(clip: Clip, track, track_index: int, *, role: str = "draw") -
         timeline_end=clip.timeline_start + clip.duration,
         graphic=getattr(clip, "graphic", None) if track.type == "graphics" else None,
         transform=clip.transform,
-        transform_keyframes=tuple(clip.transform_keyframes),
-        animation=tuple(getattr(clip, "animation", ()) or ()),
-        compositing=getattr(clip, "compositing", None),
+        transform_keyframes=(
+            state.transform_keyframes if state is not None else tuple(clip.transform_keyframes)
+        ),
+        animation=(
+            state.animation if state is not None else tuple(getattr(clip, "animation", ()) or ())
+        ),
+        compositing=state.compositing if state is not None else getattr(clip, "compositing", None),
         effects=tuple(clip.effects),
         color_grade=getattr(clip, "color_grade", None),
         role=role,
@@ -768,7 +810,7 @@ def _graphic_layer(clip: Clip, track, track_index: int, *, role: str = "draw") -
     )
 
 
-def _rig_layers(tracks, drawn: list[GraphicLayer]) -> list[GraphicLayer]:
+def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[GraphicLayer]:
     """Parents et groupes nécessaires aux calques dessinés mais absents du plan.
 
     Un parent hors de la fenêtre d'un segment, masqué, sur une piste cachée,
@@ -799,7 +841,8 @@ def _rig_layers(tracks, drawn: list[GraphicLayer]) -> list[GraphicLayer]:
         if clip.sequence_id:
             continue  # un clip imbriqué n'est pas un parent de transform
         present.add(clip_id)
-        layer = _graphic_layer(clip, track, track_index, role="rig")
+        state = effective(clip) if effective is not None else None
+        layer = _graphic_layer(clip, track, track_index, role="rig", state=state)
         result.append(layer)
         graphic = layer.graphic
         for ref in (getattr(graphic, "parent_id", ""), getattr(graphic, "group_id", "")):

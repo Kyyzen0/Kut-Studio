@@ -12,6 +12,8 @@ disque « preview » segments d'aperçu fidèles    clip + plage + qualité +   
                                                 empreinte **du segment**    propre + budget global
 disque « mograph » images des calques motion    empreinte de l'état évalué  LRU (dernier usage),
                    graphics (:mod:`core.mograph_stream`)                    budget global
+disque « tracking » résultats d'analyse de     média + plage + zone +     LRU (dernier usage),
+                   tracking (:mod:`core.tracking_engine`)  réglages + version         budget global
 disque « proxies » proxies médias               chemin source + empreinte   LRU (dernier usage),
                                                 du profil + signature       budget global ; les
                                                 source (marqueur)           proxies du projet
@@ -48,7 +50,8 @@ KIND_MEMORY = "memory"
 KIND_PREVIEW = "preview"
 KIND_PROXY = "proxy"
 KIND_MOGRAPH = "mograph"
-KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY, KIND_MOGRAPH)
+KIND_TRACKING = "tracking"
+KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY, KIND_MOGRAPH, KIND_TRACKING)
 
 
 @dataclass(frozen=True)
@@ -72,11 +75,13 @@ class CacheManager:
         max_bytes: int = DEFAULT_MAX_BYTES,
         pinned_sources: Callable[[], Iterable[str]] | None = None,
         mograph=None,
+        tracking=None,
     ) -> None:
         self.memory = memory
         self.previews = previews
         self.proxies = proxies
         self.mograph = mograph
+        self.tracking = tracking
         self._max_bytes = max(1, int(max_bytes))
         self._pinned = pinned_sources
 
@@ -108,6 +113,9 @@ class CacheManager:
         if self.mograph is not None:
             stats = self.mograph.stats()
             result.append(CacheUsage(KIND_MOGRAPH, int(stats["entries"]), int(stats["bytes"])))
+        if self.tracking is not None:
+            stats = self.tracking.stats()
+            result.append(CacheUsage(KIND_TRACKING, int(stats["entries"]), int(stats["bytes"])))
         return result
 
     def disk_bytes(self) -> int:
@@ -142,6 +150,9 @@ class CacheManager:
         if freed < excess and self.mograph is not None:
             # Images de calques : recalculables, avant les proxies.
             freed += int(self.mograph.evict_bytes(excess - freed))
+        if freed < excess and self.tracking is not None:
+            # Analyses : petites et recalculables, mais plus lentes que des images.
+            freed += int(self.tracking.evict_bytes(excess - freed))
         if freed >= excess or self.proxies is None:
             return freed
         pinned = {os.path.abspath(p) for p in (self._pinned() if self._pinned else ())}
@@ -183,6 +194,8 @@ class CacheManager:
         # Les images de calques sont des dérivés d'aperçu : purgées avec lui.
         if kind in (KIND_PREVIEW, KIND_MOGRAPH, "all") and self.mograph is not None:
             self.mograph.purge()
+        if kind in (KIND_TRACKING, "all") and self.tracking is not None:
+            self.tracking.purge()
         if kind in (KIND_PROXY, "all") and self.proxies is not None:
             self.proxies.delete_all()
         after = sum(item.bytes for item in self.usage())
@@ -221,6 +234,7 @@ __all__ = [
     "KIND_PREVIEW",
     "KIND_MOGRAPH",
     "KIND_PROXY",
+    "KIND_TRACKING",
     "CacheManager",
     "CacheUsage",
 ]

@@ -94,6 +94,7 @@ from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
+from ui.main_window_mixins.tracking import TrackingMixin
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
 # remplacent sur ce module (``ui.main_window.QMessageBox``, etc.).
@@ -122,6 +123,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    TrackingMixin,
     MotionGraphicsMixin,
     SequencesMixin,
     ColorGradingMixin,
@@ -580,6 +582,8 @@ class MainWindow(
         self._init_sequences()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
+        # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
+        self._init_tracking()
 
         # Espace de travail : le gestionnaire est l'unique autorité sur
         # la disposition. Il enregistre les quatre panneaux existants
@@ -1636,9 +1640,13 @@ class MainWindow(
             # Les images-clés sont locales au clip (0 = début du clip sur la
             # timeline), comme dans l'export : jamais le temps du média source,
             # qui diffère dès que le clip est rogné ou accéléré.
+            # Tracking : liaisons et stabilisation sont des keyframes dérivées
+            # (mêmes valeurs que l'export) ; sans tracking, les keyframes du clip.
+            from core.tracking_bindings import effective_transform_keyframes
+
             evaluated = evaluate_transform(
                 clip_obj.transform,
-                clip_obj.transform_keyframes,
+                effective_transform_keyframes(self.project, clip_obj),
                 clip_local_time=float(self.playhead_seconds) - float(clip_obj.timeline_start),
                 clip_duration=clip_obj.duration,
             )
@@ -1648,6 +1656,12 @@ class MainWindow(
                 scale=evaluated.scale,
                 rotation=evaluated.rotation,
                 opacity=evaluated.opacity,
+                anchor_x=evaluated.anchor_x,
+                anchor_y=evaluated.anchor_y,
+                scale_x=evaluated.scale_x,
+                scale_y=evaluated.scale_y,
+                flip_h=evaluated.flip_h,
+                flip_v=evaluated.flip_v,
             )
             self.preview_panel.set_effects(clip_obj.effects)
         if self.is_playing:

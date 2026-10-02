@@ -702,7 +702,7 @@ def test_kut_roundtrip_keeps_sequences_ids_active_and_nested_clips(tmp_path):
     path = tmp_path / "multi.kut"
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["version"] == CURRENT_VERSION == 15
+    assert raw["version"] == CURRENT_VERSION == 16
     assert raw["project"]["active_sequence_id"] == "intro"
     assert [s["id"] for s in raw["project"]["sequences"]] == ["main", "intro"]
     nested_raw = raw["project"]["sequences"][0]["tracks"][1]["clips"][0]

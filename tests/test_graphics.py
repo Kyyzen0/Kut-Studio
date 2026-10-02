@@ -82,7 +82,7 @@ def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
     save_project(project, str(target))
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    assert raw["version"] == CURRENT_VERSION == 15
+    assert raw["version"] == CURRENT_VERSION == 16
     assert raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["graphic"]["text"] == "Un vrai titre"
     loaded = load_project(str(target))
     loaded_graphic = loaded.tracks[0].clips[0].graphic

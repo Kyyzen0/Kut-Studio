@@ -210,7 +210,7 @@ def test_v15_round_trip_keeps_layers_hierarchy_guides_and_motion_blur(tmp_path):
     path = tmp_path / "v15.kut"
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["version"] == CURRENT_VERSION == 15
+    assert raw["version"] == CURRENT_VERSION == 16
     loaded = load_project(str(path))
     loaded_text = next(c for c in loaded.tracks[0].clips if c.id == text.id)
     assert loaded_text.graphic.parent_id == controller.id and loaded_text.graphic.motion_blur

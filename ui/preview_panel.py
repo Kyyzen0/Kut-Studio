@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style, monospace_font_family
+from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
 
 CANVAS_MARGIN = 12
@@ -105,6 +106,9 @@ class PreviewPanel(QWidget):
         self.graphics_scene.addItem(self.mograph_item)
         self.overlay = ViewerOverlay()
         self.graphics_scene.addItem(self.overlay)
+        # Trackers (points, zones, trajectoires) : au-dessus des poignées de calque.
+        self.tracking_overlay = TrackingOverlay()
+        self.graphics_scene.addItem(self.tracking_overlay)
         self._viewport_watcher = _ViewportWatcher(self._layout_canvas)
         self.graphics_view.viewport().installEventFilter(self._viewport_watcher)
 
@@ -553,6 +557,7 @@ class PreviewPanel(QWidget):
         changed = rect != self._canvas_rect
         self._canvas_rect = rect
         self.overlay.set_canvas(rect, (cw, ch))
+        self.tracking_overlay.set_canvas(rect, (cw, ch))
         self.canvas_item.setRect(rect)
         self.mograph_item.setPos(rect.topLeft())
         self._reapply_transform()

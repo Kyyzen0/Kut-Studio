@@ -1829,6 +1829,11 @@ from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 
 _TRANSLATIONS.update(_MOGRAPH)
 
+# Tracking 2D : idem.
+from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
+
+_TRANSLATIONS.update(_TRACKING)
+
 
 def _format(template: str, values: dict) -> str:
     if not values:

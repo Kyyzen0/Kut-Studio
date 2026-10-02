@@ -83,7 +83,7 @@ def clamp_fade(value: object) -> float:
 # Copie profonde rapide d'un clip (historique d'annulation)
 # ---------------------------------------------------------------------------
 
-_ATOMIC_TYPES = (str, int, float, bool, type(None))
+_ATOMIC_TYPES = (str, int, float, bool, bytes, type(None))
 _ATOMIC_SET = frozenset(_ATOMIC_TYPES)
 _VERDICTS_KEY = "kut-immutable-verdicts"
 
@@ -300,6 +300,10 @@ class Clip:
     # masques (``graphic.width``, ``mask.<id>.feather``…). Voir
     # :func:`core.animation_targets.generic_target`.
     animation: list = field(default_factory=list)
+    # --- Tracking 2D ---
+    # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
+    # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
+    tracking: object = None
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""

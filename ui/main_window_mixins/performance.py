@@ -75,6 +75,7 @@ class PerformanceMixin:
             max_bytes=int(settings.cache_max_gb * GIB),
             pinned_sources=self._project_source_paths,
             mograph=_mograph_frame_cache(),
+            tracking=_tracking_cache(),
         )
         try:
             self.cache_manager.enforce()
@@ -347,6 +348,13 @@ class PerformanceMixin:
             )
         else:
             preview.set_quality_notice(None)
+
+
+def _tracking_cache():
+    """Résultats d'analyse de tracking (budget disque global)."""
+    from core.tracking_engine import TrackingCache
+
+    return TrackingCache()
 
 
 def _mograph_frame_cache():

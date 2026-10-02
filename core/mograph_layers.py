@@ -186,6 +186,7 @@ def scene_for_project(project: Project) -> GraphicsScene:
     from .render_plan import _graphic_layer
 
     layers = []
+    context = None
     for index, track in enumerate(project.tracks):
         if track.type not in ("graphics", "video"):
             continue
@@ -194,7 +195,16 @@ def scene_for_project(project: Project) -> GraphicsScene:
                 continue
             if track.type == "graphics" and not isinstance(clip.graphic, GraphicOverlay):
                 continue
-            layers.append(_graphic_layer(clip, track, index, role="draw" if track.type == "graphics" else "rig"))
+            state = None
+            if getattr(clip, "tracking", None) is not None:
+                # Poignées du viewer : même animation que le rendu (tracking compris).
+                from .tracking_bindings import TrackingContext, effective_clip_state
+
+                context = context or TrackingContext(project)
+                state = effective_clip_state(clip, context)
+            layers.append(_graphic_layer(
+                clip, track, index, role="draw" if track.type == "graphics" else "rig", state=state,
+            ))
     return GraphicsScene(layers, project.width, project.height)
 
 
