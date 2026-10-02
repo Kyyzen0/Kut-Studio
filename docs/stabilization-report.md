@@ -201,7 +201,7 @@ du code.
 | --- | --- |
 | `ruff` propre | oui |
 | `mypy` propre | oui sur `core/` (dette listée) |
-| `pytest` complet vert | oui : 2 912 réussis, 4 sautés (dernière exécution complète locale ; la CI l'exécute sur trois plateformes) |
+| `pytest` complet vert | oui : 2 969 réussis, 4 sautés, 0 échec (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
 | Smoke test de l'interface | oui (`python main.py --smoke-test`) |
 | Build natif + smoke test empaqueté | par la CI sur trois plateformes, voir ci-dessous |
 | Anciens `.kut` compatibles | oui : `SUPPORTED_VERSIONS` inchangé, aller-retour `save → load → save` idempotent sur un projet synthétique complet, mutation champ par champ |

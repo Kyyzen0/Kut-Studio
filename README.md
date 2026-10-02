@@ -202,7 +202,7 @@ python -m ruff check .
 python -m mypy                              # core/ ; known debt is listed in pyproject.toml
 ```
 
-The suite (about 2,900 tests) covers the project model, timeline, `.kut`
+The suite (nearly 3,000 tests) covers the project model, timeline, `.kut`
 I/O, render plan, color, scopes, audio, UI integration and the FFmpeg export
 pipeline, including parity tests that render with a real FFmpeg and read back
 pixels, and a fake FFmpeg for failure paths. On a headless machine, set
@@ -389,7 +389,7 @@ python -m ruff check .
 python -m mypy                              # core/ ; la dette connue est listée dans pyproject.toml
 ```
 
-La suite (environ 2 900 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).
+La suite (près de 3 000 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).
 
 ## 🛣️ Feuille de route
 
