@@ -1461,11 +1461,15 @@ def test_scopes_result_is_applied_in_the_gui_thread(
         elapsed_seconds=0.01,
         stale=False,
     )
-    window._on_scopes_analysis_ready(analysis)
-    # Rien avant de laisser Qt exécuter les événements.
-    assert window.scopes_panel.result() is None
+    # Appelé depuis un VRAI thread de travail, comme en production : l'ancienne version l'appelait depuis le
+    # thread principal et ne vérifiait donc pas la bascule (QTimer.singleShot posté d'un thread ne s'exécute jamais).
+    import threading
+
+    worker = threading.Thread(target=lambda: window._on_scopes_analysis_ready(analysis))
+    worker.start()
+    worker.join()
     qtbot.waitUntil(lambda: window.scopes_panel.result() is not None,
-                    timeout=1000)
+                    timeout=3000)
     assert window.scopes_panel.result() is result
 
 

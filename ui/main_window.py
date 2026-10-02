@@ -81,7 +81,7 @@ from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
 from ui.main_window_mixins.media_import import MediaImportMixin
 from ui.main_window_mixins.project_files import ProjectFilesMixin
 from ui.main_window_mixins.workspace_actions import WorkspaceActionsMixin
-from ui.main_window_mixins.scopes import ScopesMixin
+from ui.main_window_mixins.scopes import ScopesMixin, _ScopeEvents
 from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMixin
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
@@ -230,7 +230,9 @@ class MainWindow(
         self._scope_temporary_paths: tuple[str, ...] = ()
         # L'analyseur s'exécute hors du thread Qt : le panneau reçoit
         # les résultats via un signal Qt émis depuis le thread de
-        # travail (voir ``_on_scopes_analysis_ready``).
+        # travail (voir ``_on_scopes_analysis_ready``). Le QObject pont vit
+        # dans le thread Qt : il doit exister avant le premier résultat.
+        self._scope_events = _ScopeEvents(self)
         self.scopes_analyzer = ScopeAnalyzer(
             on_result=self._on_scopes_analysis_ready,
             on_error=self._on_scopes_analysis_failed,
@@ -239,6 +241,7 @@ class MainWindow(
             min_interval=SCOPES_MIN_INTERVAL,
         )
         self.scopes_panel = ScopesPanel()
+        self._scope_events.ready.connect(self.scopes_panel.set_result)
         self.scopes_panel.refresh_requested.connect(
             self._request_scopes_analysis
         )

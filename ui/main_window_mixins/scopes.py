@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import os
 import tempfile
+
+from PySide6.QtCore import QObject, Signal
+
 from core.scopes_analyzer import (
     ScopeAnalysis,
     ScopeExtractionError,
     cleanup_temporary_paths,
 )
+
+
+class _ScopeEvents(QObject):
+    """Pont thread d'analyse → thread Qt (connexion en file automatique)."""
+
+    ready = Signal(object)
 
 
 def _main_window():
@@ -32,12 +41,10 @@ class ScopesMixin:
         """
         if getattr(analysis, "stale", False):
             return
-        result = analysis.result
-        # ``QTimer.singleShot(0, ...)``rebascule dans le thread GUI
-        # sans bloquer le thread de travail.
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(0, lambda: self.scopes_panel.set_result(result))
+        # Appelé depuis le thread d'analyse : un signal d'un QObject du thread Qt est mis en file et
+        # livré dans la boucle principale. ``QTimer.singleShot`` posté depuis un thread sans boucle
+        # d'événements n'exécutait jamais son rappel : les scopes ne s'affichaient jamais.
+        self._scope_events.ready.emit(analysis.result)
 
     def _on_scopes_analysis_failed(
         self, request, error: BaseException,
