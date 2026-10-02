@@ -635,11 +635,15 @@ class ProxyManager:
         os.replace(temporary, sidecar)
 
     @staticmethod
-    def _remove(path: Path) -> None:
+    def _remove(path: Path) -> bool:
+        """Supprime un fichier ; ``False`` s'il est toujours là (tenu ouvert, droits)."""
         try:
             path.unlink()
+        except FileNotFoundError:
+            return True
         except OSError:
-            pass
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Suppression, inventaire
@@ -715,12 +719,17 @@ class ProxyManager:
                         pass
         return total
 
-    def evict_path(self, proxy_file: Path) -> None:
-        """Retire un proxy (et son marqueur) sur demande du gestionnaire de cache."""
-        for target in (proxy_file, proxy_file.with_suffix(".json")):
-            self._remove(target)
+    def evict_path(self, proxy_file: Path) -> bool:
+        """Retire un proxy (et son marqueur) sur demande du gestionnaire de cache.
+
+        ``False`` si le proxy est toujours sur le disque : l'appelant ne doit pas le compter comme libéré.
+        """
+        # Le marqueur d'abord : sans lui, un proxy qui resterait n'est plus jamais servi (il est « sans marqueur »).
+        self._remove(proxy_file.with_suffix(".json"))
+        removed = self._remove(proxy_file)
         with self._lock:
             self._disk_cache.clear()
+        return removed
 
     def cleanup_orphans(self) -> int:
         """Supprime fichiers partiels et proxies sans marqueur (reste d'un arrêt brutal)."""
