@@ -24,7 +24,7 @@ from core.decode_policy import (
     measure_decode,
     set_default_context,
 )
-from core.gpu_backend import FrameStats, GpuHealth, resolve_preview_backend
+from core.gpu_backend import FrameStats, GpuCrashGuard, GpuHealth, resolve_preview_backend
 from core.gpu_cache import default_budget
 from core.hardware_cache import default_service
 from core.hardware_decoding import DECODE_LABELS, CODEC_BY_ID, DecodeMode, coerce_decode_mode
@@ -53,6 +53,8 @@ class HardwarePreviewMixin:
         self._decode_mode = coerce_decode_mode(settings.decode_mode)
         self._preview_backend_request = settings.preview_backend
         self._gpu_health = GpuHealth()
+        self._gpu_guard = GpuCrashGuard()
+        self._gpu_guard.begin_session()        # un marqueur resté en place = plantage de la session précédente
         self._decode_context = DecodeContext(
             mode=self._decode_mode,
             capabilities_provider=lambda: default_service().cached(),
@@ -98,16 +100,19 @@ class HardwarePreviewMixin:
         from PySide6.QtGui import QGuiApplication
 
         resolved = resolve_preview_backend(
-            self._preview_backend_request, health=self._gpu_health,
+            self._preview_backend_request, health=self._gpu_health, guard=self._gpu_guard,
             platform_plugin=QGuiApplication.platformName(),
         )
         panel = self.preview_panel
         if resolved.is_gpu:
             budget = default_budget(self._memory_watch.last.total_bytes or _system_memory())
-            if not panel.enable_gpu(resolved.api, cache_budget=budget):
+            if panel.enable_gpu(resolved.api, cache_budget=budget):
+                self._gpu_guard.arm()          # retiré à l'arrêt propre ou au repli CPU
+            else:
                 resolved = replace(resolved, kind="cpu", fallback_reason="initialisation impossible")
         else:
             panel.disable_gpu()
+            self._gpu_guard.disarm()
         self._resolved_preview = resolved
         LOGGER.info("Rendu de l'aperçu : %s (%s)", resolved.label, resolved.reason)
         if not getattr(self, "is_playing", False):
@@ -123,6 +128,7 @@ class HardwarePreviewMixin:
     def _on_gpu_failed(self, kind: str, detail: str) -> None:
         """Le panneau est déjà revenu au CPU : on note, on prévient discrètement, on continue."""
         self._gpu_health.record(kind, detail)
+        self._gpu_guard.disarm()               # le GPU n'est plus actif : un plantage ultérieur n'est pas le sien
         resolved = self._resolved_preview
         if resolved is not None:
             self._resolved_preview = replace(resolved, kind="cpu", fallback_reason=f"{kind} : {detail}")
@@ -146,6 +152,7 @@ class HardwarePreviewMixin:
         value = coerce_preview_backend(value).value
         self._preview_backend_request = value
         self._gpu_health.reset()  # un choix explicite redonne sa chance au GPU
+        self._gpu_guard.reset()
         self._apply_preview_backend()
         self._apply_settings(replace(self._settings_snapshot(), preview_backend=value))
 
@@ -454,6 +461,9 @@ class HardwarePreviewMixin:
 
     def _shutdown_hardware_preview(self) -> None:
         self._hardware_closed = True
+        guard = getattr(self, "_gpu_guard", None)
+        if guard is not None:
+            guard.disarm()                     # arrêt propre : la prochaine session peut réessayer le GPU
         timer = getattr(self, "_memory_timer", None)
         if timer is not None:
             timer.stop()
