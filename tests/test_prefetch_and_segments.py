@@ -164,12 +164,15 @@ def test_windowed_plan_never_changes_the_export_plan():
     assert build_render_plan(project) == build_render_plan(project, window=None)
 
 
-def test_windowed_plan_ignores_missing_media_outside_the_window():
+def test_windowed_plan_only_reports_missing_media_inside_the_window():
     project = _project([("a", 0.0, 2.0), ("b", 50.0, 2.0)])
-    project.media_assets = [project.media_assets[0]]  # « b » n'a plus son média
-    with pytest.raises(KeyError):
-        build_render_plan(project)
-    assert len(build_render_plan(project, window=(0.0, 2.0)).video_layers) == 1
+    kept = project.media_assets[0]
+    project.media_assets = [kept]  # « b » n'a plus son média
+    # Tolérant à l'écran : le plan se construit sans le clip orphelin et le signale (l'export, lui, le refuse).
+    full = build_render_plan(project)
+    assert len(full.video_layers) == 1 and len(full.missing_media) == 1 and kept.id not in full.missing_media
+    windowed = build_render_plan(project, window=(0.0, 2.0))
+    assert len(windowed.video_layers) == 1 and windowed.missing_media == ()
 
 
 def test_path_resolver_replaces_video_paths_and_changes_the_fingerprint():
