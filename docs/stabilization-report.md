@@ -84,6 +84,8 @@ Chaque ligne cite le commit de la branche.
 | Aucune protection contre un pilote qui fait tomber l'application à chaque démarrage | `81cd366` |
 | Un segment d'aperçu vide était mis en cache sept jours | `aaa0a76` |
 | Deux instances partageaient le même fichier `.partial` de proxy ; le nettoyage supprimait celui de l'autre | `9b97bee` |
+| Deux instances qui terminent un même proxy en même temps : marqueur écrit via un temporaire au nom fixe, et l'instance en échec supprimait le proxy déjà promu par l'autre (trouvé par la CI Windows) | `e21bb36` |
+| Windows refuse parfois `os.replace` quand deux processus promeuvent vers la même destination (`PermissionError` transitoire) : promotion réessayée (6 × 50 ms), proxy déjà produit toléré (trouvé par la CI Windows) | `51c4d06` |
 | ≈ 45 refus d'opération signalés par un `print`, invisible dans l'application empaquetée | `e2559f8` |
 | Aucune trace d'une exception dans l'application empaquetée (pas de console) | `5346171`, `907e06c` |
 | Entrées de menu actives sans fonction (Couper / Copier / Coller, Ajouter un clip), boutons-icônes sans nom accessible | `0fc2778` |
@@ -216,4 +218,10 @@ Le run du commit `2300b47` est **vert sur macOS, Windows et Ubuntu** : lint, `my
 l'interface, build natif et smoke test de l'application empaquetée (y compris l'étape Windows qui attend réellement le
 processus). Le run précédent (`252433e`) avait 4 échecs sous macOS et Windows (balises de couleur) et 5 sous macOS
 (filtre `subtitles` absent) : ils sont à l'origine des deux correctifs décrits plus haut.
+
+Les tests ajoutés ensuite sur les proxies partagés (`tests/test_proxy_shared_folder.py`) ont, eux, échoué **de façon
+intermittente sous Windows** (jamais en local sous Linux) : les deux échecs observés sur `e8e5b52` étaient ce test. La
+cause était réelle (deux lignes du tableau ci-dessus), pas un test instable : les deux correctifs sont `e21bb36` et
+`51c4d06`. Une exécution verte unique ne prouve pas la disparition d'une course ; les tests de nouvelle tentative
+(`_refuse_replace`) la reproduisent de façon déterministe, et le run suivant sur Windows est à surveiller.
 
