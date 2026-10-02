@@ -387,6 +387,15 @@ class HardwareCapabilities:
         """Relit un cache ; ``None`` si le contenu est d'un autre schéma ou corrompu."""
         if not isinstance(data, dict) or data.get("schema") != SCHEMA_VERSION:
             return None
+        try:
+            return cls._parse(data)
+        except (TypeError, ValueError, AttributeError, KeyError):
+            # Bon schéma mais structure inattendue (fichier édité, tronqué) : un cache n'est jamais
+            # indispensable, et un cache abîmé empêchait la fenêtre de démarrer.
+            return None
+
+    @classmethod
+    def _parse(cls, data: dict) -> HardwareCapabilities | None:
         encoders = tuple(
             item
             for item in (EncoderCapability.from_dict(raw) for raw in data.get("encoders") or [])

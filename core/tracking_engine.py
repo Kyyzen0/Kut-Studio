@@ -203,26 +203,32 @@ class TrackingCache:
         return self.directory / f"t-{key}.json"
 
     def load(self, key: str, rate: float) -> TrackerOutcome | None:
-        path = self._path(key)
+        """Résultat en cache, ou ``None`` : un fichier absent, abîmé ou d'une autre forme se recalcule."""
         try:
+            path = self._path(key)
             raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or not isinstance(raw.get("data"), dict):
+                return None  # une entrée vide ne vaut pas « rien suivi » : on recalcule
             os.utime(path)  # dernier usage (éviction LRU)
-        except (OSError, ValueError):
+            data = TrackData.from_dict(raw["data"])
+            samples = {
+                index: sample for index, sample in data.samples() if sample.status is not SampleStatus.EMPTY
+            }
+            stop = raw.get("stop_index")
+            return TrackerOutcome(
+                tracker_id="", samples=samples, reason=str(raw.get("reason", StopReason.RANGE_END)),
+                stop_index=int(stop) if stop is not None else None, from_cache=True,
+            )
+        except Exception:  # noqa: BLE001 - un cache n'est jamais indispensable
             return None
-        data = TrackData.from_dict(raw.get("data"))
-        samples = {
-            index: sample for index, sample in data.samples() if sample.status is not SampleStatus.EMPTY
-        }
-        stop = raw.get("stop_index")
-        return TrackerOutcome(
-            tracker_id="", samples=samples, reason=str(raw.get("reason", StopReason.RANGE_END)),
-            stop_index=int(stop) if stop is not None else None, from_cache=True,
-        )
 
     def store(self, key: str, outcome: TrackerOutcome, rate: float) -> None:
-        data = TrackData.from_samples(rate, outcome.samples)
-        payload = {"data": data.to_dict(), "reason": outcome.reason, "stop_index": outcome.stop_index}
-        path = self._path(key)
+        try:
+            data = TrackData.from_samples(rate, outcome.samples)
+            payload = {"data": data.to_dict(), "reason": outcome.reason, "stop_index": outcome.stop_index}
+            path = self._path(key)
+        except OSError:  # dossier de cache inutilisable : le résultat reste valable, il n'est juste pas gardé
+            return
         temporary = path.with_suffix(".tmp")
         try:
             temporary.write_text(json.dumps(payload), encoding="utf-8")
@@ -472,7 +478,11 @@ class TrackingJob:
                 self._index = index
                 self._partial = partial
 
-        result = run_tracking(self.request, cancelled=is_cancelled, progress=on_progress, cache=self.cache)
+        try:
+            result = run_tracking(self.request, cancelled=is_cancelled, progress=on_progress, cache=self.cache)
+        except Exception as exc:  # noqa: BLE001 - un job ne doit jamais rester « running » pour toujours
+            result = TrackingResult(self.request, {})
+            result.state, result.message = "failed", f"error:{exc}"
         with self._lock:
             self._result = result
             self._state = result.state

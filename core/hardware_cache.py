@@ -217,7 +217,10 @@ class CapabilityService:
             data = json.loads(self.cache_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-        return HardwareCapabilities.from_dict(data)
+        try:
+            return HardwareCapabilities.from_dict(data)
+        except Exception:  # noqa: BLE001 - un cache n'est jamais indispensable
+            return None
 
     def _write_disk(self, capabilities: HardwareCapabilities) -> None:
         path = self.cache_path
