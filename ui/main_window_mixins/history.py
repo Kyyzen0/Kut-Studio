@@ -21,8 +21,12 @@ class HistoryMixin:
         self._refresh_undo_redo_state()
         self._update_top_bar()
 
-    def _record_history(self, label: str) -> None:
-        """Enregistre l'état courant du projet dans l'historique."""
+    def _record_history(self, label: str, *, merge_key: str | None = None) -> None:
+        """Enregistre l'état courant du projet dans l'historique.
+
+        ``merge_key`` : les enregistrements successifs d'un même geste continu (glissement d'un curseur) ne
+        forment qu'une entrée annulable (voir :meth:`core.edit_history.ProjectHistory.record`).
+        """
         # Une autre action clôt la saisie de sous-titre en cours et son
         # état final est inclus dans ce snapshot d'action.
         if getattr(self, "_subtitle_edit_pending", None) is not None:
@@ -51,7 +55,7 @@ class HistoryMixin:
         clamp = getattr(self, "_with_nested_clamp", None)
         if callable(clamp):
             label = clamp(label)
-        self.history.record(self.project, label)
+        self.history.record(self.project, label, merge_key=merge_key)
         invalidate = getattr(self, "_invalidate_nested_dependents", None)
         if callable(invalidate):
             invalidate()
