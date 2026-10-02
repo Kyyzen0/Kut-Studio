@@ -222,10 +222,17 @@ def test_progress_is_reported_during_generation(tmp_path, source):
         Path(command[-1]).write_bytes(b"x")
         return RunResult(0)
 
+    def record(_path, info):
+        seen.append((threading.current_thread().name, info.state, info.progress))
+
     manager = _manager(tmp_path, runner)
-    manager.subscribe(lambda _p, info: seen.append(info.progress))
+    manager.subscribe(record)
     _generate(manager, source)
-    assert seen == sorted(seen) and max(seen[:-1]) == 75 and seen[-1] == 100   # 100 % seulement une fois prêt
+    # La notification de request() part du thread appelant et relit l'état courant :
+    # avec un worker instantané elle peut arriver après la fin (READY, 100) — seule
+    # la séquence du worker est déterministe.
+    assert [p for name, _s, p in seen if name == "kut-proxy"] == [0, 25, 50, 75, 100]
+    assert all((p == 100) == (s is ProxyState.READY) for _n, s, p in seen)   # 100 % seulement une fois prêt
     manager.shutdown()
 
 

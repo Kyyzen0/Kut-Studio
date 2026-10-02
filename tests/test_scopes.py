@@ -859,9 +859,14 @@ def test_realistic_frame_analysis_is_fast_enough() -> None:
     deviendrait le goulot d'étranglement.
     """
     frame = _ramp_frame(320, 180)
-    start = time.perf_counter()
-    analyze_frame(frame, columns=320, vectorscope_bins=128)
-    elapsed = time.perf_counter() - start
+    # Meilleur de 3 essais : sous `pytest -n auto`, un essai isolé peut être
+    # préempté par les autres workers (0,535 s observé sur un runner Windows).
+    timings = []
+    for _ in range(3):
+        start = time.perf_counter()
+        analyze_frame(frame, columns=320, vectorscope_bins=128)
+        timings.append(time.perf_counter() - start)
+    elapsed = min(timings)
     assert elapsed < 0.5, f"Analyse trop lente : {elapsed:.3f}s"
 
 
