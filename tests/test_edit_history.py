@@ -192,7 +192,7 @@ def test_history_limit_is_100():
     # On ne dépasse jamais ``MAX_HISTORY`` entrées.
     assert len(history) == MAX_HISTORY
     # L'opération la plus ancienne est bien perdue (rotation FIFO).
-    assert history.undo_label != f"Ajout 0"
+    assert history.undo_label != "Ajout 0"
     # Et les plus récentes restent présentes.
     assert history.undo_label == f"Ajout {MAX_HISTORY + 49}"
 

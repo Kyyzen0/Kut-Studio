@@ -937,10 +937,8 @@ def _subtitle_overlay_style_sheet(style) -> str:
     """Construit la feuille de style Qt pour l'overlay sous-titre."""
     color = style.color
     opacity = max(0.0, min(1.0, style.opacity))
-    text_alpha = int(round(opacity * 255))
     bg = style.background_color
     if bg:
-        bg_alpha = int(round(max(0.0, min(1.0, style.background_opacity)) * 255))
         bg_rule = f"background: {bg}; opacity: 1;"
         bg_alpha_rule = (
             f"background-color: rgba({_hex_to_rgb(bg)}, {style.background_opacity});"
@@ -950,7 +948,6 @@ def _subtitle_overlay_style_sheet(style) -> str:
         bg_alpha_rule = ""
     text_rule = f"color: rgba({_hex_to_rgb(color)}, {opacity});"
     outline = style.outline_width
-    shadow = style.shadow_offset
     padding_x = int(round(style.padding_x))
     padding_y = int(round(style.padding_y))
     font_family = style.font_family

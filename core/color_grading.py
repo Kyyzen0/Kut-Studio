@@ -833,9 +833,6 @@ def _s_curve(
         # à une interpolation linéaire entre les deux extrêmes.
         weight_shadow = max(0.0, 1.0 - 2 * x)  # 1 à x=0, 0 à x=0.5
         weight_highlight = max(0.0, 2 * x - 1.0)  # 0 à x=0.5, 1 à x=1
-        weight_mid = max(
-            0.0, 1.0 - weight_shadow - weight_highlight
-        )
         new_y = y + lift * weight_shadow + gain * weight_highlight
         new_y = max(MIN_CURVE_VALUE, min(MAX_CURVE_VALUE, new_y))
         new_points.append((x, new_y))

@@ -166,7 +166,6 @@ class TimelineRuler(QWidget):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:
-        instant = self._time_at(event.position().x())
         nearest = None
         best = 8.0
         for marker in self.markers:

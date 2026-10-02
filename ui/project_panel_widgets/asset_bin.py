@@ -239,10 +239,10 @@ class AssetBin(QWidget):
         self._list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._list.setStyleSheet(
-            f"QListWidget {{ background: transparent; border: none;"
-            f" outline: 0; padding: 2px; }}"
-            f"QListWidget::item {{ background: transparent;"
-            f" border: none; padding: 0; margin: 2px 0; }}"
+            "QListWidget { background: transparent; border: none;"
+            " outline: 0; padding: 2px; }"
+            "QListWidget::item { background: transparent;"
+            " border: none; padding: 0; margin: 2px 0; }"
         )
         self._delegate = self._CardDelegate(self._list)
         self._list.setItemDelegate(self._delegate)

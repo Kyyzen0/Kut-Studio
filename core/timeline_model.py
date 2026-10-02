@@ -47,7 +47,6 @@ def trim_clip(clips, clip_id, new_start=None, new_end=None):
     for clip in clips:
         if clip.get("id") != clip_id:
             continue
-        duration = clip["end"] - clip["start"]
         if new_start is not None:
             lower_bound = clip["start"]
             clip["start"] = min(max(new_start, lower_bound), clip["end"] - 0.1)

@@ -81,7 +81,7 @@ class TimelineEditingMixin:
         if clip_id is None:
             return
         try:
-            moved_ids = ripple_delete_clip(self.project, clip_id)
+            ripple_delete_clip(self.project, clip_id)
         except KeyError as exc:
             _main_window().QMessageBox.critical(
                 self,

@@ -219,7 +219,6 @@ class SubtitleLibraryView(QWidget):
     @staticmethod
     def _format_label(clip) -> str:
         start = clip.timeline_start
-        duration = getattr(clip, "duration", 0.0)
         text = (clip.text or "").replace("\n", " ").strip()
         if len(text) > 36:
             text = text[:35].rstrip() + "…"

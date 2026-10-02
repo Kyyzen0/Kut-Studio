@@ -201,9 +201,9 @@ def test_create_folder_rejects_duplicate_id() -> None:
 def test_list_folders_filters_and_sorts() -> None:
     project = _project_with_video()
     lib = LibraryOrganization(project)
-    a = lib.create_folder("B-roll", folder_id="fld-a")
-    b = lib.create_folder("Plans", folder_id="fld-b")
-    children = lib.create_folder("2024", folder_id="fld-c", parent_id="fld-a")
+    lib.create_folder("B-roll", folder_id="fld-a")
+    lib.create_folder("Plans", folder_id="fld-b")
+    lib.create_folder("2024", folder_id="fld-c", parent_id="fld-a")
     roots = lib.list_folders(None)
     assert [f.id for f in roots] == ["fld-a", "fld-b"]  # tri alphabétique
     children_of_a = lib.list_folders("fld-a")
@@ -212,7 +212,7 @@ def test_list_folders_filters_and_sorts() -> None:
 
 def test_rename_folder_updates_name() -> None:
     lib = LibraryOrganization(_project_with_video())
-    folder = lib.create_folder("Old", folder_id="fld-r")
+    lib.create_folder("Old", folder_id="fld-r")
     lib.rename_folder("fld-r", "New")
     assert lib.get_folder("fld-r").name == "New"
 

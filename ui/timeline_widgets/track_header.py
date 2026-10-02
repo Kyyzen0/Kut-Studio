@@ -86,7 +86,6 @@ class TrackRowHeader(QFrame):
         name_layout.setContentsMargins(0, 0, 0, 0)
         name_layout.setSpacing(0)
 
-        prefix = self._prefix_for_type(track.type)
         type_label = {
             "video": "VIDÉO",
             "audio": "AUDIO",

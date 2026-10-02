@@ -88,11 +88,9 @@ def test_add_unknown_type_raises_value_error():
 
 def test_add_many_tracks_assigns_increasing_indices():
     project = _new_project()
-    last_seen = 2  # V2 existe par défaut.
     for expected in range(3, 8):
         track = add_track(project, "video")
         assert track.id == f"V{expected}"
-        last_seen = expected
 
 
 def test_add_duplicate_name_suffixes_disambiguated():

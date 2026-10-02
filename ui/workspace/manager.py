@@ -811,7 +811,7 @@ class WorkspaceManager(QObject):
 
         # Déplacement vers une autre zone : effectif dès aujourd'hui, il
         # pose les fondations du docking complet.
-        move = QMenu(f"Déplacer vers…", parent)
+        move = QMenu("Déplacer vers…", parent)
         for area in DockArea:
             entry = QAction(_AREA_LABELS[area], move)
             entry.triggered.connect(
@@ -835,7 +835,6 @@ class WorkspaceManager(QObject):
         actions["place"].setIcon(
             self._icon(IconName.PANEL_DOCK if floating else IconName.PANEL_FLOAT)
         )
-        maximized = self._state.maximized is panel
         actions["maximize"].setEnabled(self.is_visible(panel) or floating)
         actions["restore"].setEnabled(True)
         actions["reset"].setEnabled(self.is_visible(panel) or floating)

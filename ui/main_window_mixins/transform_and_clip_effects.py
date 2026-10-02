@@ -20,7 +20,7 @@ class TransformEffectsMixin:
         """Modifie la vitesse d'un clip depuis l'inspecteur."""
         from core.timeline_operations import set_clip_speed
         try:
-            clip = set_clip_speed(self.project, clip_id, speed)
+            set_clip_speed(self.project, clip_id, speed)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
@@ -33,7 +33,7 @@ class TransformEffectsMixin:
         """Modifie le mode reverse d'un clip depuis l'inspecteur."""
         from core.timeline_operations import set_clip_reverse
         try:
-            clip = set_clip_reverse(self.project, clip_id, reverse)
+            set_clip_reverse(self.project, clip_id, reverse)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
@@ -46,7 +46,7 @@ class TransformEffectsMixin:
         """Crée un arrêt sur image pour un clip depuis l'inspecteur."""
         from core.timeline_operations import set_clip_freeze_frame
         try:
-            clip = set_clip_freeze_frame(self.project, clip_id, freeze_source_time, freeze_duration)
+            set_clip_freeze_frame(self.project, clip_id, freeze_source_time, freeze_duration)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
@@ -59,7 +59,7 @@ class TransformEffectsMixin:
         """Supprime un arrêt sur image pour un clip depuis l'inspecteur."""
         from core.timeline_operations import remove_clip_freeze_frame
         try:
-            clip = remove_clip_freeze_frame(self.project, clip_id)
+            remove_clip_freeze_frame(self.project, clip_id)
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
@@ -72,7 +72,7 @@ class TransformEffectsMixin:
         """Modifie la durée d'un arrêt sur image depuis l'inspecteur."""
         from core.timeline_operations import set_clip_freeze_duration
         try:
-            clip = set_clip_freeze_duration(self.project, clip_id, freeze_duration)
+            set_clip_freeze_duration(self.project, clip_id, freeze_duration)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
@@ -85,7 +85,7 @@ class TransformEffectsMixin:
         """Réinitialise le remappage temporel d'un clip depuis l'inspecteur."""
         from core.timeline_operations import reset_clip_time_remapping
         try:
-            clip = reset_clip_time_remapping(self.project, clip_id)
+            reset_clip_time_remapping(self.project, clip_id)
         except KeyError as exc:
             self._report_edit_refused(exc)
             return

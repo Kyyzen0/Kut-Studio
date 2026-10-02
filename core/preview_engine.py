@@ -639,7 +639,7 @@ class PreviewEngine:
             )
         except Exception as exc:
             self._remove_file(tmp_path)
-            raise RuntimeError("Echec du rendu d'apercu : %s" % exc)
+            raise RuntimeError("Echec du rendu d'apercu : %s" % exc) from exc
         except BaseException:
             # Interruption (fermeture de l'application, Ctrl-C) : meme
             # nettoyage, aucun temporaire ne doit survivre.

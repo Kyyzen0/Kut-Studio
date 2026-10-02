@@ -2,6 +2,64 @@
 extend-exclude = [".venv", "build", "dist", "graphify-out"]
 
 [tool.ruff.lint]
-# Règles de correction uniquement (noms indéfinis, erreurs de syntaxe) :
-# elles ne produisent aucun bruit de style sur le code existant.
-select = ["E9", "F63", "F7", "F82"]
+# Règles de correction, sans bruit de style : noms indéfinis et erreurs de syntaxe (E9, F63, F7, F82),
+# variables inutilisées (F841, souvent une assertion ou un effet oublié), f-strings sans champ (F541),
+# ``raise`` sans chaînage dans un ``except`` (B904).
+select = ["E9", "F63", "F7", "F82", "F841", "F541", "B904"]
+
+[tool.mypy]
+# Typage progressif : ``core`` est vérifié en entier ; la dette connue est listée ci-dessous.
+python_version = "3.11"
+files = ["core"]
+ignore_missing_imports = true
+follow_imports = "silent"
+show_error_codes = true
+
+# Dette de typage connue (erreurs existantes avant la phase de stabilisation).
+# RÈGLE : on retire un module de cette liste dès qu'il est propre ; on n'en ajoute jamais.
+# Un module nouveau est donc vérifié dès sa création.
+[[tool.mypy.overrides]]
+module = [
+    "core.audio_recorder",
+    "core.autosave",
+    "core.blend_modes",
+    "core.canvas_guides",
+    "core.compositing",
+    "core.decode_policy",
+    "core.diagnostics_log",
+    "core.export_engine",
+    "core.gpu_effects",
+    "core.gpu_frames",
+    "core.graphics",
+    "core.graphics_raster",
+    "core.hardware_cache",
+    "core.hardware_encoding",
+    "core.keyframe_editing",
+    "core.lut_importer",
+    "core.mograph_ffmpeg",
+    "core.mograph_layers",
+    "core.mograph_presets",
+    "core.mograph_raster",
+    "core.mograph_scene",
+    "core.mograph_stream",
+    "core.preview_engine",
+    "core.preview_segments",
+    "core.project_io",
+    "core.render_job",
+    "core.render_plan",
+    "core.render_queue",
+    "core.scopes",
+    "core.scopes_analyzer",
+    "core.sequences",
+    "core.text_style",
+    "core.time_remapping",
+    "core.timeline_evaluator",
+    "core.tracking_bindings",
+    "core.tracking_engine",
+    "core.tracking_frames",
+    "core.tracking_ops",
+    "core.transition_presets",
+    "core.visual_effects",
+    "core.workspace_state",
+]
+ignore_errors = true
