@@ -133,6 +133,10 @@ def _graphic_source_key(graphic) -> str:
     return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
+RENDER_ENGINE_VERSION = 2
+"""Version du rendu d'aperçu, incluse dans toute empreinte de segment."""
+
+
 def fingerprint_plan(plan, **kwargs):
     """Empreinte SHA-256 deterministe d'un plan + parametres de rendu."""
     from .export_engine import _build_clip_effect_filters
@@ -158,6 +162,9 @@ def fingerprint_plan(plan, **kwargs):
     quality = str(kwargs.get("quality", "standard"))
     extra = str(kwargs.get("extra", ""))
     payload = {
+        # À incrémenter quand le rendu change sans que le plan change : le cache d'aperçu est persistant
+        # (7 jours) et resservirait sinon des segments produits par l'ancien rendu.
+        "engine": RENDER_ENGINE_VERSION,
         "width": width,
         "height": height,
         "fps": fps,
@@ -193,13 +200,19 @@ def fingerprint_plan(plan, **kwargs):
                 "gain_db": getattr(layer, "gain_db", 0.0),
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
                 "nested": getattr(layer, "nested_key", ""),
+                # Tout le mixage (pan, fondus, volume / pan de piste, effets, automation, ducking) :
+                # la liste à la main avait oublié ces champs et le cache resservait un son périmé.
+                # Le repr de la couche suit aussi les champs qu'on ajoutera ; au pire il invalide trop.
+                "mix": repr(layer),
             }
             for layer in getattr(plan, "audio_layers", ())
         ],
+        "master": [float(getattr(plan, "master_gain_db", 0.0)), bool(getattr(plan, "master_muted", False))],
         "subtitles": [
             {"start": float(c.start), "end": float(c.end), "text": c.text}
             for c in getattr(plan, "subtitle_cues", ())
         ],
+        "subtitle_styles": [repr(style) for style in getattr(plan, "subtitle_styles", ())],
         "transitions": [
             {
                 "from": t.from_clip_id,
