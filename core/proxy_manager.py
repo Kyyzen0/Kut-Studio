@@ -58,6 +58,10 @@ from .tool_paths import find_media_tool
 SIDECAR_VERSION = 1
 LAST_USED_REFRESH_SECONDS = 60.0
 DISK_STATE_TTL_SECONDS = 2.0
+REPLACE_ATTEMPTS = 6
+REPLACE_DELAY_SECONDS = 0.05
+"""Sous Windows, deux ``os.replace`` simultanés vers la même destination (deux instances qui promeuvent le même
+proxy), ou un antivirus qui inspecte le fichier, échouent de façon transitoire avec ``PermissionError``."""
 PARTIAL_STALE_SECONDS = 600.0
 """Âge au-delà duquel un fichier partiel est considéré abandonné. FFmpeg qui écrit le met à jour en continu : un
 fichier récent peut appartenir à une génération en cours dans **une autre instance** de l'application."""
@@ -613,8 +617,14 @@ class ProxyManager:
                 error = "FFmpeg n'a produit aucun fichier."
             else:
                 size = partial.stat().st_size
-                os.replace(partial, final)
-                promoted = True
+                try:
+                    _replace_with_retry(partial, final)
+                    promoted = True
+                except PermissionError:
+                    if not (final.is_file() and final.stat().st_size > 0):
+                        raise
+                    # Une autre instance vient de produire ce même proxy : le nôtre est redondant.
+                    self._remove(partial)
                 self._write_sidecar(sidecar, source, signature.token, profile, size)
         except FileNotFoundError as exc:
             error = str(exc)
@@ -649,7 +659,7 @@ class ProxyManager:
         # fichier (sous Windows le second remplacement échouait, et l'erreur supprimait le proxy tout juste produit).
         temporary = sidecar.with_name(f"{sidecar.stem}.{os.getpid()}-{uuid.uuid4().hex[:8]}.json.tmp")
         temporary.write_text(json.dumps(payload), encoding="utf-8")
-        os.replace(temporary, sidecar)
+        _replace_with_retry(temporary, sidecar)
 
     @staticmethod
     def _remove(path: Path) -> bool:
@@ -815,6 +825,18 @@ class ProxyManager:
         for thread in list(self._threads):
             thread.join(timeout=max(0.0, deadline - time.monotonic()))
         return not any(thread.is_alive() for thread in self._threads)
+
+
+def _replace_with_retry(source: Path, target: Path) -> None:
+    """``os.replace`` qui réessaie quelques fois sur un refus d'accès transitoire (Windows)."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_DELAY_SECONDS * (attempt + 1))
 
 
 def _explain_ffmpeg_error(stderr: str) -> str:

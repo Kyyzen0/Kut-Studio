@@ -149,3 +149,74 @@ def test_a_failing_instance_does_not_delete_the_proxy_another_instance_just_prod
 
     assert proxy.is_file(), "l'échec de l'une ne doit pas supprimer le proxy valide produit par l'autre"
     assert good.info(source).state is ProxyState.READY
+
+
+def _refuse_replace(monkeypatch, *, suffix: str, times: int | None):
+    """``os.replace`` refuse l'accès vers ``*suffix`` (``times`` fois, ou toujours si ``None``), comme Windows."""
+    real_replace = os.replace
+    state = {"refused": 0}
+
+    def replace(src, dst, *args, **kwargs):
+        if str(dst).endswith(suffix) and (times is None or state["refused"] < times):
+            state["refused"] += 1
+            raise PermissionError(13, "Accès refusé (collision transitoire)", str(dst))
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", replace)
+    return state
+
+
+def _ok_runner(command, cancel, on_progress, on_start):
+    on_start(4242)
+    Path(command[-1]).write_bytes(b"P" * 64)
+    return RunResult(0)
+
+
+def test_a_transient_access_denied_while_promoting_the_proxy_is_retried(tmp_path, source, monkeypatch):
+    monkeypatch.setattr("core.proxy_manager.REPLACE_DELAY_SECONDS", 0.001)
+    state = _refuse_replace(monkeypatch, suffix=".mp4", times=2)               # deux refus, puis le système laisse passer
+    manager = _manager(tmp_path / "proxies", _ok_runner)
+    try:
+        manager.request(source, duration=2.0)
+        assert _wait(lambda: manager.info(source).state is ProxyState.READY)
+    finally:
+        manager.shutdown()
+    assert state["refused"] == 2
+    assert not [name for name in os.listdir(tmp_path / "proxies") if ".partial." in name]
+
+
+def test_a_promotion_that_keeps_failing_is_harmless_when_another_instance_already_produced_the_proxy(
+    tmp_path, source, monkeypatch
+):
+    monkeypatch.setattr("core.proxy_manager.REPLACE_DELAY_SECONDS", 0.001)
+    folder = tmp_path / "proxies"
+    first = _manager(folder, _ok_runner)
+    try:
+        first.request(source, duration=2.0)
+        assert _wait(lambda: first.info(source).state is ProxyState.READY)
+        proxy = Path(first.info(source).proxy_path)
+
+        _refuse_replace(monkeypatch, suffix=".mp4", times=None)                # l'autre instance ne peut plus promouvoir
+        second = _manager(folder, _ok_runner)
+        try:
+            second.request(source, duration=2.0, force=True)
+            assert _wait(lambda: not second._active and not second._pending)
+            assert not second._errors                                          # pas d'erreur : le proxy existe déjà
+        finally:
+            second.shutdown()
+    finally:
+        first.shutdown()
+    assert proxy.is_file() and first.info(source).state is ProxyState.READY
+    assert not [name for name in os.listdir(folder) if ".partial." in name]    # son fichier partiel est retiré
+
+
+def test_a_promotion_that_keeps_failing_with_no_proxy_is_still_an_error(tmp_path, source, monkeypatch):
+    monkeypatch.setattr("core.proxy_manager.REPLACE_DELAY_SECONDS", 0.001)
+    _refuse_replace(monkeypatch, suffix=".mp4", times=None)
+    manager = _manager(tmp_path / "proxies", _ok_runner)
+    try:
+        manager.request(source, duration=2.0)
+        assert _wait(lambda: bool(manager._errors))
+        assert manager.info(source).state is ProxyState.ERROR
+    finally:
+        manager.shutdown()
