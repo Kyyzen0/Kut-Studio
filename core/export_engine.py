@@ -90,6 +90,23 @@ LOGGER = logging.getLogger("kut_studio.encoding")
 _ffmpeg_path = find_media_tool("ffmpeg")
 
 
+OUTPUT_COLOR_STAGE = "scale=out_color_matrix=bt709:out_range=tv"
+"""Dernière étape du graphe vidéo : la conversion RVB → YUV se fait en BT.709, plage limitée."""
+
+OUTPUT_COLOR_TAGS = (
+    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+)
+"""Balises posées sur le flux encodé : un lecteur décode alors avec la matrice utilisée à l'encodage."""
+
+
+def with_output_color_stage(filter_complex: str, video_label: str) -> tuple[str, str]:
+    """Ajoute au graphe l'étape de conversion BT.709 ; renvoie ``(graphe, nouvelle étiquette vidéo)``.
+
+    Partagée par l'export et l'aperçu : les deux restent « le même graphe », y compris pour la couleur.
+    """
+    return f"{filter_complex};[{video_label}]{OUTPUT_COLOR_STAGE}[vcolor]", "vcolor"
+
+
 def _ffmpeg_command_prefix() -> list[str]:
     """Retourne la commande qui lance FFmpeg.
 
@@ -587,6 +604,10 @@ class ExportEngine(QObject):
         for path in input_paths:
             command.extend(["-i", path])
 
+        # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
+        # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
+        # un fichier HD comme du 709 affichait des couleurs décalées (rouge +11 niveaux mesurés).
+        filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
         if encoder.video_filter:
             filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
             video_label = "vencoded"
@@ -594,6 +615,7 @@ class ExportEngine(QObject):
         command.extend(["-map", f"[{video_label}]"])
         command.extend(["-map", f"[{audio_label}]"])
         command.extend(encoder.args)
+        command.extend(OUTPUT_COLOR_TAGS)
 
         # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
         # ``ExportPreset`` porte toujours ce champ, mais le moteur reste

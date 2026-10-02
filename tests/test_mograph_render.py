@@ -275,14 +275,15 @@ def test_preview_segment_and_export_compose_graphics_identically(tmp_path):
     ]
     assert max(differences) <= 40  # sous-échantillonnage 4:2:0 sur les bords de lettres
     assert sum(differences) / len(differences) < 3
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, with_output_color_stage
     from core.filter_graph import build_preview_command
 
     plan = build_render_plan(project)
     command = build_preview_command(plan, width=W, height=H, fps=10, quality="high",
                                     start=0.0, duration=1.0, output_path=str(tmp_path / "s.mp4"))
-    assert command[command.index("-filter_complex") + 1] == ExportEngine._build_filter_complex(
-        plan, W, H, 10, None, quality="high")[0]
+    common, video_label, *_rest = ExportEngine._build_filter_complex(plan, W, H, 10, None, quality="high")
+    # Même graphe que l'export, dernière étape comprise (conversion de couleur BT.709).
+    assert command[command.index("-filter_complex") + 1] == with_output_color_stage(common, video_label)[0]
 
 
 @needs_ffmpeg

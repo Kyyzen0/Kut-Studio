@@ -89,7 +89,12 @@ def build_preview_command(plan, **kwargs):
     :mod:`core.decode_policy`). Les images decodees sont telechargees en
     memoire systeme : le graphe, lui, ne change pas.
     """
-    from .export_engine import _ffmpeg_command_prefix, filter_graph_arguments
+    from .export_engine import (
+        OUTPUT_COLOR_TAGS,
+        _ffmpeg_command_prefix,
+        filter_graph_arguments,
+        with_output_color_stage,
+    )
     from .preview_render import preview_crf, preview_preset
 
     width = int(kwargs.get("width", 1920))
@@ -103,6 +108,8 @@ def build_preview_command(plan, **kwargs):
     out_w, out_h = preview_output_size(width, height, quality)
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality)
     filter_complex, video_label, audio_label, input_paths = result
+    # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
+    filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     input_args = kwargs.get("input_args")
     for path in input_paths:
@@ -124,6 +131,7 @@ def build_preview_command(plan, **kwargs):
             preview_preset(quality),
             "-crf",
             str(preview_crf(quality)),
+            *OUTPUT_COLOR_TAGS,
         ]
     )
     command.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k"])
