@@ -782,6 +782,12 @@ class IconButton(QToolButton):
             self.setToolTip(tooltip)
         self._apply_style()
 
+    def setToolTip(self, tip: str) -> None:  # noqa: D401 - Qt
+        """Surcharge : un bouton sans texte n'a que son infobulle pour se présenter aux technologies d'assistance."""
+        super().setToolTip(tip)
+        if not self.text():
+            self.setAccessibleName(tip)
+
     def setIcon(self, icon: QIcon) -> None:  # noqa: D401 - Qt
         super().setIcon(icon)
         self.setIconSize(QSize(self._icon_size_px, self._icon_size_px))

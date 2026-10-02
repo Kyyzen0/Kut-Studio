@@ -1368,8 +1368,10 @@ class MainWindow(
         edit_menu.addSeparator()
 
         for key in ("action.cut", "menu.item.copy", "menu.item.paste"):
+            # Pas de presse-papiers de clips pour l'instant : l'entrée est désactivée plutôt que de
+            # rester active et muette (un print invisible dans l'application empaquetée).
             action = self._labelled_action(key)
-            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
+            self._disable_unavailable(action)
             edit_menu.addAction(action)
 
         # Séquence
@@ -1397,9 +1399,16 @@ class MainWindow(
         delete_sequence_action.triggered.connect(lambda: self.delete_sequence_command())
         sequence_menu.addAction(delete_sequence_action)
         sequence_menu.addSeparator()
-        for key in ("menu.item.add_clip", "menu.item.trim", "menu.item.marker"):
+        for key, handler in (
+            ("menu.item.add_clip", None),
+            ("menu.item.trim", lambda: self.cut_at_playhead()),                         # Ctrl+K
+            ("menu.item.marker", lambda: self.add_marker_at(self.playhead_seconds)),    # M
+        ):
             action = self._labelled_action(key)
-            action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
+            if handler is None:
+                self._disable_unavailable(action)
+            else:
+                action.triggered.connect(lambda checked=False, run=handler: run())
             sequence_menu.addAction(action)
 
         # Fenêtre — le contenu dépend du gestionnaire d'espace de
@@ -1508,8 +1517,16 @@ class MainWindow(
         return action
 
     def _notify_placeholder(self, feature_name):
-        """Affiche un message discret pour les features à venir."""
-        print(f"[MainWindow] {feature_name} : à implémenter")
+        """Zone du rail sans panneau : le dit dans la barre d'état (un print ne se voit pas une fois empaqueté)."""
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            bar.showMessage(i18n.translate("status.unavailable"), 4000)
+
+    @staticmethod
+    def _disable_unavailable(action) -> None:
+        """Entrée de menu sans fonction pour l'instant : grisée, avec l'explication en infobulle."""
+        action.setEnabled(False)
+        action.setToolTip(i18n.translate("status.unavailable"))
 
     @staticmethod
     def global_style():

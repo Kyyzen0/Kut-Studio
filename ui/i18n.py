@@ -136,6 +136,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.kind.io": {"fr": "Écriture impossible", "en": "Could not write file", "es": "No se pudo escribir"},
     "render.confirm.rerender": {"fr": "Le fichier existant sera remplacé par le nouveau rendu. Continuer ?", "en": "The existing file will be replaced by the new render. Continue?", "es": "El archivo existente será reemplazado por el nuevo render. ¿Continuar?"},
     "render.confirm.title": {"fr": "File de rendu", "en": "Render queue", "es": "Cola de render"},
+    "status.unavailable": {
+        "fr": "Cette fonction n'est pas encore disponible.",
+        "en": "This feature is not available yet.",
+        "es": "Esta función aún no está disponible.",
+    },
+    "graphics.color.pick": {"fr": "Choisir une couleur", "en": "Pick a colour", "es": "Elegir un color"},
     "project.untitled": {"fr": "Sans titre", "en": "Untitled", "es": "Sin título"},
     "project.unsaved.title": {"fr": "Projet non enregistré", "en": "Unsaved project", "es": "Proyecto sin guardar"},
     "project.unsaved.text": {
