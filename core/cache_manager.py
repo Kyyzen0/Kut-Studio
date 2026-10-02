@@ -187,7 +187,9 @@ class CacheManager:
             for asset in assets:
                 self.proxies.delete(asset.path)
         if self.previews is not None:
-            clip_ids = [clip.id for track in project.tracks for clip in track.clips]
+            all_tracks = getattr(project, "all_tracks", None)
+            tracks = all_tracks() if callable(all_tracks) else project.tracks
+            clip_ids = [clip.id for track in tracks for clip in track.clips]
             self.previews.invalidate_clips(clip_ids)
         if self.memory is not None:
             for asset in assets:

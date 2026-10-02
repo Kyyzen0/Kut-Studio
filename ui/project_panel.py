@@ -62,6 +62,7 @@ from ui.project_panel_widgets.asset_bin import (
     _make_asset_thumbnail,
 )  # noqa: F401
 from ui.project_panel_widgets.subtitle_library import SubtitleLibraryView  # noqa: F401
+from ui.project_panel_widgets.sequence_library import SequenceLibraryView
 from ui.project_panel_widgets.text_presets_view import (
     TextPresetCard,
     TextPresetLibraryView,
@@ -404,6 +405,10 @@ class ProjectPanel(QWidget):
 
         self.audio_effects_view = AudioEffectsLibraryView(self)
         self.content_stack.addWidget(self.audio_effects_view)
+
+        # Séquences du projet (page 7) : créer, ouvrir, imbriquer.
+        self.sequence_view = SequenceLibraryView(self)
+        self.content_stack.addWidget(self.sequence_view)
         # Chaque page est faite pour défiler : on neutralise leur
         # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
         # sinon la pile réserve cette hauteur et la grille de vignettes
@@ -412,7 +417,7 @@ class ProjectPanel(QWidget):
         for page in (
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
-            self.graphics_view, self.audio_effects_view,
+            self.graphics_view, self.audio_effects_view, self.sequence_view,
         ):
             page.setMinimumHeight(0)
             page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -721,6 +726,10 @@ class ProjectPanel(QWidget):
             clip_has_audio_effects=clip_has_audio_effects,
         )
 
+    def set_sequences(self, entries) -> None:
+        """Liste des séquences du projet (page « Séquences »)."""
+        self.sequence_view.set_sequences(entries)
+
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
         page_index = {
@@ -730,6 +739,7 @@ class ProjectPanel(QWidget):
             "effects": 3,
             "transitions": 4,
             "graphics": 5,
+            "sequences": 7,
         }.get(section_id)
         if page_index is None:
             return
@@ -1090,6 +1100,9 @@ class ProjectPanel(QWidget):
         elif self._active_page_index == 6:
             count = self.audio_effects_view.preset_count()
             label_word = "preset" if count <= 1 else "presets"
+        elif self._active_page_index == 7:
+            count = len(self.sequence_view.entries())
+            label_word = "séquence" if count <= 1 else "séquences"
         else:
             count = 0
             label_word = "média"

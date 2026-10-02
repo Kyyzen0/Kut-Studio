@@ -7,10 +7,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
-from PySide6.QtWidgets import (
-    QLabel,
-    QWidget,
-)
+from PySide6.QtWidgets import QLabel, QWidget
 
 from core.media_previews import (
     thumbnail_cache_key,
@@ -19,10 +16,9 @@ from core.media_previews import (
     waveform_bins,
     waveform_cache_key,
 )
-from core.timeline_view_model import (
-    TimelineClipView,
-)
+from core.timeline_view_model import TimelineClipView
 from ui.timeline_widgets.common import _color_for_track_type, _current_palette
+from ui.timeline_widgets.nested_clip import handle_nested_double_click, paint_nested_decoration
 
 if TYPE_CHECKING:  # import de typage seul : évite le cycle clip -> panneau
     from ui.timeline_panel import TimelinePanel
@@ -359,7 +355,9 @@ class ClipWidget(QWidget):
         painter.end()
 
     def mouseDoubleClickEvent(self, event):
-        """Double-clic sur une poignée : remet le fondu correspondant à zéro."""
+        """Double-clic : ouvre une séquence imbriquée, ou remet un fondu à zéro (poignée)."""
+        if handle_nested_double_click(self, event):
+            return
         if not self.is_audio_clip:
             super().mouseDoubleClickEvent(event)
             return
@@ -552,6 +550,7 @@ class ClipWidget(QWidget):
         self._paint_effect_badge()
         self._paint_time_remapping_badges()
         self._paint_keyframes()
+        paint_nested_decoration(self)
 
     # ------------------------------------------------------------------
     # Images-clés (affichage, sélection, glisser temporel)

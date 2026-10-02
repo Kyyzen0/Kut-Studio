@@ -14,13 +14,21 @@ L'objectif est de fournir une couche de calcul :
 Elle sera consommée ultérieurement par l'aperçu vidéo et le moteur
 d'export pour rendre leur comportement réellement fidèle à la timeline
 (positions, trous, trims, pistes V1/V2, clips désactivés).
+
+Séquences imbriquées : un clip qui référence une séquence est remplacé
+par les clips actifs **de cette séquence** à l'instant correspondant
+(vitesse, reverse et arrêt sur image du clip pris en compte), récursivement.
+Les entrées obtenues portent ``root_clip_id`` (le clip imbriqué de la
+séquence évaluée) et ``nested_path``. Les cycles, références inconnues et
+imbrications trop profondes produisent une évaluation vide pour le clip
+fautif : jamais de récursion infinie.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .project_model import Clip, MediaAsset, Project
+from .project_model import Clip, MediaAsset, Project, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +59,14 @@ class ActiveClip:
             (``timeline_start + clip.duration``).
         text: Texte porté par le clip (sous-titres). Vide pour les
             autres types de clips.
+        root_clip_id: Pour un clip vu à travers une séquence imbriquée,
+            identifiant du clip imbriqué de la séquence évaluée (vide
+            sinon). ``track_id`` / ``track_index`` sont alors ceux de ce
+            clip racine, et ``timeline_start`` / ``timeline_end`` sont
+            exprimés dans le temps de la séquence évaluée.
+        nested_path: Chaîne des clips imbriqués traversés (racine d'abord).
+        sequence_id: Séquence qui contient réellement le clip (vide pour
+            la séquence évaluée).
     """
 
     clip_id: str
@@ -63,6 +79,18 @@ class ActiveClip:
     timeline_start: float
     timeline_end: float
     text: str = ""
+    root_clip_id: str = ""
+    nested_path: tuple[str, ...] = ()
+    sequence_id: str = ""
+
+    @property
+    def owner_clip_id(self) -> str:
+        """Clip de la séquence évaluée qui produit cette entrée."""
+        return self.root_clip_id or self.clip_id
+
+    @property
+    def is_nested(self) -> bool:
+        return bool(self.root_clip_id)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +167,9 @@ def _build_active_clip(
 # ---------------------------------------------------------------------------
 
 
-def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]:
+def evaluate_timeline(
+    project: Project, time_seconds: float, *, sequence_id: str | None = None
+) -> list[ActiveClip]:
     """Retourne les clips actifs à ``time_seconds``, dans l'ordre des pistes.
 
     Le temps ``time_seconds`` est exprimé en secondes sur la timeline.
@@ -182,8 +212,26 @@ def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]
             f"(reçu : {time_seconds})."
         )
 
+    if sequence_id is None:
+        sequence = project.active_sequence
+    else:
+        sequence = project.get_sequence(sequence_id)
+        if sequence is None:
+            raise KeyError(f"Séquence '{sequence_id}' introuvable dans le projet.")
+    assets = {asset.id: asset for asset in project.media_assets}
+    return _evaluate_sequence(project, sequence, time_seconds, assets, (sequence.id,))
+
+
+def _evaluate_sequence(
+    project: Project,
+    sequence: Sequence,
+    time_seconds: float,
+    assets: dict[str, MediaAsset],
+    stack: tuple[str, ...],
+) -> list[ActiveClip]:
+    """Évaluation linéaire d'une séquence (descend dans les imbrications)."""
     active: list[ActiveClip] = []
-    for track_index, track in enumerate(project.tracks):
+    for track_index, track in enumerate(sequence.tracks):
         if not track.visible:
             continue
         for clip in track.clips:
@@ -191,7 +239,21 @@ def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]
                 continue
             if not _is_active(clip, time_seconds):
                 continue
-            asset = _find_asset(project, clip.asset_id)
+            if clip.sequence_id:
+                active.extend(
+                    expand_nested_clip(
+                        project, clip, track, track_index, time_seconds, stack,
+                        lambda child, inner_time, inner_stack: _evaluate_sequence(
+                            project, child, inner_time, assets, inner_stack
+                        ),
+                    )
+                )
+                continue
+            asset = assets.get(clip.asset_id)
+            if asset is None:
+                raise KeyError(
+                    f"Média '{clip.asset_id}' introuvable dans le projet '{project.name}'."
+                )
             active.append(
                 _build_active_clip(
                     clip=clip,
@@ -204,7 +266,95 @@ def evaluate_timeline(project: Project, time_seconds: float) -> list[ActiveClip]
     return active
 
 
-def timeline_duration(project: Project) -> float:
+def apply_track_solo(tracks, active_clips: list) -> list:
+    """Retire les entrées masquées par une piste solo de leur type."""
+    solo_ids: dict[str, set[str]] = {}
+    for track in tracks:
+        if track.solo:
+            solo_ids.setdefault(track.type, set()).add(track.id)
+    if not solo_ids:
+        return list(active_clips)
+    return [
+        clip for clip in active_clips
+        if solo_ids.get(clip.track_type) is None or clip.track_id in solo_ids[clip.track_type]
+    ]
+
+
+def _map_to_parent(clip: Clip, low: float, high: float) -> tuple[float, float]:
+    """Plage ``[low, high)`` de la séquence imbriquée, en temps parent (bornée au clip)."""
+    start = clip.timeline_start
+    end = start + clip.duration
+    remapping = clip.time_remapping
+    if getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
+        return start, end
+    speed = float(remapping.speed) or 1.0
+    if remapping.reverse:
+        a = start + (clip.source_out - high) / speed
+        b = start + (clip.source_out - low) / speed
+    else:
+        a = start + (low - clip.source_in) / speed
+        b = start + (high - clip.source_in) / speed
+    return max(start, a), min(end, b)
+
+
+def expand_nested_clip(
+    project: Project,
+    clip: Clip,
+    track,
+    track_index: int,
+    time_seconds: float,
+    stack: tuple[str, ...],
+    evaluate_inner,
+    duration_of=None,
+) -> list[ActiveClip]:
+    """Entrées actives d'un clip imbriqué à ``time_seconds`` (temps parent).
+
+    ``evaluate_inner(séquence, temps, pile)`` évalue la séquence enfant
+    (linéairement ou via un index) ; ``duration_of(séquence)`` donne sa
+    durée (un index la connaît déjà, sans reparcourir ses clips). Retourne
+    ``[]`` — sans lever — pour une séquence introuvable, un cycle, une
+    imbrication trop profonde ou un instant situé au-delà de la fin de la
+    séquence source.
+    """
+    from .sequences import MAX_NESTING_DEPTH, nested_source_time
+
+    child = project.get_sequence(clip.sequence_id)
+    if child is None or child.id in stack or len(stack) > MAX_NESTING_DEPTH:
+        return []
+    inner_time = nested_source_time(clip, time_seconds)
+    child_duration = duration_of(child) if duration_of is not None else child.duration
+    if inner_time is None or inner_time < 0.0 or inner_time >= child_duration:
+        return []
+    inner = apply_track_solo(
+        child.tracks, evaluate_inner(child, inner_time, stack + (child.id,))
+    )
+    accepted = None if track.type == "video" else {"audio"}
+    mapped: list[ActiveClip] = []
+    for entry in inner:
+        if accepted is not None and entry.track_type not in accepted:
+            continue
+        low, high = _map_to_parent(clip, entry.timeline_start, entry.timeline_end)
+        mapped.append(
+            ActiveClip(
+                clip_id=entry.clip_id,
+                asset_id=entry.asset_id,
+                track_id=track.id,
+                track_type=entry.track_type,
+                track_index=track_index,
+                source_path=entry.source_path,
+                source_time=entry.source_time,
+                timeline_start=low,
+                timeline_end=max(low, high),
+                text=entry.text,
+                root_clip_id=clip.id,
+                nested_path=(clip.id,) + entry.nested_path,
+                sequence_id=entry.sequence_id or child.id,
+            )
+        )
+    return mapped
+
+
+def timeline_duration(project: Project, sequence_id: str | None = None) -> float:
     """Retourne la fin maximale des clips activés du projet.
 
     La durée est calculée comme :
@@ -223,12 +373,7 @@ def timeline_duration(project: Project) -> float:
         Durée maximale des clips activés, en secondes (``0.0`` si le
         projet ne contient aucun clip activé).
     """
-    end_times = [
-        clip.timeline_start + clip.duration
-        for track in project.tracks
-        for clip in track.clips
-        if clip.enabled
-    ]
-    if not end_times:
-        return 0.0
-    return max(end_times)
+    if sequence_id is not None:
+        sequence = project.get_sequence(sequence_id)
+        return sequence.duration if sequence is not None else 0.0
+    return project.active_sequence.duration

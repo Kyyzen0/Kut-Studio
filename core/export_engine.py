@@ -670,174 +670,19 @@ class ExportEngine(QObject):
             input_paths: liste dédupliquée des chemins à passer en ``-i``.
         """
         width, height = output_width, output_height
-        duration = plan.duration
 
-        # Inputs dédupliqués : on assigne un index à chaque chemin unique.
+        # Inputs dédupliqués : on assigne un index à chaque chemin unique
+        # (séquences imbriquées comprises).
         input_paths, path_to_index = _build_input_list(plan)
 
         parts: list[str] = []
 
-        # ---------------- Vidéo ----------------
-        bg_duration = f":d={_format_seconds(duration)}" if duration > 0 else ""
-        parts.append(
-            f"color=c=black:s={width}x{height}:r={fps}{bg_duration}[bg]"
+        # Séquences imbriquées : chaque sous-plan est composé une fois, en
+        # amont, puis distribué (``split``) à ses instances.
+        sources = _build_nested_sources(parts, plan, path_to_index, width, height)
+        video_label, audio_label = _compose_plan_graph(
+            parts, plan, width, height, fps, path_to_index, sources,
         )
-
-        for layer_index, layer in enumerate(plan.video_layers):
-            input_index = path_to_index[layer.source_path]
-            parts.append(
-                _build_layer_filter(layer_index, layer, input_index, width, height, fps)
-            )
-
-        if plan.video_layers:
-            display_layers = _build_transition_layers(parts, plan)
-            previous_label = "bg"
-            for layer_index, (label, layer) in enumerate(display_layers):
-                is_last = layer_index == len(display_layers) - 1
-                next_label = "vout" if is_last else f"o{layer_index}"
-                overlay_args = _build_overlay_args(layer, width, height)
-                blend_mode = getattr(getattr(layer, "compositing", None), "blend_mode", "normal")
-                blend_mode = getattr(blend_mode, "value", blend_mode)
-                if blend_mode != "normal":
-                    ffmpeg_mode = {"addition": "addition"}.get(str(blend_mode), str(blend_mode))
-                    parts.append(
-                        f"[{previous_label}][{label}]blend=all_mode={ffmpeg_mode}:"
-                        f"enable='between(t,{_format_seconds(layer.timeline_start)},"
-                        f"{_format_seconds(layer.timeline_end)})'[{next_label}]"
-                    )
-                else:
-                    parts.append(
-                        f"[{previous_label}][{label}]"
-                        f"overlay={overlay_args}[{next_label}]"
-                    )
-                previous_label = next_label
-            video_label = "vout"
-        else:
-            video_label = "bg"
-
-        # ---------------- Graphiques (tâche 32) ----------------
-        # Les calques graphiques sont composés après les pistes vidéo et
-        # avant les sous-titres. Ils partagent les mêmes expressions de
-        # transform que les clips vidéo, donc aperçu et export restent
-        # strictement identiques.
-        for graphic_index, layer in enumerate(
-            getattr(plan, "graphics_layers", ())
-        ):
-            source_label = f"g{graphic_index}"
-            input_index = None
-            source_path = _graphic_input_path(layer.graphic)
-            if source_path:
-                input_index = path_to_index[source_path]
-            parts.append(
-                _build_graphic_layer_filter(
-                    graphic_index, layer, input_index, width, height, fps
-                )
-            )
-            next_label = f"gout{graphic_index}"
-            parts.append(
-                f"[{video_label}][{source_label}]overlay="
-                f"{_build_overlay_args(layer, width, height)}[{next_label}]"
-            )
-            video_label = next_label
-
-        # ---------------- Audio ----------------
-        silent_base_filter = (
-            f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:"
-            f"duration={_format_seconds(duration)}[silent_base]"
-        )
-        parts.append(silent_base_filter)
-
-        if plan.audio_layers:
-            for audio_index, layer in enumerate(plan.audio_layers):
-                input_index = path_to_index[layer.source_path]
-                parts.append(
-                    _build_audio_filter(audio_index, layer, input_index, duration)
-                )
-
-            # --- Ducking (tâche 28) ------------------------------------
-            # Pour chaque AudioLayer ciblée par un ducking, on émet
-            # des filtres ``sidechaincompress`` chaînés sur la
-            # couche musique ; chaque sidechain tire d'une voix
-            # mixée au préalable. Si plusieurs sidechains ciblent
-            # la même musique, on les empile : le plus profond
-            # l'emporte.
-            voice_mixes_by_track: dict = {}
-            voice_mix_counter = 0
-            for audio_index, layer in enumerate(plan.audio_layers):
-                sidechains = list(
-                    getattr(layer, "ducking_sidechains", []) or []
-                )
-                active_sidechains = [
-                    s for s in sidechains if getattr(s, "enabled", True)
-                ]
-                if not active_sidechains:
-                    continue
-                voice_tracks_involved: dict = {}
-                for sc in active_sidechains:
-                    voice_tracks_involved.setdefault(
-                        sc.voice_track_id, []
-                    ).append(sc)
-                for voice_track_id, sidechains_for_voice in (
-                    voice_tracks_involved.items()
-                ):
-                    voice_mix_label = voice_mixes_by_track.get(voice_track_id)
-                    if voice_mix_label is None:
-                        voice_mix_label = f"av{voice_mix_counter}"
-                        voice_mixes_by_track[voice_track_id] = voice_mix_label
-                        voice_mix_counter += 1
-                        voice_layer_indices = [
-                            i for i, lay in enumerate(plan.audio_layers)
-                            if lay.track_id == voice_track_id
-                        ]
-                        if voice_layer_indices:
-                            voice_inputs = "".join(
-                                f"[a{i}]" for i in voice_layer_indices
-                            )
-                            parts.append(
-                                f"{voice_inputs}"
-                                f"amix=inputs={len(voice_layer_indices)}:"
-                                f"duration=first:dropout_transition=0,"
-                                f"aformat=channel_layouts=stereo:"
-                                f"sample_rates=48000[{voice_mix_label}]"
-                            )
-                    # On propage le label vocal aux sidechains pour
-                    # que ``_build_ducking_chain`` puisse le citer.
-                    for sc in sidechains_for_voice:
-                        object.__setattr__(sc, "_voice_mix_label", voice_mix_label)
-                    chain_parts = [
-                        _build_ducking_chain(sc)
-                        for sc in sidechains_for_voice
-                    ]
-                    chain = ",".join(chain_parts)
-                    parts.append(
-                        f"[a{audio_index}]{chain}[a{audio_index}_duck]"
-                    )
-                    object.__setattr__(
-                        layer, "_ducked_label", f"[a{audio_index}_duck]"
-                    )
-
-            n_inputs = len(plan.audio_layers) + 1
-            mixed_inputs = "".join(
-                getattr(layer, "_ducked_label", f"[a{i}]")
-                for i, layer in enumerate(plan.audio_layers)
-            )
-            # Le gain Master est appliqué après l'amix : il doit
-            # piloter l'ensemble du mixage, pas chaque couche.
-            master_filter = _build_master_filter(plan)
-            tail = f",{master_filter}" if master_filter else ""
-            parts.append(
-                f"[silent_base]{mixed_inputs}"
-                f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
-                f"{tail},"
-                f"aformat=channel_layouts=stereo:sample_rates=48000[aout]"
-            )
-            audio_label = "aout"
-        else:
-            # Aucun clip audio : on renomme la base silencieuse en ``aout``.
-            parts.append(
-                f"[silent_base]aformat=channel_layouts=stereo:sample_rates=48000[aout]"
-            )
-            audio_label = "aout"
 
         # ---------------- Sous-titres ----------------
         # L'incrustation se fait via libass (``subtitles=``), appliquée
@@ -1006,6 +851,353 @@ class ExportEngine(QObject):
 
 
 # ---------------------------------------------------------------------------
+# Composition d'un plan (racine ou séquence imbriquée)
+# ---------------------------------------------------------------------------
+
+
+class _NestedSources:
+    """Labels FFmpeg des rendus de séquences imbriquées, à consommer.
+
+    Un label de ``-filter_complex`` ne peut être lu qu'une fois : un rendu
+    utilisé par N instances est dupliqué par ``split`` / ``asplit`` et
+    chaque couche consomme l'un des labels.
+    """
+
+    def __init__(self) -> None:
+        self.video: dict[str, list[str]] = {}
+        self.audio: dict[str, list[str]] = {}
+
+    def take_video(self, key: str) -> str:
+        labels = self.video.get(key)
+        if not labels:
+            raise ValueError(f"Rendu de séquence imbriquée introuvable : {key}.")
+        return labels.pop(0)
+
+    def take_audio(self, key: str) -> str:
+        labels = self.audio.get(key)
+        if not labels:
+            raise ValueError(f"Mixage de séquence imbriquée introuvable : {key}.")
+        return labels.pop(0)
+
+
+def _even(value: float) -> int:
+    return max(2, int(round(value / 2.0)) * 2)
+
+
+def _nested_demand(plan: RenderPlan) -> tuple[dict[str, int], dict[str, int]]:
+    """Nombre de lectures vidéo / audio de chaque sous-plan.
+
+    Parcours des parents vers les enfants (ordre inverse du registre) : un
+    sous-plan dont la vidéo n'est lue par personne ne réclame pas la vidéo
+    de ses propres enfants. Ainsi aucun label n'est produit sans lecteur
+    (FFmpeg refuserait ou mapperait un flux en trop).
+    """
+    need_video: dict[str, int] = {}
+    need_audio: dict[str, int] = {}
+
+    def count(layers, demand: dict[str, int]) -> None:
+        for layer in layers:
+            key = getattr(layer, "nested_key", "")
+            if key:
+                demand[key] = demand.get(key, 0) + 1
+
+    count(plan.video_layers, need_video)
+    count(plan.audio_layers, need_audio)
+    for entry in reversed(getattr(plan, "nested_sequences", ())):
+        if need_video.get(entry.key):
+            count(entry.plan.video_layers, need_video)
+        if need_audio.get(entry.key):
+            count(entry.plan.audio_layers, need_audio)
+    return need_video, need_audio
+
+
+def _build_nested_sources(
+    parts: list[str],
+    plan: RenderPlan,
+    path_to_index: dict[str, int],
+    output_width: int,
+    output_height: int,
+) -> _NestedSources:
+    """Compose chaque séquence imbriquée et prépare ses labels de sortie.
+
+    Une séquence imbriquée est rendue à **sa** résolution, mise à l'échelle
+    du rapport export / séquence racine (un aperçu au quart de la taille
+    rend aussi ses séquences imbriquées au quart), sur un fond
+    **transparent** : là où elle est vide, la piste parente en dessous
+    reste visible. Son image est ensuite traitée comme celle d'un média
+    (cadrage, transform, effets, opacité, fusion du clip imbriqué) :
+    rendu interne → composite → effets du clip → timeline parente.
+    """
+    sources = _NestedSources()
+    entries = tuple(getattr(plan, "nested_sequences", ()) or ())
+    if not entries:
+        return sources
+    need_video, need_audio = _nested_demand(plan)
+    scale_x = output_width / max(1, int(plan.width))
+    scale_y = output_height / max(1, int(plan.height))
+    for index, entry in enumerate(entries):
+        want_video = need_video.get(entry.key, 0)
+        want_audio = need_audio.get(entry.key, 0)
+        if not (want_video or want_audio):
+            continue
+        inner = entry.plan
+        prefix = f"n{index}_"
+        width = _even(inner.width * scale_x)
+        height = _even(inner.height * scale_y)
+        fps = inner.fps if inner.fps > 0 else 30.0
+        video_label, audio_label = _compose_plan_graph(
+            parts, inner, width, height, fps, path_to_index, sources,
+            prefix=prefix, nested=True,
+            want_video=bool(want_video), want_audio=bool(want_audio),
+        )
+        if want_video:
+            sources.video[entry.key] = _fan_out(parts, video_label, want_video, "split")
+        if want_audio:
+            sources.audio[entry.key] = _fan_out(parts, audio_label, want_audio, "asplit")
+    return sources
+
+
+def _fan_out(parts: list[str], label: str, count: int, filter_name: str) -> list[str]:
+    """``count`` labels lisant le flux ``label`` (``split`` si plusieurs)."""
+    if count <= 1:
+        return [label]
+    outputs = [f"{label}_{i}" for i in range(count)]
+    parts.append(
+        f"[{label}]{filter_name}={count}" + "".join(f"[{out}]" for out in outputs)
+    )
+    return outputs
+
+
+def _compose_plan_graph(
+    parts: list[str],
+    plan: RenderPlan,
+    width: int,
+    height: int,
+    fps,
+    path_to_index: dict[str, int],
+    sources: _NestedSources,
+    *,
+    prefix: str = "",
+    nested: bool = False,
+    want_video: bool = True,
+    want_audio: bool = True,
+) -> tuple[str, str]:
+    """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
+
+    La racine (``prefix=""``) produit exactement les labels historiques
+    (``bg``, ``v0``, ``vout``, ``aout``…). Une séquence imbriquée reçoit un
+    préfixe unique (``n0_``…), un fond transparent et pas de gain Master.
+
+    Returns:
+        ``(label vidéo, label audio)`` finaux du plan (chaîne vide pour un
+        flux non demandé).
+    """
+    duration = plan.duration
+    if nested:
+        # Au moins une image : une séquence vide reste un flux fini.
+        duration = max(duration, 1.0 / float(fps or 30.0))
+    p = prefix
+    video_label = ""
+    audio_label = ""
+    fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+
+    # ---------------- Vidéo ----------------
+    if want_video:
+        bg_duration = f":d={_format_seconds(duration)}" if duration > 0 else ""
+        if nested:
+            parts.append(
+                f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration},"
+                f"format=yuva420p[{p}bg]"
+            )
+        else:
+            parts.append(
+                f"color=c=black:s={width}x{height}:r={fps_text}{bg_duration}[{p}bg]"
+            )
+
+        for layer_index, layer in enumerate(plan.video_layers):
+            if layer.nested_key:
+                parts.append(
+                    _build_layer_filter(
+                        layer_index, layer, None, width, height, fps,
+                        source=sources.take_video(layer.nested_key),
+                        label=f"{p}v{layer_index}",
+                        pad_color="black@0",
+                    )
+                )
+            else:
+                input_index = path_to_index[layer.source_path]
+                parts.append(
+                    _build_layer_filter(
+                        layer_index, layer, input_index, width, height, fps,
+                        label=f"{p}v{layer_index}" if p else None,
+                    )
+                )
+
+        video_label = f"{p}bg"
+        if plan.video_layers:
+            display_layers = _build_transition_layers(parts, plan, prefix=p)
+            previous_label = f"{p}bg"
+            for layer_index, (label, layer) in enumerate(display_layers):
+                is_last = layer_index == len(display_layers) - 1
+                next_label = f"{p}vout" if is_last else f"{p}o{layer_index}"
+                overlay_args = _build_overlay_args(layer, width, height)
+                blend_mode = getattr(getattr(layer, "compositing", None), "blend_mode", "normal")
+                blend_mode = getattr(blend_mode, "value", blend_mode)
+                if blend_mode != "normal":
+                    ffmpeg_mode = {"addition": "addition"}.get(str(blend_mode), str(blend_mode))
+                    parts.append(
+                        f"[{previous_label}][{label}]blend=all_mode={ffmpeg_mode}:"
+                        f"enable='between(t,{_format_seconds(layer.timeline_start)},"
+                        f"{_format_seconds(layer.timeline_end)})'[{next_label}]"
+                    )
+                else:
+                    parts.append(
+                        f"[{previous_label}][{label}]"
+                        f"overlay={overlay_args}[{next_label}]"
+                    )
+                previous_label = next_label
+            video_label = f"{p}vout"
+
+        # ---------------- Graphiques (tâche 32) ----------------
+        # Les calques graphiques sont composés après les pistes vidéo et
+        # avant les sous-titres. Ils partagent les mêmes expressions de
+        # transform que les clips vidéo, donc aperçu et export restent
+        # strictement identiques.
+        for graphic_index, layer in enumerate(
+            getattr(plan, "graphics_layers", ())
+        ):
+            source_label = f"{p}g{graphic_index}"
+            input_index = None
+            source_path = _graphic_input_path(layer.graphic)
+            if source_path:
+                input_index = path_to_index[source_path]
+            parts.append(
+                _build_graphic_layer_filter(
+                    graphic_index, layer, input_index, width, height, fps,
+                    label=source_label,
+                )
+            )
+            next_label = f"{p}gout{graphic_index}"
+            parts.append(
+                f"[{video_label}][{source_label}]overlay="
+                f"{_build_overlay_args(layer, width, height)}[{next_label}]"
+            )
+            video_label = next_label
+
+    if not want_audio:
+        return video_label, ""
+
+    # ---------------- Audio ----------------
+    silent_base_filter = (
+        f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:"
+        f"duration={_format_seconds(duration)}[{p}silent_base]"
+    )
+    parts.append(silent_base_filter)
+
+    if plan.audio_layers:
+        for audio_index, layer in enumerate(plan.audio_layers):
+            if layer.nested_key:
+                parts.append(
+                    _build_audio_filter(
+                        audio_index, layer, None, duration,
+                        source=sources.take_audio(layer.nested_key),
+                        label=f"{p}a{audio_index}",
+                    )
+                )
+            else:
+                input_index = path_to_index[layer.source_path]
+                parts.append(
+                    _build_audio_filter(
+                        audio_index, layer, input_index, duration,
+                        label=f"{p}a{audio_index}" if p else None,
+                    )
+                )
+
+        # --- Ducking (tâche 28) ------------------------------------
+        # Pour chaque AudioLayer ciblée par un ducking, on émet
+        # des filtres ``sidechaincompress`` chaînés sur la
+        # couche musique ; chaque sidechain tire d'une voix
+        # mixée au préalable. Si plusieurs sidechains ciblent
+        # la même musique, on les empile : le plus profond
+        # l'emporte. Les labels sont tenus dans des tables locales
+        # (jamais posés sur les couches ou le modèle) : un même plan
+        # peut être composé plusieurs fois avec des préfixes différents.
+        voice_mixes_by_track: dict = {}
+        voice_mix_counter = 0
+        ducked_labels: dict[int, str] = {}
+        for audio_index, layer in enumerate(plan.audio_layers):
+            sidechains = list(
+                getattr(layer, "ducking_sidechains", []) or []
+            )
+            active_sidechains = [
+                s for s in sidechains if getattr(s, "enabled", True)
+            ]
+            if not active_sidechains:
+                continue
+            voice_tracks_involved: dict = {}
+            for sc in active_sidechains:
+                voice_tracks_involved.setdefault(
+                    sc.voice_track_id, []
+                ).append(sc)
+            for voice_track_id, sidechains_for_voice in (
+                voice_tracks_involved.items()
+            ):
+                voice_mix_label = voice_mixes_by_track.get(voice_track_id)
+                if voice_mix_label is None:
+                    voice_mix_label = f"{p}av{voice_mix_counter}"
+                    voice_mixes_by_track[voice_track_id] = voice_mix_label
+                    voice_mix_counter += 1
+                    voice_layer_indices = [
+                        i for i, lay in enumerate(plan.audio_layers)
+                        if lay.track_id == voice_track_id
+                    ]
+                    if voice_layer_indices:
+                        voice_inputs = "".join(
+                            f"[{p}a{i}]" for i in voice_layer_indices
+                        )
+                        parts.append(
+                            f"{voice_inputs}"
+                            f"amix=inputs={len(voice_layer_indices)}:"
+                            f"duration=first:dropout_transition=0,"
+                            f"aformat=channel_layouts=stereo:"
+                            f"sample_rates=48000[{voice_mix_label}]"
+                        )
+                chain_parts = [
+                    _build_ducking_chain(sc, voice_label=voice_mix_label)
+                    for sc in sidechains_for_voice
+                ]
+                chain = ",".join(chain_parts)
+                parts.append(
+                    f"[{p}a{audio_index}]{chain}[{p}a{audio_index}_duck]"
+                )
+                ducked_labels[audio_index] = f"[{p}a{audio_index}_duck]"
+
+        n_inputs = len(plan.audio_layers) + 1
+        mixed_inputs = "".join(
+            ducked_labels.get(i, f"[{p}a{i}]")
+            for i in range(len(plan.audio_layers))
+        )
+        # Le gain Master est appliqué après l'amix : il doit
+        # piloter l'ensemble du mixage, pas chaque couche. Une séquence
+        # imbriquée n'a pas de Master : c'est le clip qui règle son gain.
+        master_filter = "" if nested else _build_master_filter(plan)
+        tail = f",{master_filter}" if master_filter else ""
+        parts.append(
+            f"[{p}silent_base]{mixed_inputs}"
+            f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
+            f"{tail},"
+            f"aformat=channel_layouts=stereo:sample_rates=48000[{p}aout]"
+        )
+    else:
+        # Aucun clip audio : on renomme la base silencieuse en ``aout``.
+        parts.append(
+            f"[{p}silent_base]aformat=channel_layouts=stereo:sample_rates=48000[{p}aout]"
+        )
+    audio_label = f"{p}aout"
+    return video_label, audio_label
+
+
+# ---------------------------------------------------------------------------
 # Helpers de construction du filter_complex
 # ---------------------------------------------------------------------------
 
@@ -1030,20 +1222,30 @@ def _format_seconds(value: float) -> str:
 
 
 def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
-    """Construit la liste dédupliquée d'inputs et un mapping ``path → index``."""
+    """Construit la liste dédupliquée d'inputs et un mapping ``path → index``.
+
+    Les médias des séquences imbriquées sont inclus : un fichier utilisé à
+    la fois dans la séquence racine et dans une séquence imbriquée n'est
+    ouvert qu'une fois. Une couche imbriquée n'a pas de fichier propre.
+    """
     input_paths: list[str] = []
     path_to_index: dict[str, int] = {}
-    for layer in list(plan.video_layers) + list(plan.audio_layers):
-        if layer.source_path in path_to_index:
-            continue
-        path_to_index[layer.source_path] = len(input_paths)
-        input_paths.append(layer.source_path)
-    for layer in getattr(plan, "graphics_layers", ()):
-        path = _graphic_input_path(layer.graphic)
-        if not path or path in path_to_index:
-            continue
-        path_to_index[path] = len(input_paths)
-        input_paths.append(path)
+    plans = [plan] + [entry.plan for entry in getattr(plan, "nested_sequences", ()) or ()]
+    for current in plans:
+        for layer in list(current.video_layers) + list(current.audio_layers):
+            if getattr(layer, "nested_key", ""):
+                continue
+            if layer.source_path in path_to_index:
+                continue
+            path_to_index[layer.source_path] = len(input_paths)
+            input_paths.append(layer.source_path)
+    for current in plans:
+        for layer in getattr(current, "graphics_layers", ()):
+            path = _graphic_input_path(layer.graphic)
+            if not path or path in path_to_index:
+                continue
+            path_to_index[path] = len(input_paths)
+            input_paths.append(path)
     return input_paths, path_to_index
 
 
@@ -1062,8 +1264,11 @@ def _graphic_input_path(graphic: object) -> str:
     return ""
 
 
-def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[str, RenderLayer]]:
+def _build_transition_layers(
+    parts: list[str], plan: RenderPlan, prefix: str = ""
+) -> list[tuple[str, RenderLayer]]:
     """Remplace deux couches liées par leur flux ``xfade`` FFmpeg."""
+    p = prefix
     by_id = {layer.clip_id: (index, layer) for index, layer in enumerate(plan.video_layers)}
     replacements: dict[int, tuple[str, RenderLayer]] = {}
     hidden: set[int] = set()
@@ -1078,11 +1283,11 @@ def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[s
             continue
         name = _ffmpeg_transition_name(transition)
         offset = max(0.0, from_layer.timeline_end - from_layer.timeline_start - transition.duration)
-        label = f"transition{transition_index}"
+        label = f"{p}transition{transition_index}"
         parts.append(
-            f"[v{from_index}]setpts=PTS-STARTPTS[ta{transition_index}];"
-            f"[v{to_index}]setpts=PTS-STARTPTS[tb{transition_index}];"
-            f"[ta{transition_index}][tb{transition_index}]"
+            f"[{p}v{from_index}]setpts=PTS-STARTPTS[{p}ta{transition_index}];"
+            f"[{p}v{to_index}]setpts=PTS-STARTPTS[{p}tb{transition_index}];"
+            f"[{p}ta{transition_index}][{p}tb{transition_index}]"
             f"xfade=transition={name}:duration={_format_seconds(transition.duration)}:"
             f"offset={_format_seconds(offset)},"
             f"setpts=PTS+{_format_seconds(from_layer.timeline_start)}/TB[{label}]"
@@ -1095,7 +1300,7 @@ def _build_transition_layers(parts: list[str], plan: RenderPlan) -> list[tuple[s
             result.append(replacements[index])
         if index in hidden:
             continue
-        result.append((f"v{index}", layer))
+        result.append((f"{p}v{index}", layer))
     return result
 
 
@@ -1159,10 +1364,14 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
 def _build_layer_filter(
     layer_index: int,
     layer: RenderLayer,
-    input_index: int,
+    input_index: int | None,
     width: int,
     height: int,
     fps: int,
+    *,
+    source: str | None = None,
+    label: str | None = None,
+    pad_color: str = "black",
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -1184,7 +1393,13 @@ def _build_layer_filter(
     Le temps utilisé dans les expressions est local au clip : après le
     ``setpts=PTS-STARTPTS``, les filtres ``scale`` et ``rotate``
     exposent la variable ``t`` (en secondes), qui repart donc de zéro.
+
+    ``source`` remplace le flux ``[N:v]`` d'un fichier par un label du
+    graphe (rendu d'une séquence imbriquée) ; ``pad_color`` permet alors
+    un cadrage transparent. ``label`` renomme la sortie (``vN`` par défaut).
     """
+    source_label = source if source is not None else f"{input_index}:v"
+    output_label = label if label is not None else f"v{layer_index}"
     source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
@@ -1214,7 +1429,7 @@ def _build_layer_filter(
     time_remapping_filter = _build_time_remapping_video_filter(layer)
 
     parts = [
-        f"[{input_index}:v]",
+        f"[{source_label}]",
         f"trim=start={source_in}:end={source_out},",
         f"setpts=PTS-STARTPTS,",
     ]
@@ -1224,7 +1439,7 @@ def _build_layer_filter(
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         parts.append(f"{time_remapping_filter},")
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
-        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
+        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
         parts.append(f"fps={fps},")
         if effect_filters:
             parts.append(f"{effect_filters},")
@@ -1232,13 +1447,13 @@ def _build_layer_filter(
             parts.append(f"{color_grade_filters},")
         parts.append(f"{','.join(compositing_filters)},")
         parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
+        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
     else:
         # Cas normal: appliquer scale/pad/fps avant le time_remapping
         # Le time_remapping (reverse/speed) doit être appliqué AVANT setpts
         # pour que le décalage timeline soit correct
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
-        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,")
+        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
         parts.append(f"fps={fps},")
 
         # Appliquer le time_remapping (reverse/speed) ici
@@ -1254,7 +1469,7 @@ def _build_layer_filter(
             parts.append(f"{color_grade_filters},")
         parts.append(f"{','.join(compositing_filters)},")
         parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[v{layer_index}]")
+        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
 
     return "".join(parts)
 
@@ -1623,6 +1838,8 @@ def _build_graphic_layer_filter(
     width: int,
     height: int,
     fps: int,
+    *,
+    label: str | None = None,
 ) -> str:
     """Construit le flux RGBA d'un texte, rectangle, aplat ou image."""
     from .graphics import GraphicType
@@ -1682,7 +1899,7 @@ def _build_graphic_layer_filter(
     filters.append(
         f"setpts=PTS+{_format_seconds(layer.timeline_start)}/TB"
     )
-    return prefix + ",".join(filters) + f"[g{layer_index}]"
+    return prefix + ",".join(filters) + f"[{label or f'g{layer_index}'}]"
 
 
 def _build_overlay_args(
@@ -1734,8 +1951,11 @@ def _build_overlay_args(
 def _build_audio_filter(
     audio_index: int,
     layer: AudioLayer,
-    input_index: int,
+    input_index: int | None,
     timeline_duration: float,
+    *,
+    source: str | None = None,
+    label: str | None = None,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche audio.
 
@@ -1824,7 +2044,9 @@ def _build_audio_filter(
         steps.append(_build_pan_filter(layer.total_pan))
 
     steps.append(f"asetpts=PTS+{timeline_start}/TB")
-    return f"[{input_index}:a]" + ",".join(steps) + f"[a{audio_index}]"
+    source_label = source if source is not None else f"{input_index}:a"
+    output_label = label if label is not None else f"a{audio_index}"
+    return f"[{source_label}]" + ",".join(steps) + f"[{output_label}]"
 
 
 def _build_track_volume_envelope(
@@ -1906,7 +2128,7 @@ def _build_track_volume_envelope(
     )
 
 
-def _build_ducking_chain(sidechain) -> str:
+def _build_ducking_chain(sidechain, voice_label: str | None = None) -> str:
     """Construit le filtre ``sidechaincompress`` pour un ducking.
 
     La couche musique est passée via ``[aN]`` au niveau de
@@ -1926,7 +2148,8 @@ def _build_ducking_chain(sidechain) -> str:
     from .audio_automation import DuckingConfig
 
     config = getattr(sidechain, "config", None) or DuckingConfig()
-    voice_label = getattr(sidechain, "_voice_mix_label", "voice")
+    if voice_label is None:
+        voice_label = getattr(sidechain, "_voice_mix_label", "voice")
     threshold = _format_db(float(config.threshold_db))
     ratio = _format_seconds(float(config.ratio))
     attack = _format_seconds(float(config.attack_seconds))

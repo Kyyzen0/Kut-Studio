@@ -93,6 +93,27 @@ class TimelineClipView:
     # sous-titres.
     text_style: object = None
     graphic: object = None
+    # --- Séquence imbriquée ---
+    # Séquence référencée (vide pour un clip média).
+    sequence_id: str = ""
+    # ``""`` (normal), ``"missing"`` (séquence supprimée : clip hors
+    # ligne), ``"cycle"`` (imbrication circulaire) ou ``"overflow"`` (le
+    # clip dépasse la fin de sa séquence source).
+    nested_status: str = ""
+    # Instant (temps timeline) à partir duquel le clip dépasse sa source ;
+    # ``None`` s'il n'y a pas de débordement.
+    nested_overflow_start: float | None = None
+
+    @property
+    def is_nested(self) -> bool:
+        return bool(self.sequence_id)
+
+
+NESTED_CLIP_COLOR = "#C9A227"
+"""Couleur des clips imbriqués : distincte de la palette des médias."""
+
+BROKEN_NESTED_CLIP_COLOR = "#B5474B"
+"""Couleur d'un clip imbriqué hors ligne ou circulaire."""
 
 
 def color_key_for_clip(clip: Clip) -> str:
@@ -112,8 +133,29 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
     """
     asset_paths = {asset.id: asset.path for asset in project.media_assets}
     views: list[TimelineClipView] = []
+    cycles = None
     for track_index, track in enumerate(project.tracks):
         for clip in track.clips:
+            label = clip.label
+            color = color_key_for_clip(clip)
+            status = ""
+            overflow_start = None
+            if clip.sequence_id:
+                from .sequences import find_cycles, nested_clip_status
+
+                if cycles is None:
+                    cycles = find_cycles(project)
+                status = nested_clip_status(project, clip, cycles=cycles)
+                sequence = project.get_sequence(clip.sequence_id)
+                # Le nom affiché suit la séquence : la renommer renomme
+                # toutes ses occurrences.
+                label = sequence.name if sequence is not None else (clip.label or clip.sequence_id)
+                color = (
+                    BROKEN_NESTED_CLIP_COLOR if status in {"missing", "cycle"}
+                    else NESTED_CLIP_COLOR
+                )
+                if status == "overflow" and sequence is not None:
+                    overflow_start = _overflow_start(clip, sequence.duration)
             views.append(
                 TimelineClipView(
                     id=clip.id,
@@ -121,10 +163,10 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     track_index=track_index,
                     start=clip.timeline_start,
                     end=clip.timeline_start + clip.duration,
-                    label=clip.label,
+                    label=label,
                     text=clip.text,
                     source_path=asset_paths.get(clip.asset_id, ""),
-                    color_key=color_key_for_clip(clip),
+                    color_key=color,
                     track_type=track.type,
                     enabled=clip.enabled,
                     keyframes=tuple(clip.transform_keyframes),
@@ -142,9 +184,24 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                         else None
                     ),
                     graphic=getattr(clip, "graphic", None),
+                    sequence_id=clip.sequence_id,
+                    nested_status=status,
+                    nested_overflow_start=overflow_start,
                 )
             )
     return views
+
+
+def _overflow_start(clip: Clip, source_duration: float) -> float | None:
+    """Instant timeline où ``clip`` cesse d'avoir une source (vitesse incluse)."""
+    remapping = clip.time_remapping
+    # En arrêt sur image ou en reverse, la zone sans source n'est pas une
+    # fin de clip : seul le badge d'état la signale.
+    if remapping.reverse or getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
+        return None
+    speed = float(remapping.speed) or 1.0
+    local = (source_duration - clip.source_in) / speed
+    return clip.timeline_start + max(0.0, local)
 
 
 def build_export_clips(project: Project) -> list[dict]:

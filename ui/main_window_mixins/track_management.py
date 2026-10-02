@@ -81,7 +81,7 @@ class TrackManagementMixin:
             "audio": "tracks.add_audio_long",
             "subtitle": "tracks.add_subtitle_long",
         }
-        self.history.record(self.project, i18n.translate(label_keys[track.type]))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate(label_keys[track.type])))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -91,7 +91,7 @@ class TrackManagementMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
             return
-        self.history.record(self.project, i18n.translate("tracks.remove"))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.remove")))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -103,7 +103,7 @@ class TrackManagementMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.warning(self, i18n.translate("prefs.title"), str(exc))
             return
-        self.history.record(self.project, i18n.translate("tracks.rename"))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.rename")))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -113,7 +113,7 @@ class TrackManagementMixin:
         except KeyError as exc:
             print(f"[MainWindow] lock : {exc}")
             return
-        self.history.record(self.project, i18n.translate("tracks.toggle_lock"))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_lock")))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -123,7 +123,7 @@ class TrackManagementMixin:
         except KeyError as exc:
             print(f"[MainWindow] visible : {exc}")
             return
-        self.history.record(self.project, i18n.translate("tracks.toggle_visible"))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_visible")))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -137,7 +137,7 @@ class TrackManagementMixin:
         except KeyError as exc:
             print(f"[MainWindow] muted : {exc}")
             return
-        self.history.record(self.project, i18n.translate("tracks.toggle_mute"))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate("tracks.toggle_mute")))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -165,7 +165,7 @@ class TrackManagementMixin:
         label_key = (
             "tracks.move_up" if delta < 0 else "tracks.move_down"
         )
-        self.history.record(self.project, i18n.translate(label_key))
+        self.history.record(self.project, self._with_nested_clamp(i18n.translate(label_key)))
         self._refresh_after_track_change()
         self._mark_dirty()
 

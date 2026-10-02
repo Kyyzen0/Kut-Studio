@@ -39,6 +39,7 @@ from ui.timeline_panel_mixins.selection import SelectionMixin
 from ui.timeline_panel_mixins.drag_tools import DragToolsMixin
 from ui.timeline_panel_mixins.previews import PreviewsMixin
 from ui.timeline_panel_mixins.keyframes import KeyframesTimelineMixin
+from ui.timeline_panel_mixins.sequences import SequencesTimelineMixin
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.common import (  # noqa: F401 - réexports de compatibilité
     _COLLAPSED_HEIGHT,
@@ -60,7 +61,7 @@ from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 # ---------------------------------------------------------------------------
 
 
-class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, PreviewsMixin, KeyframesTimelineMixin, QWidget):
+class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, QWidget):
     """Timeline de Kut-Studio, pilotée par un ``Project``.
 
     Le panneau orchestre :
@@ -116,6 +117,14 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     record_requested = Signal(bool)
     keyframes_selected = Signal(object, bool)
     keyframes_move_requested = Signal(object, float)
+    # --- Séquences imbriquées ---
+    nested_open_requested = Signal(str)          # double-clic / menu : ouvrir le clip imbriqué
+    nest_selection_requested = Signal()          # « Créer une séquence à partir de la sélection »
+    sequence_open_requested = Signal(str)        # fil d'Ariane / menu des séquences
+    sequence_back_requested = Signal()
+    sequence_forward_requested = Signal()
+    sequence_parent_requested = Signal()
+    sequence_dropped = Signal(str, str, float)   # séquence glissée : (séquence, piste, temps)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -195,6 +204,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        outer.addWidget(self._build_sequence_bar())
         outer.addWidget(self._build_toolbar())
         self.ruler = TimelineRuler(self)
         self.ruler.seek_requested.connect(self.seek_requested.emit)

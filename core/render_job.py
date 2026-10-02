@@ -197,6 +197,10 @@ class RenderJob:
     """Raison d'un repli automatique sur le CPU, s'il a eu lieu."""
     diagnostics: str = ""
     """Fin de la sortie d'erreur FFmpeg d'un essai matériel échoué (support)."""
+    sequence_id: str = ""
+    """Séquence rendue (vide : séquence active de l'instantané, anciens jobs)."""
+    sequence_name: str = ""
+    """Nom de la séquence au moment de l'ajout (affichage)."""
 
     # -- Création -------------------------------------------------------------------
 
@@ -213,6 +217,8 @@ class RenderJob:
         duration_seconds: float = 0.0,
         name: str | None = None,
         now: float | None = None,
+        sequence_id: str = "",
+        sequence_name: str = "",
     ) -> RenderJob:
         """Crée un job ``WAITING`` à partir d'un preset."""
         stamp = time.time() if now is None else now
@@ -236,6 +242,8 @@ class RenderJob:
             master_muted=bool(master_muted),
             duration_seconds=float(duration_seconds),
             created_at=stamp,
+            sequence_id=str(sequence_id or ""),
+            sequence_name=str(sequence_name or ""),
         )
 
     # -- Lecture ----------------------------------------------------------------------
@@ -397,6 +405,8 @@ class RenderJob:
             "hardware_used": self.hardware_used,
             "fallback_reason": self.fallback_reason,
             "diagnostics": self.diagnostics,
+            "sequence_id": self.sequence_id,
+            "sequence_name": self.sequence_name,
         }
 
     @classmethod
@@ -460,6 +470,8 @@ class RenderJob:
             ),
             fallback_reason=str(data.get("fallback_reason") or ""),
             diagnostics=str(data.get("diagnostics") or "")[-800:],
+            sequence_id=str(data.get("sequence_id") or ""),
+            sequence_name=str(data.get("sequence_name") or ""),
         )
 
 

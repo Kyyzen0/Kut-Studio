@@ -82,8 +82,8 @@ def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
     save_project(project, str(target))
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    assert raw["version"] == CURRENT_VERSION == 13
-    assert raw["project"]["tracks"][0]["clips"][0]["graphic"]["text"] == "Un vrai titre"
+    assert raw["version"] == CURRENT_VERSION == 14
+    assert raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["graphic"]["text"] == "Un vrai titre"
     loaded = load_project(str(target))
     loaded_graphic = loaded.tracks[0].clips[0].graphic
     assert isinstance(loaded_graphic, GraphicOverlay)
@@ -91,7 +91,7 @@ def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
 
     # Un fichier v11 n'a pas de clé ``graphic`` et doit rester ouvrable.
     raw["version"] = 11
-    raw["project"]["tracks"][0]["clips"][0].pop("graphic")
+    raw["project"]["sequences"][0]["tracks"][0]["clips"][0].pop("graphic")
     legacy = tmp_path / "legacy.kut"
     legacy.write_text(json.dumps(raw), encoding="utf-8")
     assert load_project(str(legacy)).tracks[0].clips[0].graphic is None

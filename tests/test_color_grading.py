@@ -606,7 +606,7 @@ def test_legacy_project_without_color_grade_loads(tmp_path) -> None:
     import json
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    for track in raw["project"]["tracks"]:
+    for track in raw["project"]["sequences"][0]["tracks"]:
         for clip in track["clips"]:
             clip.pop("color_grade", None)
     target.write_text(json.dumps(raw), encoding="utf-8")
@@ -623,7 +623,7 @@ def test_invalid_color_grade_entry_is_dropped(tmp_path) -> None:
     import json
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    raw["project"]["tracks"][0]["clips"][0]["color_grade"] = {
+    raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["color_grade"] = {
         "exposure": 9999.0,  # hors bornes
         "contrast": 0.5,
         "saturation": 1.0,

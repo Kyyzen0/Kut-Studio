@@ -303,8 +303,8 @@ def test_animation_roundtrips_through_a_kut_file(tmp_path):
     path = tmp_path / "anim.kut"
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
-    stored = raw["project"]["tracks"][0]["clips"][0]["transform_keyframes"]
-    assert raw["version"] == 13
+    stored = raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["transform_keyframes"]
+    assert raw["version"] == 14
     assert {"interpolation", "tangent_mode", "id"} <= set(stored[0])
     reloaded = load_project(str(path))
     clip, original = _clip(reloaded), _clip(project)
@@ -321,7 +321,7 @@ def _legacy_file(tmp_path, keyframes, transform=None):
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw["version"] = 12
-    clip = raw["project"]["tracks"][0]["clips"][0]
+    clip = raw["project"]["sequences"][0]["tracks"][0]["clips"][0]
     clip["transform"] = transform or {"position_x": 0, "position_y": 0, "scale": 1.0, "rotation": 0, "opacity": 1.0}
     clip["transform_keyframes"] = keyframes
     path.write_text(json.dumps(raw), encoding="utf-8")

@@ -153,6 +153,8 @@ def fingerprint_plan(plan, **kwargs):
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
                 "effects": _effects_key(getattr(layer, "effects", ())),
                 "grade": _grade_key(getattr(layer, "color_grade", None)),
+                "compositing": repr(getattr(layer, "compositing", None)),
+                "nested": getattr(layer, "nested_key", ""),
             }
             for layer in getattr(plan, "video_layers", ())
         ],
@@ -164,6 +166,7 @@ def fingerprint_plan(plan, **kwargs):
                 "timeline_start": layer.timeline_start,
                 "gain_db": getattr(layer, "gain_db", 0.0),
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
+                "nested": getattr(layer, "nested_key", ""),
             }
             for layer in getattr(plan, "audio_layers", ())
         ],
@@ -175,7 +178,7 @@ def fingerprint_plan(plan, **kwargs):
             {
                 "from": t.from_clip_id,
                 "to": t.to_clip_id,
-                "type": getattr(t.transition_type, "value", str(t.transition_type)),
+                "type": getattr(getattr(t, "type", None), "value", str(getattr(t, "type", ""))),
                 "duration": float(t.duration),
             }
             for t in getattr(plan, "transitions", ())
@@ -190,6 +193,22 @@ def fingerprint_plan(plan, **kwargs):
                 "keyframes": repr(layer.transform_keyframes),
             }
             for layer in getattr(plan, "graphics_layers", ())
+        ],
+        # Séquences imbriquées : l'empreinte d'un sous-plan ne couvre que la
+        # plage qu'il lit dans ce segment. Modifier « Intro » change donc les
+        # segments parents qui la montrent, et eux seuls.
+        "nested": [
+            {
+                "key": entry.key,
+                "plan": fingerprint_plan(
+                    entry.plan,
+                    width=entry.plan.width,
+                    height=entry.plan.height,
+                    fps=entry.plan.fps,
+                    quality=quality,
+                ),
+            }
+            for entry in getattr(plan, "nested_sequences", ()) or ()
         ],
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)

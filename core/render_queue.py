@@ -189,8 +189,13 @@ class RenderQueue(QObject):
         master_gain_db: float = 0.0,
         master_muted: bool = False,
         name: str | None = None,
+        sequence_id: str | None = None,
     ) -> RenderJob:
         """Ajoute un export en attente et retourne son job.
+
+        ``sequence_id`` choisit la séquence rendue (la séquence active par
+        défaut). L'instantané contient tout le projet : les séquences
+        imbriquées sont donc rendues telles qu'elles étaient à l'ajout.
 
         Valide tout de suite ce qui peut l'être (dossier de sortie, média
         exportable, sortie non déjà réservée) pour que l'utilisateur
@@ -211,9 +216,17 @@ class RenderQueue(QObject):
                 raise ValueError(
                     f"Un export de la file écrit déjà dans ce fichier : {output.name}"
                 )
+        sequence = (
+            project.get_sequence(sequence_id) if sequence_id else project.active_sequence
+        )
+        if sequence is None:
+            raise ValueError(f"Séquence introuvable : {sequence_id}")
         try:
             plan = build_render_plan(
-                project, master_gain_db=master_gain_db, master_muted=master_muted
+                project,
+                master_gain_db=master_gain_db,
+                master_muted=master_muted,
+                sequence_id=sequence.id,
             )
         except KeyError as error:
             raise ValueError(f"Média introuvable dans le projet : {error}") from error
@@ -228,6 +241,8 @@ class RenderQueue(QObject):
             master_muted=master_muted,
             duration_seconds=plan.duration,
             name=name,
+            sequence_id=sequence.id,
+            sequence_name=sequence.name,
         )
         job.snapshot_path = str(self._store.write_snapshot(job.id, project))
         self._jobs.append(job)
@@ -453,10 +468,14 @@ class RenderQueue(QObject):
             return
         try:
             project = load_project(job.snapshot_path)
+            # Un job antérieur au multi-séquence (``sequence_id`` vide) rend la
+            # séquence active de son instantané, comme avant.
+            target = job.sequence_id if project.get_sequence(job.sequence_id) else None
             plan = build_render_plan(
                 project,
                 master_gain_db=job.master_gain_db,
                 master_muted=job.master_muted,
+                sequence_id=target,
             )
             self._partial = partial_path_for(job)
             request = job.to_request(plan, self._partial)

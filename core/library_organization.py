@@ -700,7 +700,7 @@ class LibraryOrganization:
         self.project.library_assignments.pop(asset_id, None)
         # Nettoyage des clips orphelins (optionnel)
         if not keep_orphan_clips:
-            for track in self.project.tracks:
+            for track in self.project.all_tracks():
                 track.clips = [c for c in track.clips if c.asset_id != asset_id]
 
     # ------------------------------------------------------------------
@@ -779,7 +779,7 @@ def compute_usage(project: Project, asset_id: str) -> AssetUsage:
     usage = AssetUsage(asset_id=asset_id)
     seen_clip_ids: set[str] = set()
     seen_track_ids: set[str] = set()
-    for track in project.tracks:
+    for track in project.all_tracks():
         for clip in track.clips:
             if clip.asset_id != asset_id:
                 continue
@@ -805,7 +805,7 @@ def usage_map(project: Project) -> Mapping[str, AssetUsage]:
     }
     seen_clip_ids: dict[str, set[str]] = {asset.id: set() for asset in project.media_assets}
     seen_track_ids: dict[str, set[str]] = {asset.id: set() for asset in project.media_assets}
-    for track in project.tracks:
+    for track in project.all_tracks():
         for clip in track.clips:
             usage = usages.get(clip.asset_id)
             if usage is None:
