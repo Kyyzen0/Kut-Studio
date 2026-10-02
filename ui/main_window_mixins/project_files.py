@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
+from core.export_paths import default_export_directory, export_file_name
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
 from core.render_plan import RenderPlan, build_render_plan
@@ -94,8 +95,9 @@ class ProjectFilesMixin:
         if self.current_project_path is not None:
             default_path = self.current_project_path
         else:
-            safe_name = (self.project.name or "projet").strip() or "projet"
-            default_path = os.path.join(os.path.expanduser("~"), f"{safe_name}.kut")
+            default_path = os.path.join(
+                os.path.expanduser("~"), export_file_name(self.project.name, "kut", fallback="projet")
+            )
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
             "Enregistrer le projet sous...",
@@ -243,13 +245,12 @@ class ProjectFilesMixin:
         return job
 
     def _ask_export_path(self, spec) -> str:
-        default_dir = os.path.expanduser("~/Movies")
-        os.makedirs(default_dir, exist_ok=True)
-        name = (getattr(self.project, "name", "") or "kut-studio-export").strip()
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
             i18n.translate("render.export.save_title"),
-            os.path.join(default_dir, f"{name}.{spec.container}"),
+            os.path.join(
+                default_export_directory(), export_file_name(getattr(self.project, "name", ""), spec.container)
+            ),
             f"Vidéos (*.{spec.container})",
         )
         return path
