@@ -287,6 +287,18 @@ def trim_clip_right(
     return clip
 
 
+def _fit_animation_to_duration(clip: Clip) -> None:
+    """Garde l'invariant « aucun keyframe après la fin du clip » après un changement de durée.
+
+    Changer la vitesse ou la durée d'un arrêt sur image raccourcit le clip sans toucher à ses
+    keyframes : l'aperçu et l'inspecteur ignoraient alors ceux d'après la fin, le Graph Editor et l'export
+    les gardaient, et une même image avait deux valeurs. C'est un trim droit pour l'animation : les
+    keyframes au-delà sont découpés de façon que l'animation visible ne bouge pas (sans effet si rien ne
+    dépasse).
+    """
+    apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=float(clip.duration))
+
+
 def _set_freeze_duration(clip: Clip, duration: float) -> None:
     """Nouvelle durée de timeline d'un arrêt sur image (``TimeRemapping`` est immuable)."""
     from dataclasses import replace
@@ -1175,6 +1187,7 @@ def set_clip_speed(
         raise ValueError(f"Vitesse invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1270,6 +1283,7 @@ def set_clip_freeze_frame(
         raise ValueError(f"Arrêt sur image invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1290,6 +1304,7 @@ def remove_clip_freeze_frame(
     
     # Réinitialiser le time remapping
     clip.time_remapping = TimeRemapping.default()
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1338,6 +1353,7 @@ def set_clip_freeze_duration(
         raise ValueError(f"Durée d'arrêt sur image invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    _fit_animation_to_duration(clip)
     return clip
 
 
@@ -1357,4 +1373,5 @@ def reset_clip_time_remapping(
     clip = track.clips[index]
     
     clip.time_remapping = TimeRemapping.default()
+    _fit_animation_to_duration(clip)
     return clip
