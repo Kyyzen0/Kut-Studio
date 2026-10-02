@@ -59,6 +59,13 @@ class TimelineEditingMixin:
         self.timeline_panel.select_clip(new_clip.id)
         self._mark_dirty()
 
+    def _report_edit_refused(self, reason: object) -> None:
+        """Dit à l'utilisateur qu'une édition est refusée (barre d'état) : ``print`` ne se voit pas
+        dans l'application empaquetée, et l'action semblait alors simplement ne rien faire."""
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            bar.showMessage(str(reason), 5000)
+
     def ripple_delete_selected_clip(self) -> None:
         """Supprime le clip sélectionné et ramène à gauche les clips suivants."""
         clip_id = self.timeline_panel.selected_clip_id
@@ -72,6 +79,9 @@ class TimelineEditingMixin:
                 "Suppression impossible",
                 f"Impossible de supprimer le clip :\n\n{exc}",
             )
+            return
+        except ValueError as exc:  # piste verrouillée : refus normal, pas une panne
+            self._report_edit_refused(exc)
             return
         self._record_history("Supprimer avec ripple")
         self.timeline_panel.selected_clip_id = None
@@ -123,6 +133,9 @@ class TimelineEditingMixin:
         try:
             set_clip_enabled(self.project, clip_id, not was_enabled)
         except KeyError:
+            return
+        except ValueError as exc:  # piste verrouillée
+            self._report_edit_refused(exc)
             return
         self._record_history(
             "Désactiver le clip" if was_enabled else "Activer le clip"
@@ -193,7 +206,7 @@ class TimelineEditingMixin:
         try:
             cut_clip(self.project, clip_id, playhead_pos)
         except (KeyError, ValueError) as exc:
-            print(f"[MainWindow] cut refusé : {exc}")
+            self._report_edit_refused(exc)
             return
         self._record_history("Couper le clip")
         self.timeline_panel.set_project(self.project)

@@ -372,20 +372,36 @@ def _split_fades(clip: Clip, cut_local_time: float) -> tuple[tuple[float, float]
     )
 
 
+def _free_clip_id(project: Project, prefix: str, first: int = 2) -> str:
+    """Premier ``prefix + n`` (n >= ``first``) libre dans **toutes** les séquences du projet.
+
+    Chercher seulement dans la séquence active laissait deux clips de même identifiant dans deux
+    séquences (par exemple après « créer une séquence à partir de la sélection »), ce qui rend
+    ambigu tout ce qui retrouve un clip par son id (tracking, liaisons, parentage).
+    """
+    taken = {clip.id for track in project.all_tracks() for clip in track.clips}
+    number = first
+    while f"{prefix}{number}" in taken:
+        number += 1
+    return f"{prefix}{number}"
+
+
 def cut_clip(
     project: Project, clip_id: str, cut_timeline_position: float
 ) -> tuple[Clip, Clip]:
     """Coupe un clip en deux à la position de timeline indiquée.
 
     Le clip de gauche conserve l'identifiant d'origine ; le clip de
-    droite reçoit l'identifiant ``"{clip_id}-split-2"``. Les deux clips
+    droite reçoit ``"{clip_id}-split-2"``, ou le premier suffixe libre
+    (``-split-3``…) si ce nom est déjà pris dans une séquence du projet :
+    couper deux fois la moitié gauche est donc permis. Les deux clips
     restent sur la même piste et la somme de leurs durées est égale à
     la durée d'origine du clip.
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
         ValueError: si la position n'est pas strictement à l'intérieur
-            du clip, ou si l'identifiant généré est déjà utilisé.
+            du clip.
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
@@ -402,14 +418,7 @@ def cut_clip(
             f"[{clip.timeline_start}, {timeline_end}]."
         )
 
-    right_id = f"{clip_id}-split-2"
-    for existing_track in project.tracks:
-        for existing_clip in existing_track.clips:
-            if existing_clip.id == right_id:
-                raise ValueError(
-                    f"Impossible de couper : l'identifiant '{right_id}' "
-                    f"existe déjà dans le projet."
-                )
+    right_id = _free_clip_id(project, f"{clip_id}-split-")
 
     cut_local_time = cut_timeline_position - clip.timeline_start
     left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
@@ -812,8 +821,14 @@ def set_clip_enabled(
     clip_id: str,
     enabled: bool,
 ) -> Clip:
-    """Active ou désactive ``clip_id`` et retourne le clip modifié."""
+    """Active ou désactive ``clip_id`` et retourne le clip modifié.
+
+    Raises:
+        KeyError: si ``clip_id`` n'existe pas.
+        ValueError: si la piste du clip est verrouillée.
+    """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     clip.enabled = bool(enabled)
     return clip
@@ -822,10 +837,11 @@ def set_clip_enabled(
 def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     """Supprime ``clip_id`` et ramène à gauche tous les clips suivants.
 
-    Tous les clips (vidéo, audio, sous-titres) dont le début est
-    strictement postérieur à la fin du clip supprimé sont déplacés
-    vers la gauche de ``delta``, où ``delta`` est la durée du clip
-    supprimé. Aucun clip ne se retrouve avec une position négative.
+    Tous les clips (vidéo, audio, sous-titres) des pistes **non verrouillées**
+    dont le début est postérieur ou égal à la fin du clip supprimé sont
+    déplacés vers la gauche de ``delta``, où ``delta`` est la durée du clip
+    supprimé. Aucun clip ne se retrouve avec une position négative. Les
+    transitions qui touchaient le clip supprimé sont retirées avec lui.
 
     Returns:
         Liste des identifiants effectivement déplacés.
@@ -835,10 +851,13 @@ def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     deleted_clip = track.clips.pop(index)
+    remove_transitions_for_clips(project, {clip_id})
     delta = float(deleted_clip.duration)
     boundary = float(deleted_clip.timeline_start + deleted_clip.duration)
     moved: list[str] = []
     for other_track in project.tracks:
+        if getattr(other_track, "locked", False):
+            continue  # une piste verrouillée ne bouge pas, même en ripple
         for other in list(other_track.clips):
             if other is deleted_clip:
                 continue

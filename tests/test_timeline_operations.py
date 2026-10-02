@@ -528,7 +528,9 @@ def test_cut_clip_rejects_cut_at_start_or_end() -> None:
         cut_clip(project, "v1-a", 4.0)  # à la fin exacte
 
 
-def test_cut_clip_rejects_when_generated_id_already_exists() -> None:
+def test_cut_clip_takes_the_next_free_id_when_the_generated_one_is_taken() -> None:
+    """Avant : ``ValueError`` « existe déjà » — couper deux fois la moitié gauche était impossible, et
+    l'interface avalait l'erreur : rien ne se passait."""
     project = _make_project()
     project.tracks[1].clips.append(
         Clip(
@@ -540,8 +542,61 @@ def test_cut_clip_rejects_when_generated_id_already_exists() -> None:
             source_out=1.0,
         )
     )
-    with pytest.raises(ValueError, match="split-2"):
-        cut_clip(project, "v1-a", 2.0)
+    _left, right = cut_clip(project, "v1-a", 2.0)
+    assert right.id == "v1-a-split-3"
+
+
+def test_cutting_the_left_half_twice_gives_distinct_ids() -> None:
+    project = _make_project()
+    left, first_right = cut_clip(project, "v1-a", 3.0)
+    left, second_right = cut_clip(project, "v1-a", 1.0)
+    assert left.id == "v1-a"
+    assert (first_right.id, second_right.id) == ("v1-a-split-2", "v1-a-split-3")
+
+
+def test_split_ids_are_unique_across_every_sequence() -> None:
+    """Un clip d'une autre séquence peut déjà porter le nom : l'unicité vaut pour tout le projet."""
+    from core.sequences import create_sequence
+
+    project = _make_project()
+    other = create_sequence(project, "Autre")
+    other.tracks[0].clips.append(
+        Clip(id="v1-a-split-2", asset_id="asset-a", track_id=other.tracks[0].id,
+             timeline_start=0.0, source_in=0.0, source_out=1.0)
+    )
+    _left, right = cut_clip(project, "v1-a", 2.0)
+    ids = [c.id for track in project.all_tracks() for c in track.clips]
+    assert right.id == "v1-a-split-3" and len(ids) == len(set(ids))
+
+
+def test_ripple_delete_leaves_a_locked_track_where_it_is() -> None:
+    """Avant : le ripple décalait aussi les clips des pistes verrouillées (V2 : 8 s → 4 s)."""
+    project = _make_project()
+    locked = project.tracks[1]
+    locked.clips[0].timeline_start = 8.0
+    locked.locked = True
+    deleted = project.tracks[0].clips[0]                 # v1-a, 4 s
+    moved = ripple_delete_clip(project, deleted.id)
+    assert locked.clips[0].timeline_start == 8.0
+    assert locked.clips[0].id not in moved
+    assert project.tracks[0].clips[0].timeline_start == pytest.approx(0.0)   # v1-b est bien remonté
+
+
+def test_ripple_delete_removes_the_transitions_of_the_deleted_clip() -> None:
+    from core.transitions import Transition, TransitionType
+
+    project = _make_project()
+    project.transitions.append(Transition("t1", "v1-a", "v1-b", TransitionType.CROSSFADE, 0.5))
+    ripple_delete_clip(project, "v1-a")
+    assert project.transitions == []
+
+
+def test_a_locked_track_refuses_enable_and_disable() -> None:
+    project = _make_project()
+    project.tracks[0].locked = True
+    with pytest.raises(ValueError, match="verrouillée"):
+        set_clip_enabled(project, "v1-a", False)
+    assert project.tracks[0].clips[0].enabled
 
 
 def test_cut_clip_raises_for_unknown_clip() -> None:
