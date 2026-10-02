@@ -1,0 +1,99 @@
+{
+  "export": {
+    "export_chain10_ms": 653.1407079892233,
+    "export_chain1_ms": 144.9440830037929,
+    "export_chain3_ms": 276.9376249634661,
+    "export_instances6_ms": 514.7777919773944
+  },
+  "meta": {
+    "machine": "arm64",
+    "python": "3.14.7",
+    "system": "Darwin"
+  },
+  "navigation": {
+    "nest_selection_ms": 2.9837919864803553,
+    "open_and_return_ms": 11.553624994121492
+  },
+  "scenarios": {
+    "chain:1": {
+      "active_at_us": 15.041659353300929,
+      "filter_graph_ms": 0.039583013858646154,
+      "graph_kb": 1.7216796875,
+      "nested_compositions": 1.0,
+      "nested_instances": 1.0,
+      "render_plan_ms": 0.04416698357090354,
+      "segment_fingerprint_ms": 0.07708300836384296,
+      "segment_plan_ms": 0.04554097540676594
+    },
+    "chain:10": {
+      "active_at_us": 100.24084011092782,
+      "filter_graph_ms": 0.21191703854128718,
+      "graph_kb": 9.74609375,
+      "nested_compositions": 10.0,
+      "nested_instances": 1.0,
+      "render_plan_ms": 0.2911670017056167,
+      "segment_fingerprint_ms": 0.4643340362235904,
+      "segment_plan_ms": 0.29387499671429396
+    },
+    "chain:3": {
+      "active_at_us": 34.11083947867155,
+      "filter_graph_ms": 0.07779098814353347,
+      "graph_kb": 3.5048828125,
+      "nested_compositions": 3.0,
+      "nested_instances": 1.0,
+      "render_plan_ms": 0.09212503209710121,
+      "segment_fingerprint_ms": 0.16708398470655084,
+      "segment_plan_ms": 0.10237499373033643
+    },
+    "heavy:2000": {
+      "active_at_us": 22.71750010550022,
+      "filter_graph_ms": 46.15995800122619,
+      "graph_kb": 2147.2939453125,
+      "nested_compositions": 1.0,
+      "nested_instances": 3.0,
+      "render_plan_ms": 31.455541029572487,
+      "segment_fingerprint_ms": 4.568833042867482,
+      "segment_plan_ms": 0.09995896834880114
+    },
+    "heavy:500": {
+      "active_at_us": 22.479159524664283,
+      "filter_graph_ms": 11.476874991785735,
+      "graph_kb": 532.697265625,
+      "nested_compositions": 1.0,
+      "nested_instances": 3.0,
+      "render_plan_ms": 7.71270802943036,
+      "segment_fingerprint_ms": 1.2866249890066683,
+      "segment_plan_ms": 0.09737501386553049
+    },
+    "instances:1": {
+      "active_at_us": 15.505000483244658,
+      "filter_graph_ms": 0.08612498641014099,
+      "graph_kb": 3.5732421875,
+      "nested_compositions": 1.0,
+      "nested_instances": 1.0,
+      "render_plan_ms": 0.07212499622255564,
+      "segment_fingerprint_ms": 0.12058299034833908,
+      "segment_plan_ms": 0.06745802238583565
+    },
+    "instances:20": {
+      "active_at_us": 15.217500040307641,
+      "filter_graph_ms": 0.34945900551974773,
+      "graph_kb": 15.7900390625,
+      "nested_compositions": 1.0,
+      "nested_instances": 20.0,
+      "render_plan_ms": 0.38350000977516174,
+      "segment_fingerprint_ms": 0.13699999544769526,
+      "segment_plan_ms": 0.0677089556120336
+    },
+    "instances:3": {
+      "active_at_us": 14.366660034283996,
+      "filter_graph_ms": 0.12150005204603076,
+      "graph_kb": 4.900390625,
+      "nested_compositions": 1.0,
+      "nested_instances": 3.0,
+      "render_plan_ms": 0.10920799104496837,
+      "segment_fingerprint_ms": 0.1127920113503933,
+      "segment_plan_ms": 0.062207982409745455
+    }
+  }
+}

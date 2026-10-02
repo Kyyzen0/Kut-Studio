@@ -575,7 +575,7 @@ def test_legacy_project_without_automation_loads_with_defaults(tmp_path) -> None
 
     raw = json.loads(target.read_text(encoding="utf-8"))
     # On retire les nouvelles clés au niveau piste et projet.
-    for track in raw["project"]["tracks"]:
+    for track in raw["project"]["sequences"][0]["tracks"]:
         track.pop("audio_role", None)
         track.pop("automation", None)
         track.pop("ducking_config", None)
@@ -597,7 +597,7 @@ def test_invalid_role_falls_back_to_other() -> None:
     target = "/tmp/invalid_role.kut"  # noqa: S108
     save_project(project, target)
     raw = json.loads(open(target, encoding="utf-8").read())
-    raw["project"]["tracks"][0]["audio_role"] = "alien_role"
+    raw["project"]["sequences"][0]["tracks"][0]["audio_role"] = "alien_role"
     open(target, "w", encoding="utf-8").write(json.dumps(raw))
 
     loaded = load_project(target)
@@ -663,7 +663,7 @@ def test_invalid_automation_point_is_dropped(tmp_path) -> None:
     project = _project_with_music_and_voice()
     save_project(project, str(tmp_path / "auto.kut"))
     raw = json.loads((tmp_path / "auto.kut").read_text(encoding="utf-8"))
-    raw["project"]["tracks"][0]["automation"] = [
+    raw["project"]["sequences"][0]["tracks"][0]["automation"] = [
         {"time_seconds": -1.0, "gain_db": -3.0, "fade_seconds": 0.0},  # invalide
         {"time_seconds": 0.5, "gain_db": -6.0, "fade_seconds": 0.5},  # OK
     ]

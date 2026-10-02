@@ -470,7 +470,7 @@ def test_legacy_project_without_audio_effects_loads(tmp_path) -> None:
     import json
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    for track in raw["project"]["tracks"]:
+    for track in raw["project"]["sequences"][0]["tracks"]:
         for clip in track["clips"]:
             clip.pop("audio_effects", None)
     target.write_text(json.dumps(raw), encoding="utf-8")
@@ -489,7 +489,7 @@ def test_invalid_audio_effect_entry_is_dropped(tmp_path) -> None:
     save_project(project, str(target))
     raw = json.loads(target.read_text(encoding="utf-8"))
     # On injecte un effet mal formé + un effet valide (id unique).
-    raw["project"]["tracks"][0]["clips"][0]["audio_effects"] = [
+    raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["audio_effects"] = [
         {"id": "valid", "type": "limiter", "enabled": True,
          "params": {"limit_db": -3.0}},
         {"id": "broken", "type": "alien_type"},  # type inconnu
@@ -514,7 +514,7 @@ def test_audio_effect_on_subtitle_track_not_serialized(tmp_path) -> None:
     save_project(project, str(target))
     raw = json.loads(target.read_text(encoding="utf-8"))
     # Ajout artificiel d'une piste sous-titre.
-    raw["project"]["tracks"].append({
+    raw["project"]["sequences"][0]["tracks"].append({
         "id": "S1",
         "name": "S1",
         "type": "subtitle",

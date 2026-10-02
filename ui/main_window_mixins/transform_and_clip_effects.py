@@ -255,6 +255,9 @@ class TransformEffectsMixin:
         self._transform_session_active = False
         label = getattr(self, "_transform_session_label", "Modifier le mouvement")
         self.history.record(self.project, label)
+        invalidate = getattr(self, "_invalidate_nested_dependents", None)
+        if callable(invalidate):
+            invalidate()  # les séquences qui montrent celle-ci
         self._refresh_undo_redo_state()
         self._reload_timeline_preserving_selection()
 

@@ -40,6 +40,7 @@ class ProjectFilesMixin:
         self._reset_selection_and_inspector()
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
+        self._reset_sequence_navigation()
         self._mark_clean()
 
     def save_project_file(self) -> None:
@@ -164,10 +165,13 @@ class ProjectFilesMixin:
         self._reset_selection_and_inspector()
         self.mixer_panel.set_project(self.project)
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
+        self._reset_sequence_navigation()
         if restored_autosave:
             self._refresh_undo_redo_state()
         else:
             self._mark_clean()
+        # Références cassées ou cycles : signalés, jamais corrigés en silence.
+        self._report_sequence_issues()
 
     def launch_export(self):
         """Export en une étape : choisir le fichier, ajouter à la file, lancer."""

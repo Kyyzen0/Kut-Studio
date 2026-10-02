@@ -91,9 +91,12 @@ def test_defaults_have_no_extra_shortcut_beyond_legacy_ones():
     }
     # Raccourcis ajoutés avec le moteur d'animation (aucun ne remplace un ancien).
     animation = {"Alt+K", "Alt+Shift+K", "Alt+J", "Alt+L", "Ctrl+Alt+A", "Ctrl+Alt+G"}
+    # Raccourcis ajoutés avec les séquences imbriquées (aucun ne remplace un ancien).
+    sequences = {"Ctrl+Shift+N", "Ctrl+Alt+Down", "Ctrl+Alt+Up", "Alt+Left", "Alt+Right"}
+    added = {normalize_sequence(s) for s in animation | sequences}
     assigned = {s for c in COMMANDS for s in shortcuts.sequences(c.id)}
-    assert assigned == legacy | {normalize_sequence(s) for s in animation}
-    assert not legacy & {normalize_sequence(s) for s in animation}
+    assert assigned == legacy | added
+    assert not legacy & added
 
 
 def test_defaults_are_valid_and_conflict_free():

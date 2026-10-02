@@ -37,6 +37,7 @@ class RailSection:
 # d'un monteur (médias d'abord, puis édition, puis enrichissement).
 DEFAULT_SECTIONS: tuple[RailSection, ...] = (
     RailSection("media", "Médias", IconName.MEDIA),
+    RailSection("sequences", "Séquences", IconName.FILM),
     RailSection("edit", "Éditer", IconName.SCISSORS),
     RailSection("effects", "Effets", IconName.EFFECTS),
     RailSection("color", "Couleur", IconName.COLOR),

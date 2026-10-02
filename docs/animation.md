@@ -187,5 +187,6 @@ du cache (comparaison d'identités) et reste sous 0,1 ms par image.
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.
-- Pas encore : tracking, flou de mouvement, parentage, séquences imbriquées,
-  expressions.
+- Pas encore : tracking, flou de mouvement, parentage, expressions. Les
+  séquences imbriquées sont en place (voir `docs/nested-sequences.md`) : un clip
+  imbriqué s'anime comme un autre clip, indépendamment des animations internes.
