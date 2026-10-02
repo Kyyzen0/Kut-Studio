@@ -2604,12 +2604,17 @@ def _escape_filter_path(path: str) -> str:
     FFmpeg sépare ses options sur ``:`` : le ``C:`` doit donc rester
     ``C\\:``. Les slashs sont acceptés par les trois plateformes et évitent
     aussi un double niveau d'échappement.
+
+    Une apostrophe ne peut pas être échappée *dans* une chaîne entre apostrophes :
+    ``\\'`` y est lu comme une apostrophe qui se ferme puis un caractère perdu, et
+    FFmpeg ouvrait ``Jean dArc/…``. Il faut fermer la chaîne, écrire l'apostrophe
+    échappée, puis la rouvrir (``'\\\\\\''``), comme en shell.
     """
     return (
         str(path)
         .replace("\\", "/")
         .replace(":", "\\:")
-        .replace("'", "\\'")
+        .replace("'", "'\\\\\\''")
     )
 
 
