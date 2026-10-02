@@ -131,6 +131,23 @@ def test_an_unwritable_log_folder_never_prevents_startup(tmp_path, monkeypatch):
     assert sys.excepthook is original
 
 
+def test_a_windowed_application_without_stderr_still_starts(tmp_path, monkeypatch):
+    """PyInstaller --windowed sous Windows : ``sys.stderr`` vaut ``None`` et le dossier peut être illisible."""
+    blocker = tmp_path / "fichier"
+    blocker.write_text("pas un dossier", encoding="utf-8")
+    _neutral_hooks(monkeypatch)
+    monkeypatch.setattr(sys, "stderr", None)
+    try:
+        assert install_diagnostics(blocker / "logs") is None
+        logging.getLogger("core.test").warning("sans destination : ne doit pas lever")
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError:
+            sys.excepthook(*sys.exc_info())
+    finally:
+        uninstall_diagnostics()
+
+
 def test_uninstall_without_install_is_harmless():
     assert diagnostics_log._installed is None
     uninstall_diagnostics()

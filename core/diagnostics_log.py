@@ -54,7 +54,8 @@ def _open_handler(log_dir: str | Path | None) -> tuple[logging.Handler, Path | N
         )
         return handler, path
     except OSError:
-        return logging.StreamHandler(sys.stderr), None
+        # Application graphique sous Windows : PyInstaller met ``sys.stderr`` à ``None``.
+        return (logging.StreamHandler(sys.stderr) if sys.stderr is not None else logging.NullHandler()), None
 
 
 def install_diagnostics(log_dir: str | Path | None = None) -> Path | None:
