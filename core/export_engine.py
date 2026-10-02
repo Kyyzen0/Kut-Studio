@@ -61,6 +61,7 @@ from .transitions import TransitionType
 from .time_remapping import (
     MAX_REVERSE_DURATION_SECONDS,
     FreezeFrameMode,
+    clamp_speed,
     get_ffmpeg_freeze_filter,
     get_ffmpeg_reverse_filter,
     get_ffmpeg_speed_filter,
@@ -1482,7 +1483,7 @@ def _build_layer_filter(
         )
 
     # Filtres de remappage temporel (freeze, reverse, speed)
-    time_remapping_filter = _build_time_remapping_video_filter(layer)
+    time_remapping_filter = _build_time_remapping_video_filter(layer, fps)
 
     parts = [
         f"[{source_label}]",
@@ -1490,48 +1491,44 @@ def _build_layer_filter(
         f"setpts=PTS-STARTPTS,",
     ]
 
-    # Freeze frame: appliqué immédiatement après trim/setpts
-    # car il sélectionne une frame spécifique
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        # Une seule image est retenue (avant tout traitement : un seul calcul),
+        # mise au format du cadre, puis tenue pendant la durée du freeze.
+        hold = float(layer.time_remapping.freeze_duration)
+        if hold <= 0.0:
+            hold = max(0.0, float(layer.timeline_end - layer.timeline_start))
+        hold = max(hold, 1.0 / float(fps))
         parts.append(f"{time_remapping_filter},")
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
+        parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
         parts.append(f"fps={fps},")
-        parts.append(apply_matte())
-        if flip_filters:
-            parts.append(f"{flip_filters},")
-        if effect_filters:
-            parts.append(f"{effect_filters},")
-        if color_grade_filters:
-            parts.append(f"{color_grade_filters},")
-        parts.append(f"{','.join(compositing_filters)},")
-        parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
+        parts.append(f"trim=duration={hold:.6f},")
+        parts.append("setpts=PTS-STARTPTS,")
     else:
-        # Cas normal: appliquer scale/pad/fps avant le time_remapping
-        # Le time_remapping (reverse/speed) doit être appliqué AVANT setpts
-        # pour que le décalage timeline soit correct
+        # Cas normal : scale/pad/fps avant le time_remapping, qui (reverse/speed)
+        # doit précéder le dernier setpts pour que le décalage timeline soit correct.
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
         parts.append(f"fps={fps},")
-
-        # Appliquer le time_remapping (reverse/speed) ici
         if time_remapping_filter:
             parts.append(f"{time_remapping_filter},")
-
         parts.append(f"setpts=PTS-STARTPTS,")
-        parts.append(apply_matte())
-        parts.append(f"{scale_expr},")
-        if flip_filters:
-            parts.append(f"{flip_filters},")
-        parts.append(f"{rotation_expr},")
-        if effect_filters:
-            parts.append(f"{effect_filters},")
-        if color_grade_filters:
-            parts.append(f"{color_grade_filters},")
-        parts.append(f"{','.join(compositing_filters)},")
-        parts.append(f"{opacity_expr},")
-        parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
+
+    # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
+    # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
+    parts.append(apply_matte())
+    parts.append(f"{scale_expr},")
+    if flip_filters:
+        parts.append(f"{flip_filters},")
+    parts.append(f"{rotation_expr},")
+    if effect_filters:
+        parts.append(f"{effect_filters},")
+    if color_grade_filters:
+        parts.append(f"{color_grade_filters},")
+    parts.append(f"{','.join(compositing_filters)},")
+    parts.append(f"{opacity_expr},")
+    parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
 
     return ";".join([*matte_parts, "".join(parts)])
 
@@ -2497,13 +2494,20 @@ def _build_master_filter(plan) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
+def _build_time_remapping_video_filter(layer: RenderLayer, fps: float | None = None) -> str:
     """Construit les filtres de remappage temporel pour une couche vidéo.
 
     Applique dans l'ordre :
-    1. Freeze frame (si activé) - sélectionne une seule image
-    2. Reverse (si activé) - inverse la lecture
-    3. Speed (si != 1.0) - change la vitesse via atempo
+    1. Freeze frame (si activé) : ne garde qu'une image (``trim`` sans virgule
+       interne) ; l'appelant la tient pendant ``freeze_duration``
+    2. Reverse (si activé) : inverse la lecture
+    3. Speed (si != 1.0) : ``setpts=PTS/vitesse`` puis ``fps`` pour revenir à
+       la cadence de sortie. ``atempo`` est un filtre **audio** : dans la chaîne
+       vidéo FFmpeg refuse le graphe (« Media type mismatch »).
+
+    Args:
+        layer: Couche vidéo.
+        fps: Cadence de sortie, pour rééchantillonner après un changement de vitesse.
 
     Returns:
         Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
@@ -2512,16 +2516,15 @@ def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
     tr = layer.time_remapping
     parts: list[str] = []
 
-    # Freeze frame: on sélectionne une seule image
+    # Freeze frame : on ne garde qu'une image, celle de l'instant figé.
     if tr.freeze_mode == FreezeFrameMode.FREEZE:
-        # Freeze: on utilise select pour garder une seule frame
-        # L'audio est silencieux, géré séparément
-        # Calculer le frame number à partir du temps source et du FPS source
-        freeze_filters = get_ffmpeg_freeze_filter(
-            tr.freeze_source_time,
-            layer.source_fps if layer.source_fps > 0 else 30.0,
+        parts.extend(
+            get_ffmpeg_freeze_filter(
+                tr.freeze_source_time,
+                layer.source_fps if layer.source_fps > 0 else 30.0,
+                source_in=layer.source_in,
+            )
         )
-        parts.extend(freeze_filters)
         # Après un freeze, on n'applique ni reverse ni speed
         return ",".join(parts)
 
@@ -2537,10 +2540,11 @@ def _build_time_remapping_video_filter(layer: RenderLayer) -> str:
             )
         parts.append("reverse")
 
-    # Speed: on applique les filtres atempo
+    # Speed : on resserre ou on étire les timestamps, puis on rééchantillonne.
     if tr.speed != 1.0:
-        speed_filters = get_ffmpeg_speed_filter(tr.speed)
-        parts.extend(speed_filters)
+        parts.append(f"setpts=PTS/{clamp_speed(tr.speed):.9g}")
+        if fps:
+            parts.append(f"fps={fps}")
 
     return ",".join(parts)
 

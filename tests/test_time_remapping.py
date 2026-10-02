@@ -604,11 +604,20 @@ class TestGetFfmpegReverseFilter:
 class TestGetFfmpegFreezeFilter:
     def test_freeze_filter(self):
         filters = get_ffmpeg_freeze_filter(freeze_source_time=5.0, asset_fps=30.0)
-        assert len(filters) == 2
-        assert "select=eq(n" in filters[0]
-        assert "setpts" in filters[1]
-        # Frame 150 (5.0 * 30)
-        assert "150" in filters[0]
+        # Image 150 (5,0 × 30) : une demi-image avant, pour ne jamais retenir sa voisine.
+        assert filters == ["trim=start=4.983333", "setpts=PTS-STARTPTS", "trim=end_frame=1"]
+
+    def test_the_instant_is_counted_from_the_clip_in_point(self):
+        filters = get_ffmpeg_freeze_filter(freeze_source_time=5.0, asset_fps=25.0, source_in=2.0)
+        assert filters[0] == "trim=start=2.980000"          # 3,0 s depuis l'entrée = image 75
+
+    def test_the_first_frame_and_a_zero_fps_are_safe(self):
+        assert get_ffmpeg_freeze_filter(0.0, 30.0)[0] == "trim=start=0.000000"
+        assert get_ffmpeg_freeze_filter(1.0, 0.0)[0] == "trim=start=0.983333"      # 30 i/s par défaut
+
+    def test_no_filter_contains_a_comma(self):
+        """Une virgule interne casse un filter_complex (« No such filter: '75)' »)."""
+        assert not any("," in item for item in get_ffmpeg_freeze_filter(3.0, 25.0))
 
 
 # ---------------------------------------------------------------------------
