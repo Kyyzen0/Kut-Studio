@@ -177,26 +177,13 @@ class TransformEffectsMixin:
             return
         if clip is None:
             return
-        from core.visual_effects import ANIMATABLE_PROPERTIES
+        from core.visual_effects import TRANSFORM_PROPERTY_NAMES
 
-        if property_name not in ANIMATABLE_PROPERTIES:
+        if property_name not in TRANSFORM_PROPERTY_NAMES:
             return
         try:
-            new_transform = clip.transform.__class__(
-                **{
-                    **{
-                        field: getattr(clip.transform, field)
-                        for field in (
-                            "position_x",
-                            "position_y",
-                            "scale",
-                            "rotation",
-                            "opacity",
-                        )
-                    },
-                    property_name: float(value),
-                }
-            )
+            # ``with_property`` garde les autres champs (ancrage, miroirs…).
+            new_transform = clip.transform.with_property(property_name, value)
         except ValueError as exc:
             print(f"[MainWindow] valeur transform refusée : {exc}")
             return

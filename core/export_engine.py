@@ -45,7 +45,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
+from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
 from .render_plan import (
     AudioLayer,
     GraphicLayer,
@@ -494,11 +496,14 @@ class ExportEngine(QObject):
         plan = request.render_plan
         width, height = request.preset.resolution
         self._prepare_temporary_files(plan)
-        filter_complex, video_label, _audio_label, input_paths = (
+        filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
                 plan, width, height, request.fps, self._current_srt_path
             )
         )
+        # Seule l'image est extraite : l'audio du graphe est consommé par un
+        # puits, sinon FFmpeg refuse un graphe dont une sortie n'est pas reliée.
+        filter_complex = f"{filter_complex};[{audio_label}]anullsink"
         command: list[str] = [
             *_ffmpeg_command_prefix(),
             "-y",
@@ -506,15 +511,20 @@ class ExportEngine(QObject):
             "-loglevel",
             "error",
         ]
-        for path in input_paths:
+        from .mograph_stream import still_playlist
+
+        seek = f"{max(0.0, float(playhead)):.3f}"
+        for index, path in enumerate(input_paths):
+            if path.endswith(".ffconcat"):
+                # Flux de calques (temps de timeline) : on lit directement
+                # l'image valable à la tête de lecture, sans recherche.
+                command.extend(["-i", still_playlist(path, float(playhead))])
+                continue
+            # Le seek se place juste avant la première entrée : FFmpeg
+            # décode alors uniquement ce qui précède la position demandée.
+            if index == 0:
+                command.extend(["-ss", seek])
             command.extend(["-i", path])
-        # Le seek se place juste avant la première entrée : FFmpeg
-        # décode alors uniquement ce qui précède la position demandée.
-        if "-i" in command:
-            first_input = command.index("-i")
-            command[first_input:first_input] = [
-                "-ss", f"{max(0.0, float(playhead)):.3f}",
-            ]
         command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
         command.extend(["-map", f"[{video_label}]"])
         command.extend([
@@ -656,8 +666,13 @@ class ExportEngine(QObject):
         output_height: int,
         fps: int,
         srt_path: str | None,
+        quality: str = "export",
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
+
+        ``quality`` (``draft`` / ``standard`` / ``high`` / ``export``) ne règle
+        que le flou de mouvement des calques motion graphics : un segment
+        d'aperçu brouillon s'en passe, l'export utilise le réglage complet.
 
         Si ``plan.subtitle_cues`` est non vide, le filtre ``subtitles``
         est appliqué après la composition vidéo pour incruster les
@@ -675,13 +690,24 @@ class ExportEngine(QObject):
         # (séquences imbriquées comprises).
         input_paths, path_to_index = _build_input_list(plan)
 
+        def add_input(path: str) -> int:
+            """Entrée supplémentaire (flux de calques, matte) ; dédupliquée."""
+            index = path_to_index.get(path)
+            if index is None:
+                index = path_to_index[path] = len(input_paths)
+                input_paths.append(path)
+            return index
+
         parts: list[str] = []
 
         # Séquences imbriquées : chaque sous-plan est composé une fois, en
         # amont, puis distribué (``split``) à ses instances.
-        sources = _build_nested_sources(parts, plan, path_to_index, width, height)
+        sources = _build_nested_sources(
+            parts, plan, path_to_index, width, height, add_input=add_input, quality=quality,
+        )
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
+            add_input=add_input, quality=quality,
         )
 
         # ---------------- Sous-titres ----------------
@@ -917,6 +943,9 @@ def _build_nested_sources(
     path_to_index: dict[str, int],
     output_width: int,
     output_height: int,
+    *,
+    add_input=None,
+    quality: str = "export",
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -949,6 +978,7 @@ def _build_nested_sources(
             parts, inner, width, height, fps, path_to_index, sources,
             prefix=prefix, nested=True,
             want_video=bool(want_video), want_audio=bool(want_audio),
+            add_input=add_input, quality=quality,
         )
         if want_video:
             sources.video[entry.key] = _fan_out(parts, video_label, want_video, "split")
@@ -981,6 +1011,8 @@ def _compose_plan_graph(
     nested: bool = False,
     want_video: bool = True,
     want_audio: bool = True,
+    add_input=None,
+    quality: str = "export",
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1000,6 +1032,9 @@ def _compose_plan_graph(
     video_label = ""
     audio_label = ""
     fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+    if add_input is None:
+        def add_input(path: str) -> int:
+            raise ValueError("Ce graphe n'accepte pas d'entrée supplémentaire.")
 
     # ---------------- Vidéo ----------------
     if want_video:
@@ -1022,6 +1057,7 @@ def _compose_plan_graph(
                         source=sources.take_video(layer.nested_key),
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
+                        add_input=add_input,
                     )
                 )
             else:
@@ -1030,6 +1066,7 @@ def _compose_plan_graph(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
+                        add_input=add_input,
                     )
                 )
 
@@ -1041,14 +1078,22 @@ def _compose_plan_graph(
                 is_last = layer_index == len(display_layers) - 1
                 next_label = f"{p}vout" if is_last else f"{p}o{layer_index}"
                 overlay_args = _build_overlay_args(layer, width, height)
-                blend_mode = getattr(getattr(layer, "compositing", None), "blend_mode", "normal")
-                blend_mode = getattr(blend_mode, "value", blend_mode)
-                if blend_mode != "normal":
-                    ffmpeg_mode = {"addition": "addition"}.get(str(blend_mode), str(blend_mode))
+                blend_mode = coerce_blend_mode(
+                    getattr(getattr(layer, "compositing", None), "blend_mode", "normal")
+                )
+                if blend_mode is not BlendMode.NORMAL:
+                    # Le calque est posé sur un cadre transparent (même taille
+                    # que le fond), puis fusionné avec l'alpha (voir
+                    # ``core.mograph_ffmpeg.blend_onto``).
+                    canvas_duration = _format_seconds(max(duration, 1.0 / float(fps or 30)))
                     parts.append(
-                        f"[{previous_label}][{label}]blend=all_mode={ffmpeg_mode}:"
-                        f"enable='between(t,{_format_seconds(layer.timeline_start)},"
-                        f"{_format_seconds(layer.timeline_end)})'[{next_label}]"
+                        f"color=c=black@0:s={width}x{height}:r={fps_text}:d={canvas_duration},"
+                        f"format=rgba[{p}bc{layer_index}];"
+                        f"[{p}bc{layer_index}][{label}]overlay={overlay_args}:format=rgb[{p}bt{layer_index}]"
+                    )
+                    blend_onto(
+                        parts, previous_label, f"{p}bt{layer_index}", blend_mode, next_label,
+                        f"{p}vb{layer_index}",
                     )
                 else:
                     parts.append(
@@ -1058,31 +1103,15 @@ def _compose_plan_graph(
                 previous_label = next_label
             video_label = f"{p}vout"
 
-        # ---------------- Graphiques (tâche 32) ----------------
-        # Les calques graphiques sont composés après les pistes vidéo et
-        # avant les sous-titres. Ils partagent les mêmes expressions de
-        # transform que les clips vidéo, donc aperçu et export restent
-        # strictement identiques.
-        for graphic_index, layer in enumerate(
-            getattr(plan, "graphics_layers", ())
-        ):
-            source_label = f"{p}g{graphic_index}"
-            input_index = None
-            source_path = _graphic_input_path(layer.graphic)
-            if source_path:
-                input_index = path_to_index[source_path]
-            parts.append(
-                _build_graphic_layer_filter(
-                    graphic_index, layer, input_index, width, height, fps,
-                    label=source_label,
-                )
-            )
-            next_label = f"{p}gout{graphic_index}"
-            parts.append(
-                f"[{video_label}][{source_label}]overlay="
-                f"{_build_overlay_args(layer, width, height)}[{next_label}]"
-            )
-            video_label = next_label
+        # ---------------- Motion graphics ----------------
+        # Composés après les pistes vidéo et avant les sous-titres, par le
+        # rastériseur partagé avec le viewer (``core.mograph_*``) : l'aperçu
+        # fidèle et l'export appellent ce même code.
+        bg_seconds = duration if duration > 0 else 1.0 / float(fps or 30)
+        video_label = compose_graphics(
+            parts, plan, width, height, fps, video_label, add_input,
+            prefix=p, quality=quality, duration=bg_seconds,
+        )
 
     if not want_audio:
         return video_label, ""
@@ -1239,13 +1268,9 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
                 continue
             path_to_index[layer.source_path] = len(input_paths)
             input_paths.append(layer.source_path)
-    for current in plans:
-        for layer in getattr(current, "graphics_layers", ()):
-            path = _graphic_input_path(layer.graphic)
-            if not path or path in path_to_index:
-                continue
-            path_to_index[path] = len(input_paths)
-            input_paths.append(path)
+    # Les calques motion graphics (images, textes, formes) et les mattes de
+    # masques ne sont pas des fichiers du projet : leurs flux sont produits
+    # pendant la construction du graphe (``core.mograph_ffmpeg``).
     return input_paths, path_to_index
 
 
@@ -1372,6 +1397,7 @@ def _build_layer_filter(
     source: str | None = None,
     label: str | None = None,
     pad_color: str = "black",
+    add_input=None,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -1397,6 +1423,12 @@ def _build_layer_filter(
     ``source`` remplace le flux ``[N:v]`` d'un fichier par un label du
     graphe (rendu d'une séquence imbriquée) ; ``pad_color`` permet alors
     un cadrage transparent. ``label`` renomme la sortie (``vN`` par défaut).
+
+    Masques : avec ``add_input``, ils sont rastérisés en matte
+    (:func:`core.mograph_ffmpeg.video_matte_label`) et multipliés à l'alpha
+    **en espace calque**, avant échelle et rotation (ils suivent le clip).
+    Miroirs et échelle X/Y (transform avancé) s'ajoutent à l'échelle ; le
+    point d'ancrage est appliqué par :func:`_build_overlay_args`.
     """
     source_label = source if source is not None else f"{input_index}:v"
     output_label = label if label is not None else f"v{layer_index}"
@@ -1410,6 +1442,7 @@ def _build_layer_filter(
     transform = layer.transform
     kfs = layer.transform_keyframes
     scale_expr = _build_animated_scale_expr(transform, kfs, width, height)
+    flip_filters = _build_flip_filters(transform, kfs)
     rotation_expr = _build_animated_rotation_expr(transform, kfs)
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
     effect_filters = _build_clip_effect_filters(layer.effects)
@@ -1422,8 +1455,31 @@ def _build_layer_filter(
     # afin de garantir un rendu stable quel que soit l'ordre des
     # opérations demandé par l'utilisateur.
     color_grade_filters = _build_color_grade_filters(layer.color_grade)
-    from .compositing import build_ffmpeg_filters
-    compositing_filters = build_ffmpeg_filters(layer.compositing, width, height) if layer.compositing is not None else ["format=rgba"]
+    from .compositing import build_ffmpeg_filters, chroma_key_filters
+    matte_parts: list[str] = []
+    matte_label = None
+    compositing = layer.compositing
+    if compositing is not None and getattr(compositing, "masks", ()) and add_input is not None:
+        matte_label = video_matte_label(
+            matte_parts, layer, width, height, fps, add_input, f"{output_label}_matte"
+        )
+        compositing_filters = ["format=rgba", *chroma_key_filters(compositing)]
+    elif compositing is not None:
+        compositing_filters = build_ffmpeg_filters(compositing, width, height)
+    else:
+        compositing_filters = ["format=rgba"]
+
+    def apply_matte() -> str:
+        """Multiplie l'alpha du calque (taille du cadre) par la matte."""
+        if matte_label is None:
+            return ""
+        o = output_label
+        return (
+            f"format=rgba[{o}_pm];"
+            f"[{o}_pm]split[{o}_c][{o}_a];[{o}_a]alphaextract[{o}_al];"
+            f"[{o}_al][{matte_label}]blend=all_mode=multiply:shortest=0:repeatlast=1[{o}_na];"
+            f"[{o}_c][{o}_na]alphamerge,"
+        )
 
     # Filtres de remappage temporel (freeze, reverse, speed)
     time_remapping_filter = _build_time_remapping_video_filter(layer)
@@ -1441,6 +1497,9 @@ def _build_layer_filter(
         parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
         parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
         parts.append(f"fps={fps},")
+        parts.append(apply_matte())
+        if flip_filters:
+            parts.append(f"{flip_filters},")
         if effect_filters:
             parts.append(f"{effect_filters},")
         if color_grade_filters:
@@ -1461,7 +1520,10 @@ def _build_layer_filter(
             parts.append(f"{time_remapping_filter},")
 
         parts.append(f"setpts=PTS-STARTPTS,")
+        parts.append(apply_matte())
         parts.append(f"{scale_expr},")
+        if flip_filters:
+            parts.append(f"{flip_filters},")
         parts.append(f"{rotation_expr},")
         if effect_filters:
             parts.append(f"{effect_filters},")
@@ -1471,7 +1533,7 @@ def _build_layer_filter(
         parts.append(f"{opacity_expr},")
         parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
 
-    return "".join(parts)
+    return ";".join([*matte_parts, "".join(parts)])
 
 
 def _build_color_grade_filters(grade) -> str:
@@ -1730,10 +1792,42 @@ def _build_animated_scale_expr(
     base_h = float(height)
     w_expr = f"({expr})*{_format_seconds(base_w)}"
     h_expr = f"({expr})*{_format_seconds(base_h)}"
+    axis_x = _axis_scale_expr(transform, keyframes, "scale_x")
+    axis_y = _axis_scale_expr(transform, keyframes, "scale_y")
+    if axis_x is None and axis_y is None:
+        return (
+            f"scale=w='trunc(iw*{w_expr}/iw)':h='trunc(ih*{h_expr}/ih)':"
+            f"eval=frame"
+        )
+    # Échelle X/Y (transform avancé) : au moins 2 px, une échelle nulle
+    # voudrait dire « taille d'origine » pour ``scale``.
+    w_expr = f"{w_expr}*({axis_x or '1'})"
+    h_expr = f"{h_expr}*({axis_y or '1'})"
     return (
-        f"scale=w='trunc(iw*{w_expr}/iw)':h='trunc(ih*{h_expr}/ih)':"
+        f"scale=w='max(2,trunc({w_expr}))':h='max(2,trunc({h_expr}))':"
         f"eval=frame"
     )
+
+
+def _axis_scale_expr(transform: ClipTransform, keyframes, name: str) -> str | None:
+    """Expression d'une échelle d'axe, ``None`` si neutre et non animée."""
+    frames = [kf for kf in keyframes if kf.property_name == name]
+    if not frames and float(getattr(transform, name)) == 1.0:
+        return None
+    return build_ffmpeg_expression(name, float(getattr(transform, name)), frames, time_var="t")
+
+
+def _build_flip_filters(transform: ClipTransform, keyframes) -> str:
+    """``hflip`` / ``vflip`` (statiques, ou activés par l'animation du miroir)."""
+    filters = []
+    for name, filter_name in (("flip_h", "hflip"), ("flip_v", "vflip")):
+        frames = [kf for kf in keyframes if kf.property_name == name]
+        if frames:
+            expr = build_ffmpeg_expression(name, float(getattr(transform, name)), frames, time_var="t")
+            filters.append(f"{filter_name}=enable='gte({expr},0.5)'")
+        elif getattr(transform, name):
+            filters.append(filter_name)
+    return ",".join(filters)
 
 
 def _build_animated_rotation_expr(
@@ -1902,6 +1996,38 @@ def _build_graphic_layer_filter(
     return prefix + ",".join(filters) + f"[{label or f'g{layer_index}'}]"
 
 
+def _anchor_offset_exprs(layer, canvas_width: int, canvas_height: int, time_var: str):
+    """Décalage du centre de l'image dû au point d'ancrage (``None`` si centré).
+
+    Le calque vidéo (taille du cadre) pivote et s'échelonne autour de son
+    ancrage ``A`` : son centre arrive en ``P + R·S·(c − A)`` (voir
+    :func:`core.mograph_scene.local_matrix`). ``overlay`` centre l'image
+    tournée ; on ajoute donc ``R·S·(c − A)``.
+    """
+    transform = layer.transform
+    keyframes = layer.transform_keyframes
+
+    def expr(name: str) -> str:
+        frames = [kf for kf in keyframes if kf.property_name == name]
+        return build_ffmpeg_expression(name, float(getattr(transform, name)), frames, time_var=time_var)
+
+    animated = {kf.property_name for kf in keyframes}
+    if (
+        transform.anchor_x == 0.5 and transform.anchor_y == 0.5
+        and "anchor_x" not in animated and "anchor_y" not in animated
+    ):
+        return None
+    sx = f"({expr('scale')})*({expr('scale_x')})*(1-2*({expr('flip_h')}))"
+    sy = f"({expr('scale')})*({expr('scale_y')})*(1-2*({expr('flip_v')}))"
+    dx = f"({sx})*(0.5-({expr('anchor_x')}))*{_format_seconds(canvas_width)}"
+    dy = f"({sy})*(0.5-({expr('anchor_y')}))*{_format_seconds(canvas_height)}"
+    angle = f"({expr('rotation')})*0.017453292519943295"
+    return (
+        f"({dx})*cos({angle})-({dy})*sin({angle})",
+        f"({dx})*sin({angle})+({dy})*cos({angle})",
+    )
+
+
 def _build_overlay_args(
     layer: RenderLayer | GraphicLayer,
     canvas_width: int,
@@ -1943,6 +2069,10 @@ def _build_overlay_args(
     if isinstance(layer, RenderLayer):
         x_expr = f"(W-w)/2+{x_expr}"
         y_expr = f"(H-h)/2+{y_expr}"
+        anchor = _anchor_offset_exprs(layer, canvas_width, canvas_height, local_time)
+        if anchor is not None:
+            x_expr = f"{x_expr}+({anchor[0]})"
+            y_expr = f"{y_expr}+({anchor[1]})"
     return (
         f"x='{x_expr}':y='{y_expr}':eval=frame:eof_action=pass"
     )

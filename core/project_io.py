@@ -67,7 +67,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
 from .effects_model import ClipEffect, EffectType
-from .compositing import compositing_from_dict, compositing_to_dict
+from .animation import Keyframe
+from .canvas_guides import guide_from_dict, guide_to_dict
+from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
+from .motion_blur import settings_from_dict as motion_blur_from_dict
+from .motion_blur import settings_to_dict as motion_blur_to_dict
 from .project_model import (
     MAIN_SEQUENCE_ID,
     MAIN_SEQUENCE_NAME,
@@ -80,7 +84,13 @@ from .project_model import (
 )
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
-from .visual_effects import ClipTransform, TransformKeyframe, migrate_legacy_keyframes
+from .visual_effects import (
+    ADVANCED_TRANSFORM_PROPERTIES,
+    TRANSFORM_PROPERTIES,
+    ClipTransform,
+    TransformKeyframe,
+    migrate_legacy_keyframes,
+)
 
 if TYPE_CHECKING:
     from .audio_automation import AutomationPoint
@@ -97,8 +107,18 @@ if TYPE_CHECKING:
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 14
+CURRENT_VERSION = 15
 """Version courante du format public ``.kut``.
+
+La version 15 ajoute le moteur motion graphics (voir
+``docs/motion-graphics.md``) : transform avancé (ancrage, échelle X/Y,
+inclinaison, miroirs), animation générique des clips (``animation``),
+calques étendus (formes, groupes, adjustment layers, contrôleurs,
+parentage), masques multiples avec opérations, guides et flou de
+mouvement des séquences. Un fichier v14 ou antérieur s'ouvre sans
+conversion destructive : ses calques gardent leur placement historique
+(``layout: legacy``) et les anciennes images-clés de masque passent au
+moteur central sans changer leur courbe.
 
 La version 14 ajoute le multi-séquence et les séquences imbriquées (voir
 ``docs/nested-sequences.md``). Un fichier v13 ou antérieur est lu comme un
@@ -114,7 +134,7 @@ l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -336,6 +356,66 @@ def _build_payload(project: Project) -> dict[str, Any]:
     }
 
 
+def _clip_to_dict(clip: Clip) -> dict[str, Any]:
+    """Sérialise un clip (partagé par les projets, le presse-papiers et les presets)."""
+    return {
+        "id": clip.id,
+        "asset_id": clip.asset_id,
+        "track_id": clip.track_id,
+        "timeline_start": clip.timeline_start,
+        "source_in": clip.source_in,
+        "source_out": clip.source_out,
+        "enabled": clip.enabled,
+        "label": clip.label,
+        "text": clip.text,
+        "gain_db": float(clip.gain_db),
+        "pan": float(clip.pan),
+        "fade_in": float(clip.fade_in),
+        "fade_out": float(clip.fade_out),
+        "transform": _transform_to_dict(clip.transform),
+        "transform_keyframes": [
+            _keyframe_to_dict(kf) for kf in clip.transform_keyframes
+        ],
+        # Animation générique (v15) : forme, texte, masques.
+        "animation": [
+            _keyframe_to_dict(kf) for kf in getattr(clip, "animation", ()) or ()
+        ],
+        "time_remapping": _time_remapping_to_dict(clip.time_remapping),
+        "effects": [
+            _effect_to_dict(effect) for effect in clip.effects
+        ],
+        # Effets audio non destructifs (tâche 27).
+        # Sérialisés comme liste vide pour les
+        # projets anciens ou les clips sans effets
+        # audio. La désérialisation reste stricte
+        # : un effet invalide est ignoré à l'unité,
+        # sans casser le chargement du clip.
+        "audio_effects": [
+            _audio_effect_to_dict(effect)
+            for effect in clip.audio_effects
+        ],
+        # Étalonnage couleur non destructif (tâche 29).
+        # ``None`` si l'identité ou si le clip n'a
+        # jamais été étalonné : on évite de
+        # polluer le ``.kut`` avec une copie
+        # identique au défaut. Les versions
+        # antérieures à v11.2 ne portent pas
+        # cette clé, ce qui donne ``None`` après
+        # chargement (rendu sans filtre couleur).
+        "color_grade": _color_grade_to_dict(
+            getattr(clip, "color_grade", None)
+        ),
+        "graphic": _graphic_to_dict(
+            getattr(clip, "graphic", None)
+        ),
+        "compositing": compositing_to_dict(clip.compositing),
+        "text_style": clip.text_style.to_dict(),
+        # Clip imbriqué (v14) : clé présente uniquement
+        # quand le clip référence une séquence.
+        **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
+    }
+
+
 def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
     """Sérialise une séquence : réglages, repères, transitions, pistes."""
     return {
@@ -344,6 +424,9 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         "width": sequence.width,
         "height": sequence.height,
         "fps": sequence.fps,
+        # Motion graphics (v15) : guides du viewer et flou de mouvement.
+        "guides": [guide_to_dict(guide) for guide in getattr(sequence, "guides", ()) or ()],
+        "motion_blur": motion_blur_to_dict(getattr(sequence, "motion_blur", None)),
         "markers": [
             {
                 "id": marker.id,
@@ -408,61 +491,7 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
                 "ducking_config": _ducking_config_to_dict(
                     getattr(track, "ducking_config", None)
                 ),
-                "clips": [
-                    {
-                        "id": clip.id,
-                        "asset_id": clip.asset_id,
-                        "track_id": clip.track_id,
-                        "timeline_start": clip.timeline_start,
-                        "source_in": clip.source_in,
-                        "source_out": clip.source_out,
-                        "enabled": clip.enabled,
-                        "label": clip.label,
-                        "text": clip.text,
-                        "gain_db": float(clip.gain_db),
-                        "pan": float(clip.pan),
-                        "fade_in": float(clip.fade_in),
-                        "fade_out": float(clip.fade_out),
-                        "transform": _transform_to_dict(clip.transform),
-                        "transform_keyframes": [
-                            _keyframe_to_dict(kf) for kf in clip.transform_keyframes
-                        ],
-                        "time_remapping": _time_remapping_to_dict(clip.time_remapping),
-                        "effects": [
-                            _effect_to_dict(effect) for effect in clip.effects
-                        ],
-                        # Effets audio non destructifs (tâche 27).
-                        # Sérialisés comme liste vide pour les
-                        # projets anciens ou les clips sans effets
-                        # audio. La désérialisation reste stricte
-                        # : un effet invalide est ignoré à l'unité,
-                        # sans casser le chargement du clip.
-                        "audio_effects": [
-                            _audio_effect_to_dict(effect)
-                            for effect in clip.audio_effects
-                        ],
-                        # Étalonnage couleur non destructif (tâche 29).
-                        # ``None`` si l'identité ou si le clip n'a
-                        # jamais été étalonné : on évite de
-                        # polluer le ``.kut`` avec une copie
-                        # identique au défaut. Les versions
-                        # antérieures à v11.2 ne portent pas
-                        # cette clé, ce qui donne ``None`` après
-                        # chargement (rendu sans filtre couleur).
-                        "color_grade": _color_grade_to_dict(
-                            getattr(clip, "color_grade", None)
-                        ),
-                        "graphic": _graphic_to_dict(
-                            getattr(clip, "graphic", None)
-                        ),
-                        "compositing": compositing_to_dict(clip.compositing),
-                        "text_style": clip.text_style.to_dict(),
-                        # Clip imbriqué (v14) : clé présente uniquement
-                        # quand le clip référence une séquence.
-                        **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
-                    }
-                    for clip in track.clips
-                ],
+                "clips": [_clip_to_dict(clip) for clip in track.clips],
             }
             for track in sequence.tracks
         ],
@@ -626,6 +655,14 @@ def _deserialize_sequence(
         markers=markers,
     )
     sequence.transitions = _deserialize_transitions(data.get("transitions", []), sequence)
+    # --- Motion graphics (v15) : absent d'un ancien fichier → aucun guide,
+    # flou de mouvement par défaut.
+    raw_guides = data.get("guides", [])
+    sequence.guides = [
+        guide for guide in (guide_from_dict(item) for item in (raw_guides if isinstance(raw_guides, list) else []))
+        if guide is not None
+    ]
+    sequence.motion_blur = motion_blur_from_dict(data.get("motion_blur"))
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont
@@ -712,6 +749,87 @@ def _shared_compositing(raw):
     return compositing_from_dict(raw)
 
 
+def _deserialize_clip(
+    raw_clip: Any, track_type: str, *, project_root: Path | None = None,
+) -> Clip:
+    """Reconstruit un clip ; une structure invalide lève ``ValueError``."""
+    if not isinstance(raw_clip, dict):
+        raise ValueError("Clip invalide : objet JSON attendu.")
+    clip_kwargs = {
+        key: value
+        for key, value in raw_clip.items()
+        if key not in {
+            "transform", "transform_keyframes", "time_remapping", "effects",
+            "graphic", "compositing", "animation",
+        }
+        and key in _CLIP_KNOWN_FIELDS
+    }
+    clip_kwargs["transform"] = _dict_to_transform(
+        raw_clip.get("transform")
+    )
+    keyframes_raw = raw_clip.get("transform_keyframes", [])
+    if not isinstance(keyframes_raw, list):
+        raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
+    keyframes = [_dict_to_keyframe(raw) for raw in keyframes_raw]
+    if _is_legacy_keyframe_list(keyframes_raw):
+        # Ancien moteur : valeur de base jusqu'au premier keyframe. On
+        # garde exactement ce rendu (keyframe ``hold`` à 0 si nécessaire).
+        keyframes = migrate_legacy_keyframes(clip_kwargs["transform"], keyframes)
+    clip_kwargs["transform_keyframes"] = keyframes
+    # Gérer le time_remapping (version 7+)
+    if "time_remapping" in raw_clip:
+        clip_kwargs["time_remapping"] = _dict_to_time_remapping(
+            raw_clip.get("time_remapping")
+        )
+    else:
+        # Version antérieure à 7 : utiliser les valeurs par défaut
+        clip_kwargs["time_remapping"] = TimeRemapping()
+    # Effets (version 9+) : pistes vidéo, et pistes graphiques depuis la
+    # v15 (adjustment layers, effets de calque). Une version antérieure
+    # n'a pas la clé : la liste reste vide.
+    if track_type in ("video", "graphics"):
+        clip_kwargs["effects"] = _deserialize_clip_effects(
+            raw_clip.get("effects")
+        )
+    else:
+        clip_kwargs["effects"] = []
+    # Effets audio (tâche 27, v11+) : acceptés sur les pistes
+    # vidéo (qui peuvent porter de l'audio) et audio. Les
+    # versions antérieures à la v11 n'ont pas la clé : la liste
+    # reste vide, comportement historique préservé.
+    if track_type in ("video", "audio"):
+        clip_kwargs["audio_effects"] = _deserialize_audio_effects(
+            raw_clip.get("audio_effects")
+        )
+    else:
+        clip_kwargs["audio_effects"] = []
+    # Étalonnage couleur (tâche 29) : si la clé manque (projet
+    # v10‑ ou v11.0/11.1), ``None`` ; les projets neufs portent
+    # toujours une clé, potentiellement nulle (identité).
+    clip_kwargs["color_grade"] = _deserialize_color_grade(
+        raw_clip.get("color_grade"),
+        project_root=project_root,
+    )
+    clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
+    compositing = _shared_compositing(raw_clip.get("compositing"))
+    animation_raw = raw_clip.get("animation", [])
+    if not isinstance(animation_raw, list):
+        animation_raw = []
+    animation = [kf for kf in (_dict_to_generic_keyframe(raw) for raw in animation_raw) if kf is not None]
+    # Images-clés de masque du format v12 : converties vers le moteur
+    # central, courbe identique (voir ``migrate_legacy_mask_keyframes``).
+    compositing, migrated = migrate_legacy_mask_keyframes(compositing)
+    clip_kwargs["compositing"] = compositing
+    clip_kwargs["animation"] = sorted(
+        animation + migrated, key=lambda kf: (kf.property_name, kf.time_seconds)
+    )
+    # Style texte (tâche 24) : rétrocompatible — un clip sans la
+    # clé ``text_style`` reçoit le style standard par défaut, ce
+    # qui correspond exactement au rendu historique.
+    clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
+    return Clip(**clip_kwargs)
+
+
 def _deserialize_track(
     data: dict[str, Any], *, project_root: Path | None = None,
 ) -> Track:
@@ -732,69 +850,7 @@ def _deserialize_track(
         raise ValueError("Liste de clips invalide : tableau JSON attendu.")
     clips = []
     for raw_clip in raw_clips:
-        if not isinstance(raw_clip, dict):
-            raise ValueError("Clip invalide : objet JSON attendu.")
-        clip_kwargs = {
-            key: value
-            for key, value in raw_clip.items()
-            if key not in {
-                "transform", "transform_keyframes", "time_remapping", "effects",
-                "graphic", "compositing",
-            }
-            and key in _CLIP_KNOWN_FIELDS
-        }
-        clip_kwargs["transform"] = _dict_to_transform(
-            raw_clip.get("transform")
-        )
-        keyframes_raw = raw_clip.get("transform_keyframes", [])
-        if not isinstance(keyframes_raw, list):
-            raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
-        keyframes = [_dict_to_keyframe(raw) for raw in keyframes_raw]
-        if _is_legacy_keyframe_list(keyframes_raw):
-            # Ancien moteur : valeur de base jusqu'au premier keyframe. On
-            # garde exactement ce rendu (keyframe ``hold`` à 0 si nécessaire).
-            keyframes = migrate_legacy_keyframes(clip_kwargs["transform"], keyframes)
-        clip_kwargs["transform_keyframes"] = keyframes
-        # Gérer le time_remapping (version 7+)
-        if "time_remapping" in raw_clip:
-            clip_kwargs["time_remapping"] = _dict_to_time_remapping(
-                raw_clip.get("time_remapping")
-            )
-        else:
-            # Version antérieure à 7 : utiliser les valeurs par défaut
-            clip_kwargs["time_remapping"] = TimeRemapping()
-        # Effets (version 9+) : uniquement sur les pistes vidéo. Une
-        # version antérieure n'a pas la clé : la liste reste vide.
-        if track_type == "video":
-            clip_kwargs["effects"] = _deserialize_clip_effects(
-                raw_clip.get("effects")
-            )
-        else:
-            clip_kwargs["effects"] = []
-        # Effets audio (tâche 27, v11+) : acceptés sur les pistes
-        # vidéo (qui peuvent porter de l'audio) et audio. Les
-        # versions antérieures à la v11 n'ont pas la clé : la liste
-        # reste vide, comportement historique préservé.
-        if track_type in ("video", "audio"):
-            clip_kwargs["audio_effects"] = _deserialize_audio_effects(
-                raw_clip.get("audio_effects")
-            )
-        else:
-            clip_kwargs["audio_effects"] = []
-        # Étalonnage couleur (tâche 29) : si la clé manque (projet
-        # v10‑ ou v11.0/11.1), ``None`` ; les projets neufs portent
-        # toujours une clé, potentiellement nulle (identité).
-        clip_kwargs["color_grade"] = _deserialize_color_grade(
-            raw_clip.get("color_grade"),
-            project_root=project_root,
-        )
-        clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
-        clip_kwargs["compositing"] = _shared_compositing(raw_clip.get("compositing"))
-        # Style texte (tâche 24) : rétrocompatible — un clip sans la
-        # clé ``text_style`` reçoit le style standard par défaut, ce
-        # qui correspond exactement au rendu historique.
-        clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
-        clips.append(Clip(**clip_kwargs))
+        clips.append(_deserialize_clip(raw_clip, track_type, project_root=project_root))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS
     }
@@ -820,14 +876,31 @@ def _deserialize_track(
     return Track(clips=clips, **track_kwargs)
 
 
+def clip_to_dict(clip: Clip) -> dict[str, Any]:
+    """Forme JSON publique d'un clip (format ``.kut`` courant)."""
+    return _clip_to_dict(clip)
+
+
+def clip_from_dict(raw: Any, track_type: str) -> Clip:
+    """Clip depuis :func:`clip_to_dict` (presse-papiers, presets)."""
+    return _deserialize_clip(raw, track_type)
+
+
 def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:
-    return {
+    data: dict[str, Any] = {
         "position_x": float(transform.position_x),
         "position_y": float(transform.position_y),
         "scale": float(transform.scale),
         "rotation": float(transform.rotation),
         "opacity": float(transform.opacity),
     }
+    # Transform avancé (v15) : écrit seulement s'il diffère du neutre, un
+    # clip simple garde exactement son ancien JSON.
+    for name in ADVANCED_TRANSFORM_PROPERTIES:
+        value = getattr(transform, name)
+        if value != TRANSFORM_PROPERTIES[name].default:
+            data[name] = bool(value) if isinstance(value, bool) else float(value)
+    return data
 
 
 def _graphic_to_dict(graphic: object) -> dict[str, Any] | None:
@@ -847,12 +920,17 @@ def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
     if not isinstance(raw, dict):
         return ClipTransform()
     try:
+        advanced = {
+            name: (bool(raw[name]) if TRANSFORM_PROPERTIES[name].kind.value == "bool" else float(raw[name]))
+            for name in ADVANCED_TRANSFORM_PROPERTIES if name in raw
+        }
         return ClipTransform(
             position_x=float(raw.get("position_x", 0.0)),
             position_y=float(raw.get("position_y", 0.0)),
             scale=float(raw.get("scale", 1.0)),
             rotation=float(raw.get("rotation", 0.0)),
             opacity=float(raw.get("opacity", 1.0)),
+            **advanced,
         )
     except (TypeError, ValueError):
         return ClipTransform()
@@ -862,7 +940,10 @@ def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
     data: dict[str, Any] = {
         "property_name": keyframe.property_name,
         "time_seconds": float(keyframe.time_seconds),
-        "value": float(keyframe.value),
+        "value": (
+            [float(c) for c in keyframe.value]
+            if isinstance(keyframe.value, (tuple, list)) else float(keyframe.value)
+        ),
         "interpolation": keyframe.interpolation.value,
         "tangent_mode": keyframe.tangent_mode.value,
         "id": keyframe.id,
@@ -899,6 +980,27 @@ def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
         tangent_mode=raw.get("tangent_mode", "linked"),
         id=str(raw.get("id") or ""),
     )
+
+
+def _dict_to_generic_keyframe(raw: object) -> Keyframe | None:
+    """Keyframe de ``Clip.animation`` ; une entrée corrompue est ignorée seule."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        value = raw["value"]
+        value = tuple(float(c) for c in value) if isinstance(value, list) else float(value)
+        return Keyframe(
+            property_name=str(raw["property_name"]),
+            time_seconds=float(raw["time_seconds"]),
+            value=value,
+            interpolation=raw.get("interpolation", "linear"),
+            in_slope=_optional_slope(raw.get("in_slope")),
+            out_slope=_optional_slope(raw.get("out_slope")),
+            tangent_mode=raw.get("tangent_mode", "linked"),
+            id=str(raw.get("id") or ""),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _is_legacy_keyframe_list(raw_keyframes: list) -> bool:

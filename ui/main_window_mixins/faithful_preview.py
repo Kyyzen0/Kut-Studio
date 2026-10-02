@@ -240,6 +240,10 @@ class FaithfulPreviewMixin:
         if cached_preview is None:
             return False
         cached_path, segment_start = cached_preview
+        # Le segment contient déjà les calques motion graphics : l'aperçu
+        # interactif des calques est masqué (sinon il serait doublé).
+        self._viewer_composited = True
+        self.preview_panel.set_mograph_visible(False)
         self.preview_panel.preview_at(
             cached_path, max(0.0, timeline_time - segment_start)
         )

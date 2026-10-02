@@ -489,6 +489,13 @@ class ConstructionMixin:
         reset_button.setSizePolicy(reset_button.sizePolicy().horizontalPolicy(),
                                    reset_button.sizePolicy().verticalPolicy())
         self.reset_movement_button = reset_button
+        # Transformation avancée (motion graphics) : repliée par défaut.
+        from ui.properties_widgets.advanced_transform import AdvancedTransformEditor
+
+        self.advanced_transform = AdvancedTransformEditor()
+        self.advanced_transform.value_changed.connect(self._emit_advanced_transform)
+        self.advanced_transform.keyframe_toggled.connect(self._emit_advanced_keyframe)
+        movement_layout.addWidget(self.advanced_transform)
         movement_layout.addWidget(reset_button)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True

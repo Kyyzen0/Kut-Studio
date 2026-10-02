@@ -99,6 +99,8 @@ class RenderLayer:
     # Séquence imbriquée : clé du :class:`NestedSequencePlan` dont le rendu
     # composite remplace le fichier source (``source_path`` est alors vide).
     nested_key: str = ""
+    # Animation générique du clip (masques animés…), voir ``Clip.animation``.
+    animation: tuple = field(default_factory=tuple)
 
     @property
     def is_nested(self) -> bool:
@@ -200,7 +202,14 @@ class RenderTransition:
 
 @dataclass(frozen=True)
 class GraphicLayer:
-    """Calque graphique généré ou image, composé au-dessus de la vidéo."""
+    """Calque motion graphics, composé au-dessus de la vidéo.
+
+    ``role`` vaut ``"draw"`` pour un calque à dessiner, ``"rig"`` pour un
+    calque présent **seulement** pour la hiérarchie : parent situé hors de
+    la fenêtre d'un segment, parent masqué, ou clip vidéo parent
+    (``graphic`` vaut alors ``None`` et sa boîte est le cadre). Ainsi un
+    segment d'aperçu place les enfants exactement comme l'export.
+    """
 
     clip_id: str
     track_id: str
@@ -210,6 +219,16 @@ class GraphicLayer:
     graphic: object
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
+    animation: tuple = field(default_factory=tuple)
+    compositing: object = None
+    effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
+    color_grade: object = None
+    role: str = "draw"
+    label: str = ""
+
+    @property
+    def is_rig(self) -> bool:
+        return self.role == "rig"
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +282,8 @@ class RenderPlan:
     # Problèmes rencontrés (référence cassée, cycle, profondeur) : les
     # clips concernés sont rendus vides au lieu de faire échouer le rendu.
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    # Flou de mouvement de la séquence (:class:`core.motion_blur.MotionBlurSettings`).
+    motion_blur: object = None
 
     def nested(self, key: str) -> "NestedSequencePlan | None":
         """Sous-plan de clé ``key`` (``None`` si inconnu)."""
@@ -548,18 +569,7 @@ class _PlanBuilder:
                         continue
                     if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                         continue
-                    graphics_layers.append(
-                        GraphicLayer(
-                            clip_id=clip.id,
-                            track_id=track.id,
-                            track_index=track_index,
-                            timeline_start=clip.timeline_start,
-                            timeline_end=clip.timeline_start + clip.duration,
-                            graphic=graphic,
-                            transform=clip.transform,
-                            transform_keyframes=tuple(clip.transform_keyframes),
-                        )
-                    )
+                    graphics_layers.append(_graphic_layer(clip, track, track_index))
                 continue
             if track.type not in {"video", "audio"}:
                 continue
@@ -614,6 +624,7 @@ class _PlanBuilder:
                             # travail au moteur d'export.
                             color_grade=getattr(clip, "color_grade", None),
                             compositing=getattr(clip, "compositing", None),
+                            animation=tuple(getattr(clip, "animation", ()) or ()),
                         )
                     )
                     # Un solo audio ne laisse passer que les pistes audio armées
@@ -632,6 +643,7 @@ class _PlanBuilder:
                             ducking_sidechains=sidechains_for(track.id),
                         )
                     )
+        graphics_layers.extend(_rig_layers(tracks, graphics_layers))
         layer_ids = {layer.clip_id for layer in video_layers}
         transitions = tuple(
             RenderTransition(
@@ -671,6 +683,7 @@ class _PlanBuilder:
             transitions=transitions,
             graphics_layers=tuple(graphics_layers),
             sequence_id=sequence.id,
+            motion_blur=getattr(sequence, "motion_blur", None),
         )
 
     def _add_nested_clip(
@@ -715,6 +728,7 @@ class _PlanBuilder:
                     color_grade=getattr(clip, "color_grade", None),
                     compositing=getattr(clip, "compositing", None),
                     nested_key=entry.key,
+                    animation=tuple(getattr(clip, "animation", ()) or ()),
                 )
             )
             lifted_cues.extend(_lift_nested_cues(clip, inner))
@@ -733,6 +747,65 @@ class _PlanBuilder:
             audio_layers.append(
                 replace(layer, source_fps=float(inner.fps), nested_key=entry.key)
             )
+
+
+def _graphic_layer(clip: Clip, track, track_index: int, *, role: str = "draw") -> GraphicLayer:
+    return GraphicLayer(
+        clip_id=clip.id,
+        track_id=track.id,
+        track_index=track_index,
+        timeline_start=clip.timeline_start,
+        timeline_end=clip.timeline_start + clip.duration,
+        graphic=getattr(clip, "graphic", None) if track.type == "graphics" else None,
+        transform=clip.transform,
+        transform_keyframes=tuple(clip.transform_keyframes),
+        animation=tuple(getattr(clip, "animation", ()) or ()),
+        compositing=getattr(clip, "compositing", None),
+        effects=tuple(clip.effects),
+        color_grade=getattr(clip, "color_grade", None),
+        role=role,
+        label=clip.label,
+    )
+
+
+def _rig_layers(tracks, drawn: list[GraphicLayer]) -> list[GraphicLayer]:
+    """Parents et groupes nécessaires aux calques dessinés mais absents du plan.
+
+    Un parent hors de la fenêtre d'un segment, masqué, sur une piste cachée,
+    ou un clip vidéo parent garde son rôle de transform : il est ajouté en
+    ``rig`` (jamais dessiné). Parcours borné : chaque clip au plus une fois.
+    """
+    present = {layer.clip_id for layer in drawn}
+    wanted: list[str] = []
+    for layer in drawn:
+        graphic = layer.graphic
+        for ref in (getattr(graphic, "parent_id", ""), getattr(graphic, "group_id", "")):
+            if ref and ref not in present:
+                wanted.append(ref)
+    if not wanted:
+        return []
+    by_id: dict[str, tuple] = {}
+    for track_index, track in enumerate(tracks):
+        if track.type not in ("graphics", "video"):
+            continue
+        for clip in track.clips:
+            by_id[clip.id] = (clip, track, track_index)
+    result: list[GraphicLayer] = []
+    while wanted:
+        clip_id = wanted.pop()
+        if clip_id in present or clip_id not in by_id:
+            continue
+        clip, track, track_index = by_id[clip_id]
+        if clip.sequence_id:
+            continue  # un clip imbriqué n'est pas un parent de transform
+        present.add(clip_id)
+        layer = _graphic_layer(clip, track, track_index, role="rig")
+        result.append(layer)
+        graphic = layer.graphic
+        for ref in (getattr(graphic, "parent_id", ""), getattr(graphic, "group_id", "")):
+            if ref and ref not in present:
+                wanted.append(ref)
+    return result
 
 
 def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:

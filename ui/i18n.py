@@ -1824,6 +1824,12 @@ def reset_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 
+# Motion graphics : traductions tenues à part, fusionnées ici.
+from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
+
+_TRANSLATIONS.update(_MOGRAPH)
+
+
 def _format(template: str, values: dict) -> str:
     if not values:
         return template

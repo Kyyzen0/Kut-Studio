@@ -29,6 +29,7 @@ import uuid
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
+from . import graph_cycles
 from .project_model import Clip, Marker, Project, Sequence, Track
 
 MAX_NESTING_DEPTH = 32
@@ -205,16 +206,7 @@ def reachable_sequences(project: Project, start_id: str) -> set[str]:
     Parcours itératif avec ensemble des visités : termine toujours, même
     sur un graphe cyclique ou des références inconnues.
     """
-    graph = dependency_graph(project)
-    seen: set[str] = set()
-    stack = list(graph.get(start_id, ()))
-    while stack:
-        current = stack.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        stack.extend(graph.get(current, ()))
-    return seen
+    return graph_cycles.reachable(dependency_graph(project), start_id)
 
 
 def would_create_cycle(project: Project, parent_id: str, child_id: str) -> bool:
@@ -224,66 +216,17 @@ def would_create_cycle(project: Project, parent_id: str, child_id: str) -> bool:
     atteignable depuis ``child_id`` (le parent serait alors son propre
     descendant).
     """
-    if parent_id == child_id:
-        return True
-    return parent_id in reachable_sequences(project, child_id)
+    return graph_cycles.would_create_cycle(dependency_graph(project), parent_id, child_id)
 
 
 def find_cycles(project: Project) -> list[tuple[str, ...]]:
     """Cycles du graphe des séquences (composantes fortement connexes).
 
     Chaque cycle est un tuple d'identifiants trié. Une auto-référence
-    (A contient A) est un cycle d'un élément. Algorithme de Tarjan en
-    version itérative : aucune limite de récursion Python à craindre.
+    (A contient A) est un cycle d'un élément. Voir
+    :func:`core.graph_cycles.find_cycles` (partagé avec le parentage des calques).
     """
-    graph = dependency_graph(project)
-    index_of: dict[str, int] = {}
-    lowlink: dict[str, int] = {}
-    on_stack: set[str] = set()
-    stack: list[str] = []
-    cycles: list[tuple[str, ...]] = []
-    counter = 0
-    for root in graph:
-        if root in index_of:
-            continue
-        work = [(root, iter(sorted(graph.get(root, ()))))]
-        index_of[root] = lowlink[root] = counter
-        counter += 1
-        stack.append(root)
-        on_stack.add(root)
-        while work:
-            node, children = work[-1]
-            advanced = False
-            for child in children:
-                if child not in graph:
-                    continue  # référence cassée : traitée ailleurs
-                if child not in index_of:
-                    index_of[child] = lowlink[child] = counter
-                    counter += 1
-                    stack.append(child)
-                    on_stack.add(child)
-                    work.append((child, iter(sorted(graph.get(child, ())))))
-                    advanced = True
-                    break
-                if child in on_stack:
-                    lowlink[node] = min(lowlink[node], index_of[child])
-            if advanced:
-                continue
-            work.pop()
-            if work:
-                parent = work[-1][0]
-                lowlink[parent] = min(lowlink[parent], lowlink[node])
-            if lowlink[node] == index_of[node]:
-                component = []
-                while True:
-                    member = stack.pop()
-                    on_stack.discard(member)
-                    component.append(member)
-                    if member == node:
-                        break
-                if len(component) > 1 or node in graph.get(node, ()):
-                    cycles.append(tuple(sorted(component)))
-    return cycles
+    return graph_cycles.find_cycles(dependency_graph(project))
 
 
 def nesting_depth(project: Project, sequence_id: str) -> int:

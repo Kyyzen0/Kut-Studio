@@ -395,6 +395,9 @@ def cut_clip(
     cut_local_time = cut_timeline_position - clip.timeline_start
     left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
     left_keyframes, right_keyframes = _split_transform_keyframes(clip, cut_local_time)
+    from .animation_targets import split_animation
+
+    left_animation, right_animation = split_animation(clip.animation, cut_local_time)
     (left_fade_in, left_fade_out), (right_fade_in, right_fade_out) = _split_fades(
         clip, cut_local_time
     )
@@ -438,6 +441,7 @@ def cut_clip(
         fade_in=left_fade_in,
         fade_out=left_fade_out,
         time_remapping=left_remapping,
+        animation=left_animation,
         **_carried_properties(clip),
     )
     right_clip = Clip(
@@ -457,6 +461,7 @@ def cut_clip(
         fade_in=right_fade_in,
         fade_out=right_fade_out,
         time_remapping=right_remapping,
+        animation=right_animation,
         **_carried_properties(clip, copy=True),
     )
 
@@ -590,6 +595,7 @@ def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None
 from .subtitle_io import SubtitleCue  # noqa: E402  (import local pour cycle)
 from .visual_effects import (  # noqa: E402  (import local pour cycle)
     ANIMATABLE_PROPERTIES,
+    TRANSFORM_PROPERTY_NAMES,
     ClipTransform,
     TransformKeyframe,
     copy_keyframe,
@@ -770,7 +776,13 @@ def duplicate_clip(
         transform=source_clip.transform,
         transform_keyframes=[copy_keyframe(kf) for kf in source_clip.transform_keyframes],
         time_remapping=source_clip.time_remapping,
-        sequence_id=source_clip.sequence_id,
+        gain_db=source_clip.gain_db,
+        pan=source_clip.pan,
+        fade_in=source_clip.fade_in,
+        fade_out=source_clip.fade_out,
+        animation=list(source_clip.animation),
+        # Calque graphique, effets, composition, style… : une copie complète.
+        **_carried_properties(source_clip, copy=True),
     )
     source_track.clips.append(duplicate)
     return duplicate
@@ -920,7 +932,7 @@ def set_transform_keyframe(
     pour le même couple, sa valeur est écrasée.
     """
     clip = _require_video_clip(project, clip_id)
-    if property_name not in ANIMATABLE_PROPERTIES:
+    if property_name not in TRANSFORM_PROPERTY_NAMES:
         raise ValueError(f"Propriété inconnue : {property_name!r}.")
     duration = clip.duration
     if duration <= 0.0:
@@ -1035,6 +1047,14 @@ def apply_clip_transform_on_trim(
         new_source_in=new_source_in,
         new_source_out=new_source_out,
     )
+    if clip.animation:
+        from .animation_targets import retime_animation
+
+        clip.animation = retime_animation(
+            clip.animation,
+            start_offset=float(new_source_in - old_source_in),
+            new_duration=float(new_source_out - new_source_in),
+        )
 
 
 def duplicate_clip_preserving_transform(

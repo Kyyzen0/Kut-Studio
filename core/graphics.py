@@ -1,15 +1,41 @@
-"""Calques graphiques non destructifs (tâche 32).
+"""Calques graphiques non destructifs (tâche 32, motion graphics).
 
 Les graphiques sont de vrais clips placés sur une piste ``graphics``.
 Leur durée, leur transform et leurs images-clés utilisent donc les mêmes
 primitives que les clips vidéo. Ce module reste pur : aucune dépendance Qt.
+
+Modèle de calque
+----------------
+
+Un seul type, :class:`GraphicOverlay`, décrit **tous** les calques motion
+graphics ; seul ``type`` change ce qui est dessiné :
+
+=============  ==============================================================
+``text``       texte (point ou boîte), contour, ombre, fond, alignements
+``shape``      rectangle, rectangle arrondi, ellipse, ligne, polygone
+``rectangle``  rectangle historique (tâche 32), dessiné comme une forme
+``solid``      aplat de couleur
+``image``      fichier image
+``group``      groupe : ses membres (``group_id``) sont composés ensemble
+``adjustment`` adjustment layer : applique ses effets à tout ce qui est dessous
+``null``       contrôleur invisible, sert de parent
+=============  ==============================================================
+
+Ce qui est commun à tout calque vit ailleurs, sans duplication :
+identifiant, nom, durée, in/out → le :class:`~core.project_model.Clip` ;
+transform (avec ancrage, inclinaison, miroirs) → ``Clip.transform`` ;
+masques et mode de fusion → ``Clip.compositing`` ; effets → ``Clip.effects`` ;
+propriétés animées → ``Clip.transform_keyframes`` / ``Clip.animation``.
+Ici : contenu, apparence, visibilité, verrou, parent, groupe, ordre.
+
+Ajouter un type de calque : voir ``docs/motion-graphics.md``.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from enum import Enum
 from pathlib import Path
 
@@ -21,7 +47,40 @@ class GraphicType(str, Enum):
     RECTANGLE = "rectangle"
     SOLID = "solid"
     IMAGE = "image"
+    SHAPE = "shape"
+    GROUP = "group"
+    ADJUSTMENT = "adjustment"
+    NULL = "null"
 
+
+class ShapeKind(str, Enum):
+    RECTANGLE = "rectangle"
+    ROUNDED_RECTANGLE = "rounded_rectangle"
+    ELLIPSE = "ellipse"
+    LINE = "line"
+    POLYGON = "polygon"
+
+
+class LayerLayout(str, Enum):
+    """Interprétation de la position d'un calque.
+
+    - ``anchor`` (calques créés depuis le moteur motion graphics) : la
+      position (0 = centre du cadre) désigne l'endroit où se trouve le point
+      d'ancrage, comme pour un clip vidéo.
+    - ``legacy`` (projets de la tâche 32) : la position place le coin
+      haut-gauche de l'image tournée. Gardé tel quel à l'ouverture d'un
+      ancien projet pour ne rien déplacer.
+    """
+
+    ANCHOR = "anchor"
+    LEGACY = "legacy"
+
+
+CONTAINER_TYPES = frozenset({GraphicType.GROUP, GraphicType.NULL, GraphicType.ADJUSTMENT})
+"""Calques sans pixels propres (aucun contenu rastérisé)."""
+
+TEXT_ALIGN_H = ("left", "center", "right")
+TEXT_ALIGN_V = ("top", "center", "bottom")
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 
@@ -31,13 +90,23 @@ def normalize_color(value: object, fallback: str) -> str:
     return text.upper() if _HEX_COLOR.fullmatch(text) else fallback
 
 
+def _bounded(value: object, low: float, high: float, fallback: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if number != number:
+        return fallback
+    return max(low, min(high, number))
+
+
 @dataclass(frozen=True)
 class GraphicOverlay:
-    """Contenu et apparence d'un clip graphique.
+    """Contenu, apparence et place dans la pile d'un calque graphique.
 
-    La géométrie animable (position, échelle, rotation, opacité) reste dans
-    ``Clip.transform``. Ici vivent uniquement les propriétés intrinsèques du
-    calque, ce qui évite deux sources de vérité.
+    La géométrie animable (position, échelle, rotation, opacité, ancrage…)
+    reste dans ``Clip.transform``. Ici vivent uniquement les propriétés
+    intrinsèques du calque, ce qui évite deux sources de vérité.
     """
 
     type: GraphicType = GraphicType.TEXT
@@ -53,12 +122,39 @@ class GraphicOverlay:
     shadow_offset_y: int = 4
     font_family: str = "Sans Serif"
     font_size: int = 64
+    # --- Calque (pile, hiérarchie) ---
+    visible: bool = True
+    locked: bool = False
+    parent_id: str = ""
+    group_id: str = ""
+    z_order: int = 0
+    motion_blur: bool = False
+    layout: LayerLayout = LayerLayout.ANCHOR
+    # --- Forme ---
+    shape: ShapeKind = ShapeKind.RECTANGLE
+    corner_radius: float = 0.0
+    polygon_sides: int = 6
+    fill_enabled: bool = True
+    # --- Texte ---
+    align_h: str = "center"
+    align_v: str = "center"
+    tracking: float = 0.0
+    line_spacing: float = 1.0
+    bold: bool = False
+    italic: bool = False
+    box_text: bool = True
+    autosize: bool = False
+    shadow_blur: float = 0.0
+    background_enabled: bool = False
+    background_color: str = "#000000AA"
+    background_padding: int = 16
+    background_radius: float = 0.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
         object.__setattr__(self, "width", max(2, min(8192, int(self.width))))
         object.__setattr__(self, "height", max(2, min(8192, int(self.height))))
-        object.__setattr__(self, "stroke_width", max(0, min(64, int(self.stroke_width))))
+        object.__setattr__(self, "stroke_width", max(0, min(256, int(self.stroke_width))))
         object.__setattr__(self, "font_size", max(6, min(512, int(self.font_size))))
         object.__setattr__(self, "shadow_offset_x", max(-256, min(256, int(self.shadow_offset_x))))
         object.__setattr__(self, "shadow_offset_y", max(-256, min(256, int(self.shadow_offset_y))))
@@ -68,8 +164,55 @@ class GraphicOverlay:
         object.__setattr__(self, "text", str(self.text or ""))
         object.__setattr__(self, "source_path", str(self.source_path or ""))
         object.__setattr__(self, "font_family", str(self.font_family or "Sans Serif"))
+        # Calque
+        object.__setattr__(self, "visible", bool(self.visible))
+        object.__setattr__(self, "locked", bool(self.locked))
+        object.__setattr__(self, "parent_id", str(self.parent_id or ""))
+        object.__setattr__(self, "group_id", str(self.group_id or ""))
+        object.__setattr__(self, "z_order", int(_bounded(self.z_order, -1_000_000, 1_000_000, 0)))
+        object.__setattr__(self, "motion_blur", bool(self.motion_blur))
+        try:
+            layout = LayerLayout(self.layout)
+        except ValueError:
+            layout = LayerLayout.ANCHOR
+        object.__setattr__(self, "layout", layout)
+        # Forme
+        try:
+            shape = ShapeKind(self.shape)
+        except ValueError:
+            shape = ShapeKind.RECTANGLE
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "corner_radius", _bounded(self.corner_radius, 0.0, 4096.0, 0.0))
+        object.__setattr__(self, "polygon_sides", int(_bounded(self.polygon_sides, 3, 64, 6)))
+        object.__setattr__(self, "fill_enabled", bool(self.fill_enabled))
+        # Texte
+        object.__setattr__(self, "align_h", self.align_h if self.align_h in TEXT_ALIGN_H else "center")
+        object.__setattr__(self, "align_v", self.align_v if self.align_v in TEXT_ALIGN_V else "center")
+        object.__setattr__(self, "tracking", _bounded(self.tracking, -100.0, 500.0, 0.0))
+        object.__setattr__(self, "line_spacing", _bounded(self.line_spacing, 0.3, 5.0, 1.0))
+        object.__setattr__(self, "bold", bool(self.bold))
+        object.__setattr__(self, "italic", bool(self.italic))
+        object.__setattr__(self, "box_text", bool(self.box_text))
+        object.__setattr__(self, "autosize", bool(self.autosize))
+        object.__setattr__(self, "shadow_blur", _bounded(self.shadow_blur, 0.0, 200.0, 0.0))
+        object.__setattr__(self, "background_enabled", bool(self.background_enabled))
+        object.__setattr__(self, "background_color", normalize_color(self.background_color, "#000000AA"))
+        object.__setattr__(self, "background_padding", int(_bounded(self.background_padding, 0, 1024, 16)))
+        object.__setattr__(self, "background_radius", _bounded(self.background_radius, 0.0, 1024.0, 0.0))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
+
+    @property
+    def is_container(self) -> bool:
+        """Groupe, contrôleur ou adjustment layer : pas de pixels propres."""
+        return self.type in CONTAINER_TYPES
+
+    @property
+    def is_shape(self) -> bool:
+        return self.type in (GraphicType.SHAPE, GraphicType.RECTANGLE)
+
+
+_GRAPHIC_FIELDS = frozenset(f.name for f in fields(GraphicOverlay))
 
 
 def graphic_defaults(
@@ -78,6 +221,7 @@ def graphic_defaults(
     project_width: int = 1920,
     project_height: int = 1080,
     source_path: str = "",
+    shape: ShapeKind | str = ShapeKind.RECTANGLE,
 ) -> GraphicOverlay:
     kind = GraphicType(graphic_type)
     if kind == GraphicType.TEXT:
@@ -87,11 +231,31 @@ def graphic_defaults(
             type=kind, text="", width=480, height=270,
             fill_color="#36E6C3", stroke_color="#FFFFFF", stroke_width=0,
         )
+    if kind == GraphicType.SHAPE:
+        shape_kind = ShapeKind(shape)
+        if shape_kind == ShapeKind.LINE:
+            return GraphicOverlay(
+                type=kind, text="", width=480, height=24, shape=shape_kind,
+                fill_enabled=False, stroke_color="#FFFFFF", stroke_width=6,
+            )
+        size = (320, 320) if shape_kind in (ShapeKind.ELLIPSE, ShapeKind.POLYGON) else (480, 270)
+        return GraphicOverlay(
+            type=kind, text="", width=size[0], height=size[1], shape=shape_kind,
+            fill_color="#36E6C3", stroke_color="#FFFFFF", stroke_width=0,
+            corner_radius=32.0 if shape_kind == ShapeKind.ROUNDED_RECTANGLE else 0.0,
+        )
     if kind == GraphicType.SOLID:
         return GraphicOverlay(
             type=kind, text="", width=project_width, height=project_height,
             fill_color="#061514", shadow_offset_x=0, shadow_offset_y=0,
         )
+    if kind in (GraphicType.GROUP, GraphicType.ADJUSTMENT):
+        return GraphicOverlay(
+            type=kind, text="", width=project_width, height=project_height,
+            shadow_offset_x=0, shadow_offset_y=0,
+        )
+    if kind == GraphicType.NULL:
+        return GraphicOverlay(type=kind, text="", width=100, height=100, shadow_offset_x=0, shadow_offset_y=0)
     return GraphicOverlay(
         type=kind, text="", source_path=source_path,
         width=min(960, project_width), height=min(540, project_height),
@@ -121,6 +285,33 @@ def ensure_graphics_track(project: Project) -> Track:
     return track
 
 
+_LABELS = {
+    GraphicType.TEXT: "Titre",
+    GraphicType.RECTANGLE: "Rectangle",
+    GraphicType.SOLID: "Aplat",
+    GraphicType.SHAPE: "Forme",
+    GraphicType.GROUP: "Groupe",
+    GraphicType.ADJUSTMENT: "Calque d'effets",
+    GraphicType.NULL: "Contrôleur",
+}
+
+_SHAPE_LABELS = {
+    ShapeKind.RECTANGLE: "Rectangle",
+    ShapeKind.ROUNDED_RECTANGLE: "Rectangle arrondi",
+    ShapeKind.ELLIPSE: "Ellipse",
+    ShapeKind.LINE: "Ligne",
+    ShapeKind.POLYGON: "Polygone",
+}
+
+
+def next_z_order(track: Track) -> int:
+    """Rang au-dessus de tous les calques de la piste."""
+    values = [
+        clip.graphic.z_order for clip in track.clips if isinstance(clip.graphic, GraphicOverlay)
+    ]
+    return max(values, default=-1) + 1
+
+
 def add_graphic_clip(
     project: Project,
     graphic_type: GraphicType | str,
@@ -128,32 +319,45 @@ def add_graphic_clip(
     timeline_start: float,
     duration: float = 5.0,
     source_path: str = "",
+    shape: ShapeKind | str = ShapeKind.RECTANGLE,
+    graphic: GraphicOverlay | None = None,
+    track: Track | None = None,
 ) -> Clip:
-    """Crée un média technique, une piste G si nécessaire et le clip."""
+    """Crée un média technique, une piste G si nécessaire et le clip.
+
+    ``graphic`` remplace le contenu par défaut (presets, collage) ; ``track``
+    force la piste (sinon la première piste G éditable).
+    """
     start = max(0.0, float(timeline_start))
     duration = float(duration)
     if duration <= 0.0:
         raise ValueError("La durée d'un graphique doit être positive.")
-    kind = GraphicType(graphic_type)
+    kind = GraphicType(graphic.type if graphic is not None else graphic_type)
     if kind == GraphicType.IMAGE:
-        path = Path(source_path).expanduser()
+        path = Path(graphic.source_path if graphic is not None else source_path).expanduser()
         if not path.is_file():
             raise FileNotFoundError(f"Image graphique introuvable : {path}")
         source_path = str(path.resolve())
-    graphic = graphic_defaults(
-        kind,
-        project_width=project.width,
-        project_height=project.height,
-        source_path=source_path,
-    )
+    if graphic is None:
+        graphic = graphic_defaults(
+            kind,
+            project_width=project.width,
+            project_height=project.height,
+            source_path=source_path,
+            shape=shape,
+        )
+    elif kind == GraphicType.IMAGE:
+        graphic = replace(graphic, source_path=source_path)
+    target_track = track if track is not None else ensure_graphics_track(project)
+    graphic = replace(graphic, z_order=next_z_order(target_track))
     token = uuid.uuid4().hex[:12]
     asset_id = f"graphic-asset-{token}"
-    label = {
-        GraphicType.TEXT: "Titre",
-        GraphicType.RECTANGLE: "Rectangle",
-        GraphicType.SOLID: "Aplat",
-        GraphicType.IMAGE: Path(source_path).stem or "Image",
-    }[kind]
+    if kind == GraphicType.IMAGE:
+        label = Path(source_path).stem or "Image"
+    elif kind == GraphicType.SHAPE:
+        label = _SHAPE_LABELS[graphic.shape]
+    else:
+        label = _LABELS[kind]
     project.media_assets.append(
         MediaAsset(
             id=asset_id,
@@ -166,11 +370,10 @@ def add_graphic_clip(
             media_type="graphic",
         )
     )
-    track = ensure_graphics_track(project)
     clip = Clip(
         id=f"graphic-{token}",
         asset_id=asset_id,
-        track_id=track.id,
+        track_id=target_track.id,
         timeline_start=start,
         source_in=0.0,
         source_out=duration,
@@ -178,15 +381,15 @@ def add_graphic_clip(
         text=graphic.text,
         graphic=graphic,
     )
-    track.clips.append(clip)
-    track.clips.sort(key=lambda item: (item.timeline_start, item.id))
+    target_track.clips.append(clip)
+    target_track.clips.sort(key=lambda item: (item.timeline_start, item.id))
     return clip
 
 
 def update_graphic(clip: Clip, field_name: str, value: object) -> GraphicOverlay:
     if not isinstance(clip.graphic, GraphicOverlay):
         raise ValueError("Ce clip ne porte pas de calque graphique.")
-    if field_name not in GraphicOverlay.__dataclass_fields__ or field_name == "type":
+    if field_name not in _GRAPHIC_FIELDS or field_name == "type":
         raise ValueError(f"Propriété graphique inconnue : {field_name!r}.")
     current = clip.graphic
     graphic = replace(current, **{field_name: value})
@@ -201,34 +404,29 @@ def update_graphic(clip: Clip, field_name: str, value: object) -> GraphicOverlay
 def graphic_to_dict(graphic: GraphicOverlay | None) -> dict | None:
     if not isinstance(graphic, GraphicOverlay):
         return None
-    return {
-        "type": graphic.type.value,
-        "text": graphic.text,
-        "source_path": graphic.source_path,
-        "width": graphic.width,
-        "height": graphic.height,
-        "fill_color": graphic.fill_color,
-        "stroke_color": graphic.stroke_color,
-        "stroke_width": graphic.stroke_width,
-        "shadow_color": graphic.shadow_color,
-        "shadow_offset_x": graphic.shadow_offset_x,
-        "shadow_offset_y": graphic.shadow_offset_y,
-        "font_family": graphic.font_family,
-        "font_size": graphic.font_size,
-    }
+    data = {}
+    for item in fields(GraphicOverlay):
+        value = getattr(graphic, item.name)
+        data[item.name] = value.value if isinstance(value, Enum) else value
+    return data
 
 
 def graphic_from_dict(raw: object) -> GraphicOverlay | None:
     if not isinstance(raw, dict):
         return None
     try:
-        allowed = GraphicOverlay.__dataclass_fields__
-        return GraphicOverlay(**{key: value for key, value in raw.items() if key in allowed})
+        kwargs = {key: value for key, value in raw.items() if key in _GRAPHIC_FIELDS}
+        # Un calque écrit avant le moteur motion graphics n'a pas de ``layout`` :
+        # sa position désigne le coin haut-gauche (rendu historique conservé).
+        kwargs.setdefault("layout", LayerLayout.LEGACY.value)
+        return GraphicOverlay(**kwargs)
     except (TypeError, ValueError):
         return None
 
 
 __all__ = [
-    "GraphicOverlay", "GraphicType", "add_graphic_clip", "ensure_graphics_track",
-    "graphic_defaults", "graphic_from_dict", "graphic_to_dict", "update_graphic",
+    "CONTAINER_TYPES", "GraphicOverlay", "GraphicType", "LayerLayout", "ShapeKind",
+    "TEXT_ALIGN_H", "TEXT_ALIGN_V", "add_graphic_clip", "ensure_graphics_track",
+    "graphic_defaults", "graphic_from_dict", "graphic_to_dict", "next_z_order",
+    "normalize_color", "update_graphic",
 ]

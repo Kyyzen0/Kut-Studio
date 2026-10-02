@@ -94,6 +94,10 @@ class RenderQueue(QObject):
         self._jobs: list[RenderJob] = []
         self._current: RenderJob | None = None
         self._launched = False  # le moteur a-t-il été démarré pour _current ?
+        # Préparation des calques motion graphics (fil séparé) avant ``start``.
+        self._prepare_executor = None
+        self._prepare_timer = None
+        self._preparing = None
         self._partial: str | None = None
         self._mode: str | None = None  # None, "all" ou "single"
         self._targets: set[str] = set()  # jobs d'une exécution « single »
@@ -492,7 +496,47 @@ class RenderQueue(QObject):
             self._finish_current(lambda: job.mark_failed(message, ErrorKind.INVALID))
             self._schedule_next()
             return
+        from .mograph_ffmpeg import needs_graphics_preparation
+
+        if needs_graphics_preparation(plan):
+            # Les images des calques motion graphics sont rendues dans un fil à
+            # part : l'interface reste fluide, puis FFmpeg les lit dans le cache.
+            self._prepare_then_start(job, request)
+            return
         # ``True`` avant ``start`` : le moteur peut émettre ``failed`` de façon synchrone.
+        self._launched = True
+        self._engine.start(request)
+
+    def _prepare_then_start(self, job: RenderJob, request) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from .mograph_ffmpeg import prepare_graphics_streams
+
+        if self._prepare_executor is None:
+            self._prepare_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kut-mograph")
+            self._prepare_timer = QTimer(self)
+            self._prepare_timer.setInterval(50)
+            self._prepare_timer.timeout.connect(self._poll_preparation)
+        width, height = request.preset.resolution
+        future = self._prepare_executor.submit(
+            prepare_graphics_streams, request.render_plan, width, height, request.fps,
+        )
+        self._preparing = (job, request, future)
+        self._prepare_timer.start()
+
+    def _poll_preparation(self) -> None:
+        preparing = self._preparing
+        if preparing is None:
+            self._prepare_timer.stop()
+            return
+        job, request, future = preparing
+        if not future.done():
+            return
+        self._prepare_timer.stop()
+        self._preparing = None
+        # Annulé, remplacé ou application en fermeture pendant la préparation.
+        if self._current is not job or self._launched or self._closing:
+            return
         self._launched = True
         self._engine.start(request)
 
@@ -684,6 +728,11 @@ class RenderQueue(QObject):
         self._closing = True
         self._mode = None
         self._targets.clear()
+        if self._prepare_executor is not None:
+            # Une préparation de calques en cours ne retient pas la fermeture.
+            self._prepare_timer.stop()
+            self._preparing = None
+            self._prepare_executor.shutdown(wait=False, cancel_futures=True)
         stopped = True
         if self._launched:
             stopped = self._engine.shutdown(timeout_ms)

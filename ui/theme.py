@@ -408,18 +408,20 @@ def _stylesheet(palette: ThemePalette) -> str:
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
         border-color: {palette.accent};
     }}
-    /* Tableaux des raccourcis (Préférences) et de la file de rendu : lisibles quel que soit le
-       fond natif du dialogue. */
-    QTreeWidget#shortcutsTree, QTreeWidget#renderQueueTree {{
+    /* Tableaux des raccourcis (Préférences), de la file de rendu et pile des calques : lisibles
+       quel que soit le fond natif. */
+    QTreeWidget#shortcutsTree, QTreeWidget#renderQueueTree, QTreeWidget#layers_tree {{
         background: {palette.panel_alt}; color: {palette.text};
         alternate-background-color: {palette.panel};
         border: 1px solid {palette.border}; border-radius: 6px; outline: 0;
     }}
-    QTreeWidget#shortcutsTree::item, QTreeWidget#renderQueueTree::item {{ padding: 3px 4px; }}
-    QTreeWidget#shortcutsTree::item:selected, QTreeWidget#renderQueueTree::item:selected {{
+    QTreeWidget#shortcutsTree::item, QTreeWidget#renderQueueTree::item, QTreeWidget#layers_tree::item {{ padding: 3px 4px; }}
+    QTreeWidget#shortcutsTree::item:selected, QTreeWidget#renderQueueTree::item:selected,
+    QTreeWidget#layers_tree::item:selected {{
         background: {palette.accent_dark}; color: {palette.text};
     }}
-    QTreeWidget#shortcutsTree QHeaderView::section, QTreeWidget#renderQueueTree QHeaderView::section {{
+    QTreeWidget#shortcutsTree QHeaderView::section, QTreeWidget#renderQueueTree QHeaderView::section,
+    QTreeWidget#layers_tree QHeaderView::section {{
         background: {palette.surface}; color: {palette.muted};
         border: none; border-bottom: 1px solid {palette.border};
         padding: 4px 8px; font-weight: 600;

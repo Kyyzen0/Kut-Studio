@@ -82,7 +82,7 @@ def test_graphics_roundtrip_and_legacy_project(tmp_path) -> None:
     save_project(project, str(target))
 
     raw = json.loads(target.read_text(encoding="utf-8"))
-    assert raw["version"] == CURRENT_VERSION == 14
+    assert raw["version"] == CURRENT_VERSION == 15
     assert raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["graphic"]["text"] == "Un vrai titre"
     loaded = load_project(str(target))
     loaded_graphic = loaded.tracks[0].clips[0].graphic
@@ -120,11 +120,12 @@ def test_render_plan_filter_graph_and_keyframes(qtbot, tmp_path) -> None:
     graph, label, _audio, inputs = ExportEngine._build_filter_complex(
         plan, 320, 180, 10, None
     )
-    assert label.startswith("gout")
+    assert label.startswith("mgout")
     assert "overlay=" in graph
     assert "drawtext" not in graph  # portable même sans libfreetype
+    # Le titre est rastérisé (Qt) en flux d'images dédupliquées (.ffconcat).
     assert len(inputs) == 1
-    assert Path(inputs[0]).is_file() and Path(inputs[0]).suffix == ".png"
+    assert Path(inputs[0]).is_file() and Path(inputs[0]).suffix == ".ffconcat"
 
     before = fingerprint_plan(plan, width=320, height=180, fps=10, quality="standard")
     update_graphic(clip, "fill_color", "#FF0000")

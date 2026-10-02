@@ -295,6 +295,11 @@ class Clip:
     # alors des temps de la séquence référencée et ``asset_id`` reste vide.
     # La séquence n'est jamais copiée dans le clip : elle est référencée.
     sequence_id: str = ""
+    # --- Animation générique (motion graphics) ---
+    # Keyframes des propriétés animables hors transform : forme, texte,
+    # masques (``graphic.width``, ``mask.<id>.feather``…). Voir
+    # :func:`core.animation_targets.generic_target`.
+    animation: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -446,6 +451,13 @@ def _default_transform():  # pragma: no cover - import deferred
     from .visual_effects import ClipTransform
 
     return ClipTransform()
+
+
+def _default_motion_blur():  # pragma: no cover - import deferred
+    """Retourne des :class:`MotionBlurSettings` par défaut (import paresseux)."""
+    from .motion_blur import MotionBlurSettings
+
+    return MotionBlurSettings()
 
 
 def _default_time_remapping():  # pragma: no cover - import deferred
@@ -631,6 +643,11 @@ class Sequence:
     markers: list[Marker] = field(default_factory=list)
     transitions: list["Transition"] = field(default_factory=list)
     ducking_sidechains: list = field(default_factory=list)
+    # --- Motion graphics ---
+    # Guides du viewer (:class:`core.canvas_guides.Guide`) : jamais exportés.
+    guides: list = field(default_factory=list)
+    # Réglages du flou de mouvement (:class:`core.motion_blur.MotionBlurSettings`).
+    motion_blur: object = field(default_factory=lambda: _default_motion_blur())
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():
@@ -642,6 +659,10 @@ class Sequence:
             self.transitions = []
         if self.ducking_sidechains is None:
             self.ducking_sidechains = []
+        if self.guides is None:
+            self.guides = []
+        if self.motion_blur is None:
+            self.motion_blur = _default_motion_blur()
 
     @property
     def duration(self) -> float:

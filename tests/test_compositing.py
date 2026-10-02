@@ -24,11 +24,10 @@ def test_compositing_kut_round_trip_and_old_default(tmp_path):
     clip = Clip("c", "a", "V1", 0, 0, 1, compositing=comp)
     project.media_assets.append(asset); project.tracks.append(Track("V1", "V1", "video", clips=[clip]))
     path = tmp_path / "x.kut"; save_project(project, str(path))
-    # Le compositing est un ajout rétrocompatible au schéma v12. Éviter une
-    # hausse de version protège les lecteurs de la tâche 32 et constitue une
-    # régression explicitement couverte par les suites graphics/project_io.
-    assert CURRENT_VERSION == 14
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 14
+    # Le compositing reste un champ optionnel ; la version 15 (motion
+    # graphics) est la version courante du format.
+    assert CURRENT_VERSION == 15
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 15
     restored = load_project(str(path)).tracks[0].clips[0]
     assert restored.compositing == comp
     assert build_render_plan(load_project(str(path))).video_layers[0].compositing == comp

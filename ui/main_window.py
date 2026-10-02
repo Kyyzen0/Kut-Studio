@@ -93,6 +93,7 @@ from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.sequences import SequencesMixin
+from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
 # remplacent sur ce module (``ui.main_window.QMessageBox``, etc.).
@@ -121,6 +122,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    MotionGraphicsMixin,
     SequencesMixin,
     ColorGradingMixin,
     AudioMixin,
@@ -576,6 +578,8 @@ class MainWindow(
         self._sync_preview_to_timeline()
         # Séquences : navigation (fil d'Ariane), bibliothèque, imbrication.
         self._init_sequences()
+        # Motion graphics : panneau Calques, viewer interactif, presets.
+        self._init_motion_graphics()
 
         # Espace de travail : le gestionnaire est l'unique autorité sur
         # la disposition. Il enregistre les quatre panneaux existants
@@ -1438,8 +1442,10 @@ class MainWindow(
         proxies_selection_action.triggered.connect(self.generate_proxies_for_selection)
         sequence_menu.addAction(proxies_selection_action)
 
-        for menu in (file_menu, edit_menu, sequence_menu, window_menu):
+        for menu in (file_menu, edit_menu, sequence_menu):
             menu_bar.addMenu(menu)
+        self._build_layers_menu(menu_bar)
+        menu_bar.addMenu(window_menu)
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
         preferences_action = self._command_action("preferences", "action.preferences")
@@ -1548,6 +1554,13 @@ class MainWindow(
             self._request_scopes_analysis()
 
     def _sync_preview_to_timeline(self) -> list:
+        """Synchronise le moniteur puis l'aperçu des calques et la surcouche."""
+        self._viewer_composited = False
+        result = self._sync_preview_core()
+        self._after_preview_sync()
+        return result
+
+    def _sync_preview_core(self) -> list:
         """Évalue la timeline à ``playhead_seconds`` et synchronise l'aperçu.
 
         - S'il existe au moins un clip vidéo actif, on charge la source
@@ -1970,6 +1983,7 @@ class MainWindow(
             **self._animation_shortcut_handlers(),
             # Séquences
             **self._sequence_shortcut_handlers(),
+            **self._mograph_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:
@@ -2078,6 +2092,7 @@ class MainWindow(
             "timeline_menu": "menu.timeline",
             "window_menu": "menu.window",
             "help_menu": "menu.help",
+            "layers_menu": "menu.layers",
         }
         key = mapping.get(object_name or "")
         return i18n.translate(key) if key else ""

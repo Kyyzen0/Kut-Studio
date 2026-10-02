@@ -274,6 +274,21 @@ class SubtitlesGraphicsMixin:
             return
         try:
             before = clip.graphic
+            # Propriété animée (corps, approche…) : la valeur saisie devient
+            # l'image-clé à la tête de lecture, comme pour le transform.
+            from core import keyframe_editing
+            from core.mograph_targets import GRAPHIC_PROPERTY_SPECS, graphic_property_id
+
+            property_id = graphic_property_id(field_name)
+            if property_id in GRAPHIC_PROPERTY_SPECS and keyframe_editing.is_animated(clip, property_id):
+                local = keyframe_editing.snap_to_frame(
+                    clip, float(self.playhead_seconds) - clip.timeline_start, float(self.project.fps)
+                )
+                keyframe_editing.set_value_at(self.project, clip_id, property_id, local, float(value))
+                self._schedule_graphic_history(clip_id)
+                self._invalidate_preview_for_clip(clip_id)
+                self._schedule_graphic_preview_refresh()
+                return
             updated = update_graphic(clip, field_name, value)
         except (TypeError, ValueError) as exc:
             self.statusBar().showMessage(f"Modification graphique refusée : {exc}", 5000)

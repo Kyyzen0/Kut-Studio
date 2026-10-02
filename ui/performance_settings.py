@@ -170,7 +170,10 @@ class PerformanceSettingsTab(QWidget):
         stats = host.cache_summary()["usage"]
 
         def size(kind: str) -> str:
-            return format_size(int(stats.get(kind, {}).get("bytes", 0)))
+            total = int(stats.get(kind, {}).get("bytes", 0))
+            if kind == "preview":  # les images de calques sont des dérivés d'aperçu
+                total += int(stats.get("mograph", {}).get("bytes", 0))
+            return format_size(total)
 
         self.usage_label.setText(
             i18n.translate(

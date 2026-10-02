@@ -10,7 +10,7 @@ Graph Editor) n'enregistrent qu'à la fin du geste.
 from __future__ import annotations
 
 from core.animation import InterpolationType
-from core.animation_targets import get_target, targets_for
+from core.animation_targets import get_target, targets_for_clip
 from core.keyframe_editing import (
     AnimationClipboard,
     KeyframeRef,
@@ -66,7 +66,9 @@ class AnimationMixin:
         return ""
 
     def _animation_properties(self, clip) -> list[str]:
-        return [target.id for target in targets_for(self._track_type_of(clip))]
+        # Propriétés de **ce** clip : transform, plus celles de son type de
+        # calque (texte, forme) et de ses masques.
+        return [target.id for target in targets_for_clip(clip, self._track_type_of(clip))]
 
     def _local_playhead(self, clip) -> float:
         local = float(self.playhead_seconds) - float(clip.timeline_start)

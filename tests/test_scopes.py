@@ -1615,7 +1615,9 @@ def test_build_frame_command_matches_export_filter_graph(tmp_path) -> None:
     def graph(command: list[str]) -> str:
         return command[command.index("-filter_complex") + 1]
 
-    assert graph(single) == graph(full)
+    # Même graphe ; l'audio, inutile pour une image, part dans un puits
+    # (FFmpeg refuse une sortie de graphe non reliée).
+    assert graph(single) == graph(full) + ";[aout]anullsink"
     # Le seek est avant l'entrée, la sortie est un PNG sur stdout.
     assert single.index("-ss") < single.index("-i")
     assert single[single.index("-ss") + 1] == "5.000"

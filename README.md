@@ -27,6 +27,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - 📤 **Export and render queue** — MP4 (H.264), MOV (H.264) and MOV (ProRes) through FFmpeg, with presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) and a persistent, reorderable render queue. See [docs/render-queue.md](docs/render-queue.md).
 - 🎬 **Keyframe animation** — one central engine (hold, linear, ease in/out, Bézier with linked or broken tangents) for position, scale, rotation and opacity: diamond buttons in the inspector, keyframes on the timeline, a Graph Editor, configurable shortcuts and undo — with preview and export computing exactly the same values. See [docs/animation.md](docs/animation.md).
 - 🎞️ **Hardware encoding** — export with VideoToolbox, NVENC, Quick Sync, AMF or VAAPI when your FFmpeg really supports it (detected and validated at runtime), automatic CPU fallback, and an always-available CPU path. See [docs/hardware-encoding.md](docs/hardware-encoding.md).
+- ✳️ **Motion graphics and compositing** — text, shape (rectangle, rounded rectangle, ellipse, line, polygon), solid and image layers, groups, null controllers and adjustment layers; anchor point, X/Y scale, skew and flips; parenting with cycle protection; multiple feathered masks (add / subtract / intersect); 8 blend modes identical in preview and export; optional motion blur; direct manipulation in the viewer with snapping, guides and safe areas; a Layers panel, attribute copy/paste and presets. See [docs/motion-graphics.md](docs/motion-graphics.md).
 - 🗂️ **Multiple and nested sequences** — several timelines per project; use a sequence as a clip inside another (rendered once however many times it is used, with its own transform, effects, keyframes and audio), nest a selection in one step, open nested sequences by double-click and navigate with breadcrumbs (`Master › Scene 01 › Intro`), back/forward and parent. Cycles are refused, older single-timeline projects open unchanged. See [docs/nested-sequences.md](docs/nested-sequences.md).
 - ⚡ **Performance layer** — media proxies for preview (export always uses the originals), a unified cache with disk budget and purge, smart prefetching, timeline indexes for 10,000-clip projects and an adaptive *Auto* preview quality. See [docs/performance.md](docs/performance.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
@@ -165,6 +166,8 @@ Kut-Studio/
 | `Ctrl + ,` | Preferences |
 | `Ctrl + Shift + N` | Nest selection into a sequence |
 | `Ctrl + Alt + ↓` / `Ctrl + Alt + ↑` | Open nested sequence / go to parent sequence |
+| `Ctrl + G` / `Ctrl + Shift + G` | Group / ungroup layers |
+| `Ctrl + '` / `Ctrl + ;` | Safe areas / guides in the viewer |
 | `Alt + ←` / `Alt + →` | Previous / next sequence |
 
 Every shortcut can be changed in **Preferences → Shortcuts** (search, conflict detection, secondary shortcut, per-command or global reset). Changes apply immediately and are saved with your preferences; `Ctrl` is `⌘` on macOS. Multi-step chords such as `Ctrl+K, B` are supported.
@@ -196,6 +199,7 @@ headless machine, set `QT_QPA_PLATFORM=offscreen`.
 - Hardware-accelerated encoding (the model and extension point are ready)
 - Preview and timeline performance on large projects
 - Signed installers and automated releases
+- Motion graphics: per-character text animation, animated colors and mask vertices, effects inside groups
 
 ## 🤝 Contributing
 
@@ -225,6 +229,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - 📤 **Export et file de rendu** — MP4 (H.264), MOV (H.264) et MOV (ProRes) via FFmpeg, avec des presets (H.264 1080p/1440p/4K, YouTube, vertical 1080×1920, ProRes Master, Custom) et une file de rendu persistante et réordonnable. Voir [docs/render-queue.md](docs/render-queue.md).
 - 🎬 **Animation par images-clés** — un moteur central (maintien, linéaire, ease in/out, Bézier aux tangentes liées ou séparées) pour la position, l’échelle, la rotation et l’opacité : losanges dans l’inspecteur, images-clés dans la timeline, éditeur de courbes, raccourcis configurables et annulation — l’aperçu et l’export calculent exactement les mêmes valeurs. Voir [docs/animation.md](docs/animation.md).
 - 🎞️ **Encodage matériel** — export avec VideoToolbox, NVENC, Quick Sync, AMF ou VAAPI lorsque votre FFmpeg le permet réellement (détecté et validé à l’exécution), repli CPU automatique et chemin CPU toujours disponible. Voir [docs/hardware-encoding.md](docs/hardware-encoding.md).
+- ✳️ **Motion graphics et compositing** — calques texte, forme (rectangle, rectangle arrondi, ellipse, ligne, polygone), aplat et image, groupes, contrôleurs et calques d'effets (adjustment) ; point d'ancrage, échelle X/Y, inclinaison et miroirs ; parentage protégé contre les cycles ; masques multiples adoucis (ajouter / soustraire / intersection) ; 8 modes de fusion identiques en aperçu et à l'export ; flou de mouvement optionnel ; manipulation directe dans le viewer avec magnétisme, guides et zones de sécurité ; panneau Calques, copier / coller d'attributs et presets. Voir [docs/motion-graphics.md](docs/motion-graphics.md).
 - 🗂️ **Séquences multiples et imbriquées** — plusieurs timelines par projet ; une séquence s'utilise comme un clip dans une autre (rendue une seule fois quel que soit le nombre d'instances, avec ses propres transform, effets, images-clés et audio), une sélection s'imbrique en une étape, double-clic pour ouvrir une séquence imbriquée et navigation par fil d'Ariane (`Master › Scene 01 › Intro`), précédent/suivant et parent. Les cycles sont refusés, les anciens projets à timeline unique s'ouvrent sans changement. Voir [docs/nested-sequences.md](docs/nested-sequences.md).
 - ⚡ **Couche de performance** — proxies média pour l’aperçu (l’export utilise toujours les originaux), cache unifié avec budget disque et purge, préchargement intelligent, index de timeline pour des projets de 10 000 clips et qualité d’aperçu *Auto* adaptative. Voir [docs/performance.md](docs/performance.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
@@ -330,6 +335,8 @@ outils sont adaptés à chaque système.
 | `Ctrl + ,` | Préférences |
 | `Ctrl + Maj + N` | Créer une séquence à partir de la sélection |
 | `Ctrl + Alt + ↓` / `Ctrl + Alt + ↑` | Ouvrir la séquence imbriquée / revenir à la séquence parente |
+| `Ctrl + G` / `Ctrl + Maj + G` | Grouper / dégrouper les calques |
+| `Ctrl + '` / `Ctrl + ;` | Zones de sécurité / guides du viewer |
 | `Alt + ←` / `Alt + →` | Séquence précédente / suivante |
 
 Tous les raccourcis se modifient dans **Préférences → Raccourcis** (recherche, détection des conflits, raccourci secondaire, réinitialisation par commande ou globale). Les changements sont appliqués immédiatement et sauvegardés avec vos préférences ; `Ctrl` correspond à `⌘` sur macOS. Les accords en plusieurs étapes, comme `Ctrl+K, B`, sont pris en charge.
@@ -358,6 +365,7 @@ La suite (environ 1 650 tests) couvre le modèle de projet, la timeline, les E/S
 - Décodage matériel, aperçu et effets accélérés par le GPU (l’encodage matériel de l’export est en place : voir `docs/hardware-encoding.md`)
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées
+- Motion graphics : animation caractère par caractère, couleurs et sommets de masque animés, effets à l'intérieur des groupes
 
 ## 🤝 Contribution
 

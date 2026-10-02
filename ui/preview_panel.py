@@ -13,12 +13,14 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QTransform
+from PySide6.QtCore import QEvent, QObject, QRectF, QSizeF, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QPixmap, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
     QGridLayout,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
     QHBoxLayout,
@@ -31,9 +33,29 @@ from PySide6.QtWidgets import (
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style, monospace_font_family
+from ui.viewer_overlay import ViewerOverlay
+
+CANVAS_MARGIN = 12
+"""Marge (pixels) entre le cadre de la séquence et les bords du viewer."""
+
+
+class _ViewportWatcher(QObject):
+    """Relaie les redimensionnements du viewport (le cadre suit sa taille)."""
+
+    def __init__(self, callback) -> None:
+        super().__init__()
+        self._callback = callback
+
+    def eventFilter(self, _watched, event) -> bool:  # noqa: N802 (API Qt)
+        if event.type() == QEvent.Resize:
+            self._callback()
+        return False
 
 
 class PreviewPanel(QWidget):
+    canvas_changed = Signal()
+    """Le cadre affiché a changé de taille (re-rendre l'aperçu des calques)."""
+
     def __init__(
         self,
         toggle_play,
@@ -63,6 +85,28 @@ class PreviewPanel(QWidget):
         self.video_item = QGraphicsVideoItem()
         self.graphics_scene.addItem(self.video_item)
         self.player.setVideoOutput(self.video_item)
+        self.graphics_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # Cadre de la séquence : le repère commun de la vidéo, de l'aperçu des
+        # calques motion graphics et de la surcouche interactive.
+        self._canvas_size: tuple[int, int] = (1920, 1080)
+        self._canvas_rect = QRectF(0, 0, 1, 1)
+        # Fond noir du cadre (comme le fond de l'export) : on voit où est le
+        # cadre même sans vidéo sous la tête de lecture.
+        self.canvas_item = QGraphicsRectItem()
+        self.canvas_item.setBrush(QColor(0, 0, 0))
+        self.canvas_item.setPen(QColor(COLORS["border"]))
+        self.canvas_item.setZValue(-10)
+        self.graphics_scene.addItem(self.canvas_item)
+        self.mograph_item = QGraphicsPixmapItem()
+        self.mograph_item.setZValue(5)
+        self.mograph_item.setTransformationMode(Qt.SmoothTransformation)
+        self.graphics_scene.addItem(self.mograph_item)
+        self.overlay = ViewerOverlay()
+        self.graphics_scene.addItem(self.overlay)
+        self._viewport_watcher = _ViewportWatcher(self._layout_canvas)
+        self.graphics_view.viewport().installEventFilter(self._viewport_watcher)
 
         # Position / échelle courantes appliquées à ``QGraphicsVideoItem``.
         self._applied_pos_x: float = 0.0
@@ -70,6 +114,7 @@ class PreviewPanel(QWidget):
         self._applied_scale: float = 1.0
         self._applied_rotation: float = 0.0
         self._applied_opacity: float = 1.0
+        self._applied_advanced: dict[str, float] = {}
 
         # Suivi interne de la source affichée pour les deux modes.
         self._timeline_preview_path: str | None = None
@@ -477,6 +522,72 @@ class PreviewPanel(QWidget):
     # Application du transform courant (tâche 13)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Cadre de la séquence
+    # ------------------------------------------------------------------
+
+    def set_canvas_size(self, width: int, height: int) -> None:
+        """Taille (pixels) de la séquence affichée : fixe le rapport du cadre."""
+        size = (max(2, int(width)), max(2, int(height)))
+        if size != self._canvas_size:
+            self._canvas_size = size
+            self._layout_canvas()
+
+    def canvas_size(self) -> tuple[int, int]:
+        return self._canvas_size
+
+    def canvas_rect(self) -> QRectF:
+        """Rectangle (repère de la scène = pixels du viewport) du cadre."""
+        return QRectF(self._canvas_rect)
+
+    def _layout_canvas(self) -> None:
+        viewport = self.graphics_view.viewport().rect()
+        vw, vh = max(viewport.width(), 1), max(viewport.height(), 1)
+        self.graphics_scene.setSceneRect(QRectF(0, 0, vw, vh))
+        cw, ch = self._canvas_size
+        available_w = max(1.0, vw - 2 * CANVAS_MARGIN)
+        available_h = max(1.0, vh - 2 * CANVAS_MARGIN)
+        k = min(available_w / cw, available_h / ch)
+        width, height = cw * k, ch * k
+        rect = QRectF((vw - width) / 2.0, (vh - height) / 2.0, width, height)
+        changed = rect != self._canvas_rect
+        self._canvas_rect = rect
+        self.overlay.set_canvas(rect, (cw, ch))
+        self.canvas_item.setRect(rect)
+        self.mograph_item.setPos(rect.topLeft())
+        self._reapply_transform()
+        if changed:
+            self.canvas_changed.emit()
+
+    def set_mograph_image(self, image) -> None:
+        """Calques motion graphics rendus à la taille du cadre (``None`` = rien)."""
+        if image is None or image.isNull():
+            self.mograph_item.setPixmap(QPixmap())
+            return
+        pixmap = QPixmap.fromImage(image)
+        if pixmap.width() > 0:
+            # L'image peut être rendue plus petite (lecture) : elle couvre le cadre.
+            self.mograph_item.setScale(self._canvas_rect.width() / pixmap.width())
+        self.mograph_item.setPixmap(pixmap)
+
+    def set_mograph_visible(self, visible: bool) -> None:
+        self.mograph_item.setVisible(bool(visible))
+
+    def set_graphics_present(self, present: bool) -> None:
+        """Des calques sont visibles : le message « aucun clip » ne doit pas les cacher."""
+        if present:
+            self.empty_state.hide()
+
+    def _reapply_transform(self) -> None:
+        self.apply_transform(
+            position_x=self._applied_pos_x,
+            position_y=self._applied_pos_y,
+            scale=self._applied_scale,
+            rotation=self._applied_rotation,
+            opacity=self._applied_opacity,
+            **self._applied_advanced,
+        )
+
     def apply_transform(
         self,
         *,
@@ -487,35 +598,38 @@ class PreviewPanel(QWidget):
         opacity: float = 1.0,
         canvas_width: int | None = None,
         canvas_height: int | None = None,
+        anchor_x: float = 0.5,
+        anchor_y: float = 0.5,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        flip_h: bool = False,
+        flip_v: bool = False,
+        **_ignored,
     ) -> None:
+        """Place la vidéo dans le cadre comme l'export (voir ``core.mograph_scene``).
+
+        Le média occupe le cadre (adapté sans déformation, comme ``scale`` +
+        ``pad`` de l'export), puis pivote et s'échelonne autour du point
+        d'ancrage ; la position (fraction du cadre) désigne l'ancrage.
+        """
         opacity = max(0.0, min(1.0, float(opacity)))
         scale = max(0.01, float(scale))
-
-        view_rect = self.graphics_view.viewport().rect()
-        if canvas_width is None or canvas_width <= 0:
-            canvas_width = max(view_rect.width(), 1)
-        if canvas_height is None or canvas_height <= 0:
-            canvas_height = max(view_rect.height(), 1)
-        scene_w = float(canvas_width)
-        scene_h = float(canvas_height)
-        center_x = self.graphics_view.mapToScene(view_rect.center()).x()
-        center_y = self.graphics_view.mapToScene(view_rect.center()).y()
-
-        native = self.video_item.nativeSize()
-        item_w = max(float(native.width()), 1.0)
-        item_h = max(float(native.height()), 1.0)
-        target_w = item_w * scale
-        target_h = item_h * scale
-        self.video_item.setScale(scale)
-
-        delta_x = float(position_x) * scene_w
-        delta_y = float(position_y) * scene_h
+        rect = self._canvas_rect
+        width, height = rect.width(), rect.height()
+        self.video_item.setSize(QSizeF(width, height))
+        self.video_item.setScale(1.0)
+        sx = scale * float(scale_x) * (-1.0 if flip_h else 1.0)
+        sy = scale * float(scale_y) * (-1.0 if flip_v else 1.0)
         transform = QTransform()
-        transform.translate(center_x + delta_x, center_y + delta_y)
+        transform.translate(
+            rect.x() + width / 2.0 + float(position_x) * width,
+            rect.y() + height / 2.0 + float(position_y) * height,
+        )
         # Sens horaire pour un angle positif, comme le filtre ``rotate`` de
         # FFmpeg : l'aperçu et l'export tournent dans le même sens.
         transform.rotate(float(rotation))
-        transform.translate(-target_w / 2.0, -target_h / 2.0)
+        transform.scale(sx, sy)
+        transform.translate(-float(anchor_x) * width, -float(anchor_y) * height)
         self.video_item.setTransform(transform)
         self.video_item.setOpacity(opacity)
 
@@ -524,6 +638,11 @@ class PreviewPanel(QWidget):
         self._applied_scale = scale
         self._applied_rotation = float(rotation)
         self._applied_opacity = opacity
+        self._applied_advanced = {
+            "anchor_x": float(anchor_x), "anchor_y": float(anchor_y),
+            "scale_x": float(scale_x), "scale_y": float(scale_y),
+            "flip_h": bool(flip_h), "flip_v": bool(flip_v),
+        }
 
     def current_applied_transform(self) -> dict[str, float]:
         return {

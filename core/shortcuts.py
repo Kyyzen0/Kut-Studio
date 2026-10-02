@@ -71,6 +71,7 @@ class Category(str, Enum):
     AUDIO = "audio"
     MARKERS = "markers"
     ANIMATION = "animation"
+    MOTION = "motion"
     SEQUENCES = "sequences"
 
 
@@ -480,6 +481,19 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("sequence_parent", Category.SEQUENCES, "Ctrl+Alt+Up", scope=_A),
     _cmd("sequence_back", Category.SEQUENCES, "Alt+Left", scope=_A),
     _cmd("sequence_forward", Category.SEQUENCES, "Alt+Right", scope=_A),
+    # --- Motion graphics (calques, viewer) -----------------------------------
+    _cmd("layer_add_text", Category.MOTION, scope=_A),
+    _cmd("layer_add_shape", Category.MOTION, scope=_A),
+    _cmd("layer_add_null", Category.MOTION, scope=_A),
+    _cmd("layer_add_adjustment", Category.MOTION, scope=_A),
+    _cmd("layer_group", Category.MOTION, "Ctrl+G", scope=_A),
+    _cmd("layer_ungroup", Category.MOTION, "Ctrl+Shift+G", scope=_A),
+    _cmd("layer_copy_attributes", Category.MOTION, scope=_A),
+    _cmd("layer_paste_attributes", Category.MOTION, scope=_A),
+    _cmd("view_safe_areas", Category.MOTION, "Ctrl+'", scope=_A),
+    _cmd("view_guides", Category.MOTION, "Ctrl+;", scope=_A),
+    _cmd("view_grid", Category.MOTION, scope=_A),
+    _cmd("mograph_snapping", Category.MOTION, scope=_A),
 )
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}

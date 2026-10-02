@@ -93,6 +93,8 @@ class TimelineClipView:
     # sous-titres.
     text_style: object = None
     graphic: object = None
+    # Masques, mode de fusion, incrustation (éditeur Compositing).
+    compositing: object = None
     # --- Séquence imbriquée ---
     # Séquence référencée (vide pour un clip média).
     sequence_id: str = ""
@@ -177,13 +179,14 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     time_remapping=clip.time_remapping,
                     effects=tuple(clip.effects),
                     color_grade=getattr(clip, "color_grade", None),
-                    locked=bool(track.locked),
+                    locked=bool(track.locked) or bool(getattr(getattr(clip, "graphic", None), "locked", False)),
                     text_style=(
                         getattr(clip, "text_style", None)
                         if track.type in {"subtitle", "graphics"}
                         else None
                     ),
                     graphic=getattr(clip, "graphic", None),
+                    compositing=getattr(clip, "compositing", None),
                     sequence_id=clip.sequence_id,
                     nested_status=status,
                     nested_overflow_start=overflow_start,

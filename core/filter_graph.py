@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 
 
-def build_filter_complex(plan, output_width, output_height, fps, srt_path=None):
-    """Construit le -filter_complex via le moteur d'export (parite)."""
+def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export"):
+    """Construit le -filter_complex via le moteur d'export (parite).
+
+    ``quality`` ne regle que le flou de mouvement des calques motion
+    graphics (brouillon : desactive) ; le reste du graphe est identique.
+    """
     from .export_engine import ExportEngine
 
     return ExportEngine._build_filter_complex(
-        plan, output_width, output_height, fps, srt_path
+        plan, output_width, output_height, fps, srt_path, quality=quality
     )
 
 
@@ -77,7 +82,7 @@ def build_preview_command(plan, **kwargs):
     output_path = str(kwargs.get("output_path", ""))
     srt_path = kwargs.get("srt_path", None)
     out_w, out_h = preview_output_size(width, height, quality)
-    result = build_filter_complex(plan, out_w, out_h, fps, srt_path)
+    result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality)
     filter_complex, video_label, audio_label, input_paths = result
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     for path in input_paths:
@@ -106,6 +111,18 @@ def build_preview_command(plan, **kwargs):
         command.extend(["-t", "%.3f" % float(duration)])
     command.append(output_path)
     return command
+
+
+def _graphic_source_key(graphic) -> str:
+    """Signature du fichier d'un calque image (modifié sur disque → nouveau rendu)."""
+    path = getattr(graphic, "source_path", "")
+    if not path:
+        return ""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return "missing"
+    return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
 def fingerprint_plan(plan, **kwargs):
@@ -154,6 +171,7 @@ def fingerprint_plan(plan, **kwargs):
                 "effects": _effects_key(getattr(layer, "effects", ())),
                 "grade": _grade_key(getattr(layer, "color_grade", None)),
                 "compositing": repr(getattr(layer, "compositing", None)),
+                "animation": repr(getattr(layer, "animation", ())),
                 "nested": getattr(layer, "nested_key", ""),
             }
             for layer in getattr(plan, "video_layers", ())
@@ -191,9 +209,18 @@ def fingerprint_plan(plan, **kwargs):
                 "graphic": repr(layer.graphic),
                 "transform": repr(layer.transform),
                 "keyframes": repr(layer.transform_keyframes),
+                # Motion graphics : animation générique, masques / fusion,
+                # effets, rôle (« rig » = parent hors fenêtre) et image source.
+                "animation": repr(getattr(layer, "animation", ())),
+                "compositing": repr(getattr(layer, "compositing", None)),
+                "effects": _effects_key(getattr(layer, "effects", ())),
+                "grade": _grade_key(getattr(layer, "color_grade", None)),
+                "role": getattr(layer, "role", "draw"),
+                "source": _graphic_source_key(layer.graphic),
             }
             for layer in getattr(plan, "graphics_layers", ())
         ],
+        "motion_blur": repr(getattr(plan, "motion_blur", None)),
         # Séquences imbriquées : l'empreinte d'un sous-plan ne couvre que la
         # plage qu'il lit dans ce segment. Modifier « Intro » change donc les
         # segments parents qui la montrent, et eux seuls.

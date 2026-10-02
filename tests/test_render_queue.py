@@ -838,3 +838,49 @@ def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path
             store.snapshot_dir(bad)
         store.delete_snapshot(bad)  # sans effet
     assert (victim / "important.txt").read_text(encoding="utf-8") == "à garder"
+
+
+def test_graphics_are_prepared_off_the_ui_thread_before_ffmpeg_starts(qtbot, queue, tmp_path, monkeypatch):
+    """Les images des calques sont rendues dans un fil, puis FFmpeg démarre."""
+    import threading
+
+    from core import mograph_ffmpeg
+    from core.graphics import add_graphic_clip
+
+    threads: list[str] = []
+    original = mograph_ffmpeg.prepare_graphics_streams
+
+    def spy(*args):
+        threads.append(threading.current_thread().name)
+        return original(*args)
+
+    monkeypatch.setattr(mograph_ffmpeg, "prepare_graphics_streams", spy)
+    project = _project(tmp_path)
+    add_graphic_clip(project, "text", timeline_start=0.0, duration=2.0)
+    job = _enqueue(queue, tmp_path, project=project)
+    queue.start_job(job.id)
+    _wait_idle(qtbot, queue)
+    assert job.status is JobStatus.COMPLETED
+    assert threads and threads[0].startswith("kut-mograph")
+
+
+def test_cancel_during_graphics_preparation_never_starts_ffmpeg(qtbot, queue, tmp_path, monkeypatch):
+    import threading
+
+    from core import mograph_ffmpeg
+    from core.graphics import add_graphic_clip
+
+    gate = threading.Event()
+    monkeypatch.setattr(mograph_ffmpeg, "prepare_graphics_streams", lambda *_a: gate.wait(5) or True)
+    started: list[object] = []
+    monkeypatch.setattr(queue._engine, "start", lambda request: started.append(request))
+    project = _project(tmp_path)
+    add_graphic_clip(project, "text", timeline_start=0.0, duration=2.0)
+    job = _enqueue(queue, tmp_path, project=project)
+    queue.start_job(job.id)
+    qtbot.waitUntil(lambda: queue._preparing is not None, timeout=TIMEOUT)
+    queue.cancel(job.id)
+    gate.set()
+    qtbot.wait(200)
+    assert job.status is JobStatus.CANCELLED and started == []
+
