@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 
 from PySide6.QtCore import QByteArray, QSize, Qt, QTimer, Signal
@@ -67,6 +68,9 @@ from core.gpu_composite import (
 from core.gpu_frames import LAYOUTS, QT_COLOR_RANGES, QT_COLOR_SPACES, layout_for
 
 LOGGER = logging.getLogger("kut_studio.gpu")
+
+SRB_CACHE_SIZE = 128
+"""Liaisons de ressources gardées : une image en utilise une dizaine au plus ; le reste est du cache."""
 
 _FORMATS = {
     "R8": QRhiTexture.Format.R8,
@@ -182,7 +186,8 @@ class RhiExecutor:
         self._sources: dict[str, tuple] = {}  # id -> (clé, [textures])
         self._template_rpds: dict[str, object] = {}
         self._pipelines: dict[tuple, QRhiGraphicsPipeline] = {}
-        self._srbs: dict[tuple, object] = {}
+        self._srbs: OrderedDict[tuple, object] = OrderedDict()
+        self._pinned_srbs: dict[tuple, object] = {}
         self._present: QRhiGraphicsPipeline | None = None
         self._present_rpd = None
         self.texture_bytes = 0
@@ -218,7 +223,11 @@ class RhiExecutor:
         rt.setRenderPassDescriptor(rpd)
         if not rt.create():
             raise GpuUnavailable("cible de rendu impossible")
-        self._template_rpds.setdefault(fmt, rpd)
+        if fmt not in self._template_rpds:
+            # Modèle des pipelines de ce format, DISTINCT du descripteur de la cible : celui-ci est détruit
+            # avec elle (redimensionnement, changement de séquence) alors que les pipelines suivants
+            # s'appuyaient encore dessus.
+            self._template_rpds[fmt] = rt.newCompatibleRenderPassDescriptor()
         entry = ((fmt, spec.width, spec.height), texture, rt, rpd)
         self._targets[name] = entry
         self.texture_bytes += spec.width * spec.height * (8 if fmt == "RGBA16F" else 4)
@@ -257,27 +266,40 @@ class RhiExecutor:
         ])
         pipeline.setVertexInputLayout(self._layout())
         pipeline.setTopology(QRhiGraphicsPipeline.Topology.TriangleStrip)
-        pipeline.setShaderResourceBindings(self._srb_for(self._ubuf(0), (self._dummy,) * 3))
+        pipeline.setShaderResourceBindings(self._srb_for(self._ubuf(0), (self._dummy,) * 3, pinned=True))
         pipeline.setRenderPassDescriptor(rpd)
         if not pipeline.create():
             raise GpuUnavailable("pipeline graphique impossible")
         return pipeline
 
-    def _srb_for(self, ubuf, textures):
-        key = (id(ubuf), *(id(t) for t in textures))
-        srb = self._srbs.get(key)
-        if srb is None:
-            stages = QRhiShaderResourceBinding.StageFlag.VertexStage | QRhiShaderResourceBinding.StageFlag.FragmentStage
-            fragment = QRhiShaderResourceBinding.StageFlag.FragmentStage
-            srb = self.rhi.newShaderResourceBindings()
-            srb.setBindings([
-                QRhiShaderResourceBinding.uniformBuffer(0, stages, ubuf),
-                *(QRhiShaderResourceBinding.sampledTexture(i + 1, fragment, t, self._sampler)
-                  for i, t in enumerate(textures)),
-            ])
-            if not srb.create():
-                raise GpuUnavailable("liaisons de ressources impossibles")
-            self._srbs[key] = srb
+    def _srb_for(self, ubuf, textures, *, pinned: bool = False):
+        # La clé porte les OBJETS, pas leur ``id()`` : Python réutilise l'identifiant d'un objet libéré, et
+        # une texture neuve (un masque animé en crée une par image) retombait sur la liaison construite
+        # pour une texture déjà détruite. Tant que l'entrée existe, la clé garde ses objets vivants.
+        key = (ubuf, *textures)
+        table = self._pinned_srbs if pinned else self._srbs
+        srb = table.get(key)
+        if srb is not None:
+            if not pinned:
+                table.move_to_end(key)
+            return srb
+        stages = QRhiShaderResourceBinding.StageFlag.VertexStage | QRhiShaderResourceBinding.StageFlag.FragmentStage
+        fragment = QRhiShaderResourceBinding.StageFlag.FragmentStage
+        srb = self.rhi.newShaderResourceBindings()
+        srb.setBindings([
+            QRhiShaderResourceBinding.uniformBuffer(0, stages, ubuf),
+            *(QRhiShaderResourceBinding.sampledTexture(i + 1, fragment, t, self._sampler)
+              for i, t in enumerate(textures)),
+        ])
+        if not srb.create():
+            raise GpuUnavailable("liaisons de ressources impossibles")
+        table[key] = srb
+        while not pinned and len(table) > SRB_CACHE_SIZE:
+            _key, oldest = table.popitem(last=False)   # le moins récemment utilisé, jamais celui de l'image courante
+            try:
+                oldest.destroy()
+            except Exception:  # noqa: BLE001 - libérer ne doit jamais interrompre le rendu
+                pass
         return srb
 
     def ensure_present_pipeline(self, rpd) -> None:
@@ -463,14 +485,17 @@ class RhiExecutor:
             self._release_target(name)
         for source_id in list(self._sources):
             self.release_source(source_id)
-        for resource in [*self._pipelines.values(), *self._srbs.values(), *self._ubufs,
+        for resource in [*self._pipelines.values(), *self._srbs.values(), *self._pinned_srbs.values(),
+                         *self._template_rpds.values(), *self._ubufs,
                          *([self._present] if self._present is not None else []), *self._resources]:
             try:
                 resource.destroy()
             except Exception:
                 pass
         self._pipelines.clear()
+        self._template_rpds.clear()
         self._srbs.clear()
+        self._pinned_srbs.clear()
         self._ubufs.clear()
         self._resources.clear()
         self._present = None
