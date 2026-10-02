@@ -151,3 +151,52 @@ def test_a_windowed_application_without_stderr_still_starts(tmp_path, monkeypatc
 def test_uninstall_without_install_is_harmless():
     assert diagnostics_log._installed is None
     uninstall_diagnostics()
+
+
+def test_the_kut_studio_loggers_reach_the_file(diagnostics):
+    """Choix d'encodeur, repli de décodage, état du GPU : ils journalisent sous ``kut_studio.*``, pas sous ``core``."""
+    logging.getLogger("kut_studio.encoding").info("encodeur choisi : libx264")
+    logging.getLogger("kut_studio.decode").warning("repli CPU")
+    logging.getLogger("kut_studio.gpu").info("GPU confirmé")
+    text = _text(diagnostics)
+    assert "encodeur choisi : libx264" in text and "repli CPU" in text and "GPU confirmé" in text
+
+
+def test_every_logger_name_used_by_the_application_is_covered():
+    """Un nouveau nom de journal qui ne descend d'aucune racine n'arriverait jamais au fichier."""
+    import re
+
+    roots = diagnostics_log.LOGGER_ROOTS
+    root = Path(__file__).resolve().parent.parent
+    uncovered = []
+    for folder in ("core", "ui"):
+        for path in (root / folder).rglob("*.py"):
+            for name in re.findall(r'getLogger\(\s*"([^"]+)"', path.read_text(encoding="utf-8")):
+                if name.split(".")[0] not in roots:
+                    uncovered.append(f"{path.relative_to(root)}: {name}")
+    assert not uncovered, uncovered
+
+
+def _run_main(code: str, tmp_path):
+    import os
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent
+    env = {**os.environ, "KUT_STUDIO_LOG_DIR": str(tmp_path / "logs"), "QT_QPA_PLATFORM": "offscreen"}
+    return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True, timeout=90)
+
+
+def test_importing_the_entry_point_does_not_load_qt_or_the_interface(tmp_path):
+    """Sinon un échec au chargement de Qt ou de l'interface surviendrait avant l'installation du journal."""
+    completed = _run_main(
+        "import sys, main; print('PySide6.QtWidgets' in sys.modules, 'ui.main_window' in sys.modules)", tmp_path
+    )
+    assert completed.returncode == 0, completed.stderr[-500:]
+    assert completed.stdout.strip() == "False False"
+
+
+def test_a_failure_while_loading_the_interface_leaves_a_trace_in_the_log(tmp_path):
+    completed = _run_main("import sys; sys.modules['ui.main_window'] = None; import main; main.main()", tmp_path)
+    assert completed.returncode != 0
+    text = (tmp_path / "logs" / diagnostics_log.LOG_FILE_NAME).read_text(encoding="utf-8")
+    assert "Exception non rattrapée" in text and "ui.main_window" in text

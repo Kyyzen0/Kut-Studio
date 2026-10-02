@@ -25,6 +25,9 @@ BACKUP_COUNT = 3
 _FORMAT = "%(asctime)s %(levelname)-8s %(threadName)s %(name)s : %(message)s"
 _MARKER = "_kut_diagnostics_handler"
 LOGGER = logging.getLogger("kut")
+LOGGER_ROOTS = ("kut", "kut_studio", "core", "ui")
+"""Racines des journaux de l'application : ``kut`` (ce module), ``kut_studio.*`` (encodage, décodage, GPU : choix
+d'encodeur, repli de décodage, état du GPU), puis les modules qui journalisent sous leur nom (``core.…``, ``ui.…``)."""
 
 
 class _Installed:
@@ -70,10 +73,7 @@ def install_diagnostics(log_dir: str | Path | None = None) -> Path | None:
     handler, path = _open_handler(log_dir)
     handler.setFormatter(logging.Formatter(_FORMAT))
     setattr(handler, _MARKER, True)
-    LOGGER.addHandler(handler)
-    LOGGER.setLevel(logging.INFO)
-    # Les modules de l'application journalisent sous leur nom de module (``core.…``, ``ui.…``).
-    for name in ("core", "ui"):
+    for name in LOGGER_ROOTS:
         logging.getLogger(name).addHandler(handler)
         logging.getLogger(name).setLevel(logging.INFO)
     state = _Installed(handler, path)
@@ -118,7 +118,7 @@ def uninstall_diagnostics() -> None:
     sys.excepthook = state.excepthook
     threading.excepthook = state.threading_hook
     sys.unraisablehook = state.unraisable_hook
-    for name in ("kut", "core", "ui"):
+    for name in LOGGER_ROOTS:
         logging.getLogger(name).removeHandler(state.handler)
     state.handler.close()
 
