@@ -1146,7 +1146,7 @@ def _compose_plan_graph(
         bg_seconds = duration if duration > 0 else 1.0 / float(fps or 30)
         video_label = compose_graphics(
             parts, plan, width, height, fps, video_label, add_input,
-            prefix=p, quality=quality, duration=bg_seconds,
+            prefix=p, quality=quality, duration=bg_seconds, nested=nested,
         )
 
     if not want_audio:
@@ -1523,7 +1523,7 @@ def _build_layer_filter(
     parts = [
         f"[{source_label}]",
         f"trim=start={source_in}:end={source_out},",
-        f"setpts=PTS-STARTPTS,",
+        "setpts=PTS-STARTPTS,",
     ]
 
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
@@ -1548,7 +1548,7 @@ def _build_layer_filter(
         parts.append(f"fps={fps},")
         if time_remapping_filter:
             parts.append(f"{time_remapping_filter},")
-        parts.append(f"setpts=PTS-STARTPTS,")
+        parts.append("setpts=PTS-STARTPTS,")
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).

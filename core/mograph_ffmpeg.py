@@ -124,8 +124,12 @@ def compose_graphics(
     prefix: str = "",
     quality: str = "export",
     duration: float,
+    nested: bool = False,
 ) -> str:
-    """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``."""
+    """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``.
+
+    ``nested`` : le dessous est le cadre **transparent** d'une séquence imbriquée (et non un fond opaque).
+    """
     layers = getattr(plan, "graphics_layers", ()) or ()
     if not any(getattr(layer, "role", "draw") == "draw" for layer in layers):
         return video_label
@@ -144,7 +148,9 @@ def compose_graphics(
         tag = f"{p}mg{index}"
         out = f"{p}mgout{index}"
         if element.kind == "adjustment":
-            current = _compose_adjustment(parts, renderer, element, current, add_input, fps, duration, tag, out)
+            current = _compose_adjustment(
+                parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested
+            )
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
@@ -164,7 +170,8 @@ def compose_graphics(
 
 
 def _compose_adjustment(
-    parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out
+    parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out,
+    *, nested: bool = False,
 ) -> str:
     clip_id = element.clip_id
     path = write_stream(
@@ -176,6 +183,21 @@ def _compose_adjustment(
     )
     coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov")
     chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False)
+    if nested:
+        # Le dessous est transparent là où la séquence imbriquée est vide : l'ajustement ne doit rien créer
+        # à cet endroit (sinon le noir des effets opaques masquerait la piste parente). Sa couverture est
+        # donc multipliée par l'alpha du dessous.
+        parts.append(f"[{current}]split=3[{tag}a][{tag}b][{tag}c]")
+        parts.append(f"[{tag}c]alphaextract[{tag}ba]")
+        processed = _apply_chain(parts, f"{tag}b", chain, tag) if chain else f"{tag}b"
+        parts.append(
+            f"[{coverage}]alphaextract[{tag}ca];"
+            f"[{tag}ca][{tag}ba]blend=all_mode=multiply:shortest=0:repeatlast=1[{tag}al];"
+            f"[{processed}]format=rgba[{tag}pr];"
+            f"[{tag}pr][{tag}al]alphamerge[{tag}pa];"
+            f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass[{out}]"
+        )
+        return out
     parts.append(f"[{current}]split[{tag}a][{tag}b]")
     processed = _apply_chain(parts, f"{tag}b", chain, tag) if chain else f"{tag}b"
     parts.append(
