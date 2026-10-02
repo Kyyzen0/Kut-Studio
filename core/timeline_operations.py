@@ -175,9 +175,10 @@ def trim_clip_left(
     """Rogne la partie gauche du clip en avançant son point d'entrée.
 
     Le clip ne peut que se raccourcir par la gauche : ``timeline_start``
-    doit être supérieur ou égal à la valeur actuelle, et ``source_in``
-    est augmenté de la même quantité (la durée diminue d'autant,
-    ``source_out`` reste fixe).
+    doit être supérieur ou égal à la valeur actuelle. La fin du clip sur
+    la timeline ne bouge pas. Le point de source consommé est ``delta *
+    vitesse`` : ``source_in`` avance, ou ``source_out`` recule si le clip
+    est lu à l'envers ; un arrêt sur image raccourcit sa durée.
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas dans le projet.
@@ -192,31 +193,29 @@ def trim_clip_left(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
-    delta = new_timeline_start - clip.timeline_start
+    delta = new_timeline_start - clip.timeline_start  # secondes de timeline
     if delta < 0.0:
         raise ValueError(
             f"Le trim gauche ne peut que reculer la position de début "
             f"vers l'avant : timeline_start actuel = {clip.timeline_start}, "
             f"demandé = {new_timeline_start}."
         )
-    new_source_in = clip.source_in + delta
-    if new_source_in >= clip.source_out:
+    new_duration = clip.duration - delta
+    if new_duration <= 1e-9:
         raise ValueError(
             f"Le trim gauche produirait une durée nulle ou négative pour "
-            f"le clip '{clip_id}' (source_in={new_source_in}, "
-            f"source_out={clip.source_out})."
+            f"le clip '{clip_id}' (durée={new_duration})."
         )
-    old_source_in = clip.source_in
-    old_source_out = clip.source_out
+    if clip.is_frozen:
+        # Un arrêt sur image garde ses bornes source : seule sa durée change.
+        _set_freeze_duration(clip, new_duration)
+    elif clip.is_reversed:
+        # Lu à l'envers, le début de la timeline montre la fin de la source.
+        clip.source_out -= delta * clip.speed
+    else:
+        clip.source_in += delta * clip.speed
     clip.timeline_start = new_timeline_start
-    clip.source_in = new_source_in
-    apply_clip_transform_on_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=new_source_in,
-        new_source_out=clip.source_out,
-    )
+    apply_clip_transform_on_trim(clip, start_offset=delta, new_duration=new_duration)
     return clip
 
 
@@ -225,9 +224,10 @@ def trim_clip_right(
 ) -> Clip:
     """Rogne ou étend la partie droite du clip.
 
-    Seule la valeur ``source_out`` est modifiée ; ``timeline_start`` et
-    ``source_in`` restent inchangés. La nouvelle position de fin ne doit
-    pas dépasser la durée du ``MediaAsset`` référencé par le clip.
+    ``timeline_start`` ne change pas. La durée demandée est convertie en
+    durée de source selon la vitesse : ``source_out`` bouge (``source_in``
+    si le clip est lu à l'envers) ; un arrêt sur image change sa durée.
+    La source ne peut pas dépasser la durée du ``MediaAsset`` référencé.
 
     Raises:
         KeyError: si ``clip_id`` ou le ``MediaAsset`` associé est introuvable.
@@ -240,41 +240,58 @@ def trim_clip_right(
     clip = track.clips[index]
     source_name, source_limit = _source_bounds(project, clip)
 
-    current_timeline_end = clip.timeline_start + clip.duration
-    delta = new_timeline_end - current_timeline_end
-    new_source_out = clip.source_out + delta
-
     if new_timeline_end <= clip.timeline_start:
         raise ValueError(
             f"Le trim droit produirait une durée nulle ou négative pour "
             f"le clip '{clip_id}' (timeline_start={clip.timeline_start}, "
             f"timeline_end demandé={new_timeline_end})."
         )
-    if new_source_out <= clip.source_in:
+    new_duration = new_timeline_end - clip.timeline_start
+    if clip.is_frozen:
+        # Un arrêt sur image garde ses bornes source : seule sa durée change.
+        _set_freeze_duration(clip, new_duration)
+        apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
+        return clip
+
+    # Durée de timeline -> durée de source : la vitesse change le rapport entre les deux.
+    new_source_span = new_duration * clip.speed
+    if clip.is_reversed:
+        # Lu à l'envers, la fin de la timeline montre le début de la source.
+        new_source_in = clip.source_out - new_source_span
+        if new_source_in < -1e-9:
+            raise ValueError(
+                f"Le trim droit dépasserait le début de {source_name} "
+                f"(source_in={new_source_in})."
+            )
+        new_source_in = max(0.0, new_source_in)
+        new_source_out = clip.source_out
+    else:
+        new_source_in = clip.source_in
+        new_source_out = clip.source_in + new_source_span
+        # Raccourcir reste toujours permis, même pour un clip imbriqué qui
+        # déborde déjà d'une séquence source raccourcie.
+        if new_source_out > max(source_limit, clip.source_out) + 1e-9:
+            raise ValueError(
+                f"Le trim droit dépasserait la durée de {source_name} "
+                f"(source={source_limit}s, source_out={new_source_out})."
+            )
+    if new_source_out - new_source_in <= 1e-9:
         raise ValueError(
             f"Le trim droit produirait une durée nulle ou négative pour "
-            f"le clip '{clip_id}' (source_in={clip.source_in}, "
+            f"le clip '{clip_id}' (source_in={new_source_in}, "
             f"source_out={new_source_out})."
         )
-    # Raccourcir reste toujours permis, même pour un clip imbriqué qui
-    # déborde déjà d'une séquence source raccourcie.
-    if new_source_out > max(source_limit, clip.source_out) + 1e-9:
-        raise ValueError(
-            f"Le trim droit dépasserait la durée de {source_name} "
-            f"(source={source_limit}s, source_out={new_source_out})."
-        )
-
-    old_source_in = clip.source_in
-    old_source_out = clip.source_out
+    clip.source_in = new_source_in
     clip.source_out = new_source_out
-    apply_clip_transform_on_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=clip.source_in,
-        new_source_out=new_source_out,
-    )
+    apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
     return clip
+
+
+def _set_freeze_duration(clip: Clip, duration: float) -> None:
+    """Nouvelle durée de timeline d'un arrêt sur image (``TimeRemapping`` est immuable)."""
+    from dataclasses import replace
+
+    clip.time_remapping = replace(clip.time_remapping, freeze_duration=float(duration))
 
 
 # ---------------------------------------------------------------------------
@@ -994,28 +1011,25 @@ def reset_clip_transform(
 def clip_keyframes_remain_valid_after_trim(
     clip: Clip,
     *,
-    old_source_in: float,
-    old_source_out: float,
-    new_source_in: float,
-    new_source_out: float,
+    start_offset: float,
+    new_duration: float,
 ) -> list[TransformKeyframe]:
     """Filtre les keyframes devenues invalides après un trim.
 
-    - Trim gauche : ``source_in`` augmente, donc le temps local 0
-      correspond à un point de source plus avancé. Les keyframes
-      situées au-delà du nouveau ``source_in`` doivent être décalées
-      de ``new_source_in - old_source_in`` pour rester cohérentes.
-    - Trim droit : ``source_out`` diminue, donc la durée effective
-      du clip diminue. Les keyframes situées au-delà de la nouvelle
-      durée sont supprimées.
+    Les temps des keyframes sont locaux au clip, donc en secondes de
+    **timeline** (jamais de source : la vitesse et le reverse n'y changent rien).
+
+    - Trim gauche : le temps local 0 avance de ``start_offset`` ; les keyframes
+      sont décalées d'autant pour que l'animation visible ne bouge pas.
+    - Trim droit : les keyframes au-delà de ``new_duration`` sont supprimées.
     """
-    if new_source_in > new_source_out:
-        raise ValueError("Les nouvelles bornes de source sont invalides.")
+    if new_duration < 0.0:
+        raise ValueError("La nouvelle durée du clip est invalide.")
 
     return retime_transform_keyframes(
         clip.transform_keyframes,
-        start_offset=float(new_source_in - old_source_in),
-        new_duration=float(new_source_out - new_source_in),
+        start_offset=float(start_offset),
+        new_duration=float(new_duration),
     )
 
 
@@ -1036,26 +1050,23 @@ def apply_clip_transform_on_move(
 def apply_clip_transform_on_trim(
     clip: Clip,
     *,
-    old_source_in: float,
-    old_source_out: float,
-    new_source_in: float,
-    new_source_out: float,
+    start_offset: float,
+    new_duration: float,
 ) -> None:
-    """Filtre les keyframes devenues invalides suite à un trim, en place."""
+    """Retime les keyframes (transform et animation) après un trim, en place.
+
+    ``start_offset`` et ``new_duration`` sont en secondes de timeline.
+    """
     clip.transform_keyframes = clip_keyframes_remain_valid_after_trim(
-        clip,
-        old_source_in=old_source_in,
-        old_source_out=old_source_out,
-        new_source_in=new_source_in,
-        new_source_out=new_source_out,
+        clip, start_offset=start_offset, new_duration=new_duration
     )
     if clip.animation:
         from .animation_targets import retime_animation
 
         clip.animation = retime_animation(
             clip.animation,
-            start_offset=float(new_source_in - old_source_in),
-            new_duration=float(new_source_out - new_source_in),
+            start_offset=float(start_offset),
+            new_duration=float(new_duration),
         )
 
 
