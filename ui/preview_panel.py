@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, label_style, monospace_font_family
 
 
 class PreviewPanel(QWidget):
@@ -172,13 +172,13 @@ class PreviewPanel(QWidget):
         # Timecode turquoise à gauche.
         self.timecode_label = QLabel("00:00:00:00")
         self.timecode_label.setStyleSheet(
-            f"color: {COLORS['accent']}; font-family: 'SF Mono', 'Menlo', monospace;"
+            f"color: {COLORS['accent']}; {monospace_font_family()}"
             f" font-size: 14px; font-weight: 700; letter-spacing: 1px;"
             f" padding: 0 8px;"
         )
         self.duration_label = QLabel("00:00:00")
         self.duration_label.setStyleSheet(
-            f"color: {COLORS['muted']}; font-family: 'SF Mono', 'Menlo', monospace;"
+            f"color: {COLORS['muted']}; {monospace_font_family()}"
             f" font-size: 12px; font-weight: 600;"
         )
         toolbar_layout.addWidget(self.timecode_label)
