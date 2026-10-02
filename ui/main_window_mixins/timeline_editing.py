@@ -212,12 +212,22 @@ class TimelineEditingMixin:
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
+        from core.tracking_ops import tracking_dependents
+
+        followers = tracking_dependents(self.project, clip_id)
         try:
             cut_clip(self.project, clip_id, playhead_pos)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
         self._record_history("Couper le clip")
+        if followers:
+            # Honnête plutôt que silencieux : la partie droite a un nouvel identifiant, leur suivi s'arrête ici.
+            self.statusBar().showMessage(
+                f"Ce clip porte le tracking de {len(followers)} autre(s) clip(s) : leur suivi s'arrête à la "
+                "coupe. Reliez-les à la partie droite pour qu'il continue.",
+                10000,
+            )
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()

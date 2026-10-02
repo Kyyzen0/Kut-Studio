@@ -337,6 +337,25 @@ def apply_tracking_result(project, result) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
+def tracking_dependents(project, source_clip_id: str) -> list[str]:
+    """Identifiants des **autres** clips de la séquence active dont une liaison active suit ``source_clip_id``.
+
+    Couper la source d'un tracking en deux donne à la partie droite un nouvel identifiant : ces clips
+    continuent de pointer sur la partie gauche, et leur mouvement s'arrête à la coupe (il reste figé
+    sur la dernière image). L'interface s'en sert pour le dire.
+    """
+    return [
+        clip.id
+        for track in project.active_sequence.tracks
+        for clip in track.clips
+        if clip.id != source_clip_id
+        and any(
+            link.enabled and link.source_clip_id == source_clip_id
+            for link in getattr(getattr(clip, "tracking", None), "links", ()) or ()
+        )
+    ]
+
+
 def link_targets(project, source_clip_id: str) -> list[dict]:
     """Cibles possibles des trackers de ``source_clip_id`` (interface).
 
