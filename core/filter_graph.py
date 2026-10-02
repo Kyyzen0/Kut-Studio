@@ -64,6 +64,20 @@ def ffmpeg_supports_subtitles():
     return bool(_ffmpeg_supports_subtitles())
 
 
+def normalize_fps(value, default=30):
+    """Cadence propre : entière si elle l'est (``30``, pas ``30.0``), sinon flottante (``29.97``).
+
+    ``int(29.97)`` valait 29 : l'aperçu était rendu à une cadence qui n'est pas celle du projet.
+    """
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not rate > 0.0 or rate != rate:
+        return default
+    return int(rate) if rate.is_integer() else rate
+
+
 def build_preview_command(plan, **kwargs):
     """Commande FFmpeg d'un segment d'apercu, graphe identique a l'export.
 
@@ -80,7 +94,7 @@ def build_preview_command(plan, **kwargs):
 
     width = int(kwargs.get("width", 1920))
     height = int(kwargs.get("height", 1080))
-    fps = int(kwargs.get("fps", 30))
+    fps = normalize_fps(kwargs.get("fps", 30))
     quality = str(kwargs.get("quality", "standard"))
     start = float(kwargs.get("start", 0.0) or 0.0)
     duration = kwargs.get("duration", None)

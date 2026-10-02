@@ -51,7 +51,7 @@ class PreviewJob:
     plan: object
     width: int = 1920
     height: int = 1080
-    fps: int = 30
+    fps: float = 30
     quality: str = "standard"
     start: float = 0.0
     duration: float = 2.0
