@@ -136,6 +136,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.kind.io": {"fr": "Écriture impossible", "en": "Could not write file", "es": "No se pudo escribir"},
     "render.confirm.rerender": {"fr": "Le fichier existant sera remplacé par le nouveau rendu. Continuer ?", "en": "The existing file will be replaced by the new render. Continue?", "es": "El archivo existente será reemplazado por el nuevo render. ¿Continuar?"},
     "render.confirm.title": {"fr": "File de rendu", "en": "Render queue", "es": "Cola de render"},
+    "project.untitled": {"fr": "Sans titre", "en": "Untitled", "es": "Sin título"},
+    "project.unsaved.title": {"fr": "Projet non enregistré", "en": "Unsaved project", "es": "Proyecto sin guardar"},
+    "project.unsaved.text": {
+        "fr": "Le projet « {name} » a des modifications non enregistrées.\n\nVoulez-vous les enregistrer ?",
+        "en": "The project “{name}” has unsaved changes.\n\nDo you want to save them?",
+        "es": "El proyecto «{name}» tiene cambios sin guardar.\n\n¿Quieres guardarlos?",
+    },
     "render.close.title": {"fr": "Rendu en cours", "en": "Render in progress", "es": "Render en curso"},
     "sequence.nav.back": {"fr": "Séquence précédente", "en": "Previous sequence", "es": "Secuencia anterior"},
     "sequence.nav.forward": {"fr": "Séquence suivante", "en": "Next sequence", "es": "Secuencia siguiente"},

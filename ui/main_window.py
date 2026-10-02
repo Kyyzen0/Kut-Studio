@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -804,71 +805,89 @@ class MainWindow(
 
     def closeEvent(self, event) -> None:
         """Libère les abonnements globaux avant de fermer la fenêtre."""
+        # Rien ne se ferme sans que l'utilisateur ait pu sauver son travail.
+        if not self._confirm_discard_changes():
+            event.ignore()
+            return
         # Un rendu en cours demande confirmation : refuser garde tout ouvert.
         if not self._confirm_close_during_render():
             event.ignore()
             return
-        self.render_queue.shutdown()
-        self._shutdown_encoding()
-        self._shutdown_hardware_preview()
-        self._stop_preview_pump()
-        # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
-        if getattr(self, "proxies", None) is not None:
-            self._shutdown_proxies()
-        workspace = getattr(self, "workspace", None)
-        if workspace is not None:
-            workspace.shutdown()
-        if hasattr(self, "timeline_timer") and self.timeline_timer is not None:
-            self.timeline_timer.stop()
-        recorder = getattr(self, "_audio_recorder", None)
-        if recorder is not None and recorder.is_recording:
-            pcm, rate, channels = recorder.stop()
-            self._place_recording(pcm, rate, channels, quiet=True)
-        self._finalize_pending_edit_sessions()
-        self._write_autosave()
-        if hasattr(self, "_autosave_timer") and self._autosave_timer is not None:
-            self._autosave_timer.stop()
-        if hasattr(self, "_debug_timer") and self._debug_timer is not None:
-            self._debug_timer.stop()
-        preview_pump = getattr(self, "_preview_pump_timer", None)
-        if preview_pump is not None:
-            preview_pump.stop()
-        preview_engine = getattr(self, "preview_engine", None)
-        if preview_engine is not None:
+        # Chaque étape est protégée : si l'une échoue (file de rendu, proxy...), les suivantes
+        # doivent quand même s'exécuter, sinon FFmpeg, l'autosave ou les threads survivent à la fenêtre.
+        for name, step in self._shutdown_steps():
             try:
-                preview_engine.cancel_all()
-            except Exception:
-                pass
-        timeline = getattr(self, "timeline_panel", None)
-        if timeline is not None:
-            timeline.unsubscribe_from_theme()
-        preview = getattr(self, "preview_panel", None)
-        if preview is not None:
-            preview.release_media()
-        # Le thread de travail des scopes est un daemon, mais on le
-        # ferme proprement : un FFmpeg en cours ne doit pas survivre à
-        # la fenêtre.
-        scopes_analyzer = getattr(self, "scopes_analyzer", None)
-        if scopes_analyzer is not None:
-            scopes_analyzer.close()
-        cleanup_temporary_paths(getattr(self, "_scope_temporary_paths", ()))
-        self._scope_temporary_paths = ()
-        autosave = getattr(self, "_autosave", None)
-        if autosave is not None:
-            autosave.close()
-        runtime = getattr(self, "runtime", None)
-        if runtime is not None:
-            runtime.shutdown()
-        subtitle_timer = getattr(self, "_subtitle_edit_timer", None)
-        if subtitle_timer is not None:
-            subtitle_timer.stop()
-
-        callback = getattr(self, "_i18n_callback", None)
-        if callback is not None:
-            i18n.unsubscribe(callback)
-            self._i18n_callback = None
-
+                step()
+            except Exception:  # noqa: BLE001 - l'arrêt ne s'interrompt jamais
+                logging.getLogger(__name__).exception("Arrêt : l'étape « %s » a échoué", name)
         super().closeEvent(event)
+
+    def _shutdown_steps(self):
+        """Étapes de fermeture dans l'ordre : ``(nom, fonction)``."""
+        def attr(name):
+            return getattr(self, name, None)
+
+        def stop_timer(name):
+            timer = attr(name)
+            if timer is not None:
+                timer.stop()
+
+        def stop_recording():
+            recorder = attr("_audio_recorder")
+            if recorder is not None and recorder.is_recording:
+                pcm, rate, channels = recorder.stop()
+                self._place_recording(pcm, rate, channels, quiet=True)
+
+        def shutdown_proxies():
+            # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
+            if attr("proxies") is not None:
+                self._shutdown_proxies()
+
+        def call(owner_name, method):
+            owner = attr(owner_name)
+            if owner is not None:
+                getattr(owner, method)()
+
+        def cancel_previews():
+            engine = attr("preview_engine")
+            if engine is not None:
+                engine.cancel_all()
+
+        def clean_scope_files():
+            cleanup_temporary_paths(attr("_scope_temporary_paths") or ())
+            self._scope_temporary_paths = ()
+
+        def release_i18n():
+            callback = attr("_i18n_callback")
+            if callback is not None:
+                i18n.unsubscribe(callback)
+                self._i18n_callback = None
+
+        return [
+            ("file de rendu", self.render_queue.shutdown),
+            ("encodage", self._shutdown_encoding),
+            ("aperçu matériel", self._shutdown_hardware_preview),
+            ("pompe d'aperçu", self._stop_preview_pump),
+            ("proxies", shutdown_proxies),
+            ("espaces de travail", lambda: call("workspace", "shutdown")),
+            ("minuteur timeline", lambda: stop_timer("timeline_timer")),
+            ("enregistrement audio", stop_recording),
+            ("sessions d'édition", self._finalize_pending_edit_sessions),
+            ("autosave final", self._write_autosave),
+            ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
+            ("minuteur debug", lambda: stop_timer("_debug_timer")),
+            ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
+            ("rendus d'aperçu", cancel_previews),
+            ("pistage", self._cancel_tracking_jobs),
+            ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
+            ("média du viewer", lambda: call("preview_panel", "release_media")),
+            ("scopes", lambda: call("scopes_analyzer", "close")),
+            ("fichiers de scopes", clean_scope_files),
+            ("autosave", lambda: call("_autosave", "close")),
+            ("runtime", lambda: call("runtime", "shutdown")),
+            ("minuteur sous-titres", lambda: stop_timer("_subtitle_edit_timer")),
+            ("traductions", release_i18n),
+        ]
 
     @property
     def playhead_seconds(self) -> float:

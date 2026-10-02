@@ -80,3 +80,13 @@ def _release_media_players_at_exit():
             except RuntimeError:  # objet C++ déjà détruit
                 pass
     QCoreApplication.processEvents()
+
+
+@pytest.fixture(autouse=True)
+def _no_unsaved_changes_prompt(monkeypatch):
+    """La boîte « enregistrer avant de quitter ? » est modale : sans réponse elle bloquerait tout test qui
+    ferme une fenêtre modifiée (qtbot ferme les fenêtres à la fin du test). Par défaut on abandonne les
+    modifications ; ``test_unsaved_changes_prompt`` réactive la vraie boîte."""
+    from ui.main_window_mixins.project_files import ProjectFilesMixin
+
+    monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)

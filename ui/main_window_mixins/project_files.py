@@ -20,8 +20,35 @@ def _main_window():
 class ProjectFilesMixin:
     """Mixin de ``MainWindow`` (project_files)."""
 
+    def _confirm_discard_changes(self) -> bool:
+        """Propose d'enregistrer un projet modifié avant de le quitter.
+
+        ``False`` annule l'action en cours (fermer, nouveau, ouvrir) : l'utilisateur a refusé, ou
+        l'enregistrement a échoué / été annulé, et rien ne doit être perdu.
+        """
+        if not getattr(self, "project_dirty", False):
+            return True
+        self._finalize_pending_edit_sessions()
+        box = _main_window().QMessageBox
+        name = (getattr(self.project, "name", "") or "").strip() or i18n.translate("project.untitled")
+        answer = box.question(
+            self,
+            i18n.translate("project.unsaved.title"),
+            i18n.translate("project.unsaved.text", name=name),
+            box.Save | box.Discard | box.Cancel,
+            box.Save,
+        )
+        if answer == box.Cancel:
+            return False
+        if answer == box.Save:
+            self.save_project_file()
+            return not self.project_dirty
+        return True
+
     def new_project(self) -> None:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
+        if not self._confirm_discard_changes():
+            return
         self._finalize_pending_edit_sessions()
         self._release_open_project()
         self.project = create_default_project()
@@ -115,6 +142,8 @@ class ProjectFilesMixin:
         d'erreur est affiché et l'état courant de l'application reste
         intact.
         """
+        if not self._confirm_discard_changes():
+            return
         self._finalize_pending_edit_sessions()
         try:
             loaded = load_project(path)
