@@ -87,11 +87,40 @@ def _apply_chain(parts: list[str], source: str, chain: list[str], tag: str) -> s
     return current
 
 
-def blend_onto(parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str) -> None:
-    """Fusionne le flux RGBA ``top`` (taille du cadre) sur ``bottom``."""
+def blend_onto(
+    parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str, *, transparent_bottom: bool = False
+) -> None:
+    """Fusionne le flux RGBA ``top`` (taille du cadre) sur ``bottom``.
+
+    ``transparent_bottom`` : le dessous est le cadre **transparent** d'une séquence imbriquée. Un mode de fusion
+    n'a rien à fusionner là où il n'y a rien : le calque s'y affiche tel quel (comme en mode Normal), et le
+    mélange n'agit qu'à proportion de l'opacité du dessous (formule W3C : ``(1-αb)·Cs + αb·B(Cb, Cs)``).
+    Sans cela, un Produit sur du vide donnait du noir.
+    """
     mode = coerce_blend_mode(mode)
     if mode is BlendMode.NORMAL:
         parts.append(f"[{bottom}][{top}]overlay=0:0:eof_action=pass[{out}]")
+        return
+    if transparent_bottom:
+        parts.append(
+            f"[{top}]format=rgba,split=3[{tag}t1][{tag}t2][{tag}t3];"
+            f"[{tag}t2]alphaextract[{tag}ta];"
+            f"[{bottom}]split=4[{tag}b1][{tag}b2][{tag}b3][{tag}b4];"
+            f"[{tag}b2]format=gbrp[{tag}bp];"
+            f"[{tag}t1]format=gbrp[{tag}tp];"
+            f"[{tag}tp][{tag}bp]blend=all_mode={ffmpeg_blend_mode(mode)}:shortest=0:repeatlast=1,"
+            f"format=gbrap[{tag}f];"
+            f"[{tag}f][{tag}ta]alphamerge[{tag}fa];"
+            f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass[{tag}mix];"      # résultat fusionné
+            f"[{tag}b3][{tag}t3]overlay=0:0:eof_action=pass[{tag}plain];"    # résultat en mode Normal
+            f"[{tag}b4]alphaextract,format=gbrp[{tag}ab];"                   # opacité du dessous, comme pondération
+            f"[{tag}plain]split[{tag}n1][{tag}n2];"
+            f"[{tag}n2]alphaextract[{tag}na];"
+            f"[{tag}n1]format=gbrp[{tag}np];"
+            f"[{tag}mix]format=gbrp[{tag}mp];"
+            f"[{tag}np][{tag}mp][{tag}ab]maskedmerge,format=gbrp[{tag}mm];"
+            f"[{tag}mm][{tag}na]alphamerge[{out}]"
+        )
         return
     parts.append(
         f"[{top}]format=rgba,split[{tag}t1][{tag}t2];"
@@ -164,7 +193,7 @@ def compose_graphics(
         label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s")
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True)
         label = _apply_chain(parts, label, chain, tag)
-        blend_onto(parts, current, label, element.blend, out, tag)
+        blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested)
         current = out
     return current
 

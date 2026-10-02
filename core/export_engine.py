@@ -1136,7 +1136,7 @@ def _compose_plan_graph(
                     )
                     blend_onto(
                         parts, previous_label, f"{p}bt{layer_index}", blend_mode, next_label,
-                        f"{p}vb{layer_index}",
+                        f"{p}vb{layer_index}", transparent_bottom=nested,
                     )
                 else:
                     parts.append(
