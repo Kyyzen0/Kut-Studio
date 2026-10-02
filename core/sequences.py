@@ -438,6 +438,33 @@ def rename_sequence(project: Project, sequence_id: str, name: str) -> Sequence:
     return sequence
 
 
+def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
+    """Réécrit, dans une copie de séquence, les références d'un clip à un autre clip.
+
+    Les clips d'une copie reçoivent de nouveaux identifiants ; sans cette réécriture, le parentage
+    et le groupe d'un calque, comme la source d'une liaison de tracking, pointaient encore vers les
+    clips de l'**original** : le parentage disparaissait en silence et la liaison devenait
+    « source introuvable ». Une référence vers un clip hors de la séquence (absente de ``renamed``)
+    est laissée telle quelle.
+    """
+    for track in sequence.tracks:
+        for clip in track.clips:
+            graphic = clip.graphic
+            if graphic is not None and (graphic.parent_id in renamed or graphic.group_id in renamed):
+                clip.graphic = replace(
+                    graphic,
+                    parent_id=renamed.get(graphic.parent_id, graphic.parent_id),
+                    group_id=renamed.get(graphic.group_id, graphic.group_id),
+                )
+            tracking = clip.tracking
+            links = getattr(tracking, "links", ())
+            if any(link.source_clip_id in renamed for link in links):
+                clip.tracking = replace(tracking, links=tuple(
+                    replace(link, source_clip_id=renamed.get(link.source_clip_id, link.source_clip_id))
+                    for link in links
+                ))
+
+
 def duplicate_sequence(
     project: Project, sequence_id: str, name: str | None = None
 ) -> Sequence:
@@ -457,6 +484,7 @@ def duplicate_sequence(
             new_id = _new_clip_id()
             renamed[clip.id] = new_id
             clip.id = new_id
+    _remap_clip_references(clone, renamed)
     clone.transitions = [
         replace(
             transition,
