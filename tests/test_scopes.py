@@ -1625,7 +1625,11 @@ def test_build_frame_command_matches_export_filter_graph(tmp_path) -> None:
     # Même graphe ; l'audio, inutile pour une image, part dans un puits
     # (FFmpeg refuse une sortie de graphe non reliée), puis la sortie composée est rognée à la tête de
     # lecture : une image à 5 s à 30 i/s est la n° 150, visée une demi-image avant son horodatage.
-    assert graph(single).startswith(graph(full) + ";[aout]anullsink;")
+    # L'export ajoute en plus l'étape de conversion BT.709 (YUV) ; l'extraction PNG lit du RVB et s'en passe.
+    common = graph(single).split(";[aout]anullsink")[0]
+    assert graph(full).startswith(common)
+    assert graph(full)[len(common):].startswith(";[") and "out_color_matrix=bt709" in graph(full)[len(common):]
+    assert ";[aout]anullsink;" in graph(single)
     assert graph(single).endswith("trim=start=4.983333,setpts=PTS-STARTPTS[kut_frame]")
     # Plus de ``-ss`` sur une entrée : il ignorait la position, la vitesse et le point d'entrée du clip.
     assert "-ss" not in single
