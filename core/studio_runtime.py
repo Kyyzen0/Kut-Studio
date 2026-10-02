@@ -153,6 +153,11 @@ class StudioRuntime:
         self.preview = PreviewQualityController()
         self.tasks = TaskQueue()
         self.worker = QueueWorker(self.tasks)
+        # Analyses longues (tracking, stabilisation) : même file et même
+        # worker que le reste, sur une voie à part pour ne jamais retarder
+        # les miniatures et formes d'onde de la timeline.
+        self.analysis = TaskQueue()
+        self.analysis_worker = QueueWorker(self.analysis)
         self.mailbox = PreviewMailbox()
         self.diagnostics = RuntimeDiagnostics()
         self._profile = resolve_profile(self.requested_profile, self.resources, self.weight)
@@ -205,6 +210,7 @@ class StudioRuntime:
         previous = self.session_id
         self.session_id += 1
         self.tasks.cancel_session(previous)
+        self.analysis.cancel_session(previous)
         self.mailbox.clear()
         self.cache.clear_namespace("project")
         self.weight = "light"
@@ -215,10 +221,17 @@ class StudioRuntime:
         self.tasks.submit(key, fn, priority=priority, session_id=self.session_id)
         self.worker.ensure_started()
 
+    def schedule_analysis(self, key: str, fn, *, priority: int = PRIORITY_BACKGROUND) -> None:
+        """Planifie une analyse longue de la session courante (voie d'analyse)."""
+        self.analysis.submit(key, fn, priority=priority, session_id=self.session_id)
+        self.analysis_worker.ensure_started()
+
     def shutdown(self) -> None:
         """Arrête la file et vide le cache à la fermeture de l'application."""
         self.tasks.cancel_all()
         self.worker.stop()
+        self.analysis.cancel_all()
+        self.analysis_worker.stop()
         self.cache.clear()
 
     def output_size(self, width: int, height: int) -> tuple[int, int]:

@@ -18,6 +18,12 @@ Règles principales :
 - :meth:`ProjectHistory.mark_saved` pose une marque ``saved_index`` ;
 - :attr:`ProjectHistory.is_dirty` indique si la position courante
   diffère de la marque sauvegardée.
+
+Multi-séquence : un snapshot ne recopie pas les séquences **inchangées**
+depuis le snapshot précédent ; il réutilise leur copie (les snapshots ne
+sont jamais modifiés, ils sont recopiés à la restauration). Éditer une
+séquence d'un projet qui en compte vingt ne duplique donc qu'elle. Un
+``undo`` / ``redo`` laisse ouverte la séquence où l'opération a eu lieu.
 """
 
 from __future__ import annotations
@@ -106,7 +112,7 @@ class ProjectHistory:
         de fichier.
         """
         self._project = project
-        snapshot = _Snapshot(label="État initial", project=_deepcopy_project(project))
+        snapshot = _Snapshot(label="État initial", project=_snapshot_project(project, None))
         self._undo_stack = [snapshot]
         self._redo_stack = []
         self._saved_index = 0
@@ -125,7 +131,8 @@ class ProjectHistory:
         """
         if project is None:
             raise ValueError("Impossible d'enregistrer un projet None.")
-        snapshot = _Snapshot(label=label or "", project=_deepcopy_project(project))
+        previous = self._undo_stack[-1].project if self._undo_stack else None
+        snapshot = _Snapshot(label=label or "", project=_snapshot_project(project, previous))
         self._undo_stack.append(snapshot)
         # Limite la taille de la pile ``undo``.
         if len(self._undo_stack) > MAX_HISTORY:
@@ -154,6 +161,9 @@ class ProjectHistory:
         current = self._undo_stack.pop()
         self._redo_stack.append(current)
         restored = _deepcopy_project(self._undo_stack[-1].project)
+        # On reste dans la séquence où l'opération annulée a eu lieu (et
+        # non celle qui était ouverte lors de l'opération précédente).
+        _keep_active_sequence(restored, current.project.active_sequence_id)
         self._project = restored
         return restored
 
@@ -214,6 +224,34 @@ class _Snapshot:
     def __init__(self, *, label: str, project: Project) -> None:
         self.label = label
         self.project = project
+
+
+def _keep_active_sequence(project: Project, sequence_id: str) -> None:
+    if project.get_sequence(sequence_id) is not None:
+        project.active_sequence_id = sequence_id
+
+
+def _snapshot_project(project: Project, previous: Optional[Project]) -> Project:
+    """Copie de ``project`` qui partage les séquences inchangées de ``previous``.
+
+    Pour chaque séquence non active, si la copie du snapshot précédent lui
+    est égale, elle est réutilisée telle quelle (pré-remplissage du
+    ``memo`` de ``deepcopy``). La séquence active, presque toujours
+    modifiée, est copiée sans comparaison. Partager est sûr : un snapshot
+    n'est jamais muté, :meth:`ProjectHistory.undo` en restaure une copie.
+    """
+    memo: dict = {}
+    sequences = getattr(project, "sequences", None)
+    if previous is not None and sequences:
+        before = {sequence.id: sequence for sequence in previous.sequences}
+        active_id = project.active_sequence_id
+        for sequence in sequences:
+            if sequence.id == active_id:
+                continue
+            shared = before.get(sequence.id)
+            if shared is not None and shared == sequence:
+                memo[id(sequence)] = shared
+    return deepcopy(project, memo)
 
 
 def _deepcopy_project(project: Project) -> Project:

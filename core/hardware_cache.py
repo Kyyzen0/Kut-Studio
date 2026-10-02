@@ -9,7 +9,7 @@ et invalidé automatiquement quand :
 - le chemin de FFmpeg change ;
 - le binaire change (date ou taille : une mise à jour change donc la version) ;
 - la plateforme, l'architecture ou le nœud VAAPI changent ;
-- l'interrupteur ``KUT_STUDIO_HARDWARE_ENCODING`` change ;
+- l'interrupteur ``KUT_STUDIO_HARDWARE_ENCODING`` ou ``KUT_STUDIO_HARDWARE_DECODING`` change ;
 - le cache a plus de :data:`MAX_AGE_SECONDS` (pilotes mis à jour sans changer FFmpeg).
 
 Un pilote mis à jour *après* la détection n'est pas détectable sans la refaire :
@@ -44,11 +44,23 @@ CACHE_FILE_NAME = "hardware-encoders.json"
 MAX_AGE_SECONDS = 30 * 24 * 3600.0
 DISABLE_VARIABLE = "KUT_STUDIO_HARDWARE_ENCODING"
 """``off`` / ``0`` / ``false`` : aucune détection, tout est rendu en CPU (support, CI)."""
+DECODE_DISABLE_VARIABLE = "KUT_STUDIO_HARDWARE_DECODING"
+"""``off`` : les décodeurs ne sont ni détectés ni utilisés (encodeurs inchangés)."""
+
+_OFF_VALUES = {"off", "0", "false", "no"}
 
 
 def hardware_encoding_disabled(environment: Mapping[str, str] | None = None) -> bool:
     env = environment if environment is not None else os.environ
-    return str(env.get(DISABLE_VARIABLE, "")).strip().lower() in {"off", "0", "false", "no"}
+    return str(env.get(DISABLE_VARIABLE, "")).strip().lower() in _OFF_VALUES
+
+
+def hardware_decoding_disabled(environment: Mapping[str, str] | None = None) -> bool:
+    """Décodage matériel coupé (variable dédiée, ou toute la détection coupée)."""
+    env = environment if environment is not None else os.environ
+    if hardware_encoding_disabled(env):
+        return True
+    return str(env.get(DECODE_DISABLE_VARIABLE, "")).strip().lower() in _OFF_VALUES
 
 
 def _default_command() -> list[str] | None:
@@ -76,6 +88,7 @@ def installation_fingerprint(
         platform_module.machine(),
         vaapi_device(dict(environment) if environment is not None else None) or "no-vaapi",
         "off" if hardware_encoding_disabled(environment) else "on",
+        "decode-off" if hardware_decoding_disabled(environment) else "decode-on",
     ]
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
@@ -178,7 +191,9 @@ class CapabilityService:
             scanned_at=self._clock(), fingerprint=fingerprint,
         )
         if hardware_encoding_disabled(self._environment):
-            result = HardwareCapabilities(error="disabled", validated=False, **base)
+            result = HardwareCapabilities(
+                error="disabled", validated=False, decoding_disabled=True, **base
+            )
         elif not command:
             result = HardwareCapabilities(error="ffmpeg_missing", **base)
             with self._lock:
@@ -190,6 +205,7 @@ class CapabilityService:
             result = detect_capabilities(
                 command, runner=self._runner, validate=self._validate,
                 fingerprint=fingerprint, now=self._clock(),
+                decode=not hardware_decoding_disabled(self._environment),
             )
         with self._lock:
             self._memory = result
@@ -240,11 +256,13 @@ def current_capabilities() -> HardwareCapabilities:
 
 __all__ = [
     "CACHE_FILE_NAME",
+    "DECODE_DISABLE_VARIABLE",
     "DISABLE_VARIABLE",
     "MAX_AGE_SECONDS",
     "CapabilityService",
     "current_capabilities",
     "default_service",
+    "hardware_decoding_disabled",
     "hardware_encoding_disabled",
     "installation_fingerprint",
     "set_default_service",

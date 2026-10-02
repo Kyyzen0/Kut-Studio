@@ -2,8 +2,51 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+import threading
+
+from PySide6.QtCore import QObject, QTimer, Signal
 from ui import i18n
+
+
+class _PreviewEvents(QObject):
+    """Pont thread de rendu → thread Qt pour l'état du moteur d'aperçu."""
+
+    state = Signal(object)
+
+
+class _PreviewPump:
+    """Exécute les rendus de segments **hors du thread de l'interface**.
+
+    Avant, le minuteur appelait ``engine.pump`` dans le thread Qt : chaque segment
+    (un FFmpeg de plusieurs centaines de millisecondes) gelait la fenêtre. Le
+    minuteur ne fait plus que **réveiller** ce thread ; l'arrêter suspend donc
+    toujours les rendus (les tests s'en servent).
+    """
+
+    def __init__(self, engine) -> None:
+        self._engine = engine
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name="kut-preview-render", daemon=True)
+        self._thread.start()
+
+    def kick(self) -> None:
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._wake.set()
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            self._wake.wait()
+            self._wake.clear()
+            if self._stop.is_set():
+                return
+            try:
+                self._engine.pump(1)
+            except Exception:
+                pass
 
 
 class FaithfulPreviewMixin:
@@ -26,7 +69,11 @@ class FaithfulPreviewMixin:
                 self.preview_engine.cache.evict_if_needed()
             except Exception:
                 pass
-            self.preview_engine.subscribe(self._on_preview_engine_state)
+            # Les rendus tournent dans un thread : l'état revient au thread Qt par signal.
+            self._preview_events = _PreviewEvents(self)
+            self._preview_events.state.connect(self._on_preview_engine_state)
+            self.preview_engine.subscribe(self._preview_events.state.emit)
+            self._preview_pump = _PreviewPump(self.preview_engine)
             self._preview_pump_timer = QTimer(self)
             self._preview_pump_timer.setInterval(150)
             self._preview_pump_timer.timeout.connect(self._pump_preview_queue)
@@ -35,14 +82,18 @@ class FaithfulPreviewMixin:
             self.preview_engine = None
 
     def _pump_preview_queue(self) -> None:
-        """Vide la file d'aperçu sans bloquer l'interface (1 tâche/tick)."""
-        engine = getattr(self, "preview_engine", None)
-        if engine is None:
-            return
-        try:
-            engine.pump(1)
-        except Exception:
-            pass
+        """Réveille le thread de rendu (1 tâche par réveil) ; ne rend jamais ici."""
+        pump = getattr(self, "_preview_pump", None)
+        if pump is not None:
+            pump.kick()
+
+    def _stop_preview_pump(self) -> None:
+        pump = getattr(self, "_preview_pump", None)
+        if pump is not None:
+            pump.stop()
+        timer = getattr(self, "_preview_pump_timer", None)
+        if timer is not None:
+            timer.stop()
 
     def _on_preview_engine_state(self, state) -> None:
         """Indicateur 'Calcul de l'aperçu' + état du cache sur le moniteur."""
@@ -86,7 +137,12 @@ class FaithfulPreviewMixin:
     def _preview_resolver(self):
         """Résolveur de chemins pour l'aperçu (proxys), ``None`` sans gestionnaire."""
         manager = getattr(self, "proxies", None)
-        return manager.preview_resolver() if manager is not None else None
+        if manager is None:
+            return None
+        chooser = getattr(self, "preview_source_for", None)
+        if chooser is None:
+            return manager.preview_resolver()
+        return lambda path, need_audio=False: chooser(path, need_audio=need_audio)
 
     def _preview_segment_jobs(self, center: float, velocity: float | None = None) -> list:
         """Segments à pré-rendre autour de la tête de lecture (grille alignée).
@@ -240,6 +296,10 @@ class FaithfulPreviewMixin:
         if cached_preview is None:
             return False
         cached_path, segment_start = cached_preview
+        # Le segment contient déjà les calques motion graphics : l'aperçu
+        # interactif des calques est masqué (sinon il serait doublé).
+        self._viewer_composited = True
+        self.preview_panel.set_mograph_visible(False)
         self.preview_panel.preview_at(
             cached_path, max(0.0, timeline_time - segment_start)
         )

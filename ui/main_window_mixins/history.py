@@ -46,7 +46,15 @@ class HistoryMixin:
             if timer is not None:
                 timer.stop()
             self._graphic_session_active = False
+        # Politique de durée des séquences imbriquées : un recadrage causé
+        # par cette action entre dans la même entrée d'historique.
+        clamp = getattr(self, "_with_nested_clamp", None)
+        if callable(clamp):
+            label = clamp(label)
         self.history.record(self.project, label)
+        invalidate = getattr(self, "_invalidate_nested_dependents", None)
+        if callable(invalidate):
+            invalidate()
         self._refresh_undo_redo_state()
 
     def _finalize_pending_edit_sessions(self) -> None:
@@ -114,6 +122,9 @@ class HistoryMixin:
         if mixer is not None:
             mixer.set_project(self.project)
         self._sync_audio_inspector()
+        refresh_sequences = getattr(self, "_refresh_sequence_ui", None)
+        if callable(refresh_sequences):
+            refresh_sequences()
         self._refresh_undo_redo_state()
 
     def undo_last(self) -> None:

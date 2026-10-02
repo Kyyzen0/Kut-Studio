@@ -15,9 +15,9 @@ class TabsMixin:
         """Bascule l'onglet actif de l'inspecteur."""
         for i, button in enumerate(self.inspector_tab_buttons):
             button.setChecked(i == index)
-        specialized = index in {4, 5}
+        specialized = index in {4, 5, 6}
         self.inspector_more_button.setText(
-            "Graphiques" if index == 4 else "Compositing" if index == 5 else "•••"
+            {4: "Graphiques", 5: "Compositing", 6: "Suivi"}.get(index, "•••")
         )
         self.inspector_more_button.setProperty("active", specialized)
         self.inspector_more_button.style().unpolish(self.inspector_more_button)
@@ -49,3 +49,4 @@ class TabsMixin:
         """Filtre les groupes visibles selon l'onglet choisi."""
         self._active_inspector_tab = row
         self._apply_group_visibility()
+        self.inspector_tab_changed.emit(row)

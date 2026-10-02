@@ -73,6 +73,9 @@ class EncodingMixin:
         panel = getattr(self, "export_panel", None)
         if panel is not None:
             panel.set_capabilities(capabilities)
+        on_hardware = getattr(self, "_on_hardware_capabilities", None)
+        if on_hardware is not None:
+            on_hardware(capabilities)
         self._refresh_encoding_settings_tab()
 
     def redetect_hardware_capabilities(self) -> bool:
@@ -101,7 +104,13 @@ class EncodingMixin:
         self._apply_settings(replace(self._settings_snapshot(), export_encoder=value))
 
     def encoding_diagnostics_text(self) -> str:
-        """Diagnostic copiable : version, chemin, encodeurs, validations, backend Auto."""
+        """Diagnostic copiable : version, chemin, encodeurs, validations, backend Auto.
+
+        Avec le mixin matériel, le texte couvre aussi décodage, aperçu et mémoire.
+        """
+        full = getattr(self, "hardware_diagnostics_text", None)
+        if full is not None:
+            return full()
         capabilities = self.hardware_capabilities()
         if capabilities is None:
             return i18n.translate("encoding.detecting")

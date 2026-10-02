@@ -229,11 +229,12 @@ def test_preferences_show_diagnostics_and_only_available_encoders(qtbot, monkeyp
     text = tab.diagnostics_view.toPlainText()
     assert "h264_videotoolbox" in text and "OK" in text and "Auto pour H.264 : videotoolbox" in text
     assert _options(tab.encoder_combo) == ["auto", "cpu", "videotoolbox"]
-    assert len(text.splitlines()) < 15                            # court : jamais la sortie brute de FFmpeg
+    # Court (encodage, décodage, aperçu, mémoire) : jamais la sortie brute de FFmpeg.
+    assert len(text.splitlines()) < 40 and "Copyright" not in text
     tab.encoder_combo.setCurrentIndex(2)
     tab.encoder_combo.activated.emit(2)
     assert load_user_settings().export_encoder == "videotoolbox"
-    assert tab.encoding_box.title() == i18n.translate("perf.encoding.title")
+    assert tab.encoding_box.title() == i18n.translate("perf.hardware.title")  # décodage, aperçu, encodage
 
 
 def test_redetect_button_runs_a_fresh_detection(qtbot, monkeypatch, tmp_path, fake_proxies):

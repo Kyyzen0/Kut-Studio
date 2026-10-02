@@ -47,15 +47,23 @@ def apply_path_resolver(plan: RenderPlan, resolve: PathResolver | None) -> Rende
     """
     if resolve is None:
         return plan
+    # Une couche imbriquée n'a pas de fichier : jamais de proxy pour elle
+    # (les médias *à l'intérieur* de la séquence, eux, sont proxifiés).
     video = tuple(
-        replace(layer, source_path=resolve(layer.source_path))
+        layer if getattr(layer, "nested_key", "")
+        else replace(layer, source_path=resolve(layer.source_path))
         for layer in plan.video_layers
     )
     audio = tuple(
-        replace(layer, source_path=resolve(layer.source_path, need_audio=True))
+        layer if getattr(layer, "nested_key", "")
+        else replace(layer, source_path=resolve(layer.source_path, need_audio=True))
         for layer in plan.audio_layers
     )
-    return replace(plan, video_layers=video, audio_layers=audio)
+    nested = tuple(
+        replace(entry, plan=apply_path_resolver(entry.plan, resolve))
+        for entry in getattr(plan, "nested_sequences", ()) or ()
+    )
+    return replace(plan, video_layers=video, audio_layers=audio, nested_sequences=nested)
 
 
 def segment_plan(
@@ -92,7 +100,13 @@ def media_identity(plan: RenderPlan) -> str:
     ``stat`` par couche, sans mémo : le coût est négligeable face à un rendu.
     """
     parts: list[str] = []
-    for layer in (*plan.video_layers, *plan.audio_layers):
+    layers = [*plan.video_layers, *plan.audio_layers]
+    for entry in getattr(plan, "nested_sequences", ()) or ():
+        layers.extend(entry.plan.video_layers)
+        layers.extend(entry.plan.audio_layers)
+    for layer in layers:
+        if getattr(layer, "nested_key", ""):
+            continue
         path = layer.source_path
         try:
             stat = os.stat(path)

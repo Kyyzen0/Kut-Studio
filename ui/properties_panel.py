@@ -113,6 +113,10 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
     # Calques graphiques (tâche 32)
     graphic_property_changed = Signal(str, str, object)
     compositing_changed = Signal(str, object)
+    advanced_transform_changed = Signal(str, str, object)
+    advanced_keyframe_toggled = Signal(str, str)
+    graphic_parent_changed = Signal(str, str)
+    inspector_tab_changed = Signal(int)
 
     def __init__(self, update_color_effect, update_volume, parent=None):
         super().__init__(parent)
@@ -172,6 +176,10 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         # ----- Calque graphique (tâche 32) ----------------------------
         self.graphics_group = GraphicsEditor(self.group_style())
         self.graphics_group.field_changed.connect(self._emit_graphic_property)
+        self.graphics_group.parent_changed.connect(
+            lambda parent_id: self.selected_clip is not None
+            and self.graphic_parent_changed.emit(self.selected_clip.id, parent_id)
+        )
         layout.insertWidget(layout.indexOf(self.movement_group), self.graphics_group)
 
         # ----- Compositing (tâche 33) -------------------------------
@@ -179,6 +187,12 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self.compositing_group.value_changed.connect(
             lambda value: self.selected_clip is not None and self.compositing_changed.emit(self.selected_clip.id, value))
         layout.addWidget(self.compositing_group)
+
+        # ----- Suivi (tracking 2D) ------------------------------------
+        from ui.tracking_panel import TrackingPanel
+
+        self.tracking_group = TrackingPanel(self.group_style())
+        layout.addWidget(self.tracking_group)
 
         # ----- Audio (mixage non destructif) ---------------------------
         self.audio_group = self._build_audio_group()

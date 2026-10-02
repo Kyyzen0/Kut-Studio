@@ -74,6 +74,8 @@ class PerformanceMixin:
             proxies=self.proxies,
             max_bytes=int(settings.cache_max_gb * GIB),
             pinned_sources=self._project_source_paths,
+            mograph=_mograph_frame_cache(),
+            tracking=_tracking_cache(),
         )
         try:
             self.cache_manager.enforce()
@@ -299,12 +301,26 @@ class PerformanceMixin:
     # ------------------------------------------------------------------
 
     def _observe_playback_quality(self, now: float) -> None:
-        """Signale un tick de lecture au contrôleur de qualité (mode Auto seulement)."""
+        """Signale un tick de lecture au contrôleur de qualité (mode Auto seulement).
+
+        En plus de la cadence des ticks, le moniteur GPU signale ses images
+        perdues et un temps de rendu hors budget (voir ``core.preview_governor``).
+        """
+        stats_of = getattr(self, "preview_frame_stats", None)
+        stats = stats_of() if stats_of is not None else None
+        if stats is not None:
+            from core.preview_governor import gpu_overloaded
+
+            self.runtime.preview.adaptive.note_load(gpu_overloaded(stats))
         if self.runtime.preview.observe_tick(now) is not None:
             self._on_adaptive_quality_changed()
 
     def _reset_adaptive_quality(self) -> None:
         """Pause ou arrêt : l'aperçu revient à son niveau de base."""
+        stats_of = getattr(self, "preview_frame_stats", None)
+        stats = stats_of() if stats_of is not None else None
+        if stats is not None:
+            stats.reset()  # les pertes d'une lecture ne pèsent pas sur la suivante
         if self.runtime.preview.reset_adaptation():
             self._on_adaptive_quality_changed()
         else:
@@ -346,3 +362,17 @@ class PerformanceMixin:
             )
         else:
             preview.set_quality_notice(None)
+
+
+def _tracking_cache():
+    """Résultats d'analyse de tracking (budget disque global)."""
+    from core.tracking_engine import TrackingCache
+
+    return TrackingCache()
+
+
+def _mograph_frame_cache():
+    """Cache des images de calques motion graphics (budget disque global)."""
+    from core.mograph_stream import MographFrameCache
+
+    return MographFrameCache()

@@ -92,10 +92,15 @@ from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
+from ui.main_window_mixins.sequences import SequencesMixin
+from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
+from ui.main_window_mixins.tracking import TrackingMixin
+from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
+from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
 # remplacent sur ce module (``ui.main_window.QMessageBox``, etc.).
-from PySide6.QtWidgets import QFileDialog, QMessageBox  # noqa: E402,F401
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox  # noqa: E402,F401
 from core.media_probe import probe_media  # noqa: E402,F401
 from core.user_settings import save_user_settings  # noqa: E402,F401
 from ui.theme import COLORS, ThemeManager, global_stylesheet, label_style
@@ -120,6 +125,10 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    HardwarePreviewMixin,
+    TrackingMixin,
+    MotionGraphicsMixin,
+    SequencesMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -173,6 +182,8 @@ class MainWindow(
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)
+        # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
+        self._init_hardware_preview(loaded_settings)
         self._init_animation()
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
@@ -347,6 +358,7 @@ class MainWindow(
         self._record_tracks: list[str] = []
         self._apply_runtime_hints()
         self._init_faithful_preview()
+        self._start_hardware_preview()
         self._init_cache_manager(loaded_settings)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
@@ -572,6 +584,12 @@ class MainWindow(
         # Affichage initial de la durée totale (clip de démo = 12 s).
         self._update_timeline_duration()
         self._sync_preview_to_timeline()
+        # Séquences : navigation (fil d'Ariane), bibliothèque, imbrication.
+        self._init_sequences()
+        # Motion graphics : panneau Calques, viewer interactif, presets.
+        self._init_motion_graphics()
+        # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
+        self._init_tracking()
 
         # Espace de travail : le gestionnaire est l'unique autorité sur
         # la disposition. Il enregistre les quatre panneaux existants
@@ -705,7 +723,7 @@ class MainWindow(
                 return
 
         if section_id in (
-            "media", "audio", "text", "effects", "transitions", "graphics"
+            "media", "audio", "text", "effects", "transitions", "graphics", "sequences"
         ):
             # S'assurer que le panneau Médias est visible.
             if not self.workspace.is_visible(PanelId.MEDIA):
@@ -792,6 +810,8 @@ class MainWindow(
             return
         self.render_queue.shutdown()
         self._shutdown_encoding()
+        self._shutdown_hardware_preview()
+        self._stop_preview_pump()
         # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
         if getattr(self, "proxies", None) is not None:
             self._shutdown_proxies()
@@ -1085,7 +1105,14 @@ class MainWindow(
         """Met à jour le nom du projet et l'indicateur « Enregistré / Non enregistré »."""
         name = self.project.name if self.project is not None else "Projet sans titre"
         display_name = "Mon montage" if name == "Projet sans titre" else name
-        self.project_label.setText(display_name or "Mon montage")
+        display_name = display_name or "Mon montage"
+        # La séquence éditée est toujours visible : « Projet › Séquence ».
+        if self.project is not None and len(self.project.sequences) > 1:
+            self.project_label.setText(f"{display_name} › {self.project.active_sequence.name}")
+        else:
+            self.project_label.setText(display_name)
+        if self.project is not None:
+            self.project_label.setToolTip(self.project.active_sequence.name)
         if self.project_dirty:
             self.saved_indicator.setText("●  Non enregistré")
             self.saved_indicator.setToolTip("Modifications non enregistrées")
@@ -1326,6 +1353,28 @@ class MainWindow(
         # Séquence
         sequence_menu = QMenu(i18n.translate("menu.timeline"), self)
         sequence_menu.setObjectName("timeline_menu")
+        # Séquences : création, imbrication, navigation, gestion.
+        sequence_menu.addAction(self._command_action("sequence_new", "sequence.action.new"))
+        self.nest_selection_action = self._command_action(
+            "sequence_nest_selection", "sequence.action.nest_selection"
+        )
+        sequence_menu.addAction(self.nest_selection_action)
+        sequence_menu.addAction(
+            self._command_action("sequence_open_nested", "sequence.action.open_nested")
+        )
+        sequence_menu.addAction(self._command_action("sequence_parent", "sequence.action.parent"))
+        sequence_menu.addAction(self._command_action("sequence_back", "sequence.action.back"))
+        sequence_menu.addAction(self._command_action("sequence_forward", "sequence.action.forward"))
+        rename_sequence_action = self._labelled_action("sequence.action.rename")
+        rename_sequence_action.triggered.connect(lambda: self.rename_sequence_command())
+        sequence_menu.addAction(rename_sequence_action)
+        duplicate_sequence_action = self._labelled_action("sequence.action.duplicate")
+        duplicate_sequence_action.triggered.connect(lambda: self.duplicate_sequence_command())
+        sequence_menu.addAction(duplicate_sequence_action)
+        delete_sequence_action = self._labelled_action("sequence.action.delete")
+        delete_sequence_action.triggered.connect(lambda: self.delete_sequence_command())
+        sequence_menu.addAction(delete_sequence_action)
+        sequence_menu.addSeparator()
         for key in ("menu.item.add_clip", "menu.item.trim", "menu.item.marker"):
             action = self._labelled_action(key)
             action.triggered.connect(lambda checked=False, k=key: self._notify_placeholder(k))
@@ -1405,8 +1454,10 @@ class MainWindow(
         proxies_selection_action.triggered.connect(self.generate_proxies_for_selection)
         sequence_menu.addAction(proxies_selection_action)
 
-        for menu in (file_menu, edit_menu, sequence_menu, window_menu):
+        for menu in (file_menu, edit_menu, sequence_menu):
             menu_bar.addMenu(menu)
+        self._build_layers_menu(menu_bar)
+        menu_bar.addMenu(window_menu)
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
         preferences_action = self._command_action("preferences", "action.preferences")
@@ -1515,6 +1566,13 @@ class MainWindow(
             self._request_scopes_analysis()
 
     def _sync_preview_to_timeline(self) -> list:
+        """Synchronise le moniteur puis l'aperçu des calques et la surcouche."""
+        self._viewer_composited = False
+        result = self._sync_preview_core()
+        self._after_preview_sync()
+        return result
+
+    def _sync_preview_core(self) -> list:
         """Évalue la timeline à ``playhead_seconds`` et synchronise l'aperçu.
 
         - S'il existe au moins un clip vidéo actif, on charge la source
@@ -1559,34 +1617,48 @@ class MainWindow(
             return active_clips
         top_clip = video_clips[-1]
         if not top_clip.source_path:
-            clip_obj = self._ensure_timeline_index().clip(top_clip.clip_id)
+            clip_obj = self._ensure_timeline_index().clip(top_clip.owner_clip_id)
             clip_name = getattr(clip_obj, "label", "") if clip_obj is not None else ""
             self.preview_panel.show_missing_media(clip_name)
             return active_clips
-        # Aperçu : proxy valide si disponible, sinon média original (retour
-        # silencieux si le proxy est absent, supprimé ou obsolète).
+        # Aperçu : proxy prêt ou original, le moins coûteux à décoder qui reste
+        # assez net (voir ``preview_source_for`` ; repli silencieux sur
+        # l'original si le proxy est absent, supprimé ou obsolète).
         self.preview_panel.preview_at(
-            self.proxies.resolve(
-                top_clip.source_path, divisor=self.runtime.preview_divisor()
+            self.preview_source_for(
+                top_clip.source_path, divisor=self.runtime.preview_divisor(),
+                purpose=DecodePurpose.REALTIME,
             ),
             top_clip.source_time,
+            playing=bool(self.is_playing),
         )
         # Tâche 13 : applique le transform animé du clip supérieur si
         # la timeline contient au moins un clip vidéo. On évalue le
         # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité
         # au sommet pour être conforme à la convention de la tâches 6
         # (clip actif supérieur = superposition).
-        clip_obj = self._ensure_timeline_index().clip(top_clip.clip_id)
+        # Pour un clip vu à travers une séquence imbriquée, le moniteur temps
+        # réel applique le transform du clip imbriqué (le niveau visible
+        # ici) ; la composition exacte des niveaux vient des segments fidèles.
+        owner_id = top_clip.owner_clip_id
+        clip_obj = self._ensure_timeline_index().clip(owner_id)
         if clip_obj is None:
-            clip_obj = find_clip(self.project, top_clip.clip_id)
+            try:
+                clip_obj = find_clip(self.project, owner_id)
+            except KeyError:
+                clip_obj = None
         if clip_obj is not None:
             # Les images-clés sont locales au clip (0 = début du clip sur la
             # timeline), comme dans l'export : jamais le temps du média source,
             # qui diffère dès que le clip est rogné ou accéléré.
+            # Tracking : liaisons et stabilisation sont des keyframes dérivées
+            # (mêmes valeurs que l'export) ; sans tracking, les keyframes du clip.
+            from core.tracking_bindings import effective_transform_keyframes
+
             evaluated = evaluate_transform(
                 clip_obj.transform,
-                clip_obj.transform_keyframes,
-                clip_local_time=float(self.playhead_seconds) - float(top_clip.timeline_start),
+                effective_transform_keyframes(self.project, clip_obj),
+                clip_local_time=float(self.playhead_seconds) - float(clip_obj.timeline_start),
                 clip_duration=clip_obj.duration,
             )
             self.preview_panel.apply_transform(
@@ -1595,8 +1667,16 @@ class MainWindow(
                 scale=evaluated.scale,
                 rotation=evaluated.rotation,
                 opacity=evaluated.opacity,
+                anchor_x=evaluated.anchor_x,
+                anchor_y=evaluated.anchor_y,
+                scale_x=evaluated.scale_x,
+                scale_y=evaluated.scale_y,
+                flip_h=evaluated.flip_h,
+                flip_v=evaluated.flip_v,
             )
             self.preview_panel.set_effects(clip_obj.effects)
+            if self.preview_panel.gpu_active:
+                self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.
@@ -1622,7 +1702,8 @@ class MainWindow(
         oublie l'index. Entre deux éditions, la lecture réutilise la
         même structure.
         """
-        project_id = id(self.project)
+        # L'index décrit la séquence active : changer de séquence le reconstruit.
+        project_id = (id(self.project), self.project.active_sequence_id)
         if (
             self._timeline_index is None
             or self._timeline_index_project_id != project_id
@@ -1927,6 +2008,9 @@ class MainWindow(
             "marker_next": lambda: self.goto_marker(1),
             # Animation (images-clés)
             **self._animation_shortcut_handlers(),
+            # Séquences
+            **self._sequence_shortcut_handlers(),
+            **self._mograph_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:
@@ -2021,6 +2105,8 @@ class MainWindow(
         if mixer is not None:
             mixer.update_translations()
         self._sync_workspace_menu()
+        self.timeline_panel.sequence_bar.retranslate()
+        self.project_panel.sequence_view.retranslate()
         self.timeline_panel.refresh_clip_widgets()
         self._refresh_undo_redo_state()
 
@@ -2033,6 +2119,7 @@ class MainWindow(
             "timeline_menu": "menu.timeline",
             "window_menu": "menu.window",
             "help_menu": "menu.help",
+            "layers_menu": "menu.layers",
         }
         key = mapping.get(object_name or "")
         return i18n.translate(key) if key else ""

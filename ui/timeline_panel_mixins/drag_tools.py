@@ -11,7 +11,7 @@ from core.timeline_editing import (
     ClipPlacement,
     shifted_track_index,
 )
-from ui.timeline_widgets.clip_widget import ClipWidget
+from ui.i18n import translate
 from ui.timeline_widgets.clip_widget import ClipWidget
 
 class DragToolsMixin:
@@ -193,6 +193,12 @@ class DragToolsMixin:
         toggle = menu.addAction("Activer / désactiver")
         ripple = menu.addAction("Supprimer et refermer")
         remove = menu.addAction("Supprimer")
+        menu.addSeparator()
+        nest = menu.addAction(translate("sequence.action.nest_selection"))
+        view = self.find_view_by_id(clip_id)
+        open_nested = None
+        if view is not None and getattr(view, "sequence_id", ""):
+            open_nested = menu.addAction(translate("sequence.action.open_nested"))
         chosen = menu.exec(global_pos)
         if chosen is cut:
             self.blade_cut_requested.emit(clip_id, self.playhead_seconds)
@@ -206,3 +212,7 @@ class DragToolsMixin:
             window = self.window()
             if hasattr(window, "delete_selected_clip_with_check"):
                 window.delete_selected_clip_with_check()
+        elif chosen is nest:
+            self.nest_selection_requested.emit()
+        elif open_nested is not None and chosen is open_nested:
+            self.nested_open_requested.emit(clip_id)

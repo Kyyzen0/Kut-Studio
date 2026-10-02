@@ -89,6 +89,43 @@ def _find_asset(project: Project, asset_id: str) -> MediaAsset:
     )
 
 
+def _source_bounds(project: Project, clip: Clip) -> tuple[str, float]:
+    """``(libellé, durée)`` de la source d'un clip : média ou séquence imbriquée.
+
+    Une séquence imbriquée introuvable (supprimée) ne permet pas d'étendre
+    le clip : la limite est alors son ``source_out`` actuel.
+
+    Raises:
+        KeyError: si le média d'un clip classique est introuvable.
+    """
+    if clip.sequence_id:
+        sequence = project.get_sequence(clip.sequence_id)
+        if sequence is None:
+            return "la séquence (introuvable)", float(clip.source_out)
+        return f"la séquence '{sequence.name}'", float(sequence.duration)
+    asset = _find_asset(project, clip.asset_id)
+    return f"du média '{asset.name}'", float(asset.duration)
+
+
+def _clip_media_type(project: Project, clip: Clip) -> str:
+    """Type de source pour la validation du remappage (séquence = vidéo)."""
+    if clip.sequence_id:
+        return "video"
+    return _find_asset(project, clip.asset_id).media_type
+
+
+def _validate_track_clip_compatibility(project: Project, clip: Clip, track: Track) -> None:
+    """Le clip peut-il aller sur ``track`` ? (média ou séquence imbriquée)."""
+    if clip.sequence_id:
+        if track.type not in {"video", "audio"}:
+            raise ValueError(
+                f"Une séquence imbriquée ne peut aller que sur une piste vidéo ou "
+                f"audio (piste '{track.id}' de type '{track.type}')."
+            )
+        return
+    _validate_track_asset_compatibility(_find_asset(project, clip.asset_id), track)
+
+
 # ---------------------------------------------------------------------------
 # Déplacement
 # ---------------------------------------------------------------------------
@@ -201,7 +238,7 @@ def trim_clip_right(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
-    asset = _find_asset(project, clip.asset_id)
+    source_name, source_limit = _source_bounds(project, clip)
 
     current_timeline_end = clip.timeline_start + clip.duration
     delta = new_timeline_end - current_timeline_end
@@ -219,10 +256,12 @@ def trim_clip_right(
             f"le clip '{clip_id}' (source_in={clip.source_in}, "
             f"source_out={new_source_out})."
         )
-    if new_source_out > asset.duration:
+    # Raccourcir reste toujours permis, même pour un clip imbriqué qui
+    # déborde déjà d'une séquence source raccourcie.
+    if new_source_out > max(source_limit, clip.source_out) + 1e-9:
         raise ValueError(
-            f"Le trim droit dépasserait la durée du média '{asset.name}' "
-            f"(asset={asset.duration}s, source_out={new_source_out})."
+            f"Le trim droit dépasserait la durée de {source_name} "
+            f"(source={source_limit}s, source_out={new_source_out})."
         )
 
     old_source_in = clip.source_in
@@ -241,6 +280,28 @@ def trim_clip_right(
 # ---------------------------------------------------------------------------
 # Coupe
 # ---------------------------------------------------------------------------
+
+
+def _carried_properties(clip: Clip, *, copy: bool = False) -> dict:
+    """Propriétés qu'une coupe ou une duplication doit conserver.
+
+    Effets, effets audio, étalonnage, calque graphique, composition, style
+    texte et référence de séquence imbriquée. ``copy`` duplique les listes
+    modifiables pour que les deux clips restent indépendants.
+    """
+    from copy import deepcopy
+
+    return {
+        "effects": deepcopy(clip.effects) if copy else list(clip.effects),
+        "audio_effects": deepcopy(clip.audio_effects) if copy else list(clip.audio_effects),
+        "color_grade": clip.color_grade,
+        "graphic": clip.graphic,
+        "compositing": clip.compositing,
+        "text_style": clip.text_style,
+        "sequence_id": clip.sequence_id,
+        # Tracking : données en temps source, valables pour les deux moitiés.
+        "tracking": getattr(clip, "tracking", None),
+    }
 
 
 def _split_time_remapping(
@@ -336,6 +397,9 @@ def cut_clip(
     cut_local_time = cut_timeline_position - clip.timeline_start
     left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
     left_keyframes, right_keyframes = _split_transform_keyframes(clip, cut_local_time)
+    from .animation_targets import split_animation
+
+    left_animation, right_animation = split_animation(clip.animation, cut_local_time)
     (left_fade_in, left_fade_out), (right_fade_in, right_fade_out) = _split_fades(
         clip, cut_local_time
     )
@@ -379,6 +443,8 @@ def cut_clip(
         fade_in=left_fade_in,
         fade_out=left_fade_out,
         time_remapping=left_remapping,
+        animation=left_animation,
+        **_carried_properties(clip),
     )
     right_clip = Clip(
         id=right_id,
@@ -397,6 +463,8 @@ def cut_clip(
         fade_in=right_fade_in,
         fade_out=right_fade_out,
         time_remapping=right_remapping,
+        animation=right_animation,
+        **_carried_properties(clip, copy=True),
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]
@@ -529,6 +597,7 @@ def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None
 from .subtitle_io import SubtitleCue  # noqa: E402  (import local pour cycle)
 from .visual_effects import (  # noqa: E402  (import local pour cycle)
     ANIMATABLE_PROPERTIES,
+    TRANSFORM_PROPERTY_NAMES,
     ClipTransform,
     TransformKeyframe,
     copy_keyframe,
@@ -709,6 +778,13 @@ def duplicate_clip(
         transform=source_clip.transform,
         transform_keyframes=[copy_keyframe(kf) for kf in source_clip.transform_keyframes],
         time_remapping=source_clip.time_remapping,
+        gain_db=source_clip.gain_db,
+        pan=source_clip.pan,
+        fade_in=source_clip.fade_in,
+        fade_out=source_clip.fade_out,
+        animation=list(source_clip.animation),
+        # Calque graphique, effets, composition, style… : une copie complète.
+        **_carried_properties(source_clip, copy=True),
     )
     source_track.clips.append(duplicate)
     return duplicate
@@ -858,7 +934,7 @@ def set_transform_keyframe(
     pour le même couple, sa valeur est écrasée.
     """
     clip = _require_video_clip(project, clip_id)
-    if property_name not in ANIMATABLE_PROPERTIES:
+    if property_name not in TRANSFORM_PROPERTY_NAMES:
         raise ValueError(f"Propriété inconnue : {property_name!r}.")
     duration = clip.duration
     if duration <= 0.0:
@@ -973,6 +1049,14 @@ def apply_clip_transform_on_trim(
         new_source_in=new_source_in,
         new_source_out=new_source_out,
     )
+    if clip.animation:
+        from .animation_targets import retime_animation
+
+        clip.animation = retime_animation(
+            clip.animation,
+            start_offset=float(new_source_in - old_source_in),
+            new_duration=float(new_source_out - new_source_in),
+        )
 
 
 def duplicate_clip_preserving_transform(
@@ -1055,7 +1139,7 @@ def set_clip_speed(
         freeze_duration=new_time_remapping.freeze_duration,
         source_in=clip.source_in,
         source_out=clip.source_out,
-        media_type=_find_asset(project, clip.asset_id).media_type,
+        media_type=_clip_media_type(project, clip),
     )
     if errors:
         raise ValueError(f"Vitesse invalide: {'; '.join(errors)}")
@@ -1083,7 +1167,7 @@ def set_clip_reverse(
     """
     track, index = _find_track_for_clip(project, clip_id)
     clip = track.clips[index]
-    asset = _find_asset(project, clip.asset_id)
+    media_type = _clip_media_type(project, clip)
     
     # Valider le reverse
     new_time_remapping = TimeRemapping(
@@ -1102,7 +1186,7 @@ def set_clip_reverse(
         freeze_duration=new_time_remapping.freeze_duration,
         source_in=clip.source_in,
         source_out=clip.source_out,
-        media_type=asset.media_type,
+        media_type=media_type,
     )
     if errors:
         raise ValueError(f"Reverse invalide: {'; '.join(errors)}")
@@ -1131,7 +1215,7 @@ def set_clip_freeze_frame(
     """
     track, index = _find_track_for_clip(project, clip_id)
     clip = track.clips[index]
-    asset = _find_asset(project, clip.asset_id)
+    media_type = _clip_media_type(project, clip)
     
     # Créer le time remapping pour le freeze frame
     new_time_remapping = create_freeze_frame(
@@ -1150,7 +1234,7 @@ def set_clip_freeze_frame(
         freeze_duration=new_time_remapping.freeze_duration,
         source_in=clip.source_in,
         source_out=clip.source_out,
-        media_type=asset.media_type,
+        media_type=media_type,
     )
     if errors:
         raise ValueError(f"Arrêt sur image invalide: {'; '.join(errors)}")
@@ -1198,7 +1282,7 @@ def set_clip_freeze_duration(
     """
     track, index = _find_track_for_clip(project, clip_id)
     clip = track.clips[index]
-    asset = _find_asset(project, clip.asset_id)
+    media_type = _clip_media_type(project, clip)
     
     # Mettre à jour la durée
     new_time_remapping = TimeRemapping(
@@ -1218,7 +1302,7 @@ def set_clip_freeze_duration(
         freeze_duration=new_time_remapping.freeze_duration,
         source_in=clip.source_in,
         source_out=clip.source_out,
-        media_type=asset.media_type,
+        media_type=media_type,
     )
     if errors:
         raise ValueError(f"Durée d'arrêt sur image invalide: {'; '.join(errors)}")

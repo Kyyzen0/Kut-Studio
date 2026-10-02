@@ -64,6 +64,10 @@ class PreferencesMixin:
         if manager is not None:
             fields["cache_max_gb"] = manager.max_bytes / (1024 ** 3)
         fields["export_encoder"] = getattr(self, "_export_encoder", "auto")
+        decode = getattr(self, "_decode_mode", None)
+        if decode is not None:
+            fields["decode_mode"] = getattr(decode, "value", str(decode))
+        fields["preview_backend"] = getattr(self, "_preview_backend_request", "auto")
         return fields
 
     def show_preferences(self) -> None:

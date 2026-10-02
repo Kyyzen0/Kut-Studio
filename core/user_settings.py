@@ -148,6 +148,14 @@ DEFAULT_EXPORT_ENCODER: str = "auto"
 MIN_CACHE_MAX_GB: float = 0.5
 MAX_CACHE_MAX_GB: float = 512.0
 
+DEFAULT_DECODE_MODE: str = "auto"
+"""Décodage vidéo de l'aperçu : ``auto``, ``cpu`` ou un backend détecté (voir :mod:`core.decode_policy`)."""
+
+VALID_PREVIEW_BACKENDS: tuple[str, ...] = ("auto", "cpu", "gpu")
+"""Rendu du moniteur temps réel (voir :mod:`core.gpu_backend`)."""
+
+DEFAULT_PREVIEW_BACKEND: str = "auto"
+
 
 def _coerce_proxy_profile(value: object) -> str:
     """Filtre le profil de proxy ; ``medium`` si inconnu (ex. profil retiré)."""
@@ -164,6 +172,20 @@ def _coerce_export_encoder(value: object) -> str:
         return HardwareEncoder(str(value).strip().lower()).value
     except ValueError:
         return DEFAULT_EXPORT_ENCODER
+
+
+def _coerce_decode_mode(value: object) -> str:
+    """Filtre le mode de décodage ; ``auto`` si absent ou inconnu."""
+    from .hardware_decoding import coerce_decode_mode
+
+    return coerce_decode_mode(value).value
+
+
+def _coerce_preview_backend(value: object) -> str:
+    """Filtre le rendu de l'aperçu ; ``auto`` si absent ou inconnu."""
+    if isinstance(value, str) and value.strip().lower() in VALID_PREVIEW_BACKENDS:
+        return value.strip().lower()
+    return DEFAULT_PREVIEW_BACKEND
 
 
 def _coerce_cache_max_gb(value: object) -> float:
@@ -206,6 +228,9 @@ class UserSettings:
             l'export, qui lit toujours les médias originaux).
         proxy_profile: profil de proxy utilisé pour générer / lire.
         export_encoder: encodeur d'export proposé par défaut (voir :mod:`core.video_encoders`).
+        decode_mode: décodage vidéo de l'aperçu, des proxies et de l'analyse
+            (``auto``, ``cpu`` ou un backend). L'export décode toujours en CPU.
+        preview_backend: rendu du moniteur temps réel (``auto``, ``cpu``, ``gpu``).
         cache_max_gb: budget disque global des caches, en Go.
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
@@ -232,6 +257,9 @@ class UserSettings:
     cache_max_gb: float = DEFAULT_CACHE_MAX_GB
     # --- Export ---
     export_encoder: str = DEFAULT_EXPORT_ENCODER
+    # --- Décodage et rendu de l'aperçu (absents des fichiers antérieurs : Auto) ---
+    decode_mode: str = DEFAULT_DECODE_MODE
+    preview_backend: str = DEFAULT_PREVIEW_BACKEND
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -402,6 +430,8 @@ def load_user_settings(
         proxy_profile=_coerce_proxy_profile(data.get("proxy_profile")),
         cache_max_gb=_coerce_cache_max_gb(data.get("cache_max_gb")),
         export_encoder=_coerce_export_encoder(data.get("export_encoder")),
+        decode_mode=_coerce_decode_mode(data.get("decode_mode")),
+        preview_backend=_coerce_preview_backend(data.get("preview_backend")),
     )
 
 
@@ -451,6 +481,8 @@ def save_user_settings(
             proxy_profile=_coerce_proxy_profile(settings.proxy_profile),
             cache_max_gb=_coerce_cache_max_gb(settings.cache_max_gb),
             export_encoder=_coerce_export_encoder(settings.export_encoder),
+            decode_mode=_coerce_decode_mode(settings.decode_mode),
+            preview_backend=_coerce_preview_backend(settings.preview_backend),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -476,6 +508,8 @@ def save_user_settings(
 
 __all__ = [
     "DEFAULT_CACHE_MAX_GB",
+    "DEFAULT_DECODE_MODE",
+    "DEFAULT_PREVIEW_BACKEND",
     "DEFAULT_PROXY_PROFILE",
     "DEFAULT_LANGUAGE",
     "DEFAULT_PERFORMANCE_PROFILE",
@@ -488,6 +522,7 @@ __all__ = [
     "UserSettings",
     "VALID_LANGUAGES",
     "VALID_PERFORMANCE_PROFILES",
+    "VALID_PREVIEW_BACKENDS",
     "VALID_PREVIEW_QUALITIES",
     "VALID_RENDER_QUALITIES",
     "VALID_SCOPES_LAYOUTS",

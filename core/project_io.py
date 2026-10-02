@@ -32,6 +32,13 @@ clip). La version 11 ajoute l'organisation de la bibliothèque :
 média : ``folder_id`` et liste de ``tag_ids``).
 La version 12 ajoute les pistes et clips graphiques non destructifs
 (``graphic`` : texte, forme, aplat ou image).
+La version 14 introduit le **multi-séquence** : le projet porte une liste
+``sequences`` (chacune avec ``id``, ``name``, ``width``, ``height``,
+``fps``, ``tracks``, ``markers``, ``transitions`` et
+``ducking_sidechains``) et ``active_sequence_id``. Un clip imbriqué porte
+``sequence_id`` (et un ``asset_id`` vide). Un fichier v1–v13 (timeline
+unique) est chargé comme un projet à une séquence principale
+(:data:`core.project_model.MAIN_SEQUENCE_ID`), sans perte.
 Les versions précédentes restent lisibles : ces champs prennent leurs
 valeurs par défaut (liste d'effets vide, style standard pour
 ``text_style``, organisation de bibliothèque vide). La version 4
@@ -60,11 +67,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
 from .effects_model import ClipEffect, EffectType
-from .compositing import compositing_from_dict, compositing_to_dict
-from .project_model import Clip, Marker, MediaAsset, Project, Track
+from .animation import Keyframe
+from .canvas_guides import guide_from_dict, guide_to_dict
+from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
+from .motion_blur import settings_from_dict as motion_blur_from_dict
+from .motion_blur import settings_to_dict as motion_blur_to_dict
+from .project_model import (
+    MAIN_SEQUENCE_ID,
+    MAIN_SEQUENCE_NAME,
+    Clip,
+    Marker,
+    MediaAsset,
+    Project,
+    Sequence,
+    Track,
+)
 from .time_remapping import FreezeFrameMode, TimeRemapping
 from .transitions import Transition, TransitionType
-from .visual_effects import ClipTransform, TransformKeyframe, migrate_legacy_keyframes
+from .visual_effects import (
+    ADVANCED_TRANSFORM_PROPERTIES,
+    TRANSFORM_PROPERTIES,
+    ClipTransform,
+    TransformKeyframe,
+    migrate_legacy_keyframes,
+)
 
 if TYPE_CHECKING:
     from .audio_automation import AutomationPoint
@@ -81,8 +107,27 @@ if TYPE_CHECKING:
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 13
+CURRENT_VERSION = 16
 """Version courante du format public ``.kut``.
+
+La version 16 ajoute le tracking 2D (voir ``docs/tracking.md``) : clé
+``tracking`` d'un clip (trackers et leurs données compressées, liaisons
+dynamiques reçues, stabilisation). Absente pour un clip sans tracking ; un
+fichier v15 ou antérieur s'ouvre donc sans changement.
+
+La version 15 ajoute le moteur motion graphics (voir
+``docs/motion-graphics.md``) : transform avancé (ancrage, échelle X/Y,
+inclinaison, miroirs), animation générique des clips (``animation``),
+calques étendus (formes, groupes, adjustment layers, contrôleurs,
+parentage), masques multiples avec opérations, guides et flou de
+mouvement des séquences. Un fichier v14 ou antérieur s'ouvre sans
+conversion destructive : ses calques gardent leur placement historique
+(``layout: legacy``) et les anciennes images-clés de masque passent au
+moteur central sans changer leur courbe.
+
+La version 14 ajoute le multi-séquence et les séquences imbriquées (voir
+``docs/nested-sequences.md``). Un fichier v13 ou antérieur est lu comme un
+projet à séquence unique.
 
 La version 13 ajoute aux images-clés l'interpolation, les pentes Bézier, le
 mode des tangentes et un identifiant (voir ``docs/animation.md``). Les
@@ -94,7 +139,7 @@ l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -114,6 +159,9 @@ _VERSION_ADDED_EFFECTS: int = 9
 
 _VERSION_ADDED_LIBRARY_ORGANIZATION: int = 11
 """Première version sérialisant les dossiers, tags et affectations de la bibliothèque."""
+
+_VERSION_ADDED_SEQUENCES: int = 14
+"""Première version sérialisant plusieurs séquences et les clips imbriqués."""
 
 _FORMAT_KEY = "format"
 _VERSION_KEY = "version"
@@ -156,6 +204,7 @@ _CLIP_KNOWN_FIELDS = frozenset(
         "label",
         "text",
         "text_style",
+        "sequence_id",
     }
 ) | _CLIP_AUDIO_FIELDS | _CLIP_TIME_REMAPPING_FIELDS
 
@@ -197,7 +246,7 @@ def _materialize_project_luts(project: Project, project_root: Path) -> None:
     """Rend les LUTs d'un projet portables avant la sauvegarde."""
     from .color_grading import ColorGrade, copy_lut_into_project
 
-    for track in project.tracks:
+    for track in project.all_tracks():
         for clip in track.clips:
             grade = getattr(clip, "color_grade", None)
             if not isinstance(grade, ColorGrade) or grade.lut is None:
@@ -271,9 +320,6 @@ def _build_payload(project: Project) -> dict[str, Any]:
         _VERSION_KEY: CURRENT_VERSION,
         _PROJECT_KEY: {
             "name": project.name,
-            "width": project.width,
-            "height": project.height,
-            "fps": project.fps,
             "media_assets": [
                 {
                     "id": asset.id,
@@ -287,25 +333,6 @@ def _build_payload(project: Project) -> dict[str, Any]:
                     "has_audio": asset.has_audio,
                 }
                 for asset in project.media_assets
-            ],
-            "markers": [
-                {
-                    "id": marker.id,
-                    "time_seconds": marker.time_seconds,
-                    "name": marker.name,
-                    "category": marker.category,
-                }
-                for marker in project.markers
-            ],
-            "transitions": [
-                {
-                    "id": transition.id,
-                    "from_clip_id": transition.from_clip_id,
-                    "to_clip_id": transition.to_clip_id,
-                    "type": transition.type.value,
-                    "duration": float(transition.duration),
-                }
-                for transition in project.transitions
             ],
             # --- Organisation de la bibliothèque (tâche 25, v11) ---
             # On sérialise uniquement les champs utiles à la
@@ -323,111 +350,164 @@ def _build_payload(project: Project) -> dict[str, Any]:
                 _assignment_to_dict(assignment)
                 for assignment in project.library_assignments.values()
             ],
-            # --- Ducking automatique (tâche 28) ---
-            # Liste des associations musique ← voix au niveau projet.
-            # Une liste vide signifie : aucun ducking automatique.
-            "ducking_sidechains": [
-                _ducking_sidechain_to_dict(sidechain)
-                for sidechain in getattr(project, "ducking_sidechains", []) or []
-            ],
             "color_presets": [
                 _color_preset_to_dict(preset)
                 for preset in getattr(project, "color_presets", []) or []
             ],
-            "tracks": [
-                {
-                    "id": track.id,
-                    "name": track.name,
-                    "type": track.type,
-                    "locked": track.locked,
-                    "visible": track.visible,
-                    "muted": track.muted,
-                    "solo": track.solo,
-                    "armed": track.armed,
-                    "height_mode": track.height_mode,
-                    "collapsed": track.collapsed,
-                    "volume_db": float(track.volume_db),
-                    "pan": float(track.pan),
-                    # --- Automation audio et ducking (tâche 28) ---
-                    # ``audio_role`` reste une chaîne pour rester
-                    # compatible avec les snapshots plus anciens.
-                    "audio_role": getattr(track, "audio_role", "other"),
-                    # ``automation`` est sérialisée comme une liste de
-                    # points ``{time_seconds, gain_db, fade_seconds}``.
-                    # Une liste vide correspond à ``pas d'automation``
-                    # et reste le comportement par défaut.
-                    "automation": [
-                        {
-                            "time_seconds": float(point.time_seconds),
-                            "gain_db": float(point.gain_db),
-                            "fade_seconds": float(point.fade_seconds),
-                        }
-                        for point in _iter_automation_points(
-                            getattr(track, "automation", None)
-                        )
-                    ],
-                    # ``ducking_config`` est sérialisé comme un dict
-                    # ``{threshold_db, reduction_db, attack_seconds,
-                    # release_seconds}`` ou ``None``.
-                    "ducking_config": _ducking_config_to_dict(
-                        getattr(track, "ducking_config", None)
-                    ),
-                    "clips": [
-                        {
-                            "id": clip.id,
-                            "asset_id": clip.asset_id,
-                            "track_id": clip.track_id,
-                            "timeline_start": clip.timeline_start,
-                            "source_in": clip.source_in,
-                            "source_out": clip.source_out,
-                            "enabled": clip.enabled,
-                            "label": clip.label,
-                            "text": clip.text,
-                            "gain_db": float(clip.gain_db),
-                            "pan": float(clip.pan),
-                            "fade_in": float(clip.fade_in),
-                            "fade_out": float(clip.fade_out),
-                            "transform": _transform_to_dict(clip.transform),
-                            "transform_keyframes": [
-                                _keyframe_to_dict(kf) for kf in clip.transform_keyframes
-                            ],
-                            "time_remapping": _time_remapping_to_dict(clip.time_remapping),
-                            "effects": [
-                                _effect_to_dict(effect) for effect in clip.effects
-                            ],
-                            # Effets audio non destructifs (tâche 27).
-                            # Sérialisés comme liste vide pour les
-                            # projets anciens ou les clips sans effets
-                            # audio. La désérialisation reste stricte
-                            # : un effet invalide est ignoré à l'unité,
-                            # sans casser le chargement du clip.
-                            "audio_effects": [
-                                _audio_effect_to_dict(effect)
-                                for effect in clip.audio_effects
-                            ],
-                            # Étalonnage couleur non destructif (tâche 29).
-                            # ``None`` si l'identité ou si le clip n'a
-                            # jamais été étalonné : on évite de
-                            # polluer le ``.kut`` avec une copie
-                            # identique au défaut. Les versions
-                            # antérieures à v11.2 ne portent pas
-                            # cette clé, ce qui donne ``None`` après
-                            # chargement (rendu sans filtre couleur).
-                            "color_grade": _color_grade_to_dict(
-                                getattr(clip, "color_grade", None)
-                            ),
-                            "graphic": _graphic_to_dict(
-                                getattr(clip, "graphic", None)
-                            ),
-                            "compositing": compositing_to_dict(clip.compositing),
-                            "text_style": clip.text_style.to_dict(),
-                        }
-                        for clip in track.clips
-                    ],
-                }
-                for track in project.tracks
-            ],
+            # --- Multi-séquence (v14) ---
+            "active_sequence_id": project.active_sequence_id,
+            "sequences": [_sequence_to_dict(sequence) for sequence in project.sequences],
         },
+    }
+
+
+def _clip_to_dict(clip: Clip) -> dict[str, Any]:
+    """Sérialise un clip (partagé par les projets, le presse-papiers et les presets)."""
+    return {
+        "id": clip.id,
+        "asset_id": clip.asset_id,
+        "track_id": clip.track_id,
+        "timeline_start": clip.timeline_start,
+        "source_in": clip.source_in,
+        "source_out": clip.source_out,
+        "enabled": clip.enabled,
+        "label": clip.label,
+        "text": clip.text,
+        "gain_db": float(clip.gain_db),
+        "pan": float(clip.pan),
+        "fade_in": float(clip.fade_in),
+        "fade_out": float(clip.fade_out),
+        "transform": _transform_to_dict(clip.transform),
+        "transform_keyframes": [
+            _keyframe_to_dict(kf) for kf in clip.transform_keyframes
+        ],
+        # Animation générique (v15) : forme, texte, masques.
+        "animation": [
+            _keyframe_to_dict(kf) for kf in getattr(clip, "animation", ()) or ()
+        ],
+        "time_remapping": _time_remapping_to_dict(clip.time_remapping),
+        "effects": [
+            _effect_to_dict(effect) for effect in clip.effects
+        ],
+        # Effets audio non destructifs (tâche 27).
+        # Sérialisés comme liste vide pour les
+        # projets anciens ou les clips sans effets
+        # audio. La désérialisation reste stricte
+        # : un effet invalide est ignoré à l'unité,
+        # sans casser le chargement du clip.
+        "audio_effects": [
+            _audio_effect_to_dict(effect)
+            for effect in clip.audio_effects
+        ],
+        # Étalonnage couleur non destructif (tâche 29).
+        # ``None`` si l'identité ou si le clip n'a
+        # jamais été étalonné : on évite de
+        # polluer le ``.kut`` avec une copie
+        # identique au défaut. Les versions
+        # antérieures à v11.2 ne portent pas
+        # cette clé, ce qui donne ``None`` après
+        # chargement (rendu sans filtre couleur).
+        "color_grade": _color_grade_to_dict(
+            getattr(clip, "color_grade", None)
+        ),
+        "graphic": _graphic_to_dict(
+            getattr(clip, "graphic", None)
+        ),
+        "compositing": compositing_to_dict(clip.compositing),
+        "text_style": clip.text_style.to_dict(),
+        # Clip imbriqué (v14) : clé présente uniquement
+        # quand le clip référence une séquence.
+        **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
+        # Tracking (v16) : présent seulement si le clip en porte.
+        **_tracking_entry(getattr(clip, "tracking", None)),
+    }
+
+
+def _tracking_entry(tracking) -> dict[str, Any]:
+    if tracking is None or getattr(tracking, "is_empty", True):
+        return {}
+    return {"tracking": tracking.to_dict()}
+
+
+def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
+    """Sérialise une séquence : réglages, repères, transitions, pistes."""
+    return {
+        "id": sequence.id,
+        "name": sequence.name,
+        "width": sequence.width,
+        "height": sequence.height,
+        "fps": sequence.fps,
+        # Motion graphics (v15) : guides du viewer et flou de mouvement.
+        "guides": [guide_to_dict(guide) for guide in getattr(sequence, "guides", ()) or ()],
+        "motion_blur": motion_blur_to_dict(getattr(sequence, "motion_blur", None)),
+        "markers": [
+            {
+                "id": marker.id,
+                "time_seconds": marker.time_seconds,
+                "name": marker.name,
+                "category": marker.category,
+            }
+            for marker in sequence.markers
+        ],
+        "transitions": [
+            {
+                "id": transition.id,
+                "from_clip_id": transition.from_clip_id,
+                "to_clip_id": transition.to_clip_id,
+                "type": transition.type.value,
+                "duration": float(transition.duration),
+            }
+            for transition in sequence.transitions
+        ],
+        # --- Ducking automatique (tâche 28) ---
+        # Liste des associations musique ← voix de la séquence.
+        # Une liste vide signifie : aucun ducking automatique.
+        "ducking_sidechains": [
+            _ducking_sidechain_to_dict(sidechain)
+            for sidechain in getattr(sequence, "ducking_sidechains", []) or []
+        ],
+        "tracks": [
+            {
+                "id": track.id,
+                "name": track.name,
+                "type": track.type,
+                "locked": track.locked,
+                "visible": track.visible,
+                "muted": track.muted,
+                "solo": track.solo,
+                "armed": track.armed,
+                "height_mode": track.height_mode,
+                "collapsed": track.collapsed,
+                "volume_db": float(track.volume_db),
+                "pan": float(track.pan),
+                # --- Automation audio et ducking (tâche 28) ---
+                # ``audio_role`` reste une chaîne pour rester
+                # compatible avec les snapshots plus anciens.
+                "audio_role": getattr(track, "audio_role", "other"),
+                # ``automation`` est sérialisée comme une liste de
+                # points ``{time_seconds, gain_db, fade_seconds}``.
+                # Une liste vide correspond à ``pas d'automation``
+                # et reste le comportement par défaut.
+                "automation": [
+                    {
+                        "time_seconds": float(point.time_seconds),
+                        "gain_db": float(point.gain_db),
+                        "fade_seconds": float(point.fade_seconds),
+                    }
+                    for point in _iter_automation_points(
+                        getattr(track, "automation", None)
+                    )
+                ],
+                # ``ducking_config`` est sérialisé comme un dict
+                # ``{threshold_db, reduction_db, attack_seconds,
+                # release_seconds}`` ou ``None``.
+                "ducking_config": _ducking_config_to_dict(
+                    getattr(track, "ducking_config", None)
+                ),
+                "clips": [_clip_to_dict(clip) for clip in track.clips],
+            }
+            for track in sequence.tracks
+        ],
     }
 
 
@@ -479,35 +559,47 @@ def _deserialize_project(
         if not isinstance(item, dict):
             raise ValueError("Média invalide : objet JSON attendu.")
         assets.append(MediaAsset(**item))
-    tracks: list[Track] = []
-    raw_tracks = data.get("tracks", [])
-    if raw_tracks is None:
-        raw_tracks = []
-    if not isinstance(raw_tracks, list):
-        raise ValueError("Liste de pistes invalide : tableau JSON attendu.")
-    for item in raw_tracks:
-        if not isinstance(item, dict):
-            raise ValueError("Piste invalide : objet JSON attendu.")
-        tracks.append(
-            _deserialize_track(item, project_root=project_root)
-        )
-    markers: list[Marker] = []
-    raw_markers = data.get("markers", [])
-    if raw_markers is None:
-        raw_markers = []
-    if not isinstance(raw_markers, list):
-        raise ValueError("Liste de marqueurs invalide : tableau JSON attendu.")
-    for item in raw_markers:
-        if not isinstance(item, dict):
-            raise ValueError("Marqueur invalide : objet JSON attendu.")
-        markers.append(_deserialize_marker(item))
+
+    raw_sequences = data.get("sequences")
+    if raw_sequences is None:
+        # Fichier v1–v13 : une seule timeline, portée par le projet. Elle
+        # devient la séquence principale, avec un identifiant stable.
+        legacy = {
+            key: data[key]
+            for key in ("width", "height", "fps", "tracks", "markers", "transitions",
+                        "ducking_sidechains")
+            if key in data
+        }
+        sequences = [
+            _deserialize_sequence(
+                {"id": MAIN_SEQUENCE_ID, "name": MAIN_SEQUENCE_NAME, **legacy},
+                project_root=project_root,
+            )
+        ]
+    else:
+        if not isinstance(raw_sequences, list):
+            raise ValueError("Liste de séquences invalide : tableau JSON attendu.")
+        sequences = []
+        seen: set[str] = set()
+        for item in raw_sequences:
+            sequence = _deserialize_sequence(item, project_root=project_root)
+            if sequence.id in seen:
+                # Identifiant dupliqué (fichier retouché) : la copie reçoit
+                # un nouvel identifiant ; les références visent la première.
+                from .sequences import new_sequence_id
+
+                sequence.id = new_sequence_id()
+            seen.add(sequence.id)
+            sequences.append(sequence)
+        if not sequences:
+            sequences = [Sequence(id=MAIN_SEQUENCE_ID, name=MAIN_SEQUENCE_NAME)]
+    active_id = data.get("active_sequence_id")
     project = Project(
         media_assets=assets,
-        tracks=tracks,
-        markers=markers,
-        **{key: value for key, value in data.items() if key in _PROJECT_FIELDS},
+        sequences=sequences,
+        active_sequence_id=str(active_id) if active_id is not None else None,
+        **{key: value for key, value in data.items() if key == "name"},
     )
-    project.transitions = _deserialize_transitions(data.get("transitions", []), project)
     # Organisation de la bibliothèque (v11+). Une version antérieure
     # ne porte simplement pas ces clés : on conserve des collections
     # vides, ce qui correspond au comportement historique où tout
@@ -524,22 +616,79 @@ def _deserialize_project(
         valid_folder_ids={folder.id for folder in project.library_folders},
         valid_tag_ids={tag.id for tag in project.library_tags},
     )
-    # --- Ducking automatique (tâche 28) ---
-    # Une version antérieure (avant v11.1) ne porte pas cette clé :
-    # on retombe sur une liste vide. Les entrées invalides sont
-    # silencieusement écartées.
-    project.ducking_sidechains = _deserialize_ducking_sidechains(
-        data.get("ducking_sidechains", []),
-        valid_music_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
-        valid_voice_ids={t.id for t in project.tracks if t.type in ("audio", "video")},
-    )
     project.color_presets = _deserialize_color_presets(
         data.get("color_presets", []), project_root=project_root
     )
     return project
 
 
-def _deserialize_transitions(raw: Any, project: Project) -> list[Transition]:
+def _deserialize_sequence(
+    data: Any, *, project_root: Path | None = None,
+) -> Sequence:
+    """Reconstruit une :class:`Sequence` (pistes, repères, transitions, ducking).
+
+    Même rigueur que le reste du chargement : une piste ou un clip
+    structurellement invalide fait échouer l'ouverture ; transitions et
+    associations de ducking invalides sont ignorées à l'unité.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("Séquence invalide : objet JSON attendu.")
+    sequence_id = str(data.get("id") or "").strip()
+    if not sequence_id:
+        from .sequences import new_sequence_id
+
+        sequence_id = new_sequence_id()
+    tracks: list[Track] = []
+    raw_tracks = data.get("tracks", [])
+    if raw_tracks is None:
+        raw_tracks = []
+    if not isinstance(raw_tracks, list):
+        raise ValueError("Liste de pistes invalide : tableau JSON attendu.")
+    for item in raw_tracks:
+        if not isinstance(item, dict):
+            raise ValueError("Piste invalide : objet JSON attendu.")
+        tracks.append(_deserialize_track(item, project_root=project_root))
+    markers: list[Marker] = []
+    raw_markers = data.get("markers", [])
+    if raw_markers is None:
+        raw_markers = []
+    if not isinstance(raw_markers, list):
+        raise ValueError("Liste de marqueurs invalide : tableau JSON attendu.")
+    for item in raw_markers:
+        if not isinstance(item, dict):
+            raise ValueError("Marqueur invalide : objet JSON attendu.")
+        markers.append(_deserialize_marker(item))
+    sequence = Sequence(
+        id=sequence_id,
+        name=str(data.get("name") or MAIN_SEQUENCE_NAME),
+        width=data.get("width", 1920),
+        height=data.get("height", 1080),
+        fps=data.get("fps", 30.0),
+        tracks=tracks,
+        markers=markers,
+    )
+    sequence.transitions = _deserialize_transitions(data.get("transitions", []), sequence)
+    # --- Motion graphics (v15) : absent d'un ancien fichier → aucun guide,
+    # flou de mouvement par défaut.
+    raw_guides = data.get("guides", [])
+    sequence.guides = [
+        guide for guide in (guide_from_dict(item) for item in (raw_guides if isinstance(raw_guides, list) else []))
+        if guide is not None
+    ]
+    sequence.motion_blur = motion_blur_from_dict(data.get("motion_blur"))
+    # --- Ducking automatique (tâche 28) ---
+    # Une version antérieure (avant v11.1) ne porte pas cette clé :
+    # on retombe sur une liste vide. Les entrées invalides sont
+    # silencieusement écartées.
+    sequence.ducking_sidechains = _deserialize_ducking_sidechains(
+        data.get("ducking_sidechains", []),
+        valid_music_ids={t.id for t in tracks if t.type in ("audio", "video")},
+        valid_voice_ids={t.id for t in tracks if t.type in ("audio", "video")},
+    )
+    return sequence
+
+
+def _deserialize_transitions(raw: Any, project: Project | Sequence) -> list[Transition]:
     """Ignore les entrées de transition invalides sans empêcher l'ouverture."""
     if not isinstance(raw, list):
         return []
@@ -613,6 +762,92 @@ def _shared_compositing(raw):
     return compositing_from_dict(raw)
 
 
+def _deserialize_clip(
+    raw_clip: Any, track_type: str, *, project_root: Path | None = None,
+) -> Clip:
+    """Reconstruit un clip ; une structure invalide lève ``ValueError``."""
+    if not isinstance(raw_clip, dict):
+        raise ValueError("Clip invalide : objet JSON attendu.")
+    clip_kwargs = {
+        key: value
+        for key, value in raw_clip.items()
+        if key not in {
+            "transform", "transform_keyframes", "time_remapping", "effects",
+            "graphic", "compositing", "animation", "tracking",
+        }
+        and key in _CLIP_KNOWN_FIELDS
+    }
+    clip_kwargs["transform"] = _dict_to_transform(
+        raw_clip.get("transform")
+    )
+    keyframes_raw = raw_clip.get("transform_keyframes", [])
+    if not isinstance(keyframes_raw, list):
+        raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
+    keyframes = [_dict_to_keyframe(raw) for raw in keyframes_raw]
+    if _is_legacy_keyframe_list(keyframes_raw):
+        # Ancien moteur : valeur de base jusqu'au premier keyframe. On
+        # garde exactement ce rendu (keyframe ``hold`` à 0 si nécessaire).
+        keyframes = migrate_legacy_keyframes(clip_kwargs["transform"], keyframes)
+    clip_kwargs["transform_keyframes"] = keyframes
+    # Gérer le time_remapping (version 7+)
+    if "time_remapping" in raw_clip:
+        clip_kwargs["time_remapping"] = _dict_to_time_remapping(
+            raw_clip.get("time_remapping")
+        )
+    else:
+        # Version antérieure à 7 : utiliser les valeurs par défaut
+        clip_kwargs["time_remapping"] = TimeRemapping()
+    # Effets (version 9+) : pistes vidéo, et pistes graphiques depuis la
+    # v15 (adjustment layers, effets de calque). Une version antérieure
+    # n'a pas la clé : la liste reste vide.
+    if track_type in ("video", "graphics"):
+        clip_kwargs["effects"] = _deserialize_clip_effects(
+            raw_clip.get("effects")
+        )
+    else:
+        clip_kwargs["effects"] = []
+    # Effets audio (tâche 27, v11+) : acceptés sur les pistes
+    # vidéo (qui peuvent porter de l'audio) et audio. Les
+    # versions antérieures à la v11 n'ont pas la clé : la liste
+    # reste vide, comportement historique préservé.
+    if track_type in ("video", "audio"):
+        clip_kwargs["audio_effects"] = _deserialize_audio_effects(
+            raw_clip.get("audio_effects")
+        )
+    else:
+        clip_kwargs["audio_effects"] = []
+    # Étalonnage couleur (tâche 29) : si la clé manque (projet
+    # v10‑ ou v11.0/11.1), ``None`` ; les projets neufs portent
+    # toujours une clé, potentiellement nulle (identité).
+    clip_kwargs["color_grade"] = _deserialize_color_grade(
+        raw_clip.get("color_grade"),
+        project_root=project_root,
+    )
+    clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
+    compositing = _shared_compositing(raw_clip.get("compositing"))
+    animation_raw = raw_clip.get("animation", [])
+    if not isinstance(animation_raw, list):
+        animation_raw = []
+    animation = [kf for kf in (_dict_to_generic_keyframe(raw) for raw in animation_raw) if kf is not None]
+    # Images-clés de masque du format v12 : converties vers le moteur
+    # central, courbe identique (voir ``migrate_legacy_mask_keyframes``).
+    compositing, migrated = migrate_legacy_mask_keyframes(compositing)
+    clip_kwargs["compositing"] = compositing
+    clip_kwargs["animation"] = sorted(
+        animation + migrated, key=lambda kf: (kf.property_name, kf.time_seconds)
+    )
+    # Style texte (tâche 24) : rétrocompatible — un clip sans la
+    # clé ``text_style`` reçoit le style standard par défaut, ce
+    # qui correspond exactement au rendu historique.
+    clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
+    # Tracking (v16) : lecture tolérante, un tracker corrompu est ignoré seul.
+    if track_type == "video" or raw_clip.get("tracking") is not None:
+        from .tracking_model import ClipTracking
+
+        clip_kwargs["tracking"] = ClipTracking.from_dict(raw_clip.get("tracking"))
+    return Clip(**clip_kwargs)
+
+
 def _deserialize_track(
     data: dict[str, Any], *, project_root: Path | None = None,
 ) -> Track:
@@ -633,69 +868,7 @@ def _deserialize_track(
         raise ValueError("Liste de clips invalide : tableau JSON attendu.")
     clips = []
     for raw_clip in raw_clips:
-        if not isinstance(raw_clip, dict):
-            raise ValueError("Clip invalide : objet JSON attendu.")
-        clip_kwargs = {
-            key: value
-            for key, value in raw_clip.items()
-            if key not in {
-                "transform", "transform_keyframes", "time_remapping", "effects",
-                "graphic", "compositing",
-            }
-            and key in _CLIP_KNOWN_FIELDS
-        }
-        clip_kwargs["transform"] = _dict_to_transform(
-            raw_clip.get("transform")
-        )
-        keyframes_raw = raw_clip.get("transform_keyframes", [])
-        if not isinstance(keyframes_raw, list):
-            raise ValueError("Liste d'images-clés invalide : tableau JSON attendu.")
-        keyframes = [_dict_to_keyframe(raw) for raw in keyframes_raw]
-        if _is_legacy_keyframe_list(keyframes_raw):
-            # Ancien moteur : valeur de base jusqu'au premier keyframe. On
-            # garde exactement ce rendu (keyframe ``hold`` à 0 si nécessaire).
-            keyframes = migrate_legacy_keyframes(clip_kwargs["transform"], keyframes)
-        clip_kwargs["transform_keyframes"] = keyframes
-        # Gérer le time_remapping (version 7+)
-        if "time_remapping" in raw_clip:
-            clip_kwargs["time_remapping"] = _dict_to_time_remapping(
-                raw_clip.get("time_remapping")
-            )
-        else:
-            # Version antérieure à 7 : utiliser les valeurs par défaut
-            clip_kwargs["time_remapping"] = TimeRemapping()
-        # Effets (version 9+) : uniquement sur les pistes vidéo. Une
-        # version antérieure n'a pas la clé : la liste reste vide.
-        if track_type == "video":
-            clip_kwargs["effects"] = _deserialize_clip_effects(
-                raw_clip.get("effects")
-            )
-        else:
-            clip_kwargs["effects"] = []
-        # Effets audio (tâche 27, v11+) : acceptés sur les pistes
-        # vidéo (qui peuvent porter de l'audio) et audio. Les
-        # versions antérieures à la v11 n'ont pas la clé : la liste
-        # reste vide, comportement historique préservé.
-        if track_type in ("video", "audio"):
-            clip_kwargs["audio_effects"] = _deserialize_audio_effects(
-                raw_clip.get("audio_effects")
-            )
-        else:
-            clip_kwargs["audio_effects"] = []
-        # Étalonnage couleur (tâche 29) : si la clé manque (projet
-        # v10‑ ou v11.0/11.1), ``None`` ; les projets neufs portent
-        # toujours une clé, potentiellement nulle (identité).
-        clip_kwargs["color_grade"] = _deserialize_color_grade(
-            raw_clip.get("color_grade"),
-            project_root=project_root,
-        )
-        clip_kwargs["graphic"] = _dict_to_graphic(raw_clip.get("graphic"))
-        clip_kwargs["compositing"] = _shared_compositing(raw_clip.get("compositing"))
-        # Style texte (tâche 24) : rétrocompatible — un clip sans la
-        # clé ``text_style`` reçoit le style standard par défaut, ce
-        # qui correspond exactement au rendu historique.
-        clip_kwargs["text_style"] = _shared_text_style(raw_clip.get("text_style"))
-        clips.append(Clip(**clip_kwargs))
+        clips.append(_deserialize_clip(raw_clip, track_type, project_root=project_root))
     track_kwargs = {
         key: value for key, value in data.items() if key in _TRACK_FIELDS
     }
@@ -721,14 +894,31 @@ def _deserialize_track(
     return Track(clips=clips, **track_kwargs)
 
 
+def clip_to_dict(clip: Clip) -> dict[str, Any]:
+    """Forme JSON publique d'un clip (format ``.kut`` courant)."""
+    return _clip_to_dict(clip)
+
+
+def clip_from_dict(raw: Any, track_type: str) -> Clip:
+    """Clip depuis :func:`clip_to_dict` (presse-papiers, presets)."""
+    return _deserialize_clip(raw, track_type)
+
+
 def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:
-    return {
+    data: dict[str, Any] = {
         "position_x": float(transform.position_x),
         "position_y": float(transform.position_y),
         "scale": float(transform.scale),
         "rotation": float(transform.rotation),
         "opacity": float(transform.opacity),
     }
+    # Transform avancé (v15) : écrit seulement s'il diffère du neutre, un
+    # clip simple garde exactement son ancien JSON.
+    for name in ADVANCED_TRANSFORM_PROPERTIES:
+        value = getattr(transform, name)
+        if value != TRANSFORM_PROPERTIES[name].default:
+            data[name] = bool(value) if isinstance(value, bool) else float(value)
+    return data
 
 
 def _graphic_to_dict(graphic: object) -> dict[str, Any] | None:
@@ -748,12 +938,17 @@ def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
     if not isinstance(raw, dict):
         return ClipTransform()
     try:
+        advanced = {
+            name: (bool(raw[name]) if TRANSFORM_PROPERTIES[name].kind.value == "bool" else float(raw[name]))
+            for name in ADVANCED_TRANSFORM_PROPERTIES if name in raw
+        }
         return ClipTransform(
             position_x=float(raw.get("position_x", 0.0)),
             position_y=float(raw.get("position_y", 0.0)),
             scale=float(raw.get("scale", 1.0)),
             rotation=float(raw.get("rotation", 0.0)),
             opacity=float(raw.get("opacity", 1.0)),
+            **advanced,
         )
     except (TypeError, ValueError):
         return ClipTransform()
@@ -763,7 +958,10 @@ def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
     data: dict[str, Any] = {
         "property_name": keyframe.property_name,
         "time_seconds": float(keyframe.time_seconds),
-        "value": float(keyframe.value),
+        "value": (
+            [float(c) for c in keyframe.value]
+            if isinstance(keyframe.value, (tuple, list)) else float(keyframe.value)
+        ),
         "interpolation": keyframe.interpolation.value,
         "tangent_mode": keyframe.tangent_mode.value,
         "id": keyframe.id,
@@ -800,6 +998,27 @@ def _dict_to_keyframe(raw: dict[str, Any]) -> TransformKeyframe:
         tangent_mode=raw.get("tangent_mode", "linked"),
         id=str(raw.get("id") or ""),
     )
+
+
+def _dict_to_generic_keyframe(raw: object) -> Keyframe | None:
+    """Keyframe de ``Clip.animation`` ; une entrée corrompue est ignorée seule."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        value = raw["value"]
+        value = tuple(float(c) for c in value) if isinstance(value, list) else float(value)
+        return Keyframe(
+            property_name=str(raw["property_name"]),
+            time_seconds=float(raw["time_seconds"]),
+            value=value,
+            interpolation=raw.get("interpolation", "linear"),
+            in_slope=_optional_slope(raw.get("in_slope")),
+            out_slope=_optional_slope(raw.get("out_slope")),
+            tangent_mode=raw.get("tangent_mode", "linked"),
+            id=str(raw.get("id") or ""),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _is_legacy_keyframe_list(raw_keyframes: list) -> bool:

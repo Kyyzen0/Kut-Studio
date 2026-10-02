@@ -1,0 +1,236 @@
+{
+ "machine": "macOS-27.2-arm64-arm-64bit-Mach-O · arm64 · 10 cœurs",
+ "ffmpeg": "9.0.2",
+ "decode_backend": "videotoolbox",
+ "decode": {
+  "cpu": {
+   "1080p_h264": {
+    "fps": 188.6,
+    "cpu_ms_per_frame": 42.09,
+    "max_rss_mb": 134.9
+   },
+   "4k_h264": {
+    "fps": 48.9,
+    "cpu_ms_per_frame": 166.35,
+    "max_rss_mb": 459.4
+   },
+   "4k_hevc": {
+    "fps": 43.4,
+    "cpu_ms_per_frame": 186.79,
+    "max_rss_mb": 508.0
+   },
+   "4k_hevc10": {
+    "fps": 30.2,
+    "cpu_ms_per_frame": 274.41,
+    "max_rss_mb": 725.0
+   },
+   "proxy_720p": {
+    "fps": 412.1,
+    "cpu_ms_per_frame": 18.31,
+    "max_rss_mb": 72.7
+   },
+   "4x_1080p_h264": {
+    "fps_total": 219.3,
+    "ok": true
+   }
+  },
+  "hardware": {
+   "1080p_h264": {
+    "fps": 76.9,
+    "cpu_ms_per_frame": 2.49,
+    "max_rss_mb": 148.2
+   },
+   "4k_h264": {
+    "fps": 24.1,
+    "cpu_ms_per_frame": 6.29,
+    "max_rss_mb": 478.2
+   },
+   "4k_hevc": {
+    "fps": 47.1,
+    "cpu_ms_per_frame": 4.59,
+    "max_rss_mb": 523.7
+   },
+   "4k_hevc10": {
+    "fps": 53.5,
+    "cpu_ms_per_frame": 5.1,
+    "max_rss_mb": 744.0
+   },
+   "proxy_720p": {
+    "fps": 162.5,
+    "cpu_ms_per_frame": 1.18,
+    "max_rss_mb": 94.1
+   },
+   "4x_1080p_h264": {
+    "fps_total": 277.2,
+    "ok": true
+   }
+  }
+ },
+ "scrub": {
+  "cpu": {
+   "median_ms": 1947.1,
+   "max_ms": 3897.6
+  },
+  "hardware": {
+   "median_ms": 776.1,
+   "max_ms": 1725.3
+  }
+ },
+ "segments": {
+  "cpu": {
+   "effects": {
+    "seconds_per_2s_segment": 3.4
+   },
+   "compositing": {
+    "seconds_per_2s_segment": 4.78
+   },
+   "motion_blur": {
+    "seconds_per_2s_segment": 3.0
+   }
+  },
+  "hardware": {
+   "effects": {
+    "seconds_per_2s_segment": 1.26
+   },
+   "compositing": {
+    "seconds_per_2s_segment": 3.64
+   },
+   "motion_blur": {
+    "seconds_per_2s_segment": 1.26
+   }
+  }
+ },
+ "monitor_4k_hevc10": {
+  "cpu_decode+cpu_preview": {
+   "wall": 4.047836333978921,
+   "process_cpu_percent": 710.6,
+   "event_loop_lag_ms_p95": 10.18,
+   "max_rss_mb": 1098.2,
+   "frames_received": 121,
+   "fps": 29.9
+  },
+  "hw_decode+cpu_preview": {
+   "wall": 3.998293125012424,
+   "process_cpu_percent": 63.3,
+   "event_loop_lag_ms_p95": 14.84,
+   "max_rss_mb": 1089.9,
+   "frames_received": 120,
+   "fps": 30.0
+  },
+  "cpu_decode+gpu_preview": {
+   "wall": 4.002071957977023,
+   "process_cpu_percent": 656.1,
+   "event_loop_lag_ms_p95": 4.38,
+   "max_rss_mb": 1023.4,
+   "frames_received": 120,
+   "frames_presented": 116,
+   "frames_dropped": 4,
+   "gpu_render_ms_avg": 3.39,
+   "gpu_render_ms_p95": 3.6,
+   "texture_mb": 55.4,
+   "device": "Metal · Apple M4",
+   "fps": 29.0
+  },
+  "hw_decode+gpu_preview": {
+   "wall": 4.195181499992032,
+   "process_cpu_percent": 31.8,
+   "event_loop_lag_ms_p95": 8.98,
+   "max_rss_mb": 1014.4,
+   "frames_received": 126,
+   "frames_presented": 126,
+   "frames_dropped": 0,
+   "gpu_render_ms_avg": 7.19,
+   "gpu_render_ms_p95": 8.93,
+   "texture_mb": 55.4,
+   "device": "Metal · Apple M4",
+   "fps": 30.0
+  },
+  "hw_decode+gpu_preview+effects": {
+   "wall": 4.00125712499721,
+   "process_cpu_percent": 32.2,
+   "event_loop_lag_ms_p95": 22.64,
+   "max_rss_mb": 1034.8,
+   "frames_received": 120,
+   "frames_presented": 117,
+   "frames_dropped": 3,
+   "gpu_render_ms_avg": 7.46,
+   "gpu_render_ms_p95": 9.03,
+   "texture_mb": 71.2,
+   "device": "Metal · Apple M4",
+   "fps": 29.2
+  }
+ },
+ "monitor_1080p_h264": {
+  "cpu_decode+cpu_preview": {
+   "wall": 4.024073790991679,
+   "process_cpu_percent": 134.0,
+   "event_loop_lag_ms_p95": 3.11,
+   "max_rss_mb": 381.1,
+   "frames_received": 119,
+   "fps": 29.6
+  },
+  "hw_decode+cpu_preview": {
+   "wall": 3.9666206249967217,
+   "process_cpu_percent": 43.2,
+   "event_loop_lag_ms_p95": 8.1,
+   "max_rss_mb": 375.4,
+   "frames_received": 118,
+   "fps": 29.7
+  },
+  "cpu_decode+gpu_preview": {
+   "wall": 3.9973827920039184,
+   "process_cpu_percent": 119.6,
+   "event_loop_lag_ms_p95": 1.29,
+   "max_rss_mb": 360.1,
+   "frames_received": 119,
+   "frames_presented": 118,
+   "frames_dropped": 1,
+   "gpu_render_ms_avg": 0.7,
+   "gpu_render_ms_p95": 0.85,
+   "texture_mb": 34.6,
+   "device": "Metal · Apple M4",
+   "fps": 29.5
+  },
+  "hw_decode+gpu_preview": {
+   "wall": 4.048256624955684,
+   "process_cpu_percent": 23.3,
+   "event_loop_lag_ms_p95": 4.43,
+   "max_rss_mb": 376.2,
+   "frames_received": 120,
+   "frames_presented": 120,
+   "frames_dropped": 0,
+   "gpu_render_ms_avg": 3.09,
+   "gpu_render_ms_p95": 4.04,
+   "texture_mb": 34.6,
+   "device": "Metal · Apple M4",
+   "fps": 29.6
+  },
+  "hw_decode+gpu_preview+effects": {
+   "wall": 3.8435192920151167,
+   "process_cpu_percent": 23.0,
+   "event_loop_lag_ms_p95": 16.82,
+   "max_rss_mb": 376.0,
+   "frames_received": 114,
+   "frames_presented": 113,
+   "frames_dropped": 1,
+   "gpu_render_ms_avg": 3.03,
+   "gpu_render_ms_p95": 4.16,
+   "texture_mb": 50.4,
+   "device": "Metal · Apple M4",
+   "fps": 29.4
+  }
+ },
+ "gpu_cache": {
+  "no_cache": {
+   "ms_per_frame_median": 4.21,
+   "cache_entries": 12,
+   "cache_mb": 94.9
+  },
+  "cache": {
+   "ms_per_frame_median": 2.91,
+   "cache_entries": 1,
+   "cache_mb": 7.9
+  }
+ },
+ "peak_rss_mb_bench": 68.2
+}

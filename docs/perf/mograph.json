@@ -1,0 +1,94 @@
+{
+  "machine": "Darwin arm64",
+  "python": "3.14.7",
+  "scenarios": {
+    "layers:10": {
+      "layers": 10,
+      "preview_frame": 0.753,
+      "scrub_frame": 0.907,
+      "ui_refresh": 0.086,
+      "graph_build_cold": 958.6,
+      "stream_frames": 60,
+      "graph_build_cached": 12.342,
+      "export_ffmpeg": 196.2,
+      "export_ok": true
+    },
+    "layers:50": {
+      "layers": 50,
+      "preview_frame": 3.654,
+      "scrub_frame": 4.197,
+      "ui_refresh": 0.329,
+      "graph_build_cold": 1276.8,
+      "stream_frames": 60,
+      "graph_build_cached": 57.527,
+      "export_ffmpeg": 211.1,
+      "export_ok": true
+    },
+    "layers:100": {
+      "layers": 100,
+      "preview_frame": 6.961,
+      "scrub_frame": 8.415,
+      "ui_refresh": 0.666,
+      "graph_build_cold": 1833.5,
+      "stream_frames": 60,
+      "graph_build_cached": 118.282,
+      "export_ffmpeg": 253.9,
+      "export_ok": true
+    },
+    "groups": {
+      "layers": 60,
+      "preview_frame": 4.489,
+      "scrub_frame": 5.241,
+      "ui_refresh": 0.483,
+      "graph_build_cold": 1370.2,
+      "stream_frames": 60,
+      "graph_build_cached": 71.983,
+      "export_ffmpeg": 205.1,
+      "export_ok": true
+    },
+    "masks": {
+      "layers": 50,
+      "preview_frame": 12.495,
+      "scrub_frame": 13.27,
+      "ui_refresh": 0.34,
+      "graph_build_cold": 2238.6,
+      "stream_frames": 60,
+      "graph_build_cached": 91.813,
+      "export_ffmpeg": 246.5,
+      "export_ok": true
+    },
+    "adjust": {
+      "layers": 52,
+      "preview_frame": 3.714,
+      "scrub_frame": 4.349,
+      "ui_refresh": 0.351,
+      "graph_build_cold": 2794.2,
+      "stream_frames": 182,
+      "graph_build_cached": 65.726,
+      "export_ffmpeg": 1026.6,
+      "export_ok": true
+    },
+    "blur:10": {
+      "layers": 10,
+      "preview_frame": 4.462,
+      "scrub_frame": 5.658,
+      "ui_refresh": 0.145,
+      "graph_build_cold": 1816.0,
+      "stream_frames": 60,
+      "graph_build_cached": 73.892,
+      "export_ffmpeg": 147.6,
+      "export_ok": true
+    },
+    "blur:50": {
+      "layers": 50,
+      "preview_frame": 40.51,
+      "scrub_frame": 24.27,
+      "ui_refresh": 0.346,
+      "graph_build_cold": 5517.3,
+      "stream_frames": 60,
+      "graph_build_cached": 372.362,
+      "export_ffmpeg": 224.5,
+      "export_ok": true
+    }
+  }
+}

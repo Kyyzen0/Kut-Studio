@@ -46,7 +46,30 @@ ANIMATABLE_PROPERTIES: tuple[str, ...] = (
     "rotation",
     "opacity",
 )
-"""Liste exhaustive des propriétés animables d'un clip."""
+"""Propriétés de transform « essentielles » (groupe Mouvement de l'inspecteur)."""
+
+ADVANCED_TRANSFORM_PROPERTIES: tuple[str, ...] = (
+    "anchor_x",
+    "anchor_y",
+    "scale_x",
+    "scale_y",
+    "skew",
+    "flip_h",
+    "flip_v",
+)
+"""Propriétés de transform avancées (motion graphics), toutes animables.
+
+- ``anchor_x`` / ``anchor_y`` : point d'ancrage en fraction de la taille du
+  calque (``0.5`` = centre). Rotation, échelle et parentage pivotent autour
+  de lui ; la position désigne l'endroit où il se trouve.
+- ``scale_x`` / ``scale_y`` : multiplicateurs de l'échelle uniforme
+  (``scale``) : l'échelle effective est ``scale × scale_x``.
+- ``skew`` : inclinaison horizontale en degrés (calques graphiques).
+- ``flip_h`` / ``flip_v`` : miroirs (booléens, interpolation en maintien).
+"""
+
+TRANSFORM_PROPERTY_NAMES: tuple[str, ...] = ANIMATABLE_PROPERTIES + ADVANCED_TRANSFORM_PROPERTIES
+"""Toutes les propriétés de :class:`ClipTransform`, dans l'ordre d'affichage."""
 
 _SCALE_MIN = 0.05
 _SCALE_MAX = 10.0
@@ -56,6 +79,12 @@ _OPACITY_MIN = 0.0
 _OPACITY_MAX = 1.0
 _POSITION_MIN = -4.0
 _POSITION_MAX = 4.0
+_ANCHOR_MIN = -4.0
+_ANCHOR_MAX = 5.0
+_AXIS_SCALE_MIN = 0.0
+_AXIS_SCALE_MAX = 10.0
+_SKEW_MIN = -85.0
+_SKEW_MAX = 85.0
 
 
 _PROPERTY_BOUNDS: dict[str, tuple[float, float]] = {
@@ -64,6 +93,13 @@ _PROPERTY_BOUNDS: dict[str, tuple[float, float]] = {
     "scale": (_SCALE_MIN, _SCALE_MAX),
     "rotation": (_ROTATION_MIN, _ROTATION_MAX),
     "opacity": (_OPACITY_MIN, _OPACITY_MAX),
+    "anchor_x": (_ANCHOR_MIN, _ANCHOR_MAX),
+    "anchor_y": (_ANCHOR_MIN, _ANCHOR_MAX),
+    "scale_x": (_AXIS_SCALE_MIN, _AXIS_SCALE_MAX),
+    "scale_y": (_AXIS_SCALE_MIN, _AXIS_SCALE_MAX),
+    "skew": (_SKEW_MIN, _SKEW_MAX),
+    "flip_h": (0.0, 1.0),
+    "flip_v": (0.0, 1.0),
 }
 """Bornes acceptées pour chaque propriété animable."""
 
@@ -78,6 +114,20 @@ TRANSFORM_PROPERTIES: dict[str, AnimatableProperty] = {
                                    0.0, _ROTATION_MIN, _ROTATION_MAX, 1.0),
     "opacity": AnimatableProperty("opacity", "animation.property.opacity", ValueKind.FLOAT,
                                   1.0, _OPACITY_MIN, _OPACITY_MAX, 0.01),
+    "anchor_x": AnimatableProperty("anchor_x", "animation.property.anchor_x", ValueKind.FLOAT,
+                                   0.5, _ANCHOR_MIN, _ANCHOR_MAX, 0.01),
+    "anchor_y": AnimatableProperty("anchor_y", "animation.property.anchor_y", ValueKind.FLOAT,
+                                   0.5, _ANCHOR_MIN, _ANCHOR_MAX, 0.01),
+    "scale_x": AnimatableProperty("scale_x", "animation.property.scale_x", ValueKind.FLOAT,
+                                  1.0, _AXIS_SCALE_MIN, _AXIS_SCALE_MAX, 0.01),
+    "scale_y": AnimatableProperty("scale_y", "animation.property.scale_y", ValueKind.FLOAT,
+                                  1.0, _AXIS_SCALE_MIN, _AXIS_SCALE_MAX, 0.01),
+    "skew": AnimatableProperty("skew", "animation.property.skew", ValueKind.FLOAT,
+                               0.0, _SKEW_MIN, _SKEW_MAX, 1.0),
+    "flip_h": AnimatableProperty("flip_h", "animation.property.flip_h", ValueKind.BOOL,
+                                 False, 0.0, 1.0, 1.0),
+    "flip_v": AnimatableProperty("flip_v", "animation.property.flip_v", ValueKind.BOOL,
+                                 False, 0.0, 1.0, 1.0),
 }
 """Description générique (:class:`~core.animation.AnimatableProperty`) du transform."""
 
@@ -108,24 +158,39 @@ class ClipTransform:
     scale: float = 1.0
     rotation: float = 0.0
     opacity: float = 1.0
+    # --- Transform avancé (motion graphics) : neutre par défaut ---
+    anchor_x: float = 0.5
+    anchor_y: float = 0.5
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+    skew: float = 0.0
+    flip_h: bool = False
+    flip_v: bool = False
 
     def __post_init__(self) -> None:
         """Valide les bornes des champs du transform."""
-        _validate_value("position_x", self.position_x)
-        _validate_value("position_y", self.position_y)
-        _validate_value("scale", self.scale)
-        _validate_value("rotation", self.rotation)
-        _validate_value("opacity", self.opacity)
+        for name in TRANSFORM_PROPERTY_NAMES:
+            _validate_value(name, getattr(self, name))
+        object.__setattr__(self, "flip_h", bool(self.flip_h))
+        object.__setattr__(self, "flip_v", bool(self.flip_v))
 
     def with_property(self, name: str, value: float) -> "ClipTransform":
         """Retourne un nouveau transform avec la propriété ``name`` mise à jour.
 
         L'instance courante étant immuable, un nouvel objet est créé.
         """
-        if name not in ANIMATABLE_PROPERTIES:
+        if name not in TRANSFORM_PROPERTY_NAMES:
             raise ValueError(f"Propriété inconnue : {name!r}.")
         new_value = _coerce_value(name, value)
         return replace(self, **{name: new_value})
+
+    @property
+    def is_advanced(self) -> bool:
+        """Utilise-t-il une propriété avancée (ancre, échelle X/Y, inclinaison, miroir) ?"""
+        return any(
+            getattr(self, name) != TRANSFORM_PROPERTIES[name].default
+            for name in ADVANCED_TRANSFORM_PROPERTIES
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -145,13 +210,16 @@ class TransformKeyframe(Keyframe):
 
     def __post_init__(self) -> None:
         """Valide l'image-clé."""
-        if self.property_name not in ANIMATABLE_PROPERTIES:
+        if self.property_name not in TRANSFORM_PROPERTY_NAMES:
             raise ValueError(
                 f"Propriété de keyframe inconnue : {self.property_name!r}."
             )
         super().__post_init__()
         _validate_value(self.property_name, self.value)
-        object.__setattr__(self, "value", float(self.value))
+        if TRANSFORM_PROPERTIES[self.property_name].kind is ValueKind.BOOL:
+            object.__setattr__(self, "value", bool(float(self.value) >= 0.5))
+        else:
+            object.__setattr__(self, "value", float(self.value))
 
 
 # ---------------------------------------------------------------------------
@@ -168,16 +236,27 @@ class EvaluatedTransform:
     scale: float
     rotation: float
     opacity: float
+    anchor_x: float = 0.5
+    anchor_y: float = 0.5
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+    skew: float = 0.0
+    flip_h: bool = False
+    flip_v: bool = False
 
     def as_transform(self) -> ClipTransform:
         """Retourne un nouveau :class:`ClipTransform` équivalent."""
-        return ClipTransform(
-            position_x=self.position_x,
-            position_y=self.position_y,
-            scale=self.scale,
-            rotation=self.rotation,
-            opacity=self.opacity,
-        )
+        return ClipTransform(**{name: getattr(self, name) for name in TRANSFORM_PROPERTY_NAMES})
+
+    @property
+    def effective_scale_x(self) -> float:
+        """Échelle horizontale finale (uniforme × axe), miroir non compris."""
+        return self.scale * self.scale_x
+
+    @property
+    def effective_scale_y(self) -> float:
+        """Échelle verticale finale (uniforme × axe), miroir non compris."""
+        return self.scale * self.scale_y
 
 
 _CURVE_CACHE: OrderedDict[tuple, dict[str, AnimationCurve]] = OrderedDict()
@@ -230,7 +309,9 @@ def transform_curves(
         if clip_duration is not None and kf.time_seconds > clip_duration + 1e-6:
             continue  # Keyframe située après la fin du clip.
         grouped.setdefault(kf.property_name, []).append(kf)
-    curves = {name: AnimationCurve(items) for name, items in grouped.items()}
+    curves = {
+        name: AnimationCurve(items, TRANSFORM_PROPERTIES[name].kind) for name, items in grouped.items()
+    }
     _CURVE_CACHE[key] = curves
     if isinstance(keyframes, list):
         _remember_list(keyframes, clip_duration, frames, curves)
@@ -260,18 +341,12 @@ def evaluate_transform(
             clip_local_time = float(clip_duration)
     curves = transform_curves(keyframes, clip_duration)
 
-    def _resolve(name: str) -> float:
-        return float(
-            TRANSFORM_PROPERTIES[name].evaluate(curves.get(name), getattr(transform, name), clip_local_time)
-        )
+    def _resolve(name: str):
+        spec = TRANSFORM_PROPERTIES[name]
+        value = spec.evaluate(curves.get(name), getattr(transform, name), clip_local_time)
+        return bool(value) if spec.kind is ValueKind.BOOL else float(value)
 
-    return EvaluatedTransform(
-        position_x=_resolve("position_x"),
-        position_y=_resolve("position_y"),
-        scale=_resolve("scale"),
-        rotation=_resolve("rotation"),
-        opacity=_resolve("opacity"),
-    )
+    return EvaluatedTransform(**{name: _resolve(name) for name in TRANSFORM_PROPERTY_NAMES})
 
 
 def migrate_legacy_keyframes(
@@ -291,6 +366,8 @@ def migrate_legacy_keyframes(
         if current is None or kf.time_seconds < current.time_seconds:
             first[kf.property_name] = kf
     for name, kf in first.items():
+        if name not in ANIMATABLE_PROPERTIES:
+            continue  # l'ancien moteur ne connaissait que les 5 propriétés de base
         base = float(getattr(transform, name))
         if kf.time_seconds > 0.0 and abs(base - float(kf.value)) > 1e-12:
             result.append(TransformKeyframe(name, 0.0, base, InterpolationType.HOLD))
@@ -394,10 +471,10 @@ def build_ffmpeg_expression(
     _validate_value(property_name, base_value)
     frames = [kf for kf in keyframes if kf.property_name == property_name]
     if not frames:
-        return _format_number(base_value)
+        return _format_number(float(base_value))
     spec = TRANSFORM_PROPERTIES[property_name]
     return curve_expression(
-        AnimationCurve(frames), time_var=time_var, minimum=spec.minimum, maximum=spec.maximum
+        AnimationCurve(frames, spec.kind), time_var=time_var, minimum=spec.minimum, maximum=spec.maximum
     )
 
 

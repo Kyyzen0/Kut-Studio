@@ -24,11 +24,12 @@ from __future__ import annotations
 import bisect
 from dataclasses import dataclass
 
-from .project_model import Clip, Project, Track
+from .project_model import Clip, Project, Sequence, Track
 from .timeline_evaluator import (
     ActiveClip,
     _build_active_clip,
     _is_active,
+    expand_nested_clip,
 )
 
 
@@ -53,13 +54,18 @@ class TimelineIndex:
     pistes invisibles ignorées, erreur si un média actif est absent.
     """
 
-    def __init__(self, project: Project) -> None:
+    def __init__(self, project: Project, sequence: Sequence | None = None) -> None:
         self.clip_count = 0
         self.duration = 0.0
         self._entries: list[_TrackEntry] = []
         self._clips_by_id: dict[str, Clip] = {}
+        self.sequence = sequence if sequence is not None else project.active_sequence
+        self.sequence_id = self.sequence.id
+        # Index des séquences imbriquées, construits à la première lecture.
+        self._sub_indexes: dict[str, TimelineIndex] = {}
+        self._project = project
         end = 0.0
-        for track_index, track in enumerate(project.tracks):
+        for track_index, track in enumerate(self.sequence.tracks):
             decorated = list(enumerate(track.clips))
             decorated.sort(key=lambda item: item[1].timeline_start)
             starts = [clip.timeline_start for _, clip in decorated]
@@ -110,7 +116,20 @@ class TimelineIndex:
         matched.sort(key=lambda item: item[0])
         return [clip for _, clip in matched]
 
-    def active_at(self, project: Project, time_seconds: float) -> list[ActiveClip]:
+    def sub_index(self, sequence: Sequence) -> "TimelineIndex":
+        """Index d'une séquence imbriquée (construit une fois, puis réutilisé)."""
+        return self._sub_index(sequence)
+
+    def _sub_index(self, sequence: Sequence) -> "TimelineIndex":
+        index = self._sub_indexes.get(sequence.id)
+        if index is None or index.sequence is not sequence:
+            index = TimelineIndex(self._project, sequence)
+            self._sub_indexes[sequence.id] = index
+        return index
+
+    def active_at(
+        self, project: Project, time_seconds: float, _stack: tuple[str, ...] | None = None
+    ) -> list[ActiveClip]:
         """Clips actifs à ``time_seconds``.
 
         ``project`` sert à résoudre les chemins au moment de la requête.
@@ -124,6 +143,7 @@ class TimelineIndex:
                 f"(reçu : {time_seconds})."
             )
         assets = {asset.id: asset for asset in project.media_assets}
+        stack = _stack if _stack is not None else (self.sequence_id,)
         active: list[ActiveClip] = []
         for entry in self._entries:
             track = entry.track
@@ -145,6 +165,17 @@ class TimelineIndex:
                 matched.append((entry.order[position], clip))
             matched.sort(key=lambda item: item[0])
             for _, clip in matched:
+                if clip.sequence_id:
+                    active.extend(
+                        expand_nested_clip(
+                            project, clip, track, entry.track_index, time_seconds, stack,
+                            lambda child, inner_time, inner_stack: self._sub_index(
+                                child
+                            ).active_at(project, inner_time, inner_stack),
+                            lambda child: self._sub_index(child).duration,
+                        )
+                    )
+                    continue
                 try:
                     asset = assets[clip.asset_id]
                 except KeyError as error:
@@ -164,6 +195,6 @@ class TimelineIndex:
         return active
 
 
-def build_timeline_index(project: Project) -> TimelineIndex:
-    """Construit un index de lecture pour ``project``."""
-    return TimelineIndex(project)
+def build_timeline_index(project: Project, sequence: Sequence | None = None) -> TimelineIndex:
+    """Construit un index de lecture pour ``project`` (séquence active par défaut)."""
+    return TimelineIndex(project, sequence)

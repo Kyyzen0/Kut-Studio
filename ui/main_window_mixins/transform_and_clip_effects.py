@@ -177,26 +177,13 @@ class TransformEffectsMixin:
             return
         if clip is None:
             return
-        from core.visual_effects import ANIMATABLE_PROPERTIES
+        from core.visual_effects import TRANSFORM_PROPERTY_NAMES
 
-        if property_name not in ANIMATABLE_PROPERTIES:
+        if property_name not in TRANSFORM_PROPERTY_NAMES:
             return
         try:
-            new_transform = clip.transform.__class__(
-                **{
-                    **{
-                        field: getattr(clip.transform, field)
-                        for field in (
-                            "position_x",
-                            "position_y",
-                            "scale",
-                            "rotation",
-                            "opacity",
-                        )
-                    },
-                    property_name: float(value),
-                }
-            )
+            # ``with_property`` garde les autres champs (ancrage, miroirs…).
+            new_transform = clip.transform.with_property(property_name, value)
         except ValueError as exc:
             print(f"[MainWindow] valeur transform refusée : {exc}")
             return
@@ -255,6 +242,9 @@ class TransformEffectsMixin:
         self._transform_session_active = False
         label = getattr(self, "_transform_session_label", "Modifier le mouvement")
         self.history.record(self.project, label)
+        invalidate = getattr(self, "_invalidate_nested_dependents", None)
+        if callable(invalidate):
+            invalidate()  # les séquences qui montrent celle-ci
         self._refresh_undo_redo_state()
         self._reload_timeline_preserving_selection()
 

@@ -1,4 +1,4 @@
-"""Onglet « Performance » des Préférences : proxies et cache.
+"""Onglet « Performance » des Préférences : proxies, cache et matériel.
 
 Interface volontairement sobre : un interrupteur, un profil, deux actions
 de génération, le budget et l'occupation du cache, des purges. Aucune
@@ -114,16 +114,33 @@ class PerformanceSettingsTab(QWidget):
         self.encoding_box = QGroupBox()
         encoding_layout = QVBoxLayout(self.encoding_box)
         encoding_form = QFormLayout()
+        # Décodage et rendu de l'aperçu : deux choix, pas un tableau de bord.
+        self.decode_label = QLabel()
+        self.decode_combo = QComboBox()
+        self.decode_combo.setObjectName("decodeModeCombo")
+        self.decode_combo.activated.connect(self._on_decode_changed)
+        encoding_form.addRow(self.decode_label, self.decode_combo)
+        self.preview_backend_label = QLabel()
+        self.preview_backend_combo = QComboBox()
+        self.preview_backend_combo.setObjectName("previewBackendCombo")
+        for value in ("auto", "cpu", "gpu"):
+            self.preview_backend_combo.addItem("", userData=value)
+        self.preview_backend_combo.activated.connect(self._on_preview_backend_changed)
+        encoding_form.addRow(self.preview_backend_label, self.preview_backend_combo)
         self.encoder_label = QLabel()
         self.encoder_combo = QComboBox()
         self.encoder_combo.setObjectName("defaultEncoderCombo")
         self.encoder_combo.activated.connect(self._on_encoder_changed)
         encoding_form.addRow(self.encoder_label, self.encoder_combo)
         encoding_layout.addLayout(encoding_form)
+        self.decode_hint = QLabel()
+        self.decode_hint.setWordWrap(True)
+        self.decode_hint.setStyleSheet(label_style(11, "muted", 500))
+        encoding_layout.addWidget(self.decode_hint)
         self.diagnostics_view = QPlainTextEdit()
         self.diagnostics_view.setObjectName("encodingDiagnostics")
         self.diagnostics_view.setReadOnly(True)
-        self.diagnostics_view.setFixedHeight(130)
+        self.diagnostics_view.setFixedHeight(170)
         encoding_layout.addWidget(self.diagnostics_view)
         encoding_row = QHBoxLayout()
         self.redetect_button = QPushButton()
@@ -170,7 +187,11 @@ class PerformanceSettingsTab(QWidget):
         stats = host.cache_summary()["usage"]
 
         def size(kind: str) -> str:
-            return format_size(int(stats.get(kind, {}).get("bytes", 0)))
+            total = int(stats.get(kind, {}).get("bytes", 0))
+            if kind == "preview":  # images de calques et analyses : dérivés recalculables
+                total += int(stats.get("mograph", {}).get("bytes", 0))
+                total += int(stats.get("tracking", {}).get("bytes", 0))
+            return format_size(total)
 
         self.usage_label.setText(
             i18n.translate(
@@ -197,6 +218,29 @@ class PerformanceSettingsTab(QWidget):
         self.encoder_combo.blockSignals(False)
         self.diagnostics_view.setPlainText(host.encoding_diagnostics_text())
         self.redetect_button.setEnabled(not detecting)
+        options = getattr(host, "decode_mode_options", None)
+        if options is not None:
+            current = getattr(getattr(host, "_decode_mode", None), "value", "auto")
+            self.decode_combo.blockSignals(True)
+            self.decode_combo.clear()
+            for value, label in options():
+                self.decode_combo.addItem(label, userData=value)
+            self.decode_combo.setCurrentIndex(max(0, self.decode_combo.findData(current)))
+            self.decode_combo.blockSignals(False)
+        wanted_backend = getattr(host, "_preview_backend_request", "auto")
+        self.preview_backend_combo.setCurrentIndex(max(0, self.preview_backend_combo.findData(wanted_backend)))
+        self.decode_combo.setVisible(options is not None)
+        self.decode_label.setVisible(options is not None)
+        self.preview_backend_combo.setVisible(options is not None)
+        self.preview_backend_label.setVisible(options is not None)
+
+    def _on_decode_changed(self, _index: int) -> None:
+        self._host.set_decode_mode(self.decode_combo.currentData())
+        self.decode_hint.setText(i18n.translate("perf.decode.restart_hint"))
+
+    def _on_preview_backend_changed(self, _index: int) -> None:
+        self._host.set_preview_backend(self.preview_backend_combo.currentData())
+        self.diagnostics_view.setPlainText(self._host.encoding_diagnostics_text())
 
     def _on_encoder_changed(self, _index: int) -> None:
         self._host.set_export_encoder(self.encoder_combo.currentData())
@@ -270,8 +314,13 @@ class PerformanceSettingsTab(QWidget):
         self.purge_proxies_button.setText(tr("perf.cache.purge_proxies"))
         self.purge_project_button.setText(tr("perf.cache.purge_project"))
         self.purge_all_button.setText(tr("perf.cache.purge_all"))
-        self.encoding_box.setTitle(tr("perf.encoding.title"))
-        self.encoder_label.setText(tr("perf.encoding.default"))
+        self.encoding_box.setTitle(tr("perf.hardware.title"))
+        self.decode_label.setText(tr("perf.decode"))
+        self.preview_backend_label.setText(tr("perf.preview_backend"))
+        for index in range(self.preview_backend_combo.count()):
+            value = self.preview_backend_combo.itemData(index)
+            self.preview_backend_combo.setItemText(index, tr(f"perf.preview_backend.{value}"))
+        self.encoder_label.setText(tr("perf.encoding.export"))
         self.redetect_button.setText(tr("perf.encoding.redetect"))
         self.copy_diagnostics_button.setText(tr("perf.encoding.copy"))
         self.hint_label.setText(tr("perf.quality_hint"))

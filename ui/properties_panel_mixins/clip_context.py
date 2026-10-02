@@ -22,6 +22,14 @@ class ClipContextMixin:
                 self.selected_clip.id, field_name, value
             )
 
+    def _emit_advanced_transform(self, name: str, value: object) -> None:
+        if self.selected_clip is not None and self.selected_clip_track_type in ("video", "graphics"):
+            self.advanced_transform_changed.emit(self.selected_clip.id, name, value)
+
+    def _emit_advanced_keyframe(self, name: str) -> None:
+        if self.selected_clip is not None and self.selected_clip_track_type in ("video", "graphics"):
+            self.advanced_keyframe_toggled.emit(self.selected_clip.id, name)
+
     def update_graphic_from_clip(self, graphic: object) -> None:
         self.graphics_group.set_graphic(graphic)
 
@@ -89,6 +97,8 @@ class ClipContextMixin:
             self._set_group_condition(self.graphics_group, is_graphic_clip)
             self.update_graphic_from_clip(getattr(view, "graphic", None))
             self.compositing_group.set_value(getattr(view, "compositing", None))
+            self.compositing_group.set_chroma_visible(is_video_clip)
+            self.advanced_transform.set_skew_available(is_graphic_clip)
             self.graphics_group.setEnabled(
                 is_graphic_clip and not bool(getattr(view, "locked", False))
             )

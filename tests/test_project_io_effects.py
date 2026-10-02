@@ -127,14 +127,14 @@ def test_format_version_is_eleven() -> None:
 
     La version des styles texte (10) et des effets (9) reste lisible.
     """
-    assert CURRENT_VERSION == 13
+    assert CURRENT_VERSION == 16
     assert 10 in SUPPORTED_VERSIONS
     assert 9 in SUPPORTED_VERSIONS
 
 
 def test_payload_serialises_effects_in_order() -> None:
     payload = project_payload(_project_with_effects())
-    clips = payload["project"]["tracks"][0]["clips"]
+    clips = payload["project"]["sequences"][0]["tracks"][0]["clips"]
     effects = clips[0]["effects"]
 
     assert [effect["id"] for effect in effects] == [
@@ -150,7 +150,7 @@ def test_payload_serialises_effects_in_order() -> None:
 
 def test_audio_clip_serialises_an_empty_effect_list() -> None:
     payload = project_payload(_project_with_effects())
-    audio_clip = payload["project"]["tracks"][1]["clips"][0]
+    audio_clip = payload["project"]["sequences"][0]["tracks"][1]["clips"][0]
     assert audio_clip["effects"] == []
 
 

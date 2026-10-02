@@ -36,6 +36,10 @@ from ui.properties_widgets.diamond_button import _DiamondButton
 from ui.properties_widgets.common import _PROPERTY_RANGES
 from ui.properties_widgets.diamond_button import _DiamondButton
 
+TRACKING_TAB = 6
+"""Onglet « Suivi » (menu « ••• »)."""
+
+
 class ConstructionMixin:
     """Mixin de ``PropertiesPanel`` : construction des groupes de l'inspecteur."""
 
@@ -63,7 +67,7 @@ class ConstructionMixin:
         self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
         self.inspector_tabs_layout.setSpacing(Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
-        labels = ("Clip", "Couleur", "Effets", "Audio", "Graphiques", "Compositing")
+        labels = ("Clip", "Couleur", "Effets", "Audio", "Graphiques", "Compositing", "Suivi")
         for index, label in enumerate(labels):
             button = QPushButton(label)
             button.setObjectName("inspectorTab")
@@ -94,7 +98,7 @@ class ConstructionMixin:
         # Graphiques et Compositing passent par le menu « ••• » : leurs
         # boutons gardent l'état coché mais restent rattachés au panneau
         # pour ne pas devenir des fenêtres orphelines.
-        for index in (4, 5):
+        for index in (4, 5, 6):
             self.inspector_tab_buttons[index].setParent(self.inspector_tabs_row)
             self.inspector_tab_buttons[index].hide()
 
@@ -119,6 +123,10 @@ class ConstructionMixin:
         compositing_action = more_menu.addAction("Compositing")
         compositing_action.triggered.connect(
             lambda _checked=False: self._select_inspector_tab(5)
+        )
+        tracking_action = more_menu.addAction("Suivi")
+        tracking_action.triggered.connect(
+            lambda _checked=False: self._select_inspector_tab(TRACKING_TAB)
         )
         self.inspector_more_button.setMenu(more_menu)
         self.inspector_tabs_layout.addWidget(self.inspector_more_button)
@@ -489,6 +497,13 @@ class ConstructionMixin:
         reset_button.setSizePolicy(reset_button.sizePolicy().horizontalPolicy(),
                                    reset_button.sizePolicy().verticalPolicy())
         self.reset_movement_button = reset_button
+        # Transformation avancée (motion graphics) : repliée par défaut.
+        from ui.properties_widgets.advanced_transform import AdvancedTransformEditor
+
+        self.advanced_transform = AdvancedTransformEditor()
+        self.advanced_transform.value_changed.connect(self._emit_advanced_transform)
+        self.advanced_transform.keyframe_toggled.connect(self._emit_advanced_keyframe)
+        movement_layout.addWidget(self.advanced_transform)
         movement_layout.addWidget(reset_button)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True
@@ -552,13 +567,14 @@ class ConstructionMixin:
             4: [project_group, clip_group, self.movement_group,
                 self.graphics_group, self.subtitle_group],  # Graphiques
             5: [project_group, clip_group, self.compositing_group],
+            TRACKING_TAB: [clip_group, self.tracking_group],
         }
         all_groups = [project_group, clip_group, self.transition_group,
                       self.color_group, self.movement_group, self.speed_group,
                       self.graphics_group, audio_group, self.audio_group,
                       self.subtitle_group,
                       self.effects_group, self.audio_effects_group,
-                      self.compositing_group]
+                      self.compositing_group, self.tracking_group]
         self._all_inspector_groups = all_groups
         # Certains groupes ont en plus une visibilité *conditionnelle*
         # pilotée par la sélection (``show_clip`` / ``show_transition``) :

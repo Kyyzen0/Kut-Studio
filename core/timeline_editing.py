@@ -20,7 +20,7 @@ from .timeline_operations import (
     _ensure_track_editable,
     _find_asset,
     _find_track_for_clip,
-    _validate_track_asset_compatibility,
+    _validate_track_clip_compatibility,
     delete_clip,
     find_track,
     ripple_delete_clip,
@@ -187,6 +187,12 @@ def _neighbors(project: Project, clip_id: str):
 
 
 def _asset_duration(project: Project, clip) -> float:
+    """Durée de la source du clip (média, ou séquence imbriquée)."""
+    if getattr(clip, "sequence_id", ""):
+        from .sequences import clip_source_limit
+
+        limit = clip_source_limit(project, clip)
+        return float(limit) if limit is not None else float(clip.source_out)
     return float(_find_asset(project, clip.asset_id).duration)
 
 
@@ -313,8 +319,7 @@ def relocate_clip(
     _ensure_track_editable(project, destination)
     clip = source.clips[index]
     if destination.id != source.id:
-        asset = _find_asset(project, clip.asset_id)
-        _validate_track_asset_compatibility(asset, destination)
+        _validate_track_clip_compatibility(project, clip, destination)
         source.clips.pop(index)
         clip.track_id = destination.id
         destination.clips.append(clip)
@@ -336,8 +341,7 @@ def move_clips(project: Project, placements: list[ClipPlacement]) -> None:
         _ensure_track_editable(project, destination)
         if destination.id != source.id:
             clip = next(clip for clip in source.clips if clip.id == placement.clip_id)
-            asset = _find_asset(project, clip.asset_id)
-            _validate_track_asset_compatibility(asset, destination)
+            _validate_track_clip_compatibility(project, clip, destination)
         checked.append(placement)
     for placement in checked:
         relocate_clip(
@@ -454,18 +458,10 @@ def apply_solo(project: Project, active_clips: list) -> list:
     """Retire les clips d'un type dont une piste solo existe et qui n'y sont pas.
 
     L'audio solo ne masque pas la vidéo, et l'inverse. Les sous-titres
-    ne sont filtrés que si une piste sous-titre est en solo.
+    ne sont filtrés que si une piste sous-titre est en solo. Les entrées
+    issues d'une séquence imbriquée portent la piste de leur clip racine :
+    elles suivent donc le solo de la séquence évaluée.
     """
-    solo_ids: dict[str, set[str]] = {}
-    for track in project.tracks:
-        if track.solo:
-            solo_ids.setdefault(track.type, set()).add(track.id)
-    if not solo_ids:
-        return list(active_clips)
-    visible = []
-    for clip in active_clips:
-        allowed = solo_ids.get(clip.track_type)
-        if allowed is not None and clip.track_id not in allowed:
-            continue
-        visible.append(clip)
-    return visible
+    from .timeline_evaluator import apply_track_solo
+
+    return apply_track_solo(project.tracks, active_clips)

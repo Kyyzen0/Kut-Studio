@@ -83,7 +83,7 @@ def clamp_fade(value: object) -> float:
 # Copie profonde rapide d'un clip (historique d'annulation)
 # ---------------------------------------------------------------------------
 
-_ATOMIC_TYPES = (str, int, float, bool, type(None))
+_ATOMIC_TYPES = (str, int, float, bool, bytes, type(None))
 _ATOMIC_SET = frozenset(_ATOMIC_TYPES)
 _VERDICTS_KEY = "kut-immutable-verdicts"
 
@@ -289,6 +289,21 @@ class Clip:
     compositing: object = field(default_factory=lambda: _default_compositing())
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
+    # --- Séquence imbriquée ---
+    # Identifiant d'une :class:`Sequence` du même projet. Non vide, le clip
+    # est un *nested sequence clip* : ``source_in`` / ``source_out`` sont
+    # alors des temps de la séquence référencée et ``asset_id`` reste vide.
+    # La séquence n'est jamais copiée dans le clip : elle est référencée.
+    sequence_id: str = ""
+    # --- Animation générique (motion graphics) ---
+    # Keyframes des propriétés animables hors transform : forme, texte,
+    # masques (``graphic.width``, ``mask.<id>.feather``…). Voir
+    # :func:`core.animation_targets.generic_target`.
+    animation: list = field(default_factory=list)
+    # --- Tracking 2D ---
+    # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
+    # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
+    tracking: object = None
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -420,6 +435,11 @@ class Clip:
         return not self.time_remapping.is_normal
 
     @property
+    def is_nested(self) -> bool:
+        """Le clip référence-t-il une séquence plutôt qu'un média ?"""
+        return bool(self.sequence_id)
+
+    @property
     def is_audio_affected(self) -> bool:
         """Le clip porte-t-il des réglages audio à conserver."""
         return (
@@ -435,6 +455,13 @@ def _default_transform():  # pragma: no cover - import deferred
     from .visual_effects import ClipTransform
 
     return ClipTransform()
+
+
+def _default_motion_blur():  # pragma: no cover - import deferred
+    """Retourne des :class:`MotionBlurSettings` par défaut (import paresseux)."""
+    from .motion_blur import MotionBlurSettings
+
+    return MotionBlurSettings()
 
 
 def _default_time_remapping():  # pragma: no cover - import deferred
@@ -568,18 +595,128 @@ class Marker:
             self.category = "standard"
 
 
+MAIN_SEQUENCE_ID = "seq-main"
+"""Identifiant de la séquence créée pour un projet à séquence unique.
+
+Un ancien ``.kut`` (une seule timeline) est chargé comme un projet
+contenant cette séquence : l'identifiant est stable d'un chargement à
+l'autre, donc les références et l'historique restent cohérents.
+"""
+
+MAIN_SEQUENCE_NAME = "Séquence principale"
+"""Nom par défaut de la séquence d'un projet à séquence unique."""
+
+
+def _validate_canvas(width: int, height: int, fps: float, owner: str) -> None:
+    if width <= 0:
+        raise ValueError(f"La largeur {owner} doit être strictement positive.")
+    if height <= 0:
+        raise ValueError(f"La hauteur {owner} doit être strictement positive.")
+    if fps <= 0.0:
+        raise ValueError(f"Le fps {owner} doit être strictement positif.")
+
+
 @dataclass
+class Sequence:
+    """Une timeline autonome du projet : pistes, repères, transitions.
+
+    Un projet contient une ou plusieurs séquences. Les médias restent au
+    niveau du projet (``Project.media_assets``) : deux séquences qui
+    utilisent le même fichier référencent le même ``MediaAsset``, rien
+    n'est dupliqué. Une séquence peut être utilisée comme clip dans une
+    autre (:attr:`Clip.sequence_id`) ; voir :mod:`core.sequences`.
+
+    Attributes:
+        id: Identifiant stable, unique dans le projet.
+        name: Nom affiché (onglets, fil d'Ariane, bibliothèque).
+        width / height / fps: Réglages de rendu propres à la séquence.
+            Une séquence imbriquée est rendue à sa propre résolution,
+            puis ajustée au cadre de la séquence parente comme un média.
+        tracks: Pistes de la séquence.
+        markers: Repères de la règle de cette séquence.
+        transitions: Transitions entre clips de cette séquence.
+        ducking_sidechains: Associations de ducking (pistes de la séquence).
+    """
+
+    id: str
+    name: str
+    width: int = 1920
+    height: int = 1080
+    fps: float = 30.0
+    tracks: list[Track] = field(default_factory=list)
+    markers: list[Marker] = field(default_factory=list)
+    transitions: list["Transition"] = field(default_factory=list)
+    ducking_sidechains: list = field(default_factory=list)
+    # --- Motion graphics ---
+    # Guides du viewer (:class:`core.canvas_guides.Guide`) : jamais exportés.
+    guides: list = field(default_factory=list)
+    # Réglages du flou de mouvement (:class:`core.motion_blur.MotionBlurSettings`).
+    motion_blur: object = field(default_factory=lambda: _default_motion_blur())
+
+    def __post_init__(self) -> None:
+        if not str(self.id or "").strip():
+            raise ValueError("Une séquence doit avoir un identifiant non vide.")
+        _validate_canvas(self.width, self.height, self.fps, "de la séquence")
+        if self.markers is None:
+            self.markers = []
+        if self.transitions is None:
+            self.transitions = []
+        if self.ducking_sidechains is None:
+            self.ducking_sidechains = []
+        if self.guides is None:
+            self.guides = []
+        if self.motion_blur is None:
+            self.motion_blur = _default_motion_blur()
+
+    @property
+    def duration(self) -> float:
+        """Fin du dernier clip activé (``0.0`` pour une séquence vide).
+
+        Le calcul ne descend pas dans les séquences imbriquées : la durée
+        d'un clip imbriqué est son propre ``in``/``out``, donc une séquence
+        cyclique (corrompue) ne peut pas faire boucler ce calcul.
+        """
+        ends = [
+            clip.timeline_start + clip.duration
+            for track in self.tracks
+            for clip in track.clips
+            if clip.enabled
+        ]
+        return max(ends) if ends else 0.0
+
+    @property
+    def nested_sequence_ids(self) -> set[str]:
+        """Séquences référencées **directement** par les clips de celle-ci."""
+        return {
+            clip.sequence_id
+            for track in self.tracks
+            for clip in track.clips
+            if clip.sequence_id
+        }
+
+
+@dataclass(init=False)
 class Project:
-    """Le projet complet : métadonnées de rendu + médias importés + pistes.
+    """Le projet complet : médias importés + séquences.
+
+    Un projet contient **au moins une** :class:`Sequence`. L'une d'elles
+    est la séquence *active* (celle que la timeline édite). Pour rester
+    compatible avec tout le code écrit avant le multi-séquence,
+    ``tracks``, ``markers``, ``transitions``, ``ducking_sidechains``,
+    ``width``, ``height`` et ``fps`` sont des **propriétés qui délèguent à
+    la séquence active** : une opération de timeline appliquée au projet
+    modifie la séquence ouverte, l'export rend la séquence ouverte.
+
+    Le constructeur accepte toujours l'ancienne forme
+    ``Project(name, width, height, fps, media_assets, tracks, ...)`` : elle
+    crée une séquence principale (:data:`MAIN_SEQUENCE_ID`). La forme
+    multi-séquence passe ``sequences=[...]`` et ``active_sequence_id``.
 
     Attributes:
         name: Nom humain du projet.
-        width: Largeur de la timeline en pixels (> 0).
-        height: Hauteur de la timeline en pixels (> 0).
-        fps: Fréquence d'images cible du projet (> 0).
-        media_assets: Liste des médias importés dans le projet.
-        tracks: Liste des pistes composant la timeline.
-        markers: Repères de la règle, triés par l'éditeur à l'insertion.
+        media_assets: Médias importés, partagés par toutes les séquences.
+        sequences: Séquences du projet (au moins une).
+        active_sequence_id: Séquence éditée par la timeline.
         library_folders: Dossiers personnalisés de la bibliothèque
             (tâche 25). Vide pour un projet créé avant la v11.
         library_tags: Tags (couleur / étiquette) de la bibliothèque
@@ -589,48 +726,172 @@ class Project:
             par :class:`~core.library_organization.LibraryOrganization`
             — les médias non mentionnés sont implicitement à la racine
             sans tag.
+        color_presets: Presets couleur personnels embarqués (tâche 29).
+            Le type concret est ``ColorPreset`` ; ``list`` évite un cycle
+            d'import avec :mod:`core.color_grading`.
     """
 
     name: str
-    width: int = 1920
-    height: int = 1080
-    fps: float = 30.0
-    media_assets: list[MediaAsset] = field(default_factory=list)
-    tracks: list[Track] = field(default_factory=list)
-    markers: list[Marker] = field(default_factory=list)
-    transitions: list["Transition"] = field(default_factory=list)
-    # --- Organisation de la bibliothèque (tâche 25, ajout v11) ----
-    library_folders: list = field(default_factory=list)
-    library_tags: list = field(default_factory=list)
-    library_assignments: dict = field(default_factory=dict)
-    # --- Ducking automatique (tâche 28) ---
-    # Liste d'associations ``DuckingSidechain`` au niveau projet. Une
-    # association lie une piste musique à une piste voix qui la pilote.
-    # Vide par défaut, rétrocompatible avec les anciens snapshots.
-    ducking_sidechains: list = field(default_factory=list)
-    # Presets couleur personnels embarqués dans le projet (tâche 29).
-    # Le type concret est ``ColorPreset`` ; ``list`` évite un cycle
-    # d'import avec :mod:`core.color_grading`.
-    color_presets: list = field(default_factory=list)
+    media_assets: list[MediaAsset]
+    sequences: list[Sequence]
+    active_sequence_id: str
+    library_folders: list
+    library_tags: list
+    library_assignments: dict
+    color_presets: list
 
-    def __post_init__(self) -> None:
-        """Vérifie que les paramètres de rendu du projet sont cohérents."""
-        if self.width <= 0:
-            raise ValueError("La largeur du projet doit être strictement positive.")
-        if self.height <= 0:
-            raise ValueError("La hauteur du projet doit être strictement positive.")
-        if self.fps <= 0.0:
-            raise ValueError("Le fps du projet doit être strictement positif.")
+    def __init__(
+        self,
+        name: str,
+        width: int = 1920,
+        height: int = 1080,
+        fps: float = 30.0,
+        media_assets: list[MediaAsset] | None = None,
+        tracks: list[Track] | None = None,
+        markers: list[Marker] | None = None,
+        transitions: list | None = None,
+        library_folders: list | None = None,
+        library_tags: list | None = None,
+        library_assignments: dict | None = None,
+        ducking_sidechains: list | None = None,
+        color_presets: list | None = None,
+        *,
+        sequences: list[Sequence] | None = None,
+        active_sequence_id: str | None = None,
+    ) -> None:
+        self.name = name
+        # Les listes passées sont conservées telles quelles (même identité),
+        # comme avec l'ancien dataclass.
+        self.media_assets = media_assets if media_assets is not None else []
+        if sequences:
+            if tracks or markers or transitions or ducking_sidechains:
+                raise ValueError(
+                    "Projet ambigu : pistes, repères ou transitions fournis "
+                    "en plus de « sequences ». Placez-les dans une séquence."
+                )
+            self.sequences = sequences
+        else:
+            _validate_canvas(width, height, fps, "du projet")
+            self.sequences = [
+                Sequence(
+                    id=MAIN_SEQUENCE_ID,
+                    name=MAIN_SEQUENCE_NAME,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    tracks=tracks if tracks is not None else [],
+                    markers=markers if markers is not None else [],
+                    transitions=transitions if transitions is not None else [],
+                    ducking_sidechains=(
+                        ducking_sidechains if ducking_sidechains is not None else []
+                    ),
+                )
+            ]
+        known = {sequence.id for sequence in self.sequences}
+        self.active_sequence_id = (
+            active_sequence_id if active_sequence_id in known else self.sequences[0].id
+        )
         # Les trois champs d'organisation acceptent ``None`` (rétrocompat
         # chargement depuis ancien snapshot) en retombant sur du vide.
-        if self.library_folders is None:
-            self.library_folders = []
-        if self.library_tags is None:
-            self.library_tags = []
-        if self.library_assignments is None:
-            self.library_assignments = {}
-        if self.color_presets is None:
-            self.color_presets = []
+        self.library_folders = library_folders if library_folders is not None else []
+        self.library_tags = library_tags if library_tags is not None else []
+        self.library_assignments = (
+            library_assignments if library_assignments is not None else {}
+        )
+        self.color_presets = color_presets if color_presets is not None else []
+
+    # ------------------------------------------------------------------
+    # Séquences
+    # ------------------------------------------------------------------
+
+    def get_sequence(self, sequence_id: str) -> Sequence | None:
+        """Séquence d'identifiant ``sequence_id``, ou ``None`` (jamais d'exception)."""
+        for sequence in self.sequences:
+            if sequence.id == sequence_id:
+                return sequence
+        return None
+
+    def all_tracks(self) -> list[Track]:
+        """Pistes de **toutes** les séquences (usages de médias, LUTs, caches)."""
+        return [track for sequence in self.sequences for track in sequence.tracks]
+
+    @property
+    def active_sequence(self) -> Sequence:
+        """Séquence éditée par la timeline.
+
+        Un identifiant actif inconnu (séquence supprimée, fichier
+        retouché à la main) retombe sur la première séquence au lieu de
+        lever : le projet doit rester ouvrable.
+        """
+        sequence_id = self.active_sequence_id
+        for sequence in self.sequences:
+            if sequence.id == sequence_id:
+                return sequence
+        if not self.sequences:
+            self.sequences.append(Sequence(id=MAIN_SEQUENCE_ID, name=MAIN_SEQUENCE_NAME))
+        self.active_sequence_id = self.sequences[0].id
+        return self.sequences[0]
+
+    # --- Délégation à la séquence active (compatibilité) ---------------
+
+    @property
+    def tracks(self) -> list[Track]:
+        return self.active_sequence.tracks
+
+    @tracks.setter
+    def tracks(self, value: list[Track]) -> None:
+        self.active_sequence.tracks = value
+
+    @property
+    def markers(self) -> list[Marker]:
+        return self.active_sequence.markers
+
+    @markers.setter
+    def markers(self, value: list[Marker]) -> None:
+        self.active_sequence.markers = value
+
+    @property
+    def transitions(self) -> list:
+        return self.active_sequence.transitions
+
+    @transitions.setter
+    def transitions(self, value: list) -> None:
+        self.active_sequence.transitions = value
+
+    @property
+    def ducking_sidechains(self) -> list:
+        return self.active_sequence.ducking_sidechains
+
+    @ducking_sidechains.setter
+    def ducking_sidechains(self, value: list) -> None:
+        self.active_sequence.ducking_sidechains = value if value is not None else []
+
+    @property
+    def width(self) -> int:
+        return self.active_sequence.width
+
+    @width.setter
+    def width(self, value: int) -> None:
+        _validate_canvas(value, 1, 1.0, "du projet")
+        self.active_sequence.width = value
+
+    @property
+    def height(self) -> int:
+        return self.active_sequence.height
+
+    @height.setter
+    def height(self, value: int) -> None:
+        _validate_canvas(1, value, 1.0, "du projet")
+        self.active_sequence.height = value
+
+    @property
+    def fps(self) -> float:
+        return self.active_sequence.fps
+
+    @fps.setter
+    def fps(self, value: float) -> None:
+        _validate_canvas(1, 1, value, "du projet")
+        self.active_sequence.fps = value
 
 
 def _default_compositing():

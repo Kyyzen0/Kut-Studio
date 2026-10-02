@@ -10,6 +10,10 @@ mémoire            sondes, miniatures, ondes    :mod:`core.cache_keys`      LRU
                                                 (signature du fichier)      (profil de performance)
 disque « preview » segments d'aperçu fidèles    clip + plage + qualité +    LRU (index), budget
                                                 empreinte **du segment**    propre + budget global
+disque « mograph » images des calques motion    empreinte de l'état évalué  LRU (dernier usage),
+                   graphics (:mod:`core.mograph_stream`)                    budget global
+disque « tracking » résultats d'analyse de     média + plage + zone +     LRU (dernier usage),
+                   tracking (:mod:`core.tracking_engine`)  réglages + version         budget global
 disque « proxies » proxies médias               chemin source + empreinte   LRU (dernier usage),
                                                 du profil + signature       budget global ; les
                                                 source (marqueur)           proxies du projet
@@ -45,7 +49,9 @@ DEFAULT_MAX_BYTES = 4 * 1024 ** 3
 KIND_MEMORY = "memory"
 KIND_PREVIEW = "preview"
 KIND_PROXY = "proxy"
-KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY)
+KIND_MOGRAPH = "mograph"
+KIND_TRACKING = "tracking"
+KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY, KIND_MOGRAPH, KIND_TRACKING)
 
 
 @dataclass(frozen=True)
@@ -68,10 +74,14 @@ class CacheManager:
         proxies=None,
         max_bytes: int = DEFAULT_MAX_BYTES,
         pinned_sources: Callable[[], Iterable[str]] | None = None,
+        mograph=None,
+        tracking=None,
     ) -> None:
         self.memory = memory
         self.previews = previews
         self.proxies = proxies
+        self.mograph = mograph
+        self.tracking = tracking
         self._max_bytes = max(1, int(max_bytes))
         self._pinned = pinned_sources
 
@@ -100,6 +110,12 @@ class CacheManager:
         if self.proxies is not None:
             entries = self.proxies.entries()
             result.append(CacheUsage(KIND_PROXY, len(entries), self.proxies.usage_bytes()))
+        if self.mograph is not None:
+            stats = self.mograph.stats()
+            result.append(CacheUsage(KIND_MOGRAPH, int(stats["entries"]), int(stats["bytes"])))
+        if self.tracking is not None:
+            stats = self.tracking.stats()
+            result.append(CacheUsage(KIND_TRACKING, int(stats["entries"]), int(stats["bytes"])))
         return result
 
     def disk_bytes(self) -> int:
@@ -131,6 +147,12 @@ class CacheManager:
         freed = 0
         if self.previews is not None:
             freed += int(self.previews.evict_bytes(excess))
+        if freed < excess and self.mograph is not None:
+            # Images de calques : recalculables, avant les proxies.
+            freed += int(self.mograph.evict_bytes(excess - freed))
+        if freed < excess and self.tracking is not None:
+            # Analyses : petites et recalculables, mais plus lentes que des images.
+            freed += int(self.tracking.evict_bytes(excess - freed))
         if freed >= excess or self.proxies is None:
             return freed
         pinned = {os.path.abspath(p) for p in (self._pinned() if self._pinned else ())}
@@ -169,6 +191,11 @@ class CacheManager:
             self.memory.clear()
         if kind in (KIND_PREVIEW, "all") and self.previews is not None:
             self.previews.purge()
+        # Les images de calques sont des dérivés d'aperçu : purgées avec lui.
+        if kind in (KIND_PREVIEW, KIND_MOGRAPH, "all") and self.mograph is not None:
+            self.mograph.purge()
+        if kind in (KIND_TRACKING, "all") and self.tracking is not None:
+            self.tracking.purge()
         if kind in (KIND_PROXY, "all") and self.proxies is not None:
             self.proxies.delete_all()
         after = sum(item.bytes for item in self.usage())
@@ -187,7 +214,9 @@ class CacheManager:
             for asset in assets:
                 self.proxies.delete(asset.path)
         if self.previews is not None:
-            clip_ids = [clip.id for track in project.tracks for clip in track.clips]
+            all_tracks = getattr(project, "all_tracks", None)
+            tracks = all_tracks() if callable(all_tracks) else project.tracks
+            clip_ids = [clip.id for track in tracks for clip in track.clips]
             self.previews.invalidate_clips(clip_ids)
         if self.memory is not None:
             for asset in assets:
@@ -203,7 +232,9 @@ __all__ = [
     "KINDS",
     "KIND_MEMORY",
     "KIND_PREVIEW",
+    "KIND_MOGRAPH",
     "KIND_PROXY",
+    "KIND_TRACKING",
     "CacheManager",
     "CacheUsage",
 ]

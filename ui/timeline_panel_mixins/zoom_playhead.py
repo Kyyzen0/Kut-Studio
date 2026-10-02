@@ -86,7 +86,12 @@ class ZoomPlayheadMixin:
             return
         # Seules les deux bandes de la tête sont invalidées, dans la
         # grille qui défile avec les clips. La règle, elle, est une
-        # fine bande indépendante.
+        # fine bande indépendante. La grille peint la tête à
+        # ``playhead_x`` : sans cette mise à jour, un saut (changement de
+        # séquence) laissait une ligne à l'ancienne position.
+        if hasattr(self, "timeline_grid"):
+            scale = self.pixels_per_second * self.zoom
+            self.timeline_grid.playhead_x = self.left_margin + self.playhead_seconds * scale
         self._invalidate_playhead_at(previous)
         self._invalidate_playhead_at(self.playhead_seconds)
         self._sync_ruler()

@@ -181,11 +181,15 @@ du cache (comparaison d'identités) et reste sous 0,1 ms par image.
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la
   poignée reste au tiers du segment). C'est ce qui garde des segments
   polynomiaux exacts dans FFmpeg.
-- Seules les propriétés de transformation sont branchées ; effets, compositing,
-  texte, audio et masques ont l'architecture mais pas encore leurs cibles (les
-  masques gardent leur propre format d'images-clés linéaires).
+- Propriétés branchées : transform complet (y compris ancrage, échelle X/Y,
+  inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
+  masques (`mask.<id>.*`, une famille par masque) — voir
+  `docs/motion-graphics.md`. Effets et audio ont l'architecture mais pas encore
+  leurs cibles ; les couleurs ne sont pas animables.
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.
-- Pas encore : tracking, flou de mouvement, parentage, séquences imbriquées,
-  expressions.
+- Pas encore : tracking, expressions. Parentage, groupes et flou de mouvement
+  sont en place (`docs/motion-graphics.md`) ; les séquences imbriquées aussi
+  (`docs/nested-sequences.md`) : un clip imbriqué s'anime comme un autre clip,
+  indépendamment des animations internes.

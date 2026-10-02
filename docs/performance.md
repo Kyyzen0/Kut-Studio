@@ -132,6 +132,7 @@ l'export (`ProxyProfile.hardware` est déjà accepté et retombe sur le CPU).
 | mémoire (`MemoryCache`) | sondes, miniatures, ondes | `core/cache_keys.py` : chemin + **signature** du fichier (date + taille) | LRU, budget d'octets (profil) |
 | disque « preview » | segments d'aperçu fidèles | clip + plage alignée + qualité + empreinte **du segment** | LRU (index), budget propre + budget global |
 | disque « proxies » | proxies médias | chemin + empreinte du profil, marqueur de signature | LRU (dernier usage), budget global ; proxies du projet ouvert **épinglés** |
+| disque « tracking » | résultats d'analyse de tracking (`core/tracking_engine.py`) | média + signature + plage + position de départ + zones / réglages + version de l'algorithme | LRU (dernier usage), budget global ; jamais indispensable (les données vivent dans le `.kut`, voir `docs/tracking.md`) |
 
 Doublons supprimés : les clés de miniatures et d'ondes existaient en double
 (`media_cache` sans signature, `media_previews` avec) ; elles viennent maintenant
