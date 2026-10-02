@@ -90,8 +90,15 @@ LOGGER = logging.getLogger("kut_studio.encoding")
 _ffmpeg_path = find_media_tool("ffmpeg")
 
 
-OUTPUT_COLOR_STAGE = "scale=out_color_matrix=bt709:out_range=tv"
-"""Dernière étape du graphe vidéo : la conversion RVB → YUV se fait en BT.709, plage limitée."""
+OUTPUT_COLOR_STAGE = (
+    "scale=out_color_matrix=bt709:out_range=tv,"
+    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
+)
+"""Dernière étape du graphe vidéo : conversion RVB → YUV en BT.709, plage limitée, puis propriétés des images.
+
+``setparams`` pose primaires et transfert sur les images elles-mêmes : selon la version de FFmpeg, les
+options de ligne de commande (:data:`OUTPUT_COLOR_TAGS`) ne suffisent pas (le flux sortait balisé
+« bt709 » pour la matrice seulement, primaires et transfert « unknown », sous macOS)."""
 
 OUTPUT_COLOR_TAGS = (
     "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",

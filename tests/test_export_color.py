@@ -94,3 +94,23 @@ def test_a_preview_segment_has_the_same_colours_and_tags_as_the_export(source, t
     assert completed.returncode == 0, completed.stderr[-500:]
     assert _tags(output) == ("bt709", "bt709", "bt709")
     assert _close(_decoded_as_bt709(output), _decoded_as_bt709(source))
+
+
+def test_the_graph_alone_tags_the_stream_whatever_the_command_line_options_do(source, tmp_path):
+    """Régression macOS : seule la matrice sortait balisée « bt709 » (primaires et transfert « unknown »).
+
+    Les options ``-color_primaries`` / ``-color_trc`` de la ligne de commande ne sont pas appliquées de la même
+    façon d'une version de FFmpeg à l'autre. Les propriétés posées sur les images par le graphe, elles, le sont :
+    sans aucune option de ligne de commande, le flux doit déjà être balisé BT.709.
+    """
+    from core.export_engine import OUTPUT_COLOR_TAGS
+
+    request = ExportRequest(render_plan=_plan(source), output_path=str(tmp_path / "graph_only.mp4"),
+                            format=ExportFormat.MP4_H264, preset=ExportPreset("T", (W, H), 18, "128k"), fps=FPS)
+    command = ExportEngine()._build_command(request)
+    tags = list(OUTPUT_COLOR_TAGS)
+    start = next(i for i in range(len(command)) if command[i:i + len(tags)] == tags)
+    stripped = command[:start] + command[start + len(tags):]
+    completed = subprocess.run(stripped, capture_output=True, text=True, timeout=180)
+    assert completed.returncode == 0, completed.stderr[-500:]
+    assert _tags(tmp_path / "graph_only.mp4") == ("bt709", "bt709", "bt709")

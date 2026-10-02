@@ -100,8 +100,12 @@ def test_an_apostrophe_in_a_filter_path_closes_and_reopens_the_quoted_value() ->
 @pytest.mark.parametrize("kind", ["subtitles", "lut3d"])
 def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(tmp_path, folder, kind) -> None:
     """Régression : un dossier avec apostrophe (profil Windows « O'Brien ») cassait sous-titres et LUT."""
-    from core.export_engine import _escape_filter_path
+    from core.export_engine import _escape_filter_path, _ffmpeg_supports_subtitles
 
+    if kind == "subtitles" and not _ffmpeg_supports_subtitles():
+        # Environnement, pas régression : l'application le détecte aussi et refuse avec un message clair
+        # (build FFmpeg sans libass, ex. celle du runner macOS de la CI).
+        pytest.skip("Cette build FFmpeg n'a pas le filtre « subtitles » (libass absent).")
     directory = tmp_path / folder
     directory.mkdir()
     if kind == "subtitles":
