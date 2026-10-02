@@ -385,3 +385,60 @@ def test_a_cancelled_segment_is_not_a_decoder_failure(tmp_path, monkeypatch):
     monkeypatch.setattr("core.preview_engine._run_cancellable", fake_run)
     assert PreviewEngine(cache=None)._default_render(PreviewJob(key="k", plan=plan), token) is None
     assert len(calls) == 1 and default_context().health.fallbacks == 0
+
+
+def _failing_run(commands, hardware_error, cpu_result):
+    def run(command):
+        commands.append(command)
+        return (1, hardware_error) if "-hwaccel" in command else cpu_result
+    return run
+
+
+def _hardware_still_chosen(context, media) -> bool:
+    return context.choice_for(str(media), DecodePurpose.SEGMENT).is_hardware
+
+
+def test_an_unrelated_failure_does_not_ban_a_healthy_hardware_decoder(tmp_path):
+    """Avant : tout code de retour non nul bannissait le décodeur pour la session ; un filtre invalide ou un
+    second média hors ligne suffisait, alors que la même commande échoue aussi en CPU."""
+    from core.decode_policy import FAILURES_BEFORE_BLOCK
+
+    media = tmp_path / "a.mp4"
+    media.write_bytes(b"x")
+    context = _Context()
+    for _ in range(FAILURES_BEFORE_BLOCK + 2):
+        code, _stderr, retried = run_with_decode_fallback(
+            lambda args_for: ["ffmpeg", *args_for(str(media)), "out"],
+            _failing_run([], "Error initializing filters: No such filter", (1, "Error initializing filters")),
+            paths=[str(media)], purpose=DecodePurpose.SEGMENT, context=context)
+        assert code == 1 and retried                           # le CPU a bien été essayé, et a échoué aussi
+    assert _hardware_still_chosen(context, media), "un échec sans rapport ne doit pas bannir le matériel"
+    assert context.health.fallbacks == 0 and context.health.blocked_pairs() == ()
+
+
+def test_a_failure_that_the_cpu_retry_fixes_does_ban_the_hardware_decoder(tmp_path):
+    from core.decode_policy import FAILURES_BEFORE_BLOCK
+
+    media = tmp_path / "a.mp4"
+    media.write_bytes(b"x")
+    context = _Context()
+    for _ in range(FAILURES_BEFORE_BLOCK):
+        run_with_decode_fallback(
+            lambda args_for: ["ffmpeg", *args_for(str(media)), "out"],
+            _failing_run([], "Conversion failed", (0, "")),    # le CPU réussit : le matériel est fautif
+            paths=[str(media)], purpose=DecodePurpose.SEGMENT, context=context)
+    assert not _hardware_still_chosen(context, media)
+
+
+def test_an_error_that_names_hardware_decoding_bans_it_even_if_the_cpu_also_fails(tmp_path):
+    from core.decode_policy import FAILURES_BEFORE_BLOCK
+
+    media = tmp_path / "a.mp4"
+    media.write_bytes(b"x")
+    context = _Context()
+    for _ in range(FAILURES_BEFORE_BLOCK):
+        run_with_decode_fallback(
+            lambda args_for: ["ffmpeg", *args_for(str(media)), "out"],
+            _failing_run([], "Failed setup for format videotoolbox_vld", (1, "disk full")),
+            paths=[str(media)], purpose=DecodePurpose.SEGMENT, context=context)
+    assert not _hardware_still_chosen(context, media)

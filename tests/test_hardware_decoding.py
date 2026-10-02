@@ -108,6 +108,9 @@ def test_parse_hwaccel_list_ignores_the_header():
     ("h264", "yuv444p", None),          # 4:4:4 : FFmpeg retomberait en logiciel sans le dire
     ("h264", "yuv420p10le", None),      # H.264 10 bits : rarement décodé par le matériel
     ("hevc", "yuv420p", "hevc"),
+    ("hevc", "yuv420p12le", None),      # 12 bits : hors de ce que le matériel est validé pour lire
+    ("h264", "gray", None),
+    ("hevc", "", "hevc"),               # sonde sans pix_fmt : profil 8 bits 4:2:0 par défaut (choix documenté)
     ("hevc", "yuv420p10le", "hevc10"),
     ("hevc", "yuv422p10le", None),
     ("prores", "yuv422p10le", "prores"),
