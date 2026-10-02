@@ -116,9 +116,29 @@ Mesures faites pendant la phase (la machine de mesure n'est pas celle de la CI :
 | Liaisons de ressources GPU (SRB) après 300 images à masque animé | 303 → bornées à 128 (LRU) |
 | Entrées d'historique pour un glissement de fader de 10 crans | 10 → 1 |
 
-Les benchmarks du dépôt (`tools/perf/`, résultats dans `docs/perf/`) se rejouent avec
-`QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out docs/perf/after.json` puis
-`python -m tools.perf.bench --compare docs/perf/baseline.json docs/perf/after.json`.
+### Benchmarks du dépôt : `main` contre la branche, sur la même machine
+
+Les benchmarks du dépôt (`tools/perf/`) ont été rejoués **deux fois sur la même machine**, sans autre charge : `main`
+(`docs/perf/main-before-stabilization.json`) puis la branche (`docs/perf/stabilization.json`). 223 mesures comparées
+(projets synthétiques de 100, 1 000 et 10 000 clips : chargement, enregistrement, plan de rendu, empreinte, index,
+timeline, fenêtre).
+
+* **Moyenne géométrique des durées d'au moins 1 ms : 1,01 × `main`** (1,00 = identique). Aucune régression d'ensemble :
+  chargement d'un projet de 10 000 clips 916 → 888 ms, enregistrement 1 106 → 1 106 ms, plan de rendu 216 → 182 ms.
+* **Coût mesuré, voulu : l'empreinte des segments** (`fingerprint_ms`) est de 29 % à 69 % plus lente
+  (10 000 clips : 132 → 171 ms ; 176 → 298 ms pour des clips courts sur une piste), parce qu'elle couvre maintenant
+  le mixage, les styles de sous-titres et le fader maître. Elle est calculée sur la fenêtre d'un segment, pas sur tout
+  le plan : le coût réel par segment est sans commune mesure.
+* Les autres écarts de plus de 25 % portent sur des durées de 1 à 2 ms. Plan de rendu et chargement d'un projet de
+  100 clips : du bruit à cette échelle (ils ne se retrouvent pas sur les gros projets). `layout_refresh_ms`
+  (1,3 → 2,3 ms) se retrouve sur deux scénarios : cause probable, le nom accessible posé avec chaque infobulle
+  (non investigué plus avant ; sans effet perceptible).
+* **Ne comparez pas avec `docs/perf/after.json`** : il a été mesuré sur une autre machine, plus rapide ; sur celle-ci
+  même les fonctions que cette phase n'a pas touchées (`active_at`, `index_build`) y paraissent deux fois plus lentes.
+
+Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-mesure.json`, puis
+`python -m tools.perf.bench --compare docs/perf/main-before-stabilization.json ma-mesure.json` (sur la machine qui a
+produit les deux).
 
 ## Multi-plateforme et CI
 
