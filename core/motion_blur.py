@@ -75,6 +75,26 @@ class MotionBlurSettings:
         return tuple((i / (count - 1) - 0.5) * span for i in range(count))
 
 
+def preview_quality(divisor: int, *, playing: bool) -> str:
+    """Qualité du flou pour le moniteur temps réel, d'après le niveau d'aperçu.
+
+    Le flou multiplie le rendu des calques par son nombre d'échantillons : il ne
+    doit jamais rendre l'aperçu inutilisable. Pendant la lecture il est coupé
+    (brouillon) ; à l'arrêt il suit le niveau d'aperçu — Plein : réglage complet,
+    1/2 : réduit (4 échantillons au plus), 1/4 et moins : coupé. Le diviseur
+    monte tout seul sous charge (qualité Auto), le flou suit donc. Les segments
+    fidèles suivent leur propre qualité de rendu ; l'export, toujours complet.
+    """
+    if playing:
+        return QUALITY_DRAFT
+    step = max(1, int(divisor))
+    if step <= 1:
+        return QUALITY_HIGH
+    if step == 2:
+        return QUALITY_STANDARD
+    return QUALITY_DRAFT
+
+
 def settings_to_dict(value: MotionBlurSettings | None) -> dict:
     value = value or MotionBlurSettings()
     return {"enabled": value.enabled, "shutter_angle": value.shutter_angle, "samples": value.samples}
@@ -91,7 +111,7 @@ def settings_from_dict(raw: object) -> MotionBlurSettings:
 
 
 __all__ = [
-    "DEFAULT_SAMPLES", "DEFAULT_SHUTTER_ANGLE", "MAX_SAMPLES", "MotionBlurSettings",
+    "DEFAULT_SAMPLES", "DEFAULT_SHUTTER_ANGLE", "MAX_SAMPLES", "MotionBlurSettings", "preview_quality",
     "QUALITY_DRAFT", "QUALITY_EXPORT", "QUALITY_HIGH", "QUALITY_STANDARD",
     "settings_from_dict", "settings_to_dict",
 ]

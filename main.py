@@ -20,6 +20,13 @@ def main():
         if problem:
             print(f"Smoke test : tracking indisponible — {problem}", file=sys.stderr)
             return 1
+        # Aperçu GPU : les shaders compilés doivent être embarqués et lisibles.
+        from ui.gpu_preview import gpu_self_check
+
+        problem = gpu_self_check()
+        if problem:
+            print(f"Smoke test : aperçu GPU indisponible — {problem}", file=sys.stderr)
+            return 1
         return 0
     return app.exec()
 

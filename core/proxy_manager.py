@@ -558,14 +558,18 @@ class ProxyManager:
             signature = self._memo.get(source)
             if signature is None:
                 raise FileNotFoundError("Média original introuvable.")
-            command = [
-                *self._ffmpeg_command(),
-                "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
-                "-progress", "pipe:1", "-nostats",
-                "-i", source,
-                *profile.ffmpeg_output_args(),
-                str(partial),
-            ]
+            def build(args_for) -> list[str]:
+                return [
+                    *self._ffmpeg_command(),
+                    "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-progress", "pipe:1", "-nostats",
+                    # Décodage matériel de la source (4K, HEVC 10 bits…) si validé et
+                    # utile ; relancé en CPU s'il échoue (voir core.decode_policy).
+                    *args_for(source),
+                    "-i", source,
+                    *profile.ffmpeg_output_args(),
+                    str(partial),
+                ]
 
             def on_progress(seconds: float) -> None:
                 if job.duration > 0:
@@ -577,7 +581,19 @@ class ProxyManager:
             def on_start(pid: int) -> None:
                 job.pid = pid
 
-            result = self._runner(command, job.cancel, on_progress, on_start)
+            runs: list[RunResult] = []
+
+            def run(command: list[str]) -> tuple[int, str]:
+                result = self._runner(command, job.cancel, on_progress, on_start)
+                runs.append(result)
+                if result.cancelled or job.cancel.is_set():
+                    return 0, ""  # une annulation n'est pas un échec du décodeur
+                return result.returncode, result.stderr
+
+            from .decode_policy import DecodePurpose, run_with_decode_fallback
+
+            run_with_decode_fallback(build, run, paths=[source], purpose=DecodePurpose.PROXY)
+            result = runs[-1]
             if result.cancelled or job.cancel.is_set():
                 self._remove(partial)
                 return

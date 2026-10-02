@@ -313,6 +313,9 @@ class ProjectFilesMixin:
         cancel_tracking = getattr(self, "_cancel_tracking_jobs", None)
         if cancel_tracking is not None:
             cancel_tracking()
+        release_gpu = getattr(self, "_release_gpu_for_project_change", None)
+        if release_gpu is not None:
+            release_gpu()
         runtime = getattr(self, "runtime", None)
         if runtime is not None:
             runtime.begin_project()

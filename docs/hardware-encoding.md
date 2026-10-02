@@ -6,9 +6,9 @@ la détection interroge FFmpeg et valide chaque encodeur par un mini-encodage.
 **Aucune accélération n'est obligatoire** : le chemin CPU (`libx264`,
 `prores_ks`) reste de première classe et fonctionne partout, sans détection.
 
-Périmètre : **encodage de l'export uniquement**. Pas de décodage matériel, pas
-d'accélération de l'aperçu, pas de rendu GPU des effets, pas d'encodage matériel
-des proxies (ils restent en CPU).
+Périmètre : **encodage de l'export**. La même détection décrit aussi les
+**décodeurs** (aperçu, proxies, tracking) et le moniteur peut rendre sur le GPU :
+voir [gpu-preview.md](gpu-preview.md). Les proxies restent encodés en CPU.
 
 ## Backends pris en charge
 

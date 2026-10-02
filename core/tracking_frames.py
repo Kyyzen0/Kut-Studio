@@ -120,11 +120,19 @@ class FrameReader:
         self.chunk_frames = max(4, int(chunk_bytes // max(1, geometry.frame_bytes)))
         self._process: subprocess.Popen | None = None
         self.stderr = ""
+        # Décodage de la source (matériel si validé et utile, voir core.decode_policy).
+        # Un échec matériel est relancé une fois en CPU ; les positions ne changent pas
+        # (H.264 / HEVC sont décodés au bit près par le matériel comme par le logiciel).
+        from .decode_policy import DecodePurpose, default_context
+
+        self._decode_context = default_context()
+        self.decode_choice = self._decode_context.choice_for(path, DecodePurpose.ANALYSIS)
 
     def command(self, start_index: int, count: int) -> list[str]:
         g = self.geometry
         return [
             _ffmpeg(), "-nostdin", "-hide_banner", "-v", "error",
+            *self.decode_choice.input_args,
             "-ss", _seconds(start_index / self.rate), "-i", self.path,
             "-map", "0:v:0", "-an", "-sn", "-dn",
             "-vf", f"fps={self.rate:.6f},scale={g.width}:{g.height}:flags=area,format=gray",
@@ -167,6 +175,15 @@ class FrameReader:
             drain.join(timeout=2.0)
             self.stderr = b"".join(e for e in errors if e).decode("utf-8", "replace")[-2000:]
             self._process = None
+        if produced == 0 and not self.cancelled() and self.decode_choice.is_hardware:
+            from .decode_policy import DecodePurpose, choose_decoder
+
+            self._decode_context.health.record_failure(
+                self.decode_choice, DecodePurpose.ANALYSIS, self.stderr or "aucune image"
+            )
+            self.decode_choice = choose_decoder("cpu", capabilities=None, stream=None)
+            yield from self._run(start_index, count)
+            return
         if produced == 0 and not self.cancelled() and self.stderr.strip():
             raise FrameReadError(self.stderr.strip().splitlines()[-1])
 

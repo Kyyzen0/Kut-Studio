@@ -95,6 +95,8 @@ from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
+from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
+from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
 # remplacent sur ce module (``ui.main_window.QMessageBox``, etc.).
@@ -123,6 +125,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    HardwarePreviewMixin,
     TrackingMixin,
     MotionGraphicsMixin,
     SequencesMixin,
@@ -179,6 +182,8 @@ class MainWindow(
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)
+        # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
+        self._init_hardware_preview(loaded_settings)
         self._init_animation()
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
@@ -353,6 +358,7 @@ class MainWindow(
         self._record_tracks: list[str] = []
         self._apply_runtime_hints()
         self._init_faithful_preview()
+        self._start_hardware_preview()
         self._init_cache_manager(loaded_settings)
         self.export_panel = ExportPanel()
         self.properties_panel.timeline_panel = self.timeline_panel
@@ -804,6 +810,8 @@ class MainWindow(
             return
         self.render_queue.shutdown()
         self._shutdown_encoding()
+        self._shutdown_hardware_preview()
+        self._stop_preview_pump()
         # Aucune génération de proxy ne survit à la fenêtre : FFmpeg est tué.
         if getattr(self, "proxies", None) is not None:
             self._shutdown_proxies()
@@ -1613,13 +1621,16 @@ class MainWindow(
             clip_name = getattr(clip_obj, "label", "") if clip_obj is not None else ""
             self.preview_panel.show_missing_media(clip_name)
             return active_clips
-        # Aperçu : proxy valide si disponible, sinon média original (retour
-        # silencieux si le proxy est absent, supprimé ou obsolète).
+        # Aperçu : proxy prêt ou original, le moins coûteux à décoder qui reste
+        # assez net (voir ``preview_source_for`` ; repli silencieux sur
+        # l'original si le proxy est absent, supprimé ou obsolète).
         self.preview_panel.preview_at(
-            self.proxies.resolve(
-                top_clip.source_path, divisor=self.runtime.preview_divisor()
+            self.preview_source_for(
+                top_clip.source_path, divisor=self.runtime.preview_divisor(),
+                purpose=DecodePurpose.REALTIME,
             ),
             top_clip.source_time,
+            playing=bool(self.is_playing),
         )
         # Tâche 13 : applique le transform animé du clip supérieur si
         # la timeline contient au moins un clip vidéo. On évalue le
@@ -1664,6 +1675,8 @@ class MainWindow(
                 flip_v=evaluated.flip_v,
             )
             self.preview_panel.set_effects(clip_obj.effects)
+            if self.preview_panel.gpu_active:
+                self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.

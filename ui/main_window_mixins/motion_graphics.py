@@ -241,6 +241,7 @@ class MotionGraphicsMixin:
         panel.set_graphics_present(drawable)
         if plan is not None and not composited and plan.graphics_layers:
             from core.mograph_raster import MographRenderer, scene_for_plan
+            from core.motion_blur import preview_quality
 
             rect = panel.canvas_rect()
             playing = bool(getattr(self, "is_playing", False))
@@ -251,10 +252,13 @@ class MotionGraphicsMixin:
                 scene = scene_for_plan(plan)
                 renderer = MographRenderer(
                     scene, width, height, fps=float(self.project.fps),
-                    quality="draft" if playing else "standard",
+                    # Flou de mouvement adapté au niveau d'aperçu (jamais en lecture).
+                    quality=preview_quality(self.runtime.preview_divisor(), playing=playing),
                     motion_blur=getattr(plan, "motion_blur", None),
                 )
                 panel.set_mograph_image(renderer.render(scene.top_level(), t))
+                if panel.gpu_active:
+                    self._sync_gpu_adjustments(plan, scene, t)
             except Exception as exc:  # un calque fautif ne bloque jamais le viewer
                 print(f"[MainWindow] aperçu des calques indisponible : {exc}")
                 panel.set_mograph_image(None)
@@ -263,6 +267,29 @@ class MotionGraphicsMixin:
             panel.set_mograph_image(None)
             panel.set_mograph_visible(False)
         self._refresh_viewer_overlay(t)
+
+    def _sync_gpu_adjustments(self, plan, scene, t: float) -> None:
+        """Calques d'effets actifs → moniteur GPU (effets sur la vidéo, couverture exacte)."""
+        from core.graphics import GraphicType
+        from core.mograph_raster import MographRenderer
+
+        panel = self.preview_panel
+        layers = [
+            layer for layer in plan.graphics_layers
+            if getattr(getattr(layer, "graphic", None), "type", None) == GraphicType.ADJUSTMENT
+            and layer.timeline_start <= t < layer.timeline_end and getattr(layer, "effects", ())
+        ]
+        if not layers:
+            panel.set_adjustments(())
+            return
+        width, height = panel.gpu_render_size()
+        renderer = MographRenderer(scene, width, height, fps=float(self.project.fps), quality="draft")
+        adjustments = []
+        for layer in layers:
+            coverage = renderer.render_coverage(layer.clip_id, t)
+            key = f"adjust:{layer.clip_id}:{width}x{height}:{renderer.coverage_key(layer.clip_id, t)!r}"
+            adjustments.append((key, tuple(layer.effects), coverage, 1.0))
+        panel.set_adjustments(adjustments)
 
     def _refresh_viewer_overlay(self, t: float) -> None:
         from core.graphics import CONTAINER_TYPES, GraphicOverlay

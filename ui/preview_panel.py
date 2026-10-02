@@ -3,6 +3,11 @@
 Le viewer combine :
 
 - une zone d'aperçu ``QGraphicsView`` qui rend la vidéo en cours ;
+- en rendu GPU, une surface ``QRhiWidget`` **sous** cette vue (rendue
+  transparente) : décodage → transform → effets → composition → affichage sur
+  le GPU, les poignées et calques restant dessinés par Qt au-dessus
+  (voir ``ui/gpu_preview.py``) ; le rendu CPU (``QGraphicsVideoItem``) reste
+  complet et sert de repli ;
 - un overlay de sous-titres ;
 - un overlay d'indication de transition ;
 - une barre d'outils de transport (lecture / coupe) ;
@@ -14,8 +19,8 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSizeF, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QPixmap, QTransform
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -53,9 +58,22 @@ class _ViewportWatcher(QObject):
         return False
 
 
+PLAYBACK_DRIFT_SECONDS = 0.20
+"""Écart toléré entre le lecteur et la timeline pendant la lecture.
+
+Repositionner le lecteur à chaque tick (40 ms) relance le décodage depuis
+l'image clé précédente : mesuré sur un H.264 à GOP long, **aucune** image
+n'était affichée pendant la lecture. Le lecteur suit donc sa propre horloge et
+n'est recalé que s'il dérive de plus de 200 ms (ou au changement de source)."""
+
+
 class PreviewPanel(QWidget):
     canvas_changed = Signal()
     """Le cadre affiché a changé de taille (re-rendre l'aperçu des calques)."""
+    gpu_failed = Signal(str, str)
+    """Le moniteur GPU a échoué (``type, détail``) ; le panneau est déjà revenu au CPU."""
+    gpu_ready = Signal(str)
+    """Première image GPU réussie (API et périphérique)."""
 
     def __init__(
         self,
@@ -128,6 +146,15 @@ class PreviewPanel(QWidget):
         # le futur chemin de proxies devra respecter. On ne réduit pas
         # l'image à la main, ce qui fausserait le cadrage.
         self.preview_divisor: int = 1
+        # Moniteur GPU (désactivé par défaut : voir ``enable_gpu``).
+        self.gpu_view = None
+        self._video_sink: QVideoSink | None = None
+        self._gpu_effects: tuple = ()
+        self._gpu_blend = None
+        self._gpu_matte: tuple[str, object] | None = None
+        self._gpu_source_size: tuple[int, int] | None = None
+        self._gpu_adjustments: tuple = ()
+        self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
         self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
@@ -345,17 +372,28 @@ class PreviewPanel(QWidget):
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
-    def preview_at(self, path, source_time_seconds):
-        """Affiche ``path`` à la position ``source_time_seconds``."""
+    def preview_at(self, path, source_time_seconds, *, playing: bool = False):
+        """Affiche ``path`` à la position ``source_time_seconds``.
+
+        Pendant la lecture (``playing``), le lecteur garde son horloge : il n'est
+        recalé que s'il dérive de plus de :data:`PLAYBACK_DRIFT_SECONDS` ou si la
+        source change (voir la constante : un recalage par tick figeait l'image).
+        """
         self._library_preview_path = None
         if not path:
             self.show_empty()
             return
         self.empty_state.hide()
+        target_ms = int(source_time_seconds * 1000)
         if self._timeline_preview_path != path:
             self._timeline_preview_path = path
             self.player.setSource(QUrl.fromLocalFile(path))
-        self.player.setPosition(int(source_time_seconds * 1000))
+        elif playing and self.player.playbackState() == QMediaPlayer.PlayingState:
+            if abs(self.player.position() - target_ms) <= PLAYBACK_DRIFT_SECONDS * 1000:
+                return
+        if playing:
+            self.playback_seeks += 1
+        self.player.setPosition(target_ms)
 
     def set_preview_divisor(self, divisor: int) -> None:
         """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""
@@ -439,6 +477,13 @@ class PreviewPanel(QWidget):
         retour fidèle sur l'état qui sera appliqué au rendu final.
         """
         active = [effect for effect in effects or () if effect.enabled]
+        self._gpu_effects = tuple(active)
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+            # Le GPU montre ces effets en direct : la pastille ne signale que le reste.
+            from core.gpu_effects import program_for
+
+            active = [e for e in active if e.type.value in program_for(active).unsupported]
         if not active:
             self.preview_effects_overlay.hide()
             return
@@ -493,6 +538,9 @@ class PreviewPanel(QWidget):
             self.player.setSource(QUrl())
         except Exception:  # pragma: no cover
             pass
+        if self.gpu_view is not None:
+            self.gpu_view.forget_source("main")
+            self.gpu_view.release_gpu_cache()
 
     def show_empty(self):
         """Affiche l'état vide : aucun clip vidéo actif."""
@@ -504,6 +552,8 @@ class PreviewPanel(QWidget):
             pass
         self.empty_state.show()
         self.preview_effects_overlay.hide()
+        if self.gpu_view is not None:
+            self.gpu_view.forget_source("main")
 
     def show_missing_media(self, clip_name: str = "") -> None:
         """Distingue un média absent d'un trou réel dans la timeline."""
@@ -560,6 +610,10 @@ class PreviewPanel(QWidget):
         self.tracking_overlay.set_canvas(rect, (cw, ch))
         self.canvas_item.setRect(rect)
         self.mograph_item.setPos(rect.topLeft())
+        if self.gpu_view is not None:
+            self.gpu_view.set_canvas_rect(
+                (rect.x(), rect.y(), rect.width(), rect.height()), _rgb(COLORS["background"])
+            )
         self._reapply_transform()
         if changed:
             self.canvas_changed.emit()
@@ -648,6 +702,193 @@ class PreviewPanel(QWidget):
             "scale_x": float(scale_x), "scale_y": float(scale_y),
             "flip_h": bool(flip_h), "flip_v": bool(flip_v),
         }
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
+    # ------------------------------------------------------------------
+    # Moniteur GPU
+    # ------------------------------------------------------------------
+
+    @property
+    def gpu_active(self) -> bool:
+        return self.gpu_view is not None
+
+    def enable_gpu(self, api: str, *, cache_budget: int | None = None) -> bool:
+        """Bascule le moniteur sur le GPU (``QRhiWidget``) ; ``False`` si impossible ici.
+
+        Le GPU n'est confirmé qu'à la première image (:attr:`gpu_ready`) ; un
+        échec ultérieur émet :attr:`gpu_failed` **après** le retour au CPU.
+        """
+        if self.gpu_view is not None:
+            return True
+        try:
+            from ui.gpu_preview import GpuPreviewWidget
+
+            view = GpuPreviewWidget(api=api, cache_budget=cache_budget)
+        except Exception as error:  # module Qt absent, API inconnue…
+            self.gpu_failed.emit("init", str(error))
+            return False
+        self.gpu_view = view
+        container = self.graphics_view.parentWidget()
+        layout = container.layout() if container is not None else None
+        if layout is not None:
+            layout.addWidget(view, 0, 0)
+        view.lower()  # sous la vue des poignées et calques
+        view.failed.connect(self._on_gpu_failed)
+        view.ready.connect(self.gpu_ready.emit)
+        self._set_scene_transparent(True)
+        sink = QVideoSink(self)
+        sink.videoFrameChanged.connect(self._on_gpu_frame)
+        self._video_sink = sink
+        self.video_item.hide()
+        self.player.setVideoSink(sink)
+        rect = self._canvas_rect
+        view.set_canvas_rect((rect.x(), rect.y(), rect.width(), rect.height()), _rgb(COLORS["background"]))
+        self._update_gpu_composite()
+        self.set_effects(self._gpu_effects)
+        view.show()
+        return True
+
+    def disable_gpu(self) -> None:
+        """Retour au moniteur CPU (``QGraphicsVideoItem``), ressources GPU libérées."""
+        view = self.gpu_view
+        if view is None:
+            return
+        self.gpu_view = None
+        position = self.player.position()
+        self.player.setVideoOutput(self.video_item)
+        self.player.setPosition(position)  # redonne une image au moniteur CPU
+        self.video_item.show()
+        if self._video_sink is not None:
+            try:
+                self._video_sink.videoFrameChanged.disconnect(self._on_gpu_frame)
+            except (RuntimeError, TypeError):
+                pass
+            self._video_sink.deleteLater()
+            self._video_sink = None
+        self._set_scene_transparent(False)
+        try:
+            view.release_gpu()
+        except Exception:
+            pass
+        view.hide()
+        view.deleteLater()
+        self.set_effects(self._gpu_effects)
+
+    def set_layer_compositing(self, blend_mode=None, matte: tuple[str, object] | None = None) -> None:
+        """Mode de fusion et matte (clé, ``QImage``) du clip affiché (GPU seulement)."""
+        self._gpu_blend = blend_mode
+        self._gpu_matte = matte
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
+    def set_adjustments(self, adjustments) -> None:
+        """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité)]`` (GPU seulement)."""
+        self._gpu_adjustments = tuple(adjustments or ())
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
+    def gpu_render_size(self) -> tuple[int, int]:
+        """Taille de rendu du cadre (pixels physiques), pour rastériser la matte."""
+        cw, ch = self._canvas_size
+        scale = self._gpu_render_scale()
+        return (max(2, int(round(cw * scale))), max(2, int(round(ch * scale))))
+
+    def _gpu_render_scale(self) -> float:
+        cw, _ch = self._canvas_size
+        dpr = self.devicePixelRatioF() or 1.0
+        shown = max(2.0, self._canvas_rect.width() * dpr)
+        return max(0.05, min(1.0, shown / float(cw)) / max(1, int(self.preview_divisor)))
+
+    def _set_scene_transparent(self, transparent: bool) -> None:
+        if transparent:
+            self.graphics_view.setBackgroundBrush(Qt.NoBrush)
+            self.graphics_view.setStyleSheet("background: transparent; border: none;")
+            self.graphics_view.viewport().setAutoFillBackground(False)
+            self.canvas_item.setBrush(QBrush(Qt.NoBrush))
+        else:
+            self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
+            self.graphics_view.setStyleSheet(f"background: {COLORS['background']}; border: none;")
+            self.canvas_item.setBrush(QColor(0, 0, 0))
+
+    def _on_gpu_frame(self, frame) -> None:
+        view = self.gpu_view
+        if view is None or not frame.isValid():
+            return
+        size = (int(frame.width()), int(frame.height()))
+        if size != self._gpu_source_size:
+            self._gpu_source_size = size
+            self._update_gpu_composite()
+        view.set_video_frame("main", frame)
+
+    def _on_gpu_failed(self, kind: str, detail: str) -> None:
+        self.disable_gpu()
+        self.gpu_failed.emit(kind, detail)
+
+    def _update_gpu_composite(self) -> None:
+        view = self.gpu_view
+        if view is None:
+            return
+        from types import SimpleNamespace
+
+        from core.blend_modes import coerce_blend_mode
+        from core.gpu_composite import CompositeFrame, CompositeLayer
+        from core.gpu_effects import program_for
+        from core.tracking_motion import fit_box, video_layer_matrix
+
+        cw, ch = self._canvas_size
+        layers = ()
+        if self._gpu_source_size is not None and (self._timeline_preview_path or self._library_preview_path):
+            advanced = self._applied_advanced
+            values = SimpleNamespace(
+                position_x=self._applied_pos_x, position_y=self._applied_pos_y,
+                scale=self._applied_scale, rotation=self._applied_rotation, skew=0.0,
+                anchor_x=advanced.get("anchor_x", 0.5), anchor_y=advanced.get("anchor_y", 0.5),
+                scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
+                flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
+            )
+            box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch)
+            matte_key = ""
+            mattes = {}
+            if self._gpu_matte is not None:
+                matte_key, image = self._gpu_matte
+                mattes[matte_key] = image
+            from core.gpu_effects import VIGNETTE_EXPORT
+
+            try:
+                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT)
+            except ValueError:
+                program = program_for(())
+            layers = (CompositeLayer(
+                source="main",
+                matrix=tuple(video_layer_matrix(values, cw, ch)),
+                fit=box.rect,
+                opacity=self._applied_opacity,
+                blend=coerce_blend_mode(self._gpu_blend),
+                program=program,
+                effect_scale=(values.scale * values.scale_x, values.scale * values.scale_y),
+                matte=matte_key,
+            ),)
+            adjustments = self._gpu_adjustment_layers(mattes)
+            view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), layers,
+                                              adjustments=adjustments), mattes)
+            return
+        view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), ()), {})
+
+    def _gpu_adjustment_layers(self, mattes: dict) -> tuple:
+        from core.gpu_composite import AdjustmentLayer
+        from core.gpu_effects import program_for
+
+        layers = []
+        for key, effects, coverage, opacity in self._gpu_adjustments:
+            try:
+                program = program_for(effects)
+            except ValueError:
+                continue
+            if coverage is not None:
+                mattes[key] = coverage
+            layers.append(AdjustmentLayer(program, key if coverage is not None else "", float(opacity)))
+        return tuple(layers)
 
     def current_applied_transform(self) -> dict[str, float]:
         return {
@@ -657,6 +898,11 @@ class PreviewPanel(QWidget):
             "rotation": self._applied_rotation,
             "opacity": self._applied_opacity,
         }
+
+
+def _rgb(color: str) -> tuple[float, float, float]:
+    qcolor = QColor(color)
+    return (qcolor.redF(), qcolor.greenF(), qcolor.blueF())
 
 
 def _format_timecode(seconds: float) -> str:

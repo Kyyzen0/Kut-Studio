@@ -11,6 +11,11 @@ d'un ``runner`` injectable : les tests l'alimentent avec des sorties FFmpeg
 simulées. Le cache disque et le service global sont dans
 :mod:`core.hardware_cache` ; le choix de l'encodeur et la traduction de la
 qualité dans :mod:`core.video_encoders`.
+
+C'est **l'unique** détection matérielle de Kut-Studio : elle décrit aussi les
+décodeurs (:mod:`core.hardware_decoding`, ``HardwareCapabilities.decoders``),
+utilisés par l'aperçu, les proxies et l'analyse de tracking
+(:mod:`core.decode_policy`).
 """
 
 from __future__ import annotations
@@ -27,9 +32,21 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-LOGGER = logging.getLogger("kut_studio.encoding")
+from .hardware_decoding import (
+    CODEC_BY_ID,
+    DECODE_BACKENDS,
+    DECODE_LABELS,
+    DecodeMode,
+    DecoderCapability,
+    decode_auto_order,
+    detect_decoders,
+)
 
-SCHEMA_VERSION = 1
+LOGGER = logging.getLogger("kut_studio.encoding")
+DECODE_LOGGER = logging.getLogger("kut_studio.decode")
+
+SCHEMA_VERSION = 2
+"""v2 : décodeurs ajoutés. Un cache v1 est ignoré (redétection automatique)."""
 VALIDATION_TIMEOUT_SECONDS = 20.0
 LIST_TIMEOUT_SECONDS = 20.0
 
@@ -230,6 +247,9 @@ class HardwareCapabilities:
         scanned_at: horodatage Unix de la détection.
         fingerprint: identité de l'installation au moment de la détection.
         error: ``""`` ou ``"ffmpeg_missing"`` / ``"ffmpeg_failed"`` / ``"disabled"``.
+        hwaccels: méthodes listées par ``ffmpeg -hwaccels`` (brutes, pour le diagnostic).
+        decoders: couples *(backend, famille de codec)* de décodage, validés ou non.
+        decoding_disabled: ``KUT_STUDIO_HARDWARE_DECODING=off`` (tout est décodé en CPU).
     """
 
     ffmpeg_path: str = ""
@@ -242,6 +262,9 @@ class HardwareCapabilities:
     fingerprint: str = ""
     error: str = ""
     validated: bool = True
+    hwaccels: tuple[str, ...] = ()
+    decoders: tuple[DecoderCapability, ...] = ()
+    decoding_disabled: bool = False
 
     @property
     def ffmpeg_available(self) -> bool:
@@ -292,6 +315,53 @@ class HardwareCapabilities:
             return f"{label} est listé par FFmpeg mais ne s'initialise pas{extra}."
         return f"{label} n'est pas disponible pour {codec_label}."
 
+    # -- Décodage ------------------------------------------------------------------------------------------
+
+    def decoder(self, codec: str, backend: DecodeMode) -> DecoderCapability | None:
+        for item in self.decoders:
+            if item.codec == codec and item.backend is backend:
+                return item
+        return None
+
+    def is_decode_usable(self, codec: str, backend: DecodeMode) -> bool:
+        item = self.decoder(codec, backend)
+        return item is not None and item.usable
+
+    def usable_decode_backends(self, codec: str) -> tuple[DecodeMode, ...]:
+        """Backends **validés** pour la famille ``codec``, dans l'ordre de préférence d'Auto."""
+        found = {item.backend for item in self.decoders if item.codec == codec and item.usable}
+        ordered = [b for b in decode_auto_order(self.platform) if b in found]
+        ordered.extend(b for b in DECODE_BACKENDS if b in found and b not in ordered)
+        return tuple(ordered)
+
+    def decode_backends(self) -> tuple[DecodeMode, ...]:
+        """Backends validés pour au moins une famille (choix explicites proposés)."""
+        found = {item.backend for item in self.decoders if item.usable}
+        ordered = [b for b in decode_auto_order(self.platform) if b in found]
+        ordered.extend(b for b in DECODE_BACKENDS if b in found and b not in ordered)
+        return tuple(ordered)
+
+    def decode_codecs_for(self, backend: DecodeMode) -> tuple[str, ...]:
+        return tuple(item.codec for item in self.decoders if item.backend is backend and item.usable)
+
+    def decode_unavailable_reason(self, codec: str, backend: DecodeMode) -> str:
+        """Phrase courte : pourquoi ``backend`` ne décode pas ``codec`` ici."""
+        label = DECODE_LABELS.get(backend, backend.value)
+        codec_label = CODEC_BY_ID[codec].label if codec in CODEC_BY_ID else (codec or "ce codec")
+        if self.decoding_disabled or self.error == "disabled":
+            return "Le décodage matériel est désactivé."
+        if not self.ffmpeg_available:
+            return "FFmpeg est introuvable."
+        item = self.decoder(codec, backend)
+        if item is None:
+            return f"{label} n'est pas fourni par ce FFmpeg pour {codec_label}."
+        if item.validated is False:
+            extra = f" ({item.detail})" if item.detail else ""
+            return f"{label} ne décode pas {codec_label} sur cette machine{extra}."
+        if item.validated is None:
+            return f"{label} n'a pas pu être vérifié pour {codec_label}."
+        return f"{label} n'est pas disponible pour {codec_label}."
+
     # -- Sérialisation (cache disque) ------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
@@ -307,6 +377,9 @@ class HardwareCapabilities:
             "fingerprint": self.fingerprint,
             "error": self.error,
             "validated": self.validated,
+            "hwaccels": list(self.hwaccels),
+            "decoders": [item.to_dict() for item in self.decoders],
+            "decoding_disabled": self.decoding_disabled,
         }
 
     @classmethod
@@ -334,6 +407,13 @@ class HardwareCapabilities:
             fingerprint=str(data.get("fingerprint") or ""),
             error=str(data.get("error") or ""),
             validated=bool(data.get("validated", True)),
+            hwaccels=tuple(str(h) for h in data.get("hwaccels") or []),
+            decoders=tuple(
+                item
+                for item in (DecoderCapability.from_dict(raw) for raw in data.get("decoders") or [])
+                if item is not None
+            ),
+            decoding_disabled=bool(data.get("decoding_disabled", False)),
         )
 
     # -- Diagnostic ----------------------------------------------------------------------------------------
@@ -362,7 +442,33 @@ class HardwareCapabilities:
                 lines.append(f"  - {item.encoder} [{BACKEND_LABELS[item.backend]}] : {status}")
         for codec in ("h264", "hevc"):
             lines.append(f"Auto pour {CODEC_LABELS[codec]} : {self.auto_backend(codec).value}")
+        lines.extend(self.describe_decoders())
         return "\n".join(lines)
+
+    def describe_decoders(self) -> list[str]:
+        """Section « décodage » du diagnostic (backends, familles, validations)."""
+        if self.decoding_disabled:
+            return ["Décodage matériel : désactivé (KUT_STUDIO_HARDWARE_DECODING=off)"]
+        lines = [f"Hwaccels FFmpeg : {', '.join(self.hwaccels) if self.hwaccels else 'aucun'}"]
+        backends = sorted({item.backend for item in self.decoders}, key=DECODE_BACKENDS.index)
+        if not backends:
+            lines.append("Décodeurs matériels : aucun")
+            return lines
+        lines.append("Décodeurs matériels :")
+        for backend in backends:
+            parts = []
+            for item in self.decoders:
+                if item.backend is not backend:
+                    continue
+                name = CODEC_BY_ID[item.codec].label
+                if item.validated is True:
+                    parts.append(f"{name} OK")
+                elif item.validated is False:
+                    parts.append(f"{name} non")
+                else:
+                    parts.append(f"{name} ?")
+            lines.append(f"  - {DECODE_LABELS[backend]} : {', '.join(parts)}")
+        return lines
 
 
 NO_FFMPEG = HardwareCapabilities(error="ffmpeg_missing")
@@ -542,6 +648,7 @@ def detect_capabilities(
     fingerprint: str = "",
     now: float | None = None,
     max_workers: int = 4,
+    decode: bool = True,
 ) -> HardwareCapabilities:
     """Interroge FFmpeg et construit les capacités, sans jamais lever.
 
@@ -550,6 +657,7 @@ def detect_capabilities(
         runner: exécuteur de commandes (injectable pour les tests).
         validate: valider chaque encodeur matériel listé par un mini-encodage.
         fingerprint: identité de l'installation, stockée avec le résultat.
+        decode: détecter aussi les décodeurs (``False`` : décodage matériel désactivé).
     """
     import platform as platform_module
 
@@ -584,11 +692,20 @@ def detect_capabilities(
         name for (codec, backend), name in FFMPEG_ENCODER_NAMES.items()
         if backend is HardwareEncoder.CPU and name in names
     )
+    hwaccels: tuple[str, ...] = ()
+    decoders: tuple[DecoderCapability, ...] = ()
+    if decode:
+        hwaccels, decoders = detect_decoders(
+            command, runner, encoder_names=names, validate=validate, max_workers=max_workers,
+        )
     result = HardwareCapabilities(
         ffmpeg_path=path,
         ffmpeg_version=parse_version(version_output.stdout) if version_output.returncode == 0 else "",
         encoders=tuple(listed),
         software=software,
+        hwaccels=hwaccels,
+        decoders=decoders,
+        decoding_disabled=not decode,
         **base,
     )
     LOGGER.info(
@@ -599,6 +716,13 @@ def detect_capabilities(
     for item in result.encoders:
         if item.validated is False:
             LOGGER.info("Validation échouée : %s (%s)", item.encoder, item.detail)
+    if decode:
+        DECODE_LOGGER.info(
+            "Détection matérielle : décodeurs validés : %s",
+            ", ".join(
+                f"{item.backend.value}/{item.codec}" for item in result.decoders if item.usable
+            ) or "aucun",
+        )
     return result
 
 

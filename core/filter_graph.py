@@ -69,6 +69,11 @@ def build_preview_command(plan, **kwargs):
 
     ``temporary_files`` (liste) recoit le fichier du graphe quand il est trop
     long pour la ligne de commande : l'appelant le supprime apres le rendu.
+
+    ``input_args`` (``chemin -> options``) place des options **avant** chaque
+    ``-i`` : c'est par la que passe le decodage materiel (``-hwaccel``, voir
+    :mod:`core.decode_policy`). Les images decodees sont telechargees en
+    memoire systeme : le graphe, lui, ne change pas.
     """
     from .export_engine import _ffmpeg_command_prefix, filter_graph_arguments
     from .preview_render import preview_crf, preview_preset
@@ -85,7 +90,10 @@ def build_preview_command(plan, **kwargs):
     result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality)
     filter_complex, video_label, audio_label, input_paths = result
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
+    input_args = kwargs.get("input_args")
     for path in input_paths:
+        if callable(input_args):
+            command.extend(input_args(path))
         command.extend(["-i", path])
     temporary_files = kwargs.get("temporary_files")
     command.extend(filter_graph_arguments(filter_complex, temporary_files if temporary_files is not None else []))

@@ -571,16 +571,23 @@ class PreviewEngine:
         Les sous-titres du plan sont ecrits dans un fichier temporaire
         (meme format que l'export) quand l'appelant n'en fournit pas :
         sans cela, tout projet sous-titre echouerait ici.
+
+        Les medias sont decodes selon :mod:`core.decode_policy` (materiel si
+        valide et utile) ; un echec avec decodage materiel est relance une
+        fois en CPU (repli transparent, compte dans les diagnostics). FFmpeg
+        est tue des que le jeton est annule : un segment perime ne garde pas
+        le processeur.
         """
-        import subprocess
         import tempfile
 
+        from .decode_policy import DecodePurpose, run_with_decode_fallback
         from .filter_graph import build_preview_command
 
         subtitle_path = None
         owns_subtitle = False
         tmp_path = None
         graph_files: list[str] = []
+        media = _plan_media_paths(job.plan)
         try:
             if token is not None and getattr(token, "cancelled", False):
                 return None
@@ -591,20 +598,36 @@ class PreviewEngine:
                     self._temporary_subtitles.add(str(subtitle_path))
             fd, tmp_path = tempfile.mkstemp(prefix="kut-preview-", suffix=".mp4")
             os.close(fd)
-            command = build_preview_command(
-                job.plan,
-                width=job.width,
-                height=job.height,
-                fps=job.fps,
-                quality=job.quality,
-                start=job.start,
-                duration=job.duration,
-                output_path=tmp_path,
-                srt_path=subtitle_path,
-                temporary_files=graph_files,
-            )
-            completed = subprocess.run(
-                command, capture_output=True, timeout=120, check=False
+
+            def build(args_for):
+                for graph_file in graph_files:  # un graphe deja ecrit par l'essai precedent
+                    self._remove_file(graph_file)
+                graph_files.clear()
+                return build_preview_command(
+                    job.plan,
+                    width=job.width,
+                    height=job.height,
+                    fps=job.fps,
+                    quality=job.quality,
+                    start=job.start,
+                    duration=job.duration,
+                    output_path=tmp_path,
+                    srt_path=subtitle_path,
+                    temporary_files=graph_files,
+                    input_args=lambda path: args_for(path) if path in media else (),
+                )
+
+            def run(command):
+                code, errors = _run_cancellable(command, token, timeout=120.0)
+                if token is not None and getattr(token, "cancelled", False):
+                    return 0, ""  # une annulation n'est pas une panne du décodeur : pas de repli
+                return code, errors
+
+            returncode, stderr, _fell_back = run_with_decode_fallback(
+                build,
+                run,
+                paths=sorted(media),
+                purpose=DecodePurpose.SEGMENT,
             )
         except Exception as exc:
             self._remove_file(tmp_path)
@@ -622,9 +645,12 @@ class PreviewEngine:
                 with self._lock:
                     self._temporary_subtitles.discard(str(subtitle_path))
                 self._remove_file(subtitle_path)
-        if completed.returncode != 0:
+        if token is not None and getattr(token, "cancelled", False):
             self._remove_file(tmp_path)
-            detail = (completed.stderr or b"").decode("utf-8", "replace").strip()
+            return None
+        if returncode != 0:
+            self._remove_file(tmp_path)
+            detail = (stderr or "").strip()
             raise RuntimeError(
                 "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
             )
@@ -641,6 +667,57 @@ class PreviewEngine:
         from .filter_graph import write_subtitle_file
 
         return write_subtitle_file(plan)
+
+
+def _plan_media_paths(plan) -> set[str]:
+    """Fichiers video du plan (et de ses sequences imbriquees) : seuls eux sont decodes en materiel."""
+    paths: set[str] = set()
+    plans = [plan] + [entry.plan for entry in getattr(plan, "nested_sequences", ()) or ()]
+    for current in plans:
+        for layer in getattr(current, "video_layers", ()) or ():
+            path = getattr(layer, "source_path", "")
+            if path and not getattr(layer, "nested_key", ""):
+                paths.add(str(path))
+    return paths
+
+
+def _run_cancellable(command, token, *, timeout: float):
+    """Lance FFmpeg ; le tue si ``token`` est annule ou si le delai expire.
+
+    Retourne ``(code, stderr)``. Un rendu perime (tete de lecture partie,
+    clip modifie, fermeture) libere ainsi le processeur en quelques
+    dizaines de millisecondes au lieu de finir un segment inutile.
+    """
+    import subprocess
+    import sys
+    import threading
+    import time
+
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    process = subprocess.Popen(
+        list(command), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE, creationflags=flags,
+    )
+    chunks: list[bytes] = []
+    drain = threading.Thread(target=lambda: chunks.append(process.stderr.read()), daemon=True)
+    drain.start()
+    deadline = time.monotonic() + float(timeout)
+    killed = False
+    while process.poll() is None:
+        if (token is not None and getattr(token, "cancelled", False)) or time.monotonic() > deadline:
+            process.kill()
+            killed = True
+            break
+        try:
+            process.wait(timeout=0.05)
+        except subprocess.TimeoutExpired:
+            pass
+    process.wait()
+    drain.join(timeout=2.0)
+    stderr = b"".join(c for c in chunks if c).decode("utf-8", "replace")
+    if killed and not stderr:
+        stderr = "rendu interrompu"
+    return int(process.returncode or (1 if killed else 0)), stderr
 
 
 __all__ = ["PreviewEngine", "PreviewEngineState", "PreviewJob"]

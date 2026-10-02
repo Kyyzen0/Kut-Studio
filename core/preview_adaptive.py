@@ -132,7 +132,27 @@ class AdaptiveQuality:
         self._intervals.clear()
         return self._evaluate(ratio, float(now))
 
+    def note_load(self, overloaded: bool) -> None:
+        """Signal de charge **en plus** de la cadence des ticks.
+
+        Le moniteur GPU rend hors de la boucle de ticks : il peut perdre des
+        images (ou dépasser son budget de rendu) alors que les ticks restent à
+        l'heure. Une fenêtre où ce signal a été vu compte comme surchargée.
+        """
+        if overloaded:
+            self._external_overload = True
+
+    def force_degrade(self) -> int:
+        """Baisse immédiate d'un cran (pression mémoire critique) ; retourne le diviseur."""
+        if self.divisor < self.config.max_divisor:
+            self.divisor = _step(self.divisor, +1)
+            self.changes += 1
+        return self.divisor
+
     def _evaluate(self, ratio: float, now: float) -> int | None:
+        if getattr(self, "_external_overload", False):
+            ratio = max(ratio, self.config.degrade_ratio)
+            self._external_overload = False
         cfg = self.config
         if ratio >= cfg.degrade_ratio:
             self._overloaded += 1

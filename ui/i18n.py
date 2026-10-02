@@ -1834,6 +1834,11 @@ from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
 
 _TRANSLATIONS.update(_TRACKING)
 
+# Décodage matériel et aperçu GPU : idem.
+from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
+
+_TRANSLATIONS.update(_HARDWARE)
+
 
 def _format(template: str, values: dict) -> str:
     if not values:
