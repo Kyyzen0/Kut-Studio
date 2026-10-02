@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
+import shiboken6
 from PySide6.QtCore import QObject, Signal
 
 from core.hardware_cache import default_service
@@ -84,8 +85,12 @@ class EncodingMixin:
 
     def _refresh_encoding_settings_tab(self) -> None:
         dialog = getattr(self, "_preferences_dialog", None)
-        tab = getattr(dialog, "performance_tab", None) if dialog is not None else None
-        if tab is not None:
+        # La détection tourne dans un thread : son résultat peut arriver alors que la boîte
+        # (WA_DeleteOnClose) est déjà fermée, voire détruite côté C++.
+        if dialog is None or not shiboken6.isValid(dialog):
+            return
+        tab = getattr(dialog, "performance_tab", None)
+        if tab is not None and shiboken6.isValid(tab):
             tab.refresh_encoding()
 
     # ------------------------------------------------------------------

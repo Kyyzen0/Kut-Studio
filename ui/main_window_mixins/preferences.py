@@ -89,6 +89,9 @@ class PreferencesMixin:
         dialog.render_quality_changed.connect(self.on_render_quality_changed)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         self._preferences_dialog = dialog
+        # « finished » part à la fermeture, avant que WA_DeleteOnClose ne détruise l'objet C++ :
+        # attendre le retour d'exec() laisserait une fenêtre où la référence pointe sur un objet mort.
+        dialog.finished.connect(lambda _result=0: setattr(self, "_preferences_dialog", None))
         try:
             dialog.exec()
         finally:

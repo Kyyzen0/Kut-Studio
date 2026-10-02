@@ -7,6 +7,7 @@ Couvre macOS (VideoToolbox), Windows (CUDA, D3D11VA, QSV, DXVA2) et Linux
 from __future__ import annotations
 
 import json
+from pathlib import PureWindowsPath
 
 import pytest
 
@@ -69,7 +70,8 @@ class FakeDecodeFFmpeg:
         if "-hwaccel" in command:
             hwaccel = command[command.index("-hwaccel") + 1]
             sample = command[command.index("-i") + 1]
-            codec = sample.rsplit("/", 1)[-1].split(".")[0]
+            # PureWindowsPath comprend « \ » et « / » : le chemin est fabriqué par l'OS qui exécute le test.
+            codec = PureWindowsPath(sample).name.split(".")[0]
             if (hwaccel, codec) in self.working:
                 return RunOutput(0)
             return RunOutput(234, "", "Nothing was written into output file")
@@ -81,6 +83,17 @@ def detect(runner, platform_name="darwin", **kwargs) -> HardwareCapabilities:
 
 
 # --- Modèle -----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sample", [
+    "/tmp/kut-hw/h264.mp4",
+    r"C:\Users\runneradmin\AppData\Local\Temp\kut-hw\h264.mp4",
+])
+def test_the_fake_decoder_reads_the_codec_from_posix_and_windows_paths(sample):
+    """Régression CI Windows : le faux FFmpeg ne comprenait que « / » et refusait tout décodage."""
+    runner = FakeDecodeFFmpeg(working={("cuda", "h264")})
+    assert runner(["ffmpeg", "-hwaccel", "cuda", "-i", sample, "-f", "null", "-"], 5).returncode == 0
+    assert runner(["ffmpeg", "-hwaccel", "dxva2", "-i", sample, "-f", "null", "-"], 5).returncode != 0
 
 
 def test_parse_hwaccel_list_ignores_the_header():

@@ -239,6 +239,14 @@ def _solid_background(project, color):
     return background
 
 
+# Écart toléré (niveaux 8 bits) entre le rastériseur Qt et l'export FFmpeg.
+# ``overlay`` passe par le ``hardlight`` de FFmpeg, dont la formule entière tronque avant de doubler
+# (``2 * (a * b / 255)`` : jusqu'à −2 face à la formule W3C de Qt), auquel s'ajoutent les aller-retours
+# yuv420p → gbrp du fond. Mesuré : 5 avec FFmpeg 6.1 (Ubuntu), 6 avec FFmpeg 7.1 (Windows), moins de 4 avec
+# le FFmpeg récent de macOS. Les autres modes n'ont pas ce terme : ils gardent la borne stricte de 4.
+BLEND_TOLERANCE = {BlendMode.OVERLAY: 8}
+
+
 @needs_ffmpeg
 @pytest.mark.parametrize("mode", list(BLEND_MODES))
 def test_blend_modes_match_between_qt_and_ffmpeg(mode, tmp_path):
@@ -249,7 +257,7 @@ def test_blend_modes_match_between_qt_and_ffmpeg(mode, tmp_path):
     # Référence Qt : la pile complète composée par le rastériseur.
     expected = _rgba(_render(project), 80, 45)[:3]
     actual = _rgba(_ffmpeg_frame(project, 0.5, tmp_path), 80, 45)[:3]
-    assert actual == pytest.approx(expected, abs=4), mode
+    assert actual == pytest.approx(expected, abs=BLEND_TOLERANCE.get(mode, 4)), mode
 
 
 @needs_ffmpeg
