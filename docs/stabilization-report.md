@@ -222,7 +222,11 @@ processus). Le run précédent (`252433e`) avait 4 échecs sous macOS et Windows
 Les tests ajoutés ensuite sur les proxies partagés (`tests/test_proxy_shared_folder.py`) ont, eux, échoué **de façon
 intermittente sous Windows** (jamais en local sous Linux) : les deux échecs observés sur `e8e5b52` étaient ce test. La
 cause était réelle (deux lignes du tableau ci-dessus), pas un test instable : les deux correctifs sont `e21bb36` et
-`51c4d06`. Le run de `51c4d06` est **vert sur macOS, Windows et Ubuntu** (suite complète, smoke test source, build natif,
+`51c4d06`. Un troisième échec du même fichier de tests (run de `cf3c7e0`, commit de documentation seul) n'était, lui, pas
+un défaut du produit mais une assertion trop stricte : le test comptait les appels à `os.replace`, alors qu'une instance
+qui réessaie après le refus transitoire de Windows rappelle `os.replace` avec son propre temporaire (trois appels, deux
+noms distincts). L'assertion porte maintenant sur les noms distincts, et elle échoue toujours si le nom redevient fixe.
+Le run de `51c4d06` est **vert sur macOS, Windows et Ubuntu** (suite complète, smoke test source, build natif,
 smoke test empaqueté). Une exécution verte unique ne prouve pas la disparition d'une course ; les tests de nouvelle
 tentative (`_refuse_replace`) la reproduisent de façon déterministe, et un échec intermittent de ces tests sous Windows
 doit être traité comme une régression, jamais relancé jusqu'au vert.

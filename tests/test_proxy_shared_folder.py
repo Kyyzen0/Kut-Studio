@@ -118,7 +118,9 @@ def test_two_instances_finishing_together_never_share_a_marker_temporary_file(tm
         first.shutdown()
         second.shutdown()
 
-    assert len(temporaries) == 2 and len(set(temporaries)) == 2
+    # Un nom par instance. Le nombre d'appels n'est pas contraint : une instance qui réessaie après le refus d'accès
+    # transitoire de Windows rappelle ``os.replace`` avec son propre temporaire.
+    assert len(set(temporaries)) == 2
     assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
 
 
