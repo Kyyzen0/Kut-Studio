@@ -2,10 +2,13 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from core.diagnostics_log import install_diagnostics
 from ui.main_window import MainWindow
 
 
 def main():
+    # Avant toute autre chose : une exception, même au démarrage, doit laisser une trace dans le journal.
+    install_diagnostics()
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
