@@ -46,6 +46,7 @@ de son parent (exact si le parent n'est ni tourné ni mis à l'échelle).
 from __future__ import annotations
 
 import math
+import threading
 from collections import OrderedDict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
@@ -422,6 +423,7 @@ class EffectiveState:
 
 _STATE_CACHE: OrderedDict = OrderedDict()
 _STATE_CACHE_SIZE = 256
+_STATE_LOCK = threading.RLock()     # états évalués par l'interface et par les threads de rendu
 
 
 def _state_key(clip, context: TrackingContext):
@@ -460,18 +462,21 @@ def effective_clip_state(clip, context: TrackingContext) -> EffectiveState:
     except TypeError:
         key = None
     if key is not None:
-        cached = _STATE_CACHE.get(key)
+        with _STATE_LOCK:
+            cached = _STATE_CACHE.get(key)
+            if cached is not None:
+                _STATE_CACHE.move_to_end(key)
         if cached is not None:
-            _STATE_CACHE.move_to_end(key)
             return cached
     try:
         state = _compute_state(clip, context, tracking)
     except Exception as exc:  # garde-fou : jamais de rendu cassé par une liaison
         state = replace(base, warnings=(f"tracking:{exc}",))
     if key is not None:
-        _STATE_CACHE[key] = state
-        if len(_STATE_CACHE) > _STATE_CACHE_SIZE:
-            _STATE_CACHE.popitem(last=False)
+        with _STATE_LOCK:
+            _STATE_CACHE[key] = state
+            if len(_STATE_CACHE) > _STATE_CACHE_SIZE:
+                _STATE_CACHE.popitem(last=False)
     return state
 
 
