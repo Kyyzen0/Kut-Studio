@@ -21,6 +21,7 @@ pas de transitions.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 
 from .project_model import Clip, MediaAsset, Project, Track
 from .time_remapping import (
@@ -515,6 +516,29 @@ def cut_clip(
 # ---------------------------------------------------------------------------
 
 
+def _release_clip_references(project: Project, clip: Clip) -> None:
+    """Après le retrait d'un clip : plus rien ne doit pointer vers lui ni vers son média technique.
+
+    - un calque dont le parent (transform) ou le groupe était ce clip devient autonome ;
+    - le média technique d'un calque (``media_type == "graphic"``) disparaît avec son dernier clip : sans
+      cela il resterait, invisible, dans chaque enregistrement. Les médias de la bibliothèque (vidéo,
+      audio, image) ne sont jamais supprimés ici.
+    """
+    clips = [other for track in project.all_tracks() for other in track.clips]
+    for other in clips:
+        graphic = getattr(other, "graphic", None)
+        if graphic is None:
+            continue
+        changes = {name: "" for name in ("parent_id", "group_id") if getattr(graphic, name, "") == clip.id}
+        if changes:
+            other.graphic = replace(graphic, **changes)
+    if getattr(clip, "graphic", None) is not None and not any(other.asset_id == clip.asset_id for other in clips):
+        project.media_assets[:] = [
+            asset for asset in project.media_assets
+            if not (asset.id == clip.asset_id and asset.media_type == "graphic")
+        ]
+
+
 def delete_clip(project: Project, clip_id: str) -> Clip:
     """Retire le clip de sa piste et le retourne.
 
@@ -527,6 +551,7 @@ def delete_clip(project: Project, clip_id: str) -> Clip:
     clip = track.clips[index]
     del track.clips[index]
     remove_transitions_for_clips(project, {clip_id})
+    _release_clip_references(project, clip)
     return clip
 
 
@@ -864,6 +889,7 @@ def ripple_delete_clip(project: Project, clip_id: str) -> list[str]:
     _ensure_track_editable(project, track)
     deleted_clip = track.clips.pop(index)
     remove_transitions_for_clips(project, {clip_id})
+    _release_clip_references(project, deleted_clip)
     delta = float(deleted_clip.duration)
     boundary = float(deleted_clip.timeline_start + deleted_clip.duration)
     moved: list[str] = []
