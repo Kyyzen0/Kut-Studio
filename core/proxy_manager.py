@@ -562,6 +562,7 @@ class ProxyManager:
             partial.name.replace(".partial.", f".partial.{os.getpid()}-{uuid.uuid4().hex[:8]}.", 1)
         )
         error = ""
+        promoted = False        # ce proxy-ci est-il passé de partiel à final ? (seul ce cas autorise à nettoyer final)
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
             signature = self._memo.get(source)
@@ -613,6 +614,7 @@ class ProxyManager:
             else:
                 size = partial.stat().st_size
                 os.replace(partial, final)
+                promoted = True
                 self._write_sidecar(sidecar, source, signature.token, profile, size)
         except FileNotFoundError as exc:
             error = str(exc)
@@ -622,8 +624,12 @@ class ProxyManager:
             error = f"Génération du proxy impossible : {exc}"
         if error:
             self._remove(partial)
-            self._remove(final)
-            self._remove(sidecar)
+            if promoted:
+                # Demi-promotion (le marqueur n'a pas pu être écrit) : on ne laisse pas un proxy sans marqueur.
+                # Sans promotion, ``final`` et le marqueur sont peut-être ceux d'une AUTRE instance qui vient de
+                # réussir : on n'y touche pas.
+                self._remove(final)
+                self._remove(sidecar)
             with self._lock:
                 self._errors[key] = error
 
@@ -639,7 +645,9 @@ class ProxyManager:
             "created_at": self._clock(),
             "size_bytes": size,
         }
-        temporary = sidecar.with_suffix(".json.tmp")
+        # Temporaire propre à cet appel : deux instances qui terminent en même temps ne se disputent pas le même
+        # fichier (sous Windows le second remplacement échouait, et l'erreur supprimait le proxy tout juste produit).
+        temporary = sidecar.with_name(f"{sidecar.stem}.{os.getpid()}-{uuid.uuid4().hex[:8]}.json.tmp")
         temporary.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(temporary, sidecar)
 
