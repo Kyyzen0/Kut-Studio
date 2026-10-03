@@ -893,33 +893,27 @@ def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:
 
     Les sous-titres sont incrustés une fois, sur l'image finale (libass) :
     ceux d'une séquence imbriquée sont donc reportés dans le plan parent,
-    bornés à la durée du clip et convertis selon sa vitesse / son reverse.
+    bornés à la durée du clip et convertis par **le mapping du clip** (vitesse, courbe de vitesse, reverse, arrêt sur
+    image) : une réplique suit la source. Si le mapping revient en arrière, une même réplique apparaît à chaque passage.
     Limite documentée : ils ne suivent pas le transform du clip imbriqué.
     """
     from .subtitle_io import SubtitleCue
 
     start = clip.timeline_start
-    end = start + clip.duration
-    remapping = clip.time_remapping
-    speed = float(remapping.speed) or 1.0
-    frozen = getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze"
+    time_map = clip.time_map
+    end = start + time_map.duration
     lifted = []
     for cue, style in zip(inner.subtitle_cues, inner.subtitle_styles):
-        if frozen:
-            moment = float(remapping.freeze_source_time)
-            if not (cue.start <= moment < cue.end):
-                continue
-            a, b = start, end
-        elif remapping.reverse:
-            a = start + (clip.source_out - cue.end) / speed
-            b = start + (clip.source_out - cue.start) / speed
+        if time_map.is_hold:
+            moment = time_map.source_time(0.0)
+            intervals = [(0.0, time_map.duration)] if cue.start <= moment < cue.end else []
         else:
-            a = start + (cue.start - clip.source_in) / speed
-            b = start + (cue.end - clip.source_in) / speed
-        a, b = max(a, start), min(b, end)
-        if b - a <= 1e-6:
-            continue
-        lifted.append((SubtitleCue(start=float(a), end=float(b), text=cue.text), style))
+            intervals = time_map.timeline_intervals_of(cue.start, cue.end)
+        for local_a, local_b in intervals:
+            a, b = max(start + local_a, start), min(start + local_b, end)
+            if b - a <= 1e-6:
+                continue
+            lifted.append((SubtitleCue(start=float(a), end=float(b), text=cue.text), style))
     return lifted
 
 

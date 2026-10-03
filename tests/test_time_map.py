@@ -179,6 +179,26 @@ def test_100_then_0_then_minus_100_percent_stops_and_comes_back():
     assert first == pytest.approx(1.0 - math.sqrt(0.5), abs=1e-9) and second == pytest.approx(1.0 + math.sqrt(0.5), abs=1e-9)
 
 
+def test_touching_a_bound_is_not_crossing_it():
+    """Un retournement qui frôle la borne haute (vitesse nulle au sommet) puis redescend n'épuise pas la source.
+
+    v(t) = 1 − t sur [0, 2] : M = t − t²/2 atteint ½ à t = 1 (tangence avec ``hi = ½``) puis revient à 0. La source n'est
+    épuisée qu'au retour à la borne basse, en t = 2 : la durée vaut 2, pas 1.
+    """
+    keys = (key(0, 1.0), key(2, -1.0))
+    tm = PiecewiseTimeMap(0.0, 0.5, keyframes=keys)
+    assert tm.duration == pytest.approx(2.0, abs=1e-9)
+    assert tm.source_time(1.0) == pytest.approx(0.5, abs=1e-12)
+
+
+def test_reaching_a_bound_and_carrying_on_outward_does_exhaust_the_source():
+    """À l'inverse : la source est épuisée à l'instant où elle atteint la borne en continuant vers l'extérieur."""
+    keys = (key(0, 1.0), key(1, 1.0), key(2, 3.0))                 # toujours croissant, jamais d'arrêt
+    tm = PiecewiseTimeMap(0.0, 1.0, keyframes=keys)
+    assert tm.duration == pytest.approx(1.0, abs=1e-9)             # 1 s à 100 % : la source (1 s) est épuisée pile
+    assert tm.source_time(tm.duration) == pytest.approx(1.0, abs=1e-12)
+
+
 def test_the_mapping_stays_continuous_through_the_turn_and_never_jumps():
     keys = (key(0, 1.0), key(2, -1.0))
     tm = PiecewiseTimeMap(0.0, 10.0, keyframes=keys)

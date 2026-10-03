@@ -226,6 +226,39 @@ class TimeMap:
     def is_constant(self) -> bool:
         return False
 
+    @property
+    def is_hold(self) -> bool:
+        """Le mapping tout entier montre-t-il un seul instant source (arrêt sur image) ?"""
+        runs = self.runs()
+        return len(runs) == 1 and runs[0].kind is RunKind.HOLD
+
+    def timeline_intervals_of(self, low: float, high: float) -> list[tuple[float, float]]:
+        """Intervalles disjoints (temps local du clip, triés) où le temps source est dans ``[low, high]``.
+
+        Le chemin inverse d'une plage de la source. Un mapping monotone en donne un seul ; un mapping qui revient en
+        arrière peut en donner plusieurs (une réplique de sous-titre est alors visible à plusieurs moments).
+        """
+        raise NotImplementedError
+
+    def local_time_for(self, s: float) -> float:
+        """Premier instant (temps local du clip) où le mapping montre ``s`` ; la borne la plus proche si jamais atteint.
+
+        Sert aux données exprimées en temps source (suivi, stabilisation) qui cherchent « où est-ce, sur le clip ? » : un
+        instant hors de la source est ramené au début ou à la fin du clip, comme les appelants le bornaient déjà.
+        """
+        times = self.times_at_source(s)
+        if times:
+            return times[0]
+        start, end = self.source_time(0.0), self.source_time(self.duration)
+        return 0.0 if abs(start - s) <= abs(end - s) else self.duration
+
+    def timeline_span_of(self, low: float, high: float) -> tuple[float, float]:
+        """Enveloppe (premier et dernier instant) de :meth:`timeline_intervals_of` ; ``(0, 0)`` si aucun."""
+        intervals = self.timeline_intervals_of(low, high)
+        if not intervals:
+            return 0.0, 0.0
+        return intervals[0][0], max(end for _start, end in intervals)
+
     # -- dérivés (identiques pour tous) --------------------------------------------------------------
 
     def extent(self) -> tuple[float, float]:
@@ -353,6 +386,34 @@ class ConstantTimeMap(TimeMap):
         if self.hold:
             return self.hold_source, self.hold_source
         return self.lo, self.hi
+
+    @property
+    def is_hold(self) -> bool:
+        return self.hold
+
+    def window_for(self, t0: float, t1: float) -> tuple[float, float]:
+        """Mêmes opérations flottantes que l'ancien ``nested_source_window`` (les fenêtres entrent dans des clés)."""
+        t0, t1 = sorted((min(max(t0, 0.0), self.duration), min(max(t1, 0.0), self.duration)))
+        if self.hold:
+            return self.hold_source, self.hold_source
+        if self.reverse:
+            a, b = self.hi - t1 * self.speed, self.hi - t0 * self.speed
+        else:
+            a, b = self.lo + t0 * self.speed, self.lo + t1 * self.speed
+        return max(self.lo, a), min(self.hi, b)
+
+    def timeline_span_of(self, low: float, high: float) -> tuple[float, float]:
+        """Mêmes opérations flottantes que l'ancien ``_map_to_parent`` ; un arrêt sur image couvre toute sa durée."""
+        if self.hold:
+            return 0.0, self.duration
+        if self.reverse:
+            a, b = (self.hi - high) / self.speed, (self.hi - low) / self.speed
+        else:
+            a, b = (low - self.lo) / self.speed, (high - self.lo) / self.speed
+        return a, b
+
+    def timeline_intervals_of(self, low: float, high: float) -> list[tuple[float, float]]:
+        return [self.timeline_span_of(low, high)]
 
 
 # ---------------------------------------------------------------------------
@@ -501,33 +562,33 @@ class PiecewiseTimeMap(TimeMap):
     # -- durée : première sortie vers l'extérieur de la fenêtre --------------------------------------
 
     def _natural_duration(self) -> float:
+        """Premier instant où ``M`` **franchit** une borne de la fenêtre vers l'extérieur (``inf`` s'il n'y en a pas).
+
+        Toucher une borne n'est pas la franchir : un retournement qui frôle ``hi`` (vitesse nulle au sommet) puis redescend
+        n'épuise pas la source. On décide donc au *début* de chaque intervalle monotone (la source est déjà à la borne et
+        continue vers l'extérieur), et à l'intérieur d'un intervalle seulement si la borne est strictement dépassée.
+        """
         tol = 1e-10 * (1.0 + abs(self.hi) + abs(self.lo))
         for seg in self._segments:
             cuts = [seg.t0, *seg.turning_times(seg.t0, seg.t1), seg.t1]
             for ta, tb in zip(cuts, cuts[1:]):
                 ma = seg.m(ta)
-                if math.isinf(tb):
-                    rate = seg.v(ta)
-                    if rate > _REST:
-                        if ma >= self.hi - tol:
-                            return ta
-                        return ta + (self.hi - ma) / rate
-                    if rate < -_REST:
-                        if ma <= self.lo + tol:
-                            return ta
-                        return ta + (self.lo - ma) / rate
-                    continue
-                mb = seg.m(tb)
-                if mb > ma + _REST * 1e-3:  # croissant
+                probe = ta + 1.0 if math.isinf(tb) else 0.5 * (ta + tb)
+                v = seg.v(probe)
+                if v > _REST:  # croissant : vers ``hi``
                     if ma >= self.hi - tol:
                         return ta
-                    if mb >= self.hi - tol:
-                        return self._cross(seg, ta, tb, self.hi) if mb >= self.hi else tb
-                elif mb < ma - _REST * 1e-3:  # décroissant
+                    if math.isinf(tb):
+                        return ta + (self.hi - ma) / v
+                    if seg.m(tb) > self.hi + tol:
+                        return self._cross(seg, ta, tb, self.hi)
+                elif v < -_REST:  # décroissant : vers ``lo``
                     if ma <= self.lo + tol:
                         return ta
-                    if mb <= self.lo + tol:
-                        return self._cross(seg, ta, tb, self.lo) if mb <= self.lo else tb
+                    if math.isinf(tb):
+                        return ta + (self.lo - ma) / v
+                    if seg.m(tb) < self.lo - tol:
+                        return self._cross(seg, ta, tb, self.lo)
         return math.inf
 
     @staticmethod
@@ -596,6 +657,25 @@ class PiecewiseTimeMap(TimeMap):
         self._runs = tuple(runs)
         return self._runs
 
+    def _solve_in_run(self, run: Run, s: float) -> float:
+        """Instant de ``run`` (monotone) où ``M = s`` : dichotomie à la précision machine."""
+        a, b = run.t0, run.t1
+        fa = self._segment_at(a).m(a) - s
+        if abs(fa) <= 1e-9:
+            return a
+        for _ in range(120):
+            mid = 0.5 * (a + b)
+            fm = self._segment_at(mid).m(mid) - s
+            if fm == 0.0:
+                return mid
+            if (fa < 0.0) == (fm < 0.0):
+                a, fa = mid, fm
+            else:
+                b = mid
+            if b - a <= 1e-15 * max(1.0, abs(b)):
+                break
+        return 0.5 * (a + b)
+
     def times_at_source(self, s: float) -> list[float]:
         found: list[float] = []
         slack = 1e-9
@@ -605,27 +685,32 @@ class PiecewiseTimeMap(TimeMap):
                 if abs(run.s0 - s) <= slack:
                     found.append(run.t0)
                 continue
-            if not (low - slack <= s <= high + slack):
-                continue
-            a, b = run.t0, run.t1
-            fa = self._segment_at(a).m(a) - s
-            if abs(fa) <= slack:
-                found.append(a)
-                continue
-            for _ in range(120):
-                mid = 0.5 * (a + b)
-                fm = self._segment_at(mid).m(mid) - s
-                if fm == 0.0:
-                    a = b = mid
-                    break
-                if (fa < 0.0) == (fm < 0.0):
-                    a, fa = mid, fm
-                else:
-                    b = mid
-                if b - a <= 1e-15 * max(1.0, abs(b)):
-                    break
-            found.append(0.5 * (a + b))
+            if low - slack <= s <= high + slack:
+                found.append(self._solve_in_run(run, s))
         return _dedupe(found)
+
+    def timeline_intervals_of(self, low: float, high: float) -> list[tuple[float, float]]:
+        found: list[tuple[float, float]] = []
+        slack = 1e-9
+        for run in self.runs():
+            if run.kind is RunKind.HOLD:
+                if low - slack <= run.s0 <= high + slack:
+                    found.append((run.t0, run.t1))
+                continue
+            lo_s, hi_s = sorted((run.s0, run.s1))
+            a, b = max(low, lo_s), min(high, hi_s)
+            if a > b:
+                continue
+            ta, tb = self._solve_in_run(run, a), self._solve_in_run(run, b)
+            found.append((min(ta, tb), max(ta, tb)))
+        found.sort()
+        merged: list[tuple[float, float]] = []
+        for start, end in found:
+            if merged and start <= merged[-1][1] + 1e-9:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        return merged
 
     def __repr__(self) -> str:
         keys = tuple(
@@ -642,14 +727,19 @@ class PiecewiseTimeMap(TimeMap):
 # ---------------------------------------------------------------------------
 
 
-def speed_keyframes(clip: "Clip") -> tuple["Keyframe", ...]:
-    """Keyframes de vitesse d'un clip, triés, un par instant (le dernier fourni gagne)."""
-    keys = [k for k in clip.animation if getattr(k, "property_name", "") == SPEED_PROPERTY]
+def speed_keyframes_of(animation) -> tuple["Keyframe", ...]:
+    """Keyframes de vitesse d'une liste d'animation (``Clip.animation``), triés, un par instant (le dernier gagne)."""
+    keys = [k for k in animation if getattr(k, "property_name", "") == SPEED_PROPERTY]
     if not keys:
         return ()
     from .animation import AnimationCurve
 
     return AnimationCurve(keys).keyframes
+
+
+def speed_keyframes(clip: "Clip") -> tuple["Keyframe", ...]:
+    """Keyframes de vitesse d'un clip, triés, un par instant (le dernier fourni gagne)."""
+    return speed_keyframes_of(clip.animation)
 
 
 def has_speed_curve(clip: "Clip") -> bool:
@@ -706,6 +796,7 @@ __all__ = [
     "has_speed_curve",
     "real_roots",
     "speed_keyframes",
+    "speed_keyframes_of",
     "time_map_for",
     "time_map_for_clip",
 ]

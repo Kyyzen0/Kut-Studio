@@ -40,7 +40,8 @@ from .sequences import (
     new_sequence_id,
     unique_sequence_name,
 )
-from .time_remapping import FreezeFrameMode
+from .time_editing import needs_general_path
+from .time_remapping import FreezeFrameMode, TimeInterpolation
 from .timeline_operations import cut_clip
 from .visual_effects import ClipTransform
 
@@ -672,8 +673,9 @@ class FlattenResult:
 
 
 def _is_plain(clip: Clip) -> bool:
+    """Vitesse constante positive : seul cas où deux mappings se composent par un simple produit de vitesses."""
     remap = clip.time_remapping
-    return not remap.reverse and remap.freeze_mode is not FreezeFrameMode.FREEZE
+    return not remap.reverse and remap.freeze_mode is not FreezeFrameMode.FREEZE and not needs_general_path(clip)
 
 
 def _flatten_part(
@@ -717,7 +719,15 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
     if not is_multicam_clip(project, segment):
         raise MulticamError("Ce clip n'est pas un segment Multicam.")
     if not _is_plain(segment):
-        raise MulticamError("Aplatir : un segment en lecture inverse ou en arrêt sur image n'est pas pris en charge.")
+        raise MulticamError(
+            "Aplatir : un segment en lecture inverse, en arrêt sur image ou à vitesse animée n'est pas pris en charge."
+        )
+    remapping = segment.time_remapping
+    if remapping.interpolation is not TimeInterpolation.SAMPLING or remapping.preserve_pitch or not remapping.remap_audio:
+        raise MulticamError(
+            "Aplatir : le segment porte une interpolation d'images ou un réglage audio du temps propres, que les clips "
+            "remplaçants ne reprendraient pas ; retirez-les ou imbriquez le segment."
+        )
     if (
         segment.color_grade is not None
         or segment.transform != ClipTransform()
@@ -756,7 +766,7 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
         ]
         for item in overlapping:
             if item.is_nested or not _is_plain(item):
-                raise MulticamError("Aplatir : un clip d'angle imbriqué ou en lecture inverse n'est pas pris en charge.")
+                raise MulticamError("Aplatir : un clip d'angle imbriqué, en lecture inverse ou à vitesse animée n'est pas pris en charge.")
         plans.append((angle, angle_clips, overlapping))
     new_audio_track: Track | None = None
     for angle, angle_clips, overlapping in plans:

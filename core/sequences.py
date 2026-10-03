@@ -937,6 +937,9 @@ def _clamp_nested_pass(project: Project, sequence_ids: set[str] | None) -> list[
                 remapping = clip.time_remapping
                 if getattr(remapping, "freeze_source_time", 0.0) > limit:
                     clip.time_remapping = replace(remapping, freeze_source_time=limit)
+                    remapping = clip.time_remapping
+                if remapping.anchor is not None and remapping.anchor > limit:
+                    clip.time_remapping = replace(remapping, anchor=limit)  # l'ancre est un temps source : elle suit la borne
                 clip._rebalance_fades()
                 adjustments.append(
                     ClampAdjustment(
@@ -960,51 +963,32 @@ def nested_source_time(clip: Clip, parent_time: float) -> float | None:
     ``None`` si ``parent_time`` est hors du clip. Tient compte de la
     vitesse, du reverse et de l'arrêt sur image du clip.
     """
-    from .time_remapping import timeline_to_source_time
-
+    time_map = clip.time_map
     local = parent_time - clip.timeline_start
-    if local < 0.0 or local >= clip.duration:
+    if local < 0.0 or local >= time_map.duration:
         return None
-    remapping = clip.time_remapping
-    try:
-        return timeline_to_source_time(
-            timeline_time=local,
-            source_in=clip.source_in,
-            source_out=clip.source_out,
-            speed=remapping.speed,
-            reverse=remapping.reverse,
-            freeze_mode=remapping.freeze_mode,
-            freeze_source_time=remapping.freeze_source_time,
-        )
-    except ValueError:
-        return clip.source_in + local
+    return time_map.source_time(local)
 
 
 def nested_source_window(clip: Clip, low: float, high: float) -> tuple[float, float]:
     """Plage de la séquence imbriquée lue pendant ``[low, high)`` (temps parent).
 
     Toujours incluse dans ``[source_in, source_out]``. En arrêt sur image,
-    la plage se réduit à l'image figée ; en cas de doute (remappage
-    exotique) on retourne toute la plage source, ce qui reste correct.
+    la plage se réduit à l'image figée. Avec une courbe de vitesse qui revient
+    en arrière, c'est la plage **entière** parcourue pendant la fenêtre (retournements compris), pas seulement
+    ses deux extrémités.
     """
-    remapping = clip.time_remapping
+    time_map = clip.time_map
     start = clip.timeline_start
-    end = start + clip.duration
+    end = start + time_map.duration
     low = max(low, start)
     high = min(high, end)
     if high <= low:
         return clip.source_in, clip.source_in
-    if getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
-        frozen = float(remapping.freeze_source_time)
+    if time_map.is_hold:
+        frozen = time_map.source_time(0.0)
         return frozen, frozen + 1e-3
-    speed = float(remapping.speed) or 1.0
-    if remapping.reverse:
-        a = clip.source_out - (high - start) * speed
-        b = clip.source_out - (low - start) * speed
-    else:
-        a = clip.source_in + (low - start) * speed
-        b = clip.source_in + (high - start) * speed
-    return max(clip.source_in, a), min(clip.source_out, b)
+    return time_map.window_for(low - start, high - start)
 
 
 __all__ = [
