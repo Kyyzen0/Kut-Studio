@@ -259,7 +259,9 @@ KUT_STUDIO_REQUIRE_HARDWARE=nvenc,qsv python -m tools.perf.hardware_validation
 Un backend exigé qui est absent ou refusé à la validation devient un **échec**
 (« … — exigé par KUT_STUDIO_REQUIRE_HARDWARE ») dans les tests comme dans l'outil
 (code de sortie 1). Les noms sont ceux de `--encoder` ; un nom inconnu est une
-erreur (une faute de frappe ne rend jamais l'exigence muette).
+erreur (une faute de frappe ne rend jamais l'exigence muette). Un filtre `--encoder` ne peut pas non plus la
+cacher : les backends exigés sont **toujours** validés, même s'ils n'y figurent pas
+(`KUT_STUDIO_REQUIRE_HARDWARE=nvenc python -m tools.perf.hardware_validation --encoder cpu` échoue sans NVENC).
 
 ### Résultats mesurés
 

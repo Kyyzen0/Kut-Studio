@@ -55,7 +55,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--encoder", action="append", metavar="NOM", default=[],
         help="backend (cpu, videotoolbox, nvenc, qsv, amf, vaapi) ou encodeur FFmpeg (h264_nvenc…) ; "
-             "répétable. Par défaut : tous. Le témoin CPU est toujours exporté.",
+             "répétable. Par défaut : tous. Le témoin CPU est toujours exporté, et les backends exigés par "
+             f"{REQUIRE_VARIABLE} sont toujours validés (un filtre ne peut pas cacher leur absence).",
     )
     parser.add_argument("--keep", action="store_true", help="conserver la source et les fichiers exportés")
     parser.add_argument("--timeout", type=float, default=RUN_TIMEOUT_SECONDS,

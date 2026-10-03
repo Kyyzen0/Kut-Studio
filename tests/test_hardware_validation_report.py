@@ -195,6 +195,21 @@ def test_a_required_backend_that_is_missing_is_a_failure(detected, tmp_path):
     assert "repli si cet encodeur échoue" not in format_report(report)  # jamais lancé : aucun repli à décrire
 
 
+def test_a_filter_cannot_hide_the_absence_of_a_required_backend(detected, tmp_path):
+    """``--encoder cpu`` avec ``KUT_STUDIO_REQUIRE_HARDWARE=nvenc`` : NVENC est validé quand même, donc il échoue."""
+    report = _validate(detected(), FakeMedia(), tmp_path, [HardwareEncoder.CPU], required={HardwareEncoder.NVENC})
+
+    nvenc = _run(report, HardwareEncoder.NVENC)
+    assert nvenc.outcome is Outcome.FAILED and "exigé par " + REQUIRE_VARIABLE in nvenc.reason
+    assert report.exit_code == 1
+    assert _run(report, HardwareEncoder.CPU).outcome is Outcome.PASSED      # le témoin CPU reste exporté
+    assert [item.backend for item in report.runs].count(HardwareEncoder.NVENC) == 1   # ni doublon, ni oubli
+
+    unfiltered = _validate(detected(), FakeMedia(), tmp_path, [HardwareEncoder.CPU, HardwareEncoder.NVENC],
+                           required={HardwareEncoder.NVENC})
+    assert [item.backend for item in unfiltered.runs].count(HardwareEncoder.NVENC) == 1   # déjà demandé : pas de doublon
+
+
 @pytest.mark.parametrize(
     ("failures", "detail", "witness"),
     [

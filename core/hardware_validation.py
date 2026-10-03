@@ -625,6 +625,10 @@ def run_validation(
     if HardwareEncoder.CPU not in selected:
         selected.insert(0, HardwareEncoder.CPU)  # le témoin logiciel situe tout échec matériel
     required_set = frozenset(required)
+    # Un backend exigé est toujours validé : un filtre (``--encoder cpu``) ne doit pas pouvoir cacher son absence,
+    # sinon ``KUT_STUDIO_REQUIRE_HARDWARE=nvenc`` sortirait en succès sur une machine sans NVENC.
+    ordered = (*VALIDATED_BACKENDS, *sorted(required_set - set(VALIDATED_BACKENDS), key=lambda item: item.value))
+    selected += [backend for backend in ordered if backend in required_set and backend not in selected]
     if not capabilities.ffmpeg_available:
         return ValidationReport(capabilities, required=required_set, error="FFmpeg introuvable")
     try:
