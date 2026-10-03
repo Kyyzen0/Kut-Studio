@@ -542,7 +542,8 @@ def test_closing_during_a_render_confirmed_stops_ffmpeg_cleanly(qtbot, fake_ffmp
         window.enqueue_export()
     queue = window.render_queue
     queue.start_all()
-    qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists(), timeout=TIMEOUT)
+    qtbot.waitUntil(lambda: queue._engine.is_running and pid_file.exists()
+                    and bool(pid_file.read_text().strip()), timeout=TIMEOUT)  # créé puis écrit : attendre le contenu
     pid = int(pid_file.read_text())
     assert window.close()
     text = window._calls["question"][0]

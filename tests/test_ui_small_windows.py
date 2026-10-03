@@ -91,7 +91,8 @@ def window_at(tmp_path_factory):
 
 def _assert_none(findings, context: str = "") -> None:
     """Échec lisible : chaque constat est nommé (widget, nature, dépassement) dans le message, donc dans le journal de CI."""
-    assert not findings, f"{context} {[str(f) for f in findings][:8]}".strip()
+    if findings:
+        raise AssertionError(f"{context} {[str(f) for f in findings][:8]} | {audit.environment_summary()}".strip())
 
 
 def _blocking(findings) -> list[str]:

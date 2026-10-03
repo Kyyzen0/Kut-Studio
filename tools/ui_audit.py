@@ -131,11 +131,92 @@ def scroll_culprits(scroll, limit: int = 6) -> list[str]:
     return names
 
 
+def _item_text(widget) -> str:
+    text = widget.text() if hasattr(widget, "text") and callable(widget.text) else ""
+    return f" {text[:24]!r}" if isinstance(text, str) and text else ""
+
+
+def min_width_path(content, depth: int = 10) -> str:
+    """Chaîne de widgets qui impose la largeur minimale de ``content`` (le « chemin critique » de sa largeur).
+
+    ``scroll_culprits`` liste les contrôles trop larges pour le viewport ; celui-ci répond à la question utile :
+    *qui* fixe le minimum du contenu. À chaque niveau on suit l'élément de layout le plus large (son
+    ``minimumSize`` est celui que Qt utilise réellement : un minimum explicite l'emporte sur le ``minimumSizeHint``) ;
+    une rangée de plusieurs éléments est détaillée, car ses largeurs s'additionnent.
+    """
+    steps: list[str] = []
+    widget = content
+    while widget is not None and len(steps) < depth:
+        layout = widget.layout()
+        name = widget.objectName() or type(widget).__name__
+        if layout is None:
+            steps.append(f"{name}{_item_text(widget)} {widget.minimumSizeHint().width()} px")
+            break
+        items = [layout.itemAt(index) for index in range(layout.count())]
+        items = [item for item in items if item is not None and not item.isEmpty()]
+        if not items:
+            steps.append(f"{name} {layout.totalMinimumSize().width()} px")
+            break
+        widest = max(items, key=lambda item: item.minimumSize().width())
+        own, inner = widget.minimumSizeHint().width(), layout.totalMinimumSize().width()
+        steps.append(f"{name} {own} px")
+        if widget.inherits("QGroupBox") and own > inner + 2 * layout.contentsMargins().left() + 4:
+            steps.append(f"titre {widget.title()[:28]!r} (plus large que son contenu : {inner} px)")
+            break
+        if widest.widget() is not None:
+            widget = widest.widget()
+            continue
+        row = widest.layout()
+        cells = []
+        for index in range(row.count() if row is not None else 0):
+            cell = row.itemAt(index)
+            if cell is None or cell.isEmpty():
+                continue
+            child = cell.widget()
+            label = (child.objectName() or type(child).__name__) + _item_text(child) if child is not None else "…"
+            cells.append(f"{label} {cell.minimumSize().width()}")
+        steps.append("rangée [" + " + ".join(cells) + "]")
+        break
+    return " > ".join(steps)
+
+
+def environment_summary() -> str:
+    """Contexte de plateforme d'une mesure : police effective, DPI, style, plateforme (à joindre aux échecs).
+
+    Les contrôles sont relatifs à la police de la plateforme ; sans ce contexte, un constat qui n'apparaît que sous
+    Windows ou Linux ne dit pas pourquoi (famille de police absente, DPI, style…).
+    """
+    from PySide6.QtGui import QFont, QFontDatabase, QFontInfo, QFontMetrics, QGuiApplication
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from ui.theme import _UI_FONT_FAMILIES
+
+    app = QApplication.instance()
+    if app is None:
+        return "pas d'application Qt"
+    screen = QGuiApplication.primaryScreen()
+    installed = set(QFontDatabase.families())
+    probe = QLabel("État : Aucun clip sélectionné")
+    probe.ensurePolished()
+    info = QFontInfo(probe.font())
+    sample = "État : Aucun clip sélectionné"
+    return (
+        f"plateforme={QGuiApplication.platformName()} style={app.style().objectName()} "
+        f"dpi={screen.logicalDotsPerInch():.0f} dpr={screen.devicePixelRatio():.2f} "
+        f"police_app={QFontInfo(QFont(app.font())).family()!r} "
+        f"police_sonde={info.family()!r} {info.pixelSize()}px exacte={info.exactMatch()} "
+        f"police_systeme={QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()!r} "
+        f"dpi_physique={screen.physicalDotsPerInch():.0f} QT_FONT_DPI={os.environ.get('QT_FONT_DPI', '-')} "
+        f"largeur({sample!r})={QFontMetrics(probe.font()).horizontalAdvance(sample)}px "
+        f"famille_ok={[family for family in _UI_FONT_FAMILIES if family in installed]} polices={len(installed)}"
+    )
+
+
 def scroll_clipping(scroll, label: str = "") -> list[Finding]:
     """Contenu coupé par le bord droit d'une zone défilante **sans** barre horizontale utilisable.
 
     Quand la barre horizontale est disponible, rien n'est inaccessible : on ne signale rien. Un seul constat par zone,
-    avec les contrôles à revoir.
+    avec les contrôles à revoir et le chemin qui fixe la largeur minimale du contenu.
     """
     from PySide6.QtCore import Qt
 
@@ -152,7 +233,7 @@ def scroll_clipping(scroll, label: str = "") -> list[Finding]:
     return [Finding(
         "clipped", f"{label}{widget_path(scroll, 2)}",
         f"contenu de {content.width()} px dans un viewport de {scroll.viewport().width()} px (+{excess} px) ; "
-        f"à revoir : {culprits}",
+        f"à revoir : {culprits} ; minimum fixé par : {min_width_path(content)}",
     )]
 
 
@@ -692,6 +773,7 @@ def main(argv: list[str] | None = None) -> int:
         seen.add(key)
         print(finding)
     blocking = [f for f in findings if f.blocking]
+    print(f"\nenvironnement : {environment_summary()}")
     print(f"\n{len(blocking)} constat(s) bloquant(s)" + (f", {len(findings) - len(blocking)} informatif(s)" if args.verbose else ""))
     return 1 if blocking else 0
 
