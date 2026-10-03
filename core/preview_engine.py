@@ -23,10 +23,12 @@ Invariants garantis ici :
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from dataclasses import dataclass
 
+LOGGER = logging.getLogger("kut_studio.preview")
 
 # Nombre de segments pre-rendus autour de la tete de lecture.
 PREFETCH_SEGMENTS = 4
@@ -659,6 +661,7 @@ class PreviewEngine:
         if returncode != 0:
             self._remove_file(tmp_path)
             detail = (stderr or "").strip()
+            LOGGER.error("Aperçu fidèle : FFmpeg a échoué (code %s) : %s", returncode, detail.splitlines()[-1] if detail else "sans détail")
             raise RuntimeError(
                 "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
             )

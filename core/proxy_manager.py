@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import errno
 import json
+import logging
 import os
 import queue
 import subprocess
@@ -55,6 +56,8 @@ from .proxy_profiles import (
     get_profile,
 )
 from .tool_paths import find_media_tool
+
+LOGGER = logging.getLogger("kut_studio.proxy")
 
 SIDECAR_VERSION = 1
 LAST_USED_REFRESH_SECONDS = 60.0
@@ -633,6 +636,7 @@ class ProxyManager:
         except Exception as exc:  # un échec de proxy ne doit jamais remonter plus haut
             error = f"Génération du proxy impossible : {exc}"
         if error:
+            LOGGER.error("Proxy : génération échouée pour %s : %s", source, error)
             self._remove(partial)
             if promoted:
                 # Demi-promotion (le marqueur n'a pas pu être écrit) : on ne laisse pas un proxy sans marqueur.

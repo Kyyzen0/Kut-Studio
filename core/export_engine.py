@@ -852,6 +852,9 @@ class ExportEngine(QObject):
                 self._fall_back_to_cpu(request)
                 return
             self._mark_encoder_failure()
+            LOGGER.error(
+                "Export échoué (code %s, %s) : %s", exit_code, exit_status.name, _last_line(self._error_output) or "sans détail"
+            )
             self.failed.emit(self._error_output or "L'export ffmpeg a échoué.")
             self._cleanup_temporary_files()
             return
@@ -869,10 +872,12 @@ class ExportEngine(QObject):
         if self._cancel_requested:
             return
         if error == QProcess.FailedToStart:
+            LOGGER.error("Export : FFmpeg n'a pas pu démarrer")
             self._cleanup_temporary_files()
             self.failed.emit("Impossible de démarrer ffmpeg.")
         elif not self._should_fall_back():  # sinon ``_process_finished`` bascule en CPU
             self._mark_encoder_failure()
+            LOGGER.error("Export : erreur du processus FFmpeg (%s)", error.name)
             self.failed.emit(f"Erreur ffmpeg ({error.name}) : voir logs.")
 
     # ------------------------------------------------------------------
