@@ -105,6 +105,8 @@ class ThemePalette:
     playhead_dim: str = "#36E6C380"
     marker: str = "#F7C948"
     snap_line: str = "#36E6C380"
+    # Conservés pour la palette : plus lus depuis la suppression de la pastille « Fondu enchaîné » de l'aperçu
+    # (``docs/dead-code-audit.md``).
     transition_overlay: str = "#F7C948"
     transition_overlay_bg: str = "#061918"
 

@@ -231,8 +231,8 @@ def test_no_private_module_function_is_defined_without_a_single_use():
     """Une fonction ``_privée`` que ni le code, ni un test, ni un ``getattr`` ne nomme est du code mort.
 
     Avant l'audit, sept fonctions privées dans ce cas traînaient (dont l'ancien constructeur de calque graphique de
-    l'export, 70 lignes, remplacé par ``core.mograph_ffmpeg``). ``__all__`` n'est pas un usage : une chaîne n'y compte
-    que si elle sert aussi ailleurs.
+    l'export, 70 lignes, remplacé par ``core.mograph_ffmpeg``). Une chaîne réduite à un identifiant compte comme un
+    usage (``getattr``, ``__all__``) : on préfère rater un mort que supprimer un vivant.
     """
     used = _referenced_names(_all_python_files())
     dead = sorted(

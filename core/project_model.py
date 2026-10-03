@@ -537,8 +537,8 @@ class Track:
     # l'ancienne forme (liste de points) à chaque affectation.
     automation: TrackAutomation = field(default_factory=TrackAutomation)
     # ``ducking_config`` est soit ``None`` soit une instance de
-    # :class:`DuckingConfig` ; on garde un type ``object`` pour ne pas
-    # coupler le modèle au module :mod:`core.audio_automation`.
+    # :class:`core.audio_automation.DuckingConfig` ; le type reste ``object``
+    # (le modèle ne dépend de ``audio_automation`` que pour la courbe ci-dessus).
     ducking_config: object = None
 
     def __post_init__(self) -> None:
