@@ -494,6 +494,7 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("multicam_create", Category.MULTICAM, scope=_A),
     _cmd("multicam_open_source", Category.MULTICAM, scope=_A),
     _cmd("multicam_flatten", Category.MULTICAM, scope=_A),
+    _cmd("multicam_settings", Category.MULTICAM, scope=_A),
     # --- Motion graphics (calques, viewer) -----------------------------------
     _cmd("layer_add_text", Category.MOTION, scope=_A),
     _cmd("layer_add_shape", Category.MOTION, scope=_A),

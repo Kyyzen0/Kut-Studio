@@ -147,7 +147,7 @@ _COGNATES_EN = {
     "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)", "Rectangle", "Image", "Image…", "Ellipse", "Intersection",
     "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause", "Compositing", "Transition",
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
-    *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle",
+    *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios"}

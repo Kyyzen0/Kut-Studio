@@ -93,6 +93,7 @@ from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.multicam import MulticamMixin
 from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
+from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
 from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
@@ -133,6 +134,7 @@ class MainWindow(
     SequencesMixin,
     MulticamMixin,
     MulticamCreationMixin,
+    MulticamSettingsMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -592,6 +594,7 @@ class MainWindow(
         # Multicam : bascule d'angle, remplacement, aplatir, création depuis la timeline.
         self._init_multicam()
         self._init_multicam_creation()
+        self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
@@ -886,6 +889,8 @@ class MainWindow(
             ("pistage", self._cancel_tracking_jobs),
             ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
             ("synchronisation Multicam", self._cancel_multicam_syncs),
+            ("réglages Multicam", self._close_multicam_settings),
+            ("audio Multicam", self._release_multicam_audio),
             ("moniteur Multicam", lambda: call("multicam_viewer", "shutdown")),
             ("média du viewer", lambda: call("preview_panel", "release_media")),
             ("scopes", lambda: call("scopes_analyzer", "close")),
@@ -1417,6 +1422,7 @@ class MainWindow(
         sequence_menu.addAction(self._command_action("multicam_open_source", "multicam.menu.open_source"))
         sequence_menu.addAction(self._command_action("multicam_flatten", "multicam.menu.flatten"))
         sequence_menu.addAction(self._command_action("multicam_viewer", "multicam.menu.viewer"))
+        sequence_menu.addAction(self._command_action("multicam_settings", "multicam.menu.settings"))
         sequence_menu.addSeparator()
         for key, handler in (
             ("menu.item.add_clip", None),
@@ -1662,10 +1668,12 @@ class MainWindow(
         if not self.is_playing and self._present_cached_preview_at(
             float(self.playhead_seconds)
         ):
+            self._sync_multicam_audio(None, active_clips)
             return active_clips
 
         video_clips = [c for c in active_clips if c.track_type == "video"]
         if not video_clips:
+            self._sync_multicam_audio(None, active_clips)
             self.preview_panel.show_no_active_clip()
             if any(c.track_type == "graphics" for c in active_clips):
                 try:
@@ -1690,6 +1698,8 @@ class MainWindow(
             top_clip.source_time,
             playing=bool(self.is_playing),
         )
+        # Multicam : si le son vient d'une autre source que l'image, le lecteur du moniteur est coupé et ces sources jouent.
+        self._sync_multicam_audio(top_clip, active_clips)
         # Tâche 13 : applique le transform animé du clip supérieur si
         # la timeline contient au moins un clip vidéo. On évalue le
         # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité

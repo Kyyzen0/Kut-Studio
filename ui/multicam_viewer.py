@@ -156,6 +156,7 @@ class MulticamViewer(QWidget):
     """Grille d'angles + programme ; ``angle_requested(rang)`` à chaque clic sur une tuile (0 = Angle 1)."""
 
     angle_requested = Signal(int)
+    settings_requested = Signal()
 
     def __init__(
         self,
@@ -196,6 +197,11 @@ class MulticamViewer(QWidget):
         self.title.setObjectName("multicam_title")
         header.addWidget(self.title)
         header.addStretch(1)
+        self.settings_button = QToolButton()
+        self.settings_button.setAutoRaise(True)
+        self.settings_button.setFocusPolicy(Qt.TabFocus)
+        self.settings_button.clicked.connect(self.settings_requested.emit)
+        header.addWidget(self.settings_button)
         self.page_previous = QToolButton()
         self.page_previous.setText("‹")  # i18n-ignore: signe de pagination
         self.page_next = QToolButton()
@@ -224,6 +230,8 @@ class MulticamViewer(QWidget):
 
     def retranslate(self) -> None:
         self.title.setText(i18n.translate("multicam.viewer.title"))
+        self.settings_button.setText(i18n.translate("multicam.settings.open"))
+        self.settings_button.setToolTip(i18n.translate("multicam.menu.settings"))
         self.empty_label.setText(i18n.translate("multicam.viewer.empty"))
         self.page_previous.setToolTip(i18n.translate("multicam.viewer.page_previous"))
         self.page_next.setToolTip(i18n.translate("multicam.viewer.page_next"))

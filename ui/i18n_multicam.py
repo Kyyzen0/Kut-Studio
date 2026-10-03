@@ -268,3 +268,36 @@ _DIALOGS: dict[str, dict[str, str]] = {
     "multicam.audio_word": _t("Audio", "Audio", "Audio"),
 }
 MULTICAM_TRANSLATIONS.update(_DIALOGS)
+
+
+# --- Réglages d'une source Multicam -----------------------------------------------------------------------------------------
+_SETTINGS: dict[str, dict[str, str]] = {
+    "shortcuts.command.multicam_settings": _t(
+        "Réglages Multicam…", "Multicam settings…", "Ajustes multicámara…",
+    ),
+    "multicam.menu.settings": _t("Réglages Multicam…", "Multicam settings…", "Ajustes multicámara…"),
+    "multicam.settings.open": _t("Réglages", "Settings", "Ajustes"),
+    "multicam.settings.title": _t("Réglages Multicam", "Multicam settings", "Ajustes multicámara"),
+    "multicam.settings.angles": _t("Angles", "Angles", "Ángulos"),
+    "multicam.settings.color": _t("Changer la couleur", "Change the colour", "Cambiar el color"),
+    "multicam.settings.color_of": _t(
+        "Couleur de l'angle {name}", "Colour of angle {name}", "Color del ángulo {name}",
+    ),
+    "multicam.settings.offset": _t("Décalage de synchronisation", "Synchronization offset", "Desfase de sincronización"),
+    "multicam.settings.seconds_suffix": _t(" s", " s", " s"),
+    "multicam.settings.relink": _t("Relier…", "Relink…", "Reconectar…"),
+    "multicam.settings.resync": _t("Synchroniser par le son", "Synchronize by sound", "Sincronizar por el sonido"),
+    "multicam.settings.close": _t("Fermer", "Close", "Cerrar"),
+    "multicam.settings.replace_title": _t("Supprimer l'angle", "Delete the angle", "Eliminar el ángulo"),
+    "multicam.settings.replace_label": _t(
+        "Des segments montrent « {name} » : quel angle les remplace ?",
+        "Some segments show “{name}”: which angle replaces it?",
+        "Algunos segmentos muestran «{name}»: ¿qué ángulo lo reemplaza?",
+    ),
+    "multicam.message.resync_partial": _t(
+        "{count} angle(s) n'ont pas pu être synchronisés : ils gardent leur place.",
+        "{count} angle(s) could not be synchronized: they stay where they are.",
+        "{count} ángulo(s) no se pudieron sincronizar: conservan su posición.",
+    ),
+}
+MULTICAM_TRANSLATIONS.update(_SETTINGS)

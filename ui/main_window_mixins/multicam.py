@@ -37,10 +37,13 @@ class MulticamMixin:
     # ------------------------------------------------------------------
 
     def _init_multicam(self) -> None:
+        self._multicam_aux = None          # lecteurs audio du son en direct (créés au premier segment à son fixe ou mixé)
         timeline = self.timeline_panel
         timeline.multicam_replace_requested.connect(self.replace_multicam_angle)
         timeline.multicam_flatten_requested.connect(self.flatten_multicam_segment)
         timeline.multicam_viewer_requested.connect(self.show_multicam_viewer)
+        timeline.multicam_settings_requested.connect(lambda: self.show_multicam_settings())
+        self.multicam_viewer.settings_requested.connect(lambda: self.show_multicam_settings())
         viewer = self.multicam_viewer
         viewer.set_provider(self._multicam_viewer_context)
         viewer._resolve = self._multicam_tile_path           # noqa: SLF001 - la fenêtre choisit proxy ou original
@@ -56,6 +59,7 @@ class MulticamMixin:
             "multicam_create": lambda: self.create_multicam_from_timeline_selection(),
             "multicam_open_source": lambda: self.open_multicam_source(),
             "multicam_flatten": lambda: self.flatten_multicam_segment(),
+            "multicam_settings": lambda: self.show_multicam_settings(),
         })
         return handlers
 
@@ -95,6 +99,39 @@ class MulticamMixin:
             return str(proxies.resolve(path, need_audio=False, divisor=4))
         except Exception:  # noqa: BLE001 - un proxy illisible ne doit pas priver la tuile de son image
             return path
+
+    def _sync_multicam_audio(self, top_clip, active_clips) -> None:
+        """Son en direct d'un segment Multicam dont la politique audio n'est pas « le son suit l'image ».
+
+        ``top_clip`` : entrée vidéo montrée par le moniteur (``None`` : plus aucun segment). Quand son ``silent`` est vrai,
+        le lecteur du moniteur est coupé ; les entrées audio du **même segment** (enregistreur, sources mixées) sont jouées
+        par :class:`~ui.multicam_audio.AuxAudio`. Un clip ordinaire, ou un segment dont le son suit l'image, ne change rien.
+        """
+        aux = self._multicam_aux
+        wanted: list[tuple[str, float]] = []
+        silenced = False
+        if top_clip is not None and top_clip.is_nested:
+            owner = self._ensure_timeline_index().clip(top_clip.owner_clip_id)
+            if owner is not None and is_multicam_clip(self.project, owner):
+                silenced = bool(top_clip.silent)
+                wanted = [
+                    (entry.source_path, entry.source_time) for entry in active_clips
+                    if entry.track_type == "audio" and entry.owner_clip_id == top_clip.owner_clip_id and entry.source_path
+                ]
+        self.preview_panel.set_silenced(silenced)
+        if not wanted:
+            if aux is not None:
+                aux.stop()
+            return
+        if aux is None:
+            from ui.multicam_audio import AuxAudio
+
+            aux = self._multicam_aux = AuxAudio(self)
+        aux.sync(wanted, bool(getattr(self, "is_playing", False)))
+
+    def _release_multicam_audio(self) -> None:
+        if self._multicam_aux is not None:
+            self._multicam_aux.release()
 
     def _selected_clip_id(self) -> str | None:
         timeline = self.timeline_panel

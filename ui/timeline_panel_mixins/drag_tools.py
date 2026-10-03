@@ -201,7 +201,7 @@ class DragToolsMixin:
             open_nested = menu.addAction(translate("sequence.action.open_nested"))
         create_multicam = menu.addAction(translate("multicam.menu.create"))
         create_multicam.setEnabled(len(self.selected_clip_ids) >= 2)
-        replace_actions, flatten = self._add_multicam_menu_entries(menu, view)
+        replace_actions, flatten, settings = self._add_multicam_menu_entries(menu, view)
         chosen = menu.exec(global_pos)
         if chosen is cut:
             self.blade_cut_requested.emit(clip_id, self.playhead_seconds)
@@ -225,11 +225,13 @@ class DragToolsMixin:
             self.multicam_replace_requested.emit(clip_id, replace_actions[chosen])
         elif flatten is not None and chosen is flatten:
             self.multicam_flatten_requested.emit(clip_id)
+        elif settings is not None and chosen is settings:
+            self.multicam_settings_requested.emit()
 
-    def _add_multicam_menu_entries(self, menu, view) -> tuple[dict, object]:
-        """Entrées Multicam du menu d'un segment : « Remplacer par l'angle ▸ » et « Aplatir ». Rien pour un autre clip."""
+    def _add_multicam_menu_entries(self, menu, view) -> tuple[dict, object, object]:
+        """Entrées Multicam du menu d'un segment : « Remplacer par l'angle ▸ », « Aplatir », « Réglages ». Rien pour un autre clip."""
         if view is None or not getattr(view, "is_multicam", False) or self.project is None:
-            return {}, None
+            return {}, None, None
         source = self.project.get_sequence(view.sequence_id)
         angles = source.multicam.angles if source is not None and source.multicam is not None else []
         submenu = menu.addMenu(translate("multicam.menu.replace_with"))
@@ -237,4 +239,5 @@ class DragToolsMixin:
             submenu.addAction(translate("multicam.menu.angle_item", number=index + 1, name=angle.name)): index
             for index, angle in enumerate(angles)
         }
-        return replace_actions, menu.addAction(translate("multicam.menu.flatten"))
+        flatten = menu.addAction(translate("multicam.menu.flatten"))
+        return replace_actions, flatten, menu.addAction(translate("multicam.menu.settings"))

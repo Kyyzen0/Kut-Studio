@@ -137,6 +137,9 @@ class HistoryMixin:
         refresh_sequences = getattr(self, "_refresh_sequence_ui", None)
         if callable(refresh_sequences):
             refresh_sequences()
+        refresh_multicam = getattr(self, "_refresh_multicam_settings", None)
+        if callable(refresh_multicam):
+            refresh_multicam()                   # la boîte de réglages Multicam relit la source après annuler / rétablir
         self._refresh_undo_redo_state()
 
     def undo_last(self) -> None:

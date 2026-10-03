@@ -766,3 +766,15 @@ def test_stabilization_on_an_angle_clip_survives_a_synchronisation_offset():
     assert layer_after.timeline_start == pytest.approx(layer_before.timeline_start + 4.0)
     # Les images-clés sont en temps **local du clip** : décaler le clip dans la source ne les touche pas, c'est le clip qui bouge.
     assert list(layer_after.transform_keyframes) == list(layer_before.transform_keyframes)
+
+
+def test_a_camera_whose_sound_is_kept_but_whose_picture_is_hidden_stays_audible_in_the_realtime_evaluation():
+    project, source, _segment = _with_segment("angle-2")
+    set_audio_policy(project, source.id, AudioMode.MIX, ["angle-1", "angle-4"])
+    entries = evaluate_timeline(project, 10.0)
+    video = [e for e in entries if e.track_type == "video"]
+    audio = sorted(e.source_path for e in entries if e.track_type == "audio")
+    assert [e.source_path for e in video] == ["/media/camB.mp4"] and video[0].silent       # l'image de B, sans son
+    assert audio == ["/media/camA.mp4", "/media/rec.wav"]                                    # le son de A (image masquée) et l'enregistreur
+    indexed = build_timeline_index(project).active_at(project, 10.0)
+    assert sorted(e.source_path for e in indexed if e.track_type == "audio") == audio

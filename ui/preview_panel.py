@@ -387,6 +387,10 @@ class PreviewPanel(QWidget):
             self.playback_seeks += 1
         self.player.setPosition(target_ms)
 
+    def set_silenced(self, silenced: bool) -> None:
+        """Coupe (ou rétablit) le son du lecteur du moniteur : le son vient alors d'ailleurs (enregistreur Multicam)."""
+        self.audio_output.setMuted(bool(silenced))
+
     def set_preview_divisor(self, divisor: int) -> None:
         """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""
         self.preview_divisor = max(1, int(divisor))

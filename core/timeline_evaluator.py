@@ -26,7 +26,7 @@ fautif : jamais de récursion infinie.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .project_model import Clip, MediaAsset, Project, Sequence
 
@@ -337,12 +337,18 @@ def expand_nested_clip(
     track_filter = track_filter_for(child, clip)
     visible_tracks = child.tracks
     if not track_filter.is_identity:
-        entries = [
-            entry for entry in entries
-            if entry.track_id not in (
-                track_filter.hide_video if entry.track_type == "video" else track_filter.hide_audio
-            )
-        ]
+        kept: list[ActiveClip] = []
+        for entry in entries:
+            if entry.track_type == "video" and entry.track_id in track_filter.hide_video:
+                if entry.track_id not in track_filter.hide_audio:
+                    # Image masquée mais son retenu (politique audio fixe ou mixte) : il reste une entrée **audio**, que le
+                    # moniteur en direct peut jouer ; elle n'a jamais de vidéo.
+                    kept.append(replace(entry, track_type="audio"))
+                continue
+            if entry.track_type != "video" and entry.track_id in track_filter.hide_audio:
+                continue
+            kept.append(entry)
+        entries = kept
         visible_tracks = [item for item in child.tracks if not track_filter.hides_track(item.id)]
     inner = apply_track_solo(visible_tracks, entries)
     accepted = None if track.type == "video" else {"audio"}

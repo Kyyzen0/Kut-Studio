@@ -685,6 +685,7 @@ def dialog_factories(window) -> list[tuple[str, Callable[[], object]]]:
     from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
     from ui.library_organization_widgets import TagManagerDialog
     from ui.multicam_dialogs import MulticamCreateDialog, SourceRow, SummaryRow, SyncSummaryDialog
+    from ui.multicam_settings import MulticamSettingsDialog
     from ui.preferences_dialog import PreferencesDialog
     from ui.project_panel_widgets.effects_library_view import SavePresetDialog
     from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog
@@ -699,12 +700,22 @@ def dialog_factories(window) -> list[tuple[str, Callable[[], object]]]:
             [SourceRow("a", "Wide", info="1920×1080 · 25 · 01:00:00:00"), SourceRow("b", "Close-up", info="1920×1080 · 25")],
             default_name="Multicam", from_timeline=False, addable=[SourceRow("rec", "Recorder", kind="audio")],
         )),
+        ("Réglages Multicam", lambda: _settings_dialog(window, MulticamSettingsDialog)),
         ("Résultat de la synchronisation", lambda: SyncSummaryDialog(
             [SummaryRow("Wide", SyncStatus.NONE, 0.0, reference=True), SummaryRow("Close-up", SyncStatus.GOOD, 2.48),
              SummaryRow("Drone", SyncStatus.FAILED)],
             audio_choices=[("suit", MulticamAudio(AudioMode.FOLLOW_VIDEO)), ("fixe", MulticamAudio(AudioMode.FIXED, ("angle-1",)))],
         )),
     ]
+
+
+def _settings_dialog(window, dialog_class):
+    """Réglages Multicam construits sur la première source Multicam du projet (le projet riche en contient une)."""
+    dialog = dialog_class()
+    source = next((sequence for sequence in window.project.sequences if sequence.multicam is not None), None)
+    if source is not None:
+        dialog.set_state(window.project, source.id)
+    return dialog
 
 
 def audit_dialog(name: str, dialog) -> list[Finding]:

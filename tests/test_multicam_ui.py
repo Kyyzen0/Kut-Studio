@@ -148,11 +148,11 @@ def test_the_clip_menu_offers_one_replace_entry_per_angle_for_a_segment_only(win
     panel = window.timeline_panel
     view = panel.find_view_by_id(segment.id)
     menu = QMenu()
-    replace_actions, flatten = panel._add_multicam_menu_entries(menu, view)
-    assert len(replace_actions) == 3 and flatten is not None
+    replace_actions, flatten, settings = panel._add_multicam_menu_entries(menu, view)
+    assert len(replace_actions) == 3 and flatten is not None and settings is not None
     assert [a.text() for a in replace_actions] == ["1. Wide", "2. Close-up", "3. Drone"]
     plain = QMenu()
-    assert panel._add_multicam_menu_entries(plain, None) == ({}, None)
+    assert panel._add_multicam_menu_entries(plain, None) == ({}, None, None)
 
 
 def test_flatten_from_the_menu_signal_gives_ordinary_clips_and_is_undoable(window):
@@ -221,7 +221,7 @@ def test_a_segment_clip_carries_its_angle_in_the_timeline_and_paints_the_angle_c
 
 def test_the_multicam_commands_exist_in_the_shortcut_table_with_handlers(window):
     ids = {f"multicam_angle_{n}" for n in range(1, 10)} | {
-        "multicam_viewer", "multicam_create", "multicam_open_source", "multicam_flatten",
+        "multicam_viewer", "multicam_create", "multicam_open_source", "multicam_flatten", "multicam_settings",
     }
     assert ids <= {c.id for c in window.shortcuts.shortcut_map.commands}
     assert not window.shortcuts.missing_handlers()
