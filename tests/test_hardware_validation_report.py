@@ -192,6 +192,7 @@ def test_a_required_backend_that_is_missing_is_a_failure(detected, tmp_path):
     assert nvenc.outcome is Outcome.FAILED
     assert nvenc.reason == "NVIDIA NVENC : encodeur absent de ce FFmpeg (h264_nvenc) — exigé par " + REQUIRE_VARIABLE
     assert report.exit_code == 1
+    assert "repli si cet encodeur échoue" not in format_report(report)  # jamais lancé : aucun repli à décrire
 
 
 @pytest.mark.parametrize(

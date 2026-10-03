@@ -723,7 +723,7 @@ def format_report(report: ValidationReport, *, workdir: str = "") -> str:
     witness = {run.container: run.outcome for run in report.runs if run.backend is HardwareEncoder.CPU}
     for run in report.runs:
         lines.extend(f"  {line}" for line in format_validation(run).splitlines())
-        if run.outcome is not Outcome.SKIPPED and run.fallback:
+        if run.fallback and run.returncode is not None:  # un encodeur jamais lancé n'a pas de repli à décrire
             lines.append(f"  {_fallback_text(run, witness)}")
     validated = report.validated_backends()
     lines += [
