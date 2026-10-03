@@ -18,7 +18,7 @@ from core.blend_modes import BlendMode
 from core.effects_model import ClipEffect, EffectType
 from core.gpu_backend import FrameStats
 from core.gpu_cache import GpuTextureCache
-from core.memory_monitor import CRITICAL, MemoryStatus, MemoryWatch
+from core.memory_monitor import CRITICAL, NORMAL, MemoryStatus, MemoryWatch
 from core.user_settings import load_user_settings
 from ui.preview_panel import PLAYBACK_DRIFT_SECONDS, PreviewPanel
 
@@ -219,7 +219,11 @@ def test_hardware_diagnostics_follow_the_current_language(qtbot, monkeypatch, tm
     monkeypatch.setattr("core.memory_monitor.read_memory_status",
                         lambda: MemoryStatus(24 * 2**30, 12 * 2**30, None, NORMAL, "test"))
     window = _window(qtbot, monkeypatch, tmp_path)
+    # La mémoire libre est lue sur l'OS et bouge entre deux appels : on la fige, sinon l'égalité finale est aléatoire.
+    window._memory_watch = MemoryWatch(reader=lambda: MemoryStatus(24 * 2**30, int(9.8 * 2**30), None, NORMAL, "test"))
+    window._poll_memory()
     french = window.hardware_diagnostics_text()
+    assert "9.8 Go libres / 24 Go · pression normal" in french
     expected = {"en": ("— Decoding —", "— Preview —", "— Memory —", "Export: CPU decoding"),
                 "es": ("— Decodificación —", "— Vista previa —", "— Memoria —", "Exportación: decodificación por CPU")}
     for language, sections in expected.items():
