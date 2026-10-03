@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -62,6 +63,7 @@ from .tracking_model import (
 )
 
 CACHE_KIND = "tracking"
+LOGGER = logging.getLogger("kut_studio.tracking")
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +209,7 @@ class TrackingCache:
             path = self._path(key)
             raw = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict) or not isinstance(raw.get("data"), dict):
+                LOGGER.warning("Cache de tracking : entrée %s de forme inattendue, ignorée", key)
                 return None  # une entrée vide ne vaut pas « rien suivi » : on recalcule
             os.utime(path)  # dernier usage (éviction LRU)
             data = TrackData.from_dict(raw["data"])
@@ -218,7 +221,8 @@ class TrackingCache:
                 tracker_id="", samples=samples, reason=str(raw.get("reason", StopReason.RANGE_END)),
                 stop_index=int(stop) if stop is not None else None, from_cache=True,
             )
-        except Exception:  # noqa: BLE001 - un cache n'est jamais indispensable
+        except Exception as exc:  # noqa: BLE001 - un cache n'est jamais indispensable
+            LOGGER.warning("Cache de tracking : entrée %s illisible, ignorée (%s)", key, exc)
             return None
 
     def store(self, key: str, outcome: TrackerOutcome, rate: float) -> None:
@@ -320,10 +324,13 @@ def run_tracking(
         analyzed = _analyze(request, active, geometry, outcomes, is_cancelled, progress)
         result.frames_analyzed = analyzed
     except MediaOffline as exc:
+        LOGGER.warning("Tracking : média hors ligne (%s)", exc)
         result.state, result.message = "failed", f"offline:{exc}"
     except (FrameReadError, OSError) as exc:
+        LOGGER.warning("Tracking : lecture des images impossible (%s)", exc)
         result.state, result.message = "failed", f"read:{exc}"
     except Exception as exc:  # garde-fou : l'analyse ne fait jamais tomber l'interface
+        LOGGER.exception("Tracking : l'analyse a échoué")
         result.state, result.message = "failed", f"error:{exc}"
     if result.state != "failed" and is_cancelled():
         result.state = "cancelled"
@@ -480,6 +487,7 @@ class TrackingJob:
         try:
             result = run_tracking(self.request, cancelled=is_cancelled, progress=on_progress, cache=self.cache)
         except Exception as exc:  # noqa: BLE001 - un job ne doit jamais rester « running » pour toujours
+            LOGGER.exception("Tracking : la tâche d'analyse a échoué")
             result = TrackingResult(self.request, {})
             result.state, result.message = "failed", f"error:{exc}"
         with self._lock:

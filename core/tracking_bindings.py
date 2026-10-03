@@ -45,6 +45,7 @@ de son parent (exact si le parent n'est ni tourné ni mis à l'échelle).
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 from collections import OrderedDict
@@ -89,6 +90,8 @@ from .tracking_motion import (
     stabilization_result,
 )
 from .visual_effects import TRANSFORM_PROPERTIES, TransformKeyframe, evaluate_transform
+
+LOGGER = logging.getLogger("kut_studio.tracking")
 
 CROP_MASK_ID = "trackcrop"
 """Identifiant du masque de recadrage dérivé d'une stabilisation (jamais stocké)."""
@@ -594,6 +597,7 @@ def effective_clip_state(clip, context: TrackingContext) -> EffectiveState:
     try:
         state = _compute_state(clip, context, tracking)
     except Exception as exc:  # garde-fou : jamais de rendu cassé par une liaison
+        LOGGER.exception("Tracking : état du clip %s impossible à dériver (rendu sans suivi)", clip.id)
         state = replace(base, warnings=(f"tracking:{exc}",))
     if key is not None:
         with _STATE_LOCK:

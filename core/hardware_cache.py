@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .hardware_encoding import (
     LOGGER,
+    SCHEMA_VERSION,
     HardwareCapabilities,
     Runner,
     default_runner,
@@ -215,12 +216,22 @@ class CapabilityService:
     def _read_disk(self) -> HardwareCapabilities | None:
         try:
             data = json.loads(self.cache_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except FileNotFoundError:
+            return None                       # premier démarrage : rien d'anormal
+        except (OSError, ValueError) as error:
+            LOGGER.warning("Cache des capacités illisible, détection refaite (%s)", error)
             return None
         try:
-            return HardwareCapabilities.from_dict(data)
-        except Exception:  # noqa: BLE001 - un cache n'est jamais indispensable
+            capabilities = HardwareCapabilities.from_dict(data)
+        except Exception as error:  # noqa: BLE001 - un cache n'est jamais indispensable
+            LOGGER.warning("Cache des capacités mal formé, détection refaite (%s)", error)
             return None
+        if capabilities is None:
+            outdated = isinstance(data, dict) and data.get("schema") != SCHEMA_VERSION
+            (LOGGER.info if outdated else LOGGER.warning)(
+                "Cache des capacités %s, détection refaite", "d'une version antérieure" if outdated else "mal formé"
+            )
+        return capabilities
 
     def _write_disk(self, capabilities: HardwareCapabilities) -> None:
         path = self.cache_path
