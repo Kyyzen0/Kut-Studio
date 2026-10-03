@@ -63,7 +63,7 @@ jobs:
 
       # --timeout : un test qui se bloque (thread ou FFmpeg orphelin) échoue au lieu de geler la CI 30 minutes.
       - name: Run test suite
-        run: python -m pytest -q -n auto --timeout=600
+        run: python -m pytest -q -n auto --timeout=600 --durations=15
 
       - name: Source UI smoke test
         run: python main.py --smoke-test

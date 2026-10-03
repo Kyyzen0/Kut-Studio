@@ -29,6 +29,22 @@ def pytest_pyfunc_call(pyfuncitem):
         ensure_libass()
 
 
+@pytest.fixture(autouse=True)
+def _deliver_deferred_deletes():
+    """Détruit vraiment les widgets que ``qtbot`` vient de fermer (``deleteLater`` n'est jamais livré sans boucle).
+
+    ``qtbot.addWidget`` ferme la fenêtre puis appelle ``deleteLater()`` ; hors d'une boucle d'événements, cette
+    suppression différée n'arrive jamais. La fenêtre fermée restait donc vivante, avec ses panneaux **abonnés à la
+    langue** (``i18n.subscribe`` se désabonne au ``destroyed``) : après une centaine de tests d'un même processus,
+    chaque ``set_language`` retraduisait 90 fenêtres fantômes (70 s au lieu de 2 s pour un test, soit une suite qui
+    dépassait le délai de 30 minutes de la CI macOS). Fixture automatique, donc démontée **après** celle de ``qtbot``.
+    """
+    yield
+    from qt_cleanup import deliver_deferred_deletes
+
+    deliver_deferred_deletes()
+
+
 def pytest_configure(config):
     """Déclare la marque ``libass`` ; donne à chaque worker xdist son propre dossier temporaire.
 
