@@ -84,18 +84,21 @@ class ProcessOps(Protocol):
 
 
 _VERSION_SUFFIX = re.compile(r"[\d.]+$")
+_SHELLS = frozenset({"sh", "bash", "dash", "zsh", "ksh"})
 
 
 def normalized_name(name: str) -> str:
-    """Nom comparable : casse ignorée, sans dossier, sans ``.exe`` ni suffixe de version.
+    """Nom comparable : casse ignorée, sans dossier, sans ``.exe`` ni suffixe de version, shells confondus.
 
     Un lanceur peut se ré-exécuter sous un autre nom en gardant PID et heure de début : le Python « framework » de
-    macOS passe de ``python3.14`` à ``Python``. Une comparaison exacte épargnerait alors un enfant légitime.
+    macOS passe de ``python3.14`` à ``Python``, le ``/bin/sh`` de macOS devient ``bash`` (ou ``zsh``, ``dash``).
+    Une comparaison exacte épargnerait alors un enfant légitime.
     """
     base = name.strip().replace("\\", "/").rsplit("/", 1)[-1].lower()
     if base.endswith(".exe"):
         base = base[:-4]
-    return _VERSION_SUFFIX.sub("", base) or base
+    base = _VERSION_SUFFIX.sub("", base) or base
+    return "sh" if base in _SHELLS else base
 
 
 def same_process(expected: ProcessIdentity, current: ProcessIdentity) -> bool:

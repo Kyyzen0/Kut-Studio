@@ -102,6 +102,7 @@ def _registry(root: Path, owner: ProcessIdentity | None, *children: ProcessIdent
 def test_names_are_compared_without_case_version_or_extension():
     # Le Python « framework » de macOS se ré-exécute : python3.14 devient Python, même PID, même heure de début.
     assert normalized_name("python3.14") == normalized_name("Python") == "python"
+    assert normalized_name("sh") == normalized_name("bash") == normalized_name("zsh")  # /bin/sh de macOS
     assert normalized_name(r"C:\ffmpeg\bin\FFmpeg.exe") == normalized_name("/opt/bin/ffmpeg") == "ffmpeg"
     assert normalized_name("ffmpeg") != normalized_name("ffprobe")
 
