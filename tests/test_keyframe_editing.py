@@ -63,7 +63,9 @@ def test_transform_properties_are_registered_for_video_and_graphics_only():
     ids = [t.id for t in targets_for("video")]
     assert ids[:5] == ["position_x", "position_y", "scale", "rotation", "opacity"]
     assert [t.id for t in targets_for("graphics")][:5] == ids[:5]
-    assert targets_for("audio") == () and targets_for("subtitle") == ()
+    # l'audio n'a aucune propriété de transformation : seule la vitesse (remappage temporel) s'applique à un clip audio
+    assert [t.id for t in targets_for("audio")] == ["time.speed"] and targets_for("subtitle") == ()
+    assert "time.speed" in ids and "time.speed" not in [t.id for t in targets_for("graphics")]
     with pytest.raises(KeyError):
         get_target("inconnue")
 

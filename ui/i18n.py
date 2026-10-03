@@ -1855,6 +1855,7 @@ from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
+from ui.i18n_time import TIME_TRANSLATIONS as _TIME  # noqa: E402
 
 DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_mograph": _MOGRAPH,
@@ -1864,6 +1865,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_dialogs": _DIALOGS,
     "ui.i18n_history": _HISTORY,
     "ui.i18n_multicam": _MULTICAM,
+    "ui.i18n_time": _TIME,
 }
 
 

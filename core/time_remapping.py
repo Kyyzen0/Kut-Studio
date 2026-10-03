@@ -1,13 +1,18 @@
-"""Système de remappage temporel non destructif pour Kut-Studio.
+"""Remappage temporel non destructif : ce que l'utilisateur a *choisi* pour le temps d'un clip.
 
-Ce module fournit les types et fonctions pures pour gérer la vitesse,
-le reverse et l'arrêt sur image des clips vidéo et audio.
+Ce module décrit les **choix** (vitesse, sens, arrêt sur image, interpolation des images, audio) ; le **mapping** qui en
+résulte — temps de la timeline vers temps source, durée, retournements — vit dans :mod:`core.time_map`, l'unique
+modèle temporel. Une courbe de vitesse n'est pas stockée ici : c'est une propriété animable (``time.speed``, keyframes de
+``Clip.animation``) ; ``TimeRemapping.speed`` en est la valeur **statique**, lue tant qu'aucun keyframe n'existe.
 
 Concepts clés :
-- La durée timeline d'un clip dépend de sa vitesse : duration_timeline = duration_source / speed
-- Le reverse est un booléen séparé (pas de vitesse négative)
-- Un arrêt sur image a une durée timeline positive mais ne lit qu'une image source
-- Les clips audio ne peuvent pas devenir un arrêt sur image
+- Sans courbe, la durée d'un clip est sa portion de source divisée par sa vitesse (formule historique, inchangée).
+- ``reverse`` inverse tout le mapping ; une courbe peut en plus passer par zéro et repartir en arrière.
+- Un arrêt sur image a une durée timeline positive mais ne lit qu'une image source.
+- Les clips audio ne peuvent pas devenir un arrêt sur image.
+
+Les fonctions de conversion de ce module gardent leur signature historique mais n'ont plus de formule propre : elles
+construisent un mapping constant de :mod:`core.time_map`.
 
 Toutes les fonctions sont pures et testables sans dépendance à Qt.
 """
@@ -27,11 +32,11 @@ if TYPE_CHECKING:
 # Constantes
 # ---------------------------------------------------------------------------
 
-MIN_SPEED: float = 0.1
-"""Vitesse minimale autorisée (0.1x)."""
+MIN_SPEED: float = 0.05
+"""Vitesse constante minimale (0.05x = 5 %). Une courbe peut descendre à 0 et passer en négatif."""
 
-MAX_SPEED: float = 8.0
-"""Vitesse maximale autorisée (8x)."""
+MAX_SPEED: float = 10.0
+"""Vitesse maximale (10x = 1000 %), constante ou animée, dans les deux sens."""
 
 DEFAULT_SPEED: float = 1.0
 """Vitesse par défaut (1.0x = normale)."""
@@ -52,18 +57,46 @@ class FreezeFrameMode(str, Enum):
     FREEZE = "freeze"
 
 
+class TimeInterpolation(str, Enum):
+    """Comment une image est produite quand le temps source tombe **entre** deux images source."""
+
+    SAMPLING = "sampling"
+    """Image source la plus proche : aucun calcul (le plus léger, le repli de tous les autres)."""
+    BLENDING = "blending"
+    """Mélange pondéré des deux images voisines : ``A·(1 − t) + B·t``."""
+    OPTICAL_FLOW = "optical_flow"
+    """Image intermédiaire synthétisée à partir du mouvement estimé entre les deux images voisines."""
+
+
+class FlowQuality(str, Enum):
+    """Qualité (donc coût) de l'estimation de mouvement ; ``AUTO`` choisit selon la résolution et l'usage."""
+
+    AUTO = "auto"
+    DRAFT = "draft"
+    BALANCED = "balanced"
+    BEST = "best"
+
+
 @dataclass(frozen=True)
 class TimeRemapping:
     """Remappage temporel d'un clip.
 
     Attributes:
-        speed: Vitesse de lecture (0.1 à 8.0). 1.0 = normale.
-        reverse: Si True, le clip est lu à l'envers.
+        speed: Vitesse **statique** (0.05 à 10.0), lue tant que la propriété animable ``time.speed`` n'a pas de
+            keyframe. 1.0 = normale.
+        reverse: Si True, tout le mapping est inversé (la courbe de vitesse aussi).
         freeze_mode: Mode d'arrêt sur image (NONE ou FREEZE).
         freeze_source_time: Instant source pour l'arrêt sur image (en secondes).
             Utilisé uniquement si freeze_mode == FREEZE.
         freeze_duration: Durée de l'arrêt sur image sur la timeline (en secondes).
             Doit être > 0. Utilisé uniquement si freeze_mode == FREEZE.
+        interpolation: Production des images intermédiaires (échantillonnage, mélange, flux optique).
+        flow_quality: Qualité du flux optique (``AUTO`` : selon la résolution et l'usage).
+        preserve_pitch: L'audio garde sa hauteur quand la vitesse change (sinon : effet bande).
+        remap_audio: Si False, seule la vidéo est remappée (montages musicaux) ; l'audio garde son temps.
+        anchor: Temps source à l'instant 0 du clip. ``None`` : la borne de la fenêtre (``source_in``, ou
+            ``source_out`` en inverse). Nécessaire quand une courbe revient en arrière.
+        duration: Durée imposée du clip (secondes). ``None`` : dérivée (la source est épuisée). Ne peut que raccourcir.
     """
 
     speed: float = DEFAULT_SPEED
@@ -71,6 +104,12 @@ class TimeRemapping:
     freeze_mode: FreezeFrameMode = FreezeFrameMode.NONE
     freeze_source_time: float = 0.0
     freeze_duration: float = 1.0
+    interpolation: TimeInterpolation = TimeInterpolation.SAMPLING
+    flow_quality: FlowQuality = FlowQuality.AUTO
+    preserve_pitch: bool = False
+    remap_audio: bool = True
+    anchor: float | None = None
+    duration: float | None = None
 
     def __post_init__(self) -> None:
         """Valide les invariants du remappage temporel."""
@@ -80,6 +119,12 @@ class TimeRemapping:
                 f"La vitesse doit être entre {MIN_SPEED}x et {MAX_SPEED}x, "
                 f"got {self.speed}x."
             )
+        object.__setattr__(self, "interpolation", TimeInterpolation(self.interpolation))
+        object.__setattr__(self, "flow_quality", FlowQuality(self.flow_quality))
+        if self.anchor is not None and not math.isfinite(self.anchor):
+            raise ValueError("L'ancre du mapping doit être un temps source fini.")
+        if self.duration is not None and not (math.isfinite(self.duration) and self.duration > 0.0):
+            raise ValueError("La durée imposée d'un clip doit être strictement positive.")
 
         # Freeze frame
         if self.freeze_mode == FreezeFrameMode.FREEZE:
@@ -95,11 +140,17 @@ class TimeRemapping:
 
     @property
     def is_normal(self) -> bool:
-        """Le clip a-t-il une vitesse normale sans reverse ni freeze ?"""
+        """Le clip a-t-il une vitesse normale, sans reverse, freeze, interpolation ni ancre ou durée imposée ?
+
+        Ne voit pas une courbe de vitesse (elle vit dans ``Clip.animation``) : pour un clip, voir ``Clip.is_time_remapped``.
+        """
         return (
             self.speed == DEFAULT_SPEED
             and not self.reverse
             and self.freeze_mode == FreezeFrameMode.NONE
+            and self.interpolation is TimeInterpolation.SAMPLING
+            and self.anchor is None
+            and self.duration is None
         )
 
     @classmethod
@@ -152,8 +203,6 @@ def source_to_timeline_time(
     Raises:
         ValueError: Si source_time est hors des bornes [source_in, source_out].
     """
-    source_duration = source_out - source_in
-
     if freeze_mode == FreezeFrameMode.FREEZE:
         # En mode freeze, toute la durée timeline correspond à un seul instant source
         # On vérifie que source_time correspond bien à freeze_source_time
@@ -162,7 +211,6 @@ def source_to_timeline_time(
                 f"En mode arrêt sur image, source_time doit être {freeze_source_time}, "
                 f"got {source_time}."
             )
-        # Le temps timeline est simplement l'offsets dans la durée freeze
         return 0.0  # Le freeze commence à t=0 sur la timeline du clip
 
     # Normaliser le temps source dans la plage du clip
@@ -170,18 +218,9 @@ def source_to_timeline_time(
         raise ValueError(
             f"source_time {source_time} doit être dans [{source_in}, {source_out}]."
         )
+    from .time_map import ConstantTimeMap
 
-    # Calculer le temps relatif dans le clip source
-    relative_source = source_time - source_in
-
-    if reverse:
-        # En reverse, on inverse le temps relatif
-        relative_source = source_duration - relative_source
-
-    # Appliquer la vitesse
-    timeline_time = relative_source / speed
-
-    return timeline_time
+    return ConstantTimeMap(source_in, source_out, speed, reverse).times_at_source(source_time)[0]
 
 
 def timeline_to_source_time(
@@ -210,27 +249,12 @@ def timeline_to_source_time(
     Raises:
         ValueError: Si timeline_time est hors des bornes valides.
     """
-    source_duration = source_out - source_in
+    from .time_map import ConstantTimeMap
 
     if freeze_mode == FreezeFrameMode.FREEZE:
         # En mode freeze, tout temps timeline donne le même temps source
         return freeze_source_time
-
-    # Calculer le temps source relatif
-    relative_source = timeline_time * speed
-
-    if reverse:
-        # En reverse, on inverse le temps relatif
-        relative_source = source_duration - relative_source
-
-    # Vérifier les bornes
-    if relative_source < 0.0 or relative_source > source_duration:
-        raise ValueError(
-            f"timeline_time {timeline_time} avec speed {speed} et reverse {reverse} "
-            f"donne un temps source hors des bornes [{source_in}, {source_out}]."
-        )
-
-    return source_in + relative_source
+    return ConstantTimeMap(source_in, source_out, speed, reverse).strict_source_time(timeline_time)
 
 
 def compute_timeline_duration(
@@ -252,12 +276,11 @@ def compute_timeline_duration(
     Returns:
         Durée sur la timeline (en secondes).
     """
-    source_duration = source_out - source_in
-
     if freeze_mode == FreezeFrameMode.FREEZE:
         return freeze_duration
+    from .time_map import ConstantTimeMap
 
-    return source_duration / speed
+    return ConstantTimeMap(source_in, source_out, speed).duration
 
 
 def validate_time_remapping(

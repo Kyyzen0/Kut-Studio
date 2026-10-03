@@ -393,18 +393,28 @@ class Clip:
 
     @property
     def duration(self) -> float:
-        """Durée du clip sur la timeline.
-        
-        La durée timeline dépend de la vitesse et du mode freeze frame :
-        - Sans freeze : duration = source_duration / speed
-        - Avec freeze : duration = freeze_duration
+        """Durée du clip sur la timeline, **dérivée** (jamais stockée à part).
+
+        - Arrêt sur image : ``freeze_duration``.
+        - Vitesse constante, sans ancre ni durée imposée : ``source_duration / speed`` (formule historique, inchangée).
+        - Sinon (courbe de vitesse, ancre, durée imposée) : celle de :attr:`time_map` (première sortie de la fenêtre
+          source).
         """
         from .time_remapping import FreezeFrameMode
-        
-        if self.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
-            return self.time_remapping.freeze_duration
-        
-        return self.source_duration / self.time_remapping.speed
+
+        remapping = self.time_remapping
+        if remapping.freeze_mode == FreezeFrameMode.FREEZE:
+            return remapping.freeze_duration
+        if not self.animation and remapping.anchor is None and remapping.duration is None:
+            return self.source_duration / remapping.speed
+        return self.time_map.duration
+
+    @property
+    def time_map(self):
+        """Le mapping temps timeline → temps source de ce clip (:mod:`core.time_map`), l'unique modèle temporel."""
+        from .time_map import time_map_for_clip
+
+        return time_map_for_clip(self)
 
     def set_fade_in(self, seconds: float) -> float:
         """Règle le fondu d'entrée sans empiéter sur le fondu de sortie.
@@ -475,13 +485,20 @@ class Clip:
 
     @property
     def speed(self) -> float:
-        """Vitesse de lecture du clip."""
+        """Vitesse **statique** du clip (celle des clips sans courbe). Pour l'instant ``t``, voir :attr:`time_map`."""
         return self.time_remapping.speed
 
     @property
+    def has_speed_curve(self) -> bool:
+        """La vitesse est-elle animée (keyframes ``time.speed`` dans ``Clip.animation``) ?"""
+        from .time_map import has_speed_curve
+
+        return has_speed_curve(self)
+
+    @property
     def is_time_remapped(self) -> bool:
-        """Le clip a-t-il un remappage temporel non par défaut ?"""
-        return not self.time_remapping.is_normal
+        """Le clip a-t-il un remappage temporel non par défaut (vitesse, sens, arrêt, interpolation ou courbe) ?"""
+        return not self.time_remapping.is_normal or self.has_speed_curve
 
     @property
     def is_nested(self) -> bool:
