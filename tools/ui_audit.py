@@ -779,6 +779,19 @@ def _parse_sizes(text: str) -> list[tuple[int, int]]:
     return sizes
 
 
+def scratch_directory() -> tempfile.TemporaryDirectory[str]:
+    """Dossier jetable de l'audit : préférences, caches et proxys y sont isolés, jamais ceux de l'utilisateur.
+
+    Son nettoyage est **au mieux** et ne fait jamais le verdict de l'audit. Sous Windows un fichier écrit à l'instant
+    (image de calque de motion graphics, ``.<nom>.<pid>.tmp.png``) peut rester verrouillé quelques instants, par un
+    processus fils en train de se fermer ou par l'antivirus qui l'analyse : ``rmtree`` levait alors ``PermissionError
+    [WinError 32]`` en sortant du bloc, le résumé n'était jamais affiché et le code de sortie valait 1 sans qu'aucun
+    constat n'existe (un run de CI sur deux commits identiques pour ce test : vert, puis rouge). Un reliquat dans le
+    dossier temporaire du système est sans importance.
+    """
+    return tempfile.TemporaryDirectory(prefix="kut-ui-audit-", ignore_cleanup_errors=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES), help="ex. 1280x720,1180x720")
@@ -793,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
     ensure_offscreen_fonts()
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root))
-    with tempfile.TemporaryDirectory(prefix="kut-ui-audit-") as scratch:
+    with scratch_directory() as scratch:
         # Jamais les préférences ni les caches de l'utilisateur.
         os.environ["KUT_STUDIO_CONFIG_DIR"] = str(Path(scratch) / "config")
         os.environ["KUT_STUDIO_CACHE_DIR"] = str(Path(scratch) / "cache")
