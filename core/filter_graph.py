@@ -155,8 +155,11 @@ def _graphic_source_key(graphic) -> str:
     return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
-RENDER_ENGINE_VERSION = 2
-"""Version du rendu d'aperçu, incluse dans toute empreinte de segment."""
+RENDER_ENGINE_VERSION = 3
+"""Version du rendu d'aperçu, incluse dans toute empreinte de segment.
+
+3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
+depuis le début de la timeline) ; les segments d'aperçu mis en cache avec l'ancien son sont ignorés."""
 
 
 def fingerprint_plan(plan, **kwargs):

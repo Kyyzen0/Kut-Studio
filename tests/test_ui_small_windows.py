@@ -356,3 +356,25 @@ def test_export_page_fits_at_the_smallest_size(window_at):
         _assert_none(audit.parent_overflow(window.export_panel), "page d'export : enfant hors de son parent :")
     finally:
         window.show_editor()
+
+
+def test_the_audit_scratch_directory_cleanup_never_decides_the_verdict(monkeypatch):
+    """Régression Windows : un fichier momentanément verrouillé (``WinError 32``) à la sortie du dossier jetable faisait
+    échouer l'audit sans le moindre constat, le résumé n'étant imprimé qu'après ce bloc."""
+    import os
+
+    from tools.ui_audit import scratch_directory
+
+    real_unlink = os.unlink
+
+    def locked(path, *args, **kwargs):
+        if os.path.basename(str(path)) == ".blank-960x540.1.tmp.png":
+            raise PermissionError(32, "Le processus ne peut pas accéder au fichier car ce fichier est utilisé par un autre processus")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", locked)
+    with scratch_directory() as scratch:
+        (Path(scratch) / "cache" / "mograph").mkdir(parents=True)
+        (Path(scratch) / "cache" / "mograph" / ".blank-960x540.1.tmp.png").write_bytes(b"png")
+    # arrivé ici : la sortie du bloc n'a rien levé
+

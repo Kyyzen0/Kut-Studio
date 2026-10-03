@@ -100,6 +100,7 @@ def dialog_of(window):
 DIALOGS = [
     "Préférences", "Préférences complètes", "Gestionnaire de tags",
     "Enregistrer un preset d'effet", "Enregistrer une transition",
+    "Créer une séquence Multicam", "Résultat de la synchronisation", "Réglages Multicam",
 ]
 
 
@@ -131,6 +132,8 @@ def test_dialog_default_button_is_the_validation_or_close_button(dialog_of, name
         assert default is dialog.close_button
     elif name == "Gestionnaire de tags":
         assert default is dialog.create_button
+    elif name == "Réglages Multicam":
+        assert default is dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Close)   # on ne valide rien : on ferme
     else:
         assert default is dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok)
 

@@ -15,6 +15,10 @@ correctement configuré :
 - tout autre cas (image fixe, sous-titres seuls, fichier corrompu)
   lève :class:`MediaProbeError`.
 
+Les **métadonnées de tournage** (timecode, ``time_reference`` BWF, nom de bobine, modèle de caméra, date de création)
+sont lues par :func:`extract_media_metadata` dans la même sortie JSON : jamais d'appel supplémentaire. Elles sont
+informatives : une balise absente, mal formée ou d'un type inattendu donne la valeur par défaut, jamais une erreur.
+
 Aucune dépendance à PySide6 : ``ffprobe`` est lancé par
 :func:`core.process_supervisor.supervised_run` (bibliothèque standard
 seulement), ce qui rend la sonde utilisable hors contexte Qt (tests,
@@ -25,13 +29,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .process_supervisor import supervised_run
 from .project_model import MediaAsset
+from .timecode import SECONDS_PER_DAY, FrameRate, normalize_timecode_text
 from .tool_paths import bundled_tool_path
 
 
@@ -117,11 +126,12 @@ def probe_media(path: str) -> MediaAsset:
     video_streams = [s for s in streams if s.get("codec_type") == "video"]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
 
+    metadata = extract_media_metadata(payload)
     if audio_streams and not video_streams:
-        return _build_audio_asset(path, duration)
+        return _build_audio_asset(path, duration, metadata)
     if video_streams:
         return _build_video_asset(
-            path, video_streams[0], duration, has_audio=bool(audio_streams)
+            path, video_streams[0], duration, metadata, has_audio=bool(audio_streams)
         )
     raise MediaProbeError(
         f"Aucun flux vidéo ni audio exploitable détecté dans {path}."
@@ -154,6 +164,7 @@ def _build_video_asset(
     path: str,
     stream: dict,
     duration: float,
+    metadata: MediaMetadata,
     *,
     has_audio: bool,
 ) -> MediaAsset:
@@ -191,10 +202,11 @@ def _build_video_asset(
         fps=fps,
         media_type="video",
         has_audio=has_audio,
+        **metadata.asset_fields(),
     )
 
 
-def _build_audio_asset(path: str, duration: float) -> MediaAsset:
+def _build_audio_asset(path: str, duration: float, metadata: MediaMetadata) -> MediaAsset:
     """Construit un :class:`MediaAsset` de type ``audio``."""
     if duration <= 0.0:
         raise MediaProbeError(
@@ -210,7 +222,197 @@ def _build_audio_asset(path: str, duration: float) -> MediaAsset:
         fps=0.0,
         media_type="audio",
         has_audio=True,
+        **metadata.asset_fields(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Métadonnées de tournage (timecode, BWF, bobine, caméra, création)
+# ---------------------------------------------------------------------------
+
+_MAX_TEXT = 120
+"""Longueur maximale d'une balise texte conservée (une balise démesurée n'est pas une métadonnée utile)."""
+
+
+@dataclass(frozen=True)
+class MediaMetadata:
+    """Métadonnées de tournage d'un fichier, telles que la sonde les lit (toutes optionnelles).
+
+    Attributes:
+        timecode: Timecode SMPTE de la première image sous sa forme canonique (``HH:MM:SS:FF``, ``;`` en
+            *drop-frame*, voir :func:`core.timecode.normalize_timecode_text`), ``""`` s'il n'y en a pas.
+        timecode_fps: Cadence de la piste timecode quand elle diffère de celle de l'image (vidéo en 59,94 dont le
+            timecode compte à 29,97), ``0.0`` sinon.
+        time_reference: Heure de début d'un fichier BWF, en secondes depuis minuit, ``None`` s'il n'y en a pas.
+            Un ``time_reference`` nul est ignoré : c'est la valeur écrite par défaut par FFmpeg et la plupart des
+            logiciels qui ne connaissent pas l'heure, et le prendre pour minuit décalerait l'enregistreur de plusieurs
+            heures lors d'une synchronisation par timecode.
+        reel: Nom de bobine (``reel_name``).
+        camera: Modèle de caméra (``make`` et ``model`` réunis quand le modèle ne répète pas la marque).
+        creation_time: Date de création ISO 8601 (``2026-03-14T09:26:53Z``), ``""`` si elle n'est pas lisible.
+    """
+
+    timecode: str = ""
+    timecode_fps: float = 0.0
+    time_reference: float | None = None
+    reel: str = ""
+    camera: str = ""
+    creation_time: str = ""
+
+    def asset_fields(self) -> dict[str, Any]:
+        """Champs à passer à :class:`~core.project_model.MediaAsset`."""
+        return {
+            "timecode": self.timecode,
+            "timecode_fps": self.timecode_fps,
+            "time_reference": self.time_reference,
+            "reel": self.reel,
+            "camera": self.camera,
+            "creation_time": self.creation_time,
+        }
+
+
+def extract_media_metadata(payload: Mapping[str, Any]) -> MediaMetadata:
+    """Lit les métadonnées de tournage dans la sortie JSON de ``ffprobe -show_format -show_streams``.
+
+    Les balises sont cherchées **sans tenir compte de la casse** (Matroska écrit ``TIMECODE``) dans les balises du
+    conteneur, de chaque flux et de la piste de données ``tmcd`` de QuickTime / MP4 (qui porte aussi ``reel_name``).
+    Ordre de priorité : flux vidéo, piste de données, conteneur, autres flux. Ne lève jamais : une entrée absente,
+    mal formée ou d'un type inattendu donne la valeur par défaut.
+    """
+    format_data = payload.get("format") if isinstance(payload, Mapping) else None
+    raw_streams = payload.get("streams") if isinstance(payload, Mapping) else None
+    streams = [item for item in raw_streams if isinstance(item, Mapping)] if isinstance(raw_streams, list) else []
+    videos = [item for item in streams if item.get("codec_type") == "video"]
+    data = [item for item in streams if item.get("codec_type") == "data"]
+    others = [item for item in streams if item.get("codec_type") not in ("video", "data")]
+    container = _tags(format_data)
+    ordered = [_tags(item) for item in videos + data] + [container] + [_tags(item) for item in others]
+
+    timecode = _first(ordered, ("timecode",), normalize_timecode_text)
+    return MediaMetadata(
+        timecode=timecode,
+        timecode_fps=_timecode_rate(videos, data) if timecode else 0.0,
+        time_reference=_time_reference(container, streams),
+        reel=_first(ordered, ("reel_name", "com.apple.quicktime.reelname"), _clean_text),
+        camera=_camera([container] + [_tags(item) for item in streams]),
+        creation_time=_first(
+            [container] + [_tags(item) for item in videos + others + data],
+            ("creation_time",),
+            lambda value: _creation_time(value, container.get("date", "")),
+        ),
+    )
+
+
+def _tags(node: object) -> dict[str, str]:
+    """Balises d'un objet ffprobe (format ou flux) : clés en minuscules, valeurs texte uniquement."""
+    tags = node.get("tags") if isinstance(node, Mapping) else None
+    if not isinstance(tags, Mapping):
+        return {}
+    return {key.lower(): value for key, value in tags.items() if isinstance(key, str) and isinstance(value, str)}
+
+
+def _first(tag_sets: list[dict[str, str]], keys: tuple[str, ...], clean: Callable[[str], str | None]) -> str:
+    """Première valeur valide de l'une des ``keys`` dans ``tag_sets`` (par ordre de priorité), ``""`` sinon."""
+    for tags in tag_sets:
+        for key in keys:
+            if key in tags:
+                cleaned = clean(tags[key])
+                if cleaned:
+                    return cleaned
+    return ""
+
+
+def _clean_text(value: str) -> str:
+    """Texte d'une balise : caractères imprimables, espaces compactés, longueur bornée."""
+    text = " ".join("".join(ch for ch in value if ch.isprintable()).split())
+    return text[:_MAX_TEXT]
+
+
+def _camera(tag_sets: list[dict[str, str]]) -> str:
+    """Modèle de caméra : ``model`` (ou ``com.apple.quicktime.model``), précédé de la marque si elle n'y figure pas."""
+    model = _first(tag_sets, ("model", "com.apple.quicktime.model"), _clean_text)
+    make = _first(tag_sets, ("make", "com.apple.quicktime.make"), _clean_text)
+    if not model:
+        return make
+    if make and not model.lower().startswith(make.lower()):
+        return f"{make} {model}"[:_MAX_TEXT]
+    return model
+
+
+_ISO_TIME = re.compile(
+    r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?", re.ASCII
+)
+_BWF_DATE = re.compile(r"(\d{4})[-:/](\d{2})[-:/](\d{2})", re.ASCII)
+_BWF_TIME = re.compile(r"\d{2}:\d{2}:\d{2}", re.ASCII)
+
+
+def _creation_time(value: str, date: str) -> str:
+    """Date de création ISO 8601 lisible, ``""`` sinon.
+
+    ``ffprobe`` duplique parfois la valeur du conteneur (``a;a``) : la première est gardée. Une partie fractionnaire
+    nulle (``.000000``) est retirée. Une heure seule (``08:15:30``, champ BWF ``origination time``) n'est gardée que si
+    la balise ``date`` du fichier la complète.
+    """
+    text = value.split(";")[0].strip()
+    match = _ISO_TIME.fullmatch(text)
+    if match is not None:
+        day, clock, fraction, zone = match.groups()
+        stamp = f"{day}T{clock}"
+        if fraction and fraction.strip("0"):
+            stamp += f".{fraction}"
+        return stamp + (zone or "")
+    if _BWF_TIME.fullmatch(text):
+        day_match = _BWF_DATE.fullmatch(date.strip())
+        if day_match is not None:
+            return f"{'-'.join(day_match.groups())}T{text}"
+    return ""
+
+
+def _time_reference(container: dict[str, str], streams: list[Mapping[str, Any]]) -> float | None:
+    """``time_reference`` BWF (échantillons depuis minuit) converti en secondes avec la fréquence d'échantillonnage."""
+    raw = _first([container] + [_tags(item) for item in streams], ("time_reference",), lambda value: value.strip())
+    if not (raw.isascii() and raw.isdigit()):
+        return None
+    sample_rate = next(
+        (
+            _safe_int(item.get("sample_rate"))
+            for item in streams
+            if item.get("codec_type") == "audio" and _safe_int(item.get("sample_rate")) > 0
+        ),
+        0,
+    )
+    if sample_rate <= 0:
+        return None
+    seconds = int(raw) / sample_rate
+    return seconds if 0.0 < seconds < SECONDS_PER_DAY else None
+
+
+def _timecode_rate(videos: list[Mapping[str, Any]], data: list[Mapping[str, Any]]) -> float:
+    """Cadence de la piste timecode si elle diffère de celle de l'image (sinon ``0.0``).
+
+    Une vidéo en 59,94 i/s peut porter un timecode à 29,97 : lue à 59,94, l'étiquette serait fausse de plusieurs
+    dizaines de millisecondes par image. La piste ``tmcd`` donne la vraie cadence.
+    """
+    track = next(
+        (
+            item
+            for item in data
+            if item.get("codec_tag_string") == "tmcd" or "timecode" in _tags(item)
+        ),
+        None,
+    )
+    if track is None:
+        return 0.0
+    track_rate = FrameRate.try_from_fps(_parse_frame_rate(track.get("avg_frame_rate") or track.get("r_frame_rate")))
+    if track_rate is None:
+        return 0.0
+    video: Mapping[str, Any] = videos[0] if videos else {}
+    video_rate = FrameRate.try_from_fps(
+        _parse_frame_rate(video.get("avg_frame_rate") or video.get("r_frame_rate") or "")
+    )
+    if video_rate is not None and video_rate.fps == track_rate.fps:
+        return 0.0
+    return float(track_rate.fps)
 
 
 # ---------------------------------------------------------------------------

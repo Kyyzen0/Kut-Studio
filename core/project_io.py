@@ -73,6 +73,7 @@ from .canvas_guides import guide_from_dict, guide_to_dict
 from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
 from .motion_blur import settings_from_dict as motion_blur_from_dict
 from .motion_blur import settings_to_dict as motion_blur_to_dict
+from .multicam_model import multicam_from_dict, multicam_to_dict
 from .project_model import (
     MAIN_SEQUENCE_ID,
     MAIN_SEQUENCE_NAME,
@@ -336,6 +337,42 @@ def _finite_float(text: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _asset_to_dict(asset: MediaAsset) -> dict[str, Any]:
+    """Forme écrite d'un média.
+
+    Les métadonnées optionnelles lues par la sonde (``timecode``, ``timecode_fps``, ``time_reference``, ``reel``,
+    ``camera``, ``creation_time``) ne sont écrites que si elles ne sont pas à leur défaut : un projet sans timecode
+    produit exactement les mêmes octets qu'avant, et la version du format ne change pas (clés optionnelles, comme les
+    ajouts précédents). À la lecture, ``MediaAsset.__post_init__`` ramène une valeur illisible à son défaut. Un lecteur
+    *plus ancien* refuserait un fichier qui porte ces clés (``MediaAsset(**item)`` est strict sur les clés inconnues) :
+    c'est accepté, on n'ouvre pas un fichier plus récent avec une version plus ancienne.
+    """
+    data: dict[str, Any] = {
+        "id": asset.id,
+        "path": asset.path,
+        "name": asset.name,
+        "duration": asset.duration,
+        "width": asset.width,
+        "height": asset.height,
+        "fps": asset.fps,
+        "media_type": asset.media_type,
+        "has_audio": asset.has_audio,
+    }
+    if asset.timecode:
+        data["timecode"] = asset.timecode
+    if asset.timecode_fps:
+        data["timecode_fps"] = asset.timecode_fps
+    if asset.time_reference is not None:
+        data["time_reference"] = asset.time_reference
+    if asset.reel:
+        data["reel"] = asset.reel
+    if asset.camera:
+        data["camera"] = asset.camera
+    if asset.creation_time:
+        data["creation_time"] = asset.creation_time
+    return data
+
+
 def _build_payload(project: Project) -> dict[str, Any]:
     """Construit la structure JSON-sérialisable représentant un projet."""
     return {
@@ -343,20 +380,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
         _VERSION_KEY: CURRENT_VERSION,
         _PROJECT_KEY: {
             "name": project.name,
-            "media_assets": [
-                {
-                    "id": asset.id,
-                    "path": asset.path,
-                    "name": asset.name,
-                    "duration": asset.duration,
-                    "width": asset.width,
-                    "height": asset.height,
-                    "fps": asset.fps,
-                    "media_type": asset.media_type,
-                    "has_audio": asset.has_audio,
-                }
-                for asset in project.media_assets
-            ],
+            "media_assets": [_asset_to_dict(asset) for asset in project.media_assets],
             # --- Organisation de la bibliothèque (tâche 25, v11) ---
             # On sérialise uniquement les champs utiles à la
             # reconstruction. Les listes vides restent sérialisées
@@ -441,6 +465,8 @@ def _clip_to_dict(clip: Clip) -> dict[str, Any]:
         # Clip imbriqué (v14) : clé présente uniquement
         # quand le clip référence une séquence.
         **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
+        # Multicam : angle choisi par un segment de source Multicam (absent : le premier angle).
+        **({"angle_id": clip.angle_id} if clip.angle_id else {}),
         # Tracking (v16) : présent seulement si le clip en porte.
         **_tracking_entry(getattr(clip, "tracking", None)),
     }
@@ -463,6 +489,8 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         # Motion graphics (v15) : guides du viewer et flou de mouvement.
         "guides": [guide_to_dict(guide) for guide in getattr(sequence, "guides", ()) or ()],
         "motion_blur": motion_blur_to_dict(getattr(sequence, "motion_blur", None)),
+        # Multicam : présent seulement pour une source Multicam (angles, politique audio, méthode de synchro).
+        **({"multicam": multicam_to_dict(sequence.multicam)} if sequence.multicam is not None else {}),
         "markers": [
             {
                 "id": marker.id,
@@ -579,6 +607,8 @@ def _deserialize_project(
     for item in raw_assets:
         if not isinstance(item, dict):
             raise ValueError("Média invalide : objet JSON attendu.")
+        # Les métadonnées optionnelles (timecode, bobine, caméra…) absentes prennent leur défaut ; illisibles, elles y
+        # sont ramenées par ``MediaAsset.__post_init__`` : jamais d'échec d'ouverture à cause d'elles.
         assets.append(MediaAsset(**item))
 
     raw_sequences = data.get("sequences")
@@ -697,6 +727,8 @@ def _deserialize_sequence(
         if guide is not None
     ]
     sequence.motion_blur = motion_blur_from_dict(data.get("motion_blur"))
+    # --- Multicam : absent d'un ancien fichier → séquence ordinaire ; structure abîmée → ValueError.
+    sequence.multicam = multicam_from_dict(data.get("multicam"))
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont
@@ -794,10 +826,12 @@ def _deserialize_clip(
         for key, value in raw_clip.items()
         if key not in {
             "transform", "transform_keyframes", "time_remapping", "effects",
-            "graphic", "compositing", "animation", "tracking",
+            "graphic", "compositing", "animation", "tracking", "angle_id",
         }
         and key in _CLIP_KNOWN_FIELDS
     }
+    angle_id = raw_clip.get("angle_id", "")
+    clip_kwargs["angle_id"] = angle_id if isinstance(angle_id, str) else ""
     clip_kwargs["transform"] = _dict_to_transform(
         raw_clip.get("transform")
     )

@@ -99,10 +99,22 @@ class TimelineClipView:
     # Instant (temps timeline) à partir duquel le clip dépasse sa source ;
     # ``None`` s'il n'y a pas de débordement.
     nested_overflow_start: float | None = None
+    # --- Multicam ---
+    # ``angle_index`` : rang (0 = Angle 1) de l'angle montré par ce segment dans sa source Multicam, ``-1`` si le clip
+    # n'est pas un segment Multicam. L'interface en tire la couleur (palette du thème) ; le modèle ne connaît aucune
+    # couleur d'angle, seulement ``angle_color_index``, le rang de palette que l'utilisateur a choisi pour l'angle.
+    angle_index: int = -1
+    angle_count: int = 0
+    angle_name: str = ""
+    angle_color_index: int = 0
 
     @property
     def is_nested(self) -> bool:
         return bool(self.sequence_id)
+
+    @property
+    def is_multicam(self) -> bool:
+        return self.angle_index >= 0
 
 
 NESTED_CLIP_COLOR = "#C9A227"
@@ -136,6 +148,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
             color = color_key_for_clip(clip)
             status = ""
             overflow_start = None
+            angle_index, angle_count, angle_name, angle_color = -1, 0, "", 0
             if clip.sequence_id:
                 from .sequences import find_cycles, nested_clip_status
 
@@ -152,6 +165,21 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                 )
                 if status == "overflow" and sequence is not None:
                     overflow_start = _overflow_start(clip, sequence.duration)
+                source = sequence.multicam if sequence is not None else None
+                if source is not None and source.angles:
+                    from .multicam import resolve_angle
+
+                    angle = resolve_angle(source, clip.angle_id)
+                    angle_count = len(source.angles)
+                    if angle is None:
+                        # Le segment désigne un angle qui n'existe plus : rendu vide, signalé comme un clip hors ligne.
+                        status = status or "angle_missing"
+                        color = BROKEN_NESTED_CLIP_COLOR
+                        angle_index = 0
+                    else:
+                        angle_index = source.index_of(angle.id)
+                        angle_name = angle.name
+                        angle_color = angle.color_index
             views.append(
                 TimelineClipView(
                     id=clip.id,
@@ -184,6 +212,10 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     sequence_id=clip.sequence_id,
                     nested_status=status,
                     nested_overflow_start=overflow_start,
+                    angle_index=angle_index,
+                    angle_count=angle_count,
+                    angle_name=angle_name,
+                    angle_color_index=angle_color,
                 )
             )
     return views

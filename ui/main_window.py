@@ -91,6 +91,10 @@ from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
+from ui.main_window_mixins.multicam import MulticamMixin
+from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
+from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
+from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
@@ -128,6 +132,9 @@ class MainWindow(
     TrackingMixin,
     MotionGraphicsMixin,
     SequencesMixin,
+    MulticamMixin,
+    MulticamCreationMixin,
+    MulticamSettingsMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -258,7 +265,12 @@ class MainWindow(
         # Le viewer et les scopes partagent un splitter vertical : les
         # scopes sont redimensionnables et escamotables sans toucher
         # au dock de la zone centrale.
-        self._viewer_host = ViewerHostSplitter(self.preview_panel, self.scopes_panel)
+        # Moniteur : la visionneuse ordinaire, ou le moniteur Multicam (tous les angles) sur la même zone.
+        self.multicam_viewer = MulticamViewer()
+        self._monitor_stack = QStackedWidget()
+        self._monitor_stack.addWidget(self.preview_panel)
+        self._monitor_stack.addWidget(self.multicam_viewer)
+        self._viewer_host = ViewerHostSplitter(self._monitor_stack, self.scopes_panel)
         # Par défaut, les scopes restent repliés pour ne pas rogner le
         # viewer ; l'utilisateur les ouvre via le menu Affichage.
         self._viewer_host.setSizes([520, 0])
@@ -579,6 +591,10 @@ class MainWindow(
         self._sync_preview_to_timeline()
         # Séquences : navigation (fil d'Ariane), bibliothèque, imbrication.
         self._init_sequences()
+        # Multicam : bascule d'angle, remplacement, aplatir, création depuis la timeline.
+        self._init_multicam()
+        self._init_multicam_creation()
+        self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
@@ -872,6 +888,10 @@ class MainWindow(
             ("rendus d'aperçu", cancel_previews),
             ("pistage", self._cancel_tracking_jobs),
             ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
+            ("synchronisation Multicam", self._cancel_multicam_syncs),
+            ("réglages Multicam", self._close_multicam_settings),
+            ("audio Multicam", self._release_multicam_audio),
+            ("moniteur Multicam", lambda: call("multicam_viewer", "shutdown")),
             ("média du viewer", lambda: call("preview_panel", "release_media")),
             ("scopes", lambda: call("scopes_analyzer", "close")),
             ("fichiers de scopes", clean_scope_files),
@@ -1396,6 +1416,14 @@ class MainWindow(
         delete_sequence_action.triggered.connect(lambda: self.delete_sequence_command())
         sequence_menu.addAction(delete_sequence_action)
         sequence_menu.addSeparator()
+        # Multicam : création depuis la sélection, source, aplatir, moniteur.
+        self.multicam_create_action = self._command_action("multicam_create", "multicam.menu.create")
+        sequence_menu.addAction(self.multicam_create_action)
+        sequence_menu.addAction(self._command_action("multicam_open_source", "multicam.menu.open_source"))
+        sequence_menu.addAction(self._command_action("multicam_flatten", "multicam.menu.flatten"))
+        sequence_menu.addAction(self._command_action("multicam_viewer", "multicam.menu.viewer"))
+        sequence_menu.addAction(self._command_action("multicam_settings", "multicam.menu.settings"))
+        sequence_menu.addSeparator()
         for key, handler in (
             ("menu.item.add_clip", None),
             ("menu.item.trim", lambda: self.cut_at_playhead()),                         # Ctrl+K
@@ -1640,10 +1668,12 @@ class MainWindow(
         if not self.is_playing and self._present_cached_preview_at(
             float(self.playhead_seconds)
         ):
+            self._sync_multicam_audio(None, active_clips)
             return active_clips
 
         video_clips = [c for c in active_clips if c.track_type == "video"]
         if not video_clips:
+            self._sync_multicam_audio(None, active_clips)
             self.preview_panel.show_no_active_clip()
             if any(c.track_type == "graphics" for c in active_clips):
                 try:
@@ -1668,6 +1698,8 @@ class MainWindow(
             top_clip.source_time,
             playing=bool(self.is_playing),
         )
+        # Multicam : si le son vient d'une autre source que l'image, le lecteur du moniteur est coupé et ces sources jouent.
+        self._sync_multicam_audio(top_clip, active_clips)
         # Tâche 13 : applique le transform animé du clip supérieur si
         # la timeline contient au moins un clip vidéo. On évalue le
         # ``ClipTransform`` à ``playhead_seconds`` ; on garde l'opacité
@@ -2026,6 +2058,7 @@ class MainWindow(
             **self._animation_shortcut_handlers(),
             # Séquences
             **self._sequence_shortcut_handlers(),
+            **self._multicam_shortcut_handlers(),
             **self._mograph_shortcut_handlers(),
         }
 

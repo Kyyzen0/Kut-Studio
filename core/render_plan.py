@@ -491,6 +491,7 @@ class _PlanBuilder:
         self, clip: Clip, low: float, high: float, windowed: bool, stack: tuple[str, ...]
     ) -> NestedSequencePlan | None:
         """Sous-plan lu par ``clip`` (créé au besoin), ou ``None`` si impossible."""
+        from .multicam import track_filter_for
         from .sequences import MAX_NESTING_DEPTH, nested_source_window
 
         child = self.project.get_sequence(clip.sequence_id)
@@ -512,16 +513,19 @@ class _PlanBuilder:
                 f"clip « {clip.label or clip.id} » rendu vide."
             )
             return None
+        # Source Multicam : seul l'angle choisi par le clip est rendu. Le filtre fait partie de la clé, donc deux
+        # segments du même angle partagent un sous-plan et deux angles en ont chacun un (clé inchangée sans Multicam).
+        track_filter = track_filter_for(child, clip)
         if windowed:
             a, b = nested_source_window(clip, low, high)
             # Une image de marge de chaque côté : l'arrondi au fps de la
             # séquence ne doit pas faire manquer la première/dernière image.
             margin = 1.0 / max(1.0, float(child.fps))
             inner_window = (max(0.0, a - margin), b + margin)
-            key = f"{child.id}@{inner_window[0]:.4f}:{inner_window[1]:.4f}"
+            key = f"{child.id}{track_filter.key}@{inner_window[0]:.4f}:{inner_window[1]:.4f}"
         else:
             inner_window = None
-            key = child.id
+            key = f"{child.id}{track_filter.key}"
         entry = self.entries.get(key)
         if entry is None:
             sub_index = None
@@ -532,6 +536,7 @@ class _PlanBuilder:
                 window=inner_window,
                 window_index=sub_index,
                 stack=stack + (child.id,),
+                track_filter=track_filter,
             )
             entry = NestedSequencePlan(
                 key=key,
@@ -554,6 +559,7 @@ class _PlanBuilder:
         stack: tuple[str, ...],
         master_gain_db: float = 0.0,
         master_muted: bool = False,
+        track_filter=None,
     ) -> RenderPlan:
         if window is None:
             low, high = float("-inf"), float("inf")
@@ -566,8 +572,15 @@ class _PlanBuilder:
         audio_layers: list[AudioLayer] = []
         graphics_layers: list[GraphicLayer] = []
         lifted_cues: list = []
-        video_solo = {track.id for track in tracks if track.type == "video" and track.solo}
-        audio_solo = {track.id for track in tracks if track.type == "audio" and track.solo}
+        hide_video = track_filter.hide_video if track_filter is not None else frozenset()
+        hide_audio = track_filter.hide_audio if track_filter is not None else frozenset()
+        # Un solo ne compte que sur les pistes rendues : le solo d'un angle masqué ne doit pas vider l'angle actif.
+        video_solo = {
+            track.id for track in tracks if track.type == "video" and track.solo and track.id not in hide_video
+        }
+        audio_solo = {
+            track.id for track in tracks if track.type == "audio" and track.solo and track.id not in hide_audio
+        }
         graphics_solo = {
             track.id for track in tracks
             if track.type == "graphics" and track.solo
@@ -602,6 +615,13 @@ class _PlanBuilder:
                 continue
             if track.type not in {"video", "audio"}:
                 continue
+            # Source Multicam : image et son d'une piste d'angle sont masqués séparément (angle inactif, politique audio).
+            show_video = track.id not in hide_video
+            show_audio = track.id not in hide_audio
+            if (track.type == "video" and not show_video and not show_audio) or (
+                track.type == "audio" and not show_audio
+            ):
+                continue
             if track.type == "video" and not track.visible:
                 # Une piste vidéo invisible n'apparaît pas dans le rendu.
                 continue
@@ -623,6 +643,8 @@ class _PlanBuilder:
                         video_layers, audio_layers, lifted_cues,
                         audio_solo=audio_solo,
                         sidechains=sidechains_for(track.id),
+                        show_video=show_video,
+                        show_audio=show_audio,
                     )
                     continue
                 asset = assets_by_id.get(clip.asset_id)
@@ -636,44 +658,45 @@ class _PlanBuilder:
                     self.missing_media.append(clip.asset_id)
                     continue
                 if track.type == "video":
-                    state = self.effective(clip, sequence)
-                    video_layers.append(
-                        RenderLayer(
-                            clip_id=clip.id,
-                            asset_id=clip.asset_id,
-                            track_id=track.id,
-                            track_index=track_index,
-                            source_path=asset.path,
-                            source_in=clip.source_in,
-                            source_out=clip.source_out,
-                            timeline_start=clip.timeline_start,
-                            timeline_end=clip.timeline_start + clip.duration,
-                            source_fps=float(asset.fps),
-                            transform=clip.transform,
-                            transform_keyframes=(
-                                state.transform_keyframes if state is not None
-                                else tuple(clip.transform_keyframes)
-                            ),
-                            time_remapping=clip.time_remapping,
-                            effects=tuple(clip.effects),
-                            # Étalonnage couleur (tâche 29) : si le clip ne
-                            # porte pas de ``ColorGrade``, on garde ``None``
-                            # pour signaler l'identité et économiser du
-                            # travail au moteur d'export.
-                            color_grade=getattr(clip, "color_grade", None),
-                            compositing=(
-                                state.compositing if state is not None
-                                else getattr(clip, "compositing", None)
-                            ),
-                            animation=(
-                                state.animation if state is not None
-                                else tuple(getattr(clip, "animation", ()) or ())
-                            ),
+                    if show_video:
+                        state = self.effective(clip, sequence)
+                        video_layers.append(
+                            RenderLayer(
+                                clip_id=clip.id,
+                                asset_id=clip.asset_id,
+                                track_id=track.id,
+                                track_index=track_index,
+                                source_path=asset.path,
+                                source_in=clip.source_in,
+                                source_out=clip.source_out,
+                                timeline_start=clip.timeline_start,
+                                timeline_end=clip.timeline_start + clip.duration,
+                                source_fps=float(asset.fps),
+                                transform=clip.transform,
+                                transform_keyframes=(
+                                    state.transform_keyframes if state is not None
+                                    else tuple(clip.transform_keyframes)
+                                ),
+                                time_remapping=clip.time_remapping,
+                                effects=tuple(clip.effects),
+                                # Étalonnage couleur (tâche 29) : si le clip ne
+                                # porte pas de ``ColorGrade``, on garde ``None``
+                                # pour signaler l'identité et économiser du
+                                # travail au moteur d'export.
+                                color_grade=getattr(clip, "color_grade", None),
+                                compositing=(
+                                    state.compositing if state is not None
+                                    else getattr(clip, "compositing", None)
+                                ),
+                                animation=(
+                                    state.animation if state is not None
+                                    else tuple(getattr(clip, "animation", ()) or ())
+                                ),
+                            )
                         )
-                    )
                     # Un solo audio ne laisse passer que les pistes audio armées
                     # en solo : le son embarqué des pistes vidéo est alors exclu.
-                    if asset.has_audio and not track.muted and not audio_solo:
+                    if asset.has_audio and not track.muted and not audio_solo and show_audio:
                         audio_layers.append(
                             _build_audio_layer(
                                 clip, asset, track.id, track_index, track,
@@ -747,6 +770,8 @@ class _PlanBuilder:
         *,
         audio_solo: set,
         sidechains: list,
+        show_video: bool = True,
+        show_audio: bool = True,
     ) -> None:
         """Couches (vidéo, audio, sous-titres) d'un clip imbriqué."""
         entry = self._nested_entry(clip, low, high, windowed, stack)
@@ -754,7 +779,7 @@ class _PlanBuilder:
             return
         inner = entry.plan
         timeline_end = clip.timeline_start + clip.duration
-        if track.type == "video":
+        if track.type == "video" and show_video:
             video_layers.append(
                 RenderLayer(
                     clip_id=clip.id,
@@ -781,7 +806,8 @@ class _PlanBuilder:
         # Le son de la séquence suit les mêmes règles qu'un média avec
         # piste audio : muet/solo de la piste parente, puis réglages du clip.
         audible = (
-            not track.muted
+            show_audio
+            and not track.muted
             and (track.type == "audio" or not audio_solo)
             and bool(inner.audio_layers)
         )

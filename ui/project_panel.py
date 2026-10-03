@@ -93,6 +93,7 @@ class ProjectPanel(QWidget):
     """Bibliothèque de médias et de sous-titres du projet courant."""
 
     asset_selected = Signal(str)
+    multicam_create_requested = Signal(list)  # médias sélectionnés : « Créer une séquence Multicam… »
     add_to_timeline_requested = Signal(str)
     import_requested = Signal()
     add_subtitle_requested = Signal(str, float)
@@ -713,6 +714,11 @@ class ProjectPanel(QWidget):
         )
         builder.tag_toggled.connect(self.asset_tag_toggled.emit)
         builder.manage_tags_requested.connect(self.tag_manager_requested.emit)
+        selected = self._current_bin().selected_asset_ids
+        if len(selected) >= 2 and asset_id in selected:
+            menu.addSeparator()
+            create_multicam = menu.addAction(translate("multicam.menu.create"))
+            create_multicam.triggered.connect(lambda: self.multicam_create_requested.emit(list(selected)))
         menu.exec(global_pos)
 
     def set_audio_mode(self, mode: str) -> None:

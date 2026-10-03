@@ -27,6 +27,8 @@ def nested_status_text(status: str) -> str:
         return i18n.translate("sequence.status.cycle")
     if status == "overflow":
         return i18n.translate("sequence.status.overflow")
+    if status == "angle_missing":
+        return i18n.translate("multicam.status.angle_missing")
     return i18n.translate("sequence.status.ok")
 
 
@@ -47,7 +49,7 @@ def paint_nested_decoration(widget) -> None:
             area = QRectF(x, 0, widget.width() - x, widget.height())
             painter.fillRect(area, QBrush(QColor(0, 0, 0, 110), Qt.BDiagPattern))
             painter.fillRect(area, QColor(0, 0, 0, 60))
-    if status in {"missing", "cycle"}:
+    if status in {"missing", "cycle", "angle_missing"}:
         painter.fillRect(
             QRectF(0, 0, widget.width(), widget.height()),
             QBrush(QColor(255, 255, 255, 60), Qt.DiagCrossPattern),
@@ -62,11 +64,37 @@ def paint_nested_decoration(widget) -> None:
         painter.drawRoundedRect(QRectF(right + 3, 5, _BADGE - 4, _BADGE - 5), 2, 2)
         painter.setBrush(QColor(0, 0, 0, 90))
         painter.drawRoundedRect(QRectF(right, 8, _BADGE - 4, _BADGE - 5), 2, 2)
-        if status in {"missing", "cycle", "overflow"}:
+        if status in {"missing", "cycle", "overflow", "angle_missing"}:
             painter.setPen(QPen(QColor("#FFD166"), 2))
             painter.drawText(QRectF(right - 12, 4, 10, 14), Qt.AlignCenter, "!")
+    if getattr(view, "is_multicam", False):
+        _paint_angle_marker(painter, widget, view)
     painter.end()
+    if getattr(view, "is_multicam", False) and view.angle_name:
+        widget.setToolTip(
+            i18n.translate("multicam.tooltip.segment", label=view.label, number=view.angle_index + 1,
+                           name=view.angle_name)
+        )
+        return
     widget.setToolTip(f"{view.label} — {nested_status_text(status)}")
+
+
+def _paint_angle_marker(painter: QPainter, widget, view) -> None:
+    """Bande de couleur de l'angle (bord gauche) et pastille numérotée : discret, lisible, aucune couleur métier."""
+    from ui.theme import active_palette
+
+    colors = active_palette().angle_colors
+    color = QColor(colors[view.angle_color_index % len(colors)])
+    painter.fillRect(QRectF(0, 0, 4, widget.height()), color)
+    if widget.width() < 48:
+        return
+    size = 14.0
+    chip = QRectF(widget.width() - size - 6, widget.height() - size - 5, size, size)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(color)
+    painter.drawRoundedRect(chip, 3, 3)
+    painter.setPen(QPen(QColor(255, 255, 255, 240)))
+    painter.drawText(chip, Qt.AlignCenter, str(view.angle_index + 1))
 
 
 def handle_nested_double_click(widget, event) -> bool:
@@ -77,6 +105,11 @@ def handle_nested_double_click(widget, event) -> bool:
         return False
     if event.button() != Qt.LeftButton:
         return False
+    if getattr(view, "is_multicam", False):
+        # Un segment Multicam s'ouvre sur le moniteur (tous les angles, montage au clic) ; la source se corrige par le menu.
+        parent.multicam_viewer_requested.emit(view.id)
+        event.accept()
+        return True
     parent.nested_open_requested.emit(view.id)
     event.accept()
     return True

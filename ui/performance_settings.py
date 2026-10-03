@@ -191,6 +191,7 @@ class PerformanceSettingsTab(QWidget):
             if kind == "preview":  # images de calques et analyses : dérivés recalculables
                 total += int(stats.get("mograph", {}).get("bytes", 0))
                 total += int(stats.get("tracking", {}).get("bytes", 0))
+                total += int(stats.get("multicam", {}).get("bytes", 0))
             return format_size(total)
 
         self.usage_label.setText(

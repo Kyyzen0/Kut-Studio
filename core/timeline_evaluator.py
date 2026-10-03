@@ -26,7 +26,7 @@ fautif : jamais de récursion infinie.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .project_model import Clip, MediaAsset, Project, Sequence
 
@@ -67,6 +67,10 @@ class ActiveClip:
         nested_path: Chaîne des clips imbriqués traversés (racine d'abord).
         sequence_id: Séquence qui contient réellement le clip (vide pour
             la séquence évaluée).
+        silent: Image à jouer **sans son** : la politique audio d'une source
+            Multicam écarte le son de cette piste (ex. enregistreur externe
+            retenu à la place du son de la caméra). Vrai uniquement pour une
+            entrée vidéo vue à travers une source Multicam.
     """
 
     clip_id: str
@@ -82,6 +86,7 @@ class ActiveClip:
     root_clip_id: str = ""
     nested_path: tuple[str, ...] = ()
     sequence_id: str = ""
+    silent: bool = False
 
     @property
     def owner_clip_id(self) -> str:
@@ -317,6 +322,7 @@ def expand_nested_clip(
     imbrication trop profonde ou un instant situé au-delà de la fin de la
     séquence source.
     """
+    from .multicam import track_filter_for
     from .sequences import MAX_NESTING_DEPTH, nested_source_time
 
     child = project.get_sequence(clip.sequence_id)
@@ -326,9 +332,25 @@ def expand_nested_clip(
     child_duration = duration_of(child) if duration_of is not None else child.duration
     if inner_time is None or inner_time < 0.0 or inner_time >= child_duration:
         return []
-    inner = apply_track_solo(
-        child.tracks, evaluate_inner(child, inner_time, stack + (child.id,))
-    )
+    entries = evaluate_inner(child, inner_time, stack + (child.id,))
+    # Source Multicam : seul l'angle choisi par ce clip est évalué (même filtre que le plan de rendu).
+    track_filter = track_filter_for(child, clip)
+    visible_tracks = child.tracks
+    if not track_filter.is_identity:
+        kept: list[ActiveClip] = []
+        for entry in entries:
+            if entry.track_type == "video" and entry.track_id in track_filter.hide_video:
+                if entry.track_id not in track_filter.hide_audio:
+                    # Image masquée mais son retenu (politique audio fixe ou mixte) : il reste une entrée **audio**, que le
+                    # moniteur en direct peut jouer ; elle n'a jamais de vidéo.
+                    kept.append(replace(entry, track_type="audio"))
+                continue
+            if entry.track_type != "video" and entry.track_id in track_filter.hide_audio:
+                continue
+            kept.append(entry)
+        entries = kept
+        visible_tracks = [item for item in child.tracks if not track_filter.hides_track(item.id)]
+    inner = apply_track_solo(visible_tracks, entries)
     accepted = None if track.type == "video" else {"audio"}
     mapped: list[ActiveClip] = []
     for entry in inner:
@@ -350,6 +372,8 @@ def expand_nested_clip(
                 root_clip_id=clip.id,
                 nested_path=(clip.id,) + entry.nested_path,
                 sequence_id=entry.sequence_id or child.id,
+                silent=entry.silent
+                or (entry.track_type == "video" and entry.track_id in track_filter.hide_audio),
             )
         )
     return mapped

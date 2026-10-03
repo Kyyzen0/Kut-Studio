@@ -134,6 +134,12 @@ class ThemePalette:
     diamond_filled: str = "#36E6C3"
     diamond_outline: str = "#23504B"
     diamond_border: str = "#061514"
+    # Palette catégorielle des angles Multicam (rang ``MulticamAngle.color_index`` modulo la taille) : jamais de
+    # couleur d'angle dans la logique métier, seulement un rang que l'interface résout ici.
+    angle_colors: tuple[str, ...] = (
+        "#3B82F6", "#22C55E", "#A855F7", "#F97316", "#EC4899", "#14B8A6",
+        "#EAB308", "#EF4444", "#6366F1", "#84CC16", "#06B6D4", "#F43F5E",
+    )
 
 
 # ---------------------------------------------------------------------------

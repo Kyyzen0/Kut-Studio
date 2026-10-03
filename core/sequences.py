@@ -547,6 +547,9 @@ def check_can_nest(project: Project, parent_id: str, child_id: str) -> None:
     find_sequence(project, parent_id)
     if parent_id == child_id:
         raise SequenceCycleError("Une séquence ne peut pas se contenir elle-même.")
+    if find_sequence(project, parent_id).multicam is not None and find_sequence(project, child_id).multicam is not None:
+        # Pas de Multicam dans une Multicam : un angle est un média ou une séquence ordinaire (récursion maîtrisée).
+        raise SequenceError("Une source Multicam ne peut pas contenir une autre source Multicam.")
     if would_create_cycle(project, parent_id, child_id):
         names = {sequence.id: sequence.name for sequence in project.sequences}
         raise SequenceCycleError(

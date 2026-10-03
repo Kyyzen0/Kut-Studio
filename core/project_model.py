@@ -10,6 +10,7 @@ manipulés hors d'un contexte Qt (tests, scripts, futurs services).
 from __future__ import annotations
 
 import enum
+import math
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ from .audio_automation import TrackAutomation, coerce_track_automation
 
 if TYPE_CHECKING:
     from .compositing import Compositing
+    from .multicam_model import MulticamSource
     from .effects_model import ClipEffect
     from .graphics import GraphicOverlay
     from .text_style import TextStyle
@@ -127,6 +129,18 @@ def _copy_field(value, memo: dict, verdicts: dict):
     return deepcopy(value, memo)
 
 
+def _clean_text(value: object) -> str:
+    """Métadonnée texte d'un média : une chaîne, sinon ``""`` (jamais d'exception)."""
+    return value if isinstance(value, str) else ""
+
+
+def _clean_number(value: object) -> float | None:
+    """Métadonnée numérique d'un média : un réel fini et positif ou nul, sinon ``None`` (jamais d'exception)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and number >= 0.0 else None
+
 
 @dataclass
 class MediaAsset:
@@ -151,6 +165,19 @@ class MediaAsset:
             Vrai pour les médias audio seuls ; pour les vidéos, dépend
             du contenu source. Permet à l'export de mixer l'audio même
             depuis une piste vidéo.
+        timecode: Timecode SMPTE de la première image tel que lu par la sonde
+            (``HH:MM:SS:FF``, ``;`` avant les images en *drop-frame*), ``""`` s'il n'y en a pas.
+            Lu par :mod:`core.timecode`, jamais recalculé ailleurs.
+        timecode_fps: Cadence de la piste timecode quand elle diffère de celle de l'image (29,97 pour une vidéo
+            en 59,94), ``0.0`` : celle de ``fps``.
+        time_reference: Heure de début d'un fichier audio BWF en secondes depuis minuit (``time_reference`` en
+            échantillons divisé par la fréquence d'échantillonnage), ``None`` s'il n'y en a pas.
+        reel: Nom de bobine (``reel_name``) lu dans le fichier.
+        camera: Modèle de caméra (marque et modèle quand le fichier les donne).
+        creation_time: Date de création lue dans le fichier (ISO 8601), ``""`` si absente.
+
+    Les six métadonnées optionnelles sont **informatives** : elles n'entrent dans aucune règle de validité et une
+    valeur illisible (mauvais type, non finie) retombe sur son défaut au lieu de faire échouer l'ouverture d'un projet.
     """
 
     id: str
@@ -162,9 +189,21 @@ class MediaAsset:
     fps: float
     media_type: str
     has_audio: bool = False
+    timecode: str = ""
+    timecode_fps: float = 0.0
+    time_reference: float | None = None
+    reel: str = ""
+    camera: str = ""
+    creation_time: str = ""
 
     def __post_init__(self) -> None:
         """Rejette les valeurs physiquement impossibles pour un média."""
+        self.timecode = _clean_text(self.timecode)
+        self.reel = _clean_text(self.reel)
+        self.camera = _clean_text(self.camera)
+        self.creation_time = _clean_text(self.creation_time)
+        self.timecode_fps = _clean_number(self.timecode_fps) or 0.0
+        self.time_reference = _clean_number(self.time_reference)
         if self.media_type == "audio":
             if self.duration <= 0.0:
                 raise ValueError(
@@ -309,6 +348,11 @@ class Clip:
     # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
     # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
     tracking: ClipTracking | None = None
+    # --- Multicam ---
+    # Angle vidéo choisi par ce clip quand ``sequence_id`` désigne une source Multicam
+    # (:attr:`Sequence.multicam`). Vide : le premier angle de la source. Sans effet sur une séquence ordinaire.
+    # Un « changement d'angle » est une coupe ordinaire dont la moitié droite reçoit un autre ``angle_id``.
+    angle_id: str = ""
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -667,6 +711,10 @@ class Sequence:
     guides: list = field(default_factory=list)
     # Réglages du flou de mouvement (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = field(default_factory=lambda: _default_motion_blur())
+    # --- Multicam ---
+    # Description des angles quand la séquence est une **source Multicam** (``None`` : séquence ordinaire).
+    # Le décalage d'un angle est la position de ses clips : il n'est stocké nulle part ailleurs.
+    multicam: MulticamSource | None = None
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():

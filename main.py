@@ -35,6 +35,13 @@ def main():
         if problem:
             print(f"Smoke test : tracking indisponible — {problem}", file=sys.stderr)
             return 1
+        # Synchronisation audio du Multicam : même dépendance (numpy), contrôle sur des signaux synthétiques.
+        from core.audio_sync import self_check as audio_sync_check
+
+        problem = audio_sync_check()
+        if problem:
+            print(f"Smoke test : synchronisation audio indisponible — {problem}", file=sys.stderr)
+            return 1
         # Aperçu GPU : les shaders compilés doivent être embarqués et lisibles.
         from ui.gpu_preview import gpu_self_check
 

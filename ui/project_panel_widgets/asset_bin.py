@@ -235,7 +235,7 @@ class AssetBin(QWidget):
 
         self._list = QListWidget()
         self._list.setAcceptDrops(False)
-        self._list.setSelectionMode(QListWidget.SingleSelection)
+        self._list.setSelectionMode(QListWidget.ExtendedSelection)   # Ctrl / Maj + clic : plusieurs médias (Multicam)
         self._list.setFocusPolicy(Qt.NoFocus)
         self._list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -350,6 +350,12 @@ class AssetBin(QWidget):
         if not (0 <= row < self._list.count()):
             return None
         return self._list.item(row).data(Qt.UserRole)
+
+    @property
+    def selected_asset_ids(self) -> list[str]:
+        """Médias sélectionnés, dans l'ordre de la liste (plusieurs avec Ctrl / Maj + clic)."""
+        rows = sorted(index.row() for index in self._list.selectedIndexes())
+        return [self._list.item(row).data(Qt.UserRole) for row in rows if self._list.item(row).data(Qt.UserRole)]
 
     # ------------------------------------------------------------------
     # Menu contextuel

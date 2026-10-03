@@ -73,6 +73,7 @@ class Category(str, Enum):
     ANIMATION = "animation"
     MOTION = "motion"
     SEQUENCES = "sequences"
+    MULTICAM = "multicam"
 
 
 class Scope(str, Enum):
@@ -187,6 +188,7 @@ _NAMED_KEYS: dict[str, str] = {
 }
 
 _PUNCTUATION_KEYS = frozenset("`-=[]\\;',./+")
+_DIGIT_KEYS = frozenset("0123456789")
 _FUNCTION_KEY = re.compile(r"^f([1-9]|1[0-9]|2[0-4])$", re.IGNORECASE)
 
 
@@ -285,12 +287,15 @@ def key_candidates(sequence: str) -> tuple[str, ...]:
     ``Maj+=`` sur un clavier US) et Qt rapporte alors ``Shift++``. Pour
     une touche de ponctuation, la frappe est donc aussi essayée sans
     ``Shift`` : ``+`` reste utilisable quelle que soit la disposition.
+    Même règle pour un chiffre : sur un clavier AZERTY, ``1`` s'obtient avec
+    Maj (Qt rapporte ``Shift+1``), donc les angles Multicam restent
+    atteignables au clavier principal.
     """
     normalized = _normalize_step(sequence)
     if normalized is None:
         return ()
     modifiers, key = _split_sequence(normalized) or ([], "")
-    if key in _PUNCTUATION_KEYS and "Shift" in modifiers:
+    if (key in _PUNCTUATION_KEYS or key in _DIGIT_KEYS) and "Shift" in modifiers:
         rest = [name for name in modifiers if name != "Shift"]
         return (normalized, "+".join([*rest, key]))
     return (normalized,)
@@ -481,6 +486,15 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("sequence_parent", Category.SEQUENCES, "Ctrl+Alt+Up", scope=_A),
     _cmd("sequence_back", Category.SEQUENCES, "Alt+Left", scope=_A),
     _cmd("sequence_forward", Category.SEQUENCES, "Alt+Right", scope=_A),
+    # --- Multicam : un angle par chiffre (1 à 9), pavé numérique compris ------------------------
+    # Touches seules (portée KEY) : elles ne servent que quand aucun champ de saisie n'a le focus. Sur un clavier
+    # AZERTY les chiffres s'obtiennent avec Maj : voir ``key_candidates``.
+    *(_cmd(f"multicam_angle_{number}", Category.MULTICAM, str(number)) for number in range(1, 10)),
+    _cmd("multicam_viewer", Category.MULTICAM, "Ctrl+Shift+M", scope=_A),
+    _cmd("multicam_create", Category.MULTICAM, scope=_A),
+    _cmd("multicam_open_source", Category.MULTICAM, scope=_A),
+    _cmd("multicam_flatten", Category.MULTICAM, scope=_A),
+    _cmd("multicam_settings", Category.MULTICAM, scope=_A),
     # --- Motion graphics (calques, viewer) -----------------------------------
     _cmd("layer_add_text", Category.MOTION, scope=_A),
     _cmd("layer_add_shape", Category.MOTION, scope=_A),

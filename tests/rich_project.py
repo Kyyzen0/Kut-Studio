@@ -22,20 +22,27 @@ from core.color_grading import ColorGrade, ColorGradingService, make_user_color_
 from core.compositing import Compositing, Mask, MaskShape
 from core.effects_model import add_effect_to_clip, create_effect
 from core.library_organization import LibraryOrganization
+from core.multicam_model import AudioMode, MulticamAudio, SyncMethod, SyncStatus
+from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip
 from core.project_model import MediaAsset, Marker, Project, Track
 from core.sequences import create_sequence
 from core.tracking_model import Sample, SampleStatus
 
 
 def _video_asset(index: int) -> MediaAsset:
-    return MediaAsset(f"av{index}", f"/nonexistent/v{index}.mp4", f"V{index}", 20.0, 1920, 1080, 30.0, "video", True)
+    asset = MediaAsset(f"av{index}", f"/nonexistent/v{index}.mp4", f"V{index}", 20.0, 1920, 1080, 30.0, "video", True)
+    if index == 1:      # métadonnées de sonde non défaut : timecode drop-frame, bobine, caméra, création
+        asset = replace(asset, timecode="01:02:03;04", timecode_fps=30000 / 1001, reel="A001", camera="Sony A7S III",
+                        creation_time="2026-03-14T09:26:53Z")
+    return asset
 
 
 def build_rich_project() -> Project:
     project = Project(name="Riche", width=1920, height=1080, fps=30.0)
     project.media_assets += [
         _video_asset(1), _video_asset(2),
-        MediaAsset("aa1", "/nonexistent/a1.wav", "A1", 30.0, 0, 0, 0.0, "audio", True),
+        MediaAsset("aa1", "/nonexistent/a1.wav", "A1", 30.0, 0, 0, 0.0, "audio", True,
+                   time_reference=3600.5, camera="Zoom H6", creation_time="2026-03-14T09:30:00"),
         MediaAsset("as1", "", "S1", 5.0, 0, 0, 0.0, "subtitle", False),
     ]
     project.tracks += [Track("V1", "V1", "video"), Track("V2", "V2", "video"),
@@ -86,6 +93,24 @@ def build_rich_project() -> Project:
     project.markers.append(Marker("m-1", 3.0, "M", "todo"))
     add_guide(project.active_sequence, "vertical", 0.5)
     create_sequence(project, "Seq2")
+
+    # Multicam : une source à trois angles (dont un enregistreur, synchronisé par le son) et un segment du montage
+    # qui montre le deuxième angle ; couvre ``Sequence.multicam`` et ``Clip.angle_id`` dans l'aller-retour ``.kut``.
+    source = create_multicam_source(
+        project,
+        [
+            AngleSpec(asset_id="av1", offset=0.0, name="Wide", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.EXCELLENT, sync_confidence=0.93),
+            AngleSpec(asset_id="av2", offset=1.25, name="Close-up", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.GOOD, sync_confidence=0.61),
+            AngleSpec(asset_id="aa1", offset=0.5, name="Recorder", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.UNCERTAIN, sync_confidence=0.34),
+        ],
+        name="Concert",
+        sync_method=SyncMethod.AUDIO,
+        audio=MulticamAudio(AudioMode.MIX, ("angle-1", "angle-3")),
+    )
+    insert_multicam_clip(project, source.id, "V2", 10.0, angle_id="angle-2")
 
     library = LibraryOrganization(project)
     folder = library.create_folder("F")

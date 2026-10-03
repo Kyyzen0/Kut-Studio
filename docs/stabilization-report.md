@@ -357,3 +357,24 @@ smoke test empaqueté). Une exécution verte unique ne prouve pas la disparition
 tentative (`_refuse_replace`) la reproduisent de façon déterministe, et un échec intermittent de ces tests sous Windows
 doit être traité comme une régression, jamais relancé jusqu'au vert.
 
+
+## Chantier Multicam : un défaut d'export préexistant, trouvé et corrigé
+
+Le chantier Multicam ([multicam.md](multicam.md)) n'est pas une phase de stabilisation : c'est une fonctionnalité, bâtie sur
+les principes ci-dessus (une source de vérité, un seul moteur de rendu, interface → cœur). Il a toutefois mis au jour un
+défaut qui n'avait rien de spécifique à Multicam :
+
+* **Défaut** : à l'export, le graphe audio retardait un clip par `asetpts=PTS+début/TB`, or `amix` ignore les horodatages
+  de ses entrées. Avec le FFmpeg local (**9.0.2**), deux clips bout à bout sur une même piste donnaient : le premier à sa
+  place, puis le second **joué depuis l'instant 0** (mélangé au premier) et **silence** à l'endroit où il devait être
+  entendu. Tout export de plus d'un clip audio perdait donc son son après le premier. Le défaut n'a rien de propre à
+  Multicam ; il est apparu parce qu'un enregistreur placé après l'origine l'a rendu audible. **Non établi** : le
+  comportement des anciennes versions de FFmpeg (aucune n'a été essayée ici) ; les tests de filtres existants ne
+  vérifiaient que le texte du graphe, jamais le son produit.
+* **Correctif** : `core/export_engine.py` (`_build_audio_filter`) place désormais le clip par `adelay` (millisecondes à
+  trois décimales) quand `timeline_start > 0`. `RENDER_ENGINE_VERSION` passe à **3** : les rendus mis en cache avec
+  l'ancien filtre ne sont plus réutilisés.
+* **Test** : `tests/test_export_audio_timing.py` rend de vrais fichiers avec FFmpeg et relit le **ton** entendu à chaque instant (clips bout à bout, trou entre deux clips, séquence imbriquée placée tard) ;
+  les rendus de `tests/test_multicam_export.py` mesurent en plus le son des trois politiques audio.
+* **Non vérifié** : la forme à millisecondes fractionnaires de `adelay` n'a pas été essayée sur FFmpeg 6.1 (Ubuntu en CI) ;
+  elle suit la documentation. Un échec de ces tests sur cette plateforme est à traiter comme une régression du filtre.
