@@ -130,6 +130,51 @@ def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_
     assert {view.id for view in window.timeline_panel.clip_views} >= {"intro", "intro-split-2"}
 
 
+def test_core_effects_is_gone_and_its_one_live_use_is_wired_directly(qtbot, monkeypatch):
+    """``core/effects.py`` mêlait une ligne utile à deux chemins morts ; la ligne utile est maintenant en place.
+
+    Le curseur « Audio > Volume » de l'inspecteur règle le volume de lecture du moniteur sans passer par un module
+    de ``core`` (l'ancien ``set_volume`` n'était qu'un ``setVolume(valeur / 100)``).
+    """
+    assert importlib.util.find_spec("core.effects") is None
+    window = _window(qtbot, monkeypatch)
+
+    window.properties_panel.volume_slider.setValue(50)
+
+    assert window.properties_panel.volume_value.text() == "50 %"
+    assert window.preview_panel.audio_output.volume() == 0.5
+
+
+def test_a_colour_change_reaches_the_monitor_through_the_preview_pipeline(qtbot, monkeypatch):
+    """L'étalonnage se voit par l'invalidation et la resynchronisation de l'aperçu, pas par un effet de teinte Qt.
+
+    L'ancien ``apply_color_effect`` ne s'exécutait jamais : il visait ``preview_panel.color_effect``, un attribut
+    que personne ne créait.
+    """
+    window = _window(qtbot, monkeypatch)
+    calls: list[tuple] = []
+    monkeypatch.setattr(window, "_invalidate_preview_for_clip", lambda clip_id: calls.append(("invalidate", clip_id)))
+    monkeypatch.setattr(window, "_sync_preview_to_timeline", lambda *args, **kwargs: calls.append(("sync",)))
+
+    window._refresh_color_monitor("intro")
+
+    assert calls == [("invalidate", "intro"), ("sync",)]
+    assert not hasattr(window.preview_panel, "color_effect")
+
+
+def test_a_transition_picked_on_the_timeline_goes_to_the_inspector(qtbot, monkeypatch):
+    """Une transition se règle dans l'inspecteur (``transition_selected``) ; l'ancien menu « Fondu enchaîné · 0.5 s »
+    reposait sur un signal ``transition_clicked`` que la timeline n'émettait jamais."""
+    window = _window(qtbot, monkeypatch)
+    cleared: list[str] = []
+    monkeypatch.setattr(window.properties_panel, "clear_transition", lambda: cleared.append("clear"))
+
+    window.timeline_panel.transition_selected.emit("transition-inconnue")
+
+    assert cleared == ["clear"]
+    assert not hasattr(window.timeline_panel, "transition_clicked")
+
+
 def _names_imported_from(module_suffix: str) -> set[str]:
     """Noms importés de ``module_suffix`` (``from .audio_mixer import x`` ou ``from core.audio_mixer import x``)."""
     names: set[str] = set()

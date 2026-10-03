@@ -12,7 +12,7 @@ from ui.properties_panel import PropertiesPanel
 
 def _panel(qtbot, monkeypatch, tmp_path) -> PropertiesPanel:
     monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path / "config"))
-    panel = PropertiesPanel(lambda *_: None, lambda *_: None)
+    panel = PropertiesPanel(lambda *_: None)
     qtbot.addWidget(panel)
     return panel
 
