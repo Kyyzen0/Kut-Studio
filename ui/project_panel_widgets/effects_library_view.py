@@ -26,6 +26,7 @@ from core.effects_library import (
     builtin_presets,
     filter_presets,
 )
+from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
@@ -99,11 +100,11 @@ class EffectPresetCard(QFrame):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.xs)
-        self._title = QLabel(preset.name)
+        self._title = ElidedLabel(preset.name)  # un nom long ne doit pas pousser le bouton hors de la carte
         self._title.setStyleSheet(label_style(12, "text", 700))
         title_row.addWidget(self._title)
         # Badge catégorie : sobre, juste la couleur d'accent.
-        self._badge = QLabel(translate(
+        self._badge = ElidedLabel(translate(
             f"effects.category.{preset.category.value}"
         ).upper())
         self._badge.setStyleSheet(
@@ -250,9 +251,8 @@ class EffectsLibraryView(QWidget):
 
         # --- Filtres catégorie ------------------------------------------
         self.category_row = QWidget()
-        cat_layout = QHBoxLayout(self.category_row)
-        cat_layout.setContentsMargins(0, 0, 0, 0)
-        cat_layout.setSpacing(Spacing.xs)
+        # Les onglets de catégorie passent à la ligne : en rangée simple ils étaient écrasés à ~50 px (illisibles).
+        cat_layout = FlowLayout(self.category_row, spacing=Spacing.xs)
         self.category_buttons: list[QPushButton] = []
         self._category_buttons_data: list[EffectCategory | None] = [None]
         all_label = translate("effects.category.all").upper()
@@ -263,9 +263,8 @@ class EffectsLibraryView(QWidget):
             button = self._make_category_button(label, category)
             cat_layout.addWidget(button)
             self._category_buttons_data.append(category)
-        cat_layout.addStretch(1)
         header_layout.addWidget(self.category_row)
-        layout.addWidget(header)
+        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
 
         # --- Astuce + état sélection clip ------------------------------
         self.clip_hint = QLabel(translate("effects.library.apply_hint"))

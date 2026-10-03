@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -40,6 +40,7 @@ from core.keyframe_editing import (
     set_tangents,
 )
 from ui import i18n
+from ui.adaptive_layout import ElidedLabel, make_shrinkable
 from ui.theme import COLORS, label_style
 
 HANDLE_RADIUS = 4.5
@@ -327,20 +328,23 @@ class GraphEditorWindow(QWidget):
             f"QWidget#graphEditor {{ background: {COLORS.get('panel', '#141A1F')}; }}"
             f"QWidget#graphEditor QLabel {{ color: {COLORS.get('text', '#E6E8EB')}; }}"
         )
-        self.resize(820, 420)
+        # Jamais plus grande que l'écran qui la porte (elle est modeste : 820 × 420).
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        available = screen.availableGeometry() if screen is not None else None
+        self.resize(min(820, available.width() - 40) if available else 820, min(420, available.height() - 80) if available else 420)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         bar = QHBoxLayout()
         self.property_label = QLabel()
-        self.property_combo = QComboBox()
+        self.property_combo = make_shrinkable(QComboBox(), 5)
         self.property_combo.currentIndexChanged.connect(self._on_property_selected)
         self.interpolation_label = QLabel()
-        self.interpolation_combo = QComboBox()
+        self.interpolation_combo = make_shrinkable(QComboBox(), 5)
         for kind in InterpolationType:
             self.interpolation_combo.addItem("", userData=kind.value)
         self.interpolation_combo.activated.connect(self._on_interpolation)
         self.tangent_label = QLabel()
-        self.tangent_combo = QComboBox()
+        self.tangent_combo = make_shrinkable(QComboBox(), 5)
         for key in ("linked", "broken", "auto"):
             self.tangent_combo.addItem("", userData=key)
         self.tangent_combo.activated.connect(self._on_tangent_mode)
@@ -367,7 +371,7 @@ class GraphEditorWindow(QWidget):
         self.value_spin = QDoubleSpinBox()
         self.value_spin.setDecimals(3)
         self.value_spin.editingFinished.connect(self._on_value_edited)
-        self.status_label = QLabel()
+        self.status_label = ElidedLabel()  # le message d'aide est long : tronqué, il ne fixe plus la largeur minimale
         self.status_label.setStyleSheet(label_style(12, "muted", 500))
         for widget in (self.time_label, self.time_spin, self.value_label, self.value_spin):
             fields.addWidget(widget)

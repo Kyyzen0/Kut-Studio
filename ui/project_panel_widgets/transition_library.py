@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
@@ -78,9 +79,8 @@ class TransitionLibraryView(QWidget):
 
         # --- Filtres catégorie / favoris -------------------------------
         self.filter_row = QWidget()
-        filter_layout = QHBoxLayout(self.filter_row)
-        filter_layout.setContentsMargins(0, 0, 0, 0)
-        filter_layout.setSpacing(Spacing.xs)
+        # Les filtres passent à la ligne : en rangée simple, sept puces étaient écrasées à ~30 px (illisibles).
+        filter_layout = FlowLayout(self.filter_row, spacing=Spacing.xs)
         self.filter_buttons: list[QPushButton] = []
         # Catalogue étendu (tâche 26) : trois catégories supplémentaires
         # (« Formes », « Dissolutions », « Glissements fluides ») viennent
@@ -107,9 +107,8 @@ class TransitionLibraryView(QWidget):
         for key in self._filter_keys:
             button = self._make_filter_button(labels[key], key)
             filter_layout.addWidget(button)
-        filter_layout.addStretch(1)
         header_layout.addWidget(self.filter_row)
-        layout.addWidget(header)
+        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
 
         # --- Astuce + état sélection clips -----------------------------
         self.selection_hint = QLabel(
@@ -567,10 +566,10 @@ class TransitionPresetCard(QFrame):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.xs)
-        self._title = QLabel(preset.name)
+        self._title = ElidedLabel(preset.name)  # un titre long ne doit pas pousser les boutons hors de la carte
         self._title.setStyleSheet(label_style(12, "text", 700))
         title_row.addWidget(self._title)
-        badge = QLabel(
+        badge = ElidedLabel(
             translate(
                 f"transitions.category.{preset.category.value}"
             ).upper()

@@ -23,6 +23,7 @@ from core.time_remapping import MIN_SPEED, MAX_SPEED
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
+from ui.adaptive_layout import FlowLayout, allow_shrinking
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -277,6 +278,7 @@ class ConstructionMixin:
         speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         speed_form.setSpacing(Spacing.xs)
         speed_form.setLabelAlignment(Qt.AlignLeft)
+        speed_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # libellé au-dessus du champ si la ligne est trop longue
 
         # Vitesse numérique
         self.speed_spinbox = QDoubleSpinBox()
@@ -291,9 +293,7 @@ class ConstructionMixin:
 
         # Boutons de preset de vitesse
         speed_presets = QWidget()
-        speed_presets_layout = QHBoxLayout(speed_presets)
-        speed_presets_layout.setContentsMargins(0, 0, 0, 0)
-        speed_presets_layout.setSpacing(Spacing.xs)
+        speed_presets_layout = FlowLayout(speed_presets, spacing=Spacing.xs)  # cinq boutons : à la ligne si besoin
 
         self.speed_0_25x_button = self._make_action_button(
             None, translate("action.speed_0.25x"), translate("tooltip.speed_0.25x")
@@ -493,7 +493,7 @@ class ConstructionMixin:
         reset_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         reset_button.clicked.connect(self._emit_reset)
         reset_button.setEnabled(False)
-        reset_button.setMinimumWidth(0)
+        allow_shrinking(reset_button, 120)  # le libellé est le plus long de l'onglet : dernier recours si la place manque
         reset_button.setSizePolicy(reset_button.sizePolicy().horizontalPolicy(),
                                    reset_button.sizePolicy().verticalPolicy())
         self.reset_movement_button = reset_button

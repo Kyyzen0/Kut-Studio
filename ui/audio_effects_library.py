@@ -28,6 +28,7 @@ from core.audio_effects_library import (
     builtin_audio_effect_presets,
     filter_audio_effect_presets,
 )
+from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
@@ -77,10 +78,10 @@ class AudioEffectPresetCard(QFrame):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.xs)
-        title = QLabel(preset.name)
+        title = ElidedLabel(preset.name)  # un nom long ne doit pas pousser l'étoile hors de la carte
         title.setStyleSheet(label_style(12, "text", 700))
         title_row.addWidget(title)
-        badge = QLabel(CATEGORY_LABELS[preset.category].upper())
+        badge = ElidedLabel(CATEGORY_LABELS[preset.category].upper())
         badge.setStyleSheet(
             f"QLabel {{ color: {accent}; background: transparent;"
             f" font-size: 9px; font-weight: 700; padding: 0; }}"
@@ -210,9 +211,7 @@ class AudioEffectsLibraryView(QWidget):
         header_layout.addWidget(self.search_field)
 
         category_row = QWidget()
-        cat_layout = QHBoxLayout(category_row)
-        cat_layout.setContentsMargins(0, 0, 0, 0)
-        cat_layout.setSpacing(Spacing.xs)
+        cat_layout = FlowLayout(category_row, spacing=Spacing.xs)  # à la ligne : en rangée simple, les puces étaient écrasées
         self.category_buttons: list[QPushButton] = []
         self._category_buttons_data: list[AudioEffectPresetCategory | None] = []
         self._add_category_button(cat_layout, "TOUS", None)
@@ -233,9 +232,8 @@ class AudioEffectsLibraryView(QWidget):
         )
         self.favorites_button.clicked.connect(self._on_favorites_filter_clicked)
         cat_layout.addWidget(self.favorites_button)
-        cat_layout.addStretch(1)
         header_layout.addWidget(category_row)
-        layout.addWidget(header)
+        layout.addWidget(ShrinkableScrollArea(header, Sizes.library_header_min_height))
 
         self.clip_hint = QLabel(
             "Sélectionnez un clip audio ou vidéo, puis appliquez un préréglage."

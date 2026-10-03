@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from core.tracking_model import AdaptMode, BorderMode, Precision, Smoothing, StabilizationMode
 from ui import i18n
+from ui.adaptive_layout import FlowLayout, WrappingCheckBox, allow_shrinking, make_shrinkable
 from ui.design_system import Spacing
 from ui.theme import COLORS
 
@@ -93,7 +94,8 @@ class TrackingPanel(QGroupBox):
         self.tracker_list.itemChanged.connect(self._on_item_changed)
         self.tracker_list.itemDoubleClicked.connect(lambda item: self.tracker_list.editItem(item))
         tracker_layout.addWidget(self.tracker_list)
-        row = QHBoxLayout()
+        # Les rangées de boutons passent à la ligne : à 280 px d'inspecteur, trois boutons côte à côte dépassent.
+        row = FlowLayout(spacing=Spacing.xs)
         self.add_button = QPushButton(_tr("tracking.add"), objectName="tracker_add")
         self.add_button.setToolTip(_tr("tracking.add.tip"))
         self.add_button.clicked.connect(self.add_tracker_requested.emit)
@@ -111,11 +113,12 @@ class TrackingPanel(QGroupBox):
             row.addWidget(widget)
         tracker_layout.addLayout(row)
         self.summary = QLabel(objectName="tracker_summary")
+        self.summary.setWordWrap(True)
         self.summary.setStyleSheet(f"color: {COLORS['muted']};")
         tracker_layout.addWidget(self.summary)
 
         # --- Analyse --------------------------------------------------------------------------
-        controls = QHBoxLayout()
+        controls = FlowLayout(spacing=Spacing.xs)
         self.backward_button = QPushButton("◀◀ " + _tr("tracking.backward"), objectName="track_backward")
         self.stop_button = QPushButton("■ " + _tr("tracking.stop"), objectName="track_stop")
         self.forward_button = QPushButton(_tr("tracking.forward") + " ▶▶", objectName="track_forward")
@@ -138,6 +141,7 @@ class TrackingPanel(QGroupBox):
         # --- Zones et réglages ---------------------------------------------------------------
         self.zones_box = QGroupBox(_tr("tracking.zones"))
         zones = QFormLayout(self.zones_box)
+        zones.setRowWrapPolicy(QFormLayout.WrapLongRows)  # libellé au-dessus du champ quand la ligne est trop longue
         self.pattern_w, self.pattern_h = self._size_pair(zones, "tracking.pattern", "pattern")
         self.search_w, self.search_h = self._size_pair(zones, "tracking.search", "search")
         self.min_confidence = QDoubleSpinBox(objectName="tracker_min_confidence")
@@ -145,24 +149,27 @@ class TrackingPanel(QGroupBox):
         self.min_confidence.setSingleStep(0.05)
         self.min_confidence.valueChanged.connect(lambda v: self._emit_settings(min_confidence=float(v)))
         zones.addRow(_tr("tracking.min_confidence"), self.min_confidence)
-        self.adapt = QComboBox(objectName="tracker_adapt")
+        self.adapt = make_shrinkable(QComboBox(objectName="tracker_adapt"))
         for mode in AdaptMode.ALL:
             self.adapt.addItem(_tr(f"tracking.adapt.{mode}"), mode)
         self.adapt.currentIndexChanged.connect(lambda _i: self._emit_settings(adapt=self.adapt.currentData()))
         zones.addRow(_tr("tracking.adapt"), self.adapt)
-        self.precision = QComboBox(objectName="tracker_precision")
+        self.precision = make_shrinkable(QComboBox(objectName="tracker_precision"))
         for value in Precision.ALL:
             self.precision.addItem(_tr(f"tracking.precision.{value}"), value)
         self.precision.currentIndexChanged.connect(
             lambda _i: self._emit_settings(precision=self.precision.currentData())
         )
         zones.addRow(_tr("tracking.precision"), self.precision)
-        self.stop_on_loss = QCheckBox(_tr("tracking.stop_on_loss"), objectName="tracker_stop_on_loss")
+        self.stop_on_loss = WrappingCheckBox(_tr("tracking.stop_on_loss"))
+        self.stop_on_loss.setObjectName("tracker_stop_on_loss")
         self.stop_on_loss.toggled.connect(lambda v: self._emit_settings(stop_on_loss=bool(v)))
         zones.addRow(self.stop_on_loss)
-        self.use_proxy = QCheckBox(_tr("tracking.use_proxy"), objectName="tracker_use_proxy")
+        self.use_proxy = WrappingCheckBox(_tr("tracking.use_proxy"))
+        self.use_proxy.setObjectName("tracker_use_proxy")
         zones.addRow(self.use_proxy)
-        self.show_paths = QCheckBox(_tr("tracking.show_paths"), objectName="tracker_show_paths")
+        self.show_paths = WrappingCheckBox(_tr("tracking.show_paths"))
+        self.show_paths.setObjectName("tracker_show_paths")
         self.show_paths.setChecked(True)
         self.show_paths.toggled.connect(lambda v: not self._updating and self.show_paths_changed.emit(bool(v)))
         zones.addRow(self.show_paths)
@@ -171,9 +178,9 @@ class TrackingPanel(QGroupBox):
         # --- Appliquer ------------------------------------------------------------------------
         self.apply_box = QGroupBox(_tr("tracking.apply"))
         apply_layout = QVBoxLayout(self.apply_box)
-        self.target = QComboBox(objectName="tracking_target")
+        self.target = make_shrinkable(QComboBox(objectName="tracking_target"))
         apply_layout.addWidget(self.target)
-        components = QHBoxLayout()
+        components = FlowLayout(spacing=Spacing.md)
         self.apply_position = QCheckBox(_tr("tracking.component.position"), objectName="apply_position")
         self.apply_position.setChecked(True)
         self.apply_rotation = QCheckBox(_tr("tracking.component.rotation"), objectName="apply_rotation")
@@ -185,7 +192,7 @@ class TrackingPanel(QGroupBox):
         self.multi_hint.setWordWrap(True)
         self.multi_hint.setStyleSheet(f"color: {COLORS['muted']};")
         apply_layout.addWidget(self.multi_hint)
-        buttons = QHBoxLayout()
+        buttons = FlowLayout(spacing=Spacing.xs)
         self.link_button = QPushButton(_tr("tracking.link"), objectName="tracking_link")
         self.link_button.setToolTip(_tr("tracking.link.tip"))
         self.bake_button = QPushButton(_tr("tracking.bake"), objectName="tracking_bake")
@@ -204,7 +211,7 @@ class TrackingPanel(QGroupBox):
         self.links_list.setMaximumHeight(90)
         self.links_list.itemChanged.connect(self._on_link_item_changed)
         links_layout.addWidget(self.links_list)
-        link_buttons = QHBoxLayout()
+        link_buttons = FlowLayout(spacing=Spacing.xs)
         self.freeze_button = QPushButton(_tr("tracking.link.freeze"), objectName="tracking_link_bake")
         self.unlink_button = QPushButton(_tr("tracking.link.unlink"), objectName="tracking_unlink")
         self.freeze_button.clicked.connect(lambda: self._emit_for_link(self.link_bake_requested))
@@ -217,16 +224,18 @@ class TrackingPanel(QGroupBox):
         # --- Stabilisation --------------------------------------------------------------------
         self.stab_box = QGroupBox(_tr("tracking.stabilization"))
         stab = QFormLayout(self.stab_box)
-        self.stab_enabled = QCheckBox(_tr("tracking.stab.enable"), objectName="stab_enabled")
+        stab.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.stab_enabled = WrappingCheckBox(_tr("tracking.stab.enable"))
+        self.stab_enabled.setObjectName("stab_enabled")
         self.stab_enabled.toggled.connect(lambda v: not self._updating and self.stabilization_toggled.emit(bool(v)))
         stab.addRow(self.stab_enabled)
-        self.stab_mode = QComboBox(objectName="stab_mode")
+        self.stab_mode = make_shrinkable(QComboBox(objectName="stab_mode"))
         for mode in StabilizationMode.ALL:
             self.stab_mode.addItem(_tr(f"tracking.stab.mode.{mode}"), mode)
         self.stab_mode.currentIndexChanged.connect(lambda _i: self._emit_stab(mode=self.stab_mode.currentData()))
         stab.addRow(_tr("tracking.stab.mode"), self.stab_mode)
         smoothing_row = QHBoxLayout()
-        self.stab_smoothing = QComboBox(objectName="stab_smoothing")
+        self.stab_smoothing = make_shrinkable(QComboBox(objectName="stab_smoothing"))
         for value in (Smoothing.LOW, Smoothing.MEDIUM, Smoothing.HIGH, Smoothing.CUSTOM, Smoothing.LOCKED):
             self.stab_smoothing.addItem(_tr(f"tracking.stab.smoothing.{value}"), value)
         self.stab_smoothing.currentIndexChanged.connect(
@@ -234,12 +243,13 @@ class TrackingPanel(QGroupBox):
         )
         self.stab_frames = QDoubleSpinBox(objectName="stab_frames")
         self.stab_frames.setRange(0.5, 600.0)
+        allow_shrinking(self.stab_frames)
         self.stab_frames.setSuffix(" " + _tr("tracking.stab.frames"))
         self.stab_frames.valueChanged.connect(lambda v: self._emit_stab(smoothing_frames=float(v)))
         smoothing_row.addWidget(self.stab_smoothing, 1)
         smoothing_row.addWidget(self.stab_frames)
         stab.addRow(_tr("tracking.stab.smoothing"), smoothing_row)
-        self.stab_borders = QComboBox(objectName="stab_borders")
+        self.stab_borders = make_shrinkable(QComboBox(objectName="stab_borders"))
         for value in BorderMode.ALL:
             self.stab_borders.addItem(_tr(f"tracking.stab.borders.{value}"), value)
         self.stab_borders.currentIndexChanged.connect(
@@ -251,6 +261,7 @@ class TrackingPanel(QGroupBox):
         stab.addRow(self.stab_info)
         self.auto_stab = QPushButton(_tr("tracking.stab.auto"), objectName="stab_auto")
         self.auto_stab.setToolTip(_tr("tracking.stab.auto.tip"))
+        allow_shrinking(self.auto_stab, 120)
         self.auto_stab.clicked.connect(self.auto_stabilize_requested.emit)
         stab.addRow(self.auto_stab)
         root.addWidget(self.stab_box)
@@ -266,6 +277,7 @@ class TrackingPanel(QGroupBox):
             spin.setRange(8, 4096)
             spin.setSuffix(" px")
             spin.setKeyboardTracking(False)
+            allow_shrinking(spin)  # deux champs côte à côte : leur somme ne doit pas élargir l'inspecteur
             spin.valueChanged.connect(lambda v, f=field: self._emit_settings(**{f: float(v)}))
             row.addWidget(spin)
         form.addRow(_tr(label_key), row)

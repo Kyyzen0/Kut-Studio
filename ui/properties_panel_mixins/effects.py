@@ -23,6 +23,7 @@ from core.effects_model import (
     is_single_instance,
     parameter_specs,
 )
+from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
@@ -60,7 +61,7 @@ class EffectsMixin:
         add_layout = QHBoxLayout(self.effect_add_row)
         add_layout.setContentsMargins(0, 0, 0, 0)
         add_layout.setSpacing(Spacing.xs)
-        self.effect_type_combo = QComboBox()
+        self.effect_type_combo = make_shrinkable(QComboBox())
         self.effect_type_combo.setObjectName("effectType")
         self.effect_type_combo.setFocusPolicy(Qt.NoFocus)
         self.effect_type_combo.setStyleSheet(
@@ -97,9 +98,8 @@ class EffectsMixin:
 
         # --- Bandeau d'actions ---------------------------------------
         self.effect_buttons_row = QWidget()
-        buttons_layout = QHBoxLayout(self.effect_buttons_row)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(Spacing.xs)
+        # Quatre boutons : ils passent à la ligne à 280 px d'inspecteur au lieu d'imposer ~270 px.
+        buttons_layout = FlowLayout(self.effect_buttons_row, spacing=Spacing.xs)
         self.effect_toggle_button = self._make_effect_button(
             translate("effects.disable"), self._on_effect_toggle
         )

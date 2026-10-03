@@ -22,6 +22,7 @@ from core.audio_effects_model import (
     AudioEffectType,
     parameter_specs as audio_parameter_specs,
 )
+from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
 from ui.theme import COLORS, label_style
 
@@ -63,7 +64,7 @@ class AudioEffectsMixin:
         add_layout = QHBoxLayout(self.audio_effect_add_row)
         add_layout.setContentsMargins(0, 0, 0, 0)
         add_layout.setSpacing(Spacing.xs)
-        self.audio_effect_type_combo = QComboBox()
+        self.audio_effect_type_combo = make_shrinkable(QComboBox())
         self.audio_effect_type_combo.setObjectName("audioEffectType")
         self.audio_effect_type_combo.setFocusPolicy(Qt.NoFocus)
         self.audio_effect_type_combo.setStyleSheet(
@@ -104,9 +105,7 @@ class AudioEffectsMixin:
 
         # Boutons d'action.
         self.audio_effect_buttons_row = QWidget()
-        buttons_layout = QHBoxLayout(self.audio_effect_buttons_row)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(Spacing.xs)
+        buttons_layout = FlowLayout(self.audio_effect_buttons_row, spacing=Spacing.xs)
         self.audio_effect_toggle_button = self._make_audio_effect_button(
             _tr("audio_effects.disable"), self._on_audio_effect_toggle
         )
