@@ -25,7 +25,7 @@ from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
 from core.sequences import SequenceError, create_sequence_from_selection, duplicate_sequence
-from core.time_remapping import TimeRemapping
+from core.time_remapping import FreezeFrameMode, TimeRemapping
 from core.timeline_operations import cut_clip, delete_clip
 from core.tracking_bindings import TrackingContext, effective_clip_state, link_issues
 from core.tracking_model import (
@@ -149,6 +149,19 @@ def test_the_follower_stays_continuous_when_the_source_is_remapped(remap):
     assert max(abs(a[0] - before[0][0]) for a in before) > 20.0       # le mouvement est bien suivi
 
     cut_clip(project, "v", _clip(project, "v").duration / 2.0)
+
+    _assert_same_motion(before, _positions(project, follower.id, frames))
+
+
+def test_the_follower_of_a_frozen_source_stays_put_on_both_sides_of_the_cut():
+    freeze = TimeRemapping(freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=0.5, freeze_duration=1.0)
+    project = _project(remap=freeze)
+    follower = _follower(project)
+    frames = _frames(follower)
+    before = _positions(project, follower.id, frames)
+    assert max(abs(a[0] - before[0][0]) for a in before) < 0.05      # image figée : le suiveur ne bouge pas
+
+    cut_clip(project, "v", 0.4)
 
     _assert_same_motion(before, _positions(project, follower.id, frames))
 
