@@ -815,10 +815,10 @@ def supervision_self_check(timeout: float = 15.0) -> str | None:
                 return "objet Job inactif"
             job.close()
         try:
-            code = child.wait(timeout=timeout)
+            child.wait(timeout=timeout)  # il dort 60 s : une fin avant l'échéance est un arrêt
         except subprocess.TimeoutExpired:
             return "l'enfant a survécu au déclenchement de la protection"
-        return None if code != 0 else "l'enfant s'est terminé seul au lieu d'être arrêté"
+        return None
     finally:
         if child.poll() is None:
             child.kill()

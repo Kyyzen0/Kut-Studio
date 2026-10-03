@@ -41,8 +41,11 @@ from core.process_platform import (
     same_process,
 )
 from core.process_supervisor import (
+    REAPER_FLAG,
+    SLEEPER_FLAG,
     InstanceRegistry,
     ProcessSupervisor,
+    helper_command,
     run_reaper,
     sweep_dead_instances,
     sweep_instance,
@@ -234,6 +237,9 @@ class FakeJobApi:
 
     def close(self, handle):
         self.open_handles.discard(handle)
+
+    def wait(self, handle, milliseconds):
+        return 0x102  # WAIT_TIMEOUT : le processus tourne
 
 
 def test_job_object_kills_children_on_close_and_never_leaks_process_handles():
@@ -504,6 +510,19 @@ def test_closing_the_main_window_stops_every_child_still_registered(qtbot):
         assert all(item.identity.pid != child.pid for item in supervisor.live_registrations())
     finally:
         supervisor.finish(child)
+
+
+def test_helper_processes_relaunch_the_application_itself_frozen_or_not(monkeypatch):
+    """Gelée (PyInstaller), ``python -m`` n'existe pas : l'application se relance avec un argument dédié."""
+    with monkeypatch.context() as frozen:
+        frozen.setattr(sys, "frozen", True, raising=False)
+        frozen.setattr(sys, "executable", "/Applications/Kut-Studio.app/Contents/MacOS/Kut-Studio")
+        assert helper_command(REAPER_FLAG, "/registre") == [
+            "/Applications/Kut-Studio.app/Contents/MacOS/Kut-Studio", REAPER_FLAG, "/registre"]
+    command = helper_command(SLEEPER_FLAG, "0")
+    assert command[:2] == [sys.executable, str(ROOT / "main.py")] and command[2:] == [SLEEPER_FLAG, "0"]
+    # main.py traite l'argument en tête, avant le journal et avant Qt : l'enfant se termine aussitôt.
+    assert subprocess.run(command, timeout=DEADLINE, stdin=subprocess.DEVNULL).returncode == 0
 
 
 def test_self_check_used_by_the_smoke_test_passes(monkeypatch, tmp_path):

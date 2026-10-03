@@ -485,6 +485,8 @@ class JobApi(Protocol):
 
     def close(self, handle: int) -> None: ...
 
+    def wait(self, handle: int, milliseconds: int) -> int: ...
+
     def create_job(self) -> int | None: ...
 
     def set_kill_on_close(self, job: int) -> bool: ...
@@ -543,17 +545,22 @@ class KillOnCloseJob:
                         self._warn_once("limits", "KILL_ON_JOB_CLOSE refusé (erreur %d) ; repli sur le registre", code)
                         return False
                     self._handle = job
-                process = api.open_process(pid, PROCESS_SET_QUOTA | PROCESS_TERMINATE)
+                process = api.open_process(pid, PROCESS_SET_QUOTA | PROCESS_TERMINATE | SYNCHRONIZE)
                 if not process:
                     code = api.last_error()
-                    self._warn_once(f"open-{code}", "processus %d introuvable pour le job (erreur %d)", pid, code)
+                    if code != ERROR_INVALID_PARAMETER:  # 87 : déjà terminé (sonde éclair), rien à protéger
+                        self._warn_once(f"open-{code}", "processus %d inaccessible pour le job (erreur %d)", pid, code)
                     return False
                 try:
                     if api.assign_to_job(self._handle, process):
                         return True
                     code = api.last_error()
+                    # Un processus déjà terminé est refusé avec ERROR_ACCESS_DENIED : ce n'est pas un échec du job.
+                    finished = api.wait(process, 0) == WAIT_OBJECT_0
                 finally:
                     api.close(process)
+                if finished:
+                    return False
                 reason = "déjà dans un job sans imbrication possible ?" if code == ERROR_ACCESS_DENIED else "refus"
                 self._warn_once(
                     f"assign-{code}", "processus %d hors du job (erreur %d : %s) ; repli sur le registre",
