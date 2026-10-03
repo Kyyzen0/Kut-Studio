@@ -132,9 +132,10 @@ fermeture normale), `kill_if_same` relit l'identité actuelle du PID et la compa
 
 * Le préfixe de démarrage (Linux) rend les registres d'un démarrage précédent inoffensifs : leurs jetons ne peuvent
   plus correspondre.
-* Le nom est un garde-fou supplémentaire, comparé **normalisé** (casse, dossier, `.exe`, suffixe de version) : un
-  lanceur peut se ré-exécuter sous un autre nom en gardant PID et heure de début (le Python « framework » de macOS
-  passe de `python3.14` à `Python`).
+* Le nom est un garde-fou supplémentaire, comparé **normalisé** (casse, dossier, `.exe`, suffixe de version, shells
+  confondus) : un lanceur peut se ré-exécuter sous un autre nom en gardant PID et heure de début (le Python
+  « framework » de macOS passe de `python3.14` à `Python`, le `/bin/sh` de macOS devient `bash`). Le jeton suffit
+  en pratique à distinguer deux processus ; le nom ne fait que refuser davantage.
 * Un **zombie** (terminé, pas encore récolté) est « disparu » : il répond encore à `kill(pid, 0)`, la sonde non
   (état `Z` sous Linux, `proc_pidinfo` refusé sous macOS ; objet signalé sous Windows).
 * Une identité illisible (droits, API absente) n'est **jamais** tuée. Une plateforme inconnue (ni Linux, ni macOS,
@@ -197,7 +198,13 @@ fermeture normale), `kill_if_same` relit l'identité actuelle du PID et la compa
 * **Jeton** : sous Linux, deux processus ne peuvent partager PID et tic de début (10 ms) que si le PID est réutilisé
   dans le même tic, ce que l'allocation séquentielle des PID exclut en pratique. Sous macOS, la vérification et le
   `kill()` sont deux appels (quelques microsecondes d'écart).
-* Le nom normalisé est une heuristique (casse, `.exe`, suffixe de version) ; il ne sert qu'en complément du jeton.
+* Le nom normalisé est une heuristique ; il ne sert qu'en complément du jeton. Un FFmpeg lancé par un enveloppeur qui
+  se ré-exécute sous un autre nom (`snap`, `flatpak`) est **épargné** par la vérification (sens sûr) : le groupe du
+  gardien (enfants `Popen`) ou le job (Windows) le tuent quand même, mais pas la relecture du registre (le `QProcess`
+  de l'export, le balayage au démarrage, l'étape de fermeture).
+* **Petits-enfants** : un processus lancé par un enfant enregistré hérite du groupe du gardien (POSIX) ou du job
+  (Windows) et meurt avec eux ; le balayage au démarrage, lui, ne connaît que les enfants enregistrés. FFmpeg et
+  ffprobe ne lancent pas de processus.
 * Un FFmpeg tué laisse ses fichiers partiels : le `.partial` de la file de rendu est supprimé au démarrage suivant,
   ceux des proxies par leur nettoyage des fichiers abandonnés ; un segment d'aperçu interrompu laisse un
   `kut-preview-*.mp4` dans le dossier temporaire du système.
@@ -230,6 +237,11 @@ L'auto-contrôle (`supervision_self_check`, lancé par `python main.py --smoke-t
 déclenche réellement la protection : un enfant (l'application en mode `--kut-process-sleeper`, hors du groupe du
 gardien) est enregistré comme un `QProcess`, puis le tube du gardien est fermé (POSIX) ou la poignée du job fermée
 (Windows) ; l'enfant doit mourir.
+
+Vérifié aussi à la main sur l'application gelée (PyInstaller, macOS) : `kill -9` pendant qu'un « FFmpeg » factice
+long tournait (`KUT_STUDIO_FFMPEG` pointant vers un script qui dort) ; le gardien gelé l'a arrêté par le registre,
+son petit-enfant par le groupe, et a supprimé le registre. Puis `kill -9` de l'application **et** du gardien :
+l'enfant survit, et le démarrage suivant le balaie (« balayage au démarrage — 1 enfant(s) orphelin(s) arrêté(s) »).
 
 ## Tester à la main
 
