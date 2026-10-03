@@ -11,7 +11,10 @@ L'API publique est volontairement minimale et stable :
 - :func:`current_language()` : retourne la langue active ;
 - :func:`available_languages()` : codes valides ;
 - :func:`subscribe(callback)` : permet à n'importe quel widget de se
-  rafraîchir après un changement de langue.
+  rafraîchir après un changement de langue ;
+- :func:`translate_strict` / :func:`strict_translations` : variantes **sans repli silencieux**
+  (clé inconnue, langue absente, texte vide ou champ non fourni lèvent
+  :class:`MissingTranslationError`), pour les tests et le diagnostic.
 
 Les clés de traduction sont en anglais. Une clé inconnue renvoie
 ``"[{key}]"`` pour la repérer rapidement. Les valeurs de substitution
@@ -20,6 +23,8 @@ supportent ``{name}`` (format PEP 3101).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -1837,20 +1842,36 @@ def reset_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 
-# Motion graphics : traductions tenues à part, fusionnées ici.
+# Modules de domaine : traductions tenues à part, fusionnées ici (tracking, matériel, motion graphics…).
+# Une clé définie deux fois est refusée à l'import : le doublon écraserait l'autre en silence.
+from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
-
-_TRANSLATIONS.update(_MOGRAPH)
-
-# Tracking 2D : idem.
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
 
-_TRANSLATIONS.update(_TRACKING)
+DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
+    "ui.i18n_mograph": _MOGRAPH,
+    "ui.i18n_tracking": _TRACKING,
+    "ui.i18n_hardware": _HARDWARE,
+}
 
-# Décodage matériel et aperçu GPU : idem.
-from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 
-_TRANSLATIONS.update(_HARDWARE)
+def _merge_table(module: str, table: dict[str, dict[str, str]]) -> None:
+    for key, entry in table.items():
+        if key in _TRANSLATIONS:
+            raise ValueError(f"clé i18n définie deux fois : {key!r} (déjà présente quand {module} est fusionné)")
+        _TRANSLATIONS[key] = entry
+
+
+for _module, _table in DOMAIN_TABLES.items():
+    _merge_table(_module, _table)
+
+
+class MissingTranslationError(LookupError):
+    """Une traduction manque, est vide ou ne se formate pas (mode strict)."""
+
+
+_strict_depth: int = 0
+"""> 0 pendant :func:`strict_translations` : :func:`translate` ne retombe plus sur le français."""
 
 
 def _format(template: str, values: dict) -> str:
@@ -1860,6 +1881,49 @@ def _format(template: str, values: dict) -> str:
         return template.format(**values)
     except (KeyError, IndexError):
         return template
+
+
+def translate_strict(key: str, language: str | None = None, **values) -> str:
+    """Comme :func:`translate`, mais **sans aucun repli silencieux** (pour les tests et le diagnostic).
+
+    Lève :class:`MissingTranslationError` si la clé est inconnue, absente dans ``language`` (pas de repli sur le
+    français), vide, ou si un champ ``{nom}`` du texte n'est pas fourni.
+
+    Args:
+        key: clé de traduction.
+        language: ``"fr"``, ``"en"`` ou ``"es"`` ; par défaut la langue courante.
+        **values: substitutions PEP 3101.
+    """
+    code = _current_language if language is None else language
+    if code not in AVAILABLE_LANGUAGES:
+        raise ValueError(f"langue inconnue : {code!r}")
+    entries = _TRANSLATIONS.get(key)
+    if not entries:
+        raise MissingTranslationError(f"clé i18n inconnue : {key!r}")
+    template = entries.get(code)
+    if template is None:
+        raise MissingTranslationError(f"clé {key!r} absente en {code!r}")
+    if not template.strip():
+        raise MissingTranslationError(f"clé {key!r} vide en {code!r}")
+    try:
+        return template.format(**values)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise MissingTranslationError(f"clé {key!r} en {code!r} : champ non fourni ou mal formé ({exc!r})") from exc
+
+
+@contextmanager
+def strict_translations() -> Iterator[None]:
+    """Pendant le bloc, :func:`translate` se comporte comme :func:`translate_strict` (langue courante).
+
+    Sert aux tests qui construisent un panneau dans chaque langue : une clé manquante échoue au lieu de
+    s'afficher ``[clé]`` ou en français.
+    """
+    global _strict_depth
+    _strict_depth += 1
+    try:
+        yield
+    finally:
+        _strict_depth -= 1
 
 
 def translate(key: str, **values) -> str:
@@ -1874,6 +1938,8 @@ def translate(key: str, **values) -> str:
         est inconnue, renvoie ``"[{key}]"`` pour la repérer facilement
         en debug.
     """
+    if _strict_depth:
+        return translate_strict(key, **values)
     entries = _TRANSLATIONS.get(key)
     if not entries:
         return f"[{key}]"
@@ -1886,11 +1952,15 @@ def translate(key: str, **values) -> str:
 __all__ = [
     "DEFAULT_LANGUAGE",
     "AVAILABLE_LANGUAGES",
+    "DOMAIN_TABLES",
+    "MissingTranslationError",
     "available_languages",
     "current_language",
     "reset_for_tests",
     "set_language",
+    "strict_translations",
     "subscribe",
     "translate",
+    "translate_strict",
     "unsubscribe",
 ]
