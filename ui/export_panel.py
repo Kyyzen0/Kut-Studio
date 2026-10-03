@@ -104,6 +104,7 @@ class ExportPanel(QWidget):
         close_button = QPushButton("×")
         close_button.setFixedSize(30, 30)
         close_button.setToolTip("Fermer l'export")
+        close_button.setAccessibleName(i18n.translate("a11y.export.close"))  # le libellé visible n'est qu'un « × »
         close_button.clicked.connect(self.close_requested)
         header.addWidget(self.title_label)
         header.addStretch()
@@ -213,6 +214,14 @@ class ExportPanel(QWidget):
         self.retranslate()
         self._on_preset_changed()
         self.set_status(i18n.translate("render.export.ready"), "ready")
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - API Qt
+        """Échap ferme la page d'export, comme la croix : c'est un dialogue plein écran."""
+        if event.key() == Qt.Key_Escape and not event.modifiers():
+            self.close_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     # ------------------------------------------------------------------
     # File de rendu

@@ -225,6 +225,9 @@ class RenderQueuePanel(QWidget):
         self.down_button.setText("▼")
         self.up_button.setToolTip(i18n.translate("render.btn.up"))
         self.down_button.setToolTip(i18n.translate("render.btn.down"))
+        # Les libellés visibles sont des glyphes (▲ ▼) : le nom accessible dit ce que fait le bouton.
+        self.up_button.setAccessibleName(i18n.translate("render.btn.up"))
+        self.down_button.setAccessibleName(i18n.translate("render.btn.down"))
         if self._items:
             self.rebuild()
         else:

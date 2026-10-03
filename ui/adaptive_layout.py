@@ -51,6 +51,7 @@ class ShrinkableScrollArea(QScrollArea):
         self.setFrameShape(QScrollArea.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setFocusPolicy(Qt.NoFocus)  # conteneur : Tab visite son contenu, pas un arrêt invisible
         # Sans fond explicite, le viewport peint la couleur claire par défaut de la plateforme.
         self.setStyleSheet("QScrollArea { background: transparent; border: none; }")
         self.viewport().setAutoFillBackground(False)

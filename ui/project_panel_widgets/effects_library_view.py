@@ -30,6 +30,7 @@ from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
+from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, label_style
 
 
@@ -652,6 +653,9 @@ class SavePresetDialog(QDialog):
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        # Entrée valide (le nom), Échap annule ; Tab sort de la description au lieu d'y insérer une tabulation.
+        set_single_default(self, buttons.button(QDialogButtonBox.Ok))
+        let_tab_leave(self.description_edit)
 
     @staticmethod
     def _make_form_label(text: str) -> QLabel:
