@@ -46,7 +46,7 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     "blend.add": {"fr": "Addition", "en": "Add", "es": "Añadir"},
     "blend.difference": {"fr": "Différence", "en": "Difference", "es": "Diferencia"},
     # --- Commandes et menus -----------------------------------------------------
-    "menu.layers": {"fr": "Calques", "en": "Layers", "es": "Capas"},
+    "menu.layers": {"fr": "&Calques", "en": "&Layers", "es": "&Capas"},
     "shortcuts.category.motion": {"fr": "Motion graphics", "en": "Motion graphics", "es": "Motion graphics"},
     "shortcuts.command.layer_add_text": {"fr": "Ajouter un texte", "en": "Add text", "es": "Añadir texto"},
     "shortcuts.command.layer_add_shape": {"fr": "Ajouter une forme", "en": "Add shape", "es": "Añadir forma"},

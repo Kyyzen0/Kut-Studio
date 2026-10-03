@@ -41,11 +41,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Kut-Studio",
         "es": "Kut-Studio",
     },
-    "menu.file": {"fr": "Fichier", "en": "File", "es": "Archivo"},
-    "menu.edit": {"fr": "Édition", "en": "Edit", "es": "Edición"},
-    "menu.view": {"fr": "Affichage", "en": "View", "es": "Ver"},
-    "menu.timeline": {"fr": "Séquence", "en": "Timeline", "es": "Secuencia"},
-    "menu.help": {"fr": "Aide", "en": "Help", "es": "Ayuda"},
+    # Titres des menus : « & » marque la lettre mnémonique (Alt + lettre sous Windows / Linux, retirée sous macOS).
+    # Une seule lettre par menu et par langue, sur tous les menus possibles de la barre (voir test_menu_mnemonics).
+    "menu.file": {"fr": "&Fichier", "en": "&File", "es": "&Archivo"},
+    "menu.edit": {"fr": "É&dition", "en": "&Edit", "es": "&Edición"},
+    "menu.view": {"fr": "Affic&hage", "en": "&View", "es": "&Ver"},
+    "menu.timeline": {"fr": "&Séquence", "en": "&Timeline", "es": "&Secuencia"},
+    "menu.help": {"fr": "&Aide", "en": "&Help", "es": "A&yuda"},
     "proxy.menu.title": {"fr": "Proxy", "en": "Proxy", "es": "Proxy"},
     "proxy.state.none": {"fr": "Aucun proxy", "en": "No proxy", "es": "Sin proxy"},
     "proxy.state.pending": {"fr": "Proxy en attente", "en": "Proxy queued", "es": "Proxy en espera"},
@@ -234,7 +236,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.export.resolution": {"fr": "Résolution", "en": "Resolution", "es": "Resolución"},
     "render.export.quality": {"fr": "Qualité", "en": "Quality", "es": "Calidad"},
     "render.export.fps": {"fr": "Images/seconde", "en": "Frames/second", "es": "Fotogramas/segundo"},
-    "menu.window": {"fr": "Fenêtre", "en": "Window", "es": "Ventana"},
+    "menu.window": {"fr": "Fe&nêtre", "en": "&Window", "es": "Ve&ntana"},
     "menu.item.new": {"fr": "Nouveau", "en": "New", "es": "Nuevo"},
     "menu.item.open": {"fr": "Ouvrir...", "en": "Open...", "es": "Abrir..."},
     "menu.item.save": {"fr": "Enregistrer", "en": "Save", "es": "Guardar"},
@@ -1851,6 +1853,11 @@ _TRANSLATIONS.update(_TRACKING)
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 
 _TRANSLATIONS.update(_HARDWARE)
+
+# Noms accessibles des contrôles sans texte : idem.
+from ui.i18n_accessibility import ACCESSIBILITY_TRANSLATIONS as _ACCESSIBILITY  # noqa: E402
+
+_TRANSLATIONS.update(_ACCESSIBILITY)
 
 
 def _format(template: str, values: dict) -> str:
