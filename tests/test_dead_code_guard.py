@@ -128,3 +128,26 @@ def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_
 
     assert calls == [(Project, "intro")]
     assert {view.id for view in window.timeline_panel.clip_views} >= {"intro", "intro-split-2"}
+
+
+def _names_imported_from(module_suffix: str) -> set[str]:
+    """Noms importés de ``module_suffix`` (``from .audio_mixer import x`` ou ``from core.audio_mixer import x``)."""
+    names: set[str] = set()
+    for path in _python_files(*PRODUCTION_PACKAGES).values():
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[-1] == module_suffix:
+                names.update(alias.name for alias in node.names)
+    return names
+
+
+def test_every_public_function_of_the_audio_mixer_is_used_by_the_export():
+    """Le panoramique est la seule chose que ``core.audio_mixer`` fournit encore, et l'export l'utilise.
+
+    Avant l'audit, ``mix_at`` / ``MixSpec`` / ``fade_envelope``… n'étaient appelés que par leurs tests et
+    décrivaient un mixage différent de celui du plan de rendu (voir ``test_audio_mixer``). Toute fonction publique
+    ajoutée ici doit avoir un appelant en production.
+    """
+    tree = ast.parse((ROOT / "core" / "audio_mixer.py").read_text(encoding="utf-8"))
+    public = {node.name for node in tree.body if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")}
+    assert public == {"pan_to_gains", "pan_needs_filter"}
+    assert public <= _names_imported_from("audio_mixer")

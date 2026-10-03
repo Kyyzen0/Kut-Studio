@@ -353,7 +353,7 @@ peuvent ni bloquer l'application ni dépasser la pile.
 - Dans une séquence imbriquée, le fond est **transparent** : un *adjustment layer* n'agit que là où il y a du contenu
   et ne masque pas la piste parente ; un mode de fusion (Produit, Incrustation…) affiche le calque tel quel sur le
   vide et ne se mélange qu'avec le contenu de la séquence (formule W3C pondérée par l'opacité du dessous).
-- `core.audio_mixer.mix_at` (mesures, sans usage de rendu) ignore les clips
-  imbriqués ; l'audio rendu passe par le plan de rendu.
+- L'audio rendu de la séquence imbriquée passe par le plan de rendu (l'ancien `core.audio_mixer.mix_at`, qui ignorait
+  les clips imbriqués et n'était consulté nulle part, a été supprimé).
 - Le partage de structure de l'historique compare les séquences inactives à
   chaque enregistrement (coût proportionnel à leur taille, sans copie).

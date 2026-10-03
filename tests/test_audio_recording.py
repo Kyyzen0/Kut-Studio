@@ -11,7 +11,6 @@ import wave
 
 import pytest
 
-from core.audio_mixer import mix_at
 from core.audio_recorder import (
     AudioRecorder,
     AudioRecorderError,
@@ -20,6 +19,7 @@ from core.audio_recorder import (
     write_wav,
 )
 from core.project_model import Clip, MediaAsset, Project, Track
+from core.render_plan import build_render_plan
 
 
 # ---------------------------------------------------------------------------
@@ -172,16 +172,18 @@ def test_recording_take_can_be_placed_on_armed_track(tmp_path):
     track.clips.append(clip)
     project = Project(name="prise", media_assets=[asset], tracks=[track])
 
-    # La piste armée est audible et la prise entre dans le mixage.
-    spec = mix_at(project, duration / 2.0)
-    assert spec.is_silent is False
-    assert spec.entries[0].clip_id == "take1"
+    # La piste armée est audible et la prise entre dans le mixage : c'est le plan de rendu qui le décide.
+    plan = build_render_plan(project)
+    assert plan.is_audio_silent is False
+    assert plan.audio_layers[0].clip_id == "take1"
     # La prise est compatible avec les réglages du mixeur.
     clip.set_fade_in(min(0.2, duration / 2))
     assert clip.fade_in > 0.0
     clip.gain_db = -6.0
-    assert spec.entries[0].gain_db == 0.0
-    assert mix_at(project, duration / 2.0).entries[0].gain_db == pytest.approx(-6.0)
+    assert plan.audio_layers[0].total_gain_db == 0.0              # le plan est un instantané
+    updated = build_render_plan(project).audio_layers[0]
+    assert updated.total_gain_db == pytest.approx(-6.0)
+    assert updated.fade_in == pytest.approx(clip.fade_in)
 
 
 def test_armed_track_is_required_for_recording():
