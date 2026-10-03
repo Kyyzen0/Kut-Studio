@@ -31,6 +31,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - ⚡ **Hardware decoding and GPU preview** — VideoToolbox, NVDEC (CUDA), D3D11VA, DXVA2, Quick Sync or VAAPI decoding when your FFmpeg really supports it (validated codec by codec), chosen from real measurements and always with a CPU fallback; a GPU monitor (Metal, Direct3D 11, OpenGL through Qt's QRhi) showing transforms, simple effects, blend modes, masks and adjustment layers in real time, checked against the export. See [docs/gpu-preview.md](docs/gpu-preview.md).
 - 🎯 **2D tracking and stabilisation** — track one or several points of a video clip forward or backward in the background (progress, stop, resume, partial recompute), with confidence, uncertain / lost frames flagged, manual corrections and a drawn path in the viewer; drive a layer's or clip's position (and rotation / scale with two points), an anchor point or a mask, either **linked** (updates with the track) or **baked** to keyframes; stabilise a clip (position, + rotation, + scale; low / medium / high / custom smoothing or locked shot) with black edges, automatic zoom or a fixed crop. One animation engine: preview and export compute the same values. See [docs/tracking.md](docs/tracking.md).
 - 🗂️ **Multiple and nested sequences** — several timelines per project; use a sequence as a clip inside another (rendered once however many times it is used, with its own transform, effects, keyframes and audio), nest a selection in one step, open nested sequences by double-click and navigate with breadcrumbs (`Master › Scene 01 › Intro`), back/forward and parent. Cycles are refused, older single-timeline projects open unchanged. See [docs/nested-sequences.md](docs/nested-sequences.md).
+- 🎥 **Multicam** — group several cameras and audio recorders into a Multicam source, synchronize them (by sound, timecode, markers, clip starts or by hand), watch every angle at once and **cut the programme live by pressing `1`–`9` during playback**. Each cut is an ordinary clip boundary: trim, split, transitions, effects, nesting and Undo all work unchanged; only the shown angle is rendered, and preview and export stay identical. Local audio synchronization with an honest confidence score, per-camera colour and effects, audio policy (follows the picture, fixed recorder, mix), offline angles, flatten. See [docs/multicam.md](docs/multicam.md).
 - ⚡ **Performance layer** — media proxies for preview (export always uses the originals), a unified cache with disk budget and purge, smart prefetching, timeline indexes for 10,000-clip projects and an adaptive *Auto* preview quality. See [docs/performance.md](docs/performance.md).
 - 🛡️ **Reliability** — Asks before discarding unsaved work, refuses damaged or non-finite `.kut` files with a clear message, tells you in the status bar when an edit is refused, writes uncaught errors to a rotating diagnostic log, and keeps preview, scopes and export on the same render graph. See [docs/architecture.md](docs/architecture.md) and [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
@@ -183,6 +184,8 @@ Kut-Studio/
 | `Ctrl + G` / `Ctrl + Shift + G` | Group / ungroup layers |
 | `Ctrl + '` / `Ctrl + ;` | Safe areas / guides in the viewer |
 | `Alt + ←` / `Alt + →` | Previous / next sequence |
+| `1` … `9` | Multicam: show angle N at the playhead (cuts the segment; `Shift+digit` on AZERTY, numeric keypad works too) |
+| `Ctrl + Shift + M` | Show / hide the Multicam monitor |
 
 Every shortcut can be changed in **Preferences → Shortcuts** (search, conflict detection, secondary shortcut, per-command or global reset). Changes apply immediately and are saved with your preferences; `Ctrl` is `⌘` on macOS. Multi-step chords such as `Ctrl+K, B` are supported.
 
@@ -229,6 +232,7 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 - Preview and timeline performance on large projects
 - Signed installers and automated releases
 - Motion graphics: per-character text animation, animated colors and mask vertices, effects inside groups
+- Multicam, next steps (the architecture leaves room, nothing is started): automatic multicam proxies, 16+ angles with a tuned grid, remote cameras and live capture, LTC synchronization, advanced waveform fingerprints, collaboration. See [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contributing
 
@@ -262,6 +266,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - ⚡ **Décodage matériel et aperçu GPU** — décodage VideoToolbox, NVDEC (CUDA), D3D11VA, DXVA2, Quick Sync ou VAAPI lorsque votre FFmpeg le permet réellement (validé codec par codec), choisi d'après des mesures réelles et toujours avec repli CPU ; moniteur GPU (Metal, Direct3D 11, OpenGL via QRhi de Qt) qui montre en temps réel transforms, effets simples, modes de fusion, masques et calques d'effets, vérifié contre l'export. Voir [docs/gpu-preview.md](docs/gpu-preview.md).
 - 🎯 **Tracking 2D et stabilisation** — suivi d'un ou plusieurs points d'un clip vidéo, en avant ou en arrière et en tâche de fond (progression, arrêt, reprise, recalcul partiel), avec confiance, images incertaines / perdues signalées, corrections manuelles et trajectoire dans le viewer ; pilotage de la position d'un calque ou d'un clip (et de la rotation / échelle avec deux points), d'un point d'ancrage ou d'un masque, en **liaison dynamique** (suit le tracking) ou **converti en images-clés** ; stabilisation (position, + rotation, + échelle ; lissage faible / moyen / fort / personnalisé ou plan fixe) avec bords noirs, zoom automatique ou recadrage fixe. Un seul moteur d'animation : l'aperçu et l'export calculent les mêmes valeurs. Voir [docs/tracking.md](docs/tracking.md).
 - 🗂️ **Séquences multiples et imbriquées** — plusieurs timelines par projet ; une séquence s'utilise comme un clip dans une autre (rendue une seule fois quel que soit le nombre d'instances, avec ses propres transform, effets, images-clés et audio), une sélection s'imbrique en une étape, double-clic pour ouvrir une séquence imbriquée et navigation par fil d'Ariane (`Master › Scene 01 › Intro`), précédent/suivant et parent. Les cycles sont refusés, les anciens projets à timeline unique s'ouvrent sans changement. Voir [docs/nested-sequences.md](docs/nested-sequences.md).
+- 🎥 **Multicam** — regroupez plusieurs caméras et enregistreurs audio dans une source Multicam, synchronisez-les (par le son, le timecode, des repères, le début des clips ou à la main), regardez tous les angles à la fois et **montez le programme en direct en appuyant sur `1`–`9` pendant la lecture**. Chaque coupe est une coupe de clip ordinaire : rogner, couper, transitions, effets, imbrication et Annuler fonctionnent sans changement ; seul l'angle montré est rendu, et l'aperçu et l'export restent identiques. Synchronisation audio locale avec un score de confiance honnête, étalonnage et effets par caméra, politique audio (le son suit l'image, enregistreur fixe, mixage), angles hors ligne, aplatissement. Voir [docs/multicam.md](docs/multicam.md).
 - ⚡ **Couche de performance** — proxies média pour l’aperçu (l’export utilise toujours les originaux), cache unifié avec budget disque et purge, préchargement intelligent, index de timeline pour des projets de 10 000 clips et qualité d’aperçu *Auto* adaptative. Voir [docs/performance.md](docs/performance.md).
 - 🛡️ **Fiabilité** — Demande avant d’abandonner un travail non enregistré, refuse un `.kut` abîmé ou contenant des valeurs non finies avec un message clair, dit dans la barre d’état quand une édition est refusée, écrit les erreurs non rattrapées dans un journal tournant, et garde aperçu, scopes et export sur le même graphe de rendu. Voir [docs/architecture.md](docs/architecture.md) et [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
@@ -381,6 +386,8 @@ outils sont adaptés à chaque système.
 | `Ctrl + G` / `Ctrl + Maj + G` | Grouper / dégrouper les calques |
 | `Ctrl + '` / `Ctrl + ;` | Zones de sécurité / guides du viewer |
 | `Alt + ←` / `Alt + →` | Séquence précédente / suivante |
+| `1` … `9` | Multicam : montrer l'angle N à la tête de lecture (coupe le segment ; `Maj + chiffre` sur AZERTY, le pavé numérique fonctionne aussi) |
+| `Ctrl + Maj + M` | Afficher / masquer le moniteur Multicam |
 
 Tous les raccourcis se modifient dans **Préférences → Raccourcis** (recherche, détection des conflits, raccourci secondaire, réinitialisation par commande ou globale). Les changements sont appliqués immédiatement et sauvegardés avec vos préférences ; `Ctrl` correspond à `⌘` sur macOS. Les accords en plusieurs étapes, comme `Ctrl+K, B`, sont pris en charge.
 
@@ -415,6 +422,7 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 - Performances de l’aperçu et de la timeline sur les gros projets
 - Installateurs signés et publications automatisées
 - Motion graphics : animation caractère par caractère, couleurs et sommets de masque animés, effets à l'intérieur des groupes
+- Multicam, suite (l'architecture laisse la place, rien n'est commencé) : proxys Multicam automatiques, 16 angles et plus avec une grille réglée, caméras distantes et capture en direct, synchronisation LTC, empreintes sonores avancées, collaboration. Voir [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contribution
 
