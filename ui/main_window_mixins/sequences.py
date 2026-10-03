@@ -295,7 +295,7 @@ class SequencesMixin:
         """Crée une séquence vide (mêmes réglages et pistes que l'active)."""
         if name is None:
             name = self._ask_sequence_name(
-                "sequence.dialog.new_title", unique_sequence_name(self.project, "Séquence")
+                "sequence.dialog.new_title", unique_sequence_name(self.project, i18n.translate("sequence.default_name"))
             )
             if name is None:
                 return None
@@ -321,7 +321,7 @@ class SequencesMixin:
         if name is None:
             name = self._ask_sequence_name(
                 "sequence.dialog.nest_title",
-                unique_sequence_name(self.project, "Séquence imbriquée"),
+                unique_sequence_name(self.project, i18n.translate("sequence.default_nested_name")),
             )
             if name is None:
                 return None

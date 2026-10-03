@@ -244,3 +244,28 @@ def test_sequence_widgets_follow_the_language(window):
         assert window.project_panel.sequence_view.title.text() == "PROJECT SEQUENCES"
     finally:
         i18n.set_language("fr")
+
+
+@pytest.mark.parametrize(("language", "plain", "nested"), [
+    ("fr", "Séquence", "Séquence imbriquée"),
+    ("en", "Sequence", "Nested sequence"),
+    ("es", "Secuencia", "Secuencia anidada"),
+])
+def test_default_sequence_names_are_offered_in_the_current_language(window, monkeypatch, language, plain, nested):
+    """Le nom proposé dans la boîte de dialogue suit la langue (il était écrit en dur en français)."""
+    offered = []
+
+    def accept_default(_parent, _title, _label, text=""):
+        offered.append(text)
+        return text, True
+
+    monkeypatch.setattr("ui.main_window.QInputDialog.getText", accept_default)
+    try:
+        i18n.set_language(language)
+        window.create_new_sequence(open_it=False)
+        _select(window, "intro", "b_roll")
+        window.nest_selected_clips()
+    finally:
+        i18n.set_language("fr")
+    assert offered == [plain, nested]
+    assert {sequence.name for sequence in window.project.sequences} >= {plain, nested}

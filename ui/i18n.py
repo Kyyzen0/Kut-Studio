@@ -162,6 +162,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "sequence.nav.menu": {"fr": "Séquences ▾", "en": "Sequences ▾", "es": "Secuencias ▾"},
     "sequence.nav.active": {"fr": "Séquence en cours d'édition", "en": "Sequence being edited", "es": "Secuencia en edición"},
     "sequence.nav.open_level": {"fr": "Ouvrir ce niveau", "en": "Open this level", "es": "Abrir este nivel"},
+    "sequence.default_name": {"fr": "Séquence", "en": "Sequence", "es": "Secuencia"},
+    "sequence.default_nested_name": {"fr": "Séquence imbriquée", "en": "Nested sequence", "es": "Secuencia anidada"},
     "sequence.status.ok": {"fr": "Séquence imbriquée — double-clic pour l'ouvrir", "en": "Nested sequence — double-click to open", "es": "Secuencia anidada — doble clic para abrirla"},
     "sequence.status.missing": {"fr": "Hors ligne : la séquence référencée a été supprimée", "en": "Offline: the referenced sequence was deleted", "es": "Sin conexión: la secuencia referenciada fue eliminada"},
     "sequence.status.cycle": {"fr": "Imbrication circulaire : ce clip est rendu vide", "en": "Circular nesting: this clip renders empty", "es": "Anidamiento circular: este clip se muestra vacío"},

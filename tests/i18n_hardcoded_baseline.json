@@ -346,8 +346,6 @@
   {"file": "ui/main_window_mixins/recording.py", "text": "Enregistrement", "count": 4},
   {"file": "ui/main_window_mixins/recording.py", "text": "Enregistrer une prise", "count": 1},
   {"file": "ui/main_window_mixins/recording.py", "text": "L'enregistrement est trop court pour devenir un clip.", "count": 1},
-  {"file": "ui/main_window_mixins/sequences.py", "text": "Séquence", "count": 1},
-  {"file": "ui/main_window_mixins/sequences.py", "text": "Séquence imbriquée", "count": 1},
   {"file": "ui/main_window_mixins/subtitles_graphics.py", "text": "Ajouter un calque graphique", "count": 1},
   {"file": "ui/main_window_mixins/subtitles_graphics.py", "text": "Ajouter un sous-titre", "count": 1},
   {"file": "ui/main_window_mixins/subtitles_graphics.py", "text": "Enregistrer les sous-titres", "count": 1},
