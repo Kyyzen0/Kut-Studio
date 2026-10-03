@@ -222,6 +222,8 @@ installé pour l'occasion) :
   `KUT_STUDIO_REQUIRE_LIBASS=1` : 12 réussis, avec **le vrai chemin de rendu** (libass lit le SRT/ASS, les pixels sont
   relus). Les étapes du job hors installation (exposition, vérification, tests, contrôle des sauts) ont été rejouées en
   local avec les mêmes scripts.
+* La suite complète (`-n 3`) avec `ffmpeg-full` actif et `KUT_STUDIO_REQUIRE_LIBASS=1` : 3 007 réussis, aucun saut,
+  aucun échec ; sans (FFmpeg Homebrew classique) : 2 995 réussis, 12 sautés (les 12 tests `libass`).
 * Avec le FFmpeg sans libass de cette machine : 12 sautés avec la raison ; avec la variable, 12 échecs avec le message
   ci-dessus ; les étapes de vérification et de contrôle des sauts du job échouent bien.
 * Le test de pixels échoue si le filtre `subtitles` est remplacé par un passage direct, ou si l'alignement du style par
