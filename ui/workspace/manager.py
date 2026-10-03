@@ -452,11 +452,15 @@ class WorkspaceManager(QObject):
             zone.setMinimumWidth(0)
             zone.setMinimumHeight(0)
             return
+        # Les poignées entre panneaux prennent aussi de la place : sans elles, le dernier panneau perdait
+        # quelques pixels sous son minimum (jusqu'ici masqué par la marge du panneau Timeline, plus haut
+        # que son minimum déclaré).
+        handles = zone._splitter.handleWidth() * (len(panels) - 1)
         if area is DockArea.BOTTOM:
-            zone.setMinimumHeight(sum(MIN_SIZE.get(p, 200) for p in panels))
+            zone.setMinimumHeight(sum(MIN_SIZE.get(p, 200) for p in panels) + handles)
             zone.setMinimumWidth(0)
         else:
-            zone.setMinimumWidth(sum(MIN_SIZE.get(p, 200) for p in panels))
+            zone.setMinimumWidth(sum(MIN_SIZE.get(p, 200) for p in panels) + handles)
             zone.setMinimumHeight(0)
 
     def _primary_panel(self, area: DockArea) -> PanelId:
@@ -721,11 +725,18 @@ class WorkspaceManager(QObject):
                 self._state.area_of(panel) is DockArea.BOTTOM
                 and self._state.is_visible(panel)
             ):
-                extras += MIN_SIZE.get(panel, 200)
+                extras += MIN_SIZE.get(panel, 200) + self._zones[DockArea.BOTTOM]._splitter.handleWidth()
         needed = timeline_needed + extras
         bottom = max(needed, int(total * 0.40))
         bottom = min(bottom, int(total * 0.80))
         bottom = max(bottom, timeline.minimumHeight() + extras)
+        # La rangée du haut garde la hauteur naturelle de la bibliothèque quand la fenêtre le permet (900 px) :
+        # c'était jusqu'ici son minimum de layout, trop haut pour 720 px, qui l'imposait. La timeline cède
+        # alors, jamais sous son minimum.
+        library = self._panels.get(PanelId.MEDIA)
+        if library is not None and not self._state.is_floating(PanelId.MEDIA):
+            wanted_top = library.sizeHint().height()
+            bottom = min(bottom, max(total - wanted_top, timeline.minimumHeight() + extras))
         top = max(total - bottom, 160)
         root.setSizes([top, bottom])
         # Partage interne déterministe : la timeline prend ce dont elle a

@@ -326,6 +326,10 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Buscar un efecto de audio…",
     ),
     "library.audio_effects.all": _t("TOUS", "ALL", "TODOS"),
+    "audio_effects.category.dynamics": _t("Dynamique", "Dynamics", "Dinámica"),
+    "audio_effects.category.cleanup": _t("Nettoyage", "Cleanup", "Limpieza"),
+    "audio_effects.category.eq": _t("Égaliseur", "Equalizer", "Ecualizador"),
+    "audio_effects.category.spatial": _t("Spatialisation", "Spatial", "Espacial"),
     "library.audio_effects.favorites": _t("★ FAVORIS", "★ FAVORITES", "★ FAVORITOS"),
     "library.audio_effects.hint": _t(
         "Sélectionnez un clip audio ou vidéo, puis appliquez un préréglage.",

@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.adaptive_layout import make_shrinkable
+from ui.i18n import translate
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
     TextAlignment,
@@ -69,6 +71,7 @@ class AlignmentTile(QToolButton):
         self.setFocusPolicy(Qt.NoFocus)
         self.setFixedSize(24, 24)
         self.setToolTip(alignment.value.replace("_", " ").capitalize())
+        self.setAccessibleName(translate(f"a11y.align.{alignment.value}"))
         self._apply_style(active=False)
 
     def set_active(self, active: bool) -> None:
@@ -150,8 +153,9 @@ class TextStyleEditor(QWidget):
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(6)
         form.setLabelAlignment(Qt.AlignLeft)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
 
-        self.font_family_combo = QComboBox()
+        self.font_family_combo = make_shrinkable(QComboBox(), 8)  # le plus long nom de police ne fixe plus la largeur
         self._populate_fonts()
         self.font_family_combo.currentTextChanged.connect(
             self._emit_style_changed
@@ -211,6 +215,7 @@ class TextStyleEditor(QWidget):
         effect_form = QFormLayout()
         effect_form.setContentsMargins(0, 0, 0, 0)
         effect_form.setSpacing(6)
+        effect_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.outline_width_spin = _build_spin(
             0, 20, 0.5, default=2.0, suffix=" px", decimals=1
         )
@@ -258,6 +263,7 @@ class TextStyleEditor(QWidget):
         pos_form = QFormLayout()
         pos_form.setContentsMargins(0, 0, 0, 0)
         pos_form.setSpacing(6)
+        pos_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.position_x_spin = _build_spin(
             -100, 100, 1, default=0.0, suffix=" %", decimals=1
         )
@@ -284,6 +290,7 @@ class TextStyleEditor(QWidget):
         padding_form = QFormLayout()
         padding_form.setContentsMargins(0, 0, 0, 0)
         padding_form.setSpacing(6)
+        padding_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.padding_x_spin = _build_spin(
             0, 80, 2, default=12.0, suffix=" px", decimals=0
         )

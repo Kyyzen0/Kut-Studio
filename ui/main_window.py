@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
-    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -69,6 +68,7 @@ from ui.shortcut_manager import ShortcutManager
 from ui.scopes_panel import ScopeLayout, ScopeView, ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
+from ui.viewer_host import ViewerHostSplitter
 from ui.export_panel import ExportPanel
 from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
@@ -258,14 +258,7 @@ class MainWindow(
         # Le viewer et les scopes partagent un splitter vertical : les
         # scopes sont redimensionnables et escamotables sans toucher
         # au dock de la zone centrale.
-        self._viewer_host = QSplitter(Qt.Vertical)
-        self._viewer_host.setObjectName("viewer_with_scopes")
-        self._viewer_host.setChildrenCollapsible(False)
-        self._viewer_host.setHandleWidth(6)
-        self._viewer_host.addWidget(self.preview_panel)
-        self._viewer_host.addWidget(self.scopes_panel)
-        self._viewer_host.setStretchFactor(0, 3)
-        self._viewer_host.setStretchFactor(1, 2)
+        self._viewer_host = ViewerHostSplitter(self.preview_panel, self.scopes_panel)
         # Par défaut, les scopes restent repliés pour ne pas rogner le
         # viewer ; l'utilisateur les ouvre via le menu Affichage.
         self._viewer_host.setSizes([520, 0])

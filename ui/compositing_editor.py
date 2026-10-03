@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from core.blend_modes import BLEND_MODES, blend_label_key
 from core.compositing import ChromaKey, Compositing, Mask, MaskMode, MaskShape
 from ui import i18n
+from ui.adaptive_layout import FlowLayout
 from ui.design_system import Spacing
 
 # (valeur, clé i18n du libellé) : traduit à l'affichage, jamais à l'import.
@@ -73,6 +74,7 @@ class CompositingEditor(QGroupBox):
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         root.addLayout(form)
 
         self.blend_mode = QComboBox(objectName="blend_mode")
@@ -81,7 +83,7 @@ class CompositingEditor(QGroupBox):
         form.addRow(i18n.translate("mograph.compositing.blend"), self.blend_mode)
 
         # --- Pile de masques -------------------------------------------------------------------
-        add_row = QHBoxLayout()
+        add_row = FlowLayout(spacing=Spacing.xs)  # trois contrôles : à la ligne plutôt qu'au-delà de l'inspecteur
         self.mask_shape = QComboBox(objectName="mask_shape")
         for shape, label in _SHAPES:
             self.mask_shape.addItem(i18n.translate(label), shape.value)
@@ -99,6 +101,7 @@ class CompositingEditor(QGroupBox):
         mask_form = QFormLayout(self.mask_form_host)
         mask_form.setContentsMargins(0, 0, 0, 0)
         mask_form.setSpacing(Spacing.xs)
+        mask_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.mask_mode = QComboBox(objectName="mask_mode")
         for mode, label in _MODES:
             self.mask_mode.addItem(i18n.translate(label), mode.value)
@@ -120,6 +123,7 @@ class CompositingEditor(QGroupBox):
         self.key_host = QWidget()
         key_form = QFormLayout(self.key_host)
         key_form.setContentsMargins(0, 0, 0, 0)
+        key_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.key_enabled = QCheckBox(i18n.translate("mograph.compositing.chroma_key"), objectName="chroma_key_enabled")
         key_form.addRow(self.key_enabled)
         self.key_color = QComboBox(objectName="chroma_key_color")

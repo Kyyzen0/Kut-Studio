@@ -23,6 +23,7 @@ from core.time_remapping import MIN_SPEED, MAX_SPEED
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
+from ui.adaptive_layout import FlowLayout, allow_shrinking
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -125,6 +126,7 @@ class ConstructionMixin:
                 f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
                 f" background: transparent; border: none;"
                 f" border-bottom: 2px solid {COLORS['accent']}; }}"
+                f"QPushButton#inspectorTab:focus {{ border: 1px solid {COLORS['accent']}; }}"
             )
             button.clicked.connect(
                 lambda _checked=False, idx=index: self._select_inspector_tab(idx)
@@ -185,6 +187,7 @@ class ConstructionMixin:
         # par appel direct ; ici on prépare la coquille).
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("properties_scroll_area")
+        self.scroll_area.setFocusPolicy(Qt.NoFocus)  # simple conteneur : un arrêt de Tab invisible, sans rien à faire
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -245,6 +248,7 @@ class ConstructionMixin:
         clip_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         clip_form.setSpacing(Spacing.xs)
         clip_form.setLabelAlignment(Qt.AlignLeft)
+        clip_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # « Aucun clip sélectionné » passe sous « Nom »
         self.clip_name = QLabel(translate("no_clip_selected"))
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
@@ -322,6 +326,7 @@ class ConstructionMixin:
         speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         speed_form.setSpacing(Spacing.xs)
         speed_form.setLabelAlignment(Qt.AlignLeft)
+        speed_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # libellé au-dessus du champ si la ligne est trop longue
 
         # Vitesse numérique
         self.speed_spinbox = QDoubleSpinBox()
@@ -336,9 +341,7 @@ class ConstructionMixin:
 
         # Boutons de preset de vitesse
         speed_presets = QWidget()
-        speed_presets_layout = QHBoxLayout(speed_presets)
-        speed_presets_layout.setContentsMargins(0, 0, 0, 0)
-        speed_presets_layout.setSpacing(Spacing.xs)
+        speed_presets_layout = FlowLayout(speed_presets, spacing=Spacing.xs)  # cinq boutons : à la ligne si besoin
 
         self.speed_0_25x_button = self._make_action_button(
             None, translate("action.speed_0.25x"), translate("tooltip.speed_0.25x")
@@ -521,6 +524,10 @@ class ConstructionMixin:
             next_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, 1)
             )
+            # Noms accessibles : ces boutons n'ont que « ‹ », « › » et un losange.
+            previous_button.setAccessibleName(translate("a11y.keyframe.previous", property=label.text()))
+            diamond.setAccessibleName(translate("a11y.keyframe.toggle", property=label.text()))
+            next_button.setAccessibleName(translate("a11y.keyframe.next", property=label.text()))
             self._diamonds[property_name] = diamond
             self._keyframe_nav_buttons[property_name] = (previous_button, next_button)
             for widget in (previous_button, diamond, next_button):
@@ -538,7 +545,7 @@ class ConstructionMixin:
         reset_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         reset_button.clicked.connect(self._emit_reset)
         reset_button.setEnabled(False)
-        reset_button.setMinimumWidth(0)
+        allow_shrinking(reset_button, 120)  # le libellé est le plus long de l'onglet : dernier recours si la place manque
         reset_button.setSizePolicy(reset_button.sizePolicy().horizontalPolicy(),
                                    reset_button.sizePolicy().verticalPolicy())
         self.reset_movement_button = reset_button

@@ -12,11 +12,15 @@ Où chaque information vit, et quel test la garde : [architecture.md](architectu
 * **Tout défaut corrigé l'a été avec un test qui échoue sans la correction** (vérifié en retirant la correction, puis en la
   remettant). Les tests de rendu lancent le vrai FFmpeg et relisent des pixels ; les anciens tests qui ne faisaient que
   comparer des chaînes de caractères, et qui figeaient parfois le défaut, ont été réécrits.
-* **Critique : 6 trouvés, 6 corrigés.** Haute : 15 trouvés, 15 corrigés. Moyenne : 18 trouvés, 17 corrigés, 1 mitigé
-  (le tracking après la coupe de sa source). Points ouverts : 5 de gravité moyenne, 6 de gravité faible.
-* **Ce qui n'est pas réglé est listé plus bas**, sans l'atténuer (section [Points ouverts](#points-ouverts)).
-* État de fin : `ruff` propre, `mypy` propre sur `core/` (avec une dette listée et décroissante), suite complète verte,
-  smoke test de l'interface et de l'application empaquetée, CI sur trois plateformes — voir [CI](#ci) pour le détail.
+* **Critique : 6 trouvés, 6 corrigés.** Haute : 15 trouvés, 15 corrigés. Moyenne : 18 trouvés, 18 corrigés (le tracking
+  après la coupe de sa source, d'abord mitigé par un message, est maintenant corrigé).
+* **Une seconde phase a fermé les points ouverts** de la première (section [Phase 2](#phase-2)) : des 11 points ouverts
+  (5 de gravité moyenne, 6 de gravité faible), **8 sont corrigés, 2 sont mitigés, 1 reste ouvert** ; elle a aussi trouvé et
+  corrigé des défauts qui n'étaient pas dans la liste (sous-titres ASS, pannes absentes du journal, boutons par défaut des
+  dialogues…). **Ce qui n'est pas réglé est listé plus bas**, sans l'atténuer (section [Points ouverts](#points-ouverts)).
+* État de fin : `ruff` propre, `mypy` propre sur `core/` (dette ramenée de 41 à 17 modules, et verrouillée par un test),
+  suite complète verte (3 445 réussis, 21 sautés), smoke test de l'interface et de l'application empaquetée, CI sur trois
+  plateformes **et** job `macos-libass` verts sur les deux premières PR de la phase 2 — voir [CI](#ci) pour le détail.
 
 ## Méthode
 
@@ -154,9 +158,12 @@ Différences de plateforme rencontrées et traitées :
 * **macOS / Windows** : FFmpeg récent ; seule la matrice sortait balisée « bt709 » (primaires et transfert « unknown »).
   Corrigé en posant les propriétés sur les images (`setparams`) ; un test retire les options de ligne de commande et exige
   le flux entier en BT.709.
-* **macOS** : le FFmpeg du runner n'a pas **libass** : le filtre `subtitles` n'existe pas. L'application détecte ce cas et
-  refuse avec un message clair ; les tests qui lisent un sous-titre avec ce filtre se sautent avec la raison. **Conséquence
-  à connaître : la lecture des sous-titres par libass n'est pas couverte sur macOS par la CI.**
+* **macOS** : le FFmpeg Homebrew de la matrice n'a pas **libass** (filtre `subtitles` absent) ; l'application le détecte et
+  refuse avec un message clair, et les tests de sous-titres s'y sautent avec la raison. **Un job dédié, `macOS / libass
+  (sous-titres)`, installe `ffmpeg-full` (bouteille de homebrew-core)** et n'exécute que les tests marqués `libass` avec
+  `KUT_STUDIO_REQUIRE_LIBASS=1` : le saut devient un échec, un job vert signifie « libass testé ». **Mesuré en CI**
+  (run du commit `a7eca11`) : installation 19 s, `--enable-libass` vérifié, 12 tests réussis, 0 sauté. Les tests relisent les
+  pixels d'un sous-titre rendu avec le graphe de l'application. Voir [ci-libass.md](ci-libass.md).
 * **Windows** : fichiers tenus ouverts (lecteur, antivirus) non supprimables : comptabilité des caches corrigée ; chemins avec
   `\` dans les faux FFmpeg ; exécutable graphique sans `stderr` (`sys.stderr is None`) géré par le journal de diagnostic.
 * **Linux** : bibliothèques graphiques (`libegl1`, `libgl1`) nécessaires aux tests Qt hors écran.
@@ -169,48 +176,151 @@ Corrigé : entrées sans fonction grisées avec explication, refus affichés dan
 suivent le raccourci réel, nom accessible des boutons-icônes et de la pastille de couleur (un test parcourt tous les
 boutons de la fenêtre principale), invite d'enregistrement avant d'abandonner un travail.
 
-Non traité : voir les points ouverts (focus clavier, tailles minimales, textes non traduits).
+Traité en phase 2 : tailles minimales et mises en page à 1440×900, 1280×720 et 1180×720, navigation clavier des dialogues,
+de l'inspecteur et des menus, textes d'interface — voir [Phase 2](#phase-2) et
+[ui-small-windows-and-keyboard.md](ui-small-windows-and-keyboard.md). Reste : voir les points ouverts.
+
+<a id="phase-2"></a>
+
+## Phase 2 : fermeture des points ouverts
+
+Même règle que la première phase : aucune grosse fonctionnalité (ni multicam, ni optical flow, ni API de plugins, ni
+transcription, ni IA, ni 3D), et **chaque défaut corrigé a un test qui échoue sans la correction** (vérifié en retirant la
+correction puis en la remettant ; les rares exceptions sont dites dans la colonne « Preuve »). Les chantiers indépendants
+ont été menés en parallèle dans des copies isolées du dépôt, puis fusionnés ; les tests des branches ont été relancés
+ensemble après chaque fusion (3 incompatibilités entre branches trouvées et corrigées à ce moment-là, voir plus bas).
+
+### État des points ouverts initiaux
+
+| Point ouvert | État final | Ce qui a été fait | Preuve | Commits |
+| --- | --- | --- | --- | --- |
+| **Tracking après la coupe de sa source** (moyenne) | **corrigé** | les données de tracking sont en temps source et partagées sans copie par les deux moitiés ; la **liaison** d'un autre clip suit maintenant toutes les parties de sa source (`TrackLink.continuation_ids`), à chaque instant celle qui couvre l'instant. Coupe neutre pour ce que montrent les clips liés. Stabilisation : même zoom des deux moitiés (`shared_range`). Diagnostic unique `link_issues`, messages explicites. Politique : [tracking.md](tracking.md) | `test_tracking_split.py` (35 tests, 24 échouent sans le correctif, rendu réel aperçu + export), `test_cut_tracking_source.py` | `652dd3b`, `0a765f5`, `131f12c`, `ea7f724` |
+| **FFmpeg orphelins après un arrêt brutal** (moyenne) | **corrigé** | `core/process_supervisor.py` est le **seul** point de lancement (garde AST) ; objet Job `KILL_ON_JOB_CLOSE` sous Windows ; gardien en Python pur sous macOS / Linux (l'application relancée avec `--kut-process-reaper`, valable gelée) ; registre par instance, identité vérifiée (heure de début + nom) avant tout arrêt, balayage au démarrage ; jamais un PID réutilisé, jamais une autre instance. Coût mesuré : ≈ 95 µs par lancement. [process-supervision.md](process-supervision.md) | `test_process_supervisor.py` (25), `test_process_launch_guard.py` (2) : `SIGKILL` réel d'un parent, plusieurs enfants, vrai FFmpeg, `QProcess` de l'export, deux instances, application gelée | `5b8e6cc`, `452c2bf`, `6d4b0ef`, `97a8f15`, `3ff7009`, `fbc49b4`, `c8aea8d`, `2f17da1`, `704c65e` |
+| **Textes de l'interface** (≈ 200 chaînes) (moyenne) | **corrigé** pour `ui/` ; **encore ouvert** pour les erreurs de `core/` | 684 chaînes distinctes (765 occurrences) écrites en dur au départ → **0** ; 554 clés ajoutées (936 → 1 490) ; détecteur AST `tools/i18n_audit.py` + baseline cliquet **vide** (un texte neuf fait échouer) ; parité fr / en / es stricte, `translate_strict` sans repli ; changement de langue à chaud pour les panneaux principaux. [i18n.md](i18n.md) | `test_i18n_hardcoded.py` (74), `test_i18n_parity.py` (27), `test_i18n_migrated_zones.py` (46) | `53542e0`, `139ff33`, `2161f8b`, `cbf2dbb`, `1b45c7e`, `b97f25b`, `f014fc7`, `869bf1d`, `62bf1d7`, `756f002`, `8b32da7` |
+| **Pas de couverture libass sur macOS en CI** (moyenne) | **corrigé, vérifié en CI** | job `macos-libass` (`ffmpeg-full`), garde partagée `tests/ffmpeg_caps.py`, marque `libass`, `KUT_STUDIO_REQUIRE_LIBASS=1` transforme le saut en échec. **Premier passage vert en CI** : 19 s d'installation, 12 tests, 0 sauté. [ci-libass.md](ci-libass.md) | `test_libass_subtitles.py`, `test_ffmpeg_caps.py` (21), `test_ci_workflow.py` (4) ; mutations vérifiées (filtre remplacé par `null`, `continue-on-error` ajouté…) | `abd4c7f`, `fae47b0`, `48ecb74`, `49c530e`, `8778cf7` |
+| **Encodeurs matériels et balises de couleur** (moyenne) | **mitigé** | pour chaque encodeur **disponible** : vrai mini export, relecture `ffprobe` des quatre balises, couleurs décodées à ±6 niveaux ; sauté avec raison si absent, échec avec `KUT_STUDIO_REQUIRE_HARDWARE` (un filtre `--encoder` ne le cache pas). Outil `python -m tools.perf.hardware_validation`. **VideoToolbox vérifié** (Mac arm64) : `bt709/bt709/bt709/tv`, couleurs à ±2 niveaux. **NVENC, Quick Sync, AMF, VAAPI : tests prêts, non exécutés** faute de machine | `test_hardware_color_validation.py` (12, dont 8 sautés ici), `test_hardware_validation_report.py` (15) ; mutations de l'étape de couleur vérifiées (sans `setparams`, BT.601, plage pleine : échec) | `c99662c`, `b9bb147`, `52fc1f5`, `d8b174b`, `a7eca11` |
+| Focus clavier (faible) | **corrigé là où il est nécessaire** | un seul bouton par défaut par dialogue (c'était « Retirer » ou « Choisir une couleur… »), boutons-icônes de dialogue focalisables et nommés, Tab atteint tout l'inspecteur dans l'ordre d'affichage **sans** qu'un clic vole les raccourcis (bug réel : Espace relançait le bouton cliqué), focus visible, mnémoniques de menu uniques par langue. Barre principale, timeline et bibliothèques gardent `NoFocus` : voulu | `test_ui_keyboard.py` (59), `test_theme_focus.py` (19) | `928baa1`, `9f9c9f9`, `25a5265`, `f627ba1` |
+| Mises en page aux petites tailles (faible) | **corrigé**, un reste | la somme des minima de panneaux (864 px) dépassait les 720 px de la fenêtre ; contrôles coupés dans l'inspecteur dès 1440×900 ; onglets de catégorie de la bibliothèque écrasés à ≈ 30 px ; moniteur réduit à ≈ 100 px avec les scopes. Minima cohérents, rangées qui passent à la ligne, blocs qui défilent. Audit rejouable `python -m tools.ui_audit`. [ui-small-windows-and-keyboard.md](ui-small-windows-and-keyboard.md) | `test_ui_small_windows.py` (77, assertions structurelles, polices +20 % simulées), `test_adaptive_layout.py` (9) | `ded39ca`, `f8db14d`, `a788e53` |
+| `Track.automation` à deux représentations (faible) | **corrigé** | forme canonique `TrackAutomation`, imposée par `Track.__setattr__` et fabriquée au chargement ; chemins à double forme supprimés ; format `.kut` inchangé. [track-automation.md](track-automation.md) | `test_track_automation.py` (34) | `bd4841a` |
+| Code mort probable (faible) | **corrigé** | `core/timeline_model.py`, `core/effects.py`, `core/graphics_raster.py`, `mix_at` et aides, 7 fonctions privées, 3 adaptateurs de vue supprimés avec dossier de preuves ([dead-code-audit.md](dead-code-audit.md)) ; 205 symboles restent sans référence en production : **relevé, non instruit** | `test_dead_code_guard.py` (8 : aucun module inatteignable, aucune fonction privée sans usage, chemin moderne prouvé) | `f4f4a2b`, `40aa894`, `c7c5fd6`, `442fe99`, `0e1e4e6` |
+| 41 modules de `core/` en dette `mypy` (faible) | **mitigé** | **41 → 17 modules** (23 nettoyés, dont tracking, rendu, GPU, animation, modèle de projet ; 1 supprimé avec son code mort) ; `Clip.graphic`, `.tracking`, `.compositing` ont leurs vrais types ; contrat typé du panneau Suivi. `ui/` toujours non vérifié | `test_typing_ratchet.py` (4 : liste identique à la baseline, rien n'entre, un module propre ne revient pas) | `8eb3b46`, `78c46a7`, `7acbfdb` |
+| Fusion Produit / Incrustation dans une séquence imbriquée (faible) | **encore ouvert** | non traité (hors des priorités de la phase) | — | — |
+
+### Défauts trouvés pendant la phase (hors de la liste initiale), tous corrigés
+
+| Défaut | Mesure / conséquence | Commit |
+| --- | --- | --- |
+| **`force_style` écrasait le style des fichiers ASS** (aperçu fidèle **et** export) | un clip de sous-titres 48 pt jaune « haut centré » ressortait en minuscule, en bas (145 pixels touchés au lieu de plusieurs milliers). Trouvé par le rendu réel que le job `macos-libass` rend possible | `f497163` |
+| Cinq pannes **absentes du fichier de journal** : analyse de tracking, état d'un clip impossible à dériver, entrée du cache de tracking illisible, segment d'aperçu impossible à supprimer, cache des capacités illisible | invisibles dans l'application empaquetée (pas de console), donc dans un rapport de bogue | `3c2d9f2` |
+| Échecs FFmpeg **absents du journal** : export, tâche de la file de rendu, segment d'aperçu, proxy | un export en échec laissait un message à l'écran et aucune trace | `bfe7a41` |
+| Backend exigé caché par un filtre : `KUT_STUDIO_REQUIRE_HARDWARE=nvenc … --encoder cpu` sortait en succès sans NVENC (relecture automatisée de la PR) | l'exigence « l'absence est une erreur » ne tenait pas | `a7eca11` |
+| **Changer de langue renommait les calques** (introduit par la migration i18n, trouvé en relançant la suite) : réécrire l'info-bulle d'un calque faisait émettre `itemChanged`, lu comme un renommage au nom inchangé | une entrée d'historique « Renommer le calque » par calque et par changement de langue (2 → 5 entrées après trois changements), projet marqué modifié, arbre reconstruit pendant le parcours de l'itérateur : **plantage natif intermittent** d'un processus de test (environ une suite complète sur deux) | `5e2e577` |
+| Classement « mémoire insuffisante » du GPU lu dans le **texte** du message ; qualité d'export « Custom » indexée par son **libellé affiché** | traduire aurait cassé ces comportements : indicateur explicite et identifiant interne | `2161f8b`, `62bf1d7` |
+
+Trois **incompatibilités entre branches**, trouvées en relançant la suite complète après chaque fusion et corrigées : le garde « module atteignable depuis `main.py` » ne connaissait pas l'outil de validation matérielle ; `PropertiesPanel` a perdu un paramètre mort (code mort) alors que des tests d'autres branches l'appelaient encore ; des tests de parité i18n prenaient un titre de menu (devenu « &File » avec son mnémonique) comme exemple.
+
+### Tests
+
+Référence avant la phase 2 (`main`, exécution locale) : **2 970 réussis, 7 sautés**. État final (branche, exécution locale
+complète, `-n 6`) : **3 445 réussis, 21 sautés, 0 échec** ; 3 466 tests collectés. Les 21 sautés ont tous leur raison
+affichée : 12 tests `libass` (le FFmpeg local n'a pas libass ; exécutés ici avec un `ffmpeg-full` déjà installé : 12
+réussis), 8 backends matériels absents (NVENC, Quick Sync, AMF, VAAPI, MP4 et MOV), 1 mnémonique Alt (vide sous le thème
+macOS, jamais exécuté avant la CI Windows / Linux). Vingt fichiers de tests ajoutés (ceux cités dans les tableaux ci-dessus, plus `test_dead_code_guard.py` (8),
+`test_diagnostics_coverage.py` (8) et `test_ffmpeg_failure_diagnostics.py` (4)), 23 fichiers existants adaptés (dont
+`test_audio_mixer.py` : 20 tests supprimés avec le code mort qu'ils exerçaient).
+
+### Plateformes réellement testées
+
+| Plateforme | Ce qui a tourné |
+| --- | --- |
+| **macOS arm64** (local, Python 3.14, Qt offscreen) | suite complète, `ruff`, `mypy`, smoke test source, **build PyInstaller natif + smoke test de l'application empaquetée** (code 0), `kill -9` réel d'un parent (supervision), validation matérielle VideoToolbox, rendu libass réel (`ffmpeg-full`), benchmarks |
+| **CI : macOS, Windows, Ubuntu (Python 3.11)** | workflow `Multiplatform` **vert** sur les PR #23 (`a7eca11`) et #24 (`4aaa02c`) : lint, `mypy` (Linux), suite complète, smoke test source, build natif, smoke test empaqueté. La supervision des processus (objet Job, `/proc`) y a donc tourné pour de bon sous Windows et Linux |
+| **CI : `macOS / libass (sous-titres)`** | vert sur les mêmes commits : 12 tests, 0 sauté, `--enable-libass` vérifié |
+| **Non exécuté nulle part** | NVENC, Quick Sync, AMF, VAAPI (aucune machine) ; la branche « petites fenêtres et clavier » (`928baa1`…`bea041c`) n'avait pas encore de run de CI à la rédaction de ce rapport |
+
+### Benchmarks (même machine, avant / après)
+
+`python -m tools.perf.bench` rejoué sur la même machine, sans autre charge : référence prise **avant** toute modification
+(`docs/perf/main-before-open-items.json`) puis état final (`docs/perf/open-items.json`).
+
+* **Moyenne géométrique des durées d'au moins 1 ms : 0,985 × la référence** (102 mesures ; 1,00 = identique) : aucune
+  régression d'ensemble.
+* Tracking, scénario `bindings` (liaison d'un calque à un tracker de 10 min, 18 000 images), trois passes chacun :
+  plan à froid 275–279 ms avant, 279–283 ms après (≈ +1 %) ; images-clés dérivées identiques (26 630) ; 5,24 octets par
+  image dans le `.kut`, inchangé.
+* Un écart reproduit sur deux passes : `select_all_marquee_ms` à 1 000 clips et 8 pistes, 1,9 → 2,8 ms (≈ +0,9 ms) ; absent
+  à 10 000 clips (20,1 → 19,4 / 20,1 ms). Non investigué ; imperceptible. Les autres écarts de plus de 25 % portent sur des
+  durées de 0,05 à 2 ms et ne se reproduisent pas (bruit).
+
+Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-mesure.json`, puis
+`python -m tools.perf.bench --compare docs/perf/main-before-open-items.json ma-mesure.json` (sur la machine qui a produit les deux).
+
+### Dette restante
+
+* **`mypy` : 17 modules de `core/` en dette** (liste dans `pyproject.toml`, identique à `tests/mypy_debt_baseline.txt`) :
+  `audio_recorder`, `blend_modes`, `compositing`, `export_engine`, `graphics`, `hardware_cache`, `hardware_encoding`,
+  `lut_importer`, `mograph_ffmpeg`, `mograph_layers`, `mograph_presets`, `mograph_raster`, `mograph_stream`,
+  `render_queue`, `scopes`, `scopes_analyzer`, `visual_effects` (198 erreurs au dernier relevé, dont 81 dans
+  `mograph_layers` et `mograph_raster`). `ui/` n'est pas vérifié.
+* **i18n : 0 chaîne en dur dans `ui/`** (baseline vide) ; **502 messages d'erreur français dans `core/`** (`raise
+  X("français…")`, ≈ 108 sites de `ui/` affichent `str(exc)` tel quel), non migrés (`python -m tools.i18n_audit --core`,
+  mécanisme proposé dans [i18n.md](i18n.md)) ; valeurs créées par le cœur restées en français (« Projet sans titre »,
+  « Séquence principale », « Sous-titre 01 ») ; éditeurs construits une fois, retraduits seulement à la réouverture
+  (calque graphique, compositing, style de texte, transformation avancée, étalonnage, effets audio, gestionnaire de tags).
 
 ## Points ouverts
 
-Ce qui suit n'est **pas** corrigé. Classé par gravité ; chaque point dit s'il a été mesuré ou seulement relevé à la lecture
-du code.
+État **final** de ce qui n'est pas réglé, sans l'atténuer. Le détail des points fermés est dans la [Phase 2](#phase-2).
 
 ### Moyenne
 
-| Point | État | Pourquoi pas corrigé |
+| Point | État | Pourquoi pas fermé |
 | --- | --- | --- |
-| **Tracking après la coupe de sa source** : les clips qui la suivent restent liés à la moitié gauche, leur mouvement reste figé après la coupe | constaté à la lecture du code (`LinkMotion.at` borne le temps à la durée du clip source) ; **mitigé par un message** dans la barre d'état | rattacher chaque moitié (liaison par plage de temps) est une nouvelle fonctionnalité |
-| **FFmpeg orphelins après un arrêt brutal** (`kill -9`, plantage) : l'aperçu fidèle, les proxies et l'export lancent FFmpeg en processus enfant ; sans passer par `closeEvent` ils continuent (jusqu'à 120 s pour un segment) | relevé à la lecture du code, non reproduit | exige un mécanisme par plateforme (`PR_SET_PDEATHSIG`, objet Job Windows, `kqueue`) à tester sur chaque système |
-| **Textes de l'interface** : une grande partie est écrite en dur en français (≈ 200 chaînes) malgré l'i18n fr / en / es | relevé par recherche dans le code | volumineux et sans risque de régression à traiter par morceaux ; un test de parité des clés existe pour ce qui est traduit |
-| **Pas de couverture libass sur macOS en CI** (voir ci-dessus) | mesuré | demande un FFmpeg avec libass sur le runner (formule Homebrew dédiée) |
-| **Encodeurs matériels et balises de couleur** : `-colorspace` / `setparams` ne sont pas testés avec VideoToolbox, NVENC, Quick Sync, AMF, VAAPI | non testable en CI | exige les machines correspondantes |
+| **Encodeurs matériels : NVENC, Quick Sync, AMF, VAAPI** | **mitigé** : tests et outil prêts, VideoToolbox vérifié ; les quatre autres jamais exécutés | exige les machines correspondantes (`KUT_STUDIO_REQUIRE_HARDWARE` rend l'absence bloquante sur une machine qui doit les avoir) |
+| **Erreurs de `core/` affichées en français** | **encore ouvert** (502 messages) | volumineux ; mécanisme proposé dans [i18n.md](i18n.md), à décider avant de migrer |
 
 ### Faible
 
 | Point | État |
 | --- | --- |
-| Focus clavier : les boutons-icônes n'acceptent pas le focus (`NoFocus`, voulu pour ne pas voler les raccourcis) ; navigation à la souris seulement | relevé |
-| Mises en page aux petites tailles de fenêtre (panneaux rognés) | relevé |
-| `Track.automation` a deux représentations (liste de points ou `TrackAutomation`) ; la normalisation est faite à l'usage plutôt qu'au chargement | relevé |
-| Code mort probable (`core/timeline_model.py`, `core/effects.py`, certaines fonctions `mix_*` d'`audio_mixer`) | relevé ; non supprimé faute de test qui le garantisse |
-| 41 modules de `core/` en dette `mypy` ; `ui/` non vérifié | mesuré |
-| Fusion Produit / Incrustation dans une séquence imbriquée : formule W3C implémentée par pondération d'opacité ; les bords antialiasés ne sont validés que par un cas à cheval sur une arête | mesuré sur ce cas |
+| Fusion Produit / Incrustation dans une séquence imbriquée : formule W3C par pondération d'opacité ; les bords antialiasés ne sont validés que par un cas à cheval sur une arête | **encore ouvert**, mesuré sur ce cas |
+| 17 modules de `core/` en dette `mypy` ; `ui/` non vérifié | **mitigé** (41 → 17), cliquet en place |
+| Éditeur de courbes (Graph Editor) : minimum ≈ 730 px de large et pas de défilement ; onglet spécialisé de l'inspecteur tronqué dans « ••• » à 280 px ; info-bulles des tuiles d'alignement encore en anglais ; en-tête des transitions dense à 1180 px | **encore ouvert** (dans [ui-small-windows-and-keyboard.md](ui-small-windows-and-keyboard.md)) |
+| Un `.kut` duplique les trackers à chaque coupe : en mémoire les octets sont partagés, **sur disque chaque moitié écrit sa copie** (couper N fois un plan très long multiplie la taille des trackers par N + 1) | **encore ouvert** : l'éviter demande un format de fichier (blocs partagés), donc une version du `.kut` |
+| 205 symboles sans référence en production | **relevé, non instruit** (annexe de [dead-code-audit.md](dead-code-audit.md)) |
+
+### Constats hors périmètre, relevés sans y toucher
+
+* Le curseur « Audio > Volume » (0 à 200 %) ne règle que le volume du **moniteur** : ni sauvegardé, ni exporté ; Qt le borne à 1,0.
+* `ui/main_window_mixins/audio.py` définit 7 gestionnaires d'automation, de rôle et de ducking qu'aucun signal ne déclenche :
+  fonction à moitié branchée, pas du code à supprimer.
+* **Mute contre solo** : le plan de rendu écarte d'abord une piste muette, solo ou non (la sourdine l'emporte) ; l'ancien
+  `is_audible` supprimé disait l'inverse. Le test fige le comportement réel : à trancher si l'autre sémantique est voulue.
+* Une source RVB (FFV1 `rgb`) sort de l'export CPU décalée de 3 à 4 niveaux (221,92,29 → 218,89,25) : dans le budget de
+  conversion swscale déjà mesuré (3 niveaux au maximum pour `yuv420p → rgb24`), mais à regarder.
+* Sous FFmpeg 9.0.2, `-color_primaries` / `-color_trc` seuls ne balisent ni primaires ni transfert (libx264 comme VideoToolbox) :
+  `setparams` reste indispensable.
+* Un segment d'aperçu tué laisse un `kut-preview-*.mp4` dans le dossier temporaire du système.
+* Supervision des processus : fenêtre de course entre le lancement et l'enregistrement (≈ µs sous Windows, ≈ ms pour le
+  `QProcess` sous POSIX) ; application **et** gardien tués ensemble : les enfants tournent jusqu'au prochain démarrage (balayage).
 
 ## Critères de fin
 
 | Critère | État |
 | --- | --- |
 | `ruff` propre | oui |
-| `mypy` propre | oui sur `core/` (dette listée) |
-| `pytest` complet vert | oui : 2 969 réussis, 4 sautés, 0 échec (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
-| Smoke test de l'interface | oui (`python main.py --smoke-test`) |
-| Build natif + smoke test empaqueté | par la CI sur trois plateformes, voir ci-dessous |
-| Anciens `.kut` compatibles | oui : `SUPPORTED_VERSIONS` inchangé, aller-retour `save → load → save` idempotent sur un projet synthétique complet, mutation champ par champ |
-| Aperçu / export cohérents | oui : mêmes graphe et étape de couleur, tests de parité avec le vrai FFmpeg |
-| Replis CPU / GPU | oui : image non mappable, perte du périphérique, plantage du pilote, GPU indisponible |
-| Aucun thread / process orphelin à la fermeture | oui pour la fermeture normale (`_shutdown_steps`, étapes isolées) ; **non garanti après un arrêt brutal** (point ouvert) |
-| Benchmarks documentés | `docs/perf/` + procédure ci-dessus |
+| `mypy` propre | oui sur `core/` (17 modules en dette, listés, verrouillés par `test_typing_ratchet.py`) |
+| `pytest` complet vert | oui : **3 445 réussis, 21 sautés, 0 échec** (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
+| Smoke test de l'interface | oui (`python main.py --smoke-test`), source **et** application empaquetée |
+| Build natif + smoke test empaqueté | oui en local (macOS) ; CI trois plateformes verte sur les PR #23 et #24 |
+| Anciens `.kut` compatibles | oui : `SUPPORTED_VERSIONS` inchangé ; champs ajoutés (`continuation_ids`, `shared_range`) **optionnels**, écrits seulement s'ils diffèrent du défaut ; `Track.automation` migré au chargement sans changer le fichier ; aller-retour `save → load → save` idempotent |
+| Aperçu / export cohérents | oui : mêmes graphe et étape de couleur ; tests de parité avec le vrai FFmpeg ; `force_style` corrigé pour les deux |
+| Replis CPU / GPU | oui, et leurs pannes arrivent maintenant dans le fichier de journal |
+| Aucun thread / process orphelin à la fermeture | oui, **y compris après un arrêt brutal** (objet Job, gardien, balayage), sauf la fenêtre de course documentée |
+| Tests libass sur macOS | **oui, exécutés en CI** : job `macos-libass`, 12 réussis, 0 sauté |
+| Validation matérielle conditionnelle | oui : VideoToolbox exécuté ; NVENC, Quick Sync, AMF, VAAPI sautés avec raison (jamais comptés comme réussis) |
+| Benchmarks documentés | `docs/perf/` + procédure ci-dessus ; moyenne géométrique 0,985 × la référence |
+| Aucun nouveau point critique ou haut introduit | oui, aucun relevé |
 
 ### État de la CI de la PR
 

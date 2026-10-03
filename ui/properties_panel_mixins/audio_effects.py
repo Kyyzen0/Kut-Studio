@@ -22,6 +22,7 @@ from core.audio_effects_model import (
     AudioEffectType,
     parameter_specs as audio_parameter_specs,
 )
+from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
 from ui.theme import COLORS, label_style
 
@@ -63,13 +64,14 @@ class AudioEffectsMixin:
         add_layout = QHBoxLayout(self.audio_effect_add_row)
         add_layout.setContentsMargins(0, 0, 0, 0)
         add_layout.setSpacing(Spacing.xs)
-        self.audio_effect_type_combo = QComboBox()
+        self.audio_effect_type_combo = make_shrinkable(QComboBox())
         self.audio_effect_type_combo.setObjectName("audioEffectType")
         self.audio_effect_type_combo.setFocusPolicy(Qt.NoFocus)
         self.audio_effect_type_combo.setStyleSheet(
             f"QComboBox#audioEffectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f"QComboBox#audioEffectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.audio_effect_add_button = self._make_audio_effect_button(
             _tr("audio_effects.add"), self._on_audio_effect_add
@@ -104,9 +106,7 @@ class AudioEffectsMixin:
 
         # Boutons d'action.
         self.audio_effect_buttons_row = QWidget()
-        buttons_layout = QHBoxLayout(self.audio_effect_buttons_row)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(Spacing.xs)
+        buttons_layout = FlowLayout(self.audio_effect_buttons_row, spacing=Spacing.xs)
         self.audio_effect_toggle_button = self._make_audio_effect_button(
             _tr("audio_effects.disable"), self._on_audio_effect_toggle
         )
@@ -152,6 +152,7 @@ class AudioEffectsMixin:
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
             f"QPushButton#audioEffectAction:hover {{ background: {COLORS['surface_hover']}; }}"
+            f"QPushButton#audioEffectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#audioEffectAction:disabled {{ color: {COLORS['muted']}; }}"
         )
         button.clicked.connect(lambda _checked=False: handler())
@@ -330,6 +331,7 @@ class AudioEffectsMixin:
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.audio_effect_parameters_layout.addWidget(wrapper)
+        self._sync_inspector_tab_order()
 
     def _on_audio_effect_parameter_changed(
         self, effect_id: str, name: str, value: float

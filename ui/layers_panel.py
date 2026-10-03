@@ -247,7 +247,19 @@ class LayersPanel(QWidget):
         self.retranslate()
 
     def retranslate(self) -> None:
-        """Textes du panneau dans la langue courante (changement de langue à chaud)."""
+        """Textes du panneau dans la langue courante (changement de langue à chaud).
+
+        Réécrire l'info-bulle d'un calque fait émettre ``itemChanged`` : sans garde, ``_on_item_changed`` le prenait pour
+        un renommage (entrée d'historique, projet « modifié », arbre reconstruit **pendant** le parcours de
+        l'itérateur ci-dessous, d'où un plantage natif intermittent). ``_updating`` ignore ces changements internes.
+        """
+        was_updating, self._updating = self._updating, True
+        try:
+            self._retranslate_texts()
+        finally:
+            self._updating = was_updating
+
+    def _retranslate_texts(self) -> None:
         self._title.setText(translate("mograph.layers.title"))
         self.exit_group_button.setText(translate("mograph.layers.exit_group"))
         self.add_button.setText(translate("mograph.layers.add_button"))
