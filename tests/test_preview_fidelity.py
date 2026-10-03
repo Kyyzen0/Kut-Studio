@@ -222,14 +222,13 @@ def test_cancel_all_removes_owned_subtitle_temporary(tmp_path):
     assert not subtitle.exists()
 
 
+@pytest.mark.libass
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")
 def test_default_render_incruste_les_sous_titres(tmp_path):
-    """Avec libass, un projet sous-titre se rend aussi en apercu."""
-    from core.export_engine import _ffmpeg_supports_subtitles
+    """Avec libass, un projet sous-titre se rend aussi en apercu.
 
-    if not _ffmpeg_supports_subtitles():
-        pytest.skip("FFmpeg sans libass : filtre 'subtitles' indisponible")
-
+    Marque ``libass`` : sauté sans libass, échoué avec ``KUT_STUDIO_REQUIRE_LIBASS=1``.
+    """
     import tempfile
     from dataclasses import replace
 

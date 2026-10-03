@@ -776,36 +776,17 @@ def _build_subtitle_project(video_path: Path) -> Project:
     )
 
 
+@pytest.mark.libass
 def test_real_ffmpeg_export_burns_subtitles_into_mp4(qtbot, tmp_path):
     """Export réel avec sous-titres : FFmpeg termine, vidéo+audio présents,
     fichier SRT temporaire nettoyé, filtre ``subtitles`` présent dans la
     commande.
 
-    Ce test skip si la build FFmpeg locale n'a pas libass (filtre
-    ``subtitles`` indisponible).
+    Marqué ``libass`` : sauté si la build FFmpeg n'a pas libass (filtre
+    ``subtitles`` indisponible), échoué avec ``KUT_STUDIO_REQUIRE_LIBASS=1``
+    (voir ``tests/ffmpeg_caps.py``).
     """
-    import subprocess as _subprocess
-
     ffmpeg, ffprobe = _require_ffmpeg()
-
-    # Détection rapide de libass.
-    try:
-        check = _subprocess.run(
-            [ffmpeg, "-hide_banner", "-filters"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except Exception:
-        libass_available = False
-    else:
-        libass_available = " subtitles " in f" {check.stdout} "
-    if not libass_available:
-        pytest.skip(
-            "La build FFmpeg locale ne contient pas libass : "
-            "filtre 'subtitles' indisponible."
-        )
 
     # 1. Vidéo temporaire courte, sans audio (pour vérifier que le
     # moteur ajoute quand même un flux audio silencieux).
