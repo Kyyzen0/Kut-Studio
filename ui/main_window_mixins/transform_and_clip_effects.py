@@ -116,7 +116,7 @@ class TransformEffectsMixin:
         try:
             add_effect_to_clip(self.project, clip_id, effect_type)
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Effets", str(exc))
+            QMessageBox.warning(self, translate("dialog.title.effects"), str(exc))
             return
         self._record_history(translate("history.effect.add"))
         self._refresh_effects_after_change(clip_id)

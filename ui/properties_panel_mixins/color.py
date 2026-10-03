@@ -25,6 +25,7 @@ from ui.design_system import Spacing
 from ui.icons import IconName
 from ui.theme import label_style
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
+from ui.i18n import translate
 
 class ColorMixin:
     """Mixin de ``PropertiesPanel`` : groupe Couleur : étalonnage, courbes, presets et LUT."""
@@ -221,7 +222,7 @@ class ColorMixin:
     def _request_save_color_preset(self) -> None:
         if self.selected_clip is None:
             return
-        name, accepted = QInputDialog.getText(self, "Preset couleur", "Nom du preset :")
+        name, accepted = QInputDialog.getText(self, translate("dialog.title.color_preset"), translate("dialog.preset.name_label"))
         if accepted and name.strip():
             self.color_preset_save_requested.emit(self.selected_clip.id, name.strip())
 
@@ -229,7 +230,7 @@ class ColorMixin:
         if self.selected_clip is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Importer une LUT", "", "LUT 3D (*.cube)"
+            self, translate("dialog.lut.import_title"), "", "LUT 3D (*.cube)"
         )
         if path:
             self.color_lut_import_requested.emit(self.selected_clip.id, path)

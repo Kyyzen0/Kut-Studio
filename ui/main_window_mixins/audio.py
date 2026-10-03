@@ -82,7 +82,7 @@ class AudioMixin:
         try:
             service.set_track_role(self.project, track.id, TrackRole(role))
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             self.mixer_panel.refresh_track(track)
             return
         self._record_audio_change(i18n.translate("history.audio.track_role"))
@@ -105,7 +105,7 @@ class AudioMixin:
                 self.project, track.id, time_seconds, gain_db, fade_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.automation_add"))
 
@@ -125,7 +125,7 @@ class AudioMixin:
                 self.project, track.id, time_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.automation_remove"))
 
@@ -147,7 +147,7 @@ class AudioMixin:
                 gain_db=gain_db, fade_seconds=fade_seconds,
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.automation_edit"))
 
@@ -173,7 +173,7 @@ class AudioMixin:
                 config=DuckingConfig(),
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.ducking_add"))
 
@@ -186,7 +186,7 @@ class AudioMixin:
         try:
             service.remove_ducking_sidechain(self.project, sidechain_id)
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.ducking_remove"))
 
@@ -210,7 +210,7 @@ class AudioMixin:
             )
             service.update_ducking_config(self.project, sidechain_id, config)
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.ducking_edit"))
 
@@ -400,7 +400,7 @@ class AudioMixin:
                 self.project, clip_id, AudioEffectType(effect_type)
             )
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Effet audio", str(exc))
+            QMessageBox.warning(self, i18n.translate("dialog.title.audio_effect"), str(exc))
             return
         self._record_history(i18n.translate("history.audio.effect_add"))
         self._refresh_effects_after_change(clip_id)

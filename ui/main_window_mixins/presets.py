@@ -97,7 +97,7 @@ class PresetsMixin:
         try:
             apply_preset_to_clip(self.project, clip_id, preset)
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Preset d'effets", str(exc))
+            QMessageBox.warning(self, i18n.translate("dialog.title.effects_preset"), str(exc))
             return
         self._record_history(i18n.translate("history.preset.effects_apply"))
         self._refresh_effects_after_change(clip_id)
@@ -138,7 +138,7 @@ class PresetsMixin:
                 params=preset.resolved_params(),
             )
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Effet audio", str(exc))
+            QMessageBox.warning(self, i18n.translate("dialog.title.audio_effect"), str(exc))
             return
         self._record_history(i18n.translate("history.preset.audio_apply"))
         self._refresh_effects_after_change(clip_id)
@@ -157,7 +157,7 @@ class PresetsMixin:
         effects = list(clip.audio_effects)
         if not effects:
             QMessageBox.information(
-                self, "Effet audio", "Ce clip n'a aucun effet audio à enregistrer."
+                self, i18n.translate("dialog.title.audio_effect"), i18n.translate("dialog.preset.no_audio_effect")
             )
             return
         selected_id = getattr(
@@ -165,7 +165,7 @@ class PresetsMixin:
         )
         effect = next((e for e in effects if e.id == selected_id), effects[0])
         name, accepted = QInputDialog.getText(
-            self, "Enregistrer un preset audio", "Nom du preset :"
+            self, i18n.translate("dialog.preset.save_audio_title"), i18n.translate("dialog.preset.name_label")
         )
         name = name.strip()
         if not accepted or not name:
@@ -176,7 +176,7 @@ class PresetsMixin:
             )
             self.audio_effect_preset_store.add_user_preset(preset)
         except ValueError as exc:
-            QMessageBox.warning(self, "Effet audio", str(exc))
+            QMessageBox.warning(self, i18n.translate("dialog.title.audio_effect"), str(exc))
 
     def on_audio_effect_preset_delete_requested(self, preset_id: str) -> None:
         """Supprime un preset audio utilisateur après confirmation."""
@@ -185,8 +185,8 @@ class PresetsMixin:
             return
         confirm = QMessageBox.question(
             self,
-            "Supprimer le preset",
-            f"Supprimer le preset « {preset.name} » ?",
+            i18n.translate("dialog.preset.delete_title"),
+            i18n.translate("dialog.preset.delete_text", name=preset.name),
         )
         if confirm != QMessageBox.Yes:
             return
@@ -310,7 +310,7 @@ class PresetsMixin:
         selected.sort(key=lambda view: view.start)
         if selected[0].track_id != selected[1].track_id:
             self.statusBar().showMessage(
-                "Les clips doivent être placés sur la même piste.", 5000
+                i18n.translate("status.transition.same_track"), 5000
             )
             return
         from core.transitions import add_transition
@@ -324,7 +324,7 @@ class PresetsMixin:
             )
         except (KeyError, ValueError) as error:
             self.statusBar().showMessage(
-                f"Transition refusée : {error}", 6000
+                i18n.translate("status.transition.refused", error=error), 6000
             )
             return
         self._record_history(i18n.translate("history.transition.add"))
@@ -333,7 +333,7 @@ class PresetsMixin:
         self._mark_dirty()
         self.timeline_panel.select_transition(transition.id)
         self.statusBar().showMessage(
-            f"Transition « {preset.name} » ajoutée.", 3000
+            i18n.translate("status.transition.added_named", name=preset.name), 3000
         )
 
     def on_transition_preset_save_requested(self) -> None:
@@ -352,7 +352,7 @@ class PresetsMixin:
         selected.sort(key=lambda view: view.start)
         if selected[0].track_id != selected[1].track_id:
             self.statusBar().showMessage(
-                "Les clips doivent être placés sur la même piste.", 5000
+                i18n.translate("status.transition.same_track"), 5000
             )
             return
         from core.timeline_operations import find_clip
@@ -443,7 +443,7 @@ class PresetsMixin:
         except KeyError as exc:
             self.statusBar().showMessage(str(exc), 5000)
             return
-        self.statusBar().showMessage("Transition ajoutée.", 3000)
+        self.statusBar().showMessage(i18n.translate("status.transition.added"), 3000)
 
     def _on_text_presets_changed(self) -> None:
         """Répercute les mutations du store vers la bibliothèque."""
@@ -558,7 +558,7 @@ class PresetsMixin:
             self.statusBar().showMessage(str(exc), 5000)
             return
         self.statusBar().showMessage(
-            f"Modèle « {preset.name} » enregistré.", 3000
+            i18n.translate("status.template.saved", name=preset.name), 3000
         )
 
     def on_text_preset_delete_requested(self, preset_id: str) -> None:

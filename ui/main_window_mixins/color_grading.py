@@ -204,7 +204,7 @@ class ColorGradingMixin:
             preset = make_user_color_preset(name=name, description="", grade=grade)
             self.properties_panel.color_preset_store.add_user_preset(preset)
         except (ColorGradingError, OSError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Preset couleur", str(exc))
+            _main_window().QMessageBox.warning(self, translate("dialog.title.color_preset"), str(exc))
             return
         self.project.color_presets.append(preset)
         self._record_history(translate("history.color.save_preset"))
@@ -230,7 +230,7 @@ class ColorGradingMixin:
         try:
             parsed = parse_cube_lut(lut_path)
         except LUTImportError as exc:
-            _main_window().QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            _main_window().QMessageBox.warning(self, "LUT", translate("dialog.lut.invalid", error=exc))
             return
         try:
             resource = LUTResource.from_path(
@@ -241,7 +241,7 @@ class ColorGradingMixin:
                 else None,
             )
         except (ColorGradingError, OSError) as exc:
-            _main_window().QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            _main_window().QMessageBox.warning(self, "LUT", translate("dialog.lut.invalid", error=exc))
             return
         # On préserve les réglages existants du clip ; seul le LUT
         # est remplacé.

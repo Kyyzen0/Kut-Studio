@@ -80,6 +80,7 @@ from ui.project_panel_widgets.effects_library_view import (
     SavePresetDialog,
     _CATEGORY_ACCENTS,
 )  # noqa: F401
+from ui.i18n import translate
 
 
 class ProjectPanel(QWidget):
@@ -624,8 +625,8 @@ class ProjectPanel(QWidget):
         )
 
         result = prompt_for_folder_name(
-            title="Nouveau dossier",
-            label="Nom du dossier :",
+            title=translate("dialog.folder.new_title"),
+            label=translate("dialog.folder.name_label"),
             parent=self,
         )
         if result is None:
@@ -643,7 +644,7 @@ class ProjectPanel(QWidget):
 
     def _show_warning(self, message: str) -> None:
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.warning(self, "Bibliothèque", message)
+        QMessageBox.warning(self, translate("panel.library"), message)
 
     def selected_asset_usage(self) -> AssetUsageBadge | None:
         """Retourne le badge du média sélectionné (``None`` si rien)."""

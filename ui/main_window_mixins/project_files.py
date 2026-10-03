@@ -83,8 +83,8 @@ class ProjectFilesMixin:
         except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Enregistrement impossible",
-                f"Impossible d'enregistrer le projet :\n\n{exc}",
+                i18n.translate("dialog.save.failed_title"),
+                i18n.translate("dialog.save.failed_text", error=exc),
             )
             return
         self._mark_clean()
@@ -100,9 +100,9 @@ class ProjectFilesMixin:
             )
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
-            "Enregistrer le projet sous...",
+            i18n.translate("dialog.save.as_title"),
             default_path,
-            "Projets Kut-Studio (*.kut)",
+            i18n.translate("dialog.filter.project"),
         )
         if not path:
             return
@@ -114,8 +114,8 @@ class ProjectFilesMixin:
         except (OSError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Enregistrement impossible",
-                f"Impossible d'enregistrer le projet :\n\n{exc}",
+                i18n.translate("dialog.save.failed_title"),
+                i18n.translate("dialog.save.failed_text", error=exc),
             )
             return
         self.current_project_path = path
@@ -126,9 +126,9 @@ class ProjectFilesMixin:
         default_dir = os.path.expanduser("~")
         path, _ = _main_window().QFileDialog.getOpenFileName(
             self,
-            "Ouvrir un projet Kut-Studio",
+            i18n.translate("dialog.open.title"),
             default_dir,
-            "Projets Kut-Studio (*.kut)",
+            i18n.translate("dialog.filter.project"),
         )
         if not path:
             return
@@ -152,17 +152,16 @@ class ProjectFilesMixin:
         except Exception as exc:  # noqa: BLE001 - quoi qu'il arrive, un fichier abîmé ne doit rien casser
             _main_window().QMessageBox.critical(
                 self,
-                "Impossible d'ouvrir le projet",
-                f"Le fichier {path} n'a pas pu être ouvert :\n\n{exc}",
+                i18n.translate("dialog.open.failed_title"),
+                i18n.translate("dialog.open.failed_text", path=path, error=exc),
             )
             return
         restored_autosave = False
         if autosave_is_newer(path):
             answer = _main_window().QMessageBox.question(
                 self,
-                "Récupération",
-                "Une sauvegarde automatique plus récente que ce projet "
-                "a été trouvée.\n\nVoulez-vous la restaurer ?",
+                i18n.translate("dialog.recover.title"),
+                i18n.translate("dialog.recover.text"),
                 _main_window().QMessageBox.Yes | _main_window().QMessageBox.No,
                 _main_window().QMessageBox.Yes,
             )
@@ -173,8 +172,8 @@ class ProjectFilesMixin:
                 except Exception as exc:  # noqa: BLE001 - idem pour la sauvegarde automatique
                     _main_window().QMessageBox.critical(
                         self,
-                        "Récupération impossible",
-                        f"La sauvegarde automatique n'a pas pu être lue :\n\n{exc}",
+                        i18n.translate("dialog.recover.failed_title"),
+                        i18n.translate("dialog.recover.failed_text", error=exc),
                     )
         self._release_open_project()
         self.project = loaded
@@ -251,7 +250,7 @@ class ProjectFilesMixin:
             os.path.join(
                 default_export_directory(), export_file_name(getattr(self.project, "name", ""), spec.container)
             ),
-            f"Vidéos (*.{spec.container})",
+            i18n.translate("dialog.filter.video", ext=spec.container),
         )
         return path
 

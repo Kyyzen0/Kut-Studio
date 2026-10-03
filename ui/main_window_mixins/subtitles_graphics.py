@@ -164,8 +164,8 @@ class SubtitlesGraphicsMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Sous-titre impossible",
-                f"Impossible d'ajouter le sous-titre :\n\n{exc}",
+                i18n.translate("dialog.subtitle.add_failed_title"),
+                i18n.translate("dialog.subtitle.add_failed_text", error=exc),
             )
             return
         self._record_history(i18n.translate("history.subtitle.add"))
@@ -187,7 +187,7 @@ class SubtitlesGraphicsMixin:
                 duration=5.0,
             )
         except (FileNotFoundError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Graphique", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.graphic"), str(exc))
             return
         self._record_history(i18n.translate("history.graphic.add"))
         self._reload_timeline_preserving_selection(clip.id)
@@ -205,7 +205,7 @@ class SubtitlesGraphicsMixin:
             self,
             i18n.translate("history.graphic.import_image"),
             "",
-            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)",
+            i18n.translate("dialog.filter.images"),
         )
         if not path:
             return
@@ -244,7 +244,7 @@ class SubtitlesGraphicsMixin:
                 asset.width = clip.graphic.width
                 asset.height = clip.graphic.height
         except (FileNotFoundError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Graphique", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.graphic"), str(exc))
             return
         self._record_history(i18n.translate("history.graphic.import_image"))
         self._reload_timeline_preserving_selection(clip.id)
@@ -291,7 +291,7 @@ class SubtitlesGraphicsMixin:
                 return
             updated = update_graphic(clip, field_name, value)
         except (TypeError, ValueError) as exc:
-            self.statusBar().showMessage(f"Modification graphique refusée : {exc}", 5000)
+            self.statusBar().showMessage(i18n.translate("status.graphic.refused", error=exc), 5000)
             return
         if updated is before:
             return
@@ -347,9 +347,9 @@ class SubtitlesGraphicsMixin:
     def import_subtitles_via_dialog(self) -> None:
         path, _ = _main_window().QFileDialog.getOpenFileName(
             self,
-            "Importer des sous-titres",
+            i18n.translate("dialog.subtitle.import_title"),
             os.path.expanduser("~"),
-            "Sous-titres (*.srt)",
+            i18n.translate("dialog.filter.subtitles"),
         )
         if not path:
             return
@@ -358,16 +358,16 @@ class SubtitlesGraphicsMixin:
         except (OSError, ValueError, KeyError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Import SRT impossible",
-                f"Impossible d'importer les sous-titres :\n\n{exc}",
+                i18n.translate("dialog.subtitle.import_failed_title"),
+                i18n.translate("dialog.subtitle.import_failed_text", error=exc),
             )
 
     def export_subtitles_via_dialog(self) -> None:
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
-            "Enregistrer les sous-titres",
+            i18n.translate("dialog.subtitle.export_title"),
             os.path.expanduser("~/subtitles.srt"),
-            "Sous-titres (*.srt)",
+            i18n.translate("dialog.filter.subtitles"),
         )
         if not path:
             return
@@ -376,8 +376,8 @@ class SubtitlesGraphicsMixin:
         except OSError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Export SRT impossible",
-                f"Impossible d'enregistrer les sous-titres :\n\n{exc}",
+                i18n.translate("dialog.subtitle.export_failed_title"),
+                i18n.translate("dialog.subtitle.export_failed_text", error=exc),
             )
 
     def on_subtitle_clip_selected(self, clip_id: str) -> None:

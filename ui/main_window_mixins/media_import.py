@@ -53,9 +53,9 @@ class MediaImportMixin:
         """
         paths, _ = _main_window().QFileDialog.getOpenFileNames(
             self,
-            "Importer des médias",
+            translate("dialog.import.title"),
             os.path.expanduser("~/Movies"),
-            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg)",
+            translate("dialog.filter.media"),
         )
         if not paths:
             return
@@ -85,8 +85,8 @@ class MediaImportMixin:
         except MediaProbeError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Import impossible",
-                f"Impossible d'importer le média :\n\n{path}\n\n{exc}",
+                translate("dialog.import.failed_title"),
+                translate("dialog.import.failed_text", path=path, error=exc),
             )
             return False
 
@@ -148,8 +148,8 @@ class MediaImportMixin:
         if asset is None:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Média '{asset_id}' introuvable dans le projet.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.asset_missing", asset=asset_id),
             )
             return
 
@@ -160,17 +160,16 @@ class MediaImportMixin:
         else:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Le type de média '{asset.media_type}' ne peut pas être "
-                "ajouté à la timeline depuis le panneau de bibliothèque.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.bad_type", media_type=asset.media_type),
             )
             return
 
         if not any(track.id == target_track_id for track in self.project.tracks):
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"La piste '{target_track_id}' est absente du projet courant.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.track_missing", track=target_track_id),
             )
             return
 
@@ -185,8 +184,8 @@ class MediaImportMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Impossible d'ajouter le média à la timeline :\n\n{exc}",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.failed_text", error=exc),
             )
             return
 

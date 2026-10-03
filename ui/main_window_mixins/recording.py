@@ -30,15 +30,15 @@ class RecordingMixin:
                 self._set_record_button(False)
                 _main_window().QMessageBox.information(
                     self,
-                    "Enregistrement",
-                    "Armez une piste audio avant d'enregistrer.",
+                    translate("dialog.title.recording"),
+                    translate("dialog.recording.arm_first"),
                 )
                 return
             try:
                 self._audio_recorder.start()
             except AudioRecorderError as exc:
                 self._set_record_button(False)
-                _main_window().QMessageBox.critical(self, "Enregistrement", str(exc))
+                _main_window().QMessageBox.critical(self, translate("dialog.title.recording"), str(exc))
                 return
             self._record_origin = float(self.playhead_seconds)
             self._record_tracks = armed
@@ -65,8 +65,8 @@ class RecordingMixin:
             if not quiet:
                 _main_window().QMessageBox.information(
                     self,
-                    "Enregistrement",
-                    "L'enregistrement est trop court pour devenir un clip.",
+                    translate("dialog.title.recording"),
+                    translate("dialog.recording.too_short"),
                 )
             return
         if self.current_project_path:
@@ -78,7 +78,7 @@ class RecordingMixin:
             write_wav(str(target), pcm, sample_rate, channels)
         except OSError as exc:
             if not quiet:
-                _main_window().QMessageBox.critical(self, "Enregistrement", str(exc))
+                _main_window().QMessageBox.critical(self, translate("dialog.title.recording"), str(exc))
             return
         asset = MediaAsset(
             id=f"rec-{uuid.uuid4().hex[:8]}",

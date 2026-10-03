@@ -63,6 +63,7 @@ from core.library_organization import (
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
+from ui.i18n import translate
 
 
 # Identifiants Qt ``UserRole`` utilisés pour mapper les entrées
@@ -806,7 +807,7 @@ class AssetContextMenuBuilder(QWidget):
         self._populate_move_menu(move_menu)
 
         # Tags.
-        tags_menu = menu.addMenu("Tags")
+        tags_menu = menu.addMenu(translate("dialog.title.tags"))
         self._populate_tags_menu(tags_menu)
 
         # Relier le fichier (visible surtout si manquant, mais autorisé
@@ -960,7 +961,7 @@ class TagManagerDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Gestionnaire de tags")
+        self.setWindowTitle(translate("dialog.tags.title"))
         self.resize(420, 360)
         self._organization = organization
         self._tag_rows: dict[str, "_TagRow"] = {}
@@ -1098,7 +1099,7 @@ class TagManagerDialog(QDialog):
     def _create_tag(self) -> None:
         name = self.name_field.text().strip()
         if not name:
-            _show_warning(self, "Le nom du tag ne peut pas être vide.")
+            _show_warning(self, translate("dialog.tags.name_empty"))
             return
         try:
             self._organization.create_tag(name, color=self._new_tag_color)
@@ -1114,8 +1115,8 @@ class TagManagerDialog(QDialog):
             return
         new_name, accepted = QInputDialog.getText(
             self,
-            "Renommer le tag",
-            "Nouveau nom :",
+            translate("dialog.tags.rename_title"),
+            translate("dialog.new_name_label"),
             text=tag.name,
         )
         if not accepted:
@@ -1216,7 +1217,7 @@ class _TagRow(QFrame):
 def _show_warning(parent: QWidget, message: str) -> None:
     """Affiche un QMessageBox d'avertissement sans fermer le parent."""
     from PySide6.QtWidgets import QMessageBox
-    QMessageBox.warning(parent, "Tags", message)
+    QMessageBox.warning(parent, translate("dialog.title.tags"), message)
 
 
 # ---------------------------------------------------------------------------
@@ -1244,10 +1245,10 @@ def prompt_for_folder_name(
         return None
     cleaned = (name or "").strip()
     if not cleaned:
-        _show_warning(parent, "Le nom du dossier ne peut pas être vide.")
+        _show_warning(parent, translate("dialog.folder.name_empty"))
         return None
     if len(cleaned) > 48:
-        _show_warning(parent, "Le nom du dossier est trop long (max 48 caractères).")
+        _show_warning(parent, translate("dialog.folder.name_too_long"))
         return None
     color_list = list(colors)
     if not color_list:

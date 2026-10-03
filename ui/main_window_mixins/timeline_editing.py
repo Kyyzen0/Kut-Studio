@@ -55,8 +55,8 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Duplication impossible",
-                f"Impossible de dupliquer le clip :\n\n{exc}",
+                translate("dialog.clip.duplicate_failed_title"),
+                translate("dialog.clip.duplicate_failed_text", error=exc),
             )
             return
         self._record_history(translate("menu.item.duplicate_clip"))
@@ -86,8 +86,8 @@ class TimelineEditingMixin:
         except KeyError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Suppression impossible",
-                f"Impossible de supprimer le clip :\n\n{exc}",
+                translate("dialog.clip.delete_failed_title"),
+                translate("dialog.clip.delete_failed_text", error=exc),
             )
             return
         except ValueError as exc:  # piste verrouillée : refus normal, pas une panne
@@ -208,7 +208,7 @@ class TimelineEditingMixin:
     def cut_at_playhead(self):
         clip_id = self.timeline_panel.selected_clip_id
         if clip_id is None:
-            self._report_edit_refused("Aucun clip sélectionné à couper")
+            self._report_edit_refused(translate("status.clip.cut_none"))
             return
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
@@ -225,8 +225,7 @@ class TimelineEditingMixin:
         if followers:
             # Honnête plutôt que silencieux : la partie droite a un nouvel identifiant, leur suivi s'arrête ici.
             self.statusBar().showMessage(
-                f"Ce clip porte le tracking de {len(followers)} autre(s) clip(s) : leur suivi s'arrête à la "
-                "coupe. Reliez-les à la partie droite pour qu'il continue.",
+                translate("status.clip.cut_tracking", count=len(followers)),
                 10000,
             )
         self.timeline_panel.set_project(self.project)
@@ -313,7 +312,7 @@ class TimelineEditingMixin:
                 duration=duration,
             )
         except (KeyError, ValueError) as error:
-            self.statusBar().showMessage(f"Modification refusée : {error}", 6000)
+            self.statusBar().showMessage(translate("status.transition.edit_refused", error=error), 6000)
             self.on_transition_selected(transition_id)
             return
         self._record_history(translate("history.transition.edit"))
@@ -334,7 +333,7 @@ class TimelineEditingMixin:
         self._update_timeline_duration()
         self._mark_dirty()
         self.properties_panel.clear_transition()
-        self.statusBar().showMessage("Transition supprimée.", 3000)
+        self.statusBar().showMessage(translate("status.transition.deleted"), 3000)
 
     def on_slip_requested(self, clip_id: str, delta: float) -> None:
         try:
@@ -399,8 +398,8 @@ class TimelineEditingMixin:
             return
         name, accepted = QInputDialog.getText(
             self,
-            "Marqueur",
-            "Nom du marqueur",
+            translate("menu.item.marker"),
+            translate("dialog.marker.name_label"),
             text=marker.name,
         )
         if not accepted:
