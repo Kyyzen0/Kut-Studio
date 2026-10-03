@@ -825,7 +825,7 @@ class MainWindow(
                 logging.getLogger(__name__).exception("Arrêt : l'étape « %s » a échoué", name)
         super().closeEvent(event)
 
-    def _shutdown_steps(self):
+    def _shutdown_steps(self):  # i18n-ignore: noms d'étapes du journal d'arrêt, jamais affichés
         """Étapes de fermeture dans l'ordre : ``(nom, fonction)``."""
         def attr(name):
             return getattr(self, name, None)
@@ -1781,7 +1781,7 @@ class MainWindow(
             self._debug_timer.stop()
             self._debug_overlay.hide()
 
-    def _refresh_debug_overlay(self) -> None:
+    def _refresh_debug_overlay(self) -> None:  # i18n-ignore: incrustation de débogage (KUT_STUDIO_DEBUG)
         profile = self.runtime.resolved_profile()
         cache = self.runtime.cache.stats()
         fps = self.runtime.diagnostics.viewer_fps()
