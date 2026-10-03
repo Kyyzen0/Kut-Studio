@@ -42,6 +42,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Mapping
 
+from .media_describe import describe_media
 from .media_probe import MediaProbeError, probe_media
 from .project_model import MediaAsset, Project
 
@@ -101,7 +102,10 @@ _TYPE_NAMES = {"audio": "un fichier audio", "video": "une vidéo"}
 
 
 def relink_differences(before: MediaAsset, after: MediaAsset) -> list[str]:
-    """Ce qui a changé entre l'ancien et le nouveau fichier d'un média relié (phrases lisibles)."""
+    """Ce qui a changé entre l'ancien et le nouveau fichier d'un média relié (phrases lisibles).
+
+    Durée, résolution, cadence, présence d'audio, et les repères de synchronisation (timecode, heure BWF).
+    """
     changes: list[str] = []
     if abs(before.duration - after.duration) > 0.04:
         changes.append(f"durée {before.duration:.2f} s → {after.duration:.2f} s")
@@ -111,6 +115,12 @@ def relink_differences(before: MediaAsset, after: MediaAsset) -> list[str]:
         changes.append(f"cadence {before.fps:g} → {after.fps:g} i/s")
     if before.has_audio != after.has_audio:
         changes.append("avec audio" if after.has_audio else "sans audio")
+    # Le timecode (et l'heure d'un fichier BWF) fonde la synchronisation Multicam : un fichier relié qui le perd ou le
+    # change (copie transcodée, autre prise) ne se synchronise plus comme l'original.
+    old, new = dict(describe_media(before)), dict(describe_media(after))
+    for key, label in (("timecode", "timecode"), ("time_reference", "heure BWF")):
+        if old.get(key) != new.get(key):
+            changes.append(f"{label} {old.get(key, 'aucun')} → {new.get(key, 'aucun')}")
     return changes
 
 
@@ -680,7 +690,10 @@ class LibraryOrganization:
         Le fichier relié peut n'avoir ni la même durée, ni la même résolution, ni la même cadence, ni
         les mêmes pistes que l'ancien : sans relecture, le rendu travaillerait avec des valeurs fausses
         (un ``has_audio`` périmé fait échouer l'export, les données de tracking sont rapportées à
-        l'ancienne taille). Le chemin est normalisé via ``os.path.normpath``.
+        l'ancienne taille). Il en va de même des métadonnées de tournage (timecode, heure BWF, bobine, caméra,
+        date de création) : celles du nouveau fichier remplacent les anciennes, et un fichier qui n'en porte
+        pas les efface (un timecode périmé fausserait la synchronisation). Le chemin est normalisé via
+        ``os.path.normpath``.
 
         Raises:
             LibraryError: chemin vide, fichier illisible (le média garde alors son ancien chemin), ou
@@ -713,6 +726,12 @@ class LibraryOrganization:
         asset.height = fresh.height
         asset.fps = fresh.fps
         asset.has_audio = fresh.has_audio
+        asset.timecode = fresh.timecode
+        asset.timecode_fps = fresh.timecode_fps
+        asset.time_reference = fresh.time_reference
+        asset.reel = fresh.reel
+        asset.camera = fresh.camera
+        asset.creation_time = fresh.creation_time
         return asset
 
     def remove_asset(self, asset_id: str, *, keep_orphan_clips: bool = True) -> None:
