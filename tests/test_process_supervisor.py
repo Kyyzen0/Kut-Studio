@@ -435,6 +435,14 @@ def test_brutally_killed_parent_takes_its_simultaneous_children_with_it(parents,
     _assert_guard_done(parent, tmp_path / "registries")
 
 
+def test_brutally_killed_parent_takes_its_preview_render_with_it(parents):
+    """Le cas du rapport de stabilisation : un segment d'aperçu fidèle survivait jusqu'à 120 s."""
+    parent = parents("--children", "0", "--preview")
+    assert len(parent.children) == 1 and _running(parent.children[0])
+    parent.kill()
+    assert _wait_until(lambda: not _running(parent.children[0])), "le rendu d'aperçu a survécu au parent"
+
+
 def test_brutally_killed_parent_takes_a_real_ffmpeg_with_it(parents):
     if shutil.which("ffmpeg") is None:
         pytest.skip("FFmpeg absent de cette machine : variante FFmpeg réel non exécutée")
@@ -480,6 +488,22 @@ def test_normal_close_stops_and_waits_for_every_registered_child(parents):
     assert parent.close() == 0, "shutdown() doit confirmer la fin de chaque enfant"
     assert not any(_running(child) for child in parent.children)
     assert not parent.registry.exists()
+
+
+def test_closing_the_main_window_stops_every_child_still_registered(qtbot):
+    """Étape « processus enfants » de ``_shutdown_steps`` : filet final de la fermeture normale."""
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    supervisor = process_supervisor.default_supervisor()
+    child = supervisor.popen(SLEEP)  # par exemple une sonde lancée par un thread qui n'a pas encore fini
+    try:
+        assert window.close()
+        assert child.wait(timeout=DEADLINE) != 0, "l'enfant devait être tué par la fermeture"
+        assert all(item.identity.pid != child.pid for item in supervisor.live_registrations())
+    finally:
+        supervisor.finish(child)
 
 
 def test_self_check_used_by_the_smoke_test_passes(monkeypatch, tmp_path):

@@ -10,6 +10,7 @@ Usage : ``python supervised_parent.py <dossier des registres> <sortie.json> [opt
 - ``--ffmpeg`` : ces enfants sont un vrai FFmpeg (``-f lavfi -i testsrc``) au lieu d'un ``sleep`` Python ;
 - ``--run`` : un enfant de plus, lancé par ``run()`` bloquant dans un thread (sous-processus encore actif) ;
 - ``--qprocess`` : un enfant de plus, lancé par le ``QProcess`` de l'export, enregistré au signal ``started`` ;
+- ``--preview`` : un enfant de plus, lancé par le rendu annulable de l'aperçu fidèle (``_run_cancellable``) ;
 - ``--unguarded`` : ni gardien ni objet Job (seul le registre reste, pour le balayage au démarrage).
 """
 
@@ -55,17 +56,23 @@ def main(arguments: list[str]) -> int:
     unguarded = "--unguarded" in options
     guard = False if unguarded else None  # None : protection de la plateforme (gardien ou objet Job)
     supervisor = ProcessSupervisor(root, use_reaper=guard, use_job=guard)
+    process_supervisor._default = supervisor  # les modules de l'application (aperçu, export) l'utilisent
     command = _ffmpeg_command() if "--ffmpeg" in options else SLEEP
     expected = count
     children = [supervisor.popen(command) for _ in range(count)]
     if "--run" in options:
         expected += 1
         threading.Thread(target=lambda: supervisor.run(SLEEP, timeout=600), daemon=True).start()
+    if "--preview" in options:
+        expected += 1
+        # Le vrai chemin de l'aperçu fidèle (segment FFmpeg, échéance 120 s dans l'application).
+        from core.preview_engine import _run_cancellable
+
+        threading.Thread(target=lambda: _run_cancellable(SLEEP, None, timeout=600), daemon=True).start()
     application = engine = None
     if "--qprocess" in options:
         expected += 1
-        # Le vrai chemin de l'export : QProcess de ExportEngine, PID enregistré dans le superviseur par défaut.
-        process_supervisor._default = supervisor
+        # Le vrai chemin de l'export : QProcess de ExportEngine, PID enregistré au signal started.
         from PySide6.QtCore import QCoreApplication
 
         from core.export_engine import ExportEngine
