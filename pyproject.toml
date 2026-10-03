@@ -21,12 +21,8 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = [
     "core.audio_recorder",
-    "core.autosave",
     "core.blend_modes",
-    "core.canvas_guides",
     "core.compositing",
-    "core.decode_policy",
-    "core.diagnostics_log",
     "core.export_engine",
     "core.graphics",
     "core.hardware_cache",
@@ -36,19 +32,10 @@ module = [
     "core.mograph_layers",
     "core.mograph_presets",
     "core.mograph_raster",
-    "core.mograph_scene",
     "core.mograph_stream",
-    "core.preview_engine",
-    "core.preview_segments",
-    "core.project_io",
-    "core.render_job",
     "core.render_queue",
     "core.scopes",
     "core.scopes_analyzer",
-    "core.text_style",
-    "core.tracking_frames",
-    "core.transition_presets",
     "core.visual_effects",
-    "core.workspace_state",
 ]
 ignore_errors = true

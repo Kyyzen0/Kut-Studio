@@ -288,7 +288,7 @@ def choose_decoder(
     if getattr(capabilities, "decoding_disabled", False) or not getattr(capabilities, "ffmpeg_available", True):
         return _cpu(requested, "", "decoding_disabled")
     codec = stream.codec if stream is not None else None
-    if codec is None:
+    if stream is None or codec is None:
         reason = "stream_unknown" if stream is None else "profile_unsupported"
         fallback = None
         if requested is not DecodeMode.AUTO:

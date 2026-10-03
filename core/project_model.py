@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from .audio_automation import TrackAutomation, coerce_track_automation
 
 if TYPE_CHECKING:
+    from .compositing import Compositing
     from .effects_model import ClipEffect
     from .graphics import GraphicOverlay
     from .text_style import TextStyle
@@ -290,7 +291,7 @@ class Clip:
     # pour tous les projets historiques et les autres types de clips.
     graphic: GraphicOverlay | None = None
     # Masques, incrustation et mode de fusion (tâche 33).
-    compositing: object = field(default_factory=lambda: _default_compositing())
+    compositing: Compositing = field(default_factory=lambda: _default_compositing())
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
     # --- Séquence imbriquée ---

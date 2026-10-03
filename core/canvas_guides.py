@@ -67,7 +67,11 @@ def guide_from_dict(raw: object) -> Guide | None:
 
 
 def add_guide(sequence, orientation: GuideOrientation | str, position: float) -> Guide:
-    guide = Guide(orientation=orientation, position=position)
+    try:
+        coerced = GuideOrientation(orientation)
+    except ValueError:                   # même repli que ``Guide`` : une orientation inconnue devient verticale
+        coerced = GuideOrientation.VERTICAL
+    guide = Guide(orientation=coerced, position=position)
     sequence.guides = [*sequence.guides, guide]
     return guide
 

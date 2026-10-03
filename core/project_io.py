@@ -94,6 +94,7 @@ from .visual_effects import (
 )
 
 if TYPE_CHECKING:
+    from .graphics import GraphicOverlay
     from .library_organization import AssetAssignment
 # ``library_organization`` est importé paresseusement dans les helpers
 # de sérialisation pour éviter une boucle d'imports (les modèles du
@@ -944,7 +945,7 @@ def _transform_to_dict(transform: ClipTransform) -> dict[str, float]:
     return data
 
 
-def _graphic_to_dict(graphic: object) -> dict[str, Any] | None:
+def _graphic_to_dict(graphic: GraphicOverlay | None) -> dict[str, Any] | None:
     from .graphics import graphic_to_dict
 
     return graphic_to_dict(graphic)
@@ -961,7 +962,7 @@ def _dict_to_transform(raw: dict[str, Any] | None) -> ClipTransform:
     if not isinstance(raw, dict):
         return ClipTransform()
     try:
-        advanced = {
+        advanced: dict[str, Any] = {
             name: (bool(raw[name]) if TRANSFORM_PROPERTIES[name].kind.value == "bool" else float(raw[name]))
             for name in ADVANCED_TRANSFORM_PROPERTIES if name in raw
         }
@@ -998,11 +999,11 @@ def _keyframe_to_dict(keyframe: TransformKeyframe) -> dict[str, Any]:
 
 
 def _optional_slope(raw: object) -> float | None:
-    if raw is None or isinstance(raw, bool):
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
         return None
     try:
         value = float(raw)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
     return value if math.isfinite(value) else None
 

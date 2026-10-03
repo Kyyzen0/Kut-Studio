@@ -716,8 +716,11 @@ def _run_cancellable(command, token, *, timeout: float):
 
     # Supervisé : ce FFmpeg meurt aussi avec l'application tuée brutalement (sinon jusqu'à ``timeout``).
     with supervised_popen(list(command), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as process:
+        stderr_pipe = process.stderr
+        if stderr_pipe is None:                              # jamais : ``PIPE`` demandé ci-dessus
+            raise RuntimeError("FFmpeg a été lancé sans sa sortie d'erreur.")
         chunks: list[bytes] = []
-        drain = threading.Thread(target=lambda: chunks.append(process.stderr.read()), daemon=True)
+        drain = threading.Thread(target=lambda: chunks.append(stderr_pipe.read()), daemon=True)
         drain.start()
         deadline = time.monotonic() + float(timeout)
         killed = False

@@ -149,15 +149,18 @@ class FrameReader:
         supervisor = default_supervisor()
         process = supervisor.popen(self.command(start_index, count), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self._process = process
+        stdout_pipe, stderr_pipe = process.stdout, process.stderr
+        if stdout_pipe is None or stderr_pipe is None:       # jamais : ``PIPE`` demandé ci-dessus
+            raise RuntimeError("FFmpeg a été lancé sans ses tubes de sortie.")
         errors: list[bytes] = []
-        drain = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
+        drain = threading.Thread(target=lambda: errors.append(stderr_pipe.read()), daemon=True)
         drain.start()
         produced = 0
         try:
             while produced < count:
                 if self.cancelled():
                     break
-                buffer = _read_exactly(process.stdout, size)
+                buffer = _read_exactly(stdout_pipe, size)
                 if buffer is None:
                     break
                 yield start_index + produced, np.frombuffer(buffer, dtype=np.uint8).reshape(shape)
@@ -166,7 +169,7 @@ class FrameReader:
             if process.poll() is None:
                 process.kill()
             try:
-                process.stdout.close()
+                stdout_pipe.close()
             except OSError:
                 pass
             supervisor.finish(process)  # attend la fin, puis retire l'enfant du registre
