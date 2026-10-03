@@ -548,6 +548,8 @@ def test_a_malformed_chain_is_cleaned_at_load():
     link = TrackLink.from_dict({"source_clip_id": "v", "tracker_ids": ["t1"],
                                 "continuation_ids": ["v", "b", "b", "", 3]})
     assert link is not None and link.continuation_ids == ("b", "3")
+    text = TrackLink.from_dict({"source_clip_id": "v", "tracker_ids": ["t1"], "continuation_ids": "abc"})
+    assert text is not None and text.continuation_ids == ()              # un texte n'est pas une liste de clips
     own = TrackLink(source_clip_id="", tracker_ids=("t1",), continuation_ids=("x",))
     assert own.continuation_ids == () and own.source_ids == ()
 

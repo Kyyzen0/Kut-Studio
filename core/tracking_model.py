@@ -120,6 +120,13 @@ def quantize(value: float) -> float:
     return _fixed(value) / FIXED_POINT
 
 
+def _string_list(value: object) -> tuple[str, ...]:
+    """Liste de chaînes lue dans un fichier : tout ce qui n'est pas une liste (texte, nombre) est ignoré."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value)
+
+
 def new_tracking_id() -> str:
     return uuid.uuid4().hex[:8]
 
@@ -727,7 +734,7 @@ class TrackLink:
                 mask_id=str(raw.get("mask_id", "")), position=bool(raw.get("position", True)),
                 rotation=bool(raw.get("rotation", False)), scale=bool(raw.get("scale", False)),
                 reference_index=int(raw.get("reference_index", 0)), enabled=bool(raw.get("enabled", True)),
-                continuation_ids=tuple(str(c) for c in raw.get("continuation_ids") or ()),
+                continuation_ids=_string_list(raw.get("continuation_ids")),
             )
         except (TypeError, ValueError):
             return None
