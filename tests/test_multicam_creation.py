@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QDialog
 
 from audio_scenes import SAMPLE_RATE, delayed, speech, window as cut, write_wav
 from core.multicam import angle_offset
+from multicam_stubs import keep_preview_player_off_the_disk
 from core.multicam_model import AudioMode, SyncMethod, SyncStatus
 from core.project_model import Clip, Marker, MediaAsset, Project, Track
 from ui import i18n
@@ -42,6 +43,7 @@ def window(qtbot, monkeypatch):
     main = MainWindow()
     qtbot.addWidget(main)
     main.timeline_timer.stop()
+    keep_preview_player_off_the_disk(main, monkeypatch)
     return main
 
 

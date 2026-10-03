@@ -19,14 +19,14 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 from core.multicam import PAGE_SIZE, AngleSample, AngleState, angle_samples_at, grid_shape, page_count
 from core.multicam_ops import multicam_segment_at
 from core.multicam_feed import AngleFeed, FeedPool, Frame, TileQualityGovernor, lag_ratio, tile_profile
 from core.project_model import Project
 from ui import i18n
-from ui.theme import active_palette
+from ui.theme import active_palette, label_style
 
 POLL_MS = 40
 """Cadence de rafraîchissement des tuiles tant que le moniteur est visible."""
@@ -48,6 +48,7 @@ class AngleTile(QWidget):
     """Une tuile : image de l'angle, nom, couleur, angle actif, états « hors ligne » / « pas de signal »."""
 
     clicked = Signal(int)
+    context_requested = Signal(int, object)     # (rang de l'angle, position écran) : clic droit
 
     def __init__(self, index: int, parent: QWidget | None = None, *, program: bool = False) -> None:
         super().__init__(parent)
@@ -86,6 +87,12 @@ class AngleTile(QWidget):
         self.setToolTip(tooltip)
         if changed:
             self.update()
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 - API Qt
+        if self.program:
+            return
+        self.context_requested.emit(self.index, event.globalPos())
+        event.accept()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - API Qt
         if event.button() == Qt.LeftButton and not self.program:
@@ -157,6 +164,8 @@ class MulticamViewer(QWidget):
 
     angle_requested = Signal(int)
     settings_requested = Signal()
+    proxies_requested = Signal()
+    open_source_requested = Signal(int)         # « Ouvrir la source sur cet angle » (étalonner, corriger, repositionner)
 
     def __init__(
         self,
@@ -216,6 +225,17 @@ class MulticamViewer(QWidget):
         header.addWidget(self.page_label)
         header.addWidget(self.page_next)
         root.addLayout(header)
+        notice = QHBoxLayout()
+        self.proxy_notice = QLabel()
+        self.proxy_notice.setWordWrap(True)
+        self.proxy_notice.setStyleSheet(label_style(11, "muted", 500))
+        self.proxy_button = QToolButton()
+        self.proxy_button.setFocusPolicy(Qt.TabFocus)
+        self.proxy_button.clicked.connect(self.proxies_requested.emit)
+        notice.addWidget(self.proxy_notice, 1)
+        notice.addWidget(self.proxy_button)
+        self._notice_widgets = (self.proxy_notice, self.proxy_button)
+        root.addLayout(notice)
         self.empty_label = QLabel()
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.empty_label.setWordWrap(True)
@@ -232,6 +252,8 @@ class MulticamViewer(QWidget):
         self.title.setText(i18n.translate("multicam.viewer.title"))
         self.settings_button.setText(i18n.translate("multicam.settings.open"))
         self.settings_button.setToolTip(i18n.translate("multicam.menu.settings"))
+        self.proxy_notice.setText(i18n.translate("multicam.viewer.proxy_notice"))
+        self.proxy_button.setText(i18n.translate("multicam.viewer.proxy_generate"))
         self.empty_label.setText(i18n.translate("multicam.viewer.empty"))
         self.page_previous.setToolTip(i18n.translate("multicam.viewer.page_previous"))
         self.page_next.setToolTip(i18n.translate("multicam.viewer.page_next"))
@@ -343,6 +365,14 @@ class MulticamViewer(QWidget):
             frame=program, active=False, audible=False, audio_only=bool(program_sample and program_sample.audio_only),
         )
         self._update_pages()
+        self._update_proxy_notice()
+
+    def _update_proxy_notice(self) -> None:
+        """Avec quatre angles vidéo ou plus qui lisent leurs originaux, des proxys fluidifient nettement le moniteur."""
+        live = [s for s in self._samples if s.state is AngleState.LIVE and not s.audio_only]
+        lacking = [s for s in live if self._resolve(s.path) == s.path]
+        for widget in self._notice_widgets:
+            widget.setVisible(len(live) >= 4 and bool(lacking))
 
     @staticmethod
     def _tooltip(sample: AngleSample) -> str:
@@ -352,12 +382,24 @@ class MulticamViewer(QWidget):
         while len(self._tiles) < count:
             tile = AngleTile(len(self._tiles), self.body)
             tile.clicked.connect(self._on_tile_clicked)
+            tile.context_requested.connect(self._on_tile_menu)
             tile.show()
             self._tiles.append(tile)
         for position, tile in enumerate(self._tiles):
             tile.index = self._page * PAGE_SIZE + position
             tile.setVisible(position < count)
         self._layout_tiles(count)
+
+    def _on_tile_menu(self, index: int, position) -> None:
+        menu = QMenu(self)
+        open_source = menu.addAction(i18n.translate("multicam.viewer.open_source_angle"))
+        if self._run_menu(menu, position) is open_source:
+            self.open_source_requested.emit(index)
+
+    @staticmethod
+    def _run_menu(menu, position):
+        """Affiche le menu et rend l'action choisie (isolé : un test le remplace, un menu modal bloquerait)."""
+        return menu.exec(position)
 
     def _on_tile_clicked(self, index: int) -> None:
         self.set_active_hint(index)

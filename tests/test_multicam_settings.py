@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 
 from audio_scenes import speech
 from core.multicam import angle_offset
+from multicam_stubs import keep_preview_player_off_the_disk
 from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
 from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip, switch_angle
 from core.project_model import MediaAsset, Project, Track
@@ -32,6 +33,7 @@ def window(qtbot, monkeypatch):
     main = MainWindow()
     qtbot.addWidget(main)
     main.timeline_timer.stop()
+    keep_preview_player_off_the_disk(main, monkeypatch)
     return main
 
 

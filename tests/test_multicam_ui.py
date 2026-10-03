@@ -12,6 +12,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMenu
 
 from core.multicam_model import AudioMode, SyncMethod
+from multicam_stubs import keep_preview_player_off_the_disk
 from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip, set_audio_policy
 from core.project_model import Clip, MediaAsset, Project, Track
 
@@ -27,6 +28,7 @@ def window(qtbot, monkeypatch):
     main = MainWindow()
     qtbot.addWidget(main)
     main.timeline_timer.stop()
+    keep_preview_player_off_the_disk(main, monkeypatch)
     return main
 
 
@@ -301,3 +303,21 @@ def test_closing_the_window_stops_the_monitor_feeds(window, monkeypatch):
     assert feeds
     window.multicam_viewer.shutdown()
     assert all(feed.closed for feed in feeds) and stubs is not None
+
+
+def test_the_proxy_request_covers_every_camera_of_the_source_and_the_tile_menu_opens_the_source_on_an_angle(window, monkeypatch):
+    project, source, segment = _multicam_window(window)
+    requested = []
+    monkeypatch.setattr(window, "_request_proxies", lambda assets: requested.append(sorted(a.id for a in assets)) or len(assets))
+    window.generate_proxies_for_multicam()
+    assert requested == [["camA", "camB", "camC"]]
+    window.playhead_seconds = 1.0
+    window.open_multicam_source_at_angle(2)
+    assert window.project.active_sequence_id == source.id
+    selected = window.timeline_panel.selected_clip_id
+    assert selected == source.tracks[2].clips[0].id                      # le clip de la caméra 3
+    window.playhead_seconds = 500.0
+    window.go_to_parent_sequence()
+    window.playhead_seconds = 500.0
+    window.open_multicam_source_at_angle(0)
+    assert "Aucun segment Multicam" in window.statusBar().currentMessage()

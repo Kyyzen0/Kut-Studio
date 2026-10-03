@@ -238,3 +238,39 @@ def test_the_viewer_labels_follow_the_language(qtbot, tmp_path):
     i18n.set_language("es")
     viewer.retranslate()
     assert viewer.page_next.toolTip() == "Página siguiente"
+
+
+# --- proxys recommandés, menu d'une tuile ---------------------------------------------------------------------------------------
+
+
+def test_four_or_more_angles_reading_their_originals_recommend_proxies(qtbot, tmp_path):
+    project, _segment = _project(tmp_path, 4)
+    viewer, state = _viewer(qtbot, project)
+    state["time"] = 6.0                                    # les quatre angles sont actifs (la caméra 3 démarre à 5 s)
+    viewer.refresh()
+    assert not viewer.proxy_notice.isHidden() and not viewer.proxy_button.isHidden()
+    requested = []
+    viewer.proxies_requested.connect(lambda: requested.append(1))
+    viewer.proxy_button.click()
+    assert requested == [1]
+    viewer._resolve = lambda path: path.replace(".mp4", ".proxy.mp4")             # noqa: SLF001 - des proxys existent
+    viewer.refresh()
+    assert viewer.proxy_notice.isHidden()
+    small, _segment = _project(tmp_path, 2)
+    viewer2, _state = _viewer(qtbot, small)
+    viewer2.refresh()
+    assert viewer2.proxy_notice.isHidden()                  # deux angles : inutile de recommander
+
+
+def test_the_tile_menu_opens_the_source_on_that_angle(qtbot, tmp_path, monkeypatch):
+    project, _segment = _project(tmp_path, 4)
+    viewer, _state = _viewer(qtbot, project)
+    viewer.refresh()
+    asked = []
+    viewer.open_source_requested.connect(asked.append)
+    monkeypatch.setattr(viewer, "_run_menu", lambda menu, _position: menu.actions()[0])
+    viewer._on_tile_menu(2, QPoint(0, 0))                 # noqa: SLF001
+    assert asked == [2]
+    monkeypatch.setattr(viewer, "_run_menu", lambda menu, _position: None)
+    viewer._on_tile_menu(1, QPoint(0, 0))                 # noqa: SLF001 - menu fermé sans choix
+    assert asked == [2]

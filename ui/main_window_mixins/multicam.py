@@ -48,6 +48,8 @@ class MulticamMixin:
         viewer.set_provider(self._multicam_viewer_context)
         viewer._resolve = self._multicam_tile_path           # noqa: SLF001 - la fenêtre choisit proxy ou original
         viewer.angle_requested.connect(lambda index: self.switch_multicam_angle(index + 1))
+        viewer.proxies_requested.connect(self.generate_proxies_for_multicam)
+        viewer.open_source_requested.connect(self.open_multicam_source_at_angle)
 
     def _multicam_shortcut_handlers(self) -> dict:
         handlers = {
@@ -204,6 +206,33 @@ class MulticamMixin:
             self._report_edit_refused(i18n.translate("multicam.message.not_multicam"))
             return
         self.open_nested_clip(clip.id)
+
+    def generate_proxies_for_multicam(self) -> int:
+        """Proxys des caméras de la source sous la tête de lecture : les tuiles les lisent dès qu'ils sont prêts."""
+        segment = multicam_segment_at(self.project, self.playhead_seconds)
+        source = self.project.get_sequence(segment.sequence_id) if segment is not None else None
+        if source is None or source.multicam is None:
+            return 0
+        wanted = {
+            clip.asset_id for angle in source.multicam.angles for track in source.tracks if track.id == angle.track_id
+            and track.type == "video" for clip in track.clips
+        }
+        return self._request_proxies([asset for asset in self.project.media_assets if asset.id in wanted])
+
+    def open_multicam_source_at_angle(self, angle_index: int) -> None:
+        """Ouvre la source du segment courant sur le clip d'un angle (étalonner, corriger la synchro, repositionner)."""
+        segment = multicam_segment_at(self.project, self.playhead_seconds)
+        if segment is None:
+            self._report_edit_refused(i18n.translate("multicam.message.no_segment"))
+            return
+        source = self.project.get_sequence(segment.sequence_id)
+        angles = source.multicam.angles if source is not None and source.multicam is not None else []
+        if not 0 <= angle_index < len(angles):
+            return
+        self.open_nested_clip(segment.id)
+        track = next((t for t in source.tracks if t.id == angles[angle_index].track_id), None)
+        if track is not None and track.clips:
+            self._restore_clip_selection(track.clips[0].id)
 
     def flatten_multicam_segment(self, clip_id: str | None = None):
         """« Aplatir le segment Multicam » : le remplace par les clips ordinaires qu'il montre."""

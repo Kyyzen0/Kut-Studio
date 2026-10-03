@@ -301,3 +301,17 @@ _SETTINGS: dict[str, dict[str, str]] = {
     ),
 }
 MULTICAM_TRANSLATIONS.update(_SETTINGS)
+
+
+_VIEWER_EXTRA: dict[str, dict[str, str]] = {
+    "multicam.viewer.proxy_notice": _t(
+        "Des proxys fluidifient nettement le multi-caméra : les angles lisent encore leurs originaux.",
+        "Proxies make multicam much smoother: the angles still read their originals.",
+        "Los proxies hacen la multicámara mucho más fluida: los ángulos aún leen sus originales.",
+    ),
+    "multicam.viewer.proxy_generate": _t("Générer des proxys", "Generate proxies", "Generar proxies"),
+    "multicam.viewer.open_source_angle": _t(
+        "Ouvrir la source sur cet angle", "Open the source on this angle", "Abrir la fuente en este ángulo",
+    ),
+}
+MULTICAM_TRANSLATIONS.update(_VIEWER_EXTRA)

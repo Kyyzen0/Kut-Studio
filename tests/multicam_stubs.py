@@ -35,3 +35,16 @@ class StubFeed(AngleFeed):
 
     def close(self) -> None:
         self.closed = True
+
+
+def keep_preview_player_off_the_disk(window, monkeypatch) -> None:
+    """Le lecteur de l'aperçu ne doit pas ouvrir les médias fictifs (``/media/a.mp4``) des projets de test.
+
+    Un vrai ``QMediaPlayer`` qui reçoit un chemin inexistant journalise « Could not open media » **depuis un thread du
+    pool de Qt Multimedia**, à un instant que le test ne maîtrise pas. Si ce message tombe pendant que pytest-qt change de
+    gestionnaire de messages (début ou fin de test), PySide déréférence un rappel à moitié restauré et le processus meurt
+    (SIGSEGV observé sous xdist, jamais en lançant le fichier seul ; voir aussi ``_release_media_players_at_exit``,
+    qui traite la même famille de plantage à la sortie du processus). Aucun test Multicam ne lit un vrai média ici.
+    """
+    monkeypatch.setattr(window.preview_panel.player, "setSource", lambda *_a, **_k: None)
+
