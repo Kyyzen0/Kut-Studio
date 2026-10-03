@@ -18,6 +18,7 @@ from .audio_automation import TrackAutomation, coerce_track_automation
 
 if TYPE_CHECKING:
     from .compositing import Compositing
+    from .multicam_model import MulticamSource
     from .effects_model import ClipEffect
     from .graphics import GraphicOverlay
     from .text_style import TextStyle
@@ -309,6 +310,11 @@ class Clip:
     # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
     # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
     tracking: ClipTracking | None = None
+    # --- Multicam ---
+    # Angle vidéo choisi par ce clip quand ``sequence_id`` désigne une source Multicam
+    # (:attr:`Sequence.multicam`). Vide : le premier angle de la source. Sans effet sur une séquence ordinaire.
+    # Un « changement d'angle » est une coupe ordinaire dont la moitié droite reçoit un autre ``angle_id``.
+    angle_id: str = ""
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -667,6 +673,10 @@ class Sequence:
     guides: list = field(default_factory=list)
     # Réglages du flou de mouvement (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = field(default_factory=lambda: _default_motion_blur())
+    # --- Multicam ---
+    # Description des angles quand la séquence est une **source Multicam** (``None`` : séquence ordinaire).
+    # Le décalage d'un angle est la position de ses clips : il n'est stocké nulle part ailleurs.
+    multicam: MulticamSource | None = None
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():
