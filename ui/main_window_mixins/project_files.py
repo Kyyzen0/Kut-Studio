@@ -96,7 +96,7 @@ class ProjectFilesMixin:
             default_path = self.current_project_path
         else:
             default_path = os.path.join(
-                os.path.expanduser("~"), export_file_name(self.project.name, "kut", fallback="projet")
+                os.path.expanduser("~"), export_file_name(self.project.name, "kut", fallback=i18n.translate("dialog.save.default_name"))
             )
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
@@ -231,9 +231,7 @@ class ProjectFilesMixin:
                 master_muted=self._master_muted,
             )
         except (ValueError, OSError, KeyError) as exc:
-            self.export_panel.mark_export_error(
-                i18n.translate("render.export.invalid", error=exc)
-            )
+            self.export_panel.mark_export_error(i18n.translate("render.export.invalid", error=exc))
             return None
         if start:
             self.render_queue.start_job(job.id)

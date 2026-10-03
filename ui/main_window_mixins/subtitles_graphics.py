@@ -137,9 +137,7 @@ class SubtitlesGraphicsMixin:
                 created_clips.append(clip)
         except (KeyError, ValueError):
             if created_clips:
-                self._record_history(
-                    i18n.translate("history.subtitle.import_srt", count=len(created_clips))
-                )
+                self._record_history(i18n.translate("history.subtitle.import_srt", count=len(created_clips)))
                 self._reload_timeline_preserving_selection()
                 self._update_timeline_duration()
                 self._refresh_project_library()

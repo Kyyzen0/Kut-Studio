@@ -233,9 +233,7 @@ class LayersPanel(QWidget):
         self.tree.move_requested.connect(self.move_requested.emit)
         layout.addWidget(self.tree, 1)
 
-        self.empty_hint = QLabel(
-            translate("mograph.layers.empty")
-        )
+        self.empty_hint = QLabel(translate("mograph.layers.empty"))
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setStyleSheet(label_style(11, "muted", 500))
         layout.addWidget(self.empty_hint)

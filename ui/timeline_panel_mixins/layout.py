@@ -155,9 +155,7 @@ class LayoutMixin:
         widget par clip.
         """
         count = len(self.clip_views)
-        self.clip_count_label.setText(
-            translate("timeline.clip_count_one", count=count) if count == 1 else translate("timeline.clip_count_many", count=count)
-        )
+        self.clip_count_label.setText(translate("timeline.clip_count_one", count=count) if count == 1 else translate("timeline.clip_count_many", count=count))
         self._update_scroll_extent()
         self._configure_grid()
         signature = self._header_signature()

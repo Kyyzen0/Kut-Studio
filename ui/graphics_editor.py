@@ -265,9 +265,7 @@ class GraphicsEditor(QGroupBox):
         self.parent_combo.currentIndexChanged.connect(self._on_parent_changed)
         self.layer_section.form.addRow(i18n.translate("mograph.layers.col_parent"), self.parent_combo)
         self.motion_blur_check = QCheckBox(i18n.translate("mograph.motion_blur"))
-        self.motion_blur_check.setToolTip(
-            i18n.translate("mograph.graphics.motion_blur_tooltip")
-        )
+        self.motion_blur_check.setToolTip(i18n.translate("mograph.graphics.motion_blur_tooltip"))
         self.motion_blur_check.toggled.connect(lambda checked: self._emit("motion_blur", checked))
         self.layer_section.form.addRow(self.motion_blur_check)
         root.addWidget(self.layer_section)

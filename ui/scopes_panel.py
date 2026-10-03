@@ -418,7 +418,7 @@ class ScopesPanel(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(Spacing.xs)
 
-        title = QLabel("SCOPES")
+        title = QLabel(translate("scopes.title"))
         title.setStyleSheet(label_style(10, "muted", 800))
         toolbar.addWidget(title)
         toolbar.addStretch(1)

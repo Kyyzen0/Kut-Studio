@@ -106,7 +106,7 @@ class TrackRowHeader(QFrame):
         if getattr(track, "muted", False):
             state_parts.append(translate("timeline.track.muted"))
         if getattr(track, "solo", False):
-            state_parts.append("Solo")
+            state_parts.append(translate("mixer.solo"))
         if getattr(track, "collapsed", False):
             state_parts.append(translate("timeline.track.collapsed"))
         state_label = QLabel(" · ".join(state_parts) or track.name)

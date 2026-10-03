@@ -316,6 +316,7 @@ DIALOGS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Preset de audio no encontrado",
     ),
     "status.color.invalid": _t("Étalonnage invalide", "Invalid color grading", "Corrección de color no válida"),
+    "dialog.save.default_name": _t("projet", "project", "proyecto"),
 }
 
 __all__ = ["DIALOGS_TRANSLATIONS"]

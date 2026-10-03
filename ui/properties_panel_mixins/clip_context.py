@@ -8,6 +8,7 @@ from core.visual_effects import (
     ClipTransform,
     TransformKeyframe,
 )
+from ui.i18n import translate
 
 
 class ClipContextMixin:
@@ -46,7 +47,7 @@ class ClipContextMixin:
                 self.selected_clip_track_type = None
                 self._current_transform = None
                 self._current_keyframes = []
-                self.clip_name.setText("Aucun clip sélectionné")
+                self.clip_name.setText(translate("no_clip_selected"))
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
                 self._set_group_condition(self.subtitle_group, False)
@@ -176,8 +177,8 @@ class ClipContextMixin:
             # Affichage des durées
             source_duration = getattr(view, "source_duration", 0.0)
             timeline_duration = duration
-            self.source_duration_label.setText(f"Source: {source_duration:.2f}s")
-            self.timeline_duration_label.setText(f"Timeline: {timeline_duration:.2f}s")
+            self.source_duration_label.setText(translate("inspector.source_duration", seconds=format(source_duration, '.2f')))
+            self.timeline_duration_label.setText(translate("inspector.timeline_duration", seconds=format(timeline_duration, '.2f')))
             
             # Désactiver les contrôles incompatibles
             if is_audio_clip and is_frozen:

@@ -19,6 +19,7 @@ from ui.design_system import Spacing
 from ui.icons import IconName, make_icon
 from ui.library_organization_widgets import AssetUsageBadge
 from ui.theme import COLORS
+from ui.i18n import translate
 
 
 class AssetBin(QWidget):
@@ -297,12 +298,10 @@ class AssetBin(QWidget):
             return base
         extras: list[str] = []
         if badge.usage_count > 0:
-            extras.append(f"Utilisé {badge.usage_count}× sur la timeline")
+            extras.append(translate("library.asset.used", count=badge.usage_count))
         if badge.is_missing:
-            extras.append("⚠ Fichier source introuvable — utilisez Relier")
+            extras.append(translate("library.asset.missing_tip"))
         if badge.proxy_state and badge.proxy_state != "none":
-            from ui.i18n import translate
-
             line = translate(f"proxy.state.{badge.proxy_state}", progress=badge.proxy_progress)
             if badge.proxy_state == "error" and badge.proxy_error:
                 line += f" — {badge.proxy_error}"
@@ -427,7 +426,7 @@ def _format_duration(seconds: float | None) -> str:
 def _format_asset_caption(asset: MediaAsset) -> str:
     """Construit un libellé court (nom + durée) pour la grille."""
     duration = _format_duration(asset.duration)
-    name = (asset.name or "Sans nom").strip()
+    name = (asset.name or translate("library.asset.unnamed")).strip()
     if len(name) > 24:
         name = name[:23] + "…"
     return f"{name}\n{duration}"

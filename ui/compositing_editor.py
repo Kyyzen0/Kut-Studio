@@ -64,7 +64,7 @@ class CompositingEditor(QGroupBox):
     value_changed = Signal(object)
 
     def __init__(self, group_style: str, parent=None):
-        super().__init__("Compositing", parent)
+        super().__init__(i18n.translate("inspector.tab.compositing"), parent)
         self.setObjectName("compositing_group")
         self.setStyleSheet(group_style)
         self._value = Compositing()

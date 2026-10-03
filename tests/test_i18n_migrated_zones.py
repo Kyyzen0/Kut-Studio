@@ -373,3 +373,116 @@ def test_the_export_panel_title_and_quality_choices_follow_the_language(language
     assert panel.close_button.toolTip() == "Close the export"
     i18n.set_language("es")
     assert quality() == ["Alta", "Estándar", "Baja"]
+
+
+# ---------------------------------------------------------------------------
+# Inspecteur
+# ---------------------------------------------------------------------------
+
+
+def _inspector(qtbot):
+    from ui.properties_panel import PropertiesPanel
+
+    panel = PropertiesPanel(lambda *_args: None, lambda *_args: None)
+    qtbot.addWidget(panel)
+    return panel
+
+
+def _form_labels(panel, group) -> list[str]:
+    from PySide6.QtWidgets import QFormLayout, QLabel
+
+    form = group.layout()
+    assert isinstance(form, QFormLayout)
+    return [item.widget().text() for item in (form.itemAt(i, QFormLayout.LabelRole) for i in range(form.rowCount()))
+            if item is not None and isinstance(item.widget(), QLabel)]
+
+
+@pytest.mark.parametrize(("language", "tabs", "more", "group", "rows"), [
+    ("fr", ["Clip", "Couleur", "Audio", "Effets"], "Outils spécialisés", "Clip sélectionné", ["Nom", "Durée", "Position"]),
+    ("en", ["Clip", "Color", "Audio", "Effects"], "Specialized tools", "Selected clip", ["Name", "Duration", "Position"]),
+    ("es", ["Clip", "Color", "Audio", "Efectos"], "Herramientas especializadas", "Clip seleccionado",
+     ["Nombre", "Duración", "Posición"]),
+])
+def test_the_inspector_follows_the_language_while_open(language_reset, qtbot, language, tabs, more, group, rows):
+    panel = _inspector(qtbot)
+    i18n.set_language(language)                                  # abonné : aucun appel explicite
+    visible_tabs = [panel.inspector_tab_buttons[i].text() for i in (0, 1, 3, 2)]
+    assert visible_tabs == tabs
+    assert panel.inspector_more_button.toolTip() == more == panel.inspector_more_button.accessibleName()
+    clip_group = next(g for g, key in panel._group_titles if key == "inspector.clip.title")
+    assert clip_group.title() == group
+    assert _form_labels(panel, clip_group) == rows
+    with i18n.strict_translations():
+        panel.retranslate()
+
+
+def test_the_inspector_specialized_tool_shown_in_the_more_button_is_retranslated(language_reset, qtbot):
+    panel = _inspector(qtbot)
+    panel._select_inspector_tab(4)
+    assert panel.inspector_more_button.text() == "Graphiques"
+    i18n.set_language("en")
+    assert panel.inspector_more_button.text() == "Graphics"
+    assert [action.text() for action in panel.inspector_more_button.menu().actions()] == [
+        "Graphics", "Compositing", "Tracking"]
+
+
+@pytest.mark.parametrize("language", ["en", "es"])
+def test_the_color_grading_group_builds_in_strict_mode(language_reset, qtbot, language):
+    i18n.set_language(language)
+    with i18n.strict_translations():
+        panel = _inspector(qtbot)
+    expected = {"en": "Color grading", "es": "Corrección de color"}[language]
+    assert panel.color_group.title() == expected
+    assert panel.color_lut_label.text() == {"en": "No LUT", "es": "Ninguna LUT"}[language]
+
+
+# ---------------------------------------------------------------------------
+# Bibliothèque et panneau Projet ; construction complète dans chaque langue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("language", "title", "scopes", "search", "chips", "import_text"), [
+    ("fr", "Médias", ["Projet", "Favoris"], "Rechercher dans la bibliothèque…",
+     ["Tous", "Vidéo", "Audio", "Images", "Utilisés", "Non utilisés", "Manquants"], "  Importer"),
+    ("en", "Media", ["Project", "Favorites"], "Search the library…",
+     ["All", "Video", "Audio", "Images", "Used", "Unused", "Missing"], "  Import"),
+    ("es", "Medios", ["Proyecto", "Favoritos"], "Buscar en la biblioteca…",
+     ["Todos", "Vídeo", "Audio", "Imágenes", "Usados", "No usados", "Ausentes"], "  Importar"),
+])
+def test_the_library_panel_follows_the_language(window, language, title, scopes, search, chips, import_text):
+    panel = window.project_panel
+    i18n.set_language(language)
+    assert panel._title_label.text() == title
+    assert [button.text() for button in panel.scope_tab_buttons] == scopes
+    assert panel.search_field.placeholderText() == search
+    assert [panel.filter_chips._buttons[chip_id].text() for chip_id, _key in panel.filter_chips._CHIPS] == chips
+    assert panel.import_button.text() == import_text
+    assert panel.media_count.text().split(" ", 1)[1] in {
+        "fr": {"média", "médias"}, "en": {"media"}, "es": {"medio", "medios"}}[language]
+    assert panel.folder_tree.header_label.text() == {"fr": "DOSSIERS", "en": "FOLDERS", "es": "CARPETAS"}[language]
+
+
+@pytest.mark.parametrize("language", ["en", "es"])
+def test_the_whole_main_window_builds_in_strict_mode_in_another_language(
+    language_reset, qtbot, monkeypatch, tmp_path, language
+):
+    """Aucune clé manquante ni repli sur le français dans tout ce que la fenêtre construit à son ouverture."""
+    from dataclasses import replace
+
+    from core.user_settings import load_user_settings, save_user_settings
+    from ui.main_window import MainWindow
+
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path / "config"))
+    # La fenêtre applique la langue des préférences à son ouverture : c'est elle qu'il faut régler.
+    save_user_settings(replace(load_user_settings(), language=language))
+    i18n.set_language(language)
+    with i18n.strict_translations():
+        main = MainWindow()
+        qtbot.addWidget(main)
+        if getattr(main, "timeline_timer", None) is not None:
+            main.timeline_timer.stop()
+        main._retranslate_ui()
+    texts = {"en": ("Export", "Search the library…", "Edit"), "es": ("Exportar", "Buscar en la biblioteca…", "Editar")}[language]
+    assert main.export_button.text() == " " + texts[0]
+    assert main.project_panel.search_field.placeholderText() == texts[1]
+    assert main.top_nav_buttons[0].text() == texts[2]

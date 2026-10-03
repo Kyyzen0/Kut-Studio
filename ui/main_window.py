@@ -2151,6 +2151,7 @@ class MainWindow(
         self._sync_workspace_menu()
         self.timeline_panel.sequence_bar.retranslate()
         self.project_panel.sequence_view.retranslate()
+        self.project_panel.retranslate()
         self.workspace.retranslate()
         self._retranslate_top_bar()
         self.side_rail.retranslate()

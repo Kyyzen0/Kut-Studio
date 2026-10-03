@@ -554,11 +554,11 @@ def write_baseline(counts: Counter[tuple[str, str]], path: Path = BASELINE_PATH)
         for (file, text), count in sorted(counts.items())
         if count > 0
     ]
-    body = ",\n".join(f"  {row}" for row in rows)
+    entries = "[\n%s\n ]" % ",\n".join(f"  {row}" for row in rows) if rows else "[]"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        '{\n "version": %d,\n "comment": %s,\n "entries": [\n%s\n ]\n}\n'
-        % (BASELINE_VERSION, json.dumps(_BASELINE_HEADER, ensure_ascii=False), body),
+        '{\n "version": %d,\n "comment": %s,\n "entries": %s\n}\n'
+        % (BASELINE_VERSION, json.dumps(_BASELINE_HEADER, ensure_ascii=False), entries),
         encoding="utf-8",
     )
 
@@ -598,8 +598,8 @@ def compare(findings: list[Finding], baseline: Counter[tuple[str, str]]) -> Comp
 
 NEW_ADVICE = (
     "Ne l'ajoutez PAS à la baseline : passez par le système i18n existant. Remplacez le littéral par "
-    'translate("domaine.clé") (voir ui/i18n.py, ui/i18n_hardware.py, ui/i18n_mograph.py, ui/i18n_tracking.py) '
-    "et ajoutez la clé en fr, en ET es (mêmes champs {nom} dans les trois langues). Le texte français doit rester "
+    'translate("domaine.clé") (clé à ajouter dans ui/i18n.py ou dans le module de domaine ui/i18n_*.py qui convient ; '
+    "voir docs/i18n.md) en fr, en ET es (mêmes champs {nom} dans les trois langues). Le texte français doit rester "
     "identique si un test le vérifie. Donnée technique qui ressemble à du français : `# i18n-ignore: raison` "
     "sur la ligne."
 )

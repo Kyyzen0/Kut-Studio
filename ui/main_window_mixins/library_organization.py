@@ -43,9 +43,7 @@ class LibraryOrganizationMixin:
         except (LibraryError, LibraryNameError) as exc:
             _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            translate("history.library.folder_create", name=folder.name)
-        )
+        self._record_history(translate("history.library.folder_create", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -67,9 +65,7 @@ class LibraryOrganizationMixin:
         except (LibraryError, LibraryNameError) as exc:
             _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            translate("history.library.folder_rename", name=folder.name)
-        )
+        self._record_history(translate("history.library.folder_rename", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -98,9 +94,7 @@ class LibraryOrganizationMixin:
         except LibraryError as exc:
             _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            translate("history.library.folder_delete", name=folder.name)
-        )
+        self._record_history(translate("history.library.folder_delete", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -143,9 +137,7 @@ class LibraryOrganizationMixin:
             return
         # On n'enregistre l'historique que si le déplacement est
         # effectif (le service est idempotent).
-        self._record_history(
-            translate("history.library.asset_move")
-        )
+        self._record_history(translate("history.library.asset_move"))
         self._refresh_project_library()
         self._mark_dirty()
 

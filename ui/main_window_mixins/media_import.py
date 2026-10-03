@@ -35,9 +35,7 @@ class MediaImportMixin:
             clip = add_clip_to_track(self.project, asset_id, track_id, timeline_start)
         except (KeyError, ValueError):
             return
-        self._record_history(
-            translate("history.media.drop", name=asset.name, track=track_id)
-        )
+        self._record_history(translate("history.media.drop", name=asset.name, track=track_id))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._refresh_project_library()

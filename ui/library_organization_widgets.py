@@ -193,14 +193,14 @@ class FolderTreeWidget(QWidget):
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(Spacing.xs)
-        self.header_label = QLabel("DOSSIERS")
+        self.header_label = QLabel(translate("library.folders.title"))
         self.header_label.setStyleSheet(label_style(10, "muted", 800))
         header_row.addWidget(self.header_label)
         header_row.addStretch(1)
         self.add_button = QToolButton()
         self.add_button.setObjectName("folderAddButton")
         self.add_button.setIcon(make_icon(IconName.PLUS, size=12))
-        self.add_button.setToolTip("Nouveau dossier")
+        self.add_button.setToolTip(translate("dialog.folder.new_title"))
         self.add_button.setCursor(Qt.PointingHandCursor)
         self.add_button.setFocusPolicy(Qt.NoFocus)
         self.add_button.setFixedSize(20, 20)
@@ -267,25 +267,25 @@ class FolderTreeWidget(QWidget):
             return
 
         # Entrée « Tous » — affiche l'intégralité des médias.
-        all_item = QTreeWidgetItem([_label_with_count("Tous", 0)])
+        all_item = QTreeWidgetItem([_label_with_count(translate("library.filter.all"), 0)])
         all_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ALL)
-        all_item.setData(0, _FOLDER_NAME_ROLE, "Tous")
+        all_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.all"))
         self.tree.addTopLevelItem(all_item)
 
         # Entrée « Racine » — médias sans dossier.
-        root_item = QTreeWidgetItem([_label_with_count("Racine", 0)])
+        root_item = QTreeWidgetItem([_label_with_count(translate("library.folder.root"), 0)])
         root_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_ROOT)
-        root_item.setData(0, _FOLDER_NAME_ROLE, "Racine")
+        root_item.setData(0, _FOLDER_NAME_ROLE, translate("library.folder.root"))
         self.tree.addTopLevelItem(root_item)
 
         # Entrée « Manquants » — apparaît seulement si le projet a au
         # moins un média sans fichier source.
         if has_missing:
             missing_item = QTreeWidgetItem(
-                [_label_with_count("Manquants", 0)]
+                [_label_with_count(translate("library.filter.missing"), 0)]
             )
             missing_item.setData(0, _FOLDER_KIND_ROLE, self._KIND_MISSING)
-            missing_item.setData(0, _FOLDER_NAME_ROLE, "Manquants")
+            missing_item.setData(0, _FOLDER_NAME_ROLE, translate("library.filter.missing"))
             self.tree.addTopLevelItem(missing_item)
 
         # Dossiers personnalisés : on parcourt récursivement les
@@ -320,13 +320,13 @@ class FolderTreeWidget(QWidget):
             folder_id = item.data(0, _FOLDER_ID_ROLE)
             if kind == self._KIND_ALL:
                 count = counts.get("__all__", 0)
-                item.setText(0, _label_with_count("Tous", count))
+                item.setText(0, _label_with_count(translate("library.filter.all"), count))
             elif kind == self._KIND_ROOT:
                 count = counts.get("__root__", 0)
-                item.setText(0, _label_with_count("Racine", count))
+                item.setText(0, _label_with_count(translate("library.folder.root"), count))
             elif kind == self._KIND_MISSING:
                 count = counts.get("__missing__", 0)
-                item.setText(0, _label_with_count("Manquants", count))
+                item.setText(0, _label_with_count(translate("library.filter.missing"), count))
             elif folder_id is not None:
                 count = counts.get(folder_id, 0)
                 item.setText(0, _label_with_count(_folder_display_name(item), count))
@@ -466,7 +466,7 @@ class FolderTreeWidget(QWidget):
         if item is None:
             # Menu vide : seul « Nouveau dossier » est proposé.
             menu = QMenu(self)
-            action_new = menu.addAction("Nouveau dossier…")
+            action_new = menu.addAction(translate("library.menu.new_folder"))
             action_new.triggered.connect(
                 lambda: self.folder_create_requested.emit(None)
             )
@@ -477,23 +477,23 @@ class FolderTreeWidget(QWidget):
         menu = QMenu(self)
         if kind == self._KIND_FOLDER:
             folder_id = item.data(0, _FOLDER_ID_ROLE)
-            action_rename = menu.addAction("Renommer le dossier…")
+            action_rename = menu.addAction(translate("library.menu.rename_folder"))
             action_rename.triggered.connect(
                 lambda: self.folder_rename_requested.emit(folder_id)
             )
-            action_new_child = menu.addAction("Nouveau sous-dossier…")
+            action_new_child = menu.addAction(translate("library.menu.new_subfolder"))
             action_new_child.triggered.connect(
                 lambda: self.folder_create_requested.emit(folder_id)
             )
             menu.addSeparator()
-            action_delete = menu.addAction("Supprimer le dossier…")
+            action_delete = menu.addAction(translate("library.menu.delete_folder"))
             action_delete.triggered.connect(
                 lambda: self.folder_delete_requested.emit(folder_id)
             )
         else:
             # Entrées synthétiques : seul « Nouveau dossier » est
             # proposé. Pas de renommage / suppression.
-            action_new = menu.addAction("Nouveau dossier…")
+            action_new = menu.addAction(translate("library.menu.new_folder"))
             action_new.triggered.connect(
                 lambda: self.folder_create_requested.emit(None)
             )
@@ -606,14 +606,14 @@ class FilterChipBar(QWidget):
 
     filter_changed = Signal(str)
 
-    _CHIPS: tuple[tuple[str, str], ...] = (
-        (FILTER_ALL, "Tous"),
-        (FILTER_VIDEO, "Vidéo"),
-        (FILTER_AUDIO, "Audio"),
-        (FILTER_IMAGE, "Images"),
-        (FILTER_USED, "Utilisés"),
-        (FILTER_UNUSED, "Non utilisés"),
-        (FILTER_MISSING, "Manquants"),
+    _CHIPS: tuple[tuple[str, str], ...] = (  # (identifiant, clé i18n du libellé) : traduit à l'affichage
+        (FILTER_ALL, "library.filter.all"),
+        (FILTER_VIDEO, "tracks.add_video"),
+        (FILTER_AUDIO, "rail.audio"),
+        (FILTER_IMAGE, "library.filter.images"),
+        (FILTER_USED, "library.filter.used"),
+        (FILTER_UNUSED, "library.filter.unused"),
+        (FILTER_MISSING, "library.filter.missing"),
     )
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -631,15 +631,22 @@ class FilterChipBar(QWidget):
         # hauteur préférée de tous ses voisins.
         self.setMinimumWidth(Sizes.panel_min_width - 2 * Spacing.xs)
 
-        self.header_label = QLabel("FILTRES")
+        self.header_label = QLabel(translate("library.filters.title"))
         self.header_label.setStyleSheet(label_style(10, "muted", 800))
         layout.addWidget(self.header_label)
 
-        for chip_id, label in self._CHIPS:
-            button = self._make_chip(chip_id, label)
+        for chip_id, label_key in self._CHIPS:
+            button = self._make_chip(chip_id, translate(label_key))
             self._buttons[chip_id] = button
             layout.addWidget(button)
         self._fit_height(self.minimumWidth())
+
+    def retranslate(self) -> None:
+        """Titre et libellés des filtres dans la langue courante."""
+        self.header_label.setText(translate("library.filters.title"))
+        for chip_id, label_key in self._CHIPS:
+            self._buttons[chip_id].setText(translate(label_key))
+        self._fit_height(self.width())
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
@@ -786,16 +793,14 @@ class AssetContextMenuBuilder(QWidget):
         menu.addSeparator()
 
         # Renommer.
-        action_rename = menu.addAction("Renommer…")
+        action_rename = menu.addAction(translate("tracking.rename"))
         action_rename.triggered.connect(
             lambda: self.rename_requested.emit(self.asset_id)
         )
 
         # Sélectionner dans la timeline (si utilisé au moins une fois).
         if self.usage_count > 0:
-            action_focus = menu.addAction(
-                f"Sélectionner dans la timeline ({self.usage_count})"
-            )
+            action_focus = menu.addAction(translate("library.menu.select_in_timeline", count=self.usage_count))
             action_focus.triggered.connect(
                 lambda: self.show_in_timeline_requested.emit(self.asset_id)
             )
@@ -803,7 +808,7 @@ class AssetContextMenuBuilder(QWidget):
         menu.addSeparator()
 
         # Déplacer vers un dossier.
-        move_menu = menu.addMenu("Déplacer vers")
+        move_menu = menu.addMenu(translate("library.menu.move_to"))
         self._populate_move_menu(move_menu)
 
         # Tags.
@@ -814,13 +819,13 @@ class AssetContextMenuBuilder(QWidget):
         # pour tous les médias : on peut relier un média présent pour
         # corriger son chemin).
         if self.is_missing:
-            action_relink = menu.addAction("Relier le fichier…")
-            action_relink.setText("⚠ Relier le fichier…")
+            action_relink = menu.addAction(translate("library.menu.relink"))
+            action_relink.setText(translate("library.menu.relink_missing"))
             action_relink.triggered.connect(
                 lambda: self.relink_requested.emit(self.asset_id)
             )
         else:
-            action_relink = menu.addAction("Relier le fichier…")
+            action_relink = menu.addAction(translate("library.menu.relink"))
             action_relink.triggered.connect(
                 lambda: self.relink_requested.emit(self.asset_id)
             )
@@ -829,7 +834,7 @@ class AssetContextMenuBuilder(QWidget):
         self._populate_proxy_menu(menu)
 
         # Supprimer.
-        action_remove = menu.addAction("Supprimer de la bibliothèque")
+        action_remove = menu.addAction(translate("library.menu.delete_asset"))
         action_remove.triggered.connect(
             lambda: self.remove_requested.emit(self.asset_id)
         )
@@ -842,7 +847,7 @@ class AssetContextMenuBuilder(QWidget):
 
     def _make_header_text(self) -> str:
         prefix = "⚠ " if self.is_missing else ""
-        usage = f"  ·  ×{self.usage_count}" if self.usage_count > 0 else "  ·  inutilisé"
+        usage = f"  ·  ×{self.usage_count}" if self.usage_count > 0 else "  " + translate("library.asset.unused")
         return f"{prefix}{self.asset_name}{usage}"
 
     def _populate_proxy_menu(self, menu: QMenu) -> None:
@@ -879,14 +884,14 @@ class AssetContextMenuBuilder(QWidget):
 
     def _populate_move_menu(self, menu: QMenu) -> None:
         # Option racine : « Pas de dossier ».
-        root_action = menu.addAction("Racine")
+        root_action = menu.addAction(translate("library.folder.root"))
         root_action.setCheckable(True)
         root_action.setChecked(self.assigned_folder_id is None)
         root_action.triggered.connect(
             lambda: self.move_to_folder_requested.emit(self.asset_id, None)
         )
         if not self.folders:
-            placeholder = menu.addAction("(aucun dossier personnalisé)")
+            placeholder = menu.addAction(translate("library.menu.no_folder"))
             placeholder.setEnabled(False)
             return
         menu.addSeparator()
@@ -920,7 +925,7 @@ class AssetContextMenuBuilder(QWidget):
 
     def _populate_tags_menu(self, menu: QMenu) -> None:
         if not self.tags:
-            placeholder = menu.addAction("(aucun tag — ouvrez le gestionnaire)")
+            placeholder = menu.addAction(translate("library.menu.no_tag"))
             placeholder.setEnabled(False)
         else:
             for tag in self.tags:
@@ -936,7 +941,7 @@ class AssetContextMenuBuilder(QWidget):
                     )
                 )
         menu.addSeparator()
-        action_manage = menu.addAction("Gérer les tags…")
+        action_manage = menu.addAction(translate("library.manage_tags"))
         action_manage.triggered.connect(self.manage_tags_requested.emit)
 
 
@@ -972,10 +977,7 @@ class TagManagerDialog(QDialog):
         )
         layout.setSpacing(Spacing.sm)
 
-        intro = QLabel(
-            "Créez et organisez les tags à appliquer aux médias. Les "
-            "couleurs sont facultatives et purement visuelles."
-        )
+        intro = QLabel(translate("library.tags.intro"))
         intro.setWordWrap(True)
         intro.setStyleSheet(label_style(11, "muted", 500))
         layout.addWidget(intro)
@@ -1010,19 +1012,19 @@ class TagManagerDialog(QDialog):
         )
         form_layout.setSpacing(Spacing.xs)
         self.name_field = QLineEdit()
-        self.name_field.setPlaceholderText("Nom du tag…")
+        self.name_field.setPlaceholderText(translate("library.tags.name_placeholder"))
         self.name_field.setMaxLength(48)
         self.color_button = QPushButton()
-        self.color_button.setText("Choisir une couleur…")
+        self.color_button.setText(translate("library.tags.pick_color"))
         self.color_button.setCursor(Qt.PointingHandCursor)
         self._new_tag_color: str = TAG_COLOR_PALETTE[0]
         self.color_button.clicked.connect(self._pick_color)
         self._apply_color_to_button()
-        self.create_button = QPushButton("Créer")
+        self.create_button = QPushButton(translate("library.tags.create"))
         self.create_button.setCursor(Qt.PointingHandCursor)
         self.create_button.clicked.connect(self._create_tag)
-        form_layout.addRow("Nom", self.name_field)
-        form_layout.addRow("Couleur", self.color_button)
+        form_layout.addRow(translate("field.name"), self.name_field)
+        form_layout.addRow(translate("group.color"), self.color_button)
         form_layout.addRow("", self.create_button)
         layout.addWidget(form_box)
 
@@ -1060,7 +1062,7 @@ class TagManagerDialog(QDialog):
 
         tags = self._organization.list_tags()
         if not tags:
-            empty = QLabel("Aucun tag pour l'instant.")
+            empty = QLabel(translate("library.tags.none"))
             empty.setAlignment(Qt.AlignCenter)
             empty.setStyleSheet(label_style(11, "muted", 500))
             self.list_layout.insertWidget(0, empty)
@@ -1083,7 +1085,7 @@ class TagManagerDialog(QDialog):
     def _pick_color(self) -> None:
         initial = QColor(self._new_tag_color)
         chosen = QColorDialog.getColor(
-            initial, self, "Couleur du tag", QColorDialog.DontUseNativeDialog
+            initial, self, translate("library.tags.color_title"), QColorDialog.DontUseNativeDialog
         )
         if chosen.isValid():
             self._new_tag_color = chosen.name()
@@ -1133,7 +1135,7 @@ class TagManagerDialog(QDialog):
         if tag is None:
             return
         chosen = QColorDialog.getColor(
-            QColor(tag.color), self, "Couleur du tag",
+            QColor(tag.color), self, translate("library.tags.color_title"),
             QColorDialog.DontUseNativeDialog,
         )
         if not chosen.isValid():
@@ -1191,7 +1193,7 @@ class _TagRow(QFrame):
 
         rename_button = QToolButton()
         rename_button.setIcon(make_icon(IconName.EDIT, size=12))
-        rename_button.setToolTip("Renommer")
+        rename_button.setToolTip(translate("tracks.rename_tooltip"))
         rename_button.setCursor(Qt.PointingHandCursor)
         rename_button.setFocusPolicy(Qt.NoFocus)
         rename_button.clicked.connect(lambda: on_rename(tag.id))
@@ -1199,7 +1201,7 @@ class _TagRow(QFrame):
 
         recolor_button = QToolButton()
         recolor_button.setIcon(make_icon(IconName.EDIT, size=12))
-        recolor_button.setToolTip("Changer la couleur")
+        recolor_button.setToolTip(translate("library.tags.change_color"))
         recolor_button.setCursor(Qt.PointingHandCursor)
         recolor_button.setFocusPolicy(Qt.NoFocus)
         recolor_button.clicked.connect(lambda: on_recolor(tag.id))
@@ -1207,7 +1209,7 @@ class _TagRow(QFrame):
 
         delete_button = QToolButton()
         delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
-        delete_button.setToolTip("Supprimer")
+        delete_button.setToolTip(translate("action.delete"))
         delete_button.setCursor(Qt.PointingHandCursor)
         delete_button.setFocusPolicy(Qt.NoFocus)
         delete_button.clicked.connect(lambda: on_delete(tag.id))
@@ -1254,7 +1256,7 @@ def prompt_for_folder_name(
     if not color_list:
         return cleaned, ""
     chosen = QColorDialog.getColor(
-        QColor(color_list[0]), parent, "Couleur du dossier",
+        QColor(color_list[0]), parent, translate("library.folder.color_title"),
         QColorDialog.DontUseNativeDialog,
     )
     if not chosen.isValid():

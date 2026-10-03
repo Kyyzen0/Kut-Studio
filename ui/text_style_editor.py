@@ -132,9 +132,7 @@ class TextStyleEditor(QWidget):
         content_label.setStyleSheet(_label_style(11, "muted", 600))
         layout.addWidget(content_label)
         self.content_editor = QTextEdit()
-        self.content_editor.setPlaceholderText(
-            translate("mograph.textstyle.placeholder")
-        )
+        self.content_editor.setPlaceholderText(translate("mograph.textstyle.placeholder"))
         self.content_editor.setFixedHeight(60)
         self.content_editor.setStyleSheet(
             "QTextEdit { background: #1F1F1F; color: #FAFAFA;"

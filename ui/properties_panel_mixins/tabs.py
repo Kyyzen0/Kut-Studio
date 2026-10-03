@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.i18n import translate
+
 
 
 class TabsMixin:
@@ -17,7 +19,7 @@ class TabsMixin:
             button.setChecked(i == index)
         specialized = index in {4, 5, 6}
         self.inspector_more_button.setText(
-            {4: "Graphiques", 5: "Compositing", 6: "Suivi"}.get(index, "•••")
+            translate(self._TAB_KEYS[index]) if index in {4, 5, 6} else "•••"
         )
         self.inspector_more_button.setProperty("active", specialized)
         self.inspector_more_button.style().unpolish(self.inspector_more_button)

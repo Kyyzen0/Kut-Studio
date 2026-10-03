@@ -31,6 +31,7 @@ from core.audio_effects_library import (
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
+from ui.i18n import translate
 
 
 class AudioEffectPresetCard(QFrame):
@@ -103,7 +104,7 @@ class AudioEffectPresetCard(QFrame):
         self.favorite_button.setCursor(Qt.PointingHandCursor)
         self.favorite_button.setFocusPolicy(Qt.NoFocus)
         self.favorite_button.setFixedSize(22, 22)
-        self.favorite_button.setToolTip("Ajouter aux favoris")
+        self.favorite_button.setToolTip(translate("transitions.library.favorite_add"))
         self.favorite_button.setStyleSheet(
             f"QPushButton#audioPresetFavorite {{ background: transparent;"
             f" border: none; color: {COLORS['muted']}; font-size: 15px; }}"
@@ -120,7 +121,7 @@ class AudioEffectPresetCard(QFrame):
         self.delete_button.setCursor(Qt.PointingHandCursor)
         self.delete_button.setFocusPolicy(Qt.NoFocus)
         self.delete_button.setFixedSize(22, 22)
-        self.delete_button.setToolTip("Supprimer ce preset")
+        self.delete_button.setToolTip(translate("effects.library.delete"))
         self.delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
         self.delete_button.setStyleSheet(
             f"QPushButton#audioPresetDelete {{ background: transparent;"
@@ -203,7 +204,7 @@ class AudioEffectsLibraryView(QWidget):
         header_layout.setSpacing(Spacing.xs)
         self.search_field = QLineEdit()
         self.search_field.setObjectName("audioEffectsSearch")
-        self.search_field.setPlaceholderText("Rechercher un effet audio…")
+        self.search_field.setPlaceholderText(translate("library.audio_effects.search"))
         self.search_field.setClearButtonEnabled(True)
         self.search_field.setFixedHeight(28)
         self.search_field.textChanged.connect(self._on_search_changed)
@@ -215,13 +216,13 @@ class AudioEffectsLibraryView(QWidget):
         cat_layout.setSpacing(Spacing.xs)
         self.category_buttons: list[QPushButton] = []
         self._category_buttons_data: list[AudioEffectPresetCategory | None] = []
-        self._add_category_button(cat_layout, "TOUS", None)
+        self._add_category_button(cat_layout, translate("library.audio_effects.all"), None)
         for category in AudioEffectPresetCategory:
             self._add_category_button(
                 cat_layout, CATEGORY_LABELS[category].upper(), category
             )
         self.category_buttons[0].setChecked(True)
-        self.favorites_button = QPushButton("★ FAVORIS")
+        self.favorites_button = QPushButton(translate("library.audio_effects.favorites"))
         self.favorites_button.setObjectName("audioEffectsFavoritesTab")
         self.favorites_button.setCheckable(True)
         self.favorites_button.setCursor(Qt.PointingHandCursor)
@@ -237,9 +238,7 @@ class AudioEffectsLibraryView(QWidget):
         header_layout.addWidget(category_row)
         layout.addWidget(header)
 
-        self.clip_hint = QLabel(
-            "Sélectionnez un clip audio ou vidéo, puis appliquez un préréglage."
-        )
+        self.clip_hint = QLabel(translate("library.audio_effects.hint"))
         self.clip_hint.setWordWrap(True)
         self.clip_hint.setStyleSheet(
             f"color: {COLORS['muted']}; font-size: 11px; padding: 4px 6px;"
@@ -276,12 +275,12 @@ class AudioEffectsLibraryView(QWidget):
         )
         self.apply_button = IconButton(
             icon=IconName.PLUS,
-            tooltip="Appliquer le préréglage au clip sélectionné",
+            tooltip=translate("library.audio_effects.apply_tip"),
             size=Sizes.icon_button,
             accent=True,
             square=False,
         )
-        self.apply_button.setText("  Appliquer au clip")
+        self.apply_button.setText("  " + translate("effects.library.apply"))
         self.apply_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.apply_button.setMinimumHeight(Sizes.button_md)
         self.apply_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -290,12 +289,12 @@ class AudioEffectsLibraryView(QWidget):
 
         self.save_button = IconButton(
             icon=IconName.SAVE,
-            tooltip="Enregistrer l'effet audio du clip comme preset",
+            tooltip=translate("library.audio_effects.save_tip"),
             size=Sizes.icon_button,
             accent=False,
             square=False,
         )
-        self.save_button.setText("  Enregistrer comme preset")
+        self.save_button.setText("  " + translate("effects.library.save"))
         self.save_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.save_button.setMinimumHeight(Sizes.button_md)
         self.save_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -416,7 +415,7 @@ class AudioEffectsLibraryView(QWidget):
         builtin_visible = [p for p in visible if p.builtin]
         user_visible = [p for p in visible if not p.builtin]
         if not visible:
-            empty = QLabel("Aucun préréglage ne correspond à la recherche.")
+            empty = QLabel(translate("library.audio_effects.no_match"))
             empty.setWordWrap(True)
             empty.setAlignment(Qt.AlignCenter)
             empty.setStyleSheet(
@@ -424,8 +423,8 @@ class AudioEffectsLibraryView(QWidget):
             )
             self.cards_layout.insertWidget(0, empty)
         else:
-            self._render_section("Préréglages", builtin_visible)
-            self._render_section("Mes presets", user_visible)
+            self._render_section(translate("effects.library.section.builtin"), builtin_visible)
+            self._render_section(translate("effects.library.section.user"), user_visible)
 
         ids = list(self._cards)
         if self._selected_preset_id in ids:

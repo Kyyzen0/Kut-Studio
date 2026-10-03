@@ -99,9 +99,7 @@ class SubtitleLibraryView(QWidget):
         editor_layout.addWidget(title)
 
         self.text_edit = QPlainTextEdit()
-        self.text_edit.setPlaceholderText(
-            "Texte du sous-titre…\nVous pouvez écrire sur plusieurs lignes."
-        )
+        self.text_edit.setPlaceholderText(translate("library.subtitle.placeholder"))
         self.text_edit.setMinimumHeight(72)
         self.text_edit.setStyleSheet(
             f"QPlainTextEdit {{ background: {COLORS['panel_alt']}; "
@@ -110,7 +108,7 @@ class SubtitleLibraryView(QWidget):
         )
         editor_layout.addWidget(self.text_edit)
 
-        duration_label = QLabel("Durée (secondes)")
+        duration_label = QLabel(translate("library.subtitle.duration"))
         duration_label.setStyleSheet(label_style(11, "muted", 600))
         editor_layout.addWidget(duration_label)
         self.duration_spin = QDoubleSpinBox()
@@ -127,7 +125,7 @@ class SubtitleLibraryView(QWidget):
 
         self.add_button = IconButton(
             icon=IconName.PLUS,
-            tooltip="Ajouter un sous-titre",
+            tooltip=translate("history.subtitle.add"),
             size=Sizes.icon_button,
             square=False,
         )
@@ -141,7 +139,7 @@ class SubtitleLibraryView(QWidget):
         io_row.setSpacing(Spacing.sm)
         self.import_button = IconButton(
             icon=IconName.IMPORT,
-            tooltip="Importer un fichier SRT",
+            tooltip=translate("library.subtitle.import_tip"),
             size=Sizes.icon_button,
             square=True,
         )
@@ -149,7 +147,7 @@ class SubtitleLibraryView(QWidget):
         self.import_button.clicked.connect(self.import_requested)
         self.export_button = IconButton(
             icon=IconName.EXPORT,
-            tooltip="Exporter les sous-titres en SRT",
+            tooltip=translate("library.subtitle.export_tip"),
             size=Sizes.icon_button,
             square=True,
         )

@@ -213,7 +213,7 @@ class PresetsMixin:
             return
         default_name = ""
         if clip.label:
-            default_name = f"Preset « {clip.label} »"
+            default_name = i18n.translate("history.layer.preset", name=clip.label)
         dialog = SavePresetDialog(
             self,
             default_name=default_name,
