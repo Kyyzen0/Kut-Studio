@@ -6,6 +6,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMenu
 from core.workspace_state import PanelId, workspace_display_name
 from ui import i18n
+from ui.workspace.panel_host import panel_label
 
 
 def _main_window():
@@ -39,7 +40,8 @@ class WorkspaceActionsMixin:
         panels_menu.setObjectName("panels_menu")
         self._translated_menus.append((panels_menu, "menu.item.panels"))
         for panel in PanelId:
-            action = QAction(panel.label(), self)
+            action = QAction(panel_label(panel), self)
+            self._translated_actions.append((action, f"workspace.panel.{panel.value}"))
             action.setCheckable(True)
             action.setChecked(self.workspace.is_visible(panel))
             action.setIcon(self._workspace_icon("PANEL_MAXIMIZE"))
@@ -52,7 +54,8 @@ class WorkspaceActionsMixin:
         for panel in PanelId:
             # Un sous-menu par panneau : sans étiquette, quatre groupes
             # d'actions identiques seraient ambiguës.
-            panel_menu = menu.addMenu(panel.label())
+            panel_menu = menu.addMenu(panel_label(panel))
+            self._translated_menus.append((panel_menu, f"workspace.panel.{panel.value}"))
             for action in self.workspace.build_actions(panel):
                 if isinstance(action, QMenu):
                     # ``addMenu`` gère l'action associée au sous-menu.
@@ -92,21 +95,21 @@ class WorkspaceActionsMixin:
     def save_workspace_as(self) -> None:
         """Enregistre la disposition courante sous un nom choisi."""
         name, accepted = QInputDialog.getText(
-            self, "Espace de travail", "Nom de l'espace de travail :"
+            self, i18n.translate("workspace.dialog.title"), i18n.translate("workspace.dialog.name_label")
         )
         if not accepted or not name.strip():
             return
         if self.workspace.save_workspace_as(name):
             _main_window().QMessageBox.information(
                 self,
-                "Espace de travail",
-                f"Disposition enregistrée sous « {name.strip()} ».",
+                i18n.translate("workspace.dialog.title"),
+                i18n.translate("workspace.dialog.saved", name=name.strip()),
             )
         else:
             _main_window().QMessageBox.warning(
                 self,
-                "Espace de travail",
-                "Impossible d'enregistrer cet espace de travail.",
+                i18n.translate("workspace.dialog.title"),
+                i18n.translate("workspace.dialog.save_failed"),
             )
 
     def toggle_panel(self, panel: PanelId) -> None:

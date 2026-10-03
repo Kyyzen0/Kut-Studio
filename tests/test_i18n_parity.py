@@ -134,7 +134,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 _LOANWORDS = {
     "Cache", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
     "Parade", "Preset", "Proxies", "Proxy", "Reverse", "Solo", "Stop", "Timeline", "Trackers",
-    "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Waveform", "Zoom",
+    "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }
 # Cognats : le mot s'écrit pareil en français et en anglais.

@@ -1848,12 +1848,14 @@ def reset_for_tests() -> None:
 # Une clé définie deux fois est refusée à l'import : le doublon écraserait l'autre en silence.
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
+from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
 
 DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_mograph": _MOGRAPH,
     "ui.i18n_tracking": _TRACKING,
     "ui.i18n_hardware": _HARDWARE,
+    "ui.i18n_panels": _PANELS,
 }
 
 

@@ -176,9 +176,9 @@ class ShortcutManager(QObject):
         """
         command = self._map.command(command_id)
         if command.scope is not Scope.ACTION:
-            raise ValueError(f"{command_id!r} n'est pas une commande de portée ACTION")
+            raise ValueError(f"{command_id!r} n'est pas une commande de portée ACTION")  # i18n-ignore: erreur de programmation
         if command_id in self._actions:
-            raise ValueError(f"{command_id!r} possède déjà une QAction")
+            raise ValueError(f"{command_id!r} possède déjà une QAction")  # i18n-ignore: erreur de programmation
         action = QAction(text, parent if parent is not None else self)
         action.setCheckable(checkable)
         action.setShortcutContext(

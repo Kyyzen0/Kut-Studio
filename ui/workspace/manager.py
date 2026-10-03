@@ -54,15 +54,16 @@ from core.workspace_state import (
     save_workspace_state,
 )
 from ui.icons import IconName
+from ui.i18n import translate
 from ui.workspace.panel_host import PanelHost, PanelWindow
 
 
-#: Libellés lisibles des zones de dock, pour les menus.
+#: Clés i18n des libellés lisibles des zones de dock, pour les menus.
 _AREA_LABELS: dict[DockArea, str] = {
-    DockArea.LEFT: "Zone gauche",
-    DockArea.CENTER: "Zone centrale",
-    DockArea.RIGHT: "Zone droite",
-    DockArea.BOTTOM: "Zone basse",
+    DockArea.LEFT: "workspace.area.left",
+    DockArea.CENTER: "workspace.area.center",
+    DockArea.RIGHT: "workspace.area.right",
+    DockArea.BOTTOM: "workspace.area.bottom",
 }
 
 
@@ -314,7 +315,7 @@ class WorkspaceManager(QObject):
     def register(self, panel: PanelId, widget: QWidget) -> None:
         """Enregistre un composant de panneau (sans le docker encore)."""
         if panel in self._panels:
-            raise ValueError(f"Panneau déjà enregistré : {panel.value}")
+            raise ValueError(f"Panneau déjà enregistré : {panel.value}")  # i18n-ignore: erreur de programmation
         self._panels[panel] = widget
 
     def build(
@@ -785,25 +786,25 @@ class WorkspaceManager(QObject):
             "reset": self._icon(IconName.PANEL_RESET),
             "close": self._icon(IconName.PANEL_CLOSE),
         }
-        place = QAction("Détacher le panneau", parent)
+        place = QAction(translate("workspace.action.float"), parent)
         place.setIcon(icons["float"])
         place.triggered.connect(lambda _c=False, p=panel: self.float_panel(p))
 
-        maximize = QAction("Maximiser le panneau", parent)
+        maximize = QAction(translate("workspace.action.maximize"), parent)
         maximize.setIcon(icons["maximize"])
         maximize.triggered.connect(
             lambda _c=False, p=panel: self.maximize_panel(p)
         )
 
-        restore = QAction("Restaurer la disposition", parent)
+        restore = QAction(translate("menu.item.restore_layout"), parent)
         restore.setIcon(icons["restore"])
         restore.triggered.connect(self.restore_layout)
 
-        reset = QAction("Réinitialiser la taille", parent)
+        reset = QAction(translate("workspace.action.reset_size"), parent)
         reset.setIcon(icons["reset"])
         reset.triggered.connect(lambda _c=False, p=panel: self.reset_panel_size(p))
 
-        close = QAction("Fermer le panneau", parent)
+        close = QAction(translate("workspace.action.close"), parent)
         close.setIcon(icons["close"])
         close.triggered.connect(
             lambda _c=False, p=panel: self.set_panel_visible(p, False)
@@ -811,9 +812,9 @@ class WorkspaceManager(QObject):
 
         # Déplacement vers une autre zone : effectif dès aujourd'hui, il
         # pose les fondations du docking complet.
-        move = QMenu("Déplacer vers…", parent)
+        move = QMenu(translate("workspace.action.move_to"), parent)
         for area in DockArea:
-            entry = QAction(_AREA_LABELS[area], move)
+            entry = QAction(translate(_AREA_LABELS[area]), move)
             entry.triggered.connect(
                 lambda _c=False, a=area, p=panel: self.move_panel(p, a)
             )
@@ -831,7 +832,7 @@ class WorkspaceManager(QObject):
     def _refresh_actions(self, panel: PanelId, actions: dict) -> None:
         """Met à jour l'état des actions d'un panneau (sans les recréer)."""
         floating = self.is_floating(panel)
-        actions["place"].setText("Rattacher" if floating else "Détacher le panneau")
+        actions["place"].setText(translate("workspace.action.dock" if floating else "workspace.action.float"))
         actions["place"].setIcon(
             self._icon(IconName.PANEL_DOCK if floating else IconName.PANEL_FLOAT)
         )
@@ -839,6 +840,23 @@ class WorkspaceManager(QObject):
         actions["restore"].setEnabled(True)
         actions["reset"].setEnabled(self.is_visible(panel) or floating)
         actions["close"].setEnabled(self.is_visible(panel))
+
+    def retranslate(self) -> None:
+        """Textes des menus d'options et des hôtes dans la langue courante (changement de langue à chaud)."""
+        for panel, actions in self._action_cache.items():
+            actions["maximize"].setText(translate("workspace.action.maximize"))
+            actions["restore"].setText(translate("menu.item.restore_layout"))
+            actions["reset"].setText(translate("workspace.action.reset_size"))
+            actions["close"].setText(translate("workspace.action.close"))
+            move = actions["move"]
+            move.setTitle(translate("workspace.action.move_to"))
+            for entry, area in zip(move.actions(), DockArea):
+                entry.setText(translate(_AREA_LABELS[area]))
+            self._refresh_actions(panel, actions)
+        for host in self._hosts.values():
+            host.retranslate()
+        for window in self._windows.values():
+            window.retranslate()
 
     def _icon(self, name: IconName):
         from ui.icons import make_icon
