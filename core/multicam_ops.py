@@ -370,6 +370,22 @@ def angle_usages(project: Project, sequence_id: str, angle_id: str) -> list[Clip
 # ---------------------------------------------------------------------------
 
 
+def angle_has_audio(project: Project, sequence: Sequence, angle: MulticamAngle) -> bool:
+    """L'angle porte-t-il du son ? Piste audio, clip imbriqué (non analysé) ou média déclaré avec son.
+
+    Une caméra dont le média n'a pas de son ne peut pas être « la source audio » : la source entière deviendrait muette.
+    """
+    track = next((item for item in sequence.tracks if item.id == angle.track_id), None)
+    if track is None:
+        return False
+    if track.type == "audio":
+        return True
+    assets = {asset.id: asset for asset in project.media_assets}
+    return any(
+        clip.is_nested or (clip.asset_id in assets and bool(assets[clip.asset_id].has_audio)) for clip in track.clips
+    )
+
+
 def set_audio_policy(
     project: Project, sequence_id: str, mode: AudioMode, angle_ids: SequenceType[str] = ()
 ) -> MulticamAudio:
@@ -381,7 +397,9 @@ def set_audio_policy(
     source = _source_of(sequence)
     ids = tuple(dict.fromkeys(angle_ids))
     for angle_id in ids:
-        _angle_of(sequence, angle_id)
+        angle = _angle_of(sequence, angle_id)
+        if mode is not AudioMode.FOLLOW_VIDEO and not angle_has_audio(project, sequence, angle):
+            raise MulticamError(f"« {angle.name} » n'a pas de son : il ne peut pas être une source audio de la source Multicam.")
     if mode is AudioMode.FIXED and len(ids) != 1:
         raise MulticamError("Un son fixe désigne exactement une source audio.")
     if mode is AudioMode.MIX and not ids:
@@ -584,13 +602,35 @@ def create_multicam_from_clips(
             raise MulticamError("Seuls des clips vidéo ou audio peuvent devenir des angles.")
         found.append((track, clip))
     ordered = sorted(found, key=lambda pair: (pair[0].type != "video", pair[1].timeline_start))
+    known: dict[str, float] = {}
+    for _track, clip in ordered:
+        measured = (outcomes or {}).get(clip.id)
+        if measured is not None and measured.offset is not None:
+            known[clip.id] = float(measured.offset)
+        elif clip.id in (offsets or {}):
+            known[clip.id] = float((offsets or {})[clip.id])
+    anchor = next(((clip, known[clip.id]) for _track, clip in ordered if clip.id in known), None)
+
+    def placed(clip: Clip) -> float:
+        """Position d'un clip dans le repère des décalages : celle qui est connue, sinon sa place d'origine.
+
+        Les décalages mesurés (ou fournis) ont leur propre origine (le plus petit vaut 0), pas celle de la timeline : un
+        clip dont la mesure a échoué ne peut donc pas reprendre sa position absolue (il atterrirait à des minutes des
+        autres). On le garde au même écart qu'avant d'un clip dont le décalage est connu. Sans aucun décalage connu,
+        les positions actuelles sont la seule information et servent telles quelles.
+        """
+        if clip.id in known:
+            return known[clip.id]
+        if anchor is None:
+            return float(clip.timeline_start)
+        return anchor[1] + (clip.timeline_start - anchor[0].timeline_start)
+
     specs = []
     for track, clip in ordered:
         outcome = (outcomes or {}).get(clip.id)
-        offset = outcome.offset if outcome is not None and outcome.offset is not None else None
         specs.append(AngleSpec(
             clip=clip, track_type=track.type,
-            offset=float(offset if offset is not None else (offsets or {}).get(clip.id, clip.timeline_start)),
+            offset=placed(clip),
             name=(names or {}).get(clip.id) or clip.label,
             sync_method=outcome.method if outcome is not None else sync_method,
             sync_status=outcome.status if outcome is not None else SyncStatus.NONE,
@@ -665,7 +705,8 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
     audio de la source : le son d'une autre source que l'angle vidéo devient un clip d'une piste audio ajoutée au
     montage (``Multicam audio``) et la vidéo, alors, est coupée à −60 dB. Refus (rien n'est modifié) si le segment ou un
     clip d'angle utilise un remappage de lecture (inverse, arrêt sur image), si le segment porte un étalonnage, une
-    transformation ou une composition propres (impossible à fusionner sans changer l'image) ou si l'angle est inconnu.
+    transformation ou une composition propres (impossible à fusionner sans changer l'image), un gain, un panoramique,
+    des fondus ou des effets audio propres (impossibles à reprendre sans changer le son) ou si l'angle est inconnu.
     """
     from .timeline_operations import _find_track_for_clip
 
@@ -687,6 +728,11 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
         raise MulticamError(
             "Aplatir : le segment porte un étalonnage, une transformation ou une composition propres ; "
             "retirez-les ou imbriquez le segment."
+        )
+    if segment.gain_db or segment.pan or segment.fade_in or segment.fade_out or segment.audio_effects:
+        raise MulticamError(
+            "Aplatir : le segment porte un gain, un panoramique, des fondus ou des effets audio propres, que les clips "
+            "remplaçants ne peuvent pas reprendre sans changer le son ; retirez-les ou imbriquez le segment."
         )
     child = find_sequence(project, segment.sequence_id)
     source = _source_of(child)
@@ -765,6 +811,7 @@ __all__ = [
     "SwitchResult",
     "SyncOutcome",
     "add_angle",
+    "angle_has_audio",
     "angle_usages",
     "apply_sync",
     "create_multicam_from_clips",

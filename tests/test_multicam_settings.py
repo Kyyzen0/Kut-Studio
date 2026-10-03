@@ -17,7 +17,7 @@ from audio_scenes import speech
 from core.multicam import angle_offset
 from multicam_stubs import keep_preview_player_off_the_disk
 from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
-from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip, switch_angle
+from core.multicam_ops import AngleSpec, add_angle, create_multicam_source, insert_multicam_clip, switch_angle
 from core.project_model import MediaAsset, Project, Track
 from test_multicam_creation import _media_project
 from ui import i18n
@@ -173,6 +173,19 @@ def test_the_audio_policy_is_chosen_in_the_dialog_and_undone_with_the_history(wi
     assert dialog.audio_combo.currentIndex() == 0
     dialog.audio_combo.setCurrentIndex(len(labels) - 1)                          # tout mixer
     assert window.project.get_sequence(source.id).multicam.audio.mode is AudioMode.MIX
+
+
+def test_a_silent_camera_is_not_offered_as_an_audio_source(window):
+    """Une caméra dont le média n'a pas de son rendrait la source entière muette : elle n'est pas proposée."""
+    project, source, _segment = _setup(window)
+    project.media_assets.append(MediaAsset("mute", "/media/mute.mp4", "mute", 60.0, 1920, 1080, 25.0, "video", False))
+    add_angle(project, source.id, AngleSpec(asset_id="mute", name="Muet"))
+    dialog = _open(window, source)
+    labels = [dialog.audio_combo.itemText(i) for i in range(dialog.audio_combo.count())]
+    assert "Son de « Drone » en continu" in labels and not any("Muet" in label for label in labels)
+    dialog.audio_combo.setCurrentIndex(len(labels) - 1)                               # tout mixer
+    live = window.project.get_sequence(source.id)
+    assert live.multicam.audio == MulticamAudio(AudioMode.MIX, ("angle-1", "angle-2", "angle-3"))   # sans « Muet »
 
 
 def test_an_angle_can_be_added_from_the_library_media_and_removed_with_its_segments_redirected(window, monkeypatch):

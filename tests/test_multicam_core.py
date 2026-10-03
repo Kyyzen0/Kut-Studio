@@ -33,6 +33,7 @@ from core.multicam_ops import (
     MulticamError,
     SyncOutcome,
     add_angle,
+    angle_has_audio,
     angle_usages,
     apply_sync,
     create_multicam_from_clips,
@@ -778,3 +779,72 @@ def test_a_camera_whose_sound_is_kept_but_whose_picture_is_hidden_stays_audible_
     assert audio == ["/media/camA.mp4", "/media/rec.wav"]                                    # le son de A (image masquée) et l'enregistreur
     indexed = build_timeline_index(project).active_at(project, 10.0)
     assert sorted(e.source_path for e in indexed if e.track_type == "audio") == audio
+
+
+# --- relecture de la PR : repères, minuit, aplatissement, sources muettes -----------------------------------------------
+
+
+def test_a_clip_whose_sync_failed_keeps_its_gap_to_a_measured_clip_not_its_absolute_position():
+    """Les décalages mesurés ont leur origine (le plus petit vaut 0), pas celle de la timeline : le clip dont la mesure a
+    échoué doit rester au même écart qu'avant d'un clip mesuré, et non retomber à sa position absolue (110 s)."""
+    project = Project(
+        "t", media_assets=[_video("camA"), _video("camB"), _video("camC")],
+        tracks=[Track("V1", "V1", "video"), Track("V2", "V2", "video"), Track("V3", "V3", "video")],
+    )
+    project.tracks[0].clips.append(Clip("a", "camA", "V1", 100.0, 0.0, 20.0, label="A"))
+    project.tracks[1].clips.append(Clip("b", "camB", "V2", 103.0, 0.0, 20.0, label="B"))
+    project.tracks[2].clips.append(Clip("c", "camC", "V3", 110.0, 0.0, 20.0, label="C"))
+    outcomes = {
+        "a": SyncOutcome(0.0, SyncMethod.AUDIO, SyncStatus.EXCELLENT, 0.9),
+        "b": SyncOutcome(2.0, SyncMethod.AUDIO, SyncStatus.GOOD, 0.7),       # mesuré : 2 s après A (et non les 3 s de la timeline)
+        "c": SyncOutcome(None, SyncMethod.AUDIO, SyncStatus.FAILED, 0.0),    # mesure échouée
+    }
+    source, _segment = create_multicam_from_clips(project, ["a", "b", "c"], outcomes=outcomes)
+    assert source.multicam is not None
+    placed = {angle.name: angle_offset(source, angle) for angle in source.multicam.angles}
+    assert placed == {"A": 0.0, "B": 2.0, "C": 10.0}                         # C : ses 10 s d'écart avec A, pas 110 s
+    failed = next(angle for angle in source.multicam.angles if angle.name == "C")
+    assert failed.sync_status is SyncStatus.FAILED                            # et l'échec reste dit
+
+
+def test_without_any_measured_offset_the_current_positions_are_used_as_they_are():
+    project = _timeline_project()
+    outcomes = {clip.id: SyncOutcome(None, SyncMethod.AUDIO, SyncStatus.FAILED, 0.0) for track in project.tracks for clip in track.clips}
+    source, _segment = create_multicam_from_clips(project, ["a", "b", "r"], outcomes=outcomes)
+    assert [angle_offset(source, angle) for angle in source.multicam.angles] == [0.5, 2.5, 0.0]
+
+
+@pytest.mark.parametrize("control", ["gain_db", "pan", "fade_in", "fade_out", "audio_effects"])
+def test_flattening_refuses_a_segment_that_carries_its_own_audio_controls(control):
+    """Le rendu imbriqué applique gain, panoramique, fondus et effets audio du segment ; les clips remplaçants ne les
+    reprendraient pas : l'export changerait de son à l'instant de l'aplatissement."""
+    from core.audio_effects_model import AudioEffect, AudioEffectType
+
+    project, _source, segment = _with_segment("angle-1")
+    value = {"gain_db": -6.0, "pan": 0.5, "fade_in": 1.0, "fade_out": 1.0,
+             "audio_effects": [AudioEffect("fx", next(iter(AudioEffectType)))]}[control]
+    setattr(segment, control, value)
+    before = _snapshot(project)
+    with pytest.raises(MulticamError, match="gain|son"):
+        flatten_multicam_clip(project, segment.id)
+    assert _snapshot(project) == before                                       # rien n'a changé
+    setattr(segment, control, [] if control == "audio_effects" else 0.0)
+    assert flatten_multicam_clip(project, segment.id).video                  # sans réglage audio propre : aplati
+
+
+def test_a_silent_camera_cannot_be_the_audio_source_but_a_recorder_or_a_camera_with_sound_can():
+    project, source = _project()                                              # « Drone » : média sans son
+    sequence = project.get_sequence(source.id)
+    angles = {angle.name: angle for angle in sequence.multicam.angles}
+    assert [angle_has_audio(project, sequence, angles[name]) for name in ("Wide", "Close-up", "Drone", "Recorder")] == [
+        True, True, False, True,
+    ]
+    before = sequence.multicam.audio
+    with pytest.raises(MulticamError, match="Drone"):
+        set_audio_policy(project, source.id, AudioMode.FIXED, ["angle-3"])
+    with pytest.raises(MulticamError, match="Drone"):
+        set_audio_policy(project, source.id, AudioMode.MIX, ["angle-1", "angle-3"])
+    assert sequence.multicam.audio == before                                  # refusé : rien n'a changé
+    assert set_audio_policy(project, source.id, AudioMode.FIXED, ["angle-2"]).angle_ids == ("angle-2",)
+    assert set_audio_policy(project, source.id, AudioMode.FOLLOW_VIDEO).mode is AudioMode.FOLLOW_VIDEO
+

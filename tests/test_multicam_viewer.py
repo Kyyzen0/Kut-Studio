@@ -95,6 +95,28 @@ def test_more_than_sixteen_angles_are_paged_and_only_the_visible_page_decodes(qt
     assert {feed for feed in StubFeed.created} - first_page  # la page 2 ouvre ses propres flux
 
 
+def test_the_program_keeps_its_picture_when_the_active_angle_is_on_another_page(qtbot, tmp_path):
+    """Au-delà de 16 angles, l'angle du programme peut être hors de la page affichée : il continue d'être alimenté."""
+    project, segment = _project(tmp_path, 20)
+    segment.angle_id = "angle-18"                                       # page 2 ; la page 1 est affichée
+    viewer, _state = _viewer(qtbot, project)
+    viewer.refresh()
+    assert viewer.page_label.text() == "1/2" and all(not tile._active for tile in _visible(viewer))   # noqa: SLF001
+    assert viewer.program_tile._state is AngleState.LIVE and viewer.program_tile._frame is not None   # noqa: SLF001
+    assert any("cam17" in path for path in StubFeed.created)             # son flux tourne bien
+    viewer.page_next.click()
+    viewer.page_previous.click()                                         # on s'éloigne puis on revient : toujours alimenté
+    assert viewer.program_tile._state is AngleState.LIVE and viewer.program_tile._frame is not None   # noqa: SLF001
+
+
+def test_an_offline_active_angle_on_another_page_shows_as_offline_in_the_program(qtbot, tmp_path):
+    project, segment = _project(tmp_path, 20, offline=(17,))
+    segment.angle_id = "angle-18"
+    viewer, _state = _viewer(qtbot, project)
+    viewer.refresh()
+    assert viewer.program_tile._state is AngleState.OFFLINE             # noqa: SLF001
+
+
 def test_a_narrow_viewer_puts_the_program_above_the_grid_and_a_wide_one_beside_it(qtbot, tmp_path):
     project, _segment = _project(tmp_path, 4)
     viewer, _state = _viewer(qtbot, project)

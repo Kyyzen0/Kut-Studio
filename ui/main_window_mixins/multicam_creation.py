@@ -32,7 +32,7 @@ from core.multicam_ops import (
     suggest_audio_policy,
 )
 from core.project_model import Clip, MediaAsset
-from core.timecode import asset_start_seconds
+from core.timecode import asset_day_seconds, asset_start_seconds, unwrap_midnight
 from ui import i18n
 from ui.multicam_dialogs import (
     CreationChoice,
@@ -209,7 +209,12 @@ class MulticamCreationMixin:
     def _offline_outcomes(self, sources: list[_Source], method: SyncMethod) -> dict[str, SyncOutcome]:
         """Décalages des méthodes sans analyse sonore (timecode, repères, début, positions, manuel)."""
         if method is SyncMethod.TIMECODE:
-            starts = {s.key: s.row.start_seconds for s in sources if s.row.start_seconds is not None}
+            raw = {s.key: s.row.start_seconds for s in sources if s.row.start_seconds is not None}
+            days = {s.key: asset_day_seconds(s.asset) for s in sources if s.asset is not None}
+            starts = unwrap_midnight(raw, days)            # des caméras de part et d'autre de minuit : 2 s d'écart, pas 24 h
+            if starts != raw:
+                LOGGER.info("Timecode : tournage à cheval sur minuit, %d début(s) reporté(s) au jour suivant",
+                            sum(1 for key in raw if starts[key] != raw[key]))
             reference = min(starts.values()) if starts else 0.0
             return {
                 s.key: (

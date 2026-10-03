@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from core.media_describe import describe_media
 from core.multicam import angle_offset
 from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
+from core.multicam_ops import angle_has_audio
 from core.project_model import Project
 from ui.design_system import Spacing
 from ui.i18n import translate
@@ -220,7 +221,7 @@ class MulticamSettingsDialog(QDialog):
             )
             self._rows.append(row)
             self._rows_layout.addWidget(row)
-        self._fill_audio(source, sequence)
+        self._fill_audio(source, sequence, project)
         self._add_menu.clear()
         candidates = [a for a in project.media_assets if a.id not in used and a.media_type in {"video", "audio"}]
         for asset in candidates:
@@ -233,14 +234,12 @@ class MulticamSettingsDialog(QDialog):
         self._scroll.setMinimumHeight(height)
         self._scroll.setMaximumHeight(height)
 
-    def _fill_audio(self, source, sequence) -> None:
+    def _fill_audio(self, source, sequence, project: Project) -> None:
         self._blocking = True
         self.audio_combo.clear()
         self._audio_options = [MulticamAudio(AudioMode.FOLLOW_VIDEO, ())]
         self.audio_combo.addItem(translate("multicam.audio.follow"))
-        capable = [
-            angle for angle in source.angles if any(item.id == angle.track_id for item in sequence.tracks)
-        ]
+        capable = [angle for angle in source.angles if angle_has_audio(project, sequence, angle)]   # pas de caméra muette
         for angle in capable:
             self._audio_options.append(MulticamAudio(AudioMode.FIXED, (angle.id,)))
             self.audio_combo.addItem(translate("multicam.audio.fixed", name=angle.name))

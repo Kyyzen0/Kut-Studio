@@ -134,6 +134,8 @@ commune ; hors de sa couverture l'angle est affiché `NO SIGNAL` dans le moniteu
 | Manuelle | l'utilisateur déplace l'angle ou saisit une valeur dans *Réglages Multicam…* |
 
 La confiance ne dit jamais « bonne » faute de pouvoir mesurer : `excellent` / `good` / `uncertain` / `failed`.
+Un angle dont la mesure a échoué garde, depuis la timeline, son **écart d'origine avec un angle mesuré** (jamais sa position
+absolue : les décalages mesurés ont leur propre origine, le plus petit vaut 0) et reste marqué `failed`.
 Une correction manuelle est une opération d'historique comme une autre (annulable) et marque l'angle `manual`.
 
 ### Timecode (`core/timecode.py`)
@@ -142,8 +144,11 @@ Un seul module porte les mathématiques SMPTE : 23,976 · 24 · 25 · 29,97 (san
 59,94 (sans saut et *drop-frame*) · 60. Les durées sont des `Fraction` exactes, jamais un `fps` tronqué : une cadence
 inconnue **n'est jamais arrondie à l'entier le plus proche** (l'ancien défaut lisait 29,97 comme 29). Le *drop-frame* saute des **étiquettes**, pas des images : `01:00:00;00` = 107 892 images ;
 sans saut à 29,97, `01:00:00:00` vaut 3 603,6 s écoulées, la seule grandeur qui compte pour un décalage entre deux
-appareils. Un tournage à cheval sur minuit donne un écart d'environ 24 h que l'appelant doit traiter ; ce n'est pas
-masqué par un modulo.
+appareils. `seconds_between` ne boucle pas à minuit (un écart de 24 h y est une réponse exacte) ; la **création Multicam**
+applique `unwrap_midnight` avant de calculer les décalages : elle cherche le plus grand intervalle vide du cercle de 24 h
+(minuit y est) et reporte au jour suivant les débuts d'après minuit, de la durée de **leur** journée — qui n'est pas toujours
+86 400 s (`asset_day_seconds` : 86 399,9136 s en *drop-frame*, 86 486,4 s en 29,97 sans saut). Deux caméras à 23:59:59 et
+00:00:01 sont donc à 2 s l'une de l'autre, non à 24 h. Limite : cela suppose des appareils calés sur un même compteur.
 
 ### Synchronisation par le son (`core/audio_sync.py`)
 
@@ -191,8 +196,10 @@ détruit aucun lecteur.
   10 et plus : 240×136) ; `TileQualityGovernor` descend d'un cran quand les images arrivent en retard (retard mesuré,
   pas supposé) et remonte quand la machine suit de nouveau. La vignette de l'angle actif a toujours un cran de finesse
   de plus que les autres.
-* **Préchargement** : chaque flux lit 1,5 s en avance ; **tous les angles visibles sont traités à égalité** — il n'y a pas
-  d'ordre de priorité entre eux (voir les limites).
+* **Préchargement** : chaque flux lit 1,5 s en avance. Au démarrage, l'angle du programme est lancé en premier et les autres
+  de façon échelonnée (deux nouveaux flux par rafraîchissement, `START_BUDGET`) ; ensuite tous les flux lancés sont traités
+  **à égalité** (voir les limites). Au-delà de 16 angles, le flux de l'angle du programme reste alimenté même quand sa page
+  n'est pas affichée : le programme ne passe pas à `NO SIGNAL` parce qu'on feuillette la grille.
 * **Sortie programme** : elle réutilise le flux de l'angle actif — **pas de second décodage** de la même image.
 * **États** : `MEDIA OFFLINE` (fichier introuvable), `NO SIGNAL` (hors de la couverture de l'angle), vignette audio
   pour un enregistreur.
@@ -235,6 +242,8 @@ au moment de construire le sous-plan, jamais recopié dans les clips. `FOLLOW_VI
 Dans les deux derniers cas, le son des caméras est **retiré** du segment (clips marqués `silent` par le filtre), sans
 modifier les clips. Les coupes audio et vidéo restent dissociables (un clip imbriqué posé sur une piste audio n'apporte
 que le son), ce qui prépare les coupes en J et en L sans les implémenter ici.
+Une caméra dont le média **n'a pas de son** ne peut être ni source `FIXED` ni entrer dans un `MIX` : la source entière
+serait muette. `set_audio_policy` le refuse (`angle_has_audio`) et la boîte *Réglages Multicam…* ne la propose pas.
 
 **En lecture directe**, le moniteur ordinaire ne sait lire que le son du fichier de l'image affichée. Avec une politique
 `FIXED` ou `MIX`, son lecteur est donc coupé (`PreviewPanel.set_silenced`) et `ui/multicam_audio.py` (`AuxAudio`) joue les
@@ -279,7 +288,8 @@ revient sans autre geste ; la synchronisation, qui n'est que la position des cli
 
 * **Aplatir** (`flatten_multicam_clip`) remplace un segment par les clips réels de l'angle montré, taillés à la durée
   du segment, sans plus aucun lien avec la source. Refusé, avec une explication, si le segment porte une transformation,
-  un étalonnage ou une composition propres, ou s'il est inversé / figé : l'aplatir perdrait ces réglages. Avec une
+  un étalonnage ou une composition propres, un gain, un panoramique, des fondus ou des effets audio propres, ou s'il est
+  inversé / figé : les clips remplaçants ne pourraient pas les reprendre sans changer l'image ou le son. Avec une
   politique `FIXED` ou `MIX`, les caméras sont mises à −60 dB sur la copie.
 * **Dupliquer un segment** crée une autre *instance* de la même source (même `angle_id`) : modifier la source modifie
   les deux. **Dupliquer la séquence source** (`duplicate_sequence`) en fait une copie indépendante : angles, politique
@@ -404,9 +414,9 @@ Ce qui n'est **pas** fait ou **pas** vérifié — à lire avant de promettre qu
 * **Clavier AZERTY** : `Maj`+chiffre, pavé numérique et réaffectation fonctionnent ; la rangée de symboles *sans* Maj
   (`&é"'(`…) n'est pas associée aux angles 1–9.
 * **Vignettes sur CPU** (voir plus haut) : pas d'accélération GPU des vignettes.
-* **Pas de priorité de préchargement** entre angles : tous les angles visibles sont lus à égalité, et le gouverneur
-  dégrade toutes les vignettes ensemble. Sous forte charge, l'angle actif n'est pas protégé au détriment des autres
-  (il a seulement un cran de finesse de plus).
+* **Pas de priorité sous charge** : l'angle du programme démarre en premier (les autres de façon échelonnée), mais une fois
+  lancés tous les flux sont traités à égalité et le gouverneur dégrade toutes les vignettes ensemble. Sous forte charge,
+  l'angle actif n'est pas protégé au détriment des autres (il a seulement un cran de finesse de plus).
 * **Vignettes sans focus clavier** : la bascule se fait par `1`–`9` ou à la souris ; une vignette ne se parcourt pas à `Tab`.
 * **Double décodage de l'angle actif** : le moniteur ordinaire (caché) continue de décoder l'angle actif en plus du
   flux de sa vignette. Mesuré comme acceptable, non éliminé.
@@ -415,8 +425,8 @@ Ce qui n'est **pas** fait ou **pas** vérifié — à lire avant de promettre qu
   produits par les tests, **pas** sur des fichiers de ces caméras.
 * **Synchronisation par le son** : la passe grossière échoue (honnêtement : statut `failed`) quand le signal commun est
   enfoui dans le bruit, même si la passe fine l'aurait vu. Préférable à une réponse fausse ; la correction manuelle reste.
-* **Aplatissement** : refusé pour un segment portant ses propres transformation, étalonnage ou composition, et pour un
-  segment inversé ou figé.
+* **Aplatissement** : refusé pour un segment portant ses propres transformation, étalonnage, composition ou réglages audio
+  (gain, panoramique, fondus, effets), et pour un segment inversé ou figé.
 * **Son en direct** : quatre sources au plus, approximation du mixage exact (qui est celui de l'aperçu fidèle et de l'export).
 * **Mesures** : une machine ; seize sources de deux heures sur un son synthétique ; flux hors fenêtre ; rien sous
   Windows / Linux. **FFmpeg 6.1** (Ubuntu en CI) : le décalage audio `adelay` en millisecondes fractionnaires a été écrit
@@ -427,8 +437,8 @@ Ce qui n'est **pas** fait ou **pas** vérifié — à lire avant de promettre qu
 
 Rien de ce qui suit n'est commencé. Ce qui rend chaque point possible sans refonte :
 
-* **Priorité de préchargement** : un ordre explicite (angle actif, puis voisins, puis le reste) qui dégrade les angles
-  cachés avant l'angle actif ; le gouverneur sait déjà mesurer le retard, il manque la politique.
+* **Priorité sous charge** : dégrader les angles non actifs avant l'angle du programme (le démarrage donne déjà la priorité
+  à l'angle actif) ; le gouverneur sait déjà mesurer le retard, il manque la politique.
 * **Plus de 16 angles** : la grille pagine déjà par 16 et les flux sont créés à la demande ; il manque un profil de
   vignette réglé pour 25–64 angles (le modèle admet 64).
 * **Proxys Multicam automatiques** : la bannière appelle déjà la génération de proxys pour les angles visibles ; il manque

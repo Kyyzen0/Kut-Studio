@@ -27,7 +27,7 @@ Conventions
 * **24 h** : les étiquettes bouclent à minuit (``from_frames`` / ``from_seconds`` prennent le modulo d'un jour ; en
   *drop-frame*, 24 h contiennent exactement 2 589 408 images à 29,97, car 24 h est un multiple de 10 minutes).
   ``seconds_between`` ne boucle **pas** : un tournage à cheval sur minuit donne un écart d'environ 24 h, à traiter par
-  l'appelant.
+  l'appelant (``unwrap_midnight``, que la création Multicam applique avant de calculer les décalages).
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from .project_model import MediaAsset
 
 SECONDS_PER_DAY = 86400
@@ -378,3 +380,48 @@ def asset_start_seconds(asset: MediaAsset) -> float | None:
     if reference is not None and math.isfinite(reference) and 0.0 <= reference < SECONDS_PER_DAY:
         return float(reference)
     return None
+
+
+def asset_day_seconds(asset: MediaAsset) -> float:
+    """Durée, en secondes d'étiquette, d'une journée de timecode de ce média (celle qui précède le retour à minuit).
+
+    Une journée d'étiquettes n'est pas toujours 86 400 s : 86 399,9136 s en 29,97 *drop-frame* (le saut d'étiquettes
+    rattrape l'horloge à 86,4 ms près), 86 486,4 s en 29,97 sans saut (30 étiquettes par seconde comptées à 29,97 i/s).
+    Un média sans timecode lisible (ou un son BWF, dont ``time_reference`` est une heure réelle) vaut 86 400 s.
+    """
+    text = asset.timecode
+    if text:
+        timecode = Timecode.try_parse(text, FrameRate.try_from_fps(asset.timecode_fps or asset.fps or 0.0))
+        if timecode is not None:
+            # la cadence de l'étiquette lue (le séparateur ``;`` en fait du drop-frame), pas celle supposée avant lecture
+            return float(Fraction(timecode.rate.frames_per_day) / timecode.rate.fps)
+    return float(SECONDS_PER_DAY)
+
+
+def unwrap_midnight(starts: Mapping[str, float], days: Mapping[str, float] | None = None) -> dict[str, float]:
+    """Ramène à un même jour des heures de début qui encadrent minuit (``23:59:59`` et ``00:00:01`` : 2 s d'écart).
+
+    Les étiquettes bouclent à 24 h : sans cette correction, la caméra de ``00:00:01`` semble commencer presque un jour
+    avant celle de ``23:59:59``. On cherche le plus grand intervalle vide du cercle de 24 h : minuit est dedans, et les
+    débuts situés avant lui (les plus petits) sont reportés au jour suivant, de la durée de **leur** journée (``days``,
+    voir :func:`asset_day_seconds` ; 86 400 s à défaut). Pour des caméras tournant ensemble, cela revient à choisir
+    l'étalement le plus court, le seul plausible. Sans franchissement de minuit — et à égalité d'intervalles — rien ne change.
+
+    Deux cadences de natures différentes (une caméra en 29,97 sans saut, un enregistreur en horloge réelle) ne partagent
+    pas de compteur : leur écart n'a de sens que si le tournage a été calé sur une même horloge, ce que ce module ne sait
+    pas vérifier.
+    """
+    result = {key: float(value) for key, value in starts.items()}
+    if len(result) < 2:
+        return result
+    ordered = sorted(result, key=lambda key: result[key])
+    values = [result[key] for key in ordered]
+    cut, widest = 0, values[0] + SECONDS_PER_DAY - values[-1]       # intervalle qui enjambe minuit tel quel
+    for index in range(1, len(values)):
+        gap = values[index] - values[index - 1]
+        if gap > widest:
+            cut, widest = index, gap
+    for key in ordered[:cut]:
+        result[key] += (days or {}).get(key, float(SECONDS_PER_DAY))
+    return result
+

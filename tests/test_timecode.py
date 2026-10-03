@@ -19,10 +19,12 @@ from core.timecode import (
     InvalidTimecode,
     Timecode,
     UnsupportedFrameRate,
+    asset_day_seconds,
     asset_start_seconds,
     format_fps,
     normalize_timecode_text,
     seconds_between,
+    unwrap_midnight,
 )
 
 NDF_2997 = FrameRate.from_fps(29.97)
@@ -379,3 +381,46 @@ def test_an_unreadable_timecode_falls_back_to_the_time_reference_then_none():
     assert asset_start_seconds(audio) == 12.0
     out_of_day = MediaAsset("w", "/m/w.wav", "w", 60.0, 0, 0, 0.0, "audio", True, time_reference=86400.0)
     assert asset_start_seconds(out_of_day) is None                                 # un BWF ne dépasse pas 24 h
+
+
+# --- minuit : un tournage qui change de jour ----------------------------------------------------------------------------
+
+
+def test_a_day_of_labels_lasts_what_its_frame_rate_makes_it_last():
+    """86 400 s seulement à cadence entière : le drop-frame rattrape l'horloge à 86,4 ms près, le 29,97 sans saut compte
+    30 étiquettes par seconde à 29,97 i/s (86 486,4 s)."""
+    assert asset_day_seconds(_asset(timecode="01:00:00;00", fps=29.97)) == pytest.approx(86399.9136, abs=1e-4)
+    assert asset_day_seconds(_asset(timecode="01:00:00;00", fps=59.94)) == pytest.approx(86399.9136, abs=1e-4)
+    assert asset_day_seconds(_asset(timecode="01:00:00:00", fps=29.97)) == pytest.approx(86486.4, abs=1e-4)
+    assert asset_day_seconds(_asset(timecode="01:00:00:00", fps=25.0)) == 86400.0
+    assert asset_day_seconds(_asset()) == 86400.0                                    # sans timecode : un jour d'horloge
+    assert asset_day_seconds(_asset(timecode="garbage")) == 86400.0
+
+
+def test_cameras_on_either_side_of_midnight_are_two_seconds_apart_not_a_day():
+    starts = {"late": 23 * 3600 + 59 * 60 + 59.0, "early": 1.0}                      # 23:59:59 et 00:00:01
+    unwrapped = unwrap_midnight(starts)
+    assert unwrapped["early"] - unwrapped["late"] == 2.0
+    assert unwrapped["late"] == starts["late"]                                       # c'est la caméra d'après minuit qui est reportée
+
+
+def test_the_unwrap_picks_the_shortest_spread_and_leaves_a_same_day_shoot_alone():
+    assert unwrap_midnight({"a": 36000.0, "b": 36010.5, "c": 36000.5}) == {"a": 36000.0, "b": 36010.5, "c": 36000.5}
+    around = unwrap_midnight({"a": 23 * 3600.0, "b": 23 * 3600 + 59 * 60.0, "c": 30 * 60.0})   # 23:00, 23:59, 00:30
+    assert max(around.values()) - min(around.values()) == pytest.approx(1.5 * 3600)
+    assert around["a"] == 23 * 3600.0 and around["c"] == 30 * 60.0 + 86400.0
+    assert unwrap_midnight({"only": 5.0}) == {"only": 5.0} and unwrap_midnight({}) == {}
+
+
+def test_the_midnight_shift_uses_the_day_of_the_camera_that_wrapped():
+    """Deux caméras calées sur le même compteur 29,97 sans saut : 23:59:59:00 puis 00:00:01:00, soit 60 images, pas
+    2 s ni 2 s + 86,4 s (ce que donnerait un jour supposé de 86 400 s)."""
+    late = _asset(id="late", timecode="23:59:59:00", fps=29.97)
+    early = _asset(id="early", timecode="00:00:01:00", fps=29.97)
+    starts = {"late": asset_start_seconds(late), "early": asset_start_seconds(early)}
+    days = {"late": asset_day_seconds(late), "early": asset_day_seconds(early)}
+    wrong = unwrap_midnight(starts)                                                  # jour supposé de 86 400 s
+    right = unwrap_midnight(starts, days)
+    assert right["early"] - right["late"] == pytest.approx(60 * 1001 / 30000, abs=1e-9)
+    assert abs((wrong["early"] - wrong["late"]) - (right["early"] - right["late"])) > 80.0
+

@@ -116,6 +116,27 @@ def test_a_timecode_with_a_different_frame_rate_is_not_truncated(window):
 
 
 @pytest.mark.parametrize(
+    ("rate", "expected"),
+    [
+        (25.0, 2.0),                                  # 50 images à 25 i/s
+        (29.97002997, 60 * 1001 / 30000),             # 60 images à 29,97 sans saut : 2,002 s (le jour de ce compteur dure 86 486,4 s)
+    ],
+)
+def test_a_shoot_that_crosses_midnight_is_seconds_wide_not_a_day(window, rate, expected):
+    """23:59:59 et 00:00:01 sur le même compteur : l'écart est de quelques secondes, jamais d'environ 24 h."""
+    _load(window, _empty([
+        _video("camA", timecode="23:59:59:00", timecode_fps=rate), _video("camB", timecode="00:00:01:00", timecode_fps=rate),
+    ]))
+    result = window.create_multicam_from_assets(
+        ["camA", "camB"], choice=_choice(SyncMethod.TIMECODE, ("camA", "Late"), ("camB", "Early")),
+    )
+    assert result is not None
+    sequence = _source(window)
+    offsets = {angle.name: angle_offset(sequence, angle) for angle in sequence.multicam.angles}
+    assert offsets == pytest.approx({"Late": 0.0, "Early": expected}, abs=1e-6)
+
+
+@pytest.mark.parametrize(
     ("method", "expected"),
     [(SyncMethod.START, SyncMethod.START), (SyncMethod.MANUAL, SyncMethod.MANUAL)],
 )

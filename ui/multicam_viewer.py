@@ -311,11 +311,21 @@ class MulticamViewer(QWidget):
         start = self._page * PAGE_SIZE
         return self._samples[start:start + PAGE_SIZE]
 
+    def _active_sample(self) -> AngleSample | None:
+        """Angle du programme, **quelle que soit la page affichée** (au-delà de 16 angles il peut être sur une autre)."""
+        if self._pending_active is not None:
+            return next((sample for sample in self._samples if sample.index == self._pending_active), None)
+        return next((sample for sample in self._samples if sample.active), None)
+
     def _drive_feeds(self, playing: bool) -> None:
         visible = self._visible_samples()
+        driven = list(visible)
+        active = self._active_sample()
+        if active is not None and all(sample.index != active.index for sample in visible):
+            driven.append(active)                       # le programme continue d'être alimenté si l'on change de page
         wanted: set = set()
         started = 0
-        ordered = sorted(visible, key=lambda sample: not sample.active)   # angle actif d'abord, puis les autres
+        ordered = sorted(driven, key=lambda sample: not sample.active)   # angle actif d'abord, puis les autres
         for sample in ordered:
             if sample.state is not AngleState.LIVE or sample.audio_only:
                 continue
@@ -359,6 +369,15 @@ class MulticamViewer(QWidget):
                 frame=frame, active=active, audible=sample.audible, audio_only=sample.audio_only,
                 tooltip=self._tooltip(sample),
             )
+        if program_sample is None:                       # l'angle actif est sur une autre page que celle des vignettes
+            off_page = self._active_sample()
+            if off_page is not None:
+                frame_off, feed_off = self._frame_for(off_page, len(visible))
+                program_sample = off_page
+                if off_page.state is AngleState.LIVE:
+                    program = frame_off
+                if feed_off is not None and frame_off is not None:
+                    shown.append((feed_off, feed_off.last_lag))
         self._governor.observe(lag_ratio(shown), self._clock())
         self.program_tile.set_content(
             name="", color=palette.accent, state=program_sample.state if program_sample else AngleState.NO_SIGNAL,
