@@ -14,7 +14,7 @@ jobs:
   audit:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -31,25 +31,59 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install libEGL (Linux)
+      - name: Install FFmpeg (Linux, apporte libpulse)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip -r requirements-dev.txt
-      - name: Audit 1440x900 + 1180x720
+
+      - name: Ubuntu, audit 1180x720 à +20 % de police
+        if: runner.os == 'Linux'
         continue-on-error: true
-        run: python -m tools.ui_audit --sizes 1440x900,1180x720 2>&1 | tail -n 60
-      - name: Audit 1180x720, polices +20 %
-        continue-on-error: true
-        run: python -m tools.ui_audit --sizes 1180x720 --font-scale 1.2 2>&1 | tail -n 40
-      - name: Fonts installed
+        run: python -m tools.ui_audit --sizes 1180x720 --font-scale 1.2 2>&1 | tail -n 30
+
+      - name: Windows, polices par défaut (rien)
+        if: runner.os == 'Windows'
         continue-on-error: true
         run: |
-          python - <<'PY'
-          from PySide6.QtGui import QFontDatabase, QGuiApplication
+          cat > probe.py <<'PY'
+          import os, sys
+          from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics, QGuiApplication
           app = QGuiApplication([])
-          families = sorted(QFontDatabase.families())
-          print(len(families), "familles")
-          print([f for f in families if f in ("Segoe UI", "Arial", "Helvetica Neue", "SF Pro Text", "DejaVu Sans")])
-          print(families[:40])
+          if len(sys.argv) > 1:
+              for name in sys.argv[1:]:
+                  print("addApplicationFont", name, QFontDatabase.addApplicationFont(name))
+          families = QFontDatabase.families()
+          print("plateforme", app.platformName(), "familles", len(families), families[:8])
+          for family in ("Segoe UI", "Arial", "Sans Serif"):
+              font = QFont(family)
+              font.setPixelSize(13)
+              print(family, "largeur", QFontMetrics(font).horizontalAdvance("État : Aucun clip sélectionné"))
           PY
+          python probe.py
+
+      - name: Windows, polices ajoutées avec addApplicationFont
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: python probe.py "C:/Windows/Fonts/segoeui.ttf" "C:/Windows/Fonts/arial.ttf"
+
+      - name: Windows, QT_QPA_FONTDIR
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        env:
+          QT_QPA_FONTDIR: C:/Windows/Fonts
+        run: python probe.py
+
+      - name: Windows, plateforme native
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: windows
+        run: python probe.py
+
+      - name: Windows, audit en plateforme native
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: windows
+        run: python -m tools.ui_audit --sizes 1440x900,1180x720 2>&1 | tail -n 30
