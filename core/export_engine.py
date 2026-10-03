@@ -46,6 +46,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from . import process_supervisor
 from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
@@ -162,7 +163,7 @@ def _ffmpeg_major_version() -> int | None:
         return cache[prefix]
     major: int | None = None
     try:
-        completed = subprocess.run(
+        completed = process_supervisor.supervised_run(
             [*prefix, "-hide_banner", "-version"], capture_output=True, text=True, timeout=10, check=False,
         )
         from .hardware_encoding import parse_version
@@ -209,7 +210,7 @@ def _ffmpeg_supports_subtitles() -> bool:
         _ffmpeg_supports_subtitles._cached = False  # type: ignore[attr-defined]
         return False
     try:
-        completed = subprocess.run(
+        completed = process_supervisor.supervised_run(
             [*command_prefix, "-hide_banner", "-filters"],
             capture_output=True,
             text=True,
@@ -373,6 +374,10 @@ class ExportEngine(QObject):
         self._process.readyReadStandardError.connect(self._read_error)
         self._process.finished.connect(self._process_finished)
         self._process.errorOccurred.connect(self._process_error)
+        # FFmpeg est enregistré auprès du superviseur dès son démarrage : il meurt avec l'application, même tuée
+        # brutalement (voir core/process_supervisor.py).
+        self._process.started.connect(self._supervise_started)
+        self._supervision: process_supervisor.Registration | None = None
         self._request: ExportRequest | None = None
         self._error_output = ""
         self._progress_buffer = ""
@@ -411,11 +416,14 @@ class ExportEngine(QObject):
         processus n'a pas pu être confirmé comme terminé.
         """
         if self._process.state() == QProcess.NotRunning:
+            self._release_supervision()
             self._cleanup_temporary_files()
             return True
         self._cancel_requested = True
         self._process.kill()
         stopped = self._process.waitForFinished(timeout_ms)
+        if stopped:
+            self._release_supervision()
         self._cleanup_temporary_files()
         return bool(stopped)
 
@@ -813,8 +821,18 @@ class ExportEngine(QObject):
         )
         self._error_output = (self._error_output + error).strip()
 
+    def _supervise_started(self) -> None:
+        """Signal ``started`` : le PID de FFmpeg rejoint le registre du superviseur (protection après un crash)."""
+        self._release_supervision()
+        self._supervision = process_supervisor.register_pid(int(self._process.processId()))
+
+    def _release_supervision(self) -> None:
+        registration, self._supervision = self._supervision, None
+        process_supervisor.release(registration)
+
     def _process_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         """Traite la fin normale ou anormale du processus FFmpeg."""
+        self._release_supervision()
         self._read_error()  # sortie d'erreur restante : la classification de l'échec en dépend
         request = self._request
         self._request = None
