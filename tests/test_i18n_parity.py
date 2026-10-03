@@ -125,10 +125,10 @@ def test_the_shape_of_a_text_is_the_same_in_all_languages():
 # Pas de français recopié
 # ---------------------------------------------------------------------------
 
-# Sigles et noms propres, identiques dans toutes les langues.
+# Sigles, noms propres et mots qui s'écrivent pareil dans les trois langues (« AUDIO », « clip »).
 _ACRONYMS_AND_PROPER_NAMES = {
     "CPU", "GPU", "Kut-Studio", "ProRes Master", "PREVIEW", "TikTok / Vertical 1080×1920", "YouTube",
-    "Auto (≤ 1080p)", "MOTION GRAPHICS",
+    "Auto (≤ 1080p)", "MOTION GRAPHICS", "AUDIO", "slip {delta}s", "{count} clip", "{count} clips",
 }
 # Emprunts à l'anglais que le français (et l'espagnol) emploient tels quels.
 _LOANWORDS = {
@@ -144,7 +144,7 @@ _COGNATES_EN = {
     "Navigation", "Performance", "Position", "Position + rotation", "Position X", "Position Y", "Ratio", "Rotation",
     "Saturation", "Stabilisation", "Standard", "Type", "Volume",
     "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)", "Rectangle", "Image", "Image…", "Ellipse", "Intersection",
-    "Parent", "Source", "Transform",
+    "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause",
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes"}

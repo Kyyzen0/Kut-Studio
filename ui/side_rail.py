@@ -20,32 +20,38 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from ui.design_system import Iconography, Sizes, Spacing
+from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName, make_icon
 from ui.theme import COLORS
 
 
 @dataclass(frozen=True)
 class RailSection:
-    """Section représentée par un bouton du rail."""
+    """Section représentée par un bouton du rail (``label_key`` : clé i18n du libellé)."""
 
     id: str
-    label: str
+    label_key: str
     icon: IconName
+
+    @property
+    def label(self) -> str:
+        """Libellé dans la langue courante."""
+        return translate(self.label_key)
 
 
 # Sections exposées par le rail. L'ordre reflète la hiérarchie visuelle
 # d'un monteur (médias d'abord, puis édition, puis enrichissement).
 DEFAULT_SECTIONS: tuple[RailSection, ...] = (
-    RailSection("media", "Médias", IconName.MEDIA),
-    RailSection("sequences", "Séquences", IconName.FILM),
-    RailSection("edit", "Éditer", IconName.SCISSORS),
-    RailSection("effects", "Effets", IconName.EFFECTS),
-    RailSection("color", "Couleur", IconName.COLOR),
-    RailSection("text", "Texte", IconName.TEXT),
-    RailSection("transitions", "Transitions", IconName.TRANSITIONS),
-    RailSection("audio", "Audio", IconName.AUDIO),
-    RailSection("graphics", "Graphiques", IconName.SUBTITLE),
-    RailSection("templates", "Modèles", IconName.PROJECT),
+    RailSection("media", "rail.media", IconName.MEDIA),
+    RailSection("sequences", "rail.sequences", IconName.FILM),
+    RailSection("edit", "rail.edit", IconName.SCISSORS),
+    RailSection("effects", "rail.effects", IconName.EFFECTS),
+    RailSection("color", "rail.color", IconName.COLOR),
+    RailSection("text", "rail.text", IconName.TEXT),
+    RailSection("transitions", "rail.transitions", IconName.TRANSITIONS),
+    RailSection("audio", "rail.audio", IconName.AUDIO),
+    RailSection("graphics", "rail.graphics", IconName.SUBTITLE),
+    RailSection("templates", "rail.templates", IconName.PROJECT),
 )
 
 
@@ -133,6 +139,14 @@ class SideRail(QWidget):
     def active(self) -> str | None:
         """Section active courante."""
         return self._active
+
+    def retranslate(self) -> None:
+        """Libellés, infobulles et noms accessibles dans la langue courante."""
+        for section in self._sections:
+            button = self._buttons[section.id]
+            button.setText(section.label)
+            button.setToolTip(section.label)
+            button.setAccessibleName(section.label)
 
     # ------------------------------------------------------------------
     # Slots internes

@@ -267,9 +267,9 @@ class TimelineEditingMixin:
 
     def offer_transition(self, transition_time):
         menu = QMenu(self)
-        menu.addAction(f"Jonction à {transition_time:.2f}s")
+        menu.addAction(translate("timeline.junction", time=format(transition_time, '.2f')))
         menu.addSeparator()
-        crossfade = menu.addAction("Fondu enchaîné · 0.5 s")
+        crossfade = menu.addAction(translate("preview.crossfade_overlay"))
         if menu.exec(QCursor.pos()) is crossfade:
             self.transition_seconds = transition_time
             self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)

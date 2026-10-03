@@ -14,10 +14,18 @@ Principe
 --------
 
 Le détecteur lit l'AST des modules de ``ui/`` (jamais une regex sur le texte source) et relève chaque littéral de
-chaîne — f-strings et morceaux de concaténation compris — qui contient du **texte humain français** : lettres
-accentuées ou mots français courants (lexique figé, voir :data:`FRENCH_WORDS`). Sont écartés : docstrings, appels de
-journal, tables de traduction (``ui/i18n*.py``), clés i18n, chemins et noms de fichiers, formats, CSS, noms
-d'objets Qt, noms de langues dans leur propre langue.
+chaîne — f-strings et morceaux de concaténation compris — de deux sortes :
+
+* partout dans ``ui/`` : un **texte humain français**, c'est-à-dire des lettres accentuées ou un mot du lexique
+  français figé (:data:`FRENCH_WORDS`) ;
+* passé **directement à un puits d'affichage** (constructeurs de widgets, ``setText`` / ``setToolTip`` /
+  ``addAction`` / ``addRow``…, ``QMessageBox`` / ``QInputDialog`` / ``QFileDialog``, ``showMessage``, aides
+  d'historique du dépôt) : tout texte, **quelle que soit sa langue** (« Position » s'écrit pareil en français et en
+  anglais, mais c'est du texte à traduire).
+
+Sont écartés : docstrings, appels de journal, tables de traduction (``ui/i18n*.py``), clés i18n, chemins et noms de
+fichiers, formats, CSS, noms d'objets Qt et propriétés, sigles et unités, noms de langues dans leur propre langue,
+``__repr__`` / ``__str__``.
 
 Chaque littéral est rapporté avec son **contexte** (la catégorie : dialogue, menu, infobulle, barre d'état, libellé
 d'historique, table de libellés…) ; la catégorie ne sert qu'à l'affichage, jamais à la clé.
@@ -32,9 +40,10 @@ d'occurrences, **jamais par un numéro de ligne** : décaler du code ne fait pas
   puisse que décroître.
 
 Limites assumées : un texte construit à l'exécution (``"".join`` de variables, lu dans un fichier…) n'est pas
-vu ; les mots français identiques à leur équivalent anglais sans accent (« Position », « Auto »…) ne sont pas
-détectables, et un texte anglais écrit en dur n'est pas non plus relevé. Une exception légitime (donnée
-technique qui ressemble à du français) se marque sur la ligne par ``# i18n-ignore: raison``.
+vu ; **hors puits d'affichage** (tables de libellés, valeurs de retour), un mot français identique à son équivalent
+anglais sans accent (« Rotation », « Standard »…) et un texte anglais ne sont pas détectables. Une exception
+légitime (donnée technique qui ressemble à du français, message de développeur) se marque par
+``# i18n-ignore: raison`` sur la ligne du littéral, ou sur la ligne ``def`` d'une fonction pour l'exempter en entier.
 """
 
 from __future__ import annotations

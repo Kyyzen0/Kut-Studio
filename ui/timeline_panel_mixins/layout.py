@@ -9,7 +9,7 @@ from core.timeline_spatial import SnapIndex, SpanIndex
 from core.timeline_view_model import (
     TimelineClipView,
 )
-from ui.i18n import translate
+from ui.i18n import current_language, translate
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.common import (
     _COLLAPSED_HEIGHT,
@@ -130,7 +130,7 @@ class LayoutMixin:
             return
         self.track_names = [track.name for track in self.project.tracks]
         self.track_labels = [
-            _TRACK_TYPE_LABELS.get(track.type, track.type)
+            translate(_TRACK_TYPE_LABELS[track.type]) if track.type in _TRACK_TYPE_LABELS else track.type
             for track in self.project.tracks
         ]
 
@@ -156,7 +156,7 @@ class LayoutMixin:
         """
         count = len(self.clip_views)
         self.clip_count_label.setText(
-            f"{count} clip" if count == 1 else f"{count} clips"
+            translate("timeline.clip_count_one", count=count) if count == 1 else translate("timeline.clip_count_many", count=count)
         )
         self._update_scroll_extent()
         self._configure_grid()
@@ -171,7 +171,7 @@ class LayoutMixin:
     def _header_signature(self) -> tuple:
         if self.project is None:
             return tuple()
-        return tuple(
+        return (current_language(),) + tuple(
             (
                 index,
                 track.id,
@@ -409,12 +409,12 @@ class LayoutMixin:
     @staticmethod
     def _transition_label(transition) -> str:
         labels = {
-            "crossfade": "FONDU",
-            "fade_black": "NOIR",
-            "wipe_left": "BALAYAGE ←",
-            "wipe_right": "BALAYAGE →",
+            "crossfade": translate("timeline.transition.crossfade"),
+            "fade_black": translate("timeline.transition.fade_black"),
+            "wipe_left": translate("timeline.transition.wipe_left"),
+            "wipe_right": translate("timeline.transition.wipe_right"),
         }
-        return f"{labels.get(transition.type.value, 'TRANSITION')} · {transition.duration:.1f}s"
+        return f"{labels.get(transition.type.value, translate('timeline.transition.default'))} · {transition.duration:.1f}s"
 
     def _layout_transition_widgets(self) -> None:
         if self.project is None:

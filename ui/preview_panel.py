@@ -40,6 +40,7 @@ from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style, monospace_font_family
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
+from ui.i18n import translate
 
 CANVAS_MARGIN = 12
 """Marge (pixels) entre le cadre de la séquence et les bords du viewer."""
@@ -157,7 +158,7 @@ class PreviewPanel(QWidget):
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
-        self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
+        self.preview_transition_overlay = QLabel(translate("preview.crossfade_overlay"))
         self.preview_transition_overlay.setAlignment(Qt.AlignCenter)
         self.preview_transition_overlay.setStyleSheet(
             f"background: {COLORS['transition_overlay_bg']}; color: {COLORS['transition_overlay']}; "
@@ -166,10 +167,8 @@ class PreviewPanel(QWidget):
         )
         self.preview_transition_overlay.hide()
 
-        self.empty_state = QLabel(
-            "Aucun clip sous la tête de lecture\n"
-            "Déplacez la tête de lecture ou sélectionnez un clip dans la timeline."
-        )
+        self.empty_state = QLabel(translate("preview.no_clip"))
+        self._empty_state_name: str | None = None  # ``None`` : pas de clip ; sinon nom du clip sans média
         self.empty_state.setAlignment(Qt.AlignCenter)
         self.empty_state.setStyleSheet(
             f"color: {COLORS['muted_strong']}; background: {COLORS['panel']};"
@@ -223,7 +222,8 @@ class PreviewPanel(QWidget):
         title_icon = IconLabel(IconName.MEDIA, size=Iconography.md)
         title_icon.set_color(QColor(COLORS["muted_strong"]))
         title_layout.addWidget(title_icon)
-        title = QLabel("VISIONNEUSE")
+        title = QLabel(translate("preview.title"))
+        self._title_label = title
         title.setStyleSheet(label_style(10, "muted", 800))
         title_layout.addWidget(title)
         header_layout.addWidget(title_box)
@@ -268,50 +268,54 @@ class PreviewPanel(QWidget):
         # Transport : retour / play / stop / avance.
         rewind = IconButton(
             icon=IconName.REWIND,
-            tooltip="Reculer de 2 s",
+            tooltip=translate("preview.back"),
             size=Sizes.icon_button,
         )
         rewind.clicked.connect(lambda: seek_relative(-2))
         self.play_button = IconButton(
             icon=IconName.PLAY,
-            tooltip="Lecture / Pause",
+            tooltip=translate("shortcuts.command.play_pause"),
             accent=True,
             size=Sizes.icon_button + 4,
         )
         self.play_button.clicked.connect(toggle_play)
         stop = IconButton(
             icon=IconName.STOP,
-            tooltip="Stop",
+            tooltip=translate("tracking.stop"),
             size=Sizes.icon_button,
         )
         stop.clicked.connect(stop_playback)
         forward = IconButton(
             icon=IconName.FORWARD,
-            tooltip="Avancer de 2 s",
+            tooltip=translate("preview.forward"),
             size=Sizes.icon_button,
         )
         forward.clicked.connect(lambda: seek_relative(2))
 
         for button in (rewind, self.play_button, stop, forward):
             toolbar_layout.addWidget(button)
+        # Boutons à infobulle traduite : (bouton, clé i18n), réécrits par ``update_translations``.
+        self._tooltip_buttons = [(rewind, "preview.back"), (self.play_button, "shortcuts.command.play_pause"),
+                                 (stop, "tracking.stop"), (forward, "preview.forward")]
 
         toolbar_layout.addStretch()
 
         # Qualité / actions à droite (discrètes).
         cut_button = IconButton(
             icon=IconName.CUT,
-            tooltip="Couper le clip à la tête de lecture",
+            tooltip=translate("tooltip.cut"),
             size=Sizes.icon_button,
         )
         cut_button.clicked.connect(cut_callback)
         import_button = IconButton(
             icon=IconName.IMPORT,
-            tooltip="Importer un média",
+            tooltip=translate("preview.import"),
             size=Sizes.icon_button,
         )
         import_button.clicked.connect(open_file_callback)
         toolbar_layout.addWidget(cut_button)
         toolbar_layout.addWidget(import_button)
+        self._tooltip_buttons += [(cut_button, "tooltip.cut"), (import_button, "preview.import")]
 
         # Zone d'aperçu ---------------------------------------------------------
         preview_container = QWidget()
@@ -433,7 +437,7 @@ class PreviewPanel(QWidget):
             except Exception:
                 pass
         if computing:
-            badge.setText(label or "Calcul de l'aperçu…")
+            badge.setText(label or translate("preview.computing"))
             badge.show()
             badge.raise_()
         else:
@@ -462,7 +466,7 @@ class PreviewPanel(QWidget):
                     layout.addWidget(pill, 0, 0, Qt.AlignBottom | Qt.AlignHCenter)
             except Exception:
                 pass
-        pill.setText(label or ("Aperçu en cache" if cached else ""))
+        pill.setText(label or (translate("preview.cached") if cached else ""))
         if label or cached:
             pill.show()
             pill.raise_()
@@ -558,19 +562,30 @@ class PreviewPanel(QWidget):
     def show_missing_media(self, clip_name: str = "") -> None:
         """Distingue un média absent d'un trou réel dans la timeline."""
         self.show_empty()
-        name = clip_name.strip() or "Le clip sélectionné"
-        self.empty_state.setText(
-            f"{name} n’a pas encore de média source\n"
-            "Importez ou reliez le fichier pour l’afficher dans la visionneuse."
-        )
+        self._empty_state_name = clip_name.strip()
+        self.empty_state.setText(translate("preview.no_source", name=self._empty_state_name
+                                           or translate("preview.selected_clip")))
 
     def show_no_active_clip(self) -> None:
         """Restaure le message destiné aux espaces vides de la timeline."""
         self.show_empty()
-        self.empty_state.setText(
-            "Aucun clip sous la tête de lecture\n"
-            "Déplacez la tête de lecture ou sélectionnez un clip dans la timeline."
-        )
+        self._empty_state_name = None
+        self.empty_state.setText(translate("preview.no_clip"))
+
+    def update_translations(self) -> None:
+        """Textes de la visionneuse dans la langue courante (appelé par ``MainWindow._retranslate_ui``)."""
+        self._title_label.setText(translate("preview.title"))
+        for button, key in self._tooltip_buttons:
+            button.setToolTip(translate(key))
+        self.preview_transition_overlay.setText(translate("preview.crossfade_overlay"))
+        if self._empty_state_name is None:
+            self.empty_state.setText(translate("preview.no_clip"))
+        else:
+            self.empty_state.setText(translate("preview.no_source", name=self._empty_state_name
+                                               or translate("preview.selected_clip")))
+        pill = getattr(self, "preview_cache_pill", None)
+        if pill is not None and pill.text():
+            pill.setText(translate("preview.cached"))
 
     # ------------------------------------------------------------------
     # Application du transform courant (tâche 13)

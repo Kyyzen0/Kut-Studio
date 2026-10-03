@@ -240,3 +240,136 @@ def test_layer_attribute_choices_and_dialogs_follow_the_language(window, monkeyp
     window._attribute_clipboard = None
     window._paste_layer_attributes([_first_clip_id(window)])
     assert window.statusBar().currentMessage() == "Copy a layer's attributes first."
+
+
+# ---------------------------------------------------------------------------
+# Fenêtre principale : barre supérieure, rail latéral, raccourcis, lecture
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("language", "nav", "export", "settings", "saved", "unsaved", "title", "caption"), [
+    ("fr", ["Éditer", "Médias", "Effets", "Couleur", "Audio", "Graphiques"], " Exporter", "Réglages",
+     "●  Enregistré", "●  Non enregistré", "Mon montage", "SÉQUENCE"),
+    ("en", ["Edit", "Media", "Effects", "Color", "Audio", "Graphics"], " Export", "Settings",
+     "●  Saved", "●  Unsaved", "My edit", "SEQUENCE"),
+    ("es", ["Editar", "Medios", "Efectos", "Color", "Audio", "Gráficos"], " Exportar", "Ajustes",
+     "●  Guardado", "●  Sin guardar", "Mi montaje", "SECUENCIA"),
+])
+def test_the_top_bar_and_the_side_rail_follow_the_language(
+    window, language, nav, export, settings, saved, unsaved, title, caption
+):
+    i18n.set_language(language)                                    # la fenêtre est abonnée : retraduction à chaud
+    assert [button.text() for button in window.top_nav_buttons] == nav
+    assert window.export_button.text() == export
+    assert window.settings_button.text() == " " + settings and window.settings_button.toolTip() == settings
+    assert window._sequence_caption.text() == caption
+    window.project_dirty = True
+    window._update_top_bar()
+    assert window.saved_indicator.text() == unsaved
+    window.project_dirty = False
+    window._update_top_bar()
+    assert window.saved_indicator.text() == saved
+    assert window.project_label.text() == title
+    media = window.side_rail._buttons["media"]
+    assert media.toolTip() == nav[1] == media.accessibleName()
+    with i18n.strict_translations():
+        window._retranslate_ui()
+
+
+def test_the_play_button_tooltip_keeps_its_state_when_the_language_changes(window):
+    window.is_playing = True
+    window._set_preview_play_icon(True)
+    i18n.set_language("en")
+    assert window.preview_panel.play_button.toolTip() == "Pause"
+    window.is_playing = False
+    window._set_preview_play_icon(False)
+    assert window.preview_panel.play_button.toolTip() == "Play"
+    i18n.set_language("es")
+    assert window.preview_panel.play_button.toolTip() == "Reproducir"
+
+
+def test_shortcut_tooltips_keep_the_current_shortcut_in_every_language(window):
+    roll = window.timeline_panel.roll_button
+    assert roll.toolTip() == "Roll (R) : déplace la coupe entre deux clips"
+    i18n.set_language("en")
+    assert roll.toolTip() == "Roll (R): moves the cut between two clips"
+    i18n.set_language("es")
+    assert roll.toolTip() == "Roll (R): mueve el corte entre dos clips"
+    assert window.timeline_panel.blade_button.toolTip() == "Herramienta de cuchilla (B)"
+
+
+# ---------------------------------------------------------------------------
+# Timeline : en-têtes de piste, transitions
+# ---------------------------------------------------------------------------
+
+
+def _header_titles(window) -> list[str]:
+    from PySide6.QtWidgets import QLabel
+
+    from ui.timeline_widgets.track_header import TrackRowHeader
+
+    titles = []
+    for header in window.timeline_panel.findChildren(TrackRowHeader):
+        titles += [label.text() for label in header.findChildren(QLabel) if label.text().startswith(("V", "A", "S"))]
+    return titles
+
+
+def test_track_headers_are_rebuilt_in_the_new_language(window):
+    french = _header_titles(window)
+    assert any("VIDÉO" in title for title in french)
+    i18n.set_language("en")
+    english = _header_titles(window)
+    assert any("VIDEO" in title for title in english) and not any("VIDÉO" in title for title in english)
+    i18n.set_language("es")
+    assert any("VÍDEO" in title for title in _header_titles(window))
+
+
+@pytest.mark.parametrize(("language", "label"), [("fr", "FONDU · 0.5s"), ("en", "CROSSFADE · 0.5s"),
+                                                  ("es", "FUNDIDO · 0.5s")])
+def test_transition_labels_on_the_timeline_follow_the_language(language_reset, language, label):
+    from types import SimpleNamespace
+
+    from ui.timeline_panel import TimelinePanel
+
+    i18n.set_language(language)
+    transition = SimpleNamespace(type=SimpleNamespace(value="crossfade"), duration=0.5)
+    assert TimelinePanel._transition_label(transition) == label
+
+
+# ---------------------------------------------------------------------------
+# Visionneuse et export
+# ---------------------------------------------------------------------------
+
+
+def test_the_viewer_follows_the_language_and_remembers_what_it_shows(window):
+    panel = window.preview_panel
+    panel.show_no_active_clip()
+    assert panel._title_label.text() == "VISIONNEUSE"
+    i18n.set_language("en")
+    assert panel._title_label.text() == "VIEWER"
+    assert panel._tooltip_buttons[0][0].toolTip() == "Back 2 s"
+    assert panel.empty_state.text() == "No clip under the playhead\nMove the playhead or select a clip in the timeline."
+    panel.show_missing_media("Interview")
+    assert panel.empty_state.text() == (
+        "Interview has no source media yet\nImport or relink the file to display it in the viewer.")
+    i18n.set_language("es")                                       # le message « média absent » garde le nom du clip
+    assert panel.empty_state.text().startswith("Interview aún no tiene medio de origen")
+    panel.show_no_active_clip()
+    i18n.set_language("fr")
+    assert panel.empty_state.text().startswith("Aucun clip sous la tête de lecture")
+
+
+def test_the_export_panel_title_and_quality_choices_follow_the_language(language_reset, qtbot):
+    from ui.export_panel import ExportPanel
+
+    panel = ExportPanel()
+    qtbot.addWidget(panel)
+    quality = lambda: [panel.quality_combo.itemText(i) for i in range(panel.quality_combo.count())]  # noqa: E731
+    assert panel.title_label.text() == "EXPORT DU PROJET" and quality() == ["Élevée", "Standard", "Basse"]
+    panel.quality_combo.setCurrentIndex(2)
+    i18n.set_language("en")
+    assert panel.title_label.text() == "PROJECT EXPORT" and quality() == ["High", "Standard", "Low"]
+    assert panel.quality_combo.currentIndex() == 2 and panel.quality_combo.currentData() == "low"
+    assert panel.close_button.toolTip() == "Close the export"
+    i18n.set_language("es")
+    assert quality() == ["Alta", "Estándar", "Baja"]

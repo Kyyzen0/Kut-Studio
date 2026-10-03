@@ -985,8 +985,8 @@ class MainWindow(
         top_nav_layout.setContentsMargins(0, 0, 0, 0)
         top_nav_layout.setSpacing(2)
         self.top_nav_buttons: list[QPushButton] = []
-        for index, label in enumerate(("Éditer", "Médias", "Effets", "Couleur", "Audio", "Graphiques")):
-            button = QPushButton(label)
+        for index, key in enumerate(self._TOP_NAV_KEYS):
+            button = QPushButton(i18n.translate(key))
             button.setObjectName("topNavTab")
             button.setCheckable(True)
             button.setChecked(index == 0)
@@ -1007,9 +1007,10 @@ class MainWindow(
         sequence_layout = QVBoxLayout(sequence_box)
         sequence_layout.setContentsMargins(0, 0, 0, 0)
         sequence_layout.setSpacing(0)
-        seq_title = QLabel("SÉQUENCE")
+        seq_title = QLabel(i18n.translate("sequence.nav.caption"))
+        self._sequence_caption = seq_title
         seq_title.setStyleSheet(label_style(9, "muted", 800))
-        self.project_label = QLabel("Projet sans titre")
+        self.project_label = QLabel(i18n.translate("topbar.default_name"))
         self.project_label.setStyleSheet(label_style(12, "text", 700))
         sequence_layout.addWidget(seq_title)
         sequence_layout.addWidget(self.project_label)
@@ -1018,8 +1019,8 @@ class MainWindow(
         saved_layout = QHBoxLayout(saved_box)
         saved_layout.setContentsMargins(0, 0, 0, 0)
         saved_layout.setSpacing(6)
-        self.saved_indicator = QLabel("●  Enregistré")
-        self.saved_indicator.setToolTip("Projet enregistré")
+        self.saved_indicator = QLabel(i18n.translate("topbar.saved"))
+        self.saved_indicator.setToolTip(i18n.translate("topbar.saved_tooltip"))
         self.saved_indicator.setStyleSheet(label_style(10, "success", 700))
         self.saved_indicator.setAlignment(Qt.AlignCenter)
         saved_layout.addWidget(self.saved_indicator)
@@ -1056,31 +1057,33 @@ class MainWindow(
         layout.addWidget(self._vseparator())
         layout_btn = IconButton(
             icon=IconName.PANEL_RESTORE,
-            tooltip="Réinitialiser la disposition des panneaux",
+            tooltip=i18n.translate("topbar.reset_layout"),
             size=Sizes.icon_button,
         )
+        self.reset_layout_button = layout_btn
         layout_btn.clicked.connect(self.workspace.reset_layout)
         layout.addWidget(layout_btn)
 
         settings_btn = IconButton(
             icon=IconName.MENU,
-            tooltip="Réglages",
+            tooltip=i18n.translate("topbar.settings"),
             size=Sizes.icon_button,
             square=False,
         )
-        settings_btn.setText(" Réglages")
+        settings_btn.setText(" " + i18n.translate("topbar.settings"))
         settings_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.settings_button = settings_btn
         settings_btn.clicked.connect(self.show_preferences)
         layout.addWidget(settings_btn)
 
         self.export_button = IconButton(
             icon=IconName.EXPORT,
-            tooltip="Exporter le montage",       # aucun raccourci : Ctrl+E est « activer/désactiver le clip »
+            tooltip=i18n.translate("tooltip.export"),       # aucun raccourci : Ctrl+E est « activer/désactiver le clip »
             size=Sizes.button_md,
             square=False,
             accent=True,
         )
-        self.export_button.setText(" Exporter")
+        self.export_button.setText(" " + i18n.translate("topbar.export"))
         self.export_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.export_button.setMinimumWidth(108)
         self.export_button.setMinimumHeight(32)
@@ -1125,9 +1128,11 @@ class MainWindow(
 
     def _update_top_bar(self) -> None:
         """Met à jour le nom du projet et l'indicateur « Enregistré / Non enregistré »."""
-        name = self.project.name if self.project is not None else "Projet sans titre"
-        display_name = "Mon montage" if name == "Projet sans titre" else name
-        display_name = display_name or "Mon montage"
+        name = self.project.name if self.project is not None else "Projet sans titre"  # i18n-ignore: nom par défaut du projet (donnée du cœur)
+        display_name = (
+            i18n.translate("topbar.default_name") if name == "Projet sans titre" else name  # i18n-ignore: idem
+        )
+        display_name = display_name or i18n.translate("topbar.default_name")
         # La séquence éditée est toujours visible : « Projet › Séquence ».
         if self.project is not None and len(self.project.sequences) > 1:
             self.project_label.setText(f"{display_name} › {self.project.active_sequence.name}")
@@ -1136,12 +1141,12 @@ class MainWindow(
         if self.project is not None:
             self.project_label.setToolTip(self.project.active_sequence.name)
         if self.project_dirty:
-            self.saved_indicator.setText("●  Non enregistré")
-            self.saved_indicator.setToolTip("Modifications non enregistrées")
+            self.saved_indicator.setText(i18n.translate("topbar.dirty"))
+            self.saved_indicator.setToolTip(i18n.translate("topbar.dirty_tooltip"))
             self.saved_indicator.setStyleSheet(label_style(11, "warning", 700))
         else:
-            self.saved_indicator.setText("●  Enregistré")
-            self.saved_indicator.setToolTip("Projet enregistré")
+            self.saved_indicator.setText(i18n.translate("topbar.saved"))
+            self.saved_indicator.setToolTip(i18n.translate("topbar.saved_tooltip"))
             self.saved_indicator.setStyleSheet(label_style(11, "success", 700))
 
     # ------------------------------------------------------------------
@@ -1559,12 +1564,12 @@ class MainWindow(
             self.preview_panel.play_button.setIcon(
                 make_icon(IconName.PAUSE, size=Iconography.lg)
             )
-            self.preview_panel.play_button.setToolTip("Pause")
+            self.preview_panel.play_button.setToolTip(i18n.translate("topbar.pause"))
         else:
             self.preview_panel.play_button.setIcon(
                 make_icon(IconName.PLAY, size=Iconography.lg)
             )
-            self.preview_panel.play_button.setToolTip("Lecture")
+            self.preview_panel.play_button.setToolTip(i18n.translate("topbar.play"))
 
     def _tick_playback(self) -> None:
         """Avance l'horloge de timeline quand la lecture est active.
@@ -2064,19 +2069,18 @@ class MainWindow(
         self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
         self._save_master_state()
 
-    # (bouton de la timeline, commande, gabarit) : ``{hint}`` devient
+    # Clés i18n des boutons de navigation supérieure (même ordre que le rail latéral).
+    _TOP_NAV_KEYS = ("rail.edit", "rail.media", "rail.effects", "rail.color", "rail.audio", "rail.graphics")
+
+    # (bouton de la timeline, commande, clé i18n du gabarit) : ``{hint}`` devient
     # `` (B)`` selon le raccourci courant, ou rien si la commande n'en a plus.
     _SHORTCUT_TOOLTIPS = (
-        ("blade_button", "tool_blade", "Outil lame{hint}"),
-        ("roll_button", "tool_roll", "Roll{hint} : déplace la coupe entre deux clips"),
-        ("slip_button", "tool_slip", "Slip{hint} : change le contenu sans bouger le clip"),
-        ("slide_button", "tool_slide", "Slide{hint} : glisse le clip et ajuste ses voisins"),
-        (
-            "ripple_button",
-            "toggle_ripple",
-            "Ripple{hint} : referme le trou après un trim droit ou une suppression",
-        ),
-        ("marker_button", "marker_add", "Marqueur au playhead{hint}"),
+        ("blade_button", "tool_blade", "timeline.tip.blade"),
+        ("roll_button", "tool_roll", "timeline.tip.roll"),
+        ("slip_button", "tool_slip", "timeline.tip.slip"),
+        ("slide_button", "tool_slide", "timeline.tip.slide"),
+        ("ripple_button", "toggle_ripple", "timeline.tip.ripple"),
+        ("marker_button", "marker_add", "timeline.tip.marker"),
     )
 
     def _refresh_shortcut_tooltips(self) -> None:
@@ -2090,7 +2094,7 @@ class MainWindow(
             if button is None:
                 continue
             hint = self.shortcuts.hint(command_id)
-            button.setToolTip(template.format(hint=f" ({hint})" if hint else ""))
+            button.setToolTip(i18n.translate(template, hint=f" ({hint})" if hint else ""))
 
     def _on_shortcuts_changed(self, _overrides: dict) -> None:
         """Persiste la configuration des raccourcis dès qu'elle change."""
@@ -2148,8 +2152,23 @@ class MainWindow(
         self.timeline_panel.sequence_bar.retranslate()
         self.project_panel.sequence_view.retranslate()
         self.workspace.retranslate()
+        self._retranslate_top_bar()
+        self.side_rail.retranslate()
+        self._refresh_shortcut_tooltips()
+        self._set_preview_play_icon(bool(getattr(self, "is_playing", False)))
         self.timeline_panel.refresh_clip_widgets()
         self._refresh_undo_redo_state()
+
+    def _retranslate_top_bar(self) -> None:
+        """Textes de la barre supérieure qui ne dépendent pas de l'état du projet."""
+        self._sequence_caption.setText(i18n.translate("sequence.nav.caption"))
+        self.reset_layout_button.setToolTip(i18n.translate("topbar.reset_layout"))
+        self.settings_button.setToolTip(i18n.translate("topbar.settings"))
+        self.settings_button.setText(" " + i18n.translate("topbar.settings"))
+        self.export_button.setToolTip(i18n.translate("tooltip.export"))
+        self.export_button.setText(" " + i18n.translate("topbar.export"))
+        for button, key in zip(self.top_nav_buttons, self._TOP_NAV_KEYS):
+            button.setText(i18n.translate(key))
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:
