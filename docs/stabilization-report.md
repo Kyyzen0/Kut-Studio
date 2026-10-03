@@ -19,7 +19,7 @@ Où chaque information vit, et quel test la garde : [architecture.md](architectu
   corrigé des défauts qui n'étaient pas dans la liste (sous-titres ASS, pannes absentes du journal, boutons par défaut des
   dialogues…). **Ce qui n'est pas réglé est listé plus bas**, sans l'atténuer (section [Points ouverts](#points-ouverts)).
 * État de fin : `ruff` propre, `mypy` propre sur `core/` (dette ramenée de 41 à 17 modules, et verrouillée par un test),
-  suite complète verte (3 436 réussis, 21 sautés), smoke test de l'interface et de l'application empaquetée, CI sur trois
+  suite complète verte (3 445 réussis, 21 sautés), smoke test de l'interface et de l'application empaquetée, CI sur trois
   plateformes **et** job `macos-libass` verts sur les deux premières PR de la phase 2 — voir [CI](#ci) pour le détail.
 
 ## Méthode
@@ -214,6 +214,7 @@ ensemble après chaque fusion (3 incompatibilités entre branches trouvées et c
 | Cinq pannes **absentes du fichier de journal** : analyse de tracking, état d'un clip impossible à dériver, entrée du cache de tracking illisible, segment d'aperçu impossible à supprimer, cache des capacités illisible | invisibles dans l'application empaquetée (pas de console), donc dans un rapport de bogue | `3c2d9f2` |
 | Échecs FFmpeg **absents du journal** : export, tâche de la file de rendu, segment d'aperçu, proxy | un export en échec laissait un message à l'écran et aucune trace | `bfe7a41` |
 | Backend exigé caché par un filtre : `KUT_STUDIO_REQUIRE_HARDWARE=nvenc … --encoder cpu` sortait en succès sans NVENC (relecture automatisée de la PR) | l'exigence « l'absence est une erreur » ne tenait pas | `a7eca11` |
+| **Changer de langue renommait les calques** (introduit par la migration i18n, trouvé en relançant la suite) : réécrire l'info-bulle d'un calque faisait émettre `itemChanged`, lu comme un renommage au nom inchangé | une entrée d'historique « Renommer le calque » par calque et par changement de langue (2 → 5 entrées après trois changements), projet marqué modifié, arbre reconstruit pendant le parcours de l'itérateur : **plantage natif intermittent** d'un processus de test (environ une suite complète sur deux) | `5e2e577` |
 | Classement « mémoire insuffisante » du GPU lu dans le **texte** du message ; qualité d'export « Custom » indexée par son **libellé affiché** | traduire aurait cassé ces comportements : indicateur explicite et identifiant interne | `2161f8b`, `62bf1d7` |
 
 Trois **incompatibilités entre branches**, trouvées en relançant la suite complète après chaque fusion et corrigées : le garde « module atteignable depuis `main.py` » ne connaissait pas l'outil de validation matérielle ; `PropertiesPanel` a perdu un paramètre mort (code mort) alors que des tests d'autres branches l'appelaient encore ; des tests de parité i18n prenaient un titre de menu (devenu « &File » avec son mnémonique) comme exemple.
@@ -221,7 +222,7 @@ Trois **incompatibilités entre branches**, trouvées en relançant la suite com
 ### Tests
 
 Référence avant la phase 2 (`main`, exécution locale) : **2 970 réussis, 7 sautés**. État final (branche, exécution locale
-complète, `-n 6`) : **3 436 réussis, 21 sautés, 0 échec** ; 3 457 tests collectés. Les 21 sautés ont tous leur raison
+complète, `-n 6`) : **3 445 réussis, 21 sautés, 0 échec** ; 3 466 tests collectés. Les 21 sautés ont tous leur raison
 affichée : 12 tests `libass` (le FFmpeg local n'a pas libass ; exécutés ici avec un `ffmpeg-full` déjà installé : 12
 réussis), 8 backends matériels absents (NVENC, Quick Sync, AMF, VAAPI, MP4 et MOV), 1 mnémonique Alt (vide sous le thème
 macOS, jamais exécuté avant la CI Windows / Linux). Vingt fichiers de tests ajoutés (ceux cités dans les tableaux ci-dessus, plus `test_dead_code_guard.py` (8),
@@ -309,7 +310,7 @@ Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-me
 | --- | --- |
 | `ruff` propre | oui |
 | `mypy` propre | oui sur `core/` (17 modules en dette, listés, verrouillés par `test_typing_ratchet.py`) |
-| `pytest` complet vert | oui : **3 436 réussis, 21 sautés, 0 échec** (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
+| `pytest` complet vert | oui : **3 445 réussis, 21 sautés, 0 échec** (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
 | Smoke test de l'interface | oui (`python main.py --smoke-test`), source **et** application empaquetée |
 | Build natif + smoke test empaqueté | oui en local (macOS) ; CI trois plateformes verte sur les PR #23 et #24 |
 | Anciens `.kut` compatibles | oui : `SUPPORTED_VERSIONS` inchangé ; champs ajoutés (`continuation_ids`, `shared_range`) **optionnels**, écrits seulement s'ils diffèrent du défaut ; `Track.automation` migré au chargement sans changer le fichier ; aller-retour `save → load → save` idempotent |
