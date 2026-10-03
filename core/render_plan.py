@@ -411,9 +411,10 @@ def build_render_plan(
     if sequence_id is None:
         sequence = project.active_sequence
     else:
-        sequence = project.get_sequence(sequence_id)
-        if sequence is None:
+        found = project.get_sequence(sequence_id)
+        if found is None:
             raise KeyError(f"Séquence '{sequence_id}' introuvable dans le projet.")
+        sequence = found
     builder = _PlanBuilder(project, window_index)
     plan = builder.build(
         sequence,

@@ -333,8 +333,8 @@ class LinkMotion:
         self.target = target_clip
         self.space = space
         self.parts: list[_SourcePart] = []
-        self.reference_inverse = None
-        self.target_matrix = None
+        self.reference_inverse: Matrix | None = None
+        self.target_matrix: tuple[Matrix, Matrix] | None = None
         parts = [
             part for part in (
                 _SourcePart.build(context, source, link, target_clip, space)
@@ -387,6 +387,8 @@ class LinkMotion:
         layer_motion = part.series.matrix_at_time(source_time(source, local))
         if part.layer_only:
             return layer_motion
+        if self.reference_inverse is None:
+            return None
         source_matrix = part.source_matrix or self.context.layer_matrix(source, local)
         canvas_motion = mat_mul(mat_mul(source_matrix, layer_motion), self.reference_inverse)
         if self.space == "canvas":
@@ -548,7 +550,7 @@ _STATE_LOCK = threading.RLock()     # états évalués par l'interface et par le
 
 def _state_key(clip, context: TrackingContext):
     tracking: ClipTracking = clip.tracking
-    sources = []
+    sources: list[tuple] = []
     for link in tracking.links:
         if link.enabled:
             for source_id in link.source_ids:
@@ -834,7 +836,9 @@ def _crop_mask(compositing, corrections, times, result: StabilizationResult, con
     from .compositing import Compositing
 
     canvas = (float(context.width), float(context.height))
-    columns = {name: [] for name in ("position_x", "position_y", "width", "height", "rotation")}
+    if result.crop_rect is None:
+        return compositing, []
+    columns: dict[str, list[float]] = {name: [] for name in ("position_x", "position_y", "width", "height", "rotation")}
     for correction in corrections:
         px, py, w, h, rotation = crop_mask_values(correction, result.crop_rect, canvas)
         for name, value in zip(columns, (px, py, w, h, rotation)):
@@ -873,7 +877,9 @@ def baked_keyframes(project, clip, link_id: str) -> tuple[list, list] | None:
     liaison seule, puis on garde ses propriétés.
     """
     tracking: ClipTracking | None = getattr(clip, "tracking", None)
-    link = tracking.link(link_id) if tracking is not None else None
+    if tracking is None:
+        return None
+    link = tracking.link(link_id)
     if link is None:
         return None
     solo = replace(tracking, links=(replace(link, enabled=True),), stabilization=None)

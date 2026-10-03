@@ -587,7 +587,7 @@ def estimate_ffmpeg_memory_usage(
         return 0
 
     # Mémoire pour la vidéo: width * height * 4 bytes par frame * fps * duration
-    video_memory_bytes = 0
+    video_memory_bytes = 0.0
     if has_video:
         bits_per_pixel = 24  # RGB24 ou similaire
         bytes_per_frame = width * height * (bits_per_pixel / 8)
@@ -595,7 +595,7 @@ def estimate_ffmpeg_memory_usage(
         video_memory_bytes = bytes_per_frame * total_frames
 
     # Mémoire pour l'audio: 44100 Hz * 16 bits * 2 channels * duration
-    audio_memory_bytes = 0
+    audio_memory_bytes = 0.0
     if has_audio:
         sample_rate = 44100
         bits_per_sample = 16

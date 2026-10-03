@@ -16,9 +16,11 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .effects_model import ClipEffect
+    from .graphics import GraphicOverlay
     from .text_style import TextStyle
     from .transitions import Transition
     from .time_remapping import TimeRemapping
+    from .tracking_model import ClipTracking
     from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -284,7 +286,7 @@ class Clip:
     # --- Calque graphique non destructif (tâche 32) ---
     # ``GraphicOverlay`` pour les clips de piste ``graphics`` ; ``None``
     # pour tous les projets historiques et les autres types de clips.
-    graphic: object = None
+    graphic: GraphicOverlay | None = None
     # Masques, incrustation et mode de fusion (tâche 33).
     compositing: object = field(default_factory=lambda: _default_compositing())
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
@@ -303,7 +305,7 @@ class Clip:
     # --- Tracking 2D ---
     # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
     # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
-    tracking: object = None
+    tracking: ClipTracking | None = None
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""

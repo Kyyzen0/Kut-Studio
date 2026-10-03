@@ -241,7 +241,7 @@ class TrackingCache:
     # -- vue « gestionnaire de cache » -------------------------------------------------------
 
     def _files(self) -> list[tuple[Path, int, float]]:
-        result = []
+        result: list[tuple[Path, int, float]] = []
         try:
             entries = list(os.scandir(self.directory))
         except OSError:
@@ -332,9 +332,9 @@ def run_tracking(
                 outcome.reason = StopReason.CANCELLED
     if result.state == "finished" and cache is not None:
         for tracker in active:
-            outcome = outcomes.get(tracker.id)
-            if outcome is not None and outcome.reason not in (StopReason.CANCELLED, StopReason.FAILED):
-                cache.store(keys[tracker.id], outcome, request.rate)
+            finished = outcomes.get(tracker.id)
+            if finished is not None and finished.reason not in (StopReason.CANCELLED, StopReason.FAILED):
+                cache.store(keys[tracker.id], finished, request.rate)
     if result.state == "failed":
         for tracker in active:
             outcomes.setdefault(tracker.id, TrackerOutcome(tracker.id, reason=StopReason.FAILED))

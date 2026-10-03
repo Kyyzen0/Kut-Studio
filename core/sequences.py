@@ -457,9 +457,10 @@ def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
                     group_id=renamed.get(graphic.group_id, graphic.group_id),
                 )
             tracking = clip.tracking
-            links = getattr(tracking, "links", ())
-            remapped = tuple(link.with_renamed_sources(renamed) for link in links)
-            if remapped != tuple(links):
+            if tracking is None:
+                continue
+            remapped = tuple(link.with_renamed_sources(renamed) for link in tracking.links)
+            if remapped != tracking.links:
                 clip.tracking = replace(tracking, links=remapped)
 
 
@@ -679,10 +680,10 @@ def _prune_crossing_sources(sequence: Sequence, selected: set[str]) -> None:
     """
     clips = {clip.id: clip for track in sequence.tracks for clip in track.clips}
     for clip in clips.values():
-        tracking = getattr(clip, "tracking", None)
-        links = tuple(getattr(tracking, "links", ()) or ())
-        if not links:
+        tracking = clip.tracking
+        if tracking is None or not tracking.links:
             continue
+        links = tracking.links
         pruned = []
         for link in links:
             kept = set(_relevant_sources(clip, link, clips))

@@ -301,8 +301,8 @@ def analysis_request(
 
     clip, asset = trackable_clip(project, clip_id)
     tracking = tracking_of(clip)
-    trackers = [tracking.tracker(t) for t in tracker_ids]
-    trackers = [t for t in trackers if t is not None and t.visible]
+    candidates = [tracking.tracker(t) for t in tracker_ids]
+    trackers = [t for t in candidates if t is not None and t.visible]
     if not trackers:
         raise TrackingError("Aucun tracker à analyser.")
     rate = media_rate(asset)
@@ -390,11 +390,13 @@ def tracking_for_cut(clip) -> ClipTracking | None:
     le plan d'origine) : sans elle, chaque moitié calculerait son propre agrandissement et l'image
     sauterait au point de coupe.
     """
-    tracking = getattr(clip, "tracking", None)
-    stabilization = getattr(tracking, "stabilization", None)
-    if stabilization is None or stabilization.borders == BorderMode.BLACK:
+    tracking: ClipTracking | None = getattr(clip, "tracking", None)
+    if tracking is None or tracking.stabilization is None:
         return tracking
-    datas = [tracking.tracker(t).data for t in stabilization.tracker_ids if tracking.tracker(t) is not None]
+    stabilization = tracking.stabilization
+    if stabilization.borders == BorderMode.BLACK:
+        return tracking
+    datas = [t.data for t in (tracking.tracker(tid) for tid in stabilization.tracker_ids) if t is not None]
     rate = next((d.rate for d in datas if d.rate > 0), 0.0)
     if rate <= 0:
         return tracking
@@ -498,8 +500,9 @@ def add_link(
         raise TrackingError("Seuls les clips vidéo et les calques peuvent suivre un tracker.")
     tracking = tracking_of(source)
     ids = tuple(dict.fromkeys(tracker_ids))
-    trackers = [tracking.tracker(t) for t in ids]
-    if not ids or any(t is None for t in trackers):
+    found = [tracking.tracker(t) for t in ids]
+    trackers = [t for t in found if t is not None]
+    if not ids or len(trackers) != len(found):
         raise TrackingError("Tracker introuvable.")
     if any(len(t.data.valid_indices()) < 2 for t in trackers):
         raise TrackingError("Analysez le tracker avant de l'appliquer.")

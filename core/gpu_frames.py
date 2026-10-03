@@ -208,7 +208,8 @@ def invert4(m: Matrix4) -> Matrix4:
     inv[2][1] = (a[0][1] * a[2][0] - a[0][0] * a[2][1]) / det
     inv[2][2] = (a[0][0] * a[1][1] - a[0][1] * a[1][0]) / det
     offset = [-(inv[r][0] * t[0] + inv[r][1] * t[1] + inv[r][2] * t[2]) for r in range(3)]
-    return tuple((*inv[r], offset[r]) for r in range(3)) + ((0.0, 0.0, 0.0, 1.0),)
+    rows = [(inv[r][0], inv[r][1], inv[r][2], offset[r]) for r in range(3)]
+    return (rows[0], rows[1], rows[2], (0.0, 0.0, 0.0, 1.0))
 
 
 def column_major(m: Matrix4) -> tuple[float, ...]:
