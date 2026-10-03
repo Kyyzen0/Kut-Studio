@@ -59,7 +59,7 @@ def test_filter_chips_keep_their_labels_in_a_narrow_column(qtbot) -> None:
 
 
 def test_overflow_inspector_tabs_are_not_orphan_windows(qtbot) -> None:
-    panel = PropertiesPanel(lambda *_args: None, lambda *_args: None)
+    panel = PropertiesPanel(lambda *_args: None)
     qtbot.addWidget(panel)
     for button in panel.inspector_tab_buttons:
         assert button.parent() is not None

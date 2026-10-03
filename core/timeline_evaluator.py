@@ -215,9 +215,10 @@ def evaluate_timeline(
     if sequence_id is None:
         sequence = project.active_sequence
     else:
-        sequence = project.get_sequence(sequence_id)
-        if sequence is None:
+        found = project.get_sequence(sequence_id)
+        if found is None:
             raise KeyError(f"Séquence '{sequence_id}' introuvable dans le projet.")
+        sequence = found
     assets = {asset.id: asset for asset in project.media_assets}
     return _evaluate_sequence(project, sequence, time_seconds, assets, (sequence.id,))
 

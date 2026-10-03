@@ -1,0 +1,20 @@
+# Dette de typage connue (cliquet) : doit être EXACTEMENT la liste `ignore_errors` de pyproject.toml.
+# On retire un module ici ET dans pyproject.toml dès qu'il est propre ; on n'en ajoute jamais
+# (voir tests/test_typing_ratchet.py).
+core.audio_recorder
+core.blend_modes
+core.compositing
+core.export_engine
+core.graphics
+core.hardware_cache
+core.hardware_encoding
+core.lut_importer
+core.mograph_ffmpeg
+core.mograph_layers
+core.mograph_presets
+core.mograph_raster
+core.mograph_stream
+core.render_queue
+core.scopes
+core.scopes_analyzer
+core.visual_effects

@@ -14,6 +14,7 @@ from dataclasses import replace
 
 from .tracking_model import (
     SELF_CLIP,
+    BorderMode,
     ClipTracking,
     Sample,
     SampleStatus,
@@ -158,13 +159,33 @@ def remove_tracker(project, clip_id: str, tracker_id: str) -> None:
                 continue
             links = []
             for link in other.tracking.links:
-                if link.source_clip_id == clip_id and tracker_id in link.tracker_ids:
+                if link.follows(clip_id) and tracker_id in link.tracker_ids and not _still_tracked_elsewhere(
+                    project, link, clip_id, tracker_id
+                ):
                     remaining = tuple(t for t in link.tracker_ids if t != tracker_id)
                     if not remaining:
                         continue
                     link = replace(link, tracker_ids=remaining)
                 links.append(link)
             _store(other, replace(other.tracking, links=tuple(links)))
+
+
+def _still_tracked_elsewhere(project, link: TrackLink, removed_clip_id: str, tracker_id: str) -> bool:
+    """Une autre partie de la source (après une coupe) porte-t-elle encore ce tracker ?
+
+    Les moitiés d'un clip coupé ont chacune leur copie des trackers : en supprimer un sur l'une ne doit pas
+    défaire la liaison qui suit encore l'autre.
+    """
+    for source_id in link.source_ids:
+        if source_id == removed_clip_id:
+            continue
+        try:
+            part, _track = find_clip_and_track(project, source_id)
+        except TrackingError:
+            continue
+        if tracking_of(part).tracker(tracker_id) is not None:
+            return True
+    return False
 
 
 def update_tracker(project, clip_id: str, tracker_id: str, **changes) -> Tracker:
@@ -280,8 +301,8 @@ def analysis_request(
 
     clip, asset = trackable_clip(project, clip_id)
     tracking = tracking_of(clip)
-    trackers = [tracking.tracker(t) for t in tracker_ids]
-    trackers = [t for t in trackers if t is not None and t.visible]
+    candidates = [tracking.tracker(t) for t in tracker_ids]
+    trackers = [t for t in candidates if t is not None and t.visible]
     if not trackers:
         raise TrackingError("Aucun tracker à analyser.")
     rate = media_rate(asset)
@@ -340,9 +361,8 @@ def apply_tracking_result(project, result) -> dict[str, int]:
 def tracking_dependents(project, source_clip_id: str) -> list[str]:
     """Identifiants des **autres** clips de la séquence active dont une liaison active suit ``source_clip_id``.
 
-    Couper la source d'un tracking en deux donne à la partie droite un nouvel identifiant : ces clips
-    continuent de pointer sur la partie gauche, et leur mouvement s'arrête à la coupe (il reste figé
-    sur la dernière image). L'interface s'en sert pour le dire.
+    Une liaison suit la source **et** ses prolongements après coupe (:attr:`TrackLink.source_ids`) : la liste
+    sert à prévenir avant de couper ou de supprimer une source, et à dire qui suit après une coupe.
     """
     return [
         clip.id
@@ -350,10 +370,83 @@ def tracking_dependents(project, source_clip_id: str) -> list[str]:
         for clip in track.clips
         if clip.id != source_clip_id
         and any(
-            link.enabled and link.source_clip_id == source_clip_id
+            link.enabled and link.follows(source_clip_id)
             for link in getattr(getattr(clip, "tracking", None), "links", ()) or ()
         )
     ]
+
+
+# ---------------------------------------------------------------------------
+# Coupe et suppression de la source d'un tracking
+# ---------------------------------------------------------------------------
+
+
+def tracking_for_cut(clip) -> ClipTracking | None:
+    """Tracking que reçoivent **les deux** moitiés d'un clip coupé.
+
+    Les trackers sont en temps source et immuables : les deux moitiés les partagent sans copie, chacune en
+    lit la portion que son intervalle montre (``source_in`` / ``source_out`` et remappage de temps).
+    Seule la stabilisation à zoom ou recadrage automatique reçoit une plage commune (``shared_range`` :
+    le plan d'origine) : sans elle, chaque moitié calculerait son propre agrandissement et l'image
+    sauterait au point de coupe.
+    """
+    tracking: ClipTracking | None = getattr(clip, "tracking", None)
+    if tracking is None or tracking.stabilization is None:
+        return tracking
+    stabilization = tracking.stabilization
+    if stabilization.borders == BorderMode.BLACK:
+        return tracking
+    datas = [t.data for t in (tracking.tracker(tid) for tid in stabilization.tracker_ids) if t is not None]
+    rate = next((d.rate for d in datas if d.rate > 0), 0.0)
+    if rate <= 0:
+        return tracking
+    first, last = clip_source_indices(clip, rate)
+    shared = stabilization.shared_range
+    if shared is not None:
+        first, last = min(first, shared[0]), max(last, shared[1])
+    return replace(tracking, stabilization=replace(stabilization, shared_range=(first, last)))
+
+
+def follow_cut(project, left_id: str, right_id: str) -> list[str]:
+    """Après la coupe de ``left_id`` : les liaisons qui le suivaient suivent aussi ``right_id``.
+
+    Retourne les identifiants des clips dont une liaison a été étendue. À chaque instant, la liaison
+    suit celle des deux moitiés qui couvre l'instant (:class:`core.tracking_bindings.LinkMotion`) : le
+    mouvement ne s'arrête plus à la coupe. À appeler dans la même opération que la coupe (une seule
+    entrée d'historique).
+    """
+    updated: list[str] = []
+    for track in project.all_tracks():
+        for clip in track.clips:
+            tracking = clip.tracking
+            if tracking is None or not any(link.follows(left_id) for link in tracking.links):
+                continue
+            links = tuple(link.after_cut(left_id, right_id) for link in tracking.links)
+            if links != tracking.links:
+                clip.tracking = replace(tracking, links=links)
+                updated.append(clip.id)
+    return updated
+
+
+def release_source(project, clip_id: str) -> list[str]:
+    """Après la suppression de ``clip_id`` : les liaisons suivent les parties restantes de la source.
+
+    Retourne les clips dont la liaison **n'a plus aucune source** (ni ``clip_id`` ni prolongement) : ils
+    sont rendus tels quels (liaison signalée « source introuvable », jamais effacée en silence), et
+    l'interface le dit à l'utilisateur.
+    """
+    orphaned: list[str] = []
+    for track in project.all_tracks():
+        for clip in track.clips:
+            tracking = clip.tracking
+            if tracking is None or not any(link.follows(clip_id) for link in tracking.links):
+                continue
+            links = tuple(link.without_source(clip_id) for link in tracking.links)
+            if links != tracking.links:
+                clip.tracking = replace(tracking, links=links)
+            if any(link.source_clip_id == clip_id and link.enabled for link in links):
+                orphaned.append(clip.id)
+    return orphaned
 
 
 def link_targets(project, source_clip_id: str) -> list[dict]:
@@ -407,8 +500,9 @@ def add_link(
         raise TrackingError("Seuls les clips vidéo et les calques peuvent suivre un tracker.")
     tracking = tracking_of(source)
     ids = tuple(dict.fromkeys(tracker_ids))
-    trackers = [tracking.tracker(t) for t in ids]
-    if not ids or any(t is None for t in trackers):
+    found = [tracking.tracker(t) for t in ids]
+    trackers = [t for t in found if t is not None]
+    if not ids or len(trackers) != len(found):
         raise TrackingError("Tracker introuvable.")
     if any(len(t.data.valid_indices()) < 2 for t in trackers):
         raise TrackingError("Analysez le tracker avant de l'appliquer.")

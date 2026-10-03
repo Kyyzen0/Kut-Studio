@@ -681,8 +681,11 @@ def _coerce_user_preset(payload: object) -> TransitionPreset | None:
     description = payload.get("description", "")
     if not isinstance(description, str):
         description = ""
+    raw_duration = payload.get("default_duration")
+    if raw_duration is None:
+        return None
     try:
-        default_duration = float(payload.get("default_duration"))
+        default_duration = float(raw_duration)
     except (TypeError, ValueError):
         return None
     if default_duration < MIN_DURATION or default_duration > MAX_DURATION:

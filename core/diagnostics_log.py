@@ -16,6 +16,7 @@ import sys
 import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 from .platform_paths import user_log_dir
 
@@ -85,11 +86,8 @@ def install_diagnostics(log_dir: str | Path | None = None) -> Path | None:
 
     def thread_hook(args: threading.ExceptHookArgs) -> None:
         name = args.thread.name if args.thread is not None else "?"
-        LOGGER.critical(
-            "Exception non rattrapée dans le thread %s",
-            name,
-            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
-        )
+        exc_info: Any = (args.exc_type, args.exc_value, args.exc_traceback)   # ``exc_value`` peut être ``None``
+        LOGGER.critical("Exception non rattrapée dans le thread %s", name, exc_info=exc_info)
         state.threading_hook(args)
 
     def unraisable_hook(args: object) -> None:

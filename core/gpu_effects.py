@@ -331,8 +331,8 @@ def reference_layer(
                 blurred = _blur_axis(np, _blur_axis(np, luma, BINOMIAL5, 2, 1), BINOMIAL5, 2, 0)
                 pixels = pixels.copy()
                 pixels[..., 0] = np.clip(luma + op.amount * (luma - blurred), 0.0, 1.0)
-        for op in segment:
-            pixels, space = _apply_point(np, pixels, space, op, yuv_to_rgb, rgb_to_yuv, coords)
+        for point_op in segment:
+            pixels, space = _apply_point(np, pixels, space, point_op, yuv_to_rgb, rgb_to_yuv, coords)
     if space == SPACE_YUV:
         pixels = _convert(np, pixels, yuv_to_rgb)
     return pixels

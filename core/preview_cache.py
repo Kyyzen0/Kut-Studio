@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -24,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .platform_paths import user_cache_dir
+
+LOGGER = logging.getLogger("kut_studio.cache")
 
 
 SEGMENT_SECONDS = 2.0
@@ -175,7 +178,8 @@ class DiskPreviewCache:
             (self.directory / name).unlink()
         except FileNotFoundError:
             return True
-        except OSError:
+        except OSError as exc:
+            LOGGER.warning("Cache d'aperçu : %s impossible à supprimer, il reste sur le disque (%s)", name, exc)
             return False
         return True
 

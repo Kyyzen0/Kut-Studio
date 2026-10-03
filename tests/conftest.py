@@ -16,14 +16,32 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem):
+    """Garde des tests ``@pytest.mark.libass`` : ils exigent un FFmpeg avec libass.
+
+    Sans libass le test se saute avec la raison ; avec ``KUT_STUDIO_REQUIRE_LIBASS=1`` il échoue
+    (voir ``tests/ffmpeg_caps.py``). Posée ici, la règle ne dépend d'aucun test en particulier.
+    """
+    if pyfuncitem.get_closest_marker("libass") is not None:
+        from ffmpeg_caps import ensure_libass
+
+        ensure_libass()
+
+
 def pytest_configure(config):
-    """Donne à chaque worker xdist son propre dossier temporaire.
+    """Déclare la marque ``libass`` ; donne à chaque worker xdist son propre dossier temporaire.
 
     Plusieurs tests vérifient qu'aucun fichier ``kut-preview-*`` ou
     ``kut-studio-subtitles-*`` ne traîne dans le dossier temporaire du
     système : avec des workers parallèles, ils verraient les fichiers
     légitimes d'un autre worker.
     """
+    config.addinivalue_line(
+        "markers",
+        "libass: test qui exige un FFmpeg avec libass (filtre « subtitles ») ; sauté sans libass, "
+        "échoué si KUT_STUDIO_REQUIRE_LIBASS=1 ; sélection : pytest -m libass",
+    )
     worker = os.environ.get("PYTEST_XDIST_WORKER")
     if not worker:
         return

@@ -251,18 +251,18 @@ class WorkspaceState:
         raw_float = data.get("floating")
         if isinstance(raw_float, list):
             for entry in raw_float:
-                pid = _coerce_panel_id(entry)
-                if pid is None:
+                floating_id = _coerce_panel_id(entry)
+                if floating_id is None:
                     continue
                 if not isinstance(entry, dict):
                     continue
                 geom = FloatingGeometry(
                     x=_coerce_int(entry.get("x"), 0),
                     y=_coerce_int(entry.get("y"), 0),
-                    width=_coerce_int(entry.get("width"), DEFAULT_SIZE[pid]),
-                    height=_coerce_int(entry.get("height"), MIN_SIZE[pid]),
+                    width=_coerce_int(entry.get("width"), DEFAULT_SIZE[floating_id]),
+                    height=_coerce_int(entry.get("height"), MIN_SIZE[floating_id]),
                 )
-                floating.append((pid, geom.normalized(pid)))
+                floating.append((floating_id, geom.normalized(floating_id)))
 
         maximized = _coerce_panel_id({"panel": data.get("maximized")})
         ratio = data.get("center_ratio")

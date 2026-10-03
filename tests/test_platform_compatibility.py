@@ -97,15 +97,14 @@ def test_an_apostrophe_in_a_filter_path_closes_and_reopens_the_quoted_value() ->
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
 @pytest.mark.parametrize("folder", ["plain dir", "Jean d'Arc", "O'Brien's cut", "café été", "a,b[c];d"])
-@pytest.mark.parametrize("kind", ["subtitles", "lut3d"])
+# Les sous-titres exigent libass : marque ``libass`` (sautée sans libass, échouée avec KUT_STUDIO_REQUIRE_LIBASS=1,
+# voir tests/ffmpeg_caps.py). Ce n'est pas une régression de l'application : elle détecte l'absence de libass
+# et refuse avec un message clair (build FFmpeg sans libass, ex. celle du runner macOS de la CI).
+@pytest.mark.parametrize("kind", [pytest.param("subtitles", marks=pytest.mark.libass), "lut3d"])
 def test_ffmpeg_opens_subtitle_and_lut_files_whatever_the_folder_name(tmp_path, folder, kind) -> None:
     """Régression : un dossier avec apostrophe (profil Windows « O'Brien ») cassait sous-titres et LUT."""
-    from core.export_engine import _escape_filter_path, _ffmpeg_supports_subtitles
+    from core.export_engine import _escape_filter_path
 
-    if kind == "subtitles" and not _ffmpeg_supports_subtitles():
-        # Environnement, pas régression : l'application le détecte aussi et refuse avec un message clair
-        # (build FFmpeg sans libass, ex. celle du runner macOS de la CI).
-        pytest.skip("Cette build FFmpeg n'a pas le filtre « subtitles » (libass absent).")
     directory = tmp_path / folder
     directory.mkdir()
     if kind == "subtitles":

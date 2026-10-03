@@ -14,11 +14,16 @@ from copy import deepcopy
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING
 
+from .audio_automation import TrackAutomation, coerce_track_automation
+
 if TYPE_CHECKING:
+    from .compositing import Compositing
     from .effects_model import ClipEffect
+    from .graphics import GraphicOverlay
     from .text_style import TextStyle
     from .transitions import Transition
     from .time_remapping import TimeRemapping
+    from .tracking_model import ClipTracking
     from .visual_effects import ClipTransform, TransformKeyframe
 
 
@@ -284,9 +289,9 @@ class Clip:
     # --- Calque graphique non destructif (tâche 32) ---
     # ``GraphicOverlay`` pour les clips de piste ``graphics`` ; ``None``
     # pour tous les projets historiques et les autres types de clips.
-    graphic: object = None
+    graphic: GraphicOverlay | None = None
     # Masques, incrustation et mode de fusion (tâche 33).
-    compositing: object = field(default_factory=lambda: _default_compositing())
+    compositing: Compositing = field(default_factory=lambda: _default_compositing())
     # --- Style texte non destructif (tâche 24, sous-titres principalement) ---
     text_style: "TextStyle" = field(default_factory=lambda: _default_text_style())
     # --- Séquence imbriquée ---
@@ -303,7 +308,7 @@ class Clip:
     # --- Tracking 2D ---
     # :class:`core.tracking_model.ClipTracking` (trackers, liaisons reçues,
     # stabilisation) ou ``None``. Immuable : partagé par les snapshots.
-    tracking: object = None
+    tracking: ClipTracking | None = None
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -529,13 +534,14 @@ class Track:
     # ou ``"other"``) pour rester rétro-compatible avec les snapshots
     # d'historique (la sérialisation JSON ne touche pas au champ).
     audio_role: str = "other"
-    # ``automation`` est la liste ordonnée des points-clés (gain / fade)
-    # de la piste. Vide par défaut pour préserver le comportement
-    # historique (gain constant).
-    automation: list = field(default_factory=list)
+    # ``automation`` est la courbe de gain de la piste (points-clés gain /
+    # fade, triés). Toujours une :class:`TrackAutomation`, vide par défaut
+    # (gain constant, comportement historique) : ``__setattr__`` convertit
+    # l'ancienne forme (liste de points) à chaque affectation.
+    automation: TrackAutomation = field(default_factory=TrackAutomation)
     # ``ducking_config`` est soit ``None`` soit une instance de
-    # :class:`DuckingConfig` ; on garde un type ``object`` pour ne pas
-    # coupler le modèle au module :mod:`core.audio_automation`.
+    # :class:`core.audio_automation.DuckingConfig` ; le type reste ``object``
+    # (le modèle ne dépend de ``audio_automation`` que pour la courbe ci-dessus).
     ducking_config: object = None
 
     def __post_init__(self) -> None:
@@ -546,6 +552,15 @@ class Track:
         # Rôle par défaut ``other`` si la valeur n'est pas reconnue.
         if self.audio_role not in {"voice", "music", "sfx", "other"}:
             self.audio_role = "other"
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Unique point d'écriture de la forme canonique de l'automation : le constructeur, ``track.automation = ...``,
+        # le chargement d'un fichier et le code ou les tests anciens (qui écrivent une liste de points) passent tous
+        # ici. Les copies (``copy`` / ``deepcopy`` / historique) restaurent ``__dict__`` sans repasser par ici, et
+        # le contenu qu'elles copient est déjà canonique.
+        if name == "automation":
+            value = coerce_track_automation(value, getattr(self, "id", ""))
+        super().__setattr__(name, value)
 
     def set_volume_db(self, value: float) -> float:
         """Règle le volume de piste, borné, et retourne la valeur appliquée."""

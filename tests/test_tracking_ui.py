@@ -229,3 +229,39 @@ def test_dragging_a_stabilized_clip_edits_the_user_transform(window, qtbot):
     overlay.transform_dragged.emit("v", {"position_x": selection.values["position_x"] + 0.1})
     overlay.transform_released.emit("v", "Déplacer le calque")
     assert _clip(window).transform.position_x == pytest.approx(0.1)
+
+
+def test_the_panel_state_matches_its_typed_contract(window):
+    """L'état que la fenêtre fabrique a exactement les clés du contrat typé (``core.tracking_panel_state``)."""
+    from dataclasses import replace
+    from typing import get_type_hints
+
+    from core import tracking_ops as ops
+    from core.tracking_model import Sample, TrackData
+    from core.tracking_panel_state import (
+        LinkRow,
+        StabilizationInfo,
+        TargetSpec,
+        TrackerRow,
+        TrackingPanelState,
+    )
+
+    clip = _clip(window)
+    tracker = ops.add_tracker(window.project, "v", timeline_time=0.0, x=80.0, y=60.0)
+    samples = {i: Sample(80.0 + i, 60.0, 1.0, SampleStatus.TRACKED) for i in range(FRAMES)}
+    clip.tracking = clip.tracking.with_tracker(
+        replace(tracker, data=TrackData.from_samples(FPS, samples, source_size=(W, H)))
+    )
+    ops.set_stabilization(window.project, "v", tracker_ids=(tracker.id,))
+    ops.add_link(window.project, "v", "v", [tracker.id], target=TrackTarget.ANCHOR, timeline_time=0.0)
+    window._restore_clip_selection("v")
+
+    state = window._tracking_panel_state()
+
+    assert set(state) <= set(get_type_hints(TrackingPanelState))
+    assert {"kind", "available", "links", "trackers", "selected", "stabilization", "targets"} <= set(state)
+    assert all(set(row) == set(get_type_hints(LinkRow)) for row in state["links"]) and state["links"]
+    assert all(set(row) == set(get_type_hints(TrackerRow)) for row in state["trackers"]) and state["trackers"]
+    assert set(state["stabilization"]) == set(get_type_hints(StabilizationInfo))
+    assert state["targets"] and all(set(spec) == set(get_type_hints(TargetSpec)) for _label, spec in state["targets"])
+    assert get_type_hints(TrackingPanelState)["stabilization"] is StabilizationInfo

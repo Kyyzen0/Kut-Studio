@@ -50,7 +50,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import threading
 import time
 from collections import OrderedDict, deque
@@ -69,6 +68,7 @@ from .hardware_decoding import (
     coerce_decode_mode,
     decode_input_args,
 )
+from .process_supervisor import default_supervisor, supervised_run
 
 LOGGER = logging.getLogger("kut_studio.decode")
 
@@ -157,14 +157,12 @@ def _default_probe(path: str) -> StreamInfo | None:
     ffprobe = find_media_tool("ffprobe")
     if not ffprobe:
         return None
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             [ffprobe, "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=codec_type,codec_name,pix_fmt,width,height",
              "-of", "json", path],
-            capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL,
-            creationflags=flags, encoding="utf-8", errors="replace",
+            capture_output=True, text=True, timeout=15, encoding="utf-8", errors="replace",
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -290,7 +288,7 @@ def choose_decoder(
     if getattr(capabilities, "decoding_disabled", False) or not getattr(capabilities, "ffmpeg_available", True):
         return _cpu(requested, "", "decoding_disabled")
     codec = stream.codec if stream is not None else None
-    if codec is None:
+    if stream is None or codec is None:
         reason = "stream_unknown" if stream is None else "profile_unsupported"
         fallback = None
         if requested is not DecodeMode.AUTO:
@@ -612,34 +610,36 @@ def run_measured(command: Sequence[str], timeout: float = 60.0) -> tuple[int, fl
     ``wait4`` donne la consommation **de ce processus seul** (les autres threads
     de Kut-Studio n'y sont pas mêlés). Indisponible sous Windows : ``None``.
     """
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    supervisor = default_supervisor()
     started = time.perf_counter()
     try:
-        process = subprocess.Popen(list(command), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, creationflags=flags)
+        process = supervisor.popen(list(command), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return -1, 0.0, None
     cpu = None
-    if hasattr(os, "wait4"):
-        deadline = started + timeout
-        while True:
-            pid, status, usage = os.wait4(process.pid, os.WNOHANG)
-            if pid:
-                process.returncode = os.waitstatus_to_exitcode(status)
-                cpu = usage.ru_utime + usage.ru_stime
-                break
-            if time.perf_counter() > deadline:
+    try:
+        if hasattr(os, "wait4"):
+            deadline = started + timeout
+            while True:
+                pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+                if pid:
+                    process.returncode = os.waitstatus_to_exitcode(status)
+                    cpu = usage.ru_utime + usage.ru_stime
+                    break
+                if time.perf_counter() > deadline:
+                    process.kill()
+                    process.wait()
+                    return -1, time.perf_counter() - started, None
+                time.sleep(0.005)
+        else:
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
                 return -1, time.perf_counter() - started, None
-            time.sleep(0.005)
-    else:
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            return -1, time.perf_counter() - started, None
+    finally:
+        supervisor.finish(process)  # déjà récolté par wait4 : seulement désenregistré
     return int(process.returncode or 0), time.perf_counter() - started, cpu
 
 

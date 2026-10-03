@@ -118,10 +118,9 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
     graphic_parent_changed = Signal(str, str)
     inspector_tab_changed = Signal(int)
 
-    def __init__(self, update_color_effect, update_volume, parent=None):
+    def __init__(self, update_volume, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(280)
-        self.update_color_effect_callback = update_color_effect
         self.selected_clip = None
         self.selected_clip_track_type = None
         self.selected_transition_id: str | None = None

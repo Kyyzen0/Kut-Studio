@@ -103,9 +103,10 @@ class AutosaveCoordinator:
             with self._condition:
                 while self._pending is None and not self._closed:
                     self._condition.wait()
-                if self._pending is None and self._closed:
+                pending = self._pending
+                if pending is None:          # fermé et rien en attente
                     return
-                generation, payload, target = self._pending
+                generation, payload, target = pending
                 self._pending = None
             try:
                 write_project_payload(payload, target)

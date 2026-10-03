@@ -48,7 +48,6 @@ class ColorGradingMixin:
 
     def _refresh_color_monitor(self, clip_id: str) -> None:
         """Aligne le moniteur sur l'étalonnage courant du projet."""
-        self.update_color_effect()
         try:
             self._invalidate_preview_for_clip(clip_id)
             self._sync_preview_to_timeline()

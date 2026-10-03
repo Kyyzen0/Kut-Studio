@@ -432,6 +432,10 @@ def cut_clip(
         )
 
     right_id = _free_clip_id(project, f"{clip_id}-split-")
+    from .tracking_ops import follow_cut, tracking_for_cut
+
+    # Données de tracking en temps source : partagées sans copie par les deux moitiés.
+    cut_tracking = tracking_for_cut(clip)
 
     cut_local_time = cut_timeline_position - clip.timeline_start
     left_remapping, right_remapping = _split_time_remapping(clip, cut_local_time)
@@ -483,7 +487,7 @@ def cut_clip(
         fade_out=left_fade_out,
         time_remapping=left_remapping,
         animation=left_animation,
-        **_carried_properties(clip),
+        **{**_carried_properties(clip), "tracking": cut_tracking},
     )
     right_clip = Clip(
         id=right_id,
@@ -503,11 +507,13 @@ def cut_clip(
         fade_out=right_fade_out,
         time_remapping=right_remapping,
         animation=right_animation,
-        **_carried_properties(clip, copy=True),
+        **{**_carried_properties(clip, copy=True), "tracking": cut_tracking},
     )
 
     track.clips[index : index + 1] = [left_clip, right_clip]
     remove_transitions_for_clips(project, {clip_id})
+    # Les clips qui suivaient le tracking de ce clip suivent aussi la partie droite (sinon figés à la coupe).
+    follow_cut(project, left_clip.id, right_clip.id)
     return left_clip, right_clip
 
 
@@ -524,6 +530,9 @@ def _release_clip_references(project: Project, clip: Clip) -> None:
       cela il resterait, invisible, dans chaque enregistrement. Les médias de la bibliothèque (vidéo,
       audio, image) ne sont jamais supprimés ici.
     """
+    from .tracking_ops import release_source
+
+    release_source(project, clip.id)
     clips = [other for track in project.all_tracks() for other in track.clips]
     for other in clips:
         graphic = getattr(other, "graphic", None)

@@ -100,6 +100,14 @@ def snap_to_frame(clip, local_time: float, fps: float) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _keyframe_at(curve: AnimationCurve, time: float) -> Keyframe:
+    """Le keyframe de ``curve`` à ``time`` : l'appelant vient de l'y poser (invariant, jamais ``None``)."""
+    keyframe = curve.keyframe_at(time)
+    if keyframe is None:
+        raise RuntimeError(f"Keyframe attendu à t={time:g} s : la courbe vient d'être modifiée à cet instant.")
+    return keyframe
+
+
 def _bounded_time(clip, local_time: float) -> float:
     duration = clip_duration(clip)
     t = normalize_time(local_time)
@@ -143,7 +151,7 @@ def add_keyframe(
         if curve:
             curve = curve.inserted_preserving_shape(t, clamp=target.spec.clamp)
             if interpolation is not None:
-                inserted = curve.keyframe_at(t)
+                inserted = _keyframe_at(curve, t)
                 curve = curve.replaced({inserted.id: replace(
                     inserted, interpolation=coerce_interpolation(interpolation), id=inserted.id
                 )})
@@ -153,7 +161,7 @@ def add_keyframe(
                 interpolation=coerce_interpolation(interpolation or InterpolationType.LINEAR),
             )], target.spec.kind)
         _store(target, clip, curve)
-        return curve.keyframe_at(t)
+        return _keyframe_at(curve, t)
     if existing is not None:
         updated = replace(existing, value=target.spec.clamp(value), id=existing.id)
         if interpolation is not None:
@@ -165,7 +173,7 @@ def add_keyframe(
             target, t, value, interpolation=coerce_interpolation(interpolation or template)
         ))
     _store(target, clip, curve)
-    return curve.keyframe_at(t)
+    return _keyframe_at(curve, t)
 
 
 def _neighbour_interpolation(curve: AnimationCurve, t: float) -> InterpolationType:

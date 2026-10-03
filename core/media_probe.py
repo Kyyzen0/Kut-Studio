@@ -15,9 +15,10 @@ correctement configuré :
 - tout autre cas (image fixe, sous-titres seuls, fichier corrompu)
   lève :class:`MediaProbeError`.
 
-Aucune dépendance à PySide6 : seul ``subprocess`` de la bibliothèque
-standard est utilisé, ce qui rend la sonde utilisable hors contexte Qt
-(tests, scripts).
+Aucune dépendance à PySide6 : ``ffprobe`` est lancé par
+:func:`core.process_supervisor.supervised_run` (bibliothèque standard
+seulement), ce qui rend la sonde utilisable hors contexte Qt (tests,
+scripts).
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
+from .process_supervisor import supervised_run
 from .project_model import MediaAsset
 from .tool_paths import bundled_tool_path
 
@@ -72,7 +74,7 @@ def probe_media(path: str) -> MediaAsset:
         )
 
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             [
                 ffprobe_path,
                 "-v",

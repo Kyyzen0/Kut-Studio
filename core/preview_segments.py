@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from typing import Any
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -100,7 +101,7 @@ def media_identity(plan: RenderPlan) -> str:
     ``stat`` par couche, sans mémo : le coût est négligeable face à un rendu.
     """
     parts: list[str] = []
-    layers = [*plan.video_layers, *plan.audio_layers]
+    layers: list[Any] = [*plan.video_layers, *plan.audio_layers]
     for entry in getattr(plan, "nested_sequences", ()) or ():
         layers.extend(entry.plan.video_layers)
         layers.extend(entry.plan.audio_layers)

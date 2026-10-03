@@ -31,6 +31,7 @@ import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
+from .process_supervisor import default_supervisor
 from .tool_paths import find_media_tool
 from .tracking_model import Precision
 
@@ -145,21 +146,21 @@ class FrameReader:
         np = require_numpy()
         size = self.geometry.frame_bytes
         shape = (self.geometry.height, self.geometry.width)
-        creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(
-            self.command(start_index, count), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL, creationflags=creation,
-        )
+        supervisor = default_supervisor()
+        process = supervisor.popen(self.command(start_index, count), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self._process = process
+        stdout_pipe, stderr_pipe = process.stdout, process.stderr
+        if stdout_pipe is None or stderr_pipe is None:       # jamais : ``PIPE`` demandé ci-dessus
+            raise RuntimeError("FFmpeg a été lancé sans ses tubes de sortie.")
         errors: list[bytes] = []
-        drain = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
+        drain = threading.Thread(target=lambda: errors.append(stderr_pipe.read()), daemon=True)
         drain.start()
         produced = 0
         try:
             while produced < count:
                 if self.cancelled():
                     break
-                buffer = _read_exactly(process.stdout, size)
+                buffer = _read_exactly(stdout_pipe, size)
                 if buffer is None:
                     break
                 yield start_index + produced, np.frombuffer(buffer, dtype=np.uint8).reshape(shape)
@@ -168,10 +169,10 @@ class FrameReader:
             if process.poll() is None:
                 process.kill()
             try:
-                process.stdout.close()
+                stdout_pipe.close()
             except OSError:
                 pass
-            process.wait()
+            supervisor.finish(process)  # attend la fin, puis retire l'enfant du registre
             drain.join(timeout=2.0)
             self.stderr = b"".join(e for e in errors if e).decode("utf-8", "replace")[-2000:]
             self._process = None

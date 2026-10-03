@@ -30,6 +30,7 @@ Pas de « pause » : voir :mod:`core.render_job`.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -44,6 +45,8 @@ from .render_plan import build_render_plan
 from .render_presets import RenderPresetSpec
 from .render_queue_store import RenderQueueStore
 from .video_encoders import HardwareEncoder
+
+LOGGER = logging.getLogger("kut_studio.encoding")
 
 MAX_ERROR_CHARS = 4000
 """Longueur conservée d'un message d'erreur FFmpeg (la fin est la plus utile)."""
@@ -667,6 +670,9 @@ class RenderQueue(QObject):
             else ErrorKind.FFMPEG
         )
         diagnostics = getattr(self._engine, "last_diagnostics", "") or job.diagnostics
+        LOGGER.error(
+            "File de rendu : tâche %s en échec (%s) : %s", job.id, kind, text.splitlines()[-1] if text else ""
+        )
 
         def fail() -> None:
             job.mark_failed(text, kind)

@@ -308,7 +308,7 @@ class TextStyle:
                 background_opacity=_safe_float(payload.get("background_opacity"), default=0.0),
                 padding_x=_safe_float(payload.get("padding_x"), default=12.0),
                 padding_y=_safe_float(payload.get("padding_y"), default=6.0),
-                alignment=_safe_str(payload.get("alignment"), default="bottom_center"),
+                alignment=TextAlignment(_safe_str(payload.get("alignment"), default="bottom_center")),
                 position_x=_safe_float(payload.get("position_x"), default=0.0),
                 position_y=_safe_float(payload.get("position_y"), default=0.0),
                 margin_x=_safe_float(payload.get("margin_x"), default=32.0),

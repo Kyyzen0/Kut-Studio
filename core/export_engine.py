@@ -46,6 +46,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from . import process_supervisor
 from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
@@ -162,7 +163,7 @@ def _ffmpeg_major_version() -> int | None:
         return cache[prefix]
     major: int | None = None
     try:
-        completed = subprocess.run(
+        completed = process_supervisor.supervised_run(
             [*prefix, "-hide_banner", "-version"], capture_output=True, text=True, timeout=10, check=False,
         )
         from .hardware_encoding import parse_version
@@ -209,7 +210,7 @@ def _ffmpeg_supports_subtitles() -> bool:
         _ffmpeg_supports_subtitles._cached = False  # type: ignore[attr-defined]
         return False
     try:
-        completed = subprocess.run(
+        completed = process_supervisor.supervised_run(
             [*command_prefix, "-hide_banner", "-filters"],
             capture_output=True,
             text=True,
@@ -373,6 +374,10 @@ class ExportEngine(QObject):
         self._process.readyReadStandardError.connect(self._read_error)
         self._process.finished.connect(self._process_finished)
         self._process.errorOccurred.connect(self._process_error)
+        # FFmpeg est enregistré auprès du superviseur dès son démarrage : il meurt avec l'application, même tuée
+        # brutalement (voir core/process_supervisor.py).
+        self._process.started.connect(self._supervise_started)
+        self._supervision: process_supervisor.Registration | None = None
         self._request: ExportRequest | None = None
         self._error_output = ""
         self._progress_buffer = ""
@@ -411,11 +416,14 @@ class ExportEngine(QObject):
         processus n'a pas pu être confirmé comme terminé.
         """
         if self._process.state() == QProcess.NotRunning:
+            self._release_supervision()
             self._cleanup_temporary_files()
             return True
         self._cancel_requested = True
         self._process.kill()
         stopped = self._process.waitForFinished(timeout_ms)
+        if stopped:
+            self._release_supervision()
         self._cleanup_temporary_files()
         return bool(stopped)
 
@@ -769,9 +777,15 @@ class ExportEngine(QObject):
                 if fonts_dir
                 else ""
             )
+            # Un SRT n'a pas de style : ``force_style`` lui donne celui par défaut. Un ASS porte déjà le sien,
+            # champ par champ (corps, couleur, position, contour) : y ajouter ``force_style`` l'écraserait
+            # (mesuré avec libass : un style 48 pt jaune en haut ressortait en 22 pt blanc en bas).
+            force_option = (
+                "" if srt_path.lower().endswith(".ass") else f":force_style={_SUBTITLE_FORCE_STYLE_FORCE}"
+            )
             parts.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(srt_path)}'"
-                f"{fonts_option}:force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
+                f"{fonts_option}{force_option}[vfinal]"
             )
             video_label = "vfinal"
 
@@ -813,8 +827,18 @@ class ExportEngine(QObject):
         )
         self._error_output = (self._error_output + error).strip()
 
+    def _supervise_started(self) -> None:
+        """Signal ``started`` : le PID de FFmpeg rejoint le registre du superviseur (protection après un crash)."""
+        self._release_supervision()
+        self._supervision = process_supervisor.register_pid(int(self._process.processId()))
+
+    def _release_supervision(self) -> None:
+        registration, self._supervision = self._supervision, None
+        process_supervisor.release(registration)
+
     def _process_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         """Traite la fin normale ou anormale du processus FFmpeg."""
+        self._release_supervision()
         self._read_error()  # sortie d'erreur restante : la classification de l'échec en dépend
         request = self._request
         self._request = None
@@ -828,6 +852,9 @@ class ExportEngine(QObject):
                 self._fall_back_to_cpu(request)
                 return
             self._mark_encoder_failure()
+            LOGGER.error(
+                "Export échoué (code %s, %s) : %s", exit_code, exit_status.name, _last_line(self._error_output) or "sans détail"
+            )
             self.failed.emit(self._error_output or "L'export ffmpeg a échoué.")
             self._cleanup_temporary_files()
             return
@@ -845,10 +872,12 @@ class ExportEngine(QObject):
         if self._cancel_requested:
             return
         if error == QProcess.FailedToStart:
+            LOGGER.error("Export : FFmpeg n'a pas pu démarrer")
             self._cleanup_temporary_files()
             self.failed.emit("Impossible de démarrer ffmpeg.")
         elif not self._should_fall_back():  # sinon ``_process_finished`` bascule en CPU
             self._mark_encoder_failure()
+            LOGGER.error("Export : erreur du processus FFmpeg (%s)", error.name)
             self.failed.emit(f"Erreur ffmpeg ({error.name}) : voir logs.")
 
     # ------------------------------------------------------------------
@@ -1317,21 +1346,6 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
     return input_paths, path_to_index
 
 
-def _graphic_input_path(graphic: object) -> str:
-    """Source fichier d'un calque image ou titre rasterisé."""
-    from .graphics import GraphicOverlay, GraphicType
-
-    if not isinstance(graphic, GraphicOverlay):
-        return ""
-    if graphic.type == GraphicType.IMAGE:
-        return graphic.source_path
-    if graphic.type == GraphicType.TEXT:
-        from .graphics_raster import rasterize_text_graphic
-
-        return rasterize_text_graphic(graphic)
-    return ""
-
-
 def _build_transition_layers(
     parts: list[str], plan: RenderPlan, prefix: str = ""
 ) -> list[tuple[str, RenderLayer]]:
@@ -1744,33 +1758,6 @@ def _compute_colorbalance_offsets(
     )
 
 
-def _compute_colorbalance_highlights_shadows(
-    shadows: float, highlights: float,
-) -> tuple[float, float, float]:
-    """Convertit (shadows, highlights) en offsets RGB ``colorbalance``.
-
-    On module la teinte moyenne par un effet croisé léger :
-    ombres froides (bleu +), hautes lumières chaudes (rouge +) lorsque
-    les valeurs sont positives. Inversement pour les valeurs négatives.
-    Les deltas sont petits (≤ 0.3) pour rester naturels.
-    """
-    # Hautes lumières : on tire vers le rouge / vert (chaleur).
-    rh = highlights * 0.5
-    gh = highlights * 0.3
-    bh = -highlights * 0.4
-    # Ombres : on tire vers le bleu (froid) ; les valeurs positives
-    # ``shadows`` éclaircissent les ombres, ce qui revient à tirer
-    # vers le rouge.
-    rh += -shadows * 0.3
-    gh += -shadows * 0.15
-    bh += shadows * 0.3
-    return (
-        max(-0.5, min(0.5, rh)),
-        max(-0.5, min(0.5, gh)),
-        max(-0.5, min(0.5, bh)),
-    )
-
-
 def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
@@ -1932,107 +1919,6 @@ def _build_animated_opacity_expr(
         "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':"
         f"a='alpha(X\\,Y)*({escaped})'"
     )
-
-
-def _ffmpeg_graphic_color(value: str) -> str:
-    """Convertit ``#RRGGBB[AA]`` vers une couleur acceptée par FFmpeg."""
-    text = str(value or "#FFFFFF").lstrip("#")
-    if len(text) not in (6, 8):
-        text = "FFFFFF"
-    rgb = text[:6]
-    if len(text) == 8:
-        alpha = int(text[6:8], 16) / 255.0
-        return f"0x{rgb}@{_format_seconds(alpha)}"
-    return f"0x{rgb}"
-
-
-def _build_graphic_opacity_expr(layer: GraphicLayer) -> str:
-    """Applique l'opacité tout en préservant l'alpha du texte/image."""
-    keyframes = [
-        kf for kf in layer.transform_keyframes
-        if kf.property_name == "opacity"
-    ]
-    if not keyframes:
-        return f"colorchannelmixer=aa={_format_seconds(layer.transform.opacity)}"
-    expr = build_ffmpeg_expression(
-        "opacity", layer.transform.opacity, keyframes, time_var="T"
-    )
-    escaped = escape_filter_complex_commas(expr)
-    return (
-        "geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':"
-        f"a='alpha(X\\,Y)*({escaped})'"
-    )
-
-
-def _build_graphic_layer_filter(
-    layer_index: int,
-    layer: GraphicLayer,
-    input_index: int | None,
-    width: int,
-    height: int,
-    fps: int,
-    *,
-    label: str | None = None,
-) -> str:
-    """Construit le flux RGBA d'un texte, rectangle, aplat ou image."""
-    from .graphics import GraphicType
-
-    graphic = layer.graphic
-    kind = GraphicType(graphic.type)
-    duration = max(0.001, layer.timeline_end - layer.timeline_start)
-    size = f"{int(graphic.width)}x{int(graphic.height)}"
-    filters: list[str] = []
-    if kind in {GraphicType.IMAGE, GraphicType.TEXT}:
-        if input_index is None:
-            raise ValueError("Le calque image/texte n'a pas d'entrée FFmpeg.")
-        prefix = f"[{input_index}:v]"
-        filters.extend(
-            [
-                "loop=loop=-1:size=1:start=0",
-                f"trim=duration={_format_seconds(duration)}",
-                "setpts=PTS-STARTPTS",
-                f"scale={int(graphic.width)}:{int(graphic.height)}",
-                "format=rgba",
-            ]
-        )
-    else:
-        prefix = ""
-        fill = _ffmpeg_graphic_color(graphic.fill_color)
-        filters.extend(
-            [
-                f"color=c={fill}:s={size}:r={fps}:d={_format_seconds(duration)}",
-                "format=rgba",
-            ]
-        )
-        if int(graphic.stroke_width) > 0:
-            filters.append(
-                "drawbox=x=0:y=0:w=iw:h=ih:"
-                f"color={_ffmpeg_graphic_color(graphic.stroke_color)}:"
-                f"t={int(graphic.stroke_width)}"
-            )
-
-    scale_expr = build_ffmpeg_expression(
-        "scale",
-        layer.transform.scale,
-        [kf for kf in layer.transform_keyframes if kf.property_name == "scale"],
-        time_var="t",
-    )
-    scale_expr = escape_filter_complex_commas(scale_expr)
-    filters.append(
-        "scale="
-        f"w='max(2\\,iw*({scale_expr}))':"
-        f"h='max(2\\,ih*({scale_expr}))':eval=frame"
-    )
-    filters.append(
-        _build_animated_rotation_expr(
-            layer.transform, layer.transform_keyframes
-        )
-    )
-    filters.append(_build_graphic_opacity_expr(layer))
-    filters.append(
-        f"setpts=PTS+{_format_seconds(layer.timeline_start)}/TB"
-    )
-    return prefix + ",".join(filters) + f"[{label or f'g{layer_index}'}]"
 
 
 def _anchor_offset_exprs(layer, canvas_width: int, canvas_height: int, time_var: str):

@@ -116,11 +116,11 @@ def _codec_family(video_codec: str) -> str:
 
 
 def _int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return default
     try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        return int(value)
+    except ValueError:
         return default
 
 

@@ -462,7 +462,7 @@ class GraphicsScene:
             opacity *= parent_eval.opacity
         masks: tuple = ()
         compositing = getattr(layer, "compositing", None)
-        if compositing is not None and getattr(compositing, "masks", ()):
+        if compositing is not None and compositing.masks:
             mask_curves = {k: v for k, v in self._curves_for(clip_id).items() if k.startswith("mask.")}
             masks = tuple(
                 evaluate_mask_at(mask, mask_curves, max(0.0, min(duration, local)))

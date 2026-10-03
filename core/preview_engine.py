@@ -23,10 +23,12 @@ Invariants garantis ici :
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from dataclasses import dataclass
 
+LOGGER = logging.getLogger("kut_studio.preview")
 
 # Nombre de segments pre-rendus autour de la tete de lecture.
 PREFETCH_SEGMENTS = 4
@@ -659,6 +661,7 @@ class PreviewEngine:
         if returncode != 0:
             self._remove_file(tmp_path)
             detail = (stderr or "").strip()
+            LOGGER.error("Aperçu fidèle : FFmpeg a échoué (code %s) : %s", returncode, detail.splitlines()[-1] if detail else "sans détail")
             raise RuntimeError(
                 "FFmpeg apercu a echoue." + (" " + detail[-400:] if detail else "")
             )
@@ -706,31 +709,32 @@ def _run_cancellable(command, token, *, timeout: float):
     dizaines de millisecondes au lieu de finir un segment inutile.
     """
     import subprocess
-    import sys
     import threading
     import time
 
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-    process = subprocess.Popen(
-        list(command), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE, creationflags=flags,
-    )
-    chunks: list[bytes] = []
-    drain = threading.Thread(target=lambda: chunks.append(process.stderr.read()), daemon=True)
-    drain.start()
-    deadline = time.monotonic() + float(timeout)
-    killed = False
-    while process.poll() is None:
-        if (token is not None and getattr(token, "cancelled", False)) or time.monotonic() > deadline:
-            process.kill()
-            killed = True
-            break
-        try:
-            process.wait(timeout=0.05)
-        except subprocess.TimeoutExpired:
-            pass
-    process.wait()
-    drain.join(timeout=2.0)
+    from .process_supervisor import supervised_popen
+
+    # Supervisé : ce FFmpeg meurt aussi avec l'application tuée brutalement (sinon jusqu'à ``timeout``).
+    with supervised_popen(list(command), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as process:
+        stderr_pipe = process.stderr
+        if stderr_pipe is None:                              # jamais : ``PIPE`` demandé ci-dessus
+            raise RuntimeError("FFmpeg a été lancé sans sa sortie d'erreur.")
+        chunks: list[bytes] = []
+        drain = threading.Thread(target=lambda: chunks.append(stderr_pipe.read()), daemon=True)
+        drain.start()
+        deadline = time.monotonic() + float(timeout)
+        killed = False
+        while process.poll() is None:
+            if (token is not None and getattr(token, "cancelled", False)) or time.monotonic() > deadline:
+                process.kill()
+                killed = True
+                break
+            try:
+                process.wait(timeout=0.05)
+            except subprocess.TimeoutExpired:
+                pass
+        process.wait()
+        drain.join(timeout=2.0)
     stderr = b"".join(c for c in chunks if c).decode("utf-8", "replace")
     if killed and not stderr:
         stderr = "rendu interrompu"

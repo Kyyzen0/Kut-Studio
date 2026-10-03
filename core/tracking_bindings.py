@@ -45,6 +45,7 @@ de son parent (exact si le parent n'est ni tourné ni mis à l'échelle).
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 from collections import OrderedDict
@@ -89,6 +90,8 @@ from .tracking_motion import (
     stabilization_result,
 )
 from .visual_effects import TRANSFORM_PROPERTIES, TransformKeyframe, evaluate_transform
+
+LOGGER = logging.getLogger("kut_studio.tracking")
 
 CROP_MASK_ID = "trackcrop"
 """Identifiant du masque de recadrage dérivé d'une stabilisation (jamais stocké)."""
@@ -157,6 +160,17 @@ class TrackingContext:
             return None
         return fit_box(size[0], size[1], self.width, self.height)
 
+    def link_sources(self, target_clip, link: TrackLink) -> list:
+        """Clips existants que ``link`` suit, dans l'ordre (le clip cible lui-même pour une liaison propre).
+
+        Après la coupe de la source, il y en a plusieurs : la liaison suit celui qui couvre l'instant
+        évalué (:class:`LinkMotion`). Un clip disparu est simplement absent de la liste ;
+        :func:`link_issues` dit pourquoi.
+        """
+        if link.source_clip_id == SELF_CLIP:
+            return [target_clip]
+        return [clip for clip in (self.clip(clip_id) for clip_id in link.source_ids) if clip is not None]
+
     def tracker_datas(self, clip, tracker_ids: Iterable[str]):
         tracking = getattr(clip, "tracking", None)
         if tracking is None:
@@ -188,9 +202,11 @@ class TrackingContext:
         if fit is None or size is None or not datas:
             return None
         rate = next((d.rate for d in datas if d.rate > 0), 0.0)
-        result = stabilization_result(
-            stab, datas, fit, media_size=size, shown=clip_source_indices(clip, rate),
-        )
+        shown = clip_source_indices(clip, rate)
+        if stab.shared_range is not None:
+            # Une coupe a posé la plage du plan d'origine : les deux moitiés calculent le même zoom.
+            shown = (min(shown[0], stab.shared_range[0]), max(shown[1], stab.shared_range[1]))
+        result = stabilization_result(stab, datas, fit, media_size=size, shown=shown)
         return result if result.valid else None
 
     def correction(self, clip, local_time: float) -> Matrix:
@@ -256,66 +272,127 @@ class TrackingContext:
         )
 
 
+_TIME_EPSILON = 1e-9
+"""Tolérance sur les instants de la timeline (un instant qui tombe 1e-12 avant une coupe est après)."""
+
+
+class _SourcePart:
+    """Mouvement d'une liaison mesuré sur **un** clip : la source entière, ou l'une de ses moitiés coupées.
+
+    Série de mouvement et repères du clip sont calculés à la construction ; l'évaluation par image
+    n'est plus qu'une interpolation et deux ou trois produits de matrices.
+    """
+
+    __slots__ = ("source", "series", "start", "end", "duration", "layer_only", "source_matrix")
+
+    def __init__(self, source, series, layer_only: bool, source_matrix) -> None:
+        self.source = source
+        self.series = series
+        self.duration = float(source.duration)
+        self.start = float(source.timeline_start)
+        self.end = self.start + self.duration
+        self.layer_only = layer_only
+        self.source_matrix = source_matrix
+
+    @classmethod
+    def build(cls, context: TrackingContext, source, link: TrackLink, target_clip, space: str):
+        if getattr(source, "graphic", None) is not None:
+            return None
+        datas = context.tracker_datas(source, link.tracker_ids)
+        fit = context.fit(source)
+        size = context.media_size(source)
+        if not datas or fit is None or size is None:
+            return None
+        series = motion_series(
+            datas, fit, reference_index=link.reference_index, media_size=size,
+            rotation=link.rotation and len(datas) >= 2, scale=link.scale and len(datas) >= 2,
+        )
+        if series.is_empty:
+            return None
+        layer_only = space == "layer" or (space == "target" and source is target_clip)
+        source_matrix = None
+        if not layer_only and context.is_static(source):
+            source_matrix = context.layer_matrix(source, 0.0)
+        return cls(source, series, layer_only, source_matrix)
+
+    def shows(self, source_index: int) -> bool:
+        """Le clip montre-t-il l'image source ``source_index`` ?"""
+        low, high = clip_source_indices(self.source, self.series.rate)
+        return low <= source_index <= high
+
+
 class LinkMotion:
     """Mouvement d'une liaison, résolu une fois puis évalué image par image.
 
-    Série de mouvement, matrice de référence inverse et repères des clips
-    statiques sont calculés à la construction : l'évaluation par image
-    n'est plus qu'une interpolation et deux ou trois produits de matrices.
+    Une liaison suit un clip, ou plusieurs après la coupe de sa source (:attr:`TrackLink.source_ids`) :
+    à chaque instant, c'est la partie qui **couvre** cet instant de la timeline qui donne le mouvement.
+    Les deux moitiés lisent les mêmes données (temps source), donc le mouvement est continu au point de
+    coupe. Hors de toute partie, le mouvement tient la valeur de la plus proche (jamais un saut) ;
+    :func:`link_issues` le signale pour que l'interface ne le laisse pas passer en silence.
     """
 
     def __init__(self, context: TrackingContext, target_clip, link: TrackLink, space: str) -> None:
         self.context = context
         self.target = target_clip
         self.space = space
-        self.series = None
-        source = target_clip if link.source_clip_id == SELF_CLIP else context.clip(link.source_clip_id)
-        self.source = source
-        if source is None or getattr(source, "graphic", None) is not None:
+        self.parts: list[_SourcePart] = []
+        self.reference_inverse: Matrix | None = None
+        self.target_matrix: tuple[Matrix, Matrix] | None = None
+        parts = [
+            part for part in (
+                _SourcePart.build(context, source, link, target_clip, space)
+                for source in context.link_sources(target_clip, link)
+            ) if part is not None
+        ]
+        if not parts:
             return
-        datas = context.tracker_datas(source, link.tracker_ids)
-        fit = context.fit(source)
-        size = context.media_size(source)
-        if not datas or fit is None or size is None:
-            return
-        series = motion_series(
-            datas, fit, reference_index=link.reference_index, media_size=size,
-            rotation=link.rotation and len(datas) >= 2, scale=link.scale and len(datas) >= 2,
-        )
-        if series.is_empty:
-            return
-        self.series = series
-        self.duration = float(source.duration)
-        self.layer_only = space == "layer" or (space == "target" and source is target_clip)
-        if self.layer_only:
-            return
-        reference_seconds = series.reference_index / series.rate if series.rate > 0 else 0.0
-        reference_local = max(0.0, min(self.duration, local_time_for_source(source, reference_seconds)))
-        try:
-            self.reference_inverse = mat_invert(context.layer_matrix(source, reference_local))
-        except ValueError:
-            self.series = None
-            return
-        self.source_matrix = context.layer_matrix(source, 0.0) if context.is_static(source) else None
-        self.target_matrix = None
-        if space == "target":
-            if context.is_static(target_clip):
+        if any(not part.layer_only for part in parts):
+            # Le repère de référence est celui du clip qui montre l'image de référence.
+            owner = next((part for part in parts if part.shows(link.reference_index)), parts[0])
+            rate = owner.series.rate
+            seconds = owner.series.reference_index / rate if rate > 0 else 0.0
+            reference_local = max(0.0, min(owner.duration, local_time_for_source(owner.source, seconds)))
+            try:
+                self.reference_inverse = mat_invert(context.layer_matrix(owner.source, reference_local))
+            except ValueError:
+                return
+            if space == "target" and context.is_static(target_clip):
                 matrix = context.layer_matrix(target_clip, 0.0)
                 try:
                     self.target_matrix = (matrix, mat_invert(matrix))
                 except ValueError:
-                    self.series = None
+                    return
+        self.parts = parts
+
+    @property
+    def series(self):
+        """Série de la première partie (``None`` sans donnée) : le mouvement existe-t-il ?"""
+        return self.parts[0].series if self.parts else None
+
+    def _part_at(self, timeline_time: float) -> _SourcePart | None:
+        parts = self.parts
+        if len(parts) <= 1:
+            return parts[0] if parts else None
+        covering = [p for p in parts if p.start - _TIME_EPSILON <= timeline_time < p.end - _TIME_EPSILON]
+        if covering:
+            return covering[0]          # plusieurs : ambigu (signalé par link_issues), l'ordre de la liaison tranche
+        # Hors de toute partie : la plus proche, la dernière en cas d'égalité.
+        return min(
+            reversed(parts), key=lambda p: max(p.start - timeline_time, timeline_time - p.end, 0.0)
+        )
 
     def at(self, timeline_time: float) -> Matrix | None:
-        series = self.series
-        if series is None:
+        part = self._part_at(float(timeline_time))
+        if part is None:
             return None
-        source = self.source
-        local = max(0.0, min(self.duration, float(timeline_time) - float(source.timeline_start)))
-        layer_motion = series.matrix_at_time(source_time(source, local))
-        if self.layer_only:
+        source = part.source
+        local = max(0.0, min(part.duration, float(timeline_time) - float(source.timeline_start)))
+        layer_motion = part.series.matrix_at_time(source_time(source, local))
+        if part.layer_only:
             return layer_motion
-        source_matrix = self.source_matrix or self.context.layer_matrix(source, local)
+        if self.reference_inverse is None:
+            return None
+        source_matrix = part.source_matrix or self.context.layer_matrix(source, local)
         canvas_motion = mat_mul(mat_mul(source_matrix, layer_motion), self.reference_inverse)
         if self.space == "canvas":
             return canvas_motion
@@ -328,6 +405,54 @@ class LinkMotion:
             except ValueError:
                 return None
         return mat_mul(mat_mul(inverse, canvas_motion), n)
+
+
+def link_issues(context: TrackingContext, target_clip, link: TrackLink) -> tuple[str, ...]:
+    """Ce qui empêche ``link`` de suivre correctement toute la durée de ``target_clip``.
+
+    Codes (``tracking.link.<code>`` dans les avertissements du plan et dans l'interface) :
+
+    - ``missing_source`` : aucun des clips suivis n'existe plus ;
+    - ``part_missing`` : l'une des parties de la source a disparu (supprimée) ;
+    - ``source_gap`` : une partie de la durée du clip lié n'est couverte par aucune partie de la source
+      (une moitié a été raccourcie, déplacée ou supprimée) : le mouvement y reste figé sur la plus proche ;
+    - ``ambiguous_source`` : plusieurs parties de la source se recouvrent sous le clip lié ; la première
+      de la liaison est utilisée.
+
+    Une liaison propre au clip (``SELF_CLIP``) n'a jamais de ces défauts. Vide : la liaison suit
+    correctement.
+    """
+    if link.source_clip_id == SELF_CLIP:
+        return ()
+    issues: list[str] = []
+    found = [clip for clip in (context.clip(clip_id) for clip_id in link.source_ids) if clip is not None]
+    if not found:
+        return ("missing_source",)
+    if len(found) < len(link.source_ids):
+        issues.append("part_missing")
+    usable = [
+        clip for clip in found
+        if getattr(clip, "graphic", None) is None and context.tracker_datas(clip, link.tracker_ids)
+    ]
+    first = float(target_clip.timeline_start)
+    last = first + float(target_clip.duration)
+    half_frame = 0.5 / max(1.0, context.fps)
+    spans = sorted(
+        (max(first, float(c.timeline_start)), min(last, float(c.timeline_start) + float(c.duration)))
+        for c in usable
+    )
+    spans = [(a, b) for a, b in spans if b > a]
+    covered = 0.0
+    cursor = first
+    for a, b in spans:
+        if b > cursor:
+            covered += b - max(a, cursor)
+            cursor = b
+    if last - first - covered > half_frame:
+        issues.append("source_gap")
+    if any(spans[i][1] - spans[i + 1][0] > half_frame for i in range(len(spans) - 1)):
+        issues.append("ambiguous_source")
+    return tuple(issues)
 
 
 # ---------------------------------------------------------------------------
@@ -428,18 +553,19 @@ _STATE_LOCK = threading.RLock()     # états évalués par l'interface et par le
 
 def _state_key(clip, context: TrackingContext):
     tracking: ClipTracking = clip.tracking
-    sources = []
+    sources: list[tuple] = []
     for link in tracking.links:
-        if link.enabled and link.source_clip_id != SELF_CLIP:
-            source = context.clip(link.source_clip_id)
-            if source is None:
-                sources.append((link.source_clip_id, None))
-                continue
-            sources.append((
-                source.id, source.tracking, source.transform, tuple(source.transform_keyframes),
-                source.timeline_start, source.source_in, source.source_out, source.time_remapping,
-                source.asset_id,
-            ))
+        if link.enabled:
+            for source_id in link.source_ids:
+                source = context.clip(source_id)
+                if source is None:
+                    sources.append((source_id, None))
+                    continue
+                sources.append((
+                    source.id, source.tracking, source.transform, tuple(source.transform_keyframes),
+                    source.timeline_start, source.source_in, source.source_out, source.time_remapping,
+                    source.asset_id,
+                ))
     graphic = getattr(clip, "graphic", None)
     return (
         clip.id, tracking, clip.transform, tuple(clip.transform_keyframes), tuple(clip.animation),
@@ -471,6 +597,7 @@ def effective_clip_state(clip, context: TrackingContext) -> EffectiveState:
     try:
         state = _compute_state(clip, context, tracking)
     except Exception as exc:  # garde-fou : jamais de rendu cassé par une liaison
+        LOGGER.exception("Tracking : état du clip %s impossible à dériver (rendu sans suivi)", clip.id)
         state = replace(base, warnings=(f"tracking:{exc}",))
     if key is not None:
         with _STATE_LOCK:
@@ -511,10 +638,12 @@ def _compute_state(clip, context: TrackingContext, tracking: ClipTracking) -> Ef
     for link in tracking.links:
         if not link.enabled:
             continue
-        source = clip if link.source_clip_id == SELF_CLIP else context.clip(link.source_clip_id)
-        if source is None:
+        sources = context.link_sources(clip, link)
+        if not sources:
             warnings.append("tracking.link.missing_source")
             continue
+        source = sources[0]
+        warnings.extend(f"tracking.link.{code}" for code in link_issues(context, clip, link))
         if link.target == TrackTarget.TRANSFORM:
             motions = [context.link_motion(clip, link, clip.timeline_start + t, space="canvas") for t in times]
             if all(m is None for m in motions):
@@ -711,7 +840,9 @@ def _crop_mask(compositing, corrections, times, result: StabilizationResult, con
     from .compositing import Compositing
 
     canvas = (float(context.width), float(context.height))
-    columns = {name: [] for name in ("position_x", "position_y", "width", "height", "rotation")}
+    if result.crop_rect is None:
+        return compositing, []
+    columns: dict[str, list[float]] = {name: [] for name in ("position_x", "position_y", "width", "height", "rotation")}
     for correction in corrections:
         px, py, w, h, rotation = crop_mask_values(correction, result.crop_rect, canvas)
         for name, value in zip(columns, (px, py, w, h, rotation)):
@@ -750,7 +881,9 @@ def baked_keyframes(project, clip, link_id: str) -> tuple[list, list] | None:
     liaison seule, puis on garde ses propriétés.
     """
     tracking: ClipTracking | None = getattr(clip, "tracking", None)
-    link = tracking.link(link_id) if tracking is not None else None
+    if tracking is None:
+        return None
+    link = tracking.link(link_id)
     if link is None:
         return None
     solo = replace(tracking, links=(replace(link, enabled=True),), stabilization=None)
@@ -777,6 +910,6 @@ def curve_for(keyframes: Iterable[Keyframe], name: str) -> AnimationCurve:
 
 
 __all__ = [
-    "CROP_MASK_ID", "EffectiveState", "TrackingContext", "baked_keyframes", "effective_clip_state",
-    "curve_for", "effective_transform_keyframes", "frame_times", "simplify",
+    "CROP_MASK_ID", "EffectiveState", "LinkMotion", "TrackingContext", "baked_keyframes", "effective_clip_state",
+    "curve_for", "effective_transform_keyframes", "frame_times", "link_issues", "simplify",
 ]
