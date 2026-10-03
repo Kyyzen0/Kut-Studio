@@ -6,6 +6,7 @@ import os
 from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError
 from core.timeline_operations import add_clip_to_track
+from ui.i18n import translate
 
 
 def _main_window():
@@ -34,9 +35,7 @@ class MediaImportMixin:
             clip = add_clip_to_track(self.project, asset_id, track_id, timeline_start)
         except (KeyError, ValueError):
             return
-        self._record_history(
-            f"Déposer « {asset.name} » sur {track_id}"
-        )
+        self._record_history(translate("history.media.drop", name=asset.name, track=track_id))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -52,9 +51,9 @@ class MediaImportMixin:
         """
         paths, _ = _main_window().QFileDialog.getOpenFileNames(
             self,
-            "Importer des médias",
+            translate("dialog.import.title"),
             os.path.expanduser("~/Movies"),
-            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg)",
+            translate("dialog.filter.media"),
         )
         if not paths:
             return
@@ -84,8 +83,8 @@ class MediaImportMixin:
         except MediaProbeError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Import impossible",
-                f"Impossible d'importer le média :\n\n{path}\n\n{exc}",
+                translate("dialog.import.failed_title"),
+                translate("dialog.import.failed_text", path=path, error=exc),
             )
             return False
 
@@ -104,7 +103,7 @@ class MediaImportMixin:
         self.project_panel.select_asset(asset.id)
         if asset.media_type == "video":
             self.preview_panel.load_video(asset.path)
-        self._record_history(f"Importer le média « {asset.name} »")
+        self._record_history(translate("history.media.import", name=asset.name))
         self._mark_dirty()
         return True
 
@@ -147,8 +146,8 @@ class MediaImportMixin:
         if asset is None:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Média '{asset_id}' introuvable dans le projet.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.asset_missing", asset=asset_id),
             )
             return
 
@@ -159,17 +158,16 @@ class MediaImportMixin:
         else:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Le type de média '{asset.media_type}' ne peut pas être "
-                "ajouté à la timeline depuis le panneau de bibliothèque.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.bad_type", media_type=asset.media_type),
             )
             return
 
         if not any(track.id == target_track_id for track in self.project.tracks):
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"La piste '{target_track_id}' est absente du projet courant.",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.track_missing", track=target_track_id),
             )
             return
 
@@ -184,13 +182,13 @@ class MediaImportMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Ajout impossible",
-                f"Impossible d'ajouter le média à la timeline :\n\n{exc}",
+                translate("dialog.add.failed_title"),
+                translate("dialog.add.failed_text", error=exc),
             )
             return
 
         # Rafraîchit la projection (qui inclut le nouveau clip).
-        self._record_history(f"Ajouter le clip « {new_clip.label or new_clip.id} »")
+        self._record_history(translate("history.media.add_clip", name=new_clip.label or new_clip.id))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self.timeline_panel.select_clip(new_clip.id)

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui import i18n
 from core.audio_effects_model import (
     AudioEffect,
 )
@@ -144,6 +145,8 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self._current_color_grade = ColorGrade.identity()
         self._allow_color_signals = True
         self.color_preset_store = ColorPresetStore()
+        self._group_titles: list[tuple] = []  # (QGroupBox, clé i18n) : réécrits par ``retranslate``
+        self._row_labels: list[tuple] = []  # (QFormLayout, champ, clé i18n)
         self.setObjectName("properties_panel")
         self.setStyleSheet(
             f"QWidget#properties_panel {{ background: {COLORS['panel']}; "
@@ -210,8 +213,14 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         layout.addStretch()
 
         self._register_inspector_groups(project_group, clip_group, audio_group)
+        callback = self._on_language_changed
+        i18n.subscribe(callback)
+        self.destroyed.connect(lambda *_: i18n.unsubscribe(callback))
 
 
+
+    def _on_language_changed(self, _code: str) -> None:
+        self.retranslate()
 
     # ------------------------------------------------------------------
     # Helpers privés : construction

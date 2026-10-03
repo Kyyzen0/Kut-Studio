@@ -66,6 +66,7 @@ from core.gpu_composite import (
     present_uniforms,
 )
 from core.gpu_frames import LAYOUTS, QT_COLOR_RANGES, QT_COLOR_SPACES, layout_for
+from ui.i18n import translate
 
 LOGGER = logging.getLogger("kut_studio.gpu")
 
@@ -105,6 +106,11 @@ QUAD = (
 class GpuUnavailable(RuntimeError):
     """Le GPU ne peut pas servir le moniteur (cause lisible dans le message)."""
 
+    def __init__(self, message: str, *, out_of_memory: bool = False) -> None:
+        super().__init__(message)
+        self.out_of_memory = out_of_memory
+        """Manque de mémoire GPU : classé ``out_of_memory`` (pas ``render``), quelle que soit la langue du message."""
+
 
 def _with_flip(data: bytes, flip: float) -> bytes:
     import struct
@@ -117,10 +123,10 @@ def load_shader(name: str) -> QShader:
     try:
         raw = path.read_bytes()
     except OSError as error:
-        raise GpuUnavailable(f"shader introuvable : {path.name}") from error
+        raise GpuUnavailable(translate("gpu.error.shader_missing", name=path.name)) from error
     shader = QShader.fromSerialized(QByteArray(raw))
     if not shader.isValid():
-        raise GpuUnavailable(f"shader invalide : {path.name}")
+        raise GpuUnavailable(translate("gpu.error.shader_invalid", name=path.name))
     return shader
 
 
@@ -173,7 +179,7 @@ class RhiExecutor:
         self._resources: list[object] = []
         self._vbuf = self._keep(rhi.newBuffer(QRhiBuffer.Type.Immutable, QRhiBuffer.UsageFlag.VertexBuffer, 64))
         if not self._vbuf.create():
-            raise GpuUnavailable("tampon de sommets impossible")
+            raise GpuUnavailable(translate("gpu.error.vertex_buffer"))
         self._vbuf_uploaded = False
         self._sampler = self._keep(rhi.newSampler(
             QRhiSampler.Filter.Linear, QRhiSampler.Filter.Linear, QRhiSampler.Filter.None_,
@@ -205,7 +211,7 @@ class RhiExecutor:
             buf = self.rhi.newBuffer(QRhiBuffer.Type.Dynamic, QRhiBuffer.UsageFlag.UniformBuffer,
                                      self.rhi.ubufAligned(UNIFORM_BYTES))
             if not buf.create():
-                raise GpuUnavailable("tampon d'uniformes impossible")
+                raise GpuUnavailable(translate("gpu.error.uniform_buffer"))
             self._ubufs.append(buf)
         return self._ubufs[index]
 
@@ -219,12 +225,12 @@ class RhiExecutor:
         texture = self.rhi.newTexture(_FORMATS[fmt], QSize(spec.width, spec.height), 1,
                                       QRhiTexture.Flag.RenderTarget)
         if not texture.create():
-            raise GpuUnavailable(f"texture {spec.width}×{spec.height} impossible (mémoire GPU ?)")
+            raise GpuUnavailable(translate("gpu.error.texture", width=spec.width, height=spec.height), out_of_memory=True)
         rt = self.rhi.newTextureRenderTarget(QRhiTextureRenderTargetDescription(QRhiColorAttachment(texture)))
         rpd = rt.newCompatibleRenderPassDescriptor()
         rt.setRenderPassDescriptor(rpd)
         if not rt.create():
-            raise GpuUnavailable("cible de rendu impossible")
+            raise GpuUnavailable(translate("gpu.error.render_target"))
         if fmt not in self._template_rpds:
             # Modèle des pipelines de ce format, DISTINCT du descripteur de la cible : celui-ci est détruit
             # avec elle (redimensionnement, changement de séquence) alors que les pipelines suivants
@@ -271,7 +277,7 @@ class RhiExecutor:
         pipeline.setShaderResourceBindings(self._srb_for(self._ubuf(0), (self._dummy,) * 3, pinned=True))
         pipeline.setRenderPassDescriptor(rpd)
         if not pipeline.create():
-            raise GpuUnavailable("pipeline graphique impossible")
+            raise GpuUnavailable(translate("gpu.error.pipeline"))
         return pipeline
 
     def _srb_for(self, ubuf, textures, *, pinned: bool = False):
@@ -294,7 +300,7 @@ class RhiExecutor:
               for i, t in enumerate(textures)),
         ])
         if not srb.create():
-            raise GpuUnavailable("liaisons de ressources impossibles")
+            raise GpuUnavailable(translate("gpu.error.bindings"))
         table[key] = srb
         while not pinned and len(table) > SRB_CACHE_SIZE:
             _key, oldest = table.popitem(last=False)   # le moins récemment utilisé, jamais celui de l'image courante
@@ -389,7 +395,7 @@ class RhiExecutor:
             pw, ph = layout.plane_size(index, width, height)
             texture = self.rhi.newTexture(_FORMATS[spec.texture_format], QSize(pw, ph))
             if not texture.create():
-                raise GpuUnavailable("texture vidéo impossible (mémoire GPU ?)")
+                raise GpuUnavailable(translate("gpu.error.video_texture"), out_of_memory=True)
             textures.append(texture)
             self.texture_bytes += pw * ph * spec.bytes_per_texel
         self._sources[source_id] = (key, textures, layout.bytes_per_frame(width, height))
@@ -412,7 +418,7 @@ class RhiExecutor:
         image = image.convertToFormat(QImage.Format.Format_RGBA8888_Premultiplied)
         texture = self.rhi.newTexture(QRhiTexture.Format.RGBA8, image.size())
         if not texture.create():
-            raise GpuUnavailable("texture de matte impossible")
+            raise GpuUnavailable(translate("gpu.error.matte_texture"))
         batch.uploadTexture(texture, QRhiTextureUploadDescription(QRhiTextureUploadEntry(
             0, 0, QRhiTextureSubresourceUploadDescription(image))))
         return texture
@@ -475,7 +481,7 @@ class RhiExecutor:
         if step.shader == "prep":
             planes = self._input_texture(step.inputs[0], mattes)
             if planes is None:
-                raise GpuUnavailable("source vidéo absente")
+                raise GpuUnavailable(translate("gpu.error.no_source"))
             if not isinstance(planes, list):  # calque d'effets : le cadre composé
                 planes = [planes]
             textures = (list(planes) + [self._dummy] * 3)[:3]
@@ -600,7 +606,7 @@ class GpuPreviewWidget(QRhiWidget):
         try:
             rhi = self.rhi()
             if rhi is None:
-                raise GpuUnavailable("aucun contexte QRhi")
+                raise GpuUnavailable(translate("gpu.error.no_context"))
             if self.executor is None or self.executor.rhi is not rhi:
                 if self.executor is not None:
                     self.executor.release()
@@ -647,7 +653,7 @@ class GpuPreviewWidget(QRhiWidget):
             present = present_uniforms(viewport, (x * dpr, y * dpr, w * dpr, h * dpr), self._background)
             executor.run(cb, plan, batch, mattes, self.renderTarget(), present, viewport)
         except Exception as error:
-            self._fail("out_of_memory" if "mémoire" in str(error) else "render", str(error))
+            self._fail("out_of_memory" if getattr(error, "out_of_memory", False) else "render", str(error))
             return
         self.stats.note_render((time.perf_counter() - started) * 1000.0, uploaded)
         if not self._confirmed:
@@ -693,7 +699,8 @@ class GpuPreviewWidget(QRhiWidget):
         except Exception:
             pass
         lost = bool(rhi is not None and rhi.isDeviceLost())
-        self._fail("device_lost" if lost else "render", "périphérique perdu" if lost else "QRhi a refusé le rendu")
+        self._fail("device_lost" if lost else "render",
+                   translate("gpu.error.device_lost") if lost else translate("gpu.error.render_refused"))
 
     def _fail(self, kind: str, detail: str) -> None:
         if self._broken:
@@ -704,7 +711,7 @@ class GpuPreviewWidget(QRhiWidget):
         QTimer.singleShot(0, lambda: self.failed.emit(kind, detail))
 
 
-def gpu_self_check() -> str:
+def gpu_self_check() -> str:  # i18n-ignore: sortie console du smoke test de build, pas l'interface
     """``""`` si tous les shaders sont présents et valides (smoke test de l'application construite)."""
     from core.gpu_backend import SHADER_NAMES, missing_shaders
 

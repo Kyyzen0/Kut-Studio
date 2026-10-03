@@ -11,6 +11,7 @@ from core.timeline_operations import (
     set_clip_transform,
     set_transform_keyframe,
 )
+from ui.i18n import translate
 
 
 class TransformEffectsMixin:
@@ -24,7 +25,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Modifier la vitesse")
+        self._record_history(translate("history.speed.edit"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -37,7 +38,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Inverser le clip" if reverse else "Désinverser le clip")
+        self._record_history(translate("history.clip.reverse") if reverse else translate("history.clip.unreverse"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -50,7 +51,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Créer un arrêt sur image")
+        self._record_history(translate("tooltip.freeze_frame"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -63,7 +64,7 @@ class TransformEffectsMixin:
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer l'arrêt sur image")
+        self._record_history(translate("history.freeze.remove"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -76,7 +77,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Modifier la durée de l'arrêt sur image")
+        self._record_history(translate("history.freeze.duration"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -89,7 +90,7 @@ class TransformEffectsMixin:
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Réinitialiser la vitesse et le remappage temporel")
+        self._record_history(translate("tooltip.reset_speed"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -105,7 +106,7 @@ class TransformEffectsMixin:
             self._report_edit_refused(exc)
             return
         self._record_history(
-            "Activer un effet" if enabled else "Désactiver un effet"
+            translate("history.effect.enable") if enabled else translate("history.effect.disable")
         )
         self._refresh_effects_after_change(clip_id)
 
@@ -115,9 +116,9 @@ class TransformEffectsMixin:
         try:
             add_effect_to_clip(self.project, clip_id, effect_type)
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Effets", str(exc))
+            QMessageBox.warning(self, translate("dialog.title.effects"), str(exc))
             return
-        self._record_history("Ajouter un effet")
+        self._record_history(translate("history.effect.add"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_effect_removed(self, clip_id: str, effect_id: str) -> None:
@@ -128,7 +129,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer un effet")
+        self._record_history(translate("history.effect.remove"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_effect_moved(
@@ -141,7 +142,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Réordonner un effet")
+        self._record_history(translate("history.effect.move"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_effect_parameter_changed(
@@ -156,7 +157,7 @@ class TransformEffectsMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Modifier un effet")
+        self._record_history(translate("history.effect.edit"))
         self._refresh_effects_after_change(clip_id)
 
     def on_transform_property_changed(
@@ -195,7 +196,7 @@ class TransformEffectsMixin:
 
         # Le snapshot courant de l'historique est l'état avant la rafale.
         # Il suffit d'enregistrer l'état modifié à la fin du debounce.
-        self._schedule_transform_history("Modifier le mouvement")
+        self._schedule_transform_history(translate("history.motion.edit"))
 
         # Rafraîchit l'aperçu immédiatement pour le retour visuel.
         self.properties_panel.update_transform_from_clip(
@@ -240,7 +241,7 @@ class TransformEffectsMixin:
         if timer is not None:
             timer.stop()
         self._transform_session_active = False
-        label = getattr(self, "_transform_session_label", "Modifier le mouvement")
+        label = getattr(self, "_transform_session_label", translate("history.motion.edit"))
         self.history.record(self.project, label)
         invalidate = getattr(self, "_invalidate_nested_dependents", None)
         if callable(invalidate):
@@ -296,7 +297,7 @@ class TransformEffectsMixin:
             return
         # Même debounce que le slider de la base : un glisser qui réécrit
         # l'image-clé sous la tête ne doit pas empiler une entrée par cran.
-        self._schedule_transform_history("Ajouter une image-clé")
+        self._schedule_transform_history(translate("history.keyframes.add"))
         self.properties_panel.update_transform_from_clip(
             clip.transform,
             clip.transform_keyframes,
@@ -318,7 +319,7 @@ class TransformEffectsMixin:
             self._report_edit_refused(exc)
             return
         clip = find_clip(self.project, clip_id)
-        self._record_history("Supprimer une image-clé")
+        self._record_history(translate("history.keyframes.remove"))
         self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(
@@ -338,7 +339,7 @@ class TransformEffectsMixin:
             self._report_edit_refused(exc)
             return
         clip = find_clip(self.project, clip_id)
-        self._record_history("Réinitialiser le mouvement")
+        self._record_history(translate("history.motion.reset"))
         self._reload_timeline_preserving_selection(clip_id)
         if clip is not None:
             self.properties_panel.update_transform_from_clip(

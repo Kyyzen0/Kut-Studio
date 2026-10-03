@@ -37,17 +37,18 @@ from PySide6.QtWidgets import (
 from core.graphics import GraphicOverlay, GraphicType, ShapeKind
 from ui import i18n
 from ui.design_system import Spacing
+from ui.layers_panel import SHAPE_CHOICES
 from ui.theme import label_style
 
-TYPE_NAMES = {
-    GraphicType.TEXT: "Titre",
-    GraphicType.RECTANGLE: "Rectangle",
-    GraphicType.SOLID: "Aplat",
-    GraphicType.IMAGE: "Image",
-    GraphicType.SHAPE: "Forme",
-    GraphicType.GROUP: "Groupe",
-    GraphicType.ADJUSTMENT: "Calque d'effets",
-    GraphicType.NULL: "Contrôleur",
+TYPE_NAMES = {  # type de calque -> clé i18n du nom affiché
+    GraphicType.TEXT: "text.preset.title.name",
+    GraphicType.RECTANGLE: "mograph.shape.rectangle",
+    GraphicType.SOLID: "mograph.library.solid_name",
+    GraphicType.IMAGE: "mograph.type.image",
+    GraphicType.SHAPE: "menu.item.add_shape_layer",
+    GraphicType.GROUP: "mograph.type.group",
+    GraphicType.ADJUSTMENT: "mograph.type.adjustment",
+    GraphicType.NULL: "mograph.type.null",
 }
 
 
@@ -111,7 +112,7 @@ class _ColorField(QWidget):
         current = self.edit.text()
         alpha = int(current[7:9], 16) if len(current) == 9 else 255
         color = QColorDialog.getColor(
-            QColor(current[:7]), self, "Couleur", QColorDialog.ShowAlphaChannel
+            QColor(current[:7]), self, i18n.translate("group.color"), QColorDialog.ShowAlphaChannel
         )
         if not color.isValid():
             return
@@ -130,7 +131,7 @@ class GraphicsEditor(QGroupBox):
     parent_changed = Signal(str)
 
     def __init__(self, group_style: str = "", parent=None) -> None:
-        super().__init__("Calque graphique", parent)
+        super().__init__(i18n.translate("mograph.graphics.title"), parent)
         self.setObjectName("graphicsGroup")
         self.setStyleSheet(group_style)
         self._updating = False
@@ -145,70 +146,67 @@ class GraphicsEditor(QGroupBox):
 
         self.type_label = QLabel("--")
         self.type_label.setStyleSheet(label_style(12, "text", 700))
-        form.addRow("Type", self.type_label)
+        form.addRow(i18n.translate("common.type"), self.type_label)
 
         self.text_edit = QTextEdit()
         self.text_edit.setFixedHeight(64)
-        self.text_edit.setPlaceholderText("Texte du titre")
+        self.text_edit.setPlaceholderText(i18n.translate("mograph.graphics.text_placeholder"))
         self.text_edit.textChanged.connect(lambda: self._emit("text", self.text_edit.toPlainText()))
-        self.text_label = QLabel("Texte")
+        self.text_label = QLabel(i18n.translate("common.text"))
         form.addRow(self.text_label, self.text_edit)
 
         self.source_label = QLabel("--")
         self.source_label.setWordWrap(True)
         self.source_label.setStyleSheet(label_style(10, "muted", 500))
-        self.source_row_label = QLabel("Source")
+        self.source_row_label = QLabel(i18n.translate("common.source"))
         form.addRow(self.source_row_label, self.source_label)
 
         self.width_spin = self._spin(2, 8192, "width")
         self.height_spin = self._spin(2, 8192, "height")
-        self.size_label = QLabel("Taille")
+        self.size_label = QLabel(i18n.translate("common.size"))
         form.addRow(self.size_label, self._pair(self.width_spin, "×", self.height_spin))
 
         self.fill_field = _ColorField("#FFFFFF")
         self.fill_field.changed.connect(lambda value: self._emit("fill_color", value))
-        self.fill_label = QLabel("Couleur")
+        self.fill_label = QLabel(i18n.translate("group.color"))
         form.addRow(self.fill_label, self.fill_field)
 
         # --- Forme ---------------------------------------------------------------------------
-        self.shape_section = _Section("Forme", expanded=True)
+        self.shape_section = _Section(i18n.translate("menu.item.add_shape_layer"), expanded=True)
         self.shape_combo = QComboBox(objectName="shape_kind")
-        for kind, label in (
-            (ShapeKind.RECTANGLE, "Rectangle"), (ShapeKind.ROUNDED_RECTANGLE, "Rectangle arrondi"),
-            (ShapeKind.ELLIPSE, "Ellipse / cercle"), (ShapeKind.LINE, "Ligne"), (ShapeKind.POLYGON, "Polygone"),
-        ):
-            self.shape_combo.addItem(label, kind.value)
+        for kind, label_key in SHAPE_CHOICES:
+            self.shape_combo.addItem(i18n.translate(label_key), kind.value)
         self.shape_combo.currentIndexChanged.connect(
             lambda: self._emit("shape", self.shape_combo.currentData())
         )
-        self.shape_section.form.addRow("Forme", self.shape_combo)
+        self.shape_section.form.addRow(i18n.translate("menu.item.add_shape_layer"), self.shape_combo)
         self.corner_spin = self._double(0, 4096, 1, "corner_radius")
-        self.shape_section.form.addRow("Rayon d'angle", self.corner_spin)
+        self.shape_section.form.addRow(i18n.translate("graphics.property.corner_radius"), self.corner_spin)
         self.sides_spin = self._spin(3, 64, "polygon_sides")
-        self.shape_section.form.addRow("Côtés", self.sides_spin)
-        self.fill_check = QCheckBox("Remplissage")
+        self.shape_section.form.addRow(i18n.translate("mograph.graphics.sides"), self.sides_spin)
+        self.fill_check = QCheckBox(i18n.translate("mograph.graphics.fill"))
         self.fill_check.toggled.connect(lambda checked: self._emit("fill_enabled", checked))
         self.shape_section.form.addRow(self.fill_check)
         root.addWidget(self.shape_section)
 
         # --- Contour (formes et textes) ----------------------------------------------------
-        self.stroke_section = _Section("Contour")
+        self.stroke_section = _Section(i18n.translate("mograph.graphics.stroke"))
         self.stroke_field = _ColorField("#000000")
         self.stroke_field.changed.connect(lambda value: self._emit("stroke_color", value))
-        self.stroke_section.form.addRow("Couleur", self.stroke_field)
+        self.stroke_section.form.addRow(i18n.translate("group.color"), self.stroke_field)
         self.stroke_width_spin = self._spin(0, 256, "stroke_width")
-        self.stroke_section.form.addRow("Épaisseur", self.stroke_width_spin)
+        self.stroke_section.form.addRow(i18n.translate("mograph.graphics.thickness"), self.stroke_width_spin)
         root.addWidget(self.stroke_section)
 
         # --- Texte ---------------------------------------------------------------------------
-        self.text_section = _Section("Texte", expanded=True)
+        self.text_section = _Section(i18n.translate("common.text"), expanded=True)
         self.font_combo = QFontComboBox()
         self.font_combo.currentFontChanged.connect(lambda font: self._emit("font_family", font.family()))
-        self.text_section.form.addRow("Police", self.font_combo)
+        self.text_section.form.addRow(i18n.translate("mograph.graphics.font"), self.font_combo)
         self.font_size_spin = self._spin(6, 512, "font_size")
-        self.bold_check = QCheckBox("Gras")
+        self.bold_check = QCheckBox(i18n.translate("mograph.graphics.bold"))
         self.bold_check.toggled.connect(lambda checked: self._emit("bold", checked))
-        self.italic_check = QCheckBox("Italique")
+        self.italic_check = QCheckBox(i18n.translate("mograph.graphics.italic"))
         self.italic_check.toggled.connect(lambda checked: self._emit("italic", checked))
         size_row = QWidget()
         size_layout = QHBoxLayout(size_row)
@@ -216,61 +214,58 @@ class GraphicsEditor(QGroupBox):
         size_layout.addWidget(self.font_size_spin)
         size_layout.addWidget(self.bold_check)
         size_layout.addWidget(self.italic_check)
-        self.text_section.form.addRow("Corps", size_row)
+        self.text_section.form.addRow(i18n.translate("mograph.graphics.font_size"), size_row)
         self.align_h = QComboBox(objectName="text_align_h")
-        for value, label in (("left", "Gauche"), ("center", "Centre"), ("right", "Droite")):
+        for value, label in (("left", i18n.translate("mograph.graphics.left")), ("center", i18n.translate("mograph.graphics.center")), ("right", i18n.translate("mograph.graphics.right"))):
             self.align_h.addItem(label, value)
         self.align_h.currentIndexChanged.connect(lambda: self._emit("align_h", self.align_h.currentData()))
         self.align_v = QComboBox(objectName="text_align_v")
-        for value, label in (("top", "Haut"), ("center", "Milieu"), ("bottom", "Bas")):
+        for value, label in (("top", i18n.translate("mograph.graphics.top")), ("center", i18n.translate("mograph.graphics.middle")), ("bottom", i18n.translate("mograph.graphics.bottom"))):
             self.align_v.addItem(label, value)
         self.align_v.currentIndexChanged.connect(lambda: self._emit("align_v", self.align_v.currentData()))
-        self.text_section.form.addRow("Alignement", self._pair(self.align_h, "", self.align_v))
+        self.text_section.form.addRow(i18n.translate("mograph.graphics.alignment"), self._pair(self.align_h, "", self.align_v))
         self.tracking_spin = self._double(-100, 500, 0.5, "tracking")
-        self.text_section.form.addRow("Approche", self.tracking_spin)
+        self.text_section.form.addRow(i18n.translate("mograph.graphics.tracking"), self.tracking_spin)
         self.line_spacing_spin = self._double(0.3, 5.0, 0.05, "line_spacing")
-        self.text_section.form.addRow("Interligne", self.line_spacing_spin)
-        self.box_check = QCheckBox("Texte en boîte (retour à la ligne)")
+        self.text_section.form.addRow(i18n.translate("graphics.property.line_spacing"), self.line_spacing_spin)
+        self.box_check = QCheckBox(i18n.translate("mograph.graphics.box_text"))
         self.box_check.toggled.connect(lambda checked: self._emit("box_text", checked))
         self.text_section.form.addRow(self.box_check)
-        self.autosize_check = QCheckBox("Taille automatique")
+        self.autosize_check = QCheckBox(i18n.translate("mograph.graphics.autosize"))
         self.autosize_check.toggled.connect(lambda checked: self._emit("autosize", checked))
         self.text_section.form.addRow(self.autosize_check)
         root.addWidget(self.text_section)
 
         # --- Ombre et fond (texte) ------------------------------------------------------------
-        self.style_section = _Section("Ombre et fond")
+        self.style_section = _Section(i18n.translate("mograph.graphics.shadow_background"))
         self.shadow_field = _ColorField("#000000AA")
         self.shadow_field.changed.connect(lambda value: self._emit("shadow_color", value))
-        self.style_section.form.addRow("Ombre", self.shadow_field)
+        self.style_section.form.addRow(i18n.translate("mograph.graphics.shadow"), self.shadow_field)
         self.shadow_x_spin = self._spin(-256, 256, "shadow_offset_x")
         self.shadow_y_spin = self._spin(-256, 256, "shadow_offset_y")
         self.style_section.form.addRow(
-            "Décalage", self._pair(self.shadow_x_spin, "Y", self.shadow_y_spin, first_label="X")
+            i18n.translate("mograph.graphics.offset"), self._pair(self.shadow_x_spin, "Y", self.shadow_y_spin, first_label="X")
         )
         self.shadow_blur_spin = self._double(0, 200, 0.5, "shadow_blur")
-        self.style_section.form.addRow("Flou de l'ombre", self.shadow_blur_spin)
-        self.background_check = QCheckBox("Fond derrière le texte")
+        self.style_section.form.addRow(i18n.translate("graphics.property.shadow_blur"), self.shadow_blur_spin)
+        self.background_check = QCheckBox(i18n.translate("mograph.graphics.background_behind"))
         self.background_check.toggled.connect(lambda checked: self._emit("background_enabled", checked))
         self.style_section.form.addRow(self.background_check)
         self.background_field = _ColorField("#000000AA")
         self.background_field.changed.connect(lambda value: self._emit("background_color", value))
-        self.style_section.form.addRow("Couleur du fond", self.background_field)
+        self.style_section.form.addRow(i18n.translate("mograph.graphics.background_color"), self.background_field)
         self.padding_spin = self._spin(0, 1024, "background_padding")
         self.radius_spin = self._double(0, 1024, 1, "background_radius")
-        self.style_section.form.addRow("Marge / rayon", self._pair(self.padding_spin, "", self.radius_spin))
+        self.style_section.form.addRow(i18n.translate("mograph.graphics.padding_radius"), self._pair(self.padding_spin, "", self.radius_spin))
         root.addWidget(self.style_section)
 
         # --- Calque -----------------------------------------------------------------------------
-        self.layer_section = _Section("Calque")
+        self.layer_section = _Section(i18n.translate("mograph.layers.col_layer"))
         self.parent_combo = QComboBox(objectName="layer_parent")
         self.parent_combo.currentIndexChanged.connect(self._on_parent_changed)
-        self.layer_section.form.addRow("Parent", self.parent_combo)
-        self.motion_blur_check = QCheckBox("Flou de mouvement")
-        self.motion_blur_check.setToolTip(
-            "Flou des déplacements, rotations et échelles. Désactivable pour toute la séquence "
-            "(menu Calques) sur les machines modestes."
-        )
+        self.layer_section.form.addRow(i18n.translate("mograph.layers.col_parent"), self.parent_combo)
+        self.motion_blur_check = QCheckBox(i18n.translate("mograph.motion_blur"))
+        self.motion_blur_check.setToolTip(i18n.translate("mograph.graphics.motion_blur_tooltip"))
         self.motion_blur_check.toggled.connect(lambda checked: self._emit("motion_blur", checked))
         self.layer_section.form.addRow(self.motion_blur_check)
         root.addWidget(self.layer_section)
@@ -329,7 +324,7 @@ class GraphicsEditor(QGroupBox):
         self._updating = True
         try:
             self.parent_combo.clear()
-            self.parent_combo.addItem("Aucun", "")
+            self.parent_combo.addItem(i18n.translate("common.none"), "")
             for clip_id, name in choices:
                 self.parent_combo.addItem(name, clip_id)
             index = self.parent_combo.findData(current)
@@ -351,7 +346,7 @@ class GraphicsEditor(QGroupBox):
                 return
             self._graphic = graphic
             kind = graphic.type
-            name = TYPE_NAMES.get(kind, kind.value)
+            name = i18n.translate(TYPE_NAMES[kind]) if kind in TYPE_NAMES else kind.value
             self.type_label.setText(name)
             is_text = kind == GraphicType.TEXT
             is_shape = kind in (GraphicType.SHAPE, GraphicType.RECTANGLE)
@@ -364,7 +359,7 @@ class GraphicsEditor(QGroupBox):
                 widget.setVisible(is_text)
             for widget in (self.source_label, self.source_row_label):
                 widget.setVisible(kind == GraphicType.IMAGE)
-            self.source_label.setText(graphic.source_path or "Généré")
+            self.source_label.setText(graphic.source_path or i18n.translate("mograph.graphics.generated"))
             for widget in (self.width_spin, self.height_spin, self.size_label):
                 widget.setVisible(sized)
             self.width_spin.parentWidget().setVisible(sized)

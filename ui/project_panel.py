@@ -80,6 +80,7 @@ from ui.project_panel_widgets.effects_library_view import (
     SavePresetDialog,
     _CATEGORY_ACCENTS,
 )  # noqa: F401
+from ui.i18n import translate
 
 
 class ProjectPanel(QWidget):
@@ -196,20 +197,22 @@ class ProjectPanel(QWidget):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.sm)
-        title = QLabel("Médias")
+        title = QLabel(translate("rail.media"))
+        self._title_label = title
         title.setStyleSheet(label_style(13, "text", 700))
         title_row.addWidget(title)
         title_row.addStretch(1)
         # Compteur global (mis à jour à chaque mutation).
-        self.media_count = QLabel("0 média")
+        self.media_count = QLabel(f"0 {translate('library.word.media')}")
         self.media_count.setStyleSheet(label_style(10, "muted", 500))
         title_row.addWidget(self.media_count)
         quick_import = IconButton(
             icon=IconName.PLUS,
-            tooltip="Importer un média",
+            tooltip=translate("preview.import"),
             size=Sizes.icon_button_sm,
         )
-        quick_import.setAccessibleName("Importer un média")
+        quick_import.setAccessibleName(translate("preview.import"))
+        self._quick_import = quick_import
         quick_import.clicked.connect(self.import_requested.emit)
         title_row.addWidget(quick_import)
         header_layout.addLayout(title_row)
@@ -221,7 +224,7 @@ class ProjectPanel(QWidget):
         scope_tabs_layout.setContentsMargins(0, 0, 0, 0)
         scope_tabs_layout.setSpacing(Spacing.xs)
         self.scope_tab_buttons: list[QPushButton] = []
-        for index, label in enumerate(("Projet", "Favoris")):
+        for index, label in enumerate((translate("panel.project"), translate("transitions.category.favorites"))):
             button = QPushButton(label)
             button.setObjectName("scopeTab")
             button.setCheckable(True)
@@ -257,7 +260,7 @@ class ProjectPanel(QWidget):
         search_layout.setSpacing(Spacing.sm)
         self.search_field = QLineEdit()
         self.search_field.setObjectName("librarySearch")
-        self.search_field.setPlaceholderText("Rechercher dans la bibliothèque…")
+        self.search_field.setPlaceholderText(translate("library.search_placeholder"))
         self.search_field.setClearButtonEnabled(True)
         self.search_field.setFixedHeight(28)
         self.search_field.textChanged.connect(self._on_search_changed)
@@ -323,7 +326,7 @@ class ProjectPanel(QWidget):
         tags_layout.setContentsMargins(0, 0, 0, 0)
         tags_layout.setSpacing(Spacing.xs)
         tags_layout.addStretch(1)
-        self.manage_tags_button = QPushButton("Gérer les tags…")
+        self.manage_tags_button = QPushButton(translate("library.manage_tags"))
         self.manage_tags_button.setObjectName("manageTagsButton")
         self.manage_tags_button.setCursor(Qt.PointingHandCursor)
         self.manage_tags_button.setFocusPolicy(Qt.NoFocus)
@@ -352,7 +355,7 @@ class ProjectPanel(QWidget):
         audio_mode_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, 0)
         audio_mode_layout.setSpacing(Spacing.xs)
         self.audio_mode_buttons: dict[str, QPushButton] = {}
-        for mode, label in (("files", "Fichiers"), ("effects", "Effets audio")):
+        for mode, label in (("files", translate("library.audio_files")), ("effects", translate("audio_effects.section"))):
             button = QPushButton(label)
             button.setObjectName("scopeTab")
             button.setCheckable(True)
@@ -448,17 +451,17 @@ class ProjectPanel(QWidget):
         actions_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.md)
         actions_layout.setSpacing(Spacing.xs)
         self.import_button = self._make_wide_button(
-            IconName.IMPORT, "Importer",
+            IconName.IMPORT, translate("library.import"),
             accent=False,
-            tooltip="Importer des médias dans le projet",
+            tooltip=translate("library.import_tip"),
         )
         self.import_button.clicked.connect(self.import_requested)
         actions_layout.addWidget(self.import_button, 1)
 
         self.add_to_timeline_button = self._make_wide_button(
-            IconName.PLUS, "Timeline",
+            IconName.PLUS, translate("panel.timeline"),
             accent=True,
-            tooltip="Ajouter le média sélectionné à la timeline",
+            tooltip=translate("library.add_tip"),
         )
         self.add_to_timeline_button.setEnabled(False)
         self.add_to_timeline_button.clicked.connect(self._on_add_to_timeline_clicked)
@@ -624,8 +627,8 @@ class ProjectPanel(QWidget):
         )
 
         result = prompt_for_folder_name(
-            title="Nouveau dossier",
-            label="Nom du dossier :",
+            title=translate("dialog.folder.new_title"),
+            label=translate("dialog.folder.name_label"),
             parent=self,
         )
         if result is None:
@@ -643,7 +646,7 @@ class ProjectPanel(QWidget):
 
     def _show_warning(self, message: str) -> None:
         from PySide6.QtWidgets import QMessageBox
-        QMessageBox.warning(self, "Bibliothèque", message)
+        QMessageBox.warning(self, translate("panel.library"), message)
 
     def selected_asset_usage(self) -> AssetUsageBadge | None:
         """Retourne le badge du média sélectionné (``None`` si rien)."""
@@ -852,7 +855,7 @@ class ProjectPanel(QWidget):
         if self._active_scope == "favorites":
             self.bin_videos.set_assets([])
             self.bin_audios.set_assets([])
-            self.media_count.setText("Aucun favori")
+            self.media_count.setText(translate("library.no_favorites"))
             return
         self.bin_videos.set_assets(self._filter_assets(videos))
         self.bin_videos.apply_badges(self._badges)
@@ -869,6 +872,26 @@ class ProjectPanel(QWidget):
     # ------------------------------------------------------------------
     # Construction
     # ------------------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """En-tête, onglets, recherche et boutons dans la langue courante (changement de langue à chaud)."""
+        self._title_label.setText(translate("rail.media"))
+        self._quick_import.setToolTip(translate("preview.import"))
+        self._quick_import.setAccessibleName(translate("preview.import"))
+        for button, key in zip(self.scope_tab_buttons, ("panel.project", "transitions.category.favorites")):
+            button.setText(translate(key))
+        for mode, key in (("files", "library.audio_files"), ("effects", "audio_effects.section")):
+            self.audio_mode_buttons[mode].setText(translate(key))
+        self.search_field.setPlaceholderText(translate("library.search_placeholder"))
+        self.manage_tags_button.setText(translate("library.manage_tags"))
+        self.import_button.setText("  " + translate("library.import"))
+        self.import_button.setToolTip(translate("library.import_tip"))
+        self.add_to_timeline_button.setText("  " + translate("panel.timeline"))
+        self.add_to_timeline_button.setToolTip(translate("library.add_tip"))
+        self.folder_tree.header_label.setText(translate("library.folders.title"))
+        self.folder_tree.add_button.setToolTip(translate("dialog.folder.new_title"))
+        self.filter_chips.retranslate()
+        self._refresh_count()
 
     @staticmethod
     def _make_wide_button(
@@ -1077,35 +1100,35 @@ class ProjectPanel(QWidget):
         # Le titre statique ``BIBLIOTHÈQUE`` dans l'en-tête suffit : le
         # nombre d'éléments reflète la section courante.
         if self._active_scope == "favorites":
-            self.media_count.setText("Aucun favori")
+            self.media_count.setText(translate("library.no_favorites"))
             return
         if self._active_page_index == 0:
             count = self.bin_videos.count()
-            label_word = "média" if count <= 1 else "médias"
+            label_word = translate("library.word.media") if count <= 1 else translate("library.word.media_many")
         elif self._active_page_index == 1:
             count = self.bin_audios.count()
-            label_word = "audio" if count <= 1 else "audios"
+            label_word = translate("library.word.audio") if count <= 1 else translate("library.word.audio_many")
         elif self._active_page_index == 2:
             count = self.subtitle_view.count()
-            label_word = "sous-titre" if count <= 1 else "sous-titres"
+            label_word = translate("library.word.subtitle") if count <= 1 else translate("library.word.subtitle_many")
         elif self._active_page_index == 3:
             # Bibliothèque d'effets : on annonce le total (intégrés +
             # utilisateur). Le détail reste dans la bibliothèque.
             count = self.effects_view.preset_count()
-            label_word = "preset" if count <= 1 else "presets"
+            label_word = translate("library.word.preset") if count <= 1 else translate("library.word.preset_many")
         elif self._active_page_index == 4:
             # Bibliothèque de transitions : on annonce le total.
             count = self.transition_view.preset_count()
-            label_word = "preset" if count <= 1 else "presets"
+            label_word = translate("library.word.preset") if count <= 1 else translate("library.word.preset_many")
         elif self._active_page_index == 6:
             count = self.audio_effects_view.preset_count()
-            label_word = "preset" if count <= 1 else "presets"
+            label_word = translate("library.word.preset") if count <= 1 else translate("library.word.preset_many")
         elif self._active_page_index == 7:
             count = len(self.sequence_view.entries())
-            label_word = "séquence" if count <= 1 else "séquences"
+            label_word = translate("library.word.sequence") if count <= 1 else translate("library.word.sequence_many")
         else:
             count = 0
-            label_word = "média"
+            label_word = translate("library.word.media")
         self.media_count.setText(f"{count} {label_word}")
 
     def _make_placeholder_label(self, message: str) -> QLabel:

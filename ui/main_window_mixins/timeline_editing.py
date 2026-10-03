@@ -27,6 +27,7 @@ from core.timeline_operations import (
     trim_clip_left,
     trim_clip_right,
 )
+from ui.i18n import translate
 
 
 LOGGER = logging.getLogger(__name__)
@@ -52,11 +53,11 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Duplication impossible",
-                f"Impossible de dupliquer le clip :\n\n{exc}",
+                translate("dialog.clip.duplicate_failed_title"),
+                translate("dialog.clip.duplicate_failed_text", error=exc),
             )
             return
-        self._record_history("Dupliquer le clip")
+        self._record_history(translate("menu.item.duplicate_clip"))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self.timeline_panel.select_clip(new_clip.id)
@@ -84,14 +85,14 @@ class TimelineEditingMixin:
         except KeyError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Suppression impossible",
-                f"Impossible de supprimer le clip :\n\n{exc}",
+                translate("dialog.clip.delete_failed_title"),
+                translate("dialog.clip.delete_failed_text", error=exc),
             )
             return
         except ValueError as exc:  # piste verrouillée : refus normal, pas une panne
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer avec ripple")
+        self._record_history(translate("action.ripple_delete"))
         if followers:
             self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
@@ -122,7 +123,7 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer la sélection")
+        self._record_history(translate("history.clip.delete_selection"))
         if followers:
             self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
@@ -151,7 +152,7 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             return
         self._record_history(
-            "Désactiver le clip" if was_enabled else "Activer le clip"
+            translate("history.clip.disable") if was_enabled else translate("history.clip.enable")
         )
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
@@ -164,7 +165,7 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Déplacer le clip")
+        self._record_history(translate("history.clip.move"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -178,7 +179,7 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Trim gauche")
+        self._record_history(translate("history.clip.trim_left"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -203,7 +204,7 @@ class TimelineEditingMixin:
                 new_timeline_end - old_end,
                 exclude_ids={clip_id},
             )
-        self._record_history("Trim droit")
+        self._record_history(translate("history.clip.trim_right"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -211,7 +212,7 @@ class TimelineEditingMixin:
     def cut_at_playhead(self):
         clip_id = self.timeline_panel.selected_clip_id
         if clip_id is None:
-            self._report_edit_refused("Aucun clip sélectionné à couper")
+            self._report_edit_refused(translate("status.clip.cut_none"))
             return
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
@@ -222,7 +223,7 @@ class TimelineEditingMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Couper le clip")
+        self._record_history(translate("history.clip.cut"))
         if followers:
             self._announce_tracking_followers(followers, cut=True)
         self.timeline_panel.set_project(self.project)
@@ -269,7 +270,6 @@ class TimelineEditingMixin:
         """
         from core.tracking_bindings import TrackingContext, link_issues
         from core.tracking_ops import find_clip_and_track
-        from ui.i18n import translate
 
         context = TrackingContext(self.project)
         issues: dict[str, set[str]] = {}
@@ -300,7 +300,7 @@ class TimelineEditingMixin:
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer le clip")
+        self._record_history(translate("menu.item.delete_clip"))
         if followers:
             self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
@@ -348,10 +348,10 @@ class TimelineEditingMixin:
                 duration=duration,
             )
         except (KeyError, ValueError) as error:
-            self.statusBar().showMessage(f"Modification refusée : {error}", 6000)
+            self.statusBar().showMessage(translate("status.transition.edit_refused", error=error), 6000)
             self.on_transition_selected(transition_id)
             return
-        self._record_history("Modifier une transition")
+        self._record_history(translate("history.transition.edit"))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -364,12 +364,12 @@ class TimelineEditingMixin:
             remove_transition(self.project, transition_id)
         except KeyError:
             return
-        self._record_history("Supprimer une transition")
+        self._record_history(translate("history.transition.delete"))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
         self.properties_panel.clear_transition()
-        self.statusBar().showMessage("Transition supprimée.", 3000)
+        self.statusBar().showMessage(translate("status.transition.deleted"), 3000)
 
     def on_slip_requested(self, clip_id: str, delta: float) -> None:
         try:
@@ -378,7 +378,7 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
-        self._record_history("Slip")
+        self._record_history(translate("history.tool.slip"))
         self._reload_timeline_preserving_selection(clip_id)
         self._mark_dirty()
 
@@ -389,7 +389,7 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
-        self._record_history("Slide")
+        self._record_history(translate("history.tool.slide"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -401,7 +401,7 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
-        self._record_history("Roll")
+        self._record_history(translate("history.tool.roll"))
         self._reload_timeline_preserving_selection(clip_id)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -413,7 +413,7 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             self._reload_timeline_preserving_selection()
             return
-        self._record_history("Déplacer les clips")
+        self._record_history(translate("history.clip.move_many"))
         self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._mark_dirty()
@@ -423,7 +423,7 @@ class TimelineEditingMixin:
 
     def add_marker_at(self, seconds: float) -> None:
         marker = add_marker(self.project, seconds)
-        self._record_history("Ajouter un marqueur")
+        self._record_history(translate("shortcuts.command.marker_add"))
         self._reload_timeline_preserving_selection()
         self._mark_dirty()
         del marker
@@ -434,14 +434,14 @@ class TimelineEditingMixin:
             return
         name, accepted = QInputDialog.getText(
             self,
-            "Marqueur",
-            "Nom du marqueur",
+            translate("menu.item.marker"),
+            translate("dialog.marker.name_label"),
             text=marker.name,
         )
         if not accepted:
             return
         marker.name = name.strip()
-        self._record_history("Renommer un marqueur")
+        self._record_history(translate("history.marker.rename"))
         self._reload_timeline_preserving_selection()
         self._mark_dirty()
 

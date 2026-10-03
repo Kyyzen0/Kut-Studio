@@ -11,6 +11,7 @@ from core.color_grading import (
     LUTResource,
     make_user_color_preset,
 )
+from ui.i18n import translate
 
 
 def _main_window():
@@ -83,7 +84,7 @@ class ColorGradingMixin:
         if timer is not None:
             timer.stop()
         self._color_session_active = False
-        label = getattr(self, "_color_session_label", "Étalonnage")
+        label = getattr(self, "_color_session_label", translate("history.color.default"))
         clip_id = getattr(self, "_color_session_clip_id", None)
         self._record_history(label)
         if clip_id:
@@ -98,7 +99,7 @@ class ColorGradingMixin:
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
-        self._commit_color_grade(clip_id, updated, f"Couleur : {field}", coalesce=True)
+        self._commit_color_grade(clip_id, updated, translate("history.color.field", field=field), coalesce=True)
 
     def on_color_grade_enabled_changed(self, clip_id: str, enabled: bool) -> None:
         try:
@@ -106,7 +107,7 @@ class ColorGradingMixin:
         except ColorGradingError:
             return
         self._commit_color_grade(
-            clip_id, current.with_enabled(enabled), "Activer l’étalonnage"
+            clip_id, current.with_enabled(enabled), translate("history.color.enable")
         )
 
     def on_color_curve_changed(
@@ -120,7 +121,7 @@ class ColorGradingMixin:
         except (ColorGradingError, TypeError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._commit_color_grade(clip_id, updated, f"Courbe {channel}", coalesce=True)
+        self._commit_color_grade(clip_id, updated, translate("history.color.curve", channel=channel), coalesce=True)
 
     def on_color_grade_replaced(
         self, clip_id: str, grade_dict: dict | None
@@ -142,9 +143,9 @@ class ColorGradingMixin:
             )
         )
         if grade is None:
-            self._report_edit_refused("Étalonnage invalide")
+            self._report_edit_refused(translate("status.color.invalid"))
             return
-        self._commit_color_grade(clip_id, grade, "Étalonner le clip")
+        self._commit_color_grade(clip_id, grade, translate("history.color.grade"))
 
     def on_color_grade_reset(self, clip_id: str) -> None:
         """Réinitialise l'étalonnage d'un clip."""
@@ -163,7 +164,7 @@ class ColorGradingMixin:
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Réinitialiser l'étalonnage")
+        self._record_history(translate("history.color.reset"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
 
@@ -191,7 +192,7 @@ class ColorGradingMixin:
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Appliquer un preset d'étalonnage")
+        self._record_history(translate("history.color.apply_preset"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
 
@@ -202,10 +203,10 @@ class ColorGradingMixin:
             preset = make_user_color_preset(name=name, description="", grade=grade)
             self.properties_panel.color_preset_store.add_user_preset(preset)
         except (ColorGradingError, OSError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Preset couleur", str(exc))
+            _main_window().QMessageBox.warning(self, translate("dialog.title.color_preset"), str(exc))
             return
         self.project.color_presets.append(preset)
-        self._record_history("Enregistrer un preset couleur")
+        self._record_history(translate("history.color.save_preset"))
         self._mark_dirty()
         self.properties_panel._refresh_color_presets()
 
@@ -228,7 +229,7 @@ class ColorGradingMixin:
         try:
             parsed = parse_cube_lut(lut_path)
         except LUTImportError as exc:
-            _main_window().QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            _main_window().QMessageBox.warning(self, "LUT", translate("dialog.lut.invalid", error=exc))
             return
         try:
             resource = LUTResource.from_path(
@@ -239,7 +240,7 @@ class ColorGradingMixin:
                 else None,
             )
         except (ColorGradingError, OSError) as exc:
-            _main_window().QMessageBox.warning(self, "LUT", f"LUT invalide : {exc}")
+            _main_window().QMessageBox.warning(self, "LUT", translate("dialog.lut.invalid", error=exc))
             return
         # On préserve les réglages existants du clip ; seul le LUT
         # est remplacé.
@@ -254,7 +255,7 @@ class ColorGradingMixin:
         except ColorGradingError as exc:
             _main_window().QMessageBox.warning(self, "LUT", str(exc))
             return
-        self._record_history("Importer un LUT")
+        self._record_history(translate("history.color.import_lut"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_color_monitor(clip_id)
 
@@ -263,4 +264,4 @@ class ColorGradingMixin:
             current = ColorGradingService().get_grade(self.project, clip_id)
         except ColorGradingError:
             return
-        self._commit_color_grade(clip_id, current.with_lut(None), "Retirer le LUT")
+        self._commit_color_grade(clip_id, current.with_lut(None), translate("history.color.remove_lut"))

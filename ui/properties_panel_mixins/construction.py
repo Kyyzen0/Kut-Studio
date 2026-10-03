@@ -43,6 +43,47 @@ TRACKING_TAB = 6
 class ConstructionMixin:
     """Mixin de ``PropertiesPanel`` : construction des groupes de l'inspecteur."""
 
+    # Clés i18n des onglets, dans l'ordre historique des indices (Clip, Couleur, Effets, Audio, Graphiques,
+    # Compositing, Suivi).
+    _TAB_KEYS = (
+        "inspector.tab.clip", "group.color", "rail.effects", "rail.audio", "rail.graphics",
+        "inspector.tab.compositing", "tracking.title",
+    )
+
+    # ------------------------------------------------------------------
+    # Langue
+    # ------------------------------------------------------------------
+
+    def _titled_group(self, key: str) -> QGroupBox:
+        """``QGroupBox`` dont le titre suit la langue (réécrit par :meth:`retranslate`)."""
+        group = QGroupBox(translate(key))
+        self._group_titles.append((group, key))
+        return group
+
+    def _add_row(self, form: QFormLayout, key: str, field: QWidget) -> None:
+        """Ligne de formulaire dont le libellé suit la langue (réécrit par :meth:`retranslate`)."""
+        form.addRow(translate(key), field)
+        self._row_labels.append((form, field, key))
+
+    def retranslate(self) -> None:
+        """Onglets, menu « ••• », titres de groupes et libellés de formulaire dans la langue courante."""
+        for button, key in zip(self.inspector_tab_buttons, self._TAB_KEYS):
+            button.setText(translate(key))
+        more = translate("inspector.more_tooltip")
+        self.inspector_more_button.setToolTip(more)
+        self.inspector_more_button.setAccessibleName(more)
+        for action, key in self._more_menu_actions:
+            action.setText(translate(key))
+        active = next((i for i, button in enumerate(self.inspector_tab_buttons) if button.isChecked()), 0)
+        if active in {4, 5, 6}:
+            self.inspector_more_button.setText(translate(self._TAB_KEYS[active]))
+        for group, key in self._group_titles:
+            group.setTitle(translate(key))
+        for form, field, key in self._row_labels:
+            label = form.labelForField(field)
+            if label is not None:
+                label.setText(translate(key))
+
     def _build_header(self, outer_layout):
         """En-tête : titre et barre d'onglets de l'inspecteur."""
         # Titre du panneau (header) + barre d'onglets.
@@ -53,7 +94,7 @@ class ConstructionMixin:
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(Spacing.lg, Spacing.sm, Spacing.lg, 0)
         header_layout.setSpacing(Spacing.sm)
-        title = QLabel("INSPECTEUR")
+        title = QLabel(translate("inspector.title"))
         title.setStyleSheet(label_style(10, "muted", 800))
         title.hide()
 
@@ -67,9 +108,8 @@ class ConstructionMixin:
         self.inspector_tabs_layout.setContentsMargins(0, 0, 0, 0)
         self.inspector_tabs_layout.setSpacing(Spacing.xs)
         self.inspector_tab_buttons: list[QPushButton] = []
-        labels = ("Clip", "Couleur", "Effets", "Audio", "Graphiques", "Compositing", "Suivi")
-        for index, label in enumerate(labels):
-            button = QPushButton(label)
+        for index, key in enumerate(self._TAB_KEYS):
+            button = QPushButton(translate(key))
             button.setObjectName("inspectorTab")
             button.setCheckable(True)
             button.setChecked(index == 0)
@@ -105,8 +145,8 @@ class ConstructionMixin:
         self.inspector_more_button = QToolButton()
         self.inspector_more_button.setObjectName("inspectorMore")
         self.inspector_more_button.setText("•••")
-        self.inspector_more_button.setToolTip("Outils spécialisés")
-        self.inspector_more_button.setAccessibleName("Outils spécialisés")
+        self.inspector_more_button.setToolTip(translate("inspector.more_tooltip"))
+        self.inspector_more_button.setAccessibleName(translate("inspector.more_tooltip"))
         self.inspector_more_button.setStyleSheet(
             f"QToolButton {{ color: {COLORS['muted']}; background: transparent;"
             f" border: none; border-radius: 4px; padding: 5px 6px; }}"
@@ -116,18 +156,23 @@ class ConstructionMixin:
         )
         self.inspector_more_button.setPopupMode(QToolButton.InstantPopup)
         more_menu = QMenu(self.inspector_more_button)
-        graphics_action = more_menu.addAction("Graphiques")
+        graphics_action = more_menu.addAction(translate("rail.graphics"))
         graphics_action.triggered.connect(
             lambda _checked=False: self._select_inspector_tab(4)
         )
-        compositing_action = more_menu.addAction("Compositing")
+        compositing_action = more_menu.addAction(translate("inspector.tab.compositing"))
         compositing_action.triggered.connect(
             lambda _checked=False: self._select_inspector_tab(5)
         )
-        tracking_action = more_menu.addAction("Suivi")
+        tracking_action = more_menu.addAction(translate("tracking.title"))
         tracking_action.triggered.connect(
             lambda _checked=False: self._select_inspector_tab(TRACKING_TAB)
         )
+        self._more_menu_actions = [
+            (graphics_action, "rail.graphics"),
+            (compositing_action, "inspector.tab.compositing"),
+            (tracking_action, "tracking.title"),
+        ]
         self.inspector_more_button.setMenu(more_menu)
         self.inspector_tabs_layout.addWidget(self.inspector_more_button)
         self.inspector_tabs_layout.addStretch(1)
@@ -170,18 +215,18 @@ class ConstructionMixin:
     def _build_project_group(self, layout):
         """Groupe « Paramètres du projet »."""
         # ----- Paramètres du projet ------------------------------------
-        project_group = QGroupBox("Paramètres du projet")
+        project_group = self._titled_group("group.project")
         project_group.setStyleSheet(self.group_style())
         project_layout = QVBoxLayout(project_group)
         project_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         project_layout.setSpacing(Spacing.xs)
 
         project_fields = [
-            ("État", "Aucun clip sélectionné"),
-            ("Résolution", "1920 × 1080"),
-            ("Format", "16:9"),
-            ("Fréquence", "30 fps"),
-            ("Fond", "#000000"),
+            (translate("inspector.project.state"), translate("no_clip_selected")),
+            (translate("field.resolution"), "1920 × 1080"),
+            (translate("inspector.project.format"), "16:9"),
+            (translate("field.fps"), "30 fps"),
+            (translate("field.background"), "#000000"),
         ]
         for field, value in project_fields:
             lbl = QLabel(f"{field} : {value}")
@@ -194,37 +239,37 @@ class ConstructionMixin:
     def _build_clip_group(self, layout):
         """Groupe « Clip sélectionné »."""
         # ----- Clip sélectionné ---------------------------------------
-        clip_group = QGroupBox("Clip sélectionné")
+        clip_group = self._titled_group("inspector.clip.title")
         clip_group.setStyleSheet(self.group_style())
         clip_form = QFormLayout(clip_group)
         clip_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         clip_form.setSpacing(Spacing.xs)
         clip_form.setLabelAlignment(Qt.AlignLeft)
-        self.clip_name = QLabel("Aucun clip sélectionné")
+        self.clip_name = QLabel(translate("no_clip_selected"))
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
         for label in (self.clip_name, self.clip_duration, self.clip_position):
             label.setStyleSheet(label_style(12, "muted", 500))
         self.clip_name.setStyleSheet(label_style(13, "text", 700))
-        clip_form.addRow("Nom", self.clip_name)
-        clip_form.addRow("Durée", self.clip_duration)
-        clip_form.addRow("Position", self.clip_position)
+        self._add_row(clip_form, "field.name", self.clip_name)
+        self._add_row(clip_form, "field.duration", self.clip_duration)
+        self._add_row(clip_form, "field.position", self.clip_position)
         layout.addWidget(clip_group)
         return clip_group
 
     def _build_transition_group(self, layout):
         """Groupe « Transition » (visible sur sélection de transition)."""
         # ----- Transition sélectionnée --------------------------------
-        self.transition_group = QGroupBox("Transition")
+        self.transition_group = self._titled_group("inspector.transition.title")
         self.transition_group.setStyleSheet(self.group_style())
         transition_form = QFormLayout(self.transition_group)
         transition_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         transition_form.setSpacing(Spacing.xs)
         self.transition_type_combo = QComboBox()
-        self.transition_type_combo.addItem("Fondu enchaîné", "crossfade")
-        self.transition_type_combo.addItem("Fondu au noir", "fade_black")
-        self.transition_type_combo.addItem("Balayage gauche", "wipe_left")
-        self.transition_type_combo.addItem("Balayage droite", "wipe_right")
+        self.transition_type_combo.addItem(translate("transitions.preset.crossfade.name"), "crossfade")
+        self.transition_type_combo.addItem(translate("transitions.preset.fade_black.name"), "fade_black")
+        self.transition_type_combo.addItem(translate("transitions.preset.wipe_left.name"), "wipe_left")
+        self.transition_type_combo.addItem(translate("transitions.preset.wipe_right.name"), "wipe_right")
         self.transition_duration_spin = QDoubleSpinBox()
         self.transition_duration_spin.setRange(0.1, 5.0)
         self.transition_duration_spin.setDecimals(2)
@@ -240,13 +285,13 @@ class ConstructionMixin:
         ):
             label.setStyleSheet(label_style(11, "muted", 500))
         self.remove_transition_button = self._make_action_button(
-            IconName.REMOVE, "Supprimer la transition", "Supprimer uniquement la transition"
+            IconName.REMOVE, translate("inspector.transition.remove"), translate("inspector.transition.remove_tip")
         )
-        transition_form.addRow("Type", self.transition_type_combo)
-        transition_form.addRow("Durée", self.transition_duration_spin)
-        transition_form.addRow("Clip sortant", self.transition_from_label)
-        transition_form.addRow("Clip entrant", self.transition_to_label)
-        transition_form.addRow("Piste", self.transition_track_label)
+        self._add_row(transition_form, "common.type", self.transition_type_combo)
+        self._add_row(transition_form, "field.duration", self.transition_duration_spin)
+        self._add_row(transition_form, "inspector.transition.outgoing", self.transition_from_label)
+        self._add_row(transition_form, "inspector.transition.incoming", self.transition_to_label)
+        self._add_row(transition_form, "inspector.transition.track", self.transition_track_label)
         transition_form.addRow("", self.remove_transition_button)
         self.transition_type_combo.currentIndexChanged.connect(self._on_transition_type_changed)
         self.transition_duration_spin.valueChanged.connect(self._on_transition_duration_changed)
@@ -256,14 +301,14 @@ class ConstructionMixin:
     def _build_volume_group(self, layout, update_volume):
         """Groupe « Audio » (curseur de volume)."""
         # ----- Audio ---------------------------------------------------
-        audio_group = QGroupBox("Audio")
+        audio_group = self._titled_group("group.audio")
         audio_group.setStyleSheet(self.group_style())
         audio_form = QFormLayout(audio_group)
         audio_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         self.volume_slider, volume_row, self.volume_value = self.make_slider(
             0, 200, 100, suffix=" %"
         )
-        audio_form.addRow("Volume", volume_row)
+        self._add_row(audio_form, "field.volume", volume_row)
         layout.addWidget(audio_group)
         self.volume_slider.valueChanged.connect(update_volume)
         return audio_group
@@ -271,7 +316,7 @@ class ConstructionMixin:
     def _build_speed_group(self, layout):
         """Groupe « Vitesse et durée » (remappage temporel)."""
         # ----- Vitesse et durée (tâche 18) -----------------------------
-        self.speed_group = QGroupBox(translate("group.speed_and_duration"))
+        self.speed_group = self._titled_group("group.speed_and_duration")
         self.speed_group.setStyleSheet(self.group_style())
         speed_form = QFormLayout(self.speed_group)
         speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
@@ -287,7 +332,7 @@ class ConstructionMixin:
         self.speed_spinbox.setMinimumWidth(70)
         self.speed_spinbox.setEnabled(False)
         self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
-        speed_form.addRow(translate("field.speed"), self.speed_spinbox)
+        self._add_row(speed_form, "field.speed", self.speed_spinbox)
 
         # Boutons de preset de vitesse
         speed_presets = QWidget()
@@ -329,7 +374,7 @@ class ConstructionMixin:
             btn.setEnabled(False)
             speed_presets_layout.addWidget(btn)
 
-        speed_form.addRow("Presets", speed_presets)
+        self._add_row(speed_form, "mograph.layers.presets", speed_presets)
 
         # Bouton Reverse
         self.reverse_button = IconButton(
@@ -341,7 +386,7 @@ class ConstructionMixin:
         self.reverse_button.setMinimumHeight(Sizes.button_md)
         self.reverse_button.setEnabled(False)
         self.reverse_button.toggled.connect(self._on_reverse_toggled)
-        speed_form.addRow(translate("field.reverse"), self.reverse_button)
+        self._add_row(speed_form, "field.reverse", self.reverse_button)
 
         # Freeze frame
         self.freeze_frame_button = self._make_action_button(
@@ -349,7 +394,7 @@ class ConstructionMixin:
         )
         self.freeze_frame_button.setEnabled(False)
         self.freeze_frame_button.clicked.connect(self._on_freeze_frame_clicked)
-        speed_form.addRow(translate("field.freeze_frame"), self.freeze_frame_button)
+        self._add_row(speed_form, "field.freeze_frame", self.freeze_frame_button)
 
         # Durée freeze frame (visible uniquement en mode freeze)
         self.freeze_duration_spinbox = QDoubleSpinBox()
@@ -371,7 +416,7 @@ class ConstructionMixin:
         freeze_row_layout.addWidget(self.freeze_duration_spinbox)
         freeze_row_layout.addWidget(self.freeze_duration_label)
         freeze_row.setVisible(False)
-        speed_form.addRow(translate("field.freeze_duration"), freeze_row)
+        self._add_row(speed_form, "field.freeze_duration", freeze_row)
         self.freeze_duration_row = freeze_row
 
         # Bouton de réinitialisation
@@ -383,9 +428,9 @@ class ConstructionMixin:
         speed_form.addRow("", self.reset_speed_button)
 
         # Affichage des durées source et timeline
-        self.source_duration_label = QLabel("Source: --")
+        self.source_duration_label = QLabel(translate("inspector.source_empty"))
         self.source_duration_label.setStyleSheet(label_style(11, "muted", 500))
-        self.timeline_duration_label = QLabel("Timeline: --")
+        self.timeline_duration_label = QLabel(translate("inspector.timeline_empty"))
         self.timeline_duration_label.setStyleSheet(label_style(11, "muted", 500))
         duration_info = QWidget()
         duration_layout = QHBoxLayout(duration_info)
@@ -401,7 +446,7 @@ class ConstructionMixin:
     def _build_movement_group(self, layout):
         """Groupe « Mouvement » (position, échelle, rotation, opacité)."""
         # ----- Mouvement (tâche 13) ------------------------------------
-        self.movement_group = QGroupBox("Mouvement")
+        self.movement_group = self._titled_group("group.movement")
         self.movement_group.setStyleSheet(self.group_style())
         movement_layout = QVBoxLayout(self.movement_group)
         movement_layout.setContentsMargins(
@@ -486,10 +531,10 @@ class ConstructionMixin:
 
         reset_button = IconButton(
             icon=IconName.RESET,
-            tooltip="Réinitialiser le mouvement",
+            tooltip=translate("action.reset_movement"),
             size=Sizes.icon_button,
         )
-        reset_button.setText("  Réinitialiser le mouvement")
+        reset_button.setText("  " + translate("action.reset_movement"))
         reset_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         reset_button.clicked.connect(self._emit_reset)
         reset_button.setEnabled(False)
@@ -514,7 +559,7 @@ class ConstructionMixin:
     def _build_subtitle_group(self, layout):
         """Groupe « Sous-titre » (style et contenu)."""
         # ----- Sous-titre (style + contenu, tâche 24) ------------------
-        self.subtitle_group = QGroupBox("Sous-titre")
+        self.subtitle_group = self._titled_group("inspector.subtitle.title")
         self.subtitle_group.setStyleSheet(self.group_style())
         subtitle_layout = QVBoxLayout(self.subtitle_group)
         subtitle_layout.setContentsMargins(

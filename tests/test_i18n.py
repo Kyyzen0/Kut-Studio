@@ -64,17 +64,20 @@ def test_translate_supports_format_substitution():
     assert "{seconds}" not in out
 
 
-def test_translate_key_missing_in_language_falls_back_to_default():
+def test_translate_key_missing_in_language_falls_back_to_default(monkeypatch):
     """Une clé présente uniquement dans la langue par défaut doit
     être renvoyée si on la demande dans une autre langue non chargée.
+
+    La clé de test est retirée en fin de test (``monkeypatch``) : restée dans la table globale, elle fausserait
+    le test de parité (``tests/test_i18n_parity.py``) du worker qui l'exécute ensuite.
     """
     from ui import i18n as i18n_module
 
     test_key = "_test_only_fallback_key"
-    i18n_module._TRANSLATIONS[test_key] = {
+    monkeypatch.setitem(i18n_module._TRANSLATIONS, test_key, {
         "fr": "valeur-fr",
         "en": "fallback to default",
-    }
+    })
     set_language("en")
     # L'entrée anglaise existe → on récupère la valeur anglaise.
     assert translate(test_key) == "fallback to default"

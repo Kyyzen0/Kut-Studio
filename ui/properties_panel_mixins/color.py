@@ -25,19 +25,20 @@ from ui.design_system import Spacing
 from ui.icons import IconName
 from ui.theme import label_style
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
+from ui.i18n import translate
 
 class ColorMixin:
     """Mixin de ``PropertiesPanel`` : groupe Couleur : étalonnage, courbes, presets et LUT."""
 
     def _build_color_group(self) -> QGroupBox:
-        group = QGroupBox("Étalonnage couleur")
+        group = self._titled_group("inspector.color.title")
         group.setObjectName("colorGradingGroup")
         group.setStyleSheet(self.group_style())
         root = QVBoxLayout(group)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.sm)
 
-        self.color_enabled_check = QCheckBox("Activer l’étalonnage")
+        self.color_enabled_check = QCheckBox(translate("history.color.enable"))
         self.color_enabled_check.setChecked(True)
         self.color_enabled_check.toggled.connect(self._on_color_enabled_toggled)
         root.addWidget(self.color_enabled_check)
@@ -46,13 +47,13 @@ class ColorMixin:
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(Spacing.xs)
         specs = (
-            ("exposure", "Exposition", -2.0, 2.0, 0.05, " EV"),
-            ("contrast", "Contraste", -1.0, 1.0, 0.05, ""),
-            ("saturation", "Saturation", 0.0, 2.0, 0.05, "×"),
-            ("temperature", "Température", -100.0, 100.0, 1.0, ""),
-            ("hue", "Teinte", -180.0, 180.0, 1.0, "°"),
-            ("shadows", "Ombres", -1.0, 1.0, 0.05, ""),
-            ("highlights", "Hautes lumières", -1.0, 1.0, 0.05, ""),
+            ("exposure", translate("inspector.color.exposure"), -2.0, 2.0, 0.05, " EV"),
+            ("contrast", translate("field.contrast"), -1.0, 1.0, 0.05, ""),
+            ("saturation", translate("inspector.color.saturation"), 0.0, 2.0, 0.05, "×"),
+            ("temperature", translate("inspector.color.temperature"), -100.0, 100.0, 1.0, ""),
+            ("hue", translate("inspector.color.hue"), -180.0, 180.0, 1.0, "°"),
+            ("shadows", translate("inspector.color.shadows"), -1.0, 1.0, 0.05, ""),
+            ("highlights", translate("inspector.color.highlights"), -1.0, 1.0, 0.05, ""),
         )
         self.color_field_spins: dict[str, QDoubleSpinBox] = {}
         for name, label, minimum, maximum, step, suffix in specs:
@@ -68,14 +69,14 @@ class ColorMixin:
             form.addRow(label, spin)
         root.addLayout(form)
 
-        curves_title = QLabel("Courbes")
+        curves_title = QLabel(translate("inspector.color.curves"))
         curves_title.setStyleSheet(label_style(11, "muted", 700))
         root.addWidget(curves_title)
         self.color_curve_channel = QComboBox()
-        self.color_curve_channel.addItem("Globale", "master")
-        self.color_curve_channel.addItem("Rouge", "red")
-        self.color_curve_channel.addItem("Verte", "green")
-        self.color_curve_channel.addItem("Bleue", "blue")
+        self.color_curve_channel.addItem(translate("inspector.color.channel_master"), "master")
+        self.color_curve_channel.addItem(translate("inspector.color.channel_red"), "red")
+        self.color_curve_channel.addItem(translate("inspector.color.channel_green"), "green")
+        self.color_curve_channel.addItem(translate("inspector.color.channel_blue"), "blue")
         self.color_curve_channel.currentIndexChanged.connect(
             self._on_color_curve_channel_changed
         )
@@ -84,12 +85,12 @@ class ColorMixin:
         self.color_curve_editor.points_changed.connect(self._on_color_curve_points_changed)
         root.addWidget(self.color_curve_editor)
         self.color_curve_reset_button = self._make_action_button(
-            IconName.RESET, "Réinitialiser cette courbe", "Courbe linéaire"
+            IconName.RESET, translate("inspector.color.curve_reset"), translate("inspector.color.curve_linear_tip")
         )
         self.color_curve_reset_button.clicked.connect(self._reset_active_color_curve)
         root.addWidget(self.color_curve_reset_button)
 
-        preset_title = QLabel("Grades prêts à l’emploi")
+        preset_title = QLabel(translate("inspector.color.presets"))
         preset_title.setStyleSheet(label_style(11, "muted", 700))
         root.addWidget(preset_title)
         preset_row = QWidget()
@@ -99,14 +100,14 @@ class ColorMixin:
         self.color_preset_combo = QComboBox()
         self._refresh_color_presets()
         self.color_preset_apply_button = self._make_action_button(
-            None, "Appliquer", "Appliquer le grade sélectionné"
+            None, translate("tracking.apply"), translate("inspector.color.apply_tip")
         )
         self.color_preset_apply_button.clicked.connect(self._apply_selected_color_preset)
         preset_layout.addWidget(self.color_preset_combo, 1)
         preset_layout.addWidget(self.color_preset_apply_button)
         root.addWidget(preset_row)
         self.color_preset_save_button = self._make_action_button(
-            None, "Enregistrer comme preset…", "Sauvegarder les réglages actuels"
+            None, translate("mograph.layers.save_preset"), translate("inspector.color.save_tip")
         )
         self.color_preset_save_button.clicked.connect(self._request_save_color_preset)
         root.addWidget(self.color_preset_save_button)
@@ -114,7 +115,7 @@ class ColorMixin:
         lut_title = QLabel("LUT 3D (.cube)")
         lut_title.setStyleSheet(label_style(11, "muted", 700))
         root.addWidget(lut_title)
-        self.color_lut_label = QLabel("Aucune LUT")
+        self.color_lut_label = QLabel(translate("inspector.color.no_lut"))
         self.color_lut_label.setWordWrap(True)
         self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
         root.addWidget(self.color_lut_label)
@@ -123,10 +124,10 @@ class ColorMixin:
         lut_layout.setContentsMargins(0, 0, 0, 0)
         lut_layout.setSpacing(Spacing.xs)
         self.color_lut_import_button = self._make_action_button(
-            None, "Importer…", "Importer une LUT Adobe .cube"
+            None, translate("inspector.color.import"), translate("inspector.color.import_tip")
         )
         self.color_lut_remove_button = self._make_action_button(
-            IconName.REMOVE, "Retirer", "Retirer la LUT du clip"
+            IconName.REMOVE, translate("shortcuts.clear"), translate("inspector.color.remove_tip")
         )
         self.color_lut_import_button.clicked.connect(self._request_color_lut_import)
         self.color_lut_remove_button.clicked.connect(self._request_color_lut_remove)
@@ -135,7 +136,7 @@ class ColorMixin:
         root.addWidget(lut_row)
 
         self.color_reset_button = self._make_action_button(
-            IconName.RESET, "Tout réinitialiser", "Retirer réglages, courbes et LUT"
+            IconName.RESET, translate("shortcuts.reset_all"), translate("inspector.color.reset_tip")
         )
         self.color_reset_button.clicked.connect(self._request_color_reset)
         root.addWidget(self.color_reset_button)
@@ -148,7 +149,7 @@ class ColorMixin:
             return
         self.color_preset_combo.clear()
         for preset in self.color_preset_store.all_presets():
-            label = preset.name if preset.builtin else f"{preset.name} · Personnel"
+            label = preset.name if preset.builtin else translate("inspector.color.personal", name=preset.name)
             self.color_preset_combo.addItem(label, preset.id)
         if current is not None:
             index = self.color_preset_combo.findData(current)
@@ -171,11 +172,11 @@ class ColorMixin:
             self._sync_color_curve_editor()
             lut = self._current_color_grade.lut
             if lut is None:
-                self.color_lut_label.setText("Aucune LUT")
+                self.color_lut_label.setText(translate("inspector.color.no_lut"))
                 self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
                 self.color_lut_remove_button.setEnabled(False)
             elif lut.missing:
-                self.color_lut_label.setText(f"⚠ LUT manquante : {lut.title}\n{lut.path}")
+                self.color_lut_label.setText(translate("inspector.color.lut_missing", title=lut.title, path=lut.path))
                 self.color_lut_label.setStyleSheet(label_style(11, "danger", 600))
                 self.color_lut_remove_button.setEnabled(True)
             else:
@@ -221,7 +222,7 @@ class ColorMixin:
     def _request_save_color_preset(self) -> None:
         if self.selected_clip is None:
             return
-        name, accepted = QInputDialog.getText(self, "Preset couleur", "Nom du preset :")
+        name, accepted = QInputDialog.getText(self, translate("dialog.title.color_preset"), translate("dialog.preset.name_label"))
         if accepted and name.strip():
             self.color_preset_save_requested.emit(self.selected_clip.id, name.strip())
 
@@ -229,7 +230,7 @@ class ColorMixin:
         if self.selected_clip is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Importer une LUT", "", "LUT 3D (*.cube)"
+            self, translate("dialog.lut.import_title"), "", "LUT 3D (*.cube)"
         )
         if path:
             self.color_lut_import_requested.emit(self.selected_clip.id, path)

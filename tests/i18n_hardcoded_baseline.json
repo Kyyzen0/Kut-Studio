@@ -1,0 +1,5 @@
+{
+ "version": 1,
+ "comment": "Dette i18n connue : textes d'interface français écrits en dur, par fichier et texte normalisé (jamais par numéro de ligne). Cliquet : ne peut que décroître. Voir tools/i18n_audit.py.",
+ "entries": []
+}

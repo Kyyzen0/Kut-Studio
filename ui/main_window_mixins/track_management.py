@@ -33,7 +33,7 @@ class TrackManagementMixin:
             self.timeline_panel.refresh_headers()
             return
         track.solo = bool(enabled)
-        self._record_history("Solo de piste")
+        self._record_history(i18n.translate("history.track.solo"))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -45,7 +45,7 @@ class TrackManagementMixin:
             self.timeline_panel.refresh_headers()
             return
         track.armed = bool(enabled)
-        self._record_history("Armer la piste")
+        self._record_history(i18n.translate("history.track.arm"))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -56,7 +56,7 @@ class TrackManagementMixin:
         order = ("compact", "normal", "large")
         current = track.height_mode if track.height_mode in order else "normal"
         track.height_mode = order[(order.index(current) + 1) % len(order)]
-        self._record_history("Hauteur de piste")
+        self._record_history(i18n.translate("history.track.height"))
         self._refresh_after_track_change()
         self._mark_dirty()
 
@@ -65,7 +65,7 @@ class TrackManagementMixin:
         if track is None:
             return
         track.collapsed = bool(collapsed)
-        self._record_history("Réduire la piste")
+        self._record_history(i18n.translate("history.track.collapse"))
         self._refresh_after_track_change()
         self._mark_dirty()
 

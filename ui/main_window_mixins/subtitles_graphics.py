@@ -64,7 +64,7 @@ class SubtitlesGraphicsMixin:
             timer.stop()
         self._subtitle_edit_history_before = None
         self._subtitle_edit_pending = None
-        self.history.record(self.project, "Modifier un sous-titre")
+        self.history.record(self.project, i18n.translate("history.subtitle.edit"))
         self._refresh_undo_redo_state()
 
     def update_subtitle_from_editor(self, new_text: str | None = None):
@@ -137,15 +137,13 @@ class SubtitlesGraphicsMixin:
                 created_clips.append(clip)
         except (KeyError, ValueError):
             if created_clips:
-                self._record_history(
-                    f"Importer le SRT ({len(created_clips)} sous-titres)"
-                )
+                self._record_history(i18n.translate("history.subtitle.import_srt", count=len(created_clips)))
                 self._reload_timeline_preserving_selection()
                 self._update_timeline_duration()
                 self._refresh_project_library()
                 self._mark_dirty()
             raise
-        self._record_history(f"Importer le SRT ({len(cues)} sous-titres)")
+        self._record_history(i18n.translate("history.subtitle.import_srt", count=len(cues)))
         self._reload_timeline_preserving_selection()
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -164,11 +162,11 @@ class SubtitlesGraphicsMixin:
         except (KeyError, ValueError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Sous-titre impossible",
-                f"Impossible d'ajouter le sous-titre :\n\n{exc}",
+                i18n.translate("dialog.subtitle.add_failed_title"),
+                i18n.translate("dialog.subtitle.add_failed_text", error=exc),
             )
             return
-        self._record_history("Ajouter un sous-titre")
+        self._record_history(i18n.translate("history.subtitle.add"))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -187,9 +185,9 @@ class SubtitlesGraphicsMixin:
                 duration=5.0,
             )
         except (FileNotFoundError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Graphique", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.graphic"), str(exc))
             return
-        self._record_history("Ajouter un calque graphique")
+        self._record_history(i18n.translate("history.graphic.add"))
         self._reload_timeline_preserving_selection(clip.id)
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -203,9 +201,9 @@ class SubtitlesGraphicsMixin:
         """Importe une image comme calque graphique animable."""
         path, _ = _main_window().QFileDialog.getOpenFileName(
             self,
-            "Importer une image graphique",
+            i18n.translate("history.graphic.import_image"),
             "",
-            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)",
+            i18n.translate("dialog.filter.images"),
         )
         if not path:
             return
@@ -244,9 +242,9 @@ class SubtitlesGraphicsMixin:
                 asset.width = clip.graphic.width
                 asset.height = clip.graphic.height
         except (FileNotFoundError, ValueError) as exc:
-            _main_window().QMessageBox.warning(self, "Graphique", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.graphic"), str(exc))
             return
-        self._record_history("Importer une image graphique")
+        self._record_history(i18n.translate("history.graphic.import_image"))
         self._reload_timeline_preserving_selection(clip.id)
         self._update_timeline_duration()
         self._refresh_project_library()
@@ -291,7 +289,7 @@ class SubtitlesGraphicsMixin:
                 return
             updated = update_graphic(clip, field_name, value)
         except (TypeError, ValueError) as exc:
-            self.statusBar().showMessage(f"Modification graphique refusée : {exc}", 5000)
+            self.statusBar().showMessage(i18n.translate("status.graphic.refused", error=exc), 5000)
             return
         if updated is before:
             return
@@ -309,7 +307,7 @@ class SubtitlesGraphicsMixin:
         self._graphic_session_active = True
         self._graphic_session_clip_id = clip_id
         if not active:
-            self._graphic_session_label = "Modifier un calque graphique"
+            self._graphic_session_label = i18n.translate("history.graphic.edit")
         timer = getattr(self, "_graphic_session_timer", None)
         if timer is None:
             timer = QTimer(self)
@@ -328,7 +326,7 @@ class SubtitlesGraphicsMixin:
         self._graphic_session_active = False
         clip_id = getattr(self, "_graphic_session_clip_id", None)
         label = getattr(
-            self, "_graphic_session_label", "Modifier un calque graphique"
+            self, "_graphic_session_label", i18n.translate("history.graphic.edit")
         )
         self._record_history(label)
         if clip_id:
@@ -347,9 +345,9 @@ class SubtitlesGraphicsMixin:
     def import_subtitles_via_dialog(self) -> None:
         path, _ = _main_window().QFileDialog.getOpenFileName(
             self,
-            "Importer des sous-titres",
+            i18n.translate("dialog.subtitle.import_title"),
             os.path.expanduser("~"),
-            "Sous-titres (*.srt)",
+            i18n.translate("dialog.filter.subtitles"),
         )
         if not path:
             return
@@ -358,16 +356,16 @@ class SubtitlesGraphicsMixin:
         except (OSError, ValueError, KeyError) as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Import SRT impossible",
-                f"Impossible d'importer les sous-titres :\n\n{exc}",
+                i18n.translate("dialog.subtitle.import_failed_title"),
+                i18n.translate("dialog.subtitle.import_failed_text", error=exc),
             )
 
     def export_subtitles_via_dialog(self) -> None:
         path, _ = _main_window().QFileDialog.getSaveFileName(
             self,
-            "Enregistrer les sous-titres",
+            i18n.translate("dialog.subtitle.export_title"),
             os.path.expanduser("~/subtitles.srt"),
-            "Sous-titres (*.srt)",
+            i18n.translate("dialog.filter.subtitles"),
         )
         if not path:
             return
@@ -376,8 +374,8 @@ class SubtitlesGraphicsMixin:
         except OSError as exc:
             _main_window().QMessageBox.critical(
                 self,
-                "Export SRT impossible",
-                f"Impossible d'enregistrer les sous-titres :\n\n{exc}",
+                i18n.translate("dialog.subtitle.export_failed_title"),
+                i18n.translate("dialog.subtitle.export_failed_text", error=exc),
             )
 
     def on_subtitle_clip_selected(self, clip_id: str) -> None:
@@ -437,7 +435,7 @@ class SubtitlesGraphicsMixin:
         if clip.text_style == style:
             return
         clip.text_style = style
-        self._record_history("Modifier le style du sous-titre")
+        self._record_history(i18n.translate("history.subtitle.style"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_subtitle_overlay()
 
@@ -452,7 +450,7 @@ class SubtitlesGraphicsMixin:
         if clip.text_style == default_text_style():
             return
         clip.text_style = default_text_style()
-        self._record_history("Réinitialiser le style du sous-titre")
+        self._record_history(i18n.translate("history.subtitle.style_reset"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_subtitle_overlay()
         self.statusBar().showMessage(

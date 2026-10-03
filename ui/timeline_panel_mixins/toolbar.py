@@ -54,7 +54,7 @@ class ToolbarMixin:
 
         self.play_button = IconButton(
             icon=IconName.PLAY,
-            tooltip="Lecture / Pause",
+            tooltip=translate("shortcuts.command.play_pause"),
             accent=True,
             size=Sizes.icon_button,
         )
@@ -108,7 +108,7 @@ class ToolbarMixin:
         left_layout.addWidget(self.snap_button)
         self.blade_button = IconButton(
             icon=IconName.SCISSORS,
-            tooltip="Outil lame (B)",
+            tooltip=translate("timeline.tip.blade", hint=" (B)"),
             checkable=True,
             size=Sizes.icon_button,
         )
@@ -116,19 +116,19 @@ class ToolbarMixin:
         left_layout.addWidget(self.blade_button)
         self.roll_button = IconButton(
             icon=IconName.CUT,
-            tooltip="Roll (R) : déplace la coupe entre deux clips",
+            tooltip=translate("timeline.tip.roll", hint=" (R)"),
             checkable=True,
             size=Sizes.icon_button,
         )
         self.slip_button = IconButton(
             icon=IconName.REWIND,
-            tooltip="Slip (Y) : change le contenu sans bouger le clip",
+            tooltip=translate("timeline.tip.slip", hint=" (Y)"),
             checkable=True,
             size=Sizes.icon_button,
         )
         self.slide_button = IconButton(
             icon=IconName.FORWARD,
-            tooltip="Slide (U) : glisse le clip et ajuste ses voisins",
+            tooltip=translate("timeline.tip.slide", hint=" (U)"),
             checkable=True,
             size=Sizes.icon_button,
         )
@@ -143,7 +143,7 @@ class ToolbarMixin:
             # voisins dans la barre d'outils et partageaient auparavant le
             # même glyphe de marqueur, ce qui les rendait indiscernables.
             icon=IconName.MIC,
-            tooltip="Enregistrer sur les pistes audio armées",
+            tooltip=translate("timeline.tip.record"),
             checkable=True,
             size=Sizes.icon_button,
         )
@@ -151,7 +151,7 @@ class ToolbarMixin:
         left_layout.addWidget(self.record_button)
         self.ripple_button = IconButton(
             icon=IconName.FORWARD,
-            tooltip="Ripple (N) : referme le trou après un trim droit ou une suppression",
+            tooltip=translate("timeline.tip.ripple", hint=" (N)"),
             checkable=True,
             size=Sizes.icon_button,
         )
@@ -159,7 +159,7 @@ class ToolbarMixin:
         left_layout.addWidget(self.ripple_button)
         self.marker_button = IconButton(
             icon=IconName.MARKER,
-            tooltip="Marqueur au playhead (M)",
+            tooltip=translate("timeline.tip.marker", hint=" (M)"),
             size=Sizes.icon_button,
         )
         self.marker_button.clicked.connect(
@@ -255,7 +255,7 @@ class ToolbarMixin:
         )
         self.zoom_fit_btn = IconButton(
             icon=IconName.PANEL_RESTORE,
-            tooltip="Voir toute la timeline",
+            tooltip=translate("timeline.tip.fit"),
             size=Sizes.icon_button_sm,
         )
         self.zoom_fit_btn.clicked.connect(self.fit_timeline)

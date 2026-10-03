@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.timeline_widgets.common import _current_palette
+from ui.i18n import translate
 
 if TYPE_CHECKING:  # typage seul : évite le cycle marqueur -> panneau
     from ui.timeline_panel import TimelinePanel
@@ -24,7 +25,7 @@ class TransitionMarkerWidget(QLabel):
         self.timeline = timeline
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Cliquer pour modifier cette transition")
+        self.setToolTip(translate("timeline.transition.tooltip"))
 
     def refresh_style(self, label: str) -> None:
         palette = _current_palette()

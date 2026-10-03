@@ -154,7 +154,7 @@ class EffectPresetCard(QFrame):
     @staticmethod
     def _format_subtitle(preset: EffectPreset) -> str:
         count = len(preset.effects)
-        suffix = "effet" if count <= 1 else "effets"
+        suffix = translate("library.word.effect") if count <= 1 else translate("library.word.effect_many")
         return f"{count} {suffix}"
 
     # ----- Sélection visuelle --------------------------------------------
@@ -307,14 +307,14 @@ class EffectsLibraryView(QWidget):
         actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
         actions_layout.setSpacing(Spacing.xs)
         self.apply_button = self._make_wide_button(
-            IconName.PLUS, "Appliquer au clip", accent=True,
+            IconName.PLUS, translate("effects.library.apply"), accent=True,
             tooltip=translate("effects.library.apply"),
         )
         self.apply_button.clicked.connect(self._emit_apply_requested)
         actions_layout.addWidget(self.apply_button)
 
         self.save_button = self._make_wide_button(
-            IconName.SAVE, "Enregistrer comme preset", accent=False,
+            IconName.SAVE, translate("effects.library.save"), accent=False,
             tooltip=translate("effects.library.save"),
         )
         self.save_button.clicked.connect(self._emit_save_requested)
