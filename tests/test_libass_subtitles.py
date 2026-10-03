@@ -89,8 +89,8 @@ def _plan(source: Path, *, style: TextStyle | None = None) -> RenderPlan:
     return plan
 
 
-def _render(plan: RenderPlan, tmp_path: Path, playhead: float) -> tuple[list[bytes], list[str], str]:
-    """Rend l'image à ``playhead`` avec le graphe de l'application ; renvoie (lignes de gris, commande, SRT/ASS)."""
+def _render_image(plan: RenderPlan, tmp_path: Path, playhead: float) -> tuple[QImage, list[str], str]:
+    """Rend l'image à ``playhead`` avec le graphe de l'application ; renvoie (image, commande, fichier SRT/ASS)."""
     engine = ExportEngine()
     request = ExportRequest(render_plan=plan, output_path=str(tmp_path / "inutilise.mp4"),
                             format=ExportFormat.MP4_H264, preset=ExportPreset("T", (W, H), 28, "64k"), fps=FPS)
@@ -110,10 +110,15 @@ def _render(plan: RenderPlan, tmp_path: Path, playhead: float) -> tuple[list[byt
     image = QImage()
     assert image.loadFromData(completed.stdout), "PNG illisible : FFmpeg n'a rien rendu"
     assert (image.width(), image.height()) == (W, H)
+    return image, command, next((path for path in temporary), "")
+
+
+def _render(plan: RenderPlan, tmp_path: Path, playhead: float) -> tuple[list[bytes], list[str], str]:
+    """Comme :func:`_render_image`, avec l'image en lignes de gris."""
+    image, command, subtitle_file = _render_image(plan, tmp_path, playhead)
     gray = image.convertToFormat(QImage.Format.Format_Grayscale8)
     stride, data = gray.bytesPerLine(), bytes(gray.constBits())
-    rows = [data[y * stride:y * stride + W] for y in range(H)]
-    return rows, command, next((path for path in temporary), "")
+    return [data[y * stride:y * stride + W] for y in range(H)], command, subtitle_file
 
 
 def _background(rows: list[bytes]) -> int:
@@ -180,15 +185,31 @@ def test_no_text_is_burned_outside_the_cue(tmp_path, playhead) -> None:
 
 
 def test_an_ass_file_with_a_custom_style_is_rendered_by_libass(tmp_path) -> None:
-    """Un style non standard passe par un fichier ASS : libass doit le lire et rendre du texte.
+    """Un style non standard passe par un fichier ASS : libass le lit, et ``force_style`` ne l'écrase plus.
 
-    Volontairement muet sur la taille, la couleur et la position : ``force_style`` (voir
-    ``docs/ci-libass.md``, « Constat ») écrase aujourd'hui le style du fichier ASS, et ce test ne doit
-    ni figer ce comportement ni échouer le jour où il sera corrigé.
+    Avant le correctif, ``force_style`` (22 pt, blanc, bas centré) était ajouté aussi aux fichiers ASS : un clip
+    en 48 pt jaune « haut centré » ressortait en minuscule, en bas (145 pixels touchés, mesurés avec
+    ffmpeg-full 9.0.2, au lieu de plusieurs milliers). Le style du clip doit se retrouver à l'image : le texte
+    en **haut** du cadre, **jaune**, et nettement plus gros que le style par défaut.
     """
     style = TextStyle(font_size=48.0, color="#ffcc00", alignment=TextAlignment.TOP_CENTER)
     plan = _plan(_generate_source(tmp_path / "fond.mp4"), style=style)
-    rows, command, subtitle_file = _render(plan, tmp_path, CUE_START + CUE_DURATION / 2)
-    assert "subtitles=filename=" in command[command.index("-filter_complex") + 1]
+    image, command, subtitle_file = _render_image(plan, tmp_path, CUE_START + CUE_DURATION / 2)
+    graph = command[command.index("-filter_complex") + 1]
+    assert "subtitles=filename=" in graph
+    assert "force_style" not in graph, "un ASS porte son style : force_style l'écraserait"
     assert subtitle_file.endswith(".ass"), f"style personnalisé : un ASS était attendu, pas {subtitle_file!r}"
-    assert len(_changed(rows)) >= MINIMUM_ANY_TEXT_PIXELS, "le fichier ASS n'a produit aucun texte"
+
+    gray = image.convertToFormat(QImage.Format.Format_Grayscale8)
+    stride, data = gray.bytesPerLine(), bytes(gray.constBits())
+    rows = [data[y * stride:y * stride + W] for y in range(H)]
+    touched = _changed(rows)
+    assert len(touched) >= MINIMUM_TEXT_PIXELS, f"texte trop petit ou absent : {len(touched)} pixels touchés"
+    assert max(y for _x, y in touched) < H // 2, "style « haut centré » : le texte doit rester dans la moitié haute"
+    assert not [y for _x, y in touched if y >= H // 2]
+    # Couleur : au cœur des lettres le jaune (#ffcc00) domine, le bleu en est très en retrait (le blanc par
+    # défaut aurait les trois composantes proches).
+    yellow = [image.pixelColor(x, y) for x, y in touched if image.pixelColor(x, y).red() > 200]
+    assert yellow, "aucun pixel clair : le texte n'a pas la couleur du style"
+    core = [c for c in yellow if c.green() > 150]
+    assert core and sum(1 for c in core if c.blue() < 90) / len(core) > 0.5, "le texte n'est pas jaune"

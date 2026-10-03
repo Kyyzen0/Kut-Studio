@@ -769,9 +769,15 @@ class ExportEngine(QObject):
                 if fonts_dir
                 else ""
             )
+            # Un SRT n'a pas de style : ``force_style`` lui donne celui par défaut. Un ASS porte déjà le sien,
+            # champ par champ (corps, couleur, position, contour) : y ajouter ``force_style`` l'écraserait
+            # (mesuré avec libass : un style 48 pt jaune en haut ressortait en 22 pt blanc en bas).
+            force_option = (
+                "" if srt_path.lower().endswith(".ass") else f":force_style={_SUBTITLE_FORCE_STYLE_FORCE}"
+            )
             parts.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(srt_path)}'"
-                f"{fonts_option}:force_style={_SUBTITLE_FORCE_STYLE_FORCE}[vfinal]"
+                f"{fonts_option}{force_option}[vfinal]"
             )
             video_label = "vfinal"
 
