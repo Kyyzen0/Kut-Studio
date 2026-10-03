@@ -225,14 +225,6 @@ class AutomationPoint:
             )
 
 
-def _require_point(point: object) -> AutomationPoint:
-    if not isinstance(point, AutomationPoint):
-        raise AudioAutomationError(
-            "Le point doit être une instance d'AutomationPoint."
-        )
-    return point
-
-
 @dataclass
 class TrackAutomation:
     """Courbe d'automation de volume pour une piste.

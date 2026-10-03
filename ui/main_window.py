@@ -52,7 +52,6 @@ from core.timeline_evaluator import (
     ActiveClip,
     timeline_duration,
 )
-from core.timeline_view_model import build_export_clips
 from core.user_settings import (
     DEFAULT_LANGUAGE,
     DEFAULT_THEME,

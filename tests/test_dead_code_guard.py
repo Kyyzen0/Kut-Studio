@@ -196,3 +196,63 @@ def test_every_public_function_of_the_audio_mixer_is_used_by_the_export():
     public = {node.name for node in tree.body if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")}
     assert public == {"pan_to_gains", "pan_needs_filter"}
     assert public <= _names_imported_from("audio_mixer")
+
+
+def _referenced_names(paths) -> set[str]:
+    """Noms que le code *utilise* : variables, attributs, imports, mots-clés et chaînes réduites à un identifiant
+    (``getattr(objet, "nom")``, ``@Slot``). Les définitions ``def`` / ``class`` ne comptent pas."""
+    used: set[str] = set()
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Name):
+                used.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                used.add(node.attr)
+            elif isinstance(node, ast.alias):
+                used.add(node.name.rpartition(".")[2])
+            elif isinstance(node, ast.keyword) and node.arg:
+                used.add(node.arg)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
+                used.add(node.value)
+    return used
+
+
+def _toplevel_functions(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
+
+
+def _all_python_files() -> list[Path]:
+    files = list(_python_files("core", "ui", "tools", "tests").values())
+    return files + [ROOT / "main.py", ROOT / "build.py"]
+
+
+def test_no_private_module_function_is_defined_without_a_single_use():
+    """Une fonction ``_privée`` que ni le code, ni un test, ni un ``getattr`` ne nomme est du code mort.
+
+    Avant l'audit, sept fonctions privées dans ce cas traînaient (dont l'ancien constructeur de calque graphique de
+    l'export, 70 lignes, remplacé par ``core.mograph_ffmpeg``). ``__all__`` n'est pas un usage : une chaîne n'y compte
+    que si elle sert aussi ailleurs.
+    """
+    used = _referenced_names(_all_python_files())
+    dead = sorted(
+        f"{path.relative_to(ROOT).as_posix()}::{name}"
+        for path in _python_files(*PRODUCTION_PACKAGES).values()
+        for name in _toplevel_functions(path)
+        if name.startswith("_") and not name.startswith("__") and name not in used
+    )
+    assert not dead, f"Fonctions privées jamais utilisées : {dead}"
+
+
+def test_the_view_model_keeps_only_what_the_timeline_uses():
+    """``core/timeline_view_model.py`` ne garde que la projection des clips : l'export lit le plan de rendu.
+
+    Les adaptateurs ``build_export_clips`` (dont l'appelant documenté, ``core.effects.save_subtitles``, n'existait
+    plus), ``transition_gap_pixels`` et ``v1_transition_pairs`` n'avaient aucun appelant hors de leurs tests.
+    """
+    production = [path for path in _all_python_files() if "tests" not in path.relative_to(ROOT).parts]
+    used = _referenced_names(production)
+    unused = [
+        name for name in _toplevel_functions(ROOT / "core" / "timeline_view_model.py") if name not in used
+    ]
+    assert not unused

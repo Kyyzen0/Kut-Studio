@@ -625,10 +625,6 @@ def global_stylesheet(palette: ThemePalette | None = None) -> str:
     return _stylesheet(palette)
 
 
-def _compat_stylesheet() -> str:
-    return _stylesheet(THEMES["dark"])
-
-
 def label_style(
     size: int = 12,
     color: str = "text",

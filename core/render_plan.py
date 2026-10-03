@@ -896,13 +896,6 @@ def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:
     return lifted
 
 
-def _subtitle_cues_for_export(project: Project):
-    """Sous-titres exportés de la séquence active (visibilité et solo respectés)."""
-    entries = _subtitle_cues_for_tracks(project.tracks)
-    entries.sort(key=lambda pair: (pair[0].start, pair[0].end))
-    return entries
-
-
 def _subtitle_cues_for_tracks(tracks):
     """Sous-titres exportés, en respectant visibilité et solo.
 
