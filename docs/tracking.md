@@ -234,12 +234,49 @@ tel quel, un projet sans tracking s'écrit comme avant) :
   par image et par tracker (10 min de suivi ≈ 95 Ko).
 - `source_clip_id` vide = le clip lui-même : une coupe ou une duplication
   garde ses liaisons internes.
+- `continuation_ids` (optionnel, absent tant que la source n'a pas été coupée) : les clips qui **prolongent** la
+  source après une coupe. Voir [Couper la source d'un tracking](#couper-la-source-dun-tracking).
+- `stabilization.shared_range` (optionnel) : plage d'images source sur laquelle le zoom automatique est calculé en plus
+  de celles que montre le clip ; posé par une coupe (même section).
 - Les corrections de stabilisation, le masque de recadrage et les images-clés
   des liaisons ne sont **pas** stockés : ils se dérivent des données.
 - Lecture tolérante : un tracker, une liaison ou des données corrompus sont
   ignorés seuls, jamais le clip.
 - `source_size` : si le média est remplacé par une autre résolution (relink,
   autre machine), les positions suivent l'échelle.
+
+## Couper la source d'un tracking
+
+Les données d'un tracker sont en **temps source** et immuables : couper le clip ne les découpe pas. Les deux
+moitiés reçoivent le **même** `ClipTracking` (mêmes octets, sans copie) et chacune en lit la portion que son
+intervalle montre (`source_in` / `source_out` et remappage : `core.tracking_motion.source_time`). La partie gauche
+garde donc « sa » portion, la partie droite reçoit la sienne avec son temps local recalculé, et rien n'est dupliqué
+en mémoire ni borné (rallonger une moitié par un trim retrouve ses données).
+
+Ce qui change à la coupe, dans `cut_clip` (donc **une seule entrée d'historique**, annulable) :
+
+| Cas | Politique |
+| --- | --- |
+| Liaison d'un autre clip vers la source | la liaison suit désormais **les deux moitiés** (`TrackLink.continuation_ids`, la moitié droite se range juste après celle qu'on a coupée) ; à chaque instant de la timeline elle suit celle qui **couvre** cet instant (`LinkMotion`). Le mouvement est continu à la coupe (mêmes données) et rien ne change d'une image : un test compare les positions avant et après, coupe avant le premier point suivi, au milieu, après le dernier |
+| Liaison propre au clip (point d'ancrage, masque du clip, stabilisation) | inchangée : chaque moitié suit ses propres trackers |
+| Clip lié qui ne voit qu'une moitié | la liaison garde les deux : la coupe est **neutre aussi pour les modifications suivantes** (étendre ensuite le clip lié continue de suivre) |
+| Stabilisation avec zoom ou recadrage automatique | les deux moitiés reçoivent `shared_range` = plage du plan d'origine : même agrandissement, pas de saut d'image à la coupe (mesuré sans cette plage : 1,60 × à gauche contre 4,15 × à droite sur un mouvement qui accélère) |
+| Bake | inchangé (`baked_keyframes` passe par `LinkMotion`) : le bake d'après la coupe est identique à celui d'avant |
+| Séquences imbriquées | les liaisons ne vivent que dans une séquence. Imbriquer une sélection qui sépare un clip lié d'une moitié qu'il **voit** est refusé (message) ; une moitié qu'il ne voit jamais est retirée de sa liaison (aucune image ne change). Dupliquer une séquence réécrit tous les identifiants de la chaîne |
+
+**Rien n'est figé en silence.** `core.tracking_bindings.link_issues` est la source unique du diagnostic d'une liaison
+(plan de rendu, panneau de suivi, barre d'état, tests) :
+
+| Code | Sens |
+| --- | --- |
+| `missing_source` | aucun des clips suivis n'existe plus (source supprimée) : la liaison reste, signalée |
+| `part_missing` | une partie de la source a disparu |
+| `source_gap` | une partie de la durée du clip lié n'est couverte par aucune partie de la source (moitié raccourcie, déplacée ou supprimée) : le mouvement tient la valeur de la plus proche |
+| `ambiguous_source` | plusieurs parties se recouvrent sous le clip lié : la première de la liaison est utilisée |
+
+Supprimer une moitié retire la référence morte (`TrackLink.without_source`) : la moitié restante devient la source ;
+la barre d'état nomme le défaut s'il en reste un. Hors de toute partie de la source, le mouvement **tient** la valeur
+de la plus proche (jamais un saut) et `source_gap` le dit.
 
 ## Undo / redo
 
@@ -334,9 +371,9 @@ rendu, aperçu et export suivent.
   rotation est appliquée telle quelle (approximation ; exact en échelle
   uniforme).
 - **Clips imbriqués** : ni source ni cible de liaison.
-- **Couper la source d'un tracking** : la partie droite reçoit un nouvel identifiant, les clips qui suivent la source
-  restent liés à la partie gauche et leur mouvement reste figé sur sa dernière image. La coupe l'annonce dans la
-  barre d'état ; il faut relier les clips à la partie droite (`core.tracking_ops.tracking_dependents` les liste).
+- **Couper la source d'un tracking** : corrigé, voir [la politique](#couper-la-source-dun-tracking). Reste : sur
+  disque, chaque moitié écrit sa propre copie (compressée) des trackers dans le `.kut` — en mémoire les octets sont
+  partagés, pas dans le fichier (couper N fois un plan très long multiplie la taille des trackers par N+1).
 - **Relier un média différent** (autre résolution, autre cadence) : les positions suivies sont en pixels du média
   d'origine ; le relink relit maintenant les métadonnées du nouveau fichier et annonce les différences, mais un
   nouveau suivi reste nécessaire si l'image n'est plus la même.

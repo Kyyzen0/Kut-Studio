@@ -607,6 +607,13 @@ class TrackLink:
     Attributes:
         source_clip_id: clip vidéo qui porte les trackers (:data:`SELF_CLIP`
             = le clip lui-même ; conservé par une coupe ou une duplication).
+        continuation_ids: clips qui **prolongent** la source après une coupe
+            (la partie droite, puis celles des coupes suivantes). La liaison
+            suit, à chaque instant de la timeline, celui des clips de
+            :attr:`source_ids` qui couvre cet instant : couper la source ne
+            fige donc pas le mouvement des clips liés. Les données de
+            tracking sont en temps source et partagées par les deux moitiés ;
+            seule cette liste dit quelles moitiés la liaison suit.
         tracker_ids: un tracker = translation ; deux ou plus = translation,
             rotation et échelle (similitude ajustée aux moindres carrés).
         target: :class:`TrackTarget`.
@@ -627,11 +634,17 @@ class TrackLink:
     scale: bool = False
     reference_index: int = 0
     enabled: bool = True
+    continuation_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id:
             object.__setattr__(self, "id", new_tracking_id())
         object.__setattr__(self, "source_clip_id", str(self.source_clip_id or ""))
+        source = str(self.source_clip_id)
+        continuation = tuple(
+            dict.fromkeys(str(c) for c in self.continuation_ids if c and str(c) != source)
+        ) if source != SELF_CLIP else ()
+        object.__setattr__(self, "continuation_ids", continuation)
         object.__setattr__(self, "tracker_ids", tuple(dict.fromkeys(str(t) for t in self.tracker_ids if t)))
         object.__setattr__(
             self, "target", self.target if self.target in TrackTarget.ALL else TrackTarget.TRANSFORM
@@ -645,9 +658,62 @@ class TrackLink:
     def is_similarity(self) -> bool:
         return len(self.tracker_ids) >= 2 and (self.rotation or self.scale)
 
+    @property
+    def source_ids(self) -> tuple[str, ...]:
+        """Clips suivis, dans l'ordre : la source, puis ses prolongements (vide : le clip lui-même)."""
+        if self.source_clip_id == SELF_CLIP:
+            return ()
+        return (self.source_clip_id, *self.continuation_ids)
+
+    def follows(self, clip_id: str) -> bool:
+        """La liaison suit-elle ``clip_id`` (comme source ou comme prolongement) ?"""
+        return clip_id in self.source_ids
+
+    def after_cut(self, clip_id: str, right_id: str) -> TrackLink:
+        """Liaison après la coupe de ``clip_id`` : elle suit aussi la partie droite ``right_id``.
+
+        La partie droite se range juste après celle qu'on vient de couper ; une liaison qui ne
+        suit pas ``clip_id`` est rendue telle quelle.
+        """
+        if not self.follows(clip_id) or right_id in self.source_ids:
+            return self
+        if clip_id == self.source_clip_id:
+            return replace(self, continuation_ids=(right_id, *self.continuation_ids))
+        position = self.continuation_ids.index(clip_id) + 1
+        return replace(
+            self, continuation_ids=(*self.continuation_ids[:position], right_id, *self.continuation_ids[position:])
+        )
+
+    def without_source(self, clip_id: str) -> TrackLink:
+        """Liaison après la suppression de ``clip_id`` : elle suit les parties restantes.
+
+        Si c'est la source elle-même qui disparaît, la première partie restante devient la source ;
+        sans partie restante, la liaison est rendue telle quelle (source introuvable : elle est
+        signalée, jamais effacée en silence).
+        """
+        if not self.follows(clip_id) or not self.continuation_ids:
+            return self
+        if clip_id == self.source_clip_id:
+            return replace(self, source_clip_id=self.continuation_ids[0], continuation_ids=self.continuation_ids[1:])
+        return replace(self, continuation_ids=tuple(c for c in self.continuation_ids if c != clip_id))
+
+    def with_renamed_sources(self, renamed: Mapping[str, str]) -> TrackLink:
+        """Liaison dont les clips suivis portent de nouveaux identifiants (copie de séquence)."""
+        if self.source_clip_id == SELF_CLIP or not any(i in renamed for i in self.source_ids):
+            return self
+        return replace(
+            self, source_clip_id=renamed.get(self.source_clip_id, self.source_clip_id),
+            continuation_ids=tuple(renamed.get(c, c) for c in self.continuation_ids),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         data = dict(vars(self))
         data["tracker_ids"] = list(self.tracker_ids)
+        # Écrit seulement s'il diffère du défaut : un projet sans coupe garde exactement son format.
+        if self.continuation_ids:
+            data["continuation_ids"] = list(self.continuation_ids)
+        else:
+            del data["continuation_ids"]
         return data
 
     @classmethod
@@ -661,6 +727,7 @@ class TrackLink:
                 mask_id=str(raw.get("mask_id", "")), position=bool(raw.get("position", True)),
                 rotation=bool(raw.get("rotation", False)), scale=bool(raw.get("scale", False)),
                 reference_index=int(raw.get("reference_index", 0)), enabled=bool(raw.get("enabled", True)),
+                continuation_ids=tuple(str(c) for c in raw.get("continuation_ids") or ()),
             )
         except (TypeError, ValueError):
             return None
@@ -669,6 +736,17 @@ class TrackLink:
 # ---------------------------------------------------------------------------
 # Stabilisation
 # ---------------------------------------------------------------------------
+
+
+def _normalized_range(value: object) -> tuple[int, int] | None:
+    """``(première, dernière)`` entières et ordonnées, ou ``None`` si la valeur n'est pas une plage."""
+    if value is None:
+        return None
+    try:
+        low, high = (int(bound) for bound in value)  # type: ignore[attr-defined]
+    except (TypeError, ValueError):
+        return None
+    return (max(0, min(low, high)), max(0, low, high))
 
 
 class StabilizationMode:
@@ -717,6 +795,11 @@ class Stabilization:
     smoothing_frames: float = 12.0
     borders: str = BorderMode.ZOOM
     reference_index: int = 0
+    shared_range: tuple[int, int] | None = None
+    """Images source ``(première, dernière)`` sur lesquelles l'agrandissement et le recadrage sont
+    calculés **en plus** de celles que montre le clip. Posé par une coupe : les deux moitiés d'un plan
+    stabilisé gardent ainsi le même zoom (sans cela, chacune calculait le sien et l'image « sautait »
+    au point de coupe). ``None`` : seules les images montrées comptent."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "enabled", bool(self.enabled))
@@ -730,6 +813,7 @@ class Stabilization:
         object.__setattr__(self, "smoothing_frames", max(0.5, min(600.0, _finite(self.smoothing_frames, 12.0))))
         object.__setattr__(self, "borders", self.borders if self.borders in BorderMode.ALL else BorderMode.ZOOM)
         object.__setattr__(self, "reference_index", max(0, int(self.reference_index)))
+        object.__setattr__(self, "shared_range", _normalized_range(self.shared_range))
 
     @property
     def sigma(self) -> float | None:
@@ -743,6 +827,10 @@ class Stabilization:
     def to_dict(self) -> dict[str, Any]:
         data = dict(vars(self))
         data["tracker_ids"] = list(self.tracker_ids)
+        if self.shared_range is None:      # écrit seulement s'il diffère du défaut
+            del data["shared_range"]
+        else:
+            data["shared_range"] = list(self.shared_range)
         return data
 
     @classmethod
@@ -755,6 +843,7 @@ class Stabilization:
                 mode=str(raw.get("mode", "")), smoothing=str(raw.get("smoothing", "")),
                 smoothing_frames=raw.get("smoothing_frames", 12.0), borders=str(raw.get("borders", "")),
                 reference_index=int(raw.get("reference_index", 0)),
+                shared_range=raw.get("shared_range"),
             )
         except (TypeError, ValueError):
             return None

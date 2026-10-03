@@ -458,11 +458,9 @@ def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
                 )
             tracking = clip.tracking
             links = getattr(tracking, "links", ())
-            if any(link.source_clip_id in renamed for link in links):
-                clip.tracking = replace(tracking, links=tuple(
-                    replace(link, source_clip_id=renamed.get(link.source_clip_id, link.source_clip_id))
-                    for link in links
-                ))
+            remapped = tuple(link.with_renamed_sources(renamed) for link in links)
+            if remapped != tuple(links):
+                clip.tracking = replace(tracking, links=remapped)
 
 
 def duplicate_sequence(
@@ -615,15 +613,40 @@ def insert_sequence_clip(
 # ---------------------------------------------------------------------------
 
 
-def _clip_references(clip: Clip) -> list[tuple[str, str]]:
-    """Clips (de la même séquence) dont ``clip`` dépend : ``(nature, identifiant)``."""
+def _overlaps(first: Clip, second: Clip) -> bool:
+    """Les deux clips partagent-ils un instant de la timeline ?"""
+    return (
+        first.timeline_start < second.timeline_start + second.duration - _EPSILON
+        and second.timeline_start < first.timeline_start + first.duration - _EPSILON
+    )
+
+
+def _relevant_sources(clip: Clip, link, clips: dict[str, Clip]) -> list[str]:
+    """Parties de la source d'une liaison qui comptent encore pour ``clip``.
+
+    Après la coupe de la source, la liaison suit les deux moitiés ; un clip lié qui ne recouvre que l'une
+    d'elles n'a pas besoin de l'autre. Seules les parties qui recouvrent le clip lié comptent (sinon, toutes :
+    la relation est conservée, et signalée comme lacune par ``link_issues``).
+    """
+    members = [source_id for source_id in link.source_ids if source_id in clips]
+    overlapping = [source_id for source_id in members if _overlaps(clip, clips[source_id])]
+    return overlapping or members
+
+
+def _clip_references(clip: Clip, clips: dict[str, Clip] | None = None) -> list[tuple[str, str]]:
+    """Clips (de la même séquence) dont ``clip`` dépend : ``(nature, identifiant)``.
+
+    ``clips`` (identifiant → clip de la séquence) restreint les liaisons de tracking aux parties de la
+    source qui recouvrent ``clip`` (voir :func:`_relevant_sources`).
+    """
     references: list[tuple[str, str]] = []
     graphic = getattr(clip, "graphic", None)
     if graphic is not None:
         references += [("parent", getattr(graphic, "parent_id", "")), ("groupe", getattr(graphic, "group_id", ""))]
     tracking = getattr(clip, "tracking", None)
     for link in getattr(tracking, "links", ()) or ():
-        references.append(("tracking", link.source_clip_id))
+        sources = _relevant_sources(clip, link, clips) if clips is not None else link.source_ids
+        references.extend(("tracking", source_id) for source_id in sources)
     return [(kind, target) for kind, target in references if target]
 
 
@@ -637,7 +660,7 @@ def _refuse_split_dependencies(sequence: Sequence, selected: set[str]) -> None:
     clips = {clip.id: clip for track in sequence.tracks for clip in track.clips}
     broken: list[str] = []
     for clip in clips.values():
-        for kind, target in _clip_references(clip):
+        for kind, target in _clip_references(clip, clips):
             if target in clips and (clip.id in selected) != (target in selected):
                 broken.append(f"« {clip.label or clip.id} » dépend de « {clips[target].label or target} » ({kind})")
     if broken:
@@ -645,6 +668,30 @@ def _refuse_split_dependencies(sequence: Sequence, selected: set[str]) -> None:
         raise SequenceError(
             f"La sélection sépare des clips liés : {shown}. Sélectionnez-les ensemble pour les imbriquer."
         )
+
+
+def _prune_crossing_sources(sequence: Sequence, selected: set[str]) -> None:
+    """Retire des liaisons de tracking les parties de source que l'imbrication met de l'autre côté.
+
+    Appelée **après** :func:`_refuse_split_dependencies` : ce qui reste à cheval est une partie qui ne recouvre
+    pas le clip lié (la moitié de la source coupée qu'il ne voit jamais). La garder ferait pointer la liaison
+    vers un clip d'une autre séquence ; la retirer ne change aucune image.
+    """
+    clips = {clip.id: clip for track in sequence.tracks for clip in track.clips}
+    for clip in clips.values():
+        tracking = getattr(clip, "tracking", None)
+        links = tuple(getattr(tracking, "links", ()) or ())
+        if not links:
+            continue
+        pruned = []
+        for link in links:
+            kept = set(_relevant_sources(clip, link, clips))
+            for source_id in link.source_ids:
+                if source_id in clips and (clip.id in selected) != (source_id in selected) and source_id not in kept:
+                    link = link.without_source(source_id)
+            pruned.append(link)
+        if tuple(pruned) != links:
+            clip.tracking = replace(tracking, links=tuple(pruned))
 
 
 def create_sequence_from_selection(
@@ -752,6 +799,7 @@ def create_sequence_from_selection(
         inner_tracks.append(copy)
     by_track_id = {track.id: track for track in inner_tracks}
 
+    _prune_crossing_sources(parent, {clip.id for _i, _t, clip in located})
     moved_ids: set[str] = set()
     for _index, track, clip in located:
         track.clips.remove(clip)
