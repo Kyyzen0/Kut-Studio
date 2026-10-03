@@ -65,6 +65,7 @@ def build_rich_project() -> Project:
     audio.set_track_role(project, "A1", TrackRole.MUSIC)
     audio.set_track_role(project, "A2", TrackRole.VOICE)
     audio.add_automation_point(project, "A1", 1.0, -6.0, 0.2)
+    audio.add_automation_point(project, "V1", 2.0, -3.0)         # le son embarqué d'une piste vidéo s'automatise aussi
     audio.add_ducking_sidechain(project, "A1", "A2", config=DuckingConfig())
 
     title = layers.add_layer(project, "text", at=1.0, duration=4.0)

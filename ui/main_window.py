@@ -19,11 +19,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.autosave import AutosaveCoordinator
-from core.effects import apply_color_effect, set_volume
 from core.audio_effects_library import AudioEffectPresetStore
 from core.effects_library import EffectPreset, UserPresetStore
 from core.edit_history import ProjectHistory
-from core.color_grading import ColorGrade
 from core.transition_presets import (
     TransitionPreset,
     TransitionPresetStore,
@@ -54,7 +52,6 @@ from core.timeline_evaluator import (
     ActiveClip,
     timeline_duration,
 )
-from core.timeline_view_model import build_export_clips
 from core.user_settings import (
     DEFAULT_LANGUAGE,
     DEFAULT_THEME,
@@ -158,7 +155,6 @@ class MainWindow(
         self.resize(1480, 920)
         self.subtitle_file: str | None = None
         self.active_subtitle_clip = None
-        self.transition_seconds = None
         # ``Project`` est désormais l'unique source de vérité de la timeline.
         self.project: Project = create_default_project()
         # Historique undo/redo non destructif.
@@ -326,7 +322,7 @@ class MainWindow(
         self.project_panel.asset_occurrences_requested.connect(
             self._on_asset_occurrences_requested
         )
-        self.properties_panel = PropertiesPanel(self.update_color_effect, self.update_volume)
+        self.properties_panel = PropertiesPanel(self.update_volume)
         self.properties_panel.set_project_color_presets(
             getattr(self.project, "color_presets", [])
         )
@@ -397,7 +393,6 @@ class MainWindow(
         self.timeline_panel.play_button.clicked.connect(self.toggle_play)
         self.timeline_panel.seek_requested.connect(self.seek_to_position)
         self.timeline_panel.clip_selected.connect(self.on_clip_selected)
-        self.timeline_panel.transition_clicked.connect(self.offer_transition)
         self.timeline_panel.move_clip_requested.connect(self.on_move_clip_requested)
         self.timeline_panel.trim_clip_left_requested.connect(self.on_trim_left_requested)
         self.timeline_panel.trim_clip_right_requested.connect(self.on_trim_right_requested)
@@ -1861,29 +1856,9 @@ class MainWindow(
     # Tâche 32 : calques graphiques
     # ------------------------------------------------------------------
 
-    def update_color_effect(self, *_):
-        panel = self.properties_panel
-        grade = None
-        selected = getattr(panel, "selected_clip", None)
-        clip_id = getattr(selected, "id", None)
-        if clip_id:
-            clip, _track = self._find_clip_and_track(clip_id)
-            grade = getattr(clip, "color_grade", None) if clip is not None else None
-        if grade is None:
-            grade = getattr(panel, "_current_color_grade", ColorGrade.identity())
-        color_effect = getattr(self.preview_panel, "color_effect", None)
-        if color_effect is None:
-            return
-        apply_color_effect(
-            color_effect,
-            int(max(-100, min(100, grade.exposure * 50.0))),
-            int(max(-100, min(100, grade.contrast * 100.0))),
-            int(max(-100, min(100, (grade.saturation - 1.0) * 100.0))),
-        )
-
     def update_volume(self, value):
         self.properties_panel.volume_value.setText(f"{value} %")
-        set_volume(self.preview_panel.audio_output, value)
+        self.preview_panel.audio_output.setVolume(value / 100.0)
 
     # ------------------------------------------------------------------
     # Tâche 23 : gestion des presets de transitions

@@ -5,16 +5,10 @@ qui transforme un ``Project`` en une liste de vues prêtes à être
 affichées. La projection est strictement en lecture : aucune vue ne
 peut muter le ``Project`` source.
 
-Trois responsabilités supplémentaires y sont regroupées :
-
-- ``color_key_for_clip`` : couleur déterministe basée sur l'identifiant
-  du clip (utilisée pour colorer les blocs sur la timeline).
-- ``build_export_clips`` : adaptateur produisant un snapshot
-  « clé-valeur » du projet, conservé pour la sauvegarde ``.srt`` des
-  sous-titres (``core.effects.save_subtitles``). L'export vidéo
-  principal utilise désormais :class:`core.render_plan.RenderPlan`.
-- ``v1_transition_pairs`` : helper utilisé par la timeline pour repérer
-  les jonctions entre clips V1.
+``color_key_for_clip`` donne une couleur déterministe basée sur
+l'identifiant du clip (utilisée pour colorer les blocs sur la timeline).
+L'export (vidéo comme sous-titres ``.srt``) ne passe pas par ce module : il
+consomme :class:`core.render_plan.RenderPlan`.
 
 Aucune dépendance PySide6 : ces vues sont de simples dataclass.
 """
@@ -207,68 +201,3 @@ def _overflow_start(clip: Clip, source_duration: float) -> float | None:
     return clip.timeline_start + max(0.0, local)
 
 
-def build_export_clips(project: Project) -> list[dict]:
-    """Adaptateur : produit un snapshot clé-valeur du ``Project``.
-
-    Utilisé par :func:`core.effects.save_subtitles` pour écrire un
-    fichier ``.srt`` à partir des clips de la piste ``S1``. L'export
-    vidéo principal (``core.export_engine``) n'utilise plus cette
-    fonction ; il consomme désormais
-    :class:`core.render_plan.RenderPlan`.
-
-    Le format produit est stable (clés ``id``, ``track``, ``start``,
-    ``end``, ``label``, ``text``, ``source_path``, ``color``) et
-    constitue la source de vérité pour la sauvegarde ``.srt``.
-    """
-    asset_paths = {asset.id: asset.path for asset in project.media_assets}
-    export_clips: list[dict] = []
-    for track_index, track in enumerate(project.tracks):
-        for clip in track.clips:
-            export_clips.append(
-                {
-                    "id": clip.id,
-                    "track": track_index,
-                    "start": clip.timeline_start,
-                    "end": clip.timeline_start + clip.duration,
-                    "label": clip.label,
-                    "text": clip.text,
-                    "source_path": asset_paths.get(clip.asset_id, ""),
-                    "color": color_key_for_clip(clip),
-                }
-            )
-    return export_clips
-
-
-# ---------------------------------------------------------------------------
-# Helpers de rendu (jonctions V1)
-# ---------------------------------------------------------------------------
-
-
-def transition_gap_pixels(
-    previous: TimelineClipView,
-    following: TimelineClipView,
-    pixels_per_second: float,
-    zoom: float,
-) -> float:
-    """Largeur en pixels de l'écart entre deux clips successifs."""
-    return (following.start - previous.end) * pixels_per_second * zoom
-
-
-def v1_transition_pairs(
-    views: list[TimelineClipView],
-    pixels_per_second: float,
-    zoom: float,
-    max_gap_pixels: float = 10.0,
-) -> list[tuple[TimelineClipView, TimelineClipView]]:
-    """Retourne les paires de clips V1 suffisamment proches pour une jonction."""
-    v1_views = sorted(
-        (view for view in views if view.track_id == "V1"),
-        key=lambda view: view.start,
-    )
-    return [
-        (previous, following)
-        for previous, following in zip(v1_views, v1_views[1:])
-        if 0
-        < transition_gap_pixels(previous, following, pixels_per_second, zoom)
-        <= max_gap_pixels
-    ]

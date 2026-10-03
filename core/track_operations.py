@@ -93,13 +93,6 @@ def _coerce_track_type(track_type: str) -> str:
     return normalized
 
 
-def _is_valid_track_id(track_id: str) -> bool:
-    """Vrai si ``track_id`` est un identifiant de piste syntaxiquement valide."""
-    if not isinstance(track_id, str) or not track_id:
-        return False
-    return bool(_ID_RE.match(track_id))
-
-
 def _ensure_track_id(
     project: "Project",
     track_type: str,

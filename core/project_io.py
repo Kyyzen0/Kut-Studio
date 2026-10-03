@@ -64,10 +64,11 @@ import shutil
 import tempfile
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from .effects_model import ClipEffect, EffectType
 from .animation import Keyframe
+from .audio_automation import TrackAutomation
 from .canvas_guides import guide_from_dict, guide_to_dict
 from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
 from .motion_blur import settings_from_dict as motion_blur_from_dict
@@ -93,7 +94,6 @@ from .visual_effects import (
 )
 
 if TYPE_CHECKING:
-    from .audio_automation import AutomationPoint
     from .library_organization import AssetAssignment
 # ``library_organization`` est importé paresseusement dans les helpers
 # de sérialisation pour éviter une boucle d'imports (les modèles du
@@ -506,19 +506,17 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
                 # ``audio_role`` reste une chaîne pour rester
                 # compatible avec les snapshots plus anciens.
                 "audio_role": getattr(track, "audio_role", "other"),
-                # ``automation`` est sérialisée comme une liste de
-                # points ``{time_seconds, gain_db, fade_seconds}``.
-                # Une liste vide correspond à ``pas d'automation``
-                # et reste le comportement par défaut.
+                # ``automation`` (une ``TrackAutomation``) est sérialisée
+                # comme une liste de points ``{time_seconds, gain_db,
+                # fade_seconds}``. Une liste vide correspond à ``pas
+                # d'automation`` et reste le comportement par défaut.
                 "automation": [
                     {
                         "time_seconds": float(point.time_seconds),
                         "gain_db": float(point.gain_db),
                         "fade_seconds": float(point.fade_seconds),
                     }
-                    for point in _iter_automation_points(
-                        getattr(track, "automation", None)
-                    )
+                    for point in track.automation.points
                 ],
                 # ``ducking_config`` est sérialisé comme un dict
                 # ``{threshold_db, reduction_db, attack_seconds,
@@ -907,8 +905,11 @@ def _deserialize_track(
         track_kwargs["audio_role"] = "other"
     elif track_kwargs["audio_role"] not in {"voice", "music", "sfx", "other"}:
         track_kwargs["audio_role"] = "other"
-    track_kwargs["automation"] = _deserialize_automation_points(
-        track_kwargs.get("automation") or []
+    # Le fichier stocke une liste de points ; en mémoire, la piste porte
+    # toujours la forme canonique (``TrackAutomation``), fabriquée ici.
+    track_kwargs["automation"] = TrackAutomation(
+        track_id=str(track_kwargs.get("id", "")),
+        points=_deserialize_automation_points(track_kwargs.get("automation") or []),
     )
     track_kwargs["ducking_config"] = _deserialize_ducking_config(
         track_kwargs.get("ducking_config")
@@ -1598,26 +1599,6 @@ def _deserialize_library_assignments(
 # ---------------------------------------------------------------------------
 # Automation audio et ducking (tâche 28)
 # ---------------------------------------------------------------------------
-
-
-def _iter_automation_points(value) -> Iterable[AutomationPoint]:
-    """Normalise l'accès aux points d'automation d'une piste.
-
-    Le champ ``track.automation`` peut être :
-
-    - une liste de :class:`AutomationPoint` (cas historique et cas
-      ``track.automation == []``) ;
-    - une instance de :class:`TrackAutomation` (cas où le service
-      :class:`AudioAutomationService` l'a enrichie, avec un attribut
-      ``.points``). On détecte ce cas via ``hasattr(value, "points")``.
-    """
-    if value is None:
-        return []
-    if hasattr(value, "points"):
-        return list(getattr(value, "points", []) or [])
-    if isinstance(value, list):
-        return value
-    return []
 
 
 def _ducking_config_to_dict(config) -> dict[str, Any] | None:

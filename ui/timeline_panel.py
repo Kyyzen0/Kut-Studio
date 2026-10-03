@@ -83,7 +83,6 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     seek_requested = Signal(float)
     clip_selected = Signal(str)
     transition_selected = Signal(str)
-    transition_clicked = Signal(float)
     move_clip_requested = Signal(str, float)
     trim_clip_left_requested = Signal(str, float)
     trim_clip_right_requested = Signal(str, float)

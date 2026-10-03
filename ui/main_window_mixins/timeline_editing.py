@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QInputDialog, QMenu
-from core.effects import play_crossfade_preview
+from PySide6.QtWidgets import QInputDialog
 from core.timeline_editing import (
     add_marker,
     delete_clips,
@@ -311,15 +309,6 @@ class TimelineEditingMixin:
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
-
-    def offer_transition(self, transition_time):
-        menu = QMenu(self)
-        menu.addAction(f"Jonction à {transition_time:.2f}s")
-        menu.addSeparator()
-        crossfade = menu.addAction("Fondu enchaîné · 0.5 s")
-        if menu.exec(QCursor.pos()) is crossfade:
-            self.transition_seconds = transition_time
-            self.transition_animation = play_crossfade_preview(self.preview_panel.preview_transition_overlay, self)
 
     def on_transition_selected(self, transition_id: str) -> None:
         """Affiche les réglages de la transition choisie sur la timeline."""

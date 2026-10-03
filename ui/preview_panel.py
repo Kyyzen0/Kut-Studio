@@ -157,15 +157,6 @@ class PreviewPanel(QWidget):
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
-        self.preview_transition_overlay = QLabel("Fondu enchaîné · 0.5 s")
-        self.preview_transition_overlay.setAlignment(Qt.AlignCenter)
-        self.preview_transition_overlay.setStyleSheet(
-            f"background: {COLORS['transition_overlay_bg']}; color: {COLORS['transition_overlay']}; "
-            f"border: 1px solid {COLORS['transition_overlay']}; border-radius: 6px; "
-            f"padding: 8px 14px; font-weight: 700;"
-        )
-        self.preview_transition_overlay.hide()
-
         self.empty_state = QLabel(
             "Aucun clip sous la tête de lecture\n"
             "Déplacez la tête de lecture ou sélectionnez un clip dans la timeline."
@@ -320,9 +311,6 @@ class PreviewPanel(QWidget):
         preview_layout.setSpacing(0)
         preview_layout.addWidget(self.graphics_view, 0, 0)
         preview_layout.addWidget(self.empty_state, 0, 0, Qt.AlignCenter)
-        preview_layout.addWidget(
-            self.preview_transition_overlay, 0, 0, Qt.AlignCenter
-        )
         preview_layout.addWidget(
             self.preview_subtitle_overlay,
             0, 0,

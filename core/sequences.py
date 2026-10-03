@@ -763,7 +763,7 @@ def create_sequence_from_selection(
             "Aucune piste vidéo ou audio disponible pour accueillir la séquence imbriquée."
         )
 
-    from .audio_automation import AutomationPoint  # import tardif (pas de cycle)
+    from .audio_automation import AutomationPoint, TrackAutomation  # import tardif (pas de cycle)
 
     inner_tracks: list[Track] = []
     for _index, track in selected_tracks:
@@ -780,7 +780,7 @@ def create_sequence_from_selection(
             copy.volume_db = track.volume_db
             copy.pan = track.pan
             copy.ducking_config = deepcopy(track.ducking_config)
-            points = list(getattr(track.automation, "points", track.automation) or [])
+            points = list(track.automation.points)
             shifted = []
             for point in points:
                 time_value = float(getattr(point, "time_seconds", 0.0)) - start
@@ -796,7 +796,7 @@ def create_sequence_from_selection(
                     )
                 except (TypeError, ValueError):
                     continue
-            copy.automation = shifted
+            copy.automation = TrackAutomation(track_id=copy.id, points=shifted)
         inner_tracks.append(copy)
     by_track_id = {track.id: track for track in inner_tracks}
 

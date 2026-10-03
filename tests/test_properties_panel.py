@@ -12,7 +12,7 @@ from ui.project_panel import ProjectPanel
 
 
 def _panel(qtbot) -> PropertiesPanel:
-    panel = PropertiesPanel(lambda *_args: None, lambda *_args: None)
+    panel = PropertiesPanel(lambda *_args: None)
     qtbot.addWidget(panel)
     return panel
 

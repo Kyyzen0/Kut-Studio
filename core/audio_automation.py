@@ -225,14 +225,6 @@ class AutomationPoint:
             )
 
 
-def _require_point(point: object) -> AutomationPoint:
-    if not isinstance(point, AutomationPoint):
-        raise AudioAutomationError(
-            "Le point doit être une instance d'AutomationPoint."
-        )
-    return point
-
-
 @dataclass
 class TrackAutomation:
     """Courbe d'automation de volume pour une piste.
@@ -246,13 +238,23 @@ class TrackAutomation:
     gain est nul (``-inf`` n'est pas un gain valide : on retourne
     ``DEFAULT_GAIN_MIN_DB``). Après le dernier point, le gain est
     celui du dernier point.
+
+    C'est la **forme canonique** de :attr:`core.project_model.Track.automation` :
+    chaque piste en porte une (vide par défaut). ``track_id`` n'est qu'une
+    étiquette pour les messages d'erreur, sans contrainte de forme (un
+    identifiant de piste hérité d'un ancien fichier, avec espaces ou accents,
+    ne doit pas empêcher d'ouvrir le projet) et hors de la comparaison : deux
+    courbes de mêmes points sont égales.
     """
 
-    track_id: str
+    track_id: str = field(default="", compare=False)
     points: list[AutomationPoint] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.track_id = _require_id(self.track_id, "piste")
+        if not isinstance(self.track_id, str):
+            raise AudioAutomationNameError(
+                f"L'identifiant de la piste doit être une chaîne : {self.track_id!r}."
+            )
         # Normalise : trie par points, ne mute pas la liste si elle est
         # déjà dans le bon ordre (important pour les tests qui passent
         # une liste figée).
@@ -356,6 +358,30 @@ class TrackAutomation:
                     float(current.gain_db) - float(previous.gain_db)
                 )
         return float(self.points[-1].gain_db)
+
+
+def coerce_track_automation(value: object, track_id: str = "") -> TrackAutomation:
+    """Ramène ce qu'on affecte à ``Track.automation`` à sa forme canonique.
+
+    Une :class:`TrackAutomation` est rendue **telle quelle** (même objet : les
+    éditions en place restent visibles ; une courbe encore sans identifiant
+    prend celui de la piste). ``None`` donne une courbe vide ; une liste ou un
+    tuple de points, l'ancienne forme, est enveloppé et trié. Tout autre type
+    lève ``TypeError`` : mieux vaut refuser une affectation absurde que
+    perdre une courbe en silence. L'opération est idempotente.
+    """
+    if isinstance(value, TrackAutomation):
+        if not value.track_id:
+            value.track_id = track_id
+        return value
+    if value is None:
+        return TrackAutomation(track_id=track_id)
+    if isinstance(value, (list, tuple)):
+        return TrackAutomation(track_id=track_id, points=list(value))
+    raise TypeError(
+        "Track.automation attend une TrackAutomation ou une liste de AutomationPoint, "
+        f"pas {type(value).__name__}."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -499,18 +525,13 @@ class AudioAutomationService:
     # ----- Automation ----------------------------------------------------
 
     def ensure_automation(self, project, track_id: str) -> "TrackAutomation":
-        """Retourne l'automation d'une piste, en créant une liste vide
-        si nécessaire (idempotent).
+        """Retourne l'automation d'une piste (idempotent).
+
+        Le modèle garantit que ``track.automation`` est toujours une
+        :class:`TrackAutomation` (vide par défaut, normalisée à l'affectation
+        et au chargement) : il n'y a plus rien à envelopper ici.
         """
-        track = self._find_audio_track(project, track_id)
-        automation = getattr(track, "automation", None)
-        if not isinstance(automation, TrackAutomation):
-            # Un projet chargé porte une simple liste de points : il faut l'envelopper, pas
-            # la jeter (le premier réglage après l'ouverture effaçait toute la courbe).
-            points = list(automation) if isinstance(automation, (list, tuple)) else []
-            automation = TrackAutomation(track_id=track.id, points=points)
-            object.__setattr__(track, "automation", automation)
-        return automation
+        return self._find_audio_track(project, track_id).automation
 
     def add_automation_point(
         self,
@@ -699,6 +720,7 @@ __all__ = [
     "DuckingSidechain",
     "TrackAutomation",
     "TrackRole",
+    "coerce_track_automation",
     # Constantes
     "DEFAULT_GAIN_MAX_DB",
     "DEFAULT_GAIN_MIN_DB",

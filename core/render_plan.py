@@ -897,13 +897,6 @@ def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:
     return lifted
 
 
-def _subtitle_cues_for_export(project: Project):
-    """Sous-titres exportés de la séquence active (visibilité et solo respectés)."""
-    entries = _subtitle_cues_for_tracks(project.tracks)
-    entries.sort(key=lambda pair: (pair[0].start, pair[0].end))
-    return entries
-
-
 def _subtitle_cues_for_tracks(tracks):
     """Sous-titres exportés, en respectant visibilité et solo.
 
@@ -945,18 +938,9 @@ def _build_audio_layer(
     *,
     ducking_sidechains: list | None = None,
 ) -> AudioLayer:
-    # Automation de volume (tâche 28) : on la récupère depuis le track
-    # parent. L'automation peut être soit une liste (cas historique),
-    # soit une instance de :class:`TrackAutomation` (cas enrichi par
-    # :class:`AudioAutomationService`). On normalise dans les deux cas
-    # vers une liste ordonnée de :class:`AutomationPoint`.
-    track_automation = getattr(track, "automation", None)
-    if hasattr(track_automation, "points"):
-        track_automation_points = list(getattr(track_automation, "points", []) or [])
-    elif isinstance(track_automation, list):
-        track_automation_points = list(track_automation)
-    else:
-        track_automation_points = []
+    # Automation de volume (tâche 28) : les points ordonnés de la
+    # :class:`TrackAutomation` du track parent (forme canonique du modèle).
+    track_automation_points = tuple(track.automation.points) if track is not None else ()
     return AudioLayer(
         clip_id=clip.id,
         asset_id=clip.asset_id,
@@ -976,6 +960,6 @@ def _build_audio_layer(
         track_pan=float(getattr(track, "pan", 0.0)),
         time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
         audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
-        track_automation=tuple(track_automation_points),
+        track_automation=track_automation_points,
         ducking_sidechains=tuple(ducking_sidechains or []),
     )
