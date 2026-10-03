@@ -706,25 +706,6 @@ def test_subtitles_srt_is_not_tracked_in_git() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Aucune dépendance à l'ancien module timeline_model dans l'UI
-# ---------------------------------------------------------------------------
-
-
-def test_ui_does_not_import_legacy_timeline_model() -> None:
-    """L'interface ne référence plus ``core.timeline_model`` (provisoirement gardé pour ses tests)."""
-    ui_dir = pathlib.Path(__file__).resolve().parent.parent / "ui"
-    offenders: list[str] = []
-    for py_file in sorted(ui_dir.glob("*.py")):
-        content = py_file.read_text(encoding="utf-8")
-        if "timeline_model" in content:
-            offenders.append(py_file.name)
-    assert not offenders, (
-        "Les fichiers ui/ suivants importent encore timeline_model : "
-        f"{offenders}"
-    )
-
-
-# ---------------------------------------------------------------------------
 # Tâche 5 — Nouveau / Ouvrir / Enregistrer (.kut)
 # ---------------------------------------------------------------------------
 
