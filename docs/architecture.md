@@ -150,6 +150,12 @@ renvoyée à la recréation.
    `core/process_supervisor.py`, jamais directement.
 8. **Plateformes** : pas de chemin en dur, pas de `os.name` ; passer par `core/platform_paths.py`. La CI tourne
    sous macOS, Windows et Linux (voir [stabilization-report.md](stabilization-report.md#ci)).
+9. **Petites tailles et clavier** : un panneau doit tenir à 1180×720 (le minimum déclaré d'un panneau ne dépasse pas celui
+   de sa zone, `MIN_SIZE`) ; ce qui dépasse défile ou cède (`ui/adaptive_layout.py`) ; la visionneuse et ses scopes sont dans
+   `ui/viewer_host.py` (les scopes cèdent d'abord). Dans l'espace de montage aucun bouton ne prend le focus au clic
+   (`Qt.TabFocus`, `ui/keyboard_navigation.py`) ; un dialogue a un seul bouton par défaut ; un bouton-icône de dialogue est
+   focalisable et nommé (`ui/i18n_accessibility.py`). Rejouer l'audit : `python -m tools.ui_audit` (voir
+   [ui-small-windows-and-keyboard.md](ui-small-windows-and-keyboard.md)).
 
 ## Vérifications de développement
 
