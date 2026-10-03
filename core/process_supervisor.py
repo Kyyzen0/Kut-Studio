@@ -317,8 +317,10 @@ def run_reaper(
     except Exception as error:  # noqa: BLE001 - le groupe doit être tué quoi qu'il arrive
         report.errors.append(str(error))
     if report.killed or report.spared or report.errors:
-        LOGGER.warning(
-            "Supervision : tube du parent fermé (parent mort) — %d enfant(s) arrêté(s), %d épargné(s) %s%s",
+        # Enfant encore enregistré à l'EOF : parent mort sans fermer (ou auto-contrôle du smoke test).
+        LOGGER.log(
+            logging.WARNING if report.spared or report.errors else logging.INFO,
+            "Supervision : gardien, tube du parent fermé — %d enfant(s) arrêté(s), %d épargné(s) %s%s",
             len(report.killed), len(report.spared),
             [f"{identity.pid}:{outcome.value}" for identity, outcome in report.spared],
             f" ; erreurs : {report.errors}" if report.errors else "",
@@ -691,7 +693,8 @@ class ProcessSupervisor:
         for registration in pending:
             if registration not in remaining:
                 self.release(registration)
-        LOGGER.info("Supervision : fermeture — %d processus enfant(s) arrêté(s)", killed)
+        if killed:
+            LOGGER.info("Supervision : fermeture — %d processus enfant(s) arrêté(s)", killed)
         if remaining:
             LOGGER.warning(
                 "Supervision : %d processus enfant(s) encore vivant(s) après la fermeture : %s",
