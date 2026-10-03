@@ -136,6 +136,9 @@ def test_probe_video_raises_when_ffprobe_is_missing(tmp_path: Path, monkeypatch)
     """Si ``ffprobe`` n'est pas dans le PATH, l'erreur est explicite."""
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"\x00")
+    # Un développeur (ou le job libass de la CI) peut désigner un ffprobe par ces variables : elles priment sur le PATH.
+    monkeypatch.delenv("KUT_STUDIO_FFPROBE", raising=False)
+    monkeypatch.delenv("KUT_STUDIO_FFMPEG_DIR", raising=False)
     monkeypatch.setattr("core.media_probe.shutil.which", lambda _: None)
 
     with pytest.raises(MediaProbeError, match="ffprobe"):

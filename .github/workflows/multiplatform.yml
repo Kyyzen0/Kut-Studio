@@ -95,3 +95,130 @@ jobs:
           name: Kut-Studio-${{ runner.os }}
           path: dist/
           if-no-files-found: error
+
+  # Couverture réelle des sous-titres (libass) sur macOS. Le FFmpeg Homebrew du job « macos-latest » ci-dessus
+  # n'a pas libass : les tests de sous-titres s'y sautent. Ce job installe ffmpeg-full (bouteille de
+  # homebrew-core, avec libass), l'expose à l'application et n'exécute que les tests marqués « libass ».
+  # KUT_STUDIO_REQUIRE_LIBASS=1 transforme le saut en échec : « vert » veut dire « libass testé », jamais
+  # « tout sauté ». Il est volontairement bloquant (pas de continue-on-error) ; choix, mesures à faire et
+  # stratégie de repli : docs/ci-libass.md. Aucune dépendance (« needs ») : il n'agit pas sur la matrice.
+  macos-libass:
+    name: macOS / libass (sous-titres)
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      KUT_STUDIO_REQUIRE_LIBASS: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Pas d'actions/cache sur Homebrew : les bouteilles pèsent ~200 Mo déjà compressées (gain nul face à
+      # ghcr.io) et un Cellar restauré est fragile. Le coût est la mise en place de ~100 formules : la durée
+      # de cette étape est écrite dans le résumé du job pour décider avec des mesures (docs/ci-libass.md).
+      - name: Install FFmpeg with libass (Homebrew ffmpeg-full)
+        run: |
+          started=$SECONDS
+          for attempt in 1 2 3; do
+            if brew install ffmpeg-full; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::brew install ffmpeg-full a échoué 3 fois"
+              exit 1
+            fi
+            echo "::warning::brew install ffmpeg-full a échoué (tentative $attempt sur 3), nouvel essai dans 20 s"
+            sleep 20
+          done
+          echo "Installation de ffmpeg-full : $((SECONDS - started)) s"
+          echo "- Installation de ffmpeg-full : $((SECONDS - started)) s" >> "$GITHUB_STEP_SUMMARY"
+
+      # ffmpeg-full est « keg-only » : il n'est pas lié dans /opt/homebrew/bin. L'application le trouve par
+      # KUT_STUDIO_FFMPEG / KUT_STUDIO_FFPROBE (core/tool_paths.py) ; le PATH sert aux tests qui lancent « ffmpeg ».
+      - name: Expose ffmpeg-full to the application
+        run: |
+          prefix="$(brew --prefix ffmpeg-full)"
+          if [ ! -x "$prefix/bin/ffmpeg" ] || [ ! -x "$prefix/bin/ffprobe" ]; then
+            echo "::error::ffmpeg ou ffprobe introuvable dans $prefix/bin"
+            exit 1
+          fi
+          {
+            echo "KUT_STUDIO_FFMPEG=$prefix/bin/ffmpeg"
+            echo "KUT_STUDIO_FFPROBE=$prefix/bin/ffprobe"
+          } >> "$GITHUB_ENV"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      # Pas de « cmd | grep -q » : grep quitte au premier résultat et ffmpeg reçoit SIGPIPE.
+      - name: Verify the application will use an FFmpeg with libass
+        run: |
+          echo "ffmpeg du PATH : $(command -v ffmpeg)"
+          version="$(ffmpeg -hide_banner -version)"
+          echo "$version" | head -n 2
+          buildconf="$(ffmpeg -hide_banner -buildconf)"
+          filters="$(ffmpeg -hide_banner -filters)"
+          if ! grep -Eq '(^|[[:space:]])--enable-libass([[:space:]]|$)' <<< "$buildconf"; then
+            echo "::error::ffmpeg -buildconf ne contient pas --enable-libass : ce FFmpeg n'utilise pas libass"
+            exit 1
+          fi
+          if ! grep -Eq '^ *[^ ]+ +subtitles +[^ ]+->' <<< "$filters"; then
+            echo "::error::le filtre « subtitles » est absent de ffmpeg -filters"
+            exit 1
+          fi
+          python - <<'EOF'
+          import os
+          import sys
+
+          from core.tool_paths import find_media_tool
+
+          resolved = find_media_tool("ffmpeg")
+          expected = os.path.realpath(os.environ["KUT_STUDIO_FFMPEG"])
+          print("ffmpeg résolu par l'application :", resolved)
+          if resolved is None or os.path.realpath(resolved) != expected:
+              print(f"::error::l'application ne résout pas ffmpeg-full ({expected}) mais {resolved}")
+              sys.exit(1)
+          EOF
+          {
+            echo "### FFmpeg des tests de sous-titres"
+            echo '```'
+            echo "$version" | head -n 2
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --timeout : le premier rendu libass construit le cache de polices (fontconfig), lent sur un runner neuf.
+      - name: Run subtitle tests (libass required)
+        run: python -m pytest -q -m libass -rs -p no:cacheprovider --timeout=300 --junitxml="$RUNNER_TEMP/libass-junit.xml"
+
+      # Défense en profondeur : même si la variable était retirée, un job où des tests sont sautés ou trop peu
+      # nombreux (marque perdue) ne doit pas rester vert.
+      - name: Check that libass was really exercised
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          MINIMUM_TESTS = 10  # 12 tests « libass » au moment de l'écriture ; à ajuster si on en retire volontairement
+          root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "libass-junit.xml")).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          totals = {key: sum(int(suite.get(key, 0)) for suite in suites) for key in ("tests", "skipped", "failures", "errors")}
+          line = ", ".join(f"{key}={value}" for key, value in totals.items())
+          print("Tests libass :", line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"- Tests libass : {line}\n")
+          if totals["skipped"] or totals["failures"] or totals["errors"] or totals["tests"] < MINIMUM_TESTS:
+              print(f"::error::libass n'a pas été exercé comme prévu ({line}, minimum {MINIMUM_TESTS} tests, aucun saut)")
+              sys.exit(1)
+          EOF
