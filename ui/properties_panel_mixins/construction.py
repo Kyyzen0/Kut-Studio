@@ -203,6 +203,7 @@ class ConstructionMixin:
         clip_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         clip_form.setSpacing(Spacing.xs)
         clip_form.setLabelAlignment(Qt.AlignLeft)
+        clip_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # « Aucun clip sélectionné » passe sous « Nom »
         self.clip_name = QLabel("Aucun clip sélectionné")
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")

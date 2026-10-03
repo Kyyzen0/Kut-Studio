@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.adaptive_layout import allow_shrinking
 from ui.design_system import Spacing
 from ui.theme import label_style
 
@@ -52,6 +53,7 @@ class AdvancedTransformEditor(QWidget):
         self.toggle.setArrowType(Qt.RightArrow)
         self.toggle.setStyleSheet("QToolButton { border: none; font-weight: 700; }")
         self.toggle.toggled.connect(self._on_toggled)
+        allow_shrinking(self.toggle, 120)  # « Transformation avancée » fixait la largeur minimale du groupe Mouvement
         layout.addWidget(self.toggle)
         self.body = QWidget()
         grid = QGridLayout(self.body)

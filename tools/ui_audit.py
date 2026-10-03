@@ -19,6 +19,12 @@ Ces constats sont **bloquants** : les tests de ``tests/test_ui_small_windows.py`
 Les contrôles « écrasés sous leur ``minimumSizeHint`` » sont seulement **informatifs** (``--verbose``) : un bouton-icône de
 taille fixe est une fausse alerte fréquente, il faut regarder la capture avant de corriger.
 
+``--dialogs`` audite le clavier des dialogues (``tests/test_ui_keyboard.py`` en rejoue les règles) :
+
+* ``keyboard`` : un contrôle que Tab n'atteint pas ;
+* ``default`` : un dialogue qui n'a pas exactement un bouton par défaut (Entrée) ;
+* ``unnamed`` : un bouton sans texte lisible ni nom accessible.
+
 Les fonctions de ce module sont aussi la boîte à outils des tests (``from tools.ui_audit import ...``).
 """
 

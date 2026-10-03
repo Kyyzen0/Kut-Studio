@@ -225,6 +225,60 @@ def test_declared_minimums_agree_with_the_panels():
     assert PropertiesPanel(lambda *_a: None, lambda *_a: None).minimumWidth() <= MIN_SIZE[PanelId.INSPECTOR]
 
 
+# --- l'outil d'audit lui-même ------------------------------------------------------------------------------------
+
+
+def test_audit_tool_replays_and_saves_one_capture_per_scenario(tmp_path):
+    """L'audit se rejoue à la main : ``python -m tools.ui_audit --out DIR`` (ici à 1180 × 720)."""
+    findings = audit.run_audit(((1180, 720),), out_dir=tmp_path)
+    assert _blocking(findings) == []
+    captures = sorted(path.name for path in tmp_path.glob("*.png"))
+    assert "1180x720-defaut.png" in captures
+    assert "1180x720-inspecteur-suivi.png" in captures
+    assert any(name.startswith("1180x720-bibliotheque-") for name in captures)
+
+
+def test_layouts_survive_20_percent_wider_fonts_at_the_smallest_size():
+    """Robustesse entre plateformes : les polices de Windows / Linux sont plus larges que celles de macOS.
+
+    Les tests ne comparent aucune taille absolue ; celui-ci simule des polices 20 % plus larges (``scale_fonts``) et exige
+    que rien ne soit coupé, débordant ou superposé à 1180 × 720, tous scénarios joués.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    before = app.styleSheet()
+    try:
+        findings = audit.run_audit(((1180, 720),), font_scale=1.2)
+    finally:
+        app.setStyleSheet(before)
+    assert _blocking(findings) == []
+
+
+def test_audit_font_scale_restarts_from_the_original_stylesheet(window_at):
+    """Régression de l'outil : l'agrandissement des polices se cumulait d'une fenêtre à l'autre."""
+    import re
+
+    from PySide6.QtWidgets import QApplication
+
+    window = window_at((1180, 720))
+    app = QApplication.instance()
+    base = app.property("_kut_audit_base_stylesheet") or app.styleSheet()
+
+    def sizes() -> list[int]:
+        return [int(n) for n in re.findall(r"font-size:\s*(\d+)px", app.styleSheet())]
+
+    try:
+        audit.scale_fonts(window, 1.5)
+        once = sizes()
+        audit.scale_fonts(window, 1.5)
+        assert sizes() == once  # même facteur, même résultat : pas de cumul
+        audit.scale_fonts(window, 1.0)
+        assert sizes() == [int(n) for n in re.findall(r"font-size:\s*(\d+)px", base)]
+    finally:
+        app.setStyleSheet(base)
+
+
 # --- fenêtres annexes ----------------------------------------------------------------------------------------
 
 
