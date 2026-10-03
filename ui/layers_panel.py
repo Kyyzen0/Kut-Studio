@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,8 @@ from PySide6.QtWidgets import (
 from core.graphics import GraphicType, ShapeKind
 from ui.design_system import Spacing
 from ui.theme import COLORS, label_style
+from ui import i18n
+from ui.i18n import translate
 
 ID_ROLE = Qt.UserRole + 1
 SPAN_ROLE = Qt.UserRole + 2
@@ -48,12 +51,12 @@ TYPE_GLYPHS = {
     GraphicType.NULL: "⊕",
 }
 
-SHAPE_CHOICES = (
-    (ShapeKind.RECTANGLE, "Rectangle"),
-    (ShapeKind.ROUNDED_RECTANGLE, "Rectangle arrondi"),
-    (ShapeKind.ELLIPSE, "Ellipse / cercle"),
-    (ShapeKind.LINE, "Ligne"),
-    (ShapeKind.POLYGON, "Polygone"),
+SHAPE_CHOICES = (  # (forme, clé i18n du libellé) : traduit à l'affichage, jamais à l'import
+    (ShapeKind.RECTANGLE, "mograph.shape.rectangle"),
+    (ShapeKind.ROUNDED_RECTANGLE, "mograph.shape.rounded"),
+    (ShapeKind.ELLIPSE, "mograph.shape.ellipse"),
+    (ShapeKind.LINE, "mograph.shape.line"),
+    (ShapeKind.POLYGON, "mograph.shape.polygon"),
 )
 
 
@@ -162,14 +165,15 @@ class LayersPanel(QWidget):
         layout.setSpacing(Spacing.xs)
 
         header = QHBoxLayout()
-        title = QLabel("CALQUES")
+        title = QLabel(translate("mograph.layers.title"))
+        self._title = title
         title.setStyleSheet(label_style(11, "muted_strong", 800))
         header.addWidget(title)
         self.breadcrumb = QLabel("")
         self.breadcrumb.setStyleSheet(label_style(11, "accent", 700))
         header.addWidget(self.breadcrumb, 1)
         self.exit_group_button = QToolButton()
-        self.exit_group_button.setText("↩ Sortir du groupe")
+        self.exit_group_button.setText(translate("mograph.layers.exit_group"))
         self.exit_group_button.clicked.connect(lambda: self.enter_group(""))
         self.exit_group_button.hide()
         header.addWidget(self.exit_group_button)
@@ -178,17 +182,17 @@ class LayersPanel(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(Spacing.xs)
         self.add_button = QToolButton()
-        self.add_button.setText("+ Ajouter")
+        self.add_button.setText(translate("mograph.layers.add_button"))
         self.add_button.setPopupMode(QToolButton.InstantPopup)
         self.add_button.setMenu(self._build_add_menu())
         toolbar.addWidget(self.add_button)
         self.group_button = QToolButton()
-        self.group_button.setText("Grouper")
-        self.group_button.setToolTip("Grouper les calques sélectionnés (Ctrl+G)")
+        self.group_button.setText(translate("menu.item.group_layers"))
+        self.group_button.setToolTip(translate("mograph.layers.group_tooltip"))
         self.group_button.clicked.connect(lambda: self.group_requested.emit(self.selected_ids()))
         toolbar.addWidget(self.group_button)
         self.presets_button = QToolButton()
-        self.presets_button.setText("Presets")
+        self.presets_button.setText(translate("mograph.layers.presets"))
         self.presets_button.setPopupMode(QToolButton.InstantPopup)
         self.presets_menu = QMenu(self.presets_button)
         self.presets_button.setMenu(self.presets_menu)
@@ -199,7 +203,7 @@ class LayersPanel(QWidget):
         self.tree = _LayerTree()
         self.tree.setObjectName("layers_tree")
         self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels(["◉", "▣", "Calque", "Parent", "Durée"])
+        self.tree.setHeaderLabels(["◉", "▣", translate("mograph.layers.col_layer"), translate("mograph.layers.col_parent"), translate("field.duration")])
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setDragDropMode(QAbstractItemView.InternalMove)
         self.tree.setDragEnabled(True)
@@ -229,29 +233,63 @@ class LayersPanel(QWidget):
         self.tree.move_requested.connect(self.move_requested.emit)
         layout.addWidget(self.tree, 1)
 
-        self.empty_hint = QLabel(
-            "Aucun calque. Ajoutez un texte ou une forme : il apparaît dans le viewer, "
-            "où vous pouvez le déplacer directement."
-        )
+        self.empty_hint = QLabel(translate("mograph.layers.empty"))
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setStyleSheet(label_style(11, "muted", 500))
         layout.addWidget(self.empty_hint)
+        callback = self._on_language_changed
+        i18n.subscribe(callback)
+        self.destroyed.connect(lambda *_: i18n.unsubscribe(callback))
+
+    # -- langue --------------------------------------------------------------------------------
+
+    def _on_language_changed(self, _code: str) -> None:
+        self.retranslate()
+
+    def retranslate(self) -> None:
+        """Textes du panneau dans la langue courante (changement de langue à chaud)."""
+        self._title.setText(translate("mograph.layers.title"))
+        self.exit_group_button.setText(translate("mograph.layers.exit_group"))
+        self.add_button.setText(translate("mograph.layers.add_button"))
+        previous_menu = self.add_button.menu()
+        self.add_button.setMenu(self._build_add_menu())
+        if previous_menu is not None:
+            previous_menu.deleteLater()
+        self.group_button.setText(translate("menu.item.group_layers"))
+        self.group_button.setToolTip(translate("mograph.layers.group_tooltip"))
+        self.presets_button.setText(translate("mograph.layers.presets"))
+        self.set_presets(self._presets)
+        self.tree.setHeaderLabels(
+            ["◉", "▣", translate("mograph.layers.col_layer"), translate("mograph.layers.col_parent"),
+             translate("field.duration")]
+        )
+        self.empty_hint.setText(translate("mograph.layers.empty"))
+        names = {node.clip_id: node.name for node in self._nodes}
+        iterator = QTreeWidgetItemIterator(self.tree)
+        while iterator.value() is not None:
+            item = iterator.value()
+            item.setToolTip(COL_VISIBLE, translate("tracks.visible_tooltip"))
+            item.setToolTip(COL_LOCK, translate("tracks.lock_tooltip"))
+            name = names.get(item.data(COL_NAME, ID_ROLE))
+            if name is not None:
+                item.setToolTip(COL_NAME, translate("mograph.layers.rename_tooltip", name=name))
+            iterator += 1
 
     # -- menus ---------------------------------------------------------------------------------
 
     def _build_add_menu(self) -> QMenu:
         menu = QMenu(self)
-        menu.addAction("Texte").triggered.connect(lambda: self.add_requested.emit("text", ""))
-        shapes = menu.addMenu("Forme")
+        menu.addAction(translate("common.text")).triggered.connect(lambda: self.add_requested.emit("text", ""))
+        shapes = menu.addMenu(translate("menu.item.add_shape_layer"))
         for kind, label in SHAPE_CHOICES:
-            shapes.addAction(label).triggered.connect(
+            shapes.addAction(translate(label)).triggered.connect(
                 lambda _checked=False, value=kind.value: self.add_requested.emit("shape", value)
             )
-        menu.addAction("Aplat de couleur").triggered.connect(lambda: self.add_requested.emit("solid", ""))
-        menu.addAction("Image…").triggered.connect(self.import_image_requested.emit)
+        menu.addAction(translate("mograph.layers.solid")).triggered.connect(lambda: self.add_requested.emit("solid", ""))
+        menu.addAction(translate("mograph.layers.image")).triggered.connect(self.import_image_requested.emit)
         menu.addSeparator()
-        menu.addAction("Contrôleur (null)").triggered.connect(lambda: self.add_requested.emit("null", ""))
-        menu.addAction("Calque d'effets (adjustment)").triggered.connect(
+        menu.addAction(translate("menu.item.add_null_layer")).triggered.connect(lambda: self.add_requested.emit("null", ""))
+        menu.addAction(translate("menu.item.add_adjustment_layer")).triggered.connect(
             lambda: self.add_requested.emit("adjustment", "")
         )
         return menu
@@ -269,7 +307,7 @@ class LayersPanel(QWidget):
                 lambda _checked=False, value=preset: self.preset_apply_requested.emit(value)
             )
         self.presets_menu.addSeparator()
-        save = self.presets_menu.addAction("Enregistrer la sélection comme preset…")
+        save = self.presets_menu.addAction(translate("menu.item.save_preset"))
         save.triggered.connect(lambda: self.save_preset_requested.emit(self.selected_ids()))
 
     def _show_context_menu(self, point) -> None:
@@ -281,9 +319,9 @@ class LayersPanel(QWidget):
             if clip_id not in ids:
                 ids = [clip_id]
             node = next((n for n in self._nodes if n.clip_id == clip_id), None)
-            menu.addAction("Renommer").triggered.connect(lambda: self.tree.editItem(item, COL_NAME))
-            parent_menu = menu.addMenu("Parent")
-            none = parent_menu.addAction("Aucun")
+            menu.addAction(translate("tracks.rename_tooltip")).triggered.connect(lambda: self.tree.editItem(item, COL_NAME))
+            parent_menu = menu.addMenu(translate("mograph.layers.col_parent"))
+            none = parent_menu.addAction(translate("common.none"))
             none.triggered.connect(lambda: self.parent_requested.emit(clip_id, ""))
             choices = (
                 self.parent_choices_provider(clip_id)
@@ -298,30 +336,30 @@ class LayersPanel(QWidget):
                     lambda _checked=False, value=candidate_id: self.parent_requested.emit(clip_id, value)
                 )
             menu.addSeparator()
-            menu.addAction("Grouper").triggered.connect(lambda: self.group_requested.emit(ids))
+            menu.addAction(translate("menu.item.group_layers")).triggered.connect(lambda: self.group_requested.emit(ids))
             if node is not None and node.is_group:
-                menu.addAction("Dégrouper").triggered.connect(lambda: self.ungroup_requested.emit(clip_id))
-                menu.addAction("Entrer dans le groupe").triggered.connect(lambda: self.enter_group(clip_id))
-            menu.addAction("Dupliquer").triggered.connect(lambda: self.duplicate_requested.emit(ids))
+                menu.addAction(translate("mograph.layers.ungroup")).triggered.connect(lambda: self.ungroup_requested.emit(clip_id))
+                menu.addAction(translate("mograph.layers.enter_group")).triggered.connect(lambda: self.enter_group(clip_id))
+            menu.addAction(translate("action.duplicate")).triggered.connect(lambda: self.duplicate_requested.emit(ids))
             menu.addSeparator()
-            menu.addAction("Copier transform, masques et effets").triggered.connect(
+            menu.addAction(translate("menu.item.copy_attributes")).triggered.connect(
                 lambda: self.copy_attributes_requested.emit(clip_id)
             )
-            menu.addAction("Coller les attributs…").triggered.connect(
+            menu.addAction(translate("menu.item.paste_attributes")).triggered.connect(
                 lambda: self.paste_attributes_requested.emit(ids)
             )
             if node is not None and not node.is_group and node.type not in (GraphicType.NULL, GraphicType.ADJUSTMENT):
-                blur = menu.addAction("Flou de mouvement")
+                blur = menu.addAction(translate("mograph.motion_blur"))
                 blur.setCheckable(True)
                 blur.setChecked(bool(self._motion_blur.get(clip_id)))
                 blur.triggered.connect(lambda checked: self.motion_blur_toggled.emit(clip_id, checked))
-            menu.addAction("Enregistrer comme preset…").triggered.connect(
+            menu.addAction(translate("mograph.layers.save_preset")).triggered.connect(
                 lambda: self.save_preset_requested.emit(ids)
             )
             menu.addSeparator()
-            menu.addAction("Supprimer").triggered.connect(lambda: self.delete_requested.emit(ids))
+            menu.addAction(translate("action.delete")).triggered.connect(lambda: self.delete_requested.emit(ids))
         else:
-            menu.addMenu(self._build_add_menu()).setTitle("Ajouter")
+            menu.addMenu(self._build_add_menu()).setTitle(translate("common.add"))
         menu.exec(self.tree.viewport().mapToGlobal(point))
 
     # -- contenu ---------------------------------------------------------------------------------
@@ -368,11 +406,11 @@ class LayersPanel(QWidget):
                 item.setData(COL_NAME, ID_ROLE, node.clip_id)
                 item.setData(COL_NAME, Qt.UserRole + 3, node.type.value)
                 item.setText(COL_VISIBLE, "●" if node.visible else "○")
-                item.setToolTip(COL_VISIBLE, "Afficher / masquer")
+                item.setToolTip(COL_VISIBLE, translate("tracks.visible_tooltip"))
                 item.setText(COL_LOCK, "■" if node.locked else "□")
-                item.setToolTip(COL_LOCK, "Verrouiller / déverrouiller")
+                item.setToolTip(COL_LOCK, translate("tracks.lock_tooltip"))
                 item.setText(COL_NAME, f"{TYPE_GLYPHS.get(node.type, '•')}  {node.name}")
-                item.setToolTip(COL_NAME, f"{node.name} — double-clic pour renommer")
+                item.setToolTip(COL_NAME, translate("mograph.layers.rename_tooltip", name=node.name))
                 if node.parent_id:
                     item.setText(COL_PARENT, f"↳ {names.get(node.parent_id, node.parent_id)}")
                 item.setData(COL_TIME, SPAN_ROLE, (node.start, node.end))

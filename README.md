@@ -199,15 +199,26 @@ Tests fail if a command has no translation, no handler, or a default that confli
 python -m pip install -r requirements-dev.txt
 python -m pytest -q -n auto --timeout=600   # parallel; drop -n auto to run serially
 python -m ruff check .
-python -m mypy                              # core/ ; known debt is listed in pyproject.toml
+python -m mypy                              # core/ ; known debt is listed in pyproject.toml (it can only shrink)
+python -m tools.i18n_audit --summary        # hard-coded UI texts (the baseline is empty: a new one fails the tests)
+python -m tools.perf.hardware_validation    # tests YOUR GPU encoders: mini export read back with ffprobe
 ```
 
-The suite (nearly 3,000 tests) covers the project model, timeline, `.kut`
+The suite (over 3,200 tests) covers the project model, timeline, `.kut`
 I/O, render plan, color, scopes, audio, UI integration and the FFmpeg export
 pipeline, including parity tests that render with a real FFmpeg and read back
 pixels, and a fake FFmpeg for failure paths. On a headless machine, set
 `QT_QPA_PLATFORM=offscreen`. Where each piece of information lives, and which
 test guards it: [docs/architecture.md](docs/architecture.md).
+
+Some tests depend on what the machine has and **skip with their reason** instead of passing
+vacuously (`pytest -rs` lists them): subtitle rendering needs an FFmpeg built with libass
+(`pytest -m libass`; `KUT_STUDIO_REQUIRE_LIBASS=1` turns the skip into a failure, as the
+`macos-libass` CI job does — see [docs/ci-libass.md](docs/ci-libass.md)), and each hardware encoder
+(VideoToolbox, NVENC, Quick Sync, AMF, VAAPI) is validated only where it exists
+(`KUT_STUDIO_REQUIRE_HARDWARE=nvenc` makes its absence a failure — see
+[docs/hardware-encoding.md](docs/hardware-encoding.md)). FFmpeg children are killed with the
+application even after `kill -9`: [docs/process-supervision.md](docs/process-supervision.md).
 
 ## 🛣️ Roadmap
 
@@ -386,10 +397,14 @@ Les tests échouent si une commande n'a ni traduction, ni fonction, ou si son d�
 python -m pip install -r requirements-dev.txt
 python -m pytest -q -n auto --timeout=600   # en parallèle ; retirez -n auto pour l’exécution séquentielle
 python -m ruff check .
-python -m mypy                              # core/ ; la dette connue est listée dans pyproject.toml
+python -m mypy                              # core/ ; la dette connue est listée dans pyproject.toml (elle ne peut que diminuer)
+python -m tools.i18n_audit --summary        # textes d’interface en dur (baseline vide : un nouveau fait échouer les tests)
+python -m tools.perf.hardware_validation    # teste VOS encodeurs GPU : mini export relu avec ffprobe
 ```
 
-La suite (près de 3 000 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).
+La suite (plus de 3 200 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).
+
+Certains tests dépendent de la machine et **se sautent avec leur raison** au lieu de passer à vide (`pytest -rs` les liste) : le rendu des sous-titres exige un FFmpeg compilé avec libass (`pytest -m libass` ; `KUT_STUDIO_REQUIRE_LIBASS=1` transforme le saut en échec, comme le fait le job de CI `macos-libass` — voir [docs/ci-libass.md](docs/ci-libass.md)), et chaque encodeur matériel (VideoToolbox, NVENC, Quick Sync, AMF, VAAPI) n’est validé que là où il existe (`KUT_STUDIO_REQUIRE_HARDWARE=nvenc` rend son absence bloquante — voir [docs/hardware-encoding.md](docs/hardware-encoding.md)). Les processus FFmpeg meurent avec l’application, même après un `kill -9` : [docs/process-supervision.md](docs/process-supervision.md).
 
 ## 🛣️ Feuille de route
 

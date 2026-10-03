@@ -82,10 +82,10 @@ class AudioMixin:
         try:
             service.set_track_role(self.project, track.id, TrackRole(role))
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             self.mixer_panel.refresh_track(track)
             return
-        self._record_audio_change("Modifier le rôle de la piste")
+        self._record_audio_change(i18n.translate("history.audio.track_role"))
 
     def on_track_automation_point_added(
         self, track_id: str, time_seconds: float,
@@ -105,9 +105,9 @@ class AudioMixin:
                 self.project, track.id, time_seconds, gain_db, fade_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Ajouter un point d'automation")
+        self._record_audio_change(i18n.translate("history.audio.automation_add"))
 
     def on_track_automation_point_removed(
         self, track_id: str, time_seconds: float
@@ -125,9 +125,9 @@ class AudioMixin:
                 self.project, track.id, time_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Supprimer un point d'automation")
+        self._record_audio_change(i18n.translate("history.audio.automation_remove"))
 
     def on_track_automation_point_updated(
         self, track_id: str, time_seconds: float,
@@ -147,9 +147,9 @@ class AudioMixin:
                 gain_db=gain_db, fade_seconds=fade_seconds,
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Modifier un point d'automation")
+        self._record_audio_change(i18n.translate("history.audio.automation_edit"))
 
     def on_ducking_sidechain_added(
         self, music_track_id: str, voice_track_id: str,
@@ -173,9 +173,9 @@ class AudioMixin:
                 config=DuckingConfig(),
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Ajouter un ducking")
+        self._record_audio_change(i18n.translate("history.audio.ducking_add"))
 
     def on_ducking_sidechain_removed(self, sidechain_id: str) -> None:
         from core.audio_automation import (
@@ -186,9 +186,9 @@ class AudioMixin:
         try:
             service.remove_ducking_sidechain(self.project, sidechain_id)
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Supprimer un ducking")
+        self._record_audio_change(i18n.translate("history.audio.ducking_remove"))
 
     def on_ducking_config_changed(
         self, sidechain_id: str,
@@ -210,9 +210,9 @@ class AudioMixin:
             )
             service.update_ducking_config(self.project, sidechain_id, config)
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, "Mixage", str(exc))
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
-        self._record_audio_change("Modifier le ducking")
+        self._record_audio_change(i18n.translate("history.audio.ducking_edit"))
 
     def on_track_pan_changed(self, track_id: str, value: float) -> None:
         track = self._find_audio_track(track_id)
@@ -400,9 +400,9 @@ class AudioMixin:
                 self.project, clip_id, AudioEffectType(effect_type)
             )
         except (KeyError, ValueError) as exc:
-            QMessageBox.warning(self, "Effet audio", str(exc))
+            QMessageBox.warning(self, i18n.translate("dialog.title.audio_effect"), str(exc))
             return
-        self._record_history("Ajouter un effet audio")
+        self._record_history(i18n.translate("history.audio.effect_add"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_audio_effect_removed(
@@ -417,7 +417,7 @@ class AudioMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer un effet audio")
+        self._record_history(i18n.translate("history.audio.effect_remove"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_audio_effect_moved(
@@ -432,7 +432,7 @@ class AudioMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Réordonner un effet audio")
+        self._record_history(i18n.translate("history.audio.effect_move"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_audio_effect_enabled_changed(
@@ -447,7 +447,7 @@ class AudioMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Modifier un effet audio")
+        self._record_history(i18n.translate("history.audio.effect_edit"))
         self._refresh_effects_after_change(clip_id)
 
     def on_clip_audio_effect_parameter_changed(
@@ -462,5 +462,5 @@ class AudioMixin:
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Modifier un effet audio")
+        self._record_history(i18n.translate("history.audio.effect_edit"))
         self._refresh_effects_after_change(clip_id)

@@ -15,6 +15,7 @@ import pytest
 from PySide6.QtWidgets import QMenu
 
 from core.workspace_state import DockArea, PanelId
+from ui import i18n
 from ui.main_window import MainWindow
 
 
@@ -473,3 +474,73 @@ def test_no_two_actions_share_the_same_shortcut(window):
             by_shortcut[sequence.toString()].append(action.text())
     duplicates = {key: names for key, names in by_shortcut.items() if len(names) > 1}
     assert duplicates == {}
+
+
+# ---------------------------------------------------------------------------
+# Langue : noms des panneaux, menu d'options, fenêtres détachées
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def language_reset():
+    """À demander **avant** ``window`` : ``reset_for_tests`` retire les abonnés, ceux de la fenêtre compris."""
+    i18n.reset_for_tests()
+    yield
+    i18n.reset_for_tests()
+
+
+def _flat_labels(manager, panel):
+    return [a.text() for a in manager.build_actions(panel) if not isinstance(a, QMenu) and not a.isSeparator()]
+
+
+@pytest.mark.parametrize(("language", "detach", "attach", "move_to", "media", "left_area"), [
+    ("en", "Detach panel", "Attach", "Move to…", "Media", "Left area"),
+    ("es", "Desacoplar panel", "Acoplar", "Mover a…", "Medios", "Zona izquierda"),
+    ("fr", "Détacher le panneau", "Rattacher", "Déplacer vers…", "Médias", "Zone gauche"),
+])
+def test_panel_menus_and_floating_windows_follow_the_language(
+    language_reset, window, language, detach, attach, move_to, media, left_area
+):
+    """Menu d'options des panneaux, noms du menu Fenêtre et fenêtre détachée suivent la langue à chaud."""
+    manager = window.workspace
+    manager.float_panel(PanelId.TIMELINE)
+    manager.dock_panel(PanelId.TIMELINE)
+    manager.build_actions(PanelId.MEDIA)                  # actions mises en cache dans la langue d'origine
+    i18n.set_language("es" if language == "en" else "en")  # une langue autre que la cible, puis la cible
+    window._retranslate_ui()
+    i18n.set_language(language)
+    with i18n.strict_translations():
+        window._retranslate_ui()
+    assert detach in _flat_labels(manager, PanelId.MEDIA)
+    move_menu = next(a for a in manager.build_actions(PanelId.MEDIA) if isinstance(a, QMenu))
+    assert move_menu.title() == move_to
+    assert left_area in [a.text() for a in move_menu.actions()]
+    panel_names = [a.text() for a in window.window_menu.findChild(QMenu, "panels_menu").actions()]
+    assert media in panel_names
+    manager.float_panel(PanelId.TIMELINE)
+    assert attach in _flat_labels(manager, PanelId.TIMELINE)
+    floating = manager._windows[PanelId.TIMELINE]
+    assert floating.windowTitle().startswith("Kut-Studio — ")
+    assert floating._dock_button.toolTip() == i18n.translate("workspace.dock_tooltip")
+
+
+def test_a_floating_window_is_retranslated_while_it_is_open(language_reset, window):
+    manager = window.workspace
+    manager.float_panel(PanelId.MIXER)
+    floating = manager._windows[PanelId.MIXER]
+    assert floating.windowTitle() == "Kut-Studio — Mixeur"
+    i18n.set_language("en")
+    assert floating.windowTitle() == "Kut-Studio — Mixer"
+    assert floating._options._button.toolTip() == "Mixer panel options"
+    assert floating._title_label.text() == "Mixer"
+
+
+def test_saving_a_workspace_asks_and_confirms_in_the_current_language(language_reset, window, monkeypatch):
+    texts = []
+    monkeypatch.setattr("ui.main_window_mixins.workspace_actions.QInputDialog.getText",
+                        lambda _parent, title, label, *a, **k: (texts.append((title, label)) or ("Mon espace", True)))
+    monkeypatch.setattr("ui.main_window.QMessageBox.information",
+                        lambda _parent, title, message, *a, **k: texts.append((title, message)))
+    i18n.set_language("en")
+    window.save_workspace_as()
+    assert texts == [("Workspace", "Workspace name:"), ("Workspace", "Layout saved as “Mon espace”.")]

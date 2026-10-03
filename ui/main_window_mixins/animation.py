@@ -150,7 +150,7 @@ class AnimationMixin:
         clip = find_clip(self.project, clip_id)
         set_animation_enabled(self.project, clip_id, property_id, enabled, self._local_playhead(clip))
         self.set_active_animation_property(property_id)
-        label = "Activer l'animation" if enabled else "Désactiver l'animation"
+        label = i18n.translate("animation.menu.enable") if enabled else i18n.translate("history.animation.disable")
         self._after_animation_edit(clip_id, label)
 
     def on_keyframe_navigation(self, property_id: str | None, direction: int) -> bool:
@@ -175,7 +175,7 @@ class AnimationMixin:
             return 0
         changed = set_interpolation(self.project, refs, interpolation)
         if changed:
-            self._after_animation_edit(next(iter(refs)).clip_id, "Changer l'interpolation")
+            self._after_animation_edit(next(iter(refs)).clip_id, i18n.translate("history.keyframes.interpolation"))
         return changed
 
     def _keyframes_for_command(self, property_id: str | None = None) -> list[KeyframeRef]:
@@ -209,7 +209,7 @@ class AnimationMixin:
         props = self._command_properties(clip)
         for pid in props:
             add_keyframe(self.project, clip.id, pid, local)
-        self._after_animation_edit(clip.id, "Ajouter une image-clé")
+        self._after_animation_edit(clip.id, i18n.translate("history.keyframes.add"))
         return len(props)
 
     def _snap_local(self, clip, local: float) -> float:
@@ -225,7 +225,7 @@ class AnimationMixin:
         clip = find_clip(self.project, refs[0].clip_id)
         count = remove_keyframes(self.project, refs, local_time=self._local_playhead(clip))
         self.set_keyframe_selection(set())
-        self._after_animation_edit(refs[0].clip_id, "Supprimer une image-clé")
+        self._after_animation_edit(refs[0].clip_id, i18n.translate("history.keyframes.remove"))
         return count
 
     def select_all_keyframes(self) -> int:
@@ -267,7 +267,7 @@ class AnimationMixin:
                                   target_property=target)
         if created:
             self.set_keyframe_selection(created)
-            self._after_animation_edit(clip.id, "Coller des images-clés")
+            self._after_animation_edit(clip.id, i18n.translate("history.keyframes.paste"))
         return len(created)
 
     def _show_animation_message(self, text: str) -> None:
@@ -318,7 +318,7 @@ class AnimationMixin:
         if not refs or abs(delta_seconds) < 1e-9:
             return
         move_keyframes(self.project, refs, float(delta_seconds), fps=float(self.project.fps or 30.0))
-        self._after_animation_edit(refs[0].clip_id, "Déplacer des images-clés")
+        self._after_animation_edit(refs[0].clip_id, i18n.translate("history.keyframes.move"))
 
     def on_graph_edit(self, label: str, clip_id: str, *, record: bool) -> None:
         """Le Graph Editor a modifié le projet ; ``record`` à la fin d'un geste."""
@@ -361,5 +361,5 @@ class AnimationMixin:
             return False
         removed = remove_keyframe_at(self.project, clip.id, property_id, self._local_playhead(clip))
         if removed:
-            self._after_animation_edit(clip.id, "Supprimer une image-clé")
+            self._after_animation_edit(clip.id, i18n.translate("history.keyframes.remove"))
         return removed

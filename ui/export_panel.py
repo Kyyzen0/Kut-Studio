@@ -43,11 +43,16 @@ _RESOLUTION_CHOICES = [
     ("1080 × 1920 (Vertical)", (1080, 1920)),
 ]
 
-# Qualité du preset « Custom » : (CRF, débit audio).
+# Qualité du preset « Custom » : identifiant -> (CRF, débit audio) ; le libellé affiché est traduit (voir ci-dessous).
 _QUALITY_PRESETS = {
-    "Élevée": (18, "192k"),
-    "Standard": (23, "128k"),
-    "Basse": (28, "96k"),
+    "high": (18, "192k"),
+    "standard": (23, "128k"),
+    "low": (28, "96k"),
+}
+_QUALITY_LABEL_KEYS = {
+    "high": "render.export.quality.high",
+    "standard": "render.export.quality.standard",
+    "low": "render.export.quality.low",
 }
 
 
@@ -99,18 +104,19 @@ class ExportPanel(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        self.title_label = QLabel("EXPORT DU PROJET")
+        self.title_label = QLabel(i18n.translate("render.export.title"))
         self.title_label.setStyleSheet(label_style(13, "muted", 700))
         close_button = QPushButton("×")
+        self.close_button = close_button
         close_button.setFixedSize(30, 30)
-        close_button.setToolTip("Fermer l'export")
+        close_button.setToolTip(i18n.translate("render.export.close_tooltip"))
         close_button.clicked.connect(self.close_requested)
         header.addWidget(self.title_label)
         header.addStretch()
         header.addWidget(close_button)
         layout.addLayout(header)
 
-        self.subtitle_label = QLabel("Préparez les paramètres de sortie de votre montage.")
+        self.subtitle_label = QLabel(i18n.translate("render.export.subtitle"))
         self.subtitle_label.setStyleSheet(label_style(13, "text", 500))
         self.subtitle_label.setWordWrap(True)
         layout.addWidget(self.subtitle_label)
@@ -149,8 +155,9 @@ class ExportPanel(QWidget):
         for label, resolution in _RESOLUTION_CHOICES:
             self.resolution_combo.addItem(label, userData=resolution)
         self.quality_combo = QComboBox()
-        self.quality_combo.addItems(list(_QUALITY_PRESETS.keys()))
-        self.quality_combo.setCurrentText("Standard")
+        for quality_id in _QUALITY_PRESETS:
+            self.quality_combo.addItem(i18n.translate(_QUALITY_LABEL_KEYS[quality_id]), quality_id)
+        self.quality_combo.setCurrentIndex(self.quality_combo.findData("standard"))
         self.fps_combo = QComboBox()
         self.fps_combo.addItems(["24", "25", "30", "60"])
         self.fps_combo.setCurrentText("30")
@@ -254,6 +261,11 @@ class ExportPanel(QWidget):
 
     def retranslate(self) -> None:
         tr = i18n.translate
+        self.title_label.setText(tr("render.export.title"))
+        self.subtitle_label.setText(tr("render.export.subtitle"))
+        self.close_button.setToolTip(tr("render.export.close_tooltip"))
+        for index in range(self.quality_combo.count()):
+            self.quality_combo.setItemText(index, tr(_QUALITY_LABEL_KEYS[self.quality_combo.itemData(index)]))
         self.preset_label.setText(tr("render.export.preset"))
         self.encoder_label.setText(tr("render.export.encoder"))
         self._rebuild_encoder_options()
@@ -282,7 +294,7 @@ class ExportPanel(QWidget):
             return get_preset(preset_id) or default_preset()
         export_format = self.format_combo.currentData()
         width, height = self.resolution_combo.currentData()
-        crf, audio_bitrate = _QUALITY_PRESETS[self.quality_combo.currentText()]
+        crf, audio_bitrate = _QUALITY_PRESETS[self.quality_combo.currentData()]
         return custom_preset(
             container=export_format.container,
             video_codec=export_format.codec,

@@ -29,8 +29,14 @@ from PySide6.QtWidgets import (
 
 from core.workspace_state import FLOATING_TITLEBAR_SIZE, PanelId
 from ui.design_system import Spacing
+from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import COLORS, label_style
+
+
+def panel_label(panel: PanelId) -> str:
+    """Nom du panneau dans la langue courante (``PanelId.label()`` reste le nom français du cœur)."""
+    return translate(f"workspace.panel.{panel.value}")
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +65,7 @@ class PanelOptionsBar(QWidget):
         layout.setSpacing(0)
         self._button = IconButton(
             icon=IconName.MORE,
-            tooltip=f"Options du panneau {panel.label()}",
+            tooltip=translate("workspace.options_tooltip", panel=panel_label(panel)),
             size=24,
         )
         self._button.setObjectName("panelOptionsButton")
@@ -69,6 +75,10 @@ class PanelOptionsBar(QWidget):
         # panneau, elle ne doit pas hériter de la taille par défaut
         # d'un QWidget (100 px), sinon elle déborde du panneau.
         self.setFixedSize(24, 24)
+
+    def retranslate(self) -> None:
+        """Infobulle du bouton dans la langue courante."""
+        self._button.setToolTip(translate("workspace.options_tooltip", panel=panel_label(self._panel)))
 
     def set_actions(self, actions: list) -> None:
         """Remplit le menu d'actions (rechargé à chaque ouverture).
@@ -172,6 +182,10 @@ class PanelHost(QWidget):
         if self.manager is not None:
             self._options.set_actions(self.manager.build_actions(self.panel))
 
+    def retranslate(self) -> None:
+        """Textes de l'hôte dans la langue courante (après un changement de langue)."""
+        self._options.retranslate()
+
     def set_options_visible(self, visible: bool) -> None:
         """Affiche ou masque la barre d'options (au survol)."""
         if visible and not self._options.isVisible():
@@ -229,7 +243,7 @@ class PanelWindow(QWidget):
         self.manager = manager
         self._content = content
         self.setObjectName(f"panelWindow_{panel.value}")
-        self.setWindowTitle(f"Kut-Studio — {panel.label()}")
+        self.setWindowTitle(f"Kut-Studio — {panel_label(panel)}")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
             f"QWidget#panelWindow_{panel.value} {{"
@@ -252,16 +266,18 @@ class PanelWindow(QWidget):
         title_layout.setContentsMargins(Spacing.md, 0, Spacing.sm, 0)
         title_layout.setSpacing(Spacing.sm)
 
-        title = QLabel(panel.label())
+        title = QLabel(panel_label(panel))
+        self._title_label = title
         title.setStyleSheet(label_style(11, "muted_strong", 700))
         title_layout.addWidget(title)
         title_layout.addStretch(1)
 
         dock_button = IconButton(
             icon=IconName.PANEL_DOCK,
-            tooltip="Rattacher à la fenêtre principale",
+            tooltip=translate("workspace.dock_tooltip"),
             size=24,
         )
+        self._dock_button = dock_button
         dock_button.setObjectName("floatingDockButton")
         dock_button.clicked.connect(self._on_dock_requested)
         title_layout.addWidget(dock_button)
@@ -283,6 +299,13 @@ class PanelWindow(QWidget):
     def refresh_actions(self) -> None:
         if self.manager is not None:
             self._options.set_actions(self.manager.build_actions(self.panel))
+
+    def retranslate(self) -> None:
+        """Titre et infobulles de la fenêtre détachée dans la langue courante."""
+        self.setWindowTitle(f"Kut-Studio — {panel_label(self.panel)}")
+        self._title_label.setText(panel_label(self.panel))
+        self._dock_button.setToolTip(translate("workspace.dock_tooltip"))
+        self._options.retranslate()
 
     def _on_dock_requested(self) -> None:
         if self.manager is not None:

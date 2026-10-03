@@ -132,7 +132,7 @@ class DragToolsMixin:
 
     def preview_slip(self, widget: ClipWidget, delta: float) -> None:
         self._slip_delta = delta
-        widget.duration_label.setText(f"slip {delta:+.2f}s")
+        widget.duration_label.setText(translate("timeline.slip_preview", delta=format(delta, '+.2f')))
 
     def preview_slide(self, widget: ClipWidget, new_start: float) -> None:
         widget.pending_start = new_start
@@ -188,11 +188,11 @@ class DragToolsMixin:
         if clip_id not in self.selected_clip_ids:
             self.select_clip(clip_id)
         menu = QMenu(self)
-        cut = menu.addAction("Couper au playhead")
-        duplicate = menu.addAction("Dupliquer")
-        toggle = menu.addAction("Activer / désactiver")
-        ripple = menu.addAction("Supprimer et refermer")
-        remove = menu.addAction("Supprimer")
+        cut = menu.addAction(translate("timeline.menu.cut"))
+        duplicate = menu.addAction(translate("action.duplicate"))
+        toggle = menu.addAction(translate("timeline.menu.toggle"))
+        ripple = menu.addAction(translate("timeline.menu.ripple_delete"))
+        remove = menu.addAction(translate("action.delete"))
         menu.addSeparator()
         nest = menu.addAction(translate("sequence.action.nest_selection"))
         view = self.find_view_by_id(clip_id)

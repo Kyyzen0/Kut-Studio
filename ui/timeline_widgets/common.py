@@ -8,11 +8,11 @@ from ui.design_system import Iconography
 from ui.theme import ThemePalette
 
 
-_TRACK_TYPE_LABELS = {
-    "video": "Vidéo",
-    "audio": "Audio",
-    "subtitle": "Sous-titres",
-    "graphics": "Graphiques",
+_TRACK_TYPE_LABELS = {  # type de piste -> clé i18n du libellé (traduit à l'affichage)
+    "video": "tracks.add_video",
+    "audio": "tracks.add_audio",
+    "subtitle": "tracks.add_subtitle",
+    "graphics": "rail.graphics",
 }
 
 _CONTENT_TOP = 8

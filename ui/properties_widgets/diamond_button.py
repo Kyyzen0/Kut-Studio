@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS
+from ui.i18n import translate
 
 
 class _DiamondButton(QToolButton):
@@ -29,10 +30,7 @@ class _DiamondButton(QToolButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(22, 22)
         self.animated = False
-        self.setToolTip(
-            f"Image-clé « {property_name} » : clic pour ajouter ou retirer, "
-            "clic droit pour plus d'options"
-        )
+        self.setToolTip(translate("inspector.keyframe_tooltip", name=property_name))
 
     def set_animated(self, animated: bool) -> None:
         if animated != self.animated:

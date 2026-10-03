@@ -86,12 +86,13 @@ class TrackRowHeader(QFrame):
         name_layout.setContentsMargins(0, 0, 0, 0)
         name_layout.setSpacing(0)
 
-        type_label = {
-            "video": "VIDÉO",
-            "audio": "AUDIO",
-            "subtitle": "TEXTE",
-            "graphics": "GRAPHISME",
-        }.get(track.type, track.type.upper())
+        type_keys = {
+            "video": "timeline.track.video",
+            "audio": "timeline.track.audio",
+            "subtitle": "timeline.track.subtitle",
+            "graphics": "timeline.track.graphics",
+        }
+        type_label = translate(type_keys[track.type]) if track.type in type_keys else track.type.upper()
         title = QLabel(f"{track.id}  {type_label}")
         title.setStyleSheet(label_style(11, "text", 800))
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -99,15 +100,15 @@ class TrackRowHeader(QFrame):
 
         state_parts: list[str] = []
         if getattr(track, "locked", False):
-            state_parts.append("Verrouillée")
+            state_parts.append(translate("timeline.track.locked"))
         if not getattr(track, "visible", True):
-            state_parts.append("Masquée")
+            state_parts.append(translate("timeline.track.hidden"))
         if getattr(track, "muted", False):
-            state_parts.append("Muette")
+            state_parts.append(translate("timeline.track.muted"))
         if getattr(track, "solo", False):
-            state_parts.append("Solo")
+            state_parts.append(translate("mixer.solo"))
         if getattr(track, "collapsed", False):
-            state_parts.append("Réduite")
+            state_parts.append(translate("timeline.track.collapsed"))
         state_label = QLabel(" · ".join(state_parts) or track.name)
         state_label.setStyleSheet(label_style(9, "muted", 500))
         name_layout.addWidget(state_label)
@@ -189,7 +190,7 @@ class TrackRowHeader(QFrame):
 
         solo_btn = _btn(
             IconName.SOLO,
-            "Solo",
+            translate("mixer.solo"),
             lambda checked: self.solo_toggled.emit(track.id, checked),
             checkable=True,
             checked=bool(getattr(track, "solo", False)),
@@ -198,7 +199,7 @@ class TrackRowHeader(QFrame):
         if track.type == "audio":
             arm_btn = _btn(
                 IconName.MARKER,
-                "Armer la piste",
+                translate("history.track.arm"),
                 lambda checked: self.arm_toggled.emit(track.id, checked),
                 checkable=True,
                 checked=bool(getattr(track, "armed", False)),
@@ -207,12 +208,12 @@ class TrackRowHeader(QFrame):
 
         # Les commandes moins fréquentes restent disponibles sans saturer
         # chaque en-tête de piste.
-        more_btn = _btn(IconName.MORE, "Actions de la piste", lambda: None)
+        more_btn = _btn(IconName.MORE, translate("timeline.track.actions"), lambda: None)
         menu = QMenu(more_btn)
         actions = (
-            ("Hauteur de piste", lambda: self.height_cycle_requested.emit(track.id)),
+            (translate("history.track.height"), lambda: self.height_cycle_requested.emit(track.id)),
             (
-                "Réduire ou développer",
+                translate("timeline.track.collapse_toggle"),
                 lambda: self.collapse_toggled.emit(
                     track.id, not bool(getattr(track, "collapsed", False))
                 ),

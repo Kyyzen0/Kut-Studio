@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from PySide6.QtWidgets import QDialog
+from ui.i18n import translate
 
 
 def _main_window():
@@ -40,11 +41,9 @@ class LibraryOrganizationMixin:
                 color=color or "",
             )
         except (LibraryError, LibraryNameError) as exc:
-            _main_window().QMessageBox.warning(self, "Dossier", str(exc))
+            _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            f"Créer le dossier « {folder.name} »"
-        )
+        self._record_history(translate("history.library.folder_create", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -64,11 +63,9 @@ class LibraryOrganizationMixin:
         try:
             folder = org.rename_folder(folder_id, new_name)
         except (LibraryError, LibraryNameError) as exc:
-            _main_window().QMessageBox.warning(self, "Dossier", str(exc))
+            _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            f"Renommer le dossier en « {folder.name} »"
-        )
+        self._record_history(translate("history.library.folder_rename", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -85,9 +82,8 @@ class LibraryOrganizationMixin:
             return
         confirm = _main_window().QMessageBox.question(
             self,
-            "Supprimer le dossier",
-            f"Supprimer le dossier « {folder.name} » et ramener ses "
-            "médias à la racine ?",
+            translate("dialog.folder.delete_title"),
+            translate("dialog.folder.delete_text", name=folder.name),
             _main_window().QMessageBox.Yes | _main_window().QMessageBox.No,
             _main_window().QMessageBox.No,
         )
@@ -96,11 +92,9 @@ class LibraryOrganizationMixin:
         try:
             org.delete_folder(folder_id, cascade=True)
         except LibraryError as exc:
-            _main_window().QMessageBox.warning(self, "Dossier", str(exc))
+            _main_window().QMessageBox.warning(self, translate("dialog.title.folder"), str(exc))
             return
-        self._record_history(
-            f"Supprimer le dossier « {folder.name} »"
-        )
+        self._record_history(translate("history.library.folder_delete", name=folder.name))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -116,7 +110,7 @@ class LibraryOrganizationMixin:
             # Le dialogue n'utilise pas Accept ; tout est appliqué en
             # place. On enregistre l'historique dès qu'il y a au moins
             # une modification.
-            self._record_history("Modifier les tags de la bibliothèque")
+            self._record_history(translate("history.library.tags_edit"))
             self._refresh_project_library()
             self._mark_dirty()
         # Même sur rejet, le dialogue peut avoir été modifié : on
@@ -139,13 +133,11 @@ class LibraryOrganizationMixin:
         try:
             org.move_asset(asset_id, folder_id_str)
         except LibraryError as exc:
-            _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
+            _main_window().QMessageBox.warning(self, translate("panel.library"), str(exc))
             return
         # On n'enregistre l'historique que si le déplacement est
         # effectif (le service est idempotent).
-        self._record_history(
-            "Déplacer le média dans un dossier"
-        )
+        self._record_history(translate("history.library.asset_move"))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -165,12 +157,12 @@ class LibraryOrganizationMixin:
         try:
             if assign:
                 org.add_tag_to_asset(asset_id, tag_id)
-                self._record_history("Tagger un média")
+                self._record_history(translate("history.library.asset_tag"))
             else:
                 org.remove_tag_from_asset(asset_id, tag_id)
-                self._record_history("Retirer un tag d'un média")
+                self._record_history(translate("history.library.asset_untag"))
         except LibraryError as exc:
-            _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
+            _main_window().QMessageBox.warning(self, translate("panel.library"), str(exc))
             return
         self._refresh_project_library()
         self._mark_dirty()
@@ -193,9 +185,9 @@ class LibraryOrganizationMixin:
             start_path = os.path.expanduser("~")
         path, _ = _main_window().QFileDialog.getOpenFileName(
             self,
-            "Relier le média…",
+            translate("dialog.relink.title"),
             start_path,
-            "Médias (*.mp4 *.mov *.avi *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.flac *.ogg *.png *.jpg *.jpeg)",
+            translate("dialog.filter.media_images"),
         )
         if not path:
             return
@@ -208,16 +200,16 @@ class LibraryOrganizationMixin:
         try:
             org.relink_asset(asset_id, path)
         except LibraryError as exc:
-            _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
+            _main_window().QMessageBox.warning(self, translate("panel.library"), str(exc))
             return
-        self._record_history("Relier le fichier d'un média")
+        self._record_history(translate("history.library.asset_relink"))
         self._refresh_project_library()
         self._mark_dirty()
         changes = relink_differences(before, asset)
         if changes:
             # Le nouveau fichier n'est pas identique à l'ancien : les clips (trims, tracking) en dépendent.
             self.statusBar().showMessage(
-                "Média relié, mais le fichier est différent : " + ", ".join(changes) + ".", 10000
+                translate("status.relink.differs") + ", ".join(changes) + ".", 10000
             )
 
     def _on_asset_rename_requested(
@@ -236,9 +228,9 @@ class LibraryOrganizationMixin:
         try:
             org.rename_asset(asset_id, new_name)
         except (LibraryError, LibraryNameError) as exc:
-            _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
+            _main_window().QMessageBox.warning(self, translate("panel.library"), str(exc))
             return
-        self._record_history("Renommer un média")
+        self._record_history(translate("history.library.asset_rename"))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -258,10 +250,8 @@ class LibraryOrganizationMixin:
             return
         confirm = _main_window().QMessageBox.question(
             self,
-            "Supprimer le média",
-            f"Supprimer « {asset.name} » de la bibliothèque ?\n"
-            "Les clips qui l'utilisent resteront sur la timeline "
-            "(ils pointeront vers un média absent).",
+            translate("dialog.media.delete_title"),
+            translate("dialog.media.delete_text", name=asset.name),
             _main_window().QMessageBox.Yes | _main_window().QMessageBox.No,
             _main_window().QMessageBox.No,
         )
@@ -270,9 +260,9 @@ class LibraryOrganizationMixin:
         try:
             org.remove_asset(asset_id, keep_orphan_clips=True)
         except LibraryError as exc:
-            _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
+            _main_window().QMessageBox.warning(self, translate("panel.library"), str(exc))
             return
-        self._record_history("Supprimer un média")
+        self._record_history(translate("history.library.asset_delete"))
         self._refresh_project_library()
         self._mark_dirty()
 

@@ -32,9 +32,9 @@ class KeyframesMixin:
         return {
             "position_x": "X",
             "position_y": "Y",
-            "scale": "Échelle",
-            "rotation": "Rotation",
-            "opacity": "Opacité",
+            "scale": i18n.translate("field.scale"),
+            "rotation": i18n.translate("animation.property.rotation"),
+            "opacity": i18n.translate("field.opacity"),
         }[property_name]
 
     @staticmethod
