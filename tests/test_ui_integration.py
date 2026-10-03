@@ -2467,6 +2467,7 @@ def test_toggle_clip_history_label_describes_the_action(qtbot, monkeypatch) -> N
     assert window.history.undo_label == "Activer le clip"
 
 
+@pytest.mark.usefixtures("restore_global_theme")   # le test passe en thème clair : le test suivant du worker ne doit pas en hériter
 def test_settings_changes_preserve_master_and_runtime_preferences(
     qtbot, monkeypatch
 ) -> None:
