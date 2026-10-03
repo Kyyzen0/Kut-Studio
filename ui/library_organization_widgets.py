@@ -247,6 +247,7 @@ class FolderTreeWidget(QWidget):
         # pour « Tous » / « Racine » / « Manquants »). Sert à
         # restaurer la sélection après un ``set_organization``.
         self._selected_folder_id: str | None = None
+        self._folder_counts: dict[str, int] = {}
         self._selected_kind: str = self._KIND_ALL
         self._has_missing: bool = False
 
@@ -308,6 +309,26 @@ class FolderTreeWidget(QWidget):
         self.tree.blockSignals(False)
         self._on_current_item_changed(self.tree.currentItem(), None)
 
+    def retranslate(self) -> None:
+        """Textes de l'arbre dans la langue courante, compteurs et sélection conservés.
+
+        Les entrées synthétiques (« Tous », « Racine », « Manquants ») sont écrites avec leur compteur par
+        :meth:`set_folder_counts` : on le rejoue avec les derniers compteurs connus.
+        """
+        self.header_label.setText(translate("library.folders.title"))
+        self.add_button.setToolTip(translate("dialog.folder.new_title"))
+        names = {
+            self._KIND_ALL: "library.filter.all",
+            self._KIND_ROOT: "library.folder.root",
+            self._KIND_MISSING: "library.filter.missing",
+        }
+        for index in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(index)
+            key = names.get(item.data(0, _FOLDER_KIND_ROLE))
+            if key is not None:
+                item.setData(0, _FOLDER_NAME_ROLE, translate(key))
+        self.set_folder_counts(self._folder_counts)
+
     def set_folder_counts(self, counts: dict[str, int]) -> None:
         """Met à jour le nombre de médias affichés à côté de chaque dossier.
 
@@ -317,6 +338,7 @@ class FolderTreeWidget(QWidget):
                 ``"__all__"`` pour « Tous », ``"__missing__"`` pour
                 « Manquants ».
         """
+        self._folder_counts = dict(counts)          # rejoués par retranslate() au changement de langue
         for index in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(index)
             kind = item.data(0, _FOLDER_KIND_ROLE)

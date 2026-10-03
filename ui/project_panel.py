@@ -902,8 +902,7 @@ class ProjectPanel(QWidget):
         self.import_button.setToolTip(translate("library.import_tip"))
         self.add_to_timeline_button.setText("  " + translate("panel.timeline"))
         self.add_to_timeline_button.setToolTip(translate("library.add_tip"))
-        self.folder_tree.header_label.setText(translate("library.folders.title"))
-        self.folder_tree.add_button.setToolTip(translate("dialog.folder.new_title"))
+        self.folder_tree.retranslate()
         self.filter_chips.retranslate()
         self._refresh_count()
 

@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_effects_library import (
-    CATEGORY_LABELS,
     AudioEffectPreset,
     AudioEffectPresetCategory,
     builtin_audio_effect_presets,
@@ -33,6 +32,15 @@ from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
 from ui.i18n import translate
+
+
+def category_text(category: AudioEffectPresetCategory) -> str:
+    """Nom de catégorie affiché (majuscules), dans la langue courante.
+
+    Les noms viennent des tables i18n (``audio_effects.category.<id>``) : le tableau ``CATEGORY_LABELS`` du cœur est en
+    français et ne se traduit pas.
+    """
+    return translate(f"audio_effects.category.{category.value}").upper()
 
 
 class AudioEffectPresetCard(QFrame):
@@ -82,7 +90,7 @@ class AudioEffectPresetCard(QFrame):
         title = ElidedLabel(preset.name)  # un nom long ne doit pas pousser l'étoile hors de la carte
         title.setStyleSheet(label_style(12, "text", 700))
         title_row.addWidget(title)
-        badge = ElidedLabel(CATEGORY_LABELS[preset.category].upper())
+        badge = ElidedLabel(category_text(preset.category))
         badge.setStyleSheet(
             f"QLabel {{ color: {accent}; background: transparent;"
             f" font-size: 9px; font-weight: 700; padding: 0; }}"
@@ -218,7 +226,7 @@ class AudioEffectsLibraryView(QWidget):
         self._add_category_button(cat_layout, translate("library.audio_effects.all"), None)
         for category in AudioEffectPresetCategory:
             self._add_category_button(
-                cat_layout, CATEGORY_LABELS[category].upper(), category
+                cat_layout, category_text(category), category
             )
         self.category_buttons[0].setChecked(True)
         self.favorites_button = QPushButton(translate("library.audio_effects.favorites"))
