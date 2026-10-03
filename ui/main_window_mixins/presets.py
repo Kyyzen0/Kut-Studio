@@ -99,7 +99,7 @@ class PresetsMixin:
         except (KeyError, ValueError) as exc:
             QMessageBox.warning(self, "Preset d'effets", str(exc))
             return
-        self._record_history("Appliquer un preset d'effets")
+        self._record_history(i18n.translate("history.preset.effects_apply"))
         self._refresh_effects_after_change(clip_id)
 
     def _selected_audio_capable_clip_id(self) -> str | None:
@@ -140,7 +140,7 @@ class PresetsMixin:
         except (KeyError, ValueError) as exc:
             QMessageBox.warning(self, "Effet audio", str(exc))
             return
-        self._record_history("Appliquer un preset d'effet audio")
+        self._record_history(i18n.translate("history.preset.audio_apply"))
         self._refresh_effects_after_change(clip_id)
 
     def on_audio_effect_preset_save_requested(self) -> None:
@@ -239,7 +239,7 @@ class PresetsMixin:
         except ValueError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Enregistrer un preset utilisateur")
+        self._record_history(i18n.translate("history.preset.user_save"))
 
     def on_effect_preset_delete_requested(self, preset_id: str) -> None:
         """Supprime un preset utilisateur après confirmation."""
@@ -267,7 +267,7 @@ class PresetsMixin:
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
-        self._record_history("Supprimer un preset utilisateur")
+        self._record_history(i18n.translate("history.preset.user_delete"))
 
     def add_transition_from_library(self, preset_id: str, duration: float) -> None:
         """Pose un preset de transition entre les deux clips sélectionnés.
@@ -327,7 +327,7 @@ class PresetsMixin:
                 f"Transition refusée : {error}", 6000
             )
             return
-        self._record_history("Ajouter une transition")
+        self._record_history(i18n.translate("history.transition.add"))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -404,7 +404,7 @@ class PresetsMixin:
         except ValueError as exc:
             self.statusBar().showMessage(str(exc), 5000)
             return
-        self._record_history("Enregistrer une transition personnalisée")
+        self._record_history(i18n.translate("history.transition.save_custom"))
 
     def on_transition_preset_delete_requested(self, preset_id: str) -> None:
         """Supprime un preset utilisateur après confirmation."""
@@ -434,7 +434,7 @@ class PresetsMixin:
         except KeyError as exc:
             self.statusBar().showMessage(str(exc), 5000)
             return
-        self._record_history("Supprimer une transition personnalisée")
+        self._record_history(i18n.translate("history.transition.delete_custom"))
 
     def on_transition_favorite_toggled(self, preset_id: str) -> None:
         """Bascule l'état favori d'un preset (intégré ou utilisateur)."""
@@ -472,7 +472,7 @@ class PresetsMixin:
         clip.text_style = preset.style
         if not (clip.text or "").strip() and preset.default_text:
             clip.text = preset.default_text
-        self._record_history("Appliquer un modèle de sous-titre")
+        self._record_history(i18n.translate("history.subtitle.apply_template"))
         self._reload_timeline_preserving_selection(clip_id)
         self._refresh_subtitle_overlay()
         return True

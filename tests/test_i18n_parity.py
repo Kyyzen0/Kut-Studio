@@ -133,7 +133,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 # Emprunts à l'anglais que le français (et l'espagnol) emploient tels quels.
 _LOANWORDS = {
     "Cache", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
-    "Parade", "Preset", "Proxies", "Proxy", "Reverse", "Solo", "Stop", "Timeline", "Trackers",
+    "Parade", "Preset", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Timeline", "Trackers",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }

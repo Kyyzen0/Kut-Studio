@@ -6,6 +6,7 @@ import os
 from core.media_cache import cached_probe
 from core.media_probe import MediaProbeError
 from core.timeline_operations import add_clip_to_track
+from ui.i18n import translate
 
 
 def _main_window():
@@ -35,7 +36,7 @@ class MediaImportMixin:
         except (KeyError, ValueError):
             return
         self._record_history(
-            f"Déposer « {asset.name} » sur {track_id}"
+            translate("history.media.drop", name=asset.name, track=track_id)
         )
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
@@ -104,7 +105,7 @@ class MediaImportMixin:
         self.project_panel.select_asset(asset.id)
         if asset.media_type == "video":
             self.preview_panel.load_video(asset.path)
-        self._record_history(f"Importer le média « {asset.name} »")
+        self._record_history(translate("history.media.import", name=asset.name))
         self._mark_dirty()
         return True
 
@@ -190,7 +191,7 @@ class MediaImportMixin:
             return
 
         # Rafraîchit la projection (qui inclut le nouveau clip).
-        self._record_history(f"Ajouter le clip « {new_clip.label or new_clip.id} »")
+        self._record_history(translate("history.media.add_clip", name=new_clip.label or new_clip.id))
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self.timeline_panel.select_clip(new_clip.id)

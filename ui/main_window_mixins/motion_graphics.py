@@ -13,6 +13,7 @@ import logging
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
+from ui.i18n import translate
 
 
 LOGGER = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class MotionGraphicsMixin:
         overlay.transform_released.connect(self._on_viewer_transform_released)
         overlay.layer_clicked.connect(self._on_viewer_layer_clicked)
         overlay.guide_moved.connect(self._on_viewer_guide_moved)
-        overlay.guide_released.connect(lambda _guide_id: self._commit_layer_edit("Déplacer un guide"))
+        overlay.guide_released.connect(lambda _guide_id: self._commit_layer_edit(translate("history.guides.move")))
         self.preview_panel.canvas_changed.connect(self._schedule_viewer_graphics)
         panel = self.layers_panel
         panel.layer_selected.connect(self._on_layer_panel_selected)
@@ -557,13 +558,13 @@ class MotionGraphicsMixin:
 
         add_guide(self.project.active_sequence, orientation, 0.5)
         self._set_viewer_flag("show_guides", True)
-        self._commit_layer_edit("Ajouter un guide")
+        self._commit_layer_edit(translate("history.guides.add"))
 
     def clear_viewer_guides(self) -> None:
         from core.canvas_guides import clear_guides
 
         if clear_guides(self.project.active_sequence):
-            self._commit_layer_edit("Effacer les guides")
+            self._commit_layer_edit(translate("menu.item.clear_guides"))
 
     def _lock_all_guides(self) -> None:
         from core.canvas_guides import set_guide_locked
@@ -574,7 +575,7 @@ class MotionGraphicsMixin:
         lock = not all(g.locked for g in sequence.guides)
         for guide in list(sequence.guides):
             set_guide_locked(sequence, guide.id, lock)
-        self._commit_layer_edit("Verrouiller les guides")
+        self._commit_layer_edit(translate("menu.item.lock_guides"))
 
     def _toggle_viewer_flag(self, flag: str) -> None:
         overlay = self.preview_panel.overlay
@@ -596,7 +597,7 @@ class MotionGraphicsMixin:
         if not bool(getattr(self, "_transform_session_active", False)):
             self._finalize_graphic_history()
         if self._apply_property_values(clip_id, {name: value}):
-            self._schedule_transform_history("Modifier la transformation avancée")
+            self._schedule_transform_history(translate("history.layer.advanced_transform"))
             self._after_live_change(clip_id)
 
     def _on_advanced_keyframe_toggled(self, clip_id: str, name: str) -> None:
@@ -615,7 +616,7 @@ class MotionGraphicsMixin:
             if not keyframe_editing.remove_keyframe_at(self.project, clip_id, name, local):
                 keyframe_editing.add_keyframe(self.project, clip_id, name, local)
 
-        self._layer_operation("Image-clé (transformation avancée)", toggle, select=clip_id)
+        self._layer_operation(translate("history.layer.advanced_keyframe"), toggle, select=clip_id)
 
     def _on_compositing_changed(self, clip_id: str, value) -> None:
         from core.timeline_operations import find_clip
@@ -635,7 +636,7 @@ class MotionGraphicsMixin:
             kf for kf in clip.animation
             if not kf.property_name.startswith("mask.") or kf.property_name.split(".")[1] in kept_ids
         ]
-        self._schedule_transform_history("Modifier le compositing")
+        self._schedule_transform_history(translate("history.layer.compositing"))
         self._after_live_change(clip_id)
 
     # ------------------------------------------------------------------
@@ -651,7 +652,7 @@ class MotionGraphicsMixin:
                 shape=shape or "rectangle",
             )
 
-        clip = self._layer_operation("Ajouter un calque", create)
+        clip = self._layer_operation(translate("history.layer.add"), create)
         if clip is not None:
             self._select_layer(clip.id)
             self.properties_panel._select_inspector_tab(4)
@@ -660,7 +661,7 @@ class MotionGraphicsMixin:
         from core.mograph_layers import set_layer_visible
 
         self._layer_operation(
-            "Afficher le calque" if visible else "Masquer le calque",
+            translate("history.layer.show") if visible else translate("history.layer.hide"),
             lambda: set_layer_visible(self.project, clip_id, visible),
         )
 
@@ -668,19 +669,19 @@ class MotionGraphicsMixin:
         from core.mograph_layers import set_layer_locked
 
         self._layer_operation(
-            "Verrouiller le calque" if locked else "Déverrouiller le calque",
+            translate("history.layer.lock") if locked else translate("history.layer.unlock"),
             lambda: set_layer_locked(self.project, clip_id, locked),
         )
 
     def _on_layer_rename(self, clip_id: str, name: str) -> None:
         from core.mograph_layers import rename_layer
 
-        self._layer_operation("Renommer le calque", lambda: rename_layer(self.project, clip_id, name))
+        self._layer_operation(translate("history.layer.rename"), lambda: rename_layer(self.project, clip_id, name))
 
     def _on_layer_motion_blur(self, clip_id: str, enabled: bool) -> None:
         from core.mograph_layers import set_motion_blur
 
-        self._layer_operation("Flou de mouvement du calque", lambda: set_motion_blur(self.project, clip_id, enabled))
+        self._layer_operation(translate("history.layer.motion_blur"), lambda: set_motion_blur(self.project, clip_id, enabled))
 
     def _on_layer_move(self, clip_id: str, group_id: str, rank: int) -> None:
         from core.mograph_layers import find_layer, move_into_group, reorder_layer, siblings
@@ -692,13 +693,13 @@ class MotionGraphicsMixin:
             target = len(siblings(self.project, clip_id)) - 1 if rank < 0 else rank
             reorder_layer(self.project, clip_id, target)
 
-        self._layer_operation("Réordonner les calques", move, select=clip_id)
+        self._layer_operation(translate("history.layer.reorder"), move, select=clip_id)
 
     def _on_layer_parent(self, clip_id: str, parent_id: str) -> None:
         from core.mograph_layers import set_parent
 
         self._layer_operation(
-            "Changer le parent" if parent_id else "Détacher du parent",
+            translate("history.layer.reparent") if parent_id else translate("history.layer.unparent"),
             lambda: set_parent(self.project, clip_id, parent_id, at_time=float(self.playhead_seconds)),
             select=clip_id,
         )
@@ -709,7 +710,7 @@ class MotionGraphicsMixin:
         if not clip_ids:
             self.statusBar().showMessage("Sélectionnez au moins un calque à grouper.", 4000)
             return
-        group = self._layer_operation("Grouper les calques", lambda: group_layers(self.project, clip_ids))
+        group = self._layer_operation(translate("shortcuts.command.layer_group"), lambda: group_layers(self.project, clip_ids))
         if group is not None:
             self._select_layer(group.id)
 
@@ -721,19 +722,19 @@ class MotionGraphicsMixin:
     def _ungroup_layer(self, group_id: str) -> None:
         from core.mograph_layers import ungroup
 
-        self._layer_operation("Dégrouper", lambda: ungroup(self.project, group_id), select="")
+        self._layer_operation(translate("menu.item.ungroup_layers"), lambda: ungroup(self.project, group_id), select="")
 
     def _duplicate_layers(self, clip_ids: list[str]) -> None:
         from core.mograph_layers import duplicate_layers
 
-        created = self._layer_operation("Dupliquer les calques", lambda: duplicate_layers(self.project, clip_ids))
+        created = self._layer_operation(translate("history.layer.duplicate"), lambda: duplicate_layers(self.project, clip_ids))
         if created:
             self._select_layer(created[0].id)
 
     def _delete_layers(self, clip_ids: list[str]) -> None:
         from core.mograph_layers import delete_layers
 
-        self._layer_operation("Supprimer les calques", lambda: delete_layers(self.project, clip_ids), select="")
+        self._layer_operation(translate("history.layer.delete"), lambda: delete_layers(self.project, clip_ids), select="")
         self._reset_selection_and_inspector()
 
     def copy_selected_layers(self) -> None:
@@ -756,7 +757,7 @@ class MotionGraphicsMixin:
         if clipboard is None:
             return
         created = self._layer_operation(
-            "Coller les calques", lambda: paste_layers(self.project, clipboard, at=float(self.playhead_seconds)),
+            translate("history.layer.paste"), lambda: paste_layers(self.project, clipboard, at=float(self.playhead_seconds)),
         )
         if created:
             self._select_layer(created[0].id)
@@ -785,14 +786,14 @@ class MotionGraphicsMixin:
             "masks": "Masques", "keyframes": "Animation (images-clés)",
         }
         choice, ok = QInputDialog.getItem(
-            self, "Coller les attributs", "Attributs à coller :",
+            self, translate("shortcuts.command.layer_paste_attributes"), "Attributs à coller :",
             ["Tout", *[labels[k] for k in ATTRIBUTE_KINDS]], 0, False,
         )
         if not ok:
             return
         kinds = ATTRIBUTE_KINDS if choice == "Tout" else [k for k, v in labels.items() if v == choice]
         self._layer_operation(
-            "Coller les attributs", lambda: paste_attributes(self.project, clip_ids, clipboard, kinds),
+            translate("shortcuts.command.layer_paste_attributes"), lambda: paste_attributes(self.project, clip_ids, clipboard, kinds),
         )
 
     # ------------------------------------------------------------------
@@ -813,7 +814,7 @@ class MotionGraphicsMixin:
         from core.mograph_presets import apply_preset
 
         created = self._layer_operation(
-            f"Preset « {preset.name} »", lambda: apply_preset(self.project, preset, at=float(self.playhead_seconds)),
+            translate("history.layer.preset", name=preset.name), lambda: apply_preset(self.project, preset, at=float(self.playhead_seconds)),
         )
         if created:
             top = created[-1]
@@ -853,7 +854,7 @@ class MotionGraphicsMixin:
         if current.enabled == bool(enabled):
             return
         sequence.motion_blur = replace(current, enabled=bool(enabled))
-        self._commit_layer_edit("Flou de mouvement de la séquence")
+        self._commit_layer_edit(translate("history.layer.sequence_motion_blur"))
 
     def _edit_motion_blur_settings(self) -> None:
         from dataclasses import replace
@@ -873,7 +874,7 @@ class MotionGraphicsMixin:
         if not ok:
             return
         sequence.motion_blur = replace(current, shutter_angle=angle, samples=samples)
-        self._commit_layer_edit("Réglages du flou de mouvement")
+        self._commit_layer_edit(translate("history.layer.motion_blur_settings"))
 
 
 def _stack_rank(scene, clip_id: str) -> tuple:

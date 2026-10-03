@@ -291,7 +291,7 @@ class CurveCanvas(QWidget):
             self._rubber = None
             self.update()
         elif gesture in ("move", "handle"):
-            self.editor.finish_gesture("Modifier les images-clés" if gesture == "move" else "Modifier les tangentes")
+            self.editor.finish_gesture(i18n.translate("history.keyframes.edit") if gesture == "move" else i18n.translate("history.keyframes.tangents"))
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt
         """Double clic sur la courbe : nouvelle image-clé, sans changer l'animation."""
@@ -543,7 +543,7 @@ class GraphEditorWindow(QWidget):
             KeyframeRef(self.clip_id, self.property_id, kid): value + dv
             for kid, value in origin["values"].items()
         })
-        self._edited("Modifier les images-clés", record=False)
+        self._edited(i18n.translate("history.keyframes.edit"), record=False)
 
     def drag_handle(self, keyframe, side: str, t: float, v: float) -> None:
         dt = t - keyframe.time_seconds
@@ -553,7 +553,7 @@ class GraphEditorWindow(QWidget):
         ref = KeyframeRef(self.clip_id, self.property_id, keyframe.id)
         kwargs = {"out_slope": slope} if side == "out" else {"in_slope": slope}
         set_tangents(self.host.project, ref, **kwargs)
-        self._edited("Modifier les tangentes", record=False)
+        self._edited(i18n.translate("history.keyframes.tangents"), record=False)
 
     def finish_gesture(self, label: str) -> None:
         if self._gesture_open:
@@ -566,12 +566,12 @@ class GraphEditorWindow(QWidget):
             return
         t = min(max(0.0, local_time), float(clip.duration))
         add_keyframe(self.host.project, clip.id, self.property_id, self.host._snap_local(clip, t))
-        self._edited("Ajouter une image-clé", record=True)
+        self._edited(i18n.translate("history.keyframes.add"), record=True)
 
     def _on_interpolation(self, _index: int) -> None:
         refs = self.selected_refs()
         if refs and set_interpolation(self.host.project, refs, self.interpolation_combo.currentData()):
-            self._edited("Changer l'interpolation", record=True)
+            self._edited(i18n.translate("history.keyframes.interpolation"), record=True)
 
     def _on_tangent_mode(self, _index: int) -> None:
         mode = self.tangent_combo.currentData()
@@ -582,7 +582,7 @@ class GraphEditorWindow(QWidget):
             else:
                 set_tangents(self.host.project, ref, mode=TangentMode(mode))
         if refs:
-            self._edited("Modifier les tangentes", record=True)
+            self._edited(i18n.translate("history.keyframes.tangents"), record=True)
 
     def _on_time_edited(self) -> None:
         refs = self.selected_refs()
@@ -591,14 +591,14 @@ class GraphEditorWindow(QWidget):
             return
         move_keyframes(self.host.project, refs, self.time_spin.value() - current.time_seconds,
                        fps=float(getattr(self.host.project, "fps", 0.0) or 30.0))
-        self._edited("Déplacer une image-clé", record=True)
+        self._edited(i18n.translate("history.keyframes.move_one"), record=True)
 
     def _on_value_edited(self) -> None:
         refs = self.selected_refs()
         if len(refs) != 1:
             return
         set_keyframe_values(self.host.project, {refs[0]: self.value_spin.value()})
-        self._edited("Modifier une image-clé", record=True)
+        self._edited(i18n.translate("history.keyframes.edit_one"), record=True)
 
     # -- textes ------------------------------------------------------------------------------------------
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.audio_recorder import AudioRecorderError, pcm_duration, write_wav
 from core.project_model import MediaAsset
 from core.timeline_operations import add_clip_to_track
+from ui.i18n import translate
 
 
 def _main_window():
@@ -96,7 +97,7 @@ class RecordingMixin:
                 add_clip_to_track(self.project, asset.id, track_id, self._record_origin)
             except (KeyError, ValueError) as exc:
                 self._report_edit_refused(exc)
-        self._record_history("Enregistrer une prise")
+        self._record_history(translate("history.recording.take"))
         self._refresh_project_library()
         self._reload_timeline_preserving_selection()
         self._update_timeline_duration()

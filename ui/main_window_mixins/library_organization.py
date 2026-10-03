@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from PySide6.QtWidgets import QDialog
+from ui.i18n import translate
 
 
 def _main_window():
@@ -43,7 +44,7 @@ class LibraryOrganizationMixin:
             _main_window().QMessageBox.warning(self, "Dossier", str(exc))
             return
         self._record_history(
-            f"Créer le dossier « {folder.name} »"
+            translate("history.library.folder_create", name=folder.name)
         )
         self._refresh_project_library()
         self._mark_dirty()
@@ -67,7 +68,7 @@ class LibraryOrganizationMixin:
             _main_window().QMessageBox.warning(self, "Dossier", str(exc))
             return
         self._record_history(
-            f"Renommer le dossier en « {folder.name} »"
+            translate("history.library.folder_rename", name=folder.name)
         )
         self._refresh_project_library()
         self._mark_dirty()
@@ -99,7 +100,7 @@ class LibraryOrganizationMixin:
             _main_window().QMessageBox.warning(self, "Dossier", str(exc))
             return
         self._record_history(
-            f"Supprimer le dossier « {folder.name} »"
+            translate("history.library.folder_delete", name=folder.name)
         )
         self._refresh_project_library()
         self._mark_dirty()
@@ -116,7 +117,7 @@ class LibraryOrganizationMixin:
             # Le dialogue n'utilise pas Accept ; tout est appliqué en
             # place. On enregistre l'historique dès qu'il y a au moins
             # une modification.
-            self._record_history("Modifier les tags de la bibliothèque")
+            self._record_history(translate("history.library.tags_edit"))
             self._refresh_project_library()
             self._mark_dirty()
         # Même sur rejet, le dialogue peut avoir été modifié : on
@@ -144,7 +145,7 @@ class LibraryOrganizationMixin:
         # On n'enregistre l'historique que si le déplacement est
         # effectif (le service est idempotent).
         self._record_history(
-            "Déplacer le média dans un dossier"
+            translate("history.library.asset_move")
         )
         self._refresh_project_library()
         self._mark_dirty()
@@ -165,10 +166,10 @@ class LibraryOrganizationMixin:
         try:
             if assign:
                 org.add_tag_to_asset(asset_id, tag_id)
-                self._record_history("Tagger un média")
+                self._record_history(translate("history.library.asset_tag"))
             else:
                 org.remove_tag_from_asset(asset_id, tag_id)
-                self._record_history("Retirer un tag d'un média")
+                self._record_history(translate("history.library.asset_untag"))
         except LibraryError as exc:
             _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
             return
@@ -210,7 +211,7 @@ class LibraryOrganizationMixin:
         except LibraryError as exc:
             _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
             return
-        self._record_history("Relier le fichier d'un média")
+        self._record_history(translate("history.library.asset_relink"))
         self._refresh_project_library()
         self._mark_dirty()
         changes = relink_differences(before, asset)
@@ -238,7 +239,7 @@ class LibraryOrganizationMixin:
         except (LibraryError, LibraryNameError) as exc:
             _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
             return
-        self._record_history("Renommer un média")
+        self._record_history(translate("history.library.asset_rename"))
         self._refresh_project_library()
         self._mark_dirty()
 
@@ -272,7 +273,7 @@ class LibraryOrganizationMixin:
         except LibraryError as exc:
             _main_window().QMessageBox.warning(self, "Bibliothèque", str(exc))
             return
-        self._record_history("Supprimer un média")
+        self._record_history(translate("history.library.asset_delete"))
         self._refresh_project_library()
         self._mark_dirty()
 

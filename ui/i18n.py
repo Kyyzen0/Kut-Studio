@@ -1846,7 +1846,9 @@ def reset_for_tests() -> None:
 
 # Modules de domaine : traductions tenues à part, fusionnées ici (tracking, matériel, motion graphics…).
 # Une clé définie deux fois est refusée à l'import : le doublon écraserait l'autre en silence.
+from ui.i18n_dialogs import DIALOGS_TRANSLATIONS as _DIALOGS  # noqa: E402
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
+from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
@@ -1856,6 +1858,8 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_tracking": _TRACKING,
     "ui.i18n_hardware": _HARDWARE,
     "ui.i18n_panels": _PANELS,
+    "ui.i18n_dialogs": _DIALOGS,
+    "ui.i18n_history": _HISTORY,
 }
 
 
