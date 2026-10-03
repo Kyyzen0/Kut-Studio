@@ -77,6 +77,7 @@ class PerformanceMixin:
             mograph=_mograph_frame_cache(),
             tracking=_tracking_cache(),
             multicam=_multicam_cache(),
+            flow=_flow_cache(),
         )
         try:
             self.cache_manager.enforce()
@@ -377,6 +378,13 @@ def _multicam_cache():
     from core.audio_sync_cache import AudioSyncCache
 
     return AudioSyncCache()
+
+
+def _flow_cache():
+    """Vecteurs de mouvement du flux optique (budget disque global)."""
+    from core.flow_cache import FlowCache
+
+    return FlowCache()
 
 
 def _mograph_frame_cache():

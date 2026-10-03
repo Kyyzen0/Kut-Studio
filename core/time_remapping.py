@@ -92,7 +92,8 @@ class TimeRemapping:
             Doit être > 0. Utilisé uniquement si freeze_mode == FREEZE.
         interpolation: Production des images intermédiaires (échantillonnage, mélange, flux optique).
         flow_quality: Qualité du flux optique (``AUTO`` : selon la résolution et l'usage).
-        preserve_pitch: L'audio garde sa hauteur quand la vitesse change (sinon : effet bande).
+        preserve_pitch: L'audio garde sa hauteur quand la vitesse change (``True``, le comportement de tout clip jusqu'ici :
+            ``atempo``) ; ``False`` : effet bande, la hauteur suit la vitesse.
         remap_audio: Si False, seule la vidéo est remappée (montages musicaux) ; l'audio garde son temps.
         anchor: Temps source à l'instant 0 du clip. ``None`` : la borne de la fenêtre (``source_in``, ou
             ``source_out`` en inverse). Nécessaire quand une courbe revient en arrière.
@@ -106,7 +107,7 @@ class TimeRemapping:
     freeze_duration: float = 1.0
     interpolation: TimeInterpolation = TimeInterpolation.SAMPLING
     flow_quality: FlowQuality = FlowQuality.AUTO
-    preserve_pitch: bool = False
+    preserve_pitch: bool = True
     remap_audio: bool = True
     anchor: float | None = None
     duration: float | None = None

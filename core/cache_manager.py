@@ -14,6 +14,8 @@ disque « mograph » images des calques motion    empreinte de l'état évalué 
                    graphics (:mod:`core.mograph_stream`)                    budget global
 disque « tracking » résultats d'analyse de     média + plage + zone +     LRU (dernier usage),
                    tracking (:mod:`core.tracking_engine`)  réglages + version         budget global
+disque « flow »    vecteurs de mouvement par   média analysé + image +    LRU (dernier usage),
+                   (:mod:`core.flow_cache`)    grille + moteur            budget global
 disque « proxies » proxies médias               chemin source + empreinte   LRU (dernier usage),
                                                 du profil + signature       budget global ; les
                                                 source (marqueur)           proxies du projet
@@ -52,7 +54,8 @@ KIND_PROXY = "proxy"
 KIND_MOGRAPH = "mograph"
 KIND_TRACKING = "tracking"
 KIND_MULTICAM = "multicam"
-KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY, KIND_MOGRAPH, KIND_TRACKING, KIND_MULTICAM)
+KIND_FLOW = "flow"
+KINDS = (KIND_MEMORY, KIND_PREVIEW, KIND_PROXY, KIND_MOGRAPH, KIND_TRACKING, KIND_MULTICAM, KIND_FLOW)
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,7 @@ class CacheManager:
         mograph=None,
         tracking=None,
         multicam=None,
+        flow=None,
     ) -> None:
         self.memory = memory
         self.previews = previews
@@ -85,6 +89,7 @@ class CacheManager:
         self.mograph = mograph
         self.tracking = tracking
         self.multicam = multicam
+        self.flow = flow
         self._max_bytes = max(1, int(max_bytes))
         self._pinned = pinned_sources
 
@@ -122,6 +127,9 @@ class CacheManager:
         if self.multicam is not None:
             stats = self.multicam.stats()
             result.append(CacheUsage(KIND_MULTICAM, int(stats["entries"]), int(stats["bytes"])))
+        if self.flow is not None:
+            stats = self.flow.stats()
+            result.append(CacheUsage(KIND_FLOW, int(stats["entries"]), int(stats["bytes"])))
         return result
 
     def disk_bytes(self) -> int:
@@ -162,6 +170,9 @@ class CacheManager:
         if freed < excess and self.multicam is not None:
             # Enveloppes audio de synchronisation : quelques Mo, recalculées en une fraction de seconde de décodage.
             freed += int(self.multicam.evict_bytes(excess - freed))
+        if freed < excess and self.flow is not None:
+            # Vecteurs de mouvement : petits, mais chaque paire coûte des centaines de ms à recalculer ; après les images.
+            freed += int(self.flow.evict_bytes(excess - freed))
         if freed >= excess or self.proxies is None:
             return freed
         pinned = {os.path.abspath(p) for p in (self._pinned() if self._pinned else ())}
@@ -207,6 +218,8 @@ class CacheManager:
             self.tracking.purge()
         if kind in (KIND_MULTICAM, "all") and self.multicam is not None:
             self.multicam.purge()
+        if kind in (KIND_FLOW, "all") and self.flow is not None:
+            self.flow.purge()
         if kind in (KIND_PROXY, "all") and self.proxies is not None:
             self.proxies.delete_all()
         after = sum(item.bytes for item in self.usage())
@@ -244,6 +257,7 @@ __all__ = [
     "KIND_MEMORY",
     "KIND_PREVIEW",
     "KIND_MOGRAPH",
+    "KIND_FLOW",
     "KIND_MULTICAM",
     "KIND_PROXY",
     "KIND_TRACKING",

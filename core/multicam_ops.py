@@ -723,7 +723,7 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
             "Aplatir : un segment en lecture inverse, en arrêt sur image ou à vitesse animée n'est pas pris en charge."
         )
     remapping = segment.time_remapping
-    if remapping.interpolation is not TimeInterpolation.SAMPLING or remapping.preserve_pitch or not remapping.remap_audio:
+    if remapping.interpolation is not TimeInterpolation.SAMPLING or not remapping.preserve_pitch or not remapping.remap_audio:
         raise MulticamError(
             "Aplatir : le segment porte une interpolation d'images ou un réglage audio du temps propres, que les clips "
             "remplaçants ne reprendraient pas ; retirez-les ou imbriquez le segment."

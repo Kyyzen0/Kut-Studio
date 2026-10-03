@@ -44,6 +44,7 @@ from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project, Sequence
 from .subtitle_io import SubtitleCue
 from .text_style import TextStyle
+from .time_map import TimeMap
 from .time_remapping import TimeRemapping
 from .transitions import TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
@@ -90,6 +91,12 @@ class RenderLayer:
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    # Mapping temps timeline → temps source du clip (:mod:`core.time_map`), l'unique modèle temporel ; ``None`` pour un clip
+    # qui n'est pas remappé. L'export, l'aperçu fidèle et les empreintes lisent ce mapping, jamais ``source_in`` × vitesse.
+    time_map: TimeMap | None = None
+    # Nombre d'images du média (``0`` : inconnu) : borne l'image la plus proche de la fin d'un média (voir
+    # :func:`core.retime_graph.nearest_frame`) pour que la lecture inverse d'un clip entier ne soit pas décalée d'une image.
+    source_frames: int = 0
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
     # ``None`` si l'identité. On garde un type ``object`` pour ne
@@ -156,6 +163,7 @@ class AudioLayer:
     track_volume_db: float = 0.0
     track_pan: float = 0.0
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    time_map: TimeMap | None = None  # voir ``RenderLayer.time_map``
     # Effets audio non destructifs (tâche 27). Tuple pour respecter le
     # caractère immuable de l'AudioLayer. Les effets sont appliqués
     # dans l'ordre de la séquence au moment du rendu.
@@ -678,6 +686,8 @@ class _PlanBuilder:
                                     else tuple(clip.transform_keyframes)
                                 ),
                                 time_remapping=clip.time_remapping,
+                                time_map=clip.time_map if clip.is_time_remapped else None,
+                                source_frames=_frame_count(asset.duration, asset.fps),
                                 effects=tuple(clip.effects),
                                 # Étalonnage couleur (tâche 29) : si le clip ne
                                 # porte pas de ``ColorGrade``, on garde ``None``
@@ -795,6 +805,8 @@ class _PlanBuilder:
                     transform=clip.transform,
                     transform_keyframes=tuple(clip.transform_keyframes),
                     time_remapping=clip.time_remapping,
+                    time_map=clip.time_map if clip.is_time_remapped else None,
+                    source_frames=_frame_count(inner.duration, inner.fps),
                     effects=tuple(clip.effects),
                     color_grade=getattr(clip, "color_grade", None),
                     compositing=getattr(clip, "compositing", None),
@@ -888,6 +900,13 @@ def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[Graph
     return result
 
 
+def _frame_count(duration: float, fps: float) -> int:
+    """Nombre d'images d'un flux de ``duration`` secondes à ``fps`` (``0`` si l'un des deux est inconnu)."""
+    if duration <= 0.0 or fps <= 0.0:
+        return 0
+    return max(1, round(float(duration) * float(fps)))
+
+
 def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:
     """Sous-titres d'une séquence imbriquée, recalés dans le temps parent.
 
@@ -979,6 +998,7 @@ def _build_audio_layer(
         track_volume_db=float(getattr(track, "volume_db", 0.0)),
         track_pan=float(getattr(track, "pan", 0.0)),
         time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
+        time_map=clip.time_map if getattr(clip, "is_time_remapped", False) else None,
         audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
         track_automation=track_automation_points,
         ducking_sidechains=tuple(ducking_sidechains or []),

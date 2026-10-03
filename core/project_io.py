@@ -1105,8 +1105,8 @@ def _time_remapping_to_dict(time_remapping: TimeRemapping) -> dict[str, Any]:
         data["interpolation"] = time_remapping.interpolation.value
     if time_remapping.flow_quality is not FlowQuality.AUTO:
         data["flow_quality"] = time_remapping.flow_quality.value
-    if time_remapping.preserve_pitch:
-        data["preserve_pitch"] = True
+    if not time_remapping.preserve_pitch:
+        data["preserve_pitch"] = False
     if not time_remapping.remap_audio:
         data["remap_audio"] = False
     if time_remapping.anchor is not None:
@@ -1159,7 +1159,7 @@ def _dict_to_time_remapping(raw: dict[str, Any] | None) -> TimeRemapping:
             freeze_duration=float(raw.get("freeze_duration", 1.0)),
             interpolation=_coerce_enum(TimeInterpolation, raw.get("interpolation", "sampling"), TimeInterpolation.SAMPLING),
             flow_quality=_coerce_enum(FlowQuality, raw.get("flow_quality", "auto"), FlowQuality.AUTO),
-            preserve_pitch=bool(raw.get("preserve_pitch", False)),
+            preserve_pitch=bool(raw.get("preserve_pitch", True)),
             remap_audio=bool(raw.get("remap_audio", True)),
             anchor=_optional_finite_float(raw.get("anchor")),
             duration=_optional_positive_float(raw.get("duration")),

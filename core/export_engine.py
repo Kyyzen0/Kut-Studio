@@ -40,9 +40,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
@@ -60,16 +63,13 @@ from .render_plan import (
 from .subtitle_io import format_ass_with_styles, format_srt
 from .text_style import default_text_style, is_default_style as _is_default_style
 from .transitions import TransitionType
-from .time_remapping import (
-    MAX_REVERSE_DURATION_SECONDS,
-    FreezeFrameMode,
-    clamp_speed,
-    get_ffmpeg_freeze_filter,
-    get_ffmpeg_reverse_filter,
-    get_ffmpeg_speed_filter,
-)
+from .frame_interpolation import plan_interpolation
+from .retime_graph import RetimeError, audio_stage, video_stage
+from .time_map import time_map_for
+from .time_remapping import FreezeFrameMode, TimeInterpolation, get_ffmpeg_freeze_filter
 from .tool_paths import find_media_tool
 from .hardware_encoding import looks_like_encoder_failure, redact_command
+from .optical_flow import BackendPreference
 from .video_encoders import (
     EncoderChoice,
     EncoderUnavailableError,
@@ -85,6 +85,10 @@ from .visual_effects import (
     escape_filter_complex_commas,
 )
 
+
+if TYPE_CHECKING:
+    from .flow_cache import FlowCache
+    from .retime_prepare import PreparedStream, PrepareReport
 
 LOGGER = logging.getLogger("kut_studio.encoding")
 
@@ -365,6 +369,9 @@ class ExportEngine(QObject):
     """Émis à chaque lancement (et après un repli) avec l'``EncoderChoice`` utilisé."""
     encoder_fallback = Signal(str)
     """Émis quand ``auto`` abandonne l'encodeur matériel pour le CPU (raison lisible)."""
+    preparation_progress = Signal(int, int)
+    """Émis pendant le calcul des images intermédiaires (mélange d'images, flux optique) : ``(faites, à faire)``."""
+    _preparation_finished = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -393,6 +400,19 @@ class ExportEngine(QObject):
         self._launch_request: ExportRequest | None = None
         self._fallback_used = False
         self._progress_seen = False
+        # Images intermédiaires (mélange d'images, flux optique) : fabriquées avant FFmpeg, dans un fil, puis relues par le graphe.
+        self._prepared: dict[str, PreparedStream] = {}
+        self._preparing = False
+        self._pending_request: ExportRequest | None = None
+        self._prepare_cancel = threading.Event()
+        self._prepare_thread: threading.Thread | None = None
+        self.flow_cache: FlowCache | None = None
+        """Cache des vecteurs et des flux préparés ; ``None`` : celui de l'application (créé au premier besoin)."""
+        self.flow_preference = BackendPreference.AUTO
+        """Backend de flux optique demandé (réglage de l'application)."""
+        self.last_preparation: PrepareReport | None = None
+        """Bilan du dernier calcul d'images intermédiaires (images fabriquées, replis, confiance) ; ``None`` s'il n'y en avait pas."""
+        self._preparation_finished.connect(self._on_preparation_finished)
 
     # ------------------------------------------------------------------
     # API publique
@@ -400,8 +420,8 @@ class ExportEngine(QObject):
 
     @property
     def is_running(self) -> bool:
-        """``True`` tant qu'un processus FFmpeg tourne pour cet export."""
-        return self._process.state() != QProcess.NotRunning
+        """``True`` tant qu'un processus FFmpeg tourne pour cet export, ou que ses images intermédiaires se calculent."""
+        return self._preparing or self._process.state() != QProcess.NotRunning
 
     @property
     def process_id(self) -> int:
@@ -415,6 +435,7 @@ class ExportEngine(QObject):
         processus FFmpeg ne reste en vie. Retourne ``False`` si le
         processus n'a pas pu être confirmé comme terminé.
         """
+        self._stop_preparation(timeout_ms / 1000.0)
         if self._process.state() == QProcess.NotRunning:
             self._release_supervision()
             self._cleanup_temporary_files()
@@ -436,7 +457,7 @@ class ExportEngine(QObject):
         - le dossier de sortie est introuvable ;
         - la build FFmpeg ne supporte pas ``subtitles`` (libass requis).
         """
-        if self._process.state() != QProcess.NotRunning:
+        if self._preparing or self._process.state() != QProcess.NotRunning:
             self.failed.emit("Un export est déjà en cours.")
             return
 
@@ -454,6 +475,11 @@ class ExportEngine(QObject):
                     "incruster les sous-titres."
                 )
             self._prepare_temporary_files(request.render_plan)
+            self._prepared = {}
+            self.last_preparation = None
+            if self._needs_preparation(request):
+                self._begin_preparation(request)
+                return
             command = self._build_command(request)
         except EncoderUnavailableError as error:
             self._cleanup_temporary_files()
@@ -465,7 +491,10 @@ class ExportEngine(QObject):
             self._cleanup_temporary_files()
             self.failed.emit(str(error))
             return
+        self._launch_export(request, command)
 
+    def _launch_export(self, request: ExportRequest, command: list[str]) -> None:
+        """Suite commune de :meth:`start` : état de l'export en cours puis lancement de FFmpeg."""
         self._request = request
         self._launch_request = request
         self._error_output = ""
@@ -489,7 +518,11 @@ class ExportEngine(QObject):
         self._process.start(command[0], command[1:])
 
     def cancel(self) -> None:
-        """Termine le processus FFmpeg actif et émet ``cancelled``."""
+        """Termine le processus FFmpeg actif (ou interrompt le calcul des images intermédiaires) et émet ``cancelled``."""
+        if self._preparing:
+            self.status_changed.emit("Annulation de l'export...")
+            self._prepare_cancel.set()       # le fil s'arrête à l'image suivante : ``_on_preparation_finished`` émet ``cancelled``
+            return
         if self._process.state() == QProcess.NotRunning:
             return
         self._cancel_requested = True
@@ -497,6 +530,108 @@ class ExportEngine(QObject):
         self._process.kill()
         # ``_process_finished`` se chargera du nettoyage des fichiers
         # temporaires une fois le slot appelé par Qt.
+
+    # ------------------------------------------------------------------
+    # Images intermédiaires (mélange d'images, flux optique)
+    # ------------------------------------------------------------------
+
+    def _cache(self) -> FlowCache:
+        if self.flow_cache is None:
+            from .flow_cache import FlowCache
+
+            self.flow_cache = FlowCache()
+        return self.flow_cache
+
+    def _needs_preparation(self, request: ExportRequest) -> bool:
+        from .retime_layers import plan_needs_preparation
+
+        if request.render_plan.missing_media:
+            return False                      # ``_build_command`` refuse avec le message clair (média introuvable)
+        width, height = request.preset.resolution
+        return plan_needs_preparation(request.render_plan, width, height, request.fps, self.flow_preference)
+
+    def _begin_preparation(self, request: ExportRequest) -> None:
+        """Calcule les images intermédiaires dans un fil ; FFmpeg démarre ensuite, sur le fil principal, si tout a réussi."""
+        from .retime_layers import prepare_plan
+        from .retime_prepare import PrepareCancelled
+
+        width, height = request.preset.resolution
+        cache = self._cache()
+        plan = request.render_plan
+        preference = self.flow_preference
+        self._pending_request = request
+        self._preparing = True
+        self._prepare_cancel.clear()
+        self.progress_changed.emit(0)
+        self.status_changed.emit("Calcul des images intermédiaires...")
+
+        def work() -> None:
+            try:
+                result = prepare_plan(
+                    plan, width, height, request.fps, cache, preference=preference,
+                    progress=lambda done, total: self.preparation_progress.emit(done, total),
+                    cancelled=self._prepare_cancel.is_set,
+                )
+            except PrepareCancelled:
+                self._preparation_finished.emit(None)
+            except BaseException as error:  # noqa: BLE001 - tout échec revient sur le fil principal, jamais perdu dans le fil
+                self._preparation_finished.emit(error)
+            else:
+                self._preparation_finished.emit(result)
+
+        self._prepare_thread = threading.Thread(target=work, name="kut-flow-prepare", daemon=True)
+        self._prepare_thread.start()
+
+    def _on_preparation_finished(self, outcome: object) -> None:
+        """Fin du calcul (fil principal) : lance l'export, ou rapporte l'échec / l'annulation."""
+        request = self._pending_request
+        self._pending_request = None
+        thread, self._prepare_thread = self._prepare_thread, None
+        if thread is not None:
+            thread.join(timeout=5.0)
+        self._preparing = False
+        if outcome is None or self._prepare_cancel.is_set():
+            self._prepare_cancel.clear()
+            self._cleanup_temporary_files()
+            self.cancelled.emit()
+            return
+        if isinstance(outcome, BaseException):
+            LOGGER.error("Images intermédiaires : %s", outcome)
+            self._cleanup_temporary_files()
+            self.failed.emit(str(outcome) or type(outcome).__name__)
+            return
+        from .retime_layers import PlanPreparation
+
+        if not isinstance(outcome, PlanPreparation):
+            self._cleanup_temporary_files()
+            self.failed.emit("Le calcul des images intermédiaires n'a rien rendu.")
+            return
+        self._prepared = dict(outcome.streams)
+        self.last_preparation = outcome.report
+        if request is None:
+            self.failed.emit("La requête d'export est introuvable.")
+            self._cleanup_temporary_files()
+            return
+        try:
+            command = self._build_command(request)
+        except EncoderUnavailableError as error:
+            self._cleanup_temporary_files()
+            self.last_error_kind = "encoder"
+            self.failed.emit(str(error))
+            return
+        except (ImportError, OSError, ValueError, RuntimeError) as error:
+            self._cleanup_temporary_files()
+            self.failed.emit(str(error))
+            return
+        self._launch_export(request, command)
+
+    def _stop_preparation(self, timeout: float) -> None:
+        """Interrompt le calcul des images intermédiaires s'il tourne (fermeture de l'application)."""
+        thread = self._prepare_thread
+        if thread is None:
+            return
+        self._prepare_cancel.set()
+        thread.join(timeout=timeout)
 
     # ------------------------------------------------------------------
     # Construction de la commande FFmpeg
@@ -537,9 +672,10 @@ class ExportEngine(QObject):
         plan = request.render_plan
         width, height = request.preset.resolution
         self._prepare_temporary_files(plan)
+        prepared = self._prepare_frame(plan, width, height, request.fps, playhead)
         filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
-                plan, width, height, request.fps, self._current_srt_path
+                plan, width, height, request.fps, self._current_srt_path, prepared=prepared
             )
         )
         # Seule l'image est extraite : l'audio du graphe est consommé par un
@@ -574,6 +710,15 @@ class ExportEngine(QObject):
         ])
         return command
 
+    def _prepare_frame(self, plan: RenderPlan, width: int, height: int, fps: float, playhead: float):
+        """Images intermédiaires d'**une** image (scopes) : la fenêtre se réduit à la tête de lecture, le calcul reste instantané."""
+        from .retime_layers import plan_needs_preparation, prepare_plan
+
+        window = (max(0.0, float(playhead)), max(0.0, float(playhead)) + 1.0 / max(1.0, float(fps)))
+        if not plan_needs_preparation(plan, width, height, fps, self.flow_preference, window):
+            return None
+        return prepare_plan(plan, width, height, fps, self._cache(), preference=self.flow_preference, window=window).streams
+
     def _build_command(self, request: ExportRequest) -> list[str]:
         """Construit la commande FFmpeg pour un export basé ``RenderPlan``."""
         plan = request.render_plan
@@ -593,7 +738,7 @@ class ExportEngine(QObject):
 
         srt_path = self._current_srt_path
         filter_complex, video_label, audio_label, input_paths = (
-            self._build_filter_complex(plan, width, height, request.fps, srt_path)
+            self._build_filter_complex(plan, width, height, request.fps, srt_path, prepared=self._prepared)
         )
 
         command: list[str] = [
@@ -718,12 +863,17 @@ class ExportEngine(QObject):
         fps: int,
         srt_path: str | None,
         quality: str = "export",
+        prepared: Mapping[str, PreparedStream] | None = None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
         ``quality`` (``draft`` / ``standard`` / ``high`` / ``export``) ne règle
         que le flou de mouvement des calques motion graphics : un segment
         d'aperçu brouillon s'en passe, l'export utilise le réglage complet.
+
+        ``prepared`` : les flux d'images intermédiaires déjà fabriqués (mélange d'images, flux optique), par identifiant de
+        clip (:func:`core.retime_layers.prepare_plan`). Un clip qui en demande et n'en a pas fait l'objet est refusé
+        (:class:`~core.retime_graph.RetimeError`) : jamais une sortie silencieusement différente de celle qu'on a choisie.
 
         Si ``plan.subtitle_cues`` est non vide, le filtre ``subtitles``
         est appliqué après la composition vidéo pour incruster les
@@ -754,11 +904,11 @@ class ExportEngine(QObject):
         # Séquences imbriquées : chaque sous-plan est composé une fois, en
         # amont, puis distribué (``split``) à ses instances.
         sources = _build_nested_sources(
-            parts, plan, path_to_index, width, height, add_input=add_input, quality=quality,
+            parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
         )
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality,
+            add_input=add_input, quality=quality, prepared=prepared,
         )
 
         # ---------------- Sous-titres ----------------
@@ -1009,6 +1159,15 @@ def _nested_demand(plan: RenderPlan) -> tuple[dict[str, int], dict[str, int]]:
     return need_video, need_audio
 
 
+def nested_geometry(inner: RenderPlan, output_width: int, output_height: int, parent: RenderPlan) -> tuple[int, int, float]:
+    """Taille et cadence auxquelles une séquence imbriquée est composée : **sa** résolution, mise à l'échelle du rapport
+    export / séquence racine (un aperçu au quart rend aussi ses séquences imbriquées au quart). Partagée avec la préparation des
+    images intermédiaires, qui doit décoder à la taille exacte où le graphe les relira."""
+    scale_x = output_width / max(1, int(parent.width))
+    scale_y = output_height / max(1, int(parent.height))
+    return _even(inner.width * scale_x), _even(inner.height * scale_y), inner.fps if inner.fps > 0 else 30.0
+
+
 def _build_nested_sources(
     parts: list[str],
     plan: RenderPlan,
@@ -1018,6 +1177,7 @@ def _build_nested_sources(
     *,
     add_input=None,
     quality: str = "export",
+    prepared: Mapping[str, PreparedStream] | None = None,
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -1034,8 +1194,6 @@ def _build_nested_sources(
     if not entries:
         return sources
     need_video, need_audio = _nested_demand(plan)
-    scale_x = output_width / max(1, int(plan.width))
-    scale_y = output_height / max(1, int(plan.height))
     for index, entry in enumerate(entries):
         want_video = need_video.get(entry.key, 0)
         want_audio = need_audio.get(entry.key, 0)
@@ -1043,14 +1201,12 @@ def _build_nested_sources(
             continue
         inner = entry.plan
         prefix = f"n{index}_"
-        width = _even(inner.width * scale_x)
-        height = _even(inner.height * scale_y)
-        fps = inner.fps if inner.fps > 0 else 30.0
+        width, height, fps = nested_geometry(inner, output_width, output_height, plan)
         video_label, audio_label = _compose_plan_graph(
             parts, inner, width, height, fps, path_to_index, sources,
             prefix=prefix, nested=True,
             want_video=bool(want_video), want_audio=bool(want_audio),
-            add_input=add_input, quality=quality,
+            add_input=add_input, quality=quality, prepared=prepared,
         )
         if want_video:
             sources.video[entry.key] = _fan_out(parts, video_label, want_video, "split")
@@ -1085,6 +1241,7 @@ def _compose_plan_graph(
     want_audio: bool = True,
     add_input=None,
     quality: str = "export",
+    prepared: Mapping[str, PreparedStream] | None = None,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1138,7 +1295,7 @@ def _compose_plan_graph(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
-                        add_input=add_input,
+                        add_input=add_input, prepared=prepared,
                     )
                 )
 
@@ -1322,6 +1479,22 @@ def _format_seconds(value: float) -> str:
     return f"{float(text):.1f}" if "." not in text else text
 
 
+OFFSET_GUARD_TICKS = 1e-3
+"""Garde ajoutée (en unités de la base de temps) au décalage d'une couche : plus que toute erreur d'arrondi flottante."""
+
+
+def _format_offset(value: float) -> str:
+    """Terme ajouté à ``PTS`` pour poser une couche à ``value`` secondes : ``<secondes>/TB+<garde>``.
+
+    ``setpts`` **tronque** son résultat à un entier de la base de temps. Après le conformage ``fps`` cette base vaut
+    ``1/cadence`` et une erreur d'un millionième suffit à perdre une image : ``1.033333`` (31/30 s sur six décimales) valait
+    30,99999 ticks, et même un décimal exact comme ``1.16`` s à 25 i/s, divisé par ``TB``, donne 28,999999999999996 ; la couche
+    apparaissait une image trop tôt. La garde (un millième de tick) absorbe ces erreurs sans jamais atteindre le tick
+    suivant, et ne change rien quand la base de temps est fine.
+    """
+    return f"{_format_seconds(value)}/TB+{OFFSET_GUARD_TICKS:g}"
+
+
 def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
     """Construit la liste dédupliquée d'inputs et un mapping ``path → index``.
 
@@ -1372,7 +1545,7 @@ def _build_transition_layers(
             f"[{p}ta{transition_index}][{p}tb{transition_index}]"
             f"xfade=transition={name}:duration={_format_seconds(transition.duration)}:"
             f"offset={_format_seconds(offset)},"
-            f"setpts=PTS+{_format_seconds(from_layer.timeline_start)}/TB[{label}]"
+            f"setpts=PTS+{_format_offset(from_layer.timeline_start)}[{label}]"
         )
         replacements[min(from_index, to_index)] = (label, from_layer)
         hidden.update({from_index, to_index})
@@ -1443,6 +1616,47 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
     return "fade"
 
 
+def _prepared_source(layer, time_map, fps: float, last_frame, source, prepared, add_input):
+    """Le fichier d'images intermédiaires d'une couche et les runs qui s'y lisent, ou ``(None, None)`` si l'échantillonnage suffit.
+
+    L'échantillonnage suffit quand le mode est « Échantillonnage », quand la couche est une séquence imbriquée (son flux n'est
+    pas un fichier : l'interpolation y est refusée à l'édition) ou quand aucune image du clip n'est intermédiaire (200 %, arrêt…) :
+    il produit alors exactement les mêmes images. Sinon le flux préparé est **obligatoire** : son absence ou sa péremption est une
+    erreur, jamais un repli silencieux.
+    """
+    interpolation = layer.time_remapping.interpolation
+    if interpolation is TimeInterpolation.SAMPLING or source is not None:
+        return None, None
+    plan = plan_interpolation(
+        time_map, fps=fps, source_fps=float(layer.source_fps) if layer.source_fps > 0 else 30.0, last_frame=last_frame,
+        interpolation=interpolation,
+    )
+    needed = plan.runs_to_synthesize()
+    if not needed:
+        return None, None
+    stream = None if prepared is None else prepared.get(layer.clip_id)
+    if stream is None:
+        raise RetimeError(
+            f"Les images intermédiaires du clip « {layer.clip_id} » ({interpolation.value}) n'ont pas été préparées : "
+            "lancez la préparation avant de construire le rendu."
+        )
+    runs = {run.run_index: run for run in stream.runs}
+    if set(runs) != set(needed) or any(runs[i].ticks != plan.runs[i].ticks for i in needed):
+        raise RetimeError(
+            f"Les images intermédiaires préparées du clip « {layer.clip_id} » ne correspondent plus à son temps : "
+            "elles sont périmées, il faut les refaire."
+        )
+    if add_input is None:
+        raise RetimeError("Ce graphe n'accepte pas d'entrée supplémentaire : impossible de lire les images intermédiaires.")
+    return f"{add_input(stream.path)}:v", runs
+
+
+def frame_fit_filter(width: int, height: int, pad_color: str = "black") -> str:
+    """Mise au cadre d'un média : ``scale`` qui préserve le ratio puis ``pad`` aux bandes. Partagée avec la préparation des images
+    intermédiaires : l'image qu'elle décode est exactement celle que le graphe aurait obtenue."""
+    return f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color}"
+
+
 def _build_layer_filter(
     layer_index: int,
     layer: RenderLayer,
@@ -1455,6 +1669,7 @@ def _build_layer_filter(
     label: str | None = None,
     pad_color: str = "black",
     add_input=None,
+    prepared: Mapping[str, PreparedStream] | None = None,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -1491,7 +1706,7 @@ def _build_layer_filter(
     output_label = label if label is not None else f"v{layer_index}"
     source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
-    timeline_start = _format_seconds(layer.timeline_start)
+    timeline_start = _format_offset(layer.timeline_start)
 
     # ``scale`` et ``rotate`` attendent la variable temporelle
     # minuscule ``t``. ``T`` n'est définie que par certains filtres,
@@ -1538,38 +1753,50 @@ def _build_layer_filter(
             f"[{o}_c][{o}_na]alphamerge,"
         )
 
-    # Filtres de remappage temporel (freeze, reverse, speed)
-    time_remapping_filter = _build_time_remapping_video_filter(layer, fps)
-
-    parts = [
-        f"[{source_label}]",
-        f"trim=start={source_in}:end={source_out},",
-        "setpts=PTS-STARTPTS,",
-    ]
-
+    frame_fit = frame_fit_filter(width, height, pad_color)
+    retime_chains: tuple[str, ...] = ()
+    time_map = _retime_map_of(layer)
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         # Une seule image est retenue (avant tout traitement : un seul calcul),
         # mise au format du cadre, puis tenue pendant la durée du freeze.
+        parts = [
+            f"[{source_label}]",
+            f"trim=start={source_in}:end={source_out},",
+            "setpts=PTS-STARTPTS,",
+        ]
         hold = float(layer.time_remapping.freeze_duration)
         if hold <= 0.0:
             hold = max(0.0, float(layer.timeline_end - layer.timeline_start))
         hold = max(hold, 1.0 / float(fps))
-        parts.append(f"{time_remapping_filter},")
-        parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
-        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
+        parts.append(f"{_build_freeze_video_filter(layer)},")
+        parts.append(f"{frame_fit},")
         parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
         parts.append(f"fps={fps},")
         parts.append(f"trim=duration={hold:.6f},")
         parts.append("setpts=PTS-STARTPTS,")
+    elif time_map is not None:
+        # Clip remappé (vitesse, courbe, sens, interpolation) : le temps vient du ``TimeMap`` du clip, une seule fois,
+        # sur les horodatages d'origine du média (plus de ``fps`` avant le remappage : une double conformation décalait
+        # les images). Le flux obtenu est à la cadence du projet, de durée exacte, horodaté à partir de 0.
+        last_frame = layer.source_frames - 1 if layer.source_frames > 0 else None
+        prepared_label, prepared_runs = _prepared_source(layer, time_map, float(fps), last_frame, source, prepared, add_input)
+        stage = video_stage(
+            time_map, source_label=source_label, prefix=f"{output_label}_t", fps=float(fps),
+            source_fps=float(layer.source_fps), prepare=frame_fit, frame_bytes=int(width * height * 1.5),
+            last_frame=last_frame, prepared_label=prepared_label, prepared_runs=prepared_runs,
+        )
+        retime_chains = stage.chains
+        parts = [f"[{stage.label}]"]
     else:
-        # Cas normal : scale/pad/fps avant le time_remapping, qui (reverse/speed)
-        # doit précéder le dernier setpts pour que le décalage timeline soit correct.
-        parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease,")
-        parts.append(f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color},")
-        parts.append(f"fps={fps},")
-        if time_remapping_filter:
-            parts.append(f"{time_remapping_filter},")
-        parts.append("setpts=PTS-STARTPTS,")
+        # Cas normal : un clip non remappé est conformé à la cadence du projet.
+        parts = [
+            f"[{source_label}]",
+            f"trim=start={source_in}:end={source_out},",
+            "setpts=PTS-STARTPTS,",
+            f"{frame_fit},",
+            f"fps={fps},",
+            "setpts=PTS-STARTPTS,",
+        ]
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
@@ -1584,9 +1811,9 @@ def _build_layer_filter(
         parts.append(f"{color_grade_filters},")
     parts.append(f"{','.join(compositing_filters)},")
     parts.append(f"{opacity_expr},")
-    parts.append(f"setpts=PTS+{timeline_start}/TB[{output_label}]")
+    parts.append(f"setpts=PTS+{timeline_start}[{output_label}]")
 
-    return ";".join([*matte_parts, "".join(parts)])
+    return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
 def _build_color_grade_filters(grade) -> str:
@@ -2044,17 +2271,28 @@ def _build_audio_filter(
     timeline_start = _format_seconds(layer.timeline_start)
     _ = timeline_duration  # conservé pour traçabilité / évolutions futures
 
-    steps: list[str] = [
-        f"atrim=start={source_in}:end={source_out}",
-        "asetpts=PTS-STARTPTS",
-        "aformat=channel_layouts=stereo:sample_rates=48000",
-    ]
-
-    # Filtres de remappage temporel (freeze, reverse, speed)
-    time_remapping_filter = _build_time_remapping_audio_filter(layer)
-    if time_remapping_filter:
-        # Appliquer le time_remapping avant les effets audio
-        steps.append(time_remapping_filter)
+    source_label = source if source is not None else f"{input_index}:a"
+    output_label = label if label is not None else f"a{audio_index}"
+    time_map = _retime_audio_map_of(layer)
+    pre_chains: tuple[str, ...] = ()
+    if time_map is not None:
+        # Clip remappé : le son vient du ``TimeMap`` du clip, morceau par morceau (voir :mod:`core.retime_graph`). Le
+        # flux obtenu est stéréo 48 kHz, de durée exacte, horodaté à partir de 0 : la suite de la chaîne est inchangée.
+        stage = audio_stage(
+            time_map, source_label=source_label, prefix=f"{output_label}_t",
+            preserve_pitch=layer.time_remapping.preserve_pitch, remap_audio=layer.time_remapping.remap_audio,
+            source_in=layer.source_in,
+        )
+        pre_chains = stage.chains
+        head = f"[{stage.label}]"
+        steps: list[str] = []
+    else:
+        head = f"[{source_label}]"
+        steps = [
+            f"atrim=start={source_in}:end={source_out}",
+            "asetpts=PTS-STARTPTS",
+            "aformat=channel_layouts=stereo:sample_rates=48000",
+        ]
 
     # Effets audio non destructifs du clip (tâche 27). On les applique
     # *avant* le volume / panoramique / fondus, conformément à la
@@ -2106,9 +2344,7 @@ def _build_audio_filter(
         steps.append(f"adelay={delay_ms}|{delay_ms}")
     else:
         steps.append(f"asetpts=PTS+{timeline_start}/TB")
-    source_label = source if source is not None else f"{input_index}:a"
-    output_label = label if label is not None else f"a{audio_index}"
-    return f"[{source_label}]" + ",".join(steps) + f"[{output_label}]"
+    return ";".join([*pre_chains, head + ",".join(steps) + f"[{output_label}]"])
 
 
 def _build_track_volume_envelope(
@@ -2429,104 +2665,45 @@ def _build_master_filter(plan) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_time_remapping_video_filter(layer: RenderLayer, fps: float | None = None) -> str:
-    """Construit les filtres de remappage temporel pour une couche vidéo.
+def _retime_map_of(layer: RenderLayer):
+    """Le mapping que l'étage de temps doit rendre, ou ``None`` (clip non remappé, ou arrêt sur image : chaînes historiques).
 
-    Applique dans l'ordre :
-    1. Freeze frame (si activé) : ne garde qu'une image (``trim`` sans virgule
-       interne) ; l'appelant la tient pendant ``freeze_duration``
-    2. Reverse (si activé) : inverse la lecture
-    3. Speed (si != 1.0) : ``setpts=PTS/vitesse`` puis ``fps`` pour revenir à
-       la cadence de sortie. ``atempo`` est un filtre **audio** : dans la chaîne
-       vidéo FFmpeg refuse le graphe (« Media type mismatch »).
-
-    Args:
-        layer: Couche vidéo.
-        fps: Cadence de sortie, pour rééchantillonner après un changement de vitesse.
-
-    Returns:
-        Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
-        si aucun remappage n'est actif.
+    Une couche construite à la main (tests) sans ``time_map`` mais avec un remappage non neutre est lue par ses choix : le
+    mapping reste celui de :mod:`core.time_map`, jamais une formule locale.
     """
-    tr = layer.time_remapping
-    parts: list[str] = []
+    remapping = layer.time_remapping
+    if remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        return None
+    if layer.time_map is not None:
+        return layer.time_map
+    if remapping.is_normal:
+        return None
+    return time_map_for(layer.source_in, layer.source_out, remapping)
 
-    # Freeze frame : on ne garde qu'une image, celle de l'instant figé.
-    if tr.freeze_mode == FreezeFrameMode.FREEZE:
-        parts.extend(
-            get_ffmpeg_freeze_filter(
-                tr.freeze_source_time,
-                layer.source_fps if layer.source_fps > 0 else 30.0,
-                source_in=layer.source_in,
-            )
+
+def _build_freeze_video_filter(layer: RenderLayer) -> str:
+    """Ne garde que l'image de l'instant figé (``trim`` sans virgule interne) ; l'appelant la tient pendant la durée."""
+    remapping = layer.time_remapping
+    return ",".join(
+        get_ffmpeg_freeze_filter(
+            remapping.freeze_source_time,
+            layer.source_fps if layer.source_fps > 0 else 30.0,
+            source_in=layer.source_in,
         )
-        # Après un freeze, on n'applique ni reverse ni speed
-        return ",".join(parts)
-
-    # Reverse: on applique le filtre reverse
-    if tr.reverse:
-        # Vérifier la durée pour éviter les problèmes de mémoire
-        source_duration = layer.source_out - layer.source_in
-        if source_duration > MAX_REVERSE_DURATION_SECONDS:
-            raise ValueError(
-                f"Impossible d'appliquer reverse : clip trop long "
-                f"({source_duration:.0f}s > {MAX_REVERSE_DURATION_SECONDS:.0f}s). "
-                f"Limitation FFmpeg pour éviter une consommation mémoire excessive."
-            )
-        parts.append("reverse")
-
-    # Speed : on resserre ou on étire les timestamps, puis on rééchantillonne.
-    if tr.speed != 1.0:
-        parts.append(f"setpts=PTS/{clamp_speed(tr.speed):.9g}")
-        if fps:
-            parts.append(f"fps={fps}")
-
-    return ",".join(parts)
+    )
 
 
-def _build_time_remapping_audio_filter(layer: AudioLayer) -> str:
-    """Construit les filtres de remappage temporel pour une couche audio.
+def _retime_audio_map_of(layer: AudioLayer):
+    """Le mapping que l'étage audio doit rendre, ou ``None`` (clip non remappé : chaîne historique).
 
-    Applique dans l'ordre :
-    1. Freeze frame: l'audio est silencieux (volume=0)
-    2. Reverse: areverse
-    3. Speed: atempo
-
-    Note: Le freeze frame pour l'audio se traduit par un silence total.
-    La durée timeline est déjà correcte dans le RenderPlan.
-
-    Returns:
-        Chaîne de filtres à insérer dans le filter_complex, ou chaîne vide
-        si aucun remappage n'est actif.
+    Un arrêt sur image y est un run d'arrêt : le son est un silence de **la durée du clip** (l'ancien filtre coupait le son
+    sur toute la durée de la *source*).
     """
-    tr = layer.time_remapping
-    parts: list[str] = []
-
-    # Freeze frame: l'audio est silencieux
-    if tr.freeze_mode == FreezeFrameMode.FREEZE:
-        # Pour le freeze, on rend l'audio silencieux mais on garde la bonne durée
-        # Le trim et asetpts sont déjà appliqués avant
-        return "volume=0"
-
-    # Reverse
-    if tr.reverse:
-        # Vérifier la durée pour éviter les problèmes de mémoire
-        source_duration = layer.source_out - layer.source_in
-        if source_duration > MAX_REVERSE_DURATION_SECONDS:
-            raise ValueError(
-                f"Impossible d'appliquer reverse : clip trop long "
-                f"({source_duration:.0f}s > {MAX_REVERSE_DURATION_SECONDS:.0f}s). "
-                f"Limitation FFmpeg pour éviter une consommation mémoire excessive."
-            )
-        parts.append("areverse")
-
-    # Speed
-    if tr.speed != 1.0:
-        speed_filters = get_ffmpeg_speed_filter(tr.speed)
-        # Pour l'audio, atempo fonctionne directement
-        parts.extend(speed_filters)
-
-    return ",".join(parts)
+    if layer.time_map is not None:
+        return layer.time_map
+    if layer.time_remapping.is_normal:
+        return None
+    return time_map_for(layer.source_in, layer.source_out, layer.time_remapping)
 
 
 # ---------------------------------------------------------------------------

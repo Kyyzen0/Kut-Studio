@@ -832,6 +832,24 @@ def test_flattening_refuses_a_segment_that_carries_its_own_audio_controls(contro
     assert flatten_multicam_clip(project, segment.id).video                  # sans réglage audio propre : aplati
 
 
+@pytest.mark.parametrize(
+    "choice", [{"interpolation": "blending"}, {"interpolation": "optical_flow"}, {"preserve_pitch": False}, {"remap_audio": False}]
+)
+def test_flattening_refuses_a_time_choice_the_replacement_clips_would_not_keep(choice):
+    """Les clips remplaçants héritent du remappage de l'angle : une interpolation d'images, une hauteur libre ou un audio non
+    remappé propres au segment seraient perdus. Les valeurs par défaut (échantillonnage, hauteur conservée) n'empêchent rien."""
+    from dataclasses import replace
+
+    project, _source, segment = _with_segment("angle-1")
+    segment.time_remapping = replace(segment.time_remapping, **choice)
+    before = _snapshot(project)
+    with pytest.raises(MulticamError, match="interpolation|audio"):
+        flatten_multicam_clip(project, segment.id)
+    assert _snapshot(project) == before
+    segment.time_remapping = replace(segment.time_remapping, **{key: getattr(type(segment.time_remapping)(), key) for key in choice})
+    assert flatten_multicam_clip(project, segment.id).video
+
+
 def test_a_silent_camera_cannot_be_the_audio_source_but_a_recorder_or_a_camera_with_sound_can():
     project, source = _project()                                              # « Drone » : média sans son
     sequence = project.get_sequence(source.id)
