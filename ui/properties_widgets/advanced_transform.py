@@ -23,16 +23,17 @@ from PySide6.QtWidgets import (
 
 from ui.design_system import Spacing
 from ui.theme import label_style
+from ui.i18n import translate
 
-# (propriété, libellé, min, max, pas, facteur d'affichage, suffixe)
+# (propriété, clé i18n du libellé, min, max, pas, facteur d'affichage, suffixe)
 NUMERIC_FIELDS = (
-    ("anchor_x", "Ancrage X", -400.0, 500.0, 1.0, 100.0, " %"),
-    ("anchor_y", "Ancrage Y", -400.0, 500.0, 1.0, 100.0, " %"),
-    ("scale_x", "Échelle X", 0.0, 1000.0, 1.0, 100.0, " %"),
-    ("scale_y", "Échelle Y", 0.0, 1000.0, 1.0, 100.0, " %"),
-    ("skew", "Inclinaison", -85.0, 85.0, 1.0, 1.0, " °"),
+    ("anchor_x", "animation.property.anchor_x", -400.0, 500.0, 1.0, 100.0, " %"),
+    ("anchor_y", "animation.property.anchor_y", -400.0, 500.0, 1.0, 100.0, " %"),
+    ("scale_x", "animation.property.scale_x", 0.0, 1000.0, 1.0, 100.0, " %"),
+    ("scale_y", "animation.property.scale_y", 0.0, 1000.0, 1.0, 100.0, " %"),
+    ("skew", "animation.property.skew", -85.0, 85.0, 1.0, 1.0, " °"),
 )
-BOOL_FIELDS = (("flip_h", "Miroir horizontal"), ("flip_v", "Miroir vertical"))
+BOOL_FIELDS = (("flip_h", "animation.property.flip_h"), ("flip_v", "animation.property.flip_v"))
 
 
 class AdvancedTransformEditor(QWidget):
@@ -46,7 +47,7 @@ class AdvancedTransformEditor(QWidget):
         layout.setContentsMargins(0, Spacing.xs, 0, 0)
         layout.setSpacing(Spacing.xs)
         self.toggle = QToolButton()
-        self.toggle.setText("Transformation avancée")
+        self.toggle.setText(translate("mograph.advanced.title"))
         self.toggle.setCheckable(True)
         self.toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle.setArrowType(Qt.RightArrow)
@@ -63,7 +64,7 @@ class AdvancedTransformEditor(QWidget):
         self._labels: dict[str, QLabel] = {}
         row = 0
         for name, label, low, high, step, factor, suffix in NUMERIC_FIELDS:
-            caption = QLabel(label)
+            caption = QLabel(translate(label))
             caption.setStyleSheet(label_style(11, "muted", 600))
             spin = QDoubleSpinBox(objectName=f"advanced_{name}")
             spin.setRange(low, high)
@@ -80,7 +81,7 @@ class AdvancedTransformEditor(QWidget):
             self._labels[name] = caption
             row += 1
         for name, label in BOOL_FIELDS:
-            check = QCheckBox(label, objectName=f"advanced_{name}")
+            check = QCheckBox(translate(label), objectName=f"advanced_{name}")
             check.toggled.connect(lambda checked, prop=name: self._emit(prop, bool(checked)))
             grid.addWidget(check, row, 0, 1, 2)
             grid.addWidget(self._diamond(name), row, 2)
@@ -96,7 +97,7 @@ class AdvancedTransformEditor(QWidget):
         button.setText("◇")
         button.setCheckable(True)
         button.setFixedSize(22, 22)
-        button.setToolTip("Ajouter / retirer une image-clé à la tête de lecture")
+        button.setToolTip(translate("mograph.advanced.keyframe_tooltip"))
         button.clicked.connect(lambda _checked=False, prop=name: self.keyframe_toggled.emit(prop))
         self.diamonds[name] = button
         return button

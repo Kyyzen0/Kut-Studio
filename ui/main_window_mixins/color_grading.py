@@ -144,7 +144,7 @@ class ColorGradingMixin:
             )
         )
         if grade is None:
-            self._report_edit_refused("Étalonnage invalide")
+            self._report_edit_refused(translate("status.color.invalid"))
             return
         self._commit_color_grade(clip_id, grade, translate("history.color.grade"))
 

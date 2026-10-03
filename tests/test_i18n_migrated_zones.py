@@ -146,3 +146,97 @@ def test_status_bar_messages_follow_the_language(window):
     assert window.statusBar().currentMessage() == "Transition deleted."
     window._report_edit_refused(i18n.translate("status.clip.cut_none"))
     assert window.statusBar().currentMessage() == "No clip selected to cut"
+
+
+# ---------------------------------------------------------------------------
+# Motion graphics : calques, bibliothèque, éditeurs
+# ---------------------------------------------------------------------------
+
+
+def _menu_texts(menu) -> list[str]:
+    return [action.text() for action in menu.actions() if not action.isSeparator()]
+
+
+@pytest.mark.parametrize(("language", "title", "add_button", "headers", "shape_names"), [
+    ("fr", "CALQUES", "+ Ajouter", ["Calque", "Parent", "Durée"],
+     ["Rectangle", "Rectangle arrondi", "Ellipse / cercle", "Ligne", "Polygone"]),
+    ("en", "LAYERS", "+ Add", ["Layer", "Parent", "Duration"],
+     ["Rectangle", "Rounded rectangle", "Ellipse / circle", "Line", "Polygon"]),
+    ("es", "CAPAS", "+ Añadir", ["Capa", "Padre", "Duración"],
+     ["Rectángulo", "Rectángulo redondeado", "Elipse / círculo", "Línea", "Polígono"]),
+])
+def test_the_layers_panel_follows_the_language_while_open(
+    language_reset, qtbot, language, title, add_button, headers, shape_names
+):
+    from ui.layers_panel import LayersPanel
+
+    panel = LayersPanel()
+    qtbot.addWidget(panel)
+    assert panel._title.text() == "CALQUES" and panel.add_button.text() == "+ Ajouter"
+    i18n.set_language(language)                                  # le panneau est abonné : aucun appel explicite
+    assert panel._title.text() == title and panel.add_button.text() == add_button
+    assert [panel.tree.headerItem().text(column) for column in (2, 3, 4)] == headers
+    shapes_menu = next(action.menu() for action in panel.add_button.menu().actions() if action.menu() is not None)
+    assert _menu_texts(shapes_menu) == shape_names
+    with i18n.strict_translations():
+        panel.retranslate()
+
+
+def test_the_graphics_library_retranslates_its_buttons_and_tooltips(language_reset, qtbot):
+    from ui.graphics_library import GraphicsLibraryView
+
+    view = GraphicsLibraryView()
+    qtbot.addWidget(view)
+    assert view.create_buttons["text"].text() == "Titre"
+    assert view.create_buttons["text"].toolTip() == "Ajouter : Titre — Texte éditable"
+    i18n.set_language("en")
+    assert view.create_buttons["text"].text() == "Title"
+    assert view.create_buttons["text"].toolTip() == "Add: Title — Editable text"
+    assert view.import_image_button.toolTip() == "Create a graphic layer from an image"
+    i18n.set_language("es")
+    assert view.create_buttons["solid"].text() == "Relleno"
+
+
+@pytest.mark.parametrize("language", ["en", "es"])
+def test_the_motion_graphics_editors_build_in_strict_mode_without_missing_keys(language_reset, qtbot, language):
+    """Les éditeurs construisent tous leurs libellés : une clé absente d'une langue échoue au lieu de se replier."""
+    from ui.compositing_editor import CompositingEditor
+    from ui.graphics_editor import GraphicsEditor
+    from ui.properties_widgets.advanced_transform import AdvancedTransformEditor
+    from ui.text_style_editor import TextStyleEditor
+
+    i18n.set_language(language)
+    with i18n.strict_translations():
+        widgets = [GraphicsEditor(), CompositingEditor(""), TextStyleEditor(), AdvancedTransformEditor()]
+    for widget in widgets:
+        qtbot.addWidget(widget)
+    graphics, compositing, _text, advanced = widgets
+    texts = {"en": ("Graphic layer", "Advanced transform"), "es": ("Capa gráfica", "Transformación avanzada")}[language]
+    assert graphics.title() == texts[0]
+    assert advanced.toggle.text() == texts[1]
+    shape_labels = [graphics.shape_combo.itemText(i) for i in range(graphics.shape_combo.count())]
+    assert shape_labels[1] == {"en": "Rounded rectangle", "es": "Rectángulo redondeado"}[language]
+    mask_modes = [compositing.mask_mode.itemText(i) for i in range(compositing.mask_mode.count())]
+    assert mask_modes == {"en": ["Add", "Subtract", "Intersection"], "es": ["Añadir", "Restar", "Intersección"]}[language]
+
+
+def test_layer_attribute_choices_and_dialogs_follow_the_language(window, monkeypatch):
+    from core.mograph_layers import ATTRIBUTE_KINDS
+
+    seen = []
+
+    def choose(_parent, title, label, items, *_args):
+        seen.append((title, label, list(items)))
+        return items[0], False
+
+    monkeypatch.setattr("ui.main_window_mixins.motion_graphics.QInputDialog.getItem", choose)
+    window._attribute_clipboard = object()
+    i18n.set_language("en")
+    window._paste_layer_attributes([_first_clip_id(window)])
+    title, label, items = seen[0]
+    assert (title, label) == ("Paste attributes", "Attributes to paste:")
+    assert items == ["All", "Transform", "Effects and color", "Masks", "Animation (keyframes)"]
+    assert len(items) == len(ATTRIBUTE_KINDS) + 1
+    window._attribute_clipboard = None
+    window._paste_layer_attributes([_first_clip_id(window)])
+    assert window.statusBar().currentMessage() == "Copy a layer's attributes first."

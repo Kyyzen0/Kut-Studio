@@ -128,12 +128,12 @@ class TextStyleEditor(QWidget):
         layout.setSpacing(Spacing.sm)
 
         # ----- Contenu ------------------------------------------------
-        content_label = QLabel("Texte")
+        content_label = QLabel(translate("common.text"))
         content_label.setStyleSheet(_label_style(11, "muted", 600))
         layout.addWidget(content_label)
         self.content_editor = QTextEdit()
         self.content_editor.setPlaceholderText(
-            "Texte affiché sur le preview…"
+            translate("mograph.textstyle.placeholder")
         )
         self.content_editor.setFixedHeight(60)
         self.content_editor.setStyleSheet(
@@ -144,7 +144,7 @@ class TextStyleEditor(QWidget):
         layout.addWidget(self.content_editor)
 
         # ----- Typographie -------------------------------------------
-        typo_label = QLabel("Typographie")
+        typo_label = QLabel(translate("mograph.textstyle.typography"))
         typo_label.setStyleSheet(_label_style(11, "muted", 600))
         layout.addWidget(typo_label)
 
@@ -158,24 +158,24 @@ class TextStyleEditor(QWidget):
         self.font_family_combo.currentTextChanged.connect(
             self._emit_style_changed
         )
-        form.addRow(_row_label("Police"), self.font_family_combo)
+        form.addRow(_row_label(translate("mograph.graphics.font")), self.font_family_combo)
 
         self.font_size_spin = _build_spin(
             6, 240, 1, default=32, decimals=0
         )
         self.font_size_spin.valueChanged.connect(self._emit_style_changed)
-        form.addRow(_row_label("Taille"), self.font_size_spin)
+        form.addRow(_row_label(translate("common.size")), self.font_size_spin)
 
         self.opacity_spin = _build_spin(
             0, 1, 0.05, default=1.0, suffix="", decimals=2
         )
         self.opacity_spin.valueChanged.connect(self._emit_style_changed)
-        form.addRow(_row_label("Opacité"), self.opacity_spin)
+        form.addRow(_row_label(translate("field.opacity")), self.opacity_spin)
 
         layout.addLayout(form)
 
         # ----- Couleurs ----------------------------------------------
-        colors_label = QLabel("Couleurs")
+        colors_label = QLabel(translate("mograph.textstyle.colors"))
         colors_label.setStyleSheet(_label_style(11, "muted", 600))
         layout.addWidget(colors_label)
 
@@ -199,13 +199,13 @@ class TextStyleEditor(QWidget):
         colors_grid = QGridLayout()
         colors_grid.setContentsMargins(0, 0, 0, 0)
         colors_grid.setSpacing(4)
-        colors_grid.addWidget(_row_label("Texte"), 0, 0)
+        colors_grid.addWidget(_row_label(translate("common.text")), 0, 0)
         colors_grid.addWidget(self.text_color_btn, 0, 1)
-        colors_grid.addWidget(_row_label("Contour"), 1, 0)
+        colors_grid.addWidget(_row_label(translate("mograph.graphics.stroke")), 1, 0)
         colors_grid.addWidget(self.outline_color_btn, 1, 1)
-        colors_grid.addWidget(_row_label("Ombre"), 2, 0)
+        colors_grid.addWidget(_row_label(translate("mograph.graphics.shadow")), 2, 0)
         colors_grid.addWidget(self.shadow_color_btn, 2, 1)
-        colors_grid.addWidget(_row_label("Fond"), 3, 0)
+        colors_grid.addWidget(_row_label(translate("field.background")), 3, 0)
         colors_grid.addWidget(self.background_color_btn, 3, 1)
         layout.addLayout(colors_grid)
 
@@ -218,14 +218,14 @@ class TextStyleEditor(QWidget):
         )
         self.outline_width_spin.valueChanged.connect(self._emit_style_changed)
         effect_form.addRow(
-            _row_label("Épaisseur contour"), self.outline_width_spin
+            _row_label(translate("mograph.textstyle.stroke_width")), self.outline_width_spin
         )
         self.shadow_offset_spin = _build_spin(
             0, 20, 0.5, default=1.5, suffix=" px", decimals=1
         )
         self.shadow_offset_spin.valueChanged.connect(self._emit_style_changed)
         effect_form.addRow(
-            _row_label("Décalage ombre"), self.shadow_offset_spin
+            _row_label(translate("mograph.textstyle.shadow_offset")), self.shadow_offset_spin
         )
         self.background_opacity_spin = _build_spin(
             0, 1, 0.05, default=0.0, suffix="", decimals=2
@@ -234,12 +234,12 @@ class TextStyleEditor(QWidget):
             self._emit_style_changed
         )
         effect_form.addRow(
-            _row_label("Opacité fond"), self.background_opacity_spin
+            _row_label(translate("mograph.textstyle.background_opacity")), self.background_opacity_spin
         )
         layout.addLayout(effect_form)
 
         # ----- Alignement 3×3 ---------------------------------------
-        align_label = QLabel("Alignement")
+        align_label = QLabel(translate("mograph.graphics.alignment"))
         align_label.setStyleSheet(_label_style(11, "muted", 600))
         layout.addWidget(align_label)
         self._tiles: dict[TextAlignment, AlignmentTile] = {}
@@ -264,22 +264,22 @@ class TextStyleEditor(QWidget):
             -100, 100, 1, default=0.0, suffix=" %", decimals=1
         )
         self.position_x_spin.valueChanged.connect(self._emit_style_changed)
-        pos_form.addRow(_row_label("Décalage X"), self.position_x_spin)
+        pos_form.addRow(_row_label(translate("mograph.textstyle.offset_x")), self.position_x_spin)
         self.position_y_spin = _build_spin(
             -100, 100, 1, default=0.0, suffix=" %", decimals=1
         )
         self.position_y_spin.valueChanged.connect(self._emit_style_changed)
-        pos_form.addRow(_row_label("Décalage Y"), self.position_y_spin)
+        pos_form.addRow(_row_label(translate("mograph.textstyle.offset_y")), self.position_y_spin)
         self.margin_x_spin = _build_spin(
             0, 200, 4, default=32.0, suffix=" px", decimals=0
         )
         self.margin_x_spin.valueChanged.connect(self._emit_style_changed)
-        pos_form.addRow(_row_label("Marge latérale"), self.margin_x_spin)
+        pos_form.addRow(_row_label(translate("mograph.textstyle.margin_side")), self.margin_x_spin)
         self.margin_y_spin = _build_spin(
             0, 200, 4, default=48.0, suffix=" px", decimals=0
         )
         self.margin_y_spin.valueChanged.connect(self._emit_style_changed)
-        pos_form.addRow(_row_label("Marge verticale"), self.margin_y_spin)
+        pos_form.addRow(_row_label(translate("mograph.textstyle.margin_vertical")), self.margin_y_spin)
         layout.addLayout(pos_form)
 
         # Padding fond
@@ -290,16 +290,16 @@ class TextStyleEditor(QWidget):
             0, 80, 2, default=12.0, suffix=" px", decimals=0
         )
         self.padding_x_spin.valueChanged.connect(self._emit_style_changed)
-        padding_form.addRow(_row_label("Padding horizontal"), self.padding_x_spin)
+        padding_form.addRow(_row_label(translate("mograph.textstyle.padding_horizontal")), self.padding_x_spin)
         self.padding_y_spin = _build_spin(
             0, 80, 2, default=6.0, suffix=" px", decimals=0
         )
         self.padding_y_spin.valueChanged.connect(self._emit_style_changed)
-        padding_form.addRow(_row_label("Padding vertical"), self.padding_y_spin)
+        padding_form.addRow(_row_label(translate("mograph.textstyle.padding_vertical")), self.padding_y_spin)
         layout.addLayout(padding_form)
 
         # ----- Bouton réinitialisation ---------------------------------
-        self.reset_button = QPushButton("Réinitialiser le style")
+        self.reset_button = QPushButton(translate("mograph.textstyle.reset"))
         self.reset_button.setStyleSheet(
             "QPushButton { padding: 6px 10px; border-radius: 4px;"
             " background: #2A2A2A; color: #FAFAFA;"
@@ -417,7 +417,7 @@ class TextStyleEditor(QWidget):
         chosen = QColorDialog.getColor(
             QColor(initial),
             self,
-            f"Couleur {field.replace('_', ' ')}",
+            translate("mograph.textstyle.pick_color", name=field.replace('_', ' ')),
             QColorDialog.ShowAlphaChannel,
         )
         if not chosen.isValid():
@@ -477,7 +477,7 @@ class _ColorButton(QPushButton):
 
     def _refresh_label(self) -> None:
         if self._allow_none and not self.color:
-            self.setText("Aucun")
+            self.setText(translate("common.none"))
             self.setIcon(QIcon())
         else:
             self.setText(self.color.upper() if self.color else "—")
@@ -541,3 +541,4 @@ def _system_font_families() -> list[str]:
 
 # Imports différés : évite les cycles et garde un typage strict.
 from ui.design_system import Spacing  # noqa: E402  (import local)
+from ui.i18n import translate

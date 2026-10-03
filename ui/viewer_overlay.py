@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QGraphicsObject
 
 from core.canvas_guides import GuideOrientation, safe_area_rects, snap_box
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
+from ui.i18n import translate
 
 HANDLE_RADIUS = 5.0
 ROTATE_DISTANCE = 26.0
@@ -338,9 +339,9 @@ class ViewerOverlay(QGraphicsObject):
             return
         if drag["moved"]:
             label = {
-                "move": "Déplacer le calque", "rotate": "Faire pivoter le calque",
-                "anchor": "Déplacer le point d'ancrage",
-            }.get(drag["mode"], "Redimensionner le calque")
+                "move": translate("mograph.viewer.move"), "rotate": translate("mograph.viewer.rotate"),
+                "anchor": translate("mograph.viewer.anchor"),
+            }.get(drag["mode"], translate("mograph.viewer.resize"))
             self.transform_released.emit(drag["clip_id"], label)
 
     # -- calcul des valeurs ------------------------------------------------------------------

@@ -7,6 +7,11 @@ propriétés animables, ``shortcuts.command.*`` pour les commandes…).
 
 from __future__ import annotations
 
+
+def _t(fr: str, en: str, es: str) -> dict[str, str]:
+    return {"fr": fr, "en": en, "es": es}
+
+
 MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     # --- Propriétés de transform avancées ---------------------------------
     "animation.property.anchor_x": {"fr": "Ancrage X", "en": "Anchor X", "es": "Anclaje X"},
@@ -83,6 +88,154 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     "menu.item.motion_blur_settings": {"fr": "Réglages du flou de mouvement…", "en": "Motion blur settings…", "es": "Ajustes del desenfoque…"},
     "menu.item.presets": {"fr": "Presets motion graphics", "en": "Motion graphics presets", "es": "Presets de motion graphics"},
     "menu.item.save_preset": {"fr": "Enregistrer la sélection comme preset…", "en": "Save selection as preset…", "es": "Guardar selección como preset…"},
+    # --- Formes et types de calque (tables traduites à l'affichage) --------------------------------------------------
+    "mograph.shape.rectangle": _t("Rectangle", "Rectangle", "Rectángulo"),
+    "mograph.shape.rounded": _t("Rectangle arrondi", "Rounded rectangle", "Rectángulo redondeado"),
+    "mograph.shape.ellipse": _t("Ellipse / cercle", "Ellipse / circle", "Elipse / círculo"),
+    "mograph.shape.line": _t("Ligne", "Line", "Línea"),
+    "mograph.shape.polygon": _t("Polygone", "Polygon", "Polígono"),
+    "mograph.type.image": _t("Image", "Image", "Imagen"),
+    "mograph.type.group": _t("Groupe", "Group", "Grupo"),
+    "mograph.type.adjustment": _t("Calque d'effets", "Adjustment layer", "Capa de ajuste"),
+    "mograph.type.null": _t("Contrôleur", "Controller", "Controlador"),
+    "mograph.graphics.center": _t("Centre", "Center", "Centro"),
+    "mograph.compositing.shape_ellipse": _t("Ellipse", "Ellipse", "Elipse"),
+    "mograph.compositing.mode_subtract": _t("Soustraire", "Subtract", "Restar"),
+    "mograph.compositing.mode_intersect": _t("Intersection", "Intersection", "Intersección"),
+    "mograph.compositing.position_x": _t("Position X", "Position X", "Posición X"),
+    "mograph.compositing.position_y": _t("Position Y", "Position Y", "Posición Y"),
+    "mograph.compositing.rotation": _t("Rotation", "Rotation", "Rotación"),
+    "mograph.compositing.feather": _t("Contour adouci", "Feather", "Suavizado de borde"),
+    "mograph.compositing.expansion": _t("Dilatation", "Expansion", "Expansión"),
+    # --- Panneau des calques -----------------------------------------------------------------------------------------
+    "mograph.layers.title": _t("CALQUES", "LAYERS", "CAPAS"),
+    "mograph.layers.exit_group": _t("↩ Sortir du groupe", "↩ Exit group", "↩ Salir del grupo"),
+    "mograph.layers.group_tooltip": _t(
+        "Grouper les calques sélectionnés (Ctrl+G)",
+        "Group the selected layers (Ctrl+G)",
+        "Agrupar las capas seleccionadas (Ctrl+G)",
+    ),
+    "mograph.layers.presets": _t("Presets", "Presets", "Presets"),
+    "mograph.layers.col_layer": _t("Calque", "Layer", "Capa"),
+    "mograph.layers.col_parent": _t("Parent", "Parent", "Padre"),
+    "mograph.layers.empty": _t(
+        "Aucun calque. Ajoutez un texte ou une forme : il apparaît dans le viewer, où vous pouvez le déplacer directement.",
+        "No layers. Add a text or a shape: it appears in the viewer, where you can move it directly.",
+        "Ninguna capa. Añada un texto o una forma: aparece en el visor, donde puede moverlo directamente.",
+    ),
+    "mograph.layers.solid": _t("Aplat de couleur", "Color fill", "Relleno de color"),
+    "mograph.layers.image": _t("Image…", "Image…", "Imagen…"),
+    "mograph.layers.ungroup": _t("Dégrouper", "Ungroup", "Desagrupar"),
+    "mograph.layers.enter_group": _t("Entrer dans le groupe", "Enter group", "Entrar en el grupo"),
+    "mograph.motion_blur": _t("Flou de mouvement", "Motion blur", "Desenfoque de movimiento"),
+    "mograph.layers.save_preset": _t("Enregistrer comme preset…", "Save as preset…", "Guardar como preset…"),
+    "mograph.layers.rename_tooltip": _t(
+        "{name} — double-clic pour renommer",
+        "{name} — double-click to rename",
+        "{name} — doble clic para renombrar",
+    ),
+    # --- Bibliothèque motion graphics --------------------------------------------------------------------------------
+    "mograph.library.title": _t("MOTION GRAPHICS", "MOTION GRAPHICS", "MOTION GRAPHICS"),
+    "mograph.library.intro": _t(
+        "Ajoutez un élément à la tête de lecture, puis déplacez-le directement dans le viewer. Chaque élément est un clip animable.",
+        "Add an element at the playhead, then move it directly in the viewer. Each element is an animatable clip.",
+        "Añada un elemento en el cabezal y muévalo directamente en el visor. Cada elemento es un clip animable.",
+    ),
+    "mograph.library.text_desc": _t("Texte éditable", "Editable text", "Texto editable"),
+    "mograph.library.rect_desc": _t("Rectangle coloré", "Colored rectangle", "Rectángulo de color"),
+    "mograph.library.solid_name": _t("Aplat", "Fill", "Relleno"),
+    "mograph.library.solid_desc": _t("Fond plein cadre", "Full-frame background", "Fondo a pantalla completa"),
+    "mograph.library.add_tooltip": _t(
+        "Ajouter : {name} — {description}",
+        "Add: {name} — {description}",
+        "Añadir: {name} — {description}",
+    ),
+    "mograph.library.import_tooltip": _t(
+        "Créer un calque graphique depuis une image",
+        "Create a graphic layer from an image",
+        "Crear una capa gráfica a partir de una imagen",
+    ),
+    # --- Éditeur de calque graphique ---------------------------------------------------------------------------------
+    "mograph.graphics.title": _t("Calque graphique", "Graphic layer", "Capa gráfica"),
+    "mograph.graphics.text_placeholder": _t("Texte du titre", "Title text", "Texto del título"),
+    "mograph.graphics.sides": _t("Côtés", "Sides", "Lados"),
+    "mograph.graphics.fill": _t("Remplissage", "Fill", "Relleno"),
+    "mograph.graphics.stroke": _t("Contour", "Stroke", "Contorno"),
+    "mograph.graphics.thickness": _t("Épaisseur", "Thickness", "Grosor"),
+    "mograph.graphics.font": _t("Police", "Font", "Fuente"),
+    "mograph.graphics.bold": _t("Gras", "Bold", "Negrita"),
+    "mograph.graphics.italic": _t("Italique", "Italic", "Cursiva"),
+    "mograph.graphics.font_size": _t("Corps", "Size", "Tamaño"),
+    "mograph.graphics.left": _t("Gauche", "Left", "Izquierda"),
+    "mograph.graphics.right": _t("Droite", "Right", "Derecha"),
+    "mograph.graphics.top": _t("Haut", "Top", "Arriba"),
+    "mograph.graphics.middle": _t("Milieu", "Middle", "Medio"),
+    "mograph.graphics.bottom": _t("Bas", "Bottom", "Abajo"),
+    "mograph.graphics.alignment": _t("Alignement", "Alignment", "Alineación"),
+    "mograph.graphics.tracking": _t("Approche", "Tracking", "Espaciado"),
+    "mograph.graphics.box_text": _t(
+        "Texte en boîte (retour à la ligne)",
+        "Text box (word wrap)",
+        "Texto en caja (salto de línea)",
+    ),
+    "mograph.graphics.autosize": _t("Taille automatique", "Automatic size", "Tamaño automático"),
+    "mograph.graphics.shadow_background": _t("Ombre et fond", "Shadow and background", "Sombra y fondo"),
+    "mograph.graphics.shadow": _t("Ombre", "Shadow", "Sombra"),
+    "mograph.graphics.offset": _t("Décalage", "Offset", "Desplazamiento"),
+    "mograph.graphics.background_behind": _t(
+        "Fond derrière le texte",
+        "Background behind the text",
+        "Fondo detrás del texto",
+    ),
+    "mograph.graphics.background_color": _t("Couleur du fond", "Background color", "Color del fondo"),
+    "mograph.graphics.padding_radius": _t("Marge / rayon", "Margin / radius", "Margen / radio"),
+    "mograph.graphics.motion_blur_tooltip": _t(
+        "Flou des déplacements, rotations et échelles. Désactivable pour toute la séquence (menu Calques) sur les machines modestes.",
+        "Blur of movements, rotations and scales. Can be turned off for the whole sequence (Layers menu) on modest machines.",
+        "Desenfoque de desplazamientos, rotaciones y escalas. Se puede desactivar para toda la secuencia (menú Capas) en equipos modestos.",
+    ),
+    "mograph.graphics.generated": _t("Généré", "Generated", "Generado"),
+    # --- Compositing : masques et chroma key -------------------------------------------------------------------------
+    "mograph.compositing.blend": _t("Mode de fusion", "Blend mode", "Modo de fusión"),
+    "mograph.compositing.add_mask": _t("Ajouter un masque", "Add a mask", "Añadir una máscara"),
+    "mograph.compositing.operation": _t("Opération", "Operation", "Operación"),
+    "mograph.compositing.invert": _t("Inverser", "Invert", "Invertir"),
+    "mograph.compositing.chroma_key": _t("Chroma Key", "Chroma Key", "Chroma Key"),
+    "mograph.compositing.tolerance": _t("Tolérance", "Tolerance", "Tolerancia"),
+    "mograph.compositing.softness": _t("Douceur", "Softness", "Suavidad"),
+    "mograph.compositing.spill": _t("Anti-débordement vert", "Green spill suppression", "Supresión de derrame verde"),
+    "mograph.compositing.mask_name": _t("Masque {index}", "Mask {index}", "Máscara {index}"),
+    "mograph.compositing.inverted_suffix": _t(" · inversé", " · inverted", " · invertida"),
+    # --- Style de texte ----------------------------------------------------------------------------------------------
+    "mograph.textstyle.placeholder": _t(
+        "Texte affiché sur le preview…",
+        "Text shown on the preview…",
+        "Texto mostrado en la vista previa…",
+    ),
+    "mograph.textstyle.typography": _t("Typographie", "Typography", "Tipografía"),
+    "mograph.textstyle.colors": _t("Couleurs", "Colors", "Colores"),
+    "mograph.textstyle.stroke_width": _t("Épaisseur contour", "Stroke width", "Grosor del contorno"),
+    "mograph.textstyle.shadow_offset": _t("Décalage ombre", "Shadow offset", "Desplazamiento de la sombra"),
+    "mograph.textstyle.background_opacity": _t("Opacité fond", "Background opacity", "Opacidad del fondo"),
+    "mograph.textstyle.offset_x": _t("Décalage X", "Offset X", "Desplazamiento X"),
+    "mograph.textstyle.offset_y": _t("Décalage Y", "Offset Y", "Desplazamiento Y"),
+    "mograph.textstyle.margin_side": _t("Marge latérale", "Side margin", "Margen lateral"),
+    "mograph.textstyle.margin_vertical": _t("Marge verticale", "Vertical margin", "Margen vertical"),
+    "mograph.textstyle.padding_horizontal": _t("Padding horizontal", "Horizontal padding", "Relleno horizontal"),
+    "mograph.textstyle.padding_vertical": _t("Padding vertical", "Vertical padding", "Relleno vertical"),
+    "mograph.textstyle.reset": _t("Réinitialiser le style", "Reset style", "Restablecer el estilo"),
+    "mograph.textstyle.pick_color": _t("Couleur {name}", "Color {name}", "Color {name}"),
+    # --- Transformation avancée et viewer ----------------------------------------------------------------------------
+    "mograph.advanced.title": _t("Transformation avancée", "Advanced transform", "Transformación avanzada"),
+    "mograph.advanced.keyframe_tooltip": _t(
+        "Ajouter / retirer une image-clé à la tête de lecture",
+        "Add / remove a keyframe at the playhead",
+        "Añadir / quitar un fotograma clave en el cabezal",
+    ),
+    "mograph.viewer.move": _t("Déplacer le calque", "Move layer", "Mover la capa"),
+    "mograph.viewer.rotate": _t("Faire pivoter le calque", "Rotate layer", "Girar la capa"),
+    "mograph.viewer.anchor": _t("Déplacer le point d'ancrage", "Move anchor point", "Mover el punto de anclaje"),
+    "mograph.viewer.resize": _t("Redimensionner le calque", "Resize layer", "Redimensionar la capa"),
 }
 
 __all__ = ["MOGRAPH_TRANSLATIONS"]

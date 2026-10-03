@@ -39,6 +39,14 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
                                  "Disposición guardada como «{name}»."),
     "workspace.dialog.save_failed": _t("Impossible d'enregistrer cet espace de travail.",
                                        "Could not save this workspace.", "No se pudo guardar este espacio de trabajo."),
+    # --- Vocabulaire commun ------------------------------------------------------------------------------------------
+    "mograph.layers.add_button": _t("+ Ajouter", "+ Add", "+ Añadir"),
+    "common.add": _t("Ajouter", "Add", "Añadir"),
+    "common.none": _t("Aucun", "None", "Ninguno"),
+    "common.text": _t("Texte", "Text", "Texto"),
+    "common.size": _t("Taille", "Size", "Tamaño"),
+    "common.type": _t("Type", "Type", "Tipo"),
+    "common.source": _t("Source", "Source", "Origen"),
 }
 
 __all__ = ["PANELS_TRANSLATIONS"]

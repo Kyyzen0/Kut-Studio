@@ -150,7 +150,7 @@ class AnimationMixin:
         clip = find_clip(self.project, clip_id)
         set_animation_enabled(self.project, clip_id, property_id, enabled, self._local_playhead(clip))
         self.set_active_animation_property(property_id)
-        label = "Activer l'animation" if enabled else "Désactiver l'animation"
+        label = i18n.translate("animation.menu.enable") if enabled else i18n.translate("history.animation.disable")
         self._after_animation_edit(clip_id, label)
 
     def on_keyframe_navigation(self, property_id: str | None, direction: int) -> bool:

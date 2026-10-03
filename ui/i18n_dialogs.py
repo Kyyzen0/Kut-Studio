@@ -266,6 +266,56 @@ DIALOGS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "No clip selected to cut",
         "Ningún clip seleccionado para cortar",
     ),
+    # --- Motion graphics : presets, attributs, flou de mouvement -----------------------------------------------------
+    "dialog.layers.attr_transform": _t("Transform", "Transform", "Transformación"),
+    "status.layers.group_select": _t(
+        "Sélectionnez au moins un calque à grouper.",
+        "Select at least one layer to group.",
+        "Seleccione al menos una capa para agrupar.",
+    ),
+    "status.layers.copied": _t(
+        "{count} calque(s) copié(s).",
+        "{count} layer(s) copied.",
+        "{count} capa(s) copiada(s).",
+    ),
+    "status.layers.attributes_copied": _t(
+        "Transform, masques, effets et animation copiés.",
+        "Transform, masks, effects and animation copied.",
+        "Transformación, máscaras, efectos y animación copiados.",
+    ),
+    "status.layers.copy_first": _t(
+        "Copiez d'abord les attributs d'un calque.",
+        "Copy a layer's attributes first.",
+        "Copie primero los atributos de una capa.",
+    ),
+    "dialog.layers.attr_effects": _t("Effets et couleur", "Effects and color", "Efectos y color"),
+    "dialog.layers.attr_masks": _t("Masques", "Masks", "Máscaras"),
+    "dialog.layers.attr_keyframes": _t(
+        "Animation (images-clés)",
+        "Animation (keyframes)",
+        "Animación (fotogramas clave)",
+    ),
+    "dialog.layers.paste_label": _t("Attributs à coller :", "Attributes to paste:", "Atributos que pegar:"),
+    "dialog.layers.attr_all": _t("Tout", "All", "Todo"),
+    "status.layers.save_select": _t(
+        "Sélectionnez les calques à enregistrer.",
+        "Select the layers to save.",
+        "Seleccione las capas que guardar.",
+    ),
+    "status.preset.saved": _t("Preset « {name} » enregistré.", "Preset “{name}” saved.", "Preset «{name}» guardado."),
+    "dialog.motion_blur.shutter": _t("Angle d'obturation (°) :", "Shutter angle (°):", "Ángulo de obturación (°):"),
+    "dialog.motion_blur.samples": _t(
+        "Échantillons à l'export (2–32) :",
+        "Samples at export (2–32):",
+        "Muestras en la exportación (2–32):",
+    ),
+    "status.preset.not_found": _t("Preset introuvable", "Preset not found", "Preset no encontrado"),
+    "status.preset.audio_not_found": _t(
+        "Preset audio introuvable",
+        "Audio preset not found",
+        "Preset de audio no encontrado",
+    ),
+    "status.color.invalid": _t("Étalonnage invalide", "Invalid color grading", "Corrección de color no válida"),
 }
 
 __all__ = ["DIALOGS_TRANSLATIONS"]

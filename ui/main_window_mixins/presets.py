@@ -92,7 +92,7 @@ class PresetsMixin:
         if preset is None:
             preset = self.user_preset_store.get(preset_id)
         if preset is None:
-            self._report_edit_refused("Preset introuvable")
+            self._report_edit_refused(i18n.translate("status.preset.not_found"))
             return
         try:
             apply_preset_to_clip(self.project, clip_id, preset)
@@ -128,7 +128,7 @@ class PresetsMixin:
             return
         preset = self.audio_effect_preset_store.get_preset(preset_id)
         if preset is None:
-            self._report_edit_refused("Preset audio introuvable")
+            self._report_edit_refused(i18n.translate("status.preset.audio_not_found"))
             return
         try:
             add_audio_effect_to_clip(
