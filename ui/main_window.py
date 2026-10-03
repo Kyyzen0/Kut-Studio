@@ -31,6 +31,7 @@ from core.text_presets import TextPresetStore
 from core.export_engine import ExportEngine
 from core.render_queue import RenderQueue
 from core.media_probe import probe_video
+from core.process_supervisor import shutdown_children
 from core.project_factory import create_default_project
 from core.project_model import Project
 from core.subtitle_io import parse_srt
@@ -883,6 +884,9 @@ class MainWindow(
             ("fichiers de scopes", clean_scope_files),
             ("autosave", lambda: call("_autosave", "close")),
             ("runtime", lambda: call("runtime", "shutdown")),
+            # Filet final, après tous les arrêts ciblés : tout FFmpeg encore enregistré (miniature, sonde lancée
+            # par un thread qui finit) est tué, identité vérifiée, puis attendu (core/process_supervisor.py).
+            ("processus enfants", shutdown_children),
             ("minuteur sous-titres", lambda: stop_timer("_subtitle_edit_timer")),
             ("traductions", release_i18n),
         ]

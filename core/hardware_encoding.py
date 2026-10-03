@@ -41,6 +41,7 @@ from .hardware_decoding import (
     decode_auto_order,
     detect_decoders,
 )
+from .process_supervisor import supervised_run
 
 LOGGER = logging.getLogger("kut_studio.encoding")
 DECODE_LOGGER = logging.getLogger("kut_studio.decode")
@@ -526,18 +527,15 @@ class RunOutput:
 
 
 def default_runner(command: Sequence[str], timeout: float) -> RunOutput:
-    """Exécute ``command`` sans fenêtre ni stdin ; ne lève jamais (échec = code ``-1``)."""
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    """Exécute ``command`` (supervisé : sans fenêtre ni stdin) ; ne lève jamais (échec = code ``-1``)."""
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             list(command),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
-            stdin=subprocess.DEVNULL,
-            creationflags=flags,
         )
     except subprocess.TimeoutExpired:
         return RunOutput(-1, "", "délai dépassé")

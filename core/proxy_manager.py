@@ -47,6 +47,7 @@ from pathlib import Path
 
 from .cache_keys import SignatureMemo, default_signatures, proxy_key
 from .platform_paths import user_cache_dir
+from .process_supervisor import default_supervisor
 from .proxy_profiles import (
     DEFAULT_PROFILE_ID,
     ProxyProfile,
@@ -138,59 +139,58 @@ def run_ffmpeg(
     en secondes de média encodées. Les deux tubes sont lus par des threads :
     un FFmpeg bavard ne peut pas se bloquer sur un tube plein.
     """
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    if on_start is not None:
-        on_start(process.pid)
-    lines: queue.Queue[bytes] = queue.Queue()
-    stderr_chunks: list[bytes] = []
+    supervisor = default_supervisor()
+    process = supervisor.popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        if on_start is not None:
+            on_start(process.pid)
+        lines: queue.Queue[bytes] = queue.Queue()
+        stderr_chunks: list[bytes] = []
 
-    def pump_stdout() -> None:
-        assert process.stdout is not None
-        for raw in iter(process.stdout.readline, b""):
-            lines.put(raw)
+        def pump_stdout() -> None:
+            assert process.stdout is not None
+            for raw in iter(process.stdout.readline, b""):
+                lines.put(raw)
 
-    def pump_stderr() -> None:
-        assert process.stderr is not None
-        for raw in iter(process.stderr.readline, b""):
-            if sum(len(chunk) for chunk in stderr_chunks) < 20_000:
-                stderr_chunks.append(raw)
+        def pump_stderr() -> None:
+            assert process.stderr is not None
+            for raw in iter(process.stderr.readline, b""):
+                if sum(len(chunk) for chunk in stderr_chunks) < 20_000:
+                    stderr_chunks.append(raw)
 
-    readers = [threading.Thread(target=pump_stdout, daemon=True),
-               threading.Thread(target=pump_stderr, daemon=True)]
-    for reader in readers:
-        reader.start()
-    cancelled = False
-    while True:
-        try:
-            raw = lines.get(timeout=0.05)
-        except queue.Empty:
-            raw = b""
-        if raw.startswith((b"out_time_us=", b"out_time_ms=")):
+        readers = [threading.Thread(target=pump_stdout, daemon=True),
+                   threading.Thread(target=pump_stderr, daemon=True)]
+        for reader in readers:
+            reader.start()
+        cancelled = False
+        while True:
             try:
-                on_progress(int(raw.split(b"=", 1)[1]) / 1_000_000)
-            except ValueError:
-                pass
-        if cancel.is_set() and process.poll() is None:
-            cancelled = True
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        if process.poll() is not None and lines.empty():
-            break
-    for reader in readers:
-        reader.join(timeout=2)
-    for stream in (process.stdout, process.stderr):
-        if stream is not None:
-            stream.close()
+                raw = lines.get(timeout=0.05)
+            except queue.Empty:
+                raw = b""
+            if raw.startswith((b"out_time_us=", b"out_time_ms=")):
+                try:
+                    on_progress(int(raw.split(b"=", 1)[1]) / 1_000_000)
+                except ValueError:
+                    pass
+            if cancel.is_set() and process.poll() is None:
+                cancelled = True
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            if process.poll() is not None and lines.empty():
+                break
+        for reader in readers:
+            reader.join(timeout=2)
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+    finally:
+        # Supervisé : il meurt aussi avec l'application tuée brutalement ; ici, tué s'il tourne encore et oublié.
+        supervisor.finish(process)
     return RunResult(
         returncode=process.returncode,
         stderr=b"".join(stderr_chunks).decode("utf-8", "replace"),

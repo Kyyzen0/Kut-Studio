@@ -31,6 +31,7 @@ import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
+from .process_supervisor import default_supervisor
 from .tool_paths import find_media_tool
 from .tracking_model import Precision
 
@@ -145,11 +146,8 @@ class FrameReader:
         np = require_numpy()
         size = self.geometry.frame_bytes
         shape = (self.geometry.height, self.geometry.width)
-        creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(
-            self.command(start_index, count), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL, creationflags=creation,
-        )
+        supervisor = default_supervisor()
+        process = supervisor.popen(self.command(start_index, count), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self._process = process
         errors: list[bytes] = []
         drain = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
@@ -171,7 +169,7 @@ class FrameReader:
                 process.stdout.close()
             except OSError:
                 pass
-            process.wait()
+            supervisor.finish(process)  # attend la fin, puis retire l'enfant du registre
             drain.join(timeout=2.0)
             self.stderr = b"".join(e for e in errors if e).decode("utf-8", "replace")[-2000:]
             self._process = None

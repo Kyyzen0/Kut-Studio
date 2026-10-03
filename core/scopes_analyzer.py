@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from .process_supervisor import supervised_run
 from .scopes import (
     ColorSpace,
     ScopeFrame,
@@ -69,7 +70,7 @@ def extract_frame_png(
             si la sortie est vide.
     """
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             ffmpeg_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
