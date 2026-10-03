@@ -92,6 +92,35 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
     set_default_service(None)
 
 
+@pytest.fixture
+def restore_global_theme():
+    """Rend à l'application, à la fin du test, le thème qu'elle avait au début : feuille de style, marqueur, palette.
+
+    Le thème est un état **global au processus** : la feuille de style de la ``QApplication`` (avec le marqueur
+    ``_kut_studio_theme_stylesheet`` qui évite de la réappliquer à l'identique) et la palette que publie
+    ``ui.theme.set_active_palette``. Un test qui passait en thème clair le laissait au test suivant du même worker
+    xdist ; la ``MainWindow`` de celui-ci rebasculait en sombre, donc la feuille de style changeait *dans* ce
+    test-là, ce que le garde de ``test_ui_small_windows`` fait échouer (ou que d'autres tests absorbent en silence),
+    selon la répartition des tests entre workers.
+
+    À demander par les seuls tests qui changent de thème. Elle n'est pas automatique : la première fenêtre d'un
+    worker installe légitimement la feuille de style, et la défaire après chaque test la ferait réinstaller (donc
+    repolir tous les widgets) à chaque fois.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from ui.theme import active_palette, set_active_palette
+
+    marker_name = "_kut_studio_theme_stylesheet"
+    app = QApplication.instance()
+    stylesheet, marker, palette = app.styleSheet(), app.property(marker_name), active_palette()
+    yield
+    set_active_palette(palette)
+    if app.styleSheet() != stylesheet:   # ``setStyleSheet`` repolit tous les widgets, même à l'identique
+        app.setStyleSheet(stylesheet)
+    app.setProperty(marker_name, marker)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _widgets_application():
     """Une vraie ``QApplication`` avant le premier test, quel que soit l'ordre d'exécution.
