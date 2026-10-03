@@ -130,6 +130,40 @@ TRACKING_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tracking.link.describe": _t("{target} ← {trackers}", "{target} ← {trackers}", "{target} ← {trackers}"),
     "tracking.link.freeze": _t("Figer", "Bake", "Fijar"),
     "tracking.link.unlink": _t("Délier", "Unlink", "Desvincular"),
+    "tracking.link.cut_followed": _t(
+        "Le tracking de ce clip est suivi par {count} autre(s) clip(s) : ils suivent maintenant les deux parties.",
+        "This clip's tracking is followed by {count} other clip(s): they now follow both parts.",
+        "El seguimiento de este clip lo siguen {count} clip(s) más: ahora siguen las dos partes.",
+    ),
+    "tracking.link.cut_issue": _t(
+        "Le tracking de ce clip est suivi par {count} autre(s) clip(s), mais un suivi ne couvre pas toute leur "
+        "durée ({detail}) : le mouvement y reste figé.",
+        "This clip's tracking is followed by {count} other clip(s), but the track does not cover their whole "
+        "duration ({detail}): the motion stays frozen there.",
+        "El seguimiento de este clip lo siguen {count} clip(s) más, pero no cubre toda su duración ({detail}): "
+        "el movimiento se queda fijo.",
+    ),
+    "tracking.link.delete_orphaned": _t(
+        "{count} clip(s) suivaient le tracking de ce clip : leur liaison est interrompue (source introuvable).",
+        "{count} clip(s) were following this clip's tracking: their link is broken (source not found).",
+        "{count} clip(s) seguían el seguimiento de este clip: su vínculo queda interrumpido (origen no encontrado).",
+    ),
+    "tracking.link.issue.missing_source": _t(
+        "source introuvable", "source not found", "origen no encontrado",
+    ),
+    "tracking.link.issue.part_missing": _t(
+        "une partie de la source a disparu", "a part of the source is gone", "falta una parte del origen",
+    ),
+    "tracking.link.issue.source_gap": _t(
+        "la source ne couvre pas toute la durée du clip lié",
+        "the source does not cover the whole linked clip",
+        "el origen no cubre toda la duración del clip vinculado",
+    ),
+    "tracking.link.issue.ambiguous_source": _t(
+        "plusieurs parties de la source se recouvrent sous le clip lié",
+        "several parts of the source overlap under the linked clip",
+        "varias partes del origen se solapan bajo el clip vinculado",
+    ),
     "tracking.stabilization": _t("Stabilisation", "Stabilisation", "Estabilización"),
     "tracking.stab.enable": _t("Stabiliser ce clip", "Stabilise this clip", "Estabilizar este clip"),
     "tracking.stab.mode": _t("Compensation", "Compensation", "Compensación"),

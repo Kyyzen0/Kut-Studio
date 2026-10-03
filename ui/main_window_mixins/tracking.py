@@ -279,6 +279,12 @@ class TrackingMixin:
         if source is not None and source is not clip:
             label += f" ({source_label})"
         warning = "" if source is not None and "?" not in names else "?"
+        if source is not None:
+            from core.tracking_bindings import TrackingContext, link_issues
+
+            issues = link_issues(TrackingContext(self.project), clip, link)
+            if issues:
+                warning = ", ".join(_tr(f"tracking.link.issue.{code}") for code in issues)
         return {"id": link.id, "label": label, "enabled": link.enabled, "warning": warning}
 
     def _refresh_tracking_overlay(self) -> None:

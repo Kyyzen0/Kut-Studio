@@ -80,6 +80,7 @@ class TimelineEditingMixin:
         clip_id = self.timeline_panel.selected_clip_id
         if clip_id is None:
             return
+        followers = self._tracking_followers_of([clip_id])
         try:
             ripple_delete_clip(self.project, clip_id)
         except KeyError as exc:
@@ -93,6 +94,8 @@ class TimelineEditingMixin:
             self._report_edit_refused(exc)
             return
         self._record_history("Supprimer avec ripple")
+        if followers:
+            self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
         self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
@@ -115,12 +118,15 @@ class TimelineEditingMixin:
         if len(ids) == 1 and not self.timeline_panel.ripple_enabled:
             self.delete_selected_clip(ids[0])
             return
+        followers = self._tracking_followers_of(ids)
         try:
             delete_clips(self.project, ids, ripple=self.timeline_panel.ripple_enabled)
         except (KeyError, ValueError) as exc:
             self._report_edit_refused(exc)
             return
         self._record_history("Supprimer la sélection")
+        if followers:
+            self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
         self.timeline_panel.selected_clip_ids = set()
         self.active_subtitle_clip = None
@@ -212,9 +218,7 @@ class TimelineEditingMixin:
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
 
     def cut_selected_clip(self, clip_id, playhead_pos):
-        from core.tracking_ops import tracking_dependents
-
-        followers = tracking_dependents(self.project, clip_id)
+        followers = self._tracking_followers_of([clip_id])
         try:
             cut_clip(self.project, clip_id, playhead_pos)
         except (KeyError, ValueError) as exc:
@@ -222,12 +226,7 @@ class TimelineEditingMixin:
             return
         self._record_history("Couper le clip")
         if followers:
-            # Honnête plutôt que silencieux : la partie droite a un nouvel identifiant, leur suivi s'arrête ici.
-            self.statusBar().showMessage(
-                f"Ce clip porte le tracking de {len(followers)} autre(s) clip(s) : leur suivi s'arrête à la "
-                "coupe. Reliez-les à la partie droite pour qu'il continue.",
-                10000,
-            )
+            self._announce_tracking_followers(followers, cut=True)
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._mark_dirty()
@@ -251,13 +250,61 @@ class TimelineEditingMixin:
             self.properties_panel.set_clip(None, "")
             self.timeline_panel.selected_clip_id = None
 
+    def _tracking_followers_of(self, clip_ids) -> list[str]:
+        """Clips (hors de ``clip_ids``) dont une liaison suit l'un de ces clips : à relever **avant** l'opération."""
+        from core.tracking_ops import tracking_dependents
+
+        removed = set(clip_ids)
+        followers: list[str] = []
+        for clip_id in clip_ids:
+            for follower in tracking_dependents(self.project, clip_id):
+                if follower not in removed and follower not in followers:
+                    followers.append(follower)
+        return followers
+
+    def _announce_tracking_followers(self, followers, *, cut: bool) -> None:
+        """Dit ce qu'il advient des clips qui suivaient le tracking du clip qu'on vient de couper ou de supprimer.
+
+        Une coupe étend leur liaison aux deux moitiés (le mouvement continue) ; une suppression laisse les parties
+        restantes. S'il reste un défaut (source introuvable, partie de leur durée que la source ne couvre pas), il
+        est nommé : jamais un mouvement figé en silence.
+        """
+        from core.tracking_bindings import TrackingContext, link_issues
+        from core.tracking_ops import find_clip_and_track
+        from ui.i18n import translate
+
+        context = TrackingContext(self.project)
+        issues: dict[str, set[str]] = {}
+        for follower_id in followers:
+            try:
+                clip, _track = find_clip_and_track(self.project, follower_id)
+            except ValueError:               # TrackingError : le clip lié a lui-même été supprimé
+                continue
+            found = {code for link in clip.tracking.links for code in link_issues(context, clip, link)}
+            if found:
+                issues[follower_id] = found
+        orphaned = [follower for follower, codes in issues.items() if "missing_source" in codes]
+        if orphaned:
+            message = translate("tracking.link.delete_orphaned", count=len(orphaned))
+        elif issues:
+            detail = ", ".join(translate(f"tracking.link.issue.{code}") for code in sorted(set().union(*issues.values())))
+            message = translate("tracking.link.cut_issue", count=len(issues), detail=detail)
+        elif cut:
+            message = translate("tracking.link.cut_followed", count=len(followers))
+        else:
+            return
+        self.statusBar().showMessage(message, 10000)
+
     def delete_selected_clip(self, clip_id):
+        followers = self._tracking_followers_of([clip_id])
         try:
             delete_clip(self.project, clip_id)
         except KeyError as exc:
             self._report_edit_refused(exc)
             return
         self._record_history("Supprimer le clip")
+        if followers:
+            self._announce_tracking_followers(followers, cut=False)
         self.timeline_panel.selected_clip_id = None
         self.active_subtitle_clip = None
         self.properties_panel.set_clip(None, "")
