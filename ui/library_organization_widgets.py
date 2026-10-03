@@ -61,7 +61,7 @@ from core.library_organization import (
     is_asset_missing,
 )
 from core.workspace_state import MIN_SIZE, PanelId
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import set_single_default
