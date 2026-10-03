@@ -22,6 +22,8 @@ from core.color_grading import ColorGrade, ColorGradingService, make_user_color_
 from core.compositing import Compositing, Mask, MaskShape
 from core.effects_model import add_effect_to_clip, create_effect
 from core.library_organization import LibraryOrganization
+from core.multicam_model import AudioMode, MulticamAudio, SyncMethod, SyncStatus
+from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip
 from core.project_model import MediaAsset, Marker, Project, Track
 from core.sequences import create_sequence
 from core.tracking_model import Sample, SampleStatus
@@ -86,6 +88,24 @@ def build_rich_project() -> Project:
     project.markers.append(Marker("m-1", 3.0, "M", "todo"))
     add_guide(project.active_sequence, "vertical", 0.5)
     create_sequence(project, "Seq2")
+
+    # Multicam : une source à trois angles (dont un enregistreur, synchronisé par le son) et un segment du montage
+    # qui montre le deuxième angle ; couvre ``Sequence.multicam`` et ``Clip.angle_id`` dans l'aller-retour ``.kut``.
+    source = create_multicam_source(
+        project,
+        [
+            AngleSpec(asset_id="av1", offset=0.0, name="Wide", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.EXCELLENT, sync_confidence=0.93),
+            AngleSpec(asset_id="av2", offset=1.25, name="Close-up", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.GOOD, sync_confidence=0.61),
+            AngleSpec(asset_id="aa1", offset=0.5, name="Recorder", sync_method=SyncMethod.AUDIO,
+                      sync_status=SyncStatus.UNCERTAIN, sync_confidence=0.34),
+        ],
+        name="Concert",
+        sync_method=SyncMethod.AUDIO,
+        audio=MulticamAudio(AudioMode.MIX, ("angle-1", "angle-3")),
+    )
+    insert_multicam_clip(project, source.id, "V2", 10.0, angle_id="angle-2")
 
     library = LibraryOrganization(project)
     folder = library.create_folder("F")

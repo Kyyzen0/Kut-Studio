@@ -91,6 +91,7 @@ from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
+from ui.main_window_mixins.multicam import MulticamMixin
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
@@ -128,6 +129,7 @@ class MainWindow(
     TrackingMixin,
     MotionGraphicsMixin,
     SequencesMixin,
+    MulticamMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -579,6 +581,8 @@ class MainWindow(
         self._sync_preview_to_timeline()
         # Séquences : navigation (fil d'Ariane), bibliothèque, imbrication.
         self._init_sequences()
+        # Multicam : bascule d'angle, remplacement, aplatir, création depuis la timeline.
+        self._init_multicam()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
@@ -1396,6 +1400,13 @@ class MainWindow(
         delete_sequence_action.triggered.connect(lambda: self.delete_sequence_command())
         sequence_menu.addAction(delete_sequence_action)
         sequence_menu.addSeparator()
+        # Multicam : création depuis la sélection, source, aplatir, moniteur.
+        self.multicam_create_action = self._command_action("multicam_create", "multicam.menu.create")
+        sequence_menu.addAction(self.multicam_create_action)
+        sequence_menu.addAction(self._command_action("multicam_open_source", "multicam.menu.open_source"))
+        sequence_menu.addAction(self._command_action("multicam_flatten", "multicam.menu.flatten"))
+        sequence_menu.addAction(self._command_action("multicam_viewer", "multicam.menu.viewer"))
+        sequence_menu.addSeparator()
         for key, handler in (
             ("menu.item.add_clip", None),
             ("menu.item.trim", lambda: self.cut_at_playhead()),                         # Ctrl+K
@@ -2026,6 +2037,7 @@ class MainWindow(
             **self._animation_shortcut_handlers(),
             # Séquences
             **self._sequence_shortcut_handlers(),
+            **self._multicam_shortcut_handlers(),
             **self._mograph_shortcut_handlers(),
         }
 

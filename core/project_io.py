@@ -73,6 +73,7 @@ from .canvas_guides import guide_from_dict, guide_to_dict
 from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
 from .motion_blur import settings_from_dict as motion_blur_from_dict
 from .motion_blur import settings_to_dict as motion_blur_to_dict
+from .multicam_model import multicam_from_dict, multicam_to_dict
 from .project_model import (
     MAIN_SEQUENCE_ID,
     MAIN_SEQUENCE_NAME,
@@ -441,6 +442,8 @@ def _clip_to_dict(clip: Clip) -> dict[str, Any]:
         # Clip imbriqué (v14) : clé présente uniquement
         # quand le clip référence une séquence.
         **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
+        # Multicam : angle choisi par un segment de source Multicam (absent : le premier angle).
+        **({"angle_id": clip.angle_id} if clip.angle_id else {}),
         # Tracking (v16) : présent seulement si le clip en porte.
         **_tracking_entry(getattr(clip, "tracking", None)),
     }
@@ -463,6 +466,8 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         # Motion graphics (v15) : guides du viewer et flou de mouvement.
         "guides": [guide_to_dict(guide) for guide in getattr(sequence, "guides", ()) or ()],
         "motion_blur": motion_blur_to_dict(getattr(sequence, "motion_blur", None)),
+        # Multicam : présent seulement pour une source Multicam (angles, politique audio, méthode de synchro).
+        **({"multicam": multicam_to_dict(sequence.multicam)} if sequence.multicam is not None else {}),
         "markers": [
             {
                 "id": marker.id,
@@ -697,6 +702,8 @@ def _deserialize_sequence(
         if guide is not None
     ]
     sequence.motion_blur = motion_blur_from_dict(data.get("motion_blur"))
+    # --- Multicam : absent d'un ancien fichier → séquence ordinaire ; structure abîmée → ValueError.
+    sequence.multicam = multicam_from_dict(data.get("multicam"))
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont
@@ -794,10 +801,12 @@ def _deserialize_clip(
         for key, value in raw_clip.items()
         if key not in {
             "transform", "transform_keyframes", "time_remapping", "effects",
-            "graphic", "compositing", "animation", "tracking",
+            "graphic", "compositing", "animation", "tracking", "angle_id",
         }
         and key in _CLIP_KNOWN_FIELDS
     }
+    angle_id = raw_clip.get("angle_id", "")
+    clip_kwargs["angle_id"] = angle_id if isinstance(angle_id, str) else ""
     clip_kwargs["transform"] = _dict_to_transform(
         raw_clip.get("transform")
     )

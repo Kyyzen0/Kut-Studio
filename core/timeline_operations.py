@@ -329,6 +329,9 @@ def _carried_properties(clip: Clip, *, copy: bool = False) -> dict:
         "compositing": clip.compositing,
         "text_style": clip.text_style,
         "sequence_id": clip.sequence_id,
+        # Multicam : un segment coupé en deux garde l'angle de départ ; le changement d'angle est la seule
+        # différence que l'opération de bascule applique ensuite à la moitié droite.
+        "angle_id": clip.angle_id,
         # Tracking : données en temps source, valables pour les deux moitiés.
         "tracking": getattr(clip, "tracking", None),
     }

@@ -95,7 +95,9 @@ def test_defaults_have_no_extra_shortcut_beyond_legacy_ones():
     sequences = {"Ctrl+Shift+N", "Ctrl+Alt+Down", "Ctrl+Alt+Up", "Alt+Left", "Alt+Right"}
     # Raccourcis ajoutés avec le moteur motion graphics (aucun ne remplace un ancien).
     motion = {"Ctrl+G", "Ctrl+Shift+G", "Ctrl+'", "Ctrl+;"}
-    added = {normalize_sequence(s) for s in animation | sequences | motion}
+    # Raccourcis ajoutés avec le Multicam : un angle par chiffre et le moniteur Multicam.
+    multicam = {str(number) for number in range(1, 10)} | {"Ctrl+Shift+M"}
+    added = {normalize_sequence(s) for s in animation | sequences | motion | multicam}
     assigned = {s for c in COMMANDS for s in shortcuts.sequences(c.id)}
     assert assigned == legacy | added
     assert not legacy & added

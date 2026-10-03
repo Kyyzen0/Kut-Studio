@@ -134,7 +134,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 # Emprunts à l'anglais que le français (et l'espagnol) emploient tels quels.
 _LOANWORDS = {
     "Cache", "Chroma Key", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
-    "Parade", "Preset", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
+    "Multicam", "Parade", "Preset", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
     "Trackers",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
@@ -147,6 +147,7 @@ _COGNATES_EN = {
     "Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)", "Rectangle", "Image", "Image…", "Ellipse", "Intersection",
     "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause", "Compositing", "Transition",
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
+    *(f"Angle {number}" for number in range(1, 10)),
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios"}
