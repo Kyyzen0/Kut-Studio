@@ -16,6 +16,13 @@ from test_scopes import _window
 
 ROOT = Path(__file__).resolve().parent.parent
 PRODUCTION_PACKAGES = ("core", "ui")
+ENTRY_POINTS = {
+    "main": "main.py",
+    # Outil de diagnostic documenté (``python -m tools.perf.hardware_validation``, docs/hardware-encoding.md) : il est
+    # le seul consommateur de ``core.hardware_validation`` en dehors de ses tests, et c'est voulu. Tout autre
+    # outil qui voudrait « sauver » un module de ``core/`` doit être ajouté ici en connaissance de cause.
+    "tools.perf.hardware_validation": "tools/perf/hardware_validation.py",
+}
 
 
 def _module_name(path: Path) -> str:
@@ -68,11 +75,11 @@ def _imports_of(module: str, path: Path, known: set[str]) -> set[str]:
 
 def _reachable_from_main() -> tuple[set[str], set[str]]:
     files = _python_files(*PRODUCTION_PACKAGES)
-    files["main"] = ROOT / "main.py"
+    files.update({name: ROOT / path for name, path in ENTRY_POINTS.items()})
     known = set(files)
     graph = {module: _imports_of(module, path, known) for module, path in files.items()}
     seen: set[str] = set()
-    pending = ["main"]
+    pending = list(ENTRY_POINTS)
     while pending:
         module = pending.pop()
         if module in seen:

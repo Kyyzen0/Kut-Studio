@@ -10,7 +10,6 @@ core.decode_policy
 core.diagnostics_log
 core.export_engine
 core.graphics
-core.graphics_raster
 core.hardware_cache
 core.hardware_encoding
 core.lut_importer
