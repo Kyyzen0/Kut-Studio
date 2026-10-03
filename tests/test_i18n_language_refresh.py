@@ -105,3 +105,59 @@ def _all_texts(widget) -> list[str]:
     from PySide6.QtWidgets import QLabel
 
     return [label.text() for label in widget.findChildren(QLabel)]
+
+
+# --- Panneau des calques : changer de langue ne renomme rien ------------------------------------------------------------
+
+
+def _layer_node():
+    from core.graphics import GraphicType
+    from core.mograph_layers import LayerNode
+
+    return LayerNode(
+        clip_id="c1", name="Titre", type=GraphicType.TEXT, depth=0, parent_id="", group_id="", visible=True,
+        locked=False, start=0.0, end=2.0, track_id="G1", is_group=False,
+    )
+
+
+def test_retranslating_the_layers_panel_never_asks_for_a_rename(qtbot):
+    """Réécrire l'info-bulle d'un calque fait émettre ``itemChanged`` ; ce n'est pas un renommage.
+
+    Sans garde, ``_on_item_changed`` émettait ``rename_requested`` avec le nom **inchangé** : la fenêtre l'appliquait
+    (entrée d'historique, projet « modifié ») et reconstruisait l'arbre pendant que ``retranslate`` le parcourait,
+    d'où un plantage natif intermittent de l'itérateur.
+    """
+    from ui.layers_panel import LayersPanel
+
+    panel = LayersPanel()
+    qtbot.addWidget(panel)
+    panel.set_layers([_layer_node()], names={"c1": "Titre"}, duration=2.0)
+    requested = []
+    panel.rename_requested.connect(lambda *args: requested.append(args))
+
+    for language in ("en", "es", "fr"):
+        i18n.set_language(language)          # le panneau est abonné : il se retraduit seul
+        panel.retranslate()
+
+    assert requested == []
+    assert panel.tree.topLevelItemCount() == 1                                  # et l'arbre n'a pas été reconstruit
+    assert panel.tree.topLevelItem(0).toolTip(2) == i18n.translate("mograph.layers.rename_tooltip", name="Titre")
+
+
+def test_changing_the_language_leaves_no_history_entry_and_does_not_dirty_the_project(qtbot, monkeypatch):
+    from core.graphics import add_graphic_clip
+
+    window = _window(qtbot, monkeypatch)
+    add_graphic_clip(window.project, "text", timeline_start=0.0, duration=2.0)
+    window._refresh_layers_panel()
+    window._record_history("Ajouter un titre")
+    window._mark_dirty()
+    entries, dirty = len(window.history), window.project_dirty
+    assert window.layers_panel.tree.topLevelItemCount() == 1                    # le calque est bien dans le panneau
+
+    for language in ("en", "es", "fr"):
+        i18n.set_language(language)
+        window._retranslate_ui()
+
+    assert len(window.history) == entries                                       # aucun « Renommer le calque » parasite
+    assert window.project_dirty is dirty
