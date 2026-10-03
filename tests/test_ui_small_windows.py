@@ -319,3 +319,28 @@ def test_audit_font_scale_restarts_from_the_original_stylesheet(tmp_path):
     """Régression de l'outil : l'agrandissement des polices se cumulait d'une fenêtre à l'autre (sous-processus)."""
     done = _run_in_subprocess(["-c", _SCALE_FONTS_SCRIPT], tmp_path)
     assert done.returncode == 0 and done.stdout.strip().endswith("ok"), f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
+
+
+def test_graph_editor_can_be_narrower_than_a_small_screen(window_at):
+    """Son minimum (913 px) empêchait de la réduire ; la zone d'aide, non tronquée, fixait la largeur."""
+    window = window_at((1280, 720))
+    editor = window.open_graph_editor()
+    audit.settle(window)
+    assert editor.minimumSizeHint().width() <= 900, f"largeur minimale de l'éditeur : {editor.minimumSizeHint().width()} px"
+    editor.resize(100, 100)
+    audit.settle(window)
+    assert editor.width() <= 900, f"largeur de l'éditeur réduit au minimum : {editor.width()} px"
+    _assert_none(audit.sibling_overlaps(editor), "éditeur de courbes : chevauchement :")
+    editor.hide()
+
+
+def test_export_page_fits_at_the_smallest_size(window_at):
+    window = window_at((1180, 720))
+    window.show_export()
+    audit.settle(window)
+    try:
+        for scroll in window.export_panel.findChildren(QScrollArea):
+            _assert_none(audit.scroll_clipping(scroll), "page d'export coupée :")
+        _assert_none(audit.parent_overflow(window.export_panel), "page d'export : enfant hors de son parent :")
+    finally:
+        window.show_editor()
