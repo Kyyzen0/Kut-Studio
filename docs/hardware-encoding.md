@@ -156,6 +156,122 @@ rapporte durée, images/s, vitesse (× temps réel) et taille. Outil de
 **vérification** (chaque chemin fonctionne, pas de régression) : les qualités
 et débits des encodeurs ne sont pas équivalents, ce n'est pas un comparatif.
 
+## Validation matérielle
+
+La détection dit qu'un encodeur **s'initialise** ; elle ne dit pas que le fichier
+exporté est juste. La validation matérielle le vérifie, encodeur par encodeur,
+sur la machine qui l'exécute (`core/hardware_validation.py`, partagé par les tests
+et l'outil de diagnostic) :
+
+1. une source synthétique **sans perte** (FFV1) de trois bandes de couleur connue,
+   rouge (221, 92, 29), vert (40, 180, 60), bleu (30, 60, 200), en BT.709 plage
+   limitée ;
+2. un **mini export** de 1 s en 320×180 avec la **chaîne d'export de l'application**
+   (`ExportEngine` : plan de rendu, graphe, `OUTPUT_COLOR_STAGE`, arguments
+   d'encodeur, `OUTPUT_COLOR_TAGS`), en MP4 **et** en MOV (les deux conteneurs
+   n'écrivent pas les balises de la même façon) ; aucune ligne FFmpeg n'est écrite
+   à la main ;
+3. le fichier produit est **relu avec `ffprobe`** : `color_space`,
+   `color_primaries`, `color_transfer`, `color_range` doivent valoir
+   `bt709/bt709/bt709/tv` (attendus dérivés de `OUTPUT_COLOR_TAGS`) ;
+4. une image est **décodée comme un lecteur** (BT.709, plage limitée) : chaque
+   bande doit revenir à sa couleur à ±6 niveaux. Mesuré en cassant volontairement
+   l'étape de couleur : une conversion BT.601 décale le rouge de 11 niveaux et le
+   vert de 21, une plage pleine décale chaque bande de 11 à 15, et l'absence de
+   `setparams` laisse primaires et transfert non balisés ; les trois défauts sont
+   attrapés, avec l'encodeur logiciel comme avec VideoToolbox.
+
+Pour chaque backend, dans cet ordre : témoin logiciel (`libx264`, toujours
+exporté : il situe un échec matériel), VideoToolbox, NVENC, Quick Sync, AMF,
+VAAPI. Trois issues, jamais confondues :
+
+| Issue | Sens |
+| --- | --- |
+| **Réussi** | le fichier a été produit **et** relu : balises et couleurs justes |
+| **Échec** | un backend disponible n'a pas produit de fichier, ou un fichier mal balisé, illisible ou aux couleurs fausses ; ou un backend **exigé** est absent |
+| **Sauté** | le backend n'existe pas ici (« encodeur absent de ce FFmpeg »), ou la détection l'a refusé (« présent mais refusé à la validation : … »), ou la détection est désactivée : **rien n'a été vérifié** |
+
+La disponibilité vient de la détection de l'application (`CapabilityService`) :
+il n'y a pas de seconde détection.
+
+### Ce que la CI couvre, et ce qu'elle ne couvre pas
+
+| Chemin | CI publique (macOS, Windows, Ubuntu) | Machine du développeur ou de l'utilisateur |
+| --- | --- | --- |
+| Témoin logiciel `libx264` (MP4, MOV) : balises et couleurs relues | **exécuté** sur les trois plateformes | exécuté |
+| VideoToolbox | dépend de la machine virtuelle du runner : sans encodeur validé, **sauté** avec la raison | exécuté sur un Mac (vérifié : Mac arm64, FFmpeg 9.0.2) |
+| NVENC, Quick Sync, AMF | runners sans GPU : **sautés** (« absent » ou « présent mais refusé à la validation ») | exécutés là où la détection les valide |
+| VAAPI | pas de `/dev/dri` : **sauté** | exécuté sous Linux avec un nœud de rendu |
+| Logique des verdicts (balises fausses, sortie illisible, couleurs fausses, absence, exigence, repli) | **exécutée** partout, FFmpeg et ffprobe simulés (`tests/test_hardware_validation_report.py`) | idem |
+
+Un test sauté n'est **pas** une validation : la ligne `SKIPPED` de pytest donne la
+raison (`pytest -rs`).
+
+### Tester son matériel
+
+```bash
+python -m tools.perf.hardware_validation                         # témoin CPU + tous les backends
+python -m tools.perf.hardware_validation --encoder nvenc --keep  # un backend, fichiers conservés
+python -m tools.perf.hardware_validation --json rapport.json --timeout 120
+python -m tools.perf.hardware_validation --rescan                # après une mise à jour de pilote
+QT_QPA_PLATFORM=offscreen python -m pytest -rs tests/test_hardware_color_validation.py
+```
+
+`--encoder` accepte un backend (`cpu`, `videotoolbox`, `nvenc`, `qsv`, `amf`,
+`vaapi`) ou un encodeur FFmpeg (`h264_nvenc`) et se répète ; le témoin CPU est
+toujours exporté. `--keep` conserve la source et les exports (le chemin est
+affiché), `--timeout` borne chaque commande FFmpeg (60 s par défaut). L'outil
+utilise la détection et le cache de l'application ; il fonctionne sans aucun GPU
+et le dit (« aucun : ce FFmpeg n'expose aucun encodeur matériel… »).
+
+### Lire le rapport
+
+- **Encodeurs matériels détectés** : chaque encodeur listé par FFmpeg et le résultat
+  de la validation de l'application (« validé », « refusé à la validation (raison) ») ;
+  le backend qu'Auto retiendrait pour H.264. Puis les **décodeurs** détectés.
+- **Mini exports** : une ligne par backend et par conteneur, `[RÉUSSI]`, `[ÉCHEC]` ou
+  `[SAUTÉ]`, avec la durée, la taille et le code de sortie de FFmpeg, l'encodeur
+  réellement placé dans la commande, les balises **attendues / obtenues** et les
+  couleurs attendues → décodées. En cas d'échec, `problème :` dit lequel.
+- **Repli** : ce que ferait l'application si cet encodeur échouait (Auto relance une
+  fois en CPU, `libx264`, même fichier ; un choix explicite échoue avec « Relancer
+  en CPU ») et si ce repli marcherait ici (résultat du témoin CPU).
+- **Résultat** : nombre de réussis, d'échecs et de sautés, et la liste des backends
+  matériels **réellement vérifiés**. Code de sortie : `0` aucun échec (des sauts
+  sont permis, ils ne sont jamais comptés comme réussis), `1` un backend disponible
+  ou exigé a échoué, `2` validation impossible (FFmpeg ou ffprobe introuvable,
+  valeur d'exigence inconnue, source de test impossible). `--json` écrit le même
+  rapport, chemins réduits (`~`).
+
+Joignez le texte (ou le JSON) à un rapport de bug : il ne contient jamais la sortie
+brute de FFmpeg, seulement sa dernière ligne d'erreur.
+
+### Rendre l'absence bloquante
+
+Sur une machine qui **doit** avoir le matériel (runner auto-hébergé, poste de
+recette), une absence ne doit pas passer pour un saut :
+
+```bash
+KUT_STUDIO_REQUIRE_HARDWARE=videotoolbox python -m pytest -rs tests/test_hardware_color_validation.py
+KUT_STUDIO_REQUIRE_HARDWARE=nvenc,qsv python -m tools.perf.hardware_validation
+```
+
+Un backend exigé qui est absent ou refusé à la validation devient un **échec**
+(« … — exigé par KUT_STUDIO_REQUIRE_HARDWARE ») dans les tests comme dans l'outil
+(code de sortie 1). Les noms sont ceux de `--encoder` ; un nom inconnu est une
+erreur (une faute de frappe ne rend jamais l'exigence muette).
+
+### Résultats mesurés
+
+Mac arm64, FFmpeg 9.0.2 (Homebrew) : VideoToolbox H.264 en MP4 et en MOV est
+balisé `bt709/bt709/bt709/tv` et ses couleurs reviennent à ±2 niveaux, comme le
+témoin `libx264`. Sur ce FFmpeg, les options `-color_primaries` / `-color_trc`
+de la ligne de commande seules ne balisent **ni** les primaires **ni** le
+transfert (avec `libx264` comme avec VideoToolbox) : ce sont les propriétés
+posées sur les images par `setparams` qui rendent le flux juste, et VideoToolbox
+les respecte. NVENC, Quick Sync, AMF et VAAPI n'ont pas pu être exécutés (pas de
+machine correspondante) : l'outil ci-dessus est fait pour cela.
+
 ## Ajouter un backend matériel
 
 1. `core/hardware_encoding.py` : ajouter la valeur à `HardwareEncoder`, son nom
@@ -168,8 +284,8 @@ et débits des encodeurs ne sont pas équivalents, ce n'est pas un comparatif.
 3. `tests/test_hardware_encoding.py` : une sortie `-encoders` simulée
    (`HARDWARE_LINES`) et les cas détecté / non validé / Auto / explicite.
 
-Détection, cache, mode Auto, repli, interface et diagnostics suivent sans autre
-changement. Le décodage matériel, l'aperçu accéléré ou le rendu GPU des effets
+Détection, cache, mode Auto, repli, interface, diagnostics et validation
+matérielle (qui parcourt `HARDWARE_BACKENDS`) suivent sans autre changement. Le décodage matériel, l'aperçu accéléré ou le rendu GPU des effets
 pourront réutiliser `HardwareCapabilities` (un champ de plus par capacité) sans
 toucher à l'encodage.
 
@@ -177,8 +293,10 @@ toucher à l'encodage.
 
 - **Balises de couleur** : l'export convertit en BT.709 (plage limitée) et pose matrice, primaires, transfert et plage
   à la fois sur les images (`setparams`, dernière étape du graphe) et sur la ligne de commande. C'est testé avec
-  l'encodeur CPU (H.264 et ProRes) sur trois plateformes ; **les encodeurs matériels ne sont pas testés** avec ces
-  balises (VideoToolbox, NVENC, Quick Sync, AMF, VAAPI : il faut les machines correspondantes).
+  l'encodeur CPU (H.264 et ProRes) sur trois plateformes, et **avec chaque encodeur matériel présent** sur la machine
+  qui exécute les tests (voir [Validation matérielle](#validation-matérielle)) : VideoToolbox l'a été sur un Mac
+  arm64 ; NVENC, Quick Sync, AMF et VAAPI restent **non exécutés** faute de machine (tests sautés en CI, outil
+  `python -m tools.perf.hardware_validation` pour les vérifier sur place).
 
 - NVENC, QSV, AMF et VAAPI sont validés par la logique et par des sorties FFmpeg
   simulées, mais n'ont pas pu être exécutés sur du vrai matériel pendant le
