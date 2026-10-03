@@ -73,7 +73,8 @@ NATIVE_LANGUAGE_NAMES = frozenset({"Français", "Español", "English", "Deutsch"
 # clé i18n ne doit jamais faire apparaître de la dette). Les mots accentués sont déjà couverts par ``ACCENTED_LETTERS``.
 FRENCH_WORDS = frozenset(
     """
-    accentue actif actifs activer actuelle adaptatif adouci adoucit affichage afficher agrandit aide aigu aigus
+    absent absente absents absentes invalide accentue actif actifs activer actuelle adaptatif adouci adoucit
+    affichage afficher agrandit aide aigu aigus
     aimant aimantation ajoute ajouter ajoutez ajuster alignement analyser analysez ancien ancrage anglais
     annulation annuler annulera aplat apparence applique appliquent appliquer appliquez approche appuyez armer
     armez assombrit attaque atteinte attendez attente attributs aucun aucune augmentez automatique automatiques

@@ -109,7 +109,7 @@ class HardwarePreviewMixin:
             if panel.enable_gpu(resolved.api, cache_budget=budget):
                 self._gpu_guard.arm()          # retiré à l'arrêt propre ou au repli CPU
             else:
-                resolved = replace(resolved, kind="cpu", fallback_reason="initialisation impossible")
+                resolved = replace(resolved, kind="cpu", fallback_reason=i18n.translate("gpu.error.init_failed"))
         else:
             panel.disable_gpu()
             self._gpu_guard.disarm()
@@ -181,7 +181,7 @@ class HardwarePreviewMixin:
                 options.append((backend.value, DECODE_LABELS[backend]))
         current = self._decode_mode
         if current not in (DecodeMode.AUTO, DecodeMode.CPU) and current.value not in {v for v, _ in options}:
-            options.append((current.value, f"{DECODE_LABELS[current]} (indisponible)"))
+            options.append((current.value, i18n.translate("perf.decode.unavailable", label=DECODE_LABELS[current])))
         return options
 
     def _sync_gpu_compositing(self, clip, timeline_time: float) -> None:
@@ -360,7 +360,7 @@ class HardwarePreviewMixin:
                 pass
         if actions.disable_gpu and panel is not None and panel.gpu_active:
             panel.disable_gpu()
-            self._gpu_health.record("out_of_memory", "pression mémoire critique")
+            self._gpu_health.record("out_of_memory", i18n.translate("gpu.error.memory_pressure"))
         try:
             self.statusBar().showMessage(i18n.translate("preview.memory_pressure"), 6000)
         except Exception:
@@ -392,71 +392,77 @@ class HardwarePreviewMixin:
         else:
             lines.append(capabilities.describe())
         lines.append("")
-        lines.append("— Décodage —")
-        lines.append(f"Mode : {self._decode_mode.value}")
+        lines.append(i18n.translate("diag.hardware.decode_title"))
+        lines.append(i18n.translate("diag.hardware.mode", mode=self._decode_mode.value))
         qt_value, origin = self._qt_decode
-        lines.append(f"Moniteur temps réel (Qt) : {qt_value or 'défaut de Qt'} ({origin})")
+        lines.append(i18n.translate("diag.hardware.qt_monitor", value=qt_value or i18n.translate("diag.hardware.qt_default"),
+                                    origin=origin))
         if self._decode_mode is not self._qt_decode_mode_at_start:
-            lines.append("  (nouveau mode appliqué au moniteur au prochain démarrage)")
+            lines.append("  " + i18n.translate("diag.hardware.restart_pending"))
         health = self._decode_context.health
-        lines.append(f"Décodages matériels réussis : {health.hardware_runs} · replis CPU : {health.fallbacks}")
+        lines.append(i18n.translate("diag.hardware.decode_runs", runs=health.hardware_runs, fallbacks=health.fallbacks))
         for pair in health.blocked_pairs():
-            lines.append(f"  banni pour la session : {pair[0]}/{pair[1]}")
+            lines.append("  " + i18n.translate("diag.hardware.banned", backend=pair[0], codec=pair[1]))
         for event in health.events()[-3:]:
-            lines.append(f"  repli {event.backend}/{event.codec} ({event.purpose}) : {event.detail}")
+            lines.append("  " + i18n.translate("diag.hardware.fallback_event", backend=event.backend, codec=event.codec,
+                                                purpose=event.purpose, detail=event.detail))
         profile = self._decode_context.profile
         if profile is not None:
             for key, item in sorted(profile.items().items()):
                 backend, codec, size = key.split("/")
                 label = CODEC_BY_ID[codec].label if codec in CODEC_BY_ID else codec
-                cpu = f", {item.cpu_seconds_per_frame * 1000:.1f} ms CPU/img" if item.cpu_seconds_per_frame else ""
-                lines.append(f"  mesuré {backend} · {label} · {size} : {item.fps:.0f} i/s{cpu}")
-        lines.append("Export : décodage CPU (résultat déterministe)")
+                cpu = (i18n.translate("diag.hardware.cpu_per_frame", ms=f"{item.cpu_seconds_per_frame * 1000:.1f}")
+                       if item.cpu_seconds_per_frame else "")
+                lines.append("  " + i18n.translate("diag.hardware.measured", backend=backend, codec=label, size=size,
+                                                    fps=f"{item.fps:.0f}", cpu=cpu))
+        lines.append(i18n.translate("diag.hardware.export_cpu"))
         lines.append("")
-        lines.append("— Aperçu —")
+        lines.append(i18n.translate("diag.hardware.preview_title"))
         resolved = self._resolved_preview
         panel = self.preview_panel
         active = "GPU" if panel.gpu_active else "CPU"
-        lines.append(f"Rendu demandé : {self._preview_backend_request} · actif : {active}")
+        lines.append(i18n.translate("diag.hardware.render_requested", requested=self._preview_backend_request,
+                                    active=active))
         if resolved is not None and resolved.reason and not panel.gpu_active:
-            lines.append(f"Raison : {_REASONS.get(resolved.reason, resolved.reason)}")
+            reason_key = _REASON_KEYS.get(resolved.reason)
+            lines.append(i18n.translate("diag.hardware.reason",
+                                        reason=i18n.translate(reason_key) if reason_key else resolved.reason))
         if resolved is not None and resolved.fallback_reason:
-            lines.append(f"Repli : {resolved.fallback_reason}")
+            lines.append(i18n.translate("diag.hardware.fallback", reason=resolved.fallback_reason))
         if self._gpu_device_label:
-            lines.append(f"GPU : {self._gpu_device_label}")
+            lines.append(i18n.translate("diag.hardware.gpu_device", device=self._gpu_device_label))
         for event in self._gpu_health.events()[-3:]:
-            lines.append(f"  échec GPU ({event.kind}) : {event.detail}")
+            lines.append("  " + i18n.translate("diag.hardware.gpu_failure", kind=event.kind, detail=event.detail))
         stats = self.preview_frame_stats()
         if stats is not None:
             average = stats.average_render_ms()
             p95 = stats.p95_render_ms()
-            lines.append(
-                f"Images reçues {stats.received} · affichées {stats.presented} · perdues {stats.dropped}"
-            )
+            lines.append(i18n.translate("diag.hardware.frames", received=stats.received, presented=stats.presented,
+                                        dropped=stats.dropped))
             if average is not None:
-                lines.append(f"Rendu moyen {average:.2f} ms (p95 {p95:.2f} ms)")
+                lines.append(i18n.translate("diag.hardware.render_average", average=f"{average:.2f}", p95=f"{p95:.2f}"))
             view = panel.gpu_view
             cache = view.cache.stats()
             textures = view.executor.texture_bytes if view.executor is not None else 0
-            lines.append(
-                f"Cache GPU {cache.entries} · {cache.bytes / 2**20:.1f} / {cache.budget_bytes / 2**20:.0f} Mo"
-                f" · textures de travail {textures / 2**20:.1f} Mo"
-            )
+            lines.append(i18n.translate("diag.hardware.gpu_cache", entries=cache.entries, used=f"{cache.bytes / 2**20:.1f}",
+                                        budget=f"{cache.budget_bytes / 2**20:.0f}", textures=f"{textures / 2**20:.1f}"))
             if view.fallback_frames:
-                lines.append(f"Images converties par Qt (format non lu par le shader) : {view.fallback_frames}")
-        lines.append(f"Recalages du lecteur pendant la lecture : {panel.playback_seeks}")
+                lines.append(i18n.translate("diag.hardware.qt_converted", count=view.fallback_frames))
+        lines.append(i18n.translate("diag.hardware.seeks", count=panel.playback_seeks))
         memory = self._memory_watch.last
         if not memory.source:
             from core.memory_monitor import read_memory_status
 
             memory = read_memory_status()
         lines.append("")
-        lines.append("— Mémoire —")
+        lines.append(i18n.translate("diag.hardware.memory_title"))
         if memory.total_bytes:
-            free = f"{memory.available_bytes / 2**30:.1f} Go libres / " if memory.available_bytes else ""
-            lines.append(f"{free}{memory.total_bytes / 2**30:.0f} Go · pression {memory.pressure}")
+            free = (i18n.translate("diag.hardware.memory_free", value=f"{memory.available_bytes / 2**30:.1f}")
+                    if memory.available_bytes else "")
+            lines.append(i18n.translate("diag.hardware.memory_total", free=free, total=f"{memory.total_bytes / 2**30:.0f}",
+                                        pressure=memory.pressure))
         else:
-            lines.append("non lisible sur ce système")
+            lines.append(i18n.translate("diag.hardware.memory_unreadable"))
         return "\n".join(lines)
 
     def _shutdown_hardware_preview(self) -> None:
@@ -473,12 +479,12 @@ class HardwarePreviewMixin:
         set_default_context(None)
 
 
-_REASONS = {
-    "requested_cpu": "rendu CPU demandé",
-    "disabled": "aperçu GPU désactivé (KUT_STUDIO_GPU_PREVIEW=off)",
-    "no_window_system": "pas de contexte graphique (plateforme Qt sans fenêtre)",
-    "gpu_failed": "le GPU a échoué pendant la session",
-    "gpu": "GPU en attente de sa première image",
+_REASON_KEYS = {
+    "requested_cpu": "preview.reason.requested_cpu",
+    "disabled": "preview.reason.disabled",
+    "no_window_system": "preview.reason.no_window_system",
+    "gpu_failed": "preview.reason.gpu_failed",
+    "gpu": "preview.reason.gpu",
 }
 
 

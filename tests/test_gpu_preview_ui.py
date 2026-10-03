@@ -200,6 +200,48 @@ def test_window_uses_the_cpu_monitor_offscreen_and_reports_everything(qtbot, mon
     assert "actif : CPU" in text
 
 
+@pytest.fixture
+def french_language():
+    """Les tests de langue rendent la main en français (la langue est un état global)."""
+    from ui import i18n
+
+    i18n.reset_for_tests()
+    yield i18n
+    i18n.reset_for_tests()
+
+
+def test_hardware_diagnostics_follow_the_current_language(qtbot, monkeypatch, tmp_path, fake_proxies, french_language):
+    """Le diagnostic copiable est calculé à la demande : il suit la langue, sans clé manquante ni repli."""
+    window = _window(qtbot, monkeypatch, tmp_path)
+    french = window.hardware_diagnostics_text()
+    expected = {"en": ("— Decoding —", "— Preview —", "— Memory —", "Export: CPU decoding"),
+                "es": ("— Decodificación —", "— Vista previa —", "— Memoria —", "Exportación: decodificación por CPU")}
+    for language, sections in expected.items():
+        french_language.set_language(language)
+        with french_language.strict_translations():
+            text = window.hardware_diagnostics_text()
+        assert all(section in text for section in sections), (language, text)
+        assert "— Décodage —" not in text and text != french
+    french_language.set_language("fr")
+    assert window.hardware_diagnostics_text() == french
+
+
+def test_the_unavailable_decode_backend_and_the_gpu_events_are_translated(qtbot, monkeypatch, tmp_path, fake_proxies,
+                                                                          fake_gpu, french_language):
+    from core.decode_policy import DecodeMode
+
+    window = _window(qtbot, monkeypatch, tmp_path)
+    french_language.set_language("en")
+    panel = window.preview_panel
+    panel.enable_gpu("metal")
+    window._memory_watch = MemoryWatch(reader=lambda: MemoryStatus(100, 2, None, CRITICAL, "test"))
+    window._poll_memory()
+    assert window._gpu_health.events()[-1].detail == "critical memory pressure"
+    assert "GPU failure (out_of_memory): critical memory pressure" in window.hardware_diagnostics_text()
+    window._decode_mode = DecodeMode.AUTO
+    assert [label for _value, label in window.decode_mode_options()][0] == "Auto"
+
+
 def test_preferences_offer_decode_and_preview_choices(qtbot, monkeypatch, tmp_path, fake_proxies):
     window = _window(qtbot, monkeypatch, tmp_path)
     _dialog, tab = _prefs(qtbot, window)
