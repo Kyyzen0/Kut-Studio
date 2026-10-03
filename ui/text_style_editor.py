@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.adaptive_layout import make_shrinkable
+from ui.i18n import translate
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
     TextAlignment,
@@ -70,6 +71,7 @@ class AlignmentTile(QToolButton):
         self.setFocusPolicy(Qt.NoFocus)
         self.setFixedSize(24, 24)
         self.setToolTip(alignment.value.replace("_", " ").capitalize())
+        self.setAccessibleName(translate(f"a11y.align.{alignment.value}"))
         self._apply_style(active=False)
 
     def set_active(self, active: bool) -> None:

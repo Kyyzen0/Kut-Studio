@@ -36,6 +36,7 @@ from core.visual_effects import (
 )
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
+from ui.keyboard_navigation import let_tab_leave_in, tab_only_controls
 from ui.graphics_editor import GraphicsEditor
 from ui.compositing_editor import CompositingEditor
 from ui.theme import COLORS, label_style
@@ -211,6 +212,11 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         layout.addStretch()
 
         self._register_inspector_groups(project_group, clip_group, audio_group)
+        # Clavier : Tab atteint tous les contrôles, un clic n'en vole pas le focus (Espace continue de lire) ;
+        # Tab sort des éditeurs multilignes. Voir ui.keyboard_navigation.
+        tab_only_controls(self)
+        let_tab_leave_in(self)
+        self._sync_inspector_tab_order()
 
 
 

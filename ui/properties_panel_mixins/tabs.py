@@ -6,10 +6,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.keyboard_navigation import follow_layout_order
+
 
 
 class TabsMixin:
     """Mixin de ``PropertiesPanel`` : onglets de l'inspecteur et visibilité des groupes."""
+
+    def _sync_inspector_tab_order(self) -> None:
+        """Tab visite les contrôles dans l'ordre où l'inspecteur les affiche (haut → bas, gauche → droite)."""
+        follow_layout_order(self.layout())
 
     def _select_inspector_tab(self, index: int) -> None:
         """Bascule l'onglet actif de l'inspecteur."""

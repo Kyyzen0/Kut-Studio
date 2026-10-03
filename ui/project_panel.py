@@ -35,6 +35,7 @@ from core.library_organization import (
 )
 from core.project_model import MediaAsset
 from ui.adaptive_layout import ShrinkableScrollArea
+from ui.keyboard_navigation import let_tab_leave_in
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
@@ -510,6 +511,7 @@ class ProjectPanel(QWidget):
         self.graphics_view.import_requested.connect(
             self.graphic_import_requested.emit
         )
+        let_tab_leave_in(self)  # Tab sort des éditeurs multilignes (sous-titres) au lieu d'y insérer une tabulation
 
     # ------------------------------------------------------------------
     # Filtres et scopes

@@ -86,6 +86,7 @@ class ConstructionMixin:
                 f"QPushButton#inspectorTab:checked {{ color: {COLORS['accent']};"
                 f" background: transparent; border: none;"
                 f" border-bottom: 2px solid {COLORS['accent']}; }}"
+                f"QPushButton#inspectorTab:focus {{ border: 1px solid {COLORS['accent']}; }}"
             )
             button.clicked.connect(
                 lambda _checked=False, idx=index: self._select_inspector_tab(idx)
@@ -141,6 +142,7 @@ class ConstructionMixin:
         # par appel direct ; ici on prépare la coquille).
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("properties_scroll_area")
+        self.scroll_area.setFocusPolicy(Qt.NoFocus)  # simple conteneur : un arrêt de Tab invisible, sans rien à faire
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -476,6 +478,10 @@ class ConstructionMixin:
             next_button.clicked.connect(
                 lambda _checked=False, name=property_name: self._on_keyframe_navigation(name, 1)
             )
+            # Noms accessibles : ces boutons n'ont que « ‹ », « › » et un losange.
+            previous_button.setAccessibleName(translate("a11y.keyframe.previous", property=label.text()))
+            diamond.setAccessibleName(translate("a11y.keyframe.toggle", property=label.text()))
+            next_button.setAccessibleName(translate("a11y.keyframe.next", property=label.text()))
             self._diamonds[property_name] = diamond
             self._keyframe_nav_buttons[property_name] = (previous_button, next_button)
             for widget in (previous_button, diamond, next_button):

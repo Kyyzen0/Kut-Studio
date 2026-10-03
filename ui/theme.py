@@ -408,6 +408,14 @@ def _stylesheet(palette: ThemePalette) -> str:
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
         border-color: {palette.accent};
     }}
+    /* Focus clavier visible sur tous les contrôles (atteints avec Tab) : la même teinte d'accent que les champs. */
+    QPushButton:focus, QToolButton:focus {{ border: 1px solid {palette.accent}; }}
+    QToolButton#accentIcon:focus, QToolButton#accentText:focus {{ border: 2px solid {palette.text}; }}
+    QCheckBox::indicator:focus, QRadioButton::indicator:focus {{ border: 2px solid {palette.accent}; }}
+    QListWidget:focus, QTreeWidget:focus, QTextEdit:focus, QPlainTextEdit:focus {{
+        border: 1px solid {palette.accent};
+    }}
+    QSlider::handle:horizontal:focus {{ border: 2px solid {palette.text}; }}
     /* Tableaux des raccourcis (Préférences), de la file de rendu et pile des calques : lisibles
        quel que soit le fond natif. */
     QTreeWidget#shortcutsTree, QTreeWidget#renderQueueTree, QTreeWidget#layers_tree {{

@@ -68,6 +68,7 @@ class EffectsMixin:
             f"QComboBox#effectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f"QComboBox#effectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.effect_add_button = self._make_effect_button(
             translate("effects.add"), self._on_effect_add
@@ -144,6 +145,7 @@ class EffectsMixin:
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
             f"QPushButton#effectAction:hover {{ background: {COLORS['surface_hover']}; }}"
+            f"QPushButton#effectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#effectAction:disabled {{ color: {COLORS['muted']}; }}"
         )
         button.clicked.connect(lambda _checked=False: handler())
@@ -308,6 +310,7 @@ class EffectsMixin:
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.effect_parameters_layout.addWidget(wrapper)
+        self._sync_inspector_tab_order()  # réglages ajoutés après coup : Tab les visite à leur place
 
     def _on_effect_parameter_changed(
         self, effect_id: str, name: str, value: float

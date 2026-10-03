@@ -71,6 +71,7 @@ class AudioEffectsMixin:
             f"QComboBox#audioEffectType {{ background: {COLORS['surface']};"
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
+            f"QComboBox#audioEffectType:focus {{ border-color: {COLORS['accent']}; }}"
         )
         self.audio_effect_add_button = self._make_audio_effect_button(
             _tr("audio_effects.add"), self._on_audio_effect_add
@@ -151,6 +152,7 @@ class AudioEffectsMixin:
             f" color: {COLORS['text']}; border: 1px solid {COLORS['border']};"
             f" border-radius: 6px; padding: 4px 6px; font-size: 11px; }}"
             f"QPushButton#audioEffectAction:hover {{ background: {COLORS['surface_hover']}; }}"
+            f"QPushButton#audioEffectAction:focus {{ border: 1px solid {COLORS['accent']}; }}"
             f"QPushButton#audioEffectAction:disabled {{ color: {COLORS['muted']}; }}"
         )
         button.clicked.connect(lambda _checked=False: handler())
@@ -329,6 +331,7 @@ class AudioEffectsMixin:
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.audio_effect_parameters_layout.addWidget(wrapper)
+        self._sync_inspector_tab_order()
 
     def _on_audio_effect_parameter_changed(
         self, effect_id: str, name: str, value: float

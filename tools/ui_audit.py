@@ -424,6 +424,223 @@ def run_audit(
 
 
 # ---------------------------------------------------------------------------
+# Navigation au clavier
+# ---------------------------------------------------------------------------
+
+_INTERACTIVE_TYPES: tuple[str, ...] = (
+    "QAbstractButton", "QAbstractSpinBox", "QComboBox", "QLineEdit", "QSlider", "QTextEdit", "QPlainTextEdit",
+    "QAbstractItemView", "QKeySequenceEdit",
+)
+
+
+def interactive_controls(root) -> list:
+    """Contrôles interactifs visibles et actifs sous ``root`` (sans leurs composants internes)."""
+    from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QKeySequenceEdit, QTabBar, QWidget
+
+    controls = []
+    for widget in root.findChildren(QWidget):
+        if not any(widget.inherits(name) for name in _INTERACTIVE_TYPES):
+            continue
+        if not widget.isVisibleTo(root) or not widget.isEnabled() or _is_scroll_internal(widget):
+            continue
+        parent = widget.parentWidget()
+        if widget.inherits("QLineEdit") and isinstance(parent, (QAbstractSpinBox, QComboBox, QKeySequenceEdit)):
+            continue  # le champ interne d'une boîte numérique, d'une liste éditable, d'un champ de raccourci
+        if isinstance(parent, QTabBar) or widget.inherits("QHeaderView"):
+            continue
+        controls.append(widget)
+    return controls
+
+
+def _is_exclusive_radio(widget) -> bool:
+    return widget.inherits("QRadioButton") and widget.autoExclusive()
+
+
+def keyboard_gaps(root, label: str = "") -> list[Finding]:
+    """Contrôles que Tab n'atteint pas : politique de focus sans ``TabFocus``.
+
+    Un bouton radio d'un groupe exclusif n'a ``TabFocus`` que s'il est coché (les flèches changent de choix) : ce
+    n'est pas un défaut tant qu'un bouton de son groupe l'a.
+    """
+    from PySide6.QtCore import Qt
+
+    controls = interactive_controls(root)
+    findings: list[Finding] = []
+    for widget in controls:
+        if widget.focusPolicy() & Qt.TabFocus:
+            continue
+        if _is_exclusive_radio(widget):
+            group = widget.group()
+            members = group.buttons() if group is not None else [
+                w for w in controls if _is_exclusive_radio(w) and w.parentWidget() is widget.parentWidget()
+            ]
+            if any(member.focusPolicy() & Qt.TabFocus for member in members):
+                continue
+        name = widget.accessibleName() or widget.toolTip()[:30]
+        findings.append(Finding(
+            "keyboard", f"{label}{widget_path(widget, 3)}",
+            f"n'accepte pas Tab (politique {int(widget.focusPolicy())}) {name!r}".rstrip(),
+        ))
+    return findings
+
+
+def default_buttons(dialog) -> list:
+    """Boutons marqués par défaut (Entrée) d'un dialogue affiché."""
+    from PySide6.QtWidgets import QPushButton
+
+    return [button for button in dialog.findChildren(QPushButton) if button.isDefault()]
+
+
+def unnamed_icon_buttons(root, label: str = "") -> list[Finding]:
+    """Boutons sans texte lisible (icône ou glyphe) et sans nom accessible : inutilisables avec une aide technique."""
+    from PySide6.QtWidgets import QAbstractButton
+
+    findings = []
+    for button in root.findChildren(QAbstractButton):
+        if not button.isVisibleTo(root):
+            continue
+        text = button.text().replace("&", "").strip()
+        if sum(ch.isalnum() for ch in text) >= 2 or button.accessibleName():
+            continue
+        findings.append(Finding("unnamed", f"{label}{widget_path(button, 3)}", f"texte {text!r}, sans nom accessible"))
+    return findings
+
+
+def _owner(widget):
+    """Le contrôle visible qui porte un composant interne focalisé (champ d'une boîte numérique…)."""
+    from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QKeySequenceEdit
+
+    parent = widget.parentWidget()
+    if widget.inherits("QLineEdit") and isinstance(parent, (QAbstractSpinBox, QComboBox, QKeySequenceEdit)):
+        return parent
+    return widget
+
+
+def tab_sequence(top, *, start=None, within=None, limit: int = 300) -> list:
+    """Contrôles successivement focalisés par Tab (``QTest.keyClick``), jusqu'au tour complet ou à la sortie de ``within``."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    top.show()
+    top.activateWindow()
+    settle(top)
+    sequence: list = []
+    seen: set = set()
+    if start is not None:
+        start.setFocus(Qt.TabFocusReason)
+        settle(top)
+        sequence.append(start)
+        seen.add(start)
+    for _ in range(limit):
+        QTest.keyClick(top, Qt.Key_Tab)
+        settle(top)
+        focused = QApplication.focusWidget()
+        if focused is None:
+            break
+        focused = _owner(focused)
+        if focused in seen:
+            break
+        if within is not None and not within.isAncestorOf(focused):
+            if sequence:
+                break
+            continue
+        seen.add(focused)
+        sequence.append(focused)
+    return sequence
+
+
+def tab_order_violations(sequence, content) -> list[str]:
+    """Paires de contrôles consécutifs où le second est au-dessus du premier (ou à sa gauche, sur une même ligne).
+
+    ``content`` est le contenu défilant : ses contrôles sont comparés dans ses coordonnées (le défilement ne compte
+    pas) ; ceux qui sont hors du contenu (l'en-tête et ses onglets) passent avant.
+    """
+
+    def position(widget) -> tuple[int, int]:
+        if content.isAncestorOf(widget):
+            point = widget.mapTo(content, widget.rect().center())
+            return point.x(), point.y()
+        top = widget.window()
+        point = widget.mapTo(top, widget.rect().center())
+        return point.x(), point.y() - 1_000_000  # hors du contenu : avant lui
+
+    problems = []
+    for first, second in zip(sequence, sequence[1:]):
+        (ax, ay), (bx, by) = position(first), position(second)
+        same_row = abs(ay - by) <= max(first.height(), second.height()) // 2
+        backwards = bx < ax - 2 if same_row else by < ay
+        if backwards:
+            problems.append(f"{widget_path(first, 2)} -> {widget_path(second, 2)}")
+    return problems
+
+
+def dialog_factories(window) -> list[tuple[str, Callable[[], object]]]:
+    """Les dialogues de l'application, construits comme l'application les construit."""
+    from core.library_organization import LibraryOrganization
+    from ui.library_organization_widgets import TagManagerDialog
+    from ui.preferences_dialog import PreferencesDialog
+    from ui.project_panel_widgets.effects_library_view import SavePresetDialog
+    from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog
+
+    return [
+        ("Préférences", lambda: PreferencesDialog()),
+        ("Préférences complètes", lambda: PreferencesDialog(shortcut_manager=window.shortcuts, performance_host=window)),
+        ("Gestionnaire de tags", lambda: TagManagerDialog(LibraryOrganization(window.project))),
+        ("Enregistrer un preset d'effet", lambda: SavePresetDialog(default_name="x")),
+        ("Enregistrer une transition", lambda: SaveTransitionPresetDialog(default_name="x")),
+    ]
+
+
+def audit_dialog(name: str, dialog) -> list[Finding]:
+    """Constats clavier d'un dialogue : contrôles non atteints par Tab, boutons par défaut, boutons sans nom."""
+    dialog.show()
+    dialog.activateWindow()
+    settle(dialog)
+    pages = [None]
+    tabs = getattr(dialog, "tabs", None)
+    if tabs is not None:
+        pages = list(range(tabs.count()))
+    findings: list[Finding] = []
+    for page in pages:
+        if page is not None:
+            tabs.setCurrentIndex(page)
+            settle(dialog)
+        label = f"{name}{'' if page is None else f' (onglet {page})'} "
+        findings += keyboard_gaps(dialog, label)
+        reached = set(tab_sequence(dialog))
+        for widget in interactive_controls(dialog):
+            if widget not in reached and not _is_exclusive_radio(widget) and widget.focusPolicy() & 1:
+                findings.append(Finding("keyboard", f"{label}{widget_path(widget, 3)}", "Tab ne l'atteint pas"))
+    defaults = default_buttons(dialog)
+    if len(defaults) != 1:
+        findings.append(Finding("default", name, f"{len(defaults)} bouton(s) par défaut : {[b.text() for b in defaults]}"))
+    findings += unnamed_icon_buttons(dialog, f"{name} ")
+    dialog.close()
+    return findings
+
+
+def print_dialog_report() -> int:
+    """Audite le clavier de chaque dialogue et affiche les constats (code de sortie 1 s'il y en a)."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    window = make_main_window(1280, 720, scopes=False)
+    total = 0
+    try:
+        for name, factory in dialog_factories(window):
+            findings = audit_dialog(name, factory())
+            print(f"== {name} : {len(findings)} constat(s)")
+            for finding in findings:
+                print(f"   {finding}")
+            total += len(findings)
+    finally:
+        window.close()
+        app.processEvents()
+    return 1 if total else 0
+
+
+# ---------------------------------------------------------------------------
 # Ligne de commande
 # ---------------------------------------------------------------------------
 
@@ -454,9 +671,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["KUT_STUDIO_CONFIG_DIR"] = str(Path(scratch) / "config")
         os.environ["KUT_STUDIO_CACHE_DIR"] = str(Path(scratch) / "cache")
         os.environ["KUT_STUDIO_PROXY_DIR"] = str(Path(scratch) / "proxies")
+        os.environ["KUT_STUDIO_HARDWARE_ENCODING"] = "off"  # pas de détection matérielle en tâche de fond
         if args.dialogs:
-            from tools.ui_audit_keyboard import print_dialog_report
-
             return print_dialog_report()
         findings = run_audit(
             _parse_sizes(args.sizes), out_dir=args.out, font_scale=args.font_scale, scopes=not args.no_scopes
