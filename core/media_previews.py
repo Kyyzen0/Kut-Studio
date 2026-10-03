@@ -18,6 +18,7 @@ import shutil
 import subprocess
 
 from .cache_keys import thumbnail_key, waveform_key
+from .process_supervisor import supervised_run
 from .tool_paths import bundled_tool_path
 
 
@@ -102,7 +103,7 @@ def extract_waveform_peaks(path: str, bins: int) -> tuple[float, ...] | None:
     if ffmpeg is None or not os.path.isfile(path):
         return None
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             [
                 ffmpeg,
                 "-v",
@@ -144,7 +145,7 @@ def extract_thumbnail(path: str, time_seconds: float, width: int = 160) -> bytes
         return None
     safe_width = max(32, min(320, int(width)))
     try:
-        completed = subprocess.run(
+        completed = supervised_run(
             [
                 ffmpeg,
                 "-v",
