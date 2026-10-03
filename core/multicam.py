@@ -14,7 +14,9 @@ source) ne sont jamais masquées.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 
 from .multicam_model import AudioMode, MulticamAngle, MulticamSource
 from .project_model import Clip, Project, Sequence, Track
@@ -135,6 +137,107 @@ def angle_offset(sequence: Sequence, angle: MulticamAngle) -> float | None:
     return None if extent is None else extent[0]
 
 
+class AngleState(str, Enum):
+    """Ce que montre un angle à un instant donné."""
+
+    LIVE = "live"
+    """Un média est lu."""
+    NO_SIGNAL = "no_signal"
+    """L'angle n'a pas encore commencé ou est déjà fini (synchronisation partielle) : rien à montrer."""
+    OFFLINE = "offline"
+    """Le média de l'angle est introuvable (déplacé, supprimé) : « MEDIA OFFLINE », les autres angles continuent."""
+
+
+@dataclass(frozen=True)
+class AngleSample:
+    """État d'un angle sous la tête de lecture : média à lire, instant dans ce média, rôle dans le segment."""
+
+    angle: MulticamAngle
+    index: int
+    state: AngleState
+    path: str = ""
+    media_time: float = 0.0
+    active: bool = False
+    """C'est l'angle que le segment montre (image du programme)."""
+    audible: bool = False
+    """Son mixé pour ce segment selon la politique audio."""
+    audio_only: bool = False
+
+
+def angle_samples_at(
+    project: Project, segment: Clip, time_seconds: float, *, exists: Callable[[str], bool] | None = None,
+) -> list[AngleSample]:
+    """Pour chaque angle de la source du segment, ce qu'il montre à ``time_seconds`` (temps de la séquence du segment).
+
+    Lecture seule, sans E/S sauf ``exists`` (existence du fichier : mémorisée par défaut). Un angle sans clip à cet
+    instant est ``NO_SIGNAL`` ; un média absent du projet ou du disque est ``OFFLINE`` : le moniteur Multicam l'affiche
+    sans rien casser. Retourne ``[]`` si ``segment`` n'est pas un segment Multicam ou si l'instant est hors du segment.
+    """
+    from .cache_keys import file_exists
+    from .sequences import nested_source_time
+    from .time_remapping import timeline_to_source_time
+
+    child = project.get_sequence(segment.sequence_id) if segment.sequence_id else None
+    source = child.multicam if child is not None else None
+    if child is None or source is None:
+        return []
+    inner = nested_source_time(segment, time_seconds)
+    if inner is None:
+        return []
+    check = exists or file_exists
+    active = resolve_angle(source, segment.angle_id)
+    audible = set(audio_angle_ids(source, active)) if active is not None else set()
+    assets = {asset.id: asset for asset in project.media_assets}
+    samples: list[AngleSample] = []
+    for index, angle in enumerate(source.angles):
+        track = angle_track(child, angle)
+        base = dict(angle=angle, index=index, active=active is not None and angle.id == active.id,
+                    audible=angle.id in audible, audio_only=track is not None and track.type == "audio")
+        clip = None
+        if track is not None:
+            clip = next((item for item in track.clips if item.enabled and not item.is_nested
+                         and item.timeline_start <= inner < item.timeline_start + item.duration), None)
+        if clip is None:
+            samples.append(AngleSample(state=AngleState.NO_SIGNAL, **base))  # type: ignore[arg-type]
+            continue
+        asset = assets.get(clip.asset_id)
+        if asset is None or not asset.path or not check(asset.path):
+            samples.append(AngleSample(state=AngleState.OFFLINE, path=asset.path if asset else "", **base))  # type: ignore[arg-type]
+            continue
+        remapping = clip.time_remapping
+        try:
+            media_time = timeline_to_source_time(
+                timeline_time=inner - clip.timeline_start, source_in=clip.source_in, source_out=clip.source_out,
+                speed=remapping.speed, reverse=remapping.reverse, freeze_mode=remapping.freeze_mode,
+                freeze_source_time=remapping.freeze_source_time,
+            )
+        except ValueError:
+            media_time = clip.source_in + (inner - clip.timeline_start)
+        samples.append(AngleSample(state=AngleState.LIVE, path=asset.path, media_time=media_time, **base))  # type: ignore[arg-type]
+    return samples
+
+
+PAGE_SIZE = 16
+"""Nombre maximal de tuiles affichées en même temps ; au-delà, le moniteur Multicam pagine."""
+
+
+def grid_shape(count: int) -> tuple[int, int]:
+    """``(lignes, colonnes)`` de la grille d'angles : 2 → 1×2, 3-4 → 2×2, 5-9 → 3×3, 10-16 → 4×4 (pages au-delà)."""
+    if count <= 1:
+        return 1, 1
+    if count == 2:
+        return 1, 2
+    for side in (2, 3, 4):
+        if count <= side * side:
+            return side, side
+    return 4, 4
+
+
+def page_count(count: int) -> int:
+    """Nombre de pages de tuiles (16 par page)."""
+    return max(1, -(-count // PAGE_SIZE))
+
+
 @dataclass(frozen=True)
 class MulticamIssue:
     """Un défaut d'une source Multicam ou d'un de ses segments.
@@ -184,14 +287,20 @@ def multicam_issues(project: Project) -> list[MulticamIssue]:
 
 __all__ = [
     "NO_FILTER",
+    "PAGE_SIZE",
+    "AngleSample",
+    "AngleState",
     "MulticamIssue",
     "TrackFilter",
     "angle_extent",
     "angle_offset",
+    "angle_samples_at",
     "angle_track",
     "audio_angle_ids",
+    "grid_shape",
     "is_multicam_clip",
     "multicam_issues",
+    "page_count",
     "resolve_angle",
     "track_filter_for",
 ]

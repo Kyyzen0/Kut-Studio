@@ -486,6 +486,11 @@ def window_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
     yield "editeur-de-courbes", lambda: (window.open_graph_editor(), settle(window))
     yield "export", lambda: (window.graph_editor.hide(), window.show_export(), settle(window))
     yield "retour-editeur", lambda: (window.show_editor(), settle(window))
+    segments = _clip_ids(window, lambda track, clip: bool(clip.sequence_id) and window.project.get_sequence(clip.sequence_id) is not None
+                         and window.project.get_sequence(clip.sequence_id).multicam is not None)
+    if segments:
+        yield "moniteur-multicam", lambda i=segments[0]: (window.show_multicam_viewer(i), settle(window))
+        yield "retour-moniteur", lambda: (window._monitor_stack.setCurrentWidget(window.preview_panel), settle(window))
 
 
 def _scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
@@ -677,7 +682,9 @@ def tab_order_violations(sequence, content) -> list[str]:
 def dialog_factories(window) -> list[tuple[str, Callable[[], object]]]:
     """Les dialogues de l'application, construits comme l'application les construit."""
     from core.library_organization import LibraryOrganization
+    from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
     from ui.library_organization_widgets import TagManagerDialog
+    from ui.multicam_dialogs import MulticamCreateDialog, SourceRow, SummaryRow, SyncSummaryDialog
     from ui.preferences_dialog import PreferencesDialog
     from ui.project_panel_widgets.effects_library_view import SavePresetDialog
     from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog
@@ -688,6 +695,15 @@ def dialog_factories(window) -> list[tuple[str, Callable[[], object]]]:
         ("Gestionnaire de tags", lambda: TagManagerDialog(LibraryOrganization(window.project))),
         ("Enregistrer un preset d'effet", lambda: SavePresetDialog(default_name="x")),
         ("Enregistrer une transition", lambda: SaveTransitionPresetDialog(default_name="x")),
+        ("Créer une séquence Multicam", lambda: MulticamCreateDialog(
+            [SourceRow("a", "Wide", info="1920×1080 · 25 · 01:00:00:00"), SourceRow("b", "Close-up", info="1920×1080 · 25")],
+            default_name="Multicam", from_timeline=False, addable=[SourceRow("rec", "Recorder", kind="audio")],
+        )),
+        ("Résultat de la synchronisation", lambda: SyncSummaryDialog(
+            [SummaryRow("Wide", SyncStatus.NONE, 0.0, reference=True), SummaryRow("Close-up", SyncStatus.GOOD, 2.48),
+             SummaryRow("Drone", SyncStatus.FAILED)],
+            audio_choices=[("suit", MulticamAudio(AudioMode.FOLLOW_VIDEO)), ("fixe", MulticamAudio(AudioMode.FIXED, ("angle-1",)))],
+        )),
     ]
 
 

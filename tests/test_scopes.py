@@ -1321,7 +1321,9 @@ def test_scopes_splitter_holds_viewer_and_panel(qtbot, monkeypatch) -> None:
     host = window._viewer_host
     assert host.objectName() == "viewer_with_scopes"
     assert host.count() == 2
-    assert host.widget(0) is window.preview_panel
+    # La zone du haut est la pile du moniteur : visionneuse ordinaire ou moniteur Multicam (même emplacement).
+    assert host.widget(0) is window._monitor_stack
+    assert window._monitor_stack.widget(0) is window.preview_panel
     assert host.widget(1) is window.scopes_panel
     # Le panneau est redimensionnable : il ne doit pas être figé.
     assert host.childrenCollapsible() is False

@@ -81,9 +81,9 @@ def paint_nested_decoration(widget) -> None:
 
 def _paint_angle_marker(painter: QPainter, widget, view) -> None:
     """Bande de couleur de l'angle (bord gauche) et pastille numérotée : discret, lisible, aucune couleur métier."""
-    from ui.timeline_widgets.common import _current_palette
+    from ui.theme import active_palette
 
-    colors = _current_palette().angle_colors
+    colors = active_palette().angle_colors
     color = QColor(colors[view.angle_color_index % len(colors)])
     painter.fillRect(QRectF(0, 0, 4, widget.height()), color)
     if widget.width() < 48:
@@ -105,6 +105,11 @@ def handle_nested_double_click(widget, event) -> bool:
         return False
     if event.button() != Qt.LeftButton:
         return False
+    if getattr(view, "is_multicam", False):
+        # Un segment Multicam s'ouvre sur le moniteur (tous les angles, montage au clic) ; la source se corrige par le menu.
+        parent.multicam_viewer_requested.emit(view.id)
+        event.accept()
+        return True
     parent.nested_open_requested.emit(view.id)
     event.accept()
     return True

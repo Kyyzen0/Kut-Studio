@@ -100,6 +100,7 @@ def dialog_of(window):
 DIALOGS = [
     "Préférences", "Préférences complètes", "Gestionnaire de tags",
     "Enregistrer un preset d'effet", "Enregistrer une transition",
+    "Créer une séquence Multicam", "Résultat de la synchronisation",
 ]
 
 

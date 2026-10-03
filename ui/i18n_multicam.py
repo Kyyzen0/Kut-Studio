@@ -118,5 +118,153 @@ MULTICAM_TRANSLATIONS: dict[str, dict[str, str]] = {
     "multicam.dialog.create_title": _t(
         "Créer une séquence Multicam", "Create a Multicam sequence", "Crear una secuencia multicámara",
     ),
+    "multicam.viewer.title": _t("MULTICAM", "MULTICAM", "MULTICÁMARA"),
+    "multicam.viewer.empty": _t(
+        "Placez la tête de lecture sur un segment Multicam pour voir tous ses angles.",
+        "Move the playhead onto a Multicam segment to see all its angles.",
+        "Sitúe el cabezal sobre un segmento multicámara para ver todos sus ángulos.",
+    ),
+    "multicam.viewer.offline": _t("MÉDIA HORS LIGNE", "MEDIA OFFLINE", "MEDIO SIN CONEXIÓN"),
+    "multicam.viewer.no_signal": _t("PAS DE SIGNAL", "NO SIGNAL", "SIN SEÑAL"),
+    "multicam.viewer.audio_only": _t("AUDIO", "AUDIO", "AUDIO"),
+    "multicam.viewer.program": _t("PROGRAMME", "PROGRAM", "PROGRAMA"),
+    "multicam.viewer.page": _t("{page}/{pages}", "{page}/{pages}", "{page}/{pages}"),
+    "multicam.viewer.page_previous": _t("Page précédente", "Previous page", "Página anterior"),
+    "multicam.viewer.page_next": _t("Page suivante", "Next page", "Página siguiente"),
+    "multicam.message.no_source": _t(
+        "Ce projet ne contient aucune source Multicam.", "This project has no Multicam source.",
+        "Este proyecto no tiene ninguna fuente multicámara.",
+    ),
     "multicam.message.dialog_title": _t("Multicam", "Multicam", "Multicámara"),
 }
+
+
+# --- Boîtes de dialogue : création, résultat de synchronisation, progression ------------------------------------------------
+_DIALOGS: dict[str, dict[str, str]] = {
+    "multicam.kind.video": _t("VIDÉO", "VIDEO", "VÍDEO"),
+    "multicam.kind.audio": _t("AUDIO", "AUDIO", "AUDIO"),
+    "multicam.dialog.name": _t("Nom", "Name", "Nombre"),
+    "multicam.dialog.angle_name": _t("Nom de l'angle", "Angle name", "Nombre del ángulo"),
+    "multicam.dialog.sources": _t("Sources", "Sources", "Fuentes"),
+    "multicam.dialog.add_source": _t("Ajouter une source…", "Add a source…", "Añadir una fuente…"),
+    "multicam.dialog.remove": _t("Retirer", "Remove", "Quitar"),
+    "multicam.dialog.method": _t("Synchronisation", "Synchronization", "Sincronización"),
+    "multicam.dialog.create": _t("Créer", "Create", "Crear"),
+    "multicam.dialog.cancel": _t("Annuler", "Cancel", "Cancelar"),
+    "multicam.method.audio": _t("Par le son", "By sound", "Por el sonido"),
+    "multicam.method.audio.tip": _t(
+        "Compare les formes d'onde et aligne les sources sur le même événement sonore.",
+        "Compares the waveforms and aligns the sources on the same sound event.",
+        "Compara las formas de onda y alinea las fuentes sobre el mismo evento sonoro.",
+    ),
+    "multicam.method.audio.unavailable": _t(
+        "Il faut au moins deux sources avec du son.", "At least two sources with sound are needed.",
+        "Se necesitan al menos dos fuentes con sonido.",
+    ),
+    "multicam.method.timecode": _t("Par le timecode", "By timecode", "Por el timecode"),
+    "multicam.method.timecode.tip": _t(
+        "Aligne les sources sur l'heure de début inscrite dans leurs métadonnées ; une source sans timecode est placée au début.",
+        "Aligns the sources on the start time stored in their metadata; a source without timecode is placed at the start.",
+        "Alinea las fuentes según la hora de inicio de sus metadatos; una fuente sin timecode se coloca al principio.",
+    ),
+    "multicam.method.timecode.unavailable": _t(
+        "Au moins deux sources doivent porter un timecode.", "At least two sources must carry a timecode.",
+        "Al menos dos fuentes deben tener timecode.",
+    ),
+    "multicam.method.marker": _t("Par les repères", "By markers", "Por los marcadores"),
+    "multicam.method.marker.tip": _t(
+        "Aligne les clips sur le repère posé dans chacun d'eux.", "Aligns the clips on the marker placed in each of them.",
+        "Alinea los clips según el marcador colocado en cada uno.",
+    ),
+    "multicam.method.marker.unavailable": _t(
+        "Chaque clip de la timeline doit contenir un repère.", "Each timeline clip must contain a marker.",
+        "Cada clip de la línea de tiempo debe contener un marcador.",
+    ),
+    "multicam.method.positions": _t(
+        "Positions actuelles", "Current positions", "Posiciones actuales",
+    ),
+    "multicam.method.positions.tip": _t(
+        "Garde l'alignement actuel des clips sur la timeline.", "Keeps the clips' current alignment on the timeline.",
+        "Mantiene la alineación actual de los clips en la línea de tiempo.",
+    ),
+    "multicam.method.positions.unavailable": _t(
+        "Disponible depuis des clips de la timeline.", "Available from timeline clips.",
+        "Disponible desde clips de la línea de tiempo.",
+    ),
+    "multicam.method.start": _t("Début des clips", "Clip starts", "Inicio de los clips"),
+    "multicam.method.start.tip": _t(
+        "Fait commencer toutes les sources en même temps.", "Starts all the sources at the same time.",
+        "Hace que todas las fuentes empiecen al mismo tiempo.",
+    ),
+    "multicam.method.manual": _t(
+        "Manuelle (j'ajusterai moi-même)", "Manual (I will adjust it myself)", "Manual (lo ajustaré yo)",
+    ),
+    "multicam.method.manual.tip": _t(
+        "Crée la source sans synchroniser : décalez ensuite chaque angle à la main.",
+        "Creates the source without synchronizing: shift each angle by hand afterwards.",
+        "Crea la fuente sin sincronizar: desplace después cada ángulo a mano.",
+    ),
+    "multicam.summary.title": _t("Résultat de la synchronisation", "Synchronization result", "Resultado de la sincronización"),
+    "multicam.summary.hint": _t(
+        "Les angles non synchronisés gardent le début de leurs clips ; vous pourrez les décaler à la main dans la source.",
+        "Unsynchronized angles keep the start of their clips; you can shift them by hand in the source.",
+        "Los ángulos sin sincronizar conservan el inicio de sus clips; podrá desplazarlos a mano en la fuente.",
+    ),
+    "multicam.summary.audio": _t("Son", "Sound", "Sonido"),
+    "multicam.summary.offset": _t("décalage {seconds} s", "offset {seconds} s", "desfase {seconds} s"),
+    "multicam.sync.excellent": _t("Synchronisation excellente", "Excellent synchronization", "Sincronización excelente"),
+    "multicam.sync.good": _t("Synchronisation bonne", "Good synchronization", "Sincronización buena"),
+    "multicam.sync.uncertain": _t("Synchronisation incertaine", "Uncertain synchronization", "Sincronización incierta"),
+    "multicam.sync.failed": _t("Échec de la synchronisation", "Synchronization failed", "Falló la sincronización"),
+    "multicam.sync.manual": _t("Réglée à la main", "Set by hand", "Ajustada a mano"),
+    "multicam.sync.none": _t("Non mesurée", "Not measured", "Sin medir"),
+    "multicam.sync.reference": _t("Référence", "Reference", "Referencia"),
+    "multicam.audio.follow": _t("Le son suit l'image", "Sound follows the picture", "El sonido sigue a la imagen"),
+    "multicam.audio.fixed": _t("Son de « {name} » en continu", "Sound of “{name}” throughout", "Sonido de «{name}» continuo"),
+    "multicam.audio.mix": _t(
+        "Mixer toutes les sources sonores", "Mix all the sound sources", "Mezclar todas las fuentes sonoras",
+    ),
+    "multicam.progress.title": _t("Synchronisation en cours", "Synchronization in progress", "Sincronización en curso"),
+    "multicam.progress.envelope": _t("Analyse du son : {name}", "Analyzing sound: {name}", "Analizando el sonido: {name}"),
+    "multicam.progress.measure": _t("Mesure du décalage : {name}", "Measuring offset: {name}", "Midiendo el desfase: {name}"),
+    "multicam.progress.cancel": _t("Annuler", "Cancel", "Cancelar"),
+    "multicam.message.need_two": _t(
+        "Choisissez au moins deux sources.", "Choose at least two sources.", "Elija al menos dos fuentes.",
+    ),
+    "multicam.message.created": _t(
+        "Source Multicam « {name} » créée ({summary}).", "Multicam source “{name}” created ({summary}).",
+        "Fuente multicámara «{name}» creada ({summary}).",
+    ),
+    "multicam.message.synced": _t(
+        "{count} angle(s) synchronisé(s) sur {total}", "{count} of {total} angle(s) synchronized",
+        "{count} de {total} ángulo(s) sincronizado(s)",
+    ),
+    "multicam.message.no_timecode": _t(
+        "{count} source(s) sans timecode, placée(s) au début", "{count} source(s) without timecode, placed at the start",
+        "{count} fuente(s) sin timecode, colocada(s) al principio",
+    ),
+    "multicam.message.sync_cancelled": _t(
+        "Synchronisation annulée.", "Synchronization cancelled.", "Sincronización cancelada.",
+    ),
+    "multicam.message.sync_failed": _t(
+        "La synchronisation a échoué (voir le journal).", "Synchronization failed (see the log).",
+        "Falló la sincronización (consulte el registro).",
+    ),
+    "multicam.message.positions": _t("positions actuelles", "current positions", "posiciones actuales"),
+    "multicam.message.starts": _t("début des clips", "clip starts", "inicio de los clips"),
+    "multicam.message.manual": _t("à régler à la main", "to adjust by hand", "por ajustar a mano"),
+    "multicam.message.markers": _t("repères", "markers", "marcadores"),
+    "multicam.message.timecode": _t("timecode", "timecode", "timecode"),
+    "multicam.info.file": _t("Fichier", "File", "Archivo"),
+    "multicam.info.resolution": _t("Résolution", "Resolution", "Resolución"),
+    "multicam.info.fps": _t("Cadence", "Frame rate", "Cadencia"),
+    "multicam.info.camera": _t("Caméra", "Camera", "Cámara"),
+    "multicam.info.reel": _t("Bobine", "Reel", "Bobina"),
+    "multicam.info.timecode": _t("Timecode", "Timecode", "Timecode"),
+    "multicam.info.time_reference": _t("Référence BWF", "BWF reference", "Referencia BWF"),
+    "multicam.info.creation_time": _t("Création", "Created", "Creación"),
+    "multicam.default_name": _t("Multicam", "Multicam", "Multicámara"),
+    "multicam.angle_word": _t("Angle", "Angle", "Ángulo"),
+    "multicam.audio_word": _t("Audio", "Audio", "Audio"),
+}
+MULTICAM_TRANSLATIONS.update(_DIALOGS)

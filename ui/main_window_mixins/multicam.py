@@ -15,7 +15,6 @@ import logging
 from core.multicam import is_multicam_clip
 from core.multicam_ops import (
     MulticamError,
-    create_multicam_from_clips,
     flatten_multicam_clip,
     multicam_segment_at,
     replace_angle,
@@ -41,7 +40,11 @@ class MulticamMixin:
         timeline = self.timeline_panel
         timeline.multicam_replace_requested.connect(self.replace_multicam_angle)
         timeline.multicam_flatten_requested.connect(self.flatten_multicam_segment)
-        timeline.multicam_create_requested.connect(self.create_multicam_from_timeline_selection)
+        timeline.multicam_viewer_requested.connect(self.show_multicam_viewer)
+        viewer = self.multicam_viewer
+        viewer.set_provider(self._multicam_viewer_context)
+        viewer._resolve = self._multicam_tile_path           # noqa: SLF001 - la fenêtre choisit proxy ou original
+        viewer.angle_requested.connect(lambda index: self.switch_multicam_angle(index + 1))
 
     def _multicam_shortcut_handlers(self) -> dict:
         handlers = {
@@ -74,10 +77,24 @@ class MulticamMixin:
         self._mark_dirty()
 
     def _refresh_multicam_views(self) -> None:
-        """Point d'extension : le moniteur Multicam se met à jour quand il existe."""
+        """Le moniteur Multicam relit la tête de lecture (après une édition, un saut de lecture)."""
         viewer = getattr(self, "multicam_viewer", None)
         if viewer is not None:
             viewer.refresh()
+
+    def _multicam_viewer_context(self):
+        """(projet, tête de lecture, lecture en cours) : ce que le moniteur Multicam relit à chaque rafraîchissement."""
+        return self.project, self.playhead_seconds, bool(getattr(self, "is_playing", False))
+
+    def _multicam_tile_path(self, path: str) -> str:
+        """Média lu par une tuile : le plus petit proxy prêt, sinon l'original (jamais de génération ici)."""
+        proxies = getattr(self, "proxies", None)
+        if proxies is None:
+            return path
+        try:
+            return str(proxies.resolve(path, need_audio=False, divisor=4))
+        except Exception:  # noqa: BLE001 - un proxy illisible ne doit pas priver la tuile de son image
+            return path
 
     def _selected_clip_id(self) -> str | None:
         timeline = self.timeline_panel
@@ -115,6 +132,7 @@ class MulticamMixin:
         if result is None:
             return None
         LOGGER.info("Bascule Multicam : angle %s (« %s ») à %.3f s, coupe=%s", number, angle.name, time_seconds, result.cut)
+        self.multicam_viewer.set_active_hint(number - 1)       # retour immédiat : la suite (historique, timeline) est plus lourde
         self._record_history(i18n.translate("multicam.history.switch", number=number, name=angle.name))
         self._after_multicam_edit()
         return result
@@ -168,40 +186,27 @@ class MulticamMixin:
         return result
 
     # ------------------------------------------------------------------
-    # Création
-    # ------------------------------------------------------------------
-
-    def create_multicam_from_timeline_selection(self, name: str | None = None):
-        """« Créer une séquence Multicam… » depuis des clips déjà alignés (méthode : positions actuelles)."""
-        timeline = self.timeline_panel
-        ids = [view.id for view in timeline.clip_views if view.id in timeline.selected_clip_ids]
-        if len(ids) < 2:
-            self._report_edit_refused(i18n.translate("multicam.message.select_two"))
-            return None
-        if name is None:
-            name = self._ask_sequence_name("multicam.dialog.create_title", "Multicam")
-            if name is None:
-                return None
-        try:
-            sequence, segment = create_multicam_from_clips(self.project, ids, name=name)
-        except (KeyError, MulticamError) as error:
-            self._report_edit_refused(error)
-            return None
-        LOGGER.info("Source Multicam « %s » créée depuis %d clips (positions actuelles)", sequence.name, len(ids))
-        self._record_history(i18n.translate("multicam.history.create", name=sequence.name))
-        self._after_multicam_edit(select_clip_id=segment.id)
-        self._refresh_project_library()
-        self._refresh_sequence_ui()
-        return sequence, segment
-
-    # ------------------------------------------------------------------
     # Moniteur
     # ------------------------------------------------------------------
 
     def toggle_multicam_viewer(self) -> None:
-        """Affiche / masque le moniteur Multicam (point d'extension : posé par ``multicam_viewer``)."""
-        viewer = getattr(self, "multicam_viewer", None)
-        if viewer is None:
-            self._report_edit_refused(i18n.translate("status.unavailable"))
+        """Affiche / masque le moniteur Multicam (raccourci, menu)."""
+        if self._monitor_stack.currentWidget() is self.multicam_viewer:
+            self._monitor_stack.setCurrentWidget(self.preview_panel)
             return
-        viewer.toggle()
+        if not self._has_multicam_source():
+            self._report_edit_refused(i18n.translate("multicam.message.no_source"))
+            return
+        self._monitor_stack.setCurrentWidget(self.multicam_viewer)
+
+    def show_multicam_viewer(self, clip_id: str | None = None) -> None:
+        """Montre le moniteur Multicam sur un segment (double-clic) : la tête de lecture rejoint le segment si besoin."""
+        if clip_id:
+            try:
+                clip = find_clip(self.project, clip_id)
+            except KeyError:
+                clip = None
+            if clip is not None and not (clip.timeline_start <= self.playhead_seconds < clip.timeline_start + clip.duration):
+                self.seek_to_position(clip.timeline_start)
+        self._monitor_stack.setCurrentWidget(self.multicam_viewer)
+        self.multicam_viewer.refresh()

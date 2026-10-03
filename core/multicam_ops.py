@@ -557,13 +557,18 @@ def create_multicam_from_clips(
     name: str = "Multicam",
     sync_method: SyncMethod | None = SyncMethod.POSITIONS,
     offsets: Mapping[str, float] | None = None,
+    names: Mapping[str, str] | None = None,
+    outcomes: Mapping[str, SyncOutcome] | None = None,
+    audio: MulticamAudio | None = None,
 ) -> tuple[Sequence, Clip]:
     """Transforme des clips de la timeline en une source Multicam et les remplace par **un** segment.
 
     Chaque clip devient un angle (copie : effets, rognage et réglages conservés). Sans ``offsets`` ce sont leurs
-    positions actuelles qui servent de synchronisation (« utiliser les positions actuelles »). Les clips d'origine
-    sont retirés et un segment unique, sur l'angle 1, occupe la piste vidéo la plus basse de la sélection à la plus
-    petite position. Rien n'est modifié si l'opération est refusée.
+    positions actuelles qui servent de synchronisation (« utiliser les positions actuelles »). ``names`` : nom d'angle par
+    clip ; ``outcomes`` : résultat de synchronisation par clip (un décalage mesuré remplace la position, une mesure échouée
+    garde la position et note l'échec) ; ``audio`` : politique audio, sinon celle de :func:`suggest_audio_policy`. Les
+    clips d'origine sont retirés et un segment unique, sur l'angle 1, occupe la piste vidéo la plus basse de la sélection
+    à la plus petite position. Rien n'est modifié si l'opération est refusée.
     """
     from .timeline_operations import _find_track_for_clip
 
@@ -579,15 +584,19 @@ def create_multicam_from_clips(
             raise MulticamError("Seuls des clips vidéo ou audio peuvent devenir des angles.")
         found.append((track, clip))
     ordered = sorted(found, key=lambda pair: (pair[0].type != "video", pair[1].timeline_start))
-    specs = [
-        AngleSpec(
+    specs = []
+    for track, clip in ordered:
+        outcome = (outcomes or {}).get(clip.id)
+        offset = outcome.offset if outcome is not None and outcome.offset is not None else None
+        specs.append(AngleSpec(
             clip=clip, track_type=track.type,
-            offset=float((offsets or {}).get(clip.id, clip.timeline_start)),
-            name=clip.label, sync_method=sync_method,
-        )
-        for track, clip in ordered
-    ]
-    sequence = create_multicam_source(project, specs, name=name, sync_method=sync_method)
+            offset=float(offset if offset is not None else (offsets or {}).get(clip.id, clip.timeline_start)),
+            name=(names or {}).get(clip.id) or clip.label,
+            sync_method=outcome.method if outcome is not None else sync_method,
+            sync_status=outcome.status if outcome is not None else SyncStatus.NONE,
+            sync_confidence=outcome.confidence if outcome is not None else None,
+        ))
+    sequence = create_multicam_source(project, specs, name=name, sync_method=sync_method, audio=audio)
     video_tracks = [track for track, _clip in found if track.type == "video"]
     host = video_tracks[0] if video_tracks else found[0][0]
     for candidate in video_tracks[1:]:

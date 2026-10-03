@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMenu
 
-from core.multicam_model import AudioMode
+from core.multicam_model import AudioMode, SyncMethod
 from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip, set_audio_policy
 from core.project_model import Clip, MediaAsset, Project, Track
 
@@ -185,7 +185,11 @@ def test_creating_a_multicam_from_selected_timeline_clips_replaces_them_by_one_s
     )
     _load(window, project)
     window.timeline_panel._set_selection(["a", "b"], "a", announce=False)
-    result = window.create_multicam_from_timeline_selection(name="Interview")
+    from ui.multicam_dialogs import CreationChoice
+
+    result = window.create_multicam_from_timeline_selection(
+        choice=CreationChoice("Interview", SyncMethod.POSITIONS, (("a", "Cam A"), ("b", "Cam B"))),
+    )
     assert result is not None
     sequence, segment = result
     assert sequence.multicam is not None and [a.name for a in sequence.multicam.angles] == ["Cam A", "Cam B"]
@@ -194,7 +198,7 @@ def test_creating_a_multicam_from_selected_timeline_clips_replaces_them_by_one_s
     window.undo_last()
     assert {c.id for c in _clips(window)} == {"a", "b"}
     window.timeline_panel._set_selection(["a"], "a", announce=False)
-    assert window.create_multicam_from_timeline_selection(name="X") is None
+    assert window.create_multicam_from_timeline_selection() is None
     assert "au moins deux clips" in window.statusBar().currentMessage()
 
 
@@ -222,3 +226,78 @@ def test_the_multicam_commands_exist_in_the_shortcut_table_with_handlers(window)
     assert ids <= {c.id for c in window.shortcuts.shortcut_map.commands}
     assert not window.shortcuts.missing_handlers()
     assert window.shortcuts.shortcut_map.sequences("multicam_angle_4") == ("4",)
+
+
+# --- moniteur Multicam dans la fenêtre ----------------------------------------------------------------------------------
+
+
+def _with_stub_feeds(window):
+    from core.multicam_feed import FeedPool
+    from multicam_stubs import StubFeed
+
+    StubFeed.created = []
+    window.multicam_viewer._pool = FeedPool(StubFeed)  # noqa: SLF001 - flux factices : ni FFmpeg ni média réel
+    return StubFeed
+
+
+def test_a_double_click_on_a_segment_shows_the_multicam_monitor_instead_of_opening_the_source(window):
+    project, source, segment = _multicam_window(window)
+    _with_stub_feeds(window)
+    widget = window.timeline_panel.clip_widgets[segment.id]
+    QTest.mouseDClick(widget, Qt.LeftButton)
+    assert window._monitor_stack.currentWidget() is window.multicam_viewer   # noqa: SLF001
+    assert window.project.active_sequence_id != source.id                     # la source n'est pas ouverte
+
+
+def test_the_source_stays_reachable_from_the_menu_command(window):
+    project, source, segment = _multicam_window(window)
+    window.timeline_panel._set_selection([segment.id], segment.id, announce=False)
+    window.open_multicam_source()
+    assert window.project.active_sequence_id == source.id
+
+
+def test_the_monitor_command_toggles_between_the_viewer_and_the_multicam_monitor(window):
+    _multicam_window(window)
+    _with_stub_feeds(window)
+    window.toggle_multicam_viewer()
+    assert window._monitor_stack.currentWidget() is window.multicam_viewer   # noqa: SLF001
+    window.toggle_multicam_viewer()
+    assert window._monitor_stack.currentWidget() is window.preview_panel     # noqa: SLF001
+
+
+def test_the_monitor_command_explains_when_the_project_has_no_multicam_source(window):
+    window.toggle_multicam_viewer()
+    assert window._monitor_stack.currentWidget() is window.preview_panel     # noqa: SLF001
+    assert window.statusBar().currentMessage() == "Ce projet ne contient aucune source Multicam."
+
+
+def test_clicking_a_tile_of_the_monitor_cuts_the_segment_at_the_playhead(window):
+    _multicam_window(window)
+    _with_stub_feeds(window)
+    window.show_multicam_viewer()
+    window.playhead_seconds = 7.0
+    window.multicam_viewer.refresh()
+    window.multicam_viewer.angle_requested.emit(2)
+    assert [c.angle_id for c in _clips(window)] == ["angle-1", "angle-3"]
+    assert window.history.undo_label == "Angle 3 : Drone"
+
+
+def test_showing_the_monitor_on_a_segment_moves_the_playhead_into_it(window):
+    project, source, segment = _multicam_window(window)
+    _with_stub_feeds(window)
+    window.playhead_seconds = 500.0
+    window.show_multicam_viewer(segment.id)
+    assert window.playhead_seconds == segment.timeline_start
+
+
+def test_closing_the_window_stops_the_monitor_feeds(window, monkeypatch):
+    monkeypatch.setattr("core.cache_keys.file_exists", lambda *_a, **_k: True)   # médias factices considérés présents
+    _multicam_window(window)
+    stubs = _with_stub_feeds(window)
+    window.show()                       # le moniteur ne lit ses flux que visible
+    window.show_multicam_viewer()
+    window.multicam_viewer.refresh()
+    feeds = list(window.multicam_viewer._pool._feeds.values())    # noqa: SLF001
+    assert feeds
+    window.multicam_viewer.shutdown()
+    assert all(feed.closed for feed in feeds) and stubs is not None

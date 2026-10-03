@@ -128,6 +128,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     multicam_replace_requested = Signal(str, int)   # (segment, rang de l'angle, 0 = Angle 1) : « Remplacer par l'angle »
     multicam_flatten_requested = Signal(str)        # « Aplatir le segment Multicam »
     multicam_create_requested = Signal()            # « Créer une séquence Multicam… » depuis la sélection
+    multicam_viewer_requested = Signal(str)         # double-clic sur un segment : montrer le moniteur Multicam
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)

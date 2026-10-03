@@ -92,6 +92,8 @@ from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.multicam import MulticamMixin
+from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
+from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
@@ -130,6 +132,7 @@ class MainWindow(
     MotionGraphicsMixin,
     SequencesMixin,
     MulticamMixin,
+    MulticamCreationMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -260,7 +263,12 @@ class MainWindow(
         # Le viewer et les scopes partagent un splitter vertical : les
         # scopes sont redimensionnables et escamotables sans toucher
         # au dock de la zone centrale.
-        self._viewer_host = ViewerHostSplitter(self.preview_panel, self.scopes_panel)
+        # Moniteur : la visionneuse ordinaire, ou le moniteur Multicam (tous les angles) sur la même zone.
+        self.multicam_viewer = MulticamViewer()
+        self._monitor_stack = QStackedWidget()
+        self._monitor_stack.addWidget(self.preview_panel)
+        self._monitor_stack.addWidget(self.multicam_viewer)
+        self._viewer_host = ViewerHostSplitter(self._monitor_stack, self.scopes_panel)
         # Par défaut, les scopes restent repliés pour ne pas rogner le
         # viewer ; l'utilisateur les ouvre via le menu Affichage.
         self._viewer_host.setSizes([520, 0])
@@ -583,6 +591,7 @@ class MainWindow(
         self._init_sequences()
         # Multicam : bascule d'angle, remplacement, aplatir, création depuis la timeline.
         self._init_multicam()
+        self._init_multicam_creation()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
@@ -876,6 +885,8 @@ class MainWindow(
             ("rendus d'aperçu", cancel_previews),
             ("pistage", self._cancel_tracking_jobs),
             ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
+            ("synchronisation Multicam", self._cancel_multicam_syncs),
+            ("moniteur Multicam", lambda: call("multicam_viewer", "shutdown")),
             ("média du viewer", lambda: call("preview_panel", "release_media")),
             ("scopes", lambda: call("scopes_analyzer", "close")),
             ("fichiers de scopes", clean_scope_files),
