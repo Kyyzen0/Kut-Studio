@@ -11,7 +11,6 @@ from dataclasses import replace
 
 import pytest
 
-from core.audio_automation import AutomationPoint
 from core.audio_effects_model import AudioEffectType, create_audio_effect
 from core.filter_graph import fingerprint_plan
 from core.preview_segments import build_segment_job
@@ -53,7 +52,7 @@ MIX_EDITS = {
     "track mute": lambda p: setattr(_video(p), "muted", True),
     "audio effect": lambda p: _video(p).clips[0].audio_effects.append(
         create_audio_effect(next(iter(AudioEffectType)), effect_id="afx-test")),
-    "track automation": lambda p: _video(p).automation.append(AutomationPoint(time_seconds=1.0, gain_db=-9.0)),
+    "track automation": lambda p: _video(p).automation.add_point(1.0, -9.0),
 }
 
 SUBTITLE_EDITS = {

@@ -26,10 +26,8 @@ def _audio_project() -> Project:
 
 
 def _points(project: Project) -> list[tuple[float, float]]:
-    """Points d'automation de la 1re piste. Le modèle les porte en liste après un chargement et en
-    ``TrackAutomation`` une fois le service passé : deux représentations, les deux sont lues."""
-    automation = project.tracks[0].automation
-    return [(p.time_seconds, p.gain_db) for p in getattr(automation, "points", automation)]
+    """Points d'automation de la 1re piste (le modèle la porte toujours en ``TrackAutomation``, chargée ou non)."""
+    return [(p.time_seconds, p.gain_db) for p in project.tracks[0].automation.points]
 
 
 # --- Automation audio --------------------------------------------------------------------------------------------

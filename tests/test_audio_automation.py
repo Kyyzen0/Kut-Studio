@@ -551,8 +551,8 @@ def test_roundtrip_preserves_roles_automation_and_ducking(tmp_path) -> None:
     # Rôles.
     assert loaded.tracks[0].audio_role == "music"
     assert loaded.tracks[1].audio_role == "voice"
-    # Automation : ce sont des AutomationPoint.
-    auto = loaded.tracks[0].automation
+    # Automation : une TrackAutomation de AutomationPoint.
+    auto = loaded.tracks[0].automation.points
     assert len(auto) == 2
     assert auto[0].time_seconds == 0.0
     assert auto[1].fade_seconds == 1.0
@@ -584,7 +584,7 @@ def test_legacy_project_without_automation_loads_with_defaults(tmp_path) -> None
 
     loaded = load_project(str(target))
     assert loaded.tracks[0].audio_role == "other"
-    assert loaded.tracks[0].automation == []
+    assert loaded.tracks[0].automation.points == []
     assert loaded.tracks[0].ducking_config is None
     assert loaded.ducking_sidechains == []
 
@@ -670,7 +670,7 @@ def test_invalid_automation_point_is_dropped(tmp_path) -> None:
     (tmp_path / "auto.kut").write_text(json.dumps(raw), encoding="utf-8")
 
     loaded = load_project(str(tmp_path / "auto.kut"))
-    auto = loaded.tracks[0].automation
+    auto = loaded.tracks[0].automation.points
     assert len(auto) == 1
     assert auto[0].time_seconds == 0.5
 
@@ -697,13 +697,14 @@ def test_audio_layer_carries_automation_and_ducking() -> None:
     assert voice_layer.ducking_sidechains == ()
 
 
-def test_audio_layer_falls_back_to_list_for_legacy_automation() -> None:
-    """Un projet pré-tâche 28 peut porter une automation sous forme
-    de liste : le layer la transporte en tuple."""
+def test_audio_layer_carries_a_legacy_list_assigned_to_the_track() -> None:
+    """Un ancien code qui affecte une liste de points voit sa courbe normalisée par le modèle (``TrackAutomation``),
+    puis transportée en tuple par le plan de rendu."""
     project = _project_with_audio_clips()
     project.tracks[0].automation = [
         AutomationPoint(time_seconds=0.0, gain_db=-6.0)
     ]
+    assert isinstance(project.tracks[0].automation, TrackAutomation)
 
     plan = build_render_plan(project)
     layer = next(l for l in plan.audio_layers if l.track_id == "M1")
@@ -830,9 +831,9 @@ def test_undo_redo_for_add_automation_point() -> None:
 
     restored = history.undo()
     assert restored is not None
-    # ``ProjectHistory`` capture le projet tel quel : la liste est
-    # restaurée sous forme de liste (et non de ``TrackAutomation``).
-    assert list(restored.tracks[0].automation) == []
+    # ``ProjectHistory`` restaure une copie du projet : la courbe est une ``TrackAutomation``, comme avant.
+    assert isinstance(restored.tracks[0].automation, TrackAutomation)
+    assert restored.tracks[0].automation.points == []
 
 
 def test_undo_redo_for_remove_automation_point() -> None:
