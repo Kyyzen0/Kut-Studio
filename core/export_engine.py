@@ -13,7 +13,7 @@ timeline :
 2. **Audio** : une source silencieuse de référence (stéréo, 48 kHz)
    couvrant toute la timeline, puis pour chaque :class:`AudioLayer` :
    ``atrim``, ``asetpts=PTS-STARTPTS``, ``aformat`` pour normaliser en
-   stéréo / 48 kHz, ``asetpts=PTS+timeline_start/TB`` pour décaler ;
+   stéréo / 48 kHz, ``adelay`` pour décaler à ``timeline_start`` ;
    toutes les sources sont mixées via ``amix`` avec
    ``duration=first`` (la base silencieuse) et ``dropout_transition=0``.
 
@@ -2027,8 +2027,10 @@ def _build_audio_filter(
        décibels ;
     6. ``afade`` d'entrée puis de sortie, seulement si non nuls ;
     7. ``pan`` stéréo, seulement si le panoramique n'est pas centré ;
-    8. ``asetpts=PTS+timeline_start/TB`` qui décale la couche à sa
-       position sur la timeline.
+    8. ``adelay`` qui décale la couche à sa position sur la timeline (rien si
+       elle commence à 0). ``amix`` **ignore les horodatages** de ses entrées :
+       un ``asetpts=PTS+début/TB`` ne retarde rien, le clip jouait depuis le
+       début et se mélangeait au premier ; ``adelay`` retarde les échantillons.
 
     Chaque filtre est **omis** s'il n'a rien à faire : une chaîne
     neutre n'est pas émise. Toutes les valeurs sont bornées avant
@@ -2098,7 +2100,12 @@ def _build_audio_filter(
     if pan_needs_filter(layer.total_pan):
         steps.append(_build_pan_filter(layer.total_pan))
 
-    steps.append(f"asetpts=PTS+{timeline_start}/TB")
+    if layer.timeline_start > 0.0:
+        # ``amix`` ne lit pas les horodatages : seul un retard des échantillons place le clip sur la timeline.
+        delay_ms = f"{layer.timeline_start * 1000.0:.3f}"
+        steps.append(f"adelay={delay_ms}|{delay_ms}")
+    else:
+        steps.append(f"asetpts=PTS+{timeline_start}/TB")
     source_label = source if source is not None else f"{input_index}:a"
     output_label = label if label is not None else f"a{audio_index}"
     return f"[{source_label}]" + ",".join(steps) + f"[{output_label}]"

@@ -588,7 +588,7 @@ def test_filter_complex_includes_audio_layer_filters(engine, tmp_path):
 
     # atrim + décalage temporel présents.
     assert "atrim=start=1.0:end=6.0" in filter_complex
-    assert "asetpts=PTS+2.0/TB" in filter_complex
+    assert "adelay=2000.000|2000.000" in filter_complex
     # L'amix fusionne la base silencieuse avec le clip.
     assert "amix=inputs=" in filter_complex
 
@@ -673,7 +673,7 @@ def test_audio_layer_shift_via_setpts(engine, tmp_path):
     command = engine._build_command(request)
     filter_complex = command[command.index("-filter_complex") + 1]
 
-    assert "asetpts=PTS+3.5/TB" in filter_complex
+    assert "adelay=3500.000|3500.000" in filter_complex
 
 
 def test_audio_and_video_share_same_duration(engine, tmp_path):

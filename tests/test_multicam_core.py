@@ -680,3 +680,89 @@ def test_a_segment_clipped_by_a_shorter_source_still_resolves_its_angle():
     cut_clip(project, segment.id, 30.0)
     plan = build_render_plan(project)
     assert len(plan.video_layers) == 2 and len(plan.nested_sequences) == 1
+
+
+# --- imbrication, marqueurs, suivi, effets par angle ------------------------------------------------------------------------
+
+
+def test_a_multicam_source_cannot_contain_another_multicam_source(tmp_path):
+    from core.sequences import SequenceError, insert_sequence_clip
+
+    project, first = _project()
+    other = create_multicam_source(project, [AngleSpec(asset_id="camA"), AngleSpec(asset_id="camB")], name="Autre")
+    project.active_sequence_id = first.id
+    with pytest.raises(MulticamError):
+        insert_multicam_clip(project, other.id, "V1", 0.0)                 # depuis les opérations Multicam…
+    with pytest.raises(SequenceError):
+        insert_sequence_clip(project, other.id, "V1", 0.0)                 # …comme depuis un glisser-déposer de séquence
+    assert not any(clip.sequence_id for track in first.tracks for clip in track.clips)
+    assert len(project.sequences) == 3
+
+
+def test_a_multicam_segment_can_live_inside_an_ordinary_nested_sequence_and_still_renders_only_its_angle():
+    from core.sequences import create_sequence_from_selection
+
+    project, source, segment = _with_segment("angle-3")
+    nested = create_sequence_from_selection(project, [segment.id], "Scène").clip
+    assert nested.sequence_id and not nested.angle_id          # la séquence imbriquée est ordinaire
+    plan = build_render_plan(project)
+    inner = [entry for entry in plan.nested_sequences if entry.sequence_id == source.id]
+    assert len(inner) == 1
+    assert {layer.asset_id for layer in inner[0].plan.video_layers} == {"camC"}
+    assert len(plan.nested_sequences) == 2                      # la source Multicam, puis la séquence qui la contient
+    assert multicam_issues(project) == []
+
+
+def test_markers_of_the_source_and_of_the_montage_never_mix():
+    project, source, _segment = _with_segment("angle-1")
+    from core.project_model import Marker
+
+    source.markers.append(Marker("m-src", 12.0, "dans la source"))
+    project.markers.append(Marker("m-main", 3.0, "dans le montage"))
+    assert [m.id for m in project.markers] == ["m-main"]
+    assert [m.id for m in source.markers] == ["m-src"]
+    assert {m.id for m in duplicate_sequence(project, source.id).markers} != {"m-src"}   # une copie reçoit de nouveaux repères
+
+
+def test_an_effect_on_an_angle_clip_applies_to_every_appearance_without_being_copied_per_cut():
+    from core.effects_model import create_effect
+
+    project, source, segment = _with_segment("angle-2")
+    switch_angle(project, 10.0, "angle-1")
+    switch_angle(project, 20.0, "angle-2")
+    angle_clip = source.tracks[1].clips[0]
+    angle_clip.effects = [create_effect("blur")]
+    plan = build_render_plan(project)
+    blur_layers = [
+        layer for entry in plan.nested_sequences for layer in entry.plan.video_layers if layer.asset_id == "camB" and layer.effects
+    ]
+    assert len(blur_layers) == 1                          # un seul sous-plan pour l'angle B, deux apparitions dans le montage
+    assert all(not layer.effects for layer in plan.video_layers)                        # rien n'est recopié sur les segments
+    assert len(plan.video_layers) == 3 and len({layer.nested_key for layer in plan.video_layers}) == 2
+
+
+def test_stabilization_on_an_angle_clip_survives_a_synchronisation_offset():
+    """Les données de suivi sont en temps source : décaler l'angle dans la source ne les déplace pas."""
+    from core import tracking_ops as tracking
+    from core.tracking_model import Sample, SampleStatus
+    from dataclasses import replace
+
+    project, source, _segment = _with_segment("angle-2")
+    project.active_sequence_id = source.id
+    angle_clip = source.tracks[1].clips[0]
+    tracker = tracking.add_tracker(project, angle_clip.id, timeline_time=angle_clip.timeline_start + 1.0, x=500.0, y=300.0)
+    samples = {i: Sample(500.0 + 2 * i, 300.0 + i, 0.9, SampleStatus.TRACKED) for i in range(1, 40)}
+    clip, _track = tracking.find_clip_and_track(project, angle_clip.id)
+    tracking._put_tracker(clip, replace(tracker, data=tracker.data.with_samples(samples)))
+    tracking.set_stabilization(project, angle_clip.id, enabled=True, tracker_ids=(tracker.id,))
+    project.active_sequence_id = "seq-main"
+    before = build_render_plan(project)
+    layer_before = next(layer for entry in before.nested_sequences for layer in entry.plan.video_layers if layer.asset_id == "camB")
+    set_angle_offset(project, source.id, "angle-2", 6.0)                       # on décale l'angle de 4 s
+    after = build_render_plan(project)
+    layer_after = next(layer for entry in after.nested_sequences for layer in entry.plan.video_layers if layer.asset_id == "camB")
+    assert layer_before.transform_keyframes and layer_after.transform_keyframes
+    assert len(layer_before.transform_keyframes) == len(layer_after.transform_keyframes)
+    assert layer_after.timeline_start == pytest.approx(layer_before.timeline_start + 4.0)
+    # Les images-clés sont en temps **local du clip** : décaler le clip dans la source ne les touche pas, c'est le clip qui bouge.
+    assert list(layer_after.transform_keyframes) == list(layer_before.transform_keyframes)
