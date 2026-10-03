@@ -60,6 +60,7 @@ from core.library_organization import (
     TAG_COLOR_PALETTE,
     is_asset_missing,
 )
+from core.workspace_state import MIN_SIZE, PanelId
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
@@ -624,11 +625,12 @@ class FilterChipBar(QWidget):
         # une rangée horizontale simple, Qt les écrase jusqu'à masquer
         # leur libellé.
         layout = _ChipFlowLayout(self, spacing=Spacing.xs)
-        # Largeur plancher : celle de la colonne Médias la plus étroite.
+        # Largeur plancher : celle de la colonne Médias la plus étroite, moins ses marges (une barre plus
+        # large que la colonne débordait de 4 à 6 px à 1180 px de fenêtre).
         # La hauteur suit la largeur réelle via ``resizeEvent`` plutôt que
         # ``heightForWidth``, qui ferait réclamer au panneau parent la
         # hauteur préférée de tous ses voisins.
-        self.setMinimumWidth(Sizes.panel_min_width - 2 * Spacing.xs)
+        self.setMinimumWidth(MIN_SIZE[PanelId.MEDIA] - 4 * Spacing.xs - 1)
 
         self.header_label = QLabel("FILTRES")
         self.header_label.setStyleSheet(label_style(10, "muted", 800))

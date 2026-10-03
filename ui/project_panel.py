@@ -34,6 +34,7 @@ from core.library_organization import (
     usage_map,
 )
 from core.project_model import MediaAsset
+from ui.adaptive_layout import ShrinkableScrollArea
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconLabel, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
@@ -80,6 +81,10 @@ from ui.project_panel_widgets.effects_library_view import (
     SavePresetDialog,
     _CATEGORY_ACCENTS,
 )  # noqa: F401
+
+
+BROWSE_MIN_HEIGHT = 84
+"""Hauteur plancher (px) du bloc dossiers / filtres / tags : en dessous il défile (voir ``ShrinkableScrollArea``)."""
 
 
 class ProjectPanel(QWidget):
@@ -269,7 +274,6 @@ class ProjectPanel(QWidget):
         # vivent déjà dans le rail et les menus du haut : les répéter ici
         # encombrait la colonne sans offrir d'action supplémentaire.
         browse_content = QWidget()
-        self.library_browse_content = browse_content
         browse_content.setObjectName("libraryBrowse")
         browse_content.setStyleSheet(
             f"background: {COLORS['panel']};"
@@ -340,8 +344,14 @@ class ProjectPanel(QWidget):
         tags_layout.addWidget(self.manage_tags_button)
         browse_layout.addWidget(tags_row)
 
-        browse_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        layout.addWidget(browse_content, 0)
+        # Dossiers, filtres et tags tiennent à hauteur naturelle quand la colonne est haute. Quand elle ne
+        # l'est pas (720 px de fenêtre : ~400 px pour toute la bibliothèque), le bloc défile au lieu d'être
+        # écrasé sous son minimum, ce qui superposait les puces de filtre à la liste des dossiers.
+        browse_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        browse_scroll = ShrinkableScrollArea(browse_content, min_height=BROWSE_MIN_HEIGHT)
+        browse_scroll.setObjectName("libraryBrowseScroll")
+        self.library_browse_content = browse_scroll
+        layout.addWidget(browse_scroll, 0)
 
         # ----- Contenu empilé (grilles + placeholders) ----------------
         # Seule zone élastique du panneau : elle absorbe toute la
@@ -445,7 +455,9 @@ class ProjectPanel(QWidget):
             f"background: {COLORS['panel']}; border-top: 1px solid {COLORS['border']};"
         )
         actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.md)
+        # Marges latérales réduites : à 1180 px de fenêtre la colonne ne fait que ~230 px, et les libellés
+        # « Importer » / « Timeline » étaient tronqués (« Im…rter »).
+        actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.md)
         actions_layout.setSpacing(Spacing.xs)
         self.import_button = self._make_wide_button(
             IconName.IMPORT, "Importer",
@@ -888,6 +900,7 @@ class ProjectPanel(QWidget):
         button.setText(f"  {text}")
         button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         button.setMinimumHeight(Sizes.button_md)
+        button.setStyleSheet("QToolButton { padding: 4px 4px; }")
         # Le bouton s'étend pour suivre la largeur du panneau parent.
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return button

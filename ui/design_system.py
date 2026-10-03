@@ -88,7 +88,16 @@ class _Sizes:
     timeline_left_margin: int = 220
     timeline_ruler_height: int = 22
     timeline_header_height: int = 38
-    timeline_min_height: int = 270
+    # Doit rester ≤ ``MIN_SIZE[PanelId.TIMELINE]`` (core.workspace_state) : un panneau plus haut que le
+    # minimum de sa zone déborde de son hôte (30 px rognés à 1280 × 720).
+    timeline_min_height: int = 240
+    # Colonne de la visionneuse : hauteur minimale utile de la visionneuse (en-tête, image, transport) et
+    # plancher des scopes, qui cèdent d'abord quand la fenêtre est basse (voir ``ui.viewer_host``).
+    monitor_min_height: int = 244
+    scopes_min_height: int = 128
+    scopes_comfort_height: int = 200
+    # En-tête (recherche + puces de filtre) d'une page de bibliothèque : il défile en dessous de cette hauteur.
+    library_header_min_height: int = 64
 
 
 Sizes = _Sizes()
