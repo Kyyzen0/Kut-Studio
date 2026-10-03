@@ -21,6 +21,7 @@ import threading
 
 from PySide6.QtCore import QTimer
 
+from core.tracking_panel_state import LinkRow, TrackerRow, TrackingPanelState
 from ui import i18n
 
 
@@ -149,13 +150,13 @@ class TrackingMixin:
             self.tracking_panel.set_state(self._tracking_panel_state())
         self._refresh_tracking_overlay()
 
-    def _tracking_panel_state(self) -> dict:
+    def _tracking_panel_state(self) -> TrackingPanelState:
         from core.tracking_ops import TrackingError, link_targets, stabilization_report, tracking_of
 
         clip, track_type = self._tracking_selected_clip()
         if clip is None:
             return {}
-        state: dict = {"kind": track_type, "available": self._tracking_available}
+        state: TrackingPanelState = {"kind": track_type, "available": self._tracking_available}
         if not self._tracking_available:
             state["message"] = _tr("tracking.unavailable")
         tracking = tracking_of(clip)
@@ -171,7 +172,7 @@ class TrackingMixin:
             state["message"] = str(exc)
             return state
         selected = self._selected_tracker_ids(clip)
-        trackers = []
+        trackers: list[TrackerRow] = []
         for tracker in tracking.trackers:
             trackers.append({
                 "id": tracker.id, "name": tracker.name, "color": tracker.color,
@@ -251,7 +252,7 @@ class TrackingMixin:
                 result.append((text, spec))
         return result
 
-    def _describe_link(self, clip, link) -> dict:
+    def _describe_link(self, clip, link) -> LinkRow:
         from core.timeline_operations import find_clip
         from core.tracking_model import SELF_CLIP, TrackTarget
 

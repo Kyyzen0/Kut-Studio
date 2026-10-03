@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.tracking_model import AdaptMode, BorderMode, Precision, Smoothing, StabilizationMode
+from core.tracking_panel_state import TrackingPanelState
 from ui import i18n
 from ui.design_system import Spacing
 from ui.theme import COLORS
@@ -341,7 +342,7 @@ class TrackingPanel(QGroupBox):
 
     # -- état ------------------------------------------------------------------------------------
 
-    def set_state(self, state: dict) -> None:
+    def set_state(self, state: TrackingPanelState) -> None:
         """Affiche ``state`` (voir :meth:`TrackingMixin._tracking_panel_state`)."""
         self._updating = True
         try:
@@ -349,7 +350,7 @@ class TrackingPanel(QGroupBox):
         finally:
             self._updating = False
 
-    def _apply_state(self, state: dict) -> None:
+    def _apply_state(self, state: TrackingPanelState) -> None:
         self._state = state
         kind = state.get("kind", "")
         video = kind == "video"
