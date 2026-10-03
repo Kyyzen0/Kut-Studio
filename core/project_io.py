@@ -337,6 +337,42 @@ def _finite_float(text: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _asset_to_dict(asset: MediaAsset) -> dict[str, Any]:
+    """Forme écrite d'un média.
+
+    Les métadonnées optionnelles lues par la sonde (``timecode``, ``timecode_fps``, ``time_reference``, ``reel``,
+    ``camera``, ``creation_time``) ne sont écrites que si elles ne sont pas à leur défaut : un projet sans timecode
+    produit exactement les mêmes octets qu'avant, et la version du format ne change pas (clés optionnelles, comme les
+    ajouts précédents). À la lecture, ``MediaAsset.__post_init__`` ramène une valeur illisible à son défaut. Un lecteur
+    *plus ancien* refuserait un fichier qui porte ces clés (``MediaAsset(**item)`` est strict sur les clés inconnues) :
+    c'est accepté, on n'ouvre pas un fichier plus récent avec une version plus ancienne.
+    """
+    data: dict[str, Any] = {
+        "id": asset.id,
+        "path": asset.path,
+        "name": asset.name,
+        "duration": asset.duration,
+        "width": asset.width,
+        "height": asset.height,
+        "fps": asset.fps,
+        "media_type": asset.media_type,
+        "has_audio": asset.has_audio,
+    }
+    if asset.timecode:
+        data["timecode"] = asset.timecode
+    if asset.timecode_fps:
+        data["timecode_fps"] = asset.timecode_fps
+    if asset.time_reference is not None:
+        data["time_reference"] = asset.time_reference
+    if asset.reel:
+        data["reel"] = asset.reel
+    if asset.camera:
+        data["camera"] = asset.camera
+    if asset.creation_time:
+        data["creation_time"] = asset.creation_time
+    return data
+
+
 def _build_payload(project: Project) -> dict[str, Any]:
     """Construit la structure JSON-sérialisable représentant un projet."""
     return {
@@ -344,20 +380,7 @@ def _build_payload(project: Project) -> dict[str, Any]:
         _VERSION_KEY: CURRENT_VERSION,
         _PROJECT_KEY: {
             "name": project.name,
-            "media_assets": [
-                {
-                    "id": asset.id,
-                    "path": asset.path,
-                    "name": asset.name,
-                    "duration": asset.duration,
-                    "width": asset.width,
-                    "height": asset.height,
-                    "fps": asset.fps,
-                    "media_type": asset.media_type,
-                    "has_audio": asset.has_audio,
-                }
-                for asset in project.media_assets
-            ],
+            "media_assets": [_asset_to_dict(asset) for asset in project.media_assets],
             # --- Organisation de la bibliothèque (tâche 25, v11) ---
             # On sérialise uniquement les champs utiles à la
             # reconstruction. Les listes vides restent sérialisées
@@ -584,6 +607,8 @@ def _deserialize_project(
     for item in raw_assets:
         if not isinstance(item, dict):
             raise ValueError("Média invalide : objet JSON attendu.")
+        # Les métadonnées optionnelles (timecode, bobine, caméra…) absentes prennent leur défaut ; illisibles, elles y
+        # sont ramenées par ``MediaAsset.__post_init__`` : jamais d'échec d'ouverture à cause d'elles.
         assets.append(MediaAsset(**item))
 
     raw_sequences = data.get("sequences")

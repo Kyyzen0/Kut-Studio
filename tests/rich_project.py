@@ -30,14 +30,19 @@ from core.tracking_model import Sample, SampleStatus
 
 
 def _video_asset(index: int) -> MediaAsset:
-    return MediaAsset(f"av{index}", f"/nonexistent/v{index}.mp4", f"V{index}", 20.0, 1920, 1080, 30.0, "video", True)
+    asset = MediaAsset(f"av{index}", f"/nonexistent/v{index}.mp4", f"V{index}", 20.0, 1920, 1080, 30.0, "video", True)
+    if index == 1:      # métadonnées de sonde non défaut : timecode drop-frame, bobine, caméra, création
+        asset = replace(asset, timecode="01:02:03;04", timecode_fps=30000 / 1001, reel="A001", camera="Sony A7S III",
+                        creation_time="2026-03-14T09:26:53Z")
+    return asset
 
 
 def build_rich_project() -> Project:
     project = Project(name="Riche", width=1920, height=1080, fps=30.0)
     project.media_assets += [
         _video_asset(1), _video_asset(2),
-        MediaAsset("aa1", "/nonexistent/a1.wav", "A1", 30.0, 0, 0, 0.0, "audio", True),
+        MediaAsset("aa1", "/nonexistent/a1.wav", "A1", 30.0, 0, 0, 0.0, "audio", True,
+                   time_reference=3600.5, camera="Zoom H6", creation_time="2026-03-14T09:30:00"),
         MediaAsset("as1", "", "S1", 5.0, 0, 0, 0.0, "subtitle", False),
     ]
     project.tracks += [Track("V1", "V1", "video"), Track("V2", "V2", "video"),
