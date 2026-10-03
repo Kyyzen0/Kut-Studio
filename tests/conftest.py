@@ -15,6 +15,10 @@ if str(ROOT) not in sys.path:
 # The tests build Qt widgets but do not require an on-screen desktop session.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from tools.ui_audit import ensure_offscreen_fonts  # noqa: E402  (après le réglage du chemin et de la plateforme)
+
+ensure_offscreen_fonts()  # Windows : sans police, chaque caractère mesure une boîte carrée et toute mise en page déborde
+
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_pyfunc_call(pyfuncitem):
@@ -27,6 +31,22 @@ def pytest_pyfunc_call(pyfuncitem):
         from ffmpeg_caps import ensure_libass
 
         ensure_libass()
+
+
+@pytest.fixture(autouse=True)
+def _deliver_deferred_deletes():
+    """Détruit vraiment les widgets que ``qtbot`` vient de fermer (``deleteLater`` n'est jamais livré sans boucle).
+
+    ``qtbot.addWidget`` ferme la fenêtre puis appelle ``deleteLater()`` ; hors d'une boucle d'événements, cette
+    suppression différée n'arrive jamais. La fenêtre fermée restait donc vivante, avec ses panneaux **abonnés à la
+    langue** (``i18n.subscribe`` se désabonne au ``destroyed``) : après une centaine de tests d'un même processus,
+    chaque ``set_language`` retraduisait 90 fenêtres fantômes (70 s au lieu de 2 s pour un test, soit une suite qui
+    dépassait le délai de 30 minutes de la CI macOS). Fixture automatique, donc démontée **après** celle de ``qtbot``.
+    """
+    yield
+    from qt_cleanup import deliver_deferred_deletes
+
+    deliver_deferred_deletes()
 
 
 def pytest_configure(config):

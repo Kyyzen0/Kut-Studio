@@ -99,6 +99,7 @@ class AudioEffectsMixin:
 
         # Placeholder "aucun effet audio".
         self.audio_effects_empty_label = QLabel(_tr("audio_effects.empty"))
+        self.audio_effects_empty_label.setWordWrap(True)  # une phrase : elle ne doit pas fixer la largeur de l'inspecteur
         self.audio_effects_empty_label.setStyleSheet(
             label_style(11, "muted", 500)
         )

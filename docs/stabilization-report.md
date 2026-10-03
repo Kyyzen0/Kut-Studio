@@ -19,7 +19,7 @@ Où chaque information vit, et quel test la garde : [architecture.md](architectu
   corrigé des défauts qui n'étaient pas dans la liste (sous-titres ASS, pannes absentes du journal, boutons par défaut des
   dialogues…). **Ce qui n'est pas réglé est listé plus bas**, sans l'atténuer (section [Points ouverts](#points-ouverts)).
 * État de fin : `ruff` propre, `mypy` propre sur `core/` (dette ramenée de 41 à 17 modules, et verrouillée par un test),
-  suite complète verte (3 445 réussis, 21 sautés), smoke test de l'interface et de l'application empaquetée, CI sur trois
+  suite complète verte (3 445 réussis, 20 sautés), smoke test de l'interface et de l'application empaquetée, CI sur trois
   plateformes **et** job `macos-libass` verts sur les deux premières PR de la phase 2 — voir [CI](#ci) pour le détail.
 
 ## Méthode
@@ -222,10 +222,9 @@ Trois **incompatibilités entre branches**, trouvées en relançant la suite com
 ### Tests
 
 Référence avant la phase 2 (`main`, exécution locale) : **2 970 réussis, 7 sautés**. État final (branche, exécution locale
-complète, `-n 6`) : **3 445 réussis, 21 sautés, 0 échec** ; 3 466 tests collectés. Les 21 sautés ont tous leur raison
+complète, `-n 6`) : **3 445 réussis, 20 sautés, 0 échec** ; 3 465 tests collectés. Les 20 sautés ont tous leur raison
 affichée : 12 tests `libass` (le FFmpeg local n'a pas libass ; exécutés ici avec un `ffmpeg-full` déjà installé : 12
-réussis), 8 backends matériels absents (NVENC, Quick Sync, AMF, VAAPI, MP4 et MOV), 1 mnémonique Alt (vide sous le thème
-macOS, jamais exécuté avant la CI Windows / Linux). Vingt fichiers de tests ajoutés (ceux cités dans les tableaux ci-dessus, plus `test_dead_code_guard.py` (8),
+réussis) et 8 backends matériels absents (NVENC, Quick Sync, AMF, VAAPI, MP4 et MOV). Vingt fichiers de tests ajoutés (ceux cités dans les tableaux ci-dessus, plus `test_dead_code_guard.py` (8),
 `test_diagnostics_coverage.py` (8) et `test_ffmpeg_failure_diagnostics.py` (4)), 23 fichiers existants adaptés (dont
 `test_audio_mixer.py` : 20 tests supprimés avec le code mort qu'ils exerçaient).
 
@@ -236,7 +235,7 @@ macOS, jamais exécuté avant la CI Windows / Linux). Vingt fichiers de tests aj
 | **macOS arm64** (local, Python 3.14, Qt offscreen) | suite complète, `ruff`, `mypy`, smoke test source, **build PyInstaller natif + smoke test de l'application empaquetée** (code 0), `kill -9` réel d'un parent (supervision), validation matérielle VideoToolbox, rendu libass réel (`ffmpeg-full`), benchmarks |
 | **CI : macOS, Windows, Ubuntu (Python 3.11)** | workflow `Multiplatform` **vert** sur les PR #23 (`a7eca11`) et #24 (`4aaa02c`) : lint, `mypy` (Linux), suite complète, smoke test source, build natif, smoke test empaqueté. La supervision des processus (objet Job, `/proc`) y a donc tourné pour de bon sous Windows et Linux |
 | **CI : `macOS / libass (sous-titres)`** | vert sur les mêmes commits : 12 tests, 0 sauté, `--enable-libass` vérifié |
-| **Non exécuté nulle part** | NVENC, Quick Sync, AMF, VAAPI (aucune machine) ; la branche « petites fenêtres et clavier » (`928baa1`…`bea041c`) n'avait pas encore de run de CI à la rédaction de ce rapport |
+| **Non exécuté nulle part** | NVENC, Quick Sync, AMF, VAAPI (aucune machine) ; la CI de la branche « petites fenêtres et clavier » (#25) a été **rouge** : voir l'incident ci-dessous |
 
 ### Benchmarks (même machine, avant / après)
 
@@ -310,7 +309,7 @@ Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-me
 | --- | --- |
 | `ruff` propre | oui |
 | `mypy` propre | oui sur `core/` (17 modules en dette, listés, verrouillés par `test_typing_ratchet.py`) |
-| `pytest` complet vert | oui : **3 445 réussis, 21 sautés, 0 échec** (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
+| `pytest` complet vert | oui : **3 445 réussis, 20 sautés, 0 échec** (exécution complète locale sur l'état final ; la CI l'exécute sur trois plateformes) |
 | Smoke test de l'interface | oui (`python main.py --smoke-test`), source **et** application empaquetée |
 | Build natif + smoke test empaqueté | oui en local (macOS) ; CI trois plateformes verte sur les PR #23 et #24 |
 | Anciens `.kut` compatibles | oui : `SUPPORTED_VERSIONS` inchangé ; champs ajoutés (`continuation_ids`, `shared_range`) **optionnels**, écrits seulement s'ils diffèrent du défaut ; `Track.automation` migré au chargement sans changer le fichier ; aller-retour `save → load → save` idempotent |
@@ -321,6 +320,23 @@ Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-me
 | Validation matérielle conditionnelle | oui : VideoToolbox exécuté ; NVENC, Quick Sync, AMF, VAAPI sautés avec raison (jamais comptés comme réussis) |
 | Benchmarks documentés | `docs/perf/` + procédure ci-dessus ; moyenne géométrique 0,985 × la référence |
 | Aucun nouveau point critique ou haut introduit | oui, aucun relevé |
+
+### Incident : CI rouge sur la PR #25 (petites fenêtres et clavier), puis corrigée
+
+La PR #25 a été fusionnée avec une CI **rouge** : Ubuntu 2 échecs, Windows 61 échecs, macOS annulé au bout de 30 minutes
+(délai du job) après la mort d'un worker (« node down »), alors que la suite était verte en local et que les deux PR
+précédentes (#23, #24) avaient une CI verte. Rien n'a signalé l'échec avant la fusion (l'auto-correction n'était pas
+active sur cette PR). Causes établies par mesure, pas par réglage de seuils :
+
+| Cause | Mesure | Correctif |
+| --- | --- | --- |
+| Deux tests de police (`scale_fonts`) **modifiaient la feuille de style de l'application et les fenêtres partagées** (`window_at`, fixture de module) sans pouvoir les restaurer (le facteur 1,0 se réapplique sur des feuilles déjà agrandies) | exécutés avant les tests structurels dans le même processus, ceux-ci échouent (« onglet clip coupé à (1180, 720) ») : c'est la série de 60 échecs Windows, selon l'ordre qu'xdist donne au worker | ces scénarios tournent dans un **sous-processus** ; un garde fait échouer le test fautif, pas ses voisins ; les messages d'échec nomment chaque constat |
+| Des fenêtres fermées par `qtbot` **restaient vivantes** (leur `deleteLater()` n'est jamais livré sans boucle d'événements), donc leurs panneaux restaient **abonnés à la langue** | 460 abonnés fantômes après une centaine de tests ; chaque `set_language` retraduisait toutes ces fenêtres (la retraduction est lourde depuis l'i18n) : un test de 2 s en prenait 70, la suite doublait sur Ubuntu (≈ 6 → 13 min) et dépassait 30 min sur macOS | fixture automatique de `conftest` qui livre les suppressions différées après chaque test (460 → 0 abonné, suite locale 328 → 114 s) ; un test garde le mécanisme |
+| Le test du mnémonique Alt simulait la touche dans une fenêtre hors écran | échec Ubuntu et Windows (la plateforme `offscreen` ne livre pas Alt + lettre de façon fiable) | le test vérifie la **résolution** du titre en raccourci (`Alt + F`), identique sur toutes les plateformes (plus de saut sous macOS) |
+
+Aucun de ces défauts n'est dans le code de l'application : ce sont des défauts de **la suite de tests**. L'incident montre
+qu'un test « structurel » qui touche un état global (feuille de style, abonnés de langue) ne se valide que par la suite
+complète, jamais fichier par fichier ; la CI affiche maintenant les 15 tests les plus lents (`--durations=15`).
 
 ### État de la CI de la PR
 

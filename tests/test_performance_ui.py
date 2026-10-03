@@ -314,7 +314,9 @@ def test_closing_during_a_generation_kills_ffmpeg_and_leaves_no_partial_file(qtb
     monkeypatch.setattr("core.tool_paths.find_media_tool", lambda name: "/usr/bin/ffmpeg")
     window = _window(qtbot, monkeypatch, tmp_path)
     window.generate_proxy_for_asset("v0")
-    qtbot.waitUntil(lambda: pid_file.exists() and bool(window.proxies.active_process_ids()), timeout=TIMEOUT)
+    # Le fichier est créé puis écrit : sous Windows on peut le lire vide entre les deux, d'où l'attente du contenu.
+    qtbot.waitUntil(lambda: pid_file.exists() and bool(pid_file.read_text().strip())
+                    and bool(window.proxies.active_process_ids()), timeout=TIMEOUT)
     pid = int(pid_file.read_text())
     folder = Path(window.proxies.directory)
     assert window.close()

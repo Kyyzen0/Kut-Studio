@@ -74,7 +74,7 @@ class ColorMixin:
         curves_title = QLabel(translate("inspector.color.curves"))
         curves_title.setStyleSheet(label_style(11, "muted", 700))
         root.addWidget(curves_title)
-        self.color_curve_channel = QComboBox()
+        self.color_curve_channel = make_shrinkable(QComboBox())
         self.color_curve_channel.addItem(translate("inspector.color.channel_master"), "master")
         self.color_curve_channel.addItem(translate("inspector.color.channel_red"), "red")
         self.color_curve_channel.addItem(translate("inspector.color.channel_green"), "green")

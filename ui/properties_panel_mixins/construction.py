@@ -234,6 +234,7 @@ class ConstructionMixin:
         for field, value in project_fields:
             lbl = QLabel(f"{field} : {value}")
             lbl.setMinimumHeight(20)
+            lbl.setWordWrap(True)  # « État : Aucun clip sélectionné » fixait la largeur minimale de tout l'inspecteur
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
         layout.addWidget(project_group)
@@ -250,6 +251,7 @@ class ConstructionMixin:
         clip_form.setLabelAlignment(Qt.AlignLeft)
         clip_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # « Aucun clip sélectionné » passe sous « Nom »
         self.clip_name = QLabel(translate("no_clip_selected"))
+        self.clip_name.setWordWrap(True)  # un nom de fichier long ne doit pas fixer la largeur de l'inspecteur
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
         for label in (self.clip_name, self.clip_duration, self.clip_position):
@@ -436,12 +438,10 @@ class ConstructionMixin:
         self.timeline_duration_label = QLabel(translate("inspector.timeline_empty"))
         self.timeline_duration_label.setStyleSheet(label_style(11, "muted", 500))
         duration_info = QWidget()
-        duration_layout = QHBoxLayout(duration_info)
+        duration_layout = FlowLayout(duration_info, spacing=Spacing.md)  # deux libellés : à la ligne si la place manque
         duration_layout.setContentsMargins(0, 0, 0, 0)
-        duration_layout.setSpacing(Spacing.md)
         duration_layout.addWidget(self.source_duration_label)
         duration_layout.addWidget(self.timeline_duration_label)
-        duration_layout.addStretch()
         speed_form.addRow("", duration_info)
 
         layout.addWidget(self.speed_group)
