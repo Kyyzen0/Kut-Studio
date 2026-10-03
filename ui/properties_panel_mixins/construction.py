@@ -251,6 +251,7 @@ class ConstructionMixin:
         clip_form.setLabelAlignment(Qt.AlignLeft)
         clip_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # « Aucun clip sélectionné » passe sous « Nom »
         self.clip_name = QLabel(translate("no_clip_selected"))
+        self.clip_name.setWordWrap(True)  # un nom de fichier long ne doit pas fixer la largeur de l'inspecteur
         self.clip_duration = QLabel("--")
         self.clip_position = QLabel("--")
         for label in (self.clip_name, self.clip_duration, self.clip_position):

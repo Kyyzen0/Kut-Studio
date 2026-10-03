@@ -261,6 +261,17 @@ def test_scopes_alert_bar_only_takes_room_when_it_carries_an_alert(window_at):
     assert not window.scopes_panel._alert_bar.isVisible()
 
 
+def test_the_offscreen_platform_has_real_fonts(qapp):
+    """Sans police (Windows ``offscreen``), chaque caractère devient une boîte carrée : les mesures sont fausses."""
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+    assert QFontDatabase.families(), "aucune police : les largeurs de texte mesurées ne sont pas celles d'une vraie police"
+    font = QFont()
+    font.setPixelSize(13)
+    sample = "État : Aucun clip sélectionné"
+    assert QFontMetrics(font).horizontalAdvance(sample) < len(sample) * 13 * 0.8, "texte mesuré avec des glyphes-boîtes"
+
+
 def test_declared_minimums_agree_with_the_panels():
     """Un panneau plus grand que le minimum de sa zone déborde de son hôte."""
     from ui.properties_panel import PropertiesPanel

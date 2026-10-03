@@ -131,6 +131,18 @@ def scroll_culprits(scroll, limit: int = 6) -> list[str]:
     return names
 
 
+def ensure_offscreen_fonts() -> None:
+    """Donne de vraies polices à la plateforme Qt ``offscreen`` de Windows (à appeler avant de créer ``QApplication``).
+
+    Sous Windows, ``offscreen`` ne charge aucune police : ``QFontDatabase.families()`` est vide et Qt dessine chaque
+    caractère comme une boîte aussi large que la police est haute. Un texte y mesure alors 2,3 fois sa largeur
+    réelle (« État : Aucun clip sélectionné » : 377 px au lieu de 161 px en Segoe UI), et l'audit y signalait des
+    dépassements qui n'existent pas. ``QT_QPA_FONTDIR`` désigne le dossier des polices du système.
+    """
+    if sys.platform == "win32" and os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
+
+
 def _item_text(widget) -> str:
     text = widget.text() if hasattr(widget, "text") and callable(widget.text) else ""
     return f" {text[:24]!r}" if isinstance(text, str) and text else ""
@@ -751,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    ensure_offscreen_fonts()
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root))
     with tempfile.TemporaryDirectory(prefix="kut-ui-audit-") as scratch:

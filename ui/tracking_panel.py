@@ -198,6 +198,7 @@ class TrackingPanel(QGroupBox):
         self.link_button.setToolTip(_tr("tracking.link.tip"))
         self.bake_button = QPushButton(_tr("tracking.bake"), objectName="tracking_bake")
         self.bake_button.setToolTip(_tr("tracking.bake.tip"))
+        allow_shrinking(self.bake_button, 120)  # le libellé le plus long de l'onglet : dernier recours, il est alors coupé
         self.link_button.clicked.connect(lambda: self._emit_link(False))
         self.bake_button.clicked.connect(lambda: self._emit_link(True))
         buttons.addWidget(self.link_button)
@@ -278,7 +279,7 @@ class TrackingPanel(QGroupBox):
             spin.setRange(8, 4096)
             spin.setSuffix(" px")
             spin.setKeyboardTracking(False)
-            allow_shrinking(spin)  # deux champs côte à côte : leur somme ne doit pas élargir l'inspecteur
+            allow_shrinking(spin, 72)  # deux champs côte à côte : leur somme ne doit pas élargir l'inspecteur
             spin.valueChanged.connect(lambda v, f=field: self._emit_settings(**{f: float(v)}))
             row.addWidget(spin)
         form.addRow(_tr(label_key), row)

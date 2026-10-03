@@ -15,6 +15,10 @@ if str(ROOT) not in sys.path:
 # The tests build Qt widgets but do not require an on-screen desktop session.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from tools.ui_audit import ensure_offscreen_fonts  # noqa: E402  (après le réglage du chemin et de la plateforme)
+
+ensure_offscreen_fonts()  # Windows : sans police, chaque caractère mesure une boîte carrée et toute mise en page déborde
+
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_pyfunc_call(pyfuncitem):

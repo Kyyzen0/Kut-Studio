@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.adaptive_layout import make_shrinkable
+from ui.adaptive_layout import allow_shrinking, make_shrinkable
 from ui.i18n import translate
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
@@ -312,6 +312,7 @@ class TextStyleEditor(QWidget):
             "QPushButton:hover { background: #3A3A3A; }"
         )
         self.reset_button.clicked.connect(self._on_reset_clicked)
+        allow_shrinking(self.reset_button, 120)  # dernier recours : libellé coupé plutôt que contenu hors de l'inspecteur
         layout.addWidget(self.reset_button)
 
         layout.addStretch(1)
@@ -474,6 +475,7 @@ class _ColorButton(QPushButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(22)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(60)  # le code hexadécimal est coupé plutôt que de pousser la grille hors de l'inspecteur
         self._refresh_label()
 
     def set_color(self, hex_color: str) -> None:
