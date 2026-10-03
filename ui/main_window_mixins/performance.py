@@ -76,6 +76,7 @@ class PerformanceMixin:
             pinned_sources=self._project_source_paths,
             mograph=_mograph_frame_cache(),
             tracking=_tracking_cache(),
+            multicam=_multicam_cache(),
         )
         try:
             self.cache_manager.enforce()
@@ -369,6 +370,13 @@ def _tracking_cache():
     from core.tracking_engine import TrackingCache
 
     return TrackingCache()
+
+
+def _multicam_cache():
+    """Enveloppes audio de la synchronisation Multicam (budget disque global)."""
+    from core.audio_sync_cache import AudioSyncCache
+
+    return AudioSyncCache()
 
 
 def _mograph_frame_cache():
