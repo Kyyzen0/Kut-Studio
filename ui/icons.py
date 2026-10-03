@@ -811,6 +811,11 @@ class IconButton(QToolButton):
                     new_icon = self._icon_size_px + 4
                     self._icon_size_px = new_icon
                     self.setIconSize(QSize(new_icon, new_icon))
+            elif self.minimumWidth() == 0:
+                # Bouton à libellé créé sans taille fixe : sans largeur minimale explicite, un layout lui impose
+                # la largeur de son libellé et une colonne étroite (bibliothèque à 1180 px) déborde ou coupe
+                # la page. Il peut se comprimer (libellé coupé) plutôt que de faire déborder son conteneur.
+                self.setMinimumWidth(self._icon_size_px + 60)
             self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
 
     def _apply_style(self) -> None:

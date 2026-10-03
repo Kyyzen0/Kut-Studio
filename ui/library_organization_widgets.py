@@ -60,8 +60,11 @@ from core.library_organization import (
     TAG_COLOR_PALETTE,
     is_asset_missing,
 )
-from ui.design_system import Sizes, Spacing
+from core.workspace_state import MIN_SIZE, PanelId
+from ui.design_system import Spacing
+from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
+from ui.keyboard_navigation import set_single_default
 from ui.theme import COLORS, label_style
 from ui.i18n import translate
 
@@ -625,11 +628,12 @@ class FilterChipBar(QWidget):
         # une rangée horizontale simple, Qt les écrase jusqu'à masquer
         # leur libellé.
         layout = _ChipFlowLayout(self, spacing=Spacing.xs)
-        # Largeur plancher : celle de la colonne Médias la plus étroite.
+        # Largeur plancher : celle de la colonne Médias la plus étroite, moins ses marges (une barre plus
+        # large que la colonne débordait de 4 à 6 px à 1180 px de fenêtre).
         # La hauteur suit la largeur réelle via ``resizeEvent`` plutôt que
         # ``heightForWidth``, qui ferait réclamer au panneau parent la
         # hauteur préférée de tous ses voisins.
-        self.setMinimumWidth(Sizes.panel_min_width - 2 * Spacing.xs)
+        self.setMinimumWidth(MIN_SIZE[PanelId.MEDIA] - 4 * Spacing.xs - 1)
 
         self.header_label = QLabel(translate("library.filters.title"))
         self.header_label.setStyleSheet(label_style(10, "muted", 800))
@@ -986,6 +990,7 @@ class TagManagerDialog(QDialog):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setFocusPolicy(Qt.NoFocus)  # simple conteneur : les boutons des lignes portent le focus
         self.scroll.setStyleSheet(
             f"QScrollArea {{ background: {COLORS['panel']};"
             f" border: 1px solid {COLORS['border']};"
@@ -1032,7 +1037,12 @@ class TagManagerDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self._close_button = buttons.button(QDialogButtonBox.Close)
 
+        # Entrée dans le champ du nom crée le tag : « Créer » est le seul bouton par défaut (avant, c'était
+        # « Choisir une couleur… » qui s'ouvrait). Échap ferme le dialogue.
+        set_single_default(self, self.create_button)
+        self.name_field.setFocus()
         self._rebuild_list()
 
     # ------------------------------------------------------------------
@@ -1077,6 +1087,16 @@ class TagManagerDialog(QDialog):
             )
             self._tag_rows[tag.id] = row
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
+        self._sync_tab_order()
+
+    def _sync_tab_order(self) -> None:
+        """Ordre de tabulation = ordre visuel : les lignes de tags (créées après le formulaire) d'abord."""
+        chain: list[QWidget] = []
+        for row in self._tag_rows.values():
+            chain.extend(row.buttons)
+        chain.extend([self.name_field, self.color_button, self.create_button, self._close_button])
+        for first, second in zip(chain, chain[1:]):
+            QWidget.setTabOrder(first, second)
 
     # ------------------------------------------------------------------
     # Handlers
@@ -1195,7 +1215,8 @@ class _TagRow(QFrame):
         rename_button.setIcon(make_icon(IconName.EDIT, size=12))
         rename_button.setToolTip(translate("tracks.rename_tooltip"))
         rename_button.setCursor(Qt.PointingHandCursor)
-        rename_button.setFocusPolicy(Qt.NoFocus)
+        rename_button.setFocusPolicy(Qt.StrongFocus)  # dialogue : atteignable au clavier
+        rename_button.setAccessibleName(translate("a11y.tag.rename"))
         rename_button.clicked.connect(lambda: on_rename(tag.id))
         layout.addWidget(rename_button)
 
@@ -1203,7 +1224,8 @@ class _TagRow(QFrame):
         recolor_button.setIcon(make_icon(IconName.EDIT, size=12))
         recolor_button.setToolTip(translate("library.tags.change_color"))
         recolor_button.setCursor(Qt.PointingHandCursor)
-        recolor_button.setFocusPolicy(Qt.NoFocus)
+        recolor_button.setFocusPolicy(Qt.StrongFocus)
+        recolor_button.setAccessibleName(translate("a11y.tag.recolor"))
         recolor_button.clicked.connect(lambda: on_recolor(tag.id))
         layout.addWidget(recolor_button)
 
@@ -1211,9 +1233,11 @@ class _TagRow(QFrame):
         delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
         delete_button.setToolTip(translate("action.delete"))
         delete_button.setCursor(Qt.PointingHandCursor)
-        delete_button.setFocusPolicy(Qt.NoFocus)
+        delete_button.setFocusPolicy(Qt.StrongFocus)
+        delete_button.setAccessibleName(translate("a11y.tag.delete"))
         delete_button.clicked.connect(lambda: on_delete(tag.id))
         layout.addWidget(delete_button)
+        self.buttons = (rename_button, recolor_button, delete_button)
 
 
 def _show_warning(parent: QWidget, message: str) -> None:

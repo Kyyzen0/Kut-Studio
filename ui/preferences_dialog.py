@@ -65,6 +65,7 @@ from ui.i18n import (
     translate,
     unsubscribe,
 )
+from ui.keyboard_navigation import set_single_default
 from ui.performance_settings import PerformanceSettingsTab
 from ui.shortcut_manager import ShortcutManager
 from ui.shortcuts_editor import ShortcutsEditor
@@ -271,6 +272,7 @@ class PreferencesDialog(QDialog):
             # Le viewport prendrait le fond natif de l'OS : on le laisse
             # transparent pour garder le fond du thème du dialogue.
             general_scroll.setObjectName("preferencesScroll")
+            general_scroll.setFocusPolicy(Qt.NoFocus)  # simple conteneur : pas d'arrêt de Tab invisible
             general_scroll.setStyleSheet(
                 "QScrollArea#preferencesScroll,"
                 " QScrollArea#preferencesScroll > QWidget > QWidget"
@@ -309,6 +311,9 @@ class PreferencesDialog(QDialog):
         self.close_button = self.buttons_box.button(QDialogButtonBox.Close)
         self.buttons_box.rejected.connect(self.reject)
         root.addWidget(self.buttons_box)
+        # Un seul bouton par défaut : « Fermer ». Sans cela Entrée déclenchait le premier bouton créé
+        # (« Restaurer les réglages par défaut », ou « Retirer » un raccourci dans l'éditeur).
+        set_single_default(self, self.close_button)
 
     # ------------------------------------------------------------------
     # Construction des groupes de radios

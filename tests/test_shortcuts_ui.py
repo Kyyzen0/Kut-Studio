@@ -629,13 +629,13 @@ def test_menu_labels_follow_the_language_live(qtbot, monkeypatch):
     window = _window(qtbot, monkeypatch)
     try:
         assert window.shortcuts.action("project_new").text() == "Nouveau"
-        assert window.window_menu.title() == "Fenêtre"
+        assert window.window_menu.title().replace("&", "") == "Fenêtre"  # « & » : lettre mnémonique
         monkeypatch.setattr("ui.main_window.save_user_settings", lambda *_: None)
         window._apply_settings(replace(window._settings_snapshot(), language="en"))
         assert window.shortcuts.action("project_new").text() == "New"
         assert window.shortcuts.action("toggle_scopes").text() == "Show scopes"
         assert window.undo_action.text() == "Undo"
-        assert window.window_menu.title() == "Window"
+        assert window.window_menu.title().replace("&", "") == "Window"
     finally:
         i18n.set_language(original)
 

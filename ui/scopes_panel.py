@@ -50,7 +50,7 @@ from core.scopes import (
     VideoLevels,
     levels_bounds,
 )
-from ui.design_system import Spacing
+from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
@@ -95,7 +95,9 @@ class _ScopeCanvas(QWidget):
         self._result: Optional[ScopeResult] = None
         self._levels = VideoLevels.VIDEO
         self._color_space = ColorSpace.REC709
-        self.setMinimumSize(120, 80)
+        # Plancher bas : en quad deux rangées de scopes doivent tenir dans le plancher du panneau
+        # (``Sizes.scopes_min_height``) sans déborder.
+        self.setMinimumSize(96, 32)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setStyleSheet(
             f"background: {COLORS['background']};"
@@ -401,7 +403,7 @@ class ScopesPanel(QWidget):
         )
         # Taille minimale : le panneau doit rester lisible même
         # dans un layout serré.
-        self.setMinimumSize(280, 200)
+        self.setMinimumSize(280, Sizes.scopes_min_height)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self._layout_mode = ScopeLayout.QUAD
@@ -509,6 +511,7 @@ class ScopesPanel(QWidget):
         self._alert_layout.addWidget(self._black_alert)
         self._alert_layout.addWidget(self._white_alert)
         self._alert_layout.addStretch(1)
+        self._alert_bar.setVisible(False)
         root.addWidget(self._alert_bar)
 
         # Alertes optionnelles (désactivées par défaut pour ne pas
@@ -689,16 +692,20 @@ class ScopesPanel(QWidget):
         if not self._alerts_enabled or result is None:
             self._set_alert(self._black_alert, "scopes.alert.black", None)
             self._set_alert(self._white_alert, "scopes.alert.white", None)
-            return
-        self._set_alert(
-            self._black_alert,
-            "scopes.alert.black",
-            result.alerts.black_clipping,
-        )
-        self._set_alert(
-            self._white_alert,
-            "scopes.alert.white",
-            result.alerts.highlight_clipping,
+        else:
+            self._set_alert(
+                self._black_alert,
+                "scopes.alert.black",
+                result.alerts.black_clipping,
+            )
+            self._set_alert(
+                self._white_alert,
+                "scopes.alert.white",
+                result.alerts.highlight_clipping,
+            )
+        # La barre vide ne mangeait que de la hauteur : elle n'apparaît que pour porter une alerte.
+        self._alert_bar.setVisible(
+            not (self._black_alert.isHidden() and self._white_alert.isHidden())
         )
 
     @staticmethod

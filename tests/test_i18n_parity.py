@@ -56,9 +56,9 @@ def test_the_tables_are_not_empty_and_the_merge_loses_no_key():
 
 
 def test_merging_a_duplicated_key_is_refused_instead_of_overwriting_silently():
-    with pytest.raises(ValueError, match="menu.file"):
-        i18n._merge_table("ui.i18n_test", {"menu.file": {"fr": "x", "en": "x", "es": "x"}})
-    assert translate_strict("menu.file", "en") == "File"  # la clé d'origine n'a pas bougé
+    with pytest.raises(ValueError, match="action.open"):
+        i18n._merge_table("ui.i18n_test", {"action.open": {"fr": "x", "en": "x", "es": "x"}})
+    assert translate_strict("action.open", "en") == "Open…"  # la clé d'origine n'a pas bougé
 
 
 @pytest.mark.parametrize("path", TABLE_FILES, ids=lambda path: path.name)
@@ -198,8 +198,8 @@ def test_every_key_resolves_strictly_in_every_language(language):
 
 def test_translate_strict_answers_in_the_current_language_by_default():
     i18n.set_language("es")
-    assert translate_strict("menu.file") == "Archivo"
-    assert translate_strict("menu.file", "en") == "File"
+    assert translate_strict("action.open") == "Abrir…"
+    assert translate_strict("action.open", "en") == "Open…"
 
 
 def test_translate_strict_refuses_an_unknown_key_where_translate_returns_a_marker():
@@ -229,7 +229,7 @@ def test_translate_strict_refuses_an_empty_value_and_a_missing_field(monkeypatch
 
 def test_translate_strict_refuses_an_unknown_language():
     with pytest.raises(ValueError, match="langue"):
-        translate_strict("menu.file", "de")
+        translate_strict("action.open", "de")
 
 
 def test_strict_mode_makes_translate_raise_instead_of_falling_back(monkeypatch):
@@ -240,5 +240,5 @@ def test_strict_mode_makes_translate_raise_instead_of_falling_back(monkeypatch):
             translate("test.only_french")
         with pytest.raises(MissingTranslationError):
             translate("does.not.exist")
-        assert translate("menu.file") == "Archivo"
+        assert translate("action.open") == "Abrir…"
     assert translate("does.not.exist") == "[does.not.exist]"  # le mode normal revient à la sortie du bloc

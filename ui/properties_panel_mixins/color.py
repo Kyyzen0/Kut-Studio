@@ -21,6 +21,7 @@ from core.color_grading import (
     ColorGrade,
     ColorPresetStore,
 )
+from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Spacing
 from ui.icons import IconName
 from ui.theme import label_style
@@ -46,6 +47,7 @@ class ColorMixin:
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(Spacing.xs)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         specs = (
             ("exposure", translate("inspector.color.exposure"), -2.0, 2.0, 0.05, " EV"),
             ("contrast", translate("field.contrast"), -1.0, 1.0, 0.05, ""),
@@ -97,7 +99,7 @@ class ColorMixin:
         preset_layout = QHBoxLayout(preset_row)
         preset_layout.setContentsMargins(0, 0, 0, 0)
         preset_layout.setSpacing(Spacing.xs)
-        self.color_preset_combo = QComboBox()
+        self.color_preset_combo = make_shrinkable(QComboBox())
         self._refresh_color_presets()
         self.color_preset_apply_button = self._make_action_button(
             None, translate("tracking.apply"), translate("inspector.color.apply_tip")
@@ -120,9 +122,7 @@ class ColorMixin:
         self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
         root.addWidget(self.color_lut_label)
         lut_row = QWidget()
-        lut_layout = QHBoxLayout(lut_row)
-        lut_layout.setContentsMargins(0, 0, 0, 0)
-        lut_layout.setSpacing(Spacing.xs)
+        lut_layout = FlowLayout(lut_row, spacing=Spacing.xs)
         self.color_lut_import_button = self._make_action_button(
             None, translate("inspector.color.import"), translate("inspector.color.import_tip")
         )

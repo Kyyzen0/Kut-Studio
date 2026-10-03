@@ -97,7 +97,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
 MIN_SIZE: dict[PanelId, int] = {
     PanelId.MEDIA: 220,
     PanelId.VIEWER: 320,
-    PanelId.INSPECTOR: 260,
+    PanelId.INSPECTOR: 280,
     PanelId.TIMELINE: 240,
     PanelId.MIXER: 320,
 }
