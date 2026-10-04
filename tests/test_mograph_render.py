@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 
 from core.blend_modes import BLEND_MODES, BlendMode
 from core.compositing import Compositing, Mask, MaskMode, MaskShape
@@ -41,6 +42,25 @@ def _render(project: Project, t: float = 0.0, *, quality: str = "export", blend:
 def _rgba(image, x: int, y: int) -> tuple[int, int, int, int]:
     color = image.pixelColor(x, y)
     return (color.red(), color.green(), color.blue(), color.alpha())
+
+
+def _transparent_pockets(image, threshold: int = 128) -> int:
+    """Pixels transparents que le vide extérieur n'atteint pas : des trous dans l'encre.
+
+    Le remplissage part des bords en 4-connexité : les coins du carré où une barre recouvre une
+    hampe touchent le fond en diagonale, une 8-connexité s'y engouffrerait et ne verrait rien.
+    """
+    width, height = image.width(), image.height()
+    empty = {(x, y) for y in range(height) for x in range(width) if image.pixelColor(x, y).alpha() < threshold}
+    outside = {(x, y) for x, y in empty if x in (0, width - 1) or y in (0, height - 1)}
+    frontier = list(outside)
+    while frontier:
+        x, y = frontier.pop()
+        for neighbour in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if neighbour in empty and neighbour not in outside:
+                outside.add(neighbour)
+                frontier.append(neighbour)
+    return len(empty - outside)
 
 
 def _shape(project, kind="rectangle", *, size=(60, 40), color="#FF0000", **transform):
@@ -97,6 +117,48 @@ def test_text_renders_with_background_and_tracking_changes_width():
     narrow = measure_text(text.graphic)[0]
     update_graphic(text, "tracking", 20.0)
     assert measure_text(text.graphic)[0] == pytest.approx(narrow + 40.0, abs=2)
+
+
+def test_text_path_fills_with_the_winding_rule():
+    """Indépendant de la police installée : le contrat qui garde le test de pixels ci-dessous."""
+    from core.mograph_raster import text_path
+
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    update_graphic(text, "text", "Kut")
+    path, _block = text_path(text.graphic, 150, 60)
+    assert path.fillRule() == Qt.WindingFill
+    # L'ombre est un ``translated()`` du tracé : elle doit hériter de la même règle.
+    assert path.translated(4, 4).fillRule() == Qt.WindingFill
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        {},
+        # Remplissage invisible : seul l'ombre décalée, tracé par ``translated()``, reste à l'image.
+        {"fill_color": "#00000000", "shadow_color": "#000000FF", "shadow_offset_x": 6, "shadow_offset_y": 6},
+        # Contour fin : le pinceau de ``drawPath`` doit suivre la même règle de remplissage.
+        {"stroke_width": 1, "stroke_color": "#FF0000"},
+    ],
+    ids=["fill", "shadow", "stroke"],
+)
+def test_overlapping_glyph_contours_leave_no_hole(style):
+    from PySide6.QtGui import QFontDatabase
+
+    if "Inter" not in QFontDatabase.families():
+        pytest.skip("police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas")
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    # « f » et « t » n'ont pas de contre-poinçon : tout vide fermé dans leur encre est un défaut.
+    fields = {"text": "f t", "font_family": "Inter", "bold": True, "font_size": 40, "width": 150, "height": 60,
+              "fill_color": "#000000", "shadow_offset_x": 0, "shadow_offset_y": 0, **style}
+    for name, value in fields.items():
+        update_graphic(text, name, value)
+    image = _render(project)
+    ink = sum(1 for x in range(W) for y in range(H) if _rgba(image, x, y)[3] > 200)
+    assert ink > 100  # le texte est bien tracé (sinon l'absence de trou ne prouverait rien)
+    assert _transparent_pockets(image) == 0
 
 
 @pytest.mark.parametrize(
