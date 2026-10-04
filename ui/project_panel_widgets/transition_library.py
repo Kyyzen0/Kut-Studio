@@ -22,11 +22,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, active_palette, label_style
 
 
 class TransitionLibraryView(QWidget):
@@ -419,7 +419,7 @@ class TransitionLibraryView(QWidget):
         label = QLabel(title.upper())
         label.setStyleSheet(
             f"color: {COLORS['muted_strong']}; font-size: 10px;"
-            f" font-weight: 800; letter-spacing: 1px;"
+            f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )
         self.cards_layout.addWidget(label)
@@ -495,10 +495,17 @@ class TransitionLibraryView(QWidget):
         self.favorite_toggled.emit(preset_id)
 
 
-_TRANSITION_CATEGORY_ACCENTS: dict[str, str] = {
-    "fade": "#36E6C3",      # turquoise
-    "wipe": "#8E7DFA",      # violet
+_TRANSITION_CATEGORY_RANK: dict[str, int] = {
+    "fade": 0,      # bleu
+    "wipe": 3,      # violet
 }
+
+
+def _transition_accent(category: str) -> str:
+    """Teinte d'une catégorie de transitions : un rang de la palette catégorielle du thème actif ; l'accent à défaut."""
+    colors = active_palette().category_colors
+    rank = _TRANSITION_CATEGORY_RANK.get(category)
+    return colors[rank % len(colors)] if rank is not None else COLORS["accent"]
 
 
 class TransitionPresetCard(QFrame):
@@ -527,9 +534,7 @@ class TransitionPresetCard(QFrame):
         self._selected = False
 
         accent_key = preset.category.value
-        accent = _TRANSITION_CATEGORY_ACCENTS.get(
-            accent_key, COLORS["accent"]
-        )
+        accent = _transition_accent(accent_key)
         accent_color = QColor(accent)
         self._accent_color = accent_color
 
@@ -577,7 +582,7 @@ class TransitionPresetCard(QFrame):
         )
         badge.setStyleSheet(
             f"QLabel {{ color: {accent_color.name()};"
-            f" background: transparent; font-size: 9px;"
+            f" background: transparent; font-size: {Typography.caption}px;"
             f" font-weight: 700; padding: 0; }}"
         )
         title_row.addWidget(badge)
@@ -628,7 +633,7 @@ class TransitionPresetCard(QFrame):
         self.delete_button.setStyleSheet(
             f"QPushButton#transitionDeleteBtn {{ background: transparent;"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 11px; }}"
+            f" border-radius: {Radius.pill}px; }}"
             f"QPushButton#transitionDeleteBtn:hover {{"
             f" background: {COLORS['danger_dark']};"
             f" border: 1px solid {COLORS['danger']}; }}"
@@ -670,7 +675,7 @@ class TransitionPresetCard(QFrame):
             f" background: transparent;"
             f" color: {color};"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 11px;"
+            f" border-radius: {Radius.pill}px;"
             f" font-size: 12px; font-weight: 700; }}"
             f"QPushButton#transitionFavoriteBtn:hover {{"
             f" color: {COLORS['warning']};"

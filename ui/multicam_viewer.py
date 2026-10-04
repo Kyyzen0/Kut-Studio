@@ -57,7 +57,7 @@ class AngleTile(QWidget):
         self._image: QImage | None = None
         self._frame: Frame | None = None
         self._name = ""
-        self._color = QColor("#888888")
+        self._color = QColor(active_palette().muted)
         self._state = AngleState.NO_SIGNAL
         self._active = False
         self._audible = False

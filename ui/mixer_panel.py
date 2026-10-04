@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Track
-from ui.design_system import Iconography, Sizes, Spacing
+from ui.design_system import Iconography, Radius, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style
@@ -304,9 +304,9 @@ class _VerticalFader(QSlider):
         return (
             f"QSlider#verticalFader {{ background: transparent; }}"
             f"QSlider::groove:vertical {{"
-            f" background: {COLORS['border']}; width: 4px; border-radius: 2px; }}"
+            f" background: {COLORS['border']}; width: 4px; border-radius: {Radius.pill}px; }}"
             f"QSlider::sub-page:vertical {{"
-            f" background: {COLORS['accent']}; border-radius: 2px; }}"
+            f" background: {COLORS['accent']}; border-radius: {Radius.pill}px; }}"
             f"QSlider::handle:vertical {{"
             f" background: {COLORS['text']}; width: 12px; height: 12px;"
             f" margin: 0 -4px; border-radius: 6px; }}"

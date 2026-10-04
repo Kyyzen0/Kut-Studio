@@ -17,6 +17,14 @@ from core.media_previews import (
     waveform_cache_key,
 )
 from core.timeline_view_model import TimelineClipView
+from ui.theme import BLACK, mix_colors
+from ui.timeline_widgets.clip_style import (
+    cache_dot_color,
+    clip_body_style,
+    clip_fill,
+    duration_style,
+    title_style,
+)
 from ui.timeline_widgets.common import _color_for_track_type, _current_palette
 from ui.timeline_widgets.nested_clip import handle_nested_double_click, paint_nested_decoration
 from ui.timeline_widgets.time_overlay import paint_time_overlays
@@ -52,20 +60,18 @@ class ClipWidget(QWidget):
         self.setMouseTracking(True)
         self.setContextMenuPolicy(Qt.DefaultContextMenu)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        self._hover_body = False
+        self._hover_keyframe: str | None = None                 # identifiant de l'image-clé survolée (jamais plus de deux repeints)
 
         # Label du clip (nom).
         self.label = QLabel(self.view.label, self)
-        self.label.setStyleSheet(
-            "color: white; font-weight: 700; font-size: 12px; background: transparent;"
-        )
+        self.label.setStyleSheet(title_style(_current_palette()))
         self.label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.duration_label = QLabel(
             self.parent_timeline.format_time(self.view.end - self.view.start) if self.parent_timeline else "",
             self,
         )
-        self.duration_label.setStyleSheet(
-            "color: rgba(255, 255, 255, 0.78); font-size: 11px; background: transparent;"
-        )
+        self.duration_label.setStyleSheet(duration_style(_current_palette()))
         self.duration_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._cache_dot = None
         self.refresh_style()
@@ -73,12 +79,7 @@ class ClipWidget(QWidget):
     def set_cache_state(self, state: str) -> None:
         """Etat du cache sur la timeline : 'cached' / 'pending' / 'none'."""
         self._cache_state = state
-        if state == "cached":
-            color = "#36E6C3"
-        elif state == "pending":
-            color = "#E6A536"
-        else:
-            color = "transparent"
+        color = cache_dot_color(state, _current_palette())
         try:
             from PySide6.QtWidgets import QLabel
 
@@ -98,19 +99,14 @@ class ClipWidget(QWidget):
         parent = self.parent_timeline
         palette = _current_palette()
         selected = parent is not None and parent._is_selected(self.view.id)
-        border = palette.clip_border_selected if selected else palette.clip_border
         track_type = getattr(self.view, "track_type", None)
         base_color = _color_for_track_type(track_type or "video", palette)
-        # Le sélecteur est limité au corps du clip : un ``QWidget`` nu
-        # peindrait aussi les libellés enfants (nom, durée), qui
-        # apparaissaient alors comme des blocs colorés.
+        # Le fond dit la catégorie du clip (vidéo, audio, titre, calque, imbriqué) ; la sélection éclaircit le fond et passe
+        # la bordure à l'accent. Le sélecteur est limité au corps du clip : un ``QWidget`` nu peindrait aussi les libellés.
         self.setObjectName("clipBody")
-        self.setStyleSheet(
-            f"QWidget#clipBody {{ background: {self.view.color_key}; "
-            f"border: 2px solid {border}; border-radius: 6px; }}"
-            f"QLabel {{ background: transparent; border: none; "
-            f"color: {palette.clip_text}; }}"
-        )
+        self.setStyleSheet(clip_body_style(self.view, palette, selected=selected, hovered=self._hover_body))
+        self.label.setStyleSheet(title_style(palette))
+        self.duration_label.setStyleSheet(duration_style(palette))
         # Mémorise la couleur de la pastille de type pour le rendu.
         self._track_accent = base_color
         self.label.setText(self.view.label)
@@ -287,7 +283,7 @@ class ClipWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         badge_width, badge_height = 38, 18
         badge_x = self.width() - badge_width - 5
-        painter.setBrush(QColor("#0F766E"))
+        painter.setBrush(QColor(mix_colors(clip_fill(self.view, palette), BLACK, 0.4)))
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(badge_x, 4, badge_width, badge_height, 4, 4)
         painter.setPen(QColor(palette.clip_text))
@@ -405,6 +401,7 @@ class ClipWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.drag_mode is None:
+            self._update_hover(event.position())
             return
         parent = self.parent_timeline
         if parent is None:
@@ -450,6 +447,28 @@ class ClipWidget(QWidget):
             self.pending_start = min(self.drag_original_end - 0.1, max(0.0, proposed))
             self._apply_pending_geometry()
         event.accept()
+
+    def _update_hover(self, position) -> None:
+        """Suit le losange sous le pointeur ; ne repeint que lorsque le survol change (aucun coût au repos)."""
+        hit = self._keyframe_hit(position)
+        hovered = self._keyframe_refs(hit)[0].keyframe_id if hit else None
+        if hovered != self._hover_keyframe:
+            self._hover_keyframe = hovered
+            self.update()
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().enterEvent(event)
+        if not self._hover_body:
+            self._hover_body = True
+            self.refresh_style()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().leaveEvent(event)
+        if self._hover_body or self._hover_keyframe is not None:
+            self._hover_body = False
+            self._hover_keyframe = None
+            self.refresh_style()
+            self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() != Qt.LeftButton:
@@ -561,6 +580,7 @@ class ClipWidget(QWidget):
         for rect, frames in items:
             ref = self._keyframe_refs(frames)[0]
             selected = parent.keyframe_selected(ref)
+            hovered = self._hover_keyframe == ref.keyframe_id
             offset = drag * pixels_per_second if selected else 0.0
             x, y, size = rect.center().x() + offset, rect.top(), rect.width()
             polygon = QPolygonF(
@@ -571,8 +591,11 @@ class ClipWidget(QWidget):
                     QPointF(x - size / 2, y + size / 2),
                 ]
             )
-            painter.setBrush(QColor(palette.diamond_filled if not selected else "#FFFFFF"))
-            painter.setPen(QPen(QColor(palette.diamond_filled if selected else palette.diamond_border), 2 if selected else 1))
+            # Un seul langage pour tous les losanges : presque blanc au repos, accent éclairci au survol, accent plein quand il
+            # est sélectionné ; toujours cerclé de l'anneau sombre (lisible sur un clip clair comme sombre).
+            fill = palette.accent if selected else (palette.accent_hover if hovered else palette.diamond_filled)
+            painter.setBrush(QColor(fill))
+            painter.setPen(QPen(QColor(palette.diamond_border), 2 if selected or hovered else 1))
             painter.drawPolygon(polygon)
         painter.end()
 
@@ -601,12 +624,15 @@ class ClipWidget(QWidget):
 
                 peaks = synthetic_peaks(self.view.id, bins)
             if peaks:
+                # La forme d'onde accompagne le clip sans le dominer : la couleur du thème, translucide, à 80 % de la hauteur.
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(255, 255, 255, 90))
+                wave = QColor(_current_palette().clip_audio_wave)
+                wave.setAlpha(120)
+                painter.setBrush(wave)
                 step = max(1, self.width() / max(1, len(peaks)))
                 mid = self.height() / 2
                 for index, peak in enumerate(peaks):
-                    bar = max(1.0, float(peak) * (self.height() - 10))
+                    bar = max(1.0, float(peak) * (self.height() - 10) * 0.8)
                     painter.drawRect(
                         int(4 + index * step),
                         int(mid - bar / 2),

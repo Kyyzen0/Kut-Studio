@@ -23,6 +23,7 @@ from core.time_remapping import MIN_SPEED, MAX_SPEED
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
+from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, allow_shrinking
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
@@ -58,7 +59,8 @@ class ConstructionMixin:
 
     def _titled_group(self, key: str) -> QGroupBox:
         """``QGroupBox`` dont le titre suit la langue (réécrit par :meth:`retranslate`)."""
-        group = QGroupBox(translate(key))
+        # Les paramètres du projet ne servent qu'à l'occasion : repliés par défaut (la section se rouvre d'un clic, et le reste).
+        group = SectionBox(translate(key), key=key, open_by_default=key != "group.project")
         self._group_titles.append((group, key))
         return group
 
@@ -221,7 +223,6 @@ class ConstructionMixin:
         """Groupe « Paramètres du projet »."""
         # ----- Paramètres du projet ------------------------------------
         project_group = self._titled_group("group.project")
-        project_group.setStyleSheet(self.group_style())
         project_layout = QVBoxLayout(project_group)
         project_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         project_layout.setSpacing(Spacing.xs)
@@ -246,7 +247,6 @@ class ConstructionMixin:
         """Groupe « Clip sélectionné »."""
         # ----- Clip sélectionné ---------------------------------------
         clip_group = self._titled_group("inspector.clip.title")
-        clip_group.setStyleSheet(self.group_style())
         clip_form = QFormLayout(clip_group)
         clip_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         clip_form.setSpacing(Spacing.xs)
@@ -269,7 +269,6 @@ class ConstructionMixin:
         """Groupe « Transition » (visible sur sélection de transition)."""
         # ----- Transition sélectionnée --------------------------------
         self.transition_group = self._titled_group("inspector.transition.title")
-        self.transition_group.setStyleSheet(self.group_style())
         transition_form = QFormLayout(self.transition_group)
         transition_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         transition_form.setSpacing(Spacing.xs)
@@ -310,7 +309,6 @@ class ConstructionMixin:
         """Groupe « Audio » (curseur de volume)."""
         # ----- Audio ---------------------------------------------------
         audio_group = self._titled_group("group.audio")
-        audio_group.setStyleSheet(self.group_style())
         audio_form = QFormLayout(audio_group)
         audio_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         self.volume_slider, volume_row, self.volume_value = self.make_slider(
@@ -325,7 +323,6 @@ class ConstructionMixin:
         """Groupe « Vitesse et durée » (remappage temporel)."""
         # ----- Vitesse et durée (tâche 18) -----------------------------
         self.speed_group = self._titled_group("group.speed_and_duration")
-        self.speed_group.setStyleSheet(self.group_style())
         speed_form = QFormLayout(self.speed_group)
         speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         speed_form.setSpacing(Spacing.xs)
@@ -457,7 +454,6 @@ class ConstructionMixin:
         """Groupe « Mouvement » (position, échelle, rotation, opacité)."""
         # ----- Mouvement (tâche 13) ------------------------------------
         self.movement_group = self._titled_group("group.movement")
-        self.movement_group.setStyleSheet(self.group_style())
         movement_layout = QVBoxLayout(self.movement_group)
         movement_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md
@@ -574,7 +570,6 @@ class ConstructionMixin:
         """Groupe « Sous-titre » (style et contenu)."""
         # ----- Sous-titre (style + contenu, tâche 24) ------------------
         self.subtitle_group = self._titled_group("inspector.subtitle.title")
-        self.subtitle_group.setStyleSheet(self.group_style())
         subtitle_layout = QVBoxLayout(self.subtitle_group)
         subtitle_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md

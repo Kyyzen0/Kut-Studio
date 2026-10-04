@@ -256,13 +256,11 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
 
     @staticmethod
     def group_style():
-        return (
-            f"QGroupBox {{ color: {COLORS['muted_strong']}; "
-            f"border: 1px solid {COLORS['border']}; border-radius: 6px; "
-            f"margin-top: 12px; padding-top: 12px; font-weight: 600; }}"
-            f"QGroupBox::title {{ subcontrol-origin: margin; left: 10px; "
-            f"padding: 0 6px; color: {COLORS['muted_strong']}; }}"
-        )
+        """Les groupes suivent la feuille de style globale (sections à plat, titre au-dessus d'un filet) : aucun style local.
+
+        Conservé (vide) pour les éditeurs qui reçoivent encore un style de groupe à leur construction.
+        """
+        return ""
 
     @staticmethod
     def make_slider(minimum, maximum, value, suffix=""):

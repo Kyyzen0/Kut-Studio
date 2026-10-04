@@ -34,7 +34,6 @@ class ColorMixin:
     def _build_color_group(self) -> QGroupBox:
         group = self._titled_group("inspector.color.title")
         group.setObjectName("colorGradingGroup")
-        group.setStyleSheet(self.group_style())
         root = QVBoxLayout(group)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.sm)

@@ -661,18 +661,28 @@ def tab_order_violations(sequence, content) -> list[str]:
     pas) ; ceux qui sont hors du contenu (l'en-tête et ses onglets) passent avant.
     """
 
+    def centre(widget):
+        """Le point qui représente le widget : le centre de son bandeau pour l'en-tête d'une section, celui du widget sinon."""
+        if getattr(widget, "is_section_header", False):
+            return widget.header_rect().center()
+        return widget.rect().center()
+
+    def height(widget) -> int:
+        """La hauteur qui compte pour « sur la même ligne » : celle du bandeau d'une section, pas de la section entière."""
+        return widget.header_rect().height() if getattr(widget, "is_section_header", False) else widget.height()
+
     def position(widget) -> tuple[int, int]:
         if content.isAncestorOf(widget):
-            point = widget.mapTo(content, widget.rect().center())
+            point = widget.mapTo(content, centre(widget))
             return point.x(), point.y()
         top = widget.window()
-        point = widget.mapTo(top, widget.rect().center())
+        point = widget.mapTo(top, centre(widget))
         return point.x(), point.y() - 1_000_000  # hors du contenu : avant lui
 
     problems = []
     for first, second in zip(sequence, sequence[1:]):
         (ax, ay), (bx, by) = position(first), position(second)
-        same_row = abs(ay - by) <= max(first.height(), second.height()) // 2
+        same_row = abs(ay - by) <= max(height(first), height(second)) // 2
         backwards = bx < ax - 2 if same_row else by < ay
         if backwards:
             problems.append(f"{widget_path(first, 2)} -> {widget_path(second, 2)}")

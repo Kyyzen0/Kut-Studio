@@ -117,6 +117,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.overall": {"fr": "File : {done}/{total} terminé(s) · {percent} %", "en": "Queue: {done}/{total} done · {percent}%", "es": "Cola: {done}/{total} completado(s) · {percent} %"},
     "render.overall.idle": {"fr": "File inactive", "en": "Queue idle", "es": "Cola inactiva"},
     "render.empty": {"fr": "Aucun export dans la file. Choisissez un preset puis « Ajouter à la file ».", "en": "No exports in the queue. Pick a preset, then “Add to queue”.", "es": "No hay exportaciones en la cola. Elija un preset y pulse «Añadir a la cola»."},
+    "render.empty.title": {"fr": "Aucun export", "en": "No exports", "es": "Sin exportaciones"},
     "render.ffmpeg_missing": {"fr": "FFmpeg est introuvable : les exports sont impossibles. Installez FFmpeg, puis relancez les jobs en échec.", "en": "FFmpeg was not found: exports are unavailable. Install FFmpeg, then retry failed jobs.", "es": "No se encontró FFmpeg: las exportaciones no están disponibles. Instale FFmpeg y reintente los trabajos fallidos."},
     "render.detail.none": {"fr": "Sélectionnez un export pour voir ses détails.", "en": "Select an export to see its details.", "es": "Seleccione una exportación para ver sus detalles."},
     "render.detail.output": {"fr": "Fichier : {path}", "en": "File: {path}", "es": "Archivo: {path}"},

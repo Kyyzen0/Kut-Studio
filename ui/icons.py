@@ -111,6 +111,14 @@ class IconName(str, Enum):
     AUDIO_MIXER = "audio_mixer"
     MIC = "mic"
 
+    CHEVRON_DOWN = "chevron_down"
+    CHEVRON_RIGHT = "chevron_right"
+    STAR = "star"
+    STAR_FILLED = "star_filled"
+    SEARCH = "search"
+    CHECK = "check"
+    WARNING = "warning"
+
 
 # ---------------------------------------------------------------------------
 # SVG sources (24×24, currentColor)
@@ -610,6 +618,48 @@ _SVG_TEMPLATES: dict[str, str] = {
         '<path d="M12 17.5V21"/>'
         '<path d="M8.5 21h7"/></svg>'
     ),
+    IconName.CHEVRON_DOWN: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m6 9 6 6 6-6"/></svg>'
+    ),
+    IconName.CHEVRON_RIGHT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m9 6 6 6-6 6"/></svg>'
+    ),
+    IconName.STAR: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>'
+    ),
+    IconName.STAR_FILLED: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>'
+    ),
+    IconName.SEARCH: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>'
+    ),
+    IconName.CHECK: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
+    ),
+    IconName.WARNING: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 4.2 3.2 19.3h17.6z"/><path d="M12 10v4.2"/><path d="M12 17.1h.01"/></svg>'
+    ),
 }
 
 
@@ -656,7 +706,7 @@ def _default_icon_color() -> QColor:
 
         return QColor(COLORS["text"])
     except Exception:  # pragma: no cover - garde-fou
-        return QColor("#E5E7EB")
+        return QColor(Qt.white)
 
 
 def make_icon(

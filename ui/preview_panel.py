@@ -35,7 +35,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.design_system import Iconography, Sizes, Spacing
+from ui.design_system import Iconography, Sizes, Spacing, Typography, Weights
+from ui.empty_state import EmptyState
 from ui.icons import IconButton, IconLabel, IconName
 from ui.theme import COLORS, label_style, monospace_font_family
 from ui.tracking_overlay import TrackingOverlay
@@ -158,15 +159,9 @@ class PreviewPanel(QWidget):
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
-        self.empty_state = QLabel(translate("preview.no_clip"))
+        # L'état vide de la visionneuse : icône, titre (première ligne du message) et texte d'aide, sur le noir de l'image.
+        self.empty_state = EmptyState(translate("preview.no_clip"), icon=IconName.MEDIA)
         self._empty_state_name: str | None = None  # ``None`` : pas de clip ; sinon nom du clip sans média
-        self.empty_state.setAlignment(Qt.AlignCenter)
-        self.empty_state.setStyleSheet(
-            f"color: {COLORS['muted_strong']}; background: {COLORS['panel']};"
-            f" border: 1px solid {COLORS['border_strong']}; border-radius: 8px;"
-            f" padding: 18px 24px; font-size: 12px; font-weight: 600;"
-        )
-        self.empty_state.setWordWrap(True)
         self.empty_state.setMaximumWidth(390)
 
         self.preview_subtitle_overlay = QLabel()
@@ -174,7 +169,7 @@ class PreviewPanel(QWidget):
         self.preview_subtitle_overlay.setWordWrap(True)
         self.preview_subtitle_overlay.setStyleSheet(
             f"background: rgba(0, 0, 0, 190); color: {COLORS['text']}; "
-            f"border-radius: 6px; padding: 8px 14px; font-size: 16px; font-weight: 700;"
+            f"border-radius: 6px; padding: 8px 14px; font-size: {Typography.title}px; font-weight: {Weights.bold};"
         )
         self.preview_subtitle_overlay.hide()
         self._current_subtitle_alignment = Qt.AlignCenter | Qt.AlignBottom
@@ -183,7 +178,7 @@ class PreviewPanel(QWidget):
         self.preview_effects_overlay.setAlignment(Qt.AlignCenter)
         self.preview_effects_overlay.setStyleSheet(
             f"background: rgba(15, 118, 110, 210); color: {COLORS['text']};"
-            " border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 700;"
+            " border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700;"
         )
         self.preview_effects_overlay.hide()
 
@@ -192,7 +187,7 @@ class PreviewPanel(QWidget):
         self.preview_quality_notice.setAlignment(Qt.AlignCenter)
         self.preview_quality_notice.setStyleSheet(
             f"background: rgba(120, 80, 0, 200); color: {COLORS['text']};"
-            " border-radius: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600;"
+            " border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600;"
         )
         self.preview_quality_notice.hide()
 
@@ -240,7 +235,7 @@ class PreviewPanel(QWidget):
         self.timecode_label = QLabel("00:00:00:00")
         self.timecode_label.setStyleSheet(
             f"color: {COLORS['accent']}; {monospace_font_family()}"
-            f" font-size: 14px; font-weight: 700; letter-spacing: 1px;"
+            f" font-size: {Typography.body_lg}px; font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 0 8px;"
         )
         self.duration_label = QLabel("00:00:00")
@@ -418,7 +413,7 @@ class PreviewPanel(QWidget):
             badge.setObjectName("preview_render_badge")
             badge.setStyleSheet(
                 "background: %s; color: %s; border-radius: 6px; padding: 4px 10px;"
-                % (COLORS.get("accent_soft", "#1c2b2b"), COLORS.get("accent", "#36E6C3"))
+                % (COLORS["accent_dark"], COLORS["accent"])
             )
             badge.hide()
             self.preview_render_badge = badge
@@ -448,7 +443,7 @@ class PreviewPanel(QWidget):
             pill = QLabel("", container)
             pill.setObjectName("preview_cache_pill")
             pill.setStyleSheet(
-                "color: %s; padding: 2px 8px;" % COLORS.get("muted", "#888888")
+                "color: %s; padding: 2px 8px;" % COLORS["muted"]
             )
             pill.hide()
             self.preview_cache_pill = pill

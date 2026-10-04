@@ -13,10 +13,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Radius, Sizes, Spacing, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, active_palette, label_style
 
 
 class TextPresetLibraryView(QWidget):
@@ -195,7 +195,7 @@ class TextPresetLibraryView(QWidget):
         label = QLabel(title.upper())
         label.setStyleSheet(
             f"color: {COLORS['muted_strong']}; font-size: 10px;"
-            f" font-weight: 800; letter-spacing: 1px;"
+            f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )
         self.cards_layout.addWidget(label)
@@ -277,7 +277,7 @@ class TextPresetCard(QFrame):
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
         self.setFixedHeight(self.CARD_HEIGHT)
-        accent_color = QColor("#8E7DFA")
+        accent_color = QColor(active_palette().category_colors[3])
         self._accent_color = accent_color
         self._base_style = (
             f"QFrame#textPresetCard {{ background: {COLORS['panel_alt']};"
@@ -329,7 +329,7 @@ class TextPresetCard(QFrame):
         self.delete_button.setStyleSheet(
             f"QPushButton#textPresetDelete {{ background: transparent;"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 11px; }}"
+            f" border-radius: {Radius.pill}px; }}"
             f"QPushButton#textPresetDelete:hover {{"
             f" background: {COLORS['danger_dark']};"
             f" border: 1px solid {COLORS['danger']}; }}"

@@ -23,6 +23,7 @@ from core.effects_model import (
     is_single_instance,
     parameter_specs,
 )
+from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
@@ -43,9 +44,8 @@ class EffectsMixin:
         intentions via ses signaux, que ``MainWindow`` traduit en
         opérations métier puis en entrée d'historique.
         """
-        group = QGroupBox(translate("effects.section"))
+        group = SectionBox(translate("effects.section"), key="effects.section")
         group.setObjectName("effectsGroup")
-        group.setStyleSheet(self.group_style())
         group_layout = QVBoxLayout(group)
         group_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md

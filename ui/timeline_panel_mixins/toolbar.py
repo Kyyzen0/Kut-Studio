@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import label_style, monospace_font_family
@@ -68,7 +68,7 @@ class ToolbarMixin:
         time_layout.setSpacing(2)
         self.time_label = QLabel("00:00")
         self.time_label.setStyleSheet(
-            f"color: {palette.accent}; font-weight: 800; font-size: 14px;"
+            f"color: {palette.accent}; font-weight: {Weights.bold}; font-size: {Typography.body_lg}px;"
             f" {monospace_font_family()} letter-spacing: 1px;"
         )
         # Rangée combinée : timecode + durée totale séparées par un slash.

@@ -27,19 +27,25 @@ from core.effects_library import (
     filter_presets,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, active_palette, label_style
 
 
-_CATEGORY_ACCENTS: dict[EffectCategory, str] = {
-    EffectCategory.COLOR: "#36E6C3",      # turquoise
-    EffectCategory.CREATIVE: "#F7C948",   # ambre
-    EffectCategory.STYLIZED: "#F27686",   # rose / corail
-    EffectCategory.LOOK: "#8E7DFA",       # violet
+_CATEGORY_RANK: dict[EffectCategory, int] = {
+    EffectCategory.COLOR: 0,       # bleu
+    EffectCategory.CREATIVE: 1,    # ambre
+    EffectCategory.STYLIZED: 2,    # corail
+    EffectCategory.LOOK: 3,        # violet
 }
+
+
+def _category_accent(category: EffectCategory) -> str:
+    """Teinte d'une catégorie d'effets : un rang de la palette catégorielle du thème actif (suit le thème, jamais figée)."""
+    colors = active_palette().category_colors
+    return colors[_CATEGORY_RANK.get(category, 0) % len(colors)]
 
 
 class EffectPresetCard(QFrame):
@@ -62,7 +68,7 @@ class EffectPresetCard(QFrame):
         self.preset_id = preset.id
         self._is_builtin = preset.builtin
         self._selected = False
-        accent = _CATEGORY_ACCENTS.get(preset.category, COLORS["accent"])
+        accent = _category_accent(preset.category)
 
         self.setFrameShape(QFrame.NoFrame)
         self.setCursor(Qt.PointingHandCursor)
@@ -110,7 +116,7 @@ class EffectPresetCard(QFrame):
         ).upper())
         self._badge.setStyleSheet(
             f"QLabel {{ color: {accent_color.name()};"
-            f" background: transparent; font-size: 9px;"
+            f" background: transparent; font-size: {Typography.caption}px;"
             f" font-weight: 700; padding: 0; }}"
         )
         title_row.addWidget(self._badge)
@@ -142,7 +148,7 @@ class EffectPresetCard(QFrame):
         self.delete_button.setStyleSheet(
             f"QPushButton#presetDelete {{ background: transparent;"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 11px; }}"
+            f" border-radius: {Radius.pill}px; }}"
             f"QPushButton#presetDelete:hover {{"
             f" background: {COLORS['danger_dark']};"
             f" border: 1px solid {COLORS['danger']}; }}"
@@ -513,7 +519,7 @@ class EffectsLibraryView(QWidget):
         label = QLabel(title.upper())
         label.setStyleSheet(
             f"color: {COLORS['muted_strong']}; font-size: 10px;"
-            f" font-weight: 800; letter-spacing: 1px;"
+            f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )
         self.cards_layout.addWidget(label)

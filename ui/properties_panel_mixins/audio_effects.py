@@ -22,6 +22,7 @@ from core.audio_effects_model import (
     AudioEffectType,
     parameter_specs as audio_parameter_specs,
 )
+from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
 from ui.theme import COLORS, label_style
@@ -44,9 +45,8 @@ class AudioEffectsMixin:
         """
         from ui.i18n import translate as _tr
 
-        group = QGroupBox(_tr("audio_effects.section"))
+        group = SectionBox(_tr("audio_effects.section"), key="audio_effects.section")
         group.setObjectName("audioEffectsGroup")
-        group.setStyleSheet(self.group_style())
         group_layout = QVBoxLayout(group)
         group_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md
