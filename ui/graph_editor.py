@@ -41,6 +41,7 @@ from core.keyframe_editing import (
 )
 from ui import i18n
 from ui.adaptive_layout import ElidedLabel, make_shrinkable
+from ui.graph_editor_time import SpeedCurveEditing
 from ui.theme import COLORS, label_style
 
 HANDLE_RADIUS = 4.5
@@ -128,12 +129,13 @@ class CurveCanvas(QWidget):
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
             painter.setPen(text)
             painter.drawText(QPointF(x + 2, plot.bottom() + 14), _format(t) + " s")
+        scale = self.editor.display_scale()                                 # sans clip ni propriété, la grille se dessine quand même
         for v in _ticks(self.v0, self.v1, 6):
             y = self.to_screen(0, v).y()
             painter.setPen(QPen(grid, 1))
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
             painter.setPen(text)
-            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v))
+            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v * scale))
 
     def _paint_curve(self, painter: QPainter, plot: QRectF, curve) -> None:
         spec = self.editor.target().spec
@@ -312,8 +314,12 @@ class CurveCanvas(QWidget):
         event.accept()
 
 
-class GraphEditorWindow(QWidget):
-    """Fenêtre de l'éditeur de courbes, synchronisée avec la fenêtre principale."""
+class GraphEditorWindow(SpeedCurveEditing, QWidget):
+    """Fenêtre de l'éditeur de courbes, synchronisée avec la fenêtre principale.
+
+    La vitesse (``time.speed``) change la durée du clip : ses éditions passent par :class:`SpeedCurveEditing`
+    (:mod:`core.time_ops`), jamais par les mutateurs génériques de keyframes.
+    """
 
     def __init__(self, host, parent=None) -> None:
         super().__init__(parent, Qt.Window)
@@ -322,6 +328,7 @@ class GraphEditorWindow(QWidget):
         self.property_id: str | None = None
         self._loading = False
         self._gesture_open = False
+        self._gesture_state = None
         self.setObjectName("graphEditor")
         # Fenêtre indépendante : elle reprend explicitement les couleurs du thème.
         self.setStyleSheet(
@@ -395,6 +402,10 @@ class GraphEditorWindow(QWidget):
 
     def target(self):
         return get_target(self.property_id)
+
+    def display_scale(self) -> float:
+        """Facteur d'affichage de la propriété (100 pour une vitesse en %) ; 1 tant qu'aucune propriété n'est ouverte."""
+        return self.target().spec.display_scale if self.property_id else 1.0
 
     def curve(self):
         clip = self._clip()
@@ -476,12 +487,15 @@ class GraphEditorWindow(QWidget):
         self.interpolation_combo.setEnabled(bool(selected))
         self.tangent_combo.setEnabled(bool(selected))
         self.frame_selected_button.setEnabled(bool(selected))
+        scale = 1.0
         if self.property_id:
             spec = self.target().spec
-            self.value_spin.setRange(spec.minimum if spec.minimum is not None else -1e9,
-                                     spec.maximum if spec.maximum is not None else 1e9)
+            scale = spec.display_scale
+            self.value_spin.setSuffix(spec.display_unit)
+            self.value_spin.setRange((spec.minimum if spec.minimum is not None else -1e9) * scale,
+                                     (spec.maximum if spec.maximum is not None else 1e9) * scale)
         if single is not None:
-            for widget, value in ((self.time_spin, single.time_seconds), (self.value_spin, float(single.value))):
+            for widget, value in ((self.time_spin, single.time_seconds), (self.value_spin, float(single.value) * scale)):
                 widget.blockSignals(True)
                 widget.setValue(value)
                 widget.blockSignals(False)
@@ -532,17 +546,23 @@ class GraphEditorWindow(QWidget):
     def drag_keyframes(self, origin: dict, press: QPointF, point: QPointF) -> None:
         t_press, v_press = self.canvas.to_curve(press)
         t_now, v_now = self.canvas.to_curve(point)
+        fps = float(getattr(self.host.project, "fps", 0.0) or 30.0)
+        if self._is_speed():
+            # Les points saisis sont ceux du début du geste : à mi-course, un clip raccourci peut avoir fait disparaître l'un d'eux
+            # (coupé avec tout ce qui dépasse la nouvelle fin), et le glissement reprend quand il revient.
+            if self._speed_drag_points(origin, t_now - t_press, v_now - v_press, fps):
+                self._edited(i18n.translate("history.keyframes.edit"), record=False)
+            return
         refs = self.selected_refs()
         if not refs:
             return
-        fps = float(getattr(self.host.project, "fps", 0.0) or 30.0)
         anchor = origin["anchor"]
         current = next((k for k in self.curve().keyframes if k.id == anchor.id), None)
         if current is None:
             return
         desired = origin["anchor_time"] + (t_now - t_press)
-        move_keyframes(self.host.project, refs, desired - current.time_seconds, fps=fps)
         dv = v_now - v_press
+        move_keyframes(self.host.project, refs, desired - current.time_seconds, fps=fps)
         set_keyframe_values(self.host.project, {
             KeyframeRef(self.clip_id, self.property_id, kid): value + dv
             for kid, value in origin["values"].items()
@@ -556,10 +576,15 @@ class GraphEditorWindow(QWidget):
         slope = (v - float(keyframe.value)) / dt
         ref = KeyframeRef(self.clip_id, self.property_id, keyframe.id)
         kwargs = {"out_slope": slope} if side == "out" else {"in_slope": slope}
+        if self._is_speed():
+            if self._speed_drag_handle(ref, kwargs):
+                self._edited(i18n.translate("history.keyframes.tangents"), record=False)
+            return
         set_tangents(self.host.project, ref, **kwargs)
         self._edited(i18n.translate("history.keyframes.tangents"), record=False)
 
     def finish_gesture(self, label: str) -> None:
+        self._gesture_state = None
         if self._gesture_open:
             self._gesture_open = False
             self._edited(label, record=True)
@@ -569,39 +594,64 @@ class GraphEditorWindow(QWidget):
         if clip is None or self.property_id is None:
             return
         t = min(max(0.0, local_time), float(clip.duration))
-        add_keyframe(self.host.project, clip.id, self.property_id, self.host._snap_local(clip, t))
+        snapped = self.host._snap_local(clip, t)
+        if self._is_speed():
+            if self._speed_add_point(snapped):
+                self._edited(i18n.translate("history.keyframes.add"), record=True)
+            return
+        add_keyframe(self.host.project, clip.id, self.property_id, snapped)
         self._edited(i18n.translate("history.keyframes.add"), record=True)
 
     def _on_interpolation(self, _index: int) -> None:
         refs = self.selected_refs()
-        if refs and set_interpolation(self.host.project, refs, self.interpolation_combo.currentData()):
+        if not refs:
+            return
+        interpolation = self.interpolation_combo.currentData()
+        changed = self._speed_set_interpolation(refs, interpolation) if self._is_speed() else bool(
+            set_interpolation(self.host.project, refs, interpolation))
+        if changed:
             self._edited(i18n.translate("history.keyframes.interpolation"), record=True)
 
     def _on_tangent_mode(self, _index: int) -> None:
         mode = self.tangent_combo.currentData()
         refs = self.selected_refs()
-        for ref in refs:
-            if mode == "auto":
-                set_tangents(self.host.project, ref, auto=True)
-            else:
-                set_tangents(self.host.project, ref, mode=TangentMode(mode))
-        if refs:
-            self._edited(i18n.translate("history.keyframes.tangents"), record=True)
+        if not refs:
+            return
+        if self._is_speed():
+            if not self._speed_set_tangent_mode(refs, mode):
+                return
+        else:
+            for ref in refs:
+                if mode == "auto":
+                    set_tangents(self.host.project, ref, auto=True)
+                else:
+                    set_tangents(self.host.project, ref, mode=TangentMode(mode))
+        self._edited(i18n.translate("history.keyframes.tangents"), record=True)
 
     def _on_time_edited(self) -> None:
         refs = self.selected_refs()
         current = next((k for k in self.curve().keyframes if k.id in self.selected_ids()), None) if refs else None
         if current is None or abs(self.time_spin.value() - current.time_seconds) < 1e-7:
             return
-        move_keyframes(self.host.project, refs, self.time_spin.value() - current.time_seconds,
-                       fps=float(getattr(self.host.project, "fps", 0.0) or 30.0))
+        delta = self.time_spin.value() - current.time_seconds
+        fps = float(getattr(self.host.project, "fps", 0.0) or 30.0)
+        if self._is_speed():
+            if not self._speed_move_by(refs, delta, fps):
+                return
+        else:
+            move_keyframes(self.host.project, refs, delta, fps=fps)
         self._edited(i18n.translate("history.keyframes.move_one"), record=True)
 
     def _on_value_edited(self) -> None:
         refs = self.selected_refs()
         if len(refs) != 1:
             return
-        set_keyframe_values(self.host.project, {refs[0]: self.value_spin.value()})
+        value = self.value_spin.value() / self.display_scale()
+        if self._is_speed():
+            if not self._speed_set_value(refs[0], value):
+                return
+        else:
+            set_keyframe_values(self.host.project, {refs[0]: value})
         self._edited(i18n.translate("history.keyframes.edit_one"), record=True)
 
     # -- textes ------------------------------------------------------------------------------------------

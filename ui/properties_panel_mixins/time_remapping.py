@@ -38,3 +38,8 @@ class TimeRemappingMixin:
         if self.selected_clip is None or self._signal_block_depth > 0:
             return
         self.time_remapping_reset.emit(self.selected_clip.id)
+
+    def _on_time_section_command(self, command: str, argument: object) -> None:
+        if self.selected_clip is None or self._signal_block_depth > 0:
+            return
+        self.time_command_requested.emit(self.selected_clip.id, command, argument)

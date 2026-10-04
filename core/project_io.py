@@ -84,7 +84,7 @@ from .project_model import (
     Sequence,
     Track,
 )
-from .time_remapping import FreezeFrameMode, TimeRemapping
+from .time_remapping import FlowQuality, FreezeFrameMode, TimeInterpolation, TimeRemapping
 from .transitions import Transition, TransitionType
 from .visual_effects import (
     ADVANCED_TRANSFORM_PROPERTIES,
@@ -1087,20 +1087,65 @@ def _is_legacy_keyframe_list(raw_keyframes: list) -> bool:
 
 
 def _time_remapping_to_dict(time_remapping: TimeRemapping) -> dict[str, Any]:
-    """Sérialise un TimeRemapping en dict."""
-    return {
+    """Sérialise un TimeRemapping en dict.
+
+    Les cinq clés historiques sont toujours écrites ; les choix ajoutés par la suite (interpolation des images, qualité du
+    flux, hauteur préservée, audio, ancre, durée imposée) ne le sont que s'ils diffèrent du défaut : un clip sans ces
+    réglages garde exactement la forme d'avant. La courbe de vitesse n'est pas ici : ce sont des keyframes ``time.speed``
+    de ``Clip.animation``.
+    """
+    data: dict[str, Any] = {
         "speed": float(time_remapping.speed),
         "reverse": bool(time_remapping.reverse),
         "freeze_mode": str(time_remapping.freeze_mode.value),
         "freeze_source_time": float(time_remapping.freeze_source_time),
         "freeze_duration": float(time_remapping.freeze_duration),
     }
+    if time_remapping.interpolation is not TimeInterpolation.SAMPLING:
+        data["interpolation"] = time_remapping.interpolation.value
+    if time_remapping.flow_quality is not FlowQuality.AUTO:
+        data["flow_quality"] = time_remapping.flow_quality.value
+    if not time_remapping.preserve_pitch:
+        data["preserve_pitch"] = False
+    if not time_remapping.remap_audio:
+        data["remap_audio"] = False
+    if time_remapping.anchor is not None:
+        data["anchor"] = float(time_remapping.anchor)
+    if time_remapping.duration is not None:
+        data["duration"] = float(time_remapping.duration)
+    return data
+
+
+def _coerce_enum(enum_type, value: Any, default):
+    """Valeur d'énumération, ou ``default`` si elle est inconnue (fichier plus récent, édité à la main)."""
+    try:
+        return enum_type(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _optional_positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0.0 else None
+
+
+def _optional_finite_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _dict_to_time_remapping(raw: dict[str, Any] | None) -> TimeRemapping:
     """Désérialise un TimeRemapping à partir d'un dict.
 
-    Retourne un TimeRemapping par défaut si le dict est None ou invalide.
+    Retourne un TimeRemapping par défaut si le dict est None ou invalide. Les choix ajoutés après la version initiale
+    sont lus **champ par champ** : une valeur inconnue retombe sur le défaut sûr de ce champ (échantillonnage, qualité
+    automatique…) sans perdre la vitesse ni le sens.
     """
     if not isinstance(raw, dict):
         return TimeRemapping()
@@ -1112,6 +1157,12 @@ def _dict_to_time_remapping(raw: dict[str, Any] | None) -> TimeRemapping:
             freeze_mode=FreezeFrameMode(raw.get("freeze_mode", "none")),
             freeze_source_time=float(raw.get("freeze_source_time", 0.0)),
             freeze_duration=float(raw.get("freeze_duration", 1.0)),
+            interpolation=_coerce_enum(TimeInterpolation, raw.get("interpolation", "sampling"), TimeInterpolation.SAMPLING),
+            flow_quality=_coerce_enum(FlowQuality, raw.get("flow_quality", "auto"), FlowQuality.AUTO),
+            preserve_pitch=bool(raw.get("preserve_pitch", True)),
+            remap_audio=bool(raw.get("remap_audio", True)),
+            anchor=_optional_finite_float(raw.get("anchor")),
+            duration=_optional_positive_float(raw.get("duration")),
         )
     except (ValueError, TypeError, KeyError):
         # Si la désérialisation échoue, retourner les valeurs par défaut

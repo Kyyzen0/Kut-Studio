@@ -48,6 +48,7 @@ class ClipContextMixin:
                 self._current_transform = None
                 self._current_keyframes = []
                 self.clip_name.setText(translate("no_clip_selected"))
+                self.time_section.set_clip(None)
                 self.clip_duration.setText("--")
                 self.clip_position.setText("--")
                 self._set_group_condition(self.subtitle_group, False)
@@ -173,6 +174,7 @@ class ClipContextMixin:
             
             # Bouton reset
             self.reset_speed_button.setEnabled(enabled_tr)
+            self.time_section.set_clip(view)
             
             # Affichage des durées
             source_duration = getattr(view, "source_duration", 0.0)

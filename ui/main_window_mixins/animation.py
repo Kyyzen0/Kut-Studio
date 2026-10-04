@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from core.animation import InterpolationType
 from core.animation_targets import get_target, targets_for_clip
+from core.time_map import SPEED_PROPERTY
+from core.time_ops import move_speed_points, remove_speed_points
 from core.keyframe_editing import (
     AnimationClipboard,
     KeyframeRef,
@@ -223,7 +225,17 @@ class AnimationMixin:
         if not refs:
             return 0
         clip = find_clip(self.project, refs[0].clip_id)
-        count = remove_keyframes(self.project, refs, local_time=self._local_playhead(clip))
+        speed = [ref for ref in refs if ref.property_id == SPEED_PROPERTY]
+        others = [ref for ref in refs if ref.property_id != SPEED_PROPERTY]
+        count = 0
+        try:
+            if speed:
+                count += remove_speed_points(self.project, speed, mode=self._ripple_mode())
+            if others:
+                count += remove_keyframes(self.project, others, local_time=self._local_playhead(clip))
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return 0
         self.set_keyframe_selection(set())
         self._after_animation_edit(refs[0].clip_id, i18n.translate("history.keyframes.remove"))
         return count
@@ -317,7 +329,19 @@ class AnimationMixin:
         refs = list(refs)
         if not refs or abs(delta_seconds) < 1e-9:
             return
-        move_keyframes(self.project, refs, float(delta_seconds), fps=float(self.project.fps or 30.0))
+        fps = float(self.project.fps or 30.0)
+        speed = [ref for ref in refs if ref.property_id == SPEED_PROPERTY]
+        others = [ref for ref in refs if ref.property_id != SPEED_PROPERTY]
+        try:
+            # Un point de vitesse change la durée du clip : transaction du temps (durée mini, ripple), jamais le déplacement nu.
+            if speed:
+                move_speed_points(self.project, speed, float(delta_seconds), fps=fps, mode=self._ripple_mode())
+            if others:
+                move_keyframes(self.project, others, float(delta_seconds), fps=fps)
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            self._after_animation_edit(refs[0].clip_id, "", record=False)             # la timeline revient à l'état réel
+            return
         self._after_animation_edit(refs[0].clip_id, i18n.translate("history.keyframes.move"))
 
     def on_graph_edit(self, label: str, clip_id: str, *, record: bool) -> None:

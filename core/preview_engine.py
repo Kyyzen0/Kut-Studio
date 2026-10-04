@@ -114,6 +114,14 @@ class PreviewEngine:
         self._generation_seq = 0
         self._running_count = 0
         self._max_concurrent = max(1, int(kwargs.get("max_concurrent", 1)))
+        # Images intermediaires (melange d'images, flux optique) : cache des vecteurs et backend demande.
+        self._flow_cache_instance = kwargs.get("flow_cache")
+        self.flow_preference = kwargs.get("flow_preference")
+        if self.flow_preference is None:
+            from .optical_flow import BackendPreference
+
+            self.flow_preference = BackendPreference.AUTO
+        """Backend de flux optique demandé (réglage de l'application, modifiable à chaud)."""
         self._paused = False
         self._last_error = ""
         self._listeners = []
@@ -606,6 +614,9 @@ class PreviewEngine:
             if owns_subtitle:
                 with self._lock:
                     self._temporary_subtitles.add(str(subtitle_path))
+            prepared = self._prepare_interpolation(job, token)
+            if prepared is False:
+                return None                   # annulé pendant le calcul des images intermédiaires
             fd, tmp_path = tempfile.mkstemp(prefix="kut-preview-", suffix=".mp4")
             os.close(fd)
 
@@ -625,6 +636,7 @@ class PreviewEngine:
                     srt_path=subtitle_path,
                     temporary_files=graph_files,
                     input_args=lambda path: args_for(path) if path in media else (),
+                    prepared=prepared or None,
                 )
 
             def run(command):
@@ -679,6 +691,37 @@ class PreviewEngine:
         with self._lock:
             self._temp_outputs.add(str(tmp_path))
         return tmp_path
+
+    def _prepare_interpolation(self, job, token):
+        """Images intermediaires (melange d'images, flux optique) des seuls ticks du segment.
+
+        L'apercu fidele garde la couche entiere et ne decoupe qu'a la sortie (``-ss`` / ``-t``) : on ne fabrique que la
+        fenetre du segment, le reste du clip est du noir jete. Les vecteurs de mouvement, eux, sont ranges dans le cache :
+        le segment suivant les relit. Retourne les flux par clip (``{}`` si rien n'est a fabriquer) ou ``False`` si annule.
+        """
+        from .filter_graph import preview_output_size
+        from .retime_layers import plan_needs_preparation, prepare_plan
+        from .retime_prepare import PrepareCancelled
+
+        width, height = preview_output_size(job.width, job.height, job.quality)
+        window = (float(job.start), float(job.start) + float(job.duration or 0.0))
+        preference = self.flow_preference
+        if not plan_needs_preparation(job.plan, width, height, job.fps, preference, window):
+            return {}
+        try:
+            return prepare_plan(
+                job.plan, width, height, job.fps, self._flow_cache(), preference=preference, window=window,
+                cancelled=lambda: token is not None and bool(getattr(token, "cancelled", False)),
+            ).streams
+        except PrepareCancelled:
+            return False
+
+    def _flow_cache(self):
+        if self._flow_cache_instance is None:
+            from .flow_cache import FlowCache
+
+            self._flow_cache_instance = FlowCache()
+        return self._flow_cache_instance
 
     def _write_subtitles(self, plan):
         """Ecrit le SRT/ASS du plan ; ``None`` s'il n'y a aucun sous-titre."""

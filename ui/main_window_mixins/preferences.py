@@ -68,6 +68,8 @@ class PreferencesMixin:
         if decode is not None:
             fields["decode_mode"] = getattr(decode, "value", str(decode))
         fields["preview_backend"] = getattr(self, "_preview_backend_request", "auto")
+        fields["flow_backend"] = self._flow_backend_request
+        fields["time_ripple_timeline"] = self._time_ripple_timeline
         return fields
 
     def show_preferences(self) -> None:

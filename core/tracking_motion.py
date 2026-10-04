@@ -60,48 +60,56 @@ from .tracking_model import BorderMode, Stabilization, StabilizationMode, TrackD
 # ---------------------------------------------------------------------------
 
 
+def _time_map_of(clip):
+    """Le mapping du clip (:mod:`core.time_map`) ; un objet sans ``time_map`` (double de test) est lu par ses champs."""
+    time_map = getattr(clip, "time_map", None)
+    if time_map is not None:
+        return time_map
+    remapping = getattr(clip, "time_remapping", None)
+    source_in = float(getattr(clip, "source_in", 0.0))
+    if remapping is None:
+        return None
+    from .time_map import time_map_for
+
+    return time_map_for(source_in, float(getattr(clip, "source_out", source_in)), remapping)
+
+
 def source_time(clip, local_time: float) -> float:
     """Temps du média source montré à ``local_time`` (secondes locales au clip).
 
-    Reproduit le remappage de l'export (vitesse, lecture inverse, arrêt sur
-    image) **sans** lever hors des bornes : une liaison peut interroger un
-    instant voisin (tête de lecture sur la dernière image, clip coupé).
+    C'est le mapping du clip (:mod:`core.time_map` : vitesse, courbe de vitesse, lecture inverse, arrêt sur image),
+    celui de l'export. Il **ne lève jamais** hors des bornes : une liaison peut interroger un instant voisin (tête de
+    lecture sur la dernière image, clip coupé) ; le temps est alors borné à la fenêtre source.
     """
-    remapping = getattr(clip, "time_remapping", None)
-    source_in = float(getattr(clip, "source_in", 0.0))
-    source_out = float(getattr(clip, "source_out", source_in))
-    if remapping is None:
-        return source_in + float(local_time)
-    if getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
-        return float(remapping.freeze_source_time)
-    relative = float(local_time) * float(remapping.speed or 1.0)
-    if remapping.reverse:
-        relative = (source_out - source_in) - relative
-    return source_in + relative
+    time_map = _time_map_of(clip)
+    if time_map is None:
+        return float(getattr(clip, "source_in", 0.0)) + float(local_time)
+    return time_map.source_time(float(local_time))
 
 
 def local_time_for_source(clip, seconds: float) -> float:
-    """Inverse de :func:`source_time` (arrêt sur image : 0)."""
-    remapping = getattr(clip, "time_remapping", None)
-    source_in = float(getattr(clip, "source_in", 0.0))
-    source_out = float(getattr(clip, "source_out", source_in))
-    if remapping is None:
-        return float(seconds) - source_in
-    if getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
+    """Inverse de :func:`source_time` : premier instant local où le clip montre ``seconds`` (arrêt sur image : 0)."""
+    time_map = _time_map_of(clip)
+    if time_map is None:
+        return float(seconds) - float(getattr(clip, "source_in", 0.0))
+    if time_map.is_hold:
         return 0.0
-    relative = float(seconds) - source_in
-    if remapping.reverse:
-        relative = (source_out - source_in) - relative
-    return relative / float(remapping.speed or 1.0)
+    return time_map.local_time_for(float(seconds))
 
 
 def clip_source_indices(clip, rate: float) -> tuple[int, int]:
     """Images source ``(première, dernière)`` montrées par le clip."""
     if rate <= 0:
         return (0, -1)
-    a = source_time(clip, 0.0)
-    b = source_time(clip, max(0.0, float(clip.duration) - 1e-6))
-    low, high = min(a, b), max(a, b)
+    end = max(0.0, float(clip.duration) - 1e-6)
+    time_map = _time_map_of(clip)
+    if time_map is None:
+        a, b = source_time(clip, 0.0), source_time(clip, end)
+        low, high = min(a, b), max(a, b)
+    else:
+        # L'enveloppe de tout le clip, pas ses deux extrémités : une courbe qui va en avant puis revient finit où elle a commencé
+        # en ayant montré toutes les images intermédiaires, et le suivi doit les avoir.
+        low, high = time_map.window_for(0.0, end)
     return (max(0, int(math.floor(low * rate + 1e-6))), max(0, int(math.floor(high * rate + 1e-6))))
 
 

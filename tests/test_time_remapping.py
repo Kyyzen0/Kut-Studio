@@ -75,13 +75,18 @@ class TestTimeRemappingSpeedValidation:
 
     def test_invalid_speed_too_low(self):
         with pytest.raises(ValueError) as exc_info:
-            TimeRemapping(speed=0.05)
+            TimeRemapping(speed=0.04)
         assert "La vitesse doit être entre" in str(exc_info.value)
 
     def test_invalid_speed_too_high(self):
         with pytest.raises(ValueError) as exc_info:
-            TimeRemapping(speed=10.0)
+            TimeRemapping(speed=10.5)
         assert "La vitesse doit être entre" in str(exc_info.value)
+
+    def test_the_extreme_speeds_of_the_brief_are_valid(self):
+        """5 % (ralenti extrême) et 1 000 % (accéléré extrême) sont des vitesses constantes valides."""
+        assert TimeRemapping(speed=0.05).speed == 0.05
+        assert TimeRemapping(speed=10.0).speed == 10.0
 
     def test_invalid_speed_negative(self):
         with pytest.raises(ValueError) as exc_info:
@@ -315,7 +320,7 @@ class TestValidateTimeRemapping:
 
     def test_invalid_speed(self):
         errors = validate_time_remapping(
-            speed=0.05,
+            speed=0.04,
             reverse=False,
             freeze_mode=FreezeFrameMode.NONE,
             freeze_source_time=0.0,

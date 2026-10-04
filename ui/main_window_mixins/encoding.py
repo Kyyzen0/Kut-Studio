@@ -113,13 +113,15 @@ class EncodingMixin:
 
         Avec le mixin matériel, le texte couvre aussi décodage, aperçu et mémoire.
         """
+        flow = getattr(self, "flow_diagnostics_text", None)
+        extra = "\n\n" + flow() if flow is not None else ""
         full = getattr(self, "hardware_diagnostics_text", None)
         if full is not None:
-            return full()
+            return full() + extra
         capabilities = self.hardware_capabilities()
         if capabilities is None:
             return i18n.translate("encoding.detecting")
-        return capabilities.describe()
+        return capabilities.describe() + extra
 
     def _on_encoder_fallback(self, job_id: str, reason: str) -> None:
         """Le mode Auto a basculé un job vers le CPU : l'utilisateur en est informé."""

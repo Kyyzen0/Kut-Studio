@@ -1,0 +1,372 @@
+{
+  "accuracy": [
+    {
+      "blend_error": 11.85,
+      "blend_iou": 0.979,
+      "flow_error": 2.52,
+      "flow_iou": 0.993,
+      "scene": "translation +3 px"
+    },
+    {
+      "blend_error": 23.6,
+      "blend_iou": 0.916,
+      "flow_error": 1.2,
+      "flow_iou": 0.997,
+      "scene": "translation +8 px"
+    },
+    {
+      "blend_error": 37.01,
+      "blend_iou": 0.764,
+      "flow_error": 7.53,
+      "flow_iou": 0.983,
+      "scene": "translation +24 px"
+    },
+    {
+      "blend_error": 26.48,
+      "blend_iou": 0.892,
+      "flow_error": 4.32,
+      "flow_iou": 0.987,
+      "scene": "diagonale (7, 5)"
+    },
+    {
+      "blend_error": 22.45,
+      "blend_iou": 0.924,
+      "flow_error": 2.82,
+      "flow_iou": 0.994,
+      "scene": "acc\u00e9l\u00e9ration"
+    },
+    {
+      "blend_error": 16.21,
+      "blend_iou": 0.958,
+      "flow_error": 2.83,
+      "flow_iou": 0.996,
+      "scene": "rotation 10\u00b0/image"
+    },
+    {
+      "blend_error": 5.22,
+      "blend_iou": 0.982,
+      "flow_error": 2.8,
+      "flow_iou": 0.997,
+      "scene": "zoom +6 %/image"
+    },
+    {
+      "blend_error": 8.77,
+      "blend_iou": 0.945,
+      "flow_error": 1.7,
+      "flow_iou": 0.999,
+      "scene": "objet sans texture"
+    },
+    {
+      "blend_error": 23.87,
+      "blend_iou": 0.912,
+      "flow_error": 3.46,
+      "flow_iou": 0.996,
+      "scene": "deux objets oppos\u00e9s"
+    },
+    {
+      "blend_error": 19.46,
+      "blend_iou": 0.939,
+      "flow_error": 1.72,
+      "flow_iou": 0.997,
+      "scene": "croisement"
+    }
+  ],
+  "estimate": [
+    {
+      "analysis_grid": "160x90",
+      "backend": "numpy",
+      "frame": "640x360",
+      "mean_confidence": 0.995,
+      "peak_rss_mb": 63.6,
+      "quality": "draft",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.011,
+      "status": "none",
+      "stored_kb": 42.7
+    },
+    {
+      "analysis_grid": "320x180",
+      "backend": "numpy",
+      "frame": "640x360",
+      "mean_confidence": 0.985,
+      "peak_rss_mb": 64.3,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.05,
+      "status": "none",
+      "stored_kb": 169.2
+    },
+    {
+      "analysis_grid": "640x360",
+      "backend": "numpy",
+      "frame": "640x360",
+      "mean_confidence": 0.979,
+      "peak_rss_mb": 107.6,
+      "quality": "best",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.237,
+      "status": "none",
+      "stored_kb": 675.5
+    },
+    {
+      "analysis_grid": "320x180",
+      "backend": "numpy",
+      "frame": "1280x720",
+      "mean_confidence": 0.997,
+      "peak_rss_mb": 134.5,
+      "quality": "draft",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.039,
+      "status": "none",
+      "stored_kb": 169.2
+    },
+    {
+      "analysis_grid": "640x360",
+      "backend": "numpy",
+      "frame": "1280x720",
+      "mean_confidence": 0.992,
+      "peak_rss_mb": 174.1,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.187,
+      "status": "none",
+      "stored_kb": 675.5
+    },
+    {
+      "analysis_grid": "1280x720",
+      "backend": "numpy",
+      "frame": "1280x720",
+      "mean_confidence": 0.99,
+      "peak_rss_mb": 344.3,
+      "quality": "best",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.954,
+      "status": "none",
+      "stored_kb": 2700.5
+    },
+    {
+      "analysis_grid": "480x270",
+      "backend": "numpy",
+      "frame": "1920x1080",
+      "mean_confidence": 0.998,
+      "peak_rss_mb": 249.3,
+      "quality": "draft",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.084,
+      "status": "none",
+      "stored_kb": 380.2
+    },
+    {
+      "analysis_grid": "960x540",
+      "backend": "numpy",
+      "frame": "1920x1080",
+      "mean_confidence": 0.995,
+      "peak_rss_mb": 333.1,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.418,
+      "status": "none",
+      "stored_kb": 1519.2
+    },
+    {
+      "analysis_grid": "1920x1080",
+      "backend": "numpy",
+      "frame": "1920x1080",
+      "mean_confidence": 0.993,
+      "peak_rss_mb": 727.8,
+      "quality": "best",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 2.148,
+      "status": "none",
+      "stored_kb": 6075.5
+    },
+    {
+      "analysis_grid": "960x540",
+      "backend": "numpy",
+      "frame": "3840x2160",
+      "mean_confidence": 0.999,
+      "peak_rss_mb": 872.8,
+      "quality": "draft",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 0.319,
+      "status": "none",
+      "stored_kb": 1519.2
+    },
+    {
+      "analysis_grid": "1920x1080",
+      "backend": "numpy",
+      "frame": "3840x2160",
+      "mean_confidence": 0.998,
+      "peak_rss_mb": 1351.9,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 1.718,
+      "status": "none",
+      "stored_kb": 6075.5
+    },
+    {
+      "analysis_grid": "3840x2160",
+      "backend": "numpy",
+      "frame": "3840x2160",
+      "mean_confidence": 0.997,
+      "peak_rss_mb": 2573.7,
+      "quality": "best",
+      "rss_largest_ffmpeg_mb": 0.0,
+      "seconds": 9.573,
+      "status": "none",
+      "stored_kb": 24300.5
+    }
+  ],
+  "meta": {
+    "machine": "arm64",
+    "python": "3.14.7",
+    "system": "Darwin"
+  },
+  "render": [
+    {
+      "degraded": 0,
+      "encode_s": 1.26,
+      "fallbacks": {},
+      "frame": "1280x720",
+      "mean_confidence": 1.0,
+      "mode": "sampling",
+      "output_frames": 240,
+      "pairs_computed": 0,
+      "peak_rss_mb": 67.6,
+      "prepare_s": 0.0,
+      "prepared_stream_mb": 0.0,
+      "quality": "-",
+      "rss_largest_ffmpeg_mb": 237.0,
+      "synthesized": 0,
+      "total_fps": 191.1,
+      "warm_prepare_s": 0.0,
+      "warm_reused": false
+    },
+    {
+      "degraded": 0,
+      "encode_s": 1.27,
+      "fallbacks": {
+        "none": 177
+      },
+      "frame": "1280x720",
+      "mean_confidence": 1.0,
+      "mode": "blending",
+      "output_frames": 240,
+      "pairs_computed": 0,
+      "peak_rss_mb": 153.7,
+      "prepare_s": 1.24,
+      "prepared_stream_mb": 111.7,
+      "quality": "-",
+      "rss_largest_ffmpeg_mb": 131.6,
+      "synthesized": 177,
+      "total_fps": 95.5,
+      "warm_prepare_s": 0.001,
+      "warm_reused": true
+    },
+    {
+      "degraded": 0,
+      "encode_s": 1.27,
+      "fallbacks": {
+        "none": 177
+      },
+      "frame": "1280x720",
+      "mean_confidence": 0.9,
+      "mode": "optical_flow",
+      "output_frames": 240,
+      "pairs_computed": 59,
+      "peak_rss_mb": 495.7,
+      "prepare_s": 36.09,
+      "prepared_stream_mb": 115.6,
+      "quality": "draft",
+      "rss_largest_ffmpeg_mb": 130.4,
+      "synthesized": 177,
+      "total_fps": 6.4,
+      "warm_prepare_s": 0.001,
+      "warm_reused": true
+    },
+    {
+      "degraded": 0,
+      "encode_s": 1.42,
+      "fallbacks": {
+        "none": 177
+      },
+      "frame": "1280x720",
+      "mean_confidence": 0.894,
+      "mode": "optical_flow",
+      "output_frames": 240,
+      "pairs_computed": 59,
+      "peak_rss_mb": 549.2,
+      "prepare_s": 47.01,
+      "prepared_stream_mb": 115.1,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 130.1,
+      "synthesized": 177,
+      "total_fps": 5.0,
+      "warm_prepare_s": 0.001,
+      "warm_reused": true
+    },
+    {
+      "degraded": 0,
+      "encode_s": 1.29,
+      "fallbacks": {
+        "none": 177
+      },
+      "frame": "1280x720",
+      "mean_confidence": 0.902,
+      "mode": "optical_flow",
+      "output_frames": 240,
+      "pairs_computed": 59,
+      "peak_rss_mb": 590.8,
+      "prepare_s": 92.14,
+      "prepared_stream_mb": 114.7,
+      "quality": "best",
+      "rss_largest_ffmpeg_mb": 132.8,
+      "synthesized": 177,
+      "total_fps": 2.6,
+      "warm_prepare_s": 0.001,
+      "warm_reused": true
+    }
+  ],
+  "synthesize": [
+    {
+      "blend_s": 0.0004,
+      "confidence": 0.985,
+      "fallback": "none",
+      "flow_synthesis_s": 0.049,
+      "frame": "640x360",
+      "peak_rss_mb": 134.7,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0
+    },
+    {
+      "blend_s": 0.0015,
+      "confidence": 0.991,
+      "fallback": "none",
+      "flow_synthesis_s": 0.209,
+      "frame": "1280x720",
+      "peak_rss_mb": 451.1,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0
+    },
+    {
+      "blend_s": 0.004,
+      "confidence": 0.995,
+      "fallback": "none",
+      "flow_synthesis_s": 0.459,
+      "frame": "1920x1080",
+      "peak_rss_mb": 964.1,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0
+    },
+    {
+      "blend_s": 0.0199,
+      "confidence": 0.998,
+      "fallback": "none",
+      "flow_synthesis_s": 2.365,
+      "frame": "3840x2160",
+      "peak_rss_mb": 3249.3,
+      "quality": "balanced",
+      "rss_largest_ffmpeg_mb": 0.0
+    }
+  ]
+}

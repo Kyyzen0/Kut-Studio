@@ -44,6 +44,7 @@ from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project, Sequence
 from .subtitle_io import SubtitleCue
 from .text_style import TextStyle
+from .time_map import TimeMap
 from .time_remapping import TimeRemapping
 from .transitions import TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
@@ -90,6 +91,12 @@ class RenderLayer:
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    # Mapping temps timeline → temps source du clip (:mod:`core.time_map`), l'unique modèle temporel ; ``None`` pour un clip
+    # qui n'est pas remappé. L'export, l'aperçu fidèle et les empreintes lisent ce mapping, jamais ``source_in`` × vitesse.
+    time_map: TimeMap | None = None
+    # Nombre d'images du média (``0`` : inconnu) : borne l'image la plus proche de la fin d'un média (voir
+    # :func:`core.retime_graph.nearest_frame`) pour que la lecture inverse d'un clip entier ne soit pas décalée d'une image.
+    source_frames: int = 0
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
     # ``None`` si l'identité. On garde un type ``object`` pour ne
@@ -156,6 +163,7 @@ class AudioLayer:
     track_volume_db: float = 0.0
     track_pan: float = 0.0
     time_remapping: TimeRemapping = field(default_factory=TimeRemapping)
+    time_map: TimeMap | None = None  # voir ``RenderLayer.time_map``
     # Effets audio non destructifs (tâche 27). Tuple pour respecter le
     # caractère immuable de l'AudioLayer. Les effets sont appliqués
     # dans l'ordre de la séquence au moment du rendu.
@@ -678,6 +686,8 @@ class _PlanBuilder:
                                     else tuple(clip.transform_keyframes)
                                 ),
                                 time_remapping=clip.time_remapping,
+                                time_map=clip.time_map if clip.is_time_remapped else None,
+                                source_frames=_frame_count(asset.duration, asset.fps),
                                 effects=tuple(clip.effects),
                                 # Étalonnage couleur (tâche 29) : si le clip ne
                                 # porte pas de ``ColorGrade``, on garde ``None``
@@ -795,6 +805,8 @@ class _PlanBuilder:
                     transform=clip.transform,
                     transform_keyframes=tuple(clip.transform_keyframes),
                     time_remapping=clip.time_remapping,
+                    time_map=clip.time_map if clip.is_time_remapped else None,
+                    source_frames=_frame_count(inner.duration, inner.fps),
                     effects=tuple(clip.effects),
                     color_grade=getattr(clip, "color_grade", None),
                     compositing=getattr(clip, "compositing", None),
@@ -888,38 +900,39 @@ def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[Graph
     return result
 
 
+def _frame_count(duration: float, fps: float) -> int:
+    """Nombre d'images d'un flux de ``duration`` secondes à ``fps`` (``0`` si l'un des deux est inconnu)."""
+    if duration <= 0.0 or fps <= 0.0:
+        return 0
+    return max(1, round(float(duration) * float(fps)))
+
+
 def _lift_nested_cues(clip: Clip, inner: RenderPlan) -> list:
     """Sous-titres d'une séquence imbriquée, recalés dans le temps parent.
 
     Les sous-titres sont incrustés une fois, sur l'image finale (libass) :
     ceux d'une séquence imbriquée sont donc reportés dans le plan parent,
-    bornés à la durée du clip et convertis selon sa vitesse / son reverse.
+    bornés à la durée du clip et convertis par **le mapping du clip** (vitesse, courbe de vitesse, reverse, arrêt sur
+    image) : une réplique suit la source. Si le mapping revient en arrière, une même réplique apparaît à chaque passage.
     Limite documentée : ils ne suivent pas le transform du clip imbriqué.
     """
     from .subtitle_io import SubtitleCue
 
     start = clip.timeline_start
-    end = start + clip.duration
-    remapping = clip.time_remapping
-    speed = float(remapping.speed) or 1.0
-    frozen = getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze"
+    time_map = clip.time_map
+    end = start + time_map.duration
     lifted = []
     for cue, style in zip(inner.subtitle_cues, inner.subtitle_styles):
-        if frozen:
-            moment = float(remapping.freeze_source_time)
-            if not (cue.start <= moment < cue.end):
-                continue
-            a, b = start, end
-        elif remapping.reverse:
-            a = start + (clip.source_out - cue.end) / speed
-            b = start + (clip.source_out - cue.start) / speed
+        if time_map.is_hold:
+            moment = time_map.source_time(0.0)
+            intervals = [(0.0, time_map.duration)] if cue.start <= moment < cue.end else []
         else:
-            a = start + (cue.start - clip.source_in) / speed
-            b = start + (cue.end - clip.source_in) / speed
-        a, b = max(a, start), min(b, end)
-        if b - a <= 1e-6:
-            continue
-        lifted.append((SubtitleCue(start=float(a), end=float(b), text=cue.text), style))
+            intervals = time_map.timeline_intervals_of(cue.start, cue.end)
+        for local_a, local_b in intervals:
+            a, b = max(start + local_a, start), min(start + local_b, end)
+            if b - a <= 1e-6:
+                continue
+            lifted.append((SubtitleCue(start=float(a), end=float(b), text=cue.text), style))
     return lifted
 
 
@@ -985,6 +998,7 @@ def _build_audio_layer(
         track_volume_db=float(getattr(track, "volume_db", 0.0)),
         track_pan=float(getattr(track, "pan", 0.0)),
         time_remapping=getattr(clip, "time_remapping", TimeRemapping()),
+        time_map=clip.time_map if getattr(clip, "is_time_remapped", False) else None,
         audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
         track_automation=track_automation_points,
         ducking_sidechains=tuple(ducking_sidechains or []),

@@ -155,6 +155,11 @@ VALID_PREVIEW_BACKENDS: tuple[str, ...] = ("auto", "cpu", "gpu")
 """Rendu du moniteur temps réel (voir :mod:`core.gpu_backend`)."""
 
 DEFAULT_PREVIEW_BACKEND: str = "auto"
+VALID_FLOW_BACKENDS: tuple[str, ...] = ("auto", "cpu", "gpu")
+"""Calcul du flux optique (images intermédiaires) : le meilleur disponible, le processeur, ou un accélérateur."""
+DEFAULT_FLOW_BACKEND: str = "auto"
+DEFAULT_TIME_RIPPLE_TIMELINE: bool = False
+"""Une édition de vitesse garde la portion de média (défaut) ou la durée sur la timeline."""
 
 
 def _coerce_proxy_profile(value: object) -> str:
@@ -186,6 +191,13 @@ def _coerce_preview_backend(value: object) -> str:
     if isinstance(value, str) and value.strip().lower() in VALID_PREVIEW_BACKENDS:
         return value.strip().lower()
     return DEFAULT_PREVIEW_BACKEND
+
+
+def _coerce_flow_backend(value: object) -> str:
+    """Filtre le backend de flux optique ; ``auto`` si absent ou inconnu."""
+    if isinstance(value, str) and value.strip().lower() in VALID_FLOW_BACKENDS:
+        return value.strip().lower()
+    return DEFAULT_FLOW_BACKEND
 
 
 def _coerce_cache_max_gb(value: object) -> float:
@@ -231,6 +243,8 @@ class UserSettings:
         decode_mode: décodage vidéo de l'aperçu, des proxies et de l'analyse
             (``auto``, ``cpu`` ou un backend). L'export décode toujours en CPU.
         preview_backend: rendu du moniteur temps réel (``auto``, ``cpu``, ``gpu``).
+        flow_backend: calcul du flux optique pour le rendu fidèle et l'export (``auto``, ``cpu``, ``gpu``).
+        time_ripple_timeline: une édition de vitesse garde la durée sur la timeline (sinon la portion de média).
         cache_max_gb: budget disque global des caches, en Go.
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
@@ -260,6 +274,8 @@ class UserSettings:
     # --- Décodage et rendu de l'aperçu (absents des fichiers antérieurs : Auto) ---
     decode_mode: str = DEFAULT_DECODE_MODE
     preview_backend: str = DEFAULT_PREVIEW_BACKEND
+    flow_backend: str = DEFAULT_FLOW_BACKEND
+    time_ripple_timeline: bool = DEFAULT_TIME_RIPPLE_TIMELINE
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -432,6 +448,8 @@ def load_user_settings(
         export_encoder=_coerce_export_encoder(data.get("export_encoder")),
         decode_mode=_coerce_decode_mode(data.get("decode_mode")),
         preview_backend=_coerce_preview_backend(data.get("preview_backend")),
+        flow_backend=_coerce_flow_backend(data.get("flow_backend")),
+        time_ripple_timeline=_coerce_bool(data.get("time_ripple_timeline", DEFAULT_TIME_RIPPLE_TIMELINE)),
     )
 
 
@@ -483,6 +501,8 @@ def save_user_settings(
             export_encoder=_coerce_export_encoder(settings.export_encoder),
             decode_mode=_coerce_decode_mode(settings.decode_mode),
             preview_backend=_coerce_preview_backend(settings.preview_backend),
+            flow_backend=_coerce_flow_backend(settings.flow_backend),
+            time_ripple_timeline=_coerce_bool(settings.time_ripple_timeline),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -509,6 +529,8 @@ def save_user_settings(
 __all__ = [
     "DEFAULT_CACHE_MAX_GB",
     "DEFAULT_DECODE_MODE",
+    "DEFAULT_FLOW_BACKEND",
+    "DEFAULT_TIME_RIPPLE_TIMELINE",
     "DEFAULT_PREVIEW_BACKEND",
     "DEFAULT_PROXY_PROFILE",
     "DEFAULT_LANGUAGE",

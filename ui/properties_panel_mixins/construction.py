@@ -34,6 +34,7 @@ from ui.properties_widgets.common import (  # noqa: F401 - réexports de compati
     _PROPERTY_RANGES,
 )
 from ui.properties_widgets.diamond_button import _DiamondButton
+from ui.properties_widgets.time_section import TimeSection
 from ui.properties_widgets.common import _PROPERTY_RANGES
 from ui.properties_widgets.diamond_button import _DiamondButton
 
@@ -80,6 +81,7 @@ class ConstructionMixin:
             self.inspector_more_button.setText(translate(self._TAB_KEYS[active]))
         for group, key in self._group_titles:
             group.setTitle(translate(key))
+        self.time_section.retranslate()
         for form, field, key in self._row_labels:
             label = form.labelForField(field)
             if label is not None:
@@ -380,6 +382,11 @@ class ConstructionMixin:
             speed_presets_layout.addWidget(btn)
 
         self._add_row(speed_form, "mograph.layers.presets", speed_presets)
+
+        # Images intermédiaires, son, courbe de vitesse, analyse du flux optique (widget autonome).
+        self.time_section = TimeSection()
+        self.time_section.command_requested.connect(self._on_time_section_command)
+        speed_form.addRow(self.time_section)
 
         # Bouton Reverse
         self.reverse_button = IconButton(

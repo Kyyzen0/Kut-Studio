@@ -42,6 +42,13 @@ def main():
         if problem:
             print(f"Smoke test : synchronisation audio indisponible — {problem}", file=sys.stderr)
             return 1
+        # Flux optique (images intermédiaires) : même dépendance (numpy), contrôle sur un décalage connu.
+        from core.optical_flow import self_check as optical_flow_check
+
+        problem = optical_flow_check()
+        if problem:
+            print(f"Smoke test : flux optique indisponible — {problem}", file=sys.stderr)
+            return 1
         # Aperçu GPU : les shaders compilés doivent être embarqués et lisibles.
         from ui.gpu_preview import gpu_self_check
 

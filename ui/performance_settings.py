@@ -127,6 +127,14 @@ class PerformanceSettingsTab(QWidget):
             self.preview_backend_combo.addItem("", userData=value)
         self.preview_backend_combo.activated.connect(self._on_preview_backend_changed)
         encoding_form.addRow(self.preview_backend_label, self.preview_backend_combo)
+        # Flux optique (images intermédiaires du rendu fidèle et de l'export) : où se fait le calcul.
+        self.flow_backend_label = QLabel()
+        self.flow_backend_combo = QComboBox()
+        self.flow_backend_combo.setObjectName("flowBackendCombo")
+        for value in ("auto", "cpu", "gpu"):
+            self.flow_backend_combo.addItem("", userData=value)
+        self.flow_backend_combo.activated.connect(self._on_flow_backend_changed)
+        encoding_form.addRow(self.flow_backend_label, self.flow_backend_combo)
         self.encoder_label = QLabel()
         self.encoder_combo = QComboBox()
         self.encoder_combo.setObjectName("defaultEncoderCombo")
@@ -234,10 +242,24 @@ class PerformanceSettingsTab(QWidget):
         self.decode_label.setVisible(options is not None)
         self.preview_backend_combo.setVisible(options is not None)
         self.preview_backend_label.setVisible(options is not None)
+        flow_options = getattr(host, "flow_backend_options", None)
+        self.flow_backend_combo.setVisible(flow_options is not None)
+        self.flow_backend_label.setVisible(flow_options is not None)
+        if flow_options is not None:
+            self.flow_backend_combo.setCurrentIndex(
+                max(0, self.flow_backend_combo.findData(getattr(host, "_flow_backend_request", "auto")))
+            )
+            for _value, _label, available in flow_options():
+                item = self.flow_backend_combo.model().item(self.flow_backend_combo.findData(_value))
+                if item is not None:
+                    item.setEnabled(available)
 
     def _on_decode_changed(self, _index: int) -> None:
         self._host.set_decode_mode(self.decode_combo.currentData())
         self.decode_hint.setText(i18n.translate("perf.decode.restart_hint"))
+
+    def _on_flow_backend_changed(self, _index: int) -> None:
+        self._host.set_flow_backend(self.flow_backend_combo.currentData())
 
     def _on_preview_backend_changed(self, _index: int) -> None:
         self._host.set_preview_backend(self.preview_backend_combo.currentData())
@@ -321,6 +343,12 @@ class PerformanceSettingsTab(QWidget):
         for index in range(self.preview_backend_combo.count()):
             value = self.preview_backend_combo.itemData(index)
             self.preview_backend_combo.setItemText(index, tr(f"perf.preview_backend.{value}"))
+        self.flow_backend_label.setText(tr("perf.flow_backend"))
+        self.flow_backend_label.setToolTip(tr("perf.flow_backend.tip"))
+        self.flow_backend_combo.setToolTip(tr("perf.flow_backend.tip"))
+        for index in range(self.flow_backend_combo.count()):
+            value = self.flow_backend_combo.itemData(index)
+            self.flow_backend_combo.setItemText(index, tr(f"perf.flow_backend.{value}"))
         self.encoder_label.setText(tr("perf.encoding.export"))
         self.redetect_button.setText(tr("perf.encoding.redetect"))
         self.copy_diagnostics_button.setText(tr("perf.encoding.copy"))

@@ -133,6 +133,7 @@ l'export (`ProxyProfile.hardware` est déjà accepté et retombe sur le CPU).
 | disque « preview » | segments d'aperçu fidèles | clip + plage alignée + qualité + empreinte **du segment** | LRU (index), budget propre + budget global |
 | disque « proxies » | proxies médias | chemin + empreinte du profil, marqueur de signature | LRU (dernier usage), budget global ; proxies du projet ouvert **épinglés** |
 | disque « tracking » | résultats d'analyse de tracking (`core/tracking_engine.py`) | média + signature + plage + position de départ + zones / réglages + version de l'algorithme | LRU (dernier usage), budget global ; jamais indispensable (les données vivent dans le `.kut`, voir `docs/tracking.md`) |
+| disque « flow » | vecteurs de mouvement d'une paire d'images et flux d'images intermédiaires préparés (`core/flow_cache.py`, `core/retime_prepare.py`) | média réellement décodé (un proxy et l'original sont deux entrées) + paire + grille et mise au cadre + moteur ; pour un flux préparé, le plan exact des images (fenêtre comprise) | LRU (dernier usage), budget global ; **jamais** indispensable et jamais dans le `.kut` ; la forme stockée est la définition du résultat, un rendu à chaud est identique à un rendu à froid (voir `docs/optical-flow.md`) |
 
 Doublons supprimés : les clés de miniatures et d'ondes existaient en double
 (`media_cache` sans signature, `media_previews` avec) ; elles viennent maintenant

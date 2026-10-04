@@ -175,7 +175,6 @@ def angle_samples_at(
     """
     from .cache_keys import file_exists
     from .sequences import nested_source_time
-    from .time_remapping import timeline_to_source_time
 
     child = project.get_sequence(segment.sequence_id) if segment.sequence_id else None
     source = child.multicam if child is not None else None
@@ -204,15 +203,7 @@ def angle_samples_at(
         if asset is None or not asset.path or not check(asset.path):
             samples.append(AngleSample(state=AngleState.OFFLINE, path=asset.path if asset else "", **base))  # type: ignore[arg-type]
             continue
-        remapping = clip.time_remapping
-        try:
-            media_time = timeline_to_source_time(
-                timeline_time=inner - clip.timeline_start, source_in=clip.source_in, source_out=clip.source_out,
-                speed=remapping.speed, reverse=remapping.reverse, freeze_mode=remapping.freeze_mode,
-                freeze_source_time=remapping.freeze_source_time,
-            )
-        except ValueError:
-            media_time = clip.source_in + (inner - clip.timeline_start)
+        media_time = clip.time_map.source_time(inner - clip.timeline_start)
         samples.append(AngleSample(state=AngleState.LIVE, path=asset.path, media_time=media_time, **base))  # type: ignore[arg-type]
     return samples
 

@@ -213,7 +213,71 @@ def slip_clip(project: Project, clip_id: str, delta_seconds: float):
         delta_seconds = max(delta_seconds, -clip.source_in)
     clip.source_in += delta_seconds
     clip.source_out += delta_seconds
+    if clip.time_remapping.anchor is not None:
+        # L'ancre est un temps source : elle suit la fenêtre (le mapping est translaté, sa durée ne change pas).
+        from dataclasses import replace
+
+        clip.time_remapping = replace(clip.time_remapping, anchor=clip.time_remapping.anchor + delta_seconds)
     return clip
+
+
+_MIN_EDGE_SECONDS = 0.05
+"""Durée minimale (secondes de timeline) d'un clip voisin après un slide ou un roll."""
+
+
+def _refuse_curve(clip, operation: str) -> None:
+    from .time_editing import needs_general_path
+
+    if needs_general_path(clip):
+        raise ValueError(
+            f"{operation} : indisponible sur un clip dont la vitesse est animée (rognez-le : ses keyframes de vitesse "
+            "suivent le trim)."
+        )
+
+
+def _shifted_edge(project: Project, clip, edge: str, delta: float):
+    """Fenêtre source (et durée d'arrêt) d'un clip dont un bord se déplace de ``delta`` secondes de **timeline**.
+
+    ``edge`` : ``"in"`` (début sur la timeline) ou ``"out"`` (fin) ; ``delta`` est le déplacement du bord (positif = plus
+    tard). Un décalage de timeline se convertit en source par la vitesse, et le bord de la timeline qui montre
+    ``source_in`` n'est pas le même en lecture inverse : c'est la seule conversion, partagée par ``slide`` et ``roll``
+    (l'ancien code ajoutait ``delta`` tel quel aux secondes de source).
+
+    Returns:
+        ``(source_in, source_out, freeze_duration | None)`` ; rien n'est modifié.
+
+    Raises:
+        ValueError: la source sortirait du média, ou le clip deviendrait (presque) vide.
+    """
+    if clip.is_frozen:
+        duration = clip.duration + (delta if edge == "out" else -delta)
+        if duration <= _MIN_EDGE_SECONDS:
+            raise ValueError("Le clip voisin serait vide.")
+        return clip.source_in, clip.source_out, duration
+    span = delta * clip.speed
+    low, high = clip.source_in, clip.source_out
+    if clip.is_reversed:
+        if edge == "out":
+            low -= span
+        else:
+            high -= span
+    elif edge == "out":
+        high += span
+    else:
+        low += span
+    if low < -1e-6 or high > _asset_duration(project, clip) + 1e-6:
+        raise ValueError("Le déplacement sort de la source du clip voisin.")
+    if (high - low) / clip.speed <= _MIN_EDGE_SECONDS:
+        raise ValueError("Le clip voisin serait vide.")
+    return max(0.0, low), high, None
+
+
+def _apply_shifted_edge(clip, shifted) -> None:
+    from .timeline_operations import _set_freeze_duration
+
+    clip.source_in, clip.source_out, freeze = shifted
+    if freeze is not None:
+        _set_freeze_duration(clip, freeze)
 
 
 def slide_clip(project: Project, clip_id: str, new_timeline_start: float):
@@ -223,39 +287,30 @@ def slide_clip(project: Project, clip_id: str, new_timeline_start: float):
     durée source ne change pas : c'est le clip d'avant qui change de
     fin, et celui d'après qui change de début.
     """
-    from .timeline_operations import trim_clip_right
-
     track, previous, clip, following = _neighbors(project, clip_id)
     _ensure_track_editable(project, track)
+    for neighbour in (previous, following):
+        if neighbour is not None:
+            _refuse_curve(neighbour, "Slide")
     if new_timeline_start < 0.0:
         raise ValueError("Un slide ne peut pas commencer avant 0.")
     delta = float(new_timeline_start) - float(clip.timeline_start)
     if abs(delta) < 1e-9:
         return clip
+    # Tout est validé avant le moindre changement (le slide est atomique).
+    previous_edge = following_edge = None
     if previous is not None:
-        new_prev_end = previous.timeline_start + previous.duration + delta
-        if new_prev_end <= previous.timeline_start + 0.05:
-            raise ValueError("Le slide écraserait le clip précédent.")
-        if previous.source_out + delta > _asset_duration(project, previous) + 1e-6:
-            raise ValueError("Le slide dépasse la durée du média précédent.")
-        if previous.source_out + delta <= previous.source_in + 0.05:
-            raise ValueError("Le slide laisserait le clip précédent vide.")
+        previous_edge = _shifted_edge(project, previous, "out", delta)
     if following is not None:
-        new_source_in = following.source_in + delta
-        if new_source_in < 0.0 or new_source_in >= following.source_out - 0.05:
-            raise ValueError("Le slide ne tient pas dans le clip suivant.")
         if following.timeline_start + delta < 0.0:
             raise ValueError("Le slide pousserait le clip suivant avant 0.")
-    if previous is not None:
-        trim_clip_right(
-            project,
-            previous.id,
-            previous.timeline_start + previous.duration + delta,
-        )
+        following_edge = _shifted_edge(project, following, "in", delta)
+    if previous is not None and previous_edge is not None:
+        _apply_shifted_edge(previous, previous_edge)
     clip.timeline_start = float(new_timeline_start)
-    if following is not None:
+    if following is not None and following_edge is not None:
+        _apply_shifted_edge(following, following_edge)
         following.timeline_start += delta
-        following.source_in += delta
     return clip
 
 
@@ -285,16 +340,14 @@ def roll_edit(project: Project, clip_id: str, edge: str, new_time: float):
 def _roll_pair(project: Project, left, right, delta: float) -> None:
     if abs(delta) < 1e-9:
         return
-    left_out = left.source_out + delta
-    right_in = right.source_in + delta
-    if left_out <= left.source_in + 0.05 or left_out > _asset_duration(project, left) + 1e-6:
-        raise ValueError("Le roll sort du média de gauche.")
-    if right_in < 0.0 or right_in >= right.source_out - 0.05:
-        raise ValueError("Le roll sort du média de droite.")
+    _refuse_curve(left, "Roll")
+    _refuse_curve(right, "Roll")
     if right.timeline_start + delta < 0.0:
         raise ValueError("Le roll passerait avant le début de la timeline.")
-    left.source_out = left_out
-    right.source_in = right_in
+    left_edge = _shifted_edge(project, left, "out", delta)
+    right_edge = _shifted_edge(project, right, "in", delta)
+    _apply_shifted_edge(left, left_edge)
+    _apply_shifted_edge(right, right_edge)
     right.timeline_start += delta
 
 

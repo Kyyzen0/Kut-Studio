@@ -19,6 +19,7 @@ import zlib
 from dataclasses import dataclass
 
 from .project_model import Clip, Project, Track
+from .time_map import speed_keyframes
 
 
 _CLIP_COLOR_PALETTE: tuple[str, ...] = (
@@ -107,6 +108,10 @@ class TimelineClipView:
     angle_count: int = 0
     angle_name: str = ""
     angle_color_index: int = 0
+    # --- Temps ---
+    # Points de la courbe de vitesse (keyframes ``time.speed``, temps local du clip) : l'inspecteur en donne le nombre et la
+    # timeline en dessine la courbe. Vide pour un clip à vitesse constante.
+    speed_points: tuple = ()
 
     @property
     def is_nested(self) -> bool:
@@ -216,6 +221,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     angle_count=angle_count,
                     angle_name=angle_name,
                     angle_color_index=angle_color,
+                    speed_points=speed_keyframes(clip),
                 )
             )
     return views
@@ -224,12 +230,16 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
 def _overflow_start(clip: Clip, source_duration: float) -> float | None:
     """Instant timeline où ``clip`` cesse d'avoir une source (vitesse incluse)."""
     remapping = clip.time_remapping
+    time_map = clip.time_map
     # En arrêt sur image ou en reverse, la zone sans source n'est pas une
     # fin de clip : seul le badge d'état la signale.
-    if remapping.reverse or getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
+    if remapping.reverse or time_map.is_hold:
         return None
-    speed = float(remapping.speed) or 1.0
-    local = (source_duration - clip.source_in) / speed
-    return clip.timeline_start + max(0.0, local)
+    if time_map.is_constant:
+        local = (source_duration - clip.source_in) / time_map.speed_at(0.0)
+        return clip.timeline_start + max(0.0, local)
+    # Courbe de vitesse : premier instant où le mapping atteint la fin de la source.
+    reached = time_map.times_at_source(source_duration)
+    return clip.timeline_start + reached[0] if reached else None
 
 

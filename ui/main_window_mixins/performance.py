@@ -77,9 +77,11 @@ class PerformanceMixin:
             mograph=_mograph_frame_cache(),
             tracking=_tracking_cache(),
             multicam=_multicam_cache(),
+            flow=_flow_cache(),
         )
         try:
             self.cache_manager.enforce()
+            self.cache_manager.flow.cleanup_orphans()      # écritures de flux d'images abandonnées par un arrêt brutal
         except OSError:
             pass
 
@@ -354,15 +356,8 @@ class PerformanceMixin:
         self._apply_runtime_hints()
         if self.runtime.preview.degraded:
             self._request_lighter_proxies()
-        preview = getattr(self, "preview_panel", None)
-        if preview is None:
-            return
-        if self.runtime.preview.degraded:
-            preview.set_quality_notice(
-                i18n.translate("preview.quality_reduced", quality=self.runtime.preview_label())
-            )
-        else:
-            preview.set_quality_notice(None)
+        # L'avis du moniteur réunit le niveau d'aperçu réduit et « aperçu simplifié » d'un clip interpolé.
+        self._update_preview_notice()
 
 
 def _tracking_cache():
@@ -377,6 +372,13 @@ def _multicam_cache():
     from core.audio_sync_cache import AudioSyncCache
 
     return AudioSyncCache()
+
+
+def _flow_cache():
+    """Vecteurs de mouvement du flux optique (budget disque global)."""
+    from core.flow_cache import FlowCache
+
+    return FlowCache()
 
 
 def _mograph_frame_cache():

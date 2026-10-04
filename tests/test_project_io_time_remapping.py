@@ -401,3 +401,117 @@ class TestAtomicWrite:
 
         finally:
             Path(filepath).unlink(missing_ok=True)
+
+
+# --- Courbe de vitesse, interpolation, audio : formes sérialisées et compatibilité ------------------------------------------
+
+
+def _roundtrip(project: Project) -> Project:
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "p.kut"
+        save_project(project, str(path))
+        return load_project(str(path))
+
+
+def _find_clip_dict(payload: dict, clip_id: str) -> dict:
+    """Le dictionnaire du clip ``clip_id`` **dans** ce payload (modifiable en place)."""
+    for sequence in payload["project"].get("sequences", [payload["project"]]):
+        for track in sequence["tracks"]:
+            for clip in track["clips"]:
+                if clip["id"] == clip_id:
+                    return clip
+    raise KeyError(clip_id)
+
+
+def _clip_payload(project: Project, clip_id: str) -> dict:
+    return _find_clip_dict(project_payload(project), clip_id)
+
+
+def test_a_clip_without_the_new_time_settings_writes_exactly_the_historical_keys():
+    """Un clip qui n'utilise rien de nouveau garde la forme d'avant : aucune clé de plus."""
+    project = _project_with_time_remapping()
+    assert set(_clip_payload(project, "clip-fast")["time_remapping"]) == {
+        "speed", "reverse", "freeze_mode", "freeze_source_time", "freeze_duration"
+    }
+
+
+def test_the_new_time_settings_are_written_only_when_they_differ_from_the_default():
+    from dataclasses import replace
+
+    project = _project_with_time_remapping()
+    clip = project.tracks[0].clips[0]
+    clip.time_remapping = replace(
+        clip.time_remapping, interpolation="optical_flow", flow_quality="best", preserve_pitch=False,
+        remap_audio=False, anchor=4.0, duration=3.0,
+    )
+    written = _clip_payload(project, clip.id)["time_remapping"]
+    assert written["interpolation"] == "optical_flow" and written["flow_quality"] == "best"
+    assert written["preserve_pitch"] is False and written["remap_audio"] is False
+    assert written["anchor"] == 4.0 and written["duration"] == 3.0
+
+
+def test_the_time_settings_and_the_speed_curve_round_trip_exactly():
+    from core.time_ops import add_speed_point, set_clip_interpolation, set_clip_preserve_pitch, set_clip_remap_audio
+    from core.time_map import SPEED_PROPERTY
+
+    project, clip = _ramp_project()
+    for moment, speed in ((0.0, 1.0), (2.0, 1.0), (3.0, 0.25), (6.0, 0.25), (7.0, 2.0)):
+        add_speed_point(project, "c1", moment, speed)
+    set_clip_interpolation(project, "c1", "blending", "draft")
+    set_clip_preserve_pitch(project, "c1", False)
+    set_clip_remap_audio(project, "c1", False)
+    loaded = _roundtrip(project).tracks[0].clips[0]
+    assert loaded.time_remapping == clip.time_remapping
+    assert [(k.time_seconds, k.value, k.interpolation) for k in loaded.animation if k.property_name == SPEED_PROPERTY] == [
+        (k.time_seconds, k.value, k.interpolation) for k in clip.animation if k.property_name == SPEED_PROPERTY
+    ]
+    assert loaded.duration == clip.duration and loaded.time_map.source_time(5.0) == clip.time_map.source_time(5.0)
+
+
+def _ramp_project():
+    asset = MediaAsset("a", "/tmp/x.mp4", "x", 200.0, 1920, 1080, 25.0, "video", True)
+    clip = Clip("c1", "a", "V1", 3.0, 10.0, 60.0)
+    project = Project("p", width=1280, height=720, fps=25.0, media_assets=[asset],
+                      tracks=[Track("V1", "V1", "video", clips=[clip])])
+    return project, clip
+
+
+def test_an_old_project_with_a_constant_speed_gives_exactly_the_same_edit():
+    """``speed = 2.0`` dans un fichier ancien : mêmes bornes, même durée, même image montrée, au bit près."""
+    project = _project_with_time_remapping()
+    payload = project_payload(project)
+    for sequence in payload["project"].get("sequences", [payload["project"]]):
+        for track in sequence["tracks"]:
+            for clip in track["clips"]:
+                clip["time_remapping"] = {k: v for k, v in clip["time_remapping"].items()
+                                          if k in {"speed", "reverse", "freeze_mode", "freeze_source_time", "freeze_duration"}}
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "old.kut"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        loaded = load_project(str(path))
+    original = {c.id: c for t in project.tracks for c in t.clips}
+    for clip in (c for t in loaded.tracks for c in t.clips):
+        before = original[clip.id]
+        assert clip.duration == before.duration and clip.time_remapping == before.time_remapping
+        assert not clip.has_speed_curve
+        for fraction in (0.0, 0.3, 0.77):
+            t = before.duration * fraction
+            assert clip.time_map.source_time(t) == before.time_map.source_time(t)
+
+
+def test_an_unknown_interpolation_falls_back_to_sampling_without_losing_the_speed():
+    """Fichier d'une version plus récente ou édité à la main : seul le champ fautif retombe sur son défaut sûr."""
+    project, clip = _ramp_project()
+    clip.time_remapping = TimeRemapping(speed=2.0, reverse=True)
+    payload = project_payload(project)
+    raw = _find_clip_dict(payload, "c1")["time_remapping"]
+    raw.update({"interpolation": "tricubic-from-the-future", "flow_quality": "ultra", "anchor": "x", "duration": -3})
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "future.kut"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        loaded = load_project(str(path)).tracks[0].clips[0]
+    remapping = loaded.time_remapping
+    assert remapping.speed == 2.0 and remapping.reverse is True
+    assert remapping.interpolation.value == "sampling" and remapping.flow_quality.value == "auto"
+    assert remapping.anchor is None and remapping.duration is None
+

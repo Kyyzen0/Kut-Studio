@@ -74,6 +74,7 @@ class Category(str, Enum):
     MOTION = "motion"
     SEQUENCES = "sequences"
     MULTICAM = "multicam"
+    TIME = "time"
 
 
 class Scope(str, Enum):
@@ -495,6 +496,9 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("multicam_open_source", Category.MULTICAM, scope=_A),
     _cmd("multicam_flatten", Category.MULTICAM, scope=_A),
     _cmd("multicam_settings", Category.MULTICAM, scope=_A),
+    # --- Temps du clip : points de vitesse et arrêt sur image à la tête de lecture (sans touche par défaut : à configurer) ---
+    _cmd("time_add_speed_point", Category.TIME),
+    _cmd("time_freeze_frame", Category.TIME),
     # --- Motion graphics (calques, viewer) -----------------------------------
     _cmd("layer_add_text", Category.MOTION, scope=_A),
     _cmd("layer_add_shape", Category.MOTION, scope=_A),

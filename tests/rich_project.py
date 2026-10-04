@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from core import keyframe_editing as keyframes
 from core import mograph_layers as layers
+from core import time_ops
 from core import timeline_operations as ops
 from core import tracking_ops as tracking
 from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
@@ -67,6 +68,13 @@ def build_rich_project() -> Project:
     keyframes.add_keyframe(project, third.id, f"mask.{mask_id}.feather", 0.0, 0.1)
     keyframes.add_keyframe(project, third.id, f"mask.{mask_id}.feather", 2.0, 0.4)
     ops.set_clip_speed(project, second.id, 2.0)
+    # Remappage temporel : rampe de vitesse (keyframes ``time.speed``), mélange d'images, audio à hauteur préservée.
+    ramp = ops.add_clip_to_track(project, "av2", "V2", 30.0)
+    for moment, speed in ((0.0, 1.0), (2.0, 1.0), (3.0, 0.25), (6.0, 0.25), (7.0, 2.0)):
+        time_ops.add_speed_point(project, ramp.id, moment, speed)
+    time_ops.set_clip_interpolation(project, ramp.id, "blending", "draft")
+    time_ops.set_clip_preserve_pitch(project, ramp.id, False)   # effet bande : la hauteur suit la vitesse
+    time_ops.set_clip_remap_audio(project, ramp.id, False)
 
     audio = AudioAutomationService()
     audio.set_track_role(project, "A1", TrackRole.MUSIC)

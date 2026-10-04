@@ -40,6 +40,7 @@ from ui.timeline_panel_mixins.drag_tools import DragToolsMixin
 from ui.timeline_panel_mixins.previews import PreviewsMixin
 from ui.timeline_panel_mixins.keyframes import KeyframesTimelineMixin
 from ui.timeline_panel_mixins.sequences import SequencesTimelineMixin
+from ui.timeline_panel_mixins.time_menu import TimeMenuMixin
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.common import (  # noqa: F401 - réexports de compatibilité
     _COLLAPSED_HEIGHT,
@@ -61,7 +62,7 @@ from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 # ---------------------------------------------------------------------------
 
 
-class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, QWidget):
+class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, TimeMenuMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, QWidget):
     """Timeline de Kut-Studio, pilotée par un ``Project``.
 
     Le panneau orchestre :
@@ -130,6 +131,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     multicam_create_requested = Signal()            # « Créer une séquence Multicam… » depuis la sélection
     multicam_viewer_requested = Signal(str)         # double-clic sur un segment : montrer le moniteur Multicam
     multicam_settings_requested = Signal()          # « Réglages Multicam… »
+    time_command_requested = Signal(str, str, object)   # (clip, commande, argument) : menu « Vitesse » (core.time_commands)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)

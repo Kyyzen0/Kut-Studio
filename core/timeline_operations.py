@@ -24,6 +24,8 @@ import uuid
 from dataclasses import replace
 
 from .project_model import Clip, MediaAsset, Project, Track
+from .time_editing import Restriction, free_map, needs_general_path, restrict
+from .time_map import SPEED_PROPERTY, speed_keyframes, speed_keyframes_of
 from .time_remapping import (
     FreezeFrameMode,
     TimeRemapping,
@@ -210,6 +212,16 @@ def trim_clip_left(
     if clip.is_frozen:
         # Un arrêt sur image garde ses bornes source : seule sa durée change.
         _set_freeze_duration(clip, new_duration)
+    elif needs_general_path(clip):
+        # Courbe de vitesse : la portion restante est la restriction du mapping à [delta, fin]. Les keyframes de vitesse
+        # sont re-basées par ``apply_clip_transform_on_trim`` avec les autres : l'animation visible ne bouge pas.
+        time_map = clip.time_map
+        clip.timeline_start = new_timeline_start
+        apply_clip_transform_on_trim(clip, start_offset=delta, new_duration=new_duration)
+        _apply_restriction(clip, restrict(
+            time_map, clip.time_remapping, delta, time_map.duration, speed_keyframes(clip)
+        ))
+        return clip
     elif clip.is_reversed:
         # Lu à l'envers, le début de la timeline montre la fin de la source.
         clip.source_out -= delta * clip.speed
@@ -252,6 +264,20 @@ def trim_clip_right(
         # Un arrêt sur image garde ses bornes source : seule sa durée change.
         _set_freeze_duration(clip, new_duration)
         apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
+        return clip
+
+    if needs_general_path(clip):
+        # Courbe de vitesse : jusqu'où le mapping peut-il aller sans sortir du média ? (raccourcir est toujours permis.)
+        free = free_map(clip, max(source_limit, clip.source_out), new_duration)
+        if new_duration > free.duration + 1e-9:
+            raise ValueError(
+                f"Le trim droit dépasserait la source de {source_name} "
+                f"(durée maximale à cette vitesse : {free.duration:.3f}s, demandée : {new_duration:.3f}s)."
+            )
+        apply_clip_transform_on_trim(clip, start_offset=0.0, new_duration=new_duration)
+        _apply_restriction(clip, restrict(
+            free, clip.time_remapping, 0.0, new_duration, speed_keyframes(clip)
+        ))
         return clip
 
     # Durée de timeline -> durée de source : la vitesse change le rapport entre les deux.
@@ -305,6 +331,13 @@ def _set_freeze_duration(clip: Clip, duration: float) -> None:
     from dataclasses import replace
 
     clip.time_remapping = replace(clip.time_remapping, freeze_duration=float(duration))
+
+
+def _apply_restriction(clip: Clip, restriction: Restriction) -> None:
+    """Pose la fenêtre source, l'ancre et la durée imposée d'un clip restreint (voir :mod:`core.time_editing`)."""
+    clip.source_in = restriction.source_in
+    clip.source_out = restriction.source_out
+    clip.time_remapping = restriction.remapping
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +479,17 @@ def cut_clip(
     from .animation_targets import split_animation
 
     left_animation, right_animation = split_animation(clip.animation, cut_local_time)
+    general = needs_general_path(clip) and clip.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
+    if general:
+        # Courbe de vitesse : chaque moitié est une restriction du mapping d'origine ; les keyframes de vitesse viennent
+        # d'être séparées avec les autres (forme conservée), l'animation temporelle est donc la même de part et d'autre.
+        original_map = clip.time_map
+        left_restriction = restrict(
+            original_map, clip.time_remapping, 0.0, cut_local_time, speed_keyframes_of(left_animation)
+        )
+        right_restriction = restrict(
+            original_map, clip.time_remapping, cut_local_time, original_map.duration, speed_keyframes_of(right_animation)
+        )
     (left_fade_in, left_fade_out), (right_fade_in, right_fade_out) = _split_fades(
         clip, cut_local_time
     )
@@ -455,6 +499,10 @@ def cut_clip(
         # intactes, seule sa durée timeline est répartie.
         left_source_in, left_source_out = clip.source_in, clip.source_out
         right_source_in, right_source_out = clip.source_in, clip.source_out
+    elif general:
+        left_source_in, left_source_out = left_restriction.source_in, left_restriction.source_out
+        right_source_in, right_source_out = right_restriction.source_in, right_restriction.source_out
+        left_remapping, right_remapping = left_restriction.remapping, right_restriction.remapping
     else:
         cut_source_time = timeline_to_source_time(
             cut_local_time,
@@ -1197,19 +1245,14 @@ def set_clip_speed(
         ValueError: Si la vitesse est invalide.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     
     # Valider la vitesse
     clamped_speed = clamp_speed(speed)
     
-    # Valider le time remapping
-    new_time_remapping = TimeRemapping(
-        speed=clamped_speed,
-        reverse=clip.time_remapping.reverse,
-        freeze_mode=clip.time_remapping.freeze_mode,
-        freeze_source_time=clip.time_remapping.freeze_source_time,
-        freeze_duration=clip.time_remapping.freeze_duration,
-    )
+    # Valider le time remapping (``replace`` : interpolation, hauteur préservée et audio ne sont jamais perdus)
+    new_time_remapping = replace(clip.time_remapping, speed=clamped_speed, anchor=None, duration=None)
     
     errors = validate_time_remapping(
         speed=new_time_remapping.speed,
@@ -1223,7 +1266,10 @@ def set_clip_speed(
     )
     if errors:
         raise ValueError(f"Vitesse invalide: {'; '.join(errors)}")
-    
+
+    # Une vitesse constante remplace une courbe de vitesse : la propriété n'est plus animée (annulable d'un coup). La
+    # fenêtre redevient la portion de média réellement parcourue (mesurée AVANT de retirer la courbe).
+    _restore_extent(clip)
     clip.time_remapping = new_time_remapping
     _fit_animation_to_duration(clip)
     return clip
@@ -1247,17 +1293,12 @@ def set_clip_reverse(
         ValueError: Si le reverse est invalide (ex: durée trop longue).
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     media_type = _clip_media_type(project, clip)
     
-    # Valider le reverse
-    new_time_remapping = TimeRemapping(
-        speed=clip.time_remapping.speed,
-        reverse=reverse,
-        freeze_mode=clip.time_remapping.freeze_mode,
-        freeze_source_time=clip.time_remapping.freeze_source_time,
-        freeze_duration=clip.time_remapping.freeze_duration,
-    )
+    # Valider le reverse (``replace`` : tout le reste du remappage est conservé ; une ancre explicite suit le sens)
+    new_time_remapping = replace(clip.time_remapping, reverse=reverse)
     
     errors = validate_time_remapping(
         speed=new_time_remapping.speed,
@@ -1273,6 +1314,8 @@ def set_clip_reverse(
         raise ValueError(f"Reverse invalide: {'; '.join(errors)}")
     
     clip.time_remapping = new_time_remapping
+    if clip.has_speed_curve or new_time_remapping.anchor is not None:
+        _fit_animation_to_duration(clip)  # la durée d'un clip à courbe dépend du sens
     return clip
 
 
@@ -1295,15 +1338,20 @@ def set_clip_freeze_frame(
         ValueError: Si le freeze frame est invalide.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     media_type = _clip_media_type(project, clip)
     
-    # Créer le time remapping pour le freeze frame
-    new_time_remapping = create_freeze_frame(
+    # Créer le time remapping pour le freeze frame (les choix d'interpolation et d'audio sont conservés)
+    frozen = create_freeze_frame(
         source_in=clip.source_in,
         source_out=clip.source_out,
         freeze_source_time=freeze_source_time,
         freeze_duration=freeze_duration,
+    )
+    new_time_remapping = replace(
+        frozen, interpolation=clip.time_remapping.interpolation, flow_quality=clip.time_remapping.flow_quality,
+        preserve_pitch=clip.time_remapping.preserve_pitch, remap_audio=clip.time_remapping.remap_audio,
     )
     
     # Valider
@@ -1319,7 +1367,8 @@ def set_clip_freeze_frame(
     )
     if errors:
         raise ValueError(f"Arrêt sur image invalide: {'; '.join(errors)}")
-    
+
+    _clear_speed_keyframes(clip)  # un arrêt sur image n'a pas de vitesse : la courbe n'aurait plus de sens
     clip.time_remapping = new_time_remapping
     _fit_animation_to_duration(clip)
     return clip
@@ -1338,9 +1387,11 @@ def remove_clip_freeze_frame(
         Le clip modifié.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     
     # Réinitialiser le time remapping
+    _restore_extent(clip)
     clip.time_remapping = TimeRemapping.default()
     _fit_animation_to_duration(clip)
     return clip
@@ -1364,17 +1415,12 @@ def set_clip_freeze_duration(
         ValueError: Si la durée est invalide.
     """
     track, index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)
     clip = track.clips[index]
     media_type = _clip_media_type(project, clip)
     
     # Mettre à jour la durée
-    new_time_remapping = TimeRemapping(
-        speed=clip.time_remapping.speed,
-        reverse=clip.time_remapping.reverse,
-        freeze_mode=clip.time_remapping.freeze_mode,
-        freeze_source_time=clip.time_remapping.freeze_source_time,
-        freeze_duration=freeze_duration,
-    )
+    new_time_remapping = replace(clip.time_remapping, freeze_duration=freeze_duration)
     
     # Valider
     errors = validate_time_remapping(
@@ -1395,6 +1441,24 @@ def set_clip_freeze_duration(
     return clip
 
 
+def _clear_speed_keyframes(clip: Clip) -> None:
+    """Retire la courbe de vitesse (la propriété redevient statique)."""
+    clip.animation = [k for k in clip.animation if getattr(k, "property_name", "") != SPEED_PROPERTY]
+
+
+def _restore_extent(clip: Clip) -> None:
+    """Retire la courbe de vitesse et ramène la fenêtre source à la portion réellement parcourue.
+
+    Après un retrait de courbe ou une réinitialisation, ``source_in`` / ``source_out`` doivent être ce que le clip
+    montrait (sa durée sur la timeline redevient celle de la vitesse constante, sans tronquer ni étendre la source).
+    """
+    if clip.has_speed_curve or clip.time_remapping.anchor is not None:
+        low, high = clip.time_map.extent()
+        if high - low > 1e-6:
+            clip.source_in, clip.source_out = low, high
+    _clear_speed_keyframes(clip)
+
+
 def reset_clip_time_remapping(
     project: Project, clip_id: str
 ) -> Clip:
@@ -1410,6 +1474,7 @@ def reset_clip_time_remapping(
     track, index = _find_track_for_clip(project, clip_id)
     clip = track.clips[index]
     
+    _restore_extent(clip)
     clip.time_remapping = TimeRemapping.default()
     _fit_animation_to_duration(clip)
     return clip

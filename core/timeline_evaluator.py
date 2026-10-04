@@ -134,25 +134,13 @@ def _build_active_clip(
     source_path: str,
     time_seconds: float,
 ) -> ActiveClip:
-    """Construit un :class:`ActiveClip` à partir d'un ``Clip`` et du temps."""
-    from .time_remapping import timeline_to_source_time
-    
-    # Calculer le temps source en tenant compte du time remapping
-    local_timeline_time = time_seconds - clip.timeline_start
-    try:
-        source_time = timeline_to_source_time(
-            timeline_time=local_timeline_time,
-            source_in=clip.source_in,
-            source_out=clip.source_out,
-            speed=clip.time_remapping.speed,
-            reverse=clip.time_remapping.reverse,
-            freeze_mode=clip.time_remapping.freeze_mode,
-            freeze_source_time=clip.time_remapping.freeze_source_time,
-        )
-    except ValueError:
-        # Si la conversion échoue (ex: hors bornes), utiliser la méthode classique
-        source_time = clip.source_in + local_timeline_time
-    
+    """Construit un :class:`ActiveClip` à partir d'un ``Clip`` et du temps.
+
+    Le temps source vient de l'unique mapping du clip (:mod:`core.time_map`) : vitesse, courbe de vitesse, sens et arrêt
+    sur image. Hors du clip il est borné à la fenêtre source (jamais l'ancien repli silencieux « vitesse 1, non inversé »).
+    """
+    source_time = clip.time_map.source_time(time_seconds - clip.timeline_start)
+
     return ActiveClip(
         clip_id=clip.id,
         asset_id=clip.asset_id,
@@ -287,20 +275,18 @@ def apply_track_solo(tracks, active_clips: list) -> list:
 
 
 def _map_to_parent(clip: Clip, low: float, high: float) -> tuple[float, float]:
-    """Plage ``[low, high)`` de la séquence imbriquée, en temps parent (bornée au clip)."""
+    """Plage ``[low, high)`` de la séquence imbriquée, en temps parent (bornée au clip).
+
+    Avec un mapping qui revient en arrière la plage peut correspondre à plusieurs intervalles du parent : on rend leur
+    enveloppe (exact quand le mapping est monotone).
+    """
     start = clip.timeline_start
     end = start + clip.duration
-    remapping = clip.time_remapping
-    if getattr(remapping.freeze_mode, "value", remapping.freeze_mode) == "freeze":
+    time_map = clip.time_map
+    if time_map.is_hold:
         return start, end
-    speed = float(remapping.speed) or 1.0
-    if remapping.reverse:
-        a = start + (clip.source_out - high) / speed
-        b = start + (clip.source_out - low) / speed
-    else:
-        a = start + (low - clip.source_in) / speed
-        b = start + (high - clip.source_in) / speed
-    return max(start, a), min(end, b)
+    a, b = time_map.timeline_span_of(low, high)
+    return max(start, start + a), min(end, start + b)
 
 
 def expand_nested_clip(

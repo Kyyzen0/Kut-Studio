@@ -12,16 +12,18 @@ import json
 import os
 
 
-def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export"):
+def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export", prepared=None):
     """Construit le -filter_complex via le moteur d'export (parite).
 
     ``quality`` ne regle que le flou de mouvement des calques motion
     graphics (brouillon : desactive) ; le reste du graphe est identique.
+    ``prepared`` : flux d'images intermediaires deja fabriques (voir
+    ``core.retime_layers``), par identifiant de clip.
     """
     from .export_engine import ExportEngine
 
     return ExportEngine._build_filter_complex(
-        plan, output_width, output_height, fps, srt_path, quality=quality
+        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared
     )
 
 
@@ -106,7 +108,7 @@ def build_preview_command(plan, **kwargs):
     output_path = str(kwargs.get("output_path", ""))
     srt_path = kwargs.get("srt_path", None)
     out_w, out_h = preview_output_size(width, height, quality)
-    result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality)
+    result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality, prepared=kwargs.get("prepared"))
     filter_complex, video_label, audio_label, input_paths = result
     # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
     filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
@@ -155,11 +157,40 @@ def _graphic_source_key(graphic) -> str:
     return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
-RENDER_ENGINE_VERSION = 3
+def _interpolation_identity(plan, preference: str = "auto"):
+    """Identité du moteur d'images intermédiaires si un clip du plan (ou d'une séquence imbriquée) en demande, sinon ``None``.
+
+    ``preference`` est le backend **demandé** par l'utilisateur (``auto``, ``cpu``, ``gpu``) : c'est lui qui désigne le backend
+    réellement utilisé, donc celui qui entre dans l'empreinte."""
+    from .time_remapping import TimeInterpolation
+
+    layers = list(getattr(plan, "video_layers", ()))
+    for entry in getattr(plan, "nested_sequences", ()) or ():
+        layers.extend(entry.plan.video_layers)
+    if not any(
+        getattr(layer, "time_map", None) is not None and layer.time_remapping.interpolation is not TimeInterpolation.SAMPLING
+        for layer in layers
+    ):
+        return None
+    from .optical_flow import ENGINE_VERSION, BackendPreference, BackendUnavailable, classification_key, select_backend
+    from .retime_prepare import PREPARE_VERSION
+
+    try:
+        backend = select_backend(BackendPreference(preference))
+    except (ValueError, BackendUnavailable):
+        backend = select_backend(BackendPreference.AUTO)             # le rendu fera de même : mêmes images, même empreinte
+    return [ENGINE_VERSION, PREPARE_VERSION, backend.name, backend.version, *classification_key()]
+
+
+RENDER_ENGINE_VERSION = 4
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
-depuis le début de la timeline) ; les segments d'aperçu mis en cache avec l'ancien son sont ignorés."""
+depuis le début de la timeline) ; les segments d'aperçu mis en cache avec l'ancien son sont ignorés.
+4 : le temps d'un clip remappé vient de son ``TimeMap`` (courbe de vitesse, échantillonnage à l'image la plus proche au lieu
+de ``setpts`` + ``fps``, arrêt sur image muet pendant exactement sa durée) ; le décalage d'une couche vidéo sur la timeline
+porte une garde d'un millième de tick (``setpts`` tronque : une couche posée sur une image arrivait une image trop tôt) ;
+les anciens segments sont ignorés."""
 
 
 def fingerprint_plan(plan, **kwargs):
@@ -186,7 +217,11 @@ def fingerprint_plan(plan, **kwargs):
     fps = float(kwargs.get("fps", 30))
     quality = str(kwargs.get("quality", "standard"))
     extra = str(kwargs.get("extra", ""))
+    flow_preference = str(getattr(kwargs.get("flow_preference", "auto"), "value", kwargs.get("flow_preference", "auto")))
     payload = {
+        # Moteur d'images intermédiaires (mélange d'images, flux optique) : présent seulement si un clip en demande, pour qu'une
+        # nouvelle version de l'algorithme invalide les segments qui en dépendent, et eux seuls.
+        "interpolation": _interpolation_identity(plan, flow_preference),
         # À incrémenter quand le rendu change sans que le plan change : le cache d'aperçu est persistant
         # (7 jours) et resservirait sinon des segments produits par l'ancien rendu.
         "engine": RENDER_ENGINE_VERSION,
@@ -208,6 +243,8 @@ def fingerprint_plan(plan, **kwargs):
                 "transform": repr(getattr(layer, "transform", None)),
                 "keyframes": repr(getattr(layer, "transform_keyframes", ())),
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
+                "time_map": repr(getattr(layer, "time_map", None)),
+                "source_frames": getattr(layer, "source_frames", 0),
                 "effects": _effects_key(getattr(layer, "effects", ())),
                 "grade": _grade_key(getattr(layer, "color_grade", None)),
                 "compositing": repr(getattr(layer, "compositing", None)),
@@ -279,6 +316,7 @@ def fingerprint_plan(plan, **kwargs):
                     height=entry.plan.height,
                     fps=entry.plan.fps,
                     quality=quality,
+                    flow_preference=flow_preference,
                 ),
             }
             for entry in getattr(plan, "nested_sequences", ()) or ()

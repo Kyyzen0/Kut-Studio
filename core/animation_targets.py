@@ -318,3 +318,6 @@ __all__ = [
 
 # Propriétés des calques motion graphics et des masques (s'enregistrent ici).
 from . import mograph_targets as _mograph_targets  # noqa: E402,F401
+
+# Vitesse du clip (remappage temporel : la courbe de vitesse est une propriété comme les autres).
+from . import time_targets as _time_targets  # noqa: E402,F401
