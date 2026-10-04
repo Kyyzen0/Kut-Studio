@@ -180,6 +180,9 @@ def text_path(graphic: GraphicOverlay, width: float, height: float) -> tuple[QPa
     else:
         top = (height - block) / 2.0
     path = QPainterPath()
+    # Les polices variables (Inter…) superposent leurs contours (barre du « t » sur sa hampe) :
+    # en remplissage pair-impair le recouvrement s'annule et laisse un trou dans la lettre.
+    path.setFillRule(Qt.WindingFill)
     left_most = width
     right_most = 0.0
     for index, line in enumerate(lines):
