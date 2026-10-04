@@ -161,6 +161,132 @@ def test_overlapping_glyph_contours_leave_no_hole(style):
     assert _transparent_pockets(image) == 0
 
 
+def test_merged_outline_drops_the_edges_inside_overlapping_contours():
+    """Indépendant de la police : le contrat qui garde le test de pixels ci-dessous."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QPainterPath
+
+    from core.mograph_raster import _merged_outline
+
+    cross = QPainterPath()
+    cross.setFillRule(Qt.WindingFill)
+    cross.addRect(QRectF(20, 0, 10, 50))  # la hampe…
+    cross.addRect(QRectF(0, 15, 50, 10))  # …et la barre qui la recouvre, comme dans un « t »
+    assert len(cross.toSubpathPolygons()) == 2
+
+    merged = _merged_outline(cross)
+    assert len(merged.toSubpathPolygons()) == 1  # une seule silhouette : plus d'arête dans la lettre
+    assert merged.boundingRect() == cross.boundingRect()
+    assert _merged_outline(QPainterPath()).isEmpty()
+
+
+def test_merged_outline_precision_follows_the_screen_scale():
+    """La transformation du calque agrandit le contour fusionné : son écart doit rester sous le pixel écran."""
+    import math
+
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QPainterPath
+
+    from core.mograph_raster import _merged_outline
+
+    radius = 8.0  # assez petit pour que le facteur de fusion compte (un grand cercle sature dès ×2)
+    circle = QPainterPath()
+    circle.setFillRule(Qt.WindingFill)
+    circle.addEllipse(QRectF(0, 0, 2 * radius, 2 * radius))
+
+    def flattening_error(scale: float) -> float:
+        outline = _merged_outline(circle, scale)
+        points = [(outline.elementAt(i).x, outline.elementAt(i).y) for i in range(outline.elementCount())]
+        # Les sommets sont sur la courbe : l'écart est la flèche des cordes, au milieu de chacune.
+        return max(
+            abs(radius - math.hypot((x0 + x1) / 2 - radius, (y0 + y1) / 2 - radius))
+            for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1])
+        )
+
+    zoom = 16.0
+    assert flattening_error(zoom) < flattening_error(1.0)  # le facteur de fusion suit bien l'agrandissement
+    assert flattening_error(zoom) * zoom < 0.1  # et l'écart reste sous 0,1 pixel à l'écran
+    assert _merged_outline(circle, 0.1).elementCount() == _merged_outline(circle, 1.0).elementCount()  # jamais sous ×1
+
+
+def test_largest_axis_scale_reads_the_widest_axis():
+    from PySide6.QtGui import QTransform
+
+    from core.mograph_raster import _largest_axis_scale
+
+    assert _largest_axis_scale(QTransform()) == pytest.approx(1.0)
+    assert _largest_axis_scale(QTransform.fromScale(3, 3).rotate(30)) == pytest.approx(3.0)
+    assert _largest_axis_scale(QTransform.fromScale(-4, 2)) == pytest.approx(4.0)  # un miroir ne change rien
+    # Étiré ×10 en largeur et ×0,1 en hauteur, le calque vaut ×1 en moyenne mais son contour est agrandi ×10.
+    assert _largest_axis_scale(QTransform.fromScale(10, 0.1)) == pytest.approx(10.0)
+    assert _largest_axis_scale(QTransform.fromScale(10, 0.1).rotate(45)) == pytest.approx(10.0)
+
+
+def test_text_stroke_merge_uses_the_painter_transform(monkeypatch):
+    from PySide6.QtGui import QImage, QPainter
+
+    from core import mograph_raster
+    from core.mograph_raster import draw_content
+
+    seen: list[float] = []
+    real = mograph_raster._merged_outline
+    monkeypatch.setattr(mograph_raster, "_merged_outline", lambda path, scale=1.0: (seen.append(scale), real(path, scale))[1])
+
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    for name, value in {"text": "Kut", "font_size": 20, "width": 60, "height": 30, "stroke_width": 2}.items():
+        update_graphic(text, name, value)
+    image = QImage(60, 30, QImage.Format_ARGB32_Premultiplied)
+    for zoom in (1.0, 8.0):
+        painter = QPainter(image)
+        painter.scale(zoom, zoom * 0.5)  # le calque est affiché sur sa plus grande échelle : ×zoom, pas la moyenne
+        draw_content(painter, text.graphic, (60, 30), device_scale=zoom * 0.7071)
+        painter.end()
+    assert seen == [pytest.approx(1.0), pytest.approx(8.0)]
+
+
+@pytest.mark.parametrize("letter", ["t", "f", "e"])
+def test_stroke_leaves_no_seam_inside_overlapping_glyph_contours(letter):
+    from PySide6.QtGui import QFontDatabase, QImage, QPainter
+
+    from core.mograph_raster import draw_content
+
+    if "Inter" not in QFontDatabase.families():
+        pytest.skip("police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas")
+    box = (120, 130)
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    fields = {"text": letter, "font_family": "Inter", "bold": True, "font_size": 80, "width": box[0], "height": box[1],
+              "fill_color": "#000000", "stroke_width": 3, "stroke_color": "#FF0000",
+              "shadow_offset_x": 0, "shadow_offset_y": 0}
+    for name, value in fields.items():
+        update_graphic(text, name, value)
+
+    def draw() -> QImage:
+        image = QImage(box[0], box[1], QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        draw_content(painter, text.graphic, box, device_scale=1.0)
+        painter.end()
+        return image
+
+    stroked = draw()
+    update_graphic(text, "stroke_width", 0)
+    silhouette = draw()  # la même encre sans contour : la référence de ce qui est « dans » la lettre
+
+    # Le trait (2 × 3 px, centré sur le bord) mord de 3 px dans la lettre ; +1 pour l'antialiasing, +1
+    # pour la discrétisation du disque (centres de pixels, seuil d'alpha) : tout pixel plus profond que
+    # cela doit être de la couleur de remplissage, jamais du contour.
+    reach = 5
+    ink = {(x, y) for y in range(box[1]) for x in range(box[0]) if silhouette.pixelColor(x, y).alpha() >= 128}
+    disc = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1) if dx * dx + dy * dy <= reach * reach]
+    core = [(x, y) for x, y in ink if all((x + dx, y + dy) in ink for dx, dy in disc)]
+    assert len(core) > 40  # il reste bien de l'encre au cœur (sinon l'absence de liseré ne prouverait rien)
+    assert any(stroked.pixelColor(x, y).red() > 200 for x, y in ink)  # et le contour est bien tracé au bord
+    seam = [(x, y) for x, y in core if stroked.pixelColor(x, y).red() > 64]
+    assert not seam, f"{len(seam)} pixels de la couleur du contour dans la lettre « {letter} »"
+
+
 @pytest.mark.parametrize(
     ("modes", "inside", "outside"),
     [
