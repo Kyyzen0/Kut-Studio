@@ -2,6 +2,7 @@ import sys
 
 from core.diagnostics_log import install_diagnostics
 from core.process_supervisor import helper_mode_exit_code
+from core.tool_paths import extend_search_path
 
 
 def main():
@@ -10,6 +11,9 @@ def main():
     helper = helper_mode_exit_code(sys.argv)
     if helper is not None:
         return helper
+    # Lancée depuis le Dock ou le Finder, l'application n'a pas le PATH du shell : FFmpeg (Homebrew…) resterait
+    # introuvable. À faire avant les imports de l'interface, dont certains résolvent FFmpeg dès le chargement.
+    extend_search_path()
     # Avant toute autre chose : une exception, même au chargement de Qt ou de l'interface, doit laisser une trace
     # dans le journal. Qt et la fenêtre ne sont donc importés qu'ici, une fois le journal installé.
     install_diagnostics()
