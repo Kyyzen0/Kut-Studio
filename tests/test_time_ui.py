@@ -487,6 +487,108 @@ def test_a_refused_paste_keeps_its_reason_instead_of_saying_pasted(window):
     assert window.statusBar().currentMessage() == "Temps collé."
 
 
+def _speed_editor(window, qtbot, *, points=((0.0, 1.0), (4.0, 1.0))):
+    """Graph Editor ouvert sur la vitesse de ``c1`` ; retourne ``(éditeur, points)``."""
+    created = [add_speed_point(window.project, "c1", moment, value, interpolation=InterpolationType.LINEAR) for moment, value in points]
+    window.history.reset(window.project)
+    window._reload_timeline_preserving_selection("c1")
+    editor = window.open_graph_editor("time.speed")
+    qtbot.waitExposed(editor)
+    return editor, created
+
+
+def test_a_speed_value_that_would_leave_a_degenerate_clip_is_refused_by_the_graph_editor(window, qtbot):
+    asset = _asset(duration=60.0)
+    clip = Clip("c1", "a", "V1", 0.0, 0.0, 0.1)                                            # 0,1 s de source
+    window.project = Project("p", media_assets=[asset], tracks=[Track("V1", "V1", "video", clips=[clip]), Track("A1", "A1", "audio")])
+    _load(window, window.project)
+    editor, (point,) = _speed_editor(window, qtbot, points=((0.0, 1.0),))
+    before, entries = clip.duration, _entries(window)
+    editor.select_ids({point.id})
+    editor.value_spin.setValue(1000.0)                                                       # 10× : 0,01 s, sous le plancher
+    editor.value_spin.editingFinished.emit()
+    live = window.project.tracks[0].clips[0]
+    assert [k.value for k in speed_points(live)] == [1.0] and live.duration == pytest.approx(before)   # l'édition générique l'aurait laissé
+    assert _entries(window) == entries and window.statusBar().currentMessage()               # refusé, dit, rien d'enregistré
+
+
+def test_dragging_a_speed_point_back_and_forth_restores_every_keyframe_cut_on_the_way(window, qtbot):
+    from PySide6.QtCore import QPointF
+
+    from core.keyframe_editing import KeyframeRef, add_keyframe
+
+    first, _second = _two_clips(window)
+    add_keyframe(window.project, "c1", "opacity", 7.0, 0.2)
+    add_keyframe(window.project, "c1", "opacity", 9.0, 0.9)
+    editor, (_start, moving) = _speed_editor(window, qtbot)
+    start = [(k.time_seconds, k.value) for k in window.project.tracks[0].clips[0].transform_keyframes]
+    duration = window.project.tracks[0].clips[0].duration
+    entries = _entries(window)
+    window.set_keyframe_selection({KeyframeRef("c1", "time.speed", moving.id)})
+    origin = {"anchor": moving, "anchor_time": moving.time_seconds, "values": {moving.id: moving.value}}
+    press = editor.canvas.to_screen(moving.time_seconds, moving.value)
+    editor.drag_keyframes(origin, press, editor.canvas.to_screen(moving.time_seconds, 9.0))   # bien plus vite : le clip raccourcit
+    shortened = window.project.tracks[0].clips[0]
+    assert shortened.duration < duration - 1.0
+    editor.drag_keyframes(origin, press, QPointF(press))                                       # …retour à la valeur de départ, même geste
+    restored = window.project.tracks[0].clips[0]
+    assert restored.duration == pytest.approx(duration)
+    assert [(k.time_seconds, k.value) for k in restored.transform_keyframes] == start          # aucun keyframe perdu
+    editor.finish_gesture("Modifier")
+    assert _entries(window) == entries + 1                                                     # un geste = une entrée d'historique
+
+
+def test_every_other_graph_editor_edit_of_the_speed_is_a_recorded_time_operation(window, qtbot):
+    first, _second = _two_clips(window)
+    editor, (_start, point) = _speed_editor(window, qtbot)
+    editor.select_ids({point.id})
+    entries = _entries(window)
+    editor.time_spin.setValue(6.0)                                                           # champ « temps » : le point passe de 4 s à 6 s
+    editor.time_spin.editingFinished.emit()
+    live = window.project.tracks[0].clips[0]
+    assert [round(k.time_seconds, 2) for k in speed_points(live)] == [0.0, 6.0] and _entries(window) == entries + 1
+    editor.add_keyframe_at(2.0)                                                              # double-clic : un point qui garde la vitesse
+    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 2.0, 6.0]
+    editor.select_ids({point.id})
+    for combo, data in ((editor.interpolation_combo, InterpolationType.BEZIER.value), (editor.tangent_combo, "broken")):
+        index = combo.findData(data)
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)                                                          # le choix de l'utilisateur, pas un réglage de code
+    kinds = {k.id: k for k in speed_points(window.project.tracks[0].clips[0])}[point.id]
+    assert kinds.interpolation is InterpolationType.BEZIER and kinds.tangent_mode.value == "broken"
+    assert _entries(window) == entries + 4                                                   # une entrée par réglage, jamais zéro
+    window.undo_last()
+    window.undo_last()
+    window.undo_last()
+    window.undo_last()
+    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 4.0]
+
+
+def test_a_speed_edit_on_a_locked_track_is_refused_by_the_graph_editor_and_says_why(window, qtbot):
+    first, _second = _two_clips(window)
+    editor, (_start, point) = _speed_editor(window, qtbot)
+    editor.select_ids({point.id})
+    window.project.tracks[0].locked = True
+    entries = _entries(window)
+    editor.time_spin.setValue(6.0)
+    editor.time_spin.editingFinished.emit()
+    editor.add_keyframe_at(2.0)
+    assert [round(k.time_seconds, 2) for k in speed_points(window.project.tracks[0].clips[0])] == [0.0, 4.0]
+    assert _entries(window) == entries and "verrouill" in window.statusBar().currentMessage()
+
+
+def test_the_graph_editor_follows_the_ripple_policy_of_the_user_for_speed(window, qtbot):
+    first, _second = _two_clips(window)
+    window.set_time_ripple_timeline(True)                                                    # « conserver la durée sur la timeline »
+    editor, (_start, point) = _speed_editor(window, qtbot)
+    duration = window.project.tracks[0].clips[0].duration
+    editor.select_ids({point.id})
+    editor.value_spin.setValue(50.0)                                                         # ralentir allongerait le clip (16 s)
+    editor.value_spin.editingFinished.emit()
+    assert window.project.tracks[0].clips[0].duration == pytest.approx(duration)               # la politique est respectée
+    assert [k.value for k in speed_points(window.project.tracks[0].clips[0])] == [1.0, 0.5]
+
+
 def test_the_graph_editor_paints_with_no_clip_and_no_property(window, qtbot):
     _two_clips(window)
     window.timeline_panel._set_selection([], None, announce=False)

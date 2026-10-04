@@ -176,3 +176,22 @@ def test_a_reverse_run_that_would_not_fit_in_memory_is_refused_with_the_cause():
 def test_the_same_run_forward_is_never_refused_for_memory():
     video_stage(ConstantTimeMap(0.0, 10.0, 1.0), source_label="0:v", prefix="t", fps=30.0, source_fps=30.0,
                 prepare="", frame_bytes=10**9)
+
+
+def test_a_reverse_run_read_from_a_prepared_file_is_counted_in_rgb_not_in_yuv():
+    """Le fichier préparé est en RVB (3 à 4 octets par pixel) : ``reverse`` en garderait plus que ne le dit l'estimation 4:2:0."""
+    from core.retime_graph import PREPARED_BYTES_PER_PIXEL, SAMPLED_BYTES_PER_PIXEL, PreparedRun
+
+    pixels = 3840 * 2160
+    frame_bytes = int(pixels * SAMPLED_BYTES_PER_PIXEL)
+    frames = int(MAX_REVERSE_BYTES // (pixels * 3.0))                                  # tient en 4:2:0 comme en RVB 3 octets…
+    assert frames * frame_bytes < MAX_REVERSE_BYTES < frames * pixels * PREPARED_BYTES_PER_PIXEL   # …mais pas en 4 octets
+    time_map = ConstantTimeMap(0.0, frames / 30.0, 1.0, reverse=True)
+    kwargs = dict(source_label="0:v", prefix="t", fps=30.0, source_fps=30.0, prepare="", frame_bytes=frame_bytes)
+    video_stage(time_map, **kwargs)                                                    # échantillonné : accepté (estimation 4:2:0)
+    run = PreparedRun(run_index=0, first_frame=0, frames=frames, backward=True)
+    with pytest.raises(RetimeError, match="Gio"):
+        video_stage(time_map, prepared_label="1:v", prepared_runs={0: run}, **kwargs)  # préparé : refusé (RVB)
+    forward = PreparedRun(run_index=0, first_frame=0, frames=frames, backward=False)
+    video_stage(ConstantTimeMap(0.0, frames / 30.0, 1.0), prepared_label="1:v",
+                prepared_runs={0: forward}, **kwargs)                                  # sens normal : jamais refusé pour la mémoire

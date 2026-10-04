@@ -121,7 +121,13 @@ montage.
   analyse du flux optique.
 * **Timeline** : une courbe discrète sur le clip (échelle logarithmique, 100 % en pointillé, un point par keyframe) et des badges
   (vitesse ou vitesse moyenne `~0.6x`, `R`, `F`, `MIX`, `FLUX`).
-* **Graph Editor** : vitesse en pourcentage, tous les gestes d'édition de courbe.
+* **Graph Editor** : vitesse en pourcentage, tous les gestes d'édition de courbe. Pour `time.speed`, **chaque geste** (glisser un
+  point ou une poignée, champs temps / valeur, ajout, interpolation, mode de tangente) passe par `core.time_ops` : durée
+  minimale, politique de ripple choisie, keyframes d'après la nouvelle fin, refus dit dans la barre d'état et état d'avant
+  restauré — jamais par les mutateurs génériques de keyframes, qui ignorent que la durée en dépend. Un glissement est
+  **idempotent** : à chaque étape le clip est remis dans son état du début du geste, puis le déplacement total est appliqué ;
+  raccourcir le clip en cours de geste (ce qui coupe les keyframes d'après la fin) ne fait donc rien perdre si le geste le
+  rallonge ensuite (`ui/graph_editor_time.py`).
 * **Raccourcis** configurables : *Ajouter un point de vitesse*, *Arrêt sur image à la tête de lecture* (catégorie *Temps*, sans
   touche par défaut).
 

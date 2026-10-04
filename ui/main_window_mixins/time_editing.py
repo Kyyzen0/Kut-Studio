@@ -2,7 +2,8 @@
 
 Un geste = une commande (:mod:`core.time_commands`) = une entrée d'historique. Le menu « Vitesse », l'inspecteur et les raccourcis
 émettent ``(clip, commande, argument)`` ; la fenêtre l'applique au clip et à **toute la sélection** d'un coup (une seule entrée
-annulable). Les gestes continus (glisser un point dans le Graph Editor) restent dans le moteur de keyframes.
+annulable). Les gestes continus du Graph Editor (glisser un point, une poignée) appellent eux aussi :mod:`core.time_ops`
+(:mod:`ui.graph_editor_time`) : même transaction, même ripple, jamais les mutateurs génériques de keyframes.
 """
 
 from __future__ import annotations

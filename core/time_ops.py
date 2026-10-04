@@ -21,10 +21,11 @@ Aucune de ces opérations n'enregistre d'historique : l'appelant (la fenêtre) l
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import Enum
+from typing import Any
 
 from . import keyframe_editing as keyframes
 from .animation import TIME_EPSILON, AnimationCurve, InterpolationType, Keyframe, normalize_time
@@ -71,16 +72,43 @@ def _editable_clip(project: Project, clip_id: str) -> Clip:
     return clip
 
 
+@dataclass(frozen=True)
+class TimeState:
+    """Tout ce qu'une édition de vitesse peut changer d'un clip (les keyframes sont immuables : une copie de liste suffit)."""
+
+    animation: tuple[Any, ...]
+    time_remapping: Any
+    source_in: float
+    source_out: float
+    transform_keyframes: tuple[Any, ...]
+    timeline_start: float
+
+
+def capture_time_state(clip: Clip) -> TimeState:
+    """Instantané du temps du clip, pour y revenir (:func:`restore_time_state`)."""
+    return TimeState(
+        tuple(clip.animation), clip.time_remapping, clip.source_in, clip.source_out,
+        tuple(clip.transform_keyframes), clip.timeline_start,
+    )
+
+
+def restore_time_state(clip: Clip, state: TimeState) -> None:
+    """Remet le clip dans l'état de ``state`` (sa courbe de vitesse, sa fenêtre source, ses keyframes, sa position)."""
+    clip.animation = list(state.animation)
+    clip.time_remapping = state.time_remapping
+    clip.source_in = state.source_in
+    clip.source_out = state.source_out
+    clip.transform_keyframes = list(state.transform_keyframes)
+    clip.timeline_start = state.timeline_start
+
+
 @contextmanager
 def _transaction(project: Project, clip: Clip, mode: RippleMode) -> Iterator[None]:
     """Applique une édition de vitesse ; la restaure si le clip obtenu est refusé.
 
     Après l'édition : politique de ripple, découpe des keyframes d'après la fin, puis contrôle de la durée.
     """
-    saved = (
-        list(clip.animation), clip.time_remapping, clip.source_in, clip.source_out,
-        list(clip.transform_keyframes), clip.timeline_start,
-    )
+    saved = capture_time_state(clip)
     old_duration = clip.duration
     try:
         yield
@@ -97,8 +125,7 @@ def _transaction(project: Project, clip: Clip, mode: RippleMode) -> Iterator[Non
                 f"(durée {clip.duration:.3f} s)."
             )
     except Exception:
-        (clip.animation, clip.time_remapping, clip.source_in, clip.source_out,
-         clip.transform_keyframes, clip.timeline_start) = saved
+        restore_time_state(clip, saved)
         raise
 
 
@@ -221,6 +248,65 @@ def move_speed_points(
         for group in grouped.values():
             result.update(keyframes.move_keyframes(project, group, delta_seconds, fps=fps))
     return result
+
+
+def edit_speed_points(
+    project: Project,
+    refs: Sequence[KeyframeRef],
+    *,
+    delta_seconds: float = 0.0,
+    values: Mapping[KeyframeRef, float] | None = None,
+    fps: float | None = None,
+    mode: RippleMode = RippleMode.SOURCE,
+    origin: Mapping[str, TimeState] | None = None,
+) -> dict[KeyframeRef, float]:
+    """Déplace et/ou change la valeur de points de vitesse, **dans une seule transaction** par clip ; retourne leurs temps.
+
+    C'est ce qu'appelle le Graph Editor : le déplacement et les valeurs d'un même geste sont validés ensemble (l'état
+    intermédiaire d'un déplacement seul pourrait être refusé alors que le résultat final ne l'est pas).
+
+    ``origin`` (identifiant de clip → :class:`TimeState`) rend un glissement **idempotent** : chaque clip est d'abord remis dans son
+    état du début du geste, puis le déplacement total lui est appliqué. Sans cela, un clip raccourci en cours de geste perdrait
+    pour de bon les keyframes découpés d'après sa fin, même si le geste le rallonge ensuite.
+    """
+    grouped = _by_clip(project, refs)
+    checked = {ref: _check_value(value) for ref, value in (values or {}).items()}      # refuse avant de toucher à quoi que ce soit
+    for clip_id in grouped:
+        state = (origin or {}).get(clip_id)
+        if state is not None:
+            restore_time_state(project_clip(project, clip_id), state)
+    result: dict[KeyframeRef, float] = {}
+    with ExitStack() as stack:
+        for clip_id in grouped:
+            stack.enter_context(_transaction(project, project_clip(project, clip_id), mode))
+        for group in grouped.values():
+            if abs(delta_seconds) > 1e-12:
+                result.update(keyframes.move_keyframes(project, group, delta_seconds, fps=fps))
+        if checked:
+            keyframes.set_keyframe_values(project, checked)
+    return result
+
+
+def set_speed_tangents(
+    project: Project, refs: Sequence[KeyframeRef], *, ripple: RippleMode = RippleMode.SOURCE,
+    origin: Mapping[str, TimeState] | None = None, **tangents: Any,
+) -> None:
+    """Fixe les tangentes Bézier de points de vitesse (``in_slope``, ``out_slope``, ``mode``, ``auto``) ; transactionnel.
+
+    Une tangente change la courbe, donc l'intégrale de la vitesse, donc la durée du clip : elle passe par la même transaction
+    que tout point de vitesse (durée minimale, ripple, keyframes d'après la fin). ``origin`` : voir :func:`edit_speed_points`.
+    """
+    grouped = _by_clip(project, refs)
+    for clip_id in grouped:
+        state = (origin or {}).get(clip_id)
+        if state is not None:
+            restore_time_state(project_clip(project, clip_id), state)
+    with ExitStack() as stack:
+        for clip_id in grouped:
+            stack.enter_context(_transaction(project, project_clip(project, clip_id), ripple))
+        for group in grouped.values():
+            for ref in group:
+                keyframes.set_tangents(project, ref, **tangents)
 
 
 def remove_speed_points(project: Project, refs: Sequence[KeyframeRef], *, mode: RippleMode = RippleMode.SOURCE) -> int:
@@ -373,8 +459,11 @@ __all__ = [
     "HOLD_SECONDS",
     "MIN_CLIP_SECONDS",
     "RippleMode",
+    "TimeState",
     "add_speed_point",
+    "capture_time_state",
     "clear_speed_curve",
+    "edit_speed_points",
     "ensure_interpolation_possible",
     "insert_hold",
     "move_speed_point",
@@ -382,11 +471,13 @@ __all__ = [
     "project_clip",
     "remove_speed_point",
     "remove_speed_points",
+    "restore_time_state",
     "set_clip_interpolation",
     "set_clip_preserve_pitch",
     "set_clip_remap_audio",
     "set_speed_point_interpolation",
     "set_speed_point_value",
+    "set_speed_tangents",
     "speed_points",
     "speed_ref",
 ]

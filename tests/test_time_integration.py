@@ -166,3 +166,19 @@ def test_pasting_an_interpolating_time_onto_a_nested_clip_is_refused_like_settin
     plain.time_remapping = TimeRemapping(speed=0.5)                                      # l'échantillonnage se colle partout
     paste_time(project, nested.id, copy_time(plain))
     assert nested.time_remapping.speed == 0.5
+
+
+def test_the_tracked_source_range_covers_a_curve_that_goes_forward_then_comes_back():
+    """Début et fin au même instant source, mais toutes les images entre les deux ont été montrées : le suivi les analyse."""
+    from types import SimpleNamespace
+
+    from core.animation import Keyframe
+    from core.time_map import SPEED_PROPERTY, PiecewiseTimeMap
+    from core.tracking_motion import clip_source_indices
+
+    keys = (Keyframe(SPEED_PROPERTY, 0.0, 1.0, InterpolationType.LINEAR), Keyframe(SPEED_PROPERTY, 2.0, -1.0, InterpolationType.LINEAR))
+    time_map = PiecewiseTimeMap(0.0, 10.0, keyframes=keys, anchor=5.0, fixed_duration=2.0)
+    clip = SimpleNamespace(time_map=time_map, duration=2.0)
+    assert time_map.source_time(0.0) == pytest.approx(time_map.source_time(2.0), abs=1e-6)         # même point de départ et d'arrivée
+    first, last = clip_source_indices(clip, 30.0)
+    assert first == 150 and last == 165                                                          # le sommet (5,5 s) est dans la plage

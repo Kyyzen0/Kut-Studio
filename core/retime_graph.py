@@ -52,6 +52,12 @@ petite gigue d'horodatage dans le fichier, la fenêtre garde exactement ``m_lo �
 MAX_REVERSE_BYTES = 4 * 1024**3
 """Mémoire maximale d'un run en lecture inverse : ``reverse`` garde **toutes** ses images décodées (4 Gio ; ~45 s en 1080p30)."""
 
+SAMPLED_BYTES_PER_PIXEL = 1.5
+"""Octets par pixel d'une image décodée d'un média (``yuv420p``) : l'unité de ``frame_bytes`` de :func:`video_stage`."""
+PREPARED_BYTES_PER_PIXEL = 4
+"""Octets par pixel d'une image **préparée** décodée : le fichier est en RVB (``gbrp``, 3 octets, ou ``bgr0`` pour le repli FFV1,
+4 octets). ``reverse`` garde ces images-là, pas des 4:2:0 : la borne de mémoire compte au plus large, sans connaître le codec."""
+
 AUDIO_RATE = 48000
 AUDIO_CROSSFADE = 0.005
 """Durée (s) du fondu enchaîné entre deux morceaux audio : assez court pour ne pas s'entendre, assez long pour supprimer le
@@ -304,7 +310,8 @@ def video_stage(
         fps: cadence de sortie (celle du projet).
         source_fps: cadence du média source (``> 0`` ; 30 à défaut).
         prepare: filtres qui mettent l'entrée au cadre (``scale``, ``pad``…), appliqués **une fois** avant de répartir les runs.
-        frame_bytes: octets d'une image décodée au cadre (borne de mémoire d'un run en lecture inverse).
+        frame_bytes: octets d'une image décodée au cadre, en ``yuv420p`` (borne de mémoire d'un run en lecture inverse) ; un run
+            lu dans le fichier préparé est compté en RVB (:data:`PREPARED_BYTES_PER_PIXEL`).
         tolerance: écart toléré d'une approximation par morceaux (secondes de source) ; ``None`` : la valeur par défaut.
         last_frame: indice de la dernière image du média (``None`` : inconnu, aucune borne).
         prepared_label: flux du fichier d'images préparées (mélange, flux optique), ``None`` s'il n'y en a pas.
@@ -340,6 +347,7 @@ def video_stage(
         chains.append(f"[{label}]split={count}" + "".join(f"[{item}]" for item in labels))
         return labels
 
+    prepared_bytes = int(frame_bytes * PREPARED_BYTES_PER_PIXEL / SAMPLED_BYTES_PER_PIXEL)
     media_feeds = feed(media, len(from_media), "in") if from_media else []
     file_feeds = feed(prepared_label or "", len(from_file), "pf") if from_file else []
     single = len(runs) == 1
@@ -354,7 +362,7 @@ def video_stage(
         outputs[index] = out
     for (index, _item), label in zip(from_file, file_feeds):
         out = f"{prefix}out" if single else f"{prefix}run{index}"
-        chains.append(f"[{label}]{_prepared_chain(prepared_runs[index], fps=fps, frame_bytes=frame_bytes)}[{out}]")
+        chains.append(f"[{label}]{_prepared_chain(prepared_runs[index], fps=fps, frame_bytes=prepared_bytes)}[{out}]")
         outputs[index] = out
     final = f"{prefix}out"
     if single:

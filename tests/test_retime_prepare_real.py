@@ -8,6 +8,7 @@ optique doit l'approcher bien mieux qu'un mélange.
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 from dataclasses import replace
@@ -33,6 +34,13 @@ SOURCE_FRAMES = 60
 BLENDING, FLOW, SAMPLING = TimeInterpolation.BLENDING, TimeInterpolation.OPTICAL_FLOW, TimeInterpolation.SAMPLING
 SW, SH = 320, 180
 SCENE_FRAMES = 12
+INDEX_TOLERANCE = 0.45 if platform.machine().lower() in ("arm64", "aarch64") else 0.9
+"""Écart toléré (en indice de média : 1 niveau de luminance = 0,33) entre une image préparée et l'image idéale. Le fichier préparé
+est en RVB : l'image passe par yuv → rvb → yuv. Sur arm64 la conversion de swscale arrondit au plus près (écart ≤ 1,35 niveau).
+Sur x86 (Linux et Windows en intégration continue, mesurés identiques) elle retombe de façon déterministe jusqu'à un niveau plus
+bas : 24,33 pour 24,8 attendus, 0,0 pour 0,5. C'est l'« un niveau de gris près » documenté, pas une erreur de poids ni de position.
+Les poids eux-mêmes sont vérifiés exactement par ``tests/test_frame_interpolation.py`` ; ce test-ci vérifie que le fichier relu par
+FFmpeg montre bien la bonne paire d'images (un écart d'une image vaut 1,0, donc reste détecté sur arm64, plus strict)."""
 
 
 @pytest.fixture(scope="module")
@@ -129,7 +137,7 @@ def test_blending_weights_follow_the_time_map_exactly(index_media, cache, speed)
     assert preparation is not None and preparation.report.synthesized > 0
     for tick, value in enumerate(got[:-3]):
         expected = clip.time_map.source_time(tick / FPS) * FPS
-        assert abs(value - expected) < 0.45, (speed, tick, value, expected)             # 1 niveau de luminance = 0,33 indice
+        assert abs(value - expected) < INDEX_TOLERANCE, (speed, tick, value, expected)             # 1 niveau de luminance = 0,33 indice
 
 
 def test_images_that_land_on_a_source_frame_are_identical_to_the_sampled_ones(index_media, cache):
@@ -158,7 +166,7 @@ def test_a_reverse_blend_mirrors_the_weights(index_media, cache):
     got = index_values(frames)
     for tick in range(2, len(got) - 3):
         expected = min(59.0, clip.time_map.source_time(tick / FPS) * FPS)
-        assert abs(got[tick] - expected) < 0.45, (tick, got[tick], expected)
+        assert abs(got[tick] - expected) < INDEX_TOLERANCE, (tick, got[tick], expected)
 
 
 def test_a_speed_ramp_blends_where_it_is_slow_and_samples_where_it_is_fast(index_media, cache):
@@ -171,7 +179,7 @@ def test_a_speed_ramp_blends_where_it_is_slow_and_samples_where_it_is_fast(index
     assert preparation is not None and preparation.streams
     for tick in list(range(0, 28)) + list(range(36, len(got) - 3)):
         expected = clip.time_map.source_time(tick / FPS) * FPS
-        tolerance = 0.45 if tick < 30 else 0.9                                          # échantillonné : l'image la plus proche
+        tolerance = INDEX_TOLERANCE if tick < 30 else 0.9                                          # échantillonné : l'image la plus proche
         assert abs(got[tick] - expected) < tolerance, (tick, got[tick], expected)
 
 
@@ -390,7 +398,7 @@ def test_an_interpolating_clip_inside_a_nested_sequence_is_prepared_at_the_size_
     got = index_values(frames)
     for tick in range(0, len(got) - 3):
         expected = inner_clip.time_map.source_time(tick / FPS) * FPS
-        assert abs(got[tick] - expected) < 0.45, (tick, got[tick], expected)
+        assert abs(got[tick] - expected) < INDEX_TOLERANCE, (tick, got[tick], expected)
 
 
 def test_a_nested_sequence_set_to_an_interpolation_by_hand_is_refused_not_silently_sampled(index_media):
@@ -474,7 +482,7 @@ def test_the_prepared_images_do_not_depend_on_where_the_container_clock_starts(o
     got = index_values(frames)
     for tick in range(0, len(got) - 3):
         expected = clip.time_map.source_time(tick / FPS) * FPS
-        assert abs(got[tick] - expected) < 0.45, (source_in, tick, got[tick], expected)
+        assert abs(got[tick] - expected) < INDEX_TOLERANCE, (source_in, tick, got[tick], expected)
 
 
 # ---------------------------------------------------------------------------

@@ -101,9 +101,15 @@ def clip_source_indices(clip, rate: float) -> tuple[int, int]:
     """Images source ``(première, dernière)`` montrées par le clip."""
     if rate <= 0:
         return (0, -1)
-    a = source_time(clip, 0.0)
-    b = source_time(clip, max(0.0, float(clip.duration) - 1e-6))
-    low, high = min(a, b), max(a, b)
+    end = max(0.0, float(clip.duration) - 1e-6)
+    time_map = _time_map_of(clip)
+    if time_map is None:
+        a, b = source_time(clip, 0.0), source_time(clip, end)
+        low, high = min(a, b), max(a, b)
+    else:
+        # L'enveloppe de tout le clip, pas ses deux extrémités : une courbe qui va en avant puis revient finit où elle a commencé
+        # en ayant montré toutes les images intermédiaires, et le suivi doit les avoir.
+        low, high = time_map.window_for(0.0, end)
     return (max(0, int(math.floor(low * rate + 1e-6))), max(0, int(math.floor(high * rate + 1e-6))))
 
 

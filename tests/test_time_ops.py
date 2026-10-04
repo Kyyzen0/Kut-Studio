@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import pytest
 
-from core.animation import InterpolationType
+from core.animation import InterpolationType, TangentMode
+from core.keyframe_editing import KeyframeRef, add_keyframe
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.time_map import SPEED_PROPERTY, PiecewiseTimeMap
 from core.time_ops import (
     MIN_CLIP_SECONDS,
     RippleMode,
     add_speed_point,
+    capture_time_state,
     clear_speed_curve,
+    edit_speed_points,
     move_speed_point,
     remove_speed_point,
     set_clip_interpolation,
@@ -23,6 +26,7 @@ from core.time_ops import (
     set_clip_remap_audio,
     set_speed_point_interpolation,
     set_speed_point_value,
+    set_speed_tangents,
     speed_points,
 )
 from core.time_remapping import FlowQuality, TimeInterpolation, TimeRemapping
@@ -219,6 +223,85 @@ def test_a_point_outside_the_clip_is_refused_without_a_trace():
     before = _state(clip)
     with pytest.raises(ValueError, match="hors du clip"):
         add_speed_point(project, "c1", 99.0, 2.0)
+    assert _state(clip) == before
+
+
+# ---------------------------------------------------------------------------
+# Édition d'un geste du Graph Editor : une transaction, un glissement idempotent
+# ---------------------------------------------------------------------------
+
+
+def _two_points(project, clip):
+    add_speed_point(project, "c1", 0.0, 1.0)
+    add_speed_point(project, "c1", 3.0, 1.0)
+    return KeyframeRef("c1", SPEED_PROPERTY, speed_points(clip)[1].id)
+
+
+def test_moving_and_changing_the_value_of_a_point_is_one_transaction():
+    project, clip = _project(source=(10.0, 40.0))
+    ref = _two_points(project, clip)
+    before = _state(clip)
+    edit_speed_points(project, [ref], delta_seconds=1.0, values={ref: 2.0}, fps=25.0)
+    moved = speed_points(clip)[1]
+    assert moved.time_seconds == pytest.approx(4.0) and moved.value == 2.0
+    restore_after = _state(clip)
+    with pytest.raises(ValueError, match="entre"):
+        edit_speed_points(project, [ref], delta_seconds=-1.0, values={ref: 99.0}, fps=25.0)   # la valeur est refusée avant tout
+    assert _state(clip) == restore_after and _state(clip) != before                           # ni déplacé, ni à moitié modifié
+
+
+def test_a_refused_edit_of_a_whole_gesture_restores_the_clip_exactly():
+    project, clip = _project(source=(10.0, 10.2))                                             # 0,2 s de source
+    ref = _two_points_short(project, clip)
+    before = _state(clip)
+    with pytest.raises(ValueError, match="source"):
+        edit_speed_points(project, [ref], values={ref: 10.0})                                 # 0,02 s : sous le plancher
+    assert _state(clip) == before
+
+
+def _two_points_short(project, clip):
+    add_speed_point(project, "c1", 0.0, 1.0)
+    return KeyframeRef("c1", SPEED_PROPERTY, speed_points(clip)[0].id)
+
+
+def test_a_drag_that_shortens_then_lengthens_the_clip_loses_no_keyframe_when_it_starts_from_the_gesture_origin():
+    project, clip = _project(source=(10.0, 40.0))                                             # 30 s à 100 %
+    ref = _two_points(project, clip)
+    add_keyframe(project, "c1", "opacity", 25.0, 0.2)
+    add_keyframe(project, "c1", "opacity", 29.0, 0.9)
+    origin = {clip.id: capture_time_state(clip)}
+    start = _state(clip)
+    keyframes_at_start = list(clip.transform_keyframes)
+    edit_speed_points(project, [ref], values={ref: 4.0}, origin=origin)                       # le clip devient bien plus court…
+    assert clip.duration < 12.0
+    assert all(k.time_seconds <= clip.duration + 1e-6 for k in clip.transform_keyframes)       # …les keyframes d'après la fin sont coupés
+    edit_speed_points(project, [ref], values={ref: 1.0}, origin=origin)                       # …puis il se rallonge dans le même geste
+    assert _state(clip) == start and list(clip.transform_keyframes) == keyframes_at_start     # tout est revenu, rien n'a été perdu
+
+
+def test_without_the_gesture_origin_the_same_drag_would_lose_the_cut_keyframes():
+    """Ce que l'origine du geste évite : la preuve que la restauration n'est pas décorative."""
+    project, clip = _project(source=(10.0, 40.0))
+    ref = _two_points(project, clip)
+    add_keyframe(project, "c1", "opacity", 25.0, 0.2)
+    add_keyframe(project, "c1", "opacity", 29.0, 0.9)
+    original = list(clip.transform_keyframes)
+    edit_speed_points(project, [ref], values={ref: 4.0})
+    edit_speed_points(project, [ref], values={ref: 1.0})
+    assert list(clip.transform_keyframes) != original
+
+
+def test_speed_tangents_go_through_the_transaction_and_keep_the_tangent_mode_argument():
+    project, clip = _project(source=(10.0, 40.0))
+    ref = _two_points(project, clip)
+    set_speed_point_interpolation(project, "c1", [ref.keyframe_id], InterpolationType.BEZIER)
+    set_speed_tangents(project, [ref], out_slope=0.5, mode=TangentMode.BROKEN)                # ``mode`` : celui de la tangente
+    point = speed_points(clip)[1]
+    assert point.tangent_mode is TangentMode.BROKEN and point.out_slope == 0.5
+    before = _state(clip)
+    project.tracks[0].locked = True
+    with pytest.raises(ValueError, match="verrouill"):
+        set_speed_tangents(project, [ref], out_slope=2.0)
     assert _state(clip) == before
 
 
