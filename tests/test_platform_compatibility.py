@@ -219,15 +219,17 @@ def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(tmp
     """Régression : « FFmpeg est introuvable » alors qu'il est installé (Homebrew), depuis le Dock."""
     from core import tool_paths
 
-    brew = tmp_path / "bin"
+    brew, system = tmp_path / "bin", tmp_path / "usr-bin"
     brew.mkdir()
+    system.mkdir()
     ffmpeg = brew / "ffmpeg"
     ffmpeg.write_text("#!/bin/sh\n")
     ffmpeg.chmod(0o755)
     monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {sys.platform: (str(brew),)})
     for variable in ("KUT_STUDIO_FFMPEG", "KUT_STUDIO_FFMPEG_DIR"):
         monkeypatch.delenv(variable, raising=False)
-    monkeypatch.setenv("PATH", DOCK_PATH)
+    # Un PATH « de système » sans FFmpeg : on ne peut pas se fier à /usr/bin, où la CI Linux installe le vrai.
+    monkeypatch.setenv("PATH", str(system))
     assert tool_paths.find_media_tool("ffmpeg") is None
     tool_paths.extend_search_path()
     assert tool_paths.find_media_tool("ffmpeg") == str(ffmpeg)
