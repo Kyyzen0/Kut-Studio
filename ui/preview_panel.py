@@ -163,6 +163,11 @@ class PreviewPanel(QWidget):
         # L'état vide de la visionneuse : icône, titre (première ligne du message) et texte d'aide, sur le noir de l'image.
         self.empty_state = EmptyState(translate("preview.no_clip"), icon=IconName.MEDIA)
         self._empty_state_name: str | None = None  # ``None`` : pas de clip ; sinon nom du clip sans média
+        # La visibilité de l'état vide se déduit de deux intentions (voir ``_sync_empty_state``) : aucun clip vidéo à
+        # montrer, et des calques dessinés. Les afficher/cacher depuis des endroits différents le faisait osciller à
+        # chaque tick de lecture (affiché par la synchronisation, recaché par le rafraîchissement différé des calques).
+        self._empty_requested = True
+        self._graphics_present = False
         self.empty_state.setMaximumWidth(390)
 
         self.preview_subtitle_overlay = QLabel()
@@ -333,7 +338,8 @@ class PreviewPanel(QWidget):
         """Prévisualisation libre déclenchée par la bibliothèque."""
         if not path:
             return
-        self.empty_state.hide()
+        self._empty_requested = False
+        self._sync_empty_state()
         self._library_preview_path = path
         self._timeline_preview_path = None
         self.player.setSource(QUrl.fromLocalFile(path))
@@ -350,7 +356,8 @@ class PreviewPanel(QWidget):
         if not path:
             self.show_empty()
             return
-        self.empty_state.hide()
+        self._empty_requested = False
+        self._sync_empty_state()
         target_ms = int(source_time_seconds * 1000)
         if self._timeline_preview_path != path:
             self._timeline_preview_path = path
@@ -521,7 +528,8 @@ class PreviewPanel(QWidget):
             self.player.stop()
         except Exception:  # pragma: no cover
             pass
-        self.empty_state.show()
+        self._empty_requested = True
+        self._sync_empty_state()
         self.preview_effects_overlay.hide()
         if self.gpu_view is not None:
             self.gpu_view.forget_source("main")
@@ -614,9 +622,16 @@ class PreviewPanel(QWidget):
         self.mograph_item.setVisible(bool(visible))
 
     def set_graphics_present(self, present: bool) -> None:
-        """Des calques sont visibles : le message « aucun clip » ne doit pas les cacher."""
-        if present:
-            self.empty_state.hide()
+        """Des calques sont visibles : le message « aucun clip » ne doit pas les recouvrir.
+
+        Quand ils disparaissent (vrai trou dans la timeline), le message revient si aucun clip vidéo n'est affiché.
+        """
+        self._graphics_present = bool(present)
+        self._sync_empty_state()
+
+    def _sync_empty_state(self) -> None:
+        """Seul endroit qui décide de la visibilité de l'état vide (voir ``_empty_requested``)."""
+        self.empty_state.setVisible(self._empty_requested and not self._graphics_present)
 
     def _reapply_transform(self) -> None:
         self.apply_transform(
