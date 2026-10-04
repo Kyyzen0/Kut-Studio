@@ -159,6 +159,12 @@ renvoyée à la recréation.
 * **Ducking** : le sous-mixage des voix, qui alimente le détecteur, additionne aussi. Une piste de voix de plusieurs clips
   déclenche le ducking à son niveau réel et non divisé par le nombre de clips : à seuil égal, la musique baisse plus
   souvent qu'avant (un FFmpeg sans `normalize` conserve l'ancien niveau de détection).
+* **Aperçu : limite connue.** Chaque segment d'aperçu (2 s) est rendu à froid, sans l'état du précédent, comme tout filtre à
+  mémoire (ducking, compresseur, écho). Le limiteur repart donc de l'unité à chaque frontière, alors que celui de l'export
+  finit son relâchement (50 ms par défaut) quand un clip fort vient de s'arrêter. Pire cas mesuré (deux couches cohérentes à
+  0,9, limiteur engagé, arrêtées 20 ms avant la frontière) : l'export est 2,3 dB plus bas sur les 10 premières ms, 1,2 dB sur
+  les 10 suivantes, identique ensuite. Le corriger demanderait une amorce audio (preroll) sur chaque segment : un changement de
+  l'architecture de l'aperçu, pas de ce mixage.
 * **Changement de niveau visible** : un projet dont l'auteur avait relevé le gain de ses clips (ou du Master) pour compenser
   l'ancienne atténuation s'exporte maintenant **plus fort**, jusqu'à +6 dB pour un clip seul et davantage avec plusieurs
   couches. Le limiteur évite l'écrêtage mais pas la surprise : il faut redescendre ce gain pour retrouver le niveau voulu.
