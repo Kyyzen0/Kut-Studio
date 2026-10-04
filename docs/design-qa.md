@@ -2,6 +2,8 @@
 
 > **Document historique** (revue de design du 30 septembre 2026). Les chemins, captures et le nombre de tests ci-dessous
 > sont ceux de ce jour : l'état actuel de la qualité est dans [stabilization-report.md](stabilization-report.md).
+> La passe de polish visuel qui a suivi (système de design, thèmes, captures) est documentée dans
+> [design-qa-final.md](design-qa-final.md).
 
 ## Evidence
 

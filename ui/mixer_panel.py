@@ -35,6 +35,7 @@ from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Track
 from ui.design_system import Iconography, Radius, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName
+from ui.panel_header import PanelHeader
 from ui.theme import COLORS, label_style
 
 
@@ -439,27 +440,11 @@ class MixerPanel(QWidget):
         layout.setSpacing(0)
 
         # En-tête.
-        header = QWidget()
-        header.setFixedHeight(40)
-        header.setStyleSheet(
-            f"background: {COLORS['panel']};"
-            f" border-bottom: 1px solid {COLORS['border']};"
-        )
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(
-            Spacing.md, 0, Spacing.sm, 0
-        )
-        header_layout.setSpacing(Spacing.sm)
-        icon = IconLabel(IconName.AUDIO_MIXER, size=Iconography.md)
-        icon.set_color("muted_strong")
-        header_layout.addWidget(icon)
-        self.title_label = QLabel(translate("mixer.title"))
-        self.title_label.setStyleSheet(label_style(11, "muted", 800))
-        header_layout.addWidget(self.title_label)
-        header_layout.addStretch(1)
+        header = PanelHeader(translate("mixer.title"), icon=IconName.AUDIO_MIXER)
+        self.title_label = header.title_label
         self.solo_hint = QLabel("")
         self.solo_hint.setStyleSheet(label_style(10, "warning", 600))
-        header_layout.addWidget(self.solo_hint)
+        header.add_trailing(self.solo_hint)
         layout.addWidget(header)
 
         # Tranches, horizontalement défilantes.

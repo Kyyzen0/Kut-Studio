@@ -41,7 +41,9 @@ from PySide6.QtWidgets import (
 )
 
 from ui.adaptive_layout import allow_shrinking, make_shrinkable
+from ui.design_system import Radius
 from ui.i18n import translate
+from ui.theme import COLORS, label_style
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
     TextAlignment,
@@ -80,14 +82,14 @@ class AlignmentTile(QToolButton):
     def _apply_style(self, *, active: bool) -> None:
         if active:
             self.setStyleSheet(
-                "QToolButton { background: #36E6C3; border: 1px solid #1FAE93;"
-                " border-radius: 4px; }"
+                f"QToolButton {{ background: {COLORS['accent']}; border: 1px solid {COLORS['accent_hover']};"
+                f" border-radius: {Radius.sm}px; }}"
             )
         else:
             self.setStyleSheet(
-                "QToolButton { background: #2A2A2A; border: 1px solid #3F3F3F;"
-                " border-radius: 4px; }"
-                "QToolButton:hover { background: #3A3A3A; }"
+                f"QToolButton {{ background: {COLORS['surface']}; border: 1px solid {COLORS['border_strong']};"
+                f" border-radius: {Radius.sm}px; }}"
+                f"QToolButton:hover {{ background: {COLORS['surface_hover']}; }}"
             )
 
 
@@ -103,7 +105,7 @@ def _color_chip_icon(hex_color: str, size: int = 14) -> QIcon:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setBrush(QColor(hex_color))
-    painter.setPen(QColor("#3F3F3F"))
+    painter.setPen(QColor(COLORS["border_strong"]))
     painter.drawEllipse(1, 1, size - 2, size - 2)
     painter.end()
     return QIcon(pixmap)
@@ -137,10 +139,6 @@ class TextStyleEditor(QWidget):
         self.content_editor = QTextEdit()
         self.content_editor.setPlaceholderText(translate("mograph.textstyle.placeholder"))
         self.content_editor.setFixedHeight(60)
-        self.content_editor.setStyleSheet(
-            "QTextEdit { background: #1F1F1F; color: #FAFAFA;"
-            " border: 1px solid #3F3F3F; border-radius: 6px; padding: 6px; }"
-        )
         self.content_editor.textChanged.connect(self._on_content_changed)
         layout.addWidget(self.content_editor)
 
@@ -305,12 +303,6 @@ class TextStyleEditor(QWidget):
 
         # ----- Bouton réinitialisation ---------------------------------
         self.reset_button = QPushButton(translate("mograph.textstyle.reset"))
-        self.reset_button.setStyleSheet(
-            "QPushButton { padding: 6px 10px; border-radius: 4px;"
-            " background: #2A2A2A; color: #FAFAFA;"
-            " border: 1px solid #3F3F3F; }"
-            "QPushButton:hover { background: #3A3A3A; }"
-        )
         self.reset_button.clicked.connect(self._on_reset_clicked)
         allow_shrinking(self.reset_button, 120)  # dernier recours : libellé coupé plutôt que contenu hors de l'inspecteur
         layout.addWidget(self.reset_button)
@@ -489,12 +481,7 @@ class _ColorButton(QPushButton):
         else:
             self.setText(self.color.upper() if self.color else "—")
             self.setIcon(_color_chip_icon(self.color or "#ffffff"))
-        self.setStyleSheet(
-            "QPushButton { text-align: left; padding: 4px 8px;"
-            " background: #1F1F1F; color: #FAFAFA;"
-            " border: 1px solid #3F3F3F; border-radius: 4px; }"
-            "QPushButton:hover { background: #2A2A2A; }"
-        )
+        self.setStyleSheet("QPushButton { text-align: left; }")      # le reste (fond, bordure, survol) vient du thème
 
 
 def _build_spin(
@@ -519,7 +506,7 @@ def _build_spin(
 
 
 def _label_style(size: int, role: str = "muted", weight: int = 500) -> str:
-    return f"color: #B0B0B0; font-size: {size}px; font-weight: {weight};"
+    return label_style(size, role, weight)
 
 
 def _row_label(text: str) -> QLabel:

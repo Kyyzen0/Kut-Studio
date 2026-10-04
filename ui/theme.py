@@ -620,6 +620,9 @@ def _stylesheet(palette: ThemePalette) -> str:
     QLabel {{ color: {palette.text}; }}
     QLabel:disabled {{ color: {palette.disabled_text}; }}
     /* Rôles de texte (propriété ``role``) : sept rôles, six tailles ; les titres ressortent, les métadonnées s'effacent. */
+    /* Bandeau de panneau (ui/panel_header.py) : même surface et même filet dans tous les panneaux. */
+    QFrame#panelHeader {{ background: {palette.panel}; border: none; border-bottom: 1px solid {palette.border}; }}
+    QFrame#panelHeader QLabel {{ background: transparent; }}
     QLabel[role="app-title"] {{ font-size: {t.heading}px; font-weight: {w.bold}; color: {palette.text_strong}; }}
     QLabel[role="panel-title"] {{ font-size: {t.body}px; font-weight: {w.semibold}; color: {palette.text}; }}
     QLabel[role="section-title"] {{ font-size: {t.small}px; font-weight: {w.semibold}; color: {palette.muted_strong}; }}
@@ -766,6 +769,45 @@ BLACK = "#000000"
 """Les deux extrémités d'un mélange (:func:`mix_colors`) : éclaircir ou assombrir une teinte du thème."""
 
 
+@dataclass(frozen=True)
+class OverlayColors:
+    """Couleurs des repères dessinés **sur l'image** (guides, zones de sécurité, poignées, états du suivi).
+
+    Elles ne suivent pas le thème : elles se posent sur une image de caméra, dont la clarté n'a rien à voir avec lui. Elles sont
+    centralisées ici (une seule définition par rôle) et dessinées avec un halo sombre (:data:`halo`) pour rester lisibles sur une
+    image claire comme sombre."""
+
+    selection: str = "#36E6C3"          # cadre et poignées du calque ou du tracker sélectionné
+    selection_locked: str = "#A0A0A0"   # calque non modifiable
+    guide: str = "#50C8FF"
+    safe_action: str = "#FFD200"
+    safe_title: str = "#00DCFF"
+    centre: str = "#FFFFFF"
+    grid: str = "#FFFFFF"
+    snap: str = "#FF3CA0"               # ligne de magnétisme pendant un glisser
+    anchor: str = "#FFC828"
+    handle_fill: str = "#14181C"
+    halo: str = "#000000"
+    uncertain: str = "#FFAA28"          # suivi : mesure douteuse (rond pointillé, jamais la couleur seule)
+    lost: str = "#FF4646"               # suivi : mesure perdue (croix)
+    manual: str = "#FFFFFF"             # suivi : mesure corrigée à la main
+    unknown: str = "#B4B4B4"            # suivi : pas encore de mesure
+
+
+OVERLAY = OverlayColors()
+
+
+def overlay_qcolor(color: str, alpha: int = 255):
+    """``QColor`` d'une couleur de :data:`OVERLAY` avec un canal alpha explicite (0-255).
+
+    Jamais ``QColor("#rrggbbaa")`` : Qt lit les huit chiffres comme « #aarrggbb »."""
+    from PySide6.QtGui import QColor
+
+    result = QColor(color)
+    result.setAlpha(alpha)
+    return result
+
+
 def _rgb(color: str) -> tuple[int, int, int]:
     text = color.lstrip("#")
     return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
@@ -779,12 +821,59 @@ def mix_colors(base: str, other: str, amount: float) -> str:
     return "#{:02X}{:02X}{:02X}".format(*mixed)
 
 
+def set_stylesheet_if_changed(widget, sheet: str) -> bool:
+    """``widget.setStyleSheet(sheet)`` seulement si la feuille a changé ; retourne ``True`` si elle a été écrite.
+
+    Qt reparse et repolit la feuille de style **à chaque appel**, même avec un texte identique. Un clip de la timeline en posait trois à
+    chaque rafraîchissement : 87 % du temps de ``refresh_clip_widgets`` (+45 % mesurés par ``tools.perf.bench`` après le polish). Les
+    rafraîchissements qui ne changent rien (la grande majorité) ne coûtent plus rien."""
+    if widget.styleSheet() == sheet:
+        return False
+    widget.setStyleSheet(sheet)
+    return True
+
+
 def with_alpha(color: str, alpha: float) -> str:
     """``#rrggbbaa`` : ``color`` (``#rrggbb`` ou ``#rrggbbaa``) avec la transparence ``alpha`` (0 à 1), pour une **feuille de style**.
 
     À ne pas donner à ``QColor`` : Qt lit les huit chiffres comme « #aarrggbb » (canal alpha en premier) ; pour peindre, on construit
     la couleur puis ``setAlpha``."""
     return f"#{color.lstrip('#')[:6]}{round(min(1.0, max(0.0, float(alpha))) * 255):02X}"
+
+
+def qt_palette(palette: ThemePalette):
+    """``QPalette`` Qt des couleurs du thème : ce que prennent les widgets que la feuille de style ne décrit pas.
+
+    L'application ne posait que du QSS : tout widget sans fond explicite (le viewport d'une liste, une ligne de source, un panneau de
+    dialogue) retombait sur la palette **native** de l'OS, donc des panneaux presque blancs dans un dialogue sombre, avec du texte
+    clair dessus. Publier la palette du thème règle la cause plutôt que chaque symptôme, et les thèmes ne dépendent plus du mode
+    d'apparence du système."""
+    from PySide6.QtGui import QColor, QPalette
+
+    qt = QPalette()
+    roles = {
+        QPalette.Window: palette.background,
+        QPalette.WindowText: palette.text,
+        QPalette.Base: palette.input_bg,
+        QPalette.AlternateBase: palette.panel_alt,
+        QPalette.Text: palette.text,
+        QPalette.Button: palette.surface,
+        QPalette.ButtonText: palette.text,
+        QPalette.BrightText: palette.text_strong,
+        QPalette.Highlight: palette.accent,
+        QPalette.HighlightedText: palette.on_accent,
+        QPalette.ToolTipBase: palette.surface,
+        QPalette.ToolTipText: palette.text,
+        QPalette.PlaceholderText: palette.muted,
+        QPalette.Link: palette.accent,
+        QPalette.Mid: palette.border,
+        QPalette.Dark: palette.border_strong,
+    }
+    for role, color in roles.items():
+        qt.setColor(role, QColor(color))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        qt.setColor(QPalette.Disabled, role, QColor(palette.disabled_text))
+    return qt
 
 
 def global_stylesheet(palette: ThemePalette | None = None) -> str:
@@ -873,6 +962,9 @@ class ThemeManager:
                 marker_name = "_kut_studio_theme_stylesheet"
                 if app.property(marker_name) == stylesheet:
                     return
+                set_palette = getattr(app, "setPalette", None)          # d'abord : les widgets sans style prennent les couleurs du thème
+                if callable(set_palette):
+                    set_palette(qt_palette(self.effective_palette))
                 app.setStyleSheet(stylesheet)
                 app.setProperty(marker_name, stylesheet)
             except Exception:
@@ -983,12 +1075,17 @@ __all__ = [
     "colors_dict",
     "global_stylesheet",
     "BLACK",
+    "OVERLAY",
+    "OverlayColors",
     "WHITE",
     "label_style",
+    "overlay_qcolor",
+    "qt_palette",
     "mix_colors",
     "set_role",
     "set_state",
     "set_style_property",
+    "set_stylesheet_if_changed",
     "set_variant",
     "with_alpha",
 ]

@@ -37,8 +37,9 @@ from PySide6.QtWidgets import (
 
 from ui.design_system import Iconography, Sizes, Spacing, Typography, Weights
 from ui.empty_state import EmptyState
-from ui.icons import IconButton, IconLabel, IconName
-from ui.theme import COLORS, label_style, monospace_font_family
+from ui.icons import IconButton, IconName
+from ui.panel_header import PanelHeader
+from ui.theme import COLORS, label_style, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
 from ui.i18n import translate
@@ -192,34 +193,13 @@ class PreviewPanel(QWidget):
         self.preview_quality_notice.hide()
 
         # Entête ---------------------------------------------------------------
-        top_header = QWidget()
-        top_header.setFixedHeight(40)
-        top_header.setStyleSheet(
-            f"background: {COLORS['panel']}; border-bottom: 1px solid {COLORS['border']};"
-        )
-        header_layout = QHBoxLayout(top_header)
-        header_layout.setContentsMargins(Spacing.lg, 0, Spacing.lg, 0)
-        header_layout.setSpacing(Spacing.md)
-
-        title_box = QWidget()
-        title_layout = QHBoxLayout(title_box)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(Spacing.sm)
-        title_icon = IconLabel(IconName.MEDIA, size=Iconography.md)
-        title_icon.set_color("muted_strong")
-        title_layout.addWidget(title_icon)
-        title = QLabel(translate("preview.title"))
-        self._title_label = title
-        title.setStyleSheet(label_style(10, "muted", 800))
-        title_layout.addWidget(title)
-        header_layout.addWidget(title_box)
-
-        header_layout.addStretch()
+        top_header = PanelHeader(translate("preview.title"), icon=IconName.MEDIA)
+        self._title_label = top_header.title_label
 
         status = QLabel("1920 × 1080 · 30 fps · 16:9")
-        status.setStyleSheet(label_style(11, "muted", 600))
-        status.setAlignment(Qt.AlignRight)
-        header_layout.addWidget(status)
+        set_role(status, "meta")
+        status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)       # sans le VCenter, le libellé remontait au bord haut du bandeau
+        top_header.add_trailing(status)
 
         # Barre d'outils de transport -----------------------------------------
         toolbar = QWidget()

@@ -56,7 +56,7 @@ from ui.library_organization_widgets import (
     compute_badges,
     prompt_for_folder_name,
 )
-from ui.theme import COLORS, label_style
+from ui.theme import COLORS, label_style, set_role
 from ui.project_panel_widgets.asset_bin import (
     AssetBin,
     _format_asset_caption,
@@ -76,6 +76,7 @@ from ui.project_panel_widgets.transition_library import (
     _transition_accent,
     _form_label,
 )  # noqa: F401
+from ui.search_field import SearchField
 from ui.project_panel_widgets.effects_library_view import (
     EffectPresetCard,
     EffectsLibraryView,
@@ -204,9 +205,10 @@ class ProjectPanel(QWidget):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title_row.setSpacing(Spacing.sm)
+        self._section_id = "media"
         title = QLabel(translate("rail.media"))
         self._title_label = title
-        title.setStyleSheet(label_style(13, "text", 700))
+        set_role(title, "panel-title")
         title_row.addWidget(title)
         title_row.addStretch(1)
         # Compteur global (mis à jour à chaque mutation).
@@ -265,11 +267,7 @@ class ProjectPanel(QWidget):
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(Spacing.md, Spacing.sm, Spacing.md, Spacing.sm)
         search_layout.setSpacing(Spacing.sm)
-        self.search_field = QLineEdit()
-        self.search_field.setObjectName("librarySearch")
-        self.search_field.setPlaceholderText(translate("library.search_placeholder"))
-        self.search_field.setClearButtonEnabled(True)
-        self.search_field.setFixedHeight(28)
+        self.search_field = SearchField(translate("library.search_placeholder"), object_name="librarySearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         search_layout.addWidget(self.search_field)
         layout.addWidget(search_row)
@@ -766,6 +764,8 @@ class ProjectPanel(QWidget):
         }.get(section_id)
         if page_index is None:
             return
+        self._section_id = section_id
+        self._title_label.setText(translate(f"rail.{section_id}"))      # le titre du panneau dit la page affichée
         if page_index == 1 and self._audio_mode == "effects":
             page_index = 6
         self._active_page_index = page_index
@@ -895,7 +895,7 @@ class ProjectPanel(QWidget):
 
     def retranslate(self) -> None:
         """En-tête, onglets, recherche et boutons dans la langue courante (changement de langue à chaud)."""
-        self._title_label.setText(translate("rail.media"))
+        self._title_label.setText(translate(f"rail.{self._section_id}"))
         self._quick_import.setToolTip(translate("preview.import"))
         self._quick_import.setAccessibleName(translate("preview.import"))
         for button, key in zip(self.scope_tab_buttons, ("panel.project", "transitions.category.favorites")):

@@ -294,7 +294,7 @@ HEX_BASELINE: dict[str, int] = {
     "ui/debug_overlay.py": 1,
     "ui/graphics_editor.py": 4,
     "ui/properties_panel_mixins/construction.py": 1,
-    "ui/text_style_editor.py": 26,
+    "ui/text_style_editor.py": 8,
 }
 
 

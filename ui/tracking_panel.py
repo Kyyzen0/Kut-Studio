@@ -7,8 +7,8 @@ opérations de :mod:`core.tracking_ops`, une entrée d'historique par action.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -33,13 +33,35 @@ from core.tracking_model import AdaptMode, BorderMode, Precision, Smoothing, Sta
 from core.tracking_panel_state import TrackingPanelState
 from ui import i18n
 from ui.adaptive_layout import FlowLayout, WrappingCheckBox, allow_shrinking, make_shrinkable
-from ui.design_system import Spacing
-from ui.theme import COLORS
+from ui.design_system import Iconography, Spacing
+from ui.icons import IconName, make_icon
+from ui.theme import COLORS, OVERLAY, overlay_qcolor
 
 
-def _swatch(color: str) -> QIcon:
-    pixmap = QPixmap(12, 12)
-    pixmap.fill(QColor(color))
+def _swatch(color: str, health: str = "") -> QIcon:
+    """Pastille de la couleur du tracker. Sa **forme** dit l'état de ses mesures (jamais la couleur seule) : une croix quand il a
+    perdu des images, un rond pointillé quand certaines mesures sont douteuses, la pastille pleine sinon."""
+    pixmap = QPixmap(14, 14)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.fillRect(QRectF(1, 1, 12, 12), QColor(color))
+    if health == "lost":
+        painter.setPen(QPen(overlay_qcolor(OVERLAY.halo), 3.0))
+        painter.drawLine(3, 3, 11, 11)
+        painter.drawLine(3, 11, 11, 3)
+        painter.setPen(QPen(overlay_qcolor(OVERLAY.lost), 1.6))
+        painter.drawLine(3, 3, 11, 11)
+        painter.drawLine(3, 11, 11, 3)
+    elif health == "uncertain":
+        painter.setBrush(Qt.NoBrush)
+        pen = QPen(overlay_qcolor(OVERLAY.halo), 3.0)
+        painter.setPen(pen)
+        painter.drawEllipse(QRectF(3, 3, 8, 8))
+        pen = QPen(overlay_qcolor(OVERLAY.uncertain), 1.4, Qt.DashLine)
+        painter.setPen(pen)
+        painter.drawEllipse(QRectF(3, 3, 8, 8))
+    painter.end()
     return QIcon(pixmap)
 
 
@@ -120,9 +142,13 @@ class TrackingPanel(QGroupBox):
 
         # --- Analyse --------------------------------------------------------------------------
         controls = FlowLayout(spacing=Spacing.xs)
-        self.backward_button = QPushButton("◀◀ " + _tr("tracking.backward"), objectName="track_backward")
-        self.stop_button = QPushButton("■ " + _tr("tracking.stop"), objectName="track_stop")
-        self.forward_button = QPushButton(_tr("tracking.forward") + " ▶▶", objectName="track_forward")
+        self.backward_button = QPushButton(_tr("tracking.backward"), objectName="track_backward")
+        self.stop_button = QPushButton(_tr("tracking.stop"), objectName="track_stop")
+        self.forward_button = QPushButton(_tr("tracking.forward"), objectName="track_forward")
+        for button, icon in ((self.backward_button, IconName.REWIND), (self.stop_button, IconName.STOP),
+                             (self.forward_button, IconName.FORWARD)):
+            button.setIcon(make_icon(icon))                           # des icônes de la famille de l'interface, plus de glyphes texte
+            button.setIconSize(QSize(Iconography.sm, Iconography.sm))
         self.backward_button.clicked.connect(lambda: self.track_requested.emit(-1))
         self.forward_button.clicked.connect(lambda: self.track_requested.emit(1))
         self.stop_button.clicked.connect(self.stop_requested.emit)
@@ -390,9 +416,11 @@ class TrackingPanel(QGroupBox):
             item = self.tracker_list.item(row)
             if item.text() != tracker["name"]:
                 item.setText(tracker["name"])
-            item.setIcon(_swatch(tracker["color"]))
+            health = tracker.get("health", "")
+            item.setIcon(_swatch(tracker["color"], health))
             item.setCheckState(Qt.Checked if tracker["visible"] else Qt.Unchecked)
-            item.setToolTip(tracker.get("summary", ""))
+            tip = tracker.get("summary", "")
+            item.setToolTip(f"{_tr(f'tracking.health.{health}')} — {tip}" if health else tip)
             item.setSelected(tracker["id"] in selected)
         primary = state.get("primary")
         self.summary.setText(primary.get("summary", "") if primary else "")

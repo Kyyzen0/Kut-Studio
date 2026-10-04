@@ -41,6 +41,9 @@ TRACKING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "{frames} imágenes · {uncertain} inciertas · {manual} corregidas",
     ),
     "tracking.summary.empty": _t("Pas encore analysé", "Not analysed yet", "Aún sin analizar"),
+    "tracking.health.good": _t("Suivi correct", "Tracking is good", "Seguimiento correcto"),
+    "tracking.health.uncertain": _t("Mesures douteuses", "Uncertain samples", "Medidas dudosas"),
+    "tracking.health.lost": _t("Perdu sur certaines images", "Lost on some frames", "Perdido en algunos fotogramas"),
     "tracking.state.idle": _t("Prêt", "Ready", "Listo"),
     "tracking.state.queued": _t("En attente…", "Queued…", "En espera…"),
     "tracking.state.running": _t(

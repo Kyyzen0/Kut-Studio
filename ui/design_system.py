@@ -51,6 +51,9 @@ class _Spacing:
 
 Spacing = _Spacing()
 
+DIALOG_MARGINS: tuple[int, int, int, int] = (Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+"""Marges (gauche, haut, droite, bas) du contenu d'un dialogue : les mêmes partout, plus d'ouverture à 12, 16 ou 20 px selon le dialogue."""
+
 
 # ---------------------------------------------------------------------------
 # Rayons de bordures
@@ -90,6 +93,8 @@ class _Sizes:
     icon_button_sm: int = 22
     icon_button_lg: int = 36
     input_md: int = 32
+    # Champ de recherche (``ui/search_field.py``) : le même sur toutes les pages de bibliothèque.
+    search_field: int = 28
     toolbar: int = 44
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.
@@ -276,6 +281,7 @@ def metrics() -> DesignMetrics:
 
 
 __all__ = [
+    "DIALOG_MARGINS",
     "ButtonVariant",
     "Iconography",
     "METRICS",

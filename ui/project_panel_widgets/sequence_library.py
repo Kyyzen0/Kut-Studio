@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from ui.design_system import Spacing
 from ui.i18n import translate
-from ui.icons import IconButton, IconName
+from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
 
 SEQUENCE_MIME = "application/x-kut-studio-sequence-id"
@@ -142,17 +142,19 @@ class SequenceLibraryView(QWidget):
         self.list.clear()
         current_row = -1
         for row, entry in enumerate(self._entries):
-            marker = "●  " if entry.active else ""
             details = f"{entry.width}×{entry.height} · {entry.fps:g} i/s · {_format_duration(entry.duration)}"
             if entry.usage_count:
                 # Ligne à part : le panneau est étroit, rien ne doit être tronqué.
                 details += "\n" + translate("sequence.library.usage", count=entry.usage_count)
-            item = QListWidgetItem(f"{marker}{entry.name}\n{details}")
+            item = QListWidgetItem(f"{entry.name}\n{details}")
+            if entry.issue:
+                item.setIcon(make_icon(IconName.WARNING))          # un problème prime sur « active » : il demande une action
+            elif entry.active:
+                item.setIcon(make_icon(IconName.CHECK))
             item.setData(Qt.UserRole, entry.id)
             tooltip = translate("sequence.library.drag_hint")
             if entry.issue:
                 tooltip = f"{entry.issue}\n{tooltip}"
-                item.setText(f"{marker}{entry.name}  ⚠\n{details}")
             item.setToolTip(tooltip)
             self.list.addItem(item)
             if entry.id == selected or (current_row < 0 and selected is None and entry.active):

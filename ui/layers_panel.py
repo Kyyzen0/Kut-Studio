@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.graphics import GraphicType, ShapeKind
-from ui.design_system import Spacing
+from ui.design_system import Iconography, Spacing
+from ui.icons import IconName, make_icon
 from ui.theme import COLORS, label_style
 from ui import i18n
 from ui.i18n import translate
@@ -40,16 +41,17 @@ SPAN_ROLE = Qt.UserRole + 2
 
 COL_VISIBLE, COL_LOCK, COL_NAME, COL_PARENT, COL_TIME = range(5)
 
-TYPE_GLYPHS = {
-    GraphicType.TEXT: "T",
-    GraphicType.SHAPE: "◆",
-    GraphicType.RECTANGLE: "▭",
-    GraphicType.SOLID: "■",
-    GraphicType.IMAGE: "▣",
-    GraphicType.GROUP: "▤",
-    GraphicType.ADJUSTMENT: "◐",
-    GraphicType.NULL: "⊕",
+TYPE_ICONS = {
+    GraphicType.TEXT: IconName.TEXT,
+    GraphicType.SHAPE: IconName.SHAPE,
+    GraphicType.RECTANGLE: IconName.RECTANGLE,
+    GraphicType.SOLID: IconName.SOLID,
+    GraphicType.IMAGE: IconName.MEDIA,
+    GraphicType.GROUP: IconName.GROUP,
+    GraphicType.ADJUSTMENT: IconName.ADJUSTMENT,
+    GraphicType.NULL: IconName.NULL_OBJECT,
 }
+"""Une icône par type de calque (la même famille que le reste de l'interface, qui suit le thème) ; elles remplacent les glyphes texte."""
 
 SHAPE_CHOICES = (  # (forme, clé i18n du libellé) : traduit à l'affichage, jamais à l'import
     (ShapeKind.RECTANGLE, "mograph.shape.rectangle"),
@@ -203,7 +205,8 @@ class LayersPanel(QWidget):
         self.tree = _LayerTree()
         self.tree.setObjectName("layers_tree")
         self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels(["◉", "▣", translate("mograph.layers.col_layer"), translate("mograph.layers.col_parent"), translate("field.duration")])
+        self.tree.setIconSize(QSize(Iconography.md, Iconography.md))
+        self._set_header_labels()
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setDragDropMode(QAbstractItemView.InternalMove)
         self.tree.setDragEnabled(True)
@@ -271,10 +274,7 @@ class LayersPanel(QWidget):
         self.group_button.setToolTip(translate("mograph.layers.group_tooltip"))
         self.presets_button.setText(translate("mograph.layers.presets"))
         self.set_presets(self._presets)
-        self.tree.setHeaderLabels(
-            ["◉", "▣", translate("mograph.layers.col_layer"), translate("mograph.layers.col_parent"),
-             translate("field.duration")]
-        )
+        self._set_header_labels()
         self.empty_hint.setText(translate("mograph.layers.empty"))
         names = {node.clip_id: node.name for node in self._nodes}
         iterator = QTreeWidgetItemIterator(self.tree)
@@ -286,6 +286,19 @@ class LayersPanel(QWidget):
             if name is not None:
                 item.setToolTip(COL_NAME, translate("mograph.layers.rename_tooltip", name=name))
             iterator += 1
+
+    def _set_header_labels(self) -> None:
+        """En-têtes : deux colonnes d'icônes (visibilité, verrou) sans texte, puis les colonnes textuelles."""
+        self.tree.setHeaderLabels(
+            ["", "", translate("mograph.layers.col_layer"), translate("mograph.layers.col_parent"), translate("field.duration")]
+        )
+        header = self.tree.headerItem()
+        for column, icon, tip in (
+            (COL_VISIBLE, IconName.EYE, "tracks.visible_tooltip"),
+            (COL_LOCK, IconName.LOCK, "tracks.lock_tooltip"),
+        ):
+            header.setIcon(column, make_icon(icon))
+            header.setToolTip(column, translate(tip))
 
     # -- menus ---------------------------------------------------------------------------------
 
@@ -417,14 +430,15 @@ class LayersPanel(QWidget):
                 )
                 item.setData(COL_NAME, ID_ROLE, node.clip_id)
                 item.setData(COL_NAME, Qt.UserRole + 3, node.type.value)
-                item.setText(COL_VISIBLE, "●" if node.visible else "○")
+                item.setIcon(COL_VISIBLE, make_icon(IconName.EYE if node.visible else IconName.EYE_OFF))
                 item.setToolTip(COL_VISIBLE, translate("tracks.visible_tooltip"))
-                item.setText(COL_LOCK, "■" if node.locked else "□")
+                item.setIcon(COL_LOCK, make_icon(IconName.LOCK if node.locked else IconName.UNLOCK))
                 item.setToolTip(COL_LOCK, translate("tracks.lock_tooltip"))
-                item.setText(COL_NAME, f"{TYPE_GLYPHS.get(node.type, '•')}  {node.name}")
+                item.setIcon(COL_NAME, make_icon(TYPE_ICONS.get(node.type, IconName.SHAPE)))
+                item.setText(COL_NAME, node.name)
                 item.setToolTip(COL_NAME, translate("mograph.layers.rename_tooltip", name=node.name))
                 if node.parent_id:
-                    item.setText(COL_PARENT, f"↳ {names.get(node.parent_id, node.parent_id)}")
+                    item.setText(COL_PARENT, names.get(node.parent_id, node.parent_id))
                 item.setData(COL_TIME, SPAN_ROLE, (node.start, node.end))
                 item.setToolTip(COL_TIME, f"{_clock(node.start)} → {_clock(node.end)}")
                 if not node.visible:

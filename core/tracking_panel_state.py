@@ -11,7 +11,7 @@ Module **pur** (aucun import de Qt ni de ``ui/``) : il ne contient que des forme
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class LinkRow(TypedDict):
@@ -30,6 +30,8 @@ class TrackerRow(TypedDict):
     color: str
     visible: bool
     summary: str
+    health: NotRequired[str]
+    """``"good"``, ``"uncertain"`` (mesures douteuses) ou ``"lost"`` (images perdues) ; absent ou vide : pas encore analysé."""
 
 
 class PrimaryTracker(TypedDict):

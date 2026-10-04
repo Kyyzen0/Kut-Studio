@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -41,7 +41,9 @@ from core.keyframe_editing import (
 )
 from ui import i18n
 from ui.adaptive_layout import ElidedLabel, make_shrinkable
+from ui.design_system import Iconography
 from ui.graph_editor_time import SpeedCurveEditing
+from ui.icons import IconName, make_icon
 from ui.theme import COLORS, label_style
 
 HANDLE_RADIUS = 4.5
@@ -66,6 +68,7 @@ class CurveCanvas(QWidget):
         self._press = QPointF()
         self._origin: dict = {}
         self._rubber: QRectF | None = None
+        self._hover_id: str | None = None             # losange sous le pointeur (même langage que la timeline)
 
     # -- repère ------------------------------------------------------------------------------------
 
@@ -119,23 +122,40 @@ class CurveCanvas(QWidget):
         painter.end()
 
     def _paint_grid(self, painter: QPainter, plot: QRectF) -> None:
-        grid = QColor(COLORS["border"])
+        """Grille à deux niveaux : les graduations (avec leur valeur) sont lisibles, les subdivisions sont à peine là."""
+        major = QColor(COLORS["border_strong"])
+        major.setAlpha(120)
+        minor = QColor(COLORS["border_strong"])
+        minor.setAlpha(40)
         text = QColor(COLORS["muted"])
-        painter.setPen(QPen(grid, 1))
+        painter.setPen(QPen(major, 1))
         painter.drawRect(plot)
-        for t in _ticks(self.t0, self.t1, 8):
+        times = _ticks(self.t0, self.t1, 8)
+        for t in _subdivisions(times):
             x = self.to_screen(t, 0).x()
-            painter.setPen(QPen(grid, 1))
+            if plot.left() <= x <= plot.right():
+                painter.setPen(QPen(minor, 1))
+                painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+        for t in times:
+            x = self.to_screen(t, 0).x()
+            painter.setPen(QPen(major, 1))
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
             painter.setPen(text)
             painter.drawText(QPointF(x + 2, plot.bottom() + 14), _format(t) + " s")
         scale = self.editor.display_scale()                                 # sans clip ni propriété, la grille se dessine quand même
-        for v in _ticks(self.v0, self.v1, 6):
+        unit = self.editor.display_unit()
+        values = _ticks(self.v0, self.v1, 6)
+        for v in _subdivisions(values):
             y = self.to_screen(0, v).y()
-            painter.setPen(QPen(grid, 1))
+            if plot.top() <= y <= plot.bottom():
+                painter.setPen(QPen(minor, 1))
+                painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+        for v in values:
+            y = self.to_screen(0, v).y()
+            painter.setPen(QPen(major, 1))
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
             painter.setPen(text)
-            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v * scale))
+            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v * scale) + unit)
 
     def _paint_curve(self, painter: QPainter, plot: QRectF, curve) -> None:
         spec = self.editor.target().spec
@@ -177,10 +197,11 @@ class CurveCanvas(QWidget):
         selected = self.editor.selected_ids()
         for keyframe, _side, point in self._handles(curve):
             center = self.to_screen(keyframe.time_seconds, float(keyframe.value))
+            # Poignées Bézier : visibles sans concurrencer la courbe (trait fin, petit rond creux).
             painter.setPen(QPen(QColor(COLORS["muted"]), 1))
             painter.drawLine(center, point)
-            painter.setBrush(QColor(COLORS["muted"]))
-            painter.drawEllipse(point, HANDLE_RADIUS, HANDLE_RADIUS)
+            painter.setBrush(QColor(COLORS["panel_alt"]))
+            painter.drawEllipse(point, HANDLE_RADIUS - 1, HANDLE_RADIUS - 1)
         for keyframe in curve.keyframes:
             center = self.to_screen(keyframe.time_seconds, float(keyframe.value))
             half = KEYFRAME_SIZE / 2
@@ -188,9 +209,16 @@ class CurveCanvas(QWidget):
                 QPointF(center.x(), center.y() - half), QPointF(center.x() + half, center.y()),
                 QPointF(center.x(), center.y() + half), QPointF(center.x() - half, center.y()),
             ])
+            # Le langage des losanges de la timeline : clair au repos, accent éclairci au survol, accent plein une fois sélectionné.
             is_selected = keyframe.id in selected
-            painter.setBrush(QColor(COLORS["text_strong"]) if is_selected else accent)
-            painter.setPen(QPen(accent if is_selected else QColor(COLORS["diamond_border"]), 1.5))
+            if is_selected:
+                fill = accent
+            elif keyframe.id == self._hover_id:
+                fill = QColor(COLORS["accent_hover"])
+            else:
+                fill = QColor(COLORS["diamond_filled"])
+            painter.setBrush(fill)
+            painter.setPen(QPen(QColor(COLORS["diamond_border"]), 1.2))
             painter.drawPolygon(polygon)
 
     def _paint_playhead(self, painter: QPainter, plot: QRectF) -> None:
@@ -198,7 +226,7 @@ class CurveCanvas(QWidget):
         if local is None or not (self.t0 <= local <= self.t1):
             return
         x = self.to_screen(local, 0).x()
-        painter.setPen(QPen(QColor(COLORS["danger"]), 1))
+        painter.setPen(QPen(QColor(COLORS["playhead"]), 1))          # la même couleur que la tête de lecture de la timeline
         painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
 
     # -- interaction --------------------------------------------------------------------------------
@@ -264,6 +292,12 @@ class CurveCanvas(QWidget):
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt
         point = event.position()
+        if self._gesture is None:
+            hovered = self._pick_keyframe(point)
+            hover_id = hovered.id if hovered is not None else None
+            if hover_id != self._hover_id:
+                self._hover_id = hover_id
+                self.update()
         if self._gesture == "pan":
             t0, t1, v0, v1 = self._origin["view"]
             plot = self._plot()
@@ -403,6 +437,10 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
     def target(self):
         return get_target(self.property_id)
 
+    def display_unit(self) -> str:
+        """Unité des valeurs affichées (`` %``, `` dB``, ``°``…) ; vide sans propriété."""
+        return self.target().spec.display_unit if self.property_id else ""
+
     def display_scale(self) -> float:
         """Facteur d'affichage de la propriété (100 pour une vitesse en %) ; 1 tant qu'aucune propriété n'est ouverte."""
         return self.target().spec.display_scale if self.property_id else 1.0
@@ -442,8 +480,9 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             if clip is not None:
                 for pid in self.host._animation_properties(clip):
                     target = get_target(pid)
-                    marker = "● " if target.get_keyframes(clip) else ""
-                    self.property_combo.addItem(marker + _label(target), userData=pid)
+                    animated = bool(target.get_keyframes(clip))
+                    # Un losange devant les propriétés animées ; les autres reçoivent une icône vide pour que les libellés restent alignés.
+                    self.property_combo.addItem(_marker_icon(animated), _label(target), pid)
                 wanted = self.property_id or self.host.active_animation_property
                 if wanted is None or self.property_combo.findData(wanted) < 0:
                     animated = [pid for pid in self.host._animation_properties(clip) if get_target(pid).get_keyframes(clip)]
@@ -690,6 +729,20 @@ def _ticks(low: float, high: float, count: int) -> list[float]:
     step = min((m * magnitude for m in (1, 2, 5, 10)), key=lambda s: abs(s - raw))
     first = math.ceil(low / step) * step
     return [first + i * step for i in range(int((high - first) / step) + 1)]
+
+
+def _marker_icon(animated: bool) -> QIcon:
+    """Losange pour une propriété animée, icône transparente de même taille sinon (alignement des libellés)."""
+    if animated:
+        return make_icon(IconName.DIAMOND)
+    blank = QPixmap(Iconography.md, Iconography.md)
+    blank.fill(Qt.transparent)
+    return QIcon(blank)
+
+
+def _subdivisions(ticks: list[float]) -> list[float]:
+    """Le milieu de chaque intervalle entre deux graduations : les lignes secondaires de la grille."""
+    return [(a + b) / 2 for a, b in zip(ticks, ticks[1:])]
 
 
 def _format(value: float) -> str:

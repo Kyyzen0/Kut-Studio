@@ -27,11 +27,12 @@ from core.effects_library import (
     filter_presets,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
+from ui.design_system import DIALOG_MARGINS, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
+from ui.search_field import SearchField
 
 
 _CATEGORY_RANK: dict[EffectCategory, int] = {
@@ -246,13 +247,7 @@ class EffectsLibraryView(QWidget):
             Spacing.sm, Spacing.sm, Spacing.sm, 0
         )
         header_layout.setSpacing(Spacing.xs)
-        self.search_field = QLineEdit()
-        self.search_field.setObjectName("effectsSearch")
-        self.search_field.setPlaceholderText(
-            translate("effects.library.search")
-        )
-        self.search_field.setClearButtonEnabled(True)
-        self.search_field.setFixedHeight(28)
+        self.search_field = SearchField(translate("effects.library.search"), object_name="effectsSearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         header_layout.addWidget(self.search_field)
 
@@ -593,7 +588,7 @@ class SavePresetDialog(QDialog):
         self.setMinimumWidth(360)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        layout.setContentsMargins(*DIALOG_MARGINS)
         layout.setSpacing(Spacing.sm)
 
         intro = QLabel(translate("effects.library.dialog.title"))

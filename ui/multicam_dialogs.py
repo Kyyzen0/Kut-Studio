@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.multicam_model import MulticamAudio, SyncMethod, SyncStatus
-from ui.design_system import Spacing
+from ui.design_system import DIALOG_MARGINS, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import active_palette, label_style
@@ -155,7 +155,7 @@ class MulticamCreateDialog(QDialog):
         self._addable = list(addable or [])
         self._rows: list[_RowWidget] = []
         root = QVBoxLayout(self)
-        root.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        root.setContentsMargins(*DIALOG_MARGINS)
         root.setSpacing(Spacing.sm)
 
         form = QFormLayout()
@@ -315,7 +315,7 @@ class SyncSummaryDialog(QDialog):
         self.setMinimumWidth(420)
         self._choices = list(audio_choices or [])
         root = QVBoxLayout(self)
-        root.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        root.setContentsMargins(*DIALOG_MARGINS)
         root.setSpacing(Spacing.sm)
         palette = active_palette()
         for row in rows:

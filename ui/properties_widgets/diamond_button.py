@@ -13,7 +13,7 @@ from ui.theme import COLORS
 from ui.i18n import translate
 
 
-class _DiamondButton(QToolButton):
+class KeyframeDiamondButton(QToolButton):
     """Petit bouton losange pour ajouter / retirer une image-clé.
 
     État ``checked`` : image-clé présente au playhead courant (losange plein).
@@ -58,3 +58,9 @@ class _DiamondButton(QToolButton):
         outline = QColor(COLORS["diamond_filled"] if self.animated else COLORS["diamond_outline"])
         painter.setPen(QPen(outline, 2 if self.animated else 1))
         painter.drawPolygon(polygon)
+
+
+_DiamondButton = KeyframeDiamondButton
+"""Ancien nom, gardé pour les importations existantes."""
+
+__all__ = ["KeyframeDiamondButton"]

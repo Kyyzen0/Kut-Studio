@@ -8,7 +8,7 @@ un bouton « Appliquer au clip » dont le clip cible est résolu par
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,10 +28,11 @@ from core.audio_effects_library import (
     filter_audio_effect_presets,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
+from ui.design_system import Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
 from ui.i18n import translate
+from ui.search_field import SearchField
 
 
 def category_text(category: AudioEffectPresetCategory) -> str:
@@ -106,7 +107,9 @@ class AudioEffectPresetCard(QFrame):
         label.setStyleSheet(label_style(10, "muted", 500))
         layout.addWidget(label)
 
-        self.favorite_button = QPushButton("★" if favorite else "☆")
+        self.favorite_button = QPushButton()
+        self.favorite_button.setIcon(make_icon(IconName.STAR_FILLED if favorite else IconName.STAR))
+        self.favorite_button.setIconSize(QSize(Iconography.sm, Iconography.sm))
         self.favorite_button.setObjectName("audioPresetFavorite")
         self.favorite_button.setCheckable(True)
         self.favorite_button.setChecked(favorite)
@@ -115,10 +118,8 @@ class AudioEffectPresetCard(QFrame):
         self.favorite_button.setFixedSize(22, 22)
         self.favorite_button.setToolTip(translate("transitions.library.favorite_add"))
         self.favorite_button.setStyleSheet(
-            f"QPushButton#audioPresetFavorite {{ background: transparent;"
-            f" border: none; color: {COLORS['muted']}; font-size: 15px; }}"
-            f"QPushButton#audioPresetFavorite:checked {{"
-            f" color: {COLORS['accent']}; }}"
+            "QPushButton#audioPresetFavorite { background: transparent;"
+            " border: none; }"
         )
         self.favorite_button.clicked.connect(
             lambda _checked=False, pid=preset.id: self.favorite_toggled.emit(pid)
@@ -211,11 +212,7 @@ class AudioEffectsLibraryView(QWidget):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, 0)
         header_layout.setSpacing(Spacing.xs)
-        self.search_field = QLineEdit()
-        self.search_field.setObjectName("audioEffectsSearch")
-        self.search_field.setPlaceholderText(translate("library.audio_effects.search"))
-        self.search_field.setClearButtonEnabled(True)
-        self.search_field.setFixedHeight(28)
+        self.search_field = SearchField(translate("library.audio_effects.search"), object_name="audioEffectsSearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         header_layout.addWidget(self.search_field)
 

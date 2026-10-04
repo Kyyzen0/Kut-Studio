@@ -120,6 +120,14 @@ class IconName(str, Enum):
     CHECK = "check"
     WARNING = "warning"
 
+    # Types de calque graphique (panneau des calques) : remplacent les glyphes texte « ◆ ▭ ■ ▤ ◐ ⊕ ».
+    SHAPE = "shape"
+    RECTANGLE = "rectangle"
+    SOLID = "solid"
+    GROUP = "group"
+    ADJUSTMENT = "adjustment"
+    NULL_OBJECT = "null_object"
+
 
 # ---------------------------------------------------------------------------
 # SVG sources (24×24, currentColor)
@@ -660,6 +668,42 @@ _SVG_TEMPLATES: dict[str, str] = {
         'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M12 4.2 3.2 19.3h17.6z"/><path d="M12 10v4.2"/><path d="M12 17.1h.01"/></svg>'
+    ),
+    IconName.SHAPE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.5 20 8v8l-8 4.5L4 16V8z"/></svg>'
+    ),
+    IconName.RECTANGLE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="3.5" y="6.5" width="17" height="11" rx="1.6"/></svg>'
+    ),
+    IconName.SOLID: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+    ),
+    IconName.GROUP: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m12 4 8.5 4.6L12 13.2 3.5 8.6z"/><path d="m3.5 13 8.5 4.6 8.5-4.6"/></svg>'
+    ),
+    IconName.ADJUSTMENT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>'
+    ),
+    IconName.NULL_OBJECT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>'
     ),
 }
 
