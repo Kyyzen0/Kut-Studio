@@ -39,6 +39,7 @@ import os
 import subprocess
 import threading
 import time
+from functools import lru_cache
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -54,7 +55,7 @@ from .optical_flow import (
     PairAnalysis,
     blend_frames,
 )
-from .process_supervisor import default_supervisor
+from .process_supervisor import default_supervisor, supervised_run
 from .retime_graph import TRIM_END_MARGIN, TRIM_START_MARGIN, PreparedRun, RetimeError
 from .time_map import RunKind, TimeMap
 from .time_remapping import FlowQuality, TimeInterpolation
@@ -69,12 +70,21 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger("kut_studio.flow")
 
-PREPARE_VERSION = 1
+PREPARE_VERSION = 2
 """À incrémenter quand un flux préparé ne serait plus celui que le code produirait (format, ordre, arrondi)."""
 
 _WINDOW = 4
 """Images décodées gardées en mémoire (une paire en cours, plus la marge d'un run qui revient sur ses pas d'une image)."""
 _SEEK_MARGIN_FRAMES = 2
+_EXACT_SEEK_SUFFIXES = frozenset({".mp4", ".m4v", ".mov", ".qt", ".mkv", ".webm"})
+"""Conteneurs dont le saut ``-ss`` tombe sur l'image clé *précédente* (puis FFmpeg écarte jusqu'à la cible). Les autres (MPEG-TS,
+MPEG-PS, AVI…) peuvent tomber sur la suivante : des images manqueraient, ou aucune ne viendrait (un TS à une seule image clé) ;
+ils sont donc décodés depuis le début, plus lentement mais exacts."""
+
+
+def seeks_exactly(media_path: str) -> bool:
+    """Le décodage peut-il démarrer au milieu du fichier sans perdre d'image ? (liste blanche : l'inconnu se décode depuis zéro)"""
+    return os.path.splitext(media_path)[1].lower() in _EXACT_SEEK_SUFFIXES
 _FRESH_SIGNATURES = SignatureMemo(ttl=0.0)
 
 
@@ -156,7 +166,9 @@ class PrepareReport:
 
     @property
     def mean_confidence(self) -> float:
-        """Confiance moyenne des images issues du flux (1.0 s'il n'y en a pas)."""
+        """Confiance moyenne mesurée sur les images fabriquées : celles du flux, **y compris** celles qui sont retombées sur un
+        mélange faute de confiance (leur score bas compte), le mélange simple (exact par définition : 1,0) ; ni les coupures (rien
+        à mesurer) ni un clip sans image fabriquée. 1,0 quand rien n'était mesurable : ``degraded`` dit alors ce qui s'est passé."""
         return self.confidence_sum / self.confidence_count if self.confidence_count else 1.0
 
     @property
@@ -295,6 +307,56 @@ def _seconds(value: float) -> str:
     return f"{max(0.0, float(value)):.9f}".rstrip("0").rstrip(".") or "0"
 
 
+_ALPHA_FORMATS = ("yuva", "gbrap", "rgba", "bgra", "argb", "abgr", "ya8", "ya16", "ayuv")
+"""Préfixes des formats de pixels qui portent un canal alpha."""
+
+
+def _has_alpha(path: str) -> bool:
+    """Le média porte-t-il de la transparence ? (sonde ``ffprobe`` mémorisée ; en cas de doute : non.)"""
+    from .decode_policy import default_context
+
+    try:
+        info = default_context().probe.get(path)
+    except Exception:  # noqa: BLE001 - une sonde qui échoue ne doit pas empêcher la préparation
+        return False
+    return info is not None and info.pix_fmt.startswith(_ALPHA_FORMATS)
+
+
+def _require_opaque(path: str) -> None:
+    """Refuse un média transparent : l'étage de préparation travaille en RVB opaque et en aplatirait le canal alpha."""
+    if _has_alpha(path):
+        raise PrepareError(
+            f"{os.path.basename(path)} a un canal alpha (transparence) : le mélange d'images et le flux optique le feraient "
+            "disparaître. Choisissez « Échantillonnage » pour ce clip."
+        )
+
+
+_LOSSLESS_CODECS = (("utvideo", "gbrp"), ("ffv1", "bgr0"))
+"""Codecs sans perte acceptés pour les images préparées, du préféré (le plus rapide) au repli : ``(encodeur, format de pixel)``."""
+
+
+@lru_cache(maxsize=1)
+def _lossless_codec() -> tuple[str, str]:
+    """Le premier codec sans perte que cette build de FFmpeg sait **encoder** ; ``PrepareError`` s'il n'y en a aucun.
+
+    Un codec absent d'une build minimale donnerait « Unknown encoder » au milieu d'un export ; on le sait avant de commencer.
+    """
+    try:
+        listing = supervised_run(
+            [_ffmpeg(), "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=30, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        listing = ""
+    names = {line.split()[1] for line in listing.splitlines() if len(line.split()) >= 2 and line.startswith(" V")}
+    for codec, pixel_format in _LOSSLESS_CODECS:
+        if codec in names or not names:                          # liste illisible : on tente le préféré, FFmpeg dira l'erreur
+            return codec, pixel_format
+    raise PrepareError(
+        "Cette version de FFmpeg ne sait écrire aucun codec sans perte (Ut Video, FFV1) : les images intermédiaires "
+        "ne peuvent pas être préparées. Installez un FFmpeg complet."
+    )
+
+
 def _read_exactly(pipe: Any, size: int) -> bytes | None:
     """``size`` octets du tube, ou ``None`` à la fin du flux (un reste partiel vaut une fin)."""
     chunks: list[bytes] = []
@@ -325,7 +387,7 @@ class _Decoder:
     def command(self) -> list[str]:
         request = self.request
         fs = request.source_fps if request.source_fps > 0 else 30.0
-        seek = max(0.0, (self.first - _SEEK_MARGIN_FRAMES) / fs)
+        seek = max(0.0, (self.first - _SEEK_MARGIN_FRAMES) / fs) if seeks_exactly(request.media_path) else 0.0
         window = f"trim=start={_seconds((self.first - TRIM_START_MARGIN) / fs)}:end={_seconds((self.last + TRIM_END_MARGIN) / fs)}"
         chain = [window, "setpts=PTS-STARTPTS"]
         if request.conform:
@@ -333,7 +395,9 @@ class _Decoder:
         chain.append("format=rgb24")
         return [
             _ffmpeg(), "-nostdin", "-hide_banner", "-v", "error",
-            "-ss", _seconds(seek), "-copyts", "-i", request.media_path,
+            # ``-copyts`` garde les horodatages du média après le saut (le ``trim`` ci-dessous les attend absolus) ; ``-start_at_zero``
+            # les compte depuis le début du *flux*, comme le graphe principal, et non depuis l'horloge du conteneur (MPEG-TS : 1,4 s).
+            *(["-ss", _seconds(seek)] if seek > 0 else []), "-copyts", "-start_at_zero", "-i", request.media_path,
             "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", ",".join(chain),
             "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
         ]
@@ -353,14 +417,20 @@ class _Decoder:
         drain = threading.Thread(target=lambda: errors.append(stderr.read()), daemon=True)
         drain.start()
         produced = 0
+        previous: Frame8 | None = None
         try:
             while produced < expected:
                 if self.cancelled():
                     raise PrepareCancelled
                 buffer = _read_exactly(stdout, size)
                 if buffer is None:
+                    try:
+                        process.wait(timeout=5.0)                   # fin de flux : le code de sortie dit si c'est la fin du média
+                    except subprocess.TimeoutExpired:
+                        pass
                     break
-                yield self.first + produced, np.frombuffer(buffer, dtype=np.uint8).reshape(request.height, request.width, 3)
+                previous = np.frombuffer(buffer, dtype=np.uint8).reshape(request.height, request.width, 3)
+                yield self.first + produced, previous
                 produced += 1
         finally:
             if process.poll() is None:
@@ -372,6 +442,14 @@ class _Decoder:
             supervisor.finish(process)
             drain.join(timeout=2.0)
             self.stderr = b"".join(item for item in errors if item).decode("utf-8", "replace")[-1500:]
+        if produced < expected and previous is not None and process.returncode == 0:
+            # La durée du média est celle de son *conteneur* : un son plus long que l'image annonce des images qui n'existent pas.
+            # Le graphe d'échantillonnage répète alors la dernière (``tpad``) ; le flux préparé fait de même, jamais une erreur.
+            LOGGER.info("Fin du média après %d images sur %d annoncées : la dernière est répétée (%s)",
+                        produced, expected, self.request.media_path)
+            for index in range(self.first + produced, self.last + 1):
+                yield index, previous
+            return
         if produced < expected:
             detail = self.stderr.strip().splitlines()[-1] if self.stderr.strip() else "fin du média atteinte"
             raise PrepareError(
@@ -394,10 +472,11 @@ class _Encoder:
 
     def command(self) -> list[str]:
         request = self.request
+        codec, pixel_format = _lossless_codec()
         return [
             _ffmpeg(), "-nostdin", "-hide_banner", "-v", "error", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{request.width}x{request.height}", "-r", f"{request.fps:.9g}",
-            "-i", "pipe:0", "-an", "-c:v", "utvideo", "-pix_fmt", "gbrp", "-f", "matroska", self.target,
+            "-i", "pipe:0", "-an", "-c:v", codec, "-pix_fmt", pixel_format, "-f", "matroska", self.target,
         ]
 
     def start(self) -> None:
@@ -536,6 +615,7 @@ def prepare(
         return None
     if not os.path.isfile(request.media_path):
         raise PrepareError(f"Média introuvable : {request.media_path}. Reconnectez-le avant de calculer les images intermédiaires.")
+    _require_opaque(request.media_path)
     check = cancelled or (lambda: False)
     engine = OpticalFlowEngine(request.quality, request.preference) if request.interpolation is TimeInterpolation.OPTICAL_FLOW else None
     identity = engine.identity if engine is not None else ()
@@ -575,12 +655,12 @@ def prepare(
                         if request.interpolation is TimeInterpolation.BLENDING or engine is None:
                             mixed = blend_frames(_to_float(first), _to_float(second), sample.t)
                             encoder.write(_to_bytes(mixed))
-                            report.add(Fallback.NONE, None)
+                            report.add(Fallback.NONE, 1.0)                  # le mélange demandé est exactement ce qui est fait
                         else:
                             pair = _analysis(request, engine, cache, sample.a, first, second, pairs, floats, report, check)
                             result = engine.interpolator.interpolate(floats[sample.a], floats[sample.a + 1], pair, sample.t)
                             encoder.write(_to_bytes(result.pixels))
-                            report.add(result.fallback, result.confidence if result.fallback is Fallback.NONE else None)
+                            report.add(result.fallback, None if result.fallback is Fallback.SCENE_CUT else result.confidence)
                     done += 1
                     if progress is not None:
                         progress(done, total)
@@ -599,6 +679,68 @@ def prepare(
     path = cache.promote_stream(temporary, key, report.to_dict())
     LOGGER.info("Images intermédiaires : %s", report.summary())
     return PreparedStream(str(path), tuple(layout), total, report)
+
+
+def analyze_pairs(
+    request: PrepareRequest,
+    cache: FlowCache,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> PrepareReport:
+    """Calcule et range les vecteurs de mouvement de toutes les paires que le clip demande, **sans fabriquer d'image**.
+
+    C'est le pré-calcul « Analyser le flux optique » : il rend l'aperçu fidèle et l'export suivants rapides (ils relisent les
+    paires du cache). Il lit les mêmes images, au même cadre, que la préparation : les clés sont celles que l'export réclamera.
+    Rien à faire pour le mélange d'images ou l'échantillonnage (aucun mouvement à estimer) : le bilan est alors vide.
+
+    Raises:
+        PrepareCancelled: annulé (les paires déjà rangées restent valables : elles ne dépendent que du média).
+        PrepareError: décodage impossible.
+    """
+    report = PrepareReport(backend="")
+    if request.interpolation is not TimeInterpolation.OPTICAL_FLOW:
+        return report
+    plan = request.plan()
+    pairs = plan.pairs()
+    if not pairs:
+        return report
+    if not os.path.isfile(request.media_path):
+        raise PrepareError(f"Média introuvable : {request.media_path}. Reconnectez-le avant d'analyser le flux optique.")
+    _require_opaque(request.media_path)
+    check = cancelled or (lambda: False)
+    engine = OpticalFlowEngine(request.quality, request.preference)
+    report.backend = engine.backend.name
+    report.images = len(pairs)
+    started = time.perf_counter()
+    done = 0
+    groups: list[list[int]] = []
+    for index in pairs:
+        if groups and index == groups[-1][-1] + 1:
+            groups[-1].append(index)
+        else:
+            groups.append([index])
+    try:
+        for group in groups:
+            window = _FrameWindow(_Decoder(request, group[0], group[-1] + 1, check).frames())
+            known: dict[int, PairAnalysis] = {}
+            floats: dict[int, FrameF] = {}
+            try:
+                for index in group:
+                    if check():
+                        raise PrepareCancelled
+                    _analysis(request, engine, cache, index, window.get(index), window.get(index + 1), known, floats, report, check)
+                    done += 1
+                    if progress is not None:
+                        progress(done, len(pairs))
+            finally:
+                window.close()
+    except FlowCancelled as stop:
+        raise PrepareCancelled from stop
+    report.synthesized = 0
+    report.seconds = time.perf_counter() - started
+    LOGGER.info("Analyse du flux optique : %s", report.summary())
+    return report
 
 
 def _analysis(
@@ -653,6 +795,7 @@ __all__ = [
     "PreparedRun",
     "PreparedStream",
     "WindowedRun",
+    "analyze_pairs",
     "needs_preparation",
     "prepare",
     "stream_key",

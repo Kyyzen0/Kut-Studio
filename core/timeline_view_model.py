@@ -19,6 +19,7 @@ import zlib
 from dataclasses import dataclass
 
 from .project_model import Clip, Project, Track
+from .time_map import speed_keyframes
 
 
 _CLIP_COLOR_PALETTE: tuple[str, ...] = (
@@ -107,6 +108,10 @@ class TimelineClipView:
     angle_count: int = 0
     angle_name: str = ""
     angle_color_index: int = 0
+    # --- Temps ---
+    # Points de la courbe de vitesse (keyframes ``time.speed``, temps local du clip) : l'inspecteur en donne le nombre et la
+    # timeline en dessine la courbe. Vide pour un clip à vitesse constante.
+    speed_points: tuple = ()
 
     @property
     def is_nested(self) -> bool:
@@ -216,6 +221,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     angle_count=angle_count,
                     angle_name=angle_name,
                     angle_color_index=angle_color,
+                    speed_points=speed_keyframes(clip),
                 )
             )
     return views

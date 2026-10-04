@@ -42,6 +42,11 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
 * Le graphe vidéo est construit une fois (`ExportEngine._build_filter_complex`) et réutilisé tel quel par
   l'aperçu fidèle (`build_preview_command`), y compris sa dernière étape de couleur
   (`with_output_color_stage` : conversion BT.709, plage limitée, propriétés posées sur les images).
+* **Images intermédiaires** : le graphe sait *choisir* une image source, pas en *fabriquer*. Un clip qui demande un mélange ou
+  un flux optique (et dont au moins une image n'est pas exactement une image source) a ses images préparées **avant** FFmpeg
+  (`core/retime_layers.prepare_plan`, dans un fil, annulable, avec progression) dans un fichier sans perte que le graphe relit :
+  l'export, l'aperçu fidèle (seulement la fenêtre du segment) et les scopes lisent les mêmes images. Un clip qui n'en a pas
+  besoin (200 %, arrêt…) reste dans le graphe d'échantillonnage, qui produit alors exactement les mêmes images.
 * Le **moniteur temps réel** est un approximatif assumé (il doit tenir la cadence) : l'image qui fait foi est
   celle de l'aperçu fidèle, puis celle de l'export.
 
@@ -51,12 +56,14 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
 | --- | --- | --- | --- |
 | Contenu du montage | `Project` / `Sequence` / `Track` / `Clip` (`core/project_model.py`) ; `project.tracks` = pistes de la séquence **active**, `project.all_tracks()` = toutes | panneaux, plan de rendu, historique | `test_kut_integrity.py` |
 | Ce qui est rendu | `RenderPlan` (`core/render_plan.py`), immuable, avec `warnings` et `missing_media` | export, aperçu fidèle, scopes, empreintes | `test_render_plan.py`, `test_preview_parity.py` |
-| Temps source ↔ temps timeline | `timeline_to_source_time` et `TimeRemapping` (`core/time_remapping.py`) | trims, export, aperçu, tracking | `test_time_remapping.py`, `test_trim_with_remapping.py`, `test_export_remapping_real.py` |
+| Temps source ↔ temps timeline | `TimeMap` (`core/time_map.py`) : vitesse en **courbe** (`time.speed`), sens, arrêt, intégrale exacte ; `TimeRemapping` n'en est que le réglage statique ([time-remapping.md](time-remapping.md)) | trims, coupes, évaluateur, séquences imbriquées, Multicam, suivi, plan de rendu, graphe d'export, empreintes | `test_time_map.py`, `test_speed_curve_edits.py`, `test_trim_with_remapping.py`, `test_retime_export_real.py` (le vrai FFmpeg, image par image) |
+| Images intermédiaires (mélange d'images, flux optique) | `core/frame_interpolation.py` (le plan : paire et poids par tick), fabriquées par `core/retime_prepare.py` ; **recalculables**, jamais dans le `.kut` ([optical-flow.md](optical-flow.md)) | graphe d'export, aperçu fidèle, scopes | `test_frame_interpolation.py`, `test_retime_prepare*.py`, `test_export_interpolation_real.py` |
+| Vecteurs de mouvement | `FlowCache` (`core/flow_cache.py`) : une analyse par paire d'images, clé = média réellement décodé + grille + moteur ; la forme **stockée** est la définition du résultat | préparation des images, analyse « Analyser le flux optique » | `test_flow_cache.py`, `test_flow_analysis.py` |
 | Temps d'un keyframe | **temps local du clip** (0 = début du clip sur la timeline) ; invariant : aucun keyframe après la fin du clip | animation, graph editor, tracking | `test_keyframes_after_duration_change.py` |
-| Durée d'un clip | `source_out − source_in`, divisée par la vitesse (`Clip.duration`), jamais stockée à part | timeline, plan de rendu | `test_timeline_operations.py` |
+| Durée d'un clip | **dérivée** du `TimeMap` (`Clip.duration`) : l'instant où la source est épuisée ; sans courbe, `(source_out − source_in) / vitesse` ; une durée imposée (après une coupe) ne peut que raccourcir | timeline, plan de rendu | `test_timeline_operations.py`, `test_time_map.py` |
 | Couleur de sortie | BT.709 partout, y compris en SD : étape `OUTPUT_COLOR_STAGE` + balises `OUTPUT_COLOR_TAGS` | export, aperçu fidèle | `test_export_color.py`, `test_gpu_pipeline.py`, `test_hardware_color_validation.py` (chaque encodeur **disponible**, relu avec ffprobe) |
 | Image de la tête de lecture (scopes) | `project_at_playhead` (`core/playhead_snapshot.py`) puis le même graphe | panneau de scopes | `test_scopes_real.py`, `test_playhead_frame.py` |
-| Empreinte d'un segment d'aperçu | `fingerprint_plan` (`core/filter_graph.py`) + `RENDER_ENGINE_VERSION` | cache disque des segments | `test_segment_fingerprint.py` |
+| Empreinte d'un segment d'aperçu | `fingerprint_plan` (`core/filter_graph.py`) + `RENDER_ENGINE_VERSION` ; le mapping de chaque clip y figure et, si un clip interpole, la version du moteur d'images | cache disque des segments | `test_segment_fingerprint.py`, `test_export_interpolation_real.py` |
 | Raccourcis | `core/shortcuts.py` (table des commandes) ; le gestionnaire (`ui/shortcut_manager.py`) l'applique ; les infobulles lisent `hint()` | menus, boutons, éditeur de raccourcis | `test_shortcuts*.py`, `test_ui_honesty.py` |
 | Dossier de cache | `user_cache_dir()` (`core/platform_paths.py`, surcharge : `KUT_STUDIO_CACHE_DIR`) | aperçu, proxies, tracking, images de calques, capacités | `test_cache_roots.py` |
 | Capacités matérielles | `CapabilityService` (`core/hardware_cache.py`), une détection pour encodeurs **et** décodeurs ; `DecodeHealth` pour les bannissements | préférences, export, décodage, validation matérielle (`core/hardware_validation.py`) | `test_hardware_*.py`, `test_decode_policy.py` |
@@ -90,11 +97,14 @@ La même question se pose partout : *que fait-on d'une donnée incohérente ?* R
 
 ## Caches et empreintes
 
-* Tout est sous `user_cache_dir()` : `preview/`, `proxies/`, `mograph/`, `graphics/`, `tracking/`, capacités matérielles.
+* Tout est sous `user_cache_dir()` : `preview/`, `proxies/`, `mograph/`, `graphics/`, `tracking/`, `multicam/`, `flow/` (vecteurs
+  de mouvement et flux d'images préparés), capacités matérielles.
   `CacheManager` (`core/cache_manager.py`) en tient le budget (LRU, purge, statistiques).
 * **Empreinte d'un segment d'aperçu** : tout ce qui change l'image doit y figurer (calques, effets, fader maître,
   styles de sous-titres, fps, version du moteur…). Si vous changez ce que le graphe produit, **incrémentez
   `RENDER_ENGINE_VERSION`** : les anciens segments sont alors ignorés au lieu d'être resservis.
+* **Un cache ne change jamais le rendu** : un résultat dérivé d'un cache (vecteurs de mouvement) est défini par sa forme
+  stockée, que le calcul à froid utilise lui aussi ; deux rendus, à froid et à chaud, sont identiques au bit près.
 * Un cache n'est jamais lu sans validation (taille, version, structure) : `TrackingCache`, `CapabilityService`
   et le cache de segments traitent une entrée mal formée comme absente.
 

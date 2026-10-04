@@ -115,11 +115,53 @@ def test_an_object_moving_behind_an_occluder_is_never_worse_than_a_blend():
         assert flow <= 1.3 * blended + 0.01, (t, flow, blended)
 
 
+def test_a_still_flat_background_does_not_inherit_the_motion_of_a_small_moving_element():
+    """Régression mesurée sur une mire presque immobile : sans a priori de mouvement nul, la diffusion portait le mouvement du petit
+    élément mobile jusque dans les aplats immobiles (2,6 px de flux parasite, confiance 0,48 puis repli en mélange)."""
+    flat = lambda x, y: np.full_like(x, 0.30)  # noqa: E731
+    scene = Scene(W, H, [Body(24, linear(200, 90, 8, 0))], background=flat)
+    _a, _b, pair, synthesized = interpolate(scene, 0.5)
+    assert pair.forward is not None
+    far = np.hypot(pair.forward.u, pair.forward.v)[:, : pair.forward.width // 4]               # le quart gauche, loin de l'élément
+    assert float(far.mean()) < 0.4, float(far.mean())
+    assert synthesized.fallback is Fallback.NONE and synthesized.confidence > 0.85, synthesized.confidence
+
+
 def test_static_content_is_taken_as_it_is_without_estimating_anything():
     scene = Scene(W, H, [Body(60, linear(100, 90, 0, 0))])
     frame_a, _frame_b, pair, synthesized = interpolate(scene, 0.5)
     assert pair.status is Fallback.IDENTICAL and pair.forward is None
     assert synthesized.fallback is Fallback.IDENTICAL and np.array_equal(synthesized.pixels, frame_a)
+
+
+def test_a_small_object_moving_in_a_large_still_frame_is_not_taken_for_identical_images():
+    """Régression trouvée par le banc à 4K : un carré de 540 px qui avance de 8 px a un écart **moyen** minuscule (5e-4) ; l'ancien
+    critère le jugeait identique, sautait le flux et l'objet ne bougeait plus de façon fluide."""
+    scene = Scene(1000, 600, [Body(24, linear(300, 300, 8, 0))])
+    first, second = rgb(scene.render(4.0)), rgb(scene.render(5.0))
+    assert float(np.abs(first - second).mean()) < 1e-3                                         # l'écart moyen est tout petit…
+    engine = OpticalFlowEngine(FlowQuality.BALANCED)
+    pair = engine.estimator.analyze(first, second)
+    assert pair.status is Fallback.NONE and pair.forward is not None                           # … et pourtant : du mouvement
+    halfway = engine.interpolator.interpolate(first, second, pair, 0.5)
+    truth = scene.render(4.5)
+    got = scene.centroid(halfway.pixels[:, :, 0])
+    assert np.hypot(got[0] - scene.centroid(truth)[0], got[1] - scene.centroid(truth)[1]) < 0.5
+
+
+def test_a_difference_at_the_level_of_compression_noise_is_still_identical():
+    scene = Scene(W, H, [Body(60, linear(100, 90, 0, 0))])
+    first = rgb(scene.render(4.0))
+    second = first + np.random.default_rng(5).uniform(-0.004, 0.004, first.shape).astype(np.float32)   # ≈ ±1 niveau sur 255
+    assert OpticalFlowEngine(FlowQuality.BALANCED).estimator.analyze(first, second).status is Fallback.IDENTICAL
+
+
+def test_the_changed_fraction_counts_pixels_not_an_average():
+    a = np.zeros((100, 100), np.float32)
+    b = a.copy()
+    b[:3, :3] = 0.5                                                                            # 9 pixels sur 10 000
+    assert flow_numpy.changed_fraction(a, b, 0.02) == pytest.approx(9 / 10_000)
+    assert flow_numpy.changed_fraction(a, a, 0.02) == 0.0 and flow_numpy.changed_fraction(a, a[:50], 0.02) == 1.0
 
 
 def test_a_hard_cut_is_never_blended_into_two_ghosted_shots():
@@ -274,3 +316,16 @@ def test_blend_is_exactly_a_times_one_minus_t_plus_b_times_t():
     a = np.full((4, 4, 3), 0.2, np.float32)
     b = np.full((4, 4, 3), 0.8, np.float32)
     assert np.allclose(blend_frames(a, b, 0.25), 0.2 * 0.75 + 0.8 * 0.25)
+
+
+def test_the_thresholds_that_decide_what_a_pair_is_belong_to_the_identity_of_its_analysis(monkeypatch):
+    """Retoucher un seuil change le verdict stocké (identique, coupure, confiance basse) : les anciennes analyses ne sont pas relues."""
+    import core.optical_flow as optical_flow
+
+    engine = OpticalFlowEngine(FlowQuality.BALANCED)
+    before = engine.identity
+    for name in ("MIN_FLOW_SCORE", "CUT_HISTOGRAM", "CUT_CORRELATION", "IDENTICAL_LEVEL", "IDENTICAL_FRACTION"):
+        monkeypatch.setattr(optical_flow, name, getattr(optical_flow, name) * 1.5)
+        assert engine.identity != before, name
+        monkeypatch.undo()
+        assert engine.identity == before

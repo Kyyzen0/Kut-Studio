@@ -38,15 +38,22 @@ if TYPE_CHECKING:
 
 CancelCheck = Callable[[], bool]
 
-ENGINE_VERSION = 1
-"""Version de l'algorithme : à incrémenter dès qu'un champ stocké, ou une image fabriquée, ne serait plus celle recalculée."""
+ENGINE_VERSION = 2
+"""Version de l'algorithme : à incrémenter dès qu'un champ stocké, ou une image fabriquée, ne serait plus celle recalculée.
+
+2 : lissage avec a priori de mouvement nul (une zone plate immobile n'hérite plus du mouvement d'un petit objet) et images
+identiques détectées par la fraction de pixels changés (et non l'écart moyen) ; les analyses de la version 1 sont ignorées."""
 
 CUT_HISTOGRAM = 0.45
 CUT_CORRELATION = 0.6
 """Coupure franche : histogrammes de luminance très différents (variation totale ≥ 0,45) **et** structures sans rapport
 (corrélation normalisée < 0,6). Un flash change l'histogramme mais garde la structure : ce n'est pas une coupure."""
-IDENTICAL_DIFFERENCE = 5e-4
-"""Écart moyen absolu de luminance (0…1) en deçà duquel deux images sont les mêmes (caméra immobile, image dupliquée)."""
+IDENTICAL_LEVEL = 0.02
+IDENTICAL_FRACTION = 2e-5
+"""Deux images sont les mêmes (caméra immobile, image dupliquée) quand moins de 0,002 % de leurs pixels diffèrent de plus de 0,02
+en luminance (≈ 5 niveaux sur 255 : le bruit de compression). On compte les pixels qui ont **changé**, on ne fait pas une moyenne :
+un petit objet qui bouge dans une grande image immobile (un carré de 540 px à 4K) a un écart moyen minuscule et doit pourtant être
+interpolé (mesuré : l'ancien critère « écart moyen < 5e-4 » le jugeait identique et sautait le flux)."""
 MIN_FLOW_SCORE = 0.35
 """Confiance minimale d'une image fabriquée par le flux ; en deçà, un mélange simple est plus honnête qu'un mouvement douteux."""
 
@@ -233,7 +240,7 @@ class NumpyBackend:
     """Backend processeur : NumPy seul, déterministe, disponible partout (:mod:`core.flow_numpy`)."""
 
     name = "numpy"
-    version = 1
+    version = 2
     device = "cpu"
 
     def available(self) -> bool:
@@ -242,7 +249,7 @@ class NumpyBackend:
     def analyze(self, a: Plane, b: Plane, params: FlowParams, cancel: CancelCheck | None = None) -> PairAnalysis:
         from . import flow_numpy as engine
 
-        if engine.mean_difference(a, b) < IDENTICAL_DIFFERENCE:
+        if engine.changed_fraction(a, b, IDENTICAL_LEVEL) < IDENTICAL_FRACTION:
             return PairAnalysis(Fallback.IDENTICAL)
         if engine.scene_change(a, b) >= CUT_HISTOGRAM and engine.correlation(a, b) < CUT_CORRELATION:
             return PairAnalysis(Fallback.SCENE_CUT)
@@ -348,14 +355,57 @@ class OpticalFlowEngine:
     @property
     def identity(self) -> tuple[object, ...]:
         """Tout ce qui, avec les images, détermine le résultat : moteur, backend (nom, version), réglages d'analyse."""
-        return (ENGINE_VERSION, self.backend.name, self.backend.version, *self.params.key())
+        return (ENGINE_VERSION, self.backend.name, self.backend.version, *self.params.key(), *classification_key())
+
+
+def classification_key() -> tuple[float, ...]:
+    """Les seuils qui décident ce qu'une paire *est* (identique, coupure, confiance trop basse) : ils changent le verdict stocké dans
+    le cache, donc l'identité de l'analyse. Retoucher l'un d'eux invalide les analyses faites avec l'ancienne valeur."""
+    return (CUT_HISTOGRAM, CUT_CORRELATION, IDENTICAL_LEVEL, IDENTICAL_FRACTION, MIN_FLOW_SCORE)
+
+
+def self_check() -> str | None:
+    """Contrôle de l'application construite (smoke test) : le backend NumPy tourne et suit un décalage connu.
+
+    Une texture lisse est décalée de ``(5, 2)`` px : le flux estimé doit le retrouver, et l'image intermédiaire au milieu doit être
+    plus proche du décalage de moitié qu'un simple mélange. ``None`` si tout va bien, sinon la cause (NumPy ou une extension C
+    manquante dans l'empaquetage, algorithme faussé).
+    """
+    try:
+        import numpy as np
+
+        from . import flow_numpy as engine
+    except Exception as error:  # noqa: BLE001 - un module absent de l'empaquetage ne doit pas faire planter le contrôle
+        return f"NumPy ou le backend de flux optique est indisponible ({error})"
+    try:
+        rng = np.random.default_rng(3)
+        coarse = rng.random((12, 16)).astype(np.float32)
+        texture = engine.box_mean(engine.box_mean(np.kron(coarse, np.ones((6, 6), np.float32)), 3), 3)       # 72 × 96, lisse
+        first = np.repeat(texture[:, :, None], 3, axis=2)
+        second = np.roll(first, (2, 5), axis=(0, 1))
+        params = FlowParams(scale=1, levels=4, iterations=3, window=4, smoothing=3)
+        forward, backward = engine.estimate_pair(first[:, :, 0], second[:, :, 0], params)
+        interior = (slice(12, -12), slice(12, -12))
+        shift_x, shift_y = float(forward.u[interior].mean()), float(forward.v[interior].mean())
+        if abs(shift_x - 5.0) > 0.6 or abs(shift_y - 2.0) > 0.6:
+            return f"flux optique faussé : décalage (5, 2) retrouvé comme ({shift_x:.2f}, {shift_y:.2f})"
+        halfway = np.roll(first, (1, 2), axis=(0, 1))
+        fields = (forward, backward)
+        synthesized, _confidence, _unreliable = engine.synthesize(first, second, *fields, 0.5)
+        if float(np.abs(synthesized - halfway)[interior].mean()) >= float(np.abs(engine.blend(first, second, 0.5) - halfway)[interior].mean()):
+            return "l'image intermédiaire n'est pas plus juste qu'un mélange simple"
+        PairAnalysis.unpack(PairAnalysis.from_flows(forward, backward).pack())
+    except Exception as error:  # noqa: BLE001 - la cause est rapportée telle quelle
+        return f"flux optique en échec ({type(error).__name__}: {error})"
+    return None
 
 
 __all__ = [
     "CUT_CORRELATION",
     "CUT_HISTOGRAM",
     "ENGINE_VERSION",
-    "IDENTICAL_DIFFERENCE",
+    "IDENTICAL_FRACTION",
+    "IDENTICAL_LEVEL",
     "MIN_FLOW_SCORE",
     "STORAGE_REDUCTION",
     "BackendPreference",
@@ -373,7 +423,9 @@ __all__ = [
     "analysis_plane",
     "backends",
     "blend_frames",
+    "classification_key",
     "luma_plane",
     "params_for",
     "select_backend",
+    "self_check",
 ]

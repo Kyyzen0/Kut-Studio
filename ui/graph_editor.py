@@ -128,12 +128,13 @@ class CurveCanvas(QWidget):
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
             painter.setPen(text)
             painter.drawText(QPointF(x + 2, plot.bottom() + 14), _format(t) + " s")
+        scale = self.editor.display_scale()                                 # sans clip ni propriété, la grille se dessine quand même
         for v in _ticks(self.v0, self.v1, 6):
             y = self.to_screen(0, v).y()
             painter.setPen(QPen(grid, 1))
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
             painter.setPen(text)
-            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v))
+            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter, _format(v * scale))
 
     def _paint_curve(self, painter: QPainter, plot: QRectF, curve) -> None:
         spec = self.editor.target().spec
@@ -396,6 +397,10 @@ class GraphEditorWindow(QWidget):
     def target(self):
         return get_target(self.property_id)
 
+    def display_scale(self) -> float:
+        """Facteur d'affichage de la propriété (100 pour une vitesse en %) ; 1 tant qu'aucune propriété n'est ouverte."""
+        return self.target().spec.display_scale if self.property_id else 1.0
+
     def curve(self):
         clip = self._clip()
         if clip is None or self.property_id is None:
@@ -476,12 +481,15 @@ class GraphEditorWindow(QWidget):
         self.interpolation_combo.setEnabled(bool(selected))
         self.tangent_combo.setEnabled(bool(selected))
         self.frame_selected_button.setEnabled(bool(selected))
+        scale = 1.0
         if self.property_id:
             spec = self.target().spec
-            self.value_spin.setRange(spec.minimum if spec.minimum is not None else -1e9,
-                                     spec.maximum if spec.maximum is not None else 1e9)
+            scale = spec.display_scale
+            self.value_spin.setSuffix(spec.display_unit)
+            self.value_spin.setRange((spec.minimum if spec.minimum is not None else -1e9) * scale,
+                                     (spec.maximum if spec.maximum is not None else 1e9) * scale)
         if single is not None:
-            for widget, value in ((self.time_spin, single.time_seconds), (self.value_spin, float(single.value))):
+            for widget, value in ((self.time_spin, single.time_seconds), (self.value_spin, float(single.value) * scale)):
                 widget.blockSignals(True)
                 widget.setValue(value)
                 widget.blockSignals(False)
@@ -601,7 +609,8 @@ class GraphEditorWindow(QWidget):
         refs = self.selected_refs()
         if len(refs) != 1:
             return
-        set_keyframe_values(self.host.project, {refs[0]: self.value_spin.value()})
+        scale = self.display_scale()
+        set_keyframe_values(self.host.project, {refs[0]: self.value_spin.value() / scale})
         self._edited(i18n.translate("history.keyframes.edit_one"), record=True)
 
     # -- textes ------------------------------------------------------------------------------------------

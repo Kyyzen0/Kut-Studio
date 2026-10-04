@@ -357,3 +357,159 @@ def test_the_local_window_covers_the_segment_with_a_margin(index_media):
     layer = build_render_plan(project).video_layers[0]
     assert local_window(layer, (2.0, 4.0), FPS) == (2 * FPS - WINDOW_MARGIN_TICKS, 4 * FPS + WINDOW_MARGIN_TICKS)
     assert local_window(layer, (-5.0, 1.0), FPS)[0] == 0                                   # jamais avant le début du clip
+
+
+# ---------------------------------------------------------------------------
+# Séquences imbriquées : un clip interpolé dans l'enfant
+# ---------------------------------------------------------------------------
+
+
+def _nested_project(index_media, inner_remapping):
+    from core.project_model import Sequence
+    from core.sequences import insert_sequence_clip
+
+    asset = MediaAsset(id="a", path=index_media, name="m", duration=SOURCE_FRAMES / FPS, width=W, height=H, fps=float(FPS),
+                       media_type="video", has_audio=False)
+    inner_clip = Clip(id="n1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0,
+                      time_remapping=inner_remapping)
+    inner = Sequence(id="inner", name="Inner", width=W, height=H, fps=float(FPS),
+                     tracks=[Track(id="V1", name="V1", type="video", clips=[inner_clip])])
+    main = Sequence(id="main", name="Main", width=W, height=H, fps=float(FPS), tracks=[Track(id="V1", name="V1", type="video")])
+    project = Project(name="p", width=W, height=H, fps=float(FPS), media_assets=[asset], sequences=[main, inner],
+                      active_sequence_id="main")
+    insert_sequence_clip(project, "inner", "V1", 0.0)
+    return project, inner_clip
+
+
+def test_an_interpolating_clip_inside_a_nested_sequence_is_prepared_at_the_size_the_graph_reads(index_media, cache):
+    project, inner_clip = _nested_project(index_media, TimeRemapping(speed=0.5, interpolation=BLENDING))
+    plan = build_render_plan(project)
+    assert plan_needs_preparation(plan, W, H, FPS)
+    frames, preparation = render(project, W, H, cache)
+    assert preparation is not None and list(preparation.streams) == ["n1"]
+    got = index_values(frames)
+    for tick in range(0, len(got) - 3):
+        expected = inner_clip.time_map.source_time(tick / FPS) * FPS
+        assert abs(got[tick] - expected) < 0.45, (tick, got[tick], expected)
+
+
+def test_a_nested_sequence_set_to_an_interpolation_by_hand_is_refused_not_silently_sampled(index_media):
+    from core.sequences import insert_sequence_clip  # noqa: F401 - la séquence imbriquée existe
+
+    project, _inner = _nested_project(index_media, TimeRemapping())
+    nested = project.tracks[0].clips[0]
+    nested.time_remapping = TimeRemapping(speed=0.5, interpolation=BLENDING)               # impossible par l'interface : un .kut écrit à la main
+    with pytest.raises(RetimeError, match="séquence imbriquée"):
+        ExportEngine._build_filter_complex(build_render_plan(project), W, H, FPS, None)
+    nested.time_remapping = TimeRemapping(speed=2.0, interpolation=FLOW)                    # 200 % : rien à fabriquer, donc rien à refuser
+    ExportEngine._build_filter_complex(build_render_plan(project), W, H, FPS, None)
+
+
+# ---------------------------------------------------------------------------
+# Scopes : une image, sans geler l'interface
+# ---------------------------------------------------------------------------
+
+
+def test_the_sampling_plan_changes_nothing_but_the_interpolation_of_each_clip(index_media):
+    from core.retime_layers import sampling_plan
+
+    project, _clip = make_project(index_media, frames=SOURCE_FRAMES, width=W, height=H,
+                                  remapping=TimeRemapping(speed=0.5, interpolation=FLOW, flow_quality=FlowQuality.BEST))
+    plan = build_render_plan(project)
+    simple = sampling_plan(plan)
+    layer, original = simple.video_layers[0], plan.video_layers[0]
+    assert layer.time_remapping.interpolation is SAMPLING and layer.time_remapping.flow_quality is FlowQuality.BEST
+    assert layer.time_remapping.speed == original.time_remapping.speed == 0.5 and layer.time_map == original.time_map
+    assert original.time_remapping.interpolation is FLOW                                    # le plan d'origine n'est pas modifié
+    assert not plan_needs_preparation(simple, W, H, FPS) and plan_needs_preparation(plan, W, H, FPS)
+
+
+def test_the_frame_command_of_the_scopes_never_prepares_unless_asked(index_media, tmp_path):
+    from core.export_engine import ExportFormat, ExportPreset, ExportRequest
+
+    project, _clip = make_project(index_media, frames=SOURCE_FRAMES, width=W, height=H,
+                                  remapping=TimeRemapping(speed=0.25, interpolation=BLENDING))
+    request = ExportRequest(render_plan=build_render_plan(project), output_path=str(tmp_path / "f.png"),
+                            format=ExportFormat.MP4_H264, preset=ExportPreset("T", (W, H), 18, "96k"), fps=FPS)
+    engine = ExportEngine()
+    engine.flow_cache = FlowCache(tmp_path / "flow")
+    done = subprocess.run(engine.build_frame_command(request, 1.0), capture_output=True, timeout=60)
+    assert done.returncode == 0 and done.stdout[:4] == b"\x89PNG"
+    assert not (tmp_path / "flow").exists() or not list((tmp_path / "flow").glob("frames-*"))   # rien n'a été fabriqué
+    exact = subprocess.run(engine.build_frame_command(request, 1.0, interpolate=True), capture_output=True, timeout=60)
+    assert exact.returncode == 0 and len(list((tmp_path / "flow").glob("frames-*.mkv"))) == 1       # sur demande : l'image est fabriquée
+
+
+# ---------------------------------------------------------------------------
+# Un conteneur dont le temps ne démarre pas à zéro (MPEG-TS : 1,4 s ; piste vidéo décalée par rapport à l'audio)
+# ---------------------------------------------------------------------------
+
+OFFSETS = {"one-frame": (".mkv", ["-output_ts_offset", "0.0333333"]), "one-second": (".mkv", ["-output_ts_offset", "1.0"]),
+           "mpegts": (".ts", [])}
+
+
+@pytest.fixture(scope="module", params=sorted(OFFSETS))
+def offset_media(request, tmp_path_factory):
+    extension, options = OFFSETS[request.param]
+    path = tmp_path_factory.mktemp("offset") / f"index{extension}"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+         f"color=c=black:s={W}x{H}:r={FPS}:d={SOURCE_FRAMES / FPS},geq=lum='20+3*N':cb=128:cr=128,format=yuv420p",
+         "-c:v", "libx264", "-crf", "0", "-preset", "ultrafast", *options, str(path)],
+        check=True, timeout=60,
+    )
+    start = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=start_time", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=30).stdout.strip()
+    assert float(start) > 0.02, f"le média de test doit démarrer après zéro, il démarre à {start}"
+    return str(path)
+
+
+@pytest.mark.parametrize("source_in", [0.0, 0.4])
+def test_the_prepared_images_do_not_depend_on_where_the_container_clock_starts(offset_media, cache, source_in):
+    project, clip = make_project(offset_media, frames=SOURCE_FRAMES, width=W, height=H, source=1.8,
+                                 remapping=TimeRemapping(speed=0.5, interpolation=BLENDING))
+    clip.source_in = source_in
+    frames, preparation = render(project, W, H, cache)
+    assert preparation is not None and preparation.report.synthesized > 0
+    got = index_values(frames)
+    for tick in range(0, len(got) - 3):
+        expected = clip.time_map.source_time(tick / FPS) * FPS
+        assert abs(got[tick] - expected) < 0.45, (source_in, tick, got[tick], expected)
+
+
+# ---------------------------------------------------------------------------
+# Un son plus long que l'image : la durée du conteneur annonce des images qui n'existent pas
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def long_audio_media(tmp_path_factory):
+    path = tmp_path_factory.mktemp("longaudio") / "index.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+         f"color=c=black:s={W}x{H}:r={FPS}:d={SOURCE_FRAMES / FPS},geq=lum='20+3*N':cb=128:cr=128,format=yuv420p",
+         "-f", "lavfi", "-i", f"sine=frequency=440:duration={SOURCE_FRAMES / FPS + 0.5}",
+         "-c:v", "libx264", "-crf", "0", "-preset", "ultrafast", "-c:a", "aac", str(path)],
+        check=True, timeout=60,
+    )
+    duration = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                                    capture_output=True, text=True, timeout=30).stdout)
+    assert duration > SOURCE_FRAMES / FPS + 0.3, "le conteneur de test doit être plus long que sa vidéo"
+    return str(path), duration
+
+
+@pytest.mark.parametrize("mode", [BLENDING, FLOW])
+def test_a_container_longer_than_its_video_repeats_the_last_image_like_the_sampling_graph(long_audio_media, cache, mode):
+    path, container = long_audio_media
+    frames_announced = round(container * FPS)
+    assert frames_announced > SOURCE_FRAMES                                              # c'est bien le défaut qu'on reproduit
+    project, clip = make_project(path, frames=frames_announced, width=W, height=H,
+                                 remapping=TimeRemapping(speed=0.5, interpolation=mode))
+    frames, preparation = render(project, W, H, cache)
+    assert preparation is not None and preparation.streams
+    got = index_values(frames)
+    assert len(got) >= 2 * SOURCE_FRAMES
+    for tick in (0, 10, 40, 80, 100):
+        expected = min(SOURCE_FRAMES - 1.0, clip.time_map.source_time(tick / FPS) * FPS)
+        assert abs(got[tick] - expected) < 0.9, (tick, got[tick], expected)
+    assert all(abs(value - (SOURCE_FRAMES - 1.0)) < 0.5 for value in got[-5:])           # le dernier repère tient jusqu'à la fin

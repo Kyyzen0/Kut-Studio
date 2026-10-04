@@ -26,6 +26,8 @@ import hashlib
 import json
 import logging
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -42,9 +44,17 @@ _FRESH_SIGNATURES = SignatureMemo(ttl=0.0)
 """Signature relue à chaque appel : le mémo partagé garde une valeur 2 s, trop pour valider un résultat d'analyse."""
 _PREFIX = "pair-"
 _SUFFIX = ".npz"
+def _writer_tag() -> str:
+    """Nom propre à *une* écriture : processus **et** appel. Deux fils du même processus (export, aperçu, analyse) qui préparent la
+    même clé n'écrivent jamais dans le même fichier ; deux instances de l'application non plus."""
+    return f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+
 _STREAM_PREFIX = "frames-"
 _STREAM_SUFFIX = ".mkv"
 _REPORT_SUFFIX = ".json"
+ORPHAN_AGE_SECONDS = 3600.0
+"""Âge au-delà duquel un fichier ``.tmp`` est tenu pour abandonné (un fichier en cours d'écriture est touché sans cesse)."""
 
 
 def cache_directory() -> Path:
@@ -118,7 +128,7 @@ class FlowCache:
         import numpy as np
 
         path = self._path(key)
-        temporary = path.with_name(f".{path.stem}.{os.getpid()}.tmp{_SUFFIX}")
+        temporary = path.with_name(f".{path.stem}.{_writer_tag()}.tmp{_SUFFIX}")
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
             with temporary.open("wb") as handle:  # un objet fichier : ``np.savez("x.tmp")`` ajouterait ``.npz``
@@ -139,9 +149,9 @@ class FlowCache:
         return self._directory / f"{_STREAM_PREFIX}{key}{_STREAM_SUFFIX}"
 
     def stream_temporary(self, key: str) -> Path:
-        """Chemin d'écriture d'un flux en cours (un par processus : plusieurs instances peuvent préparer sans se gêner)."""
+        """Chemin d'écriture d'un flux en cours : un par appel (plusieurs fils ou instances peuvent préparer la même clé)."""
         self._directory.mkdir(parents=True, exist_ok=True)
-        return self._directory / f".{_STREAM_PREFIX}{key}.{os.getpid()}.tmp{_STREAM_SUFFIX}"
+        return self._directory / f".{_STREAM_PREFIX}{key}.{_writer_tag()}.tmp{_STREAM_SUFFIX}"
 
     def has_stream(self, key: str) -> bool:
         path = self.stream_path(key)
@@ -157,7 +167,7 @@ class FlowCache:
         """Rend le flux visible, atomiquement ; son rapport est écrit avant lui (un flux n'apparaît jamais sans son rapport)."""
         target = self.stream_path(key)
         sidecar = target.with_suffix(_REPORT_SUFFIX)
-        partial = sidecar.with_name(f".{sidecar.name}.{os.getpid()}.tmp")
+        partial = sidecar.with_name(f".{sidecar.name}.{_writer_tag()}.tmp")
         try:
             partial.write_text(json.dumps(report, sort_keys=True), encoding="utf-8")
             os.replace(partial, sidecar)
@@ -228,25 +238,30 @@ class FlowCache:
     def purge(self) -> int:
         """Supprime toutes les entrées (et les écritures abandonnées) ; retourne les octets libérés."""
         freed = self.evict_bytes(2**62)
-        self.cleanup_orphans()
+        self.cleanup_orphans(0.0)                      # une purge est un choix explicite : tout part, écritures en cours comprises
         return freed
 
-    def cleanup_orphans(self) -> int:
-        """Retire les écritures abandonnées par un arrêt brutal (``.tmp``) ; retourne leur nombre.
+    def cleanup_orphans(self, max_age_seconds: float = ORPHAN_AGE_SECONDS) -> int:
+        """Retire les écritures abandonnées par un arrêt brutal (``.tmp`` plus vieux que ``max_age_seconds``) ; retourne leur nombre.
 
-        À appeler au démarrage, quand aucune préparation n'est en cours dans cette instance (une autre instance qui prépare
-        au même instant ne perd qu'une écriture : elle la recommence).
+        Une préparation en cours — de cette instance ou **d'une autre** application ouverte en même temps — réécrit son
+        fichier sans cesse : seul un fichier qui n'a pas bougé depuis longtemps est abandonné. L'effacer sous les pieds d'une
+        préparation vivante ferait échouer son export.
         """
         removed = 0
         if not self._directory.is_dir():
             return 0
+        now = time.time()
         for item in self._directory.iterdir():
-            if item.name.startswith(".") and ".tmp" in item.name:
-                try:
-                    item.unlink()
-                    removed += 1
-                except OSError:
+            if not (item.name.startswith(".") and ".tmp" in item.name):
+                continue
+            try:
+                if now - item.stat().st_mtime < max_age_seconds:
                     continue
+                item.unlink()
+                removed += 1
+            except OSError:
+                continue
         return removed
 
 

@@ -22,7 +22,7 @@ from .time_remapping import MAX_SPEED, MIN_SPEED, FreezeFrameMode
 
 SPEED_SPEC = AnimatableProperty(
     SPEED_PROPERTY, "time.property.speed", ValueKind.FLOAT,
-    default=1.0, minimum=-SPEED_LIMIT, maximum=SPEED_LIMIT, step=0.05, group="time",
+    default=1.0, minimum=-SPEED_LIMIT, maximum=SPEED_LIMIT, step=0.05, group="time", display_scale=100.0, display_unit=" %",
 )
 
 

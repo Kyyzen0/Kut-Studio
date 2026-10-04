@@ -128,11 +128,16 @@ def test_a_write_is_atomic_and_leaves_no_temporary_file(tmp_path, media, monkeyp
     assert cache.load(key(media)) is None
 
 
-def test_cleanup_removes_writes_abandoned_by_a_killed_process(tmp_path):
+def test_cleanup_removes_writes_abandoned_by_a_killed_process_but_never_a_live_one(tmp_path):
     cache = FlowCache(tmp_path / "flow")
     (tmp_path / "flow").mkdir()
-    (tmp_path / "flow" / ".pair-abc.123.tmp.npz").write_bytes(b"partial")
-    assert cache.cleanup_orphans() == 1 and list((tmp_path / "flow").iterdir()) == []
+    abandoned = tmp_path / "flow" / ".pair-abc.123.tmp.npz"
+    live = tmp_path / "flow" / ".frames-def.456.tmp.mkv"
+    for item in (abandoned, live):
+        item.write_bytes(b"partial")
+    os.utime(abandoned, (1000, 1000))                                               # intact depuis très longtemps
+    assert cache.cleanup_orphans() == 1 and not abandoned.exists() and live.exists()   # l'écriture vivante d'une autre instance reste
+    assert cache.purge() >= 0 and list((tmp_path / "flow").iterdir()) == []         # une purge explicite emporte tout
 
 
 # ---------------------------------------------------------------------------
@@ -168,3 +173,38 @@ def test_the_cache_manager_counts_budgets_and_purges_the_flow_layer(tmp_path, me
     cache.store(key(media, 0), real_pair()[3])
     manager.purge("all")
     assert cache.stats()["entries"] == 0
+
+
+def test_two_threads_writing_the_same_key_never_share_a_temporary_file(tmp_path, media):
+    """Export, aperçu et analyse préparent parfois la même clé en même temps : chaque écriture a son fichier."""
+    import threading
+
+    cache = FlowCache(tmp_path / "flow")
+    assert cache.stream_temporary("k") != cache.stream_temporary("k")                  # un nom par appel, pas par processus
+    pair, errors = real_pair()[3], []
+
+    def write():
+        try:
+            for _ in range(6):
+                cache.store(key(media), pair)
+        except BaseException as error:  # noqa: BLE001 - le test dit ce qui s'est passé dans le fil
+            errors.append(error)
+
+    threads = [threading.Thread(target=write) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    assert cache.load(key(media)) is not None                                          # l'entrée finale est complète et lisible
+    assert [item.name for item in (tmp_path / "flow").iterdir()] == [f"pair-{key(media)}.npz"]    # aucun ``.tmp`` oublié
+
+
+def test_promoting_the_same_stream_twice_from_two_writers_keeps_both_writers_files_apart(tmp_path):
+    cache = FlowCache(tmp_path / "flow")
+    first, second = cache.stream_temporary("k"), cache.stream_temporary("k")
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    cache.promote_stream(first, "k", {})
+    cache.promote_stream(second, "k", {})                                              # ne lève pas : son fichier n'a pas disparu
+    assert cache.stream_path("k").read_bytes() == b"b" and not first.exists() and not second.exists()

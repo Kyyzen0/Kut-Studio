@@ -202,6 +202,7 @@ class DragToolsMixin:
         create_multicam = menu.addAction(translate("multicam.menu.create"))
         create_multicam.setEnabled(len(self.selected_clip_ids) >= 2)
         replace_actions, flatten, settings = self._add_multicam_menu_entries(menu, view)
+        time_actions = self._add_time_menu(menu, clip_id)
         chosen = menu.exec(global_pos)
         if chosen is cut:
             self.blade_cut_requested.emit(clip_id, self.playhead_seconds)
@@ -227,6 +228,9 @@ class DragToolsMixin:
             self.multicam_flatten_requested.emit(clip_id)
         elif settings is not None and chosen is settings:
             self.multicam_settings_requested.emit()
+        elif chosen in time_actions:
+            command, argument = time_actions[chosen]
+            self.time_command_requested.emit(clip_id, command, argument)
 
     def _add_multicam_menu_entries(self, menu, view) -> tuple[dict, object, object]:
         """Entrées Multicam du menu d'un segment : « Remplacer par l'angle ▸ », « Aplatir », « Réglages ». Rien pour un autre clip."""

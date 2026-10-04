@@ -81,6 +81,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
     reverse_toggled = Signal(str, bool)
     freeze_frame_created = Signal(str, float, float)
     freeze_frame_removed = Signal(str)
+    time_command_requested = Signal(str, str, object)   # (clip, commande, argument) : section « Temps » (core.time_commands)
     freeze_duration_changed = Signal(str, float)
     time_remapping_reset = Signal(str)
     transition_type_changed = Signal(str, str)

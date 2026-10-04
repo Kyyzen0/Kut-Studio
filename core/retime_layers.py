@@ -128,6 +128,25 @@ def layer_jobs(
     return jobs
 
 
+def sampling_plan(plan: RenderPlan) -> RenderPlan:
+    """Le même plan où **aucun** clip n'interpole : mélange d'images et flux optique deviennent un échantillonnage.
+
+    Pour un usage qui doit répondre tout de suite (les scopes, appelés sur le fil de l'interface à chaque déplacement de la tête
+    de lecture) et qui montre alors, comme le moniteur, l'image échantillonnée. Ne touche à rien d'autre.
+    """
+
+    def simplified(layer: RenderLayer) -> RenderLayer:
+        remapping = layer.time_remapping
+        if remapping.interpolation is TimeInterpolation.SAMPLING:
+            return layer
+        return replace(layer, time_remapping=replace(remapping, interpolation=TimeInterpolation.SAMPLING))
+
+    nested = tuple(
+        replace(entry, plan=sampling_plan(entry.plan)) for entry in getattr(plan, "nested_sequences", ()) or ()
+    )
+    return replace(plan, video_layers=tuple(simplified(layer) for layer in plan.video_layers), nested_sequences=nested)
+
+
 def plan_needs_preparation(
     plan: RenderPlan,
     width: int,
@@ -219,4 +238,5 @@ __all__ = [
     "local_window",
     "plan_needs_preparation",
     "prepare_plan",
+    "sampling_plan",
 ]

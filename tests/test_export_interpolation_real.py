@@ -93,6 +93,21 @@ def test_the_export_prepares_the_intermediate_images_then_encodes_them(qtbot, me
         assert abs(values[tick] - clip.time_map.source_time(tick / FPS) * FPS) < 0.8, tick
 
 
+def test_the_progress_bar_climbs_through_the_preparation_then_the_encoding_and_never_goes_back(qtbot, media, tmp_path):
+    project = project_for(media, TimeRemapping(speed=0.5, interpolation=BLENDING))
+    engine = ExportEngine()
+    engine.flow_cache = FlowCache(tmp_path / "flow")
+    values: list[int] = []
+    reports: list[object] = []
+    engine.progress_changed.connect(values.append)
+    engine.preparation_reported.connect(reports.append)
+    finished, failed = _wait_for_export(engine, 60000, start=lambda: engine.start(request_for(project, tmp_path / "out.mp4")))
+    assert not failed and finished
+    assert values == sorted(values) and values[0] == 0 and values[-1] == 100
+    assert any(0 < value <= 80 for value in values)                                      # le calcul fait avancer la barre
+    assert len(reports) == 1 and reports[0] is engine.last_preparation and reports[0].synthesized > 0
+
+
 def test_a_clip_that_needs_no_intermediate_image_exports_without_preparation(qtbot, media, tmp_path):
     engine = ExportEngine()
     engine.flow_cache = FlowCache(tmp_path / "flow")
@@ -159,16 +174,67 @@ def test_a_decoding_failure_is_reported_with_its_cause(qtbot, tmp_path):
     assert list((tmp_path / "flow").glob("frames-*")) == [] if (tmp_path / "flow").exists() else True
 
 
+def test_a_preparation_failure_is_not_classified_with_the_previous_jobs_encoder_error(qtbot, tmp_path):
+    broken = tmp_path / "broken.mp4"
+    broken.write_bytes(b"this is not a video")
+    project = project_for(str(broken), TimeRemapping(speed=0.5, interpolation=BLENDING))
+    engine = ExportEngine()
+    engine.flow_cache = FlowCache(tmp_path / "flow")
+    engine.last_error_kind = "encoder"                                                          # hérité d'un job précédent
+    finished, failed = _wait_for_export(engine, 30000, start=lambda: engine.start(request_for(project, tmp_path / "x.mp4")))
+    assert failed and not finished
+    assert engine.last_error_kind == ""
+
+
+def test_a_thread_that_cannot_start_does_not_leave_the_engine_busy_forever(qtbot, media, tmp_path, monkeypatch):
+    import threading
+
+    project = project_for(media, TimeRemapping(speed=0.5, interpolation=BLENDING))
+    engine = ExportEngine()
+    engine.flow_cache = FlowCache(tmp_path / "flow")
+    messages: list[str] = []
+    engine.failed.connect(messages.append)
+    real_start = threading.Thread.start
+
+    def refuse(self):
+        if self.name == "kut-flow-prepare":
+            raise RuntimeError("can't start new thread")
+        real_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", refuse)
+    engine.start(request_for(project, tmp_path / "one.mp4"))
+    assert messages == ["can't start new thread"] and not engine.is_running
+    monkeypatch.setattr(threading.Thread, "start", real_start)
+    finished, failed = _wait_for_export(engine, 60000, start=lambda: engine.start(request_for(project, tmp_path / "two.mp4")))
+    assert finished and not failed                                                              # le moteur n'est plus « déjà en cours »
+
+
+def test_the_shutdown_says_so_when_the_preparation_thread_outlives_the_wait(qtbot):
+    import threading
+
+    engine = ExportEngine()
+    release = threading.Event()
+    stuck = threading.Thread(target=release.wait, daemon=True)
+    stuck.start()
+    engine._prepare_thread = stuck
+    try:
+        assert engine.shutdown(50) is False                                                     # pas de « tout est arrêté » mensonger
+    finally:
+        release.set()
+        stuck.join(2.0)
+    assert engine._stop_preparation(0.5) is True                                                # le fil a fini : l'arrêt se confirme
+
+
 # ---------------------------------------------------------------------------
 # Scopes : une image
 # ---------------------------------------------------------------------------
 
 
-def test_the_frame_command_of_the_scopes_prepares_only_the_requested_image(media, tmp_path):
+def test_the_frame_command_asked_to_interpolate_prepares_only_the_requested_image(media, tmp_path):
     project = project_for(media, TimeRemapping(speed=0.25, interpolation=BLENDING))
     engine = ExportEngine()
     engine.flow_cache = FlowCache(tmp_path / "flow")
-    command = engine.build_frame_command(request_for(project, tmp_path / "frame.png"), 1.0)
+    command = engine.build_frame_command(request_for(project, tmp_path / "frame.png"), 1.0, interpolate=True)
     done = subprocess.run(command, capture_output=True, timeout=60)
     assert done.returncode == 0 and done.stdout[:4] == b"\x89PNG"
     streams = list((tmp_path / "flow").glob("frames-*.mkv"))
@@ -231,3 +297,24 @@ def test_the_flow_engine_only_enters_the_fingerprint_when_a_clip_interpolates(me
     monkeypatch.setattr(optical_flow, "ENGINE_VERSION", optical_flow.ENGINE_VERSION + 1)
     assert fingerprint(project_for(media, TimeRemapping(speed=0.5))) == plain
     assert fingerprint(project_for(media, TimeRemapping(speed=0.5, interpolation=FLOW))) != interpolated
+
+
+def test_the_fingerprint_follows_the_backend_the_user_asked_for(media, monkeypatch):
+    """Un segment rendu avec le processeur ne passe pas pour un segment rendu avec un autre backend."""
+    import core.optical_flow as optical_flow
+
+    real = optical_flow.select_backend
+
+    class Other:
+        name, version = "other", 1
+
+    monkeypatch.setattr(optical_flow, "select_backend",
+                        lambda preference: Other() if preference is optical_flow.BackendPreference.GPU else real(preference))
+    plan = build_render_plan(project_for(media, TimeRemapping(speed=0.5, interpolation=FLOW)))
+    keys = {preference: fingerprint_plan(plan, width=W, height=H, fps=FPS, quality="standard", flow_preference=preference)
+            for preference in optical_flow.BackendPreference}
+    assert keys[optical_flow.BackendPreference.GPU] != keys[optical_flow.BackendPreference.CPU]
+    assert keys[optical_flow.BackendPreference.AUTO] == keys[optical_flow.BackendPreference.CPU]   # le même backend : les mêmes images
+    # Une préférence qui n'a plus de sens (réglage d'un autre mode) retombe sur Auto, comme le rendu.
+    assert fingerprint_plan(plan, width=W, height=H, fps=FPS, quality="standard", flow_preference="plus-rien") == \
+        keys[optical_flow.BackendPreference.AUTO]

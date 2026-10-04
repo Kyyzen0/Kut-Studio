@@ -63,7 +63,7 @@ class FaithfulPreviewMixin:
 
             cache_dir = _os.environ.get("KUT_STUDIO_CACHE_DIR")
             self.preview_engine = PreviewEngine(
-                task_queue=TaskQueue(), cache=DiskPreviewCache(directory=cache_dir)
+                task_queue=TaskQueue(), cache=DiskPreviewCache(directory=cache_dir), flow_preference=self._flow_preference(),
             )
             try:
                 self.preview_engine.cache.evict_if_needed()
@@ -169,7 +169,7 @@ class FaithfulPreviewMixin:
                 job = build_segment_job(
                     self.project, request.index,
                     quality=self._render_quality, resolver=resolver,
-                    timeline_index=self._ensure_timeline_index(),
+                    timeline_index=self._ensure_timeline_index(), flow_preference=self._flow_preference(),
                 )
             except Exception:
                 continue
@@ -248,7 +248,7 @@ class FaithfulPreviewMixin:
                 fresh = segment_params_hash(
                     segment_plan(self.project, job.start, end, resolver=resolver,
                                  timeline_index=self._ensure_timeline_index()),
-                    self.project, self._render_quality, end,
+                    self.project, self._render_quality, end, flow_preference=self._flow_preference(),
                 )
                 if getattr(getattr(job, "key", None), "params_hash", None) != fresh:
                     # Les média, trims ou effets du segment ont changé depuis
@@ -259,7 +259,7 @@ class FaithfulPreviewMixin:
                 job = build_segment_job(
                     self.project, planner.index_of(timeline_time),
                     quality=self._render_quality, resolver=resolver,
-                    timeline_index=self._ensure_timeline_index(),
+                    timeline_index=self._ensure_timeline_index(), flow_preference=self._flow_preference(),
                 )
                 if job is None:
                     return None
@@ -286,6 +286,7 @@ class FaithfulPreviewMixin:
                 height=self.project.height,
                 fps=self.project.fps,
                 quality=self._render_quality,
+                flow_preference=self._flow_preference(),
             )
         except Exception:
             return None

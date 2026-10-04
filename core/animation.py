@@ -607,6 +607,8 @@ class AnimatableProperty:
             bornée ici, dans l'aperçu comme dans l'export.
         step: pas d'édition proposé à l'interface.
         group: regroupement d'affichage (``transform``, ``effect``…).
+        display_scale / display_unit: l'interface montre ``valeur × display_scale`` suivie de ``display_unit`` (la vitesse,
+            stockée en facteur 1,0, s'affiche « 100 % ») ; les keyframes et les calculs restent dans l'unité stockée.
     """
 
     id: str
@@ -617,6 +619,8 @@ class AnimatableProperty:
     maximum: float | None = None
     step: float = 0.01
     group: str = "transform"
+    display_scale: float = 1.0
+    display_unit: str = ""
 
     def clamp(self, value: Any) -> Any:
         if self.kind is ValueKind.BOOL:

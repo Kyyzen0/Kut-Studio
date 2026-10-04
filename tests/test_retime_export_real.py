@@ -257,3 +257,40 @@ def test_a_nested_sequence_can_be_sped_up_and_its_inner_timeline_is_untouched(me
     got = exported_indices(project)
     assert got[:6] == [0, 2, 4, 6, 8, 10]                                # la sortie de la séquence est lue à 2×
     assert [(c.source_in, c.source_out, c.timeline_start) for c in inner.tracks[0].clips] == inner_before
+
+
+# ---------------------------------------------------------------------------
+# Transitions : aucune image hors des limites du clip remappé
+# ---------------------------------------------------------------------------
+
+
+def test_a_transition_after_a_ramped_clip_uses_only_its_own_frames_and_keeps_the_exact_length(media, tmp_path):
+    """Le recouvrement d'une transition vit à l'intérieur des durées des deux clips : ni image avant le début, ni après la fin
+    du média, ni image tenue en trop. Avant le recouvrement : les images de la rampe ; après : uniquement celles du clip suivant."""
+    from core.transitions import add_transition
+
+    flat = tmp_path / "flat.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=gray:s={W}x{H}:r={FPS}:d=3", "-c:v", "libx264", "-crf", "0",
+         "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(flat)],
+        check=True, timeout=60,
+    )
+    project, ramp = _project(media, source=(0.0, 2.0), animation=_ramp())
+    project.media_assets.append(MediaAsset(id="b", path=str(flat), name="flat", duration=3.0, width=W, height=H, fps=float(FPS),
+                                           media_type="video", has_audio=False))
+    follower = Clip(id="c2", asset_id="b", track_id="V1", timeline_start=ramp.duration, source_in=0.0, source_out=1.5)
+    project.tracks[0].clips.append(follower)
+    add_transition(project, "c1", "c2", duration=0.5)
+    plan = build_render_plan(project)
+    got = exported_indices(project)
+    assert len(got) == round(plan.duration * FPS)                                          # durée exacte, pas une image de trop
+    overlap_start = round(follower.timeline_start * FPS)
+    before = model_indices(ramp, count=overlap_start)
+    time_map = ramp.time_map
+    for tick in range(overlap_start - 1):                                                  # avant le recouvrement : la rampe, image pour image
+        if got[tick] != before[tick]:                                                      # (à une égalité exacte : l'image voisine, d'un cran)
+            position = time_map.source_time(tick / FPS) * FPS
+            assert abs((position % 1.0) - 0.5) < 0.04 and abs(got[tick] - before[tick]) == 1, (tick, got[tick], before[tick])
+    gray = round((128 - 20) / 3)                                                           # le gris du clip suivant, lu comme un « indice »
+    tail = got[round((follower.timeline_start + 0.5) * FPS) + 1:]
+    assert tail and all(abs(index - gray) <= 1 for index in tail)                          # après : seulement le clip suivant

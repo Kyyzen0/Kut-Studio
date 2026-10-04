@@ -81,6 +81,7 @@ class PerformanceMixin:
         )
         try:
             self.cache_manager.enforce()
+            self.cache_manager.flow.cleanup_orphans()      # écritures de flux d'images abandonnées par un arrêt brutal
         except OSError:
             pass
 
@@ -355,15 +356,8 @@ class PerformanceMixin:
         self._apply_runtime_hints()
         if self.runtime.preview.degraded:
             self._request_lighter_proxies()
-        preview = getattr(self, "preview_panel", None)
-        if preview is None:
-            return
-        if self.runtime.preview.degraded:
-            preview.set_quality_notice(
-                i18n.translate("preview.quality_reduced", quality=self.runtime.preview_label())
-            )
-        else:
-            preview.set_quality_notice(None)
+        # L'avis du moniteur réunit le niveau d'aperçu réduit et « aperçu simplifié » d'un clip interpolé.
+        self._update_preview_notice()
 
 
 def _tracking_cache():

@@ -116,11 +116,12 @@ class PreviewEngine:
         self._max_concurrent = max(1, int(kwargs.get("max_concurrent", 1)))
         # Images intermediaires (melange d'images, flux optique) : cache des vecteurs et backend demande.
         self._flow_cache_instance = kwargs.get("flow_cache")
-        self._flow_preference = kwargs.get("flow_preference")
-        if self._flow_preference is None:
+        self.flow_preference = kwargs.get("flow_preference")
+        if self.flow_preference is None:
             from .optical_flow import BackendPreference
 
-            self._flow_preference = BackendPreference.AUTO
+            self.flow_preference = BackendPreference.AUTO
+        """Backend de flux optique demandé (réglage de l'application, modifiable à chaud)."""
         self._paused = False
         self._last_error = ""
         self._listeners = []
@@ -704,7 +705,7 @@ class PreviewEngine:
 
         width, height = preview_output_size(job.width, job.height, job.quality)
         window = (float(job.start), float(job.start) + float(job.duration or 0.0))
-        preference = self._flow_preference
+        preference = self.flow_preference
         if not plan_needs_preparation(job.plan, width, height, job.fps, preference, window):
             return {}
         try:

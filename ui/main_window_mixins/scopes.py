@@ -133,6 +133,9 @@ class ScopesMixin:
             # Une instance dédiée évite qu'une analyse de scopes ne remplace
             # le SRT temporaire d'un export déjà en cours.
             frame_engine = _main_window().ExportEngine()
+            frame_engine.flow_preference = self._flow_preference()
+            # Construite sur le fil de l'interface, à chaque déplacement de la tête de lecture : un clip interpolé y est lu en
+            # échantillonnage, comme dans le moniteur (voir ``build_frame_command``).
             command = frame_engine.build_frame_command(request, 0.0)
             self._scope_temporary_paths = frame_engine.take_temporary_files()
             return command

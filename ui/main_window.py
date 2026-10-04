@@ -98,6 +98,7 @@ from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
+from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
 from core.decode_policy import DecodePurpose
 
@@ -130,6 +131,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 class MainWindow(
     HardwarePreviewMixin,
     TrackingMixin,
+    TimeEditingMixin,
     MotionGraphicsMixin,
     SequencesMixin,
     MulticamMixin,
@@ -187,6 +189,8 @@ class MainWindow(
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)
+        self._flow_backend_request = loaded_settings.flow_backend      # avant le moteur d'aperçu et le moteur d'export
+        self._time_ripple_timeline = loaded_settings.time_ripple_timeline
         # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
         self._init_hardware_preview(loaded_settings)
         self._init_animation()
@@ -378,6 +382,8 @@ class MainWindow(
         # FFmpeg à la fois. La file persiste ses jobs et reprend au démarrage
         # (un rendu interrompu par un arrêt brutal est marqué « échoué »).
         self.export_engine = ExportEngine(self)
+        self.export_engine.flow_preference = self._flow_preference()
+        self.export_engine.preparation_reported.connect(self._on_preparation_reported)
         self.render_queue = RenderQueue(self.export_engine, parent=self)
         self.render_queue.restore()
         self.export_panel.set_queue(self.render_queue)
@@ -438,6 +444,12 @@ class MainWindow(
         self.properties_panel.freeze_frame_removed.connect(self.on_freeze_frame_removed)
         self.properties_panel.freeze_duration_changed.connect(self.on_freeze_duration_changed)
         self.properties_panel.time_remapping_reset.connect(self.on_time_remapping_reset)
+        # Temps du clip : menu « Vitesse », section « Temps » de l'inspecteur, raccourcis (core.time_commands).
+        self.properties_panel.time_command_requested.connect(self.on_time_command)
+        self.timeline_panel.time_command_requested.connect(self.on_time_command)
+        self.timeline_panel.time_ripple_timeline = self._time_ripple_timeline
+        self.timeline_panel.seek_requested.connect(self._schedule_preview_notice)
+        self.timeline_panel.clip_selected.connect(self._schedule_preview_notice)
         # Tâche 21 : effets visuels du clip.
         self.properties_panel.effect_enabled_changed.connect(
             self.on_clip_effect_enabled_changed
@@ -887,6 +899,7 @@ class MainWindow(
             ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
             ("rendus d'aperçu", cancel_previews),
             ("pistage", self._cancel_tracking_jobs),
+            ("analyse du flux optique", self._cancel_flow_analysis),
             ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),
             ("synchronisation Multicam", self._cancel_multicam_syncs),
             ("réglages Multicam", self._close_multicam_settings),
@@ -2060,6 +2073,7 @@ class MainWindow(
             **self._sequence_shortcut_handlers(),
             **self._multicam_shortcut_handlers(),
             **self._mograph_shortcut_handlers(),
+            **self._time_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

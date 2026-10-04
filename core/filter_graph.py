@@ -157,8 +157,11 @@ def _graphic_source_key(graphic) -> str:
     return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
-def _interpolation_identity(plan):
-    """Identité du moteur d'images intermédiaires si un clip du plan (ou d'une séquence imbriquée) en demande, sinon ``None``."""
+def _interpolation_identity(plan, preference: str = "auto"):
+    """Identité du moteur d'images intermédiaires si un clip du plan (ou d'une séquence imbriquée) en demande, sinon ``None``.
+
+    ``preference`` est le backend **demandé** par l'utilisateur (``auto``, ``cpu``, ``gpu``) : c'est lui qui désigne le backend
+    réellement utilisé, donc celui qui entre dans l'empreinte."""
     from .time_remapping import TimeInterpolation
 
     layers = list(getattr(plan, "video_layers", ()))
@@ -169,11 +172,14 @@ def _interpolation_identity(plan):
         for layer in layers
     ):
         return None
-    from .optical_flow import ENGINE_VERSION, BackendPreference, select_backend
+    from .optical_flow import ENGINE_VERSION, BackendPreference, BackendUnavailable, classification_key, select_backend
     from .retime_prepare import PREPARE_VERSION
 
-    backend = select_backend(BackendPreference.AUTO)
-    return [ENGINE_VERSION, PREPARE_VERSION, backend.name, backend.version]
+    try:
+        backend = select_backend(BackendPreference(preference))
+    except (ValueError, BackendUnavailable):
+        backend = select_backend(BackendPreference.AUTO)             # le rendu fera de même : mêmes images, même empreinte
+    return [ENGINE_VERSION, PREPARE_VERSION, backend.name, backend.version, *classification_key()]
 
 
 RENDER_ENGINE_VERSION = 4
@@ -211,10 +217,11 @@ def fingerprint_plan(plan, **kwargs):
     fps = float(kwargs.get("fps", 30))
     quality = str(kwargs.get("quality", "standard"))
     extra = str(kwargs.get("extra", ""))
+    flow_preference = str(getattr(kwargs.get("flow_preference", "auto"), "value", kwargs.get("flow_preference", "auto")))
     payload = {
         # Moteur d'images intermédiaires (mélange d'images, flux optique) : présent seulement si un clip en demande, pour qu'une
         # nouvelle version de l'algorithme invalide les segments qui en dépendent, et eux seuls.
-        "interpolation": _interpolation_identity(plan),
+        "interpolation": _interpolation_identity(plan, flow_preference),
         # À incrémenter quand le rendu change sans que le plan change : le cache d'aperçu est persistant
         # (7 jours) et resservirait sinon des segments produits par l'ancien rendu.
         "engine": RENDER_ENGINE_VERSION,
@@ -309,6 +316,7 @@ def fingerprint_plan(plan, **kwargs):
                     height=entry.plan.height,
                     fps=entry.plan.fps,
                     quality=quality,
+                    flow_preference=flow_preference,
                 ),
             }
             for entry in getattr(plan, "nested_sequences", ()) or ()

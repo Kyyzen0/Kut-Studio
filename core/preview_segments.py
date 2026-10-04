@@ -118,7 +118,7 @@ def media_identity(plan: RenderPlan) -> str:
 
 
 def segment_params_hash(
-    plan: RenderPlan, project, quality: str, window_end: float | None = None
+    plan: RenderPlan, project, quality: str, window_end: float | None = None, *, flow_preference: object = "auto"
 ) -> str:
     """Empreinte d'un plan de segment pour la qualité de rendu ``quality``.
 
@@ -136,6 +136,7 @@ def segment_params_hash(
         height=project.height,
         fps=project.fps,
         quality=quality,
+        flow_preference=flow_preference,
     )
     return f"{base}-{media_identity(plan)}"
 
@@ -161,6 +162,7 @@ def build_segment_job(
     resolver: PathResolver | None = None,
     segment_seconds: float = SEGMENT_SECONDS,
     timeline_index=None,
+    flow_preference: object = "auto",
 ) -> PreviewJob | None:
     """Job du segment ``index`` de la grille, ou ``None`` s'il est vide.
 
@@ -181,7 +183,7 @@ def build_segment_job(
         start=start,
         end=end,
         quality=quality,
-        params_hash=segment_params_hash(plan, project, quality, end),
+        params_hash=segment_params_hash(plan, project, quality, end, flow_preference=flow_preference),
     )
     return PreviewJob(
         key=key,

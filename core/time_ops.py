@@ -21,17 +21,18 @@ Aucune de ces opérations n'enregistre d'historique : l'appelant (la fenêtre) l
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Iterator, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from enum import Enum
 
 from . import keyframe_editing as keyframes
-from .animation import InterpolationType, Keyframe
+from .animation import TIME_EPSILON, AnimationCurve, InterpolationType, Keyframe, normalize_time
 from .keyframe_editing import KeyframeRef
 from .project_model import Clip, Project
 from .time_editing import free_map
 from .time_map import SPEED_LIMIT, SPEED_PROPERTY
+from .time_targets import SPEED_TARGET
 from .time_remapping import FlowQuality, FreezeFrameMode, TimeInterpolation
 from .timeline_operations import (
     _clear_speed_keyframes,
@@ -45,6 +46,11 @@ from .timeline_operations import (
 
 MIN_CLIP_SECONDS = 0.04
 """Durée minimale d'un clip après une édition de vitesse (en deçà : édition refusée, état restauré)."""
+
+HOLD_SECONDS = 1.0
+"""Durée par défaut d'un arrêt sur image inséré dans la courbe de vitesse."""
+DEFAULT_RATE = 30.0
+"""Cadence supposée quand l'appelant n'en donne pas : sert seulement à placer la première image du palier."""
 
 
 class RippleMode(str, Enum):
@@ -188,6 +194,58 @@ def remove_speed_point(
             _restore_extent(clip)
 
 
+def _by_clip(project: Project, refs: Sequence[KeyframeRef]) -> dict[str, list[KeyframeRef]]:
+    """Regroupe des références par clip, après avoir vérifié que ce sont bien des points de vitesse de clips modifiables."""
+    grouped: dict[str, list[KeyframeRef]] = {}
+    for ref in refs:
+        if ref.property_id != SPEED_PROPERTY:
+            raise ValueError(f"Ce n'est pas un point de vitesse : {ref.property_id!r}.")
+        _editable_clip(project, ref.clip_id)
+        grouped.setdefault(ref.clip_id, []).append(ref)
+    return grouped
+
+
+def move_speed_points(
+    project: Project, refs: Sequence[KeyframeRef], delta_seconds: float, *, fps: float | None = None,
+    mode: RippleMode = RippleMode.SOURCE,
+) -> dict[KeyframeRef, float]:
+    """Déplace des points de vitesse (d'un ou plusieurs clips) du même décalage, d'un bloc ; retourne leurs nouveaux temps.
+
+    Une seule transaction pour tous les clips : si l'un est refusé (durée dégénérée…), **aucun** n'est modifié.
+    """
+    grouped = _by_clip(project, refs)
+    result: dict[KeyframeRef, float] = {}
+    with ExitStack() as stack:
+        for clip_id, group in grouped.items():
+            stack.enter_context(_transaction(project, project_clip(project, clip_id), mode))
+        for group in grouped.values():
+            result.update(keyframes.move_keyframes(project, group, delta_seconds, fps=fps))
+    return result
+
+
+def remove_speed_points(project: Project, refs: Sequence[KeyframeRef], *, mode: RippleMode = RippleMode.SOURCE) -> int:
+    """Supprime des points de vitesse ; un clip qui n'en garde aucun reprend la vitesse constante qu'il montrait.
+
+    Une seule transaction pour tous les clips. Retourne le nombre de points supprimés.
+    """
+    grouped = _by_clip(project, refs)
+    removed = 0
+    with ExitStack() as stack:
+        for clip_id in grouped:
+            stack.enter_context(_transaction(project, project_clip(project, clip_id), mode))
+        for clip_id, group in grouped.items():
+            removed += keyframes.remove_keyframes(project, group)
+            clip = project_clip(project, clip_id)
+            if not speed_points(clip):
+                _restore_extent(clip)
+    return removed
+
+
+def project_clip(project: Project, clip_id: str) -> Clip:
+    track, index = _find_track_for_clip(project, clip_id)
+    return track.clips[index]
+
+
 def set_speed_point_interpolation(
     project: Project, clip_id: str, keyframe_ids: list[str], interpolation: InterpolationType | str,
     *, mode: RippleMode = RippleMode.SOURCE,
@@ -197,6 +255,58 @@ def set_speed_point_interpolation(
     refs = [KeyframeRef(clip_id, SPEED_PROPERTY, kid) for kid in keyframe_ids]
     with _transaction(project, clip, mode):
         return keyframes.set_interpolation(project, refs, interpolation)
+
+
+def insert_hold(
+    project: Project,
+    clip_id: str,
+    local_time: float,
+    duration: float = HOLD_SECONDS,
+    *,
+    fps: float | None = None,
+    mode: RippleMode = RippleMode.SOURCE,
+) -> Keyframe:
+    """Arrêt sur image **dans la courbe de vitesse** : à ``local_time`` l'image affichée reste ``duration`` s, puis la lecture
+    reprend à la vitesse qu'elle avait. Le clip s'allonge de ``duration`` (le reste de la courbe est décalé, sans être déformé).
+
+    Le palier est un vrai palier de vitesse (``0 %`` en interpolation « palier ») : il se modifie comme n'importe quel point
+    (durée, vitesse de reprise, interpolation) dans le Graph Editor. L'image figée est celle que montre la tête de lecture :
+    la vitesse tombe à zéro **à** ``local_time``, un tick après une dernière image à la vitesse d'origine. Un segment non
+    linéaire qui précède est ré-adouci jusqu'au palier (il garde ses valeurs aux extrémités). Retourne le point d'arrêt.
+    """
+    clip = _editable_clip(project, clip_id)
+    if not duration > 0.0:
+        raise ValueError("La durée d'un arrêt sur image doit être positive.")
+    tick = 1.0 / (float(fps) if fps and fps > 0 else DEFAULT_RATE)
+    moment = normalize_time(keyframes.snap_to_frame(clip, local_time, fps) if fps else local_time)
+    if moment < 0.0 or moment > clip.duration + TIME_EPSILON:
+        raise ValueError(f"Temps hors du clip : {local_time} (durée {clip.duration}).")
+    curve = SPEED_TARGET.curve(clip)
+    resume = float(SPEED_TARGET.value_at(clip, moment))
+    segment = curve.segment_index(moment)
+    template = curve.keyframes[segment].interpolation if segment is not None else InterpolationType.HOLD
+    before = float(SPEED_TARGET.value_at(clip, moment - tick)) if curve and moment - tick >= 0.0 else None
+    with _transaction(project, clip, mode):
+        clip.animation = [
+            replace(k, time_seconds=normalize_time(k.time_seconds + duration), id=k.id)
+            if getattr(k, "property_name", "") == SPEED_PROPERTY and k.time_seconds >= moment - TIME_EPSILON else k
+            for k in clip.animation
+        ]
+        added = []
+        if not curve and moment > 0.0:
+            added.append(SPEED_TARGET.make_keyframe(SPEED_PROPERTY, 0.0, resume, InterpolationType.HOLD))
+        if curve and before is not None:
+            added.append(SPEED_TARGET.make_keyframe(SPEED_PROPERTY, moment - tick, before, InterpolationType.HOLD))
+        stop = SPEED_TARGET.make_keyframe(SPEED_PROPERTY, moment, 0.0, InterpolationType.HOLD)
+        added += [stop, SPEED_TARGET.make_keyframe(SPEED_PROPERTY, moment + duration, resume, template)]
+        updated = AnimationCurve(SPEED_TARGET.get_keyframes(clip), SPEED_TARGET.spec.kind)
+        for point in added:
+            updated = updated.with_keyframe(point)
+        SPEED_TARGET.set_keyframes(clip, list(updated.keyframes))
+        if clip.time_remapping.duration is not None:
+            # Un clip coupé garde une durée imposée : elle grandit de la durée du palier, sinon la fin serait rognée.
+            clip.time_remapping = replace(clip.time_remapping, duration=clip.time_remapping.duration + duration)
+    return next(k for k in speed_points(clip) if abs(k.time_seconds - moment) < TIME_EPSILON * 2)
 
 
 def clear_speed_curve(project: Project, clip_id: str) -> None:
@@ -214,6 +324,15 @@ def clear_speed_curve(project: Project, clip_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def ensure_interpolation_possible(clip: Clip, interpolation: TimeInterpolation) -> None:
+    """Refuse un mode d'images intermédiaires que ce clip ne saurait produire (jamais accepté pour échouer à l'export)."""
+    if clip.is_nested and interpolation is not TimeInterpolation.SAMPLING:
+        raise ValueError(
+            "Le mélange d'images et le flux optique ne s'appliquent pas à une séquence imbriquée (son image n'est pas un "
+            "fichier) : ouvrez-la et réglez ses clips, ou exportez-la d'abord."
+        )
+
+
 def set_clip_interpolation(
     project: Project, clip_id: str, interpolation: TimeInterpolation | str, quality: FlowQuality | str | None = None
 ) -> Clip:
@@ -223,7 +342,9 @@ def set_clip_interpolation(
     clip = track.clips[index]
     if clip.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         raise ValueError("Un arrêt sur image n'a pas d'images intermédiaires : aucun calcul n'est nécessaire.")
-    remapping = replace(clip.time_remapping, interpolation=TimeInterpolation(interpolation))
+    mode = TimeInterpolation(interpolation)
+    ensure_interpolation_possible(clip, mode)
+    remapping = replace(clip.time_remapping, interpolation=mode)
     if quality is not None:
         remapping = replace(remapping, flow_quality=FlowQuality(quality))
     clip.time_remapping = remapping
@@ -249,12 +370,18 @@ def set_clip_remap_audio(project: Project, clip_id: str, enabled: bool) -> Clip:
 
 
 __all__ = [
+    "HOLD_SECONDS",
     "MIN_CLIP_SECONDS",
     "RippleMode",
     "add_speed_point",
     "clear_speed_curve",
+    "ensure_interpolation_possible",
+    "insert_hold",
     "move_speed_point",
+    "move_speed_points",
+    "project_clip",
     "remove_speed_point",
+    "remove_speed_points",
     "set_clip_interpolation",
     "set_clip_preserve_pitch",
     "set_clip_remap_audio",

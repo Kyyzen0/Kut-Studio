@@ -19,6 +19,7 @@ from core.media_previews import (
 from core.timeline_view_model import TimelineClipView
 from ui.timeline_widgets.common import _color_for_track_type, _current_palette
 from ui.timeline_widgets.nested_clip import handle_nested_double_click, paint_nested_decoration
+from ui.timeline_widgets.time_overlay import paint_time_overlays
 
 if TYPE_CHECKING:  # import de typage seul : évite le cycle clip -> panneau
     from ui.timeline_panel import TimelinePanel
@@ -270,64 +271,8 @@ class ClipWidget(QWidget):
         painter.end()
 
     def _paint_time_remapping_badges(self) -> None:
-        """Dessine les badges de remappage temporel (vitesse, reverse, freeze)."""
-        from core.time_remapping import FreezeFrameMode, TimeRemapping
-        
-        time_remapping = getattr(self.view, "time_remapping", None) or TimeRemapping()
-        
-        # Pas de badge si tout est par défaut
-        if time_remapping.is_normal:
-            return
-        
-        palette = _current_palette()
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Position du badge : coin supérieur droit
-        badge_x = self.width() - 45
-        active_effects = [
-            effect for effect in getattr(self.view, "effects", ())
-            if getattr(effect, "enabled", False)
-        ]
-        badge_y = 26 if active_effects else 4
-        badge_width = 40
-        badge_height = 18
-        
-        # Couleurs
-        bg_color = QColor(palette.clip_text_dim)
-        bg_color.setAlpha(220)
-        text_color = QColor(palette.clip_text)
-        
-        # Dessiner le fond du badge
-        painter.setBrush(bg_color)
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(
-            badge_x, badge_y, badge_width, badge_height, 4, 4
-        )
-        
-        # Texte du badge
-        painter.setPen(text_color)
-        painter.setFont(self.font())
-        
-        # Déterminer le texte à afficher
-        badge_text = ""
-        if time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
-            badge_text = "F"
-        elif time_remapping.reverse:
-            badge_text = "R"
-        elif time_remapping.speed != 1.0:
-            badge_text = f"{time_remapping.speed:.1f}x"
-        
-        if badge_text:
-            # Dessiner le texte centré dans le badge
-            text_metrics = painter.fontMetrics()
-            text_width = text_metrics.horizontalAdvance(badge_text)
-            text_height = text_metrics.height()
-            text_x = badge_x + (badge_width - text_width) / 2
-            text_y = badge_y + (badge_height + text_height) / 2 - 2
-            painter.drawText(int(text_x), int(text_y), badge_text)
-        
-        painter.end()
+        """Courbe de vitesse et badges de remappage temporel (voir :mod:`ui.timeline_widgets.time_overlay`)."""
+        paint_time_overlays(self)
 
     def _paint_effect_badge(self) -> None:
         """Signale les effets actifs sans masquer le nom du clip."""
@@ -561,12 +506,14 @@ class ClipWidget(QWidget):
 
     def _keyframe_items(self) -> list[tuple[QRectF, list]]:
         """Losanges dessinés : ``(rectangle, images-clés)``, un par instant et propriété."""
-        keyframes = getattr(self.view, "keyframes", None) or []
+        keyframes = list(getattr(self.view, "keyframes", None) or [])
         parent = self.parent_timeline
-        if not keyframes or parent is None:
-            return []
         track_type = getattr(self.view, "track_type", None)
         if track_type not in {"video", "graphics", None} and not self.view.track_id.startswith(("V", "G")):
+            keyframes = []                                                  # l'audio n'a pas de transformation à animer
+        # Les points de vitesse (``time.speed``) se manipulent comme les autres : sélection, glisser, suppression.
+        keyframes += list(getattr(self.view, "speed_points", None) or [])
+        if not keyframes or parent is None:
             return []
         duration = max(self.view.end - self.view.start, 1e-6)
         pixels_per_second = parent.pixels_per_second * parent.zoom

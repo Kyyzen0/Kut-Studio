@@ -49,6 +49,10 @@ _CONSISTENCY_SIGMA = 1.5
 """Écarts (luminance 0…1 ; pixels d'analyse) qui ramènent la confiance à ``1/e``."""
 _PRIORITY_PIXELS = 16.0
 """Au-delà de ce déplacement (px), un pixel ne gagne plus de priorité sur ses voisins (le premier plan bouge plus vite)."""
+_ZERO_PRIOR = 0.01
+"""Poids (en part de fenêtre texturée) d'un a priori « pas de mouvement » dans le lissage. Sans lui un aplat reste sur le flux que la
+diffusion y a laissé : mesuré sur une mire presque immobile, 2,6 px de flux parasite en moyenne (0,5 px avec) et une confiance
+de 0,48 (0,90 avec). Trop fort (≥ 0,1) il éteint le flux d'un grand déplacement : 0,01 ne coûte que 0,1 à 0,3 niveau d'erreur."""
 _COVERAGE_REFERENCE = 0.25
 """Poids cumulé en dessous duquel un pixel de sortie est mélangé au résultat simple, au prorata."""
 
@@ -157,10 +161,11 @@ def _refine(a: Plane, b: Plane, u: Plane, v: Plane, params: FlowParams, cancel: 
 
 
 def _blend_by_trust(plane: Plane, trust: Plane, radius: int) -> Plane:
-    """Moyenne pondérée par la texture : un aplat reprend le mouvement de ses bords, un bord garde le sien."""
+    """Moyenne pondérée par la texture : un aplat reprend le mouvement de ses bords, un bord garde le sien ; loin de toute texture, le
+    mouvement tend vers zéro (:data:`_ZERO_PRIOR`)."""
     weighted = box_mean(plane * trust, radius)
     weights = box_mean(trust, radius)
-    return ((weighted + 1e-3 * plane) / (weights + 1e-3)).astype(np.float32)
+    return ((weighted + 1e-3 * plane) / (weights + 1e-3 + _ZERO_PRIOR)).astype(np.float32)
 
 
 def _upsample_flow(u: Plane, v: Plane, shape: tuple[int, int]) -> tuple[Plane, Plane]:
@@ -286,9 +291,9 @@ def scene_change(a: Plane, b: Plane) -> float:
     return float(0.5 * np.abs(hist_a - hist_b).sum())
 
 
-def mean_difference(a: Plane, b: Plane) -> float:
-    """Écart moyen absolu de luminance (0…1)."""
-    return float(np.abs(a - b).mean()) if a.shape == b.shape else math.inf
+def changed_fraction(a: Plane, b: Plane, level: float) -> float:
+    """Part (0…1) des pixels dont la luminance diffère de plus de ``level`` ; 1 si les images n'ont pas la même taille."""
+    return float((np.abs(a - b) > level).mean()) if a.shape == b.shape else 1.0
 
 
 def correlation(a: Plane, b: Plane) -> float:
@@ -309,7 +314,6 @@ __all__ = [
     "correlation",
     "estimate",
     "estimate_pair",
-    "mean_difference",
     "scene_change",
     "synthesize",
 ]

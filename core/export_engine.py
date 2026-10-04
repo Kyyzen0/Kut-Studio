@@ -357,6 +357,11 @@ class ExportRequest:
 # ---------------------------------------------------------------------------
 
 
+_PREPARATION_SHARE = 80
+"""Part (en %) de la barre de progression réservée au calcul des images intermédiaires, quand il y en a : le flux optique
+domine de loin le coût, l'encodage vient ensuite sur le reste, et la barre ne recule jamais."""
+
+
 class ExportEngine(QObject):
     """Lance un export FFmpeg non bloquant et publie son état via Qt."""
 
@@ -371,6 +376,9 @@ class ExportEngine(QObject):
     """Émis quand ``auto`` abandonne l'encodeur matériel pour le CPU (raison lisible)."""
     preparation_progress = Signal(int, int)
     """Émis pendant le calcul des images intermédiaires (mélange d'images, flux optique) : ``(faites, à faire)``."""
+    preparation_reported = Signal(object)
+    """Émis une fois les images intermédiaires prêtes, avec leur :class:`~core.retime_prepare.PrepareReport` : ce que le moteur a
+    fait (images fabriquées, replis, confiance) ne doit jamais rester invisible."""
     _preparation_finished = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -413,6 +421,10 @@ class ExportEngine(QObject):
         self.last_preparation: PrepareReport | None = None
         """Bilan du dernier calcul d'images intermédiaires (images fabriquées, replis, confiance) ; ``None`` s'il n'y en avait pas."""
         self._preparation_finished.connect(self._on_preparation_finished)
+        self.preparation_progress.connect(self._on_preparation_progress)
+        self._progress_floor = 0
+        """Part de la barre déjà occupée quand FFmpeg démarre : le calcul des images intermédiaires vient d'abord."""
+        self._preparation_value = 0
 
     # ------------------------------------------------------------------
     # API publique
@@ -433,20 +445,21 @@ class ExportEngine(QObject):
 
         Destiné à la fermeture de l'application : après l'appel aucun
         processus FFmpeg ne reste en vie. Retourne ``False`` si le
-        processus n'a pas pu être confirmé comme terminé.
+        processus, ou le calcul des images intermédiaires, n'a pas pu être confirmé comme terminé (le fichier temporaire que ce
+        dernier écrivait est alors ramassé au démarrage suivant, par ``FlowCache.cleanup_orphans``).
         """
-        self._stop_preparation(timeout_ms / 1000.0)
+        preparation_stopped = self._stop_preparation(timeout_ms / 1000.0)
         if self._process.state() == QProcess.NotRunning:
             self._release_supervision()
             self._cleanup_temporary_files()
-            return True
+            return preparation_stopped
         self._cancel_requested = True
         self._process.kill()
         stopped = self._process.waitForFinished(timeout_ms)
         if stopped:
             self._release_supervision()
         self._cleanup_temporary_files()
-        return bool(stopped)
+        return bool(stopped) and preparation_stopped
 
     def start(self, request: ExportRequest) -> None:
         """Démarre un export asynchrone pour ``request``.
@@ -461,6 +474,7 @@ class ExportEngine(QObject):
             self.failed.emit("Un export est déjà en cours.")
             return
 
+        self.last_error_kind = ""                # un échec de préparation ne doit pas hériter de l'« encodeur » du job précédent
         try:
             self._duration_seconds = request.render_plan.duration
             if not (
@@ -477,6 +491,7 @@ class ExportEngine(QObject):
             self._prepare_temporary_files(request.render_plan)
             self._prepared = {}
             self.last_preparation = None
+            self._progress_floor = 0
             if self._needs_preparation(request):
                 self._begin_preparation(request)
                 return
@@ -504,7 +519,7 @@ class ExportEngine(QObject):
         self._progress_seen = False
         self.last_error_kind = ""
         self.last_diagnostics = ""
-        self.progress_changed.emit(0)
+        self.progress_changed.emit(self._progress_floor)
         self.status_changed.emit("Export en cours...")
         self._launch(command)
 
@@ -561,6 +576,7 @@ class ExportEngine(QObject):
         preference = self.flow_preference
         self._pending_request = request
         self._preparing = True
+        self._preparation_value = 0
         self._prepare_cancel.clear()
         self.progress_changed.emit(0)
         self.status_changed.emit("Calcul des images intermédiaires...")
@@ -580,7 +596,22 @@ class ExportEngine(QObject):
                 self._preparation_finished.emit(result)
 
         self._prepare_thread = threading.Thread(target=work, name="kut-flow-prepare", daemon=True)
-        self._prepare_thread.start()
+        try:
+            self._prepare_thread.start()
+        except RuntimeError:                     # plus de fil disponible : le moteur ne reste pas « déjà en cours » pour toujours
+            self._preparing = False
+            self._pending_request = None
+            self._prepare_thread = None
+            raise
+
+    def _on_preparation_progress(self, done: int, total: int) -> None:
+        """Le calcul avance (fil principal) : la barre monte jusqu'à :data:`_PREPARATION_SHARE` %, puis FFmpeg prend le relais."""
+        if not self._preparing or total <= 0:
+            return
+        value = min(_PREPARATION_SHARE, _PREPARATION_SHARE * max(0, done) // total)
+        if value > self._preparation_value:
+            self._preparation_value = value
+            self.progress_changed.emit(value)
 
     def _on_preparation_finished(self, outcome: object) -> None:
         """Fin du calcul (fil principal) : lance l'export, ou rapporte l'échec / l'annulation."""
@@ -608,6 +639,8 @@ class ExportEngine(QObject):
             return
         self._prepared = dict(outcome.streams)
         self.last_preparation = outcome.report
+        self._progress_floor = _PREPARATION_SHARE
+        self.preparation_reported.emit(outcome.report)
         if request is None:
             self.failed.emit("La requête d'export est introuvable.")
             self._cleanup_temporary_files()
@@ -625,20 +658,21 @@ class ExportEngine(QObject):
             return
         self._launch_export(request, command)
 
-    def _stop_preparation(self, timeout: float) -> None:
-        """Interrompt le calcul des images intermédiaires s'il tourne (fermeture de l'application)."""
+    def _stop_preparation(self, timeout: float) -> bool:
+        """Interrompt le calcul des images intermédiaires s'il tourne (fermeture de l'application) ; ``True`` s'il est arrêté."""
         thread = self._prepare_thread
         if thread is None:
-            return
+            return True
         self._prepare_cancel.set()
         thread.join(timeout=timeout)
+        return not thread.is_alive()
 
     # ------------------------------------------------------------------
     # Construction de la commande FFmpeg
     # ------------------------------------------------------------------
 
     def build_frame_command(
-        self, request: ExportRequest, playhead: float,
+        self, request: ExportRequest, playhead: float, *, interpolate: bool = False,
     ) -> list[str]:
         """Construit une commande FFmpeg rendant **une seule frame**.
 
@@ -656,6 +690,11 @@ class ExportEngine(QObject):
         - la sortie est un PNG unique écrit sur ``stdout``
           (``-f image2pipe``), ce qui évite tout fichier temporaire.
 
+        **Images intermédiaires** : cette commande est construite sur le fil de l'interface, à chaque déplacement de la tête de
+        lecture (scopes). Fabriquer une image par flux optique y prendrait des secondes : par défaut un clip interpolé est donc
+        lu en **échantillonnage** (l'image que montre aussi le moniteur), tout le reste est identique à l'export. Avec
+        ``interpolate=True`` l'image demandée est fabriquée (fenêtre réduite à cette image), au prix d'un calcul bloquant.
+
         Tout ce qui précède ``playhead`` traverse le graphe avant d'être jeté
         (coût O(playhead)) : pour une image rapide, passer un plan déjà ramené
         à l'origine (:func:`core.playhead_snapshot.project_at_playhead`) et
@@ -672,7 +711,12 @@ class ExportEngine(QObject):
         plan = request.render_plan
         width, height = request.preset.resolution
         self._prepare_temporary_files(plan)
-        prepared = self._prepare_frame(plan, width, height, request.fps, playhead)
+        if interpolate:
+            prepared = self._prepare_frame(plan, width, height, request.fps, playhead)
+        else:
+            from .retime_layers import sampling_plan
+
+            plan, prepared = sampling_plan(plan), None
         filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
                 plan, width, height, request.fps, self._current_srt_path, prepared=prepared
@@ -968,7 +1012,8 @@ class ExportEngine(QObject):
             if progress is not None:
                 if progress > 0:
                     self._progress_seen = True
-                self.progress_changed.emit(min(99, progress))
+                floor = self._progress_floor
+                self.progress_changed.emit(min(99, floor + progress * (100 - floor) // 100))
 
     def _read_error(self) -> None:
         """Collecte les diagnostics FFmpeg pour un éventuel message d'erreur."""
@@ -1625,7 +1670,7 @@ def _prepared_source(layer, time_map, fps: float, last_frame, source, prepared, 
     erreur, jamais un repli silencieux.
     """
     interpolation = layer.time_remapping.interpolation
-    if interpolation is TimeInterpolation.SAMPLING or source is not None:
+    if interpolation is TimeInterpolation.SAMPLING:
         return None, None
     plan = plan_interpolation(
         time_map, fps=fps, source_fps=float(layer.source_fps) if layer.source_fps > 0 else 30.0, last_frame=last_frame,
@@ -1634,6 +1679,13 @@ def _prepared_source(layer, time_map, fps: float, last_frame, source, prepared, 
     needed = plan.runs_to_synthesize()
     if not needed:
         return None, None
+    if source is not None:
+        # Une séquence imbriquée n'a pas de fichier d'images : l'interface refuse ce choix, mais un ``.kut`` écrit à la main peut
+        # le contenir. Échantillonner en silence serait une sortie différente de celle demandée.
+        raise RetimeError(
+            f"Le clip « {layer.clip_id} » est une séquence imbriquée réglée sur « {interpolation.value} » : le mélange d'images et "
+            "le flux optique ne s'appliquent pas à une séquence (son image n'est pas un fichier). Repassez-le en « Échantillonnage »."
+        )
     stream = None if prepared is None else prepared.get(layer.clip_id)
     if stream is None:
         raise RetimeError(
