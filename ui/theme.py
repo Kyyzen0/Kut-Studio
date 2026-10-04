@@ -821,12 +821,59 @@ def mix_colors(base: str, other: str, amount: float) -> str:
     return "#{:02X}{:02X}{:02X}".format(*mixed)
 
 
+def set_stylesheet_if_changed(widget, sheet: str) -> bool:
+    """``widget.setStyleSheet(sheet)`` seulement si la feuille a changé ; retourne ``True`` si elle a été écrite.
+
+    Qt reparse et repolit la feuille de style **à chaque appel**, même avec un texte identique. Un clip de la timeline en posait trois à
+    chaque rafraîchissement : 87 % du temps de ``refresh_clip_widgets`` (+45 % mesurés par ``tools.perf.bench`` après le polish). Les
+    rafraîchissements qui ne changent rien (la grande majorité) ne coûtent plus rien."""
+    if widget.styleSheet() == sheet:
+        return False
+    widget.setStyleSheet(sheet)
+    return True
+
+
 def with_alpha(color: str, alpha: float) -> str:
     """``#rrggbbaa`` : ``color`` (``#rrggbb`` ou ``#rrggbbaa``) avec la transparence ``alpha`` (0 à 1), pour une **feuille de style**.
 
     À ne pas donner à ``QColor`` : Qt lit les huit chiffres comme « #aarrggbb » (canal alpha en premier) ; pour peindre, on construit
     la couleur puis ``setAlpha``."""
     return f"#{color.lstrip('#')[:6]}{round(min(1.0, max(0.0, float(alpha))) * 255):02X}"
+
+
+def qt_palette(palette: ThemePalette):
+    """``QPalette`` Qt des couleurs du thème : ce que prennent les widgets que la feuille de style ne décrit pas.
+
+    L'application ne posait que du QSS : tout widget sans fond explicite (le viewport d'une liste, une ligne de source, un panneau de
+    dialogue) retombait sur la palette **native** de l'OS, donc des panneaux presque blancs dans un dialogue sombre, avec du texte
+    clair dessus. Publier la palette du thème règle la cause plutôt que chaque symptôme, et les thèmes ne dépendent plus du mode
+    d'apparence du système."""
+    from PySide6.QtGui import QColor, QPalette
+
+    qt = QPalette()
+    roles = {
+        QPalette.Window: palette.background,
+        QPalette.WindowText: palette.text,
+        QPalette.Base: palette.input_bg,
+        QPalette.AlternateBase: palette.panel_alt,
+        QPalette.Text: palette.text,
+        QPalette.Button: palette.surface,
+        QPalette.ButtonText: palette.text,
+        QPalette.BrightText: palette.text_strong,
+        QPalette.Highlight: palette.accent,
+        QPalette.HighlightedText: palette.on_accent,
+        QPalette.ToolTipBase: palette.surface,
+        QPalette.ToolTipText: palette.text,
+        QPalette.PlaceholderText: palette.muted,
+        QPalette.Link: palette.accent,
+        QPalette.Mid: palette.border,
+        QPalette.Dark: palette.border_strong,
+    }
+    for role, color in roles.items():
+        qt.setColor(role, QColor(color))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        qt.setColor(QPalette.Disabled, role, QColor(palette.disabled_text))
+    return qt
 
 
 def global_stylesheet(palette: ThemePalette | None = None) -> str:
@@ -915,6 +962,9 @@ class ThemeManager:
                 marker_name = "_kut_studio_theme_stylesheet"
                 if app.property(marker_name) == stylesheet:
                     return
+                set_palette = getattr(app, "setPalette", None)          # d'abord : les widgets sans style prennent les couleurs du thème
+                if callable(set_palette):
+                    set_palette(qt_palette(self.effective_palette))
                 app.setStyleSheet(stylesheet)
                 app.setProperty(marker_name, stylesheet)
             except Exception:
@@ -1030,10 +1080,12 @@ __all__ = [
     "WHITE",
     "label_style",
     "overlay_qcolor",
+    "qt_palette",
     "mix_colors",
     "set_role",
     "set_state",
     "set_style_property",
+    "set_stylesheet_if_changed",
     "set_variant",
     "with_alpha",
 ]

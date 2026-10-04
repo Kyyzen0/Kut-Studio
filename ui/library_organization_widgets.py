@@ -61,7 +61,7 @@ from core.library_organization import (
     is_asset_missing,
 )
 from core.workspace_state import MIN_SIZE, PanelId
-from ui.design_system import Radius, Spacing
+from ui.design_system import DIALOG_MARGINS, Radius, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import set_single_default
@@ -998,9 +998,7 @@ class TagManagerDialog(QDialog):
         self._tag_rows: dict[str, "_TagRow"] = {}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            Spacing.md, Spacing.md, Spacing.md, Spacing.md
-        )
+        layout.setContentsMargins(*DIALOG_MARGINS)
         layout.setSpacing(Spacing.sm)
 
         intro = QLabel(translate("library.tags.intro"))
@@ -1060,6 +1058,7 @@ class TagManagerDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._close_button = buttons.button(QDialogButtonBox.Close)
+        self._close_button.setText(translate("prefs.close"))   # le libellé d'un bouton standard est celui de Qt (« Close » en anglais)
 
         # Entrée dans le champ du nom crée le tag : « Créer » est le seul bouton par défaut (avant, c'était
         # « Choisir une couleur… » qui s'ouvrait). Échap ferme le dialogue.

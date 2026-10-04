@@ -32,7 +32,7 @@ from core.multicam import angle_offset
 from core.multicam_model import AudioMode, MulticamAudio, SyncStatus
 from core.multicam_ops import angle_has_audio
 from core.project_model import Project
-from ui.design_system import Spacing
+from ui.design_system import DIALOG_MARGINS, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import active_palette, label_style
@@ -138,7 +138,7 @@ class MulticamSettingsDialog(QDialog):
         self._audio_options: list[MulticamAudio] = []
         self._blocking = False
         root = QVBoxLayout(self)
-        root.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        root.setContentsMargins(*DIALOG_MARGINS)
         root.setSpacing(Spacing.sm)
         self.source_label = QLabel()
         self.source_label.setStyleSheet(label_style(13, "text", 700))

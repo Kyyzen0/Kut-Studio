@@ -17,7 +17,7 @@ from core.media_previews import (
     waveform_cache_key,
 )
 from core.timeline_view_model import TimelineClipView
-from ui.theme import BLACK, mix_colors
+from ui.theme import BLACK, mix_colors, set_stylesheet_if_changed
 from ui.timeline_widgets.clip_style import (
     cache_dot_color,
     clip_body_style,
@@ -36,6 +36,10 @@ if TYPE_CHECKING:  # import de typage seul : évite le cycle clip -> panneau
 # Clip widget
 # ---------------------------------------------------------------------------
 
+
+
+_TITLE_BAND = 16
+"""Hauteur (px) de la bande du nom, en haut d'un clip : la forme d'onde d'un clip audio commence en dessous."""
 
 class ClipWidget(QWidget):
     """Widget visuel représentant un :class:`TimelineClipView` immuable."""
@@ -65,13 +69,13 @@ class ClipWidget(QWidget):
 
         # Label du clip (nom).
         self.label = QLabel(self.view.label, self)
-        self.label.setStyleSheet(title_style(_current_palette()))
+        set_stylesheet_if_changed(self.label, title_style(_current_palette()))
         self.label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.duration_label = QLabel(
             self.parent_timeline.format_time(self.view.end - self.view.start) if self.parent_timeline else "",
             self,
         )
-        self.duration_label.setStyleSheet(duration_style(_current_palette()))
+        set_stylesheet_if_changed(self.duration_label, duration_style(_current_palette()))
         self.duration_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._cache_dot = None
         self.refresh_style()
@@ -86,9 +90,7 @@ class ClipWidget(QWidget):
             if self._cache_dot is None:
                 self._cache_dot = QLabel("●", self)
                 self._cache_dot.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            self._cache_dot.setStyleSheet(
-                "color: %s; font-size: 10px; background: transparent;" % color
-            )
+            set_stylesheet_if_changed(self._cache_dot, "color: %s; font-size: 10px; background: transparent;" % color)
             self._cache_dot.move(max(0, self.width() - 18), 2)
             self._cache_dot.resize(16, 14)
             self._cache_dot.setVisible(state in ("cached", "pending"))
@@ -104,9 +106,9 @@ class ClipWidget(QWidget):
         # Le fond dit la catégorie du clip (vidéo, audio, titre, calque, imbriqué) ; la sélection éclaircit le fond et passe
         # la bordure à l'accent. Le sélecteur est limité au corps du clip : un ``QWidget`` nu peindrait aussi les libellés.
         self.setObjectName("clipBody")
-        self.setStyleSheet(clip_body_style(self.view, palette, selected=selected, hovered=self._hover_body))
-        self.label.setStyleSheet(title_style(palette))
-        self.duration_label.setStyleSheet(duration_style(palette))
+        set_stylesheet_if_changed(self, clip_body_style(self.view, palette, selected=selected, hovered=self._hover_body))
+        set_stylesheet_if_changed(self.label, title_style(palette))
+        set_stylesheet_if_changed(self.duration_label, duration_style(palette))
         # Mémorise la couleur de la pastille de type pour le rendu.
         self._track_accent = base_color
         self.label.setText(self.view.label)
@@ -624,15 +626,17 @@ class ClipWidget(QWidget):
 
                 peaks = synthetic_peaks(self.view.id, bins)
             if peaks:
-                # La forme d'onde accompagne le clip sans le dominer : la couleur du thème, translucide, à 80 % de la hauteur.
+                # La forme d'onde accompagne le clip sans le dominer : la couleur du thème, translucide, et seulement sous la bande du
+                # nom (le titre du clip reste lisible, aucune barre ne passe derrière).
                 painter.setPen(Qt.NoPen)
                 wave = QColor(_current_palette().clip_audio_wave)
                 wave.setAlpha(120)
                 painter.setBrush(wave)
                 step = max(1, self.width() / max(1, len(peaks)))
-                mid = self.height() / 2
+                region = max(8.0, self.height() - _TITLE_BAND - 3)
+                mid = _TITLE_BAND + region / 2
                 for index, peak in enumerate(peaks):
-                    bar = max(1.0, float(peak) * (self.height() - 10) * 0.8)
+                    bar = max(1.0, float(peak) * region * 0.9)
                     painter.drawRect(
                         int(4 + index * step),
                         int(mid - bar / 2),

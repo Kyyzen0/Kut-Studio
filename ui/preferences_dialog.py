@@ -58,6 +58,7 @@ from core.user_settings import (
     VALID_RENDER_QUALITIES,
     VALID_THEME_MODES,
 )
+from ui.design_system import DIALOG_MARGINS
 from ui.i18n import (
     available_languages,
     current_language,
@@ -244,7 +245,7 @@ class PreferencesDialog(QDialog):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 18)
+        root.setContentsMargins(*DIALOG_MARGINS)
         root.setSpacing(14)
 
         # Sans gestionnaire de raccourcis, le dialogue garde sa forme

@@ -51,6 +51,9 @@ class _Spacing:
 
 Spacing = _Spacing()
 
+DIALOG_MARGINS: tuple[int, int, int, int] = (Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+"""Marges (gauche, haut, droite, bas) du contenu d'un dialogue : les mêmes partout, plus d'ouverture à 12, 16 ou 20 px selon le dialogue."""
+
 
 # ---------------------------------------------------------------------------
 # Rayons de bordures
@@ -278,6 +281,7 @@ def metrics() -> DesignMetrics:
 
 
 __all__ = [
+    "DIALOG_MARGINS",
     "ButtonVariant",
     "Iconography",
     "METRICS",

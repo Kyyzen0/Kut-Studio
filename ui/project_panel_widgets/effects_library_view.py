@@ -27,7 +27,7 @@ from core.effects_library import (
     filter_presets,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
+from ui.design_system import DIALOG_MARGINS, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
@@ -588,7 +588,7 @@ class SavePresetDialog(QDialog):
         self.setMinimumWidth(360)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        layout.setContentsMargins(*DIALOG_MARGINS)
         layout.setSpacing(Spacing.sm)
 
         intro = QLabel(translate("effects.library.dialog.title"))

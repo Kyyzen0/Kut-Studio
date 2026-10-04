@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Iconography, Radius, Sizes, Spacing, Typography, Weights
+from ui.design_system import DIALOG_MARGINS, Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
@@ -721,7 +721,7 @@ class SaveTransitionPresetDialog(QDialog):
         self.setMinimumWidth(360)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.md)
+        layout.setContentsMargins(*DIALOG_MARGINS)
         layout.setSpacing(Spacing.sm)
 
         intro = QLabel(
