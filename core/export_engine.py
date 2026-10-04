@@ -16,6 +16,10 @@ timeline :
    stéréo / 48 kHz, ``adelay`` pour décaler à ``timeline_start`` ;
    toutes les sources sont mixées via ``amix`` avec
    ``duration=first`` (la base silencieuse) et ``dropout_transition=0``.
+   ``normalize=0`` : le mixage **additionne** (sans lui, ``amix`` divise chaque
+   entrée par leur nombre et un clip seul sort 6 dB sous sa source) ; le
+   mixage final se termine par le gain Master puis un limiteur à 0 dBFS
+   (:data:`SAFETY_LIMITER`), car une somme n'a plus de plafond.
 
 Le résultat est un fichier ``mp4`` / ``mov`` contenant à la fois la
 vidéo H.264 / ProRes et une piste audio AAC stéréo 48 kHz. Si le
@@ -36,6 +40,7 @@ from __future__ import annotations
 import math
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -227,6 +232,37 @@ def _ffmpeg_supports_subtitles() -> bool:
         supported = " subtitles " in f" {completed.stdout} "
     _ffmpeg_supports_subtitles._cached = supported  # type: ignore[attr-defined]
     return supported
+
+
+def _ffmpeg_filter_has_option(filter_name: str, option: str) -> bool:
+    """``True`` si le FFmpeg utilisé déclare ``option`` pour le filtre ``filter_name`` (``ffmpeg -h filter=<nom>``).
+
+    On interroge le binaire plutôt que de lire son numéro de version : une build Git (``N-12345-g…``) n'en a pas
+    d'exploitable, et une build de distribution peut porter une option plus récente que son numéro. Seule une réponse
+    définitive est mémorisée (par commande FFmpeg et par option). Un binaire introuvable, muet ou trop lent se lit
+    « non » sans être mémorisé : c'est la réponse sûre, le chemin de repli du graphe fonctionnant sur tout FFmpeg.
+    """
+    try:
+        prefix = tuple(_ffmpeg_command_prefix())
+    except ImportError:
+        return False
+    cache = _ffmpeg_filter_has_option.__dict__.setdefault("_cache", {})
+    key = (prefix, filter_name, option)
+    if key in cache:
+        return cache[key]
+    try:
+        completed = process_supervisor.supervised_run(
+            [*prefix, "-hide_banner", "-h", f"filter={filter_name}"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if completed.returncode != 0:
+        return False
+    # Une option s'imprime « <espaces>nom<espaces><type> … » : l'ancrage évite de la trouver dans une description.
+    found = re.search(rf"^\s+{re.escape(option)}\s+<", completed.stdout or "", re.MULTILINE) is not None
+    cache[key] = found
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -1398,6 +1434,9 @@ def _compose_plan_graph(
     parts.append(silent_base_filter)
 
     if plan.audio_layers:
+        # ``amix`` divise chaque entrée par leur nombre : sans ``normalize=0`` un clip seul sort 6 dB sous sa source.
+        # Un FFmpeg qui ne connaît pas l'option passe par le repli de l'étage final (voir plus bas).
+        amix_sums = _ffmpeg_filter_has_option("amix", "normalize")
         for audio_index, layer in enumerate(plan.audio_layers):
             if layer.nested_key:
                 parts.append(
@@ -1458,10 +1497,14 @@ def _compose_plan_graph(
                         voice_inputs = "".join(
                             f"[{p}a{i}]" for i in voice_layer_indices
                         )
+                        # Le détecteur du ducking doit entendre la voix à son niveau réel, pas divisée par le nombre
+                        # de clips de la piste : le seuil se règle sur le signal qu'on entend. (Un FFmpeg sans
+                        # ``normalize`` garde l'ancien niveau de détection : il n'a pas de moyen exact de le corriger.)
+                        voice_normalize = ":normalize=0" if amix_sums else ""
                         parts.append(
                             f"{voice_inputs}"
                             f"amix=inputs={len(voice_layer_indices)}:"
-                            f"duration=first:dropout_transition=0,"
+                            f"duration=first:dropout_transition=0{voice_normalize},"
                             f"aformat=channel_layouts=stereo:"
                             f"sample_rates=48000[{voice_mix_label}]"
                         )
@@ -1476,19 +1519,41 @@ def _compose_plan_graph(
                 ducked_labels[audio_index] = f"[{p}a{audio_index}_duck]"
 
         n_inputs = len(plan.audio_layers) + 1
-        mixed_inputs = "".join(
+        layer_labels = [
             ducked_labels.get(i, f"[{p}a{i}]")
             for i in range(len(plan.audio_layers))
-        )
-        # Le gain Master est appliqué après l'amix : il doit
-        # piloter l'ensemble du mixage, pas chaque couche. Une séquence
-        # imbriquée n'a pas de Master : c'est le clip qui règle son gain.
-        master_filter = "" if nested else _build_master_filter(plan)
-        tail = f",{master_filter}" if master_filter else ""
+        ]
+        # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
+        mix_stage = f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
+        if amix_sums:
+            mix_stage += ":normalize=0"
+        else:
+            # Repli (FFmpeg < 4.4) : ``amix`` divise par le nombre d'entrées *encore actives* (``dropout_transition=0``
+            # renormalise dès qu'une entrée se termine), donc ``volume=N`` seul ne rattrape le niveau que tant que
+            # toutes les entrées durent : un clip qui en suit un autre sortirait trop fort. ``apad`` prolonge chaque
+            # couche de silence, aucune ne finit avant la base silencieuse, le diviseur reste N+1 et ``volume`` le
+            # compense exactement.
+            padded = []
+            for i, label in enumerate(layer_labels):
+                parts.append(f"{label}apad[{p}a{i}_pad]")
+                padded.append(f"[{p}a{i}_pad]")
+            layer_labels = padded
+            mix_stage += f",volume={n_inputs}"
+        stages = [mix_stage]
+        if not nested:
+            # Le gain Master est appliqué après l'amix : il doit piloter l'ensemble du mixage, pas chaque couche.
+            # Une séquence imbriquée n'a pas de Master : c'est le clip qui règle son gain.
+            master_filter = _build_master_filter(plan)
+            if master_filter:
+                stages.append(master_filter)
+            # Additionner n'a plus de plafond : deux couches proches du maximum dépassent 0 dBFS (+5 dBFS mesurés), et
+            # le gain d'un clip réglé pour compenser l'ancienne atténuation aussi. Le limiteur est le dernier étage
+            # du mixage final (jamais d'une séquence imbriquée : celui de la timeline parente couvre la somme).
+            if _ffmpeg_filter_has_option("alimiter", "latency"):
+                stages.append(SAFETY_LIMITER)
         parts.append(
-            f"[{p}silent_base]{mixed_inputs}"
-            f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
-            f"{tail},"
+            f"[{p}silent_base]{''.join(layer_labels)}"
+            f"{','.join(stages)},"
             f"aformat=channel_layouts=stereo:sample_rates=48000[{p}aout]"
         )
     else:
@@ -2693,6 +2758,14 @@ def _format_ratio(value: float) -> str:
     """Formate un gain de balance stereo (0 → 1) pour ``stereotools``."""
     ratio = max(0.0, min(1.0, float(value)))
     return f"{ratio:.4f}"
+
+
+SAFETY_LIMITER = "alimiter=limit=1:level=0:latency=1"
+"""Dernier étage du mixage final : plafond à 0 dBFS (``limit=1``), transparent en dessous (écart nul mesuré).
+
+``level=0`` coupe le « auto level » (le limiteur ne remonte jamais un mixage faible) ; ``latency=1`` compense le retard
+de 5 ms (239 échantillons à 48 kHz) que le limiteur introduit sinon et qui décalerait tout le son de l'image. Sans
+cette option (FFmpeg trop ancien) l'étage n'est pas émis plutôt que de désynchroniser l'audio."""
 
 
 def _build_master_filter(plan) -> str:

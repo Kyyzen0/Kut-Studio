@@ -62,6 +62,7 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
 | Temps d'un keyframe | **temps local du clip** (0 = début du clip sur la timeline) ; invariant : aucun keyframe après la fin du clip | animation, graph editor, tracking | `test_keyframes_after_duration_change.py` |
 | Durée d'un clip | **dérivée** du `TimeMap` (`Clip.duration`) : l'instant où la source est épuisée ; sans courbe, `(source_out − source_in) / vitesse` ; une durée imposée (après une coupe) ne peut que raccourcir | timeline, plan de rendu | `test_timeline_operations.py`, `test_time_map.py` |
 | Couleur de sortie | BT.709 partout, y compris en SD : étape `OUTPUT_COLOR_STAGE` + balises `OUTPUT_COLOR_TAGS` | export, aperçu fidèle | `test_export_color.py`, `test_gpu_pipeline.py`, `test_hardware_color_validation.py` (chaque encodeur **disponible**, relu avec ffprobe) |
+| Niveau audio de l'export | le mixage final **additionne** (`amix=…:normalize=0`) puis gain Master puis limiteur à 0 dBFS (`SAFETY_LIMITER`), dans `core/export_engine.py` : un clip seul sort au niveau de sa source ([ci-dessous](#mixage-audio-de-lexport)) | export, aperçu fidèle (même graphe) | `test_export_audio_level.py` |
 | Image de la tête de lecture (scopes) | `project_at_playhead` (`core/playhead_snapshot.py`) puis le même graphe | panneau de scopes | `test_scopes_real.py`, `test_playhead_frame.py` |
 | Empreinte d'un segment d'aperçu | `fingerprint_plan` (`core/filter_graph.py`) + `RENDER_ENGINE_VERSION` ; le mapping de chaque clip y figure et, si un clip interpole, la version du moteur d'images | cache disque des segments | `test_segment_fingerprint.py`, `test_export_interpolation_real.py` |
 | Raccourcis | `core/shortcuts.py` (table des commandes) ; le gestionnaire (`ui/shortcut_manager.py`) l'applique ; les infobulles lisent `hint()` | menus, boutons, éditeur de raccourcis | `test_shortcuts*.py`, `test_ui_honesty.py` |
@@ -139,6 +140,35 @@ Le GPU ne change que le moniteur temps réel ; il a un repli CPU complet. Détai
 [gpu-preview.md](gpu-preview.md). Une image GPU illisible est convertie par Qt (copie CPU) au lieu de condamner
 le moniteur ; si Qt libère les ressources du widget (masqué, détaché), la dernière image de chaque source est
 renvoyée à la recréation.
+
+## Mixage audio de l'export
+
+* **Le mixage additionne.** `amix` divise chaque entrée par leur nombre ; sans `normalize=0`, un clip seul (mixé avec la base
+  silencieuse) sortait **6 dB sous sa source** — mesuré à `ebur128` : WAV à −13,2 LUFS / −0,9 dBFS de crête, MP4 exporté à
+  −19,2 LUFS / −6,9 dBFS. Et comme `dropout_transition=0` renormalise dès qu'une entrée se termine, trois clips bout à bout
+  sortaient à −11,7 / −9,3 / −5,8 dB de leur source : chacun à un niveau différent. Le graphe de l'aperçu fidèle étant celui de
+  l'export, il suit.
+* **Chaîne finale** : `amix` → gain Master → `alimiter=limit=1:level=0:latency=1` (`SAFETY_LIMITER`) → `aformat`. Additionner
+  n'a plus de plafond (deux couches à 0,9 donnent +5,1 dBFS) : le limiteur le pose à 0 dBFS. Il est transparent en dessous
+  (écart nul mesuré) ; `latency=1` supprime le retard de 239 échantillons (~5 ms) qu'il introduit sinon, `level=0` coupe son
+  « auto level ». Une séquence imbriquée additionne mais ne limite pas : le mixage de la timeline parente couvre la somme.
+* **Les capacités se lisent sur le binaire**, pas sur son numéro de version : `_ffmpeg_filter_has_option` interroge
+  `ffmpeg -h filter=<nom>` (une build Git n'a pas de version exploitable). Sans `normalize` (FFmpeg < 4.4), chaque couche est
+  prolongée par `apad` et `volume=N` rattrape le diviseur **exactement** — un `volume=N` seul serait faux dès qu'un clip en
+  suit un autre. Sans l'option `latency` d'`alimiter`, le limiteur est omis plutôt que de décaler le son derrière l'image.
+* **Ducking** : le sous-mixage des voix, qui alimente le détecteur, additionne aussi. Une piste de voix de plusieurs clips
+  déclenche le ducking à son niveau réel et non divisé par le nombre de clips : à seuil égal, la musique baisse plus
+  souvent qu'avant (un FFmpeg sans `normalize` conserve l'ancien niveau de détection).
+* **Aperçu : limite connue.** Chaque segment d'aperçu (2 s) est rendu à froid, sans l'état du précédent, comme tout filtre à
+  mémoire (ducking, compresseur, écho). Le limiteur repart donc de l'unité à chaque frontière, alors que celui de l'export
+  finit son relâchement (50 ms par défaut) quand un clip fort vient de s'arrêter. Pire cas mesuré (deux couches cohérentes à
+  0,9, limiteur engagé, arrêtées 20 ms avant la frontière) : l'export est 2,3 dB plus bas sur les 10 premières ms, 1,2 dB sur
+  les 10 suivantes, identique ensuite. Le corriger demanderait une amorce audio (preroll) sur chaque segment : un changement de
+  l'architecture de l'aperçu, pas de ce mixage.
+* **Changement de niveau visible** : un projet dont l'auteur avait relevé le gain de ses clips (ou du Master) pour compenser
+  l'ancienne atténuation s'exporte maintenant **plus fort**, jusqu'à +6 dB pour un clip seul et davantage avec plusieurs
+  couches. Le limiteur évite l'écrêtage mais pas la surprise : il faut redescendre ce gain pour retrouver le niveau voulu.
+  Les autres projets sortent enfin au niveau de leur source.
 
 ## Format `.kut`
 

@@ -182,7 +182,7 @@ def _interpolation_identity(plan, preference: str = "auto"):
     return [ENGINE_VERSION, PREPARE_VERSION, backend.name, backend.version, *classification_key()]
 
 
-RENDER_ENGINE_VERSION = 4
+RENDER_ENGINE_VERSION = 5
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
@@ -190,7 +190,9 @@ depuis le début de la timeline) ; les segments d'aperçu mis en cache avec l'an
 4 : le temps d'un clip remappé vient de son ``TimeMap`` (courbe de vitesse, échantillonnage à l'image la plus proche au lieu
 de ``setpts`` + ``fps``, arrêt sur image muet pendant exactement sa durée) ; le décalage d'une couche vidéo sur la timeline
 porte une garde d'un millième de tick (``setpts`` tronque : une couche posée sur une image arrivait une image trop tôt) ;
-les anciens segments sont ignorés."""
+les anciens segments sont ignorés.
+5 : le mixage audio additionne (``amix=…:normalize=0``) au lieu de diviser chaque entrée par leur nombre, puis un limiteur à
+0 dBFS ferme le mixage ; un segment mis en cache avec l'ancien son (6 dB trop bas pour un clip seul) est ignoré."""
 
 
 def fingerprint_plan(plan, **kwargs):
