@@ -163,10 +163,43 @@ Aucun cache n'est dans le projet : ni vecteurs de mouvement, ni images interméd
 * Un segment non linéaire qui précède un arrêt inséré est ré-adouci jusqu'au palier (mêmes valeurs aux extrémités).
 * Pas de reprise d'un `.kut` à courbe par une version antérieure.
 
+## Dette restante
+
+Ce qui n'est **pas** fait, par ordre d'importance pour l'utilisateur :
+
+* **Moniteur temps réel** : il échantillonne toujours ; le mode *Auto* (flux → mélange → échantillonnage selon la cadence) n'existe
+  pas, seul l'avis « aperçu simplifié » est là. Il suppose un mélange et un flux en temps réel dans `core/gpu_composite`.
+* **Aucun backend GPU** (Metal, CUDA, Vulkan, OpenCL, CoreML) ni neuronal : l'interface `OpticalFlowBackend` est prête, le coût
+  processeur est documenté ([optical-flow.md](optical-flow.md#ralenti-extrême) : 4,6 min par seconde de média à 5 % en 1080p).
+* **Images fabriquées en RVB 8 bits** : un média 10 bits est ramené à 8 bits **pour les seules images intermédiaires** d'un clip
+  interpolé (l'échantillonnage garde le format du média) ; un média à canal alpha est **refusé** pour l'interpolation, jamais
+  aplati en silence.
+* **Priorités du calcul** : pas de file dédiée au flux (image demandée, puis suivantes, puis arrière-plan). L'aperçu fidèle hérite
+  des priorités de ses segments (`core/task_queue`) ; l'export et l'analyse manuelle tournent chacun dans leur fil, sans priorité
+  entre eux.
+* **Annulation automatique** : changer le mode ou le réglage de backend annule les segments d'aperçu en vol, et un segment périmé
+  est reconnu à son empreinte ; une analyse lancée à la main n'est pas annulée par une édition (ses paires restent valables : le
+  mouvement est celui du média).
+* **Cohérence d'une paire à l'autre** sur de vraies prises (bruit, flou de bougé) : non mesurée ; les mesures sont faites sur des
+  scènes synthétiques propres, donc une borne haute de la qualité.
+* **Mesures sur une seule machine** (Apple Silicon). L'intégration continue exécute les tests sur macOS, Linux et Windows, mais le
+  banc de temps n'a tourné que sur la première ; sur x86 la conversion RVB de swscale retombe d'un niveau de luminance (voir
+  `INDEX_TOLERANCE` dans `tests/test_retime_prepare_real.py`).
+* Compression et tuiles des champs de mouvement : la compression `zlib` a été **mesurée** (×1,3 à ×1,6 seulement, flottants
+  bruités), donc non retenue ; le gain pris est la réduction de moitié de la grille et la demi-précision (÷ 4 pour une erreur
+  d'image inchangée). Le découpage en tuiles n'a **pas** été évalué (voir
+  [optical-flow.md](optical-flow.md#cache-des-vecteurs-de-mouvement)).
+
 ## Tests
 
 `test_time_map` (43, intégrale contre une quadrature de Gauss-Legendre), `test_speed_curve_edits`, `test_time_ops`,
 `test_time_presets`, `test_time_commands`, `test_slide_roll_remapped`, `test_retime_graph` et `test_retime_export_real`
 (le vrai FFmpeg : image par image contre le modèle, coupes, transitions), `test_retime_audio_real` (fréquences mesurées),
 `test_time_integration` (séquences imbriquées, Multicam, suivi, sous-titres sur une rampe), `test_time_ui`, `test_time_overlay`,
-`test_project_io_time_remapping`.
+`test_project_io_time_remapping` (dont un ancien projet à vitesse constante qui donne exactement le même montage).
+
+Images intermédiaires : `test_frame_interpolation` (le plan, poids exacts de 80 % à 5 %, marche arrière), `test_optical_flow` et
+`test_flow_cache` (moteur, replis, clé et écriture atomique), `test_retime_prepare` et `test_retime_prepare_real` (le vrai FFmpeg :
+poids de mélange à 5 %, flux contre vérité exacte à 25, 10 et 5 %, conteneurs à horloge décalée, MPEG-TS, son plus long que l'image),
+`test_export_interpolation_real` (export asynchrone, annulation, progression), `test_flow_analysis`, `test_flow_bench` (invariants du
+banc : position, ralenti extrême, tableaux de la documentation) et `test_flow_self_check`.

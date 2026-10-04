@@ -126,6 +126,37 @@ def test_reverse_mirrors_the_weights_and_starts_on_the_last_existing_frame():
     assert weights(result)[:7] == [(59, 0.0), (59, 0.0), (59, 0.0), (58, 0.5), (58, 0.0), (57, 0.5), (57, 0.0)]
 
 
+@pytest.mark.parametrize("speed, per_pair", [(0.5, 1), (0.25, 3), (0.1, 9), (0.05, 19)])
+def test_extreme_slowdowns_fabricate_every_fraction_between_two_frames_with_exact_weights(speed, per_pair):
+    """50, 25, 10 et 5 % : ``1 / ratio − 1`` images par paire, aux poids ``k · ratio`` exacts ; le coût croît comme ``1 / ratio``."""
+    result = plan(ConstantTimeMap(0.0, 3.0, speed), FLOW)
+    samples = weights(result)
+    cycle = per_pair + 1
+    for pair in range(3):
+        expected = [(pair, 0.0)] + [(pair, round(k * speed, 9)) for k in range(1, cycle)]
+        assert samples[pair * cycle:(pair + 1) * cycle] == expected, (speed, pair)
+    inside = samples[:3 * cycle]
+    assert sum(1 for _frame, t in inside if t > 0.0) == 3 * per_pair                           # 95 % des images à 5 %
+    assert result.needs_synthesis
+
+
+@pytest.mark.parametrize("speed", [0.1, 0.05])
+def test_an_extreme_reverse_mirrors_the_forward_weights_and_never_assumes_the_next_frame_is_later(speed):
+    forward = plan(ConstantTimeMap(0.0, 2.0, speed), FLOW, last=59)
+    backward = plan(ConstantTimeMap(0.0, 2.0, speed, reverse=True), FLOW, last=59)
+    cycle = round(1 / speed)
+    # La lecture inverse part du bord haut de la fenêtre (position 60) puis recule de ``ratio`` par image de sortie. Tant que la
+    # position dépasse la dernière image (59), on montre cette image ; ensuite la paire est ``(⌊position⌋, position − ⌊position⌋)``,
+    # jamais « l'image suivante est plus tardive ».
+    for step, (frame, t) in enumerate(weights(backward)[:3 * cycle + 2 * round(1 / speed)]):
+        position = 60.0 - step * speed
+        if position >= 59.0:
+            assert (frame, t) == (59, 0.0), (speed, step, frame, t)
+        else:
+            assert frame + t == pytest.approx(position, abs=1e-6), (speed, step, frame, t)
+    assert len(weights(forward)) == len(weights(backward))
+
+
 def test_a_hold_shows_one_image_not_a_blend():
     keys = (
         Keyframe(SPEED_PROPERTY, 0.0, 0.4, InterpolationType.HOLD),
