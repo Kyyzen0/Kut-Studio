@@ -154,9 +154,14 @@ def test_the_muted_master_filter_wins_over_a_master_gain():
     assert _build_master_filter(build_render_plan(project, master_muted=True, master_gain_db=+6.0)) == "volume=0"
 
 
-def test_the_muted_filter_is_in_the_final_mix_of_the_export_graph(media):
-    """Le filtre atteint bien le graphe : ``volume=0`` suivi d'un autre étage, jamais le ``0dB`` d'avant."""
-    plan = build_render_plan(_project(media), master_muted=True)
+def test_the_muted_filter_is_in_the_final_mix_of_the_export_graph():
+    """Le filtre atteint bien le graphe : ``volume=0`` suivi d'un autre étage, jamais le ``0dB`` d'avant.
+
+    Les médias sont des chemins fictifs : le graphe ne lit aucun fichier, et ce test doit tenir sans binaire FFmpeg (la
+    fixture ``media`` en lance un, d'où son absence ici).
+    """
+    nowhere = {"video": Path("/nowhere/video.mp4"), "tone": Path("/nowhere/tone.wav")}
+    plan = build_render_plan(_project(nowhere), master_muted=True)
     graph = ExportEngine._build_filter_complex(plan, W, H, FPS, None)[0]
     assert "volume=0," in graph
     assert "volume=0dB" not in graph
