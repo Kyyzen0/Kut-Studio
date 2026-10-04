@@ -156,7 +156,7 @@ class AssetBin(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(COLORS["accent"]))
                 painter.drawRoundedRect(badge_rect, 8, 8)
-                painter.setPen(QColor("#ffffff"))
+                painter.setPen(QColor(COLORS["clip_text"]))
                 painter.drawText(badge_rect, Qt.AlignCenter, label)
             # Pastille « PX » : état du proxy (prêt, en cours, erreur…).
             proxy_state = getattr(badge, "proxy_state", "")
@@ -182,7 +182,7 @@ class AssetBin(QWidget):
                     painter.setPen(Qt.NoPen)
                     painter.setBrush(QColor(color))
                     painter.drawRoundedRect(proxy_rect, 6, 6)
-                    painter.setPen(QColor("#ffffff"))
+                    painter.setPen(QColor(COLORS["clip_text"]))
                     painter.drawText(proxy_rect, Qt.AlignCenter, label)
             # Pastilles de tags : 6 px de diamètre, à droite du badge
             # d'usage. On n'en affiche que 3 maximum.
@@ -215,7 +215,7 @@ class AssetBin(QWidget):
                 )
                 warn_rect.moveRight(rect.right() - self.PADDING)
                 painter.setBrush(QColor(COLORS["danger"]))
-                painter.setPen(QPen(QColor("#ffffff"), 1))
+                painter.setPen(QPen(QColor(COLORS["clip_text"]), 1))
                 painter.drawEllipse(warn_rect)
 
     def __init__(self, on_item_clicked, on_selection_changed, parent=None) -> None:

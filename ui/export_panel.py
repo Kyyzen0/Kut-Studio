@@ -27,7 +27,9 @@ from core.render_presets import (
 from core.hardware_encoding import HardwareCapabilities, HardwareEncoder
 from core.video_encoders import encoder_options
 from ui import i18n
-from ui.theme import COLORS, label_style
+from ui.design_system import ButtonVariant, Sizes, Spacing, StatusKind
+from ui.icons import IconButton, IconName
+from ui.theme import COLORS, set_role, set_state, set_variant
 
 _FORMAT_LABELS = {
     ExportFormat.MP4_H264: "MP4 · H.264",
@@ -100,15 +102,14 @@ class ExportPanel(QWidget):
         root.addWidget(scroll)
         self._layout = QVBoxLayout(content)
         layout = self._layout
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(Spacing.xl, Spacing.xl, Spacing.xl, Spacing.xl)
+        layout.setSpacing(Spacing.lg)
 
         header = QHBoxLayout()
         self.title_label = QLabel(i18n.translate("render.export.title"))
-        self.title_label.setStyleSheet(label_style(13, "muted", 700))
-        close_button = QPushButton("×")
+        set_role(self.title_label, "app-title")
+        close_button = IconButton(icon=IconName.CLOSE, size=Sizes.icon_button)
         self.close_button = close_button
-        close_button.setFixedSize(30, 30)
         close_button.setToolTip(i18n.translate("render.export.close_tooltip"))
         close_button.setAccessibleName(i18n.translate("a11y.export.close"))  # le libellé visible n'est qu'un « × »
         close_button.clicked.connect(self.close_requested)
@@ -118,17 +119,16 @@ class ExportPanel(QWidget):
         layout.addLayout(header)
 
         self.subtitle_label = QLabel(i18n.translate("render.export.subtitle"))
-        self.subtitle_label.setStyleSheet(label_style(13, "text", 500))
+        set_role(self.subtitle_label, "label-secondary")
         self.subtitle_label.setWordWrap(True)
         layout.addWidget(self.subtitle_label)
 
+        # Le preset est la première décision de la page : il ouvre la carte, juste sous le titre.
         settings = QFrame()
-        settings.setStyleSheet(
-            f"QFrame {{ background: {COLORS['panel_alt']}; border: 1px solid {COLORS['border']}; border-radius: 8px; }}"
-        )
+        settings.setObjectName("card")                          # la carte du thème : surface + filet, rayon des conteneurs
         form = QFormLayout(settings)
-        form.setContentsMargins(16, 16, 16, 16)
-        form.setVerticalSpacing(12)
+        form.setContentsMargins(Spacing.lg, Spacing.lg, Spacing.lg, Spacing.lg)
+        form.setVerticalSpacing(Spacing.md)
         self.preset_label = QLabel()
         self.preset_combo = QComboBox()
         for spec in builtin_presets():
@@ -137,7 +137,7 @@ class ExportPanel(QWidget):
         form.addRow(self.preset_label, self.preset_combo)
         self.preset_summary = QLabel()
         self.preset_summary.setWordWrap(True)
-        self.preset_summary.setStyleSheet(label_style(12, "muted", 500))
+        set_role(self.preset_summary, "label-secondary")
         form.addRow(self.preset_summary)
         self.encoder_label = QLabel()
         self.encoder_combo = QComboBox()
@@ -148,7 +148,7 @@ class ExportPanel(QWidget):
         self.custom_frame = QWidget()
         custom_form = QFormLayout(self.custom_frame)
         custom_form.setContentsMargins(0, 0, 0, 0)
-        custom_form.setVerticalSpacing(12)
+        custom_form.setVerticalSpacing(Spacing.md)
         self.format_combo = QComboBox()
         for export_format in ExportFormat:
             self.format_combo.addItem(_FORMAT_LABELS[export_format], userData=export_format)
@@ -173,7 +173,7 @@ class ExportPanel(QWidget):
         layout.addWidget(settings)
 
         self.status_label = QLabel()
-        self.status_label.setStyleSheet(label_style(12, "success", 600))
+        set_role(self.status_label, "label-secondary")
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -182,30 +182,25 @@ class ExportPanel(QWidget):
         layout.addWidget(self.progress_bar)
 
         actions_layout = QHBoxLayout()
-        actions_layout.setSpacing(10)
+        actions_layout.setSpacing(Spacing.sm)
+        # Une action principale (exporter), une normale (ajouter à la file), une légère (annuler) : la hiérarchie des boutons.
         self.cancel_button = QPushButton()
         self.cancel_button.setCursor(Qt.PointingHandCursor)
-        self.cancel_button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['surface']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']}; padding: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background: {COLORS['surface_hover']}; }}"
-            f"QPushButton:disabled {{ color: #626875; background: {COLORS['panel_alt']}; }}"
-        )
+        set_variant(self.cancel_button, ButtonVariant.GHOST)
         self.cancel_button.clicked.connect(self.cancel_requested)
         self.cancel_button.setEnabled(False)
 
         self.add_button = QPushButton()
         self.add_button.setCursor(Qt.PointingHandCursor)
-        self.add_button.setStyleSheet(self.cancel_button.styleSheet())
+        set_variant(self.add_button, ButtonVariant.SECONDARY)
         self.add_button.clicked.connect(self.add_to_queue_requested)
 
         self.launch_button = QPushButton()
         self.launch_button.setCursor(Qt.PointingHandCursor)
-        self.launch_button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']}; border: none; font-weight: 700; padding: 11px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
-            f"QPushButton:disabled {{ background: {COLORS['surface']}; color: #626875; }}"
-        )
+        set_variant(self.launch_button, ButtonVariant.PRIMARY)
         self.launch_button.clicked.connect(self.export_requested)
+        for button in (self.cancel_button, self.add_button, self.launch_button):
+            button.setMinimumHeight(Sizes.button_lg)
 
         actions_layout.addWidget(self.cancel_button, 1)
         actions_layout.addWidget(self.add_button, 2)
@@ -390,11 +385,15 @@ class ExportPanel(QWidget):
     # Statut (API historique conservée)
     # ------------------------------------------------------------------
 
+    _STATE_FOR = {
+        "ready": StatusKind.IDLE, "running": StatusKind.WORKING, "done": StatusKind.SUCCESS, "error": StatusKind.ERROR,
+    }
+
     def set_status(self, message, state="ready"):
-        color_map = {"ready": "success", "running": "accent", "done": "success", "error": "danger"}
-        color = color_map.get(state, "muted")
+        kind = self._STATE_FOR.get(state, StatusKind.IDLE)
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(label_style(12, color, 600))
+        set_state(self.status_label, kind)                 # la couleur vient de la feuille de style : même sens partout
+        set_state(self.progress_bar, kind)
         is_running = state == "running"
         self.progress_bar.setVisible(is_running)
         self.cancel_button.setEnabled(is_running)

@@ -116,7 +116,7 @@ class SideRail(QWidget):
 
         # Pied de rail : un pictogramme sobre pour rappeler l'identité.
         footer = IconLabel(IconName.INFO, size=Iconography.sm)
-        footer.set_color(QColor(COLORS["muted"]))
+        footer.set_color("muted")
         footer.setToolTip("Kut‑Studio")
         layout.addWidget(footer, 0, Qt.AlignHCenter)
 
@@ -145,8 +145,13 @@ class SideRail(QWidget):
         for section in self._sections:
             button = self._buttons[section.id]
             button.setText(section.label)
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)      # ``IconButton.setText`` le repasse en « texte à côté de l'icône »
             button.setToolTip(section.label)
             button.setAccessibleName(section.label)
+
+    def refresh_theme(self) -> None:
+        """Après un changement de thème : les icônes du rail portent une couleur imposée, qu'il faut recalculer."""
+        self._refresh_styles()
 
     # ------------------------------------------------------------------
     # Slots internes

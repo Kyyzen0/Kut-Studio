@@ -31,10 +31,20 @@ from core.render_job import JobStatus, RenderJob
 from core.render_presets import get_preset
 from core.render_queue import RenderQueue
 from ui import i18n
-from ui.theme import COLORS, label_style
+from ui.design_system import ButtonVariant, Iconography, Sizes, Spacing, StatusKind
+from ui.empty_state import EmptyState
+from ui.icons import IconName, make_icon
+from ui.theme import COLORS, label_style, set_role, set_state, set_variant
 
 _JOB_ID_ROLE = Qt.UserRole
 _COLUMNS = ("name", "preset", "status", "progress", "output", "encoder")
+_BAR_STATE = {
+    JobStatus.WAITING: StatusKind.IDLE,
+    JobStatus.RENDERING: StatusKind.WORKING,
+    JobStatus.COMPLETED: StatusKind.SUCCESS,
+    JobStatus.FAILED: StatusKind.ERROR,
+    JobStatus.CANCELLED: StatusKind.WARNING,
+}
 _STATUS_COLORS = {
     JobStatus.WAITING: "muted",
     JobStatus.RENDERING: "accent",
@@ -73,16 +83,12 @@ def open_path(path: str) -> bool:
     return QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
-def _button(key: str, *, primary: bool = False) -> QPushButton:
+def _button(key: str, variant: ButtonVariant = ButtonVariant.SECONDARY) -> QPushButton:
+    """Un bouton de la file : sa variante (principale, normale, légère, dangereuse) vient de la feuille de style du thème."""
     button = QPushButton()
     button.setCursor(Qt.PointingHandCursor)
     button.setProperty("i18n_key", key)
-    if primary:
-        button.setStyleSheet(
-            f"QPushButton {{ background: {COLORS['accent']}; border: none; font-weight: 700; padding: 6px 12px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
-            f"QPushButton:disabled {{ background: {COLORS['surface']}; color: #626875; }}"
-        )
+    set_variant(button, variant)
     return button
 
 
@@ -113,46 +119,51 @@ class RenderQueuePanel(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(Spacing.md)
 
         self.title_label = QLabel()
-        self.title_label.setStyleSheet(label_style(13, "muted", 700))
+        set_role(self.title_label, "section-title")
         layout.addWidget(self.title_label)
 
         self.ffmpeg_banner = QLabel()
         self.ffmpeg_banner.setWordWrap(True)
-        self.ffmpeg_banner.setStyleSheet(label_style(12, "danger", 600))
+        set_role(self.ffmpeg_banner, "label-secondary")
+        set_state(self.ffmpeg_banner, StatusKind.ERROR)
         layout.addWidget(self.ffmpeg_banner)
 
         overall_row = QHBoxLayout()
         self.overall_bar = QProgressBar()
         self.overall_bar.setRange(0, 100)
         self.overall_bar.setTextVisible(False)
-        self.overall_bar.setFixedHeight(10)
         self.overall_label = QLabel()
-        self.overall_label.setStyleSheet(label_style(12, "text", 600))
+        set_role(self.overall_label, "label-secondary")
         overall_row.addWidget(self.overall_bar, 1)
         overall_row.addWidget(self.overall_label)
         layout.addLayout(overall_row)
 
         controls = QHBoxLayout()
-        controls.setSpacing(6)
-        self.start_all_button = _button("render.btn.start_all", primary=True)
+        controls.setSpacing(Spacing.sm)
+        # Trois niveaux : l'action principale (tout lancer), les actions normales, les actions légères ; et une seule danger.
+        self.start_all_button = _button("render.btn.start_all", ButtonVariant.PRIMARY)
         self.start_button = _button("render.btn.start")
-        self.stop_button = _button("render.btn.stop")
-        self.up_button = _button("render.btn.up")
-        self.down_button = _button("render.btn.down")
-        self.cancel_button = _button("render.btn.cancel")
+        self.stop_button = _button("render.btn.stop", ButtonVariant.GHOST)
+        self.up_button = _button("render.btn.up", ButtonVariant.GHOST)
+        self.down_button = _button("render.btn.down", ButtonVariant.GHOST)
+        self.cancel_button = _button("render.btn.cancel", ButtonVariant.GHOST)
         self.retry_button = _button("render.btn.retry")
-        self.retry_cpu_button = _button("render.btn.retry_cpu")
-        self.remove_button = _button("render.btn.remove")
-        self.clear_button = _button("render.btn.clear")
+        self.retry_cpu_button = _button("render.btn.retry_cpu", ButtonVariant.GHOST)
+        self.remove_button = _button("render.btn.remove", ButtonVariant.DESTRUCTIVE)
+        self.clear_button = _button("render.btn.clear", ButtonVariant.GHOST)
+        for arrow, icon in ((self.up_button, IconName.ARROW_UP), (self.down_button, IconName.ARROW_DOWN)):
+            arrow.setProperty("i18n_key", None)                     # icône seule : pas de texte à traduire
+            arrow.setIcon(make_icon(icon, size=Iconography.md))
+            arrow.setFixedWidth(Sizes.button_md)
         for widget in (self.start_all_button, self.start_button, self.stop_button):
             controls.addWidget(widget)
-        controls.addSpacing(8)
+        controls.addSpacing(Spacing.sm)
         for widget in (self.up_button, self.down_button):
             controls.addWidget(widget)
-        controls.addSpacing(8)
+        controls.addSpacing(Spacing.sm)
         for widget in (self.cancel_button, self.retry_button, self.retry_cpu_button,
                        self.remove_button, self.clear_button):
             controls.addWidget(widget)
@@ -169,15 +180,13 @@ class RenderQueuePanel(QWidget):
         self.tree.setMinimumHeight(140)
         layout.addWidget(self.tree, 1)
 
-        self.empty_label = QLabel()
-        self.empty_label.setWordWrap(True)
-        self.empty_label.setStyleSheet(label_style(12, "muted", 500))
+        self.empty_label = EmptyState(icon=IconName.EXPORT)     # icône, titre court, texte : l'état vide de la file
         layout.addWidget(self.empty_label)
 
         self.detail_label = QLabel()
         self.detail_label.setWordWrap(True)
         self.detail_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.detail_label.setStyleSheet(label_style(12, "text", 500))
+        set_role(self.detail_label, "label-secondary")
         layout.addWidget(self.detail_label)
 
         detail_buttons = QHBoxLayout()
@@ -214,18 +223,16 @@ class RenderQueuePanel(QWidget):
 
     def retranslate(self) -> None:
         self.title_label.setText(i18n.translate("render.title"))
-        self.empty_label.setText(i18n.translate("render.empty"))
+        self.empty_label.set_title_and_text(i18n.translate("render.empty.title"), i18n.translate("render.empty"))
         self.ffmpeg_banner.setText(i18n.translate("render.ffmpeg_missing"))
         self.tree.setHeaderLabels([i18n.translate(f"render.col.{name}") for name in _COLUMNS])
         for button in self.findChildren(QPushButton):
             key = button.property("i18n_key")
             if key:
                 button.setText(i18n.translate(key))
-        self.up_button.setText("▲")
-        self.down_button.setText("▼")
         self.up_button.setToolTip(i18n.translate("render.btn.up"))
         self.down_button.setToolTip(i18n.translate("render.btn.down"))
-        # Les libellés visibles sont des glyphes (▲ ▼) : le nom accessible dit ce que fait le bouton.
+        # Boutons à icône seule : le nom accessible dit ce que fait le bouton.
         self.up_button.setAccessibleName(i18n.translate("render.btn.up"))
         self.down_button.setAccessibleName(i18n.translate("render.btn.down"))
         if self._items:
@@ -296,9 +303,7 @@ class RenderQueuePanel(QWidget):
         bar.setValue(job.progress)
         color = COLORS.get(_STATUS_COLORS[job.status], COLORS["text"])
         item.setForeground(2, QBrush(QColor(color)))
-        bar.setStyleSheet(
-            f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
-        )
+        set_state(bar, _BAR_STATE[job.status])             # la couleur de la barre vient de la feuille de style, jamais d'un style local
 
     def _update_row(self, job_id: str) -> None:
         job = self._queue.job(job_id)

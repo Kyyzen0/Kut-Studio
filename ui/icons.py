@@ -22,10 +22,11 @@ par ce module.
 from __future__ import annotations
 
 from enum import Enum
+from functools import lru_cache
 from typing import Iterable
 
-from PySide6.QtCore import QByteArray, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QByteArray, QPoint, QRect, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QToolButton, QWidget
 
@@ -110,6 +111,14 @@ class IconName(str, Enum):
     AUDIO_PAN = "audio_pan"
     AUDIO_MIXER = "audio_mixer"
     MIC = "mic"
+
+    CHEVRON_DOWN = "chevron_down"
+    CHEVRON_RIGHT = "chevron_right"
+    STAR = "star"
+    STAR_FILLED = "star_filled"
+    SEARCH = "search"
+    CHECK = "check"
+    WARNING = "warning"
 
 
 # ---------------------------------------------------------------------------
@@ -610,6 +619,48 @@ _SVG_TEMPLATES: dict[str, str] = {
         '<path d="M12 17.5V21"/>'
         '<path d="M8.5 21h7"/></svg>'
     ),
+    IconName.CHEVRON_DOWN: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m6 9 6 6 6-6"/></svg>'
+    ),
+    IconName.CHEVRON_RIGHT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m9 6 6 6-6 6"/></svg>'
+    ),
+    IconName.STAR: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>'
+    ),
+    IconName.STAR_FILLED: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.6l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>'
+    ),
+    IconName.SEARCH: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>'
+    ),
+    IconName.CHECK: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
+    ),
+    IconName.WARNING: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 4.2 3.2 19.3h17.6z"/><path d="M12 10v4.2"/><path d="M12 17.1h.01"/></svg>'
+    ),
 }
 
 
@@ -656,7 +707,64 @@ def _default_icon_color() -> QColor:
 
         return QColor(COLORS["text"])
     except Exception:  # pragma: no cover - garde-fou
-        return QColor("#E5E7EB")
+        return QColor(Qt.white)
+
+
+@lru_cache(maxsize=1024)
+def _cached_pixmap(name: IconName, side: int, rgba: int) -> QPixmap:
+    """Le pixmap d'une icône, en cache (nom, côté, couleur) : un moteur d'icône est interrogé à chaque repeint."""
+    return _render(name, side, QColor.fromRgba(rgba))
+
+
+class _PaletteIconEngine(QIconEngine):
+    """Icône qui se peint **à la demande**, dans la couleur de la palette active (ou dans une couleur imposée).
+
+    Un ``QIcon`` bâti sur un pixmap figé garde la couleur du thème où il est né : à un changement de thème en direct, la moitié des
+    icônes restait claire sur fond clair (ou sombre sur fond sombre). Celle-ci relit la palette à chaque peinture : le thème change,
+    l'icône suit, sans que le widget qui la porte n'ait rien à refaire. Le SVG est rendu à la taille *physique* demandée par Qt :
+    net sur un écran HiDPI. Le mode désactivé prend la couleur du texte désactivé du thème.
+    """
+
+    def __init__(self, name: IconName, color: QColor | None = None) -> None:
+        super().__init__()
+        self._name = name
+        self._color = QColor(color) if color is not None else None
+
+    def clone(self) -> "_PaletteIconEngine":
+        return _PaletteIconEngine(self._name, self._color)
+
+    def _rgba(self, mode) -> int:
+        if self._color is not None:
+            color = QColor(self._color)
+            if mode == QIcon.Mode.Disabled:
+                color.setAlphaF(color.alphaF() * 0.4)
+            return color.rgba()
+        from ui.theme import active_palette
+
+        palette = active_palette()
+        return QColor(palette.disabled_text if mode == QIcon.Mode.Disabled else palette.text).rgba()
+
+    def pixmap(self, size: QSize, mode, state) -> QPixmap:
+        side = max(1, min(size.width(), size.height()))
+        icon = _cached_pixmap(self._name, side, self._rgba(mode))
+        if size.width() == size.height():
+            return icon
+        canvas = QPixmap(size)
+        canvas.fill(Qt.transparent)
+        painter = QPainter(canvas)
+        painter.drawPixmap((size.width() - side) // 2, (size.height() - side) // 2, icon)
+        painter.end()
+        return canvas
+
+    def paint(self, painter: QPainter, rect: QRect, mode, state) -> None:
+        ratio = max(1.0, painter.device().devicePixelRatioF()) if painter.device() is not None else 1.0
+        target = QSize(max(1, round(rect.width() * ratio)), max(1, round(rect.height() * ratio)))
+        pixmap = self.pixmap(target, mode, state)
+        pixmap.setDevicePixelRatio(ratio)
+        painter.drawPixmap(QPoint(rect.x(), rect.y()), pixmap)
+
+    def actualSize(self, size: QSize, mode, state) -> QSize:
+        return size
 
 
 def make_icon(
@@ -666,20 +774,14 @@ def make_icon(
 ) -> QIcon:
     """Retourne un :class:`QIcon` peint dans ``color``.
 
-    Si ``color`` est ``None``, l'icône prend la couleur de texte du
-    thème actif, ce qui la garde lisible sur les fonds clairs comme
-    sombres.
+    Si ``color`` est ``None``, l'icône suit la couleur de texte du thème **actif au moment de la peinture** (lisible sur les fonds
+    clairs comme sombres, et qui change avec le thème sans être reconstruite : voir :class:`_PaletteIconEngine`).
 
-    Le pixmap est rendu exactement à la taille logique demandée. Ajouter
-    plusieurs pixmaps de tailles différentes ferait passer Qt à la
-    taille physique la plus grande et gonflerait la hauteur des lignes
-    de listes (bug observé sur la navigation de la bibliothèque).
+    ``size`` n'est plus qu'un indice : le moteur rend l'icône à la taille que Qt lui demande. Il n'ajoute aucun pixmap de
+    taille fixe, ce qui évite l'ancien défaut (plusieurs pixmaps de tailles différentes faisaient passer Qt à la plus grande taille
+    physique et gonflaient la hauteur des lignes de listes de la bibliothèque).
     """
-    if color is None:
-        color = _default_icon_color()
-    icon = QIcon()
-    icon.addPixmap(_render(name, max(1, int(size)), color))
-    return icon
+    return QIcon(_PaletteIconEngine(IconName(name) if not isinstance(name, IconName) else name, color))
 
 
 # ---------------------------------------------------------------------------
@@ -710,12 +812,20 @@ class IconLabel(QWidget):
         self.setFixedSize(size, size)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-    def set_color(self, color: QColor) -> None:
-        self._explicit_color = color
+    def set_color(self, color: QColor | str | None) -> None:
+        """Couleur de l'icône : un ``QColor`` figé, ou le **nom d'un jeton** de la palette (``"muted"``), lu à chaque peinture et qui
+        suit donc le thème sans rien à refaire."""
+        self._token = color if isinstance(color, str) else None
+        self._explicit_color = None if self._token else color
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: D401 - Qt
         color = self._explicit_color
+        token = getattr(self, "_token", None)
+        if token is not None:
+            from ui.theme import active_palette
+
+            color = QColor(getattr(active_palette(), token))
         if color is None:
             color = self.palette().color(self.foregroundRole())
             if not color.isValid():

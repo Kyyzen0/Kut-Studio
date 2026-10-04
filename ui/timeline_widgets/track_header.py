@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import Track
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
 from ui.theme import ThemePalette, label_style
@@ -77,7 +77,7 @@ class TrackRowHeader(QFrame):
         self._swatch.setProperty("track_swatch", True)
         self._swatch.setFixedSize(4, 32)
         self._swatch.setStyleSheet(
-            f"background: {track_color}; border-radius: 2px;"
+            f"background: {track_color}; border-radius: {Radius.pill}px;"
         )
         title_layout.addWidget(self._swatch)
 
@@ -93,8 +93,11 @@ class TrackRowHeader(QFrame):
             "graphics": "timeline.track.graphics",
         }
         type_label = translate(type_keys[track.type]) if track.type in type_keys else track.type.upper()
-        title = QLabel(f"{track.id}  {type_label}")
-        title.setStyleSheet(label_style(11, "text", 800))
+        # Le nom de la piste d'abord (« V1 », ou celui que l'utilisateur lui a donné) ; en dessous, son type, précédé de son
+        # identifiant seulement quand le nom l'a remplacé. Plus de « V1 VIDÉO » puis « V1 » : la même information deux fois.
+        shown_name = track.name or track.id
+        title = QLabel(shown_name)
+        title.setStyleSheet(label_style(Typography.small, "text", Weights.semibold))
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         name_layout.addWidget(title)
 
@@ -109,8 +112,9 @@ class TrackRowHeader(QFrame):
             state_parts.append(translate("mixer.solo"))
         if getattr(track, "collapsed", False):
             state_parts.append(translate("timeline.track.collapsed"))
-        state_label = QLabel(" · ".join(state_parts) or track.name)
-        state_label.setStyleSheet(label_style(9, "muted", 500))
+        kind = type_label if shown_name == track.id else f"{track.id} · {type_label}"
+        state_label = QLabel(" · ".join([kind, *state_parts]))
+        state_label.setStyleSheet(label_style(Typography.caption, "muted", Weights.regular))
         name_layout.addWidget(state_label)
         title_layout.addWidget(name_box, 1)
 
@@ -205,6 +209,11 @@ class TrackRowHeader(QFrame):
                 checked=bool(getattr(track, "armed", False)),
             )
             layout.addWidget(arm_btn)
+        else:
+            # Même largeur que le bouton d'armement des pistes audio : les colonnes de boutons s'alignent d'une piste à l'autre.
+            spacer = QWidget()
+            spacer.setFixedSize(Sizes.icon_button_sm, Sizes.icon_button_sm)
+            layout.addWidget(spacer)
 
         # Les commandes moins fréquentes restent disponibles sans saturer
         # chaque en-tête de piste.
@@ -243,5 +252,5 @@ class TrackRowHeader(QFrame):
         swatch_color = _color_for_track_type(self.track.type, palette)
         if hasattr(self, "_swatch") and self._swatch is not None:
             self._swatch.setStyleSheet(
-                f"background: {swatch_color}; border-radius: 2px;"
+                f"background: {swatch_color}; border-radius: {Radius.pill}px;"
             )

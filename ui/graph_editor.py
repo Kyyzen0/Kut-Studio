@@ -104,7 +104,7 @@ class CurveCanvas(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor(COLORS.get("panel_alt", "#1E1E1E")))
+        painter.fillRect(self.rect(), QColor(COLORS["panel_alt"]))
         plot = self._plot()
         self._paint_grid(painter, plot)
         curve = self.editor.curve()
@@ -113,14 +113,14 @@ class CurveCanvas(QWidget):
             self._paint_keyframes(painter, curve)
         self._paint_playhead(painter, plot)
         if self._rubber is not None:
-            painter.setPen(QPen(QColor(COLORS.get("accent", "#36E6C3")), 1, Qt.DashLine))
+            painter.setPen(QPen(QColor(COLORS["accent"]), 1, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(self._rubber)
         painter.end()
 
     def _paint_grid(self, painter: QPainter, plot: QRectF) -> None:
-        grid = QColor(COLORS.get("border", "#333333"))
-        text = QColor(COLORS.get("text_muted", COLORS.get("muted", "#9098A2")))
+        grid = QColor(COLORS["border"])
+        text = QColor(COLORS["muted"])
         painter.setPen(QPen(grid, 1))
         painter.drawRect(plot)
         for t in _ticks(self.t0, self.t1, 8):
@@ -149,7 +149,7 @@ class CurveCanvas(QWidget):
                 path.moveTo(point)
             else:
                 path.lineTo(point)
-        painter.setPen(QPen(QColor(COLORS.get("accent", "#36E6C3")), 2))
+        painter.setPen(QPen(QColor(COLORS["accent"]), 2))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
 
@@ -173,13 +173,13 @@ class CurveCanvas(QWidget):
         return result
 
     def _paint_keyframes(self, painter: QPainter, curve) -> None:
-        accent = QColor(COLORS.get("accent", "#36E6C3"))
+        accent = QColor(COLORS["accent"])
         selected = self.editor.selected_ids()
         for keyframe, _side, point in self._handles(curve):
             center = self.to_screen(keyframe.time_seconds, float(keyframe.value))
-            painter.setPen(QPen(QColor("#B0B6BE"), 1))
+            painter.setPen(QPen(QColor(COLORS["muted"]), 1))
             painter.drawLine(center, point)
-            painter.setBrush(QColor("#B0B6BE"))
+            painter.setBrush(QColor(COLORS["muted"]))
             painter.drawEllipse(point, HANDLE_RADIUS, HANDLE_RADIUS)
         for keyframe in curve.keyframes:
             center = self.to_screen(keyframe.time_seconds, float(keyframe.value))
@@ -189,8 +189,8 @@ class CurveCanvas(QWidget):
                 QPointF(center.x(), center.y() + half), QPointF(center.x() - half, center.y()),
             ])
             is_selected = keyframe.id in selected
-            painter.setBrush(QColor("#FFFFFF") if is_selected else accent)
-            painter.setPen(QPen(accent if is_selected else QColor("#10141A"), 1.5))
+            painter.setBrush(QColor(COLORS["text_strong"]) if is_selected else accent)
+            painter.setPen(QPen(accent if is_selected else QColor(COLORS["diamond_border"]), 1.5))
             painter.drawPolygon(polygon)
 
     def _paint_playhead(self, painter: QPainter, plot: QRectF) -> None:
@@ -198,7 +198,7 @@ class CurveCanvas(QWidget):
         if local is None or not (self.t0 <= local <= self.t1):
             return
         x = self.to_screen(local, 0).x()
-        painter.setPen(QPen(QColor(COLORS.get("danger", "#FF5A5A")), 1))
+        painter.setPen(QPen(QColor(COLORS["danger"]), 1))
         painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
 
     # -- interaction --------------------------------------------------------------------------------
@@ -332,8 +332,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self.setObjectName("graphEditor")
         # Fenêtre indépendante : elle reprend explicitement les couleurs du thème.
         self.setStyleSheet(
-            f"QWidget#graphEditor {{ background: {COLORS.get('panel', '#141A1F')}; }}"
-            f"QWidget#graphEditor QLabel {{ color: {COLORS.get('text', '#E6E8EB')}; }}"
+            f"QWidget#graphEditor {{ background: {COLORS['panel']}; }}"
+            f"QWidget#graphEditor QLabel {{ color: {COLORS['text']}; }}"
         )
         # Jamais plus grande que l'écran qui la porte (elle est modeste : 820 × 420).
         screen = self.screen() or QGuiApplication.primaryScreen()

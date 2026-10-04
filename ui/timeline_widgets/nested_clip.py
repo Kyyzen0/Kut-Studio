@@ -15,6 +15,7 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 
 from ui import i18n
+from ui.theme import active_palette
 
 _BADGE = 14
 
@@ -65,7 +66,7 @@ def paint_nested_decoration(widget) -> None:
         painter.setBrush(QColor(0, 0, 0, 90))
         painter.drawRoundedRect(QRectF(right, 8, _BADGE - 4, _BADGE - 5), 2, 2)
         if status in {"missing", "cycle", "overflow", "angle_missing"}:
-            painter.setPen(QPen(QColor("#FFD166"), 2))
+            painter.setPen(QPen(QColor(active_palette().warning), 2))
             painter.drawText(QRectF(right - 12, 4, 10, 14), Qt.AlignCenter, "!")
     if getattr(view, "is_multicam", False):
         _paint_angle_marker(painter, widget, view)
@@ -81,8 +82,6 @@ def paint_nested_decoration(widget) -> None:
 
 def _paint_angle_marker(painter: QPainter, widget, view) -> None:
     """Bande de couleur de l'angle (bord gauche) et pastille numérotée : discret, lisible, aucune couleur métier."""
-    from ui.theme import active_palette
-
     colors = active_palette().angle_colors
     color = QColor(colors[view.angle_color_index % len(colors)])
     painter.fillRect(QRectF(0, 0, 4, widget.height()), color)

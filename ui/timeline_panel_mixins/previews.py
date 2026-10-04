@@ -30,13 +30,13 @@ class PreviewsMixin:
         cached = self._pixmaps.get(key)
         if cached is not None:
             return cached
+        # Vignette de secours : une tuile unie, un ton plus sombre que le fond du clip, en alternance d'une tuile à l'autre pour
+        # suggérer des images. Sans texte : le nom du clip est déjà écrit dessus, et un libellé réduit à 20 px n'est que du bruit.
+        from ui.theme import BLACK, active_palette, mix_colors
+        from ui.timeline_widgets.clip_style import clip_fill
+
         image = QImage(160, 90, QImage.Format_RGB32)
-        color = QColor(view.color_key)
-        image.fill(color.darker(110 + index * 18))
-        painter = QPainter(image)
-        painter.setPen(QColor("white"))
-        painter.drawText(image.rect(), Qt.AlignCenter, view.label or str(index + 1))
-        painter.end()
+        image.fill(QColor(mix_colors(clip_fill(view, active_palette()), BLACK, 0.14 + 0.07 * (index % 2))))
         pixmap = QPixmap.fromImage(image)
         if len(self._pixmaps) > 48:
             self._pixmaps.clear()

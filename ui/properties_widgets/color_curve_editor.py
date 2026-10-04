@@ -13,7 +13,7 @@ from core.color_grading import (
     CHANNELS,
     ColorCurve,
 )
-from ui.theme import COLORS
+from ui.theme import COLORS, active_palette
 
 
 class ColorCurveEditor(QWidget):
@@ -63,11 +63,12 @@ class ColorCurveEditor(QWidget):
         path.moveTo(first)
         for point in self._curve.points[1:]:
             path.lineTo(self._point_pos(point))
+        palette = active_palette()
         channel_colors = {
-            "master": COLORS["accent"],
-            "red": "#ef4444",
-            "green": "#22c55e",
-            "blue": "#3b82f6",
+            "master": palette.accent,
+            "red": palette.channel_red,
+            "green": palette.channel_green,
+            "blue": palette.channel_blue,
         }
         painter.setPen(QPen(QColor(channel_colors[self.channel]), 2))
         painter.drawPath(path)

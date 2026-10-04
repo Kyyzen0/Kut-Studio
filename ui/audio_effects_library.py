@@ -28,7 +28,7 @@ from core.audio_effects_library import (
     filter_audio_effect_presets,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Sizes, Spacing
+from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, label_style
 from ui.i18n import translate
@@ -93,7 +93,7 @@ class AudioEffectPresetCard(QFrame):
         badge = ElidedLabel(category_text(preset.category))
         badge.setStyleSheet(
             f"QLabel {{ color: {accent}; background: transparent;"
-            f" font-size: 9px; font-weight: 700; padding: 0; }}"
+            f" font-size: {Typography.caption}px; font-weight: {Weights.bold}; padding: 0; }}"
         )
         title_row.addWidget(badge)
         title_row.addStretch(1)
@@ -134,7 +134,7 @@ class AudioEffectPresetCard(QFrame):
         self.delete_button.setIcon(make_icon(IconName.CLOSE, size=12))
         self.delete_button.setStyleSheet(
             f"QPushButton#audioPresetDelete {{ background: transparent;"
-            f" border: 1px solid {COLORS['border']}; border-radius: 11px; }}"
+            f" border: 1px solid {COLORS['border']}; border-radius: {Radius.pill}px; }}"
             f"QPushButton#audioPresetDelete:hover {{"
             f" background: {COLORS['danger_dark']};"
             f" border: 1px solid {COLORS['danger']}; }}"
@@ -449,7 +449,7 @@ class AudioEffectsLibraryView(QWidget):
         label = QLabel(title.upper())
         label.setStyleSheet(
             f"color: {COLORS['muted_strong']}; font-size: 10px;"
-            f" font-weight: 800; letter-spacing: 1px;"
+            f" font-weight: {Weights.bold}; letter-spacing: 1px;"
             f" padding: 6px 2px 2px 2px;"
         )
         self._insert(label)

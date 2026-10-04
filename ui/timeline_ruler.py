@@ -14,6 +14,12 @@ from PySide6.QtWidgets import QWidget
 
 from core.project_model import Marker
 from core.timeline_navigation import format_timecode, ruler_ticks
+from ui.theme import active_palette, mix_colors
+
+MINOR_TICKS = 4
+"""Graduations secondaires entre deux repères numérotés (donc cinq intervalles) : discrètes, sans libellé."""
+MINOR_MIN_SPACING = 48
+"""Écart minimal (px) entre deux repères numérotés pour que les graduations secondaires aient un sens : en dessous, du bruit."""
 
 
 class TimelineRuler(QWidget):
@@ -35,11 +41,13 @@ class TimelineRuler(QWidget):
         self.origin = 200.0
         self.markers: list[Marker] = []
         self._dragging = False
-        self._background = "#1a1d24"
-        self._tick = "#8b93a7"
-        self._text = "#c6c9d2"
-        self._playhead = "#ff5a36"
-        self._marker = "#f2c14e"
+        # Valeurs de repli (avant le premier ``sync``) : celles du thème actif, jamais des couleurs en dur.
+        palette = active_palette()
+        self._background = palette.ruler_bg
+        self._tick = palette.ruler_line
+        self._text = palette.muted
+        self._playhead = palette.playhead
+        self._marker = palette.marker
 
     def sync(
         self,
@@ -94,8 +102,18 @@ class TimelineRuler(QWidget):
         # repère n'y a de sens (le temps négatif s'y afficherait « 00:00 »).
         start = max(0.0, (self.scroll_x - self.origin) / scale)
         end = max(start, (self.scroll_x + self.width() - self.origin) / scale)
+        ticks = ruler_ticks(start, end, scale, self.fps)
+        # Graduations secondaires : plus courtes et plus pâles que les repères numérotés, seulement quand l'écart les justifie.
+        painter.setPen(QPen(QColor(mix_colors(self._tick, self._background, 0.5)), 1))
+        for left, right in zip(ticks, ticks[1:]):
+            left_x, right_x = self._x_of(left.seconds), self._x_of(right.seconds)
+            if right_x - left_x < MINOR_MIN_SPACING or right_x < -40 or left_x > self.width() + 40:
+                continue
+            for index in range(1, MINOR_TICKS + 1):
+                x = int(left_x + (right_x - left_x) * index / (MINOR_TICKS + 1))
+                painter.drawLine(x, self.height() - 4, x, self.height() - 1)
         painter.setPen(QPen(QColor(self._tick), 1))
-        for tick in ruler_ticks(start, end, scale, self.fps):
+        for tick in ticks:
             x = int(self._x_of(tick.seconds))
             if x < -40 or x > self.width() + 40:
                 continue

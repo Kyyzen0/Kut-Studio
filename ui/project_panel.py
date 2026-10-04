@@ -73,14 +73,14 @@ from ui.project_panel_widgets.transition_library import (
     SaveTransitionPresetDialog,
     TransitionLibraryView,
     TransitionPresetCard,
-    _TRANSITION_CATEGORY_ACCENTS,
+    _transition_accent,
     _form_label,
 )  # noqa: F401
 from ui.project_panel_widgets.effects_library_view import (
     EffectPresetCard,
     EffectsLibraryView,
     SavePresetDialog,
-    _CATEGORY_ACCENTS,
+    _category_accent,
 )  # noqa: F401
 from ui.i18n import translate
 

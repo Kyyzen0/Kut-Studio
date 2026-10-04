@@ -31,8 +31,10 @@ Les fonctions de ce module sont aussi la boîte à outils des tests (``from tool
 from __future__ import annotations
 
 import argparse
+import atexit
 import os
 import re
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Iterable
@@ -365,11 +367,50 @@ def scale_fonts(root, factor: float) -> None:
             widget.setStyleSheet(pattern.sub(scaled, sheet))
 
 
+_CONFIG_ROOT: Path | None = None
+
+
+def isolate_user_config(monkeypatch=None) -> Path:
+    """Dirige les **prochaines fenêtres** vers une configuration neuve et vide, jamais celle de l'utilisateur.
+
+    Une ``MainWindow`` lit au démarrage, puis réécrit en vivant, les réglages de l'utilisateur, la disposition des panneaux et la
+    file de rendu. Les mesures et les captures de cet outil en changeaient donc les réglages réels (le thème, les scopes) et
+    démarraient chacune d'une disposition laissée par la fenêtre précédente : des colonnes dont les largeurs **dérivaient** d'une
+    fenêtre à l'autre, ce qui rendait deux captures « identiques » différentes de plusieurs pixels, seulement sur une machine sans
+    réglages enregistrés (la CI). Un dossier neuf par appel donne à chaque fenêtre le même point de départ.
+
+    ``monkeypatch`` (pytest) : les variables sont posées par lui et rendues à son ``undo`` ; sans lui elles restent posées jusqu'à la
+    fin du processus (un outil en ligne de commande), et le dossier est alors supprimé à la sortie."""
+    global _CONFIG_ROOT
+    if _CONFIG_ROOT is None:
+        _CONFIG_ROOT = Path(tempfile.mkdtemp(prefix="kut-studio-ui-"))
+        atexit.register(shutil.rmtree, _CONFIG_ROOT, ignore_errors=True)
+    folder = Path(tempfile.mkdtemp(dir=_CONFIG_ROOT))
+    values = {
+        "KUT_STUDIO_CONFIG_DIR": str(folder / "config"),
+        "KUT_STUDIO_CACHE_DIR": str(folder / "cache"),
+        "KUT_STUDIO_PROXY_DIR": str(folder / "proxies"),
+        "KUT_STUDIO_HARDWARE_ENCODING": "off",              # pas de détection GPU réelle : la même fenêtre sur toute machine
+    }
+    for name, value in values.items():
+        if monkeypatch is not None:
+            monkeypatch.setenv(name, value)
+        else:
+            os.environ[name] = value
+    return folder
+
+
 def make_main_window(width: int, height: int, *, scopes: bool = True, rich: bool = True, font_scale: float = 1.0):
-    """Fenêtre principale de la taille demandée, avec le projet de démonstration riche, prête à être mesurée."""
+    """Fenêtre principale de la taille demandée, avec le projet de démonstration riche, prête à être mesurée.
+
+    Sans dossier de configuration déjà choisi (``KUT_STUDIO_CONFIG_DIR``), la fenêtre travaille dans une configuration jetable : elle
+    ne lit ni n'écrit jamais celle de l'utilisateur (voir :func:`isolate_user_config`)."""
     from PySide6.QtWidgets import QApplication
 
     from ui.main_window import MainWindow
+
+    if not os.environ.get("KUT_STUDIO_CONFIG_DIR"):
+        isolate_user_config()
 
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
@@ -661,21 +702,31 @@ def tab_order_violations(sequence, content) -> list[str]:
     pas) ; ceux qui sont hors du contenu (l'en-tête et ses onglets) passent avant.
     """
 
+    def centre(widget):
+        """Le point qui représente le widget : le centre de son bandeau pour l'en-tête d'une section, celui du widget sinon."""
+        if getattr(widget, "is_section_header", False):
+            return widget.header_rect().center()
+        return widget.rect().center()
+
+    def height(widget) -> int:
+        """La hauteur qui compte pour « sur la même ligne » : celle du bandeau d'une section, pas de la section entière."""
+        return widget.header_rect().height() if getattr(widget, "is_section_header", False) else widget.height()
+
     def position(widget) -> tuple[int, int]:
         if content.isAncestorOf(widget):
-            point = widget.mapTo(content, widget.rect().center())
+            point = widget.mapTo(content, centre(widget))
             return point.x(), point.y()
         top = widget.window()
-        point = widget.mapTo(top, widget.rect().center())
+        point = widget.mapTo(top, centre(widget))
         return point.x(), point.y() - 1_000_000  # hors du contenu : avant lui
 
     problems = []
     for first, second in zip(sequence, sequence[1:]):
         (ax, ay), (bx, by) = position(first), position(second)
-        same_row = abs(ay - by) <= max(first.height(), second.height()) // 2
+        same_row = abs(ay - by) <= max(height(first), height(second)) // 2
         backwards = bx < ax - 2 if same_row else by < ay
         if backwards:
-            problems.append(f"{widget_path(first, 2)} -> {widget_path(second, 2)}")
+            problems.append(f"{widget_path(first, 2)}@({ax},{ay}) -> {widget_path(second, 2)}@({bx},{by})")
     return problems
 
 

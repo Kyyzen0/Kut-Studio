@@ -61,7 +61,7 @@ from core.library_organization import (
     is_asset_missing,
 )
 from core.workspace_state import MIN_SIZE, PanelId
-from ui.design_system import Spacing
+from ui.design_system import Radius, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import set_single_default
@@ -210,7 +210,7 @@ class FolderTreeWidget(QWidget):
         self.add_button.setStyleSheet(
             f"QToolButton#folderAddButton {{ background: transparent;"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 10px; }}"
+            f" border-radius: {Radius.pill}px; }}"
             f"QToolButton#folderAddButton:hover {{"
             f" background: {COLORS['accent_dark']};"
             f" border: 1px solid {COLORS['accent']}; }}"
@@ -702,14 +702,14 @@ class FilterChipBar(QWidget):
                 f"QToolButton {{ background: {COLORS['accent_dark']};"
                 f" color: {COLORS['accent']};"
                 f" border: 1px solid {COLORS['accent']};"
-                f" border-radius: 10px; padding: 2px 10px;"
+                f" border-radius: {Radius.pill}px; padding: 2px 10px;"
                 f" font-size: 11px; font-weight: 600; }}"
             )
         return (
             f"QToolButton {{ background: transparent;"
             f" color: {COLORS['muted']};"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 10px; padding: 2px 10px;"
+            f" border-radius: {Radius.pill}px; padding: 2px 10px;"
             f" font-size: 11px; font-weight: 600; }}"
             f"QToolButton:hover {{ color: {COLORS['text']};"
             f" background: {COLORS['surface_hover']}; }}"
@@ -1224,7 +1224,7 @@ class _TagRow(QFrame):
         color_chip = QLabel()
         color_chip.setFixedSize(14, 14)
         color_chip.setStyleSheet(
-            f"background: {tag.color}; border-radius: 7px;"
+            f"background: {tag.color}; border-radius: {Radius.pill}px;"
             f" border: 1px solid {COLORS['border']};"
         )
         layout.addWidget(color_chip)

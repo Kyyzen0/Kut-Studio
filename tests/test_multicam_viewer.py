@@ -16,7 +16,8 @@ from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam
 from core.project_model import MediaAsset, Project, Track
 from multicam_stubs import COLOURS, StubFeed
 from ui import i18n
-from ui.multicam_viewer import MulticamViewer
+from ui.multicam_viewer import MulticamViewer, label_colours
+from ui.theme import THEMES
 
 @pytest.fixture(autouse=True)
 def _reset():
@@ -296,3 +297,45 @@ def test_the_tile_menu_opens_the_source_on_that_angle(qtbot, tmp_path, monkeypat
     monkeypatch.setattr(viewer, "_run_menu", lambda menu, _position: None)
     viewer._on_tile_menu(1, QPoint(0, 0))                 # noqa: SLF001 - menu fermé sans choix
     assert asked == [2]
+
+
+# --- lisibilité des repères ----------------------------------------------------------------------------------------------
+
+
+def _luminance(red: float, green: float, blue: float) -> float:
+    def channel(value: float) -> float:
+        value /= 255
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
+
+
+def _contrast(foreground, background) -> float:
+    high, low = sorted((_luminance(foreground.red(), foreground.green(), foreground.blue()),
+                        _luminance(background.red(), background.green(), background.blue())), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _over(scrim, backdrop):
+    """``scrim`` (avec son alpha) posé sur ``backdrop`` opaque : la couleur que l'œil voit derrière le texte."""
+    from PySide6.QtGui import QColor
+
+    alpha = scrim.alphaF()
+    mixed = [scrim.red() * alpha + backdrop.red() * (1 - alpha), scrim.green() * alpha + backdrop.green() * (1 - alpha),
+             scrim.blue() * alpha + backdrop.blue() * (1 - alpha)]
+    return QColor(*(round(value) for value in mixed))
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+@pytest.mark.parametrize("role", ["program", "active", "inactive"])
+def test_every_tile_label_is_readable_in_both_themes_over_any_image(theme, role):
+    """Le repère se pose sur une image de caméra : l'inactif doit tenir sur un fond blanc comme sur un fond noir (et sur la surface
+    du thème, quasi blanche en thème clair — le cas qui rendait le texte invisible)."""
+    from PySide6.QtGui import QColor
+
+    palette = THEMES[theme]
+    background, foreground = label_colours(palette, active=role == "active", program=role == "program")
+    backdrops = [QColor("#FFFFFF"), QColor("#000000"), QColor(palette.background), QColor(palette.panel)]
+    for backdrop in backdrops:
+        seen = _over(background, backdrop)
+        assert _contrast(foreground, seen) >= 4.5, f"{theme}/{role} sur {backdrop.name()} : {_contrast(foreground, seen):.2f}:1"

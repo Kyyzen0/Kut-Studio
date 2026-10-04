@@ -26,7 +26,8 @@ from core.multicam_ops import multicam_segment_at
 from core.multicam_feed import AngleFeed, FeedPool, Frame, TileQualityGovernor, lag_ratio, tile_profile
 from core.project_model import Project
 from ui import i18n
-from ui.theme import active_palette, label_style
+from ui.design_system import Spacing
+from ui.theme import BLACK, WHITE, ThemePalette, active_palette, label_style, mix_colors
 
 POLL_MS = 40
 """Cadence de rafraîchissement des tuiles tant que le moniteur est visible."""
@@ -44,6 +45,26 @@ class _TileHost(QWidget):
         self.resized.emit()
 
 
+SCRIM_ALPHA = 160
+"""Opacité (0-255) du voile sombre sous le repère d'une source : lisible sur n'importe quelle image, claire ou sombre."""
+
+
+def label_colours(palette: ThemePalette, *, active: bool, program: bool) -> tuple[QColor, QColor]:
+    """``(fond, texte)`` du repère d'une tuile.
+
+    Le Programme est inversé (clair sur sombre), l'angle actif est en accent, une source inactive pose du blanc sur un **voile
+    noir translucide** : le repère se superpose à une image de caméra, dont la clarté ne dépend pas du thème. Utiliser ici la
+    surface du thème (presque blanche en thème clair) rendait le texte clair illisible. Le voile est construit avec un canal alpha
+    explicite : ``QColor`` lit « #rrggbbaa » comme « #aarrggbb », pas comme le format de la feuille de style."""
+    if program:
+        return QColor(palette.text_strong), QColor(palette.background)
+    if active:
+        return QColor(palette.accent), QColor(palette.on_accent)
+    scrim = QColor(BLACK)
+    scrim.setAlpha(SCRIM_ALPHA)
+    return scrim, QColor(WHITE)
+
+
 class AngleTile(QWidget):
     """Une tuile : image de l'angle, nom, couleur, angle actif, états « hors ligne » / « pas de signal »."""
 
@@ -57,7 +78,7 @@ class AngleTile(QWidget):
         self._image: QImage | None = None
         self._frame: Frame | None = None
         self._name = ""
-        self._color = QColor("#888888")
+        self._color = QColor(active_palette().muted)
         self._state = AngleState.NO_SIGNAL
         self._active = False
         self._audible = False
@@ -120,11 +141,23 @@ class AngleTile(QWidget):
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(inner, Qt.AlignCenter, message)
-        border = QPen(self._color)
-        border.setWidthF(3.0 if self._active else 1.5)
+        # Trois rôles, trois bordures : le Programme (la sortie) est cerné de neutre fort, l'angle actif de l'accent, une source inactive
+        # d'un filet discret à peine teinté de sa couleur. La couleur de l'angle ne fait plus le cadre : elle reste dans la pastille
+        # et la bande du bord gauche, avec le numéro et le nom (jamais la couleur seule).
+        if self.program:
+            border = QPen(QColor(palette.text_strong))
+            border.setWidthF(2.0)
+        elif self._active:
+            border = QPen(QColor(palette.accent))
+            border.setWidthF(3.0)
+        else:
+            border = QPen(QColor(mix_colors(self._color.name(), palette.background, 0.5)))
+            border.setWidthF(1.0)
         painter.setPen(border)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(rect.adjusted(1, 1, -1, -1))
+        if not self.program:
+            painter.fillRect(QRectF(rect.left() + 3, rect.top() + 3, 3, rect.height() - 6), self._color)
         self._paint_label(painter, inner)
         painter.end()
 
@@ -140,18 +173,22 @@ class AngleTile(QWidget):
         return ""
 
     def _paint_label(self, painter: QPainter, inner: QRectF) -> None:
+        palette = active_palette()
         text = i18n.translate("multicam.viewer.program") if self.program else f"{self.index + 1}  {self._name}"
+        if self._active and not self.program:
+            text += "  ·  " + i18n.translate("multicam.viewer.active")         # le mot, pas seulement la couleur du cadre
         font = QFont(painter.font())
         font.setPointSizeF(max(7.0, min(10.0, self.width() / 26)))
         font.setBold(True)
         painter.setFont(font)
         metrics = painter.fontMetrics()
-        pad = 4
+        pad = Spacing.xs
         box = QRectF(inner.left(), inner.bottom() - metrics.height() - pad, min(inner.width(), metrics.horizontalAdvance(text) + 2 * pad + (12 if self._audible and not self.program else 0)), metrics.height() + pad)
+        background, foreground = label_colours(palette, active=self._active, program=self.program)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 150))
+        painter.setBrush(background)
         painter.drawRect(box)
-        painter.setPen(QColor(255, 255, 255, 235))
+        painter.setPen(foreground)
         painter.drawText(box.adjusted(pad, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
         if self._audible and not self.program:
             painter.setBrush(self._color)

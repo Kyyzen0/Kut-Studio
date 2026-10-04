@@ -132,7 +132,6 @@ class TrackingPanel(QGroupBox):
         self.progress = QProgressBar(objectName="tracking_progress")
         self.progress.setRange(0, 1000)
         self.progress.setTextVisible(False)
-        self.progress.setMaximumHeight(6)
         tracker_layout.addWidget(self.progress)
         self.status = QLabel(objectName="tracking_status")
         self.status.setWordWrap(True)
@@ -448,7 +447,7 @@ class TrackingPanel(QGroupBox):
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if link["enabled"] else Qt.Unchecked)
             if link.get("warning"):
-                item.setForeground(QColor(COLORS.get("warning", "#FFB020")))
+                item.setForeground(QColor(COLORS["warning"]))
                 item.setToolTip(link["warning"])
             self.links_list.addItem(item)
         if links:
@@ -479,7 +478,7 @@ class TrackingPanel(QGroupBox):
         self.stab_info.setText(info)
         self.stab_info.setVisible(bool(info))
         warning = bool(stab.get("warning"))
-        self.stab_info.setStyleSheet(f"color: {COLORS.get('warning', '#FFB020') if warning else COLORS['muted']};")
+        self.stab_info.setStyleSheet(f"color: {COLORS['warning'] if warning else COLORS['muted']};")
         self.auto_stab.setEnabled(video and not busy and available)
 
 

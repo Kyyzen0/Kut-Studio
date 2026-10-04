@@ -80,6 +80,9 @@ def _focusable_in_layout_order(widget: QWidget, found: list[QWidget]) -> None:
         return
     if isinstance(widget, QAbstractScrollArea):
         return
+    # L'en-tête d'une section repliable est un arrêt de Tab qui précède son contenu (un conteneur, pas une feuille).
+    if getattr(widget, "is_section_header", False) and widget.focusPolicy() & Qt.TabFocus:
+        found.append(widget)
     layout = widget.layout()
     if layout is not None:
         _walk_layout(layout, found)

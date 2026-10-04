@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
+from ui.properties_widgets.section_box import SectionBox
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
 from ui.theme import label_style
@@ -30,9 +31,8 @@ class AudioMixin:
         """
         from ui.i18n import translate
 
-        group = QGroupBox(translate("audio.gain"))
+        group = SectionBox(translate("audio.gain"), key="audio.gain")
         group.setObjectName("audioGroup")
-        group.setStyleSheet(self.group_style())
         group_layout = QVBoxLayout(group)
         group_layout.setContentsMargins(
             Spacing.md, Spacing.md, Spacing.md, Spacing.md

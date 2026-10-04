@@ -60,6 +60,7 @@ from core.user_settings import (
 )
 from core.visual_effects import evaluate_transform
 from ui import i18n
+from ui.design_system import Radius, Typography, Weights
 from ui.debug_overlay import DebugOverlay
 from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
@@ -993,8 +994,8 @@ class MainWindow(
         logo.setAlignment(Qt.AlignCenter)
         logo.setFixedSize(26, 26)
         logo.setStyleSheet(
-            f"background: {COLORS['accent']}; color: #061514;"
-            f" border-radius: 7px; font-size: 14px; font-weight: 800;"
+            f"background: {COLORS['accent']}; color: {COLORS['on_accent']};"
+            f" border-radius: {Radius.pill}px; font-size: {Typography.body_lg}px; font-weight: {Weights.bold};"
         )
         brand = QLabel("KUT‑STUDIO")
         brand.setStyleSheet(label_style(10, "muted_strong", 800))
