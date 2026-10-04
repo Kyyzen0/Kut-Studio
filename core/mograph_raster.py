@@ -442,18 +442,36 @@ def _draw_text(painter: QPainter, graphic: GraphicOverlay, width: float, height:
     if graphic.stroke_width > 0:
         pen = QPen(qcolor(graphic.stroke_color), max(1, int(graphic.stroke_width) * 2),
                    Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        painter.strokePath(_merged_outline(path), pen)
+        painter.strokePath(_merged_outline(path, _largest_axis_scale(painter.transform())), pen)
 
 
 # ``simplified()`` aplatit les courbes avec une tolérance absolue (en unités du chemin) : on agrandit
 # le chemin avant la fusion puis on le ramène, ce qui divise l'écart de polyligne par ce facteur.
 # Mesuré sur Inter et Helvetica Neue : à ×1 le bord dévie jusqu'à ~30 % de couverture d'un pixel
 # ('a', 'ñ', 's') ; dès ×2 il tombe sous le bruit du rasteriseur (×4 ou ×16 n'apportent rien) pour
-# la moitié du coût de ×4.
+# la moitié du coût de ×4. Mais le tracé est ensuite agrandi par la transformation du calque : l'écart
+# l'est autant (×16 : 401 et 530 pixels de contour faussés sur 'S' et 'a'), d'où un facteur qui suit
+# cet agrandissement (``_OUTLINE_MERGE_SCALE`` par unité d'écran).
 _OUTLINE_MERGE_SCALE = 2.0
+# QPathClipper plafonne le nombre de segments par courbe (mesuré sur 38 caractères : 25 400 éléments à
+# ×16, 27 000 à ×32, 27 190 à ×64 comme à ×128, ~10 ms) : au-delà de ×32 le contour ne change plus, monter
+# plus haut ne gagnerait rien.
+_OUTLINE_MERGE_MAX_SCALE = 32.0
 
 
-def _merged_outline(path: QPainterPath) -> QPainterPath:
+def _largest_axis_scale(transform: QTransform) -> float:
+    """Plus grand agrandissement que ``transform`` applique à un vecteur (valeur singulière maximale).
+
+    ``mat_scale_factor`` (racine du déterminant) moyenne les axes : un calque étiré ×10 en largeur et
+    ×0,1 en hauteur y vaut ×1 alors que son contour y est agrandi ×10.
+    """
+    a, b, c, d = transform.m11(), transform.m12(), transform.m21(), transform.m22()
+    total = a * a + b * b + c * c + d * d
+    det = a * d - b * c
+    return math.sqrt((total + math.sqrt(max(0.0, total * total - 4.0 * det * det))) / 2.0)
+
+
+def _merged_outline(path: QPainterPath, scale: float = 1.0) -> QPainterPath:
     """Contour extérieur de ``path`` sans les arêtes internes de ses contours superposés.
 
     Un ``QPen`` trace chaque sous-contour séparément, même quand la règle d'enroulement les fusionne
@@ -461,9 +479,13 @@ def _merged_outline(path: QPainterPath) -> QPainterPath:
     liseré de la couleur du contour dans la lettre. ``simplified()`` fusionne les sous-chemins qui se
     recouvrent selon la règle du chemin (``text_path`` impose l'enroulement) ; seul le tracé du
     contour en profite, le remplissage et l'ombre gardent les courbes d'origine.
+
+    ``scale`` est l'agrandissement que le tracé subira ensuite à l'écran (voir ``_largest_axis_scale``) ;
+    en dessous de 1 on garde la précision de ×1, validée.
     """
-    up = QTransform.fromScale(_OUTLINE_MERGE_SCALE, _OUTLINE_MERGE_SCALE)
-    down = QTransform.fromScale(1.0 / _OUTLINE_MERGE_SCALE, 1.0 / _OUTLINE_MERGE_SCALE)
+    factor = min(_OUTLINE_MERGE_SCALE * max(1.0, scale), _OUTLINE_MERGE_MAX_SCALE)
+    up = QTransform.fromScale(factor, factor)
+    down = QTransform.fromScale(1.0 / factor, 1.0 / factor)
     merged = down.map(up.map(path).simplified())
     return merged if not merged.isEmpty() else path
 

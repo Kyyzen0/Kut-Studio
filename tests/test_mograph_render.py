@@ -180,6 +180,71 @@ def test_merged_outline_drops_the_edges_inside_overlapping_contours():
     assert _merged_outline(QPainterPath()).isEmpty()
 
 
+def test_merged_outline_precision_follows_the_screen_scale():
+    """La transformation du calque agrandit le contour fusionné : son écart doit rester sous le pixel écran."""
+    import math
+
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QPainterPath
+
+    from core.mograph_raster import _merged_outline
+
+    radius = 8.0  # assez petit pour que le facteur de fusion compte (un grand cercle sature dès ×2)
+    circle = QPainterPath()
+    circle.setFillRule(Qt.WindingFill)
+    circle.addEllipse(QRectF(0, 0, 2 * radius, 2 * radius))
+
+    def flattening_error(scale: float) -> float:
+        outline = _merged_outline(circle, scale)
+        points = [(outline.elementAt(i).x, outline.elementAt(i).y) for i in range(outline.elementCount())]
+        # Les sommets sont sur la courbe : l'écart est la flèche des cordes, au milieu de chacune.
+        return max(
+            abs(radius - math.hypot((x0 + x1) / 2 - radius, (y0 + y1) / 2 - radius))
+            for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1])
+        )
+
+    zoom = 16.0
+    assert flattening_error(zoom) < flattening_error(1.0)  # le facteur de fusion suit bien l'agrandissement
+    assert flattening_error(zoom) * zoom < 0.1  # et l'écart reste sous 0,1 pixel à l'écran
+    assert _merged_outline(circle, 0.1).elementCount() == _merged_outline(circle, 1.0).elementCount()  # jamais sous ×1
+
+
+def test_largest_axis_scale_reads_the_widest_axis():
+    from PySide6.QtGui import QTransform
+
+    from core.mograph_raster import _largest_axis_scale
+
+    assert _largest_axis_scale(QTransform()) == pytest.approx(1.0)
+    assert _largest_axis_scale(QTransform.fromScale(3, 3).rotate(30)) == pytest.approx(3.0)
+    assert _largest_axis_scale(QTransform.fromScale(-4, 2)) == pytest.approx(4.0)  # un miroir ne change rien
+    # Étiré ×10 en largeur et ×0,1 en hauteur, le calque vaut ×1 en moyenne mais son contour est agrandi ×10.
+    assert _largest_axis_scale(QTransform.fromScale(10, 0.1)) == pytest.approx(10.0)
+    assert _largest_axis_scale(QTransform.fromScale(10, 0.1).rotate(45)) == pytest.approx(10.0)
+
+
+def test_text_stroke_merge_uses_the_painter_transform(monkeypatch):
+    from PySide6.QtGui import QImage, QPainter
+
+    from core import mograph_raster
+    from core.mograph_raster import draw_content
+
+    seen: list[float] = []
+    real = mograph_raster._merged_outline
+    monkeypatch.setattr(mograph_raster, "_merged_outline", lambda path, scale=1.0: (seen.append(scale), real(path, scale))[1])
+
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    for name, value in {"text": "Kut", "font_size": 20, "width": 60, "height": 30, "stroke_width": 2}.items():
+        update_graphic(text, name, value)
+    image = QImage(60, 30, QImage.Format_ARGB32_Premultiplied)
+    for zoom in (1.0, 8.0):
+        painter = QPainter(image)
+        painter.scale(zoom, zoom * 0.5)  # le calque est affiché sur sa plus grande échelle : ×zoom, pas la moyenne
+        draw_content(painter, text.graphic, (60, 30), device_scale=zoom * 0.7071)
+        painter.end()
+    assert seen == [pytest.approx(1.0), pytest.approx(8.0)]
+
+
 @pytest.mark.parametrize("letter", ["t", "f", "e"])
 def test_stroke_leaves_no_seam_inside_overlapping_glyph_contours(letter):
     from PySide6.QtGui import QFontDatabase, QImage, QPainter
