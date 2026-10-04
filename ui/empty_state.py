@@ -54,11 +54,8 @@ class EmptyState(QWidget):
         set_role(self.text_label, "helper")
         layout.addWidget(self.text_label, 0, Qt.AlignHCenter)
 
-        self.action_button = QPushButton()
-        self.action_button.setCursor(Qt.PointingHandCursor)
-        set_variant(self.action_button, ButtonVariant.SECONDARY)
-        self.action_button.clicked.connect(self.action_triggered)
-        layout.addWidget(self.action_button, 0, Qt.AlignHCenter)
+        self._layout = layout
+        self.action_button: QPushButton | None = None             # créé à la première action : pas de bouton vide sinon
 
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.setText(text)
@@ -85,6 +82,16 @@ class EmptyState(QWidget):
 
     def set_action(self, label: str) -> None:
         """Texte de l'action principale ; vide : pas d'action."""
+        if self.action_button is None:
+            if not label:
+                return
+            button = QPushButton()
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFocusPolicy(Qt.TabFocus)                    # atteint avec Tab, jamais au clic : il volerait les touches de lecture
+            set_variant(button, ButtonVariant.SECONDARY)
+            button.clicked.connect(self.action_triggered)
+            self._layout.addWidget(button, 0, Qt.AlignHCenter)
+            self.action_button = button
         self.action_button.setText(label)
         self.action_button.setVisible(bool(label))
 
