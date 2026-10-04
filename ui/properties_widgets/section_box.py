@@ -52,7 +52,8 @@ class SectionBox(QGroupBox):
         self.setFocusPolicy(Qt.TabFocus)
         self._key = key
         self._open = True
-        self._folded: list[QWidget] = []
+        self._folded: list[QWidget] = []               # ce qui doit réapparaître à l'ouverture (visible, ou réaffiché par la logique)
+        self._watched: list[QWidget] = []              # tous les enfants directs tant que la section est repliée
         self._busy = False
         self._margins = None                           # marges du contenu avant le pliage
         wanted = self._remembered.get(key, open_by_default) if key else open_by_default
@@ -77,16 +78,23 @@ class SectionBox(QGroupBox):
         self._busy = True
         try:
             if not value:
-                self._folded = [w for w in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly) if not w.isHidden()]
-                for widget in self._folded:
+                # Tous les enfants sont surveillés, pas seulement les visibles : une ligne cachée au moment du pliage (par
+                # exemple « durée du gel » hors d'un clip figé) peut être réaffichée par la logique tant que la section est repliée.
+                self._watched = list(self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly))
+                self._folded = [w for w in self._watched if not w.isHidden()]
+                for widget in self._watched:
                     widget.installEventFilter(self)
+                for widget in self._folded:
                     widget.hide()
             else:
-                for widget in self._folded:
+                for widget in self._watched:
                     if shiboken6.isValid(widget):
                         widget.removeEventFilter(self)
+                for widget in self._folded:
+                    if shiboken6.isValid(widget):
                         widget.show()
                 self._folded = []
+                self._watched = []
         finally:
             self._busy = False
         # Repliée, la section se réduit à son en-tête : plus de marges de contenu ni de remplissage (la feuille de style lit ``folded``).
@@ -108,13 +116,38 @@ class SectionBox(QGroupBox):
         self.open_changed.emit(value)
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt
-        """Replié, un contenu que la logique réaffiche est recaché ; qu'elle cache, il ne sera pas rouvert."""
-        if not self._open and not self._busy and watched in self._folded:
-            if event.type() == QEvent.Show:
-                QTimer.singleShot(0, watched.hide)
-            elif event.type() == QEvent.HideToParent:
-                self._folded = [w for w in self._folded if w is not watched]
+        """Replié, un contenu que la logique réaffiche est recaché mais retenu : il réapparaîtra à l'ouverture.
+
+        Ce que la logique cache elle-même (alors que nous ne l'avions pas caché) ne sera pas rouvert. Les cachés par le pliage sont
+        signalés par ``_busy`` : ils ne comptent pas comme une décision de la logique."""
+        if self._open or self._busy or watched not in self._watched:
+            return False
+        if event.type() == QEvent.Show:
+            if watched not in self._folded:
+                self._folded.append(watched)
+            QTimer.singleShot(0, lambda: self._refold(watched))
+        elif event.type() == QEvent.HideToParent:
+            self._folded = [w for w in self._folded if w is not watched]
         return False
+
+    def _refold(self, widget: QWidget) -> None:
+        """Recache un enfant que la logique vient de réafficher, si la section est toujours repliée."""
+        if self._open or not shiboken6.isValid(widget) or widget.isHidden():
+            return
+        self._busy = True
+        try:
+            widget.hide()
+        finally:
+            self._busy = False
+
+    def childEvent(self, event) -> None:  # noqa: N802 - Qt
+        """Un enfant ajouté pendant le pliage est surveillé comme les autres : sa mise en page le réaffiche, il ne doit pas déborder."""
+        if not self._open and event.added():
+            child = event.child()
+            if child.isWidgetType() and child not in self._watched:
+                self._watched.append(child)
+                child.installEventFilter(self)
+        super().childEvent(event)
 
     # -- en-tête ------------------------------------------------------------------------------------------
 

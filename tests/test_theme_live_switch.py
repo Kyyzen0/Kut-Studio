@@ -43,8 +43,17 @@ def _pixels(image: QImage) -> np.ndarray:
     return data.reshape(image.height(), image.bytesPerLine() // 4, 4)[:, : image.width()].astype(int)
 
 
+_PATCH = pytest.MonkeyPatch()
+"""Pose les variables d'environnement de la configuration jetable ; ``captures`` le défait à la fin du module."""
+
+
 def _capture(start: str, end: str) -> np.ndarray:
-    """La fenêtre démarrée dans ``start`` puis basculée en ``end`` (ou démarrée directement dans ``end`` si les deux sont égaux)."""
+    """La fenêtre démarrée dans ``start`` puis basculée en ``end`` (ou démarrée directement dans ``end`` si les deux sont égaux).
+
+    Chaque fenêtre part d'une **configuration neuve** : sans cela, la disposition des panneaux laissée par la fenêtre précédente
+    (réécrite sur disque à chaque redimensionnement) donnait des colonnes plus larges de quelques pixels à la suivante, et la
+    comparaison échouait sur toute machine sans réglages enregistrés, donc en CI, et jamais sur un poste de développement."""
+    audit.isolate_user_config(_PATCH)
     choose_theme(start)
     window = audit.make_main_window(*SIZE, scopes=False)
     try:
@@ -68,6 +77,7 @@ def captures():
         }
     finally:
         patch.undo()
+        _PATCH.undo()
         main_window_module.ThemeManager = getattr(main_window_module, "_capture_original_theme_manager", original)
 
 

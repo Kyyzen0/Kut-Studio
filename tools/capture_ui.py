@@ -10,6 +10,8 @@ Rejouable à la main, sans écran réel (plateforme Qt ``offscreen``) ::
     python -m tools.capture_ui                                         # la capture historique de docs/ (1440 × 900, sombre)
 
 Une capture par ``<sortie>/<thème>/<largeur>x<hauteur>/<scène>.png`` et un ``manifest.json`` qui dit ce qui a été produit.
+Chaque fenêtre démarre dans une configuration neuve et jetable (``ui_audit.isolate_user_config``) : l'outil ne lit ni n'écrit jamais
+les réglages de l'utilisateur, et deux captures ne dépendent pas de l'ordre où elles ont été prises.
 
 Scènes (groupes) :
 
@@ -157,11 +159,13 @@ def capture(
                 announce(f"{theme} {width}x{height} {scene}")
 
             if "home" in wanted:
+                audit.isolate_user_config()                                 # chaque fenêtre part d'une configuration neuve
                 window = audit.make_main_window(width, height, scopes=False, rich=False)
                 try:
                     record("home", None, window)
                 finally:
                     window.close()
+            audit.isolate_user_config()
             window = audit.make_main_window(width, height, scopes=True)
             try:
                 for group in (item for item in wanted if item not in ("home", "preferences")):

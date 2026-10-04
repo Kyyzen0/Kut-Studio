@@ -780,7 +780,10 @@ def mix_colors(base: str, other: str, amount: float) -> str:
 
 
 def with_alpha(color: str, alpha: float) -> str:
-    """``#rrggbbaa`` : ``color`` (``#rrggbb`` ou ``#rrggbbaa``) avec la transparence ``alpha`` (0 à 1) ; le format QSS et QColor."""
+    """``#rrggbbaa`` : ``color`` (``#rrggbb`` ou ``#rrggbbaa``) avec la transparence ``alpha`` (0 à 1), pour une **feuille de style**.
+
+    À ne pas donner à ``QColor`` : Qt lit les huit chiffres comme « #aarrggbb » (canal alpha en premier) ; pour peindre, on construit
+    la couleur puis ``setAlpha``."""
     return f"#{color.lstrip('#')[:6]}{round(min(1.0, max(0.0, float(alpha))) * 255):02X}"
 
 

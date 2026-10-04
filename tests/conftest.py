@@ -88,8 +88,21 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
     from core.hardware_cache import set_default_service
 
     set_default_service(None)
+    _forget_remembered_sections()
     yield
     set_default_service(None)
+    _forget_remembered_sections()
+
+
+def _forget_remembered_sections() -> None:
+    """Les sections repliables de l'inspecteur se souviennent de leur état **pour la session** (un attribut de classe) : sans cette
+    remise à zéro, ce qu'un test replie ou déplie réapparaît dans les fenêtres des tests suivants du même worker xdist, selon la
+    répartition des tests entre workers."""
+    try:
+        from ui.properties_widgets.section_box import SectionBox
+    except ImportError:  # pragma: no cover - Qt absent
+        return
+    SectionBox._remembered.clear()  # noqa: SLF001
 
 
 @pytest.fixture

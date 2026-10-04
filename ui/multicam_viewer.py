@@ -27,7 +27,7 @@ from core.multicam_feed import AngleFeed, FeedPool, Frame, TileQualityGovernor, 
 from core.project_model import Project
 from ui import i18n
 from ui.design_system import Spacing
-from ui.theme import active_palette, label_style, mix_colors, with_alpha
+from ui.theme import BLACK, WHITE, ThemePalette, active_palette, label_style, mix_colors
 
 POLL_MS = 40
 """Cadence de rafraîchissement des tuiles tant que le moniteur est visible."""
@@ -43,6 +43,26 @@ class _TileHost(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
         super().resizeEvent(event)
         self.resized.emit()
+
+
+SCRIM_ALPHA = 160
+"""Opacité (0-255) du voile sombre sous le repère d'une source : lisible sur n'importe quelle image, claire ou sombre."""
+
+
+def label_colours(palette: ThemePalette, *, active: bool, program: bool) -> tuple[QColor, QColor]:
+    """``(fond, texte)`` du repère d'une tuile.
+
+    Le Programme est inversé (clair sur sombre), l'angle actif est en accent, une source inactive pose du blanc sur un **voile
+    noir translucide** : le repère se superpose à une image de caméra, dont la clarté ne dépend pas du thème. Utiliser ici la
+    surface du thème (presque blanche en thème clair) rendait le texte clair illisible. Le voile est construit avec un canal alpha
+    explicite : ``QColor`` lit « #rrggbbaa » comme « #aarrggbb », pas comme le format de la feuille de style."""
+    if program:
+        return QColor(palette.text_strong), QColor(palette.background)
+    if active:
+        return QColor(palette.accent), QColor(palette.on_accent)
+    scrim = QColor(BLACK)
+    scrim.setAlpha(SCRIM_ALPHA)
+    return scrim, QColor(WHITE)
 
 
 class AngleTile(QWidget):
@@ -164,17 +184,11 @@ class AngleTile(QWidget):
         metrics = painter.fontMetrics()
         pad = Spacing.xs
         box = QRectF(inner.left(), inner.bottom() - metrics.height() - pad, min(inner.width(), metrics.horizontalAdvance(text) + 2 * pad + (12 if self._audible and not self.program else 0)), metrics.height() + pad)
-        # Le repère du Programme est inversé (clair sur sombre), celui de l'angle actif est en accent, les autres sont discrets.
-        if self.program:
-            background, foreground = palette.text_strong, palette.background
-        elif self._active:
-            background, foreground = palette.accent, palette.on_accent
-        else:
-            background, foreground = with_alpha(palette.background, 0.78), palette.clip_text
+        background, foreground = label_colours(palette, active=self._active, program=self.program)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(background))
+        painter.setBrush(background)
         painter.drawRect(box)
-        painter.setPen(QColor(foreground))
+        painter.setPen(foreground)
         painter.drawText(box.adjusted(pad, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
         if self._audible and not self.program:
             painter.setBrush(self._color)
