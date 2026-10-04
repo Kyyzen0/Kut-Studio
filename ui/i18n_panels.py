@@ -145,7 +145,7 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "No clip under the playhead\nMove the playhead or select a clip in the timeline.",
         "Ningún clip bajo el cabezal\nMueva el cabezal o seleccione un clip en la línea de tiempo.",
     ),
-    "preview.title": _t("VISIONNEUSE", "VIEWER", "VISOR"),
+    "preview.title": _t("Visionneuse", "Viewer", "Visor"),
     "preview.back": _t("Reculer de 2 s", "Back 2 s", "Retroceder 2 s"),
     "preview.forward": _t("Avancer de 2 s", "Forward 2 s", "Avanzar 2 s"),
     "preview.import": _t("Importer un média", "Import a media", "Importar un medio"),

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from ui.adaptive_layout import allow_shrinking
 from ui.design_system import Spacing
+from ui.properties_widgets.diamond_button import KeyframeDiamondButton
 from ui.theme import label_style
 from ui.i18n import translate
 
@@ -94,11 +95,7 @@ class AdvancedTransformEditor(QWidget):
         layout.addWidget(self.body)
 
     def _diamond(self, name: str) -> QToolButton:
-        button = QToolButton()
-        button.setObjectName("iconOnly")
-        button.setText("◇")
-        button.setCheckable(True)
-        button.setFixedSize(22, 22)
+        button = KeyframeDiamondButton(name)       # le même losange que dans tout l'inspecteur (plein, contour appuyé, contour discret)
         button.setToolTip(translate("mograph.advanced.keyframe_tooltip"))
         button.clicked.connect(lambda _checked=False, prop=name: self.keyframe_toggled.emit(prop))
         self.diamonds[name] = button
@@ -128,7 +125,7 @@ class AdvancedTransformEditor(QWidget):
                     check.setChecked(bool(values[name]))
             for name, diamond in self.diamonds.items():
                 diamond.setChecked(name in keyed)
-                diamond.setText("◆" if name in keyed else ("◈" if name in animated else "◇"))
+                diamond.set_animated(name in animated)
         finally:
             self._updating = False
 

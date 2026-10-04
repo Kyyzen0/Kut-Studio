@@ -344,9 +344,9 @@ def test_transition_labels_on_the_timeline_follow_the_language(language_reset, l
 def test_the_viewer_follows_the_language_and_remembers_what_it_shows(window):
     panel = window.preview_panel
     panel.show_no_active_clip()
-    assert panel._title_label.text() == "VISIONNEUSE"
+    assert panel._title_label.text() == "Visionneuse"
     i18n.set_language("en")
-    assert panel._title_label.text() == "VIEWER"
+    assert panel._title_label.text() == "Viewer"
     assert panel._tooltip_buttons[0][0].toolTip() == "Back 2 s"
     assert panel.empty_state.text() == "No clip under the playhead\nMove the playhead or select a clip in the timeline."
     panel.show_missing_media("Interview")

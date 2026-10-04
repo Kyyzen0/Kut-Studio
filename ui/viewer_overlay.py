@@ -28,6 +28,8 @@ from PySide6.QtWidgets import QGraphicsObject
 from core.canvas_guides import GuideOrientation, safe_area_rects, snap_box
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
 from ui.i18n import translate
+from ui.overlay_paint import halo_stroke
+from ui.theme import OVERLAY, overlay_qcolor
 
 HANDLE_RADIUS = 5.0
 ROTATE_DISTANCE = 26.0
@@ -169,72 +171,89 @@ class ViewerOverlay(QGraphicsObject):
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         painter.setRenderHint(QPainter.Antialiasing, True)
         rect = self.canvas_rect
+        painter.setBrush(Qt.NoBrush)
         if self.show_grid:
-            pen = QPen(QColor(255, 255, 255, 50), 1, Qt.SolidLine)
-            painter.setPen(pen)
-            for i in (1, 2):
-                x = rect.x() + rect.width() * i / 3
-                y = rect.y() + rect.height() * i / 3
-                painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-                painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+            def grid() -> None:
+                for i in (1, 2):
+                    x = rect.x() + rect.width() * i / 3
+                    y = rect.y() + rect.height() * i / 3
+                    painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+                    painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+
+            halo_stroke(painter, overlay_qcolor(OVERLAY.grid, 70), 1.0, grid)
         if self.show_safe_areas:
             areas = safe_area_rects(self.canvas_size[0], self.canvas_size[1])
-            for name, color in (("action", QColor(255, 210, 0, 150)), ("title", QColor(0, 220, 255, 150))):
+            for name, color in (("action", OVERLAY.safe_action), ("title", OVERLAY.safe_title)):
                 x, y, w, h = areas[name]
                 top_left = self.to_scene(x, y)
-                painter.setPen(QPen(color, 1, Qt.DashLine))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRect(QRectF(top_left.x(), top_left.y(), w * self.scale, h * self.scale))
+                zone = QRectF(top_left.x(), top_left.y(), w * self.scale, h * self.scale)
+                halo_stroke(painter, overlay_qcolor(color, 190), 1.0, lambda zone=zone: painter.drawRect(zone), style=Qt.DashLine)
         if self.show_center or self.show_safe_areas:
             centre = rect.center()
-            painter.setPen(QPen(QColor(255, 255, 255, 140), 1))
-            painter.drawLine(QPointF(centre.x() - 10, centre.y()), QPointF(centre.x() + 10, centre.y()))
-            painter.drawLine(QPointF(centre.x(), centre.y() - 10), QPointF(centre.x(), centre.y() + 10))
+
+            def cross() -> None:
+                painter.drawLine(QPointF(centre.x() - 10, centre.y()), QPointF(centre.x() + 10, centre.y()))
+                painter.drawLine(QPointF(centre.x(), centre.y() - 10), QPointF(centre.x(), centre.y() + 10))
+
+            halo_stroke(painter, overlay_qcolor(OVERLAY.centre, 200), 1.0, cross)
         if self.show_guides:
             for guide in self.guides:
-                color = QColor(80, 200, 255, 200) if not guide.locked else QColor(80, 200, 255, 110)
-                painter.setPen(QPen(color, 1))
                 r = self._guide_rect(guide)
-                if guide.orientation is GuideOrientation.VERTICAL:
-                    painter.drawLine(QPointF(r.x(), r.top()), QPointF(r.x(), r.bottom()))
-                else:
-                    painter.drawLine(QPointF(r.left(), r.y()), QPointF(r.right(), r.y()))
+                vertical = guide.orientation is GuideOrientation.VERTICAL
+
+                def guide_line(r=r, vertical=vertical) -> None:
+                    if vertical:
+                        painter.drawLine(QPointF(r.x(), r.top()), QPointF(r.x(), r.bottom()))
+                    else:
+                        painter.drawLine(QPointF(r.left(), r.y()), QPointF(r.right(), r.y()))
+
+                halo_stroke(painter, overlay_qcolor(OVERLAY.guide, 110 if guide.locked else 220), 1.0, guide_line)
         for line in self._snap_lines:
-            painter.setPen(QPen(QColor(255, 60, 160), 1, Qt.DashLine))
-            if line.orientation is GuideOrientation.VERTICAL:
-                x = rect.x() + line.position * self.scale
-                painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-            else:
-                y = rect.y() + line.position * self.scale
-                painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+            vertical = line.orientation is GuideOrientation.VERTICAL
+
+            def snap_line(line=line, vertical=vertical) -> None:
+                if vertical:
+                    x = rect.x() + line.position * self.scale
+                    painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+                else:
+                    y = rect.y() + line.position * self.scale
+                    painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+
+            halo_stroke(painter, overlay_qcolor(OVERLAY.snap), 1.0, snap_line, style=Qt.DashLine)
         selection = self.selection
         if selection is None:
             return
-        accent = QColor(54, 230, 195) if selection.editable else QColor(160, 160, 160)
-        painter.setPen(QPen(accent, 1.2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPolygon(self._box_polygon(selection))
+        accent = overlay_qcolor(OVERLAY.selection if selection.editable else OVERLAY.selection_locked)
+        box = self._box_polygon(selection)
+        halo_stroke(painter, accent, 1.2, lambda: painter.drawPolygon(box))
         if not selection.editable:
             return
         handles = self._handle_points(selection)
-        painter.setBrush(QBrush(QColor(20, 24, 28)))
+        fill = QBrush(overlay_qcolor(OVERLAY.handle_fill))
         for name, point in handles.items():
             if name == "anchor":
                 continue
             if name == "rotate":
-                painter.setPen(QPen(accent, 1))
-                painter.drawLine(handles["t"], point)
-                painter.drawEllipse(point, HANDLE_RADIUS, HANDLE_RADIUS)
+                halo_stroke(painter, accent, 1.0, lambda point=point: painter.drawLine(handles["t"], point))
+                shape = lambda point=point: painter.drawEllipse(point, HANDLE_RADIUS, HANDLE_RADIUS)  # noqa: E731
             else:
-                painter.drawRect(QRectF(point.x() - HANDLE_RADIUS, point.y() - HANDLE_RADIUS,
-                                        2 * HANDLE_RADIUS, 2 * HANDLE_RADIUS))
+                square = QRectF(point.x() - HANDLE_RADIUS, point.y() - HANDLE_RADIUS, 2 * HANDLE_RADIUS, 2 * HANDLE_RADIUS)
+                shape = lambda square=square: painter.drawRect(square)  # noqa: E731
+            # Une poignée : liseré sombre autour, remplissage sombre, trait de la couleur de la sélection : visible sur toute image.
+            painter.setBrush(Qt.NoBrush)
+            halo_stroke(painter, accent, 1.0, shape)
+            painter.setBrush(fill)
+            painter.setPen(QPen(accent, 1.0))
+            shape()
+            painter.setBrush(Qt.NoBrush)
         anchor = handles.get("anchor")
         if anchor is not None:
-            painter.setPen(QPen(QColor(255, 200, 40), 1.5))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawEllipse(anchor, 4, 4)
-            painter.drawLine(QPointF(anchor.x() - 8, anchor.y()), QPointF(anchor.x() + 8, anchor.y()))
-            painter.drawLine(QPointF(anchor.x(), anchor.y() - 8), QPointF(anchor.x(), anchor.y() + 8))
+            def anchor_mark() -> None:
+                painter.drawEllipse(anchor, 4, 4)
+                painter.drawLine(QPointF(anchor.x() - 8, anchor.y()), QPointF(anchor.x() + 8, anchor.y()))
+                painter.drawLine(QPointF(anchor.x(), anchor.y() - 8), QPointF(anchor.x(), anchor.y() + 8))
+
+            halo_stroke(painter, overlay_qcolor(OVERLAY.anchor), 1.5, anchor_mark)
 
     # -- interactions ------------------------------------------------------------------------
 

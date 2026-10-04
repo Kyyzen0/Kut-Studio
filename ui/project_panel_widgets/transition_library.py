@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -22,11 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
-from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
+from ui.design_system import Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
+from ui.search_field import SearchField
 
 
 class TransitionLibraryView(QWidget):
@@ -68,13 +69,7 @@ class TransitionLibraryView(QWidget):
             Spacing.sm, Spacing.sm, Spacing.sm, 0
         )
         header_layout.setSpacing(Spacing.xs)
-        self.search_field = QLineEdit()
-        self.search_field.setObjectName("transitionsSearch")
-        self.search_field.setPlaceholderText(
-            translate("transitions.library.search")
-        )
-        self.search_field.setClearButtonEnabled(True)
-        self.search_field.setFixedHeight(28)
+        self.search_field = SearchField(translate("transitions.library.search"), object_name="transitionsSearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         header_layout.addWidget(self.search_field)
 
@@ -664,21 +659,16 @@ class TransitionPresetCard(QFrame):
         self.delete_button.setVisible(self._is_user)
 
     def _refresh_favorite_icon(self) -> None:
-        # Pas d'icône étoile dédiée : on retombe sur un caractère
-        # unicode qui rend bien avec la police par défaut. Une icône
-        # SVG dédiée pourrait être ajoutée plus tard.
-        glyph = "★" if self._is_favorite else "☆"
-        self.favorite_button.setText(glyph)
-        color = COLORS["warning"] if self._is_favorite else COLORS["muted"]
+        # L'état tient à la forme de l'icône (étoile pleine ou contour), pas à une couleur ni à un caractère.
+        self.favorite_button.setText("")
+        self.favorite_button.setIcon(make_icon(IconName.STAR_FILLED if self._is_favorite else IconName.STAR))
+        self.favorite_button.setIconSize(QSize(Iconography.sm, Iconography.sm))
         self.favorite_button.setStyleSheet(
             f"QPushButton#transitionFavoriteBtn {{"
             f" background: transparent;"
-            f" color: {color};"
             f" border: 1px solid {COLORS['border']};"
-            f" border-radius: {Radius.pill}px;"
-            f" font-size: 12px; font-weight: 700; }}"
+            f" border-radius: {Radius.pill}px; }}"
             f"QPushButton#transitionFavoriteBtn:hover {{"
-            f" color: {COLORS['warning']};"
             f" background: {COLORS['surface_hover']}; }}"
         )
         self.favorite_button.setToolTip(

@@ -264,21 +264,9 @@ class PreferencesDialog(QDialog):
                 shortcuts_layout = QVBoxLayout(shortcuts_page)
                 shortcuts_layout.setContentsMargins(0, 12, 0, 0)
                 shortcuts_layout.addWidget(self.shortcuts_editor)
-            # Défilement : les cinq groupes ne tiennent pas toujours dans
-            # la hauteur de l'onglet, et ne doivent jamais être écrasés.
-            general_scroll = QScrollArea()
-            general_scroll.setWidgetResizable(True)
-            general_scroll.setFrameShape(QScrollArea.NoFrame)
-            # Le viewport prendrait le fond natif de l'OS : on le laisse
-            # transparent pour garder le fond du thème du dialogue.
-            general_scroll.setObjectName("preferencesScroll")
-            general_scroll.setFocusPolicy(Qt.NoFocus)  # simple conteneur : pas d'arrêt de Tab invisible
-            general_scroll.setStyleSheet(
-                "QScrollArea#preferencesScroll,"
-                " QScrollArea#preferencesScroll > QWidget > QWidget"
-                " { background: transparent; }"
-            )
-            general_scroll.setWidget(general_page)
+            # Défilement : les groupes ne tiennent pas toujours dans la hauteur de l'onglet, et ne doivent jamais être écrasés
+            # (c'est vrai du Général comme de la Performance : ses listes de matériel étaient réduites à une ligne de 16 px).
+            general_scroll = self._scrollable(general_page)
             self._tab_order: list[str] = ["general"]
             self.tabs.addTab(general_scroll, "")
             if shortcuts_page is not None:
@@ -286,7 +274,7 @@ class PreferencesDialog(QDialog):
                 self._tab_order.append("shortcuts")
             if self._performance_host is not None:
                 self.performance_tab = PerformanceSettingsTab(self._performance_host)
-                self.tabs.addTab(self.performance_tab, "")
+                self.tabs.addTab(self._scrollable(self.performance_tab), "")
                 self._tab_order.append("performance")
             root.addWidget(self.tabs, 1)
             self.setMinimumSize(680, 680)
@@ -314,6 +302,23 @@ class PreferencesDialog(QDialog):
         # Un seul bouton par défaut : « Fermer ». Sans cela Entrée déclenchait le premier bouton créé
         # (« Restaurer les réglages par défaut », ou « Retirer » un raccourci dans l'éditeur).
         set_single_default(self, self.close_button)
+
+    @staticmethod
+    def _scrollable(page: QWidget) -> QScrollArea:
+        """``page`` dans une zone défilante transparente (le fond du thème reste celui du dialogue)."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        # Le viewport prendrait le fond natif de l'OS : on le laisse transparent pour garder le fond du thème du dialogue.
+        scroll.setObjectName("preferencesScroll")
+        scroll.setFocusPolicy(Qt.NoFocus)  # simple conteneur : pas d'arrêt de Tab invisible
+        scroll.setStyleSheet(
+            "QScrollArea#preferencesScroll,"
+            " QScrollArea#preferencesScroll > QWidget > QWidget"
+            " { background: transparent; }"
+        )
+        scroll.setWidget(page)
+        return scroll
 
     # ------------------------------------------------------------------
     # Construction des groupes de radios

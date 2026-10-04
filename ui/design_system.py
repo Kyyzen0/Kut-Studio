@@ -90,6 +90,8 @@ class _Sizes:
     icon_button_sm: int = 22
     icon_button_lg: int = 36
     input_md: int = 32
+    # Champ de recherche (``ui/search_field.py``) : le même sur toutes les pages de bibliothèque.
+    search_field: int = 28
     toolbar: int = 44
     # Barre supérieure compacte façon DaVinci / Final Cut : pas plus
     # de 50-56 px pour rester un repère, pas une bande.

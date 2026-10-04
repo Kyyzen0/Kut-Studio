@@ -177,6 +177,7 @@ class TrackingMixin:
             trackers.append({
                 "id": tracker.id, "name": tracker.name, "color": tracker.color,
                 "visible": tracker.visible, "summary": self._tracker_summary(tracker),
+                "health": self._tracker_health(tracker),
             })
         state["trackers"] = trackers
         state["selected"] = selected
@@ -221,6 +222,20 @@ class TrackingMixin:
             info = (info + "\n" if info else "") + _tr("tracking.stab.uses", names=names)
             state["stabilization"] = {**stab.to_dict(), "info": info, "warning": warning}
         return state
+
+    @staticmethod
+    def _tracker_health(tracker) -> str:
+        """État d'ensemble des mesures d'un tracker : ``lost`` / ``uncertain`` / ``good``, ou ``""`` s'il n'est pas analysé."""
+        from core.tracking_model import SampleStatus
+
+        counts = tracker.data.counts()
+        if counts[SampleStatus.LOST]:
+            return "lost"
+        if counts[SampleStatus.UNCERTAIN]:
+            return "uncertain"
+        if counts[SampleStatus.TRACKED] + counts[SampleStatus.MANUAL] > 1:
+            return "good"
+        return ""
 
     @staticmethod
     def _tracker_summary(tracker) -> str:

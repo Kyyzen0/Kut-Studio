@@ -17,6 +17,7 @@ from ui.design_system import Radius, Sizes, Spacing, Weights
 from ui.i18n import translate
 from ui.icons import IconButton, IconName, make_icon
 from ui.theme import COLORS, active_palette, label_style
+from ui.search_field import SearchField
 
 
 class TextPresetLibraryView(QWidget):
@@ -40,13 +41,7 @@ class TextPresetLibraryView(QWidget):
         layout.setSpacing(Spacing.xs)
 
         # --- Recherche libre ------------------------------------------
-        self.search_field = QLineEdit()
-        self.search_field.setObjectName("textPresetSearch")
-        self.search_field.setPlaceholderText(
-            translate("text.library.search")
-        )
-        self.search_field.setClearButtonEnabled(True)
-        self.search_field.setFixedHeight(28)
+        self.search_field = SearchField(translate("text.library.search"), object_name="textPresetSearch")
         self.search_field.textChanged.connect(self._on_search_changed)
         layout.addWidget(self.search_field)
 

@@ -36,6 +36,7 @@ from core.shortcuts import (
 from ui.i18n import translate
 from ui.shortcut_manager import ShortcutManager
 from ui.theme import label_style
+from ui.search_field import SearchField
 
 _COMMAND_ID_ROLE = Qt.UserRole
 
@@ -64,8 +65,7 @@ class ShortcutsEditor(QWidget):
         layout.setSpacing(10)
 
         filters = QHBoxLayout()
-        self.search_edit = QLineEdit()
-        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit = SearchField()
         self.search_edit.textChanged.connect(self._apply_filter)
         self.category_combo = QComboBox()
         self.category_combo.currentIndexChanged.connect(self._apply_filter)

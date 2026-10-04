@@ -25,14 +25,18 @@ from PySide6.QtWidgets import QGraphicsObject
 
 from core.mograph_scene import IDENTITY, Matrix, mat_apply, mat_invert
 from core.tracking_model import SampleStatus
+from ui.overlay_paint import halo_stroke
+from ui.theme import OVERLAY, overlay_qcolor
 
 HANDLE = 5.0
 POINT_RADIUS = 7.0
 MAX_PATH_POINTS = 400
 """Trajectoire décimée : au plus ce nombre de sommets, quelle que soit la durée."""
 
-UNCERTAIN_COLOR = QColor(255, 170, 40)
-LOST_COLOR = QColor(255, 70, 70)
+UNCERTAIN_COLOR = overlay_qcolor(OVERLAY.uncertain)
+LOST_COLOR = overlay_qcolor(OVERLAY.lost)
+UNCERTAIN_RING = 11.0
+"""Rayon (px) du rond pointillé qui signale une mesure douteuse : l'état se lit à la forme, pas seulement à la couleur."""
 
 
 @dataclass
@@ -172,7 +176,7 @@ class TrackingOverlay(QGraphicsObject):
             elif status == SampleStatus.LOST:
                 painter.setBrush(LOST_COLOR)
             elif status == SampleStatus.MANUAL:
-                painter.setBrush(QColor(255, 255, 255))
+                painter.setBrush(overlay_qcolor(OVERLAY.manual))
             else:
                 continue
             painter.setPen(Qt.NoPen)
@@ -186,7 +190,7 @@ class TrackingOverlay(QGraphicsObject):
         status = tracker.status
         point_color = {SampleStatus.UNCERTAIN: UNCERTAIN_COLOR, SampleStatus.LOST: LOST_COLOR}.get(status, color)
         if status == SampleStatus.EMPTY:
-            point_color = QColor(180, 180, 180)
+            point_color = overlay_qcolor(OVERLAY.unknown)
         width = 1.6 if tracker.selected else 1.0
         search_pen = QPen(color, width, Qt.DashLine)
         painter.setPen(search_pen)
@@ -196,19 +200,27 @@ class TrackingOverlay(QGraphicsObject):
         painter.drawPolygon(self._zone(tracker, tracker.pattern))
         centre = self.to_scene(*tracker.point)
         if status == SampleStatus.LOST:
-            painter.setPen(QPen(LOST_COLOR, 2.0))
             r = POINT_RADIUS
-            painter.drawLine(QPointF(centre.x() - r, centre.y() - r), QPointF(centre.x() + r, centre.y() + r))
-            painter.drawLine(QPointF(centre.x() - r, centre.y() + r), QPointF(centre.x() + r, centre.y() - r))
+
+            def cross() -> None:
+                painter.drawLine(QPointF(centre.x() - r, centre.y() - r), QPointF(centre.x() + r, centre.y() + r))
+                painter.drawLine(QPointF(centre.x() - r, centre.y() + r), QPointF(centre.x() + r, centre.y() - r))
+
+            halo_stroke(painter, LOST_COLOR, 2.0, cross)
         else:
-            painter.setPen(QPen(point_color, 1.5))
-            painter.drawEllipse(centre, 3.0, 3.0)
-            painter.drawLine(QPointF(centre.x() - POINT_RADIUS, centre.y()), QPointF(centre.x() - 4, centre.y()))
-            painter.drawLine(QPointF(centre.x() + 4, centre.y()), QPointF(centre.x() + POINT_RADIUS, centre.y()))
-            painter.drawLine(QPointF(centre.x(), centre.y() - POINT_RADIUS), QPointF(centre.x(), centre.y() - 4))
-            painter.drawLine(QPointF(centre.x(), centre.y() + 4), QPointF(centre.x(), centre.y() + POINT_RADIUS))
+            def crosshair() -> None:
+                painter.drawEllipse(centre, 3.0, 3.0)
+                painter.drawLine(QPointF(centre.x() - POINT_RADIUS, centre.y()), QPointF(centre.x() - 4, centre.y()))
+                painter.drawLine(QPointF(centre.x() + 4, centre.y()), QPointF(centre.x() + POINT_RADIUS, centre.y()))
+                painter.drawLine(QPointF(centre.x(), centre.y() - POINT_RADIUS), QPointF(centre.x(), centre.y() - 4))
+                painter.drawLine(QPointF(centre.x(), centre.y() + 4), QPointF(centre.x(), centre.y() + POINT_RADIUS))
+
+            halo_stroke(painter, point_color, 1.5, crosshair)
+            if status == SampleStatus.UNCERTAIN:
+                halo_stroke(painter, point_color, 1.2, lambda: painter.drawEllipse(centre, UNCERTAIN_RING, UNCERTAIN_RING),
+                            style=Qt.DashLine)
         if tracker.selected:
-            painter.setBrush(QBrush(QColor(20, 24, 28)))
+            painter.setBrush(QBrush(overlay_qcolor(OVERLAY.handle_fill)))
             for polygon, pen in (
                 (self._zone(tracker, tracker.pattern), QPen(point_color, 1.0)),
                 (self._zone(tracker, tracker.search), QPen(color, 1.0)),

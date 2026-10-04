@@ -555,7 +555,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "track.subtitle_default": {"fr": "S{n}", "en": "S{n}", "es": "S{n}"},
 
     # --- Mixeur audio -------------------------------------------------
-    "mixer.title": {"fr": "MIXEUR", "en": "MIXER", "es": "MEZCLADOR"},
+    "mixer.title": {"fr": "Mixeur", "en": "Mixer", "es": "Mezclador"},
     "mixer.master": {"fr": "Master", "en": "Master", "es": "Master"},
     "mixer.output": {"fr": "Sortie", "en": "Output", "es": "Salida"},
     "mixer.volume": {"fr": "Volume", "en": "Volume", "es": "Volumen"},

@@ -139,6 +139,13 @@ class AssetBin(QWidget):
             font.setPointSize(9)
             font.setBold(True)
             painter.setFont(font)
+            # Média manquant : un triangle d'avertissement (une forme, pas seulement du rouge), posé tout à droite **avant** les autres
+            # badges, qui se rangent à sa gauche. Il était peint en dernier au même endroit que le badge « ×N » et le recouvrait.
+            if is_missing:
+                warn_size = 14
+                warn_rect = QRect(right_edge - warn_size, rect.top() + (rect.height() - warn_size) // 2, warn_size, warn_size)
+                make_icon(IconName.WARNING, color=QColor(COLORS["danger"])).paint(painter, warn_rect)
+                right_edge = warn_rect.left() - 4
             # Badge « ×N » : collé à droite. On n'affiche rien si 0
             # pour ne pas surcharger la carte.
             if usage_count > 0:
@@ -167,7 +174,7 @@ class AssetBin(QWidget):
                     "generating": (f"PX {progress}%", COLORS["warning"]),
                     "pending": ("PX…", COLORS["muted"]),
                     "error": ("PX!", COLORS["danger"]),
-                    "stale": ("PX↻", COLORS["warning"]),
+                    "stale": ("PX?", COLORS["warning"]),
                 }.get(proxy_state, ("", COLORS["muted"]))
                 if label:
                     fm = painter.fontMetrics()
@@ -203,20 +210,6 @@ class AssetBin(QWidget):
                     painter.setBrush(QColor(color))
                     painter.drawEllipse(x, chip_row.top(), chip_size, chip_size)
                     x += chip_size + spacing
-            # Point d'avertissement « manquant » : à droite de la
-            # ligne, plus visible que les pastilles.
-            if is_missing:
-                warn_size = 10
-                warn_rect = QRect(
-                    0,
-                    rect.top() + (rect.height() - warn_size) // 2,
-                    warn_size,
-                    warn_size,
-                )
-                warn_rect.moveRight(rect.right() - self.PADDING)
-                painter.setBrush(QColor(COLORS["danger"]))
-                painter.setPen(QPen(QColor(COLORS["clip_text"]), 1))
-                painter.drawEllipse(warn_rect)
 
     def __init__(self, on_item_clicked, on_selection_changed, parent=None) -> None:
         super().__init__(parent)

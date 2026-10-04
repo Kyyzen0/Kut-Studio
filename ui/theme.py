@@ -620,6 +620,9 @@ def _stylesheet(palette: ThemePalette) -> str:
     QLabel {{ color: {palette.text}; }}
     QLabel:disabled {{ color: {palette.disabled_text}; }}
     /* Rôles de texte (propriété ``role``) : sept rôles, six tailles ; les titres ressortent, les métadonnées s'effacent. */
+    /* Bandeau de panneau (ui/panel_header.py) : même surface et même filet dans tous les panneaux. */
+    QFrame#panelHeader {{ background: {palette.panel}; border: none; border-bottom: 1px solid {palette.border}; }}
+    QFrame#panelHeader QLabel {{ background: transparent; }}
     QLabel[role="app-title"] {{ font-size: {t.heading}px; font-weight: {w.bold}; color: {palette.text_strong}; }}
     QLabel[role="panel-title"] {{ font-size: {t.body}px; font-weight: {w.semibold}; color: {palette.text}; }}
     QLabel[role="section-title"] {{ font-size: {t.small}px; font-weight: {w.semibold}; color: {palette.muted_strong}; }}
@@ -764,6 +767,45 @@ def set_state(widget, kind) -> None:
 WHITE = "#FFFFFF"
 BLACK = "#000000"
 """Les deux extrémités d'un mélange (:func:`mix_colors`) : éclaircir ou assombrir une teinte du thème."""
+
+
+@dataclass(frozen=True)
+class OverlayColors:
+    """Couleurs des repères dessinés **sur l'image** (guides, zones de sécurité, poignées, états du suivi).
+
+    Elles ne suivent pas le thème : elles se posent sur une image de caméra, dont la clarté n'a rien à voir avec lui. Elles sont
+    centralisées ici (une seule définition par rôle) et dessinées avec un halo sombre (:data:`halo`) pour rester lisibles sur une
+    image claire comme sombre."""
+
+    selection: str = "#36E6C3"          # cadre et poignées du calque ou du tracker sélectionné
+    selection_locked: str = "#A0A0A0"   # calque non modifiable
+    guide: str = "#50C8FF"
+    safe_action: str = "#FFD200"
+    safe_title: str = "#00DCFF"
+    centre: str = "#FFFFFF"
+    grid: str = "#FFFFFF"
+    snap: str = "#FF3CA0"               # ligne de magnétisme pendant un glisser
+    anchor: str = "#FFC828"
+    handle_fill: str = "#14181C"
+    halo: str = "#000000"
+    uncertain: str = "#FFAA28"          # suivi : mesure douteuse (rond pointillé, jamais la couleur seule)
+    lost: str = "#FF4646"               # suivi : mesure perdue (croix)
+    manual: str = "#FFFFFF"             # suivi : mesure corrigée à la main
+    unknown: str = "#B4B4B4"            # suivi : pas encore de mesure
+
+
+OVERLAY = OverlayColors()
+
+
+def overlay_qcolor(color: str, alpha: int = 255):
+    """``QColor`` d'une couleur de :data:`OVERLAY` avec un canal alpha explicite (0-255).
+
+    Jamais ``QColor("#rrggbbaa")`` : Qt lit les huit chiffres comme « #aarrggbb »."""
+    from PySide6.QtGui import QColor
+
+    result = QColor(color)
+    result.setAlpha(alpha)
+    return result
 
 
 def _rgb(color: str) -> tuple[int, int, int]:
@@ -983,8 +1025,11 @@ __all__ = [
     "colors_dict",
     "global_stylesheet",
     "BLACK",
+    "OVERLAY",
+    "OverlayColors",
     "WHITE",
     "label_style",
+    "overlay_qcolor",
     "mix_colors",
     "set_role",
     "set_state",
