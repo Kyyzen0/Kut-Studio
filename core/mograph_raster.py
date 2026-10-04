@@ -33,7 +33,6 @@ from collections.abc import Iterable, Sequence
 
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (
-    QBrush,
     QColor,
     QFont,
     QFontDatabase,
@@ -439,14 +438,34 @@ def _draw_text(painter: QPainter, graphic: GraphicOverlay, width: float, height:
             _draw_blurred_path(painter, shadow, qcolor(graphic.shadow_color), graphic.shadow_blur * device_scale)
         else:
             painter.fillPath(shadow, qcolor(graphic.shadow_color))
+    painter.fillPath(path, qcolor(graphic.fill_color))
     if graphic.stroke_width > 0:
         pen = QPen(qcolor(graphic.stroke_color), max(1, int(graphic.stroke_width) * 2),
                    Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(qcolor(graphic.fill_color)))
-        painter.drawPath(path)
-    else:
-        painter.fillPath(path, qcolor(graphic.fill_color))
+        painter.strokePath(_merged_outline(path), pen)
+
+
+# ``simplified()`` aplatit les courbes avec une tolérance absolue (en unités du chemin) : on agrandit
+# le chemin avant la fusion puis on le ramène, ce qui divise l'écart de polyligne par ce facteur.
+# Mesuré sur Inter et Helvetica Neue : à ×1 le bord dévie jusqu'à ~30 % de couverture d'un pixel
+# ('a', 'ñ', 's') ; dès ×2 il tombe sous le bruit du rasteriseur (×4 ou ×16 n'apportent rien) pour
+# la moitié du coût de ×4.
+_OUTLINE_MERGE_SCALE = 2.0
+
+
+def _merged_outline(path: QPainterPath) -> QPainterPath:
+    """Contour extérieur de ``path`` sans les arêtes internes de ses contours superposés.
+
+    Un ``QPen`` trace chaque sous-contour séparément, même quand la règle d'enroulement les fusionne
+    au remplissage : la barre du « t » ou du « f » d'une police variable (Inter…) laisse alors un
+    liseré de la couleur du contour dans la lettre. ``simplified()`` fusionne les sous-chemins qui se
+    recouvrent selon la règle du chemin (``text_path`` impose l'enroulement) ; seul le tracé du
+    contour en profite, le remplissage et l'ombre gardent les courbes d'origine.
+    """
+    up = QTransform.fromScale(_OUTLINE_MERGE_SCALE, _OUTLINE_MERGE_SCALE)
+    down = QTransform.fromScale(1.0 / _OUTLINE_MERGE_SCALE, 1.0 / _OUTLINE_MERGE_SCALE)
+    merged = down.map(up.map(path).simplified())
+    return merged if not merged.isEmpty() else path
 
 
 def _draw_blurred_path(painter: QPainter, path: QPainterPath, color: QColor, radius: float) -> None:

@@ -161,6 +161,67 @@ def test_overlapping_glyph_contours_leave_no_hole(style):
     assert _transparent_pockets(image) == 0
 
 
+def test_merged_outline_drops_the_edges_inside_overlapping_contours():
+    """Indépendant de la police : le contrat qui garde le test de pixels ci-dessous."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QPainterPath
+
+    from core.mograph_raster import _merged_outline
+
+    cross = QPainterPath()
+    cross.setFillRule(Qt.WindingFill)
+    cross.addRect(QRectF(20, 0, 10, 50))  # la hampe…
+    cross.addRect(QRectF(0, 15, 50, 10))  # …et la barre qui la recouvre, comme dans un « t »
+    assert len(cross.toSubpathPolygons()) == 2
+
+    merged = _merged_outline(cross)
+    assert len(merged.toSubpathPolygons()) == 1  # une seule silhouette : plus d'arête dans la lettre
+    assert merged.boundingRect() == cross.boundingRect()
+    assert _merged_outline(QPainterPath()).isEmpty()
+
+
+@pytest.mark.parametrize("letter", ["t", "f", "e"])
+def test_stroke_leaves_no_seam_inside_overlapping_glyph_contours(letter):
+    from PySide6.QtGui import QFontDatabase, QImage, QPainter
+
+    from core.mograph_raster import draw_content
+
+    if "Inter" not in QFontDatabase.families():
+        pytest.skip("police « Inter » absente : sans police variable aux contours superposés, le défaut ne se reproduit pas")
+    box = (120, 130)
+    project = _project()
+    text = add_graphic_clip(project, "text", timeline_start=0, duration=2)
+    fields = {"text": letter, "font_family": "Inter", "bold": True, "font_size": 80, "width": box[0], "height": box[1],
+              "fill_color": "#000000", "stroke_width": 3, "stroke_color": "#FF0000",
+              "shadow_offset_x": 0, "shadow_offset_y": 0}
+    for name, value in fields.items():
+        update_graphic(text, name, value)
+
+    def draw() -> QImage:
+        image = QImage(box[0], box[1], QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        draw_content(painter, text.graphic, box, device_scale=1.0)
+        painter.end()
+        return image
+
+    stroked = draw()
+    update_graphic(text, "stroke_width", 0)
+    silhouette = draw()  # la même encre sans contour : la référence de ce qui est « dans » la lettre
+
+    # Le trait (2 × 3 px, centré sur le bord) mord de 3 px dans la lettre ; +1 pour l'antialiasing, +1
+    # pour la discrétisation du disque (centres de pixels, seuil d'alpha) : tout pixel plus profond que
+    # cela doit être de la couleur de remplissage, jamais du contour.
+    reach = 5
+    ink = {(x, y) for y in range(box[1]) for x in range(box[0]) if silhouette.pixelColor(x, y).alpha() >= 128}
+    disc = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1) if dx * dx + dy * dy <= reach * reach]
+    core = [(x, y) for x, y in ink if all((x + dx, y + dy) in ink for dx, dy in disc)]
+    assert len(core) > 40  # il reste bien de l'encre au cœur (sinon l'absence de liseré ne prouverait rien)
+    assert any(stroked.pixelColor(x, y).red() > 200 for x, y in ink)  # et le contour est bien tracé au bord
+    seam = [(x, y) for x, y in core if stroked.pixelColor(x, y).red() > 64]
+    assert not seam, f"{len(seam)} pixels de la couleur du contour dans la lettre « {letter} »"
+
+
 @pytest.mark.parametrize(
     ("modes", "inside", "outside"),
     [
