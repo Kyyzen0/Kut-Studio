@@ -206,7 +206,7 @@ class PreviewPanel(QWidget):
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(Spacing.sm)
         title_icon = IconLabel(IconName.MEDIA, size=Iconography.md)
-        title_icon.set_color(QColor(COLORS["muted_strong"]))
+        title_icon.set_color("muted_strong")
         title_layout.addWidget(title_icon)
         title = QLabel(translate("preview.title"))
         self._title_label = title
@@ -800,6 +800,15 @@ class PreviewPanel(QWidget):
         dpr = self.devicePixelRatioF() or 1.0
         shown = max(2.0, self._canvas_rect.width() * dpr)
         return max(0.05, min(1.0, shown / float(cw)) / max(1, int(self.preview_divisor)))
+
+    def refresh_theme(self) -> None:
+        """Après un changement de thème : le pinceau de la scène, le liseré du canevas et le fond du canevas GPU sont des valeurs
+        (des ``QBrush`` / ``QPen`` créés à la construction), pas des styles : la re-teinte des styles ne les atteint pas."""
+        self.canvas_item.setPen(QColor(COLORS["border"]))
+        if self.graphics_view.backgroundBrush().style() != Qt.NoBrush:
+            self.graphics_view.setBackgroundBrush(QColor(COLORS["background"]))
+        if self.gpu_view is not None:
+            self._layout_canvas()
 
     def _set_scene_transparent(self, transparent: bool) -> None:
         if transparent:

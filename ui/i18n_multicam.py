@@ -128,6 +128,7 @@ MULTICAM_TRANSLATIONS: dict[str, dict[str, str]] = {
     "multicam.viewer.no_signal": _t("PAS DE SIGNAL", "NO SIGNAL", "SIN SEÑAL"),
     "multicam.viewer.audio_only": _t("AUDIO", "AUDIO", "AUDIO"),
     "multicam.viewer.program": _t("PROGRAMME", "PROGRAM", "PROGRAMA"),
+    "multicam.viewer.active": _t("ACTIF", "ACTIVE", "ACTIVO"),
     "multicam.viewer.page": _t("{page}/{pages}", "{page}/{pages}", "{page}/{pages}"),
     "multicam.viewer.page_previous": _t("Page précédente", "Previous page", "Página anterior"),
     "multicam.viewer.page_next": _t("Page suivante", "Next page", "Página siguiente"),

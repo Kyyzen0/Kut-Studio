@@ -812,12 +812,20 @@ class IconLabel(QWidget):
         self.setFixedSize(size, size)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-    def set_color(self, color: QColor) -> None:
-        self._explicit_color = color
+    def set_color(self, color: QColor | str | None) -> None:
+        """Couleur de l'icône : un ``QColor`` figé, ou le **nom d'un jeton** de la palette (``"muted"``), lu à chaque peinture et qui
+        suit donc le thème sans rien à refaire."""
+        self._token = color if isinstance(color, str) else None
+        self._explicit_color = None if self._token else color
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: D401 - Qt
         color = self._explicit_color
+        token = getattr(self, "_token", None)
+        if token is not None:
+            from ui.theme import active_palette
+
+            color = QColor(getattr(active_palette(), token))
         if color is None:
             color = self.palette().color(self.foregroundRole())
             if not color.isValid():

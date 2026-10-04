@@ -110,7 +110,7 @@ class MixerStrip(QFrame):
         layout.addWidget(self.name_label)
 
         self.lock_badge = IconLabel(IconName.LOCK, size=Iconography.sm)
-        self.lock_badge.set_color(_color(COLORS["warning"]))
+        self.lock_badge.set_color("warning")
         self.lock_badge.hide()
         self.lock_badge.setToolTip(translate("mixer.locked"))
         layout.addWidget(self.lock_badge, 0, Qt.AlignHCenter)
@@ -347,7 +347,7 @@ class _MasterBar(QFrame):
         layout.setSpacing(Spacing.md)
 
         icon = IconLabel(IconName.AUDIO_VOLUME, size=Iconography.md)
-        icon.set_color(_color(COLORS["muted_strong"]))
+        icon.set_color("muted_strong")
         layout.addWidget(icon)
 
         self.name_label = QLabel(translate("mixer.master"))
@@ -451,7 +451,7 @@ class MixerPanel(QWidget):
         )
         header_layout.setSpacing(Spacing.sm)
         icon = IconLabel(IconName.AUDIO_MIXER, size=Iconography.md)
-        icon.set_color(_color(COLORS["muted_strong"]))
+        icon.set_color("muted_strong")
         header_layout.addWidget(icon)
         self.title_label = QLabel(translate("mixer.title"))
         self.title_label.setStyleSheet(label_style(11, "muted", 800))

@@ -10,7 +10,7 @@ texte à plusieurs lignes se lit « premier ligne = titre, le reste = aide » (`
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
@@ -20,6 +20,19 @@ from ui.theme import active_palette, set_role, set_variant
 
 MAX_TEXT_WIDTH = 360
 """Largeur maximale du texte d'aide (px) : une ligne plus longue se lit mal et fait déborder une colonne étroite."""
+
+
+class _HelperLabel(QLabel):
+    """Texte d'aide qui annonce sa largeur voulue (``MAX_TEXT_WIDTH``) plutôt que l'idéal étroit d'un ``QLabel`` à retour à la ligne.
+
+    Centré dans une colonne plus large, un ``QLabel`` ordinaire se contentait d'environ 170 px : le texte tenait sur deux lignes
+    et la seconde était rognée par une mise en page serrée. Rien n'est imposé en minimum : une colonne étroite réduit toujours
+    le texte (il retourne alors à la ligne), seule la préférence change."""
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt
+        if not (self.wordWrap() and self.text()):
+            return super().sizeHint()
+        return QSize(MAX_TEXT_WIDTH, self.heightForWidth(MAX_TEXT_WIDTH))
 
 
 class EmptyState(QWidget):
@@ -38,7 +51,7 @@ class EmptyState(QWidget):
         self.icon_label: IconLabel | None = None
         if icon is not None:
             self.icon_label = IconLabel(icon, size=Iconography.xxl)
-            self.icon_label.set_color(QColor(active_palette().muted))
+            self.icon_label.set_color("muted")                      # un jeton, lu à la peinture : suit le thème
             layout.addWidget(self.icon_label, 0, Qt.AlignHCenter)
 
         self.title_label = QLabel()
@@ -47,7 +60,7 @@ class EmptyState(QWidget):
         set_role(self.title_label, "panel-title")
         layout.addWidget(self.title_label)
 
-        self.text_label = QLabel()
+        self.text_label = _HelperLabel()
         self.text_label.setAlignment(Qt.AlignCenter)
         self.text_label.setWordWrap(True)
         self.text_label.setMaximumWidth(MAX_TEXT_WIDTH)
@@ -72,6 +85,20 @@ class EmptyState(QWidget):
         self.title_label.setVisible(bool(title))
         self.text_label.setText(body)
         self.text_label.setVisible(bool(body))
+        self._reserve_text_height()
+
+    def _reserve_text_height(self) -> None:
+        """Réserve la hauteur que le texte d'aide occupe à la largeur dont il disposera (jamais la largeur : voir ``_HelperLabel``)."""
+        label = self.text_label
+        body = label.text()
+        width = min(MAX_TEXT_WIDTH, max(1, self.width() - 2 * Spacing.lg))
+        wanted = label.fontMetrics().boundingRect(0, 0, width, 0, int(Qt.TextWordWrap), body).height() if body else 0
+        if wanted != label.minimumHeight():
+            label.setMinimumHeight(wanted)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().resizeEvent(event)
+        self._reserve_text_height()
 
     def text(self) -> str:
         title, body = self.title_label.text(), self.text_label.text()
@@ -98,11 +125,5 @@ class EmptyState(QWidget):
     def setWordWrap(self, enabled: bool) -> None:  # noqa: N802 - API d'un QLabel (le retour à la ligne est toujours actif ici)
         self.title_label.setWordWrap(True)
         self.text_label.setWordWrap(True)
-
-    def refresh_theme(self) -> None:
-        """Réapplique la couleur de l'icône (palette courante) après un changement de thème."""
-        if self.icon_label is not None:
-            self.icon_label.set_color(QColor(active_palette().muted))
-
 
 __all__ = ["EmptyState"]

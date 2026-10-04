@@ -49,8 +49,10 @@ SIZES: tuple[tuple[int, int], ...] = ((1180, 720), (1280, 720), (1440, 900), (19
 """Les tailles que l'application doit tenir : le minimum de la fenêtre, le portable courant, la référence, le grand écran."""
 GROUPS: tuple[str, ...] = ("home", "editor", "inspector", "library", "windows", "graph", "preferences")
 
-_WINDOW_SCENES = ("export", "moniteur-multicam")
-"""Parmi les scénarios de ``tools.ui_audit.window_scenarios`` : l'éditeur de courbes a sa propre capture (la fenêtre elle-même)."""
+_WINDOW_SCENES = ("export", "retour-editeur", "moniteur-multicam")
+"""Parmi les scénarios de ``tools.ui_audit.window_scenarios`` : l'éditeur de courbes a sa propre capture (la fenêtre elle-même).
+``retour-editeur`` n'est pas capturé (préfixe ``_``) : il ramène la fenêtre à l'éditeur, sans quoi le moniteur Multicam serait
+photographié derrière la page d'export."""
 
 
 def parse_sizes(text: str) -> list[tuple[int, int]]:
@@ -125,9 +127,10 @@ def scenes_for(window, group: str, audit) -> Iterable[tuple[str, Callable[[], ob
             yield name, lambda a=action: (a(), window.project_panel)[1]
     elif group == "windows":
         audit.select_first_clip(window)
+        window.open_graph_editor().hide()               # le scénario d'export de ui_audit suppose l'éditeur de courbes déjà créé
         for name, action in audit.window_scenarios(window):
             if name in _WINDOW_SCENES:
-                yield name, lambda a=action: (a(), None)[1]
+                yield ("_" + name if name == "retour-editeur" else name), lambda a=action: (a(), None)[1]
     elif group == "graph":
         yield "editeur-de-courbes", _graph_scene(window, audit)
 
@@ -165,7 +168,8 @@ def capture(
                     for scene, action in scenes_for(window, group, audit):
                         widget = action()
                         audit.settle(window)
-                        record(scene, widget, window)
+                        if not scene.startswith("_"):                       # ``_…`` : une étape qui prépare la suivante
+                            record(scene, widget, window)
                     if group == "graph" and getattr(window, "graph_editor", None) is not None:
                         window.graph_editor.hide()
                 if "preferences" in wanted:

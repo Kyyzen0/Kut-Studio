@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QApplication
 from core.user_settings import UserSettings, VALID_LANGUAGES, VALID_THEME_MODES
 from dataclasses import replace
+from ui.theming import retheme_application
 from ui import i18n
 from ui.preferences_dialog import PreferencesDialog
 
@@ -153,9 +154,13 @@ class PreferencesMixin:
         self._refresh_preview_cache_state()
 
     def _apply_settings(self, settings: UserSettings) -> None:
-        # Application du thème dans Qt.
+        # Application du thème dans Qt : la feuille globale tout de suite, puis la re-teinte des styles locaux, que la feuille
+        # globale ne rattrape pas (sans elle, un passage sombre → clair laissait la moitié de l'interface dans l'ancien thème).
+        previous_palette = self.theme_manager.effective_palette
         self.theme_manager.set_mode(settings.theme_mode)
         self.theme_manager.apply_to(QApplication.instance())
+        if self.theme_manager.effective_palette is not previous_palette:
+            retheme_application(previous_palette, self.theme_manager.effective_palette)
         self.runtime.set_requested_profile(settings.performance_profile)
         self.runtime.set_preview_quality(settings.preview_quality)
         self._render_quality = settings.render_quality

@@ -82,7 +82,7 @@ class ThemePalette:
     accent: str = "#36E6C3"
     accent_hover: str = "#5BEFD0"
     # Texte et icônes posés SUR une surface d'accent (bouton principal) : dessous, jamais de couleur en dur.
-    on_accent: str = "#061514"
+    on_accent: str = "#061515"
     # Anneau de focus clavier : visible sur toutes les surfaces du thème.
     focus_ring: str = "#36E6C3"
     accent_dark: str = "#0E3A33"
@@ -110,7 +110,7 @@ class ThemePalette:
     timeline_grid: str = "#0A211F"
     track_header_bg: str = "#081C1A"
     track_alt_bg: str = "#0A1F1D"
-    track_divider: str = "#102C28"
+    track_divider: str = "#102C29"
     ruler_bg: str = "#081C1A"
     ruler_line: str = "#2A5F59"
     playhead: str = "#36E6C3"
@@ -120,7 +120,7 @@ class ThemePalette:
     # Conservés pour la palette : plus lus depuis la suppression de la pastille « Fondu enchaîné » de l'aperçu
     # (``docs/dead-code-audit.md``).
     transition_overlay: str = "#F7C948"
-    transition_overlay_bg: str = "#061918"
+    transition_overlay_bg: str = "#061919"
 
     # Pistes par type — couleurs contrôlées, distinctes
     track_video: str = "#4FA3D9"        # bleu discret
@@ -135,8 +135,8 @@ class ThemePalette:
     clip_border: str = "#2A5F59"
     clip_border_selected: str = "#36E6C3"
     clip_border_hover: str = "#5BEFD0"
-    clip_text: str = "#FFFFFF"
-    clip_text_dim: str = "#FFFFFFCC"
+    clip_text: str = "#FFFFFE"
+    clip_text_dim: str = "#FFFFFECC"
     clip_title: str = "#B58EF9"
     clip_video_fill: str = "#2B6C99"
     clip_audio_fill: str = "#1D7A66"
@@ -150,7 +150,7 @@ class ThemePalette:
     # Keyframe diamond : presque blanc sur n'importe quel fond de clip, anneau sombre ; l'accent est réservé à la sélection.
     diamond_filled: str = "#F4FFFC"
     diamond_outline: str = "#2A5F59"
-    diamond_border: str = "#061514"
+    diamond_border: str = "#061513"
     # Palette catégorielle des angles Multicam (rang ``MulticamAngle.color_index`` modulo la taille) : jamais de
     # couleur d'angle dans la logique métier, seulement un rang que l'interface résout ici.
     angle_colors: tuple[str, ...] = (
@@ -159,11 +159,11 @@ class ThemePalette:
     )
     # Palette catégorielle des bibliothèques (catégories d'effets, de transitions, de styles) : six teintes qui ne reprennent ni
     # l'accent (réservé à la sélection et au focus) ni une couleur d'état. L'ordre est stable : une catégorie = un rang.
-    category_colors: tuple[str, ...] = ("#5AA9E6", "#F7C948", "#F27686", "#8E7DFA", "#6FD08C", "#F0A35E")
+    category_colors: tuple[str, ...] = ("#5CA9E6", "#F7C948", "#F27686", "#8E7DFA", "#70D08C", "#F0A35E")
     # Courbes de couleur : l'identité des canaux (rouge, vert, bleu), qui n'a de sens que dans l'éditeur de courbes.
-    channel_red: str = "#EF4444"
-    channel_green: str = "#22C55E"
-    channel_blue: str = "#3B82F6"
+    channel_red: str = "#EF4445"
+    channel_green: str = "#22C55F"
+    channel_blue: str = "#3B82F7"
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ THEMES: dict[str, ThemePalette] = {
         panel="#FAFCFB",
         panel_alt="#F2F6F4",
         panel_elevated="#FFFFFF",
-        surface="#FFFFFF",
+        surface="#FFFFFE",
         surface_hover="#E4ECE9",
         surface_active="#D5E2DD",
         input_bg="#F2F6F4",
@@ -269,7 +269,7 @@ THEMES: dict[str, ThemePalette] = {
         accent_dark="#D8F4ED",
         accent_dark_hover="#C2EBE0",
         accent_glow="#077A6526",
-        on_accent="#FFFFFF",
+        on_accent="#FEFFFF",
         focus_ring="#077A65",
         selection="#D8F4ED",
         selection_line="#077A65",
@@ -281,8 +281,8 @@ THEMES: dict[str, ThemePalette] = {
         warning_dark="#FAF3DD",
         info="#256399",
         info_dark="#DCEAF6",
-        tooltip_bg="#FFFFFF",
-        timeline_bg="#EEF3F1",
+        tooltip_bg="#FFFFFE",
+        timeline_bg="#EEF3F2",
         timeline_grid="#E6EDEA",
         track_header_bg="#FAFCFB",
         track_alt_bg="#F5F8F7",
@@ -294,7 +294,7 @@ THEMES: dict[str, ThemePalette] = {
         marker="#855E00",
         snap_line="#077A6580",
         transition_overlay="#855E00",
-        transition_overlay_bg="#FFFFFFE6",
+        transition_overlay_bg="#FFFEFEE6",
         track_video="#2B6A9E",
         track_video_dim="#D9E7F4",
         track_audio="#12806A",
@@ -304,21 +304,21 @@ THEMES: dict[str, ThemePalette] = {
         clip_border="#8FA69F",
         clip_border_selected="#077A65",
         clip_border_hover="#055F4E",
-        clip_text="#FFFFFF",
-        clip_text_dim="#FFFFFFD9",
+        clip_text="#FEFEFF",
+        clip_text_dim="#FEFEFFD9",
         clip_title="#6246C8",
-        clip_video_fill="#2B6A9E",
-        clip_audio_fill="#12806A",
-        clip_title_fill="#6246C8",
+        clip_video_fill="#2B6A9F",
+        clip_audio_fill="#12806B",
+        clip_title_fill="#6246C9",
         clip_graphic_fill="#5B41BF",
         clip_nested_fill="#7F620E",
         clip_broken_fill="#B03A42",
         clip_audio_wave="#E3FFF6",
         clip_adjustment="#5C46BF",
-        diamond_filled="#FFFFFF",
+        diamond_filled="#FEFFFE",
         diamond_outline="#8FA69F",
-        diamond_border="#0B1412",
-        category_colors=("#2B6A9E", "#855E00", "#C42D45", "#6246C8", "#157550", "#B45309"),
+        diamond_border="#0B1413",
+        category_colors=("#2B6A9D", "#855E00", "#C42D45", "#6246C7", "#157551", "#B45309"),
         channel_red="#DC2626",
         channel_green="#16A34A",
         channel_blue="#2563EB",
