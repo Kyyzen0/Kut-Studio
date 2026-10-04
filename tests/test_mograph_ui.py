@@ -185,6 +185,57 @@ def test_viewer_hides_live_layers_when_the_composited_segment_is_shown(window):
     assert not window.preview_panel.mograph_item.isVisible()
 
 
+@pytest.mark.parametrize("playing", [False, True])
+def test_no_clip_message_never_shows_over_visible_layers(window, qtbot, playing):
+    """Projet sans clip vidéo, calques à l'écran : le message « aucun clip » ne s'affiche à aucun moment.
+
+    Chaque tick de synchronisation passe par ``show_no_active_clip`` : le texte ne doit pas être
+    ré-affiché (même une image) pour être recaché par le rafraîchissement différé des calques.
+    """
+    from PySide6.QtCore import QEvent, QObject
+
+    class ShowCounter(QObject):
+        shown = 0
+
+        def eventFilter(self, _watched, event):  # noqa: N802 - Qt
+            if event.type() == QEvent.Show:
+                self.shown += 1
+            return False
+
+    window.add_layer_at_playhead("text", "")
+    window.is_playing = playing
+    empty = window.preview_panel.empty_state
+    counter = ShowCounter()
+    empty.installEventFilter(counter)
+    for _tick in range(3):
+        window._sync_preview_to_timeline()
+        qtbot.wait(20)  # laisse passer le rafraîchissement différé des calques
+        assert not empty.isVisible()
+    assert counter.shown == 0, "l'état vide a été ré-affiché alors que des calques sont visibles"
+
+
+def test_no_clip_message_returns_in_a_real_gap(window):
+    """Sans calque ni clip à la tête de lecture, le message d'aide reste affiché."""
+    window._sync_preview_to_timeline()
+    assert window.preview_panel.empty_state.isVisible()
+
+
+def test_empty_state_follows_layers_but_never_covers_a_video(window):
+    panel = window.preview_panel
+    panel.show_no_active_clip()
+    assert panel.empty_state.isVisible()
+    panel.set_graphics_present(True)  # des calques arrivent : le message s'efface
+    assert not panel.empty_state.isVisible()
+    panel.show_no_active_clip()  # le tick suivant ne le ramène pas
+    assert not panel.empty_state.isVisible()
+    panel.set_graphics_present(False)  # vrai trou de nouveau : le message revient
+    assert panel.empty_state.isVisible()
+    type(panel).preview_at(panel, "/tmp/clip.mp4", 0.0)  # (la fixture neutralise ``panel.preview_at``)
+    assert not panel.empty_state.isVisible()  # un clip vidéo s'affiche : jamais de message dessus
+    panel.set_graphics_present(False)
+    assert not panel.empty_state.isVisible()
+
+
 def test_presets_menu_applies_a_lower_third(window):
     presets = window.layers_panel._presets
     lower_third = next(p for p in presets if p.name == "Lower third")
