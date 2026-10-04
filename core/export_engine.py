@@ -2777,7 +2777,8 @@ def _build_master_filter(plan) -> str:
     from .audio_mixer import MAX_GAIN_DB, MIN_GAIN_DB
 
     if getattr(plan, "master_muted", False):
-        return "volume=0dB"
+        # Facteur linéaire 0 : ``0dB`` est le gain unité (x1,0) et le silence n'a pas de valeur en dB (−∞).
+        return "volume=0"
     master = float(getattr(plan, "master_gain_db", 0.0) or 0.0)
     if abs(master) > 1e-6:
         bounded = max(MIN_GAIN_DB, min(MAX_GAIN_DB, master))

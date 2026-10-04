@@ -406,7 +406,7 @@ def test_master_filter():
     )
     assert _build_master_filter(
         build_render_plan(project, master_muted=True)
-    ) == "volume=0dB"
+    ) == "volume=0"  # facteur linéaire : ``volume=0dB`` est le gain unité, le rendu réel est dans test_export_master_mute.py
 
 
 def test_export_stays_valid_without_audio():
