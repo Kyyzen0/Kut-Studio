@@ -207,22 +207,84 @@ temps.
 (niveaux de gris sur 255) **sur la région de l'objet**, flux contre mélange simple, moyenne de `t = ¼, ½, ¾` :
 
 <!-- BENCH:ACCURACY -->
-| Scène | Erreur flux | Erreur mélange | Recouvrement flux | Recouvrement mélange |
-|:---|---:|---:|---:|---:|
-| translation +3 px | 2.5 | 11.8 | 0.993 | 0.979 |
-| translation +8 px | 1.2 | 23.6 | 0.997 | 0.916 |
-| translation +24 px | 7.5 | 37.0 | 0.983 | 0.764 |
-| diagonale (7, 5) | 4.3 | 26.5 | 0.987 | 0.892 |
-| accélération | 2.8 | 22.4 | 0.994 | 0.924 |
-| rotation 10°/image | 2.8 | 16.2 | 0.996 | 0.958 |
-| zoom +6 %/image | 2.8 | 5.2 | 0.997 | 0.982 |
-| objet sans texture | 1.7 | 8.8 | 0.999 | 0.945 |
-| deux objets opposés | 3.5 | 23.9 | 0.996 | 0.912 |
-| croisement | 1.7 | 19.5 | 0.997 | 0.939 |
+| Scène | Erreur flux | Erreur mélange | Recouvrement flux | Recouvrement mélange | Position flux (px) | Position mélange (px) |
+|:---|---:|---:|---:|---:|---:|---:|
+| translation +3 px | 2.5 | 11.8 | 0.993 | 0.979 | 0.01 | 0.57 |
+| translation +8 px | 1.2 | 23.6 | 0.997 | 0.916 | 0.00 | 2.35 |
+| translation +24 px | 7.5 | 37.0 | 0.983 | 0.764 | 0.02 | 7.68 |
+| diagonale (7, 5) | 4.3 | 26.5 | 0.987 | 0.892 | 0.03 | 2.39 |
+| accélération | 2.8 | 22.4 | 0.994 | 0.924 | 0.12 | 1.89 |
+| rotation 10°/image | 2.8 | 16.2 | 0.996 | 0.958 | 0.01 | 0.04 |
+| zoom +6 %/image | 2.8 | 5.2 | 0.997 | 0.982 | 0.00 | 0.00 |
+| objet sans texture | 1.7 | 8.8 | 0.999 | 0.945 | 0.01 | 1.46 |
+| deux objets opposés | 3.5 | 23.9 | 0.996 | 0.912 | — | — |
+| croisement | 1.7 | 19.5 | 0.997 | 0.939 | — | — |
 <!-- /BENCH:ACCURACY -->
+
+La **position** est l'écart, en pixels, entre l'objet généré et l'objet vrai : on apparie le gabarit de l'objet vrai sur l'image
+fabriquée et on lit le décalage au sous-pixel (`best_offset`, scènes à un seul objet). Ce n'est pas un barycentre : un mélange déplace le
+centre de masse **exactement** comme le vrai mouvement (`(1−t)·xA + t·xB`) tout en doublant l'objet ; son erreur est le flou et les deux
+fantômes, que la position de ce qui ressemble à l'objet révèle (et que la colonne « Erreur » mesure aussi).
 
 Sur un fichier réel (`tests/test_retime_prepare_real.py`, vérité à double cadence par le même chemin de conversion) le flux est à moins de
 3 niveaux de la vérité, 4 fois plus précis qu'un mélange.
+
+## Ralenti extrême
+
+À 50 %, une image sur deux est fabriquée ; à 25 %, trois sur quatre ; à 10 %, neuf sur dix ; à 5 %, dix-neuf sur vingt. Les tableaux
+suivent chaque image de sortie d'une suite de trois paires consécutives contre la vérité exacte de la scène à sa position
+fractionnaire. L'**à-coup** est la plus grande variation de l'erreur de position entre deux images de sortie consécutives, y compris
+celles qui tombent sur une image source (erreur nulle) : ce que l'œil voit comme une irrégularité de la vitesse du mouvement.
+
+<!-- BENCH:EXTREME -->
+| Scène | Ralenti | Images / paire | Erreur flux moy. (max) | Erreur mélange moy. (max) | Position max flux / mélange (px) | À-coup max flux / mélange (px) |
+|:---|---:|---:|---:|---:|---:|---:|
+| translation +8 px | 50 % | 1 | 1.6 (1.8) | 27.2 (27.3) | 0.01 / 3.42 | 0.01 / 3.42 |
+| translation +8 px | 25 % | 3 | 1.4 (1.8) | 23.6 (27.3) | 0.01 / 3.42 | 0.01 / 5.23 |
+| translation +8 px | 10 % | 9 | 2.9 (4.0) | 21.3 (27.3) | 0.08 / 3.42 | 0.14 / 6.21 |
+| translation +8 px | 5 % | 19 | 2.8 (4.1) | 20.3 (28.2) | 0.08 / 3.42 | 0.08 / 6.47 |
+| translation +24 px | 50 % | 1 | 9.1 (9.5) | 43.6 (43.8) | 0.02 / 11.46 | 0.02 / 11.46 |
+| translation +24 px | 25 % | 3 | 7.3 (9.5) | 37.0 (43.8) | 0.03 / 11.46 | 0.03 / 17.24 |
+| translation +24 px | 10 % | 9 | 7.5 (11.0) | 34.7 (43.8) | 0.08 / 11.46 | 0.09 / 20.57 |
+| translation +24 px | 5 % | 19 | 7.1 (11.0) | 33.2 (43.8) | 0.08 / 11.46 | 0.13 / 21.72 |
+| rotation 10°/image | 50 % | 1 | 3.1 (3.2) | 19.8 (19.9) | 0.01 / 0.05 | 0.01 / 0.05 |
+| rotation 10°/image | 25 % | 3 | 2.9 (3.2) | 16.2 (19.9) | 0.01 / 0.05 | 0.01 / 0.06 |
+| rotation 10°/image | 10 % | 9 | 2.7 (3.2) | 14.1 (19.9) | 0.01 / 0.06 | 0.01 / 0.04 |
+| rotation 10°/image | 5 % | 19 | 2.6 (3.2) | 13.5 (19.9) | 0.02 / 0.06 | 0.01 / 0.02 |
+| croisement | 50 % | 1 | 1.1 (1.1) | 23.4 (23.5) | — / — | — / — |
+| croisement | 25 % | 3 | 1.8 (2.2) | 19.6 (23.5) | — / — | — / — |
+| croisement | 10 % | 9 | 2.8 (4.0) | 17.3 (24.0) | — / — | — / — |
+| croisement | 5 % | 19 | 2.7 (4.0) | 16.5 (24.0) | — / — | — / — |
+<!-- /BENCH:EXTREME -->
+
+Ce que les mesures disent, et ce qu'elles ne disent pas :
+
+* **La qualité d'une image fabriquée ne dépend pas du ratio** : elle dépend de la position `t` entre les deux images sources et du
+  mouvement entre elles. À 5 %, on fabrique davantage de `t` différents, pas de moins bonnes images (erreur maximale du même ordre
+  qu'à 50 %). Le flux garde sa trajectoire régulière (à-coup de l'ordre du dixième de pixel), alors que celle d'un mélange saute d'une
+  image à l'autre entre ses deux fantômes.
+* **Ce qui croît, c'est le coût, comme `1 / ratio`** : une paire se paie une fois, mais chaque image fabriquée se paie à part. Estimé
+  depuis les mesures de ce document (un seul fil, processeur) :
+
+<!-- BENCH:COST -->
+| Ralenti | Images de sortie | Images fabriquées | Analyse (30 paires) | Synthèse | Total, 1 s de source en 1920x1080 |
+|:---|---:|---:|---:|---:|---:|
+| 50 % | 60 | 30 (50 %) | 13 s | 14 s | 26 s (0.4 min) |
+| 25 % | 120 | 90 (75 %) | 13 s | 41 s | 54 s (0.9 min) |
+| 10 % | 300 | 270 (90 %) | 13 s | 124 s | 136 s (2.3 min) |
+| 5 % | 600 | 570 (95 %) | 13 s | 262 s | 274 s (4.6 min) |
+<!-- /BENCH:COST -->
+
+  À 10 % ou 5 %, préférez *Brouillon* pour le travail, un mélange d'images pour l'aperçu, et réservez le flux à la livraison ou à des
+  plans courts. Le flux préparé grossit dans les mêmes proportions (voir *Disque* plus bas).
+* **Chaque défaut reste à l'écran 10 ou 20 fois plus longtemps.** Une occlusion, un flash, de l'eau ou de la fumée qui produisent une
+  image douteuse à 50 % en produisent dix à 5 % : le bilan de la préparation dit combien ont été remplacées, mais la fréquence ne
+  change pas la nature du défaut.
+* **Ces scènes sont propres** (pas de bruit, pas de flou de bougé, texture parfaite) : les chiffres sont une **borne haute** de la
+  qualité, pas ce qu'on obtient sur n'importe quelle vidéo. Sur une vraie prise, l'incohérence d'une paire à l'autre (le flux de deux
+  paires voisines n'est pas exactement le même) n'est pas mesurée ici.
+* Le flux interpole **entre des images sources** : un mouvement saccadé à la prise (obturateur rapide, cadence basse) reste saccadé
+  à 5 %, seulement étiré.
 
 ## Limites assumées
 

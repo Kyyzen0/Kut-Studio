@@ -128,7 +128,7 @@ def index_values(frames: np.ndarray) -> list[float]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("speed", [0.5, 0.25, 0.4, 0.8])
+@pytest.mark.parametrize("speed", [0.5, 0.25, 0.4, 0.8, 0.1, 0.05])
 def test_blending_weights_follow_the_time_map_exactly(index_media, cache, speed):
     project, clip = make_project(index_media, frames=SOURCE_FRAMES, width=W, height=H,
                                  remapping=TimeRemapping(speed=speed, interpolation=BLENDING))
@@ -136,7 +136,9 @@ def test_blending_weights_follow_the_time_map_exactly(index_media, cache, speed)
     got = index_values(frames)[: len(frames)]
     assert preparation is not None and preparation.report.synthesized > 0
     for tick, value in enumerate(got[:-3]):
-        expected = clip.time_map.source_time(tick / FPS) * FPS
+        # Entre la dernière image réelle et la fin de la fenêtre il n'y a rien à mélanger : on montre la dernière (comme
+        # l'échantillonnage). À 5 %, cela fait vingt ticks et non plus les trois que l'on écartait.
+        expected = min(SOURCE_FRAMES - 1.0, clip.time_map.source_time(tick / FPS) * FPS)
         assert abs(value - expected) < INDEX_TOLERANCE, (speed, tick, value, expected)             # 1 niveau de luminance = 0,33 indice
 
 
@@ -223,11 +225,11 @@ def test_the_graph_refuses_prepared_images_that_no_longer_match_the_clip(index_m
 # ---------------------------------------------------------------------------
 
 
-def region_error(frames: np.ndarray, truth: np.ndarray, ticks: list[int]) -> float:
-    """Erreur moyenne (0…255) sur la région de l'objet entre l'export interpolé et la vérité, tick à tick."""
+def region_error(frames: np.ndarray, truth: np.ndarray, ticks: list[int], ratio: float = 0.5) -> float:
+    """Erreur moyenne (0…255) sur la région de l'objet entre l'export interpolé et la vérité, tick à tick (``ratio`` : le ralenti)."""
     errors = []
     for tick in ticks:
-        position = tick * 0.5
+        position = tick * ratio
         mask = np.zeros((SH, SW), dtype=bool)
         for moment in (np.floor(position), np.floor(position) + 1, position):
             mask |= SCENE.render(float(moment)) > 0.55
@@ -252,6 +254,28 @@ def test_optical_flow_follows_the_moving_object_on_a_real_file_far_better_than_a
     assert flow_error < 0.25 * blend_error, (flow_error, blend_error)
     assert flow_preparation.report.mean_confidence > 0.9 and flow_preparation.report.degraded == 0
     assert flow_preparation.report.backend == "numpy" and flow_preparation.report.pairs_computed > 0
+
+
+@pytest.mark.parametrize("speed", [0.25, 0.1, 0.05])
+def test_optical_flow_stays_close_to_the_truth_at_extreme_slowdowns_on_a_real_file(tmp_path, cache, speed):
+    """25, 10 et 5 % : l'erreur du flux ne croît pas avec le ralenti (plus d'images, pas de moins bonnes), et reste nettement sous
+    celle d'un mélange. La vérité est le même objet rendu au pas ``speed`` par le même chemin de conversion."""
+    source_frames, step = 5, round(1 / speed)
+    count = source_frames * step
+    media = _encode_scene(tmp_path / "scene.mp4", 1.0, source_frames)
+    truth_file = _encode_scene(tmp_path / "truth.mp4", speed, count)
+    truth, _ = render(make_project(truth_file, frames=count, width=SW, height=SH,
+                                   remapping=TimeRemapping(interpolation=SAMPLING))[0], SW, SH, cache)
+    ticks = [tick for tick in range(count - 2 * step) if tick % step]                    # les images fabriquées, avant la dernière paire
+    errors = {}
+    for mode in (FLOW, BLENDING):
+        project, _clip = make_project(media, frames=source_frames, width=SW, height=SH,
+                                      remapping=TimeRemapping(speed=speed, interpolation=mode, flow_quality=FlowQuality.BALANCED))
+        frames, preparation = render(project, SW, SH, cache)
+        assert preparation is not None and preparation.report.synthesized >= (step - 1) * (source_frames - 1)
+        errors[mode] = region_error(frames, truth, ticks, speed)
+    assert errors[FLOW] < 3.5, (speed, errors)                                           # niveaux de gris : plancher nul, vérité exacte
+    assert errors[FLOW] < 0.3 * errors[BLENDING], (speed, errors)
 
 
 def test_changing_the_speed_reuses_every_motion_vector(scene_media, cache):
