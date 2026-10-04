@@ -75,15 +75,18 @@ def extend_search_path(
     """
     platform_name = platform_name or sys.platform
     env = environment if environment is not None else os.environ
-    present = [entry for entry in env.get("PATH", "").split(os.pathsep) if entry]
-    added: list[str] = []
-    for directory in _CONVENTIONAL_TOOL_DIRS.get(platform_name, ()):
-        if directory not in present and os.path.isdir(directory):
-            present.append(directory)
-            added.append(directory)
+    current = env.get("PATH", "")
+    # Les composants existants restent tels quels, vides compris : sous POSIX, un composant vide désigne le
+    # dossier courant, et le retirer changerait ce que trouvent le processus et ses enfants.
+    present = set(current.split(os.pathsep))
+    added = tuple(
+        directory
+        for directory in _CONVENTIONAL_TOOL_DIRS.get(platform_name, ())
+        if directory not in present and os.path.isdir(directory)
+    )
     if added:
-        env["PATH"] = os.pathsep.join(present)
-    return tuple(added)
+        env["PATH"] = os.pathsep.join([current, *added] if current else added)
+    return added
 
 
 __all__ = ["bundled_tool_path", "extend_search_path", "find_media_tool"]

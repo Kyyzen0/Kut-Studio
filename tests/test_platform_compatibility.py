@@ -184,6 +184,19 @@ def test_extend_search_path_is_idempotent_and_keeps_a_complete_path(tmp_path, mo
     assert environment["PATH"].split(os.pathsep).count(str(brew)) == 1
 
 
+@pytest.mark.parametrize("path", [":/usr/bin", "/usr/bin:", "/usr/bin::/bin"])
+def test_extend_search_path_preserves_empty_components(path, tmp_path, monkeypatch) -> None:
+    """Un composant vide du PATH est le dossier courant (POSIX) : l'ajout ne doit pas le retirer."""
+    from core import tool_paths
+
+    brew = tmp_path / "bin"
+    brew.mkdir()
+    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
+    environment = {"PATH": path}
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert environment["PATH"] == f"{path}{os.pathsep}{brew}"
+
+
 def test_extend_search_path_handles_an_empty_path_and_other_platforms(tmp_path, monkeypatch) -> None:
     from core import tool_paths
 
@@ -193,6 +206,9 @@ def test_extend_search_path_handles_an_empty_path_and_other_platforms(tmp_path, 
     environment: dict[str, str] = {}
     assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
     assert environment["PATH"] == str(brew)  # pas de séparateur parasite devant
+    environment = {"PATH": ""}
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert environment["PATH"] == str(brew)
     untouched = {"PATH": "C:\\Windows\\System32"}
     assert tool_paths.extend_search_path(platform_name="win32", environment=untouched) == ()
     assert untouched == {"PATH": "C:\\Windows\\System32"}
