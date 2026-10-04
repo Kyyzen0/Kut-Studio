@@ -149,6 +149,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self.color_preset_store = ColorPresetStore()
         self._group_titles: list[tuple] = []  # (QGroupBox, clé i18n) : réécrits par ``retranslate``
         self._row_labels: list[tuple] = []  # (QFormLayout, champ, clé i18n)
+        self._stacked_labels: list[tuple] = []  # (QLabel, clé i18n) : libellés posés au-dessus de leur champ, voir _add_stacked_row
         self.setObjectName("properties_panel")
         self.setStyleSheet(
             f"QWidget#properties_panel {{ background: {COLORS['panel']}; "

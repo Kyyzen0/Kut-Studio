@@ -69,6 +69,19 @@ class ConstructionMixin:
         form.addRow(translate(key), field)
         self._row_labels.append((form, field, key))
 
+    def _add_stacked_row(self, form: QFormLayout, key: str, field: QWidget) -> None:
+        """Libellé **au-dessus** de son champ, l'un et l'autre sur toute la largeur du formulaire.
+
+        Pour un champ qui retourne à la ligne (un ``FlowLayout`` : rangée de boutons). À côté de son libellé, ``QFormLayout`` lui
+        donnait une colonne étroite (la largeur « idéale » d'un ``FlowLayout`` est celle de son plus large élément) et calculait la
+        hauteur de la ligne pour une autre largeur que celle où il le plaçait : après un changement d'onglet, la ligne suivante
+        démarrait sous le milieu de celle-ci et la recouvrait (un défaut déjà présent, que des boutons plus larges ou une police plus
+        large rendent visible). Sur toute la largeur, la largeur du champ est sans ambiguïté."""
+        label = QLabel(translate(key))
+        form.addRow(label)
+        form.addRow(field)
+        self._stacked_labels.append((label, key))
+
     def retranslate(self) -> None:
         """Onglets, menu « ••• », titres de groupes et libellés de formulaire dans la langue courante."""
         for button, key in zip(self.inspector_tab_buttons, self._TAB_KEYS):
@@ -88,6 +101,8 @@ class ConstructionMixin:
             label = form.labelForField(field)
             if label is not None:
                 label.setText(translate(key))
+        for label, key in self._stacked_labels:
+            label.setText(translate(key))
 
     def _build_header(self, outer_layout):
         """En-tête : titre et barre d'onglets de l'inspecteur."""
@@ -378,7 +393,7 @@ class ConstructionMixin:
             btn.setEnabled(False)
             speed_presets_layout.addWidget(btn)
 
-        self._add_row(speed_form, "mograph.layers.presets", speed_presets)
+        self._add_stacked_row(speed_form, "mograph.layers.presets", speed_presets)
 
         # Images intermédiaires, son, courbe de vitesse, analyse du flux optique (widget autonome).
         self.time_section = TimeSection()
