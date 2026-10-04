@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -148,6 +150,71 @@ def test_explicit_media_tool_override(tmp_path) -> None:
         platform_name="linux",
         environment={"KUT_STUDIO_FFPROBE": str(binary)},
     ) == str(binary.resolve())
+
+
+DOCK_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+"""Le ``PATH`` que ``launchd`` donne à une application lancée depuis le Dock ou le Finder."""
+
+
+def test_extend_search_path_appends_existing_package_manager_dirs(tmp_path, monkeypatch) -> None:
+    from core import tool_paths
+
+    brew, missing = tmp_path / "homebrew" / "bin", tmp_path / "absent" / "bin"
+    brew.mkdir(parents=True)
+    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew), str(missing))})
+    environment = {"PATH": DOCK_PATH}
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    # À la suite : les outils du système gardent la priorité ; un dossier absent n'est pas ajouté.
+    assert environment["PATH"] == os.pathsep.join([*DOCK_PATH.split(os.pathsep), str(brew)])
+
+
+def test_extend_search_path_is_idempotent_and_keeps_a_complete_path(tmp_path, monkeypatch) -> None:
+    from core import tool_paths
+
+    brew = tmp_path / "bin"
+    brew.mkdir()
+    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
+    complete = os.pathsep.join([str(brew), DOCK_PATH])  # lancement depuis un terminal
+    environment = {"PATH": complete}
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == ()
+    assert environment["PATH"] == complete
+    environment = {"PATH": DOCK_PATH}
+    tool_paths.extend_search_path(platform_name="darwin", environment=environment)
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == ()
+    assert environment["PATH"].split(os.pathsep).count(str(brew)) == 1
+
+
+def test_extend_search_path_handles_an_empty_path_and_other_platforms(tmp_path, monkeypatch) -> None:
+    from core import tool_paths
+
+    brew = tmp_path / "bin"
+    brew.mkdir()
+    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {"darwin": (str(brew),)})
+    environment: dict[str, str] = {}
+    assert tool_paths.extend_search_path(platform_name="darwin", environment=environment) == (str(brew),)
+    assert environment["PATH"] == str(brew)  # pas de séparateur parasite devant
+    untouched = {"PATH": "C:\\Windows\\System32"}
+    assert tool_paths.extend_search_path(platform_name="win32", environment=untouched) == ()
+    assert untouched == {"PATH": "C:\\Windows\\System32"}
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="faux exécutable POSIX")
+def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(tmp_path, monkeypatch) -> None:
+    """Régression : « FFmpeg est introuvable » alors qu'il est installé (Homebrew), depuis le Dock."""
+    from core import tool_paths
+
+    brew = tmp_path / "bin"
+    brew.mkdir()
+    ffmpeg = brew / "ffmpeg"
+    ffmpeg.write_text("#!/bin/sh\n")
+    ffmpeg.chmod(0o755)
+    monkeypatch.setattr(tool_paths, "_CONVENTIONAL_TOOL_DIRS", {sys.platform: (str(brew),)})
+    for variable in ("KUT_STUDIO_FFMPEG", "KUT_STUDIO_FFMPEG_DIR"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("PATH", DOCK_PATH)
+    assert tool_paths.find_media_tool("ffmpeg") is None
+    tool_paths.extend_search_path()
+    assert tool_paths.find_media_tool("ffmpeg") == str(ffmpeg)
 
 
 def test_build_command_uses_platform_separator_and_optional_binaries(tmp_path) -> None:

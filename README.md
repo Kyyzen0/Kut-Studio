@@ -113,6 +113,12 @@ folder containing `ffmpeg` and `ffprobe` (`.exe` on Windows) before running
 `build.py`. At runtime Kut-Studio checks the embedded `bin/` folder first,
 then the configured folder, then the system `PATH`.
 
+An app launched from the macOS Dock or Finder does not get your shell's `PATH`,
+so at startup Kut-Studio appends the usual package-manager folders to it
+(`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` on macOS; `/usr/local/bin`,
+`/usr/bin`, `/snap/bin` and Linuxbrew on Linux) when they exist. An FFmpeg installed
+with Homebrew is therefore found without any setup.
+
 ## 🖥️ Platform compatibility
 
 Every push and pull request runs the complete tests, an offscreen UI smoke
@@ -350,6 +356,13 @@ Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
 contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
 `build.py`. Kut-Studio cherche d’abord dans son dossier `bin/`, puis dans le
 dossier configuré, puis dans le `PATH` système.
+
+Une application lancée depuis le Dock ou le Finder de macOS ne reçoit pas le
+`PATH` de votre shell : au démarrage, Kut-Studio lui ajoute donc les dossiers
+habituels des gestionnaires de paquets (`/opt/homebrew/bin`, `/usr/local/bin`,
+`/opt/local/bin` sous macOS ; `/usr/local/bin`, `/usr/bin`, `/snap/bin` et Linuxbrew
+sous Linux) lorsqu’ils existent. Un FFmpeg installé avec Homebrew est ainsi trouvé
+sans réglage.
 
 ## 🖥️ Compatibilité des plateformes
 
