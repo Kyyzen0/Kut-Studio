@@ -105,6 +105,8 @@ def _fake_onedir(dist: Path) -> Path:
     return folder
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="droits POSIX et liens symboliques : l'archive Linux se construit sous Linux (et macOS)")
 def test_the_linux_archive_keeps_execute_permissions_and_symlinks(tmp_path):
     _fake_onedir(tmp_path / "dist")
     archive = create_archive(tmp_path / "dist", tmp_path / "out", "1.2.3", LINUX_X64)

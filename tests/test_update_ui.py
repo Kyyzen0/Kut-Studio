@@ -316,9 +316,10 @@ def test_closing_the_dialog_while_an_automatic_check_is_in_flight_does_not_reope
     assert blocker.args[0].error.kind is UpdateErrorKind.CANCELLED
     assert not checker.busy, "aucune recherche manuelle relancée"
     assert not window._update_manual_pending
-    qtbot.wait(200)
+    requests = len(server.requests)    # 0 ou 1 : l'annulation peut précéder la connexion (Windows)
+    qtbot.wait(300)
     assert not window._update_dialog.isVisible()
-    assert len(server.requests) == 1
+    assert len(server.requests) == requests <= 1, "aucune nouvelle requête après la fermeture"
 
 
 def test_the_cancel_button_during_a_check_closes_the_dialog(qtbot, monkeypatch, server, tmp_path):

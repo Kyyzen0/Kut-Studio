@@ -31,7 +31,7 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path, PurePath, PureWindowsPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from urllib.parse import quote
 
 from .app_version import APP_NAME, APP_VERSION, GITHUB_REPOSITORY
@@ -589,7 +589,9 @@ def install_context(
     executable = executable or sys.executable
     if system is OperatingSystem.WINDOWS:
         return InstallContext(InstallKind.WINDOWS_FOLDER, PureWindowsPath(executable).parent)
-    path = Path(executable)
+    # Chemins purs du système visé (comme PureWindowsPath ci-dessus) : le résultat ne dépend pas de la machine qui
+    # l'évalue, ce qui rend les trois systèmes testables depuis n'importe lequel.
+    path = PurePosixPath(executable)
     if system is OperatingSystem.MACOS:
         bundle = next((parent for parent in path.parents if parent.suffix == ".app"), None)
         translocated = "/AppTranslocation/" in path.as_posix()
