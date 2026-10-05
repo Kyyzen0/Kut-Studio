@@ -256,7 +256,9 @@ class FlowCache:
             if not (item.name.startswith(".") and ".tmp" in item.name):
                 continue
             try:
-                if now - item.stat().st_mtime < max_age_seconds:
+                # ``max_age_seconds <= 0`` (purge) : tout part, sans comparer les horloges. Sous Windows, ``time.time()``
+                # est plus grossier que l'horodatage NTFS : un fichier écrit à l'instant peut dater d'« après » ``now``.
+                if max_age_seconds > 0 and now - item.stat().st_mtime < max_age_seconds:
                     continue
                 item.unlink()
                 removed += 1
