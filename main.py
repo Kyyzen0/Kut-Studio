@@ -1,3 +1,4 @@
+import os
 import sys
 
 from core.diagnostics_log import install_diagnostics
@@ -25,6 +26,9 @@ def main():
 
     from ui.main_window import MainWindow
 
+    if "--smoke-test" in sys.argv:
+        # Le smoke test (CI, application construite) ne contacte jamais GitHub.
+        os.environ["KUT_STUDIO_UPDATE_CHECK"] = "off"
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
@@ -59,6 +63,13 @@ def main():
         problem = gpu_self_check()
         if problem:
             print(f"Smoke test : aperçu GPU indisponible — {problem}", file=sys.stderr)
+            return 1
+        # Mises à jour : l'application construite doit pouvoir parler HTTPS (moteur TLS de Qt embarqué).
+        from core.update_service import tls_self_check
+
+        problem = tls_self_check()
+        if problem:
+            print(f"Smoke test : HTTPS indisponible — {problem}", file=sys.stderr)
             return 1
         # Supervision des FFmpeg : gardien (macOS, Linux) ou objet Job (Windows) réellement déclenché.
         from core.process_supervisor import supervision_self_check

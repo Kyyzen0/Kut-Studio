@@ -6,7 +6,8 @@ Cette boîte de dialogue permet de choisir :
 - la langue de l'interface (Français / English / Español) ;
 - le profil de performance (Auto / Léger / Équilibré / Puissant) ;
 - la qualité d'aperçu temps réel (Plein, 1/2, 1/4, 1/8) ;
-- la qualité de rendu des segments d'aperçu (Brouillon / Standard / Haute).
+- la qualité de rendu des segments d'aperçu (Brouillon / Standard / Haute) ;
+- les mises à jour (recherche au démarrage, préversions).
 
 Chaque modification est appliquée **immédiatement** par
 :class:`MainWindow` : le thème est commuté via :class:`ThemeManager`,
@@ -35,10 +36,12 @@ from functools import partial
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -47,7 +50,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.app_version import APP_VERSION
 from core.user_settings import (
+    DEFAULT_CHECK_UPDATES,
+    DEFAULT_INCLUDE_PRERELEASES,
     DEFAULT_LANGUAGE,
     DEFAULT_PERFORMANCE_PROFILE,
     DEFAULT_PREVIEW_QUALITY,
@@ -58,7 +64,7 @@ from core.user_settings import (
     VALID_RENDER_QUALITIES,
     VALID_THEME_MODES,
 )
-from ui.design_system import DIALOG_MARGINS
+from ui.design_system import DIALOG_MARGINS, TextRoles
 from ui.i18n import (
     available_languages,
     current_language,
@@ -70,6 +76,7 @@ from ui.keyboard_navigation import set_single_default
 from ui.performance_settings import PerformanceSettingsTab
 from ui.shortcut_manager import ShortcutManager
 from ui.shortcuts_editor import ShortcutsEditor
+from ui.theme import set_role
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +197,8 @@ class PreferencesDialog(QDialog):
     performance_changed = Signal(str)
     preview_quality_changed = Signal(str)
     render_quality_changed = Signal(str)
+    update_check_changed = Signal(bool)
+    update_prereleases_changed = Signal(bool)
     restore_defaults_requested = Signal()
 
     def __init__(
@@ -199,6 +208,8 @@ class PreferencesDialog(QDialog):
         current_performance: str = "auto",
         current_preview_quality: str = "auto",
         current_render_quality: str = "standard",
+        current_check_updates: bool = DEFAULT_CHECK_UPDATES,
+        current_include_prereleases: bool = DEFAULT_INCLUDE_PRERELEASES,
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
         performance_host=None,
@@ -222,6 +233,8 @@ class PreferencesDialog(QDialog):
         self.current_performance = current_performance
         self.current_preview_quality = current_preview_quality
         self.current_render_quality = current_render_quality
+        self.current_check_updates = bool(current_check_updates)
+        self.current_include_prereleases = bool(current_include_prereleases)
         self.setModal(True)
         self.setMinimumWidth(360)
         # Le dialogue est détruit à sa fermeture : ``show_preferences``
@@ -282,6 +295,7 @@ class PreferencesDialog(QDialog):
 
         for choice in _CHOICE_GROUPS:
             layout.addWidget(self._build_choice_group(choice))
+        layout.addWidget(self._build_updates_group())
 
         # ----- Bouton "Restaurer les réglages par défaut" -----------------
         actions_row = QHBoxLayout()
@@ -357,6 +371,35 @@ class PreferencesDialog(QDialog):
         self._group_boxes[choice.key] = box
         return box
 
+    def _build_updates_group(self) -> QGroupBox:
+        """Groupe « Mises à jour » : deux cases (appliquées tout de suite) et la version installée."""
+        self.updates_box = QGroupBox()
+        box_layout = QVBoxLayout(self.updates_box)
+        box_layout.setSpacing(6)
+        box_layout.setContentsMargins(14, 12, 14, 12)
+        self.check_updates_box = QCheckBox()
+        self.check_updates_box.setChecked(self.current_check_updates)
+        self.check_updates_box.toggled.connect(self._on_check_updates_toggled)
+        self.prereleases_box = QCheckBox()
+        self.prereleases_box.setChecked(self.current_include_prereleases)
+        self.prereleases_box.toggled.connect(self._on_prereleases_toggled)
+        self.updates_note = QLabel()
+        self.updates_note.setWordWrap(True)
+        set_role(self.updates_note, TextRoles.label_secondary)
+        for widget in (self.check_updates_box, self.prereleases_box, self.updates_note):
+            box_layout.addWidget(widget)
+        return self.updates_box
+
+    def _on_check_updates_toggled(self, checked: bool) -> None:
+        if bool(checked) != self.current_check_updates:
+            self.current_check_updates = bool(checked)
+            self.update_check_changed.emit(self.current_check_updates)
+
+    def _on_prereleases_toggled(self, checked: bool) -> None:
+        if bool(checked) != self.current_include_prereleases:
+            self.current_include_prereleases = bool(checked)
+            self.update_prereleases_changed.emit(self.current_include_prereleases)
+
     def _default_for(self, choice: _ChoiceGroup) -> str:
         """Valeur de repli d'un groupe : défaut de :mod:`core.user_settings`.
 
@@ -408,6 +451,10 @@ class PreferencesDialog(QDialog):
                 self.shortcuts_editor.retranslate()
             if self.performance_tab is not None:
                 self.performance_tab.retranslate()
+        self.updates_box.setTitle(translate("prefs.updates"))
+        self.check_updates_box.setText(translate("prefs.updates.check"))
+        self.prereleases_box.setText(translate("prefs.updates.prereleases"))
+        self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
         self.restore_button.setText(translate("prefs.restore_defaults"))
         self.close_button.setText(translate("prefs.close"))
 
@@ -520,4 +567,11 @@ class PreferencesDialog(QDialog):
             buttons = getattr(self, choice.buttons_attribute)
             buttons[code].setChecked(True)
             setattr(self, choice.current_attribute, code)
+        # Les cases suivent sans réémettre : ``restore_defaults_requested`` applique tout d'un coup.
+        for box, value, attribute in (
+            (self.check_updates_box, DEFAULT_CHECK_UPDATES, "current_check_updates"),
+            (self.prereleases_box, DEFAULT_INCLUDE_PRERELEASES, "current_include_prereleases"),
+        ):
+            setattr(self, attribute, value)
+            box.setChecked(value)
         self.restore_defaults_requested.emit()

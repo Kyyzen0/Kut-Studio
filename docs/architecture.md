@@ -14,7 +14,8 @@ Chaque ligne du tableau ci-dessous dit où est cette source et quel test la gard
  ui/                       PySide6 : fenêtre, panneaux, thème, i18n. Ne contient aucune règle de montage.
    main_window.py          assemble des mixins (ui/main_window_mixins/*) : un mixin = un domaine de la fenêtre
  core/                     logique pure : modèle, édition, plan de rendu, graphe FFmpeg, caches, tracking…
-   (aucun import de ui/)   testable sans fenêtre ; Qt n'y entre que pour QProcess, signaux et le rasteriseur
+   (aucun import de ui/)   testable sans fenêtre ; Qt n'y entre que pour QProcess, signaux, le rasteriseur et
+                           le réseau des mises à jour (QNetworkAccessManager, core/update_service.py)
  main.py                   point d'entrée : journal de diagnostic, QApplication, --smoke-test
 ```
 
@@ -80,6 +81,7 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
 | Préférences utilisateur | `core/user_settings.py`, **hors** du `.kut` | fenêtre, préférences | `test_user_settings.py` |
 | Annuler / rétablir | `ProjectHistory` (`core/edit_history.py`) : instantanés du projet, `_saved_index` pour l'état « enregistré » | barre du haut, titre, fermeture | `test_edit_history.py`, `test_unsaved_changes_prompt.py` |
 | Journal d'erreurs | `core/diagnostics_log.py` (`user_log_dir()`) | `main.py`, `sys.excepthook`, threads | `test_diagnostics_log.py` |
+| Version de l'application, convention des releases | `core/app_version.py` (`APP_VERSION`, SemVer, comparée par `core/versioning.py`) ; noms des paquets, cibles et `SHA256SUMS.txt` dans `core/release_assets.py` ([updates.md](updates.md)) | recherche de mises à jour, À propos, `build.py` (`Info.plist`), `tools/release` (tag, archives, empreintes) | `test_versioning.py`, `test_release_assets.py`, `test_release_tools.py`, `test_release_workflow.py` (le tag doit égaler `APP_VERSION`) |
 
 ## Politique d'erreurs
 

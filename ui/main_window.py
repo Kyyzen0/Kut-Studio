@@ -101,6 +101,7 @@ from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
+from ui.main_window_mixins.updates import UpdatesMixin
 from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
@@ -130,6 +131,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    UpdatesMixin,
     HardwarePreviewMixin,
     TrackingMixin,
     TimeEditingMixin,
@@ -195,6 +197,8 @@ class MainWindow(
         # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
         self._init_hardware_preview(loaded_settings)
         self._init_animation()
+        # Mises à jour : préférences lues tôt (l'instantané des préférences les réécrit) ; aucun réseau ici.
+        self._init_updates(loaded_settings)
         self._timeline_index = None
         self._timeline_index_project_id: int | None = None
         self._autosave = AutosaveCoordinator()
@@ -890,6 +894,7 @@ class MainWindow(
             ("aperçu matériel", self._shutdown_hardware_preview),
             ("pompe d'aperçu", self._stop_preview_pump),
             ("proxies", shutdown_proxies),
+            ("mises à jour", self._shutdown_updates),
             ("espaces de travail", lambda: call("workspace", "shutdown")),
             ("minuteur timeline", lambda: stop_timer("timeline_timer")),
             ("enregistrement audio", stop_recording),
@@ -1089,6 +1094,8 @@ class MainWindow(
         self.reset_layout_button = layout_btn
         layout_btn.clicked.connect(self.workspace.reset_layout)
         layout.addWidget(layout_btn)
+
+        layout.addWidget(self._build_update_notice())
 
         settings_btn = IconButton(
             icon=IconName.MENU,
@@ -1538,6 +1545,18 @@ class MainWindow(
         self.diagnostics_action.setCheckable(True)
         self.diagnostics_action.toggled.connect(self.set_diagnostics_visible)
         window_menu.addAction(self.diagnostics_action)
+
+        # Aide : mises à jour et version installée.
+        help_menu = QMenu(i18n.translate("menu.help"), self)
+        help_menu.setObjectName("help_menu")
+        self.check_updates_action = self._labelled_action("update.menu.check")
+        self.check_updates_action.triggered.connect(lambda _checked=False: self.check_for_updates())
+        help_menu.addAction(self.check_updates_action)
+        help_menu.addSeparator()
+        self.about_action = self._labelled_action("update.menu.about")
+        self.about_action.triggered.connect(lambda _checked=False: self.show_about())
+        help_menu.addAction(self.about_action)
+        menu_bar.addMenu(help_menu)
 
     def _labelled_action(self, text_key: str) -> QAction:
         """``QAction`` dont le libellé suit la langue (retraduite à chaud)."""
@@ -2190,6 +2209,7 @@ class MainWindow(
         self.export_button.setText(" " + i18n.translate("topbar.export"))
         for button, key in zip(self.top_nav_buttons, self._TOP_NAV_KEYS):
             button.setText(i18n.translate(key))
+        self._retranslate_update_notice()
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:

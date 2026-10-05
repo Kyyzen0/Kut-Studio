@@ -36,6 +36,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - ⚡ **Performance layer** — media proxies for preview (export always uses the originals), a unified cache with disk budget and purge, smart prefetching, timeline indexes for 10,000-clip projects and an adaptive *Auto* preview quality. See [docs/performance.md](docs/performance.md).
 - 🛡️ **Reliability** — Asks before discarding unsaved work, refuses damaged or non-finite `.kut` files with a clear message, tells you in the status bar when an edit is refused, writes uncaught errors to a rotating diagnostic log, and keeps preview, scopes and export on the same render graph. See [docs/architecture.md](docs/architecture.md) and [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Workspace** — Dockable panels and saved workspaces, preferences, dark theme, and French / English / Spanish interface.
+- 🔄 **Updates** — Checks the numbered GitHub Releases at startup (at most once a day, silent when there is nothing new, can be turned off) and on demand (*Help › Check for updates…*); shows the release notes, downloads the package of your exact system and architecture with progress and cancel, verifies its size and SHA-256 before offering it, and never replaces the running app (assisted install after a normal, cancellable quit). See [docs/updates.md](docs/updates.md).
 - ⌨️ **Keyboard shortcuts** — Playback, tools, snapping, markers and zoom (see below).
 
 ## 🧰 Tech stack
@@ -107,6 +108,15 @@ The build creates a windowed `Kut-Studio` application in `dist/`.
 
 PyInstaller builds are native: run the command separately on macOS, Windows
 and Linux. The CI workflow does this automatically on all three systems.
+The version comes from `core/app_version.py` (single source).
+
+**Releases.** Pushing a tag `vX.Y.Z` equal to `core/app_version.py` runs
+`.github/workflows/release.yml`: tests, native builds, conventional archives
+(`Kut-Studio-<version>-<system>-<arch>.zip|tar.gz`), `SHA256SUMS.txt`, then a
+GitHub release. macOS packages are signed with a Developer ID and notarized only
+when the signing secrets are configured; otherwise the release notes say clearly
+that they are not notarized. A manual run builds everything without publishing.
+Procedure and secrets: [docs/updates.md](docs/updates.md).
 
 To embed local FFmpeg binaries in a build, set `KUT_STUDIO_FFMPEG_DIR` to a
 folder containing `ffmpeg` and `ffprobe` (`.exe` on Windows) before running
@@ -154,7 +164,7 @@ Kut-Studio/
 ├── ui/                  # PySide6 interface: main window, panels, theme,
 │   └── workspace/       # i18n, icons; dockable workspace manager
 ├── tests/               # pytest suite
-├── tools/               # Developer tools (UI capture, perf benchmarks)
+├── tools/               # Developer tools (UI capture, perf benchmarks, release packaging)
 ├── docs/                # Feature docs, architecture, stabilization report
 ├── .github/workflows/   # CI: macOS, Windows, Linux
 └── assets/              # Bundled assets
@@ -237,7 +247,7 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 - Open items from the stabilization pass: see [docs/stabilization-report.md](docs/stabilization-report.md)
 - More GPU effects (LUTs, colour grading, scopes) on top of the GPU preview
 - Preview and timeline performance on large projects
-- Signed installers and automated releases
+- Windows code signing (Authenticode) and a reliable automatic installation of updates (numbered releases, macOS signing / notarization when secrets are configured and verified update downloads are in place: [docs/updates.md](docs/updates.md))
 - Motion graphics: per-character text animation, animated colors and mask vertices, effects inside groups
 - Optical flow, next steps (the backend interface is ready, nothing else is started): Metal / CUDA / Vulkan / OpenCL / CoreML backends, neural interpolation, real-time blending and flow in the GPU monitor, motion blur and stabilisation built on the same flow. See [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
 - Multicam, next steps (the architecture leaves room, nothing is started): automatic multicam proxies, 16+ angles with a tuned grid, remote cameras and live capture, LTC synchronization, advanced waveform fingerprints, collaboration. See [docs/multicam.md](docs/multicam.md#architecture-future).
@@ -279,6 +289,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - ⚡ **Couche de performance** — proxies média pour l’aperçu (l’export utilise toujours les originaux), cache unifié avec budget disque et purge, préchargement intelligent, index de timeline pour des projets de 10 000 clips et qualité d’aperçu *Auto* adaptative. Voir [docs/performance.md](docs/performance.md).
 - 🛡️ **Fiabilité** — Demande avant d’abandonner un travail non enregistré, refuse un `.kut` abîmé ou contenant des valeurs non finies avec un message clair, dit dans la barre d’état quand une édition est refusée, écrit les erreurs non rattrapées dans un journal tournant, et garde aperçu, scopes et export sur le même graphe de rendu. Voir [docs/architecture.md](docs/architecture.md) et [docs/stabilization-report.md](docs/stabilization-report.md).
 - 🖥️ **Espace de travail** — Panneaux ancrables et espaces de travail enregistrés, préférences, thème sombre et interface en français / anglais / espagnol.
+- 🔄 **Mises à jour** — Consulte les versions numérotées de GitHub Releases au démarrage (une fois par jour au plus, en silence s’il n’y a rien de neuf, désactivable) et à la demande (*Aide › Rechercher des mises à jour…*) ; affiche les notes de publication, télécharge le paquet de votre système et de votre architecture exacts avec progression et annulation, vérifie sa taille et son SHA-256 avant de le proposer, et ne remplace jamais l’application en cours d’exécution (installation assistée après une fermeture normale, annulable). Voir [docs/updates.md](docs/updates.md).
 - ⌨️ **Raccourcis clavier** — Lecture, outils, snap, marqueurs et zoom (voir plus bas).
 
 ## 🧰 Stack technique
@@ -351,6 +362,15 @@ Le build produit une application graphique `Kut-Studio` dans `dist/`.
 
 Un build PyInstaller est natif : la commande doit être exécutée séparément
 sur macOS, Windows et Linux. La CI le fait automatiquement sur les trois OS.
+La version vient de `core/app_version.py` (source unique).
+
+**Releases.** Pousser un tag `vX.Y.Z` égal à `core/app_version.py` lance
+`.github/workflows/release.yml` : tests, builds natifs, archives conventionnelles
+(`Kut-Studio-<version>-<système>-<arch>.zip|tar.gz`), `SHA256SUMS.txt`, puis une
+release GitHub. Les paquets macOS ne sont signés Developer ID et notarisés que si
+les secrets de signature sont configurés ; sinon les notes de la release disent
+clairement qu’ils ne sont pas notarisés. Un lancement manuel construit tout sans
+rien publier. Procédure et secrets : [docs/updates.md](docs/updates.md).
 
 Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
 contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
@@ -436,7 +456,7 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 - Points ouverts de la phase de stabilisation : voir [docs/stabilization-report.md](docs/stabilization-report.md)
 - Plus d'effets sur GPU (LUT, étalonnage, scopes) au-dessus de l'aperçu GPU (voir `docs/gpu-preview.md`)
 - Performances de l’aperçu et de la timeline sur les gros projets
-- Installateurs signés et publications automatisées
+- Signature du code Windows (Authenticode) et installation automatique fiable des mises à jour (releases numérotées, signature / notarisation macOS quand les secrets sont configurés et téléchargement vérifié des mises à jour sont en place : [docs/updates.md](docs/updates.md))
 - Motion graphics : animation caractère par caractère, couleurs et sommets de masque animés, effets à l'intérieur des groupes
 - Flux optique, suite (l’interface de backend est prête, rien d’autre n’est commencé) : backends Metal / CUDA / Vulkan / OpenCL / CoreML, interpolation neuronale, mélange et flux en temps réel dans le moniteur GPU, flou de mouvement et stabilisation fondés sur le même flux. Voir [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
 - Multicam, suite (l'architecture laisse la place, rien n'est commencé) : proxys Multicam automatiques, 16 angles et plus avec une grille réglée, caméras distantes et capture en direct, synchronisation LTC, empreintes sonores avancées, collaboration. Voir [docs/multicam.md](docs/multicam.md#architecture-future).

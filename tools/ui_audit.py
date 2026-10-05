@@ -391,6 +391,7 @@ def isolate_user_config(monkeypatch=None) -> Path:
         "KUT_STUDIO_CACHE_DIR": str(folder / "cache"),
         "KUT_STUDIO_PROXY_DIR": str(folder / "proxies"),
         "KUT_STUDIO_HARDWARE_ENCODING": "off",              # pas de détection GPU réelle : la même fenêtre sur toute machine
+        "KUT_STUDIO_UPDATE_CHECK": "off",                   # aucune recherche de mise à jour vers GitHub
     }
     for name, value in values.items():
         if monkeypatch is not None:

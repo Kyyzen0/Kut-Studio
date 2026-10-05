@@ -160,6 +160,10 @@ VALID_FLOW_BACKENDS: tuple[str, ...] = ("auto", "cpu", "gpu")
 DEFAULT_FLOW_BACKEND: str = "auto"
 DEFAULT_TIME_RIPPLE_TIMELINE: bool = False
 """Une édition de vitesse garde la portion de média (défaut) ou la durée sur la timeline."""
+DEFAULT_CHECK_UPDATES: bool = True
+"""Recherche automatique des mises à jour au démarrage (au plus une fois par jour, voir :mod:`core.updates`)."""
+DEFAULT_INCLUDE_PRERELEASES: bool = False
+"""Une version stable ne propose pas de préversion, sauf demande explicite."""
 
 
 def _coerce_proxy_profile(value: object) -> str:
@@ -210,6 +214,23 @@ def _coerce_cache_max_gb(value: object) -> float:
     return max(MIN_CACHE_MAX_GB, min(MAX_CACHE_MAX_GB, number))
 
 
+def _coerce_timestamp(value: object) -> float:
+    """Horodatage (secondes) ; absent, négatif ou corrompu → 0 (« jamais »)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")) or number < 0:
+        return 0.0
+    return number
+
+
+def _coerce_skipped_version(value: object) -> str:
+    """Version ignorée : une version SemVer valide, ou ``""`` (aucune)."""
+    from .updates import coerce_skipped_version
+
+    return coerce_skipped_version(value)
+
+
 def _coerce_shortcuts(value: object) -> dict[str, list[str]]:
     """Filtre les raccourcis relus du disque.
 
@@ -245,6 +266,11 @@ class UserSettings:
         preview_backend: rendu du moniteur temps réel (``auto``, ``cpu``, ``gpu``).
         flow_backend: calcul du flux optique pour le rendu fidèle et l'export (``auto``, ``cpu``, ``gpu``).
         time_ripple_timeline: une édition de vitesse garde la durée sur la timeline (sinon la portion de média).
+        check_updates: recherche des mises à jour au démarrage (au plus une fois par jour).
+        include_prereleases: propose aussi les préversions (bêta, rc).
+        skipped_update_version: version que l'utilisateur a choisi d'ignorer (``""`` : aucune) ; seule la
+            vérification automatique la tait, une recherche manuelle la montre toujours.
+        last_update_check: heure (secondes depuis l'epoch) de la dernière recherche réussie, 0 si jamais.
         cache_max_gb: budget disque global des caches, en Go.
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
@@ -276,6 +302,11 @@ class UserSettings:
     preview_backend: str = DEFAULT_PREVIEW_BACKEND
     flow_backend: str = DEFAULT_FLOW_BACKEND
     time_ripple_timeline: bool = DEFAULT_TIME_RIPPLE_TIMELINE
+    # --- Mises à jour (absentes des fichiers antérieurs : défauts) ---
+    check_updates: bool = DEFAULT_CHECK_UPDATES
+    include_prereleases: bool = DEFAULT_INCLUDE_PRERELEASES
+    skipped_update_version: str = ""
+    last_update_check: float = 0.0
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -450,6 +481,10 @@ def load_user_settings(
         preview_backend=_coerce_preview_backend(data.get("preview_backend")),
         flow_backend=_coerce_flow_backend(data.get("flow_backend")),
         time_ripple_timeline=_coerce_bool(data.get("time_ripple_timeline", DEFAULT_TIME_RIPPLE_TIMELINE)),
+        check_updates=_coerce_bool(data.get("check_updates", DEFAULT_CHECK_UPDATES)),
+        include_prereleases=_coerce_bool(data.get("include_prereleases", DEFAULT_INCLUDE_PRERELEASES)),
+        skipped_update_version=_coerce_skipped_version(data.get("skipped_update_version")),
+        last_update_check=_coerce_timestamp(data.get("last_update_check")),
     )
 
 
@@ -503,6 +538,10 @@ def save_user_settings(
             preview_backend=_coerce_preview_backend(settings.preview_backend),
             flow_backend=_coerce_flow_backend(settings.flow_backend),
             time_ripple_timeline=_coerce_bool(settings.time_ripple_timeline),
+            check_updates=_coerce_bool(settings.check_updates),
+            include_prereleases=_coerce_bool(settings.include_prereleases),
+            skipped_update_version=_coerce_skipped_version(settings.skipped_update_version),
+            last_update_check=_coerce_timestamp(settings.last_update_check),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
@@ -528,6 +567,8 @@ def save_user_settings(
 
 __all__ = [
     "DEFAULT_CACHE_MAX_GB",
+    "DEFAULT_CHECK_UPDATES",
+    "DEFAULT_INCLUDE_PRERELEASES",
     "DEFAULT_DECODE_MODE",
     "DEFAULT_FLOW_BACKEND",
     "DEFAULT_TIME_RIPPLE_TIMELINE",
