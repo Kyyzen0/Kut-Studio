@@ -11,6 +11,7 @@ import hashlib
 import json
 import sys
 import time
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QByteArray, QObject, Signal
@@ -224,6 +225,33 @@ def test_a_verified_download_is_renamed_marked_and_reported(qtbot, server, clien
         assert result.marked
         assert macos_extended_attribute(result.path, QUARANTINE_ATTRIBUTE).startswith(b"0081;")
     assert not downloader.busy
+
+
+def test_a_package_the_system_refuses_to_mark_is_refused(qtbot, server, client, tmp_path, monkeypatch):
+    """macOS / Windows : sans marque « téléchargé d'Internet », Gatekeeper / SmartScreen ne contrôleraient rien."""
+    marked: list[str] = []
+
+    def refuse(path, *, url):
+        marked.append(Path(path).name)
+        return False
+
+    monkeypatch.setattr(update_service, "mark_as_downloaded", refuse)
+    monkeypatch.setattr(update_service, "download_mark_expected", lambda: True)
+    _serve_package(server)
+    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    assert result.error.kind is UpdateErrorKind.MARK_FAILED and result.path is None
+    assert marked == [f"{PACKAGE}.part"], "la marque est posée avant le renommage, sur le fichier partiel"
+    assert _left(tmp_path) == [], "ni paquet ni fichier partiel"
+
+
+def test_where_the_system_has_no_mark_a_verified_package_is_offered(qtbot, server, client, tmp_path, monkeypatch):
+    """Linux : pas de marque système, rien n'est exigé."""
+    monkeypatch.setattr(update_service, "mark_as_downloaded", lambda path, *, url: False)
+    monkeypatch.setattr(update_service, "download_mark_expected", lambda: False)
+    _serve_package(server)
+    result = _download(qtbot, UpdateDownloader(client, directory=tmp_path), _offer(server))
+    assert result.error is None and not result.marked
+    assert _left(tmp_path) == [PACKAGE]
 
 
 def test_a_wrong_checksum_deletes_the_file_and_never_offers_it(qtbot, server, client, tmp_path):

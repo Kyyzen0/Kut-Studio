@@ -301,6 +301,26 @@ def test_closing_the_dialog_during_a_check_cancels_it_quietly(qtbot, monkeypatch
     assert not window._update_dialog.isVisible()
 
 
+def test_closing_the_dialog_while_an_automatic_check_is_in_flight_does_not_reopen_it(qtbot, monkeypatch, server,
+                                                                                     tmp_path):
+    """Demande manuelle derrière une recherche automatique, puis fermeture : rien ne repart, rien ne se rouvre."""
+    serve_releases(server, REPOSITORY, [_publish(server)], delay=1.0)
+    window = _window_for(qtbot, monkeypatch, server, tmp_path)
+    checker, _downloader = window._update_services()
+    with qtbot.waitSignal(checker.finished, timeout=8000) as blocker:
+        window._start_update_check(CheckMode.AUTOMATIC)
+        window.check_for_updates()                     # en attente derrière la recherche automatique
+        assert window._update_manual_pending
+        window._update_dialog.reject()                 # l'utilisateur ferme la fenêtre
+    assert blocker.args[0].mode is CheckMode.AUTOMATIC
+    assert blocker.args[0].error.kind is UpdateErrorKind.CANCELLED
+    assert not checker.busy, "aucune recherche manuelle relancée"
+    assert not window._update_manual_pending
+    qtbot.wait(200)
+    assert not window._update_dialog.isVisible()
+    assert len(server.requests) == 1
+
+
 def test_the_cancel_button_during_a_check_closes_the_dialog(qtbot, monkeypatch, server, tmp_path):
     serve_releases(server, REPOSITORY, [_publish(server)], delay=1.0)
     window = _window_for(qtbot, monkeypatch, server, tmp_path)

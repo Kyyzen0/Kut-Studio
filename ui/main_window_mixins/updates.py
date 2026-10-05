@@ -170,7 +170,10 @@ class UpdatesMixin:
             return
         if self._update_manual_pending and result.mode is CheckMode.AUTOMATIC:
             self._update_manual_pending = False
-            self._start_update_check(CheckMode.MANUAL)
+            dialog = self._update_dialog
+            # Seulement si l'utilisateur attend toujours : fermer la fenêtre a retiré la demande manuelle.
+            if dialog is not None and dialog.isVisible() and dialog.state is UpdateDialogState.CHECKING:
+                self._start_update_check(CheckMode.MANUAL)
             return
         if result.error is None:
             self._update_last_check = result.checked_at
@@ -255,6 +258,8 @@ class UpdatesMixin:
             _open_url(offer.release.page_url)
 
     def _on_update_cancel(self) -> None:
+        # Une recherche manuelle en attente derrière une recherche automatique est abandonnée avec elle.
+        self._update_manual_pending = False
         checker, downloader = self._update_checker, self._update_downloader
         if checker is not None:
             checker.cancel()

@@ -27,6 +27,7 @@ from core.updates import (
     auto_check_due,
     automatic_checks_allowed,
     coerce_skipped_version,
+    download_mark_expected,
     evaluate_releases,
     expected_checksum,
     http_failure,
@@ -464,6 +465,12 @@ def test_a_detached_or_damaged_git_directory_is_handled(tmp_path):
 def test_the_marks_have_the_formats_browsers_write():
     assert quarantine_value(0x5F000000) == b"0081;5f000000;Kut-Studio;"
     assert zone_identifier_text("https://x/y.zip") == "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://x/y.zip\r\n"
+
+
+@pytest.mark.parametrize("platform_name,expected", [("darwin", True), ("win32", True), ("linux", False),
+                                                    ("freebsd14", False)])
+def test_a_download_mark_is_required_where_the_system_checks_it(platform_name, expected):
+    assert download_mark_expected(platform_name) is expected
 
 
 def test_linux_has_no_download_mark(tmp_path):

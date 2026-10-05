@@ -39,6 +39,7 @@ from .updates import (
     UpdateError,
     UpdateErrorKind,
     UpdateOffer,
+    download_mark_expected,
     evaluate_releases,
     expected_checksum,
     http_failure,
@@ -470,8 +471,9 @@ class UpdateDownloader(QObject):
     """Télécharge le paquet d'une offre, le vérifie, puis seulement le rend disponible.
 
     Étapes : ``SHA256SUMS.txt`` → empreinte attendue (et cohérence avec celle de GitHub) → paquet dans
-    ``<nom>.part`` avec empreinte au fil de l'eau → taille et SHA-256 → renommage atomique → marque « téléchargé
-    d'Internet ». ``progress(reçus, total)`` pendant le paquet, puis ``finished(DownloadResult)``.
+    ``<nom>.part`` avec empreinte au fil de l'eau → taille et SHA-256 → marque « téléchargé d'Internet » (refus si
+    macOS ou Windows ne l'acceptent pas) → renommage atomique. ``progress(reçus, total)`` pendant le paquet, puis
+    ``finished(DownloadResult)``.
     """
 
     progress = Signal(object, object)
@@ -569,6 +571,12 @@ class UpdateDownloader(QObject):
         try:
             verify_package(size=transfer.size, sha256=transfer.sha256, package=offer.package,
                            expected_sha256=self._expected)
+            # Marque « téléchargé d'Internet » posée sur le .part, AVANT le renommage (l'attribut et le flux suivent
+            # le fichier) : le nom définitif n'apparaît que pour un paquet vérifié ET marqué. Là où le système
+            # l'attend, un échec refuse le paquet : il échapperait sinon au contrôle de Gatekeeper / SmartScreen.
+            marked = mark_as_downloaded(transfer.path, url=offer.package.url)
+            if not marked and download_mark_expected():
+                raise UpdateError(UpdateErrorKind.MARK_FAILED, f"marque système refusée pour {transfer.path}")
             final = self.directory / offer.package.name
             os.replace(transfer.path, final)
         except UpdateError as error:
@@ -579,7 +587,6 @@ class UpdateDownloader(QObject):
             _remove_quietly(transfer.path)
             self._fail(UpdateError(UpdateErrorKind.DISK, str(exc)))
             return
-        marked = mark_as_downloaded(final, url=offer.package.url)
         LOGGER.info("Mise à jour %s téléchargée et vérifiée : %s (sha256 %s, marque système : %s)",
                     offer.version, final, transfer.sha256, marked)
         self._offer = None

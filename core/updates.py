@@ -79,6 +79,7 @@ class UpdateErrorKind(str, Enum):
     CHECKSUM_MISSING = "checksum_missing"
     NO_PACKAGE = "no_package"
     DISK = "disk"
+    MARK_FAILED = "mark_failed"
     UNSUPPORTED = "unsupported"
 
 
@@ -467,6 +468,15 @@ def _set_macos_quarantine(path: str | os.PathLike[str], value: bytes) -> bool:
     return setxattr(os.fsencode(path), QUARANTINE_ATTRIBUTE.encode("ascii"), value, len(value), 0, 0) == 0
 
 
+def download_mark_expected(platform_name: str | None = None) -> bool:
+    """Le système attend-il une marque « téléchargé d'Internet » (macOS, Windows) ? Linux n'en a pas.
+
+    Là où elle est attendue, un paquet qui ne peut pas la recevoir est **refusé** : sans elle, Gatekeeper ou
+    SmartScreen ne contrôleraient pas sa signature, et l'empreinte seule ne prouve pas qui l'a publié.
+    """
+    return normalize_system(platform_name or sys.platform) in (OperatingSystem.MACOS, OperatingSystem.WINDOWS)
+
+
 def mark_as_downloaded(
     path: str | os.PathLike[str],
     *,
@@ -607,6 +617,7 @@ __all__ = [
     "auto_check_due",
     "automatic_checks_allowed",
     "coerce_skipped_version",
+    "download_mark_expected",
     "download_prefix",
     "evaluate_releases",
     "expected_checksum",

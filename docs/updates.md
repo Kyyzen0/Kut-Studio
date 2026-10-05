@@ -38,6 +38,10 @@ qu'annonce l'API et son SHA-256 est calculé au fil de l'eau. Il n'est renommé 
 2. son **SHA-256** est celui de `SHA256SUMS.txt` publié dans la release ;
 3. quand l'API fournit l'empreinte qu'elle a calculée à l'envoi (champ `digest`), celle-ci est identique aux deux autres
    (une contradiction arrête tout, avant même de télécharger le paquet).
+4. sous macOS et Windows, le système a accepté la marque « téléchargé d'Internet » (voir plus bas), posée sur le `.part`
+   avant le renommage. Si elle est refusée (système de fichiers sans attributs étendus ni flux alternatifs), le paquet
+   est **refusé** : il échapperait sinon au contrôle de Gatekeeper ou de SmartScreen. Linux n'a pas de marque : rien
+   n'est exigé.
 
 Sinon le fichier est supprimé, jamais ouvert. Une release sans `SHA256SUMS.txt`, ou qui n'y liste pas le paquet, n'est
 pas téléchargeable depuis l'application (seule la page de la version est proposée).

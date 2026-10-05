@@ -347,6 +347,14 @@ UPDATES_TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The file could not be saved to disk (free space or permissions).",
         "es": "No se pudo guardar el archivo en el disco (espacio libre o permisos).",
     },
+    "update.error.mark_failed": {
+        "fr": "Le système a refusé la marque « téléchargé d'Internet » sur ce fichier : sans elle, sa signature ne "
+              "serait pas contrôlée à l'ouverture. Le fichier a été supprimé.",
+        "en": "The system refused the “downloaded from the Internet” mark on this file: without it, its signature "
+              "would not be checked when opened. The file was deleted.",
+        "es": "El sistema rechazó la marca «descargado de Internet» en este archivo: sin ella, su firma no se "
+              "comprobaría al abrirlo. El archivo se eliminó.",
+    },
     "update.error.unsupported": {
         "fr": "Cette installation ne dispose d'aucun moteur TLS : les connexions sécurisées sont impossibles.",
         "en": "This installation has no TLS backend: secure connections are impossible.",
