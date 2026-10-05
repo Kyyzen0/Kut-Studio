@@ -18,3 +18,16 @@ dist/
 .pytest_cache/
 
 graphify-out/
+
+# Releases : paquets et états produits par tools/release (jamais commités).
+release-assets/
+signing-status/
+release-notes.md
+
+# Secrets de signature : ne JAMAIS les commiter (ils vont dans les secrets GitHub Actions, voir docs/updates.md).
+*.p12
+*.p8
+*.pfx
+*.cer
+*.mobileprovision
+*.keychain-db

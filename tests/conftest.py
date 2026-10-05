@@ -14,6 +14,10 @@ if str(ROOT) not in sys.path:
 
 # The tests build Qt widgets but do not require an on-screen desktop session.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Aucune fenêtre de test ne contacte GitHub : la recherche automatique des mises à jour est coupée pour tout le
+# processus, dès l'import (les fixtures de module créent leurs fenêtres avant les fixtures de fonction). Les tests
+# des mises à jour utilisent un serveur HTTP local ou des réponses simulées.
+os.environ["KUT_STUDIO_UPDATE_CHECK"] = "off"
 
 from tools.ui_audit import ensure_offscreen_fonts  # noqa: E402  (après le réglage du chemin et de la plateforme)
 

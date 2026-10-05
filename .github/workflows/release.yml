@@ -1,0 +1,248 @@
+name: Release
+
+# Publie une version numérotée dans GitHub Releases, la seule source que lit la recherche de mises à jour de
+# l'application (jamais les artefacts temporaires du workflow Multiplatform).
+#
+# * Tag « vX.Y.Z » (ou « vX.Y.Z-beta.N ») poussé : construit, vérifie et publie. Le tag doit être égal à
+#   core/app_version.py, sinon rien n'est construit.
+# * Lancement manuel (workflow_dispatch) : construction d'essai complète, paquets en artefacts, AUCUNE publication.
+#
+# Convention des fichiers (core/release_assets.py) : Kut-Studio-<version>-<système>-<arch>.<zip|tar.gz> et
+# SHA256SUMS.txt. Signature et notarisation macOS seulement si les secrets existent (tools/release/macos_signing.sh) ;
+# sinon le paquet est signé ad hoc et les notes de la release disent clairement qu'il n'est pas notarisé.
+# Procédure et secrets : docs/updates.md.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Tag and version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check the tag against core/app_version.py
+        id: check
+        run: python -m tools.release check-tag --ref "$GITHUB_REF"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon (arm64) ; vérifié par « check-target »
+            target: macos-arm64
+          - os: windows-latest
+            target: windows-x64
+          # Image épinglée : glibc 2.39 (minimum annoncé dans les notes) et le FFmpeg 6.1 sous lequel la suite passe.
+          - os: ubuntu-24.04
+            target: linux-x64
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      KUT_STUDIO_UPDATE_CHECK: "off"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Check the build machine
+        run: python -m tools.release check-target --expect ${{ matrix.target }}
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+
+      - name: Install FFmpeg and Qt runtime (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      # Les mêmes contrôles que la CI : une release ne part que d'un état vert.
+      - name: Lint (ruff)
+        run: python -m ruff check .
+
+      - name: Run test suite
+        run: python -m pytest -q -n auto --timeout=600
+
+      - name: Source UI smoke test
+        run: python main.py --smoke-test
+
+      - name: Import the signing certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: bash tools/release/macos_signing.sh setup
+
+      - name: Build native application
+        run: python build.py
+
+      - name: Built application smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ".\dist\Kut-Studio\Kut-Studio.exe" -ArgumentList "--smoke-test" -Wait -PassThru
+          Write-Host "Exit code: $($process.ExitCode)"
+          exit $process.ExitCode
+
+      - name: Built application smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: ./dist/Kut-Studio/Kut-Studio --smoke-test
+
+      - name: Built application smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: ./dist/Kut-Studio.app/Contents/MacOS/Kut-Studio --smoke-test
+
+      - name: Notarize (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          mkdir -p signing-status
+          bash tools/release/macos_signing.sh notarize dist/Kut-Studio.app signing-status/macos.txt
+
+      - name: Remove the signing keychain (macOS)
+        if: always() && runner.os == 'macOS'
+        run: bash tools/release/macos_signing.sh cleanup
+
+      - name: Package
+        run: python -m tools.release archive --dist dist --out release-assets --version ${{ needs.version.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target }}
+          path: release-assets/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: signing-status
+          path: signing-status/
+          if-no-files-found: error
+
+  checksums:
+    name: Checksums and notes
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: release-assets
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: signing-status
+          path: signing-status
+
+      - name: Write and verify SHA256SUMS.txt
+        run: |
+          python -m tools.release checksums release-assets
+          python -m tools.release verify release-assets --version ${{ needs.version.outputs.version }}
+
+      - name: Release notes header
+        run: |
+          python -m tools.release notes --version ${{ needs.version.outputs.version }} \
+            --signing "$(cat signing-status/macos.txt)" --out release-notes.md
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            release-assets/
+            release-notes.md
+            signing-status/
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub release
+    needs: [version, checksums]
+    if: needs.version.outputs.publish == 'true' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: .
+
+      # Dernière vérification juste avant l'envoi : ce qui est publié est exactement ce qui a été vérifié.
+      - name: Verify the files to publish
+        run: python -m tools.release verify release-assets --version ${{ needs.version.outputs.version }}
+
+      # « gh release create » avec des fichiers crée un brouillon, envoie tout, puis publie : l'application ne voit
+      # jamais une release sans ses paquets ni SHA256SUMS.txt (l'API ne liste pas les brouillons).
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body > generated-notes.md
+          # Pas de valeur par défaut : sans l'état réel de la signature macOS, on ne publie pas.
+          python -m tools.release notes --version "$VERSION" --signing "$(cat signing-status/macos.txt)" \
+            --generated generated-notes.md --out final-notes.md
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          gh release create "$TAG" release-assets/* --verify-tag --title "Kut-Studio $VERSION" \
+            --notes-file final-notes.md "${flags[@]}"

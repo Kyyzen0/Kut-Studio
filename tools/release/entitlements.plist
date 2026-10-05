@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Droits du runtime renforcé (hardened runtime) de Kut-Studio, appliqués seulement à une signature Developer ID
+  (build.py, KUT_STUDIO_CODESIGN_IDENTITY). Aucun n'est utile à une construction ad hoc.
+
+  * audio-input : l'enregistrement de voix off (QtMultimedia) ; sans lui, une application notarisée n'a pas le micro.
+  * allow-unsigned-executable-memory : rappels ctypes / libffi de Python. Prudence assumée : à retirer si une
+    construction notarisée sans ce droit passe le smoke test et l'enregistrement de voix off (non vérifié à ce jour).
+
+  Aucun droit d'exception à la validation des bibliothèques : tous les binaires embarqués sont signés par la même
+  équipe ; FFmpeg est un processus séparé, non chargé dans l'application.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

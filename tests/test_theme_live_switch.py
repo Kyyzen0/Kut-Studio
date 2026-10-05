@@ -37,6 +37,16 @@ REGIONS = {
 }
 
 
+def _colours(pixels: np.ndarray) -> set[tuple[int, ...]]:
+    return {tuple(int(v) for v in colour) for colour in np.unique(pixels.reshape(-1, 3), axis=0)}
+
+
+def _significant_colours(pixels: np.ndarray, minimum: float = 0.01) -> set[tuple[int, ...]]:
+    """Couleurs qui couvrent au moins ``minimum`` de la zone (l'antialiasing des bords reste en dessous)."""
+    colours, counts = np.unique(pixels.reshape(-1, 3), axis=0, return_counts=True)
+    return {tuple(int(v) for v in colour) for colour, count in zip(colours, counts) if count >= minimum * counts.sum()}
+
+
 def _pixels(image: QImage) -> np.ndarray:
     image = image.convertToFormat(QImage.Format_RGBA8888)
     data = np.frombuffer(image.constBits(), np.uint8)
@@ -136,8 +146,10 @@ def test_the_waveform_keeps_the_colours_of_the_target_theme_after_a_live_switch(
     live, fresh = captures[direction]
     band = (slice(*AUDIO_BAND), slice(300, 1400), slice(0, 3))
 
-    def dominant(image):
-        colours, counts = np.unique(image[band].reshape(-1, 3), axis=0, return_counts=True)
-        return {tuple(int(v) for v in colour) for _count, colour in sorted(zip(counts, map(tuple, colours)), reverse=True)[:2]}
-
-    assert dominant(live) == dominant(fresh)
+    # Des **présences**, pas un classement : les deux couleurs les plus fréquentes basculaient avec la hauteur des barres
+    # (barres claires ≈ 18 % de la bande, fond du clip ≈ 13 % : quelques pixels de moins et le fond passe devant). Une fuite
+    # de thème, elle, peint une couleur de l'autre thème, absente de la fenêtre démarrée dans le thème visé.
+    significant_live, significant_fresh = _significant_colours(live[band]), _significant_colours(fresh[band])
+    assert significant_live <= _colours(fresh[band]), f"{direction} : couleurs absentes d'un démarrage à neuf"
+    assert significant_fresh <= _colours(live[band]), f"{direction} : couleurs du thème visé manquantes"
+    assert len(significant_fresh) >= 3, "fond du clip, barres et leur teinte claire : la bande n'est pas vide"

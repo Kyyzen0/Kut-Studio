@@ -52,6 +52,7 @@ class PreferencesMixin:
             scopes_alerts_enabled=scopes_alerts,
             shortcuts=self.shortcuts.overrides(),
             **self._performance_settings_fields(),
+            **self._update_settings_fields(),
         )
 
     def _performance_settings_fields(self) -> dict:
@@ -81,6 +82,8 @@ class PreferencesMixin:
             current_performance=self.runtime.requested_profile,
             current_preview_quality=self.runtime.requested_quality,
             current_render_quality=self._render_quality,
+            current_check_updates=self._update_check_enabled,
+            current_include_prereleases=self._update_include_prereleases,
             shortcut_manager=self.shortcuts,
             performance_host=self,
             parent=self,
@@ -91,6 +94,8 @@ class PreferencesMixin:
         dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
         dialog.render_quality_changed.connect(self.on_render_quality_changed)
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
+        dialog.update_check_changed.connect(self.set_update_check_enabled)
+        dialog.update_prereleases_changed.connect(self.set_update_include_prereleases)
         self._preferences_dialog = dialog
         # « finished » part à la fermeture, avant que WA_DeleteOnClose ne détruise l'objet C++ :
         # attendre le retour d'exec() laisserait une fenêtre où la référence pointe sur un objet mort.
@@ -121,6 +126,9 @@ class PreferencesMixin:
                 proxies_enabled=snapshot.proxies_enabled,
                 proxy_profile=snapshot.proxy_profile,
                 cache_max_gb=snapshot.cache_max_gb,
+                # Mémoire des mises à jour, pas des réglages : la version ignorée et l'heure de la dernière recherche.
+                skipped_update_version=snapshot.skipped_update_version,
+                last_update_check=snapshot.last_update_check,
             )
         )
 
@@ -173,6 +181,7 @@ class PreferencesMixin:
             mixer.set_master(self._master_gain_db, self._master_muted)
         # Proxies et cache (aperçu seulement : l'export lit toujours les originaux).
         self._apply_performance_settings(settings)
+        self._apply_update_settings(settings)
         # Application de la langue.
         if i18n.current_language() != settings.language:
             i18n.set_language(settings.language)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import numpy as np
 import pytest
@@ -208,3 +209,17 @@ def test_promoting_the_same_stream_twice_from_two_writers_keeps_both_writers_fil
     cache.promote_stream(first, "k", {})
     cache.promote_stream(second, "k", {})                                              # ne lève pas : son fichier n'a pas disparu
     assert cache.stream_path("k").read_bytes() == b"b" and not first.exists() and not second.exists()
+
+
+def test_a_purge_removes_a_write_whose_timestamp_is_ahead_of_the_clock(tmp_path):
+    """Sous Windows (Python 3.11), ``time.time()`` est plus grossier que l'horodatage NTFS : un fichier écrit à l'instant
+    peut dater d'« après » ``now``. Une purge emporte tout de même ; seul le nettoyage par âge compare les horloges."""
+    cache = FlowCache(tmp_path / "flow")
+    (tmp_path / "flow").mkdir()
+    ahead = tmp_path / "flow" / ".frames-ahead.789.tmp.mkv"
+    ahead.write_bytes(b"partial")
+    future = time.time() + 60
+    os.utime(ahead, (future, future))
+    assert cache.cleanup_orphans() == 0 and ahead.exists()
+    cache.purge()
+    assert list((tmp_path / "flow").iterdir()) == []
