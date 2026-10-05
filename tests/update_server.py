@@ -9,6 +9,7 @@ n'envoie pas (aucun paquet demandé si l'empreinte manque, par exemple).
 from __future__ import annotations
 
 import socket
+import socketserver
 import threading
 import time
 from dataclasses import dataclass, field
@@ -68,6 +69,13 @@ class _Handler(BaseHTTPRequestHandler):
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
     owner: "UpdateServer"
+
+    def server_bind(self):
+        # ``HTTPServer.server_bind`` appelle ``socket.getfqdn`` : une résolution DNS inverse de 127.0.0.1 qui attendait
+        # ~35 s sur les runners macOS de la CI. Le nom n'est jamais utilisé ici.
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = str(host), port
 
     def handle_error(self, request, client_address):
         return                                           # pas de trace pour une connexion coupée par le client
