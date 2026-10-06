@@ -188,7 +188,7 @@ def _raster_version() -> int:
     return RASTER_VERSION
 
 
-RENDER_ENGINE_VERSION = 7
+RENDER_ENGINE_VERSION = 8
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
@@ -203,7 +203,9 @@ les anciens segments sont ignorés.
 son ; un segment mis en cache avec un Master coupé et l'ancien son (non muet) est ignoré.
 7 : le ducking et l'automation de piste produisent enfin un graphe que FFmpeg accepte (seuil linéaire, attaque et
 relâchement en ms, clé écrêtée à ``reduction_db``, courbe ``gain_at`` en temps du clip, gain linéaire et non des dB lus comme
-un facteur) ; un segment mis en cache avec l'ancien graphe (qui n'a jamais pu être rendu tel quel) est ignoré."""
+un facteur) ; un segment mis en cache avec l'ancien graphe (qui n'a jamais pu être rendu tel quel) est ignoré.
+8 : un effet réglé en pixels (σ du flou) suit la taille de rendu (pixels de sortie par pixel de la séquence) ; un segment
+d'aperçu réduit mis en cache avec un flou deux ou quatre fois trop large est ignoré."""
 
 
 def fingerprint_plan(plan, **kwargs):

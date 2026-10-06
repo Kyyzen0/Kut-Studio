@@ -38,7 +38,7 @@ def _fmt(value: float) -> str:
     return _format_seconds(float(value))
 
 
-def _effect_chain(effects, grade, *, preserve_alpha: bool) -> list[str]:
+def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 1.0) -> list[str]:
     """Filtres des effets puis de l'étalonnage, dans l'ordre de l'export vidéo.
 
     ``preserve_alpha`` : flux RGBA d'un calque. Couleur en ``yuva444p``
@@ -51,7 +51,7 @@ def _effect_chain(effects, grade, *, preserve_alpha: bool) -> list[str]:
 
     chain: list[str] = []
     for effect in effects:
-        text = _build_clip_effect_filters((effect,))
+        text = _build_clip_effect_filters((effect,), pixel_scale)
         if not text:
             continue
         if not preserve_alpha:
@@ -178,7 +178,8 @@ def compose_graphics(
         out = f"{p}mgout{index}"
         if element.kind == "adjustment":
             current = _compose_adjustment(
-                parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested
+                parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested,
+                pixel_scale=_pixel_scale(renderer, plan),
             )
             continue
         ids = element.layer_ids
@@ -191,16 +192,22 @@ def compose_graphics(
             salt=element.kind,
         )
         label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s")
-        chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True)
+        chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True,
+                              pixel_scale=_pixel_scale(renderer, plan))
         label = _apply_chain(parts, label, chain, tag)
         blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested)
         current = out
     return current
 
 
+def _pixel_scale(renderer, plan) -> float:
+    """Pixels du rendu par pixel de la séquence (voir ``_build_clip_effect_filters``)."""
+    return renderer.width / float(max(1, getattr(plan, "width", 0) or renderer.width))
+
+
 def _compose_adjustment(
     parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out,
-    *, nested: bool = False,
+    *, nested: bool = False, pixel_scale: float = 1.0,
 ) -> str:
     clip_id = element.clip_id
     path = write_stream(
@@ -211,7 +218,7 @@ def _compose_adjustment(
         salt="adjustment",
     )
     coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov")
-    chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False)
+    chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False, pixel_scale=pixel_scale)
     if nested:
         # Le dessous est transparent là où la séquence imbriquée est vide : l'ajustement ne doit rien créer
         # à cet endroit (sinon le noir des effets opaques masquerait la piste parente). Sa couverture est

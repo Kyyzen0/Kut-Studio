@@ -1342,6 +1342,8 @@ def _compose_plan_graph(
     video_label = ""
     audio_label = ""
     fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+    # Pixels de sortie par pixel de la séquence (aperçu réduit, export à une autre taille) : les effets en pixels suivent.
+    pixel_scale = width / float(max(1, plan.width or width))
     if add_input is None:
         def add_input(path: str) -> int:
             raise ValueError("Ce graphe n'accepte pas d'entrée supplémentaire.")
@@ -1367,7 +1369,7 @@ def _compose_plan_graph(
                         source=sources.take_video(layer.nested_key),
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
-                        add_input=add_input,
+                        add_input=add_input, pixel_scale=pixel_scale,
                     )
                 )
             else:
@@ -1376,7 +1378,7 @@ def _compose_plan_graph(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
-                        add_input=add_input, prepared=prepared,
+                        add_input=add_input, prepared=prepared, pixel_scale=pixel_scale,
                     )
                 )
 
@@ -1801,6 +1803,7 @@ def _build_layer_filter(
     pad_color: str = "black",
     add_input=None,
     prepared: Mapping[str, PreparedStream] | None = None,
+    pixel_scale: float = 1.0,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -1848,7 +1851,7 @@ def _build_layer_filter(
     flip_filters = _build_flip_filters(transform, kfs)
     rotation_expr = _build_animated_rotation_expr(transform, kfs)
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
-    effect_filters = _build_clip_effect_filters(layer.effects)
+    effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
     # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
@@ -2116,12 +2119,15 @@ def _compute_colorbalance_offsets(
     )
 
 
-def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
+def _build_clip_effect_filters(effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
     Chaque valeur vient du modèle validé : on ne concatène donc jamais
     d'expression fournie par l'utilisateur. Les filtres s'exécutent avant
     l'alpha du calque afin de conserver une composition ``rgba`` fiable.
+
+    ``pixel_scale`` : pixels de sortie par pixel de la séquence. Un réglage en pixels (σ du flou) est donné à la taille
+    de la séquence ; un aperçu à ½ ou un export à une autre résolution le ramène à sa taille, comme le moniteur GPU.
     """
     filters: list[str] = []
     for effect in effects:
@@ -2137,7 +2143,7 @@ def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
             )
         elif effect.type is EffectType.BLUR:
             filters.append(
-                f"gblur=sigma={_format_seconds(params['intensity'])}"
+                f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
             )
         elif effect.type is EffectType.SHARPEN:
             filters.append(
