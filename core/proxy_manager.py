@@ -151,12 +151,14 @@ def run_ffmpeg(
         stderr_chunks: list[bytes] = []
 
         def pump_stdout() -> None:
-            assert process.stdout is not None
+            if process.stdout is None:
+                return
             for raw in iter(process.stdout.readline, b""):
                 lines.put(raw)
 
         def pump_stderr() -> None:
-            assert process.stderr is not None
+            if process.stderr is None:
+                return
             for raw in iter(process.stderr.readline, b""):
                 if sum(len(chunk) for chunk in stderr_chunks) < 20_000:
                     stderr_chunks.append(raw)

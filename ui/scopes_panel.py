@@ -171,7 +171,8 @@ class _ScopeCanvas(QWidget):
 
     def _paint_histogram(self, painter: QPainter, rect, low, high) -> None:
         result = self._result
-        assert result is not None
+        if result is None:  # rien à dessiner : jamais d'exception pendant une peinture
+            return
         span = max(high - low, 1.0)
         # Traces RGB en arrière-plan, luminance au premier plan.
         traces = (
@@ -233,7 +234,8 @@ class _ScopeCanvas(QWidget):
 
     def _paint_waveform(self, painter: QPainter, rect, low, high) -> None:
         result = self._result
-        assert result is not None
+        if result is None:  # rien à dessiner : jamais d'exception pendant une peinture
+            return
         columns = len(result.waveform)
         if columns == 0:
             return
@@ -271,7 +273,8 @@ class _ScopeCanvas(QWidget):
 
     def _paint_parade(self, painter: QPainter, rect, low, high) -> None:
         result = self._result
-        assert result is not None
+        if result is None:  # rien à dessiner : jamais d'exception pendant une peinture
+            return
         columns = len(result.parade)
         if columns == 0:
             return
@@ -313,7 +316,8 @@ class _ScopeCanvas(QWidget):
 
     def _paint_vectorscope(self, painter: QPainter, rect) -> None:
         result = self._result
-        assert result is not None
+        if result is None:  # rien à dessiner : jamais d'exception pendant une peinture
+            return
         bins = len(result.vectorscope)
         if bins == 0:
             return

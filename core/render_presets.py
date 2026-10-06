@@ -165,7 +165,8 @@ def get_preset(preset_id: str) -> RenderPresetSpec | None:
 
 def default_preset() -> RenderPresetSpec:
     spec = get_preset(DEFAULT_PRESET_ID)
-    assert spec is not None
+    if spec is None:  # erreur de programmation : un ``assert`` disparaîtrait sous ``python -O``
+        raise RuntimeError(f"DEFAULT_PRESET_ID absent de _BUILTIN : {DEFAULT_PRESET_ID!r}")
     return spec
 
 
