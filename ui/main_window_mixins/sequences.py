@@ -12,6 +12,8 @@ séquence ouverte.
 
 from __future__ import annotations
 
+import logging
+
 from core.sequence_navigation import SequenceNavigator
 from core.sequences import (
     SequenceError,
@@ -31,6 +33,8 @@ from core.sequences import (
 )
 from core.timeline_evaluator import timeline_duration
 from ui import i18n
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _main_window():
@@ -211,7 +215,10 @@ class SequencesMixin:
             try:
                 engine.cancel_all()  # rendus de la séquence quittée : obsolètes
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation des rendus d'aperçu en échec au changement de séquence : des rendus obsolètes peuvent continuer",
+                    exc_info=True,
+                )
         self.project.active_sequence_id = sequence.id
         target = navigator.playhead_for(sequence.id) if playhead is None else playhead
         self.timeline_panel.set_project(self.project)

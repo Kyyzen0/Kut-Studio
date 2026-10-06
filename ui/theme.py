@@ -29,10 +29,13 @@ La palette fournit deux niveaux de tokens :
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable
 
 from ui.design_system import Radius, Sizes, Spacing, Typography, Weights
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -969,7 +972,10 @@ class ThemeManager:
                 app.setStyleSheet(stylesheet)
                 app.setProperty(marker_name, stylesheet)
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Application de la feuille de style du thème en échec : l'interface garde son apparence précédente",
+                    exc_info=True,
+                )
 
     def set_mode(self, mode: str) -> bool:
         """Change la palette active."""
@@ -1056,7 +1062,10 @@ class ThemeManager:
                 if scheme == QtCore.Qt.ColorScheme.Light:
                     return "light"
         except Exception:
-            pass
+            LOGGER.debug(
+                "Lecture du thème clair / sombre du système en échec : thème sombre par défaut",
+                exc_info=True,
+            )
         return "dark"
 
     def _notify(self) -> None:
@@ -1064,7 +1073,10 @@ class ThemeManager:
             try:
                 callback(self)
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Abonné au thème en échec : changement de thème non transmis à cet abonné (%r)",
+                    callback, exc_info=True,
+                )
 
 
 __all__ = [

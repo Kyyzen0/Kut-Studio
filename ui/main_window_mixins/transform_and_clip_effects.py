@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtWidgets import QMessageBox
 
 from core.timeline_operations import (
@@ -12,6 +14,8 @@ from core.timeline_operations import (
     set_transform_keyframe,
 )
 from ui.i18n import translate
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TransformEffectsMixin:
@@ -208,7 +212,10 @@ class TransformEffectsMixin:
         try:
             self._invalidate_preview_for_clip(clip_id)
         except Exception:
-            pass
+            LOGGER.warning(
+                "Invalidation de l'aperçu en échec après la modification du transform du clip %s : des segments périmés peuvent s'afficher",
+                clip_id, exc_info=True,
+            )
         self._mark_dirty()
 
     def _ensure_transform_session_capture(self) -> None:

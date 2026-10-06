@@ -119,7 +119,10 @@ class HardwarePreviewMixin:
             try:
                 self._sync_preview_to_timeline()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Rafraîchissement de l'aperçu en échec après le choix du rendu : le moniteur garde l'image précédente",
+                    exc_info=True,
+                )
 
     def _on_gpu_ready(self, label: str) -> None:
         self._gpu_device_label = label
@@ -135,7 +138,10 @@ class HardwarePreviewMixin:
         try:
             self.statusBar().showMessage(i18n.translate("preview.gpu_fallback", detail=kind), 6000)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Message de repli GPU dans la barre d'état en échec : repli fait sans avertissement visible",
+                exc_info=True,
+            )
         if not self._gpu_health.disabled and kind == "device_lost":
             # Un périphérique perdu (pilote réinitialisé) peut revenir : un seul nouvel essai.
             QTimer.singleShot(1500, self._apply_preview_backend)
@@ -143,7 +149,10 @@ class HardwarePreviewMixin:
             try:
                 self._sync_preview_to_timeline()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Rafraîchissement de l'aperçu en échec après le repli sur le CPU : le moniteur garde l'image précédente",
+                    exc_info=True,
+                )
 
     def set_preview_backend(self, value: str) -> None:
         """Préférence « Rendu de l'aperçu » (Auto / CPU / GPU), appliquée tout de suite."""
@@ -169,7 +178,10 @@ class HardwarePreviewMixin:
             try:
                 engine.cancel_all()  # les segments en vol suivaient l'ancien réglage
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Annulation des rendus d'aperçu en échec après le changement de décodage : des segments à l'ancien réglage peuvent continuer",
+                    exc_info=True,
+                )
 
     def decode_mode_options(self) -> list[tuple[str, str]]:
         """``(valeur, libellé)`` : Auto, CPU, puis chaque backend **validé** ici."""
@@ -350,21 +362,30 @@ class HardwarePreviewMixin:
             try:
                 self.runtime.cache.clear()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Purge du cache mémoire de l'aperçu en échec sous pression mémoire : mémoire non libérée",
+                    exc_info=True,
+                )
         if actions.reduce_quality:
             try:
                 if self.runtime.requested_quality == "auto":
                     self.runtime.preview.adaptive.force_degrade()
                     self._on_adaptive_quality_changed()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Baisse de la qualité d'aperçu en échec sous pression mémoire : qualité inchangée",
+                    exc_info=True,
+                )
         if actions.disable_gpu and panel is not None and panel.gpu_active:
             panel.disable_gpu()
             self._gpu_health.record("out_of_memory", i18n.translate("gpu.error.memory_pressure"))
         try:
             self.statusBar().showMessage(i18n.translate("preview.memory_pressure"), 6000)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Message de pression mémoire dans la barre d'état en échec : aucun avertissement visible",
+                exc_info=True,
+            )
 
     def _release_gpu_for_project_change(self) -> None:
         """Nouveau projet : aucune texture de l'ancien ne doit survivre."""

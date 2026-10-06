@@ -18,6 +18,8 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QEvent, QObject, QRectF, QSizeF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
@@ -43,6 +45,8 @@ from ui.theme import COLORS, label_style, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
 from ui.i18n import translate
+
+LOGGER = logging.getLogger(__name__)
 
 CANVAS_MARGIN = 12
 """Marge (pixels) entre le cadre de la séquence et les bords du viewer."""
@@ -428,7 +432,10 @@ class PreviewPanel(QWidget):
                 if layout is not None:
                     layout.addWidget(badge, 0, 0, Qt.AlignTop | Qt.AlignHCenter)
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Insertion du badge de rendu dans le moniteur en échec : badge non affiché",
+                    exc_info=True,
+                )
         if computing:
             badge.setText(label or translate("preview.computing"))
             badge.show()
@@ -458,7 +465,10 @@ class PreviewPanel(QWidget):
                 if layout is not None:
                     layout.addWidget(pill, 0, 0, Qt.AlignBottom | Qt.AlignHCenter)
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Insertion de la pastille de cache dans le moniteur en échec : pastille non affichée",
+                    exc_info=True,
+                )
         pill.setText(label or (translate("preview.cached") if cached else ""))
         if label or cached:
             pill.show()
@@ -494,7 +504,7 @@ class PreviewPanel(QWidget):
             self.timecode_label.setText(_format_timecode(current_seconds))
             self.duration_label.setText(_format_duration(total_seconds))
         except Exception:  # pragma: no cover - cosmetic
-            pass
+            LOGGER.debug("Mise à jour du timecode du moniteur en échec : affichage non actualisé", exc_info=True)
 
     # ----- Sous-titre (tâche 24) -------------------------------------
 
@@ -534,7 +544,10 @@ class PreviewPanel(QWidget):
             self.player.stop()
             self.player.setSource(QUrl())
         except Exception:  # pragma: no cover
-            pass
+            LOGGER.debug(
+                "Libération du lecteur du moniteur en échec : le décodeur peut rester attaché au fichier précédent",
+                exc_info=True,
+            )
         if self.gpu_view is not None:
             self.gpu_view.forget_source("main")
             self.gpu_view.release_gpu_cache()
@@ -546,7 +559,10 @@ class PreviewPanel(QWidget):
         try:
             self.player.stop()
         except Exception:  # pragma: no cover
-            pass
+            LOGGER.debug(
+                "Arrêt du lecteur du moniteur en échec : la lecture peut continuer derrière l'état vide",
+                exc_info=True,
+            )
         self._empty_requested = True
         self._sync_empty_state()
         self.preview_effects_overlay.hide()
@@ -803,7 +819,10 @@ class PreviewPanel(QWidget):
         try:
             view.release_gpu()
         except Exception:
-            pass
+            LOGGER.debug(
+                "Libération des ressources GPU du moniteur en échec : ressources laissées au pilote",
+                exc_info=True,
+            )
         view.hide()
         view.deleteLater()
         self.set_effects(self._gpu_effects)

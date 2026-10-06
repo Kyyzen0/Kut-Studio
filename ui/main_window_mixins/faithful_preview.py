@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from ui import i18n
+
+LOGGER = logging.getLogger(__name__)
 
 
 class _PreviewEvents(QObject):
@@ -46,7 +49,10 @@ class _PreviewPump:
             try:
                 self._engine.pump(1)
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Rendu d'un segment d'aperçu en échec dans le thread de travail : segment abandonné, la boucle continue",
+                    exc_info=True,
+                )
 
 
 class FaithfulPreviewMixin:
@@ -68,7 +74,10 @@ class FaithfulPreviewMixin:
             try:
                 self.preview_engine.cache.evict_if_needed()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Éviction du cache d'aperçu au démarrage en échec : le cache peut dépasser son budget jusqu'à la prochaine éviction",
+                    exc_info=True,
+                )
             # Les rendus tournent dans un thread : l'état revient au thread Qt par signal.
             self._preview_events = _PreviewEvents(self)
             self._preview_events.state.connect(self._on_preview_engine_state)
@@ -121,7 +130,10 @@ class FaithfulPreviewMixin:
                             float(getattr(self, "playhead_seconds", 0.0))
                         )
         except Exception:
-            pass
+            LOGGER.debug(
+                "Mise à jour de l'indicateur de calcul / cache du moniteur en échec : indicateur non actualisé",
+                exc_info=True,
+            )
 
     def _prefetch_planner(self):
         """Planificateur de préchargement (vitesse de la tête, grille de segments)."""
@@ -193,7 +205,10 @@ class FaithfulPreviewMixin:
         try:
             engine.set_playing(bool(self.is_playing))
         except Exception:
-            pass
+            LOGGER.debug(
+                "Transmission de l'état de lecture au moteur d'aperçu en échec : la file garde ses priorités précédentes",
+                exc_info=True,
+            )
         planner = self._prefetch_planner()
         if bool(self.is_playing):
             planner.reset()
@@ -207,12 +222,15 @@ class FaithfulPreviewMixin:
             span = planner.segment_seconds
             engine.cancel_outside(low * span - 1e-6, (high + 1) * span)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Abandon des segments hors de la fenêtre d'aperçu en échec : ils restent dans la file",
+                exc_info=True,
+            )
         for job in jobs:
             try:
                 engine.request(job, job.priority)
             except Exception:
-                pass
+                LOGGER.debug("Demande de rendu d'un segment d'aperçu en échec : segment non planifié", exc_info=True)
 
     def _cached_preview_at(self, timeline_time: float):
         """Retourne ``(chemin, début)`` pour le segment fidèle actif.
@@ -333,4 +351,7 @@ class FaithfulPreviewMixin:
         try:
             engine.invalidate_clip(str(clip_id))
         except Exception:
-            pass
+            LOGGER.debug(
+                "Invalidation de l'aperçu en échec pour le clip %s : des segments périmés peuvent s'afficher",
+                clip_id, exc_info=True,
+            )

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtWidgets import QApplication
 from core.user_settings import UserSettings, VALID_LANGUAGES, VALID_THEME_MODES
 from dataclasses import replace
 from ui.theming import retheme_application
 from ui import i18n
 from ui.preferences_dialog import PreferencesDialog
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _main_window():
@@ -159,7 +163,10 @@ class PreferencesMixin:
             try:
                 engine.cancel_all()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation des rendus d'aperçu en échec après le changement de qualité : des rendus à l'ancienne qualité peuvent continuer",
+                    exc_info=True,
+                )
         self._refresh_preview_cache_state()
 
     def _apply_settings(self, settings: UserSettings) -> None:

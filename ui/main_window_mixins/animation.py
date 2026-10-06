@@ -9,6 +9,8 @@ Graph Editor) n'enregistrent qu'à la fin du geste.
 
 from __future__ import annotations
 
+import logging
+
 from core.animation import InterpolationType
 from core.animation_targets import get_target, targets_for_clip
 from core.time_map import SPEED_PROPERTY
@@ -34,6 +36,8 @@ from core.keyframe_editing import (
     set_tangents,
 )
 from ui import i18n
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AnimationMixin:
@@ -115,7 +119,10 @@ class AnimationMixin:
         try:
             self._invalidate_preview_for_clip(clip_id)
         except Exception:
-            pass
+            LOGGER.warning(
+                "Invalidation de l'aperçu en échec après la modification des images-clés du clip %s : des segments périmés peuvent s'afficher",
+                clip_id, exc_info=True,
+            )
         self._mark_dirty()
         self._refresh_graph_editor()
 
@@ -207,7 +214,10 @@ class AnimationMixin:
         try:
             local = min(max(0.0, self._snap_local(clip, local)), clip.duration)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Magnétisme de la nouvelle image-clé en échec : position non aimantée conservée",
+                exc_info=True,
+            )
         props = self._command_properties(clip)
         for pid in props:
             add_keyframe(self.project, clip.id, pid, local)

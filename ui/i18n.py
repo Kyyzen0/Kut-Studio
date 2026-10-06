@@ -23,8 +23,11 @@ supportent ``{name}`` (format PEP 3101).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
+
+LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -1813,7 +1816,10 @@ def set_language(code: str) -> bool:
             callback(code)
         except Exception:
             # On ne casse pas le changement pour un subscriber fautif.
-            pass
+            LOGGER.debug(
+                "Abonné à la langue en échec : changement de langue non transmis à cet abonné (%r)",
+                callback, exc_info=True,
+            )
     return True
 
 

@@ -527,7 +527,10 @@ class MotionGraphicsMixin:
         try:
             self._invalidate_preview_for_clip(clip_id)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Invalidation de l'aperçu en échec pendant la modification en direct du clip %s : le moniteur peut rester sur l'ancienne image",
+                clip_id, exc_info=True,
+            )
         from core.timeline_operations import find_clip
 
         try:

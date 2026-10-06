@@ -8,6 +8,7 @@ mixin ne contient que le **câblage** : la logique vit dans
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import replace
@@ -19,6 +20,8 @@ from core.cache_manager import CacheManager
 from core.platform_paths import user_cache_dir
 from core.proxy_manager import ProxyInfo, ProxyManager, ProxyState
 from ui import i18n
+
+LOGGER = logging.getLogger(__name__)
 
 GIB = 1024 ** 3
 CACHE_ENFORCE_INTERVAL = 5.0  # secondes entre deux contrôles de budget non forcés
@@ -154,7 +157,10 @@ class PerformanceMixin:
             try:
                 self._sync_preview_to_timeline()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Rafraîchissement de l'aperçu en échec après un changement de proxy : le moniteur peut lire l'ancienne source",
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Commandes de génération
@@ -267,7 +273,10 @@ class PerformanceMixin:
                 try:
                     self._sync_preview_to_timeline()
                 except Exception:
-                    pass
+                    LOGGER.warning(
+                        "Rafraîchissement de l'aperçu en échec après le changement des réglages de proxy : le moniteur peut lire l'ancienne source",
+                        exc_info=True,
+                    )
 
     def cache_summary(self) -> dict:
         """Occupation des caches pour l'affichage (octets par couche + budget)."""

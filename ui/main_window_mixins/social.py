@@ -6,6 +6,8 @@ action passe par une fonction pure de ``core`` puis enregistre **une** entrée d
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import QDialog, QMenu
 
@@ -17,6 +19,8 @@ from core.social_formats import create_social_project
 from core.timeline_operations import find_clip
 from ui import i18n
 from ui.social_dialogs import SequenceSettingsDialog, SocialProjectDialog, platform_items
+
+LOGGER = logging.getLogger(__name__)
 
 
 class SocialMixin:
@@ -174,7 +178,10 @@ class SocialMixin:
             try:
                 engine.cancel_all()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation des rendus d'aperçu en échec après le changement de format : des rendus à l'ancien format peuvent continuer",
+                    exc_info=True,
+                )
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
         self._sync_preview_to_timeline()

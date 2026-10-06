@@ -115,6 +115,8 @@ from core.media_probe import probe_media  # noqa: E402,F401
 from core.user_settings import save_user_settings  # noqa: E402,F401
 from ui.theme import COLORS, ThemeManager, global_stylesheet, label_style
 
+LOGGER = logging.getLogger(__name__)
+
 
 # --- Scopes vidéo / monitoring couleur (tâche 31) -------------------------
 #
@@ -1310,7 +1312,10 @@ class MainWindow(
             self._invalidate_preview_for_clip(clip_id)
             self._sync_preview_to_timeline()
         except Exception:
-            pass
+            LOGGER.warning(
+                "Rafraîchissement de l'aperçu en échec après la modification du clip %s : le moniteur peut rester sur l'ancienne image",
+                clip_id, exc_info=True,
+            )
         self._update_timeline_duration()
         try:
             clip = find_clip(self.project, clip_id)
@@ -1730,7 +1735,10 @@ class MainWindow(
                 try:
                     self._schedule_preview_around(float(self.playhead_seconds))
                 except Exception:
-                    pass
+                    LOGGER.debug(
+                        "Planification des segments d'aperçu en échec (graphiques seuls) : le moniteur reste sur son repli",
+                        exc_info=True,
+                    )
             return active_clips
         top_clip = video_clips[-1]
         if not top_clip.source_path:
@@ -1811,7 +1819,10 @@ class MainWindow(
         try:
             self._schedule_preview_around(float(self.playhead_seconds))
         except Exception:
-            pass
+            LOGGER.debug(
+                "Planification des segments d'aperçu fidèles en échec : le moniteur reste sur le média source",
+                exc_info=True,
+            )
         return active_clips
 
     def _update_timeline_duration(self) -> None:
