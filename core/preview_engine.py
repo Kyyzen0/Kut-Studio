@@ -164,7 +164,10 @@ class PreviewEngine:
             try:
                 callback(state)
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Écouteur d'aperçu en échec : état non transmis à cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
     def set_playing(self, playing):
         """Suspend les rendus d'arriere-plan pendant la lecture.
@@ -355,12 +358,18 @@ class PreviewEngine:
                 try:
                     cancel_key(token_key)
                 except Exception:
-                    pass
+                    LOGGER.warning(
+                        "Annulation de la tâche d'aperçu %s en échec : elle peut encore s'exécuter pour rien",
+                        token_key, exc_info=True,
+                    )
         for token in tokens:
             try:
                 token.cancel()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation d'un rendu d'aperçu en échec : FFmpeg peut tourner jusqu'à son délai et laisser son fichier temporaire",
+                    exc_info=True,
+                )
         if victims:
             self._notify()
         return len(victims)
@@ -490,7 +499,10 @@ class PreviewEngine:
                     try:
                         removed += int(invalidate(bucket))
                     except Exception:
-                        pass
+                        LOGGER.warning(
+                            "Invalidation du cache d'aperçu en échec pour %s : des segments périmés peuvent encore s'afficher",
+                            bucket, exc_info=True,
+                        )
         else:
             invalidate_all = getattr(self.cache, "invalidate_all", None)
             if callable(invalidate_all):
@@ -522,12 +534,18 @@ class PreviewEngine:
                 try:
                     cancel_key(token_key)
                 except Exception:
-                    pass
+                    LOGGER.warning(
+                        "Annulation de la tâche d'aperçu %s en échec : elle peut encore s'exécuter pour rien",
+                        token_key, exc_info=True,
+                    )
         for token in tokens:
             try:
                 token.cancel()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation d'un rendu d'aperçu en échec : FFmpeg peut tourner jusqu'à son délai et laisser son fichier temporaire",
+                    exc_info=True,
+                )
         self._notify()
         return removed
 
@@ -546,14 +564,20 @@ class PreviewEngine:
         try:
             self.tasks.cancel_all()
         except Exception:
-            pass
+            LOGGER.warning(
+                "Annulation des tâches d'aperçu en file en échec : des rendus obsolètes peuvent encore s'exécuter",
+                exc_info=True,
+            )
         # Les jetons des rendus déjà lancés : sans eux FFmpeg continuait jusqu'à son délai (120 s)
         # après la fermeture ou le changement de projet, et laissait son fichier temporaire.
         for token in tokens:
             try:
                 token.cancel()
             except Exception:
-                pass
+                LOGGER.warning(
+                    "Annulation d'un rendu d'aperçu en échec : FFmpeg peut tourner jusqu'à son délai et laisser son fichier temporaire",
+                    exc_info=True,
+                )
         for path in subtitles:
             self._remove_file(path)
         self._notify()

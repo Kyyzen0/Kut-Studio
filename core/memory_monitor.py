@@ -25,10 +25,13 @@ L'export n'est jamais touché.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+
+LOGGER = logging.getLogger(__name__)
 
 NORMAL = "normal"
 WARNING = "warning"
@@ -146,7 +149,7 @@ def read_memory_status(platform_name: str | None = None) -> MemoryStatus:
         if name.startswith("win"):
             return _windows()
     except Exception:
-        pass
+        LOGGER.debug("Lecture de la mémoire système en échec (%s) : état « indisponible »", name, exc_info=True)
     return MemoryStatus(source="unavailable")
 
 

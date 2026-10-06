@@ -17,12 +17,15 @@ Règles :
 from __future__ import annotations
 
 import importlib.util
+import logging
 import threading
 
 from PySide6.QtCore import QTimer
 
 from core.tracking_panel_state import LinkRow, TrackerRow, TrackingPanelState
 from ui import i18n
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _tr(key: str, **values) -> str:
@@ -517,7 +520,10 @@ class TrackingMixin:
         try:
             self._invalidate_preview_for_clip(clip_id)
         except Exception:
-            pass
+            LOGGER.debug(
+                "Invalidation de l'aperçu en échec pendant le glisser du tracking sur le clip %s : le moniteur peut rester sur l'ancienne image",
+                clip_id, exc_info=True,
+            )
         self._schedule_viewer_graphics()
 
     def _on_overlay_drag_finished(self, _tracker_id: str, kind: str) -> None:

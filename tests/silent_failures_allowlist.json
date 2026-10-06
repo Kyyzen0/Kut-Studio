@@ -1,0 +1,4 @@
+{
+  "_comment": "Exceptions tolérées par tests/test_silent_failures_guard.py. Chaque entrée : {\"path\": \"core/x.py\", \"rule\": \"except-pass\" ou \"assert\", \"scope\": \"Classe.methode\" (ou \"<module>\"), \"reason\": \"pourquoi on ne peut ni journaliser ni garder\"}. La liste démarre vide et ne devrait pas grossir.",
+  "entries": []
+}

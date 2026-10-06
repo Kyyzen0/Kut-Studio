@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,8 @@ from ui.timeline_widgets.clip_style import (
 from ui.timeline_widgets.common import _color_for_track_type, _current_palette
 from ui.timeline_widgets.nested_clip import handle_nested_double_click, paint_nested_decoration
 from ui.timeline_widgets.time_overlay import paint_time_overlays
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # import de typage seul : évite le cycle clip -> panneau
     from ui.timeline_panel import TimelinePanel
@@ -95,7 +98,7 @@ class ClipWidget(QWidget):
             self._cache_dot.resize(16, 14)
             self._cache_dot.setVisible(state in ("cached", "pending"))
         except Exception:
-            pass
+            LOGGER.debug("Mise à jour du témoin de cache du clip en échec : témoin non actualisé", exc_info=True)
 
     def refresh_style(self) -> None:
         parent = self.parent_timeline

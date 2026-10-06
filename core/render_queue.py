@@ -608,14 +608,16 @@ class RenderQueue(QObject):
 
     # -- Signaux du moteur ----------------------------------------------------------------------------------
 
-    def _owns_engine_event(self) -> bool:
-        return self._current is not None and self._launched
+    def _owned_job(self) -> RenderJob | None:
+        """Le job auquel appartient un signal du moteur, ou ``None`` si le signal ne concerne aucun job lancé."""
+        if self._current is not None and self._launched:
+            return self._current
+        return None
 
     def _on_progress(self, value: int) -> None:
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         value = max(0, min(100, int(value)))
         if value == job.progress:
             return
@@ -624,10 +626,9 @@ class RenderQueue(QObject):
         self._emit_overall()
 
     def _on_finished(self, _output: str) -> None:
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         partial = self._partial or ""
 
         def finish() -> None:
@@ -706,29 +707,26 @@ class RenderQueue(QObject):
 
     def _on_encoder_selected(self, choice) -> None:
         """Mémorise l'encodeur réellement lancé (visible dès le début du rendu)."""
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         job.encoder = getattr(choice, "encoder", "")
         job.hardware_used = getattr(getattr(choice, "used", None), "value", "cpu")
         job.fallback_reason = getattr(choice, "fallback_reason", None) or job.fallback_reason
         self.job_updated.emit(job.id)
 
     def _on_encoder_fallback(self, reason: str) -> None:
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         job.fallback_reason = reason
         job.diagnostics = getattr(self._engine, "last_diagnostics", "")[-800:]
         self.encoder_fallback.emit(job.id, reason)
 
     def _on_failed(self, message: str) -> None:
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         text = (message or "Le rendu a échoué.").strip()[-MAX_ERROR_CHARS:]
         kind = (
             ErrorKind.ENCODER
@@ -748,10 +746,9 @@ class RenderQueue(QObject):
         self._schedule_next()
 
     def _on_cancelled(self) -> None:
-        if not self._owns_engine_event():
+        job = self._owned_job()
+        if job is None:
             return
-        job = self._current
-        assert job is not None
         reason = CLOSED_MESSAGE if self._closing else ""
         self._finish_current(lambda: job.mark_cancelled(reason))
         self._schedule_next()

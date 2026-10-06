@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QTimer
 from core.color_grading import (
     ColorCurve,
@@ -12,6 +14,8 @@ from core.color_grading import (
     make_user_color_preset,
 )
 from ui.i18n import translate
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _main_window():
@@ -53,7 +57,10 @@ class ColorGradingMixin:
             self._invalidate_preview_for_clip(clip_id)
             self._sync_preview_to_timeline()
         except Exception:
-            pass
+            LOGGER.warning(
+                "Rafraîchissement de l'aperçu en échec après l'étalonnage du clip %s : le moniteur peut garder l'ancien étalonnage",
+                clip_id, exc_info=True,
+            )
         # Scopes (tâche 31) : un changement d'exposition, de contraste,
         # de saturation, de courbe ou de LUT doit être visible
         # immédiatement. En pause on force l'analyse (pas de

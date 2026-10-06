@@ -167,7 +167,7 @@ class RhiExecutor:
             info = rhi.driverInfo()  # garder l'objet : son QByteArray meurt avec lui
             self.device = bytes(info.deviceName).decode("utf-8", "replace")
         except Exception:
-            pass
+            LOGGER.debug("Nom du périphérique GPU illisible : diagnostic sans nom de carte", exc_info=True)
         self._vertex = load_shader("quad.vert")
         self._fragments = {name: load_shader(f"{name}.frag") for name in (*self.SHADERS, "present")}
         self.texture_flip = 1.0 if (rhi.isYUpInNDC() and not rhi.isYUpInFramebuffer()) else -1.0
@@ -307,7 +307,10 @@ class RhiExecutor:
             try:
                 oldest.destroy()
             except Exception:  # noqa: BLE001 - libérer ne doit jamais interrompre le rendu
-                pass
+                LOGGER.debug(
+                    "Libération d'un jeu de liaisons GPU en échec : ressource laissée au pilote",
+                    exc_info=True,
+                )
         return srb
 
     def ensure_present_pipeline(self, rpd) -> None:
@@ -508,7 +511,10 @@ class RhiExecutor:
             try:
                 resource.destroy()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Libération d'une ressource GPU en échec à l'arrêt : ressource laissée au pilote",
+                    exc_info=True,
+                )
         self._pipelines.clear()
         self._template_rpds.clear()
         self._srbs.clear()
@@ -690,14 +696,17 @@ class GpuPreviewWidget(QRhiWidget):
         try:
             texture.destroy()
         except Exception:
-            pass
+            LOGGER.debug("Libération d'une texture GPU du cache en échec : texture laissée au pilote", exc_info=True)
 
     def _on_render_failed(self) -> None:
         rhi = None
         try:
             rhi = self.rhi()
         except Exception:
-            pass
+            LOGGER.debug(
+                "Contexte QRhi illisible après un rendu refusé : échec classé « render » faute de savoir si le périphérique est perdu",
+                exc_info=True,
+            )
         lost = bool(rhi is not None and rhi.isDeviceLost())
         self._fail("device_lost" if lost else "render",
                    translate("gpu.error.device_lost") if lost else translate("gpu.error.render_refused"))

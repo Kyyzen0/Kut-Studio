@@ -335,7 +335,8 @@ def format_sequence(sequence: str, platform: str | None = None) -> str:
     if len(steps) > 1:
         return ", ".join(format_sequence(step, platform) for step in steps)
     split = _split_sequence(normalized)
-    assert split is not None
+    if split is None:
+        return str(sequence)
     modifiers, key = split
     is_mac = (platform or sys.platform) == "darwin"
     if is_mac:

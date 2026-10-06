@@ -335,7 +335,8 @@ class UpdateDialog(QDialog):
 
     def _render_offer(self) -> tuple[set[QPushButton], QPushButton]:
         offer = self._view.offer
-        assert offer is not None
+        if offer is None:  # pas d'offre : rien à présenter, seul « Fermer » reste
+            return {self.close_button}, self.close_button
         release = offer.release
         current = self._view.check.current if self._view.check is not None else None
         self.headline.setText(i18n.translate("update.available.title", version=str(offer.version)))
@@ -393,7 +394,8 @@ class UpdateDialog(QDialog):
 
     def _render_ready(self) -> tuple[set[QPushButton], QPushButton]:
         offer, download = self._view.offer, self._view.download
-        assert offer is not None and download is not None
+        if offer is None or download is None:  # pas de paquet vérifié : rien à installer, seul « Fermer » reste
+            return {self.close_button}, self.close_button
         version = str(offer.version)
         self.headline.setText(i18n.translate("update.ready.title", version=version))
         self.message.setText(i18n.translate("update.ready.verified", version=version))
