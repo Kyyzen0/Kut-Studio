@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -45,6 +46,8 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from .platform_paths import user_config_dir
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -1289,7 +1292,10 @@ class ColorPresetStore:
             try:
                 callback()
             except Exception:  # pragma: no cover - tolérance listener
-                    pass
+                LOGGER.debug(
+                    "Écouteur des préréglages d'étalonnage en échec : notification ignorée pour cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
     def _preset_exists(self, preset_id: str) -> bool:
         if preset_id in builtin_color_preset_ids():

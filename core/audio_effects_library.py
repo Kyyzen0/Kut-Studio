@@ -21,6 +21,7 @@ distinct de celui des transitions pour ne pas les coupler.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import uuid
@@ -36,6 +37,8 @@ from .audio_effects_model import (
     AudioEffectType,
     default_parameters,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 # Longueur max d'un nom de préréglage (court pour rester lisible).
@@ -682,7 +685,10 @@ class AudioEffectPresetStore:
             try:
                 callback()
             except Exception:  # pragma: no cover - tolérance listener
-                pass
+                LOGGER.debug(
+                    "Écouteur de la bibliothèque d'effets audio en échec : notification ignorée pour cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
     def _preset_exists(self, preset_id: str) -> bool:
         if preset_id in builtin_audio_effect_preset_ids():

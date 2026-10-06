@@ -24,6 +24,7 @@ Règles de conception :
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import uuid
@@ -37,6 +38,8 @@ from .text_style import (
     default_text_style,
 )
 from .platform_paths import user_config_dir
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +528,10 @@ class TextPresetStore:
             try:
                 callback()
             except Exception:
-                pass
+                LOGGER.debug(
+                    "Écouteur des presets de texte en échec : notification ignorée pour cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
 
 def make_user_text_preset(

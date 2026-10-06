@@ -293,7 +293,10 @@ class ProxyManager:
             try:
                 callback(source, info)
             except Exception:  # un abonné fautif ne doit pas casser la génération
-                pass
+                LOGGER.debug(
+                    "Abonné aux proxies en échec pour %s : notification ignorée, la génération continue",
+                    source, exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Emplacements

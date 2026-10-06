@@ -31,6 +31,7 @@ Règles de conception (identiques à :mod:`core.effects_library`) :
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import uuid
@@ -41,6 +42,8 @@ from typing import TYPE_CHECKING, Iterable, Sequence
 
 from .transitions import TransitionType
 from .platform_paths import user_config_dir
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
     from .project_model import Project
@@ -922,7 +925,10 @@ class TransitionPresetStore:
                 callback()
             except Exception:
                 # On ne casse pas la chaîne pour un listener fautif.
-                pass
+                LOGGER.debug(
+                    "Écouteur des presets de transition en échec : notification ignorée pour cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
     def _preset_exists(self, preset_id: str) -> bool:
         if preset_id in builtin_transition_preset_ids():

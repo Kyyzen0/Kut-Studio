@@ -30,6 +30,7 @@ Règles de conception :
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import uuid
@@ -46,6 +47,8 @@ from .effects_model import (
     validate_parameters,
 )
 from .platform_paths import user_config_dir
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
     from .project_model import Clip, Project
@@ -877,7 +880,10 @@ class UserPresetStore:
                 callback()
             except Exception:
                 # On ne casse pas la chaîne pour un listener fautif.
-                pass
+                LOGGER.debug(
+                    "Écouteur de la bibliothèque d'effets en échec : notification ignorée pour cet écouteur (%r)",
+                    callback, exc_info=True,
+                )
 
 
 # ---------------------------------------------------------------------------

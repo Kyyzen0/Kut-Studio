@@ -13,10 +13,13 @@ en production, une source synthétique en test. L'API publique de
 
 from __future__ import annotations
 
+import logging
 import math
 import wave
 from pathlib import Path
 from typing import Protocol
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AudioRecorderError(RuntimeError):
@@ -174,7 +177,10 @@ class AudioRecorder:
             try:
                 self._source.stop()
             except Exception:  # pragma: no cover - arrêt déjà partiel
-                pass
+                LOGGER.debug(
+                    "Arrêt de la source micro en échec : capture déjà arrêtée, le son lu jusque-là est rendu",
+                    exc_info=True,
+                )
             self._source = None
         self._io = None
         pcm = bytes(self._buffer)
