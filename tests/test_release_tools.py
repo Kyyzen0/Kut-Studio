@@ -252,6 +252,20 @@ def test_the_macos_bundle_gets_the_application_version_and_is_resigned(tmp_path)
     ]
 
 
+@pytest.mark.parametrize(("platform_name", "suffix"), [("darwin", ".icns"), ("win32", ".ico"), ("linux", ".png")])
+def test_every_platform_build_gets_an_icon_that_exists(platform_name, suffix):
+    """``_icon_for`` rend ``None`` pour un fichier absent : le build sortait alors sans icône, sans bruit.
+
+    C'est arrivé sous Windows : ``build.py`` visait ``icon.ico``, qui n'avait jamais été généré
+    (``python -m tools.make_icons``).
+    """
+    icon = build._icon_for(platform_name)
+    assert icon is not None and icon.is_file(), f"Icône introuvable pour {platform_name}"
+    assert icon.suffix == suffix
+    command = build.build_command(platform_name=platform_name, environment={})
+    assert command[command.index("--icon") + 1] == str(icon)
+
+
 def test_a_developer_id_identity_signs_with_the_hardened_runtime_and_entitlements(tmp_path):
     identity = "Developer ID Application: Test (TEAM123456)"
     command = build.build_command(platform_name="darwin", environment={build.CODESIGN_IDENTITY_ENV: identity})
