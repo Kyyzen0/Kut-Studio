@@ -51,6 +51,7 @@ class GraphicType(str, Enum):
     GROUP = "group"
     ADJUSTMENT = "adjustment"
     NULL = "null"
+    LIGHT = "light"
 
 
 class ShapeKind(str, Enum):
@@ -88,6 +89,8 @@ WORD_REVEALS = ("none", "word", "typewriter", "karaoke")
 """Apparition d'un texte selon ``reveal`` (0 → 1) : tout de suite, mot par mot, lettre par lettre, ou karaoké (tout est
 visible, le mot courant prend ``highlight_color``)."""
 MAX_TEXT_WORDS = 512
+LIGHT_KINDS = ("leak", "anamorphic_flare", "speed_lines", "light_trails", "sparks", "flash")
+"""Calques de lumière (dessin : :mod:`core.light_layers`) ; identifiants stables, clés ``light.kind.<id>``."""
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 
@@ -185,6 +188,17 @@ class GraphicOverlay:
     highlight_color: str = "#FFD84D"
     highlight_words: tuple[int, ...] = ()
     word_times: tuple[float, ...] = ()
+    # --- Néon (textes et formes) : halo additif flou autour du contenu ; rayon 0 = aucun ---
+    glow_color: str = "#22B8FF"
+    glow_radius: float = 0.0
+    glow_strength: float = 1.0
+    # --- Calque de lumière (core.light_layers) ---
+    light_kind: str = "leak"
+    light_seed: int = 1
+    light_speed: float = 1.0
+    light_angle: float = 0.0
+    light_density: float = 1.0
+    light_time: float = 0.0          # temps local de l'image dessinée : posé par la scène, jamais saisi
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
@@ -243,6 +257,15 @@ class GraphicOverlay:
         object.__setattr__(self, "highlight_color", normalize_color(self.highlight_color, "#FFD84D"))
         object.__setattr__(self, "highlight_words", _int_tuple(self.highlight_words))
         object.__setattr__(self, "word_times", _time_tuple(self.word_times))
+        object.__setattr__(self, "glow_color", normalize_color(self.glow_color, "#22B8FF"))
+        object.__setattr__(self, "glow_radius", _bounded(self.glow_radius, 0.0, 400.0, 0.0))
+        object.__setattr__(self, "glow_strength", _bounded(self.glow_strength, 0.0, 4.0, 1.0))
+        object.__setattr__(self, "light_kind", self.light_kind if self.light_kind in LIGHT_KINDS else "leak")
+        object.__setattr__(self, "light_seed", int(_bounded(self.light_seed, 0, 1_000_000, 1)))
+        object.__setattr__(self, "light_speed", _bounded(self.light_speed, 0.0, 10.0, 1.0))
+        object.__setattr__(self, "light_angle", _bounded(self.light_angle, -360.0, 360.0, 0.0))
+        object.__setattr__(self, "light_density", _bounded(self.light_density, 0.1, 4.0, 1.0))
+        object.__setattr__(self, "light_time", _bounded(self.light_time, 0.0, 86400.0, 0.0))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
 
@@ -300,6 +323,12 @@ def graphic_defaults(
         )
     if kind == GraphicType.NULL:
         return GraphicOverlay(type=kind, text="", width=100, height=100, shadow_offset_x=0, shadow_offset_y=0)
+    if kind == GraphicType.LIGHT:
+        # Couleurs « Night » : chaud (ambre) et bleu électrique ; le calque couvre le cadre.
+        return GraphicOverlay(
+            type=kind, text="", width=project_width, height=project_height, fill_color="#FFB040",
+            glow_color="#22B8FF", shadow_offset_x=0, shadow_offset_y=0,
+        )
     return GraphicOverlay(
         type=kind, text="", source_path=source_path,
         width=min(960, project_width), height=min(540, project_height),
@@ -337,6 +366,7 @@ _LABELS = {
     GraphicType.GROUP: "Groupe",
     GraphicType.ADJUSTMENT: "Calque d'effets",
     GraphicType.NULL: "Contrôleur",
+    GraphicType.LIGHT: "Lumière",
 }
 
 _SHAPE_LABELS = {
@@ -425,6 +455,12 @@ def add_graphic_clip(
         text=graphic.text,
         graphic=graphic,
     )
+    if kind == GraphicType.LIGHT:
+        # La lumière s'**ajoute** à l'image : Addition par défaut (modifiable dans le compositing du calque).
+        from .blend_modes import BlendMode
+        from .compositing import Compositing
+
+        clip.compositing = Compositing(blend_mode=BlendMode.ADD)
     target_track.clips.append(clip)
     target_track.clips.sort(key=lambda item: (item.timeline_start, item.id))
     return clip

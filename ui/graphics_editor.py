@@ -49,6 +49,7 @@ TYPE_NAMES = {  # type de calque -> clé i18n du nom affiché
     GraphicType.GROUP: "mograph.type.group",
     GraphicType.ADJUSTMENT: "mograph.type.adjustment",
     GraphicType.NULL: "mograph.type.null",
+    GraphicType.LIGHT: "light.library.name",
 }
 
 
@@ -244,6 +245,37 @@ class GraphicsEditor(QGroupBox):
         self.text_section.form.addRow(self.autosize_check)
         root.addWidget(self.text_section)
 
+        # --- Néon (textes et formes) et calque de lumière ---------------------------------------
+        from core.graphics import LIGHT_KINDS
+
+        self.glow_section = _Section(i18n.translate("light.neon.title"))
+        self.glow_field = _ColorField(GraphicOverlay().glow_color)
+        self.glow_field.changed.connect(lambda value: self._emit("glow_color", value))
+        self.glow_section.form.addRow(i18n.translate("light.neon.color"), self.glow_field)
+        self.glow_radius_spin = self._double(0, 400, 1, "glow_radius")
+        self.glow_section.form.addRow(i18n.translate("graphics.property.glow_radius"), self.glow_radius_spin)
+        self.glow_strength_spin = self._double(0, 4, 0.05, "glow_strength")
+        self.glow_section.form.addRow(i18n.translate("graphics.property.glow_strength"), self.glow_strength_spin)
+        root.addWidget(self.glow_section)
+        self.light_section = _Section(i18n.translate("light.library.name"), expanded=True)
+        self.light_combo = QComboBox(objectName="light_kind")
+        for light_kind in LIGHT_KINDS:
+            self.light_combo.addItem(i18n.translate(f"light.kind.{light_kind}"), light_kind)
+        self.light_combo.currentIndexChanged.connect(lambda: self._emit("light_kind", self.light_combo.currentData()))
+        self.light_section.form.addRow(i18n.translate("light.kind"), self.light_combo)
+        self.light_second_field = _ColorField(GraphicOverlay().glow_color)
+        self.light_second_field.changed.connect(lambda value: self._emit("glow_color", value))
+        self.light_section.form.addRow(i18n.translate("light.second_color"), self.light_second_field)
+        self.light_speed_spin = self._double(0, 10, 0.05, "light_speed")
+        self.light_section.form.addRow(i18n.translate("graphics.property.light_speed"), self.light_speed_spin)
+        self.light_angle_spin = self._double(-360, 360, 1, "light_angle")
+        self.light_section.form.addRow(i18n.translate("graphics.property.light_angle"), self.light_angle_spin)
+        self.light_density_spin = self._double(0.1, 4, 0.05, "light_density")
+        self.light_section.form.addRow(i18n.translate("graphics.property.light_density"), self.light_density_spin)
+        self.light_seed_spin = self._spin(0, 1_000_000, "light_seed")
+        self.light_section.form.addRow(i18n.translate("light.seed"), self.light_seed_spin)
+        root.addWidget(self.light_section)
+
         # --- Animation du texte (vidéo sociale) -----------------------------------------------
         from ui.text_animation_editor import TextAnimationSection
 
@@ -373,7 +405,8 @@ class GraphicsEditor(QGroupBox):
             is_shape = kind in (GraphicType.SHAPE, GraphicType.RECTANGLE)
             sized = kind in (GraphicType.TEXT, GraphicType.SHAPE, GraphicType.RECTANGLE,
                              GraphicType.SOLID, GraphicType.IMAGE)
-            coloured = kind in (GraphicType.TEXT, GraphicType.SHAPE, GraphicType.RECTANGLE, GraphicType.SOLID)
+            coloured = kind in (GraphicType.TEXT, GraphicType.SHAPE, GraphicType.RECTANGLE, GraphicType.SOLID,
+                                GraphicType.LIGHT)
             if self.text_edit.toPlainText() != graphic.text:
                 self.text_edit.setPlainText(graphic.text)
             for widget in (self.text_edit, self.text_label):
@@ -400,6 +433,18 @@ class GraphicsEditor(QGroupBox):
             self.stroke_outside_check.setVisible(is_text)
             self.stroke_outside_check.setChecked(graphic.stroke_position == "outside")
             self.animation_section.setVisible(is_text)
+            self.glow_section.setVisible(is_text or is_shape)
+            self.glow_field.set_value(graphic.glow_color)
+            self.glow_radius_spin.setValue(graphic.glow_radius)
+            self.glow_strength_spin.setValue(graphic.glow_strength)
+            is_light = kind == GraphicType.LIGHT
+            self.light_section.setVisible(is_light)
+            self.light_combo.setCurrentIndex(max(0, self.light_combo.findData(graphic.light_kind)))
+            self.light_second_field.set_value(graphic.glow_color)
+            self.light_speed_spin.setValue(graphic.light_speed)
+            self.light_angle_spin.setValue(graphic.light_angle)
+            self.light_density_spin.setValue(graphic.light_density)
+            self.light_seed_spin.setValue(graphic.light_seed)
             if is_text:
                 self.text_animation.set_graphic(graphic)
                 self.highlight_field.set_value(graphic.highlight_color)

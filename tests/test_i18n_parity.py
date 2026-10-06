@@ -137,7 +137,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 _LOANWORDS = {
     "Cache", "Chroma Key", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
     "Multicam", "MULTICAM", "Parade", "Preset", "Timecode", "timecode", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
-    "Trackers", "Template", "Tempo",
+    "Trackers", "Template", "Tempo", "Light leak", "Flash",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }
@@ -153,7 +153,7 @@ _COGNATES_EN = {
     "Vertical", "Portrait",
 }
 # Cognats français / espagnol.
-_COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical"}
+_COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante"}
 
 ALLOWED_IDENTICAL = {
     "en": _ACRONYMS_AND_PROPER_NAMES | _LOANWORDS | _COGNATES_EN,

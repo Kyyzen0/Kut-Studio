@@ -22,6 +22,7 @@ _ENTRIES = (  # (type, clé du nom, clé de la description, icône)
     ("text", "text.preset.title.name", "mograph.library.text_desc", IconName.TEXT),
     ("rectangle", "menu.item.add_shape_layer", "mograph.library.rect_desc", IconName.COLOR),
     ("solid", "mograph.library.solid_name", "mograph.library.solid_desc", IconName.FILM),
+    ("light", "light.library.name", "light.library.desc", IconName.EFFECTS),
 )
 
 
@@ -64,7 +65,7 @@ class GraphicsLibraryView(QWidget):
             size=Sizes.icon_button,
         )
         self.import_image_button.clicked.connect(self.import_requested.emit)
-        grid.addWidget(self.import_image_button, 1, 1)
+        grid.addWidget(self.import_image_button, len(_ENTRIES) // 2, len(_ENTRIES) % 2)
         layout.addLayout(grid)
 
         self.layers_panel = LayersPanel(self)

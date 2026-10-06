@@ -41,6 +41,7 @@ from PySide6.QtGui import (
     QImage,
     QPainter,
     QPainterPath,
+    QPainterPathStroker,
     QPen,
     QPolygonF,
     QTransform,
@@ -386,8 +387,8 @@ def image_signature(path: str) -> str:
 
 
 def content_margin(graphic: GraphicOverlay) -> float:
-    """Débordement possible du contenu hors de sa boîte (contour, ombre, fond)."""
-    margin = float(graphic.stroke_width) * 2.0 + 2.0
+    """Débordement possible du contenu hors de sa boîte (contour, ombre, fond, néon)."""
+    margin = float(graphic.stroke_width) * 2.0 + 2.0 + 3.0 * float(graphic.glow_radius)
     if graphic.type == GraphicType.TEXT:
         margin += abs(graphic.shadow_offset_x) + abs(graphic.shadow_offset_y) + 3.0 * graphic.shadow_blur
         if graphic.background_enabled:
@@ -397,8 +398,58 @@ def content_margin(graphic: GraphicOverlay) -> float:
 
 
 def needs_isolation(graphic: GraphicOverlay) -> bool:
-    """Le contenu exige-t-il un tampon intermédiaire (ombre floue) ?"""
+    """Le contenu exige-t-il un tampon intermédiaire (ombre floue, néon) ?"""
+    if _has_glow(graphic):
+        return True
     return graphic.type == GraphicType.TEXT and graphic.shadow_blur > 0 and _has_shadow(graphic)
+
+
+def _has_glow(graphic: GraphicOverlay) -> bool:
+    return (
+        graphic.type in (GraphicType.TEXT, GraphicType.SHAPE, GraphicType.RECTANGLE)
+        and graphic.glow_radius > 0 and graphic.glow_strength > 0 and qcolor(graphic.glow_color).alpha() > 0
+    )
+
+
+def _glow_path(graphic: GraphicOverlay, width: float, height: float) -> QPainterPath:
+    """Silhouette qui émet le néon : les lettres (sans les emojis) avec leur contour, ou la forme."""
+    if graphic.type == GraphicType.TEXT:
+        if is_plain(graphic.text, graphic.word_reveal, graphic.highlight_words):
+            path, _block = text_path(graphic, width, height)
+        else:
+            _lines, _metrics, font = text_lines(graphic, width)
+            state = reveal_state(graphic.text, graphic.word_reveal, graphic.reveal, graphic.highlight_words)
+            path = QPainterPath()
+            path.setFillRule(Qt.WindingFill)
+            for piece, emoji, x, baseline, word, letter in text_runs(graphic, width, height):
+                if not emoji and state.word_alpha(word) * state.letter_alpha(letter) > 0.5:
+                    path.addText(x, baseline, font, piece)
+    else:
+        path = shape_path(graphic, width, height)
+    if graphic.stroke_width > 0 and not path.isEmpty():
+        stroker = QPainterPathStroker()
+        stroker.setWidth(float(graphic.stroke_width) * 2.0)
+        stroker.setJoinStyle(Qt.RoundJoin)
+        path = path.united(stroker.createStroke(path))
+    return path
+
+
+def _draw_glow(painter: QPainter, graphic: GraphicOverlay, width: float, height: float, device_scale: float) -> None:
+    """Néon : la silhouette floutée, ajoutée (mode Plus) sous le contenu ; une force > 1 l'ajoute plusieurs fois."""
+    path = _glow_path(graphic, width, height)
+    if path.isEmpty():
+        return
+    strength = float(graphic.glow_strength)
+    radius = float(graphic.glow_radius) * device_scale
+    color = qcolor(graphic.glow_color)
+    painter.save()
+    painter.setCompositionMode(QPainter.CompositionMode_Plus)
+    while strength > 1e-6:
+        layer = QColor(color)
+        layer.setAlphaF(color.alphaF() * min(1.0, strength))
+        _draw_blurred_path(painter, path, layer, radius)
+        strength -= 1.0
+    painter.restore()
 
 
 def _has_shadow(graphic: GraphicOverlay) -> bool:
@@ -415,6 +466,8 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
     painter.setRenderHint(QPainter.TextAntialiasing, True)
     painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
     kind = graphic.type
+    if _has_glow(graphic):
+        _draw_glow(painter, graphic, width, height, device_scale)
     if kind == GraphicType.SOLID:
         painter.fillRect(QRectF(0, 0, width, height), qcolor(graphic.fill_color))
     elif kind == GraphicType.IMAGE:
@@ -444,6 +497,10 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
             painter.strokePath(path, pen)
     elif kind == GraphicType.TEXT:
         _draw_text(painter, graphic, width, height, device_scale=device_scale)
+    elif kind == GraphicType.LIGHT:
+        from .light_layers import draw_light
+
+        draw_light(painter, graphic, width, height)
 
 
 def _draw_text(painter: QPainter, graphic: GraphicOverlay, width: float, height: float, *, device_scale: float) -> None:
