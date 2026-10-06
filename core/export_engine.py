@@ -965,7 +965,9 @@ class ExportEngine(QObject):
             audio_label: label du flux audio final.
             input_paths: liste dédupliquée des chemins à passer en ``-i``.
         """
-        width, height = output_width, output_height
+        # Une sortie d'un autre format que la séquence (16:9 exporté en 9:16) reçoit **le cadre de la séquence**, réduit
+        # sans déformation et centré : la composition se fait à sa taille, puis des bandes complètent la sortie.
+        width, height = composition_size(plan.width, plan.height, output_width, output_height)
 
         # Inputs dédupliqués : on assigne un index à chaque chemin unique
         # (séquences imbriquées comprises).
@@ -990,6 +992,12 @@ class ExportEngine(QObject):
             parts, plan, width, height, fps, path_to_index, sources,
             add_input=add_input, quality=quality, prepared=prepared,
         )
+
+        if (width, height) != (output_width, output_height):
+            parts.append(
+                f"[{video_label}]pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2:black[vframe]"
+            )
+            video_label = "vframe"
 
         # ---------------- Sous-titres ----------------
         # L'incrustation se fait via libass (``subtitles=``), appliquée
@@ -1782,6 +1790,23 @@ def _prepared_source(layer, time_map, fps: float, last_frame, source, prepared, 
     if add_input is None:
         raise RetimeError("Ce graphe n'accepte pas d'entrée supplémentaire : impossible de lire les images intermédiaires.")
     return f"{add_input(stream.path)}:v", runs
+
+
+def composition_size(frame_width: int, frame_height: int, output_width: int, output_height: int) -> tuple[int, int]:
+    """Taille à laquelle composer un cadre ``frame_width × frame_height`` dans une sortie ``output_width × output_height``.
+
+    Même format (à 0,5 % près) : la sortie elle-même. Sinon, le cadre réduit sans déformation et centré (tailles paires,
+    comme l'exige ``yuv420p``) : tout ce qui est placé en fraction du cadre (clips, calques, positions) garde ses
+    proportions, et les bandes ne sont ajoutées qu'à la fin.
+    """
+    fw, fh = max(1, int(frame_width or output_width)), max(1, int(frame_height or output_height))
+    ow, oh = max(1, int(output_width)), max(1, int(output_height))
+    if abs((fw / fh) / (ow / oh) - 1.0) <= 0.005:
+        return ow, oh
+    factor = min(ow / fw, oh / fh)
+    width = min(ow, max(2, int(round(fw * factor / 2.0)) * 2))
+    height = min(oh, max(2, int(round(fh * factor / 2.0)) * 2))
+    return width, height
 
 
 def frame_fit_filter(width: int, height: int, pad_color: str = "black") -> str:

@@ -48,6 +48,10 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
   (`core/retime_layers.prepare_plan`, dans un fil, annulable, avec progression) dans un fichier sans perte que le graphe relit :
   l'export, l'aperçu fidèle (seulement la fenêtre du segment) et les scopes lisent les mêmes images. Un clip qui n'en a pas
   besoin (200 %, arrêt…) reste dans le graphe d'échantillonnage, qui produit alors exactement les mêmes images.
+* **Sortie d'un autre format que la séquence** (séquence 16:9 exportée avec un preset vertical) : la composition se fait au
+  format de la séquence, réduite sans déformation (`composition_size`), puis des bandes complètent la sortie. Clips,
+  calques et positions gardent leurs proportions ; pour remplir un cadre vertical, on travaille dans une séquence 9:16
+  ([social-video.md](social-video.md)).
 * Le **moniteur temps réel** est un approximatif assumé (il doit tenir la cadence) : l'image qui fait foi est
   celle de l'aperçu fidèle, puis celle de l'export.
 
