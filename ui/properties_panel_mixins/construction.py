@@ -242,21 +242,39 @@ class ConstructionMixin:
         project_layout.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         project_layout.setSpacing(Spacing.xs)
 
-        project_fields = [
-            (translate("inspector.project.state"), translate("no_clip_selected")),
-            (translate("field.resolution"), "1920 × 1080"),
-            (translate("inspector.project.format"), "16:9"),
-            (translate("field.fps"), "30 fps"),
-            (translate("field.background"), "#000000"),
-        ]
-        for field, value in project_fields:
-            lbl = QLabel(f"{field} : {value}")
+        # Valeurs de la séquence active : remplies par ``set_sequence_info`` (jamais des valeurs en dur).
+        self._project_info_labels: dict[str, QLabel] = {}
+        for name in ("state", "resolution", "format", "fps", "background"):
+            lbl = QLabel()
             lbl.setMinimumHeight(20)
             lbl.setWordWrap(True)  # « État : Aucun clip sélectionné » fixait la largeur minimale de tout l'inspecteur
             lbl.setStyleSheet(label_style(12, "text", 500))
             project_layout.addWidget(lbl)
+            self._project_info_labels[name] = lbl
+        self.set_sequence_info(1920, 1080, 30.0)
         layout.addWidget(project_group)
         return project_group
+
+    def set_sequence_info(self, width: int, height: int, fps: float) -> None:
+        """Cadre et cadence de la séquence active, dans le groupe « Projet »."""
+        from math import gcd
+
+        from core.social_formats import format_for_frame
+
+        entry = format_for_frame(width, height)
+        divisor = gcd(int(width), int(height)) or 1
+        ratio = entry.ratio if entry is not None else f"{int(width) // divisor}:{int(height) // divisor}"
+        values = {
+            "state": (translate("inspector.project.state"), translate("no_clip_selected")),
+            "resolution": (translate("field.resolution"), translate("inspector.project.size", width=width, height=height)),
+            "format": (translate("inspector.project.format"), ratio),
+            "fps": (translate("field.fps"), translate("social.fps", fps=f"{float(fps):g}")),
+            "background": (translate("field.background"), translate("inspector.project.black")),
+        }
+        for name, (field, value) in values.items():
+            label = self._project_info_labels.get(name)
+            if label is not None:
+                label.setText(translate("inspector.project.field", field=field, value=value))
 
     def _build_clip_group(self, layout):
         """Groupe « Clip sélectionné »."""

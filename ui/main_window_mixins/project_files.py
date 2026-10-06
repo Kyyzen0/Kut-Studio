@@ -50,9 +50,13 @@ class ProjectFilesMixin:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
         if not self._confirm_discard_changes():
             return
+        self._install_new_project(create_default_project())
+
+    def _install_new_project(self, project) -> None:
+        """Remplace le projet ouvert par ``project`` (jamais enregistré) ; les changements ont déjà été confirmés."""
         self._finalize_pending_edit_sessions()
         self._release_open_project()
-        self.project = create_default_project()
+        self.project = project
         self.current_project_path = None
         self.history.reset(self.project)
         self._refresh_undo_redo_state()

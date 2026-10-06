@@ -214,27 +214,17 @@ class SubtitlesGraphicsMixin:
                 self.project,
                 "image",
                 timeline_start=self.playhead_seconds,
-                duration=5.0,
+                duration=float(getattr(self, "_photo_duration", 5.0)),
                 source_path=path,
             )
-            # Conserve le ratio et la taille intrinsèque de l'image, sans
-            # dépasser le cadre du projet. Le modèle reste indépendant de Qt ;
-            # cette lecture de métadonnées appartient donc à la couche UI.
+            # Taille de la photo : elle tient dans le cadre (sans agrandissement) ou le remplit, selon les
+            # préférences photo (menu Réseaux sociaux), puis Ken Burns si demandé. La lecture des métadonnées de
+            # l'image appartient à la couche UI (le modèle reste indépendant de Qt).
             from PySide6.QtGui import QImageReader
 
             image_size = QImageReader(path).size()
             if image_size.isValid():
-                source_width = max(1, image_size.width())
-                source_height = max(1, image_size.height())
-                ratio = min(
-                    1.0,
-                    self.project.width / source_width,
-                    self.project.height / source_height,
-                )
-                from core.graphics import update_graphic
-
-                update_graphic(clip, "width", round(source_width * ratio))
-                update_graphic(clip, "height", round(source_height * ratio))
+                self._place_imported_photo(clip, image_size.width(), image_size.height())
                 asset = next(
                     item for item in self.project.media_assets
                     if item.id == clip.asset_id

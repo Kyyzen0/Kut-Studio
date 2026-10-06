@@ -146,6 +146,86 @@ def safe_area_rects(width: float, height: float, preset: str = "") -> dict[str, 
 
 
 # ---------------------------------------------------------------------------
+# Zones masquées par l'interface des plateformes
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PlatformZone:
+    """Zone de l'image couverte par l'interface d'une plateforme (rectangle normalisé ``x, y, w, h``).
+
+    ``kind`` : ``top_bar`` (onglets, recherche), ``caption`` (légende, son, compte), ``actions`` (colonne des boutons),
+    ``grid_crop`` (partie rognée par la grille du profil).
+    """
+
+    kind: str
+    rect: tuple[float, float, float, float]
+
+
+def _px(x: float, y: float, w: float, h: float, width: float = 1080.0, height: float = 1920.0):
+    return (x / width, y / height, w / width, h / height)
+
+
+PLATFORM_ZONES: dict[str, tuple[PlatformZone, ...]] = {
+    # Relevés sur un cadre 1080×1920 (interfaces de 2026, arrondies vers le haut : une marge de trop vaut mieux qu'une
+    # légende qui passe sous les boutons). Ce sont des repères, les plateformes les déplacent d'une version à l'autre.
+    "tiktok": (
+        PlatformZone("top_bar", _px(0, 0, 1080, 160)),
+        PlatformZone("caption", _px(0, 1520, 1080, 400)),
+        PlatformZone("actions", _px(940, 700, 140, 820)),
+    ),
+    "reels": (
+        PlatformZone("top_bar", _px(0, 0, 1080, 150)),
+        PlatformZone("caption", _px(0, 1570, 1080, 350)),
+        PlatformZone("actions", _px(950, 920, 130, 650)),
+    ),
+    "shorts": (
+        PlatformZone("top_bar", _px(0, 0, 1080, 130)),
+        PlatformZone("caption", _px(0, 1560, 1080, 360)),
+        PlatformZone("actions", _px(950, 880, 130, 680)),
+    ),
+    # Feed 4:5 : la grille du profil montre le centre en 3:4 ; les bords gauche et droit disparaissent.
+    "instagram_feed": (
+        PlatformZone("grid_crop", (0.0, 0.0, 0.03125, 1.0)),
+        PlatformZone("grid_crop", (0.96875, 0.0, 0.03125, 1.0)),
+    ),
+}
+
+PLATFORMS: tuple[str, ...] = tuple(PLATFORM_ZONES)
+
+
+def platform_zone_rects(width: float, height: float, platform: str) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """Zones masquées de ``platform`` en pixels ``(kind, (x, y, w, h))`` ; liste vide pour une plateforme inconnue."""
+    return [
+        (zone.kind, (zone.rect[0] * width, zone.rect[1] * height, zone.rect[2] * width, zone.rect[3] * height))
+        for zone in PLATFORM_ZONES.get(platform, ())
+    ]
+
+
+def platform_content_rect(platform: str) -> tuple[float, float, float, float]:
+    """Rectangle normalisé ``(x, y, w, h)`` libre de toute zone : là où placer titres et textes importants.
+
+    Le haut est sous la barre, le bas au-dessus de la légende ; à droite, on s'arrête avant la colonne d'actions sur la
+    hauteur qu'elle occupe, ce qui revient (pour un rectangle unique) à la retirer sur toute la hauteur.
+    """
+    left, top, right, bottom = 0.0, 0.0, 1.0, 1.0
+    for zone in PLATFORM_ZONES.get(platform, ()):
+        x, y, w, h = zone.rect
+        if zone.kind == "top_bar":
+            top = max(top, y + h)
+        elif zone.kind == "caption":
+            bottom = min(bottom, y)
+        elif zone.kind == "actions":
+            right = min(right, x)
+        elif zone.kind == "grid_crop":
+            if x < 0.5:
+                left = max(left, x + w)
+            else:
+                right = min(right, x)
+    return (left, top, right - left, bottom - top)
+
+
+# ---------------------------------------------------------------------------
 # Magnétisme
 # ---------------------------------------------------------------------------
 
@@ -225,7 +305,8 @@ def snap_box(
 
 
 __all__ = [
-    "Guide", "GuideOrientation", "SAFE_AREA_PRESETS", "SnapLine", "add_guide", "clear_guides",
+    "Guide", "GuideOrientation", "PLATFORMS", "PLATFORM_ZONES", "PlatformZone", "SAFE_AREA_PRESETS", "SnapLine",
+    "add_guide", "clear_guides", "platform_content_rect", "platform_zone_rects",
     "guide_from_dict", "guide_to_dict", "move_guide", "remove_guide", "safe_area_preset_for",
     "safe_area_rects", "set_guide_locked", "snap_box", "snap_candidates", "snap_value",
 ]

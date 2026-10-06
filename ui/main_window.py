@@ -102,6 +102,7 @@ from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
 from ui.main_window_mixins.updates import UpdatesMixin
+from ui.main_window_mixins.social import SocialMixin
 from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
@@ -131,6 +132,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    SocialMixin,
     UpdatesMixin,
     HardwarePreviewMixin,
     TrackingMixin,
@@ -194,6 +196,7 @@ class MainWindow(
         self._init_encoding(loaded_settings)
         self._flow_backend_request = loaded_settings.flow_backend      # avant le moteur d'aperçu et le moteur d'export
         self._time_ripple_timeline = loaded_settings.time_ripple_timeline
+        self._init_social(loaded_settings)
         # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
         self._init_hardware_preview(loaded_settings)
         self._init_animation()
@@ -614,6 +617,7 @@ class MainWindow(
         self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
+        self.set_platform_zones(self._platform_zones)               # zones de plateforme mémorisées (préférences)
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
         self._init_tracking()
 
@@ -1173,6 +1177,8 @@ class MainWindow(
             self.project_label.setText(display_name)
         if self.project is not None:
             self.project_label.setToolTip(self.project.active_sequence.name)
+            sequence = self.project.active_sequence
+            self.properties_panel.set_sequence_info(sequence.width, sequence.height, sequence.fps)
         if self.project_dirty:
             self.saved_indicator.setText(i18n.translate("topbar.dirty"))
             self.saved_indicator.setToolTip(i18n.translate("topbar.dirty_tooltip"))
@@ -1534,6 +1540,7 @@ class MainWindow(
         for menu in (file_menu, edit_menu, sequence_menu):
             menu_bar.addMenu(menu)
         self._build_layers_menu(menu_bar)
+        self._build_social_menu(menu_bar)
         menu_bar.addMenu(window_menu)
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
@@ -2097,6 +2104,7 @@ class MainWindow(
             **self._multicam_shortcut_handlers(),
             **self._mograph_shortcut_handlers(),
             **self._time_shortcut_handlers(),
+            **self._social_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

@@ -53,6 +53,7 @@ class PreferencesMixin:
             shortcuts=self.shortcuts.overrides(),
             **self._performance_settings_fields(),
             **self._update_settings_fields(),
+            **self._social_settings_fields(),
         )
 
     def _performance_settings_fields(self) -> dict:

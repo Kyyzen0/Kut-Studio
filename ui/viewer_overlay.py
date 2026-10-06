@@ -25,7 +25,13 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QGraphicsObject
 
-from core.canvas_guides import GuideOrientation, safe_area_rects, snap_box
+from core.canvas_guides import (
+    GuideOrientation,
+    platform_content_rect,
+    platform_zone_rects,
+    safe_area_rects,
+    snap_box,
+)
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
 from ui.i18n import translate
 from ui.overlay_paint import halo_stroke
@@ -64,6 +70,7 @@ class ViewerOverlay(QGraphicsObject):
         self.canvas_rect = QRectF(0, 0, 1, 1)
         self.canvas_size = (1920.0, 1080.0)
         self.show_safe_areas = False
+        self.platform_zones = ""            # plateforme dont les zones masquées sont montrées ("" : aucune)
         self.show_grid = False
         self.show_center = False
         self.show_guides = True
@@ -104,6 +111,27 @@ class ViewerOverlay(QGraphicsObject):
             if hasattr(self, name):
                 setattr(self, name, bool(value))
         self.update()
+
+    def set_platform_zones(self, platform: str) -> None:
+        """Montre les zones masquées par l'interface de ``platform`` (``""`` : aucune)."""
+        self.platform_zones = str(platform or "")
+        self.update()
+
+    def _paint_platform_zones(self, painter: QPainter) -> None:
+        """Zones couvertes par l'interface (voilées), puis le cadre libre en pointillés."""
+        width, height = self.canvas_size
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(overlay_qcolor(OVERLAY.platform_zone, 70))
+        for _kind, (x, y, w, h) in platform_zone_rects(width, height, self.platform_zones):
+            top_left = self.to_scene(x, y)
+            painter.drawRect(QRectF(top_left.x(), top_left.y(), w * self.scale, h * self.scale))
+        painter.restore()
+        x, y, w, h = platform_content_rect(self.platform_zones)
+        top_left = self.to_scene(x * width, y * height)
+        free = QRectF(top_left.x(), top_left.y(), w * width * self.scale, h * height * self.scale)
+        halo_stroke(painter, overlay_qcolor(OVERLAY.platform_zone, 220), 1.0, lambda: painter.drawRect(free),
+                    style=Qt.DashLine)
 
     # -- repères -----------------------------------------------------------------------------
 
@@ -188,6 +216,8 @@ class ViewerOverlay(QGraphicsObject):
                 top_left = self.to_scene(x, y)
                 zone = QRectF(top_left.x(), top_left.y(), w * self.scale, h * self.scale)
                 halo_stroke(painter, overlay_qcolor(color, 190), 1.0, lambda zone=zone: painter.drawRect(zone), style=Qt.DashLine)
+        if self.platform_zones:
+            self._paint_platform_zones(painter)
         if self.show_center or self.show_safe_areas:
             centre = rect.center()
 

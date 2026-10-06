@@ -75,6 +75,7 @@ class Category(str, Enum):
     SEQUENCES = "sequences"
     MULTICAM = "multicam"
     TIME = "time"
+    SOCIAL = "social"
 
 
 class Scope(str, Enum):
@@ -512,6 +513,11 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("view_guides", Category.MOTION, "Ctrl+;", scope=_A),
     _cmd("view_grid", Category.MOTION, scope=_A),
     _cmd("mograph_snapping", Category.MOTION, scope=_A),
+    # --- Vidéo sociale (format vertical, cadrage, Ken Burns) : sans touche par défaut -----------------
+    _cmd("social_new_project", Category.SOCIAL, scope=_A),
+    _cmd("sequence_settings", Category.SOCIAL, scope=_A),
+    _cmd("social_fill_frame", Category.SOCIAL, scope=_A),
+    _cmd("social_ken_burns", Category.SOCIAL, scope=_A),
 )
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}
