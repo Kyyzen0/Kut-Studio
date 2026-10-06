@@ -67,6 +67,8 @@ class SocialMixin:
             zones.addAction(action)
             self._platform_zone_actions[platform] = action
         menu.addSeparator()
+        self._build_beat_menu(menu)
+        menu.addSeparator()
         menu.addAction(self._command_action("social_fill_frame", "social.menu.fill_frame"))
         menu.addAction(self._command_action("social_ken_burns", "social.menu.ken_burns"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))

@@ -103,6 +103,7 @@ from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
 from ui.main_window_mixins.updates import UpdatesMixin
 from ui.main_window_mixins.social import SocialMixin
+from ui.main_window_mixins.beat_grid import BeatGridMixin
 from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
@@ -132,6 +133,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    BeatGridMixin,
     SocialMixin,
     UpdatesMixin,
     HardwarePreviewMixin,
@@ -2105,6 +2107,7 @@ class MainWindow(
             **self._mograph_shortcut_handlers(),
             **self._time_shortcut_handlers(),
             **self._social_shortcut_handlers(),
+            **self._beat_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

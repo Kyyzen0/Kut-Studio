@@ -152,3 +152,51 @@ def test_the_inspector_shows_the_frame_of_the_active_sequence(window):
     window._update_top_bar()
     texts = [label.text() for label in window.properties_panel._project_info_labels.values()]
     assert any("1080 × 1920" in text for text in texts) and any("9:16" in text for text in texts)
+
+
+# --- Grille rythmique -----------------------------------------------------------------------------------------------
+
+
+def test_a_beat_grid_reaches_the_ruler_and_the_magnetism(window):
+    from core.beat_grid import BeatGrid
+
+    window._set_beat_grid(BeatGrid(120.0, 0.0), "history.beat.set")
+    panel = window.timeline_panel
+    assert panel.ruler.beat_grid == BeatGrid(120.0, 0.0)
+    panel.ruler.grab()                                             # dessine les temps sans erreur
+    scale = panel.pixels_per_second * panel.zoom
+    near = 7.47                                                    # 30 ms d'un temps (seuil : 8 px)
+    assert abs(7.5 - near) * scale < panel.snap_threshold_pixels
+    assert panel.snap_position(near, "c1")[0] == pytest.approx(7.5)
+    window.set_snap_to_beats(False)
+    assert panel.snap_position(near, "c1")[0] == pytest.approx(near)
+
+
+def test_cut_and_distribute_on_the_grid_are_single_undo_steps(window):
+    from core.beat_grid import BeatGrid
+
+    window._set_beat_grid(BeatGrid(120.0, 0.0), "history.beat.set")
+    window.cut_selection_on_beats(1)
+    assert len(window.project.tracks[0].clips) == 8                # 2 clips de 2 s, coupés toutes les 0,5 s
+    window.undo_last()
+    assert len(window.project.tracks[0].clips) == 2
+    window.timeline_panel.selected_clip_ids = {"c0", "c1"}
+    window.distribute_selection_on_grid(1)
+    starts = sorted(clip.timeline_start for clip in window.project.tracks[0].clips)
+    assert starts == pytest.approx([0.0, 0.5])
+
+
+def test_the_beat_dialog_taps_and_detects(qtbot):
+    from core.beat_grid import BeatGrid
+    from ui.beat_grid_dialog import BeatGridDialog
+
+    dialog = BeatGridDialog(None, playhead=1.25, detect=lambda: BeatGrid(96.0, 0.4))
+    qtbot.addWidget(dialog)
+    assert not dialog.remove_button.isEnabled()
+    dialog.detect_button.click()
+    assert dialog.grid() == BeatGrid(96.0, 0.4)
+    for _ in range(4):
+        dialog.tap_button.click()                                  # quatre frappes rapprochées : un tempo mesuré
+    assert dialog.bpm_spin.value() >= 20.0
+    dialog.offset_spin.setValue(0.0)
+    assert dialog.grid().offset == 0.0

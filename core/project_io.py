@@ -69,6 +69,7 @@ from typing import TYPE_CHECKING, Any
 from .effects_model import ClipEffect, EffectType
 from .animation import Keyframe
 from .audio_automation import TrackAutomation
+from .beat_grid import beat_grid_from_dict, beat_grid_to_dict
 from .canvas_guides import guide_from_dict, guide_to_dict
 from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
 from .motion_blur import settings_from_dict as motion_blur_from_dict
@@ -491,6 +492,8 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         "motion_blur": motion_blur_to_dict(getattr(sequence, "motion_blur", None)),
         # Multicam : présent seulement pour une source Multicam (angles, politique audio, méthode de synchro).
         **({"multicam": multicam_to_dict(sequence.multicam)} if sequence.multicam is not None else {}),
+        # Vidéo sociale : présent seulement si la séquence a une grille rythmique.
+        **({"beat_grid": beat_grid_to_dict(sequence.beat_grid)} if getattr(sequence, "beat_grid", None) else {}),
         "markers": [
             {
                 "id": marker.id,
@@ -729,6 +732,8 @@ def _deserialize_sequence(
     sequence.motion_blur = motion_blur_from_dict(data.get("motion_blur"))
     # --- Multicam : absent d'un ancien fichier → séquence ordinaire ; structure abîmée → ValueError.
     sequence.multicam = multicam_from_dict(data.get("multicam"))
+    # --- Grille rythmique : absente d'un ancien fichier (ou abîmée) → pas de grille.
+    sequence.beat_grid = beat_grid_from_dict(data.get("beat_grid"))
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont

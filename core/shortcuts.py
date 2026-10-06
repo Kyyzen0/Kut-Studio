@@ -518,6 +518,10 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("sequence_settings", Category.SOCIAL, scope=_A),
     _cmd("social_fill_frame", Category.SOCIAL, scope=_A),
     _cmd("social_ken_burns", Category.SOCIAL, scope=_A),
+    _cmd("beat_grid", Category.SOCIAL, scope=_A),
+    _cmd("beat_snap", Category.SOCIAL, scope=_A),
+    _cmd("beat_cut", Category.SOCIAL, scope=_A),
+    _cmd("beat_distribute", Category.SOCIAL, scope=_A),
 )
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}

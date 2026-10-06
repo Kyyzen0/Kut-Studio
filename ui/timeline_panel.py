@@ -197,6 +197,8 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         self.drag_original_start = 0.0
         self.snap_enabled: bool = True
         self.snap_threshold_pixels: float = 8.0
+        # Aimantation aux temps de la grille rythmique (si la séquence en a une).
+        self.snap_to_beats: bool = True
         self.snap_line_x: float | None = None
         self.setAcceptDrops(True)
         self.setAttribute(Qt.WA_StyledBackground, True)

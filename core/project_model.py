@@ -651,12 +651,15 @@ class Track:
         return self.type == "subtitle"
 
 
+MARKER_CATEGORIES = frozenset({"standard", "todo", "chapter", "music_cue", "cover"})
+
+
 @dataclass
 class Marker:
     """Repère posé sur la règle de la timeline.
 
-    ``category`` prépare des couleurs futures (``standard``, ``todo``,
-    ``chapter``). L'interface n'en distingue qu'une pour l'instant.
+    ``category`` : ``standard``, ``todo``, ``chapter``, ``music_cue`` (repère de musique posé par un template :
+    drop, montée, fin) ou ``cover`` (image de couverture exportée avec une vidéo sociale).
     """
 
     id: str
@@ -667,7 +670,7 @@ class Marker:
     def __post_init__(self) -> None:
         if self.time_seconds < 0.0:
             raise ValueError("Un marqueur ne peut pas être avant 0 seconde.")
-        if self.category not in {"standard", "todo", "chapter"}:
+        if self.category not in MARKER_CATEGORIES:
             self.category = "standard"
 
 
@@ -732,6 +735,9 @@ class Sequence:
     # Description des angles quand la séquence est une **source Multicam** (``None`` : séquence ordinaire).
     # Le décalage d'un angle est la position de ses clips : il n'est stocké nulle part ailleurs.
     multicam: MulticamSource | None = None
+    # --- Vidéo sociale ---
+    # Grille rythmique (:class:`core.beat_grid.BeatGrid`) : tempo et calage ; ``None`` : pas de grille.
+    beat_grid: object = None
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():

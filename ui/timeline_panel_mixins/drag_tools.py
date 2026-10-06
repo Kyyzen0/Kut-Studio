@@ -27,6 +27,20 @@ class DragToolsMixin:
             self.snap_line_x = None
             self.update()
 
+    def beat_grid(self):
+        """Grille rythmique de la séquence ouverte (``None`` : aucune)."""
+        project = getattr(self, "project", None)
+        if project is None:
+            return None
+        return getattr(project.active_sequence, "beat_grid", None)
+
+    def _beat_points(self, seconds: float, threshold: float) -> list[float]:
+        """Temps de la grille proches de ``seconds`` (dans le seuil), si l'aimantation aux temps est active."""
+        grid = self.beat_grid()
+        if grid is None or not getattr(self, "snap_to_beats", True):
+            return []
+        return grid.beat_times(max(0.0, seconds - threshold), seconds + threshold)
+
     def snap_position(
         self,
         proposed_position: float,
@@ -48,6 +62,7 @@ class DragToolsMixin:
             proposed_position,
             threshold_seconds,
             excluded_ids=(excluded_clip_id,) if excluded_clip_id is not None else (),
+            extra_points=self._beat_points(proposed_position, threshold_seconds),
             playhead=self.playhead_seconds,
         )
         if abs(snapped - proposed_position) > 1e-6:
@@ -75,7 +90,7 @@ class DragToolsMixin:
             seconds,
             threshold,
             excluded_ids=excluded,
-            extra_points=[marker.time_seconds for marker in self.project.markers],
+            extra_points=[marker.time_seconds for marker in self.project.markers] + self._beat_points(seconds, threshold),
             playhead=self.playhead_seconds,
         )
         if abs(snapped - seconds) > 1e-6:
