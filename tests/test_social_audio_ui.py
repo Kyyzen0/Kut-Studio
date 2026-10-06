@@ -114,3 +114,15 @@ def test_a_ducking_preset_is_one_undo_step(window):
     assert [item.config for item in window.project.ducking_sidechains] == [DUCKING_PRESETS["gentle"]]
     window.undo_last()
     assert window.project.ducking_sidechains[0].config == DUCKING_PRESETS["social_punchy"]
+
+
+def test_the_cover_marker_is_unique_and_undoable(window):
+    window.playhead_seconds = 1.5
+    window.set_cover_at_playhead()
+    window.playhead_seconds = 3.0
+    window.set_cover_at_playhead()
+    covers = [marker for marker in window.project.markers if marker.category == "cover"]
+    assert [marker.time_seconds for marker in covers] == [3.0]
+    assert covers[0].name == i18n.translate("marker.cover_name")
+    window.undo_last()
+    assert [marker.time_seconds for marker in window.project.markers if marker.category == "cover"] == [1.5]

@@ -237,7 +237,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.preset.desc.h264_1440p": {"fr": "QHD pour les écrans haute résolution.", "en": "QHD for high-resolution screens.", "es": "QHD para pantallas de alta resolución."},
     "render.preset.desc.h264_4k": {"fr": "UHD ; rendu long et fichier volumineux.", "en": "UHD; long render and large file.", "es": "UHD; render largo y archivo grande."},
     "render.preset.desc.youtube": {"fr": "MP4 H.264 1080p, qualité élevée, démarrage rapide.", "en": "MP4 H.264 1080p, high quality, fast start.", "es": "MP4 H.264 1080p, alta calidad, inicio rápido."},
-    "render.preset.desc.tiktok": {"fr": "Vidéo verticale 1080×1920.", "en": "Vertical video 1080×1920.", "es": "Vídeo vertical 1080×1920."},
+    "render.preset.desc.tiktok": {"fr": "Vertical 1080×1920, son à −14 LUFS, copie légère et couverture.", "en": "Vertical 1080×1920, sound at −14 LUFS, light copy and cover.", "es": "Vertical 1080×1920, sonido a −14 LUFS, copia ligera y portada."},
     "render.preset.desc.prores_master": {"fr": "Intermédiaire de qualité maximale (ProRes 422 HQ).", "en": "Maximum-quality intermediate (ProRes 422 HQ).", "es": "Intermedio de máxima calidad (ProRes 422 HQ)."},
     "render.preset.desc.custom": {"fr": "Réglages libres : format, résolution, qualité, images/seconde.", "en": "Free settings: format, resolution, quality, frame rate.", "es": "Ajustes libres: formato, resolución, calidad, fotogramas por segundo."},
     "render.export.format": {"fr": "Format", "en": "Format", "es": "Formato"},

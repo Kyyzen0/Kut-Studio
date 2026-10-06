@@ -233,6 +233,7 @@ class ProjectFilesMixin:
                 path,
                 master_gain_db=self._master_gain_db,
                 master_muted=self._master_muted,
+                playhead_seconds=float(self.playhead_seconds),
             )
         except (ValueError, OSError, KeyError) as exc:
             self.export_panel.mark_export_error(i18n.translate("render.export.invalid", error=exc))

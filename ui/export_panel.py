@@ -24,6 +24,7 @@ from core.render_presets import (
     default_preset,
     get_preset,
     with_hardware,
+    with_deliverables,
     with_loudness,
 )
 from core.loudness import SOCIAL_TARGET_LUFS
@@ -178,6 +179,12 @@ class ExportPanel(QWidget):
         self.loudness_check.setObjectName("exportLoudnessCheck")
         self.loudness_check.toggled.connect(lambda _checked: self._update_summary())
         form.addRow(self.loudness_check)
+        self.preview_copy_check = QCheckBox()
+        self.preview_copy_check.setObjectName("exportPreviewCopyCheck")
+        form.addRow(self.preview_copy_check)
+        self.cover_check = QCheckBox()
+        self.cover_check.setObjectName("exportCoverCheck")
+        form.addRow(self.cover_check)
         layout.addWidget(settings)
 
         self.status_label = QLabel()
@@ -289,6 +296,10 @@ class ExportPanel(QWidget):
             label.setText(tr(f"render.export.{key}"))
         self.loudness_check.setText(tr("render.export.loudness", lufs=f"{SOCIAL_TARGET_LUFS:g}"))
         self.loudness_check.setToolTip(tr("render.export.loudness_tooltip"))
+        self.preview_copy_check.setText(tr("render.export.preview_copy"))
+        self.preview_copy_check.setToolTip(tr("render.export.preview_copy_tooltip"))
+        self.cover_check.setText(tr("render.export.cover"))
+        self.cover_check.setToolTip(tr("render.export.cover_tooltip"))
         self.cancel_button.setText(tr("render.export.cancel"))
         self.add_button.setText(tr("render.export.add"))
         self.launch_button.setText(tr("render.export.launch"))
@@ -300,7 +311,9 @@ class ExportPanel(QWidget):
     def current_spec(self) -> RenderPresetSpec:
         """Preset choisi, avec l'encodeur sélectionné (Automatique, CPU ou matériel) et la normalisation choisie."""
         spec = with_hardware(self._base_spec(), self.current_encoder())
-        return with_loudness(spec, SOCIAL_TARGET_LUFS if self.loudness_check.isChecked() else None)
+        spec = with_loudness(spec, SOCIAL_TARGET_LUFS if self.loudness_check.isChecked() else None)
+        return with_deliverables(spec, preview_copy=self.preview_copy_check.isChecked(),
+                                 cover=self.cover_check.isChecked())
 
     def _base_spec(self) -> RenderPresetSpec:
         """Preset choisi ; pour « Custom », construit depuis les réglages libres."""
@@ -321,9 +334,12 @@ class ExportPanel(QWidget):
         )
 
     def _on_preset_changed(self, *_args) -> None:
-        self.loudness_check.blockSignals(True)
-        self.loudness_check.setChecked(self._base_spec().loudness_lufs is not None)
-        self.loudness_check.blockSignals(False)
+        base = self._base_spec()
+        for check, value in ((self.loudness_check, base.loudness_lufs is not None),
+                             (self.preview_copy_check, base.preview_copy), (self.cover_check, base.cover)):
+            check.blockSignals(True)                        # les options suivent le preset, sans recalcul à chaque case
+            check.setChecked(value)
+            check.blockSignals(False)
         self.custom_frame.setVisible(self.current_preset_id() == CUSTOM_PRESET_ID)
         self._rebuild_encoder_options()
         self._update_summary()

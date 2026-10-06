@@ -48,6 +48,7 @@ class SocialMixin:
             "impact_shake": self.apply_shake_to_selection,
             "impact_flash": self.add_flash_at_playhead,
             "impact_on_cuts": self.apply_impact_on_cuts_of_track,
+            "cover_marker": self.set_cover_at_playhead,
         }
 
     # -- menu --------------------------------------------------------------------------------------------------------
@@ -80,6 +81,7 @@ class SocialMixin:
                              ("impact_flash", "impact.menu.flash"), ("impact_on_cuts", "impact.menu.on_cuts")):
             impact.addAction(self._command_action(command, key))
         self._build_social_audio_menu(menu)
+        menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
         for key, attribute in (("social.menu.photo_fill", "_photo_fill"), ("social.menu.photo_ken_burns", "_photo_ken_burns")):
             action = self._labelled_action(key)
@@ -261,6 +263,15 @@ class SocialMixin:
         self._update_timeline_duration()
         self._invalidate_preview_for_clip(clip.id)
         self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def set_cover_at_playhead(self) -> None:
+        """L'image de couverture des exports sociaux sera celle de la tête de lecture (marqueur unique « cover »)."""
+        from core.timeline_editing import set_cover_marker
+
+        set_cover_marker(self.project, float(self.playhead_seconds), i18n.translate("marker.cover_name"))
+        self._record_history(i18n.translate("history.cover_marker"))
+        self._reload_timeline_preserving_selection()
         self._mark_dirty()
 
     def apply_impact_on_cuts_of_track(self) -> None:

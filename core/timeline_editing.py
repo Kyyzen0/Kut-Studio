@@ -476,6 +476,12 @@ def add_marker(
     return marker
 
 
+def set_cover_marker(project: Project, time_seconds: float, name: str = "") -> Marker:
+    """Pose **le** marqueur de couverture (catégorie ``cover``) : il n'y en a qu'un, l'ancien est remplacé."""
+    project.markers = [marker for marker in project.markers if marker.category != "cover"]
+    return add_marker(project, time_seconds, name, category="cover")
+
+
 def remove_marker(project: Project, marker_id: str) -> bool:
     """Retire un marqueur. Retourne ``False`` s'il n'existait pas."""
     kept = [marker for marker in project.markers if marker.id != marker_id]

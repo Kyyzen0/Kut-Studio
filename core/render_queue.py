@@ -56,6 +56,7 @@ INTERRUPTED_MESSAGE = (
     "Relancez ce job pour le recommencer."
 )
 CLOSED_MESSAGE = "Rendu annulé : fermeture de Kut-Studio."
+EXTRAS_SKIPPED_MESSAGE = "Couverture et copie d'aperçu abandonnées (la vidéo est terminée)."
 
 
 def partial_path_for(job: RenderJob) -> str:
@@ -101,6 +102,7 @@ class RenderQueue(QObject):
         self._prepare_executor = None
         self._prepare_timer = None
         self._preparing = None
+        self._finishing = None  # (job, résultat, future) : couverture et copie d'aperçu après le rendu
         self._partial: str | None = None
         self._mode: str | None = None  # None, "all" ou "single"
         self._targets: set[str] = set()  # jobs d'une exécution « single »
@@ -197,11 +199,13 @@ class RenderQueue(QObject):
         master_muted: bool = False,
         name: str | None = None,
         sequence_id: str | None = None,
+        playhead_seconds: float = 0.0,
     ) -> RenderJob:
         """Ajoute un export en attente et retourne son job.
 
         ``sequence_id`` choisit la séquence rendue (la séquence active par
-        défaut). L'instantané contient tout le projet : les séquences
+        défaut). La couverture (si le preset en écrit une) est prise au
+        marqueur ``cover`` de la séquence, sinon à ``playhead_seconds``. L'instantané contient tout le projet : les séquences
         imbriquées sont donc rendues telles qu'elles étaient à l'ajout.
 
         Valide tout de suite ce qui peut l'être (dossier de sortie, média
@@ -250,6 +254,7 @@ class RenderQueue(QObject):
             name=name,
             sequence_id=sequence.id,
             sequence_name=sequence.name,
+            cover_seconds=_cover_seconds(sequence, playhead_seconds, plan.duration),
         )
         job.snapshot_path = str(self._store.write_snapshot(job.id, project))
         self._jobs.append(job)
@@ -305,6 +310,11 @@ class RenderQueue(QObject):
         if job is None or job.is_finished:
             return False
         if job is self._current:
+            if self._finishing is not None:
+                # La vidéo est terminée : seuls les livrables restent, on ne les attend pas.
+                self._poll_deliverables(abandon=True)
+                self._schedule_next()
+                return True
             if not self._launched:
                 # Rendu préparé mais pas encore lancé : rien à tuer.
                 self._finish_current(lambda: job.mark_cancelled())
@@ -511,19 +521,24 @@ class RenderQueue(QObject):
         self._engine.start(request)
 
     def _prepare_then_start(self, job: RenderJob, request) -> None:
-        from concurrent.futures import ThreadPoolExecutor
+        self._ensure_worker()
+        future = self._prepare_executor.submit(_prepare_request, request, job.loudness_lufs)
+        self._preparing = (job, request, future)
+        self._prepare_timer.start()
 
+    def _ensure_worker(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
 
         if self._prepare_executor is None:
             self._prepare_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kut-mograph")
             self._prepare_timer = QTimer(self)
             self._prepare_timer.setInterval(50)
             self._prepare_timer.timeout.connect(self._poll_preparation)
-        future = self._prepare_executor.submit(_prepare_request, request, job.loudness_lufs)
-        self._preparing = (job, request, future)
-        self._prepare_timer.start()
 
     def _poll_preparation(self) -> None:
+        if self._finishing is not None:
+            self._poll_deliverables()
+            return
         preparing = self._preparing
         if preparing is None:
             self._prepare_timer.stop()
@@ -629,20 +644,63 @@ class RenderQueue(QObject):
                 return
             choice = getattr(self._engine, "last_encoder_choice", None)
             now = time.time()
-            job.mark_completed(
-                RenderResult(
-                    output_bytes=size,
-                    render_seconds=max(0.0, now - (job.started_at or now)),
-                    timeline_seconds=job.duration_seconds,
-                    encoder=getattr(choice, "encoder", ""),
-                    hardware_used=getattr(getattr(choice, "used", None), "value", "cpu"),
-                    fallback_reason=getattr(choice, "fallback_reason", None),
-                ),
-                now,
+            result = RenderResult(
+                output_bytes=size,
+                render_seconds=max(0.0, now - (job.started_at or now)),
+                timeline_seconds=job.duration_seconds,
+                encoder=getattr(choice, "encoder", ""),
+                hardware_used=getattr(getattr(choice, "used", None), "value", "cpu"),
+                fallback_reason=getattr(choice, "fallback_reason", None),
             )
+            if job.preview_copy or job.cover:
+                return result               # la vidéo est écrite ; couverture et copie suivent, hors du fil de l'interface
+            job.mark_completed(result, now)
+            return None
 
+        if job.preview_copy or job.cover:
+            result = finish()
+            if result is not None:
+                self._partial = None
+                self._launched = False      # le moteur a fini : il n'émettra plus rien pour ce job
+                self._start_deliverables(job, result)
+                return
+            self._finish_current(lambda: None)
+            self._schedule_next()
+            return
         self._finish_current(finish)
         self._schedule_next()
+
+    # -- Livrables (couverture, copie d'aperçu) -------------------------------------------------------------
+
+    def _start_deliverables(self, job: RenderJob, result: RenderResult) -> None:
+        from .social_deliverables import Deliverables, make_deliverables
+
+        self._ensure_worker()
+        wanted = Deliverables(preview_copy=job.preview_copy, cover=job.cover, cover_seconds=job.cover_seconds)
+        future = self._prepare_executor.submit(
+            make_deliverables, job.output_path, wanted, width=job.width, height=job.height,
+            duration=job.duration_seconds, fps=job.fps,
+        )
+        self._finishing = (job, result, future)
+        self._prepare_timer.start()
+
+    def _poll_deliverables(self, *, abandon: bool = False) -> None:
+        job, result, future = self._finishing
+        if not (future.done() or abandon):
+            return
+        self._finishing = None
+        if not self._preparing:
+            self._prepare_timer.stop()
+        if future.done() and not future.cancelled():
+            try:
+                job.extras, job.extras_error = future.result()
+            except Exception as error:  # noqa: BLE001 - un livrable manquant ne fait pas échouer la vidéo, déjà écrite
+                job.extras_error = str(error) or type(error).__name__
+        else:
+            job.extras_error = EXTRAS_SKIPPED_MESSAGE
+        self._finish_current(lambda: job.mark_completed(result))
+        if not abandon:
+            self._schedule_next()
 
     def _on_encoder_selected(self, choice) -> None:
         """Mémorise l'encodeur réellement lancé (visible dès le début du rendu)."""
@@ -744,6 +802,8 @@ class RenderQueue(QObject):
             # Une préparation de calques en cours ne retient pas la fermeture.
             self._prepare_timer.stop()
             self._preparing = None
+            if self._finishing is not None:   # la vidéo est écrite : le job est terminé, sans ses livrables
+                self._poll_deliverables(abandon=True)
             self._prepare_executor.shutdown(wait=False, cancel_futures=True)
         stopped = True
         if self._launched:
@@ -775,6 +835,13 @@ class RenderQueue(QObject):
             self.overall_progress_changed.emit(value)
 
 
+def _cover_seconds(sequence, playhead: float, duration: float) -> float:
+    """Instant de la couverture : premier marqueur ``cover`` de la séquence, sinon la tête de lecture (dans le plan)."""
+    covers = sorted(marker.time_seconds for marker in getattr(sequence, "markers", ()) if marker.category == "cover")
+    seconds = covers[0] if covers else float(playhead)
+    return min(max(0.0, seconds), max(0.0, float(duration)))
+
+
 def _same_path_key(path: str | os.PathLike[str]) -> str:
     """Clé de comparaison de chemins (insensible à la casse hors POSIX)."""
     return os.path.normcase(os.path.abspath(os.path.expanduser(str(path))))
@@ -782,6 +849,7 @@ def _same_path_key(path: str | os.PathLike[str]) -> str:
 
 __all__ = [
     "CLOSED_MESSAGE",
+    "EXTRAS_SKIPPED_MESSAGE",
     "INTERRUPTED_MESSAGE",
     "RenderQueue",
     "partial_path_for",

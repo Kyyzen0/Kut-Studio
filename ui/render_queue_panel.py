@@ -383,6 +383,14 @@ class RenderQueuePanel(QWidget):
             lines.append(i18n.translate("render.detail.size", size=format_size(job.result.output_bytes)))
             if not os.path.isfile(job.output_path):
                 lines.append(i18n.translate("render.detail.missing_file"))
+            if job.extras:
+                lines.append(i18n.translate("render.detail.extras",
+                                            files=", ".join(os.path.basename(path) for path in job.extras)))
+            if job.extras_error:
+                lines.append(i18n.translate("render.detail.extras_error", error=_tail(job.extras_error)))
+        if job.loudness_lufs is not None and job.measured_lufs is not None:
+            lines.append(i18n.translate("render.detail.loudness", measured=f"{job.measured_lufs:g}",
+                                        target=f"{job.loudness_lufs:g}"))
         if job.error_message:
             kind = i18n.translate(f"render.kind.{job.error_kind}") if job.error_kind else ""
             heading = kind if kind and not kind.startswith("[") else i18n.translate("render.status.failed")

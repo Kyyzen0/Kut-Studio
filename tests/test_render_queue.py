@@ -195,11 +195,13 @@ def test_there_is_no_paused_status():
 
 def test_required_presets_exist_with_the_expected_settings():
     by_id = {spec.id: spec for spec in builtin_presets()}
-    assert {"h264_1080p", "h264_1440p", "h264_4k", "youtube", "tiktok", "prores_master"} <= set(by_id)
+    assert {"h264_1080p", "h264_1440p", "h264_4k", "youtube", "tiktok", "prores_master", "tiktok_60", "reels",
+            "shorts", "instagram_feed_4_5", "square"} <= set(by_id)
     assert by_id["h264_1080p"].resolution == (1920, 1080)
     assert by_id["h264_1440p"].resolution == (2560, 1440)
     assert by_id["h264_4k"].resolution == (3840, 2160)
     assert by_id["tiktok"].resolution == (1080, 1920)
+    assert by_id["instagram_feed_4_5"].resolution == (1080, 1350) and by_id["square"].resolution == (1080, 1080)
     assert (by_id["prores_master"].container, by_id["prores_master"].video_codec) == ("mov", "prores_ks")
     assert CUSTOM_PRESET_ID not in by_id  # Custom est construit, pas figé
 

@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -205,6 +205,16 @@ class RenderJob:
     """Loudness visée (normalisation du mixage) ; ``None`` : le mixage tel quel."""
     measured_lufs: float | None = None
     """Loudness du mixage mesurée avant normalisation (première passe), pour l'affichage."""
+    preview_copy: bool = False
+    """Écrire une copie d'aperçu légère après le rendu."""
+    cover: bool = False
+    """Écrire l'image de couverture après le rendu."""
+    cover_seconds: float = 0.0
+    """Instant de la couverture (secondes du plan), fixé à l'ajout : marqueur ``cover`` ou tête de lecture."""
+    extras: list[str] = field(default_factory=list)
+    """Fichiers livrés en plus de la vidéo (couverture, copie d'aperçu)."""
+    extras_error: str = ""
+    """Pourquoi un fichier livré manque (la vidéo, elle, est terminée)."""
 
     # -- Création -------------------------------------------------------------------
 
@@ -223,6 +233,7 @@ class RenderJob:
         now: float | None = None,
         sequence_id: str = "",
         sequence_name: str = "",
+        cover_seconds: float = 0.0,
     ) -> RenderJob:
         """Crée un job ``WAITING`` à partir d'un preset."""
         stamp = time.time() if now is None else now
@@ -249,6 +260,9 @@ class RenderJob:
             sequence_id=str(sequence_id or ""),
             sequence_name=str(sequence_name or ""),
             loudness_lufs=getattr(spec, "loudness_lufs", None),
+            preview_copy=bool(getattr(spec, "preview_copy", False)),
+            cover=bool(getattr(spec, "cover", False)),
+            cover_seconds=max(0.0, float(cover_seconds)),
         )
 
     # -- Lecture ----------------------------------------------------------------------
@@ -338,7 +352,12 @@ class RenderJob:
         self.error_message = ""
         self.error_kind = ""
         self.result = None
+        self._clear_run_info()
+
+    def _clear_run_info(self) -> None:
         self._clear_encoder_info()
+        self.extras = []
+        self.extras_error = ""
 
     def _clear_encoder_info(self) -> None:
         self.encoder = ""
@@ -354,7 +373,7 @@ class RenderJob:
         self.error_message = ""
         self.error_kind = ""
         self.result = None
-        self._clear_encoder_info()
+        self._clear_run_info()
 
     def mark_completed(self, result: RenderResult, now: float | None = None) -> None:
         self.status = JobStatus.COMPLETED
@@ -414,6 +433,11 @@ class RenderJob:
             "sequence_name": self.sequence_name,
             "loudness_lufs": self.loudness_lufs,
             "measured_lufs": self.measured_lufs,
+            "preview_copy": self.preview_copy,
+            "cover": self.cover,
+            "cover_seconds": self.cover_seconds,
+            "extras": list(self.extras),
+            "extras_error": self.extras_error,
         }
 
     @classmethod
@@ -481,6 +505,12 @@ class RenderJob:
             sequence_name=str(data.get("sequence_name") or ""),
             loudness_lufs=_optional_float(data.get("loudness_lufs")),
             measured_lufs=_optional_float(data.get("measured_lufs")),
+            preview_copy=data.get("preview_copy") is True,
+            cover=data.get("cover") is True,
+            cover_seconds=max(0.0, _float(data.get("cover_seconds"))),
+            extras=[str(path) for path in data.get("extras") or () if isinstance(path, str)]
+            if isinstance(data.get("extras"), list) else [],
+            extras_error=str(data.get("extras_error") or ""),
         )
 
 
