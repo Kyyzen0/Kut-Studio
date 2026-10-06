@@ -140,7 +140,7 @@ def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_
 def test_core_effects_is_gone_and_its_one_live_use_is_wired_directly(qtbot, monkeypatch):
     """``core/effects.py`` mêlait une ligne utile à deux chemins morts ; la ligne utile est maintenant en place.
 
-    Le curseur « Audio > Volume » de l'inspecteur règle le volume de lecture du moniteur sans passer par un module
+    Le curseur « Audio > Volume du moniteur » de l'inspecteur règle le volume de lecture du moniteur sans passer par un module
     de ``core`` (l'ancien ``set_volume`` n'était qu'un ``setVolume(valeur / 100)``).
     """
     assert importlib.util.find_spec("core.effects") is None
