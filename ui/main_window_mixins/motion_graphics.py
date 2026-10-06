@@ -416,7 +416,7 @@ class MotionGraphicsMixin:
         from core.keyframe_editing import curve_of
         from core.project_model import Clip
         from core.timeline_operations import find_clip
-        from core.visual_effects import ADVANCED_TRANSFORM_PROPERTIES, evaluate_transform
+        from core.visual_effects import ADVANCED_TRANSFORM_PROPERTIES, STATIC_TRANSFORM_PROPERTIES, evaluate_transform
 
         try:
             clip = find_clip(self.project, clip_id)
@@ -429,6 +429,8 @@ class MotionGraphicsMixin:
         animated = set()
         keyed = set()
         for name in ADVANCED_TRANSFORM_PROPERTIES:
+            if name in STATIC_TRANSFORM_PROPERTIES:
+                continue
             curve = curve_of(clip, name)
             if curve:
                 animated.add(name)
@@ -460,6 +462,7 @@ class MotionGraphicsMixin:
         from core import keyframe_editing
         from core.animation_targets import get_target
         from core.timeline_operations import find_clip
+        from core.visual_effects import STATIC_TRANSFORM_PROPERTIES
 
         try:
             clip = find_clip(self.project, clip_id)
@@ -470,6 +473,10 @@ class MotionGraphicsMixin:
         )
         changed = False
         for name, value in values.items():
+            if name in STATIC_TRANSFORM_PROPERTIES:                 # réglage du clip (« remplir »), jamais une courbe
+                clip.transform = clip.transform.with_property(name, value)
+                changed = True
+                continue
             try:
                 target = get_target(name)
                 value = target.spec.clamp(value)

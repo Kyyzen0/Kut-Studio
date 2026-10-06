@@ -1774,6 +1774,9 @@ class MainWindow(
                 scale_y=evaluated.scale_y,
                 flip_h=evaluated.flip_h,
                 flip_v=evaluated.flip_v,
+                fill=evaluated.fill,
+                pan_x=evaluated.pan_x,
+                pan_y=evaluated.pan_y,
             )
             self.preview_panel.set_effects(clip_obj.effects)
             if self.preview_panel.gpu_active:

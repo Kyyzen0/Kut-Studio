@@ -146,10 +146,33 @@ class FitBox:
         return (self.offset_x, self.offset_y, self.offset_x + self.width, self.offset_y + self.height)
 
 
-def fit_box(media_width: int, media_height: int, canvas_width: int, canvas_height: int) -> FitBox:
-    """Le média ``w × h`` adapté sans déformation dans le cadre, centré."""
+def cover_size(media_width: int, media_height: int, canvas_width: int, canvas_height: int) -> tuple[int, int]:
+    """Taille du média qui **remplit** le cadre sans déformation, comme ``scale=…:force_original_aspect_ratio=increase``
+    de FFmpeg (une dimension égale au cadre, l'autre arrondie au plus proche et jamais plus petite que le cadre)."""
     w, h = max(1, int(media_width)), max(1, int(media_height))
     cw, ch = max(1, int(canvas_width)), max(1, int(canvas_height))
+    return max(cw, int(math.floor(ch * w / h + 0.5))), max(ch, int(math.floor(cw * h / w + 0.5)))
+
+
+def pan_offset(excess: int, pan: float) -> int:
+    """Décalage entier de la fenêtre de cadrage dans un média qui dépasse de ``excess`` pixels (``crop`` de l'export)."""
+    return int(math.floor(max(0, int(excess)) * (1.0 + max(-1.0, min(1.0, float(pan)))) / 2.0))
+
+
+def fit_box(
+    media_width: int, media_height: int, canvas_width: int, canvas_height: int,
+    *, fill: bool = False, pan_x: float = 0.0, pan_y: float = 0.0,
+) -> FitBox:
+    """Le média ``w × h`` adapté sans déformation dans le cadre, centré.
+
+    ``fill`` : il remplit le cadre (l'excédent est rogné) ; ``pan_x`` / ``pan_y`` (−1…1) placent la fenêtre visible,
+    au pixel près comme le ``crop`` de l'export."""
+    w, h = max(1, int(media_width)), max(1, int(media_height))
+    cw, ch = max(1, int(canvas_width)), max(1, int(canvas_height))
+    if fill:
+        iw, ih = cover_size(w, h, cw, ch)
+        ox, oy = -pan_offset(iw - cw, pan_x), -pan_offset(ih - ch, pan_y)
+        return FitBox(iw / w, ih / h, float(ox), float(oy), float(iw), float(ih))
     factor = min(cw / w, ch / h)
     # FFmpeg arrondit la taille réduite à l'entier, puis ``pad`` centre à l'entier.
     iw = max(1, min(cw, int(round(w * factor))))
@@ -667,7 +690,7 @@ def crop_mask_values(correction: Matrix, crop: tuple[float, float, float, float]
 
 
 __all__ = [
-    "FitBox", "MotionSeries", "StabilizationResult", "clip_source_indices", "crop_mask_values",
+    "FitBox", "MotionSeries", "cover_size", "pan_offset", "StabilizationResult", "clip_source_indices", "crop_mask_values",
     "fit_box", "fit_similarity", "gaussian_smooth", "inscribed_factor", "local_time_for_source",
     "matrix_is_finite", "motion_series", "robust_fit", "similarity", "similarity_parts", "source_time",
     "stabilization_result", "video_layer_matrix",

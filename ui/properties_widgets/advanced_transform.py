@@ -34,8 +34,16 @@ NUMERIC_FIELDS = (
     ("scale_x", "animation.property.scale_x", 0.0, 1000.0, 1.0, 100.0, " %"),
     ("scale_y", "animation.property.scale_y", 0.0, 1000.0, 1.0, 100.0, " %"),
     ("skew", "animation.property.skew", -85.0, 85.0, 1.0, 1.0, " °"),
+    ("pan_x", "animation.property.pan_x", -100.0, 100.0, 1.0, 100.0, " %"),
+    ("pan_y", "animation.property.pan_y", -100.0, 100.0, 1.0, 100.0, " %"),
 )
-BOOL_FIELDS = (("flip_h", "animation.property.flip_h"), ("flip_v", "animation.property.flip_v"))
+BOOL_FIELDS = (
+    ("flip_h", "animation.property.flip_h"), ("flip_v", "animation.property.flip_v"), ("fill", "animation.property.fill"),
+)
+VIDEO_ONLY_FIELDS = ("fill", "pan_x", "pan_y")
+"""Cadrage d'un média : sans objet pour un calque graphique."""
+STATIC_FIELDS = ("fill",)
+"""Réglages sans image-clé (pas de losange)."""
 
 
 class AdvancedTransformEditor(QWidget):
@@ -87,7 +95,8 @@ class AdvancedTransformEditor(QWidget):
             check = QCheckBox(translate(label), objectName=f"advanced_{name}")
             check.toggled.connect(lambda checked, prop=name: self._emit(prop, bool(checked)))
             grid.addWidget(check, row, 0, 1, 2)
-            grid.addWidget(self._diamond(name), row, 2)
+            if name not in STATIC_FIELDS:
+                grid.addWidget(self._diamond(name), row, 2)
             self.checks[name] = check
             row += 1
         self._factors = {name: factor for name, _l, _a, _b, _s, factor, _x in NUMERIC_FIELDS}
@@ -110,8 +119,14 @@ class AdvancedTransformEditor(QWidget):
             self.value_changed.emit(name, value)
 
     def set_skew_available(self, available: bool) -> None:
+        """Calque graphique (``True``) : inclinaison ; clip vidéo (``False``) : cadrage du média."""
         for widget in (self.spins["skew"], self._labels["skew"], self.diamonds["skew"]):
             widget.setVisible(bool(available))
+        for name in VIDEO_ONLY_FIELDS:
+            widgets = [self.spins.get(name), self._labels.get(name), self.diamonds.get(name), self.checks.get(name)]
+            for widget in widgets:
+                if widget is not None:
+                    widget.setVisible(not available)
 
     def set_values(self, values: dict, *, animated=(), keyed=()) -> None:
         """Valeurs à la tête de lecture ; ``animated`` / ``keyed`` : losanges."""

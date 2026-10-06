@@ -33,6 +33,7 @@ from typing import Any
 from .animation import AnimatableProperty, AnimationCurve, Keyframe, ValueKind, normalize_time
 from .visual_effects import (
     TRANSFORM_PROPERTIES,
+    STATIC_TRANSFORM_PROPERTIES,
     TRANSFORM_PROPERTY_NAMES,
     TransformKeyframe,
 )
@@ -264,7 +265,14 @@ def _graphics_only(track_type: str) -> bool:
 
 # L'inclinaison n'existe que dans le rastériseur motion graphics : les clips
 # vidéo passent par ``scale``/``rotate`` de FFmpeg, qui ne savent pas cisailler.
-_TRANSFORM_APPLIES: dict[str, Callable[[str], bool]] = {"skew": _graphics_only}
+def _video_only(track_type: str) -> bool:
+    return track_type == "video"
+
+
+# Le cadrage (remplir, fenêtre de pan) place un **média** dans le cadre : un calque graphique n'a pas de média à cadrer.
+_TRANSFORM_APPLIES: dict[str, Callable[[str], bool]] = {
+    "skew": _graphics_only, "pan_x": _video_only, "pan_y": _video_only,
+}
 
 
 def _transform_target(name: str) -> PropertyTarget:
@@ -298,7 +306,9 @@ def _transform_target(name: str) -> PropertyTarget:
 
 
 for _name in TRANSFORM_PROPERTY_NAMES:
-    register_target(_transform_target(_name))
+    # « Remplir » choisit la taille du média avant son temps (``scale`` puis ``crop``) : un réglage du clip, pas une courbe.
+    if _name not in STATIC_TRANSFORM_PROPERTIES:
+        register_target(_transform_target(_name))
 
 
 __all__ = [

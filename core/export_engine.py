@@ -1809,6 +1809,50 @@ def composition_size(frame_width: int, frame_height: int, output_width: int, out
     return width, height
 
 
+def layer_framing(layer, width: int, height: int) -> tuple[int, int] | None:
+    """Taille agrandie du média d'une couche en cadrage « remplir » (``None`` : cadrage habituel, avec bandes).
+
+    Sans la taille du média (inconnue), le cadrage reste le cadrage habituel : mieux vaut des bandes qu'une image rognée
+    au hasard."""
+    transform = getattr(layer, "transform", None)
+    if not getattr(transform, "fill", False):
+        return None
+    source_width, source_height = int(getattr(layer, "source_width", 0)), int(getattr(layer, "source_height", 0))
+    if source_width <= 0 or source_height <= 0:
+        return None
+    from .tracking_motion import cover_size
+
+    return cover_size(source_width, source_height, width, height)
+
+
+def layer_conform_filter(layer, width: int, height: int, pad_color: str = "black") -> str:
+    """Mise au format d'une couche avant son temps : le cadre (avec bandes) ou, en « remplir », sa taille agrandie
+    (:func:`layer_framing`). La fenêtre visible est choisie ensuite, en temps du clip (:func:`_framing_crop`)."""
+    framing = layer_framing(layer, width, height)
+    if framing is None:
+        return frame_fit_filter(width, height, pad_color)
+    return f"scale={framing[0]}:{framing[1]}"
+
+
+def _framing_crop(layer, width: int, height: int) -> str:
+    """``crop`` de la fenêtre visible d'un cadrage « remplir » (pan animé en temps du clip : ``t`` part de 0)."""
+    framing = layer_framing(layer, width, height)
+    if framing is None:
+        return ""
+    keyframes = layer.transform_keyframes
+    offsets = []
+    for axis, excess in (("pan_x", framing[0] - width), ("pan_y", framing[1] - height)):
+        frames = [kf for kf in keyframes if kf.property_name == axis]
+        if not frames:
+            from .tracking_motion import pan_offset
+
+            offsets.append(str(pan_offset(excess, getattr(layer.transform, axis))))
+            continue
+        expr = build_ffmpeg_expression(axis, float(getattr(layer.transform, axis)), frames, time_var="t")
+        offsets.append(f"'floor({excess}*(1+({expr}))/2)'")
+    return f"crop={width}:{height}:{offsets[0]}:{offsets[1]}:exact=1"
+
+
 def frame_fit_filter(width: int, height: int, pad_color: str = "black") -> str:
     """Mise au cadre d'un média : ``scale`` qui préserve le ratio puis ``pad`` aux bandes. Partagée avec la préparation des images
     intermédiaires : l'image qu'elle décode est exactement celle que le graphe aurait obtenue."""
@@ -1912,7 +1956,9 @@ def _build_layer_filter(
             f"[{o}_c][{o}_na]alphamerge,"
         )
 
-    frame_fit = frame_fit_filter(width, height, pad_color)
+    frame_fit = layer_conform_filter(layer, width, height, pad_color)
+    framing = layer_framing(layer, width, height)
+    framing_crop = _framing_crop(layer, width, height)
     retime_chains: tuple[str, ...] = ()
     time_map = _retime_map_of(layer)
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
@@ -1941,7 +1987,8 @@ def _build_layer_filter(
         prepared_label, prepared_runs = _prepared_source(layer, time_map, float(fps), last_frame, source, prepared, add_input)
         stage = video_stage(
             time_map, source_label=source_label, prefix=f"{output_label}_t", fps=float(fps),
-            source_fps=float(layer.source_fps), prepare=frame_fit, frame_bytes=int(width * height * 1.5),
+            source_fps=float(layer.source_fps), prepare=frame_fit,
+            frame_bytes=int((framing or (width, height))[0] * (framing or (width, height))[1] * 1.5),
             last_frame=last_frame, prepared_label=prepared_label, prepared_runs=prepared_runs,
         )
         retime_chains = stage.chains
@@ -1959,6 +2006,9 @@ def _build_layer_filter(
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
+    # Cadrage « remplir » : la fenêtre visible, en temps du clip (le pan animé suit sa courbe).
+    if framing_crop:
+        parts.append(f"{framing_crop},")
     parts.append(apply_matte())
     parts.append(f"{scale_expr},")
     if flip_filters:

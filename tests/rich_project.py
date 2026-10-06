@@ -58,6 +58,10 @@ def build_rich_project() -> Project:
     ops.set_transform_keyframe(project, first.id, "scale", 0.0, 1.0)
     ops.set_transform_keyframe(project, first.id, "scale", 2.0, 1.5)
     ops.set_transform_keyframe(project, first.id, "opacity", 1.0, 0.5)
+    # Cadrage « remplir » (vidéo sociale) avec un pan animé.
+    second.transform = replace(second.transform, fill=True, pan_y=0.2)
+    ops.set_transform_keyframe(project, second.id, "pan_x", 0.0, -0.5)
+    ops.set_transform_keyframe(project, second.id, "pan_x", 1.5, 0.5)
     add_effect_to_clip(project, first.id, "blur")
     add_audio_effect_to_clip(project, music.id, "compressor")
     ColorGradingService().set_grade(project, first.id, ColorGrade.identity().with_field("exposure", 0.3))

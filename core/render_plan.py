@@ -97,6 +97,9 @@ class RenderLayer:
     # Nombre d'images du média (``0`` : inconnu) : borne l'image la plus proche de la fin d'un média (voir
     # :func:`core.retime_graph.nearest_frame`) pour que la lecture inverse d'un clip entier ne soit pas décalée d'une image.
     source_frames: int = 0
+    # Taille du média (``0`` : inconnue) : le cadrage « remplir » (``transform.fill``) en déduit la taille agrandie.
+    source_width: int = 0
+    source_height: int = 0
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
     # ``None`` si l'identité. On garde un type ``object`` pour ne
@@ -688,6 +691,8 @@ class _PlanBuilder:
                                 time_remapping=clip.time_remapping,
                                 time_map=clip.time_map if clip.is_time_remapped else None,
                                 source_frames=_frame_count(asset.duration, asset.fps),
+                                source_width=int(asset.width or 0),
+                                source_height=int(asset.height or 0),
                                 effects=tuple(clip.effects),
                                 # Étalonnage couleur (tâche 29) : si le clip ne
                                 # porte pas de ``ColorGrade``, on garde ``None``
@@ -807,6 +812,8 @@ class _PlanBuilder:
                     time_remapping=clip.time_remapping,
                     time_map=clip.time_map if clip.is_time_remapped else None,
                     source_frames=_frame_count(inner.duration, inner.fps),
+                    source_width=int(inner.width),
+                    source_height=int(inner.height),
                     effects=tuple(clip.effects),
                     color_grade=getattr(clip, "color_grade", None),
                     compositing=getattr(clip, "compositing", None),

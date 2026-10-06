@@ -16,7 +16,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from .export_engine import _nested_demand, frame_fit_filter, nested_geometry
+from .export_engine import _nested_demand, frame_fit_filter, layer_framing, nested_geometry
 from .optical_flow import BackendPreference
 from .render_plan import RenderLayer, RenderPlan
 from .retime_prepare import (
@@ -73,6 +73,11 @@ def _request(
 ) -> PrepareRequest | None:
     if not _eligible(layer) or layer.time_map is None:
         return None
+    # Cadrage « remplir » : les images préparées sont à la taille agrandie, comme celles que le graphe échantillonnerait ;
+    # la fenêtre visible est prise ensuite, en temps du clip.
+    framing = layer_framing(layer, width, height)
+    if framing is not None:
+        width, height = framing
     request = PrepareRequest(
         media_path=layer.source_path,
         time_map=layer.time_map,
@@ -83,7 +88,7 @@ def _request(
         source_frames=int(layer.source_frames),
         width=int(width),
         height=int(height),
-        conform=frame_fit_filter(width, height),
+        conform=frame_fit_filter(width, height) if framing is None else f"scale={width}:{height}",
         preference=preference,
     )
     return request if needs_preparation(request) else None

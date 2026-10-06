@@ -104,8 +104,14 @@ class PreviewPanel(QWidget):
         self.graphics_view.setStyleSheet(
             f"background: {COLORS['background']}; border: none;"
         )
-        self.video_item = QGraphicsVideoItem()
-        self.graphics_scene.addItem(self.video_item)
+        # Le calque vidéo (taille du cadre, transform du clip) rogne son média : en cadrage « remplir », le média
+        # agrandi dépasse du calque et seule la fenêtre de pan est visible, comme le ``crop`` de l'export.
+        self.video_frame_item = QGraphicsRectItem()
+        self.video_frame_item.setPen(Qt.NoPen)
+        self.video_frame_item.setFlag(QGraphicsRectItem.ItemClipsChildrenToShape, True)
+        self.graphics_scene.addItem(self.video_frame_item)
+        self.video_item = QGraphicsVideoItem(self.video_frame_item)
+        self.video_item.nativeSizeChanged.connect(lambda _size: self._reapply_transform())
         self.player.setVideoOutput(self.video_item)
         self.graphics_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -659,19 +665,36 @@ class PreviewPanel(QWidget):
         scale_y: float = 1.0,
         flip_h: bool = False,
         flip_v: bool = False,
+        fill: bool = False,
+        pan_x: float = 0.0,
+        pan_y: float = 0.0,
         **_ignored,
     ) -> None:
         """Place la vidéo dans le cadre comme l'export (voir ``core.mograph_scene``).
 
         Le média occupe le cadre (adapté sans déformation, comme ``scale`` +
-        ``pad`` de l'export), puis pivote et s'échelonne autour du point
-        d'ancrage ; la position (fraction du cadre) désigne l'ancrage.
+        ``pad`` de l'export, ou agrandi et rogné en cadrage « remplir »), puis
+        pivote et s'échelonne autour du point d'ancrage ; la position (fraction
+        du cadre) désigne l'ancrage.
         """
         opacity = max(0.0, min(1.0, float(opacity)))
         scale = max(0.01, float(scale))
         rect = self._canvas_rect
         width, height = rect.width(), rect.height()
-        self.video_item.setSize(QSizeF(width, height))
+        self.video_frame_item.setRect(QRectF(0.0, 0.0, width, height))
+        native = self.video_item.nativeSize()
+        if fill and native.width() > 0 and native.height() > 0:
+            from core.tracking_motion import fit_box
+
+            canvas_w, canvas_h = self._canvas_size
+            box = fit_box(int(native.width()), int(native.height()), canvas_w, canvas_h,
+                          fill=True, pan_x=float(pan_x), pan_y=float(pan_y))
+            k = width / max(1.0, float(canvas_w))
+            self.video_item.setPos(box.offset_x * k, box.offset_y * k)
+            self.video_item.setSize(QSizeF(box.width * k, box.height * k))
+        else:
+            self.video_item.setPos(0.0, 0.0)
+            self.video_item.setSize(QSizeF(width, height))
         self.video_item.setScale(1.0)
         sx = scale * float(scale_x) * (-1.0 if flip_h else 1.0)
         sy = scale * float(scale_y) * (-1.0 if flip_v else 1.0)
@@ -685,7 +708,7 @@ class PreviewPanel(QWidget):
         transform.rotate(float(rotation))
         transform.scale(sx, sy)
         transform.translate(-float(anchor_x) * width, -float(anchor_y) * height)
-        self.video_item.setTransform(transform)
+        self.video_frame_item.setTransform(transform)
         self.video_item.setOpacity(opacity)
 
         self._applied_pos_x = float(position_x)
@@ -697,6 +720,7 @@ class PreviewPanel(QWidget):
             "anchor_x": float(anchor_x), "anchor_y": float(anchor_y),
             "scale_x": float(scale_x), "scale_y": float(scale_y),
             "flip_h": bool(flip_h), "flip_v": bool(flip_v),
+            "fill": bool(fill), "pan_x": float(pan_x), "pan_y": float(pan_y),
         }
         if self.gpu_view is not None:
             self._update_gpu_composite()
@@ -852,7 +876,9 @@ class PreviewPanel(QWidget):
                 scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
                 flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
             )
-            box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch)
+            box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch,
+                          fill=bool(advanced.get("fill", False)),
+                          pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
             matte_key = ""
             mattes = {}
             if self._gpu_matte is not None:
