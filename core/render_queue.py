@@ -501,9 +501,9 @@ class RenderQueue(QObject):
             return
         from .mograph_ffmpeg import needs_graphics_preparation
 
-        if needs_graphics_preparation(plan):
-            # Les images des calques motion graphics sont rendues dans un fil à
-            # part : l'interface reste fluide, puis FFmpeg les lit dans le cache.
+        if needs_graphics_preparation(plan) or job.loudness_lufs is not None:
+            # Les images des calques motion graphics, et la mesure de loudness d'un export normalisé, sont faites
+            # dans un fil à part : l'interface reste fluide, puis FFmpeg les lit dans le cache.
             self._prepare_then_start(job, request)
             return
         # ``True`` avant ``start`` : le moteur peut émettre ``failed`` de façon synchrone.
@@ -513,17 +513,13 @@ class RenderQueue(QObject):
     def _prepare_then_start(self, job: RenderJob, request) -> None:
         from concurrent.futures import ThreadPoolExecutor
 
-        from .mograph_ffmpeg import prepare_graphics_streams
 
         if self._prepare_executor is None:
             self._prepare_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kut-mograph")
             self._prepare_timer = QTimer(self)
             self._prepare_timer.setInterval(50)
             self._prepare_timer.timeout.connect(self._poll_preparation)
-        width, height = request.preset.resolution
-        future = self._prepare_executor.submit(
-            prepare_graphics_streams, request.render_plan, width, height, request.fps,
-        )
+        future = self._prepare_executor.submit(_prepare_request, request, job.loudness_lufs)
         self._preparing = (job, request, future)
         self._prepare_timer.start()
 
@@ -540,6 +536,16 @@ class RenderQueue(QObject):
         # Annulé, remplacé ou application en fermeture pendant la préparation.
         if self._current is not job or self._launched or self._closing:
             return
+        try:
+            request, measure = future.result()
+        except Exception as error:  # noqa: BLE001 - la mesure (FFmpeg) a échoué : le job échoue, la file continue
+            message = str(error) or type(error).__name__
+            self._finish_current(lambda: job.mark_failed(message, ErrorKind.INVALID))
+            self._schedule_next()
+            return
+        if measure is not None:
+            job.measured_lufs = None if measure.silent else round(measure.integrated, 1)
+            self._after_change(job)
         self._launched = True
         self._engine.start(request)
 
@@ -780,3 +786,23 @@ __all__ = [
     "RenderQueue",
     "partial_path_for",
 ]
+
+
+def _prepare_request(request, loudness_lufs: float | None):
+    """Préparation d'un export, dans le fil de travail : images des calques, puis mesure de loudness (si demandée).
+
+    Retourne ``(requête, mesure | None)`` ; la requête porte le plan normalisé."""
+    from dataclasses import replace
+
+    from .mograph_ffmpeg import needs_graphics_preparation, prepare_graphics_streams
+
+    plan = request.render_plan
+    width, height = request.preset.resolution
+    if needs_graphics_preparation(plan):
+        prepare_graphics_streams(plan, width, height, request.fps)
+    if loudness_lufs is None:
+        return request, None
+    from .loudness import normalized_plan
+
+    plan, measure = normalized_plan(plan, request.fps, float(loudness_lufs))
+    return replace(request, render_plan=plan), measure

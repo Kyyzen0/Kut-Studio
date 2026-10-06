@@ -298,6 +298,9 @@ class RenderPlan:
     missing_media: tuple[str, ...] = field(default_factory=tuple)
     # Flou de mouvement de la séquence (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = None
+    # Normalisation de loudness d'un export (réglage du preset, jamais du projet) : gain statique mesuré par
+    # :mod:`core.loudness`, ajouté après le Master ; le limiteur final descend alors à −1 dBFS.
+    loudness_gain_db: float | None = None
 
     def nested(self, key: str) -> "NestedSequencePlan | None":
         """Sous-plan de clé ``key`` (``None`` si inconnu)."""

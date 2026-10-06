@@ -201,6 +201,10 @@ class RenderJob:
     """Séquence rendue (vide : séquence active de l'instantané, anciens jobs)."""
     sequence_name: str = ""
     """Nom de la séquence au moment de l'ajout (affichage)."""
+    loudness_lufs: float | None = None
+    """Loudness visée (normalisation du mixage) ; ``None`` : le mixage tel quel."""
+    measured_lufs: float | None = None
+    """Loudness du mixage mesurée avant normalisation (première passe), pour l'affichage."""
 
     # -- Création -------------------------------------------------------------------
 
@@ -244,6 +248,7 @@ class RenderJob:
             created_at=stamp,
             sequence_id=str(sequence_id or ""),
             sequence_name=str(sequence_name or ""),
+            loudness_lufs=getattr(spec, "loudness_lufs", None),
         )
 
     # -- Lecture ----------------------------------------------------------------------
@@ -407,6 +412,8 @@ class RenderJob:
             "diagnostics": self.diagnostics,
             "sequence_id": self.sequence_id,
             "sequence_name": self.sequence_name,
+            "loudness_lufs": self.loudness_lufs,
+            "measured_lufs": self.measured_lufs,
         }
 
     @classmethod
@@ -472,6 +479,8 @@ class RenderJob:
             diagnostics=str(data.get("diagnostics") or "")[-800:],
             sequence_id=str(data.get("sequence_id") or ""),
             sequence_name=str(data.get("sequence_name") or ""),
+            loudness_lufs=_optional_float(data.get("loudness_lufs")),
+            measured_lufs=_optional_float(data.get("measured_lufs")),
         )
 
 

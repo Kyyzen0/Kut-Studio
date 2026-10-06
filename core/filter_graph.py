@@ -288,7 +288,8 @@ def fingerprint_plan(plan, **kwargs):
             }
             for layer in getattr(plan, "audio_layers", ())
         ],
-        "master": [float(getattr(plan, "master_gain_db", 0.0)), bool(getattr(plan, "master_muted", False))],
+        "master": [float(getattr(plan, "master_gain_db", 0.0)), bool(getattr(plan, "master_muted", False)),
+                   getattr(plan, "loudness_gain_db", None)],
         "subtitles": [
             {"start": float(c.start), "end": float(c.end), "text": c.text}
             for c in getattr(plan, "subtitle_cues", ())

@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QFrame,
@@ -23,7 +24,9 @@ from core.render_presets import (
     default_preset,
     get_preset,
     with_hardware,
+    with_loudness,
 )
+from core.loudness import SOCIAL_TARGET_LUFS
 from core.hardware_encoding import HardwareCapabilities, HardwareEncoder
 from core.video_encoders import encoder_options
 from ui import i18n
@@ -170,6 +173,11 @@ class ExportPanel(QWidget):
         custom_form.addRow(self._custom_labels["quality"], self.quality_combo)
         custom_form.addRow(self._custom_labels["fps"], self.fps_combo)
         form.addRow(self.custom_frame)
+        # Vidéo sociale : normalisation du mixage (le preset la propose, l'utilisateur tranche).
+        self.loudness_check = QCheckBox()
+        self.loudness_check.setObjectName("exportLoudnessCheck")
+        self.loudness_check.toggled.connect(lambda _checked: self._update_summary())
+        form.addRow(self.loudness_check)
         layout.addWidget(settings)
 
         self.status_label = QLabel()
@@ -279,6 +287,8 @@ class ExportPanel(QWidget):
             )
         for key, label in self._custom_labels.items():
             label.setText(tr(f"render.export.{key}"))
+        self.loudness_check.setText(tr("render.export.loudness", lufs=f"{SOCIAL_TARGET_LUFS:g}"))
+        self.loudness_check.setToolTip(tr("render.export.loudness_tooltip"))
         self.cancel_button.setText(tr("render.export.cancel"))
         self.add_button.setText(tr("render.export.add"))
         self.launch_button.setText(tr("render.export.launch"))
@@ -288,8 +298,9 @@ class ExportPanel(QWidget):
         return self.preset_combo.currentData() or default_preset().id
 
     def current_spec(self) -> RenderPresetSpec:
-        """Preset choisi, avec l'encodeur sélectionné (Automatique, CPU ou matériel)."""
-        return with_hardware(self._base_spec(), self.current_encoder())
+        """Preset choisi, avec l'encodeur sélectionné (Automatique, CPU ou matériel) et la normalisation choisie."""
+        spec = with_hardware(self._base_spec(), self.current_encoder())
+        return with_loudness(spec, SOCIAL_TARGET_LUFS if self.loudness_check.isChecked() else None)
 
     def _base_spec(self) -> RenderPresetSpec:
         """Preset choisi ; pour « Custom », construit depuis les réglages libres."""
@@ -310,6 +321,9 @@ class ExportPanel(QWidget):
         )
 
     def _on_preset_changed(self, *_args) -> None:
+        self.loudness_check.blockSignals(True)
+        self.loudness_check.setChecked(self._base_spec().loudness_lufs is not None)
+        self.loudness_check.blockSignals(False)
         self.custom_frame.setVisible(self.current_preset_id() == CUSTOM_PRESET_ID)
         self._rebuild_encoder_options()
         self._update_summary()

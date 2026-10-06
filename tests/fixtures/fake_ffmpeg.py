@@ -17,6 +17,8 @@ Comportement réglable par variables d'environnement (héritées par le
   pas (``videotoolbox``…) ;
 - ``FAKE_FFMPEG_FAIL_ENCODER_LATE`` : idem mais après quelques images de progression ;
 - ``FAKE_FFMPEG_ARGS_FILE`` : ajoute une ligne JSON avec les arguments de chaque lancement.
+
+Une mesure de loudness (``ebur128`` dans le graphe) répond tout de suite par un résumé à −20 LUFS.
 """
 
 from __future__ import annotations
@@ -33,6 +35,12 @@ def main(arguments: list[str]) -> int:
     if args_file:
         with open(args_file, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(arguments) + "\n")
+    if any("ebur128" in argument for argument in arguments):
+        # Mesure de loudness (première passe d'un export normalisé) : le résumé d'ebur128, tout de suite.
+        print("[Parsed_ebur128_0 @ 0x0] Summary:\n\n  Integrated loudness:\n    I:         -20.0 LUFS\n"
+              "    Threshold: -30.0 LUFS\n\n  Loudness range:\n    LRA:         5.0 LU\n\n"
+              "  True peak:\n    Peak:       -6.0 dBFS", file=sys.stderr, flush=True)
+        return 0
     fail_encoder = os.environ.get("FAKE_FFMPEG_FAIL_ENCODER")
     if fail_encoder and any(fail_encoder in argument for argument in arguments):
         print(f"Error initializing the encoder {fail_encoder}", file=sys.stderr, flush=True)

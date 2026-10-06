@@ -945,6 +945,8 @@ class ExportEngine(QObject):
         srt_path: str | None,
         quality: str = "export",
         prepared: Mapping[str, PreparedStream] | None = None,
+        *,
+        audio_only: bool = False,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
@@ -959,6 +961,8 @@ class ExportEngine(QObject):
         Si ``plan.subtitle_cues`` est non vide, le filtre ``subtitles``
         est appliqué après la composition vidéo pour incruster les
         sous-titres via libass.
+
+        ``audio_only`` : seulement le mixage (mesure de loudness) ; ``video_label`` est alors vide.
 
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
@@ -988,11 +992,14 @@ class ExportEngine(QObject):
         # amont, puis distribué (``split``) à ses instances.
         sources = _build_nested_sources(
             parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
+            video=not audio_only,
         )
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality, prepared=prepared,
+            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only,
         )
+        if audio_only:
+            return ";".join(parts), "", audio_label, input_paths
 
         if (width, height) != (output_width, output_height):
             parts.append(
@@ -1268,6 +1275,7 @@ def _build_nested_sources(
     add_input=None,
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
+    video: bool = True,
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -1285,7 +1293,7 @@ def _build_nested_sources(
         return sources
     need_video, need_audio = _nested_demand(plan)
     for index, entry in enumerate(entries):
-        want_video = need_video.get(entry.key, 0)
+        want_video = need_video.get(entry.key, 0) if video else 0
         want_audio = need_audio.get(entry.key, 0)
         if not (want_video or want_audio):
             continue
@@ -1571,11 +1579,15 @@ def _compose_plan_graph(
             master_filter = _build_master_filter(plan)
             if master_filter:
                 stages.append(master_filter)
+            loudness = getattr(plan, "loudness_gain_db", None)
+            if loudness is not None and not getattr(plan, "master_muted", False):
+                # Normalisation de l'export (−14 LUFS…) : un gain statique, mesuré sur ce même mixage.
+                stages.append(f"volume={_format_db(float(loudness))}dB")
             # Additionner n'a plus de plafond : deux couches proches du maximum dépassent 0 dBFS (+5 dBFS mesurés), et
             # le gain d'un clip réglé pour compenser l'ancienne atténuation aussi. Le limiteur est le dernier étage
             # du mixage final (jamais d'une séquence imbriquée : celui de la timeline parente couvre la somme).
             if _ffmpeg_filter_has_option("alimiter", "latency"):
-                stages.append(SAFETY_LIMITER)
+                stages.append(LOUDNESS_LIMITER if loudness is not None else SAFETY_LIMITER)
         parts.append(
             f"[{p}silent_base]{''.join(layer_labels)}"
             f"{','.join(stages)},"
@@ -2991,6 +3003,8 @@ def _format_ratio(value: float) -> str:
 
 
 SAFETY_LIMITER = "alimiter=limit=1:level=0:latency=1"
+LOUDNESS_LIMITER = "alimiter=limit=0.891251:level=0:latency=1"
+"""Limiteur d'un export normalisé : crêtes à −1 dBFS (10^(−1/20)), la marge que demandent les plateformes."""
 """Dernier étage du mixage final : plafond à 0 dBFS (``limit=1``), transparent en dessous (écart nul mesuré).
 
 ``level=0`` coupe le « auto level » (le limiteur ne remonte jamais un mixage faible) ; ``latency=1`` compense le retard

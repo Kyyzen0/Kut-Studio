@@ -259,6 +259,17 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
     "graphics.property.light_speed": _t("Vitesse", "Speed", "Velocidad"),
     "graphics.property.light_angle": _t("Angle", "Angle", "Ángulo"),
     "graphics.property.light_density": _t("Densité", "Density", "Densidad"),
+    # --- Export pour les réseaux ---------------------------------------------------------------------------------
+    "render.export.loudness": _t("Normaliser le son à {lufs} LUFS", "Normalise the sound to {lufs} LUFS",
+                                 "Normalizar el sonido a {lufs} LUFS"),
+    "render.export.loudness_tooltip": _t(
+        "Mesure le mixage puis le remonte ou le baisse d'un gain fixe (crêtes sous −1 dBFS) : le niveau que "
+        "TikTok, Instagram et YouTube attendent.",
+        "Measures the mix, then raises or lowers it by a fixed gain (peaks below −1 dBFS): the level TikTok, "
+        "Instagram and YouTube expect.",
+        "Mide la mezcla y la sube o baja con una ganancia fija (picos bajo −1 dBFS): el nivel que esperan TikTok, "
+        "Instagram y YouTube.",
+    ),
     # --- Inspecteur : groupe « Projet » -------------------------------------------------------------------------------
     "inspector.project.field": _t("{field} : {value}", "{field}: {value}", "{field}: {value}"),
     "inspector.project.size": _t("{width} × {height}", "{width} × {height}", "{width} × {height}"),
