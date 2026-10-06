@@ -81,6 +81,13 @@ CONTAINER_TYPES = frozenset({GraphicType.GROUP, GraphicType.NULL, GraphicType.AD
 
 TEXT_ALIGN_H = ("left", "center", "right")
 TEXT_ALIGN_V = ("top", "center", "bottom")
+STROKE_POSITIONS = ("center", "outside")
+"""Contour d'un texte : centré sur le bord des lettres et dessiné par-dessus (historique), ou **extérieur** (dessiné
+sous le remplissage : l'intérieur des lettres reste intact, même en police condensée)."""
+WORD_REVEALS = ("none", "word", "typewriter", "karaoke")
+"""Apparition d'un texte selon ``reveal`` (0 → 1) : tout de suite, mot par mot, lettre par lettre, ou karaoké (tout est
+visible, le mot courant prend ``highlight_color``)."""
+MAX_TEXT_WORDS = 512
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 
@@ -98,6 +105,28 @@ def _bounded(value: object, low: float, high: float, fallback: float) -> float:
     if number != number:
         return fallback
     return max(low, min(high, number))
+
+
+def _int_tuple(value: object) -> tuple[int, ...]:
+    """Indices de mots (uniques, triés, bornés) ; une valeur illisible donne un tuple vide."""
+    try:
+        items = {int(item) for item in (value or ())}
+    except (TypeError, ValueError):
+        return ()
+    return tuple(sorted(item for item in items if 0 <= item < MAX_TEXT_WORDS))
+
+
+def _time_tuple(value: object) -> tuple[float, ...]:
+    """Temps des mots (secondes du clip), croissants et finis ; une liste abîmée est ignorée en entier."""
+    try:
+        times = tuple(float(item) for item in (value or ()))
+    except (TypeError, ValueError):
+        return ()
+    if len(times) > MAX_TEXT_WORDS or any(t != t or t < 0.0 or t > 86400.0 for t in times):
+        return ()
+    if any(b < a for a, b in zip(times, times[1:])):
+        return ()
+    return times
 
 
 @dataclass(frozen=True)
@@ -149,6 +178,13 @@ class GraphicOverlay:
     background_color: str = "#000000AA"
     background_padding: int = 16
     background_radius: float = 0.0
+    # --- Texte animé (vidéo sociale) ---
+    stroke_position: str = "center"
+    word_reveal: str = "none"
+    reveal: float = 1.0
+    highlight_color: str = "#FFD84D"
+    highlight_words: tuple[int, ...] = ()
+    word_times: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
@@ -199,6 +235,14 @@ class GraphicOverlay:
         object.__setattr__(self, "background_color", normalize_color(self.background_color, "#000000AA"))
         object.__setattr__(self, "background_padding", int(_bounded(self.background_padding, 0, 1024, 16)))
         object.__setattr__(self, "background_radius", _bounded(self.background_radius, 0.0, 1024.0, 0.0))
+        # Texte animé
+        object.__setattr__(self, "stroke_position",
+                           self.stroke_position if self.stroke_position in STROKE_POSITIONS else "center")
+        object.__setattr__(self, "word_reveal", self.word_reveal if self.word_reveal in WORD_REVEALS else "none")
+        object.__setattr__(self, "reveal", _bounded(self.reveal, 0.0, 1.0, 1.0))
+        object.__setattr__(self, "highlight_color", normalize_color(self.highlight_color, "#FFD84D"))
+        object.__setattr__(self, "highlight_words", _int_tuple(self.highlight_words))
+        object.__setattr__(self, "word_times", _time_tuple(self.word_times))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
 
@@ -407,6 +451,8 @@ def graphic_to_dict(graphic: GraphicOverlay | None) -> dict | None:
     data = {}
     for item in fields(GraphicOverlay):
         value = getattr(graphic, item.name)
+        if isinstance(value, tuple):
+            value = list(value)
         data[item.name] = value.value if isinstance(value, Enum) else value
     return data
 

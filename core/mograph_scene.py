@@ -418,6 +418,13 @@ class GraphicsScene:
                 continue
             value = curve.evaluate(local)
             values[name] = int(round(value)) if name in _INT_FIELDS else float(value)
+        if graphic.word_times:
+            # Mot par mot ou karaoké posés par les temps des mots : ``reveal`` en découle (il prime sur sa courbe).
+            from .text_runs import reveal_from_times, word_count
+
+            timed = reveal_from_times(graphic.word_times, local, word_count(graphic.text), graphic.word_reveal)
+            if timed is not None:
+                values["reveal"] = timed
         if values:
             try:
                 graphic = replace(graphic, **values)

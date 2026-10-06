@@ -39,6 +39,7 @@ GRAPHIC_ANIMATABLE: tuple[tuple[str, float, float, float, float, frozenset], ...
     ("shadow_offset_x", 4.0, -256.0, 256.0, 1.0, _TEXT),
     ("shadow_offset_y", 4.0, -256.0, 256.0, 1.0, _TEXT),
     ("shadow_blur", 0.0, 0.0, 200.0, 0.5, _TEXT),
+    ("reveal", 1.0, 0.0, 1.0, 0.01, _TEXT),
 )
 """Propriétés intrinsèques animables (les couleurs restent statiques)."""
 
