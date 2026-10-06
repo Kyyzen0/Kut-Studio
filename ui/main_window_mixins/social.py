@@ -79,6 +79,7 @@ class SocialMixin:
         for command, key in (("impact_zoom", "impact.menu.zoom"), ("impact_shake", "impact.menu.shake"),
                              ("impact_flash", "impact.menu.flash"), ("impact_on_cuts", "impact.menu.on_cuts")):
             impact.addAction(self._command_action(command, key))
+        self._build_social_audio_menu(menu)
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
         for key, attribute in (("social.menu.photo_fill", "_photo_fill"), ("social.menu.photo_ken_burns", "_photo_ken_burns")):
             action = self._labelled_action(key)

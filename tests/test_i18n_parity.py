@@ -137,7 +137,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 _LOANWORDS = {
     "Cache", "Chroma Key", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
     "Multicam", "MULTICAM", "Parade", "Preset", "Timecode", "timecode", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
-    "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain",
+    "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain", "Whoosh",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }
