@@ -210,3 +210,20 @@ def test_every_layer_operation_is_undoable():
     assert group.id not in {c.id for t in restored.tracks for c in t.clips}
     restored = history.redo()
     assert group.id in {c.id for t in restored.tracks for c in t.clips}
+
+
+def test_builtin_presets_are_rebuilt_on_a_vertical_canvas():
+    from core.social_formats import create_social_project
+
+    project = create_social_project("vertical", 30)
+    presets = {preset.name: preset for preset in builtin_presets()}
+    assert {"Titre TikTok", "Mot en couleur", "Sous-titre karaoké"} <= set(presets)
+    created = apply_preset(project, presets["Lower third"], at=0.0)
+    group = next(c for c in created if c.graphic.type is GraphicType.GROUP)
+    bar = next(c for c in created if c.graphic.type is GraphicType.SHAPE)
+    assert group.transform.position_x == 0.0 and bar.graphic.width <= project.width - 200
+    (title,) = apply_preset(project, presets["Titre TikTok"], at=1.0)
+    assert title.graphic.stroke_position == "outside" and title.graphic.font_family == "Anton"
+    assert {kf.property_name for kf in title.transform_keyframes} >= {"scale", "opacity"}
+    (caption,) = apply_preset(project, presets["Sous-titre karaoké"], at=2.0)
+    assert caption.graphic.word_reveal == "karaoke"
