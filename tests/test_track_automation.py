@@ -227,17 +227,18 @@ def test_nesting_a_selection_moves_the_automation_and_realigns_it(legacy_list):
 
 # --- Mixage et export identiques --------------------------------------------------------------------------------
 
-# Chaînes FFmpeg relevées AVANT la migration, sur ce même projet (service pour M1 et V1, liste non triée pour A2).
+# Chaînes FFmpeg de ce projet (service pour M1 et V1, liste non triée pour A2). Relevées avant la migration, puis
+# réécrites quand ``linear_interp`` (fonction inconnue de FFmpeg) a laissé place à une vraie expression : M1 tient -6 dB
+# jusqu'à 0,5 + 1 s de fondu puis rejoint -12 dB à 3 s ; A2 saute à -3 dB juste après 0 s (fondu nul) ; V1 est constant.
 GOLDEN_FILTERS = [
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
-    "volume=enable='between(t,0.000000,6.000000)':volume='linear_interp(0.000000 -6.0000 0.500000 -6.0000 "
-    "3.000000 -12.0000 6.000000 -12.0000)':eval=frame,asetpts=PTS+0.0/TB[a0]",
+    "asetnsamples=n=256:p=0,volume='pow(10,(lte(t,1.500000)*(-6.0000)+gt(t,1.500000)*lte(t,3.000000)*"
+    "(-6.0000+(-6.0000)*(t-1.500000)/1.500000)+gt(t,3.000000)*(-12.0000))/20)':eval=frame,asetpts=PTS+0.0/TB[a0]",
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
-    "volume=enable='between(t,0.000000,6.000000)':volume='linear_interp(0.000000 0.0000 0.000000 0.0000 "
-    "1.000000 -3.0000 6.000000 -3.0000)':eval=frame,asetpts=PTS+0.0/TB[a1]",
+    "asetnsamples=n=256:p=0,volume='pow(10,(lte(t,0.000000)*0.0000+gt(t,0.000000)*(-3.0000))/20)':eval=frame,"
+    "asetpts=PTS+0.0/TB[a1]",
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
-    "volume=enable='between(t,0.000000,6.000000)':volume='linear_interp(0.000000 -9.0000 2.000000 -9.0000 "
-    "6.000000 -9.0000)':eval=frame,asetpts=PTS+0.0/TB[a2]",
+    "volume=-9.000dB,asetpts=PTS+0.0/TB[a2]",
 ]
 
 

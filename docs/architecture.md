@@ -160,7 +160,20 @@ renvoyée à la recréation.
   suit un autre. Sans l'option `latency` d'`alimiter`, le limiteur est omis plutôt que de décaler le son derrière l'image.
 * **Ducking** : le sous-mixage des voix, qui alimente le détecteur, additionne aussi. Une piste de voix de plusieurs clips
   déclenche le ducking à son niveau réel et non divisé par le nombre de clips : à seuil égal, la musique baisse plus
-  souvent qu'avant (un FFmpeg sans `normalize` conserve l'ancien niveau de détection).
+  souvent qu'avant (un FFmpeg sans `normalize` conserve l'ancien niveau de détection). Le sous-mixage s'ouvre sur une base
+  silencieuse de la durée de la timeline : `sidechaincompress` s'arrête quand sa clé s'arrête, et une clé qui finissait avec
+  le premier clip voix coupait la musique au même instant. Les unités sont celles de FFmpeg (seuil en amplitude linéaire,
+  attaque et relâchement en ms, chacun borné à sa plage : une option hors bornes refuse tout le graphe). `reduction_db` est
+  un **plafond exact** : la clé est écrêtée (`aeval clip`) là où le dépassement du seuil donnerait cette réduction ; en
+  dessous, l'atténuation suit le dépassement. Mesuré : −11,94 dB pour 12 dB réglés, −5,98 pour 6. Un clip voix et un
+  sous-mixage lu plusieurs fois passent par `asplit` (une sortie FFmpeg ne se lit qu'une fois).
+* **Automation de piste** : un filtre `volume` dans la chaîne du clip, **avant** `adelay` — son `t` part de 0 au début du
+  clip, la courbe (temps de la timeline) y est ramenée. La courbe est exactement `TrackAutomation.gain_at`, écrite en somme
+  de morceaux disjoints (`gt(t,a)*lte(t,b)*dB`, pas d'imbrication) puis convertie en facteur par `pow(10,dB/20)` : un nombre
+  nu est un facteur pour `volume` (`volume=-6` multipliait par −6). Gain constant : `volume=<g>dB`. `eval=frame` réévalue
+  par trame et une trame WAV dure ~85 ms : `asetnsamples=n=256` découpe en trames de 5 ms, la rampe suit `gain_at` à 0,1 dB.
+* **Ces graphes se testent en rendant** : `tests/test_export_audio_level.py` exporte et mesure (ducking, automation, aperçu).
+  Jusqu'au 2026-10-06 ils n'étaient comparés qu'en chaînes, et FFmpeg les refusait tous.
 * **Aperçu : limite connue.** Chaque segment d'aperçu (2 s) est rendu à froid, sans l'état du précédent, comme tout filtre à
   mémoire (ducking, compresseur, écho). Le limiteur repart donc de l'unité à chaque frontière, alors que celui de l'export
   finit son relâchement (50 ms par défaut) quand un clip fort vient de s'arrêter. Pire cas mesuré (deux couches cohérentes à
