@@ -278,6 +278,55 @@ void main() {
 }
 """
 
+SHIFT = FRAGMENT_HEADER + OPS + """
+// Aberration chromatique (rgbashift de l'export) : rouge lu à gauche, bleu à droite, bords recopiés.
+vec3 rgb_at(vec2 uv) {
+    return to_space(texture(tex0, uv).rgb, int(state.x + 0.5), 1);
+}
+
+void main() {
+    vec2 d = vec2(misc.x / target.x, 0.0);
+    vec3 c = vec3(rgb_at(v_uv - d).r, rgb_at(v_uv).g, rgb_at(v_uv + d).b);
+    int space = 1;
+    c = apply_ops(c, space, v_uv * target.xy, target.xy);
+    c = to_space(c, space, int(state.y + 0.5));
+    fragColor = vec4(c, 1.0);
+}
+"""
+
+HAZE = FRAGMENT_HEADER + OPS + """
+// Heat haze (geq de l'export) : la ligne glisse d'un nombre entier de pixels de l'export.
+// misc : amplitude, fréquence, phase (t·vitesse), texels par pixel (x) ; reserved : haut, étendue, texels par pixel (y).
+void main() {
+    float row = v_uv.y * target.y / reserved.z - 0.5;
+    float height = target.y / reserved.z;
+    float ramp = clamp((row / height - reserved.x) / reserved.y, 0.0, 1.0);
+    float shift = floor(misc.x * sin(row * misc.y + misc.z) * ramp) * misc.w;
+    vec3 c = texture(tex0, v_uv - vec2(shift / target.x, 0.0)).rgb;
+    int space = int(state.x + 0.5);
+    c = apply_ops(c, space, v_uv * target.xy, target.xy);
+    c = to_space(c, space, int(state.y + 0.5));
+    fragColor = vec4(c, 1.0);
+}
+"""
+
+GLOW = FRAGMENT_HEADER + OPS + """
+// Bloom (split + lutrgb + gblur + blend addition de l'export).
+// misc.x = 0 : halo = clamp((rgb − seuil) · gain) ; misc.x = 1 : image (tex0) + halo flouté (tex1).
+void main() {
+    vec3 rgb = to_space(texture(tex0, v_uv).rgb, int(state.x + 0.5), 1);
+    if (misc.x < 0.5) {
+        fragColor = vec4(clamp((rgb - vec3(misc.y)) * misc.z, 0.0, 1.0), 1.0);
+        return;
+    }
+    vec3 c = clamp(rgb + texture(tex1, v_uv).rgb, 0.0, 1.0);
+    int space = 1;
+    c = apply_ops(c, space, v_uv * target.xy, target.xy);
+    c = to_space(c, space, int(state.y + 0.5));
+    fragColor = vec4(c, 1.0);
+}
+"""
+
 PRESENT = FRAGMENT_HEADER + """
 void main() {
     vec2 extent = fit.zw - fit.xy;
@@ -296,6 +345,9 @@ SHADERS: dict[str, tuple[str, str]] = {
     "prep.frag": ("frag", PREP),
     "blur.frag": ("frag", BLUR),
     "sharpen.frag": ("frag", SHARPEN),
+    "shift.frag": ("frag", SHIFT),
+    "haze.frag": ("frag", HAZE),
+    "glow.frag": ("frag", GLOW),
     "composite.frag": ("frag", COMPOSITE),
     "present.frag": ("frag", PRESENT),
 }

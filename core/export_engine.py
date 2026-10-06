@@ -1923,7 +1923,9 @@ def _build_layer_filter(
         transform, kfs, canvas=_animated_layer_canvas(transform, kfs, width, height, layer.timeline_end - layer.timeline_start),
     )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
-    effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale)
+    effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
+                                                include_layer_space=False)
+    layer_space_filters = _layer_space_filters(layer.effects, pixel_scale)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
     # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
@@ -2013,6 +2015,8 @@ def _build_layer_filter(
     if framing_crop:
         parts.append(f"{framing_crop},")
     parts.append(apply_matte())
+    if layer_space_filters:
+        parts.append(f"{layer_space_filters},")
     parts.append(f"{scale_expr},")
     if flip_filters:
         parts.append(f"{flip_filters},")
@@ -2197,7 +2201,48 @@ def _compute_colorbalance_offsets(
     )
 
 
-def _build_clip_effect_filters(effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0) -> str:
+def _glow_filter(params, pixel_scale: float, label: str) -> str:
+    """Bloom : copie des zones plus claires que le seuil (RVB), floutée, **ajoutée** à l'image (alpha inchangé).
+
+    Un sous-graphe au milieu de la chaîne (``split`` puis ``blend``) : la syntaxe des graphes FFmpeg permet de
+    reprendre une chaîne par un filtre à deux entrées. ``label`` rend les étiquettes uniques dans le graphe.
+
+    ``format=rgba`` et non ``gbrap`` : depuis du 4:2:0, swscale passe en RVB packé en recopiant la chroma, comme
+    pour le reste de la chaîne et la référence du moniteur GPU ; vers ``gbrap`` il l'interpole (sur une mire aux
+    couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap`` (pour ``gblur``), rien ne change.
+    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
+    comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
+    threshold = float(params["threshold"])
+    gain = float(params["intensity"]) / max(0.05, 1.0 - threshold)
+    level = _format_seconds(threshold * 255.0)
+    curve = f"'clip((val-{level})*{_format_seconds(gain)},0,255)'"
+    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale))
+    return (
+        f"format=rgba,split[{label}a][{label}b];"
+        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},gblur=sigma={sigma}[{label}g];"
+        f"[{label}a][{label}g]blend=all_mode=addition:c3_mode=normal:c3_opacity=0,format=rgba,format=yuva444p"
+    )
+
+
+def _heat_haze_filter(params, pixel_scale: float) -> str:
+    """Heat haze : chaque ligne de l'image (sous ``top``, en fondu sur ``span``) glisse d'un nombre entier de pixels.
+
+    Le décalage d'une ligne ``y`` (pixels de rendu) vaut ``⌊A·sin(y·f + t·v)·rampe(y)⌋`` avec A et f ramenés à la
+    résolution de rendu. L'image passe d'abord en ``yuva444p`` : la chroma glisse du même nombre entier de pixels que
+    la luminance, comme sur le moniteur GPU (en 4:2:0, un décalage impair devenait un demi-pixel interpolé).
+    ``T`` est le temps du clip."""
+    amplitude = float(params["amplitude"]) * pixel_scale
+    frequency = float(params["frequency"]) / max(1e-6, pixel_scale)
+    ramp = f"clip((Y/H-{_format_seconds(params['top'])})/{_format_seconds(params['span'])},0,1)"
+    shift = (f"floor({_format_seconds(amplitude)}*sin(Y*{_format_seconds(frequency)}"
+             f"+T*{_format_seconds(params['speed'])})*{ramp})")
+    expr = f"'p(X-{shift},Y)'"
+    return f"format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
+
+
+def _build_clip_effect_filters(
+    effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0, label: str = "fx", *, include_layer_space: bool = True,
+) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
     Chaque valeur vient du modèle validé : on ne concatène donc jamais
@@ -2208,7 +2253,7 @@ def _build_clip_effect_filters(effects: tuple[ClipEffect, ...], pixel_scale: flo
     de la séquence ; un aperçu à ½ ou un export à une autre résolution le ramène à sa taille, comme le moniteur GPU.
     """
     filters: list[str] = []
-    for effect in effects:
+    for index, effect in enumerate(effects):
         if not effect.enabled:
             continue
         params = effect.params
@@ -2238,7 +2283,24 @@ def _build_clip_effect_filters(effects: tuple[ClipEffect, ...], pixel_scale: flo
                 "colorchannelmixer="
                 ".393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
             )
+        elif effect.type is EffectType.GLOW:
+            filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
+        elif effect.type is EffectType.CHROMATIC_ABERRATION:
+            shift = int(round(float(params["intensity"]) * pixel_scale))
+            if shift:
+                filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
+        elif effect.type is EffectType.HEAT_HAZE and include_layer_space:
+            filters.append(_heat_haze_filter(params, pixel_scale))
     return ",".join(filters)
+
+
+def _layer_space_filters(effects, pixel_scale: float) -> str:
+    """Effets qui déforment l'image du clip elle-même (heat haze) : appliqués **avant** échelle et rotation, en espace
+    calque, comme le moniteur GPU. Après ``rotate``, le cadre agrandi décalait les lignes de l'onde."""
+    return ",".join(
+        _heat_haze_filter(effect.params, pixel_scale)
+        for effect in effects if effect.enabled and effect.type is EffectType.HEAT_HAZE
+    )
 
 
 def _build_animated_scale_expr(

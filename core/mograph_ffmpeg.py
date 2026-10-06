@@ -38,7 +38,7 @@ def _fmt(value: float) -> str:
     return _format_seconds(float(value))
 
 
-def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 1.0) -> list[str]:
+def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 1.0, label: str = "fx") -> list[str]:
     """Filtres des effets puis de l'étalonnage, dans l'ordre de l'export vidéo.
 
     ``preserve_alpha`` : flux RGBA d'un calque. Couleur en ``yuva444p``
@@ -50,8 +50,8 @@ def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 
     from .export_engine import _build_clip_effect_filters, _build_color_grade_filters
 
     chain: list[str] = []
-    for effect in effects:
-        text = _build_clip_effect_filters((effect,), pixel_scale)
+    for index, effect in enumerate(effects):
+        text = _build_clip_effect_filters((effect,), pixel_scale, label=f"{label}e{index}")
         if not text:
             continue
         if not preserve_alpha:
@@ -193,7 +193,7 @@ def compose_graphics(
         )
         label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s")
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True,
-                              pixel_scale=_pixel_scale(renderer, plan))
+                              pixel_scale=_pixel_scale(renderer, plan), label=tag)
         label = _apply_chain(parts, label, chain, tag)
         blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested)
         current = out
@@ -218,7 +218,8 @@ def _compose_adjustment(
         salt="adjustment",
     )
     coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov")
-    chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False, pixel_scale=pixel_scale)
+    chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False, pixel_scale=pixel_scale,
+                          label=tag)
     if nested:
         # Le dessous est transparent là où la séquence imbriquée est vide : l'ajustement ne doit rien créer
         # à cet endroit (sinon le noir des effets opaques masquerait la piste parente). Sa couverture est

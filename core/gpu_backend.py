@@ -336,7 +336,7 @@ def shader_dir() -> Path:
 
 
 SHADER_NAMES = ("quad.vert", "clear.frag", "prep.frag", "blur.frag", "sharpen.frag",
-                "composite.frag", "present.frag")
+                "shift.frag", "haze.frag", "glow.frag", "composite.frag", "present.frag")
 
 
 def missing_shaders(directory: Path | None = None) -> list[str]:

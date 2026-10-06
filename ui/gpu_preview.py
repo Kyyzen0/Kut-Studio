@@ -157,7 +157,7 @@ def describe_qt_frame(frame) -> tuple[str, int, int, str, str]:
 class RhiExecutor:
     """Ressources QRhi et exécution d'un :class:`~core.gpu_composite.FramePlan`."""
 
-    SHADERS = ("clear", "prep", "blur", "sharpen", "composite")
+    SHADERS = ("clear", "prep", "blur", "sharpen", "shift", "haze", "glow", "composite")
 
     def __init__(self, rhi: QRhi) -> None:
         self.rhi = rhi

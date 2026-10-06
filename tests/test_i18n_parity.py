@@ -131,13 +131,13 @@ _ACRONYMS_AND_PROPER_NAMES = {
     "Auto (≤ 1080p)", "MOTION GRAPHICS", "AUDIO", "slip {delta}s", "{count} clip", "{count} clips",
     "Clip", "SCOPES",
     # Plateformes et techniques de la vidéo sociale (noms de marque, nom propre d'un effet, sigle).
-    "TikTok", "Instagram Reels", "YouTube Shorts", "Ken Burns", "SFX", " BPM",
+    "TikTok", "Instagram Reels", "YouTube Shorts", "Ken Burns", "SFX", " BPM", "Night Look", "Neon Rush",
 }
 # Emprunts à l'anglais que le français (et l'espagnol) emploient tels quels.
 _LOANWORDS = {
     "Cache", "Chroma Key", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
     "Multicam", "MULTICAM", "Parade", "Preset", "Timecode", "timecode", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
-    "Trackers", "Template", "Tempo", "Light leak", "Flash",
+    "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }
@@ -150,7 +150,7 @@ _COGNATES_EN = {
     "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause", "Compositing", "Transition",
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
-    "Vertical", "Portrait", "Impact",
+    "Vertical", "Portrait", "Impact", "Amplitude",
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante"}

@@ -165,6 +165,7 @@ class PreviewPanel(QWidget):
         self._gpu_adjustments: tuple = ()
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
         self._gpu_blend_layers: tuple = ()
+        self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
         self._gpu_blend_pushed: dict[str, str] = {}
         self.playback_seeks = 0
 
@@ -811,6 +812,10 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_effect_time(self, seconds: float) -> None:
+        """Temps local du clip affiché, pour les effets animés du moniteur GPU (pris en compte au prochain rendu)."""
+        self._gpu_effect_time = float(seconds)
+
     def set_blend_layers(self, layers) -> None:
         """Calques graphiques à mode de fusion, du bas vers le haut : ``[(clé, QImage, mode)]`` (GPU seulement).
 
@@ -929,7 +934,7 @@ class PreviewPanel(QWidget):
             from core.gpu_effects import VIGNETTE_EXPORT
 
             try:
-                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT)
+                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT, time=self._gpu_effect_time)
             except ValueError:
                 program = program_for(())
             layers = (CompositeLayer(

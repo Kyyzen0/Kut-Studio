@@ -374,6 +374,40 @@ def _noir_preset() -> EffectPreset:
     )
 
 
+def _night_look_preset() -> EffectPreset:
+    """Look « Night » (vidéo sociale) : contraste et couleurs relevés, bloom sur les lumières, vignette."""
+    return make_preset(
+        preset_id="night_look",
+        name="Night Look",
+        description=(
+            "Nuit urbaine : contraste et saturation relevés, halo sur les lumières vives, bords assombris. "
+            "Sur un calque d'effets, il s'applique à tout le montage."
+        ),
+        category=EffectCategory.LOOK,
+        effects=(
+            _make_effect(EffectType.COLOR_CORRECTION, contrast=1.08, saturation=1.2, brightness=-0.02),
+            _make_effect(EffectType.GLOW, threshold=0.62, radius=22.0, intensity=0.9),
+            _make_effect(EffectType.VIGNETTE, intensity=0.45),
+        ),
+        builtin=True,
+    )
+
+
+def _neon_rush_preset() -> EffectPreset:
+    """Choc lumineux : bloom fort et aberration chromatique (plans d'action, cuts)."""
+    return make_preset(
+        preset_id="neon_rush",
+        name="Neon Rush",
+        description="Halo appuyé et franges rouge / bleu : l'énergie d'un plan de course ou d'un drop.",
+        category=EffectCategory.STYLIZED,
+        effects=(
+            _make_effect(EffectType.GLOW, threshold=0.5, radius=14.0, intensity=1.4),
+            _make_effect(EffectType.CHROMATIC_ABERRATION, intensity=5.0),
+        ),
+        builtin=True,
+    )
+
+
 def builtin_presets() -> tuple[EffectPreset, ...]:
     """Retourne la bibliothèque livrée avec l'application.
 
@@ -390,6 +424,8 @@ def builtin_presets() -> tuple[EffectPreset, ...]:
         _cool_grade_preset(),
         _warm_grade_preset(),
         _noir_preset(),
+        _night_look_preset(),
+        _neon_rush_preset(),
     )
 
 

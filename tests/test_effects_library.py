@@ -101,8 +101,8 @@ def test_builtin_presets_cover_six_expected_families() -> None:
         "blur",
     }
     assert expected.issubset(ids)
-    # Les huit presets sont présents — chiffre stable, volontaire.
-    assert len(builtin_presets()) == 8
+    # Les dix presets sont présents (dont Night Look et Neon Rush, vidéo sociale) — chiffre stable, volontaire.
+    assert len(builtin_presets()) == 10
 
 
 def test_builtin_preset_ids_match_catalog() -> None:

@@ -1773,6 +1773,7 @@ class MainWindow(
                 clip_local_time=float(self.playhead_seconds) - float(clip_obj.timeline_start),
                 clip_duration=clip_obj.duration,
             )
+            self.preview_panel.set_effect_time(float(self.playhead_seconds) - float(clip_obj.timeline_start))
             self.preview_panel.apply_transform(
                 position_x=evaluated.position_x,
                 position_y=evaluated.position_y,
