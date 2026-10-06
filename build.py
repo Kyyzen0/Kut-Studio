@@ -27,10 +27,11 @@ MICROPHONE_USAGE = "Kut-Studio uses the microphone only while you record a voice
 
 
 def _icon_for(platform_name: str) -> Path | None:
+    icons = ROOT / "assets" / "icons"
     candidates = {
-        "darwin": ROOT / "icon.icns",
-        "win32": ROOT / "icon.ico",
-        "linux": ROOT / "icon-light.png",
+        "darwin": icons / "icon.icns",
+        "win32": icons / "icon.ico",  # généré par ``python -m tools.make_icons``
+        "linux": icons / "icon-light.png",
     }
     key = "win32" if platform_name.startswith("win") else platform_name
     icon = candidates.get(key)

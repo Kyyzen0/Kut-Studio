@@ -58,7 +58,8 @@ déclarées pour chaque thème ; les retirer touche les tests de thème sans aut
 Le curseur « Audio > Volume » de l'inspecteur (0 à 200 %) ne règle que le volume de lecture du moniteur : la valeur n'est ni
 enregistrée dans le projet ni utilisée à l'export, et `QAudioOutput` borne à 1,0 (au-delà de 100 % le curseur ne change rien
 d'audible). C'est le seul usage vivant de l'ancien `core/effects.py` ; à trancher (supprimer le curseur, ou lui donner un vrai
-effet) plutôt que de le laisser promettre ce qu'il ne fait pas.
+effet) plutôt que de le laisser promettre ce qu'il ne fait pas. *Depuis* : il s'appelle « Volume du moniteur », son
+infobulle précise qu'il n'est ni enregistré ni exporté, et il est borné à 0–100 %.
 
 ## Appendice : relevé mécanique non instruit
 

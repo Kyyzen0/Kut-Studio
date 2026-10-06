@@ -416,6 +416,27 @@ def test_the_inspector_follows_the_language_while_open(language_reset, qtbot, la
         panel.retranslate()
 
 
+@pytest.mark.parametrize(("language", "label", "tooltip_start"), [
+    ("fr", "Volume du moniteur", "Affecte uniquement la lecture dans l'aperçu"),
+    ("en", "Monitor volume", "Affects playback in the preview only"),
+    ("es", "Volumen del monitor", "Solo afecta a la reproducción en la vista previa"),
+])
+def test_the_inspector_volume_says_it_only_drives_the_monitor(language_reset, qtbot, language, label, tooltip_start):
+    """Le curseur ne règle que la lecture de l'aperçu : ni le projet ni l'export ne le voient.
+
+    Libellé « Volume » et bornes 0–200 % laissaient croire à un gain de clip ; ``QAudioOutput`` plafonne à 1.0.
+    """
+    panel = _inspector(qtbot)
+    i18n.set_language(language)
+    monitor_label = panel._monitor_volume_tooltip_targets[1]
+    assert monitor_label.text() == label
+    assert (monitor_label, "field.monitor_volume") in panel._stacked_labels
+    for widget in panel._monitor_volume_tooltip_targets:
+        assert widget.toolTip().startswith(tooltip_start)
+    assert "export" in panel._monitor_volume_tooltip_targets[0].toolTip().lower()
+    assert (panel.volume_slider.minimum(), panel.volume_slider.maximum()) == (0, 100)
+
+
 def test_the_inspector_specialized_tool_shown_in_the_more_button_is_retranslated(language_reset, qtbot):
     panel = _inspector(qtbot)
     panel._select_inspector_tab(4)

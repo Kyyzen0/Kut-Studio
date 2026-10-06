@@ -62,7 +62,7 @@ def test_the_speed_presets_row_uses_the_full_width_under_its_label(window):
     panel = window.properties_panel
     _show_effects_tab(window)
     content = panel.scroll_area.widget()
-    label = panel._stacked_labels[0][0]                       # noqa: SLF001
+    label = next(label for label, key in panel._stacked_labels if key == "mograph.layers.presets")  # noqa: SLF001
     first = min(_top(getattr(panel, name), content) for name in PRESETS)
     assert isinstance(label, QLabel) and _bottom(label, content) <= first
     form_width = panel.speed_group.width()

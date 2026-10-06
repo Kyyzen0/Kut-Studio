@@ -291,6 +291,7 @@ Pour rejouer : `QT_QPA_PLATFORM=offscreen python -m tools.perf.bench --out ma-me
 ### Constats hors périmètre, relevés sans y toucher
 
 * Le curseur « Audio > Volume » (0 à 200 %) ne règle que le volume du **moniteur** : ni sauvegardé, ni exporté ; Qt le borne à 1,0.
+  *Depuis* : libellé « Volume du moniteur », infobulle qui le dit, bornes 0 à 100 %.
 * `ui/main_window_mixins/audio.py` définit 7 gestionnaires d'automation, de rôle et de ducking qu'aucun signal ne déclenche :
   fonction à moitié branchée, pas du code à supprimer.
 * **Mute contre solo** : le plan de rendu écarte d'abord une piste muette, solo ou non (la sourdine l'emporte) ; l'ancien

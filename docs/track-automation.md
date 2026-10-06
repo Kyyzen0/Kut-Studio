@@ -1,5 +1,9 @@
 # `Track.automation` : une seule représentation
 
+> **Statut** : l'édition UI n'est pas encore câblée ; les handlers existent mais ne sont connectés à aucun signal — voir
+> [docs/dead-code-audit.md](dead-code-audit.md). Le modèle, le plan de rendu et l'export de l'automation (et du ducking)
+> sont, eux, vivants et testés ; l'édition est inscrite à la feuille de route du README.
+
 Point ouvert du rapport de stabilisation : « `Track.automation` a deux représentations (liste de points ou
 `TrackAutomation`) ; la normalisation est faite à l'usage plutôt qu'au chargement ».
 

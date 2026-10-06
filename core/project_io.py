@@ -274,11 +274,10 @@ def load_project(file_path: str) -> Project:
     Lève :
         FileNotFoundError : si le fichier n'existe pas.
         ValueError : si le JSON est invalide, si la racine n'est pas un
-            objet, ou si le couple ``format`` / ``version`` n'est pas
-            reconnu.
-        TypeError / ValueError : si les dataclasses détectent des champs
-            manquants, des types incohérents ou des valeurs invalides
-            (durée négative, ``source_out <= source_in``...).
+            objet, si le couple ``format`` / ``version`` n'est pas
+            reconnu, ou si les dataclasses détectent des champs
+            manquants ou inconnus, des types incohérents ou des valeurs
+            invalides (durée négative, ``source_out <= source_in``...).
     """
     source = Path(file_path)
     try:
@@ -312,9 +311,9 @@ def load_project(file_path: str) -> Project:
 
     try:
         return _deserialize_project(project_data, project_root=source.parent)
-    except (KeyError, IndexError, AttributeError, ArithmeticError, RecursionError) as error:
+    except (KeyError, IndexError, AttributeError, ArithmeticError, RecursionError, TypeError) as error:
         # Contrat : un fichier abîmé est refusé par ValueError, jamais par une exception interne
-        # (clé manquante, nombre énorme...) que l'interface ne sait pas présenter.
+        # (clé manquante ou inconnue, nombre énorme...) que l'interface ne sait pas présenter.
         raise ValueError(
             f"Le fichier {source} est endommagé ({type(error).__name__} : {error})."
         ) from error

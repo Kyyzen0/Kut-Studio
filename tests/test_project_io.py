@@ -456,6 +456,35 @@ def test_load_project_rejects_missing_project_section(tmp_path: Path) -> None:
         load_project(str(target))
 
 
+def test_load_project_rejects_an_unknown_asset_key_with_a_value_error(tmp_path: Path) -> None:
+    """Une clé inconnue dans un média fait lever ``TypeError`` à ``MediaAsset(**item)`` : ``load_project`` doit la
+    traduire en ``ValueError`` lisible (son contrat), sans laisser fuir l'exception interne vers un appel direct."""
+    target = tmp_path / "unknown-key.kut"
+    save_project(_full_project(), str(target))
+    document = json.loads(target.read_text(encoding="utf-8"))
+    document["project"]["media_assets"][0]["cle_inconnue"] = 42
+    target.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"endommagé \(TypeError : .*cle_inconnue") as caught:
+        load_project(str(target))
+
+    assert str(target) in str(caught.value)
+    assert isinstance(caught.value.__cause__, TypeError)
+
+
+def test_catching_type_errors_does_not_break_a_normal_roundtrip(tmp_path: Path) -> None:
+    """Le refus élargi aux ``TypeError`` ne touche pas un projet sain : il se recharge à l'identique."""
+    target = tmp_path / "normal.kut"
+    project = _full_project()
+
+    save_project(project, str(target))
+    loaded = load_project(str(target))
+
+    assert loaded == project
+    save_project(loaded, str(tmp_path / "again.kut"))
+    assert (tmp_path / "again.kut").read_bytes() == target.read_bytes()
+
+
 # ---------------------------------------------------------------------------
 # Vérification des types reconstruits
 # ---------------------------------------------------------------------------

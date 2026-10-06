@@ -69,7 +69,7 @@ class ConstructionMixin:
         form.addRow(translate(key), field)
         self._row_labels.append((form, field, key))
 
-    def _add_stacked_row(self, form: QFormLayout, key: str, field: QWidget) -> None:
+    def _add_stacked_row(self, form: QFormLayout, key: str, field: QWidget) -> QLabel:
         """Libellé **au-dessus** de son champ, l'un et l'autre sur toute la largeur du formulaire.
 
         Pour un champ qui retourne à la ligne (un ``FlowLayout`` : rangée de boutons). À côté de son libellé, ``QFormLayout`` lui
@@ -81,6 +81,7 @@ class ConstructionMixin:
         form.addRow(label)
         form.addRow(field)
         self._stacked_labels.append((label, key))
+        return label
 
     def retranslate(self) -> None:
         """Onglets, menu « ••• », titres de groupes et libellés de formulaire dans la langue courante."""
@@ -103,6 +104,8 @@ class ConstructionMixin:
                 label.setText(translate(key))
         for label, key in self._stacked_labels:
             label.setText(translate(key))
+        for widget in self._monitor_volume_tooltip_targets:
+            widget.setToolTip(translate("tooltip.monitor_volume"))
 
     def _build_header(self, outer_layout):
         """En-tête : titre et barre d'onglets de l'inspecteur."""
@@ -339,15 +342,26 @@ class ConstructionMixin:
         layout.addWidget(self.transition_group)
 
     def _build_volume_group(self, layout, update_volume):
-        """Groupe « Audio » (curseur de volume)."""
+        """Groupe « Audio » (curseur de volume du moniteur).
+
+        Le curseur ne règle que la lecture de l'aperçu (``QAudioOutput.setVolume``) : rien n'est enregistré dans le
+        projet ni appliqué à l'export, d'où son libellé et son infobulle. ``QAudioOutput`` plafonne à 1.0 : au-delà de
+        100 %, rien ne changerait à l'oreille.
+        """
         # ----- Audio ---------------------------------------------------
         audio_group = self._titled_group("group.audio")
         audio_form = QFormLayout(audio_group)
         audio_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         self.volume_slider, volume_row, self.volume_value = self.make_slider(
-            0, 200, 100, suffix=" %"
+            0, 100, 100, suffix=" %"
         )
-        self._add_row(audio_form, "field.volume", volume_row)
+        # Libellé au-dessus du curseur : à côté, « Volume du moniteur » élargissait la colonne des libellés et donc la
+        # largeur minimale de tout l'inspecteur (coupé dans les petites fenêtres, voir test_ui_small_windows).
+        monitor_label = self._add_stacked_row(audio_form, "field.monitor_volume", volume_row)
+        # Le curseur et sa valeur n'ont pas d'infobulle propre : Qt affiche celle de la ligne qui les contient.
+        self._monitor_volume_tooltip_targets = (volume_row, monitor_label)
+        for widget in self._monitor_volume_tooltip_targets:
+            widget.setToolTip(translate("tooltip.monitor_volume"))
         layout.addWidget(audio_group)
         self.volume_slider.valueChanged.connect(update_volume)
         return audio_group
