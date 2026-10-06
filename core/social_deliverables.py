@@ -41,6 +41,8 @@ class Deliverables:
     preview_copy: bool = False
     cover: bool = False
     cover_seconds: float = 0.0
+    reserved: tuple[str, ...] = ()
+    """Sorties d'autres exports de la file : un livrable ne prend jamais leur nom."""
 
     @property
     def any(self) -> bool:
@@ -55,6 +57,17 @@ def preview_copy_path(output: str | os.PathLike[str]) -> Path:
 def cover_path(output: str | os.PathLike[str]) -> Path:
     path = Path(output)
     return path.with_name(f"{path.stem}-couverture.jpg")
+
+
+def free_path(path: Path, reserved=()) -> Path:
+    """``path`` s'il est libre, sinon ``<nom>-2``, ``<nom>-3``… : un livrable n'écrase jamais un fichier existant ni la
+    sortie d'un autre export de la file (l'utilisateur n'a choisi que le chemin de la vidéo)."""
+    taken = {os.path.normcase(os.path.abspath(str(item))) for item in reserved}
+    candidate, index = path, 1
+    while candidate.exists() or os.path.normcase(os.path.abspath(str(candidate))) in taken:
+        index += 1
+        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
+    return candidate
 
 
 def preview_size(width: int, height: int) -> tuple[int, int]:
@@ -76,7 +89,7 @@ def _ffmpeg() -> list[str]:
         prefix = _ffmpeg_command_prefix()
     except ImportError as error:
         raise DeliverableError("FFmpeg est introuvable.") from error
-    return [*prefix, "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+    return [*prefix, "-nostdin", "-hide_banner", "-loglevel", "error", "-n"]     # -n : jamais d'écrasement
 
 
 def preview_copy_command(source: str, dest: str, width: int, height: int, video_kbps: int) -> list[str]:
@@ -113,12 +126,13 @@ def _run(command: list[str], timeout: float) -> None:
 
 
 def make_preview_copy(source: str, width: int, height: int, duration: float,
-                      max_bytes: int = PREVIEW_MAX_BYTES) -> Path:
-    """Écrit la copie d'aperçu à côté de ``source`` et vérifie qu'elle tient sous ``max_bytes``."""
-    dest = preview_copy_path(source)
+                      max_bytes: int = PREVIEW_MAX_BYTES, *, reserved=()) -> Path:
+    """Écrit la copie d'aperçu à côté de ``source`` (nom libre) et vérifie qu'elle tient sous ``max_bytes``."""
+    dest = free_path(preview_copy_path(source), reserved)
     kbps = preview_video_kbps(duration, max_bytes)
     budget = 60.0 + 4.0 * float(duration)
     for _attempt in range(2):
+        dest.unlink(missing_ok=True)                  # seulement notre propre essai précédent (le nom était libre)
         _run(preview_copy_command(source, str(dest), width, height, kbps), budget)
         size = dest.stat().st_size
         if size <= max_bytes:
@@ -128,8 +142,8 @@ def make_preview_copy(source: str, width: int, height: int, duration: float,
     raise DeliverableError(f"La copie d'aperçu dépasse {max_bytes // 1_000_000} Mo même à débit réduit.")
 
 
-def make_cover(source: str, seconds: float, duration: float, fps: float) -> Path:
-    dest = cover_path(source)
+def make_cover(source: str, seconds: float, duration: float, fps: float, *, reserved=()) -> Path:
+    dest = free_path(cover_path(source), reserved)
     _run(cover_command(source, str(dest), seconds, duration, fps), 60.0)
     if not dest.is_file():
         raise DeliverableError("FFmpeg n'a pas écrit l'image de couverture.")
@@ -145,19 +159,19 @@ def make_deliverables(source: str, wanted: Deliverables, *, width: int, height: 
     errors: list[str] = []
     if wanted.cover:
         try:
-            written.append(str(make_cover(source, wanted.cover_seconds, duration, fps)))
+            written.append(str(make_cover(source, wanted.cover_seconds, duration, fps, reserved=wanted.reserved)))
         except (DeliverableError, OSError, subprocess.TimeoutExpired) as error:
             errors.append(str(error))
     if wanted.preview_copy:
         try:
-            written.append(str(make_preview_copy(source, width, height, duration)))
+            written.append(str(make_preview_copy(source, width, height, duration, reserved=wanted.reserved)))
         except (DeliverableError, OSError, subprocess.TimeoutExpired) as error:
             errors.append(str(error))
     return written, " ; ".join(errors)
 
 
 __all__ = [
-    "DeliverableError", "Deliverables", "PREVIEW_MAX_BYTES", "cover_command", "cover_path", "cover_seek",
+    "DeliverableError", "Deliverables", "PREVIEW_MAX_BYTES", "cover_command", "cover_path", "cover_seek", "free_path",
     "make_cover", "make_deliverables", "make_preview_copy", "preview_copy_command", "preview_copy_path",
     "preview_size", "preview_video_kbps",
 ]

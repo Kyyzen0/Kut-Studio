@@ -71,6 +71,8 @@ def distribute_on_grid(
     plan: list[tuple[str, float, str, float]] = []      # (clip, début, piste, fin voulue)
     for clip in clips:
         track, _index = _find_track_for_clip(project, clip.id)
+        if track.locked:                                # vérifié avant tout rognage : rien n'est modifié à moitié
+            raise ValueError(f"La piste « {track.name} » est verrouillée.")
         target_end = round(cursor + beats_each * grid.beat, 6)
         end = min(target_end, round(cursor + clip.duration, 6))
         plan.append((clip.id, cursor, track.id, end))

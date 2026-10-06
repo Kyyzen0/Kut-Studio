@@ -75,3 +75,12 @@ def test_the_card_and_then_the_media_are_what_the_export_renders(tmp_path):
     filled = render_frame(build_render_plan(project), W, H, 0.5).astype(int)
     assert filled[..., 0].mean() > 200 and filled[..., 2].mean() < 40   # le plan remplit le cadre (« remplir »)
     assert np.abs(filled[2:8, 2:8] - filled[H // 2, W // 2]).max() < 12
+
+
+def test_a_locked_track_protects_its_slots(tmp_path):
+    project = _project(tmp_path)
+    project.media_assets.append(MediaAsset("v", str(tmp_path / "v.mp4"), "v", 10.0, 1920, 1080, 25.0, "video"))
+    project.tracks[0].locked = True
+    with pytest.raises(ValueError):
+        fill_slot(project, "s0", "v")
+    assert project.tracks[0].clips[0].asset_id == ""

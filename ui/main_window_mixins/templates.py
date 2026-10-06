@@ -39,6 +39,9 @@ class TemplatesMixin:
             return True
         except KeyError:
             return False
+        except ValueError as error:                         # piste verrouillée : le dépôt est refusé, rien n'est ajouté
+            self._report_edit_refused(error)
+            return True
         self._record_history(i18n.translate("history.template.fill_slot", slot=slot.label))
         self._invalidate_preview_for_clip(slot.id)
         self._reload_timeline_preserving_selection(slot.id)

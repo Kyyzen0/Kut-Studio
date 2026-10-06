@@ -676,7 +676,9 @@ class RenderQueue(QObject):
         from .social_deliverables import Deliverables, make_deliverables
 
         self._ensure_worker()
-        wanted = Deliverables(preview_copy=job.preview_copy, cover=job.cover, cover_seconds=job.cover_seconds)
+        others = tuple(other.output_path for other in self._jobs if other is not job and not other.is_finished)
+        wanted = Deliverables(preview_copy=job.preview_copy, cover=job.cover, cover_seconds=job.cover_seconds,
+                              reserved=others)
         future = self._prepare_executor.submit(
             make_deliverables, job.output_path, wanted, width=job.width, height=job.height,
             duration=job.duration_seconds, fps=job.fps,

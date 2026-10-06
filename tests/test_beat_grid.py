@@ -74,3 +74,12 @@ def test_distribute_refuses_to_land_on_an_unselected_clip():
     project = _project(("a", 0.0, 3.0), ("b", 3.0, 3.0), ("keep", 1.6, 0.2))
     with pytest.raises(ValueError):
         distribute_on_grid(project, ["a", "b"], BeatGrid(120.0), beats_each=4)
+
+
+def test_distribute_checks_every_track_lock_before_trimming_anything():
+    project = _project(("a", 0.0, 3.0))
+    project.tracks.append(Track(id="V2", name="V2", type="video", locked=True, clips=[
+        Clip(id="b", asset_id="a", track_id="V2", timeline_start=5.0, source_in=0.0, source_out=1.0)]))
+    with pytest.raises(ValueError):
+        distribute_on_grid(project, ["a", "b"], BeatGrid(120.0), beats_each=2)
+    assert project.tracks[0].clips[0].duration == 3.0                  # le clip long n'a pas été raccourci en douce

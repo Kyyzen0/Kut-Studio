@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from .graphics import GraphicOverlay, GraphicType
 from .project_model import Clip, Project
+from .timeline_operations import _ensure_track_editable, _find_track_for_clip
 
 SLOT_INK = "#16294AF0"
 SLOT_BLUE = "#22B8FF"
@@ -77,6 +78,8 @@ def fill_slot(project: Project, clip_id: str, asset_id: str) -> Clip:
     clip = next((item for track in project.tracks for item in track.clips if item.id == clip_id), None)
     if clip is None or not clip.template_slot:
         raise KeyError(clip_id)
+    track, _index = _find_track_for_clip(project, clip_id)
+    _ensure_track_editable(project, track)              # une piste verrouillée protège aussi ses emplacements
     length = min(clip.duration, float(asset.duration) if asset.duration else clip.duration)
     clip.asset_id = asset.id
     clip.source_in, clip.source_out = 0.0, length

@@ -147,3 +147,24 @@ def test_the_preview_copy_stays_under_its_size_cap_on_hard_footage(tmp_path):
     assert copy.stat().st_size <= cap
     video = next(stream for stream in _probe(copy)["streams"] if stream["codec_type"] == "video")
     assert (video["width"], video["height"]) == (720, 1280)
+
+
+def test_a_deliverable_never_takes_an_existing_file_or_a_queued_output(tmp_path):
+    from core.social_deliverables import free_path
+
+    wanted = tmp_path / "run-apercu.mp4"
+    assert free_path(wanted) == wanted
+    wanted.write_bytes(b"export precedent")
+    assert free_path(wanted).name == "run-apercu-2.mp4"
+    assert free_path(wanted, [str(tmp_path / "run-apercu-2.mp4")]).name == "run-apercu-3.mp4"
+
+
+@needs_ffmpeg
+def test_an_existing_preview_named_file_is_kept_intact(tmp_path):
+    source = tmp_path / "run.mp4"
+    _counting_video(source)
+    previous = tmp_path / "run-apercu.mp4"
+    previous.write_bytes(b"un autre export, deja termine")
+    copy = make_preview_copy(str(source), W, H, SECONDS)
+    assert copy.name == "run-apercu-2.mp4" and copy.stat().st_size > 1000
+    assert previous.read_bytes() == b"un autre export, deja termine"
