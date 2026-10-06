@@ -428,8 +428,9 @@ def test_the_inspector_volume_says_it_only_drives_the_monitor(language_reset, qt
     """
     panel = _inspector(qtbot)
     i18n.set_language(language)
-    audio_group = next(g for g, key in panel._group_titles if key == "group.audio")
-    assert _form_labels(panel, audio_group) == [label]
+    monitor_label = panel._monitor_volume_tooltip_targets[1]
+    assert monitor_label.text() == label
+    assert (monitor_label, "field.monitor_volume") in panel._stacked_labels
     for widget in panel._monitor_volume_tooltip_targets:
         assert widget.toolTip().startswith(tooltip_start)
     assert "export" in panel._monitor_volume_tooltip_targets[0].toolTip().lower()
