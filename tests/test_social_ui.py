@@ -234,3 +234,14 @@ def test_voice_sync_needs_a_voice_under_the_title(window):
     window.sync_text_on_voice(title.id)
     assert title.graphic.word_times == ()
     assert window.statusBar().currentMessage()
+
+
+# --- Impact -------------------------------------------------------------------------------------------------------
+
+
+def test_impact_on_every_cut_is_one_undo_step(window):
+    window.apply_impact_on_cuts_of_track()
+    flashes = [clip for track in window.project.tracks if track.type == "graphics" for clip in track.clips]
+    assert len(flashes) == 1 and window.project.tracks[0].clips[1].transform_keyframes
+    window.undo_last()
+    assert not [clip for track in window.project.tracks if track.type == "graphics" for clip in track.clips]

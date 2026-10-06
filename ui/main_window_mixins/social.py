@@ -44,6 +44,10 @@ class SocialMixin:
             "sequence_settings": self.edit_sequence_settings,
             "social_fill_frame": self.toggle_fill_frame_for_selection,
             "social_ken_burns": self.apply_ken_burns_to_selection,
+            "impact_zoom": self.apply_impact_zoom_to_selection,
+            "impact_shake": self.apply_shake_to_selection,
+            "impact_flash": self.add_flash_at_playhead,
+            "impact_on_cuts": self.apply_impact_on_cuts_of_track,
         }
 
     # -- menu --------------------------------------------------------------------------------------------------------
@@ -71,6 +75,10 @@ class SocialMixin:
         menu.addSeparator()
         menu.addAction(self._command_action("social_fill_frame", "social.menu.fill_frame"))
         menu.addAction(self._command_action("social_ken_burns", "social.menu.ken_burns"))
+        impact = menu.addMenu(i18n.translate("impact.menu.title"))
+        for command, key in (("impact_zoom", "impact.menu.zoom"), ("impact_shake", "impact.menu.shake"),
+                             ("impact_flash", "impact.menu.flash"), ("impact_on_cuts", "impact.menu.on_cuts")):
+            impact.addAction(self._command_action(command, key))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
         for key, attribute in (("social.menu.photo_fill", "_photo_fill"), ("social.menu.photo_ken_burns", "_photo_ken_burns")):
             action = self._labelled_action(key)
@@ -207,6 +215,76 @@ class SocialMixin:
         bar = self.statusBar() if hasattr(self, "statusBar") else None
         if bar is not None:
             bar.showMessage(i18n.translate(key), 4000)
+
+    # -- impact ------------------------------------------------------------------------------------------------------
+
+    def _each_clip(self, clips: list[Clip], apply, history_key: str) -> None:
+        done = []
+        for clip in clips:
+            try:
+                apply(clip)
+            except ValueError as error:
+                self._report_edit_refused(error)
+                continue
+            done.append(clip)
+        if done:
+            self._after_social_edit(done, history_key)
+
+    def apply_impact_zoom_to_selection(self) -> None:
+        """Zoom d'impact (le plan entre agrandi de 8 % et se pose en 0,3 s) sur les clips sélectionnés."""
+        from core.impact_fx import apply_impact_zoom
+
+        clips = [clip for clip in self._selected_clips() if clip.graphic is None or clip.graphic.type.value != "light"]
+        if not clips:
+            self._show_social_status("social.message.no_video")
+            return
+        self._each_clip(clips, apply_impact_zoom, "history.impact.zoom")
+
+    def apply_shake_to_selection(self) -> None:
+        """Secousse de caméra au début des clips sélectionnés."""
+        from core.impact_fx import apply_camera_shake
+
+        clips = self._selected_clips()
+        if not clips:
+            self._show_social_status("social.message.no_video")
+            return
+        self._each_clip(clips, apply_camera_shake, "history.impact.shake")
+
+    def add_flash_at_playhead(self) -> None:
+        """Flash blanc de 0,18 s à la tête de lecture (calque de lumière, Addition)."""
+        from core.impact_fx import add_flash
+
+        clip = add_flash(self.project, float(self.playhead_seconds))
+        self._record_history(i18n.translate("history.impact.flash"))
+        self._reload_timeline_preserving_selection(clip.id)
+        self._update_timeline_duration()
+        self._invalidate_preview_for_clip(clip.id)
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
+
+    def apply_impact_on_cuts_of_track(self) -> None:
+        """« Impact sur chaque cut » : zoom d'impact et flash à chaque cut de la piste vidéo du clip sélectionné."""
+        from core.impact_fx import apply_impact_on_cuts
+
+        selected = self._video_clips_of_selection()
+        track_id = selected[0].track_id if selected else next(
+            (track.id for track in self.project.tracks if track.type == "video"), None)
+        if track_id is None:
+            self._show_social_status("social.message.no_video")
+            return
+        try:
+            count = apply_impact_on_cuts(self.project, track_id, flash=True)
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return
+        if not count:
+            self._show_social_status("impact.message.no_cut")
+            return
+        self._record_history(i18n.translate("history.impact.on_cuts", count=count))
+        self._reload_timeline_preserving_selection()
+        self._update_timeline_duration()
+        self._sync_preview_to_timeline()
+        self._mark_dirty()
 
     # -- texte animé -------------------------------------------------------------------------------------------------
 
