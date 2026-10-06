@@ -82,6 +82,7 @@ class SocialMixin:
             impact.addAction(self._command_action(command, key))
         self._build_social_audio_menu(menu)
         menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
+        menu.addAction(self._command_action("leaderboard", "leaderboard.menu"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
         for key, attribute in (("social.menu.photo_fill", "_photo_fill"), ("social.menu.photo_ken_burns", "_photo_ken_burns")):
             action = self._labelled_action(key)
@@ -137,11 +138,20 @@ class SocialMixin:
         self._install_new_project(project)
         self.set_platform_zones(choice.platform)
 
-    def _social_template_entries(self) -> list[tuple[str, str]]:
-        """Templates proposés à la création (aucun tant qu'aucun n'est déclaré)."""
-        return []
+    def _social_template_entries(self) -> list:
+        """Templates proposés à la création, avec leur vignette."""
+        from ui.design_system import Sizes
+        from ui.template_gallery import template_entries
+
+        return template_entries(Sizes.template_thumb)
 
     def _build_social_project(self, choice, names):
+        if choice.template_id:
+            from core.project_templates import create_from_template
+            from ui.template_gallery import template_texts
+
+            return create_from_template(choice.template_id, choice.format_id, choice.fps, name=choice.name,
+                                        track_names=names, texts=template_texts())
         return create_social_project(choice.format_id, choice.fps, name=choice.name, track_names=names)
 
     def edit_sequence_settings(self) -> None:

@@ -296,6 +296,8 @@ class RenderPlan:
     # Identifiants des médias introuvables (supprimés de la bibliothèque) dont un clip actif dépend :
     # l'interface les tolère (clip hors ligne), mais un export refuse un plan qui en porte.
     missing_media: tuple[str, ...] = field(default_factory=tuple)
+    empty_slots: tuple[str, ...] = field(default_factory=tuple)
+    """Clips d'emplacement de template encore vides (rendus comme cartes, :mod:`core.template_slots`)."""
     # Flou de mouvement de la séquence (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = None
     # Normalisation de loudness d'un export (réglage du preset, jamais du projet) : gain statique mesuré par
@@ -443,6 +445,7 @@ def build_render_plan(
         nested_sequences=builder.registry(),
         warnings=tuple(dict.fromkeys(builder.warnings)),
         missing_media=tuple(dict.fromkeys(builder.missing_media)),
+        empty_slots=tuple(dict.fromkeys(builder.empty_slots)),
     )
 
 
@@ -467,6 +470,7 @@ class _PlanBuilder:
         self.required: dict[str, float] = {}
         self.warnings: list[str] = []
         self.missing_media: list[str] = []
+        self.empty_slots: list[str] = []
         self._tracking_contexts: dict[str, object] = {}
 
     def tracking_context(self, sequence):
@@ -662,6 +666,13 @@ class _PlanBuilder:
                     )
                     continue
                 asset = assets_by_id.get(clip.asset_id)
+                if asset is None and clip.template_slot and track.type == "video":
+                    # Emplacement de template vide : une carte (calque Qt) tient sa place, même animation.
+                    if show_video:
+                        graphics_layers.append(_slot_layer(clip, track, track_index, sequence,
+                                                           self.effective(clip, sequence)))
+                    self.empty_slots.append(clip.id)
+                    continue
                 if asset is None:
                     # Média supprimé de la bibliothèque (les clips sont conservés, hors ligne) ou
                     # fichier retouché à la main : le clip ne montre rien, il ne fait pas échouer le plan
@@ -867,6 +878,14 @@ def _graphic_layer(
         role=role,
         label=clip.label,
     )
+
+
+def _slot_layer(clip: Clip, track, track_index: int, sequence, state) -> GraphicLayer:
+    """Carte d'un emplacement vide : un calque de texte à la taille du cadre, animé comme le clip."""
+    from .template_slots import slot_card
+
+    layer = _graphic_layer(clip, track, track_index, state=state)
+    return replace(layer, graphic=slot_card(clip, int(sequence.width), int(sequence.height)))
 
 
 def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[GraphicLayer]:

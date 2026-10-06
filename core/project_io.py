@@ -468,6 +468,8 @@ def _clip_to_dict(clip: Clip) -> dict[str, Any]:
         **({"sequence_id": clip.sequence_id} if clip.sequence_id else {}),
         # Multicam : angle choisi par un segment de source Multicam (absent : le premier angle).
         **({"angle_id": clip.angle_id} if clip.angle_id else {}),
+        # Template : emplacement de média (absent : clip ordinaire).
+        **({"template_slot": clip.template_slot} if clip.template_slot else {}),
         # Tracking (v16) : présent seulement si le clip en porte.
         **_tracking_entry(getattr(clip, "tracking", None)),
     }
@@ -477,6 +479,20 @@ def _tracking_entry(tracking) -> dict[str, Any]:
     if tracking is None or getattr(tracking, "is_empty", True):
         return {}
     return {"tracking": tracking.to_dict()}
+
+
+def _generated_groups_from(raw: object) -> dict:
+    """Groupes générés relus : une entrée abîmée est ignorée, les autres sont gardées."""
+    if not isinstance(raw, dict):
+        return {}
+    groups = {}
+    for group_id, group in raw.items():
+        if not (isinstance(group_id, str) and isinstance(group, dict) and isinstance(group.get("kind"), str)
+                and isinstance(group.get("data"), dict) and isinstance(group.get("clips"), list)):
+            continue
+        groups[group_id] = {"kind": group["kind"], "data": group["data"],
+                            "clips": [clip_id for clip_id in group["clips"] if isinstance(clip_id, str)]}
+    return groups
 
 
 def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
@@ -494,6 +510,8 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         **({"multicam": multicam_to_dict(sequence.multicam)} if sequence.multicam is not None else {}),
         # Vidéo sociale : présent seulement si la séquence a une grille rythmique.
         **({"beat_grid": beat_grid_to_dict(sequence.beat_grid)} if getattr(sequence, "beat_grid", None) else {}),
+        # Calques générés depuis des données (classement) : présent seulement s'il y en a.
+        **({"generated_groups": sequence.generated_groups} if getattr(sequence, "generated_groups", None) else {}),
         "markers": [
             {
                 "id": marker.id,
@@ -734,6 +752,7 @@ def _deserialize_sequence(
     sequence.multicam = multicam_from_dict(data.get("multicam"))
     # --- Grille rythmique : absente d'un ancien fichier (ou abîmée) → pas de grille.
     sequence.beat_grid = beat_grid_from_dict(data.get("beat_grid"))
+    sequence.generated_groups = _generated_groups_from(data.get("generated_groups"))
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont
@@ -831,12 +850,14 @@ def _deserialize_clip(
         for key, value in raw_clip.items()
         if key not in {
             "transform", "transform_keyframes", "time_remapping", "effects",
-            "graphic", "compositing", "animation", "tracking", "angle_id",
+            "graphic", "compositing", "animation", "tracking", "angle_id", "template_slot",
         }
         and key in _CLIP_KNOWN_FIELDS
     }
     angle_id = raw_clip.get("angle_id", "")
     clip_kwargs["angle_id"] = angle_id if isinstance(angle_id, str) else ""
+    slot = raw_clip.get("template_slot", "")
+    clip_kwargs["template_slot"] = slot if isinstance(slot, str) else ""
     clip_kwargs["transform"] = _dict_to_transform(
         raw_clip.get("transform")
     )

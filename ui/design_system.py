@@ -129,6 +129,8 @@ class _Sizes:
     # ``button_md``. C'est une taille de contrôle, pas un espacement de mise en page : les pastilles de filtre, qui n'ont pas
     # de hauteur minimale, en dépendent.
     control_pad_y: int = 6
+    # Vignette d'un template (hauteur d'une image 9:16) dans l'assistant « Nouveau projet réseaux sociaux ».
+    template_thumb: int = 148
 
 
 Sizes = _Sizes()

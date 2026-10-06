@@ -104,6 +104,7 @@ from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
 from ui.main_window_mixins.updates import UpdatesMixin
 from ui.main_window_mixins.social import SocialMixin
 from ui.main_window_mixins.social_audio import SocialAudioMixin
+from ui.main_window_mixins.templates import TemplatesMixin
 from ui.main_window_mixins.beat_grid import BeatGridMixin
 from core.decode_policy import DecodePurpose
 
@@ -137,6 +138,7 @@ class MainWindow(
     BeatGridMixin,
     SocialMixin,
     SocialAudioMixin,
+    TemplatesMixin,
     UpdatesMixin,
     HardwarePreviewMixin,
     TrackingMixin,
@@ -2115,6 +2117,7 @@ class MainWindow(
             **self._social_shortcut_handlers(),
             **self._beat_shortcut_handlers(),
             **self._social_audio_shortcut_handlers(),
+            **self._templates_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

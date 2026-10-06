@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -16,6 +18,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QRadioButton,
     QSpinBox,
     QVBoxLayout,
@@ -25,7 +29,7 @@ from PySide6.QtWidgets import (
 from core.canvas_guides import PLATFORMS
 from core.sequences import MAX_SEQUENCE_SIDE
 from core.social_formats import DEFAULT_FORMAT_ID, SOCIAL_FORMATS, SOCIAL_FRAME_RATES, social_format
-from ui.design_system import DIALOG_MARGINS, Spacing
+from ui.design_system import DIALOG_MARGINS, Sizes, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
 from ui.theme import label_style
@@ -63,7 +67,8 @@ class SocialProjectChoice:
 class SocialProjectDialog(QDialog):
     """« Nouveau projet réseaux sociaux… »."""
 
-    def __init__(self, parent: QWidget | None = None, *, templates: list[tuple[str, str]] | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *,
+                 templates: list[tuple[str, str, str, QImage]] | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(translate("social.dialog.new_title"))
         layout = QVBoxLayout(self)
@@ -100,14 +105,31 @@ class SocialProjectDialog(QDialog):
         for platform, label in platform_items():
             self.platform_combo.addItem(label, platform)
         form.addRow(translate("social.dialog.zones"), self.platform_combo)
-        self.template_combo = QComboBox()
-        self.template_combo.addItem(translate("social.dialog.no_template"), "")
-        for template_id, label in templates or ():
-            self.template_combo.addItem(label, template_id)
-        self.template_combo.setVisible(bool(templates))
-        if templates:
-            form.addRow(translate("social.dialog.template"), self.template_combo)
         layout.addLayout(form)
+        # Galerie des templates : « Projet vide » d'abord, puis chaque template avec sa vignette (9:16).
+        self.template_list = QListWidget(objectName="socialTemplateGallery")
+        self.template_list.setViewMode(QListWidget.IconMode)
+        self.template_list.setFlow(QListWidget.LeftToRight)
+        self.template_list.setWrapping(False)
+        self.template_list.setMovement(QListWidget.Static)
+        thumb = QSize(round(Sizes.template_thumb * 9 / 16), Sizes.template_thumb)
+        self.template_list.setIconSize(thumb)
+        self.template_list.setFixedHeight(thumb.height() + 4 * Spacing.lg)
+        blank = QListWidgetItem(translate("social.dialog.no_template"))
+        blank.setData(Qt.UserRole, "")
+        self.template_list.addItem(blank)
+        for template_id, label, description, image in templates or ():
+            item = QListWidgetItem(QPixmap.fromImage(image), label)
+            item.setData(Qt.UserRole, template_id)
+            item.setToolTip(description)
+            self.template_list.addItem(item)
+        self.template_list.setCurrentRow(0)
+        self.template_list.setVisible(bool(templates))
+        if templates:
+            title = QLabel(translate("social.dialog.template"))
+            title.setStyleSheet(label_style(12, "text", 600))
+            layout.addWidget(title)
+            layout.addWidget(self.template_list)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText(translate("social.dialog.create"))
         buttons.button(QDialogButtonBox.Cancel).setText(translate("social.dialog.cancel"))
@@ -123,6 +145,10 @@ class SocialProjectDialog(QDialog):
         index = self.platform_combo.findData(platforms[0] if platforms else "")
         self.platform_combo.setCurrentIndex(max(0, index))
 
+    def _current_template(self) -> str:
+        item = self.template_list.currentItem()
+        return str(item.data(Qt.UserRole)) if item is not None else ""
+
     def choice(self) -> SocialProjectChoice:
         format_id = next((fid for fid, button in self.format_buttons.items() if button.isChecked()), DEFAULT_FORMAT_ID)
         return SocialProjectChoice(
@@ -130,7 +156,7 @@ class SocialProjectDialog(QDialog):
             format_id=format_id,
             fps=float(self.fps_combo.currentData()),
             platform=str(self.platform_combo.currentData() or ""),
-            template_id=str(self.template_combo.currentData() or ""),
+            template_id=str(self._current_template() or ""),
         )
 
 

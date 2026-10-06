@@ -31,6 +31,8 @@ class MediaImportMixin:
         )
         if asset is None:
             return
+        if self.fill_slot_from_drop(asset_id, track_id, timeline_start):   # emplacement de template : rempli
+            return
         try:
             clip = add_clip_to_track(self.project, asset_id, track_id, timeline_start)
         except (KeyError, ValueError):

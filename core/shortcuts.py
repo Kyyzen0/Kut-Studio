@@ -529,6 +529,7 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("sfx_on_cuts", Category.SOCIAL, scope=_A),
     _cmd("duck_music", Category.SOCIAL, scope=_A),
     _cmd("cover_marker", Category.SOCIAL, scope=_A),
+    _cmd("leaderboard", Category.SOCIAL, scope=_A),
 )
 
 COMMANDS_BY_ID: dict[str, Command] = {command.id: command for command in COMMANDS}

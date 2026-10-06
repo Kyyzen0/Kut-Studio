@@ -353,6 +353,10 @@ class Clip:
     # (:attr:`Sequence.multicam`). Vide : le premier angle de la source. Sans effet sur une séquence ordinaire.
     # Un « changement d'angle » est une coupe ordinaire dont la moitié droite reçoit un autre ``angle_id``.
     angle_id: str = ""
+    # --- Templates ---
+    # Emplacement de template (``slot-03``…) : tant que son média manque, le clip est rendu comme une carte
+    # d'emplacement (:mod:`core.template_slots`) ; y déposer un média le remplace en gardant timing, animation et effets.
+    template_slot: str = ""
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -738,6 +742,8 @@ class Sequence:
     # --- Vidéo sociale ---
     # Grille rythmique (:class:`core.beat_grid.BeatGrid`) : tempo et calage ; ``None`` : pas de grille.
     beat_grid: object = None
+    # Calques générés à partir de données (classement…) : ``{id: {"kind", "data", "clips"}}``, pour les rééditer.
+    generated_groups: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():
@@ -753,6 +759,8 @@ class Sequence:
             self.guides = []
         if self.motion_blur is None:
             self.motion_blur = _default_motion_blur()
+        if self.generated_groups is None:
+            self.generated_groups = {}
 
     @property
     def duration(self) -> float:

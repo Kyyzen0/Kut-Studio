@@ -244,6 +244,9 @@ class ProjectFilesMixin:
             self.export_panel.set_status(
                 i18n.translate("render.added", name=job.name), "ready"
             )
+        warning = self.empty_slot_warning()
+        if warning:                                   # template pas encore rempli : les cartes partent à l'export
+            self.statusBar().showMessage(warning, 8000)
         return job
 
     def _ask_export_path(self, spec) -> str:

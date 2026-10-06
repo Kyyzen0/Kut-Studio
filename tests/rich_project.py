@@ -25,7 +25,9 @@ from core.effects_model import add_effect_to_clip, create_effect
 from core.library_organization import LibraryOrganization
 from core.multicam_model import AudioMode, MulticamAudio, SyncMethod, SyncStatus
 from core.multicam_ops import AngleSpec, create_multicam_source, insert_multicam_clip
-from core.project_model import MediaAsset, Marker, Project, Track
+from core.beat_grid import BeatGrid
+from core.leaderboard import Leaderboard, LeaderboardRow, build_leaderboard
+from core.project_model import Clip, MediaAsset, Marker, Project, Track
 from core.sequences import create_sequence
 from core.tracking_model import Sample, SampleStatus
 
@@ -123,6 +125,13 @@ def build_rich_project() -> Project:
         audio=MulticamAudio(AudioMode.MIX, ("angle-1", "angle-3")),
     )
     insert_multicam_clip(project, source.id, "V2", 10.0, angle_id="angle-2")
+
+    # Vidéo sociale : grille rythmique, emplacement de template vide, marqueur de couverture, classement généré.
+    project.active_sequence.beat_grid = BeatGrid(120.0, 0.25)
+    next(track for track in project.tracks if track.id == "V1").clips.append(
+        Clip("slot-01", "", "V1", 60.0, 0.0, 1.0, label="01", template_slot="slot-01"))
+    project.markers.append(Marker("m-cover", 4.0, "C", "cover"))
+    build_leaderboard(project, Leaderboard((LeaderboardRow("1", "A", "9 PTS"),), start=20.0, duration=3.0, id="lb-rich"))
 
     library = LibraryOrganization(project)
     folder = library.create_folder("F")

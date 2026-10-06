@@ -127,7 +127,7 @@ def test_the_shape_of_a_text_is_the_same_in_all_languages():
 
 # Sigles, noms propres et mots qui s'écrivent pareil dans les trois langues (« AUDIO », « clip »).
 _ACRONYMS_AND_PROPER_NAMES = {
-    "CPU", "GPU", "Kut-Studio", "ProRes Master", "PREVIEW", "TikTok / Vertical 1080×1920", "TikTok 60 fps", "YouTube",
+    "CPU", "GPU", "Kut-Studio", "ProRes Master", "PREVIEW", "TikTok / Vertical 1080×1920", "TikTok 60 fps", "YouTube", "Night Race", "City Lights", "PTS",
     "Auto (≤ 1080p)", "MOTION GRAPHICS", "AUDIO", "slip {delta}s", "{count} clip", "{count} clips",
     "Clip", "SCOPES",
     # Plateformes et techniques de la vidéo sociale (noms de marque, nom propre d'un effet, sigle).
@@ -137,7 +137,7 @@ _ACRONYMS_AND_PROPER_NAMES = {
 _LOANWORDS = {
     "Cache", "Chroma Key", "Ease In-Out", "Export", "Film noir", "Guides", "Look", "Master", "Mix", "Motion graphics", "Normal",
     "Multicam", "MULTICAM", "Parade", "Preset", "Timecode", "timecode", "Presets", "preset", "presets", "Proxies", "Proxy", "Reverse", "Roll", "Slide", "Slip", "Solo", "Stop", "Tags", "Timeline",
-    "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain", "Whoosh",
+    "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain", "Whoosh", "Drop", "SPRINT 🔥",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
 }
