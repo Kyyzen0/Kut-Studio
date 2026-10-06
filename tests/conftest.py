@@ -156,6 +156,12 @@ def _widgets_application():
         yield None
         return
     application = QApplication.instance() or QApplication([])
+    # Polices embarquées enregistrées tout de suite, comme main.py le fait avant la première fenêtre : les ajouter en
+    # cours de session (première résolution de famille) vide les caches de polices de Qt sous des widgets vivants, et
+    # un changement de feuille de style plantait ensuite le worker Windows hors écran (tas corrompu, 0xc0000374).
+    from core.bundled_fonts import register_bundled_fonts
+
+    register_bundled_fonts()
     yield application
 
 

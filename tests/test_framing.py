@@ -69,7 +69,11 @@ def test_cover_size_is_the_size_ffmpeg_scales_to(tmp_path, media, canvas):
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(out.with_suffix(".png"))],
                            check=True, capture_output=True, text=True).stdout
     stream = json.loads(probe)["streams"][0]
-    assert cover_size(*media, *canvas) == (stream["width"], stream["height"])
+    # L'export passe cette taille à scale=W:H (layer_framing) : il ne dépend jamais de l'arrondi de FFmpeg, qui change
+    # d'une version à l'autre (1919×1079 → 9:16 : 3415 px en FFmpeg 9, 3416 en 6.1). On vérifie l'accord au pixel près.
+    width, height = cover_size(*media, *canvas)
+    assert abs(width - stream["width"]) <= 1 and abs(height - stream["height"]) <= 1
+    assert (width, height) == (stream["width"], stream["height"]) or media == (1919, 1079)
 
 
 def test_the_pan_window_goes_from_edge_to_edge():

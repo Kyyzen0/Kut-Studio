@@ -38,4 +38,5 @@ def test_a_missing_family_is_reported_once_in_the_log(qapp, caplog):
         resolve_family("Sans Serif")                                   # générique : remplacement voulu, pas de bruit
     messages = [record.getMessage() for record in caplog.records]
     assert len([m for m in messages if "Police Introuvable Kut 42" in m]) == 1
-    assert not any("Sans Serif" in m for m in messages)
+    # Rien sur « Sans Serif » lui-même (sous Linux, il peut être le remplaçant nommé dans le message ci-dessus).
+    assert not any(m.startswith("Police « Sans Serif »") for m in messages)
