@@ -182,6 +182,12 @@ def _interpolation_identity(plan, preference: str = "auto"):
     return [ENGINE_VERSION, PREPARE_VERSION, backend.name, backend.version, *classification_key()]
 
 
+def _raster_version() -> int:
+    from .mograph_raster import RASTER_VERSION
+
+    return RASTER_VERSION
+
+
 RENDER_ENGINE_VERSION = 7
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
@@ -232,6 +238,8 @@ def fingerprint_plan(plan, **kwargs):
         # À incrémenter quand le rendu change sans que le plan change : le cache d'aperçu est persistant
         # (7 jours) et resservirait sinon des segments produits par l'ancien rendu.
         "engine": RENDER_ENGINE_VERSION,
+        # Dessin des calques graphiques : ses images sont nommées par leur état, pas par leur rendu.
+        "raster": _raster_version() if getattr(plan, "graphics_layers", ()) else None,
         "width": width,
         "height": height,
         "fps": fps,

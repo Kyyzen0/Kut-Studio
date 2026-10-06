@@ -61,6 +61,17 @@ from .mograph_scene import (
 )
 from .motion_blur import MotionBlurSettings
 
+RASTER_VERSION = 1
+"""Version du dessin des calques, incluse dans le nom de chaque image du cache (:mod:`core.mograph_stream`) et dans
+l'empreinte des segments d'aperçu (:func:`core.filter_graph.fingerprint_plan`).
+
+À incrémenter dès que le **même état** de calque se dessine autrement (ordre contour / remplissage, nouvelle mise en page du
+texte…) : le nom d'une image ne dépend que de l'état évalué, et le cache resservirait sinon les images de l'ancien dessin,
+même après une hausse de ``RENDER_ENGINE_VERSION``. Les nouveaux champs à valeur par défaut n'en ont pas besoin : leur
+valeur entre déjà dans l'état.
+
+1 : première version numérotée (contour fusionné des polices à contours superposés)."""
+
 POINT_TO_PIXEL = 96.0 / 72.0
 """Le corps d'un titre est en points à 96 ppp (échelle des titres historiques)."""
 

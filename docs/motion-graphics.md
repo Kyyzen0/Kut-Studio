@@ -205,6 +205,11 @@ sur l'image, moyennés. Un calque immobile n'est rendu qu'une fois.
   évaluées, matrices du monde, masques, échantillons de flou, fichier image).
   Une suite d'images identiques n'est rendue qu'une fois ; modifier un calque
   ne change que les images de **son** élément.
+- Le nom porte aussi la **version du dessin** (`RASTER_VERSION`,
+  `core/mograph_raster.py`), qui entre également dans l'empreinte des
+  segments : changer la façon de dessiner un même état (ordre du contour,
+  mise en page du texte…) impose de l'incrémenter, sinon le cache
+  resservirait les anciennes images.
 - Le dossier `<cache>/mograph` est déclaré au gestionnaire de cache
   (`CacheManager`, couche `mograph`) : budget disque global, éviction des
   moins récemment utilisées (avant les proxies), purge avec l'aperçu.

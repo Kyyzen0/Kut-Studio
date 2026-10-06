@@ -16,7 +16,9 @@ des calques, matrices du monde, masques, échantillons de flou…) :
 - modifier un calque ne change que les images de **son** élément : les
   autres éléments, et les segments d'aperçu qui ne le montrent pas,
   restent en cache ;
-- un aperçu puis un export réutilisent les mêmes images à résolution égale.
+- un aperçu puis un export réutilisent les mêmes images à résolution égale ;
+- la version du dessin (:data:`core.mograph_raster.RASTER_VERSION`) entre
+  dans chaque nom : un dessin modifié ne ressert jamais une image ancienne.
 
 Le dossier est hors du projet (``KUT_STUDIO_CACHE_DIR`` ou le dossier
 temporaire) et peut être vidé à tout moment ; il est déclaré au
@@ -115,6 +117,8 @@ def write_stream(
             ``frame_key`` / ``render`` (0 = début de la timeline).
         salt: distingue deux flux de même état mais de nature différente.
     """
+    from .mograph_raster import RASTER_VERSION
+
     directory = cache_directory()
     fps = float(fps) if fps and fps > 0 else 30.0
     count = max(1, int(math.ceil(duration * fps - 1e-6)))
@@ -131,7 +135,7 @@ def write_stream(
         if state is None:
             name = blank
         else:
-            name = f"f-{_digest((salt, width, height, state))}.png"
+            name = f"f-{_digest((RASTER_VERSION, salt, width, height, state))}.png"
             first_frames.setdefault(name, t)
         if runs and runs[-1][0] == name:
             runs[-1][1] += 1
