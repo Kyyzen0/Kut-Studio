@@ -111,13 +111,14 @@ def test_a_non_finite_number_never_reaches_the_model_nor_the_file():
 
 def test_an_unknown_key_is_still_refused_by_the_asset_reader(tmp_path):
     """Contrat documenté : ``MediaAsset(**item)`` reste strict sur les clés inconnues (un lecteur ancien refuserait
-    un fichier qui porte les nouvelles clés ; on n'ouvre pas un fichier plus récent avec une version plus ancienne)."""
+    un fichier qui porte les nouvelles clés ; on n'ouvre pas un fichier plus récent avec une version plus ancienne).
+    Le refus passe par le contrat de ``load_project`` : ValueError, pas le TypeError interne du constructeur."""
     path = tmp_path / "x.kut"
     save_project(Project(name="x", media_assets=[_video()]), str(path))
     document = json.loads(path.read_text(encoding="utf-8"))
     document["project"]["media_assets"][0]["bobine_inconnue"] = "A001"
     path.write_text(json.dumps(document), encoding="utf-8")
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="bobine_inconnue"):
         load_project(str(path))
 
 
