@@ -211,7 +211,8 @@ class PreviewPanel(QWidget):
         top_header = PanelHeader(translate("preview.title"), icon=IconName.MEDIA)
         self._title_label = top_header.title_label
 
-        status = QLabel("1920 × 1080 · 30 fps · 16:9")
+        status = QLabel()
+        self.format_status = status                                # cadre de la séquence active (set_frame_format)
         set_role(status, "meta")
         status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)       # sans le VCenter, le libellé remontait au bord haut du bandeau
         top_header.add_trailing(status)
@@ -382,6 +383,14 @@ class PreviewPanel(QWidget):
     def set_silenced(self, silenced: bool) -> None:
         """Coupe (ou rétablit) le son du lecteur du moniteur : le son vient alors d'ailleurs (enregistreur Multicam)."""
         self.audio_output.setMuted(bool(silenced))
+
+    def set_frame_format(self, width: int, height: int, fps: float) -> None:
+        """En-tête de la visionneuse : cadre et cadence de la séquence active (« 1080 × 1920 · 30 i/s · 9:16 »)."""
+        from math import gcd
+
+        divisor = gcd(int(width), int(height)) or 1
+        self.format_status.setText(translate("preview.frame_format", width=int(width), height=int(height),
+                                             fps=f"{float(fps):g}", ratio=f"{int(width) // divisor}:{int(height) // divisor}"))
 
     def set_preview_divisor(self, divisor: int) -> None:
         """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""

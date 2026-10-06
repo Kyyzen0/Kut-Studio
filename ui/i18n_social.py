@@ -474,4 +474,6 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
     "leaderboard.color.red": _t("Rouge course", "Race red", "Rojo carrera"),
     "leaderboard.color.steel": _t("Gris acier", "Steel grey", "Gris acero"),
     "leaderboard.color.blue_deep": _t("Bleu profond", "Deep blue", "Azul profundo"),
+    "preview.frame_format": _t("{width} × {height} · {fps} i/s · {ratio}", "{width} × {height} · {fps} fps · {ratio}",
+                               "{width} × {height} · {fps} fps · {ratio}"),
 }

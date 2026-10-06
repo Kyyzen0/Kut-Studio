@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -32,7 +32,7 @@ from core.social_formats import DEFAULT_FORMAT_ID, SOCIAL_FORMATS, SOCIAL_FRAME_
 from ui.design_system import DIALOG_MARGINS, Sizes, Spacing
 from ui.i18n import translate
 from ui.keyboard_navigation import set_single_default
-from ui.theme import label_style
+from ui.theme import COLORS, label_style
 
 SEQUENCE_FRAME_RATES: tuple[float, ...] = (23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
 
@@ -115,7 +115,9 @@ class SocialProjectDialog(QDialog):
         thumb = QSize(round(Sizes.template_thumb * 9 / 16), Sizes.template_thumb)
         self.template_list.setIconSize(thumb)
         self.template_list.setFixedHeight(thumb.height() + 4 * Spacing.lg)
-        blank = QListWidgetItem(translate("social.dialog.no_template"))
+        empty = QPixmap(thumb)
+        empty.fill(QColor(COLORS["surface"]))                      # « Projet vide » : une toile nue, alignée sur les autres
+        blank = QListWidgetItem(QIcon(empty), translate("social.dialog.no_template"))
         blank.setData(Qt.UserRole, "")
         self.template_list.addItem(blank)
         for template_id, label, description, image in templates or ():

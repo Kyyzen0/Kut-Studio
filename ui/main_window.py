@@ -1681,6 +1681,8 @@ class MainWindow(
     def _sync_preview_to_timeline(self) -> list:
         """Synchronise le moniteur puis l'aperçu des calques et la surcouche."""
         self._viewer_composited = False
+        sequence = self.project.active_sequence
+        self.preview_panel.set_frame_format(sequence.width, sequence.height, sequence.fps)
         result = self._sync_preview_core()
         self._after_preview_sync()
         return result

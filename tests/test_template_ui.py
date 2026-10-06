@@ -57,6 +57,8 @@ def test_a_template_project_opens_with_its_slots_titles_and_music(window, monkey
     assert project.name == "Run" and len(project.tracks[0].clips) == 19
     titles = {clip.graphic.text for track in project.tracks if track.type == "graphics" for clip in track.clips}
     assert i18n.translate("template.text.this_weekend_caps") in titles
+    assert window.preview_panel.format_status.text() == i18n.translate(
+        "preview.frame_format", width=1080, height=1920, fps="30", ratio="9:16")   # l'en-tête suit la séquence
     assert window.current_project_path is None and not window.project_dirty
 
 

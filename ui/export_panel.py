@@ -294,7 +294,7 @@ class ExportPanel(QWidget):
             )
         for key, label in self._custom_labels.items():
             label.setText(tr(f"render.export.{key}"))
-        self.loudness_check.setText(tr("render.export.loudness", lufs=f"{SOCIAL_TARGET_LUFS:g}"))
+        self.loudness_check.setText(tr("render.export.loudness", lufs=f"{SOCIAL_TARGET_LUFS:g}".replace("-", "−")))
         self.loudness_check.setToolTip(tr("render.export.loudness_tooltip"))
         self.preview_copy_check.setText(tr("render.export.preview_copy"))
         self.preview_copy_check.setToolTip(tr("render.export.preview_copy_tooltip"))
