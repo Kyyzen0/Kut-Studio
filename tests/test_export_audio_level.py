@@ -536,3 +536,22 @@ def test_without_any_ffmpeg_the_probe_reads_as_no(monkeypatch):
     monkeypatch.setattr(export_engine, "find_media_tool", lambda name: None)
     _ffmpeg_filter_has_option.__dict__.pop("_cache", None)
     assert _ffmpeg_filter_has_option("amix", "normalize") is False
+
+
+@requires_ffmpeg
+@pytest.mark.parametrize("preset, reduction", [("gentle", 6.0), ("voice_over_music", 12.0), ("social_punchy", 18.0)])
+def test_ducking_presets_lower_the_music_under_the_voice(media, tmp_path, preset, reduction):
+    """« Ducker la musique sous la voix » avec un preset : la musique baisse de sa réduction, une seule association."""
+    from core.audio_automation import TrackRole, AudioAutomationService, duck_music_under_voice
+
+    project = _project(media, [_clip("quiet_a", 1)], [_clip("voice", 2, 1.5, 1.0)])
+    service = AudioAutomationService()
+    service.set_track_role(project, "A1", TrackRole.MUSIC)
+    service.set_track_role(project, "A2", TrackRole.VOICE)
+    duck_music_under_voice(project, "gentle")
+    duck_music_under_voice(project, preset)                       # le réglage change, l'association reste unique
+    assert len(project.ducking_sidechains) == 1
+    out = _export(build_render_plan(project), tmp_path / "preset.mkv", codec="pcm_f32le")
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert _tone_db(out, 1.9, 0.5) == pytest.approx(source - reduction, abs=1.0)
+    assert _tone_db(out, 4.5, 0.8) == pytest.approx(source, abs=TOLERANCE_DB)
