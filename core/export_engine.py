@@ -1457,7 +1457,7 @@ def _compose_plan_graph(
 
         # --- Ducking (tâche 28) ------------------------------------
         # Chaque piste voix qui pilote un ducking est mixée une fois (sous-mixage ``av<k>``), puis chaque couche musique
-        # ciblée passe par un ``sidechaincompress`` par association, empilés : le plus profond l'emporte. Dans un graphe
+        # ciblée passe par un ``sidechaincompress`` par association (voir plus bas pour en combiner plusieurs). Dans un graphe
         # FFmpeg une sortie ne se lit qu'une fois : un clip voix (entendu dans le mixage *et* lu par le sous-mixage) et un
         # sous-mixage lu par plusieurs compresseurs passent donc par ``asplit``. Les labels sont tenus dans des tables
         # locales (jamais posés sur les couches ou le modèle) : un même plan peut être composé plusieurs fois avec des
@@ -1514,15 +1514,27 @@ def _compose_plan_graph(
                 parts.append(f"[{voice_mix}]asplit={reads}" + "".join(f"[{c}]" for c in copies))
                 voice_keys[voice_track_id] = copies
         for audio_index, active in ducked:
-            current = layer_labels[audio_index][1:-1]
-            for j, sc in enumerate(active):
-                output = f"{p}a{audio_index}_duck" if j == len(active) - 1 else f"{p}a{audio_index}_duck{j}"
+            # Plusieurs associations : l'atténuation la plus profonde l'emporte à chaque instant (``DuckingSidechain``),
+            # elles ne s'additionnent pas. Chaque compresseur travaille sur sa copie de la musique, puis
+            # :func:`_deepest_duck` garde, échantillon par échantillon, la sortie la plus atténuée.
+            music = layer_labels[audio_index][1:-1]
+            output = f"{p}a{audio_index}_duck"
+            if len(active) == 1:
+                branches = [music]
+            else:
+                branches = [f"{p}a{audio_index}_m{j}" for j in range(len(active))]
+                parts.append(f"[{music}]asplit={len(active)}" + "".join(f"[{b}]" for b in branches))
+            ducked_branches = []
+            for j, (sc, branch) in enumerate(zip(active, branches)):
+                branch_output = output if len(active) == 1 else f"{p}a{audio_index}_duck{j}"
                 parts.append(_build_ducking_chain(
-                    sc, voice_label=voice_keys[sc.voice_track_id].pop(), main_label=current,
-                    output_label=output, key_label=f"{p}a{audio_index}_sc{j}",
+                    sc, voice_label=voice_keys[sc.voice_track_id].pop(), main_label=branch,
+                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}",
                 ))
-                current = output
-            layer_labels[audio_index] = f"[{current}]"
+                ducked_branches.append(branch_output)
+            if len(active) > 1:
+                parts.append(_deepest_duck(ducked_branches, output))
+            layer_labels[audio_index] = f"[{output}]"
 
         n_inputs = len(plan.audio_layers) + 1
         # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
@@ -2601,6 +2613,31 @@ def _build_ducking_chain(sidechain, voice_label: str, main_label: str, output_la
         f"[{voice_label}]aeval=exprs='{clip}'[{key_label}];"
         f"[{main_label}][{key_label}]sidechaincompress=threshold={threshold:.6f}:ratio={ratio:.3f}:"
         f"attack={attack:.3f}:release={release:.3f}:makeup=1[{output_label}]"
+    )
+
+
+def _deepest_duck(branches: list[str], output_label: str) -> str:
+    """Garde, échantillon par échantillon, la plus atténuée de plusieurs versions duckées de la même musique.
+
+    Chaque branche vaut ``g_i * x`` (même signal, gain ``g_i >= 0`` de son compresseur, aucun ne retarde le son) : la plus
+    atténuée est la plus proche de zéro, le minimum quand l'échantillon est positif, le maximum sinon. ``amerge`` aligne
+    les branches stéréo en ``2k`` canaux, dans l'ordre des entrées, et ``aeval`` choisit.
+    """
+
+    def fold(function: str, values: list[str]) -> str:
+        expression = values[0]
+        for value in values[1:]:
+            expression = f"{function}({expression},{value})"
+        return expression
+
+    channels = []
+    for channel in (0, 1):
+        values = [f"val({2 * index + channel})" for index in range(len(branches))]
+        channels.append(f"if(gte(val({channel}),0),{fold('min', values)},{fold('max', values)})")
+    inputs = "".join(f"[{branch}]" for branch in branches)
+    return (
+        f"{inputs}amerge=inputs={len(branches)},"
+        f"aeval=exprs='{'|'.join(channels)}':channel_layout=stereo[{output_label}]"
     )
 
 

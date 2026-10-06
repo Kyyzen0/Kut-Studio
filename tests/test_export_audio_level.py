@@ -243,6 +243,33 @@ def test_ducking_lowers_the_music_by_the_configured_reduction_while_the_voice_sp
 
 
 @requires_ffmpeg
+def test_overlapping_duckings_keep_the_deepest_reduction_instead_of_adding_up(media, tmp_path):
+    """Deux voix (12 dB sur A2 de 1,5 à 3,5 s, 6 dB sur A3 de 2,5 à 4,5 s) : pendant qu'elles se chevauchent, la musique
+    baisse de 12 dB, la plus profonde des deux (``DuckingSidechain``), pas de 18 comme deux compresseurs en série.
+
+    Voix à -8 dB : la musique et les deux voix restent ensemble sous la pleine échelle, le limiteur n'y touche pas.
+    """
+    from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
+
+    def voice(track: int, start: float) -> Clip:
+        return Clip(f"voice-{track}", "voice", f"A{track}", start, 0.0, 2.0, gain_db=-8.0)
+
+    project = _project(media, [_clip("quiet_a", 1)], [voice(2, 1.5)], [voice(3, 2.5)])
+    service = AudioAutomationService()
+    service.set_track_role(project, "A1", TrackRole.MUSIC)
+    for track, reduction in (("A2", 12.0), ("A3", 6.0)):
+        service.set_track_role(project, track, TrackRole.VOICE)
+        service.add_ducking_sidechain(project, "A1", track, DuckingConfig(threshold_db=-30.0, reduction_db=reduction))
+    out = _export(build_render_plan(project), tmp_path / "two_voices.mkv", codec="pcm_f32le")
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert _peak(out) < 1.0, "le limiteur fausserait la mesure"
+    assert _tone_db(out, 1.9, 0.5) == pytest.approx(source - 12.0, abs=1.0), "A2 seule"
+    assert _tone_db(out, 2.9, 0.5) == pytest.approx(source - 12.0, abs=1.0), "les deux : la plus profonde"
+    assert _tone_db(out, 4.1, 0.3) == pytest.approx(source - 6.0, abs=1.0), "A3 seule"
+    assert _tone_db(out, 5.2, 0.7) == pytest.approx(source, abs=TOLERANCE_DB)
+
+
+@requires_ffmpeg
 def test_ducking_with_the_fallback_for_an_ffmpeg_without_normalize(media, tmp_path, monkeypatch):
     """Sans ``normalize`` (FFmpeg < 4.4), le sous-mixage voix est rattrapé comme le mixage final : même ducking."""
     real = export_engine._ffmpeg_filter_has_option
@@ -391,6 +418,7 @@ def test_every_ducking_label_is_produced_once_and_read_once(monkeypatch):
     assert sorted(read) == sorted(set(read)), "un label lu deux fois"
     assert set(read) <= set(produced)
     assert graph.count("sidechaincompress") == 4                      # deux musiques × deux voix
+    assert graph.count("amerge=inputs=2") == 2                        # combinées par la plus profonde, pas en série
 
 
 def test_without_normalize_the_layers_are_padded_and_the_mix_is_compensated(monkeypatch):
