@@ -21,6 +21,9 @@ Couvre :
 
 from __future__ import annotations
 
+import math
+import re
+
 import pytest
 
 from core.audio_automation import (
@@ -720,61 +723,141 @@ def test_volume_envelope_returns_none_when_automation_empty() -> None:
     assert _build_track_volume_envelope((), 0.0, 5.0) is None
 
 
-def test_volume_envelope_returns_linear_interp_filter() -> None:
-    automation = (
-        AutomationPoint(time_seconds=0.0, gain_db=-6.0),
-        AutomationPoint(time_seconds=2.0, gain_db=0.0),
+def _envelope_gain(filter_str: str | None, t: float) -> float:
+    """Facteur que le filtre émis applique à l'instant ``t`` du clip, calculé comme FFmpeg le ferait.
+
+    L'expression n'emploie que ``t``, l'arithmétique, ``lte``, ``gt`` et ``pow`` : Python l'évalue tel quel. Un filtre
+    ``volume=<g>dB`` est un gain constant ; pas de filtre, le gain unité.
+    """
+    if filter_str is None:
+        return 1.0
+    constant = re.fullmatch(r"volume=(-?\d+\.\d+)dB", filter_str)
+    if constant:
+        return 10.0 ** (float(constant.group(1)) / 20.0)
+    match = re.fullmatch(r"asetnsamples=n=256:p=0,volume='(.*)':eval=frame", filter_str)
+    assert match, filter_str
+    names = {"t": t, "lte": lambda a, b: float(a <= b), "gt": lambda a, b: float(a > b), "pow": pow}
+    return eval(match.group(1), {"__builtins__": {}}, names)
+
+
+CURVES = [
+    pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0)], id="saut"),
+    pytest.param([AutomationPoint(1.0, -3.0), AutomationPoint(2.0, 0.0, 0.5)], id="fondu"),
+    pytest.param(
+        [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -12.0, 0.5), AutomationPoint(4.0, -12.0),
+         AutomationPoint(5.0, 0.0, 0.5)],
+        id="creux",
+    ),
+    pytest.param([AutomationPoint(1.0, 0.0), AutomationPoint(1.5, -9.0, 2.0)], id="fondu-plus-long-que-l-ecart"),
+    pytest.param([AutomationPoint(3.0, -9.0)], id="un-seul-point"),
+]
+
+
+@pytest.mark.parametrize("points", CURVES)
+@pytest.mark.parametrize(("timeline_start", "duration"), [(0.0, 6.0), (1.25, 3.0), (2.5, 4.0), (7.0, 2.0)])
+def test_volume_envelope_applies_gain_at_in_clip_time(points, timeline_start, duration) -> None:
+    """Le filtre émis donne, à chaque instant du clip, le gain de ``gain_at`` à l'instant correspondant de la timeline.
+
+    Le ``t`` du filtre part de 0 au début du clip (le filtre est avant ``adelay``) : un clip posé à 2,5 s lit la courbe
+    à partir de 2,5 s. Le gain est un facteur linéaire, jamais des dB lus comme un facteur.
+    """
+    automation = TrackAutomation(track_id="M1", points=list(points))
+    filter_str = _build_track_volume_envelope(tuple(automation.points), timeline_start, duration)
+    # Échantillonné entre les instants ronds : à l'instant exact d'un saut, ``gain_at`` donne le gain d'après pour le
+    # dernier point et celui d'avant pour un point intérieur, une différence qu'aucune trame audio ne peut entendre.
+    for step in range(240):
+        local = duration * (step + 0.5) / 240
+        expected = 10.0 ** (automation.gain_at(timeline_start + local) / 20.0)
+        assert _envelope_gain(filter_str, local) == pytest.approx(expected, rel=1e-4), (local, filter_str)
+
+
+def test_a_constant_gain_is_a_plain_db_volume() -> None:
+    """Un gain qui ne bouge pas sur le clip : ``volume=<g>dB`` (un nombre nu serait un facteur : -6 deviendrait ×-6)."""
+    assert _build_track_volume_envelope((AutomationPoint(0.0, -6.0),), 0.0, 5.0) == "volume=-6.000dB"
+    assert _build_track_volume_envelope((AutomationPoint(0.0, 0.0),), 0.0, 5.0) is None
+
+
+def test_a_clip_after_the_last_point_takes_the_last_gain() -> None:
+    """Hors des points, le gain est celui du point le plus proche *dans le temps* : le dernier après la courbe."""
+    points = (AutomationPoint(0.0, -3.0), AutomationPoint(1.0, -9.0))
+    assert _build_track_volume_envelope(points, 4.0, 2.0) == "volume=-9.000dB"
+    assert _build_track_volume_envelope(points, -3.0, 2.0) == "volume=-3.000dB"
+
+
+def test_volume_envelope_stays_flat_with_many_points() -> None:
+    """Une somme de morceaux disjoints, pas d'imbrication : la longueur croît avec les points, pas la profondeur."""
+    points = tuple(AutomationPoint(float(i), -12.0 * (i % 2), 0.1) for i in range(200))
+    filter_str = _build_track_volume_envelope(points, 0.0, 200.0)
+    assert filter_str is not None and "if(" not in filter_str
+    curve = TrackAutomation(track_id="M1", points=list(points))
+    for t in (0.05, 50.5, 51.05, 120.7, 199.5):
+        assert _envelope_gain(filter_str, t) == pytest.approx(10.0 ** (curve.gain_at(t) / 20.0), rel=1e-4)
+
+
+def _options(chain: str) -> dict[str, str]:
+    compressor = re.search(r"sidechaincompress=([^\[]*)\[", chain)
+    assert compressor, chain
+    return dict(item.split("=", 1) for item in compressor.group(1).split(":"))
+
+
+def _sidechain(config: DuckingConfig | None = None) -> DuckingSidechain:
+    if config is None:
+        return DuckingSidechain(id="duck-1", music_track_id="M1", voice_track_id="V1")
+    return DuckingSidechain(id="duck-1", music_track_id="M1", voice_track_id="V1", config=config)
+
+
+def test_ducking_chain_takes_the_voice_on_its_second_input() -> None:
+    """``sidechaincompress`` n'a pas d'option ``sidechain`` : la clé est son entrée 1, la musique son entrée 0."""
+    chain = _build_ducking_chain(
+        _sidechain(DuckingConfig(threshold_db=-25.0, reduction_db=10.0)),
+        voice_label="av0", main_label="a0", output_label="a0_duck", key_label="a0_sc0",
     )
-    filter_str = _build_track_volume_envelope(automation, 0.0, 5.0)
-    assert filter_str is not None
-    assert "volume=" in filter_str
-    assert "linear_interp" in filter_str
-    assert "-6.0000" in filter_str
-    assert "0.0000" in filter_str
+    key, compressor = chain.split(";")
+    assert key.startswith("[av0]aeval=") and key.endswith("[a0_sc0]")
+    assert compressor.startswith("[a0][a0_sc0]sidechaincompress=") and compressor.endswith("[a0_duck]")
+    assert "sidechain=" not in chain
 
 
-def test_volume_envelope_extends_to_clip_edges() -> None:
-    """Si l'automation ne couvre qu'une portion, on fige le gain aux
-    bords du clip avec une valeur constante."""
-    automation = (
-        AutomationPoint(time_seconds=1.0, gain_db=-3.0),
-        AutomationPoint(time_seconds=2.0, gain_db=0.0),
-    )
-    # Le clip va de t=0 à t=5.
-    filter_str = _build_track_volume_envelope(automation, 0.0, 5.0)
-    assert filter_str is not None
-    # Le premier segment doit explicitement épingler t=0.0 à -3.0 dB
-    # (gain du premier point projeté au bord gauche du clip).
-    assert "0.000000 -3.0000" in filter_str
+def test_ducking_chain_speaks_ffmpeg_units() -> None:
+    """Seuil en amplitude linéaire, attaque et relâchement en millisecondes, pas de gain de compensation."""
+    options = _options(_build_ducking_chain(
+        _sidechain(), voice_label="av0", main_label="a0", output_label="o", key_label="k",
+    ))
+    assert float(options["threshold"]) == pytest.approx(0.1, rel=1e-4)       # -20 dB
+    assert float(options["ratio"]) == pytest.approx(20.0)
+    assert float(options["attack"]) == pytest.approx(50.0)                    # 0,05 s
+    assert float(options["release"]) == pytest.approx(400.0)                  # 0,4 s
+    assert float(options["makeup"]) == 1.0
 
 
-def test_ducking_chain_uses_sidechain_label() -> None:
-    """Le filtre ``sidechaincompress`` cite le label du mix vocal."""
-    config = DuckingConfig(threshold_db=-25.0, reduction_db=10.0)
-    sidechain = DuckingSidechain(
-        id="duck-1",
-        music_track_id="M1",
-        voice_track_id="V1",
-        config=config,
-    )
-    object.__setattr__(sidechain, "_voice_mix_label", "av0")
-    chain = _build_ducking_chain(sidechain)
-    assert "sidechaincompress" in chain
-    assert "threshold=" in chain
-    assert "ratio=" in chain
-    assert "sidechain=[av0]" in chain
+@pytest.mark.parametrize("config", [
+    DuckingConfig(),
+    DuckingConfig(threshold_db=MIN_DUCKING_THRESHOLD_DB, reduction_db=MAX_DUCKING_REDUCTION_DB,
+                  attack_seconds=MAX_DUCKING_ATTACK_S, release_seconds=MAX_DUCKING_RELEASE_S),
+    DuckingConfig(threshold_db=MAX_DUCKING_THRESHOLD_DB, reduction_db=MIN_DUCKING_REDUCTION_DB,
+                  attack_seconds=MIN_DUCKING_ATTACK_S, release_seconds=MIN_DUCKING_RELEASE_S),
+])
+def test_every_ducking_setting_stays_inside_ffmpeg_ranges(config) -> None:
+    """Une option hors bornes refuse le graphe entier : ``ffmpeg -h filter=sidechaincompress``."""
+    options = _options(_build_ducking_chain(
+        _sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k",
+    ))
+    assert 0.000976563 <= float(options["threshold"]) <= 1.0
+    assert 1.0 <= float(options["ratio"]) <= 20.0
+    assert 0.01 <= float(options["attack"]) <= 2000.0
+    assert 0.01 <= float(options["release"]) <= 9000.0
+    assert 1.0 <= float(options["makeup"]) <= 64.0
 
 
-def test_ducking_chain_handles_default_config() -> None:
-    """Un ``sidechain`` sans config explicite utilise les défauts."""
-    sidechain = DuckingSidechain(
-        id="duck-1",
-        music_track_id="M1",
-        voice_track_id="V1",
-    )
-    object.__setattr__(sidechain, "_voice_mix_label", "av0")
-    chain = _build_ducking_chain(sidechain)
-    assert "sidechaincompress" in chain
+def test_the_key_is_clipped_where_the_reduction_reaches_its_maximum() -> None:
+    """Le compresseur atténue de ``dépassement * (1 - 1/ratio)`` : écrêter la clé à ``seuil + R*ratio/(ratio-1)``
+    plafonne l'atténuation à ``reduction_db`` exactement."""
+    config = DuckingConfig(threshold_db=-20.0, reduction_db=12.0)
+    chain = _build_ducking_chain(_sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k")
+    ceiling = float(re.search(r"clip\(val\(0\),-([\d.]+),", chain).group(1))
+    overshoot = 20.0 * math.log10(ceiling / 0.1)
+    assert overshoot * (1.0 - 1.0 / config.ratio) == pytest.approx(12.0, abs=1e-3)
+    assert "clip(val(1)," in chain                                         # les deux canaux
 
 
 def test_volume_envelope_and_ducking_chain_compose_without_errors() -> None:

@@ -1456,73 +1456,87 @@ def _compose_plan_graph(
                 )
 
         # --- Ducking (tâche 28) ------------------------------------
-        # Pour chaque AudioLayer ciblée par un ducking, on émet
-        # des filtres ``sidechaincompress`` chaînés sur la
-        # couche musique ; chaque sidechain tire d'une voix
-        # mixée au préalable. Si plusieurs sidechains ciblent
-        # la même musique, on les empile : le plus profond
-        # l'emporte. Les labels sont tenus dans des tables locales
-        # (jamais posés sur les couches ou le modèle) : un même plan
-        # peut être composé plusieurs fois avec des préfixes différents.
-        voice_mixes_by_track: dict = {}
-        voice_mix_counter = 0
-        ducked_labels: dict[int, str] = {}
+        # Chaque piste voix qui pilote un ducking est mixée une fois (sous-mixage ``av<k>``), puis chaque couche musique
+        # ciblée passe par un ``sidechaincompress`` par association (voir plus bas pour en combiner plusieurs). Dans un graphe
+        # FFmpeg une sortie ne se lit qu'une fois : un clip voix (entendu dans le mixage *et* lu par le sous-mixage) et un
+        # sous-mixage lu par plusieurs compresseurs passent donc par ``asplit``. Les labels sont tenus dans des tables
+        # locales (jamais posés sur les couches ou le modèle) : un même plan peut être composé plusieurs fois avec des
+        # préfixes différents.
+        layer_labels = [f"[{p}a{i}]" for i in range(len(plan.audio_layers))]
+        layers_by_track: dict[str, list[int]] = {}
+        for i, lay in enumerate(plan.audio_layers):
+            layers_by_track.setdefault(lay.track_id, []).append(i)
+        ducked: list[tuple[int, list]] = []
         for audio_index, layer in enumerate(plan.audio_layers):
-            sidechains = list(
-                getattr(layer, "ducking_sidechains", []) or []
-            )
-            active_sidechains = [
-                s for s in sidechains if getattr(s, "enabled", True)
+            # Une voix sans clip n'a rien à faire entendre au compresseur ; une réduction nulle ne réduit rien.
+            active = [
+                sc for sc in (getattr(layer, "ducking_sidechains", ()) or ())
+                if getattr(sc, "enabled", True) and layers_by_track.get(sc.voice_track_id)
+                and float(_ducking_config(sc).reduction_db) > 0.0
             ]
-            if not active_sidechains:
-                continue
-            voice_tracks_involved: dict = {}
-            for sc in active_sidechains:
-                voice_tracks_involved.setdefault(
-                    sc.voice_track_id, []
-                ).append(sc)
-            for voice_track_id, sidechains_for_voice in (
-                voice_tracks_involved.items()
-            ):
-                voice_mix_label = voice_mixes_by_track.get(voice_track_id)
-                if voice_mix_label is None:
-                    voice_mix_label = f"{p}av{voice_mix_counter}"
-                    voice_mixes_by_track[voice_track_id] = voice_mix_label
-                    voice_mix_counter += 1
-                    voice_layer_indices = [
-                        i for i, lay in enumerate(plan.audio_layers)
-                        if lay.track_id == voice_track_id
-                    ]
-                    if voice_layer_indices:
-                        voice_inputs = "".join(
-                            f"[{p}a{i}]" for i in voice_layer_indices
-                        )
-                        # Le détecteur du ducking doit entendre la voix à son niveau réel, pas divisée par le nombre
-                        # de clips de la piste : le seuil se règle sur le signal qu'on entend. (Un FFmpeg sans
-                        # ``normalize`` garde l'ancien niveau de détection : il n'a pas de moyen exact de le corriger.)
-                        voice_normalize = ":normalize=0" if amix_sums else ""
-                        parts.append(
-                            f"{voice_inputs}"
-                            f"amix=inputs={len(voice_layer_indices)}:"
-                            f"duration=first:dropout_transition=0{voice_normalize},"
-                            f"aformat=channel_layouts=stereo:"
-                            f"sample_rates=48000[{voice_mix_label}]"
-                        )
-                chain_parts = [
-                    _build_ducking_chain(sc, voice_label=voice_mix_label)
-                    for sc in sidechains_for_voice
-                ]
-                chain = ",".join(chain_parts)
-                parts.append(
-                    f"[{p}a{audio_index}]{chain}[{p}a{audio_index}_duck]"
-                )
-                ducked_labels[audio_index] = f"[{p}a{audio_index}_duck]"
+            if active:
+                ducked.append((audio_index, active))
+        voice_reads: dict[str, int] = {}
+        for _, active in ducked:
+            for sc in active:
+                voice_reads[sc.voice_track_id] = voice_reads.get(sc.voice_track_id, 0) + 1
+        voice_keys: dict[str, list[str]] = {}
+        for k, (voice_track_id, reads) in enumerate(voice_reads.items()):
+            mix_inputs = []
+            for i in layers_by_track[voice_track_id]:
+                parts.append(f"{layer_labels[i]}asplit=2[{p}a{i}_heard][{p}a{i}_key]")
+                layer_labels[i] = f"[{p}a{i}_heard]"
+                mix_inputs.append(f"[{p}a{i}_key]")
+            # Une base silencieuse de la durée de la timeline ouvre le sous-mixage : ``sidechaincompress`` s'arrête dès
+            # que sa clé s'arrête, et une clé qui finirait avec le premier clip voix couperait la musique au même instant.
+            base = f"[{p}av{k}_base]"
+            parts.append(
+                f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(duration)}{base}"
+            )
+            # Le détecteur entend la voix à son niveau réel (somme, pas moyenne) : le seuil se règle sur ce qu'on entend.
+            voice_stage = f"amix=inputs={len(mix_inputs) + 1}:duration=first:dropout_transition=0"
+            if amix_sums:
+                voice_stage += ":normalize=0"
+            else:
+                # Même repli que le mixage final (voir plus bas) : diviseur constant, compensé exactement.
+                for label in mix_inputs:
+                    parts.append(f"{label}apad{label[:-1]}_pad]")
+                mix_inputs = [f"{label[:-1]}_pad]" for label in mix_inputs]
+                voice_stage += f",volume={len(mix_inputs) + 1}"
+            voice_mix = f"{p}av{k}"
+            parts.append(
+                f"{base}{''.join(mix_inputs)}{voice_stage},aformat=channel_layouts=stereo:sample_rates=48000[{voice_mix}]"
+            )
+            if reads == 1:
+                voice_keys[voice_track_id] = [voice_mix]
+            else:
+                copies = [f"{voice_mix}_{n}" for n in range(reads)]
+                parts.append(f"[{voice_mix}]asplit={reads}" + "".join(f"[{c}]" for c in copies))
+                voice_keys[voice_track_id] = copies
+        for audio_index, active in ducked:
+            # Plusieurs associations : l'atténuation la plus profonde l'emporte à chaque instant (``DuckingSidechain``),
+            # elles ne s'additionnent pas. Chaque compresseur travaille sur sa copie de la musique, puis
+            # :func:`_deepest_duck` garde, échantillon par échantillon, la sortie la plus atténuée.
+            music = layer_labels[audio_index][1:-1]
+            output = f"{p}a{audio_index}_duck"
+            if len(active) == 1:
+                branches = [music]
+            else:
+                branches = [f"{p}a{audio_index}_m{j}" for j in range(len(active))]
+                parts.append(f"[{music}]asplit={len(active)}" + "".join(f"[{b}]" for b in branches))
+            ducked_branches = []
+            for j, (sc, branch) in enumerate(zip(active, branches)):
+                branch_output = output if len(active) == 1 else f"{p}a{audio_index}_duck{j}"
+                parts.append(_build_ducking_chain(
+                    sc, voice_label=voice_keys[sc.voice_track_id].pop(), main_label=branch,
+                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}",
+                ))
+                ducked_branches.append(branch_output)
+            if len(active) > 1:
+                parts.append(_deepest_duck(ducked_branches, output))
+            layer_labels[audio_index] = f"[{output}]"
 
         n_inputs = len(plan.audio_layers) + 1
-        layer_labels = [
-            ducked_labels.get(i, f"[{p}a{i}]")
-            for i in range(len(plan.audio_layers))
-        ]
         # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
         mix_stage = f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
         if amix_sums:
@@ -2423,13 +2437,9 @@ def _build_audio_filter(
     if abs(total_db) > 1e-6:
         steps.append(f"volume={_format_db(total_db)}dB")
 
-    # Automation de volume par piste (tâche 28). On applique
-    # l'enveloppe via ``volume`` avec une expression ``between(t,...)``
-    # linéaire entre les points, plus ``enable`` pour figer le gain
-    # avant le premier / après le dernier point. Les points sont
-    # ordonnés ; ``layer.timeline_start`` est ajouté pour rester dans
-    # le référentiel de la timeline (l'automation est stockée dans ce
-    # référentiel, pas dans celui de la source).
+    # Automation de volume par piste (tâche 28) : la courbe de
+    # ``TrackAutomation.gain_at``, stockée en temps de la timeline,
+    # ramenée au temps du clip (ici ``t`` part de 0, ``adelay`` vient après).
     envelope = _build_track_volume_envelope(
         layer.track_automation, layer.timeline_start, layer.duration
     )
@@ -2464,119 +2474,170 @@ def _build_audio_filter(
     return ";".join([*pre_chains, head + ",".join(steps) + f"[{output_label}]"])
 
 
+def _automation_pieces(points) -> list[tuple[float, float, float, float]]:
+    """Découpe la courbe de :meth:`TrackAutomation.gain_at` en morceaux ``(début, fin, gain_début, gain_fin)``.
+
+    Chaque morceau couvre l'intervalle ``]début, fin]`` (temps de la timeline, bornes infinies aux deux extrémités) ;
+    le gain y varie linéairement **en dB** de ``gain_début`` à ``gain_fin`` (égaux pour un palier). La découpe suit
+    exactement ``gain_at`` : gain du premier point avant lui, du dernier après lui ; entre deux points, le gain précédent
+    est tenu jusqu'à ``précédent + fondu`` puis rejoint linéairement le point courant ; un fondu nul est un saut juste
+    après le point précédent ; un fondu qui atteint le point courant le change en saut à l'instant de ce point.
+    """
+    first, last = points[0], points[-1]
+    pieces = [(-math.inf, float(first.time_seconds), float(first.gain_db), float(first.gain_db))]
+    for previous, current in zip(points, points[1:]):
+        start, end = float(previous.time_seconds), float(current.time_seconds)
+        before, after = float(previous.gain_db), float(current.gain_db)
+        fade = float(current.fade_seconds)
+        if end <= start:
+            continue
+        if fade <= 0.0:
+            pieces.append((start, end, after, after))
+        elif start + fade >= end:
+            pieces.append((start, end, before, before))
+        else:
+            pieces.append((start, start + fade, before, before))
+            pieces.append((start + fade, end, before, after))
+    pieces.append((float(last.time_seconds), math.inf, float(last.gain_db), float(last.gain_db)))
+    merged = [pieces[0]]
+    for piece in pieces[1:]:
+        lo, _, a, b = merged[-1]
+        if a == b == piece[2] == piece[3]:      # deux paliers égaux qui se suivent : un seul terme dans l'expression
+            merged[-1] = (lo, piece[1], a, b)
+        else:
+            merged.append(piece)
+    return merged
+
+
+def _expr_number(value: float, digits: int = 6) -> str:
+    """Nombre d'une expression FFmpeg, entre parenthèses s'il est négatif (``t-(-1.5)`` plutôt que ``t--1.5``)."""
+    text = f"{value:.{digits}f}"
+    return f"({text})" if text.startswith("-") else text
+
+
 def _build_track_volume_envelope(
     automation: tuple,
     timeline_start: float,
     duration: float,
 ) -> str | None:
-    """Construit un filtre ``volume`` qui anime le gain via une enveloppe.
+    """Filtre ``volume`` qui applique au clip l'automation de sa piste, ou ``None`` s'il n'y a rien à appliquer.
 
-    On utilise la syntaxe ``volume=enable='between(t,start,end)':
-    volume='linear_interp(t, t0, v0, t1, v1, ...)':eval=frame`` pour
-    interpoler linéairement entre les points sur la durée du clip.
+    La courbe est celle de :meth:`TrackAutomation.gain_at` (voir :func:`_automation_pieces`), réduite aux morceaux qui
+    touchent le clip. Le filtre est placé dans la chaîne du clip, **avant** ``adelay`` : son ``t`` part de 0 au début du
+    clip ; les temps de la timeline sont donc ramenés au clip (``- timeline_start``).
 
-    Args:
-        automation: tuple de :class:`AutomationPoint` (peut être vide).
-        timeline_start: décalage du clip sur la timeline (s).
-        duration: durée du clip sur la timeline (s).
-
-    Returns:
-        Une chaîne de filtre prête à être concaténée dans un pipeline,
-        ou ``None`` si l'automation est vide.
+    Un gain constant sur tout le clip donne ``volume=<g>dB`` (aucun filtre à 0 dB). Sinon l'expression est une somme de
+    morceaux disjoints ``gt(t,a)*lte(t,b)*(gain en dB)`` (plate : aucune imbrication, quel que soit le nombre de points),
+    convertie en facteur **linéaire** par ``pow(10,dB/20)`` : ``volume`` lit un nombre nu comme un facteur, jamais en dB.
+    L'expression est réévaluée à chaque trame audio (``eval=frame``), sur des trames courtes.
     """
-    if not automation:
-        return None
-    # On borne les points au segment `[range(overlay_start, overlay_end)`
-    # et on émet un seul filtre ``volume``.
     points = sorted(automation, key=lambda p: p.time_seconds)
-    # Bornes du clip sur la timeline (en secondes absolues).
+    if not points:
+        return None
     clip_start = float(timeline_start)
-    clip_end = clip_start + float(duration)
-    # Filtrer les points qui tombent dans le segment du clip (à
-    # ±1 ms pour absorber les erreurs d'arrondi).
-    in_segment = [
-        p for p in points
-        if p.time_seconds <= clip_end + 1e-3
-        and p.time_seconds >= clip_start - 1e-3
+    length = max(0.0, float(duration))
+    local = [
+        (lo - clip_start, hi - clip_start, a, b)
+        for lo, hi, a, b in _automation_pieces(points)
+        if hi - clip_start >= 0.0 and lo - clip_start < length
     ]
-    # Bord gauche : on garde le premier point du segment ; s'il n'est
-    # pas dans le segment (automatisation définie avant le clip), on
-    # conserve le point le plus proche (en valeur absolue).
-    if not in_segment:
-        # Aucun point ne touche le segment : on prend le point le plus
-        # proche et on l'étend sur toute la durée du clip.
-        if not points:
-            return None
-        first = points[0]
-        last = points[-1]
-        linear = (
-            f"volume=enable='between(t,{clip_start:.6f},{clip_end:.6f})':"
-            f"volume='{_format_db(first.gain_db)}':eval=frame"
-        )
-        return linear
-    # Au moins un point dans le segment : on construit un
-    # ``linear_interp`` avec le premier point (éventuellement répété
-    # au début du clip pour figer le gain avant le premier point), les
-    # points internes, et le dernier point (répété à la fin du clip).
-    first = in_segment[0]
-    last = in_segment[-1]
-    seq: list[tuple[float, float]] = []
-    # Bord gauche : si le premier point est après le début du clip,
-    # on l'injecte au début du clip pour figer le gain.
-    if first.time_seconds > clip_start + 1e-3:
-        seq.append((clip_start, first.gain_db))
-    else:
-        seq.append((first.time_seconds, first.gain_db))
-    seq.extend((p.time_seconds, p.gain_db) for p in in_segment)
-    # Bord droit : idem pour le dernier point.
-    if last.time_seconds < clip_end - 1e-3:
-        seq.append((clip_end, last.gain_db))
-    # Expression FFmpeg : `t0 v0 t2 v2 t4 v4` (paires temps/valeur).
-    expr_parts: list[str] = []
-    for t, db in seq:
-        expr_parts.append(f"{t:.6f}")
-        expr_parts.append(f"{db:.4f}")
-    expr = " ".join(expr_parts)
+    if not local:  # clip de durée nulle posé exactement sur une borne : rien d'audible
+        return None
+    # Le premier et le dernier morceau gardés couvrent ce qui déborde du clip : leurs bornes extérieures ne servent plus.
+    local[0] = (-math.inf, *local[0][1:])
+    local[-1] = (local[-1][0], math.inf, *local[-1][2:])
+    if len(local) == 1 and abs(local[0][2] - local[0][3]) < 1e-9:
+        gain = _clamp_db(local[0][2])
+        return f"volume={_format_db(gain)}dB" if abs(gain) > 1e-6 else None
+
+    terms: list[str] = []
+    for lo, hi, a, b in local:
+        if abs(a - b) < 1e-9:
+            value = _expr_number(a, 4)
+        else:
+            value = (
+                f"({a:.4f}+{_expr_number(b - a, 4)}*(t-{_expr_number(lo)})/{hi - lo:.6f})"
+            )
+        conditions = []
+        if lo != -math.inf:
+            conditions.append(f"gt(t,{lo:.6f})")
+        if hi != math.inf:
+            conditions.append(f"lte(t,{hi:.6f})")
+        terms.append("*".join([*conditions, value]))
+    # ``eval=frame`` réévalue une fois par trame, et une trame peut durer ~85 ms (paquets WAV) : la rampe serait un
+    # escalier en retard d'autant. Des trames de 256 échantillons (5,3 ms) la suivent à 0,1 dB près ; ``p=0`` ne
+    # complète pas la dernière trame de silence (le clip garderait sinon sa durée exacte, mais pas son dernier bloc).
+    return f"asetnsamples=n=256:p=0,volume='pow(10,({'+'.join(terms)})/20)':eval=frame"
+
+
+# Bornes des options de ``sidechaincompress`` (``ffmpeg -h filter=sidechaincompress``) : une valeur hors bornes fait
+# échouer tout le graphe, donc tout l'export.
+SIDECHAIN_THRESHOLD_RANGE = (0.000976563, 1.0)   # amplitude linéaire, pas des dB
+SIDECHAIN_RATIO_RANGE = (1.0, 20.0)
+SIDECHAIN_ATTACK_MS_RANGE = (0.01, 2000.0)       # millisecondes
+SIDECHAIN_RELEASE_MS_RANGE = (0.01, 9000.0)
+
+
+def _clamp(value: float, bounds: tuple[float, float]) -> float:
+    return max(bounds[0], min(bounds[1], float(value)))
+
+
+def _ducking_config(sidechain):
+    from .audio_automation import DuckingConfig
+
+    return getattr(sidechain, "config", None) or DuckingConfig()
+
+
+def _build_ducking_chain(sidechain, voice_label: str, main_label: str, output_label: str, key_label: str) -> str:
+    """Filtres d'un ducking : ``[voix]`` atténue ``[musique]`` vers ``[sortie]``.
+
+    ``sidechaincompress`` prend la musique sur son entrée 0 et la voix (la *clé*) sur son entrée 1. Les réglages de
+    :class:`DuckingConfig` sont convertis dans les unités de FFmpeg : seuil en amplitude linéaire, attaque et relâchement
+    en millisecondes, chacun borné à sa plage (une valeur hors bornes refuse le graphe entier).
+
+    ``reduction_db`` est une atténuation **maximale** : au-dessus du seuil, un compresseur de ratio ``r`` atténue de
+    ``(niveau - seuil) * (1 - 1/r)`` dB, sans plafond. On écrête donc la clé à ``seuil + reduction * r/(r-1)`` dB
+    (``aeval``, sans latence) : la voix atténue la musique en proportion de son dépassement du seuil, jusqu'à
+    ``reduction_db`` exactement. La clé n'est jamais entendue, son écrêtage est inaudible. ``makeup=1`` : pas de
+    compensation, c'est le principe du ducking.
+    """
+    config = _ducking_config(sidechain)
+    threshold = _clamp(10.0 ** (float(config.threshold_db) / 20.0), SIDECHAIN_THRESHOLD_RANGE)
+    ratio = _clamp(config.ratio, SIDECHAIN_RATIO_RANGE)
+    attack = _clamp(float(config.attack_seconds) * 1000.0, SIDECHAIN_ATTACK_MS_RANGE)
+    release = _clamp(float(config.release_seconds) * 1000.0, SIDECHAIN_RELEASE_MS_RANGE)
+    overshoot_db = float(config.reduction_db) * ratio / (ratio - 1.0) if ratio > 1.0 else 0.0
+    ceiling = f"{threshold * 10.0 ** (overshoot_db / 20.0):.6f}"
+    clip = "|".join(f"clip(val({channel}),-{ceiling},{ceiling})" for channel in (0, 1))
     return (
-        f"volume=enable='between(t,{clip_start:.6f},{clip_end:.6f})':"
-        f"volume='linear_interp({expr})':eval=frame"
+        f"[{voice_label}]aeval=exprs='{clip}'[{key_label}];"
+        f"[{main_label}][{key_label}]sidechaincompress=threshold={threshold:.6f}:ratio={ratio:.3f}:"
+        f"attack={attack:.3f}:release={release:.3f}:makeup=1[{output_label}]"
     )
 
 
-def _build_ducking_chain(sidechain, voice_label: str | None = None) -> str:
-    """Construit le filtre ``sidechaincompress`` pour un ducking.
+def _deepest_duck(branches: list[str], output_label: str) -> str:
+    """Garde, échantillon par échantillon, la plus atténuée de plusieurs versions duckées de la même musique.
 
-    La couche musique est passée via ``[aN]`` au niveau de
-    l'appelant (cette fonction ne fait qu'émettre la chaîne de
-    filtres qui manipule ``[aN]`` en sortie). Le sidechain est
-    nommé ``sidechain_<voice_track_id>`` et défini par
-    l'appelant (``[avM]``).
-
-    Les paramètres ``threshold``, ``ratio``, ``attack`` et
-    ``release`` sont dérivés de :class:`DuckingConfig` :
-    ``ratio`` est figé à 20:1 (pour atteindre la réduction visée
-    avec un dépassement modéré du seuil), ``attack`` et ``release``
-    sont convertis en secondes (FFmpeg les attend en secondes).
+    Chaque branche vaut ``g_i * x`` (même signal, gain ``g_i >= 0`` de son compresseur, aucun ne retarde le son) : la plus
+    atténuée est la plus proche de zéro, le minimum quand l'échantillon est positif, le maximum sinon. ``amerge`` aligne
+    les branches stéréo en ``2k`` canaux, dans l'ordre des entrées, et ``aeval`` choisit.
     """
-    # Import paresseux pour éviter une dépendance forte au module
-    # ``audio_automation`` (lui-même sans dépendance Qt).
-    from .audio_automation import DuckingConfig
 
-    config = getattr(sidechain, "config", None) or DuckingConfig()
-    if voice_label is None:
-        voice_label = getattr(sidechain, "_voice_mix_label", "voice")
-    threshold = _format_db(float(config.threshold_db))
-    ratio = _format_seconds(float(config.ratio))
-    attack = _format_seconds(float(config.attack_seconds))
-    release = _format_seconds(float(config.release_seconds))
-    # ``makeup`` est laissé à 0 : la réduction n'est pas compensée,
-    # c'est exactement ce que veut un ducking. Si l'utilisateur
-    # veut compenser, il peut augmenter ``reduction_db`` via le
-    # seuil et le ratio.
+    def fold(function: str, values: list[str]) -> str:
+        expression = values[0]
+        for value in values[1:]:
+            expression = f"{function}({expression},{value})"
+        return expression
+
+    channels = []
+    for channel in (0, 1):
+        values = [f"val({2 * index + channel})" for index in range(len(branches))]
+        channels.append(f"if(gte(val({channel}),0),{fold('min', values)},{fold('max', values)})")
+    inputs = "".join(f"[{branch}]" for branch in branches)
     return (
-        f"sidechaincompress=threshold={threshold}:ratio={ratio}:"
-        f"attack={attack}:release={release}:makeup=0:"
-        f"sidechain=[{voice_label}]"
+        f"{inputs}amerge=inputs={len(branches)},"
+        f"aeval=exprs='{'|'.join(channels)}':channel_layout=stereo[{output_label}]"
     )
 
 

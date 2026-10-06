@@ -11,6 +11,7 @@ Les tests de graphe et de sonde n'exécutent pas FFmpeg : ils tiennent aussi sur
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -52,7 +53,8 @@ def media(tmp_path_factory):
     paths: dict[str, Path] = {}
     # (nom, fréquence, amplitude) : 0,5 = −6 dBFS ; 0,35 laisse la somme de deux couches sous 1 ; 0,9 la fait dépasser 0 dBFS.
     for name, hertz, amplitude in (("half", 440, 0.5), ("half_b", 660, 0.5), ("quiet_a", 440, 0.35), ("quiet_b", 660, 0.35),
-                                   ("loud", 440, 0.9)):
+                                   ("loud", 440, 0.9),
+                                   ("voice", 1000, 0.6)):
         path = folder / f"{name}.wav"
         wave = f"{amplitude}*sin(2*PI*{hertz}*t)"
         _run(_ffmpeg("-f", "lavfi", "-i", f"aevalsrc={wave}|{wave}:sample_rate=48000:duration={SECONDS}",
@@ -68,7 +70,7 @@ def media(tmp_path_factory):
 def _project(media, *audio_tracks: list[Clip]) -> Project:
     """Une piste vidéo (muette) et une piste audio par liste de clips : les clips qui se chevauchent vont sur des pistes distinctes."""
     assets = [MediaAsset("video", str(media["video"]), "video", SECONDS, W, H, float(FPS), "video", False)]
-    for name in ("half", "half_b", "quiet_a", "quiet_b", "loud"):
+    for name in ("half", "half_b", "quiet_a", "quiet_b", "loud", "voice"):
         assets.append(MediaAsset(name, str(media[name]), name, SECONDS, 0, 0, 0.0, "audio", True))
     tracks = [Track("V1", "V1", "video", clips=[Clip("v", "video", "V1", 0.0, 0.0, SECONDS)])]
     for index, clips in enumerate(audio_tracks, start=1):
@@ -189,6 +191,144 @@ def test_the_fallback_for_an_ffmpeg_without_normalize_gives_the_same_levels(medi
 
 
 # ---------------------------------------------------------------------------
+# Ducking et automation de piste : rendus réels
+# ---------------------------------------------------------------------------
+# Jusqu'au 2026-10-06 ces graphes n'étaient vérifiés que par comparaison de chaînes, et FFmpeg les refusait tous : seuil
+# du ducking en dB (FFmpeg attend une amplitude), voix lue deux fois, ``linear_interp`` inconnu de l'évaluateur… Tout
+# projet qui s'en servait échouait à l'export. Ces tests rendent et **mesurent** : la musique (440 Hz) est isolée de la
+# voix (1 kHz) par projection sur sa fréquence, et comparée à la même fenêtre de la source.
+
+
+def _tone_db(path: Path, start: float, length: float, hertz: float = 440.0) -> float:
+    """Niveau efficace (dBFS) de la seule composante à ``hertz`` sur la fenêtre, voix et autres sons exclus."""
+    data = _samples(path, start, length)[:, 0].astype(np.float64)
+    assert data.size, f"aucun échantillon lu dans {path}"
+    t = np.arange(data.size) / 48000
+    amplitude = 2 * np.abs(np.mean(data * np.exp(-2j * np.pi * hertz * t)))
+    return float(20 * np.log10(amplitude / np.sqrt(2)))
+
+
+def _ducked_project(media, reduction_db: float) -> Project:
+    """Musique sur A1 de 0 à 6 s ; deux phrases sur A2 (1,5–2,5 s et 3,5–4,5 s) qui la font baisser.
+
+    Musique (0,35) et voix (0,6) restent ensemble sous la pleine échelle : le limiteur du mixage final n'ajoute rien à
+    l'atténuation mesurée. La voix dépasse le seuil de -30 dB de bien plus que l'écart qui donne la réduction maximale.
+    """
+    from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
+
+    project = _project(media, [_clip("quiet_a", 1)], [_clip("voice", 2, 1.5, 1.0), _clip("voice", 2, 3.5, 1.0)])
+    service = AudioAutomationService()
+    service.set_track_role(project, "A1", TrackRole.MUSIC)
+    service.set_track_role(project, "A2", TrackRole.VOICE)
+    service.add_ducking_sidechain(project, "A1", "A2", DuckingConfig(threshold_db=-30.0, reduction_db=reduction_db))
+    return project
+
+
+@requires_ffmpeg
+@pytest.mark.parametrize("reduction_db", [12.0, 6.0])
+def test_ducking_lowers_the_music_by_the_configured_reduction_while_the_voice_speaks(media, tmp_path, reduction_db):
+    """Une voix forte baisse la musique de ``reduction_db`` (le maximum réglé), puis la musique revient à son niveau.
+
+    La deuxième phrase vient après un silence : la clé du compresseur doit couvrir toute la timeline. Avant, elle
+    finissait avec le premier clip voix et ``sidechaincompress`` coupait la musique au même instant.
+    """
+    out = _export(build_render_plan(_ducked_project(media, reduction_db)), tmp_path / "duck.mkv", codec="pcm_f32le")
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert len(_samples(out)) / 48000 == pytest.approx(SECONDS, abs=0.05), "la musique doit durer jusqu'au bout"
+    assert _tone_db(out, 0.3, 0.6) == pytest.approx(source, abs=TOLERANCE_DB), "avant la voix : intacte"
+    for phrase in (1.5, 3.5):
+        heard = _tone_db(out, phrase + 0.4, 0.5)
+        assert heard == pytest.approx(source - reduction_db, abs=1.0), (phrase, heard)
+    assert _tone_db(out, 5.2, 0.7) == pytest.approx(source, abs=TOLERANCE_DB), "après la voix : relâchée"
+
+
+@requires_ffmpeg
+def test_overlapping_duckings_keep_the_deepest_reduction_instead_of_adding_up(media, tmp_path):
+    """Deux voix (12 dB sur A2 de 1,5 à 3,5 s, 6 dB sur A3 de 2,5 à 4,5 s) : pendant qu'elles se chevauchent, la musique
+    baisse de 12 dB, la plus profonde des deux (``DuckingSidechain``), pas de 18 comme deux compresseurs en série.
+
+    Voix à -8 dB : la musique et les deux voix restent ensemble sous la pleine échelle, le limiteur n'y touche pas.
+    """
+    from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
+
+    def voice(track: int, start: float) -> Clip:
+        return Clip(f"voice-{track}", "voice", f"A{track}", start, 0.0, 2.0, gain_db=-8.0)
+
+    project = _project(media, [_clip("quiet_a", 1)], [voice(2, 1.5)], [voice(3, 2.5)])
+    service = AudioAutomationService()
+    service.set_track_role(project, "A1", TrackRole.MUSIC)
+    for track, reduction in (("A2", 12.0), ("A3", 6.0)):
+        service.set_track_role(project, track, TrackRole.VOICE)
+        service.add_ducking_sidechain(project, "A1", track, DuckingConfig(threshold_db=-30.0, reduction_db=reduction))
+    out = _export(build_render_plan(project), tmp_path / "two_voices.mkv", codec="pcm_f32le")
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert _peak(out) < 1.0, "le limiteur fausserait la mesure"
+    assert _tone_db(out, 1.9, 0.5) == pytest.approx(source - 12.0, abs=1.0), "A2 seule"
+    assert _tone_db(out, 2.9, 0.5) == pytest.approx(source - 12.0, abs=1.0), "les deux : la plus profonde"
+    assert _tone_db(out, 4.1, 0.3) == pytest.approx(source - 6.0, abs=1.0), "A3 seule"
+    assert _tone_db(out, 5.2, 0.7) == pytest.approx(source, abs=TOLERANCE_DB)
+
+
+@requires_ffmpeg
+def test_ducking_with_the_fallback_for_an_ffmpeg_without_normalize(media, tmp_path, monkeypatch):
+    """Sans ``normalize`` (FFmpeg < 4.4), le sous-mixage voix est rattrapé comme le mixage final : même ducking."""
+    real = export_engine._ffmpeg_filter_has_option
+    monkeypatch.setattr(export_engine, "_ffmpeg_filter_has_option",
+                        lambda name, option: False if (name, option) == ("amix", "normalize") else real(name, option))
+    out = _export(build_render_plan(_ducked_project(media, 12.0)), tmp_path / "duck_old.mkv", codec="pcm_f32le")
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert _tone_db(out, 0.3, 0.6) == pytest.approx(source, abs=TOLERANCE_DB)
+    assert _tone_db(out, 3.9, 0.5) == pytest.approx(source - 12.0, abs=1.0)
+
+
+@requires_ffmpeg
+def test_ducking_also_renders_in_the_faithful_preview(media, tmp_path):
+    """L'aperçu fidèle exécute le même graphe, sur un segment qui ne commence pas à 0."""
+    from core.filter_graph import build_preview_command
+
+    out = tmp_path / "preview.mp4"
+    plan = build_render_plan(_ducked_project(media, 12.0))
+    temporary: list[str] = []
+    command = build_preview_command(plan, width=W, height=H, fps=FPS, quality="draft", start=1.0, duration=3.0,
+                                    output_path=str(out), temporary_files=temporary)
+    _run(command)
+    source = _tone_db(media["quiet_a"], 0.3, 0.6)
+    assert _tone_db(out, 0.9, 0.5) == pytest.approx(source - 12.0, abs=1.5)      # 1,9–2,4 s de la timeline
+
+
+@requires_ffmpeg
+def test_track_automation_dips_the_music_by_its_points(media, tmp_path):
+    """Un creux de -12 dB, avec fondus, sur un clip posé à 1 s : le filtre lit la courbe dans le temps du clip."""
+    from core.audio_automation import AudioAutomationService
+
+    project = _project(media, [_clip("half", 1, 1.0, 5.0)])
+    service = AudioAutomationService()
+    for time, gain, fade in ((2.0, 0.0, 0.0), (3.0, -12.0, 0.5), (4.0, -12.0, 0.0), (5.0, 0.0, 0.5)):
+        service.add_automation_point(project, "A1", time, gain, fade)
+    out = _export(build_render_plan(project), tmp_path / "dip.mkv", codec="pcm_f32le")
+    source = _level_db(media["half"], 0.3, 0.6)
+    curve = project.tracks[1].automation
+    for start, length in ((1.2, 0.6), (3.1, 0.8), (2.73, 0.04), (4.73, 0.04), (5.2, 0.7)):
+        expected = curve.gain_at(start + length / 2)
+        heard = _level_db(out, start, length) - source
+        assert heard == pytest.approx(expected, abs=TOLERANCE_DB), (start, expected, heard)
+
+
+@requires_ffmpeg
+def test_a_clip_past_the_last_automation_point_is_attenuated_not_inverted(media, tmp_path):
+    """Gain constant sur tout le clip : ``volume=-6`` (sans ``dB``) multipliait par -6, soit +15,6 dB en opposition."""
+    from core.audio_automation import AudioAutomationService
+
+    project = _project(media, [_clip("half", 1, 2.0, 3.0)])
+    AudioAutomationService().add_automation_point(project, "A1", 0.5, -6.0)
+    out = _export(build_render_plan(project), tmp_path / "flat.mkv", codec="pcm_f32le")
+    assert _level_db(out, 2.5, 2.0) == pytest.approx(_level_db(media["half"], 0.5, 2.0) - 6.0, abs=TOLERANCE_DB)
+    original = _samples(media["half"], 0.5, 0.01)[:, 0]
+    exported = _samples(out, 2.5, 0.01)[:, 0]
+    assert float(np.dot(original, exported)) > 0, "le gain doit garder la phase"
+
+
+# ---------------------------------------------------------------------------
 # Forme du graphe (sans FFmpeg)
 # ---------------------------------------------------------------------------
 
@@ -243,8 +383,42 @@ def test_the_ducking_voice_submix_also_sums(monkeypatch):
     service.set_track_role(project, "V1", TrackRole.VOICE)
     service.add_ducking_sidechain(project, "M1", "V1", DuckingConfig())
     graph = _graph(project)
-    assert "amix=inputs=2:duration=first:dropout_transition=0:normalize=0,aformat=channel_layouts=stereo:sample_rates=48000[av0]" in graph
-    assert "sidechaincompress" in graph
+    # Deux clips voix et la base silencieuse qui fait durer la clé jusqu'au bout de la timeline.
+    assert ("[av0_base][a1_key][a2_key]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
+            "aformat=channel_layouts=stereo:sample_rates=48000[av0]") in graph
+    assert "[a0][a0_sc0]sidechaincompress" in graph
+
+
+def test_every_ducking_label_is_produced_once_and_read_once(monkeypatch):
+    """Dans un graphe FFmpeg une sortie se lit une seule fois : un clip voix (entendu et lu par la clé), un sous-mixage
+    voix lu par plusieurs musiques et deux voix sur une même musique passent par asplit."""
+    from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
+
+    _support(monkeypatch)
+    project = Project("p", width=W, height=H, fps=float(FPS), media_assets=_assets("m", "v"), tracks=[
+        Track("M1", "M1", "audio", clips=[Clip("m1", "m", "M1", 0.0, 0.0, 4.0), Clip("m2", "m", "M1", 4.0, 0.0, 4.0)]),
+        Track("V1", "V1", "audio", clips=[Clip("v1", "v", "V1", 1.0, 0.0, 2.0)]),
+        Track("V2", "V2", "audio", clips=[Clip("v2", "v", "V2", 5.0, 0.0, 2.0)]),
+    ])
+    service = AudioAutomationService()
+    service.set_track_role(project, "M1", TrackRole.MUSIC)
+    for voice in ("V1", "V2"):
+        service.set_track_role(project, voice, TrackRole.VOICE)
+        service.add_ducking_sidechain(project, "M1", voice, DuckingConfig())
+    graph = _graph(project)
+    produced: list[str] = []
+    read: list[str] = []
+    for statement in graph.split(";"):
+        labels = re.findall(r"\[([^\]]+)\]", re.sub(r"'[^']*'", "", statement))
+        head = re.match(r"(\[[^\]]+\])*", statement).group(0)
+        inputs = re.findall(r"\[([^\]]+)\]", head)
+        read += [label for label in inputs if ":" not in label]
+        produced += labels[len(inputs):]
+    assert sorted(produced) == sorted(set(produced)), "un label produit deux fois"
+    assert sorted(read) == sorted(set(read)), "un label lu deux fois"
+    assert set(read) <= set(produced)
+    assert graph.count("sidechaincompress") == 4                      # deux musiques × deux voix
+    assert graph.count("amerge=inputs=2") == 2                        # combinées par la plus profonde, pas en série
 
 
 def test_without_normalize_the_layers_are_padded_and_the_mix_is_compensated(monkeypatch):
