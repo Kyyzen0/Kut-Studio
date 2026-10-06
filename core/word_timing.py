@@ -135,7 +135,7 @@ def word_times_from_voice(
     from .audio_sync import raw_envelope
 
     envelope = raw_envelope(media_path, float(media_start), float(duration), cancelled)
-    return tuple(max(0.0, round(t + shift, 3)) for t in estimate_word_times(text, envelope))
+    return tuple(max(0.0, round(t + shift, 3)) for t in estimate_word_times(text, envelope.tolist()))
 
 
 def _np() -> Any:

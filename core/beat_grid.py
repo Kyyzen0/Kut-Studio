@@ -66,7 +66,7 @@ class BeatGrid:
         """Temps (un sur ``every``) compris dans ``[start, end]``, arrondis à la microseconde."""
         every = max(1, int(every))
         first = math.ceil(self.index_at(start) / every - 1e-9) * every
-        times = []
+        times: list[float] = []
         index = first
         while True:
             t = round(self.time_of(index), 6)

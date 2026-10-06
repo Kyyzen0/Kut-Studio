@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from .audio_automation import duck_music_under_voice
 from .beat_grid import BeatGrid
 from .effects_library import builtin_presets
-from .graphics import GraphicOverlay, GraphicType, ShapeKind, add_graphic_clip, graphic_defaults
+from .graphics import GraphicOverlay, GraphicType, ShapeKind, add_graphic_clip, graphic_defaults, update_graphic
 from .impact_fx import add_flash, apply_impact_zoom
 from .ken_burns import apply_ken_burns
 from .leaderboard import Leaderboard, LeaderboardRow, build_leaderboard
@@ -262,9 +262,10 @@ def _city_lights(b: _Builder) -> None:
     for start, _end in cuts[1:]:
         b.light("leak", max(0.0, start - 0.4), start + 0.4, light_seed=int(start * 10))
     title = b.title("city_lights", 0.3, 4.0, -420, 140, NIGHT_PALETTE["blue"])
-    title.graphic = replace(title.graphic, glow_color=NIGHT_PALETTE["blue"], glow_radius=26.0 * b.u, glow_strength=1.2)
+    for name, value in (("glow_color", NIGHT_PALETTE["blue"]), ("glow_radius", 26.0 * b.u), ("glow_strength", 1.2)):
+        update_graphic(title, name, value)
     line = b.title("karaoke_line", 4.0, 14.0, 520, 64, animation="karaoke")
-    line.graphic = replace(line.graphic, highlight_color=NIGHT_PALETTE["blue"])
+    update_graphic(line, "highlight_color", NIGHT_PALETTE["blue"])
     b.title("follow", 14.0, 16.0, 0, 72, NIGHT_PALETTE["white"])
     b.music(length)
     b.cue(0.0, "cue_hook")

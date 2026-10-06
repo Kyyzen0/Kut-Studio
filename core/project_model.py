@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from .audio_automation import TrackAutomation, coerce_track_automation
 
 if TYPE_CHECKING:
+    from .beat_grid import BeatGrid
     from .compositing import Compositing
     from .multicam_model import MulticamSource
     from .effects_model import ClipEffect
@@ -741,7 +742,7 @@ class Sequence:
     multicam: MulticamSource | None = None
     # --- Vidéo sociale ---
     # Grille rythmique (:class:`core.beat_grid.BeatGrid`) : tempo et calage ; ``None`` : pas de grille.
-    beat_grid: object = None
+    beat_grid: BeatGrid | None = None
     # Calques générés à partir de données (classement…) : ``{id: {"kind", "data", "clips"}}``, pour les rééditer.
     generated_groups: dict = field(default_factory=dict)
 

@@ -53,13 +53,13 @@ class _Lights:
         self.painter = painter
         self.width, self.height = width, height
         size = (max(2, int(width / GLOW_DIVISOR)), max(2, int(height / GLOW_DIVISOR)))
-        self.glow = QImage(size[0], size[1], QImage.Format_ARGB32_Premultiplied)
-        self.glow.fill(Qt.transparent)
+        self.glow = QImage(size[0], size[1], QImage.Format.Format_ARGB32_Premultiplied)
+        self.glow.fill(Qt.GlobalColor.transparent)
         self.glow_painter = QPainter(self.glow)
-        self.glow_painter.setRenderHint(QPainter.Antialiasing, True)
-        self.glow_painter.setCompositionMode(QPainter.CompositionMode_Plus)
+        self.glow_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.glow_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
         self.glow_painter.scale(size[0] / width, size[1] / height)
-        painter.setCompositionMode(QPainter.CompositionMode_Plus)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
     def streak(self, x1, y1, x2, y2, width: float, color: str, intensity: float, *, fade: bool = True) -> None:
         """Traînée : dégradé le long d'un trait à bouts ronds, tête blanche ; halo trois fois et demie plus large."""
@@ -70,7 +70,7 @@ class _Lights:
             gradient.setColorAt(0.0, _color(color, 0.0 if fade else intensity * 0.9))
             gradient.setColorAt(0.8, _color(color, 0.9 * intensity))
             gradient.setColorAt(1.0, _color("#FFFFFF" if white else color, intensity))
-            pen = QPen(gradient, max(0.5, width * scale), Qt.SolidLine, Qt.RoundCap)
+            pen = QPen(gradient, max(0.5, width * scale), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
             target.setPen(pen)
             target.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
@@ -81,13 +81,13 @@ class _Lights:
         core.setColorAt(0.0, _color("#FFFFFF", intensity))
         core.setColorAt(0.35, _color(color, 0.86 * intensity))
         core.setColorAt(1.0, _color(color, 0.0))
-        self.painter.setPen(Qt.NoPen)
+        self.painter.setPen(Qt.PenStyle.NoPen)
         self.painter.setBrush(core)
         self.painter.drawEllipse(QPointF(x, y), radius, radius)
         halo = QRadialGradient(QPointF(x, y), radius * glow)
         halo.setColorAt(0.0, _color(color, intensity))
         halo.setColorAt(1.0, _color(color, 0.0))
-        self.glow_painter.setPen(Qt.NoPen)
+        self.glow_painter.setPen(Qt.PenStyle.NoPen)
         self.glow_painter.setBrush(halo)
         self.glow_painter.drawEllipse(QPointF(x, y), radius * glow, radius * glow)
 
@@ -95,7 +95,7 @@ class _Lights:
         """Halo agrandi (lissé) ajouté à l'image nette."""
         self.glow_painter.end()
         painter = self.painter
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.setOpacity(painter.opacity() * min(1.0, bloom))
         painter.drawImage(QRectF(0, 0, self.width, self.height), self.glow)
 
@@ -104,7 +104,7 @@ def draw_light(painter: QPainter, graphic, width: float, height: float) -> None:
     """Dessine un calque de lumière dans sa boîte (espace calque), en mode additif."""
     kind = graphic.light_kind
     painter.save()
-    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     if kind == "flash":
         painter.fillRect(QRectF(0, 0, width, height), _color(graphic.fill_color, 1.0))
         painter.restore()
@@ -142,19 +142,19 @@ def _grain(painter: QPainter, graphic, width: float, height: float) -> None:
         noise = random.Random(int(graphic.light_seed) * 7919 + index).randbytes(cols * rows)
         # Distribution resserrée autour de 128 (± 64) : du grain, pas de la neige.
         noise = noise.translate(bytes(64 + value // 2 for value in range(256)))
-        image = QImage(noise, cols, rows, cols, QImage.Format_Grayscale8).copy()
+        image = QImage(noise, cols, rows, cols, QImage.Format.Format_Grayscale8).copy()
         if len(_GRAIN_CACHE) > 32:
             _GRAIN_CACHE.clear()
         _GRAIN_CACHE[key] = image
-    painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     painter.drawImage(QRectF(0, 0, width, height), image)
 
 
 def _leak(painter: QPainter, graphic, width: float, height: float, t: float, rng: random.Random) -> None:
     """Light leak : trois nappes de lumière chaude qui dérivent lentement et respirent."""
-    painter.setCompositionMode(QPainter.CompositionMode_Plus)
-    painter.setPen(Qt.NoPen)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+    painter.setPen(Qt.PenStyle.NoPen)
     span = max(width, height)
     for index in range(3):
         bx, by, phase = rng.uniform(-0.1, 1.1), rng.uniform(-0.1, 1.1), rng.uniform(0, 2 * math.pi)
@@ -186,7 +186,7 @@ def _flare(lights: _Lights, graphic, width: float, height: float, t: float, rng:
     halo.setColorAt(0.0, _color(graphic.fill_color, 0.55 * flicker))
     halo.setColorAt(1.0, _color(graphic.fill_color, 0.0))
     painter.save()
-    painter.setPen(Qt.NoPen)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setTransform(QTransform().translate(cx, cy).scale(width * 0.48, height * 0.035), True)
     painter.setBrush(halo)
     painter.drawEllipse(QPointF(0.0, 0.0), 1.0, 1.0)
