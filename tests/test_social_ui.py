@@ -200,3 +200,37 @@ def test_the_beat_dialog_taps_and_detects(qtbot):
     assert dialog.bpm_spin.value() >= 20.0
     dialog.offset_spin.setValue(0.0)
     assert dialog.grid().offset == 0.0
+
+
+# --- Texte animé ----------------------------------------------------------------------------------------------------
+
+
+def test_the_text_animation_section_drives_the_selected_title(window):
+    from core.graphics import add_graphic_clip
+
+    title = add_graphic_clip(window.project, "text", timeline_start=0.0, duration=2.0)
+    window._reload_timeline_preserving_selection(title.id)
+    window.on_clip_selected(title.id)
+    editor = window.properties_panel.graphics_group
+    assert not editor.animation_section.isHidden() and not editor.stroke_outside_check.isHidden()
+    editor.text_animation.preset_combo.setCurrentIndex(editor.text_animation.preset_combo.findData("pop_in"))
+    editor.text_animation.preset_combo.activated.emit(editor.text_animation.preset_combo.currentIndex())
+    assert {kf.property_name for kf in title.transform_keyframes} == {"scale", "opacity"}
+    editor.stroke_outside_check.setChecked(True)
+    assert title.graphic.stroke_position == "outside"
+    editor.text_animation.words_edit.setText("1, 3")
+    editor.text_animation.words_edit.editingFinished.emit()
+    assert title.graphic.highlight_words == (0, 2)
+    window._finalize_pending_edit_sessions()
+    window.undo_last()
+    restored = next(clip for track in window.project.tracks for clip in track.clips if clip.id == title.id)
+    assert restored.graphic.highlight_words == ()          # (les saisies rapprochées forment une seule entrée)
+
+
+def test_voice_sync_needs_a_voice_under_the_title(window):
+    from core.graphics import add_graphic_clip
+
+    title = add_graphic_clip(window.project, "text", timeline_start=0.0, duration=2.0)
+    window.sync_text_on_voice(title.id)
+    assert title.graphic.word_times == ()
+    assert window.statusBar().currentMessage()
