@@ -178,6 +178,23 @@ L'évaluation d'une courbe ne parcourt jamais tous les keyframes (dichotomie).
 Le surcoût de `evaluate_transform` à 1 000 keyframes vient de la validation
 du cache (comparaison d'identités) et reste sous 0,1 ms par image.
 
+## Animations générées (vidéo sociale)
+
+Plusieurs commandes **écrivent des images-clés ordinaires** au lieu d'ajouter un moteur : ce qu'elles produisent se
+retouche dans le Graph Editor et se rend partout pareil (détail : [social-video.md](social-video.md)).
+
+| Commande | Module | Images-clés |
+| --- | --- | --- |
+| Pop-in, glissés, fondu montant, rebond | `core/text_animations.py` | `scale` en « back » (dépassement exprimé en `BEZIER`, pente 4,70158·Δ/durée), `position_*`, `opacity` |
+| Mot par mot, machine à écrire, karaoké | `core/text_animations.py`, `core/word_timing.py` | `graphic.reveal` 0 → 1 ; `word_times` place chaque mot (karaoké calé sur la voix) |
+| Zoom d'impact, secousse, flash | `core/impact_fx.py` | `scale` (1,08 → 1 en 0,3 s), bruit déterministe à 15 Hz sur position et rotation, `opacity` du flash |
+| Ken Burns | `core/ken_burns.py` | `scale`, `position_x/y`, mouvement stable dérivé de l'identifiant du clip |
+| Pan de recadrage | `pan_x`, `pan_y` (−1 … 1) | propriétés de transform animables ; `fill` est un réglage **statique** (`STATIC_TRANSFORM_PROPERTIES`, refusé par `TransformKeyframe`) |
+
+Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la plus grande échelle du clip
+(`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
+(`RENDER_ENGINE_VERSION` 9).
+
 ## Limites connues
 
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la

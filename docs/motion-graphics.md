@@ -95,6 +95,23 @@ gardent `layout = legacy` : leur position place le coin haut-gauche de
 l'image tournée, exactement comme avant. Les nouveaux calques sont en
 `anchor`.
 
+## Vidéo sociale (0.2.0)
+
+Ces champs s'ajoutent au calque (détail : [social-video.md](social-video.md)) ; leurs défauts gardent le rendu des
+anciens fichiers au pixel près.
+
+| Champ | Rôle |
+| --- | --- |
+| `stroke_position` | `center` (historique) ou `outside` : le contour passe **sous** le remplissage |
+| `word_reveal`, `reveal`, `highlight_color`, `highlight_words`, `word_times` | mot par mot, machine à écrire, karaoké, mots en couleur ; `reveal` (0–1) est animable et fait partie de l'état du cache |
+| `glow_color`, `glow_radius`, `glow_strength` | néon additif des textes et formes (rayon et intensité animables), compté dans la marge du calque |
+| type `light` + `light_kind`, `light_seed`, `light_speed`, `light_angle`, `light_density` | calques de lumière procéduraux (`core/light_layers.py`), déterministes ; le temps local du calque entre dans l'état (le `flash` reste statique et dédupliqué) ; le grain change 24 fois par seconde, en boucle de 8 images |
+
+Les emojis couleur d'un texte sont dessinés par `drawText` (un `QPainterPath` les perd), aux positions des mêmes métriques
+(`core/text_runs.py`). Un **emplacement de template vide** est rendu comme un calque de texte synthétisé par le plan
+(`core/template_slots.py`) ; il n'existe pas dans le projet. Le moniteur GPU compose lui-même les calques en Addition,
+Écran ou Incrustation (`gpu_composite`), au lieu de les laisser à Qt contre un fond transparent.
+
 ## Ordre de compositing
 
 L'ordre est déterministe, documenté ici et **identique** dans l'aperçu fidèle
