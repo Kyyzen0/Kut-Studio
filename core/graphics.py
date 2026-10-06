@@ -89,7 +89,7 @@ WORD_REVEALS = ("none", "word", "typewriter", "karaoke")
 """Apparition d'un texte selon ``reveal`` (0 → 1) : tout de suite, mot par mot, lettre par lettre, ou karaoké (tout est
 visible, le mot courant prend ``highlight_color``)."""
 MAX_TEXT_WORDS = 512
-LIGHT_KINDS = ("leak", "anamorphic_flare", "speed_lines", "light_trails", "sparks", "flash")
+LIGHT_KINDS = ("leak", "anamorphic_flare", "speed_lines", "light_trails", "sparks", "flash", "grain")
 """Calques de lumière (dessin : :mod:`core.light_layers`) ; identifiants stables, clés ``light.kind.<id>``."""
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
@@ -456,11 +456,16 @@ def add_graphic_clip(
         graphic=graphic,
     )
     if kind == GraphicType.LIGHT:
-        # La lumière s'**ajoute** à l'image : Addition par défaut (modifiable dans le compositing du calque).
+        # La lumière s'**ajoute** à l'image : Addition par défaut ; le grain se fond en Incrustation (gris neutre).
         from .blend_modes import BlendMode
         from .compositing import Compositing
 
-        clip.compositing = Compositing(blend_mode=BlendMode.ADD)
+        grain = graphic.light_kind == "grain"
+        clip.compositing = Compositing(blend_mode=BlendMode.OVERLAY if grain else BlendMode.ADD)
+        if grain:
+            from .visual_effects import ClipTransform
+
+            clip.transform = ClipTransform(opacity=0.35)
     target_track.clips.append(clip)
     target_track.clips.sort(key=lambda item: (item.timeline_start, item.id))
     return clip

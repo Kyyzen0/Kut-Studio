@@ -86,3 +86,38 @@ def test_an_exported_light_leak_brightens_the_picture_below(tmp_path):
     dark = render_frame(build_render_plan(project), W, H, 0.3)
     assert (lit.astype(int) - dark.astype(int)).min() >= -3        # l'addition n'assombrit jamais
     assert lit.mean() > dark.mean() + 8
+
+
+# --- Grain ----------------------------------------------------------------------------------------------------------
+
+
+def test_grain_cycles_through_eight_deterministic_frames(qapp):
+    from core.light_layers import GRAIN_FRAMES, GRAIN_RATE, grain_time
+
+    assert grain_time(0.0) == grain_time(GRAIN_FRAMES / GRAIN_RATE)
+    assert len({grain_time(n / GRAIN_RATE) for n in range(40)}) == GRAIN_FRAMES
+    grain = GraphicOverlay(type=GraphicType.LIGHT, width=W, height=H, light_kind="grain", light_seed=4)
+    first = _image(replace(grain, light_time=grain_time(0.1)))
+    assert np.array_equal(first, _image(replace(grain, light_time=grain_time(0.1))))
+    assert not np.array_equal(first, _image(replace(grain, light_time=grain_time(0.15))))
+    gray = first[..., 0]
+    assert abs(gray.mean() - 128) < 3 and 20 < gray.std() < 50 and first[..., 3].min() == 255
+
+
+@needs_ffmpeg
+def test_an_exported_grain_layer_keeps_the_picture_level_and_adds_texture(tmp_path):
+    from core.graphics import graphic_defaults, update_graphic
+
+    project = Project(name="g", width=W, height=H, fps=25.0)
+    base = add_graphic_clip(project, "solid", timeline_start=0.0, duration=1.0)
+    for name, value in (("fill_color", "#506070"), ("width", W), ("height", H)):
+        update_graphic(base, name, value)
+    grain = add_graphic_clip(project, "light", timeline_start=0.0, duration=1.0,
+                             graphic=replace(graphic_defaults("light", project_width=W, project_height=H),
+                                             light_kind="grain"))
+    assert grain.compositing.blend_mode is BlendMode.OVERLAY and grain.transform.opacity == pytest.approx(0.35)
+    textured = render_frame(build_render_plan(project), W, H, 0.3).astype(float)
+    grain.enabled = False
+    flat = render_frame(build_render_plan(project), W, H, 0.3).astype(float)
+    assert abs(textured.mean() - flat.mean()) < 3.0                 # neutre en moyenne
+    assert textured[..., 1].std() > flat[..., 1].std() + 3.0        # mais texturé (écart spatial, canal vert)

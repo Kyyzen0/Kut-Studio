@@ -175,14 +175,22 @@ class SubtitlesGraphicsMixin:
 
     def add_graphic_at_playhead(self, graphic_type: str) -> None:
         """Ajoute un calque généré sur G1 et ouvre son inspecteur."""
-        from core.graphics import add_graphic_clip
+        from core.graphics import add_graphic_clip, graphic_defaults
 
         try:
+            graphic = None
+            if graphic_type == "grain":                       # calque de lumière « grain » (Incrustation)
+                from dataclasses import replace
+
+                graphic = replace(graphic_defaults("light", project_width=self.project.width,
+                                                   project_height=self.project.height), light_kind="grain")
+                graphic_type = "light"
             clip = add_graphic_clip(
                 self.project,
                 graphic_type,
                 timeline_start=self.playhead_seconds,
                 duration=5.0,
+                graphic=graphic,
             )
         except (FileNotFoundError, ValueError) as exc:
             _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.graphic"), str(exc))

@@ -420,9 +420,11 @@ class GraphicsScene:
             values[name] = int(round(value)) if name in _INT_FIELDS else float(value)
         if graphic.type == GraphicType.LIGHT:
             # Lumière procédurale : son image dépend de son temps local (au dix-millième de seconde, la clé du cache).
-            from .light_layers import STATIC_KINDS
+            from .light_layers import STATIC_KINDS, grain_time
 
-            if graphic.light_kind not in STATIC_KINDS:
+            if graphic.light_kind == "grain":
+                values["light_time"] = grain_time(local)          # huit images de grain en boucle (cache)
+            elif graphic.light_kind not in STATIC_KINDS:
                 values["light_time"] = round(local, 4)
         if graphic.word_times:
             # Mot par mot ou karaoké posés par les temps des mots : ``reveal`` en découle (il prime sur sa courbe).

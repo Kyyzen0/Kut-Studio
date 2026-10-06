@@ -24,6 +24,17 @@ from .graphics import LIGHT_KINDS
 STATIC_KINDS = frozenset({"flash"})
 """Sans mouvement propre : l'image ne dépend pas du temps (seule l'opacité du calque s'anime)."""
 
+GRAIN_RATE = 24
+"""Le grain change 24 fois par seconde, quelle que soit la cadence du projet."""
+GRAIN_FRAMES = 8
+"""Images de grain distinctes, en boucle : un tiers de seconde, imperceptible, et huit images en cache au plus."""
+
+
+def grain_time(local_time: float) -> float:
+    """Temps « de grain » d'un instant : l'une des :data:`GRAIN_FRAMES` images, toujours la même pour un instant."""
+    index = int(math.floor(max(0.0, local_time) * GRAIN_RATE + 1e-6)) % GRAIN_FRAMES
+    return index / GRAIN_RATE
+
 GLOW_DIVISOR = 8
 
 
@@ -98,6 +109,10 @@ def draw_light(painter: QPainter, graphic, width: float, height: float) -> None:
         painter.fillRect(QRectF(0, 0, width, height), _color(graphic.fill_color, 1.0))
         painter.restore()
         return
+    if kind == "grain":
+        _grain(painter, graphic, width, height)
+        painter.restore()
+        return
     t = float(graphic.light_time) * float(graphic.light_speed)
     rng = random.Random(int(graphic.light_seed))
     if kind == "leak":
@@ -108,6 +123,32 @@ def draw_light(painter: QPainter, graphic, width: float, height: float) -> None:
          "sparks": _sparks}[kind](lights, graphic, width, height, t, rng)
         lights.finish()
     painter.restore()
+
+
+_GRAIN_CACHE: dict[tuple, QImage] = {}
+
+
+def _grain(painter: QPainter, graphic, width: float, height: float) -> None:
+    """Grain de film : bruit gris centré sur 128 (neutre en Incrustation), en grains de ``light_density`` pixels
+    (de rendu), tiré d'une graine stable par image de grain."""
+    transform = painter.transform()
+    device = math.hypot(transform.m11(), transform.m12())
+    grain = max(1.0, float(graphic.light_density) * 1.5) / max(1e-3, device)          # taille en unités du calque
+    cols, rows = max(2, int(math.ceil(width / grain))), max(2, int(math.ceil(height / grain)))
+    index = int(round(float(graphic.light_time) * GRAIN_RATE)) % GRAIN_FRAMES
+    key = (cols, rows, int(graphic.light_seed), index)
+    image = _GRAIN_CACHE.get(key)
+    if image is None:
+        noise = random.Random(int(graphic.light_seed) * 7919 + index).randbytes(cols * rows)
+        # Distribution resserrée autour de 128 (± 64) : du grain, pas de la neige.
+        noise = noise.translate(bytes(64 + value // 2 for value in range(256)))
+        image = QImage(noise, cols, rows, cols, QImage.Format_Grayscale8).copy()
+        if len(_GRAIN_CACHE) > 32:
+            _GRAIN_CACHE.clear()
+        _GRAIN_CACHE[key] = image
+    painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    painter.drawImage(QRectF(0, 0, width, height), image)
 
 
 def _leak(painter: QPainter, graphic, width: float, height: float, t: float, rng: random.Random) -> None:
@@ -221,4 +262,4 @@ def _sparks(lights: _Lights, graphic, width: float, height: float, t: float, rng
         lights.dot(x, y, max(1.0, 4.0 * scale), color, 1.0 - ratio, glow=4.0)
 
 
-__all__ = ["LIGHT_KINDS", "STATIC_KINDS", "draw_light"]
+__all__ = ["GRAIN_FRAMES", "GRAIN_RATE", "LIGHT_KINDS", "STATIC_KINDS", "draw_light", "grain_time"]

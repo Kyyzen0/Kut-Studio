@@ -23,6 +23,7 @@ _ENTRIES = (  # (type, clé du nom, clé de la description, icône)
     ("rectangle", "menu.item.add_shape_layer", "mograph.library.rect_desc", IconName.COLOR),
     ("solid", "mograph.library.solid_name", "mograph.library.solid_desc", IconName.FILM),
     ("light", "light.library.name", "light.library.desc", IconName.EFFECTS),
+    ("grain", "light.kind.grain", "light.library.grain_desc", IconName.FILM),
 )
 
 
