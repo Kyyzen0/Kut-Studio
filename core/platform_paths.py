@@ -126,4 +126,15 @@ def system_font_dirs(
     )
 
 
-__all__ = ["system_font_dirs", "user_cache_dir", "user_config_dir", "user_log_dir"]
+def bundled_assets_dir(*parts: str) -> Path:
+    """Dossier ``assets/<parts>`` livré avec l'application : celui du dépôt, ou celui de l'application construite
+    (PyInstaller le décompresse sous ``sys._MEIPASS``). Shaders, polices embarquées…"""
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        candidate = Path(bundle, "assets", *parts)
+        if candidate.exists():
+            return candidate
+    return Path(__file__).resolve().parent.parent.joinpath("assets", *parts)
+
+
+__all__ = ["bundled_assets_dir", "system_font_dirs", "user_cache_dir", "user_config_dir", "user_log_dir"]

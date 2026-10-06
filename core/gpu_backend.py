@@ -330,12 +330,9 @@ class FrameStats:
 
 def shader_dir() -> Path:
     """``assets/shaders`` du dépôt ou de l'application construite (PyInstaller)."""
-    bundle = getattr(sys, "_MEIPASS", None)
-    if bundle:
-        candidate = Path(bundle) / "assets" / "shaders"
-        if candidate.is_dir():
-            return candidate
-    return Path(__file__).resolve().parent.parent / "assets" / "shaders"
+    from .platform_paths import bundled_assets_dir
+
+    return bundled_assets_dir("shaders")
 
 
 SHADER_NAMES = ("quad.vert", "clear.frag", "prep.frag", "blur.frag", "sharpen.frag",

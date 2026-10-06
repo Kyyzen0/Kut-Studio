@@ -26,6 +26,7 @@ historique des titres) : le rendu ne dépend pas du DPI de l'écran.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from collections import OrderedDict
@@ -46,6 +47,7 @@ from PySide6.QtGui import (
 )
 
 from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
+from .bundled_fonts import register_bundled_fonts
 from .compositing import MaskMode, MaskShape
 from .graphics import GraphicOverlay, GraphicType, ShapeKind
 from .mograph_scene import (
@@ -60,6 +62,8 @@ from .mograph_scene import (
     mat_translate,
 )
 from .motion_blur import MotionBlurSettings
+
+LOGGER = logging.getLogger("kut_studio.fonts")
 
 RASTER_VERSION = 1
 """Version du dessin des calques, incluse dans le nom de chaque image du cache (:mod:`core.mograph_stream`) et dans
@@ -104,6 +108,7 @@ def resolve_family(family: str) -> str:
     cached = _FAMILIES.get(family)
     if cached is not None:
         return cached
+    register_bundled_fonts()
     installed = set(QFontDatabase.families())
     if family in installed:
         resolved = family
@@ -113,9 +118,15 @@ def resolve_family(family: str) -> str:
         resolved = next((name for name in fallbacks if name in installed), None)
         if resolved is None:
             resolved = sorted(installed)[0] if installed else system
+        if family not in _GENERIC_FAMILIES:
+            # Le projet s'affichera autrement que sur la machine qui l'a créé : on le dit au journal, une fois par nom.
+            LOGGER.warning("Police « %s » absente : remplacée par « %s »", family, resolved)
     _FAMILIES[family] = resolved
     return resolved
 
+
+_GENERIC_FAMILIES = frozenset({"", "Sans Serif", "Serif", "Monospace"})
+"""Noms génériques (le défaut des calques texte) : leur remplacement par la police système est voulu, pas un oubli."""
 
 _FALLBACK_FAMILIES = (
     "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans",
