@@ -387,6 +387,26 @@ def evaluate_transform(
     return EvaluatedTransform(**{name: _resolve(name) for name in TRANSFORM_PROPERTY_NAMES})
 
 
+def max_transform_value(
+    transform: ClipTransform, keyframes: Iterable[TransformKeyframe], name: str, clip_duration: float,
+) -> float:
+    """Plus grande valeur d'une propriété sur la durée du clip (dépassements d'une courbe Bézier compris).
+
+    Chaque segment est un cubique : 64 échantillons par segment, plus les images-clés, suffisent à borner un
+    dépassement à une fraction de pour cent près (l'appelant ajoute sa marge)."""
+    static = float(getattr(transform, name))
+    curve = transform_curves(keyframes, clip_duration).get(name)
+    if curve is None or not curve.keyframes:
+        return static
+    spec = TRANSFORM_PROPERTIES[name]
+    peak = max(float(kf.value) for kf in curve.keyframes)
+    for segment in curve.segments:
+        for step in range(1, 64):
+            t = segment.t0 + segment.span * step / 64.0
+            peak = max(peak, float(spec.evaluate(curve, static, t)))
+    return peak
+
+
 def migrate_legacy_keyframes(
     transform: ClipTransform, keyframes: Iterable[TransformKeyframe]
 ) -> list[TransformKeyframe]:

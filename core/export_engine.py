@@ -83,6 +83,7 @@ from .video_encoders import (
     resolve_video_encoder,
 )
 from .visual_effects import (
+    max_transform_value,
     ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
@@ -1918,7 +1919,9 @@ def _build_layer_filter(
     kfs = layer.transform_keyframes
     scale_expr = _build_animated_scale_expr(transform, kfs, width, height)
     flip_filters = _build_flip_filters(transform, kfs)
-    rotation_expr = _build_animated_rotation_expr(transform, kfs)
+    rotation_expr = _build_animated_rotation_expr(
+        transform, kfs, canvas=_animated_layer_canvas(transform, kfs, width, height, layer.timeline_end - layer.timeline_start),
+    )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
     effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale)
 
@@ -2295,11 +2298,30 @@ def _build_flip_filters(transform: ClipTransform, keyframes) -> str:
     return ",".join(filters)
 
 
+def _animated_layer_canvas(
+    transform: ClipTransform, keyframes, width: int, height: int, duration: float,
+) -> tuple[int, int] | None:
+    """Taille fixe du cadre de ``rotate`` quand l'échelle est animée (``None`` : échelle fixe, ``hypot(iw,ih)``).
+
+    ``rotate`` évalue la taille de sortie **une fois**, sur la première image. Une échelle animée qui part petite
+    (pop-in, zoom d'entrée) était donc rognée au cadre de sa première image. Le cadre est ici celui de la plus grande
+    image du clip (diagonale de l'échelle maximale de la courbe), pair, et ne change plus."""
+    names = ("scale", "scale_x", "scale_y")
+    if not any(kf.property_name in names for kf in keyframes):
+        return None
+    peak = {name: max_transform_value(transform, keyframes, name, duration) for name in names}
+    diagonal = math.hypot(width * peak["scale"] * peak["scale_x"], height * peak["scale"] * peak["scale_y"])
+    side = int(math.ceil(diagonal / 2.0)) * 2 + 2
+    return side, side
+
+
 def _build_animated_rotation_expr(
     transform: ClipTransform,
     keyframes: tuple[TransformKeyframe, ...],
+    *,
+    canvas: tuple[int, int] | None = None,
 ) -> str:
-    """Génère un filtre ``rotate`` animé (degrés)."""
+    """Génère un filtre ``rotate`` animé (degrés) ; ``canvas`` fixe sa taille de sortie (échelle animée)."""
     expr = build_ffmpeg_expression(
         "rotation",
         transform.rotation,
@@ -2311,9 +2333,10 @@ def _build_animated_rotation_expr(
     # canvas est calculée via ``hypot(iw,ih)`` pour garantir que les
     # rotations même importantes restent entièrement visibles ; un
     # overlay final tronquera à la taille du canvas.
+    size = f"ow={canvas[0]}:oh={canvas[1]}" if canvas is not None else "ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
     return (
         f"rotate=a='{expr}*0.017453292519943295':"
-        f"c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih):"
+        f"c=black@0:{size}:"
         f"fillcolor=black@0"
     )
 
