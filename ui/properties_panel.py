@@ -61,6 +61,8 @@ from ui.properties_widgets.diamond_button import _DiamondButton  # noqa: F401 - 
 
 class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, EffectsMixin, AudioEffectsMixin, KeyframesMixin, ClipContextMixin, TransitionSubtitleMixin, TimeRemappingMixin, QWidget):
     transform_changed = Signal(str, str, float)
+    text_animation_requested = Signal(str, str)        # (calque, preset) : core.text_animations
+    voice_sync_requested = Signal(str)                 # calque texte : temps des mots depuis la voix
     keyframe_added = Signal(str, str, float, float)
     keyframe_removed = Signal(str, str, float)
     transform_reset = Signal(str)
@@ -184,6 +186,13 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self.graphics_group.parent_changed.connect(
             lambda parent_id: self.selected_clip is not None
             and self.graphic_parent_changed.emit(self.selected_clip.id, parent_id)
+        )
+        self.graphics_group.text_animation_requested.connect(
+            lambda preset: self.selected_clip is not None
+            and self.text_animation_requested.emit(self.selected_clip.id, preset)
+        )
+        self.graphics_group.voice_sync_requested.connect(
+            lambda: self.selected_clip is not None and self.voice_sync_requested.emit(self.selected_clip.id)
         )
         layout.insertWidget(layout.indexOf(self.movement_group), self.graphics_group)
 

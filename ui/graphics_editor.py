@@ -129,6 +129,8 @@ class GraphicsEditor(QGroupBox):
 
     field_changed = Signal(str, object)
     parent_changed = Signal(str)
+    text_animation_requested = Signal(str)
+    voice_sync_requested = Signal()
 
     def __init__(self, group_style: str = "", parent=None) -> None:
         super().__init__(i18n.translate("mograph.graphics.title"), parent)
@@ -196,6 +198,12 @@ class GraphicsEditor(QGroupBox):
         self.stroke_section.form.addRow(i18n.translate("group.color"), self.stroke_field)
         self.stroke_width_spin = self._spin(0, 256, "stroke_width")
         self.stroke_section.form.addRow(i18n.translate("mograph.graphics.thickness"), self.stroke_width_spin)
+        self.stroke_outside_check = QCheckBox(i18n.translate("mograph.graphics.stroke_outside"))
+        self.stroke_outside_check.setToolTip(i18n.translate("mograph.graphics.stroke_outside_tooltip"))
+        self.stroke_outside_check.toggled.connect(
+            lambda checked: self._emit("stroke_position", "outside" if checked else "center")
+        )
+        self.stroke_section.form.addRow(self.stroke_outside_check)
         root.addWidget(self.stroke_section)
 
         # --- Texte ---------------------------------------------------------------------------
@@ -235,6 +243,19 @@ class GraphicsEditor(QGroupBox):
         self.autosize_check.toggled.connect(lambda checked: self._emit("autosize", checked))
         self.text_section.form.addRow(self.autosize_check)
         root.addWidget(self.text_section)
+
+        # --- Animation du texte (vidéo sociale) -----------------------------------------------
+        from ui.text_animation_editor import TextAnimationSection
+
+        self.animation_section = _Section(i18n.translate("text_animation.title"))
+        self.text_animation = TextAnimationSection(self.animation_section.form)
+        self.text_animation.field_changed.connect(self._emit)
+        self.text_animation.animation_requested.connect(self.text_animation_requested.emit)
+        self.text_animation.voice_sync_requested.connect(self.voice_sync_requested.emit)
+        self.highlight_field = _ColorField(GraphicOverlay().highlight_color)
+        self.highlight_field.changed.connect(lambda value: self._emit("highlight_color", value))
+        self.animation_section.form.addRow(i18n.translate("text_animation.highlight_color"), self.highlight_field)
+        root.addWidget(self.animation_section)
 
         # --- Ombre et fond (texte) ------------------------------------------------------------
         self.style_section = _Section(i18n.translate("mograph.graphics.shadow_background"))
@@ -376,6 +397,12 @@ class GraphicsEditor(QGroupBox):
             self.stroke_section.setVisible(is_shape or is_text)
             self.stroke_field.set_value(graphic.stroke_color)
             self.stroke_width_spin.setValue(graphic.stroke_width)
+            self.stroke_outside_check.setVisible(is_text)
+            self.stroke_outside_check.setChecked(graphic.stroke_position == "outside")
+            self.animation_section.setVisible(is_text)
+            if is_text:
+                self.text_animation.set_graphic(graphic)
+                self.highlight_field.set_value(graphic.highlight_color)
             self.text_section.setVisible(is_text)
             self.style_section.setVisible(is_text)
             # Famille résolue (mémorisée) : une police absente ne relance pas

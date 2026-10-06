@@ -208,6 +208,68 @@ class SocialMixin:
         if bar is not None:
             bar.showMessage(i18n.translate(key), 4000)
 
+    # -- texte animé -------------------------------------------------------------------------------------------------
+
+    def apply_text_animation_to_clip(self, clip_id: str, preset: str) -> None:
+        """Preset d'animation de texte (pop-in, glissé, mot par mot, karaoké…) sur un calque, depuis le début."""
+        from core.text_animations import apply_text_animation
+
+        try:
+            clip = find_clip(self.project, clip_id)
+            apply_text_animation(clip, preset)
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return
+        self._after_social_edit([clip], "history.social.text_animation")
+        self.on_clip_selected(clip_id)
+
+    def sync_text_on_voice(self, clip_id: str) -> None:
+        """« Synchroniser sur la voix » : temps des mots d'un texte, estimés sur la voix qui passe sous lui."""
+        from dataclasses import replace
+
+        from core.audio_sync import AudioSyncError
+        from core.word_timing import word_times_from_voice
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        voice = self._voice_under(clip)
+        if voice is None:
+            self._show_social_status("social.message.no_voice")
+            return
+        voice_clip, asset = voice
+        start = max(clip.timeline_start, voice_clip.timeline_start)
+        end = min(clip.timeline_start + clip.duration, voice_clip.timeline_start + voice_clip.duration)
+        try:
+            times = word_times_from_voice(
+                clip.graphic.text, asset.path, media_start=voice_clip.source_in + (start - voice_clip.timeline_start),
+                duration=end - start, shift=start - clip.timeline_start,
+            )
+        except (AudioSyncError, OSError, ValueError, RuntimeError) as error:
+            self._report_edit_refused(error)
+            return
+        mode = clip.graphic.word_reveal if clip.graphic.word_reveal in ("word", "karaoke") else "karaoke"
+        clip.graphic = replace(clip.graphic, word_times=times, word_reveal=mode)
+        self._after_social_edit([clip], "history.social.voice_sync")
+        self.on_clip_selected(clip_id)
+
+    def _voice_under(self, clip: Clip):
+        """Clip de voix (piste « voix », sinon toute piste audio) qui chevauche le plus le calque, avec son média."""
+        best, best_overlap = None, 0.0
+        tracks = [t for t in self.project.tracks if t.type == "audio"]
+        tracks.sort(key=lambda t: t.audio_role != "voice")
+        for track in tracks:
+            for other in track.clips:
+                overlap = min(clip.timeline_start + clip.duration, other.timeline_start + other.duration) - max(
+                    clip.timeline_start, other.timeline_start)
+                asset = next((a for a in self.project.media_assets if a.id == other.asset_id), None)
+                if overlap > best_overlap + 1e-6 and asset is not None and asset.path:
+                    best, best_overlap = (other, asset), overlap
+            if best is not None and track.audio_role == "voice":
+                break
+        return best
+
     # -- photos importées ------------------------------------------------------------------------------------------
 
     def _place_imported_photo(self, clip: Clip, image_width: int, image_height: int) -> None:

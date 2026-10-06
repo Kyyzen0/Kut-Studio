@@ -514,6 +514,8 @@ class MainWindow(
         self.properties_panel.graphic_property_changed.connect(
             self.on_graphic_property_changed
         )
+        self.properties_panel.text_animation_requested.connect(self.apply_text_animation_to_clip)
+        self.properties_panel.voice_sync_requested.connect(self.sync_text_on_voice)
         # Tâche 22 : bibliothèque d'effets et presets.
         # ``UserPresetStore`` conserve la liste des presets utilisateur
         # en mémoire et persiste à chaque mutation.
