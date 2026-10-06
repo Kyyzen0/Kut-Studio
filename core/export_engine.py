@@ -2305,13 +2305,16 @@ def _animated_layer_canvas(
 
     ``rotate`` évalue la taille de sortie **une fois**, sur la première image. Une échelle animée qui part petite
     (pop-in, zoom d'entrée) était donc rognée au cadre de sa première image. Le cadre est ici celui de la plus grande
-    image du clip (diagonale de l'échelle maximale de la courbe), pair, et ne change plus."""
+    image du clip (diagonale de l'échelle maximale de la courbe), multiple de 4, et ne change plus.
+
+    Multiple de 4 : avec un côté ≡ 2 (mod 4), la moitié du cadre est impaire pour les plans de chroma (yuv420) et
+    ``rotate`` décale le calque d'un ou deux pixels d'une image à l'autre (mesuré sur un clip stabilisé : 2 px)."""
     names = ("scale", "scale_x", "scale_y")
     if not any(kf.property_name in names for kf in keyframes):
         return None
     peak = {name: max_transform_value(transform, keyframes, name, duration) for name in names}
     diagonal = math.hypot(width * peak["scale"] * peak["scale_x"], height * peak["scale"] * peak["scale_y"])
-    side = int(math.ceil(diagonal / 2.0)) * 2 + 2
+    side = int(math.ceil(diagonal / 4.0)) * 4 + 4
     return side, side
 
 
