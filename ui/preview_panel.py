@@ -163,6 +163,9 @@ class PreviewPanel(QWidget):
         self._gpu_matte: tuple[str, object] | None = None
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
+        # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
+        self._gpu_blend_layers: tuple = ()
+        self._gpu_blend_pushed: dict[str, str] = {}
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -808,6 +811,45 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_blend_layers(self, layers) -> None:
+        """Calques graphiques à mode de fusion, du bas vers le haut : ``[(clé, QImage, mode)]`` (GPU seulement).
+
+        Chaque image (taille de rendu, RGBA droit) devient une source du moniteur, envoyée seulement quand son contenu
+        change ; son alpha sert de matte. Le shader de composition applique le mode comme pour un clip vidéo."""
+        from PySide6.QtMultimedia import QVideoFrame
+
+        self._gpu_blend_layers = tuple(layers or ())
+        view = self.gpu_view
+        if view is None:
+            return
+        used = set()
+        for index, (key, image, _blend) in enumerate(self._gpu_blend_layers):
+            source = f"graphics{index}"
+            used.add(source)
+            if self._gpu_blend_pushed.get(source) != key:
+                view.set_video_frame(source, QVideoFrame(image))
+                self._gpu_blend_pushed[source] = key
+        for source in [s for s in self._gpu_blend_pushed if s not in used]:
+            view.forget_source(source)
+            del self._gpu_blend_pushed[source]
+        self._update_gpu_composite()
+
+    def _gpu_graphics_layers(self, cw: int, ch: int, mattes: dict) -> tuple:
+        """Calques à mode de fusion, au-dessus de la vidéo (cadre entier, alpha de l'image en matte)."""
+        from core.blend_modes import coerce_blend_mode
+        from core.gpu_composite import CompositeLayer
+        from core.gpu_effects import program_for
+
+        layers = []
+        for index, (key, image, blend) in enumerate(self._gpu_blend_layers):
+            matte = f"blend:{key}"
+            mattes[matte] = image
+            layers.append(CompositeLayer(
+                source=f"graphics{index}", matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), fit=(0.0, 0.0, float(cw), float(ch)),
+                blend=coerce_blend_mode(blend), program=program_for(()), matte=matte,
+            ))
+        return tuple(layers)
+
     def gpu_render_size(self) -> tuple[int, int]:
         """Taille de rendu du cadre (pixels physiques), pour rastériser la matte."""
         cw, ch = self._canvas_size
@@ -901,10 +943,13 @@ class PreviewPanel(QWidget):
                 matte=matte_key,
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
+            layers = layers + self._gpu_graphics_layers(cw, ch, mattes)
             view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), layers,
                                               adjustments=adjustments), mattes)
             return
-        view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), ()), {})
+        mattes = {}
+        view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), self._gpu_graphics_layers(cw, ch, mattes)),
+                           mattes)
 
     def _gpu_adjustment_layers(self, mattes: dict) -> tuple:
         from core.gpu_composite import AdjustmentLayer

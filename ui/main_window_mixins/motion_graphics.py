@@ -262,9 +262,15 @@ class MotionGraphicsMixin:
                     quality=preview_quality(self.runtime.preview_divisor(), playing=playing),
                     motion_blur=getattr(plan, "motion_blur", None),
                 )
-                panel.set_mograph_image(renderer.render(scene.top_level(), t))
                 if panel.gpu_active:
+                    # Moniteur GPU : les calques à mode de fusion (lumière en Addition…) sont composés par le
+                    # shader, sur la vidéo ; Qt ne dessine par-dessus que les autres.
+                    blended = self._sync_gpu_blend_layers(scene, t)
+                    panel.set_mograph_image(renderer.render(
+                        [clip_id for clip_id in scene.top_level() if clip_id not in blended], t))
                     self._sync_gpu_adjustments(plan, scene, t)
+                else:
+                    panel.set_mograph_image(renderer.render(scene.top_level(), t))
             except Exception as exc:  # un calque fautif ne bloque jamais le viewer
                 LOGGER.warning("Aperçu des calques indisponible : %s", exc)
                 panel.set_mograph_image(None)
@@ -273,6 +279,32 @@ class MotionGraphicsMixin:
             panel.set_mograph_image(None)
             panel.set_mograph_visible(False)
         self._refresh_viewer_overlay(t)
+
+    def _sync_gpu_blend_layers(self, scene, t: float) -> set[str]:
+        """Éléments « calque » à mode de fusion et sans effet FFmpeg → moniteur GPU ; retourne leurs identifiants.
+
+        Rendus à la taille de rendu du GPU, en RGBA droit (le shader multiplie lui-même par l'alpha)."""
+        from PySide6.QtGui import QImage
+
+        from core.blend_modes import BlendMode
+        from core.mograph_program import graphics_program
+        from core.mograph_raster import MographRenderer
+
+        panel = self.preview_panel
+        width, height = panel.gpu_render_size()
+        renderer = MographRenderer(scene, width, height, fps=float(self.project.fps), quality="draft")
+        layers, ids = [], set()
+        for element in graphics_program(scene):
+            if element.kind != "layer" or element.blend is BlendMode.NORMAL or element.effects or element.color_grade:
+                continue
+            if not renderer.any_active(element.layer_ids, t):
+                continue
+            image = renderer.render(element.layer_ids, t, blend_modes=False).convertToFormat(QImage.Format_RGBA8888)
+            key = f"{width}x{height}:{renderer.frame_key(element.layer_ids, t)!r}"
+            layers.append((key, image, element.blend))
+            ids.update(element.layer_ids)
+        panel.set_blend_layers(layers)
+        return ids
 
     def _sync_gpu_adjustments(self, plan, scene, t: float) -> None:
         """Calques d'effets actifs → moniteur GPU (effets sur la vidéo, couverture exacte)."""
