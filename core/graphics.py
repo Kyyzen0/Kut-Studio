@@ -51,6 +51,7 @@ class GraphicType(str, Enum):
     GROUP = "group"
     ADJUSTMENT = "adjustment"
     NULL = "null"
+    LIGHT = "light"
 
 
 class ShapeKind(str, Enum):
@@ -81,6 +82,15 @@ CONTAINER_TYPES = frozenset({GraphicType.GROUP, GraphicType.NULL, GraphicType.AD
 
 TEXT_ALIGN_H = ("left", "center", "right")
 TEXT_ALIGN_V = ("top", "center", "bottom")
+STROKE_POSITIONS = ("center", "outside")
+"""Contour d'un texte : centré sur le bord des lettres et dessiné par-dessus (historique), ou **extérieur** (dessiné
+sous le remplissage : l'intérieur des lettres reste intact, même en police condensée)."""
+WORD_REVEALS = ("none", "word", "typewriter", "karaoke")
+"""Apparition d'un texte selon ``reveal`` (0 → 1) : tout de suite, mot par mot, lettre par lettre, ou karaoké (tout est
+visible, le mot courant prend ``highlight_color``)."""
+MAX_TEXT_WORDS = 512
+LIGHT_KINDS = ("leak", "anamorphic_flare", "speed_lines", "light_trails", "sparks", "flash", "grain")
+"""Calques de lumière (dessin : :mod:`core.light_layers`) ; identifiants stables, clés ``light.kind.<id>``."""
 
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 
@@ -98,6 +108,28 @@ def _bounded(value: object, low: float, high: float, fallback: float) -> float:
     if number != number:
         return fallback
     return max(low, min(high, number))
+
+
+def _int_tuple(value: object) -> tuple[int, ...]:
+    """Indices de mots (uniques, triés, bornés) ; une valeur illisible donne un tuple vide."""
+    try:
+        items = {int(item) for item in (value or ())}
+    except (TypeError, ValueError):
+        return ()
+    return tuple(sorted(item for item in items if 0 <= item < MAX_TEXT_WORDS))
+
+
+def _time_tuple(value: object) -> tuple[float, ...]:
+    """Temps des mots (secondes du clip), croissants et finis ; une liste abîmée est ignorée en entier."""
+    try:
+        times = tuple(float(item) for item in (value or ()))
+    except (TypeError, ValueError):
+        return ()
+    if len(times) > MAX_TEXT_WORDS or any(t != t or t < 0.0 or t > 86400.0 for t in times):
+        return ()
+    if any(b < a for a, b in zip(times, times[1:])):
+        return ()
+    return times
 
 
 @dataclass(frozen=True)
@@ -149,6 +181,24 @@ class GraphicOverlay:
     background_color: str = "#000000AA"
     background_padding: int = 16
     background_radius: float = 0.0
+    # --- Texte animé (vidéo sociale) ---
+    stroke_position: str = "center"
+    word_reveal: str = "none"
+    reveal: float = 1.0
+    highlight_color: str = "#FFD84D"
+    highlight_words: tuple[int, ...] = ()
+    word_times: tuple[float, ...] = ()
+    # --- Néon (textes et formes) : halo additif flou autour du contenu ; rayon 0 = aucun ---
+    glow_color: str = "#22B8FF"
+    glow_radius: float = 0.0
+    glow_strength: float = 1.0
+    # --- Calque de lumière (core.light_layers) ---
+    light_kind: str = "leak"
+    light_seed: int = 1
+    light_speed: float = 1.0
+    light_angle: float = 0.0
+    light_density: float = 1.0
+    light_time: float = 0.0          # temps local de l'image dessinée : posé par la scène, jamais saisi
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
@@ -199,6 +249,23 @@ class GraphicOverlay:
         object.__setattr__(self, "background_color", normalize_color(self.background_color, "#000000AA"))
         object.__setattr__(self, "background_padding", int(_bounded(self.background_padding, 0, 1024, 16)))
         object.__setattr__(self, "background_radius", _bounded(self.background_radius, 0.0, 1024.0, 0.0))
+        # Texte animé
+        object.__setattr__(self, "stroke_position",
+                           self.stroke_position if self.stroke_position in STROKE_POSITIONS else "center")
+        object.__setattr__(self, "word_reveal", self.word_reveal if self.word_reveal in WORD_REVEALS else "none")
+        object.__setattr__(self, "reveal", _bounded(self.reveal, 0.0, 1.0, 1.0))
+        object.__setattr__(self, "highlight_color", normalize_color(self.highlight_color, "#FFD84D"))
+        object.__setattr__(self, "highlight_words", _int_tuple(self.highlight_words))
+        object.__setattr__(self, "word_times", _time_tuple(self.word_times))
+        object.__setattr__(self, "glow_color", normalize_color(self.glow_color, "#22B8FF"))
+        object.__setattr__(self, "glow_radius", _bounded(self.glow_radius, 0.0, 400.0, 0.0))
+        object.__setattr__(self, "glow_strength", _bounded(self.glow_strength, 0.0, 4.0, 1.0))
+        object.__setattr__(self, "light_kind", self.light_kind if self.light_kind in LIGHT_KINDS else "leak")
+        object.__setattr__(self, "light_seed", int(_bounded(self.light_seed, 0, 1_000_000, 1)))
+        object.__setattr__(self, "light_speed", _bounded(self.light_speed, 0.0, 10.0, 1.0))
+        object.__setattr__(self, "light_angle", _bounded(self.light_angle, -360.0, 360.0, 0.0))
+        object.__setattr__(self, "light_density", _bounded(self.light_density, 0.1, 4.0, 1.0))
+        object.__setattr__(self, "light_time", _bounded(self.light_time, 0.0, 86400.0, 0.0))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
 
@@ -256,6 +323,12 @@ def graphic_defaults(
         )
     if kind == GraphicType.NULL:
         return GraphicOverlay(type=kind, text="", width=100, height=100, shadow_offset_x=0, shadow_offset_y=0)
+    if kind == GraphicType.LIGHT:
+        # Couleurs « Night » : chaud (ambre) et bleu électrique ; le calque couvre le cadre.
+        return GraphicOverlay(
+            type=kind, text="", width=project_width, height=project_height, fill_color="#FFB040",
+            glow_color="#22B8FF", shadow_offset_x=0, shadow_offset_y=0,
+        )
     return GraphicOverlay(
         type=kind, text="", source_path=source_path,
         width=min(960, project_width), height=min(540, project_height),
@@ -293,6 +366,7 @@ _LABELS = {
     GraphicType.GROUP: "Groupe",
     GraphicType.ADJUSTMENT: "Calque d'effets",
     GraphicType.NULL: "Contrôleur",
+    GraphicType.LIGHT: "Lumière",
 }
 
 _SHAPE_LABELS = {
@@ -381,6 +455,17 @@ def add_graphic_clip(
         text=graphic.text,
         graphic=graphic,
     )
+    if kind == GraphicType.LIGHT:
+        # La lumière s'**ajoute** à l'image : Addition par défaut ; le grain se fond en Incrustation (gris neutre).
+        from .blend_modes import BlendMode
+        from .compositing import Compositing
+
+        grain = graphic.light_kind == "grain"
+        clip.compositing = Compositing(blend_mode=BlendMode.OVERLAY if grain else BlendMode.ADD)
+        if grain:
+            from .visual_effects import ClipTransform
+
+            clip.transform = ClipTransform(opacity=0.35)
     target_track.clips.append(clip)
     target_track.clips.sort(key=lambda item: (item.timeline_start, item.id))
     return clip
@@ -407,6 +492,8 @@ def graphic_to_dict(graphic: GraphicOverlay | None) -> dict | None:
     data = {}
     for item in fields(GraphicOverlay):
         value = getattr(graphic, item.name)
+        if isinstance(value, tuple):
+            value = list(value)
         data[item.name] = value.value if isinstance(value, Enum) else value
     return data
 

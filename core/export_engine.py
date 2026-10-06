@@ -83,6 +83,7 @@ from .video_encoders import (
     resolve_video_encoder,
 )
 from .visual_effects import (
+    max_transform_value,
     ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
@@ -944,6 +945,8 @@ class ExportEngine(QObject):
         srt_path: str | None,
         quality: str = "export",
         prepared: Mapping[str, PreparedStream] | None = None,
+        *,
+        audio_only: bool = False,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
@@ -959,13 +962,17 @@ class ExportEngine(QObject):
         est appliqué après la composition vidéo pour incruster les
         sous-titres via libass.
 
+        ``audio_only`` : seulement le mixage (mesure de loudness) ; ``video_label`` est alors vide.
+
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
             video_label: label du flux vidéo final (après incrustation).
             audio_label: label du flux audio final.
             input_paths: liste dédupliquée des chemins à passer en ``-i``.
         """
-        width, height = output_width, output_height
+        # Une sortie d'un autre format que la séquence (16:9 exporté en 9:16) reçoit **le cadre de la séquence**, réduit
+        # sans déformation et centré : la composition se fait à sa taille, puis des bandes complètent la sortie.
+        width, height = composition_size(plan.width, plan.height, output_width, output_height)
 
         # Inputs dédupliqués : on assigne un index à chaque chemin unique
         # (séquences imbriquées comprises).
@@ -985,11 +992,20 @@ class ExportEngine(QObject):
         # amont, puis distribué (``split``) à ses instances.
         sources = _build_nested_sources(
             parts, plan, path_to_index, width, height, add_input=add_input, quality=quality, prepared=prepared,
+            video=not audio_only,
         )
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality, prepared=prepared,
+            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only,
         )
+        if audio_only:
+            return ";".join(parts), "", audio_label, input_paths
+
+        if (width, height) != (output_width, output_height):
+            parts.append(
+                f"[{video_label}]pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2:black[vframe]"
+            )
+            video_label = "vframe"
 
         # ---------------- Sous-titres ----------------
         # L'incrustation se fait via libass (``subtitles=``), appliquée
@@ -1259,6 +1275,7 @@ def _build_nested_sources(
     add_input=None,
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
+    video: bool = True,
 ) -> _NestedSources:
     """Compose chaque séquence imbriquée et prépare ses labels de sortie.
 
@@ -1276,7 +1293,7 @@ def _build_nested_sources(
         return sources
     need_video, need_audio = _nested_demand(plan)
     for index, entry in enumerate(entries):
-        want_video = need_video.get(entry.key, 0)
+        want_video = need_video.get(entry.key, 0) if video else 0
         want_audio = need_audio.get(entry.key, 0)
         if not (want_video or want_audio):
             continue
@@ -1342,6 +1359,8 @@ def _compose_plan_graph(
     video_label = ""
     audio_label = ""
     fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+    # Pixels de sortie par pixel de la séquence (aperçu réduit, export à une autre taille) : les effets en pixels suivent.
+    pixel_scale = width / float(max(1, plan.width or width))
     if add_input is None:
         def add_input(path: str) -> int:
             raise ValueError("Ce graphe n'accepte pas d'entrée supplémentaire.")
@@ -1367,7 +1386,7 @@ def _compose_plan_graph(
                         source=sources.take_video(layer.nested_key),
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
-                        add_input=add_input,
+                        add_input=add_input, pixel_scale=pixel_scale,
                     )
                 )
             else:
@@ -1376,7 +1395,7 @@ def _compose_plan_graph(
                     _build_layer_filter(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
-                        add_input=add_input, prepared=prepared,
+                        add_input=add_input, prepared=prepared, pixel_scale=pixel_scale,
                     )
                 )
 
@@ -1560,11 +1579,15 @@ def _compose_plan_graph(
             master_filter = _build_master_filter(plan)
             if master_filter:
                 stages.append(master_filter)
+            loudness = getattr(plan, "loudness_gain_db", None)
+            if loudness is not None and not getattr(plan, "master_muted", False):
+                # Normalisation de l'export (−14 LUFS…) : un gain statique, mesuré sur ce même mixage.
+                stages.append(f"volume={_format_db(float(loudness))}dB")
             # Additionner n'a plus de plafond : deux couches proches du maximum dépassent 0 dBFS (+5 dBFS mesurés), et
             # le gain d'un clip réglé pour compenser l'ancienne atténuation aussi. Le limiteur est le dernier étage
             # du mixage final (jamais d'une séquence imbriquée : celui de la timeline parente couvre la somme).
             if _ffmpeg_filter_has_option("alimiter", "latency"):
-                stages.append(SAFETY_LIMITER)
+                stages.append(LOUDNESS_LIMITER if loudness is not None else SAFETY_LIMITER)
         parts.append(
             f"[{p}silent_base]{''.join(layer_labels)}"
             f"{','.join(stages)},"
@@ -1782,6 +1805,67 @@ def _prepared_source(layer, time_map, fps: float, last_frame, source, prepared, 
     return f"{add_input(stream.path)}:v", runs
 
 
+def composition_size(frame_width: int, frame_height: int, output_width: int, output_height: int) -> tuple[int, int]:
+    """Taille à laquelle composer un cadre ``frame_width × frame_height`` dans une sortie ``output_width × output_height``.
+
+    Même format (à 0,5 % près) : la sortie elle-même. Sinon, le cadre réduit sans déformation et centré (tailles paires,
+    comme l'exige ``yuv420p``) : tout ce qui est placé en fraction du cadre (clips, calques, positions) garde ses
+    proportions, et les bandes ne sont ajoutées qu'à la fin.
+    """
+    fw, fh = max(1, int(frame_width or output_width)), max(1, int(frame_height or output_height))
+    ow, oh = max(1, int(output_width)), max(1, int(output_height))
+    if abs((fw / fh) / (ow / oh) - 1.0) <= 0.005:
+        return ow, oh
+    factor = min(ow / fw, oh / fh)
+    width = min(ow, max(2, int(round(fw * factor / 2.0)) * 2))
+    height = min(oh, max(2, int(round(fh * factor / 2.0)) * 2))
+    return width, height
+
+
+def layer_framing(layer, width: int, height: int) -> tuple[int, int] | None:
+    """Taille agrandie du média d'une couche en cadrage « remplir » (``None`` : cadrage habituel, avec bandes).
+
+    Sans la taille du média (inconnue), le cadrage reste le cadrage habituel : mieux vaut des bandes qu'une image rognée
+    au hasard."""
+    transform = getattr(layer, "transform", None)
+    if not getattr(transform, "fill", False):
+        return None
+    source_width, source_height = int(getattr(layer, "source_width", 0)), int(getattr(layer, "source_height", 0))
+    if source_width <= 0 or source_height <= 0:
+        return None
+    from .tracking_motion import cover_size
+
+    return cover_size(source_width, source_height, width, height)
+
+
+def layer_conform_filter(layer, width: int, height: int, pad_color: str = "black") -> str:
+    """Mise au format d'une couche avant son temps : le cadre (avec bandes) ou, en « remplir », sa taille agrandie
+    (:func:`layer_framing`). La fenêtre visible est choisie ensuite, en temps du clip (:func:`_framing_crop`)."""
+    framing = layer_framing(layer, width, height)
+    if framing is None:
+        return frame_fit_filter(width, height, pad_color)
+    return f"scale={framing[0]}:{framing[1]}"
+
+
+def _framing_crop(layer, width: int, height: int) -> str:
+    """``crop`` de la fenêtre visible d'un cadrage « remplir » (pan animé en temps du clip : ``t`` part de 0)."""
+    framing = layer_framing(layer, width, height)
+    if framing is None:
+        return ""
+    keyframes = layer.transform_keyframes
+    offsets = []
+    for axis, excess in (("pan_x", framing[0] - width), ("pan_y", framing[1] - height)):
+        frames = [kf for kf in keyframes if kf.property_name == axis]
+        if not frames:
+            from .tracking_motion import pan_offset
+
+            offsets.append(str(pan_offset(excess, getattr(layer.transform, axis))))
+            continue
+        expr = build_ffmpeg_expression(axis, float(getattr(layer.transform, axis)), frames, time_var="t")
+        offsets.append(f"'floor({excess}*(1+({expr}))/2)'")
+    return f"crop={width}:{height}:{offsets[0]}:{offsets[1]}:exact=1"
+
+
 def frame_fit_filter(width: int, height: int, pad_color: str = "black") -> str:
     """Mise au cadre d'un média : ``scale`` qui préserve le ratio puis ``pad`` aux bandes. Partagée avec la préparation des images
     intermédiaires : l'image qu'elle décode est exactement celle que le graphe aurait obtenue."""
@@ -1801,6 +1885,7 @@ def _build_layer_filter(
     pad_color: str = "black",
     add_input=None,
     prepared: Mapping[str, PreparedStream] | None = None,
+    pixel_scale: float = 1.0,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -1846,9 +1931,13 @@ def _build_layer_filter(
     kfs = layer.transform_keyframes
     scale_expr = _build_animated_scale_expr(transform, kfs, width, height)
     flip_filters = _build_flip_filters(transform, kfs)
-    rotation_expr = _build_animated_rotation_expr(transform, kfs)
+    rotation_expr = _build_animated_rotation_expr(
+        transform, kfs, canvas=_animated_layer_canvas(transform, kfs, width, height, layer.timeline_end - layer.timeline_start),
+    )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
-    effect_filters = _build_clip_effect_filters(layer.effects)
+    effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
+                                                include_layer_space=False)
+    layer_space_filters = _layer_space_filters(layer.effects, pixel_scale)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
     # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
@@ -1884,7 +1973,9 @@ def _build_layer_filter(
             f"[{o}_c][{o}_na]alphamerge,"
         )
 
-    frame_fit = frame_fit_filter(width, height, pad_color)
+    frame_fit = layer_conform_filter(layer, width, height, pad_color)
+    framing = layer_framing(layer, width, height)
+    framing_crop = _framing_crop(layer, width, height)
     retime_chains: tuple[str, ...] = ()
     time_map = _retime_map_of(layer)
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
@@ -1913,7 +2004,8 @@ def _build_layer_filter(
         prepared_label, prepared_runs = _prepared_source(layer, time_map, float(fps), last_frame, source, prepared, add_input)
         stage = video_stage(
             time_map, source_label=source_label, prefix=f"{output_label}_t", fps=float(fps),
-            source_fps=float(layer.source_fps), prepare=frame_fit, frame_bytes=int(width * height * 1.5),
+            source_fps=float(layer.source_fps), prepare=frame_fit,
+            frame_bytes=int((framing or (width, height))[0] * (framing or (width, height))[1] * 1.5),
             last_frame=last_frame, prepared_label=prepared_label, prepared_runs=prepared_runs,
         )
         retime_chains = stage.chains
@@ -1931,7 +2023,12 @@ def _build_layer_filter(
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
     # et l'opacité animés comme n'importe quel clip (la branche freeze les ignorait).
+    # Cadrage « remplir » : la fenêtre visible, en temps du clip (le pan animé suit sa courbe).
+    if framing_crop:
+        parts.append(f"{framing_crop},")
     parts.append(apply_matte())
+    if layer_space_filters:
+        parts.append(f"{layer_space_filters},")
     parts.append(f"{scale_expr},")
     if flip_filters:
         parts.append(f"{flip_filters},")
@@ -2116,15 +2213,59 @@ def _compute_colorbalance_offsets(
     )
 
 
-def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
+def _glow_filter(params, pixel_scale: float, label: str) -> str:
+    """Bloom : copie des zones plus claires que le seuil (RVB), floutée, **ajoutée** à l'image (alpha inchangé).
+
+    Un sous-graphe au milieu de la chaîne (``split`` puis ``blend``) : la syntaxe des graphes FFmpeg permet de
+    reprendre une chaîne par un filtre à deux entrées. ``label`` rend les étiquettes uniques dans le graphe.
+
+    ``format=rgba`` et non ``gbrap`` : depuis du 4:2:0, swscale passe en RVB packé en recopiant la chroma, comme
+    pour le reste de la chaîne et la référence du moniteur GPU ; vers ``gbrap`` il l'interpole (sur une mire aux
+    couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap`` (pour ``gblur``), rien ne change.
+    L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
+    comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
+    threshold = float(params["threshold"])
+    gain = float(params["intensity"]) / max(0.05, 1.0 - threshold)
+    level = _format_seconds(threshold * 255.0)
+    curve = f"'clip((val-{level})*{_format_seconds(gain)},0,255)'"
+    sigma = _format_seconds(max(0.01, float(params["radius"]) * pixel_scale))
+    return (
+        f"format=rgba,split[{label}a][{label}b];"
+        f"[{label}b]lutrgb=r={curve}:g={curve}:b={curve},gblur=sigma={sigma}[{label}g];"
+        f"[{label}a][{label}g]blend=all_mode=addition:c3_mode=normal:c3_opacity=0,format=rgba,format=yuva444p"
+    )
+
+
+def _heat_haze_filter(params, pixel_scale: float) -> str:
+    """Heat haze : chaque ligne de l'image (sous ``top``, en fondu sur ``span``) glisse d'un nombre entier de pixels.
+
+    Le décalage d'une ligne ``y`` (pixels de rendu) vaut ``⌊A·sin(y·f + t·v)·rampe(y)⌋`` avec A et f ramenés à la
+    résolution de rendu. L'image passe d'abord en ``yuva444p`` : la chroma glisse du même nombre entier de pixels que
+    la luminance, comme sur le moniteur GPU (en 4:2:0, un décalage impair devenait un demi-pixel interpolé).
+    ``T`` est le temps du clip."""
+    amplitude = float(params["amplitude"]) * pixel_scale
+    frequency = float(params["frequency"]) / max(1e-6, pixel_scale)
+    ramp = f"clip((Y/H-{_format_seconds(params['top'])})/{_format_seconds(params['span'])},0,1)"
+    shift = (f"floor({_format_seconds(amplitude)}*sin(Y*{_format_seconds(frequency)}"
+             f"+T*{_format_seconds(params['speed'])})*{ramp})")
+    expr = f"'p(X-{shift},Y)'"
+    return f"format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
+
+
+def _build_clip_effect_filters(
+    effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0, label: str = "fx", *, include_layer_space: bool = True,
+) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
     Chaque valeur vient du modèle validé : on ne concatène donc jamais
     d'expression fournie par l'utilisateur. Les filtres s'exécutent avant
     l'alpha du calque afin de conserver une composition ``rgba`` fiable.
+
+    ``pixel_scale`` : pixels de sortie par pixel de la séquence. Un réglage en pixels (σ du flou) est donné à la taille
+    de la séquence ; un aperçu à ½ ou un export à une autre résolution le ramène à sa taille, comme le moniteur GPU.
     """
     filters: list[str] = []
-    for effect in effects:
+    for index, effect in enumerate(effects):
         if not effect.enabled:
             continue
         params = effect.params
@@ -2137,7 +2278,7 @@ def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
             )
         elif effect.type is EffectType.BLUR:
             filters.append(
-                f"gblur=sigma={_format_seconds(params['intensity'])}"
+                f"gblur=sigma={_format_seconds(float(params['intensity']) * pixel_scale)}"
             )
         elif effect.type is EffectType.SHARPEN:
             filters.append(
@@ -2154,7 +2295,24 @@ def _build_clip_effect_filters(effects: tuple[ClipEffect, ...]) -> str:
                 "colorchannelmixer="
                 ".393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
             )
+        elif effect.type is EffectType.GLOW:
+            filters.append(_glow_filter(params, pixel_scale, f"{label}{index}"))
+        elif effect.type is EffectType.CHROMATIC_ABERRATION:
+            shift = int(round(float(params["intensity"]) * pixel_scale))
+            if shift:
+                filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
+        elif effect.type is EffectType.HEAT_HAZE and include_layer_space:
+            filters.append(_heat_haze_filter(params, pixel_scale))
     return ",".join(filters)
+
+
+def _layer_space_filters(effects, pixel_scale: float) -> str:
+    """Effets qui déforment l'image du clip elle-même (heat haze) : appliqués **avant** échelle et rotation, en espace
+    calque, comme le moniteur GPU. Après ``rotate``, le cadre agrandi décalait les lignes de l'onde."""
+    return ",".join(
+        _heat_haze_filter(effect.params, pixel_scale)
+        for effect in effects if effect.enabled and effect.type is EffectType.HEAT_HAZE
+    )
 
 
 def _build_animated_scale_expr(
@@ -2214,11 +2372,33 @@ def _build_flip_filters(transform: ClipTransform, keyframes) -> str:
     return ",".join(filters)
 
 
+def _animated_layer_canvas(
+    transform: ClipTransform, keyframes, width: int, height: int, duration: float,
+) -> tuple[int, int] | None:
+    """Taille fixe du cadre de ``rotate`` quand l'échelle est animée (``None`` : échelle fixe, ``hypot(iw,ih)``).
+
+    ``rotate`` évalue la taille de sortie **une fois**, sur la première image. Une échelle animée qui part petite
+    (pop-in, zoom d'entrée) était donc rognée au cadre de sa première image. Le cadre est ici celui de la plus grande
+    image du clip (diagonale de l'échelle maximale de la courbe), multiple de 4, et ne change plus.
+
+    Multiple de 4 : avec un côté ≡ 2 (mod 4), la moitié du cadre est impaire pour les plans de chroma (yuv420) et
+    ``rotate`` décale le calque d'un ou deux pixels d'une image à l'autre (mesuré sur un clip stabilisé : 2 px)."""
+    names = ("scale", "scale_x", "scale_y")
+    if not any(kf.property_name in names for kf in keyframes):
+        return None
+    peak = {name: max_transform_value(transform, keyframes, name, duration) for name in names}
+    diagonal = math.hypot(width * peak["scale"] * peak["scale_x"], height * peak["scale"] * peak["scale_y"])
+    side = int(math.ceil(diagonal / 4.0)) * 4 + 4
+    return side, side
+
+
 def _build_animated_rotation_expr(
     transform: ClipTransform,
     keyframes: tuple[TransformKeyframe, ...],
+    *,
+    canvas: tuple[int, int] | None = None,
 ) -> str:
-    """Génère un filtre ``rotate`` animé (degrés)."""
+    """Génère un filtre ``rotate`` animé (degrés) ; ``canvas`` fixe sa taille de sortie (échelle animée)."""
     expr = build_ffmpeg_expression(
         "rotation",
         transform.rotation,
@@ -2230,9 +2410,10 @@ def _build_animated_rotation_expr(
     # canvas est calculée via ``hypot(iw,ih)`` pour garantir que les
     # rotations même importantes restent entièrement visibles ; un
     # overlay final tronquera à la taille du canvas.
+    size = f"ow={canvas[0]}:oh={canvas[1]}" if canvas is not None else "ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
     return (
         f"rotate=a='{expr}*0.017453292519943295':"
-        f"c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih):"
+        f"c=black@0:{size}:"
         f"fillcolor=black@0"
     )
 
@@ -2822,6 +3003,8 @@ def _format_ratio(value: float) -> str:
 
 
 SAFETY_LIMITER = "alimiter=limit=1:level=0:latency=1"
+LOUDNESS_LIMITER = "alimiter=limit=0.891251:level=0:latency=1"
+"""Limiteur d'un export normalisé : crêtes à −1 dBFS (10^(−1/20)), la marge que demandent les plateformes."""
 """Dernier étage du mixage final : plafond à 0 dBFS (``limit=1``), transparent en dessous (écart nul mesuré).
 
 ``level=0`` coupe le « auto level » (le limiteur ne remonte jamais un mixage faible) ; ``latency=1`` compense le retard

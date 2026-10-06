@@ -57,8 +57,11 @@ ADVANCED_TRANSFORM_PROPERTIES: tuple[str, ...] = (
     "skew",
     "flip_h",
     "flip_v",
+    "fill",
+    "pan_x",
+    "pan_y",
 )
-"""Propriétés de transform avancées (motion graphics), toutes animables.
+"""Propriétés de transform avancées (motion graphics, cadrage), toutes animables.
 
 - ``anchor_x`` / ``anchor_y`` : point d'ancrage en fraction de la taille du
   calque (``0.5`` = centre). Rotation, échelle et parentage pivotent autour
@@ -67,7 +70,14 @@ ADVANCED_TRANSFORM_PROPERTIES: tuple[str, ...] = (
   (``scale``) : l'échelle effective est ``scale × scale_x``.
 - ``skew`` : inclinaison horizontale en degrés (calques graphiques).
 - ``flip_h`` / ``flip_v`` : miroirs (booléens, interpolation en maintien).
+- ``fill`` : cadrage d'un clip vidéo. Faux (défaut) : le média tient entier dans le cadre, avec des bandes ; vrai : il
+  **remplit** le cadre sans déformation, l'excédent est rogné (recadrer une vidéo 16:9 en 9:16).
+- ``pan_x`` / ``pan_y`` : fenêtre du cadrage « remplir » dans le média, de −1 (bord gauche / haut) à 1 (bord droit / bas),
+  0 = centrée. Animées, elles font un pan dans l'image. Sans effet hors de ``fill``.
 """
+
+STATIC_TRANSFORM_PROPERTIES: frozenset[str] = frozenset({"fill"})
+"""Propriétés du transform qui ne s'animent pas (aucune image-clé acceptée)."""
 
 TRANSFORM_PROPERTY_NAMES: tuple[str, ...] = ANIMATABLE_PROPERTIES + ADVANCED_TRANSFORM_PROPERTIES
 """Toutes les propriétés de :class:`ClipTransform`, dans l'ordre d'affichage."""
@@ -86,6 +96,8 @@ _AXIS_SCALE_MIN = 0.0
 _AXIS_SCALE_MAX = 10.0
 _SKEW_MIN = -85.0
 _SKEW_MAX = 85.0
+_PAN_MIN = -1.0
+_PAN_MAX = 1.0
 
 
 _PROPERTY_BOUNDS: dict[str, tuple[float, float]] = {
@@ -101,6 +113,9 @@ _PROPERTY_BOUNDS: dict[str, tuple[float, float]] = {
     "skew": (_SKEW_MIN, _SKEW_MAX),
     "flip_h": (0.0, 1.0),
     "flip_v": (0.0, 1.0),
+    "fill": (0.0, 1.0),
+    "pan_x": (_PAN_MIN, _PAN_MAX),
+    "pan_y": (_PAN_MIN, _PAN_MAX),
 }
 """Bornes acceptées pour chaque propriété animable."""
 
@@ -129,6 +144,12 @@ TRANSFORM_PROPERTIES: dict[str, AnimatableProperty] = {
                                  False, 0.0, 1.0, 1.0),
     "flip_v": AnimatableProperty("flip_v", "animation.property.flip_v", ValueKind.BOOL,
                                  False, 0.0, 1.0, 1.0),
+    "fill": AnimatableProperty("fill", "animation.property.fill", ValueKind.BOOL,
+                               False, 0.0, 1.0, 1.0),
+    "pan_x": AnimatableProperty("pan_x", "animation.property.pan_x", ValueKind.FLOAT,
+                                0.0, _PAN_MIN, _PAN_MAX, 0.01),
+    "pan_y": AnimatableProperty("pan_y", "animation.property.pan_y", ValueKind.FLOAT,
+                                0.0, _PAN_MIN, _PAN_MAX, 0.01),
 }
 """Description générique (:class:`~core.animation.AnimatableProperty`) du transform."""
 
@@ -167,6 +188,10 @@ class ClipTransform:
     skew: float = 0.0
     flip_h: bool = False
     flip_v: bool = False
+    # --- Cadrage d'un clip vidéo (remplir le cadre, fenêtre de pan) : neutre par défaut ---
+    fill: bool = False
+    pan_x: float = 0.0
+    pan_y: float = 0.0
 
     def __post_init__(self) -> None:
         """Valide les bornes des champs du transform."""
@@ -174,6 +199,7 @@ class ClipTransform:
             _validate_value(name, getattr(self, name))
         object.__setattr__(self, "flip_h", bool(self.flip_h))
         object.__setattr__(self, "flip_v", bool(self.flip_v))
+        object.__setattr__(self, "fill", bool(self.fill))
 
     def with_property(self, name: str, value: float) -> "ClipTransform":
         """Retourne un nouveau transform avec la propriété ``name`` mise à jour.
@@ -211,7 +237,7 @@ class TransformKeyframe(Keyframe):
 
     def __post_init__(self) -> None:
         """Valide l'image-clé."""
-        if self.property_name not in TRANSFORM_PROPERTY_NAMES:
+        if self.property_name not in TRANSFORM_PROPERTY_NAMES or self.property_name in STATIC_TRANSFORM_PROPERTIES:
             raise ValueError(
                 f"Propriété de keyframe inconnue : {self.property_name!r}."
             )
@@ -244,6 +270,9 @@ class EvaluatedTransform:
     skew: float = 0.0
     flip_h: bool = False
     flip_v: bool = False
+    fill: bool = False
+    pan_x: float = 0.0
+    pan_y: float = 0.0
 
     def as_transform(self) -> ClipTransform:
         """Retourne un nouveau :class:`ClipTransform` équivalent."""
@@ -356,6 +385,26 @@ def evaluate_transform(
         return bool(value) if spec.kind is ValueKind.BOOL else float(value)
 
     return EvaluatedTransform(**{name: _resolve(name) for name in TRANSFORM_PROPERTY_NAMES})
+
+
+def max_transform_value(
+    transform: ClipTransform, keyframes: Iterable[TransformKeyframe], name: str, clip_duration: float,
+) -> float:
+    """Plus grande valeur d'une propriété sur la durée du clip (dépassements d'une courbe Bézier compris).
+
+    Chaque segment est un cubique : 64 échantillons par segment, plus les images-clés, suffisent à borner un
+    dépassement à une fraction de pour cent près (l'appelant ajoute sa marge)."""
+    static = float(getattr(transform, name))
+    curve = transform_curves(keyframes, clip_duration).get(name)
+    if curve is None or not curve.keyframes:
+        return static
+    spec = TRANSFORM_PROPERTIES[name]
+    peak = max(float(kf.value) for kf in curve.keyframes)
+    for segment in curve.segments:
+        for step in range(1, 64):
+            t = segment.t0 + segment.span * step / 64.0
+            peak = max(peak, float(spec.evaluate(curve, static, t)))
+    return peak
 
 
 def migrate_legacy_keyframes(

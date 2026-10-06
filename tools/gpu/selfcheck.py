@@ -40,6 +40,14 @@ def cases():
          (0.5, 0.0, 0.0, 0.5, 40.0, 30.0), 1.0, BlendMode.DIFFERENCE),
         ("black_white_overlay", [effect(EffectType.BLACK_AND_WHITE)], (1.0, 0.0, 0.0, 1.0, 12.0, -6.0), 0.6,
          BlendMode.OVERLAY),
+        # Vidéo sociale : bloom (4 passes), aberration chromatique, heat haze, puis une vignette après chacun.
+        ("glow_aberration", [effect(EffectType.GLOW, threshold=0.5, radius=4.0, intensity=1.2),
+                             effect(EffectType.CHROMATIC_ABERRATION, intensity=4.0),
+                             effect(EffectType.VIGNETTE, intensity=0.4)],
+         (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, BlendMode.NORMAL),
+        ("heat_haze", [effect(EffectType.HEAT_HAZE, amplitude=5.0, frequency=0.07, speed=0.0, top=0.2, span=0.5),
+                       effect(EffectType.COLOR_CORRECTION, brightness=0.0, contrast=1.1, saturation=1.2)],
+         (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, BlendMode.ADD),
     ]
 
 
@@ -75,7 +83,47 @@ def run(api: str, width: int = 320, height: int = 180) -> dict:
             reference = reference_frame(frame, {"v": reference_codes(codes)}, mattes)
             diff = np.abs(got - reference) * 255
             results["cases"][key] = {"mean": float(diff.mean()), "max": float(diff.max())}
+    results["cases"]["rgba/light_add"] = _light_case(api, width, height, codes)
     return results
+
+
+def _light_case(api: str, width: int, height: int, codes) -> dict:
+    """Calque graphique RGBA (lumière) composé en Addition sur la vidéo, son alpha en matte (moniteur GPU)."""
+    import numpy as np
+    from PySide6.QtGui import QColor, QImage, QRadialGradient, QPainter
+    from PySide6.QtCore import QPointF
+
+    from core.blend_modes import BlendMode
+    from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame
+    from core.gpu_effects import program_for
+    from tests.gpu_harness import make_frame, reference_codes, render_gpu
+
+    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    gradient = QRadialGradient(QPointF(width * 0.4, height * 0.5), height * 0.6)
+    gradient.setColorAt(0.0, QColor(255, 176, 64, 230))
+    gradient.setColorAt(1.0, QColor(255, 176, 64, 0))
+    painter.fillRect(image.rect(), gradient)
+    painter.end()
+    straight = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    data = np.frombuffer(straight.constBits(), np.uint8).reshape(height, straight.bytesPerLine())
+    rgba = data[:, : width * 4].reshape(height, width, 4) / 255.0
+    identity = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    frame = CompositeFrame(width, height, 1.0, (
+        CompositeLayer("v", identity, (0, 0, width, height), program=program_for(())),
+        CompositeLayer("light", identity, (0, 0, width, height), blend=BlendMode.ADD, program=program_for(()),
+                       matte="light"),
+    ), (VideoSource("v", "nv12", width, height), VideoSource("light", "rgba", width, height)))
+    from PySide6.QtMultimedia import QVideoFrame
+
+    got, failures = render_gpu(frame, {"v": make_frame(codes, "nv12"), "light": QVideoFrame(straight)},
+                               {"light": straight}, api=api)
+    if got is None:
+        return {"error": str(failures)}
+    reference = reference_frame(frame, {"v": reference_codes(codes), "light": rgba[..., :3]}, {"light": rgba[..., 3]})
+    diff = np.abs(got - reference) * 255
+    return {"mean": float(diff.mean()), "max": float(diff.max())}
 
 
 def _half_matte(width: int, height: int):

@@ -83,6 +83,8 @@ def pytest_configure(config):
 def _isolate_kut_studio_config(monkeypatch, tmp_path):
     """Empêche les tests de lire ou modifier les presets de l'utilisateur."""
     monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path / "config"))
+    # Bibliothèque de SFX synthétisés : jamais dans les données de l'utilisateur.
+    monkeypatch.setenv("KUT_STUDIO_DATA_DIR", str(tmp_path / "data"))
     # Les proxies générés par un test ne doivent jamais aller dans le vrai cache de l'utilisateur.
     monkeypatch.setenv("KUT_STUDIO_PROXY_DIR", str(tmp_path / "proxies"))
     # Reproductibilité : jamais de détection GPU réelle, ni de cache de capacités partagé.
@@ -154,6 +156,12 @@ def _widgets_application():
         yield None
         return
     application = QApplication.instance() or QApplication([])
+    # Polices embarquées enregistrées tout de suite, comme main.py le fait avant la première fenêtre : les ajouter en
+    # cours de session (première résolution de famille) vide les caches de polices de Qt sous des widgets vivants, et
+    # un changement de feuille de style plantait ensuite le worker Windows hors écran (tas corrompu, 0xc0000374).
+    from core.bundled_fonts import register_bundled_fonts
+
+    register_bundled_fonts()
     yield application
 
 

@@ -50,9 +50,13 @@ class ProjectFilesMixin:
         """Crée un nouveau projet vierge via ``create_default_project()``."""
         if not self._confirm_discard_changes():
             return
+        self._install_new_project(create_default_project())
+
+    def _install_new_project(self, project) -> None:
+        """Remplace le projet ouvert par ``project`` (jamais enregistré) ; les changements ont déjà été confirmés."""
         self._finalize_pending_edit_sessions()
         self._release_open_project()
-        self.project = create_default_project()
+        self.project = project
         self.current_project_path = None
         self.history.reset(self.project)
         self._refresh_undo_redo_state()
@@ -229,6 +233,7 @@ class ProjectFilesMixin:
                 path,
                 master_gain_db=self._master_gain_db,
                 master_muted=self._master_muted,
+                playhead_seconds=float(self.playhead_seconds),
             )
         except (ValueError, OSError, KeyError) as exc:
             self.export_panel.mark_export_error(i18n.translate("render.export.invalid", error=exc))
@@ -239,6 +244,9 @@ class ProjectFilesMixin:
             self.export_panel.set_status(
                 i18n.translate("render.added", name=job.name), "ready"
             )
+        warning = self.empty_slot_warning()
+        if warning:                                   # template pas encore rempli : les cartes partent à l'export
+            self.statusBar().showMessage(warning, 8000)
         return job
 
     def _ask_export_path(self, spec) -> str:

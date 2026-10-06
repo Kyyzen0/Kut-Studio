@@ -40,6 +40,10 @@ class EffectType(str, Enum):
     VIGNETTE = "vignette"
     BLACK_AND_WHITE = "black_and_white"
     SEPIA = "sepia"
+    # --- Vidéo sociale (lumière) ---
+    GLOW = "glow"
+    CHROMATIC_ABERRATION = "chromatic_aberration"
+    HEAT_HAZE = "heat_haze"
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,23 @@ EFFECT_PARAMETER_SPECS: dict[EffectType, tuple[EffectParameterSpec, ...]] = {
     EffectType.VIGNETTE: (EffectParameterSpec("intensity", 0.0, 1.0, 0.5),),
     EffectType.BLACK_AND_WHITE: (),
     EffectType.SEPIA: (),
+    # Bloom : les zones plus claires que le seuil, floutées (σ en pixels de la séquence) et ajoutées.
+    EffectType.GLOW: (
+        EffectParameterSpec("threshold", 0.0, 0.95, 0.6),
+        EffectParameterSpec("radius", 0.0, 100.0, 18.0),
+        EffectParameterSpec("intensity", 0.0, 4.0, 1.0),
+    ),
+    # Aberration chromatique : rouge et bleu décalés de part et d'autre (pixels de la séquence).
+    EffectType.CHROMATIC_ABERRATION: (EffectParameterSpec("intensity", 0.0, 40.0, 4.0),),
+    # Heat haze : chaque ligne glisse d'un nombre entier de pixels, selon une onde qui défile, sous ``top`` du
+    # cadre et en fondu sur ``span`` (fractions de la hauteur).
+    EffectType.HEAT_HAZE: (
+        EffectParameterSpec("amplitude", 0.0, 40.0, 4.0),
+        EffectParameterSpec("frequency", 0.001, 0.5, 0.045),
+        EffectParameterSpec("speed", 0.0, 40.0, 9.0),
+        EffectParameterSpec("top", 0.0, 1.0, 0.35),
+        EffectParameterSpec("span", 0.01, 1.0, 0.4),
+    ),
 }
 """Bornes et défauts par type d'effet."""
 
@@ -75,6 +96,8 @@ SINGLE_INSTANCE_EFFECTS: frozenset[EffectType] = frozenset(
         EffectType.VIGNETTE,
         EffectType.BLACK_AND_WHITE,
         EffectType.SEPIA,
+        EffectType.CHROMATIC_ABERRATION,
+        EffectType.HEAT_HAZE,
     }
 )
 """Effets qui ne peuvent exister qu'une seule fois par clip.

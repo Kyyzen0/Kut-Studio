@@ -26,6 +26,7 @@ historique des titres) : le rendu ne dépend pas du DPI de l'écran.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from collections import OrderedDict
@@ -40,12 +41,15 @@ from PySide6.QtGui import (
     QImage,
     QPainter,
     QPainterPath,
+    QPainterPathStroker,
     QPen,
     QPolygonF,
     QTransform,
 )
 
 from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
+from .bundled_fonts import register_bundled_fonts
+from .text_runs import WORD, is_plain, reveal_state, split_emoji
 from .compositing import MaskMode, MaskShape
 from .graphics import GraphicOverlay, GraphicType, ShapeKind
 from .mograph_scene import (
@@ -60,6 +64,19 @@ from .mograph_scene import (
     mat_translate,
 )
 from .motion_blur import MotionBlurSettings
+
+LOGGER = logging.getLogger("kut_studio.fonts")
+
+RASTER_VERSION = 1
+"""Version du dessin des calques, incluse dans le nom de chaque image du cache (:mod:`core.mograph_stream`) et dans
+l'empreinte des segments d'aperçu (:func:`core.filter_graph.fingerprint_plan`).
+
+À incrémenter dès que le **même état** de calque se dessine autrement (ordre contour / remplissage, nouvelle mise en page du
+texte…) : le nom d'une image ne dépend que de l'état évalué, et le cache resservirait sinon les images de l'ancien dessin,
+même après une hausse de ``RENDER_ENGINE_VERSION``. Les nouveaux champs à valeur par défaut n'en ont pas besoin : leur
+valeur entre déjà dans l'état.
+
+1 : première version numérotée (contour fusionné des polices à contours superposés)."""
 
 POINT_TO_PIXEL = 96.0 / 72.0
 """Le corps d'un titre est en points à 96 ppp (échelle des titres historiques)."""
@@ -93,6 +110,7 @@ def resolve_family(family: str) -> str:
     cached = _FAMILIES.get(family)
     if cached is not None:
         return cached
+    register_bundled_fonts()
     installed = set(QFontDatabase.families())
     if family in installed:
         resolved = family
@@ -102,9 +120,15 @@ def resolve_family(family: str) -> str:
         resolved = next((name for name in fallbacks if name in installed), None)
         if resolved is None:
             resolved = sorted(installed)[0] if installed else system
+        if family not in _GENERIC_FAMILIES:
+            # Le projet s'affichera autrement que sur la machine qui l'a créé : on le dit au journal, une fois par nom.
+            LOGGER.warning("Police « %s » absente : remplacée par « %s »", family, resolved)
     _FAMILIES[family] = resolved
     return resolved
 
+
+_GENERIC_FAMILIES = frozenset({"", "Sans Serif", "Serif", "Monospace"})
+"""Noms génériques (le défaut des calques texte) : leur remplacement par la police système est voulu, pas un oubli."""
 
 _FALLBACK_FAMILIES = (
     "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans",
@@ -363,8 +387,8 @@ def image_signature(path: str) -> str:
 
 
 def content_margin(graphic: GraphicOverlay) -> float:
-    """Débordement possible du contenu hors de sa boîte (contour, ombre, fond)."""
-    margin = float(graphic.stroke_width) * 2.0 + 2.0
+    """Débordement possible du contenu hors de sa boîte (contour, ombre, fond, néon)."""
+    margin = float(graphic.stroke_width) * 2.0 + 2.0 + 3.0 * float(graphic.glow_radius)
     if graphic.type == GraphicType.TEXT:
         margin += abs(graphic.shadow_offset_x) + abs(graphic.shadow_offset_y) + 3.0 * graphic.shadow_blur
         if graphic.background_enabled:
@@ -374,8 +398,58 @@ def content_margin(graphic: GraphicOverlay) -> float:
 
 
 def needs_isolation(graphic: GraphicOverlay) -> bool:
-    """Le contenu exige-t-il un tampon intermédiaire (ombre floue) ?"""
+    """Le contenu exige-t-il un tampon intermédiaire (ombre floue, néon) ?"""
+    if _has_glow(graphic):
+        return True
     return graphic.type == GraphicType.TEXT and graphic.shadow_blur > 0 and _has_shadow(graphic)
+
+
+def _has_glow(graphic: GraphicOverlay) -> bool:
+    return (
+        graphic.type in (GraphicType.TEXT, GraphicType.SHAPE, GraphicType.RECTANGLE)
+        and graphic.glow_radius > 0 and graphic.glow_strength > 0 and qcolor(graphic.glow_color).alpha() > 0
+    )
+
+
+def _glow_path(graphic: GraphicOverlay, width: float, height: float) -> QPainterPath:
+    """Silhouette qui émet le néon : les lettres (sans les emojis) avec leur contour, ou la forme."""
+    if graphic.type == GraphicType.TEXT:
+        if is_plain(graphic.text, graphic.word_reveal, graphic.highlight_words):
+            path, _block = text_path(graphic, width, height)
+        else:
+            _lines, _metrics, font = text_lines(graphic, width)
+            state = reveal_state(graphic.text, graphic.word_reveal, graphic.reveal, graphic.highlight_words)
+            path = QPainterPath()
+            path.setFillRule(Qt.WindingFill)
+            for piece, emoji, x, baseline, word, letter in text_runs(graphic, width, height):
+                if not emoji and state.word_alpha(word) * state.letter_alpha(letter) > 0.5:
+                    path.addText(x, baseline, font, piece)
+    else:
+        path = shape_path(graphic, width, height)
+    if graphic.stroke_width > 0 and not path.isEmpty():
+        stroker = QPainterPathStroker()
+        stroker.setWidth(float(graphic.stroke_width) * 2.0)
+        stroker.setJoinStyle(Qt.RoundJoin)
+        path = path.united(stroker.createStroke(path))
+    return path
+
+
+def _draw_glow(painter: QPainter, graphic: GraphicOverlay, width: float, height: float, device_scale: float) -> None:
+    """Néon : la silhouette floutée, ajoutée (mode Plus) sous le contenu ; une force > 1 l'ajoute plusieurs fois."""
+    path = _glow_path(graphic, width, height)
+    if path.isEmpty():
+        return
+    strength = float(graphic.glow_strength)
+    radius = float(graphic.glow_radius) * device_scale
+    color = qcolor(graphic.glow_color)
+    painter.save()
+    painter.setCompositionMode(QPainter.CompositionMode_Plus)
+    while strength > 1e-6:
+        layer = QColor(color)
+        layer.setAlphaF(color.alphaF() * min(1.0, strength))
+        _draw_blurred_path(painter, path, layer, radius)
+        strength -= 1.0
+    painter.restore()
 
 
 def _has_shadow(graphic: GraphicOverlay) -> bool:
@@ -392,6 +466,8 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
     painter.setRenderHint(QPainter.TextAntialiasing, True)
     painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
     kind = graphic.type
+    if _has_glow(graphic):
+        _draw_glow(painter, graphic, width, height, device_scale)
     if kind == GraphicType.SOLID:
         painter.fillRect(QRectF(0, 0, width, height), qcolor(graphic.fill_color))
     elif kind == GraphicType.IMAGE:
@@ -421,6 +497,10 @@ def draw_content(painter: QPainter, graphic: GraphicOverlay, box: tuple[float, f
             painter.strokePath(path, pen)
     elif kind == GraphicType.TEXT:
         _draw_text(painter, graphic, width, height, device_scale=device_scale)
+    elif kind == GraphicType.LIGHT:
+        from .light_layers import draw_light
+
+        draw_light(painter, graphic, width, height)
 
 
 def _draw_text(painter: QPainter, graphic: GraphicOverlay, width: float, height: float, *, device_scale: float) -> None:
@@ -432,17 +512,127 @@ def _draw_text(painter: QPainter, graphic: GraphicOverlay, width: float, height:
         background = QPainterPath()
         background.addRoundedRect(rect, radius, radius)
         painter.fillPath(background, qcolor(graphic.background_color))
-    if _has_shadow(graphic):
-        shadow = path.translated(graphic.shadow_offset_x, graphic.shadow_offset_y)
-        if graphic.shadow_blur > 0:
-            _draw_blurred_path(painter, shadow, qcolor(graphic.shadow_color), graphic.shadow_blur * device_scale)
-        else:
-            painter.fillPath(shadow, qcolor(graphic.shadow_color))
+    if not is_plain(graphic.text, graphic.word_reveal, graphic.highlight_words):
+        _draw_text_runs(painter, graphic, width, height, device_scale=device_scale)
+        return
+    _draw_shadow(painter, graphic, path, device_scale)
+    outside = graphic.stroke_position == "outside"
+    if outside:
+        _stroke_text(painter, graphic, path)
     painter.fillPath(path, qcolor(graphic.fill_color))
-    if graphic.stroke_width > 0:
-        pen = QPen(qcolor(graphic.stroke_color), max(1, int(graphic.stroke_width) * 2),
-                   Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        painter.strokePath(_merged_outline(path, _largest_axis_scale(painter.transform())), pen)
+    if not outside:
+        _stroke_text(painter, graphic, path)
+
+
+def _draw_shadow(painter: QPainter, graphic: GraphicOverlay, path: QPainterPath, device_scale: float,
+                 alpha: float = 1.0) -> None:
+    if not _has_shadow(graphic) or path.isEmpty() or alpha <= 0.0:
+        return
+    color = qcolor(graphic.shadow_color)
+    color.setAlphaF(color.alphaF() * alpha)
+    shadow = path.translated(graphic.shadow_offset_x, graphic.shadow_offset_y)
+    if graphic.shadow_blur > 0:
+        _draw_blurred_path(painter, shadow, color, graphic.shadow_blur * device_scale)
+    else:
+        painter.fillPath(shadow, color)
+
+
+def _stroke_text(painter: QPainter, graphic: GraphicOverlay, path: QPainterPath, alpha: float = 1.0) -> None:
+    """Contour du texte : un stylo de deux fois la largeur centré sur le bord ; dessiné **sous** le remplissage en mode
+    « extérieur », seule sa moitié externe reste visible."""
+    if graphic.stroke_width <= 0 or path.isEmpty() or alpha <= 0.0:
+        return
+    color = qcolor(graphic.stroke_color)
+    color.setAlphaF(color.alphaF() * alpha)
+    pen = QPen(color, max(1, int(graphic.stroke_width) * 2), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    painter.strokePath(_merged_outline(path, _largest_axis_scale(painter.transform())), pen)
+
+
+def text_runs(graphic: GraphicOverlay, width: float, height: float) -> list[tuple]:
+    """Morceaux d'un texte animé ``(texte, est_emoji, x, ligne de base, mot, lettre)`` placés comme ``text_path``.
+
+    Un morceau est une lettre (machine à écrire), sinon la partie texte ou emoji d'un mot. ``x`` vient de l'avance de
+    la ligne jusqu'au morceau : les lettres tombent exactement où ``text_path`` les place."""
+    lines, metrics, _font = text_lines(graphic, width)
+    line_height = _line_height(graphic, metrics)
+    block = (len(lines) - 1) * line_height + metrics.height()
+    pad = float(graphic.background_padding) if (graphic.autosize and graphic.background_enabled) else 0.0
+    if graphic.align_v == "top":
+        top = pad
+    elif graphic.align_v == "bottom":
+        top = height - block - pad
+    else:
+        top = (height - block) / 2.0
+    per_letter = graphic.word_reveal == "typewriter"
+    runs: list[tuple] = []
+    word = letter = 0
+    for index, line in enumerate(lines):
+        advance = metrics.horizontalAdvance(line)
+        if graphic.align_h == "left":
+            x0 = pad
+        elif graphic.align_h == "right":
+            x0 = width - advance - pad
+        else:
+            x0 = (width - advance) / 2.0
+        baseline = top + index * line_height + metrics.ascent()
+        for match in WORD.finditer(line):
+            offset = match.start()
+            for segment, emoji in split_emoji(match.group()):
+                pieces = [segment] if (emoji or not per_letter) else list(segment)
+                for piece in pieces:
+                    x = x0 + metrics.horizontalAdvance(line[:offset])
+                    runs.append((piece, emoji, x, baseline, word, letter))
+                    offset += len(piece)
+                    letter += 1 if (emoji or per_letter) else len(piece)
+            word += 1
+    return runs
+
+
+def _draw_text_runs(painter: QPainter, graphic: GraphicOverlay, width: float, height: float, *, device_scale: float) -> None:
+    """Texte animé ou coloré : chaque mot (ou lettre) a son opacité et sa couleur ; les emojis sont dessinés en
+    couleur par la police, sans contour ni ombre (un glyphe couleur n'a pas de contour vectoriel)."""
+    _lines, _metrics, font = text_lines(graphic, width)
+    state = reveal_state(graphic.text, graphic.word_reveal, graphic.reveal, graphic.highlight_words)
+    groups: dict[tuple[float, bool], QPainterPath] = {}
+    emojis: list[tuple[str, float, float, float]] = []
+    for piece, emoji, x, baseline, word, letter in text_runs(graphic, width, height):
+        alpha = round(state.word_alpha(word) * state.letter_alpha(letter), 3)
+        if alpha <= 0.0:
+            continue
+        if emoji:
+            emojis.append((piece, x, baseline, alpha))
+            continue
+        key = (alpha, state.is_highlighted(word))
+        path = groups.get(key)
+        if path is None:
+            path = groups[key] = QPainterPath()
+            path.setFillRule(Qt.WindingFill)
+        path.addText(x, baseline, font, piece)
+    by_alpha: dict[float, QPainterPath] = {}
+    for (alpha, _highlight), path in groups.items():
+        by_alpha.setdefault(alpha, QPainterPath()).addPath(path)
+    for alpha, path in by_alpha.items():
+        _draw_shadow(painter, graphic, path, device_scale, alpha)
+    outside = graphic.stroke_position == "outside"
+    if outside:
+        for alpha, path in by_alpha.items():
+            _stroke_text(painter, graphic, path, alpha)
+    for (alpha, highlight), path in groups.items():
+        color = qcolor(graphic.highlight_color if highlight else graphic.fill_color)
+        color.setAlphaF(color.alphaF() * alpha)
+        painter.fillPath(path, color)
+    if not outside:
+        for alpha, path in by_alpha.items():
+            _stroke_text(painter, graphic, path, alpha)
+    if emojis:
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(qcolor(graphic.fill_color))
+        base = painter.opacity()
+        for piece, x, baseline, alpha in emojis:
+            painter.setOpacity(base * alpha)
+            painter.drawText(QPointF(x, baseline), piece)
+        painter.restore()
 
 
 # ``simplified()`` aplatit les courbes avec une tolérance absolue (en unités du chemin) : on agrandit

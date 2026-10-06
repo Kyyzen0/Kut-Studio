@@ -30,6 +30,10 @@ def main():
         # Le smoke test (CI, application construite) ne contacte jamais GitHub.
         os.environ["KUT_STUDIO_UPDATE_CHECK"] = "off"
     app = QApplication(sys.argv)
+    # Polices embarquées (templates, presets verticaux) : disponibles dans les sélecteurs avant la première fenêtre.
+    from core.bundled_fonts import register_bundled_fonts
+
+    register_bundled_fonts()
     window = MainWindow()
     window.show()
     if "--smoke-test" in sys.argv:

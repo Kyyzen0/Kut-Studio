@@ -72,6 +72,12 @@ class RenderPresetSpec:
     audio_bitrate: str = "192k"
     hardware: str = HardwareEncoder.CPU.value
     description: str = ""
+    loudness_lufs: float | None = None
+    """Loudness visée à l'export (−14 LUFS pour les réseaux), ``None`` : le mixage tel quel."""
+    preview_copy: bool = False
+    """Écrire aussi une copie d'aperçu légère (< 30 Mo, :mod:`core.social_deliverables`)."""
+    cover: bool = False
+    """Écrire aussi l'image de couverture (marqueur ``cover``, sinon la tête de lecture)."""
 
     def __post_init__(self) -> None:
         export_format_for(self.container, self.video_codec)  # valide la combinaison
@@ -82,6 +88,8 @@ class RenderPresetSpec:
         if self.fps <= 0:
             raise ValueError("La fréquence d'images doit être supérieure à zéro.")
         object.__setattr__(self, "hardware", coerce_hardware(self.hardware).value)
+        if self.loudness_lufs is not None and not -40.0 <= float(self.loudness_lufs) <= -5.0:
+            raise ValueError(f"Loudness visée hors bornes : {self.loudness_lufs} LUFS.")
 
     @property
     def export_format(self) -> ExportFormat:
@@ -110,11 +118,17 @@ class RenderPresetSpec:
         return f"{self.container.upper()} · {codec} · {self.width}×{self.height} · {self.fps} fps"
 
 
-def _h264(preset_id, name, width, height, fps, quality, audio="192k", description=""):
+def _h264(preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
     return RenderPresetSpec(
         preset_id, name, "mp4", "h264", "aac", width, height, fps, quality, audio,
-        description=description,
+        description=description, loudness_lufs=loudness,
     )
+
+
+def _social(preset_id, name, width, height, fps, description):
+    """Preset réseau social : H.264 qualité 20, son normalisé à −14 LUFS, copie légère et couverture."""
+    return replace(_h264(preset_id, name, width, height, fps, 20, description=description, loudness=-14.0),
+                   preview_copy=True, cover=True)
 
 
 _BUILTIN: tuple[RenderPresetSpec, ...] = (
@@ -122,7 +136,12 @@ _BUILTIN: tuple[RenderPresetSpec, ...] = (
     _h264("h264_1440p", "H.264 1440p", 2560, 1440, 30, 20, description="QHD pour les écrans haute résolution."),
     _h264("h264_4k", "H.264 4K", 3840, 2160, 30, 20, description="UHD ; rendu long et fichier volumineux."),
     _h264("youtube", "YouTube", 1920, 1080, 30, 18, description="MP4 H.264 1080p, qualité élevée, démarrage rapide."),
-    _h264("tiktok", "TikTok / Vertical", 1080, 1920, 30, 20, description="Vidéo verticale 1080×1920."),
+    _social("tiktok", "TikTok / Vertical", 1080, 1920, 30, "Vidéo verticale 1080×1920."),
+    _social("tiktok_60", "TikTok 60 fps", 1080, 1920, 60, "Vidéo verticale 1080×1920 à 60 images/s."),
+    _social("reels", "Instagram Reels", 1080, 1920, 30, "Reels 1080×1920."),
+    _social("shorts", "YouTube Shorts", 1080, 1920, 60, "Shorts 1080×1920 à 60 images/s."),
+    _social("instagram_feed_4_5", "Instagram 4:5", 1080, 1350, 30, "Fil Instagram en portrait 1080×1350."),
+    _social("square", "Carré 1:1", 1080, 1080, 30, "Format carré 1080×1080."),
     RenderPresetSpec(
         "prores_master", "ProRes Master", "mov", "prores_ks", "aac",
         1920, 1080, 30, 3, "256k",
@@ -175,6 +194,16 @@ def with_hardware(spec: RenderPresetSpec, hardware: object) -> RenderPresetSpec:
     return replace(spec, hardware=coerce_hardware(hardware).value)
 
 
+def with_deliverables(spec: RenderPresetSpec, *, preview_copy: bool, cover: bool) -> RenderPresetSpec:
+    """Copie de ``spec`` qui écrit (ou non) la copie d'aperçu et la couverture."""
+    return replace(spec, preview_copy=bool(preview_copy), cover=bool(cover))
+
+
+def with_loudness(spec: RenderPresetSpec, lufs: float | None) -> RenderPresetSpec:
+    """Copie de ``spec`` avec une autre loudness visée (``None`` : pas de normalisation)."""
+    return replace(spec, loudness_lufs=None if lufs is None else float(lufs))
+
+
 __all__ = [
     "CUSTOM_PRESET_ID",
     "DEFAULT_PRESET_ID",
@@ -185,5 +214,7 @@ __all__ = [
     "default_preset",
     "export_format_for",
     "get_preset",
+    "with_deliverables",
     "with_hardware",
+    "with_loudness",
 ]

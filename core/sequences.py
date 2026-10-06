@@ -438,6 +438,27 @@ def rename_sequence(project: Project, sequence_id: str, name: str) -> Sequence:
     return sequence
 
 
+MAX_SEQUENCE_SIDE = 8192
+"""Plus grand côté accepté pour un cadre de séquence (8K)."""
+
+
+def set_sequence_format(project: Project, sequence_id: str, width: int, height: int, fps: float) -> Sequence:
+    """Change le cadre (taille, cadence) d'une séquence. Tailles paires (``yuv420p``), bornées.
+
+    Positions et échelles sont en fraction du cadre : clips et calques suivent. Les tailles des calques en pixels
+    (corps du texte, formes) ne changent pas : ils gardent leur taille réelle dans le nouveau cadre.
+    """
+    width, height, fps = int(width), int(height), float(fps)
+    for side in (width, height):
+        if not 16 <= side <= MAX_SEQUENCE_SIDE or side % 2:
+            raise ValueError(f"Taille de cadre refusée : {width} × {height} (entre 16 et {MAX_SEQUENCE_SIDE}, paire).")
+    if not 1.0 <= fps <= 240.0:
+        raise ValueError(f"Cadence refusée : {fps}.")
+    sequence = find_sequence(project, sequence_id)
+    sequence.width, sequence.height, sequence.fps = width, height, fps
+    return sequence
+
+
 def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
     """Réécrit, dans une copie de séquence, les références d'un clip à un autre clip.
 
@@ -992,6 +1013,8 @@ def nested_source_window(clip: Clip, low: float, high: float) -> tuple[float, fl
 
 
 __all__ = [
+    "MAX_SEQUENCE_SIDE",
+    "set_sequence_format",
     "MAX_NESTING_DEPTH",
     "NESTABLE_TRACK_TYPES",
     "ClampAdjustment",

@@ -588,6 +588,7 @@ class LayoutMixin:
             text=palette.muted,
             playhead_color=palette.playhead,
             marker_color=palette.marker,
+            beat_grid=self.beat_grid(),
         )
 
     def _publish_overlay(self) -> None:

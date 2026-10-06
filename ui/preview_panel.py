@@ -104,8 +104,14 @@ class PreviewPanel(QWidget):
         self.graphics_view.setStyleSheet(
             f"background: {COLORS['background']}; border: none;"
         )
-        self.video_item = QGraphicsVideoItem()
-        self.graphics_scene.addItem(self.video_item)
+        # Le calque vidéo (taille du cadre, transform du clip) rogne son média : en cadrage « remplir », le média
+        # agrandi dépasse du calque et seule la fenêtre de pan est visible, comme le ``crop`` de l'export.
+        self.video_frame_item = QGraphicsRectItem()
+        self.video_frame_item.setPen(Qt.NoPen)
+        self.video_frame_item.setFlag(QGraphicsRectItem.ItemClipsChildrenToShape, True)
+        self.graphics_scene.addItem(self.video_frame_item)
+        self.video_item = QGraphicsVideoItem(self.video_frame_item)
+        self.video_item.nativeSizeChanged.connect(lambda _size: self._reapply_transform())
         self.player.setVideoOutput(self.video_item)
         self.graphics_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.graphics_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -157,6 +163,10 @@ class PreviewPanel(QWidget):
         self._gpu_matte: tuple[str, object] | None = None
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
+        # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
+        self._gpu_blend_layers: tuple = ()
+        self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
+        self._gpu_blend_pushed: dict[str, str] = {}
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -201,7 +211,8 @@ class PreviewPanel(QWidget):
         top_header = PanelHeader(translate("preview.title"), icon=IconName.MEDIA)
         self._title_label = top_header.title_label
 
-        status = QLabel("1920 × 1080 · 30 fps · 16:9")
+        status = QLabel()
+        self.format_status = status                                # cadre de la séquence active (set_frame_format)
         set_role(status, "meta")
         status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)       # sans le VCenter, le libellé remontait au bord haut du bandeau
         top_header.add_trailing(status)
@@ -372,6 +383,14 @@ class PreviewPanel(QWidget):
     def set_silenced(self, silenced: bool) -> None:
         """Coupe (ou rétablit) le son du lecteur du moniteur : le son vient alors d'ailleurs (enregistreur Multicam)."""
         self.audio_output.setMuted(bool(silenced))
+
+    def set_frame_format(self, width: int, height: int, fps: float) -> None:
+        """En-tête de la visionneuse : cadre et cadence de la séquence active (« 1080 × 1920 · 30 i/s · 9:16 »)."""
+        from math import gcd
+
+        divisor = gcd(int(width), int(height)) or 1
+        self.format_status.setText(translate("preview.frame_format", width=int(width), height=int(height),
+                                             fps=f"{float(fps):g}", ratio=f"{int(width) // divisor}:{int(height) // divisor}"))
 
     def set_preview_divisor(self, divisor: int) -> None:
         """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""
@@ -659,19 +678,36 @@ class PreviewPanel(QWidget):
         scale_y: float = 1.0,
         flip_h: bool = False,
         flip_v: bool = False,
+        fill: bool = False,
+        pan_x: float = 0.0,
+        pan_y: float = 0.0,
         **_ignored,
     ) -> None:
         """Place la vidéo dans le cadre comme l'export (voir ``core.mograph_scene``).
 
         Le média occupe le cadre (adapté sans déformation, comme ``scale`` +
-        ``pad`` de l'export), puis pivote et s'échelonne autour du point
-        d'ancrage ; la position (fraction du cadre) désigne l'ancrage.
+        ``pad`` de l'export, ou agrandi et rogné en cadrage « remplir »), puis
+        pivote et s'échelonne autour du point d'ancrage ; la position (fraction
+        du cadre) désigne l'ancrage.
         """
         opacity = max(0.0, min(1.0, float(opacity)))
         scale = max(0.01, float(scale))
         rect = self._canvas_rect
         width, height = rect.width(), rect.height()
-        self.video_item.setSize(QSizeF(width, height))
+        self.video_frame_item.setRect(QRectF(0.0, 0.0, width, height))
+        native = self.video_item.nativeSize()
+        if fill and native.width() > 0 and native.height() > 0:
+            from core.tracking_motion import fit_box
+
+            canvas_w, canvas_h = self._canvas_size
+            box = fit_box(int(native.width()), int(native.height()), canvas_w, canvas_h,
+                          fill=True, pan_x=float(pan_x), pan_y=float(pan_y))
+            k = width / max(1.0, float(canvas_w))
+            self.video_item.setPos(box.offset_x * k, box.offset_y * k)
+            self.video_item.setSize(QSizeF(box.width * k, box.height * k))
+        else:
+            self.video_item.setPos(0.0, 0.0)
+            self.video_item.setSize(QSizeF(width, height))
         self.video_item.setScale(1.0)
         sx = scale * float(scale_x) * (-1.0 if flip_h else 1.0)
         sy = scale * float(scale_y) * (-1.0 if flip_v else 1.0)
@@ -685,7 +721,7 @@ class PreviewPanel(QWidget):
         transform.rotate(float(rotation))
         transform.scale(sx, sy)
         transform.translate(-float(anchor_x) * width, -float(anchor_y) * height)
-        self.video_item.setTransform(transform)
+        self.video_frame_item.setTransform(transform)
         self.video_item.setOpacity(opacity)
 
         self._applied_pos_x = float(position_x)
@@ -697,6 +733,7 @@ class PreviewPanel(QWidget):
             "anchor_x": float(anchor_x), "anchor_y": float(anchor_y),
             "scale_x": float(scale_x), "scale_y": float(scale_y),
             "flip_h": bool(flip_h), "flip_v": bool(flip_v),
+            "fill": bool(fill), "pan_x": float(pan_x), "pan_y": float(pan_y),
         }
         if self.gpu_view is not None:
             self._update_gpu_composite()
@@ -784,6 +821,49 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_effect_time(self, seconds: float) -> None:
+        """Temps local du clip affiché, pour les effets animés du moniteur GPU (pris en compte au prochain rendu)."""
+        self._gpu_effect_time = float(seconds)
+
+    def set_blend_layers(self, layers) -> None:
+        """Calques graphiques à mode de fusion, du bas vers le haut : ``[(clé, QImage, mode)]`` (GPU seulement).
+
+        Chaque image (taille de rendu, RGBA droit) devient une source du moniteur, envoyée seulement quand son contenu
+        change ; son alpha sert de matte. Le shader de composition applique le mode comme pour un clip vidéo."""
+        from PySide6.QtMultimedia import QVideoFrame
+
+        self._gpu_blend_layers = tuple(layers or ())
+        view = self.gpu_view
+        if view is None:
+            return
+        used = set()
+        for index, (key, image, _blend) in enumerate(self._gpu_blend_layers):
+            source = f"graphics{index}"
+            used.add(source)
+            if self._gpu_blend_pushed.get(source) != key:
+                view.set_video_frame(source, QVideoFrame(image))
+                self._gpu_blend_pushed[source] = key
+        for source in [s for s in self._gpu_blend_pushed if s not in used]:
+            view.forget_source(source)
+            del self._gpu_blend_pushed[source]
+        self._update_gpu_composite()
+
+    def _gpu_graphics_layers(self, cw: int, ch: int, mattes: dict) -> tuple:
+        """Calques à mode de fusion, au-dessus de la vidéo (cadre entier, alpha de l'image en matte)."""
+        from core.blend_modes import coerce_blend_mode
+        from core.gpu_composite import CompositeLayer
+        from core.gpu_effects import program_for
+
+        layers = []
+        for index, (key, image, blend) in enumerate(self._gpu_blend_layers):
+            matte = f"blend:{key}"
+            mattes[matte] = image
+            layers.append(CompositeLayer(
+                source=f"graphics{index}", matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), fit=(0.0, 0.0, float(cw), float(ch)),
+                blend=coerce_blend_mode(blend), program=program_for(()), matte=matte,
+            ))
+        return tuple(layers)
+
     def gpu_render_size(self) -> tuple[int, int]:
         """Taille de rendu du cadre (pixels physiques), pour rastériser la matte."""
         cw, ch = self._canvas_size
@@ -852,7 +932,9 @@ class PreviewPanel(QWidget):
                 scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
                 flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
             )
-            box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch)
+            box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch,
+                          fill=bool(advanced.get("fill", False)),
+                          pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
             matte_key = ""
             mattes = {}
             if self._gpu_matte is not None:
@@ -861,7 +943,7 @@ class PreviewPanel(QWidget):
             from core.gpu_effects import VIGNETTE_EXPORT
 
             try:
-                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT)
+                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT, time=self._gpu_effect_time)
             except ValueError:
                 program = program_for(())
             layers = (CompositeLayer(
@@ -875,10 +957,13 @@ class PreviewPanel(QWidget):
                 matte=matte_key,
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
+            layers = layers + self._gpu_graphics_layers(cw, ch, mattes)
             view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), layers,
                                               adjustments=adjustments), mattes)
             return
-        view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), ()), {})
+        mattes = {}
+        view.set_composite(CompositeFrame(cw, ch, self._gpu_render_scale(), self._gpu_graphics_layers(cw, ch, mattes)),
+                           mattes)
 
     def _gpu_adjustment_layers(self, mattes: dict) -> tuple:
         from core.gpu_composite import AdjustmentLayer

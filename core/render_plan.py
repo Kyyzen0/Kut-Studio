@@ -97,6 +97,9 @@ class RenderLayer:
     # Nombre d'images du média (``0`` : inconnu) : borne l'image la plus proche de la fin d'un média (voir
     # :func:`core.retime_graph.nearest_frame`) pour que la lecture inverse d'un clip entier ne soit pas décalée d'une image.
     source_frames: int = 0
+    # Taille du média (``0`` : inconnue) : le cadrage « remplir » (``transform.fill``) en déduit la taille agrandie.
+    source_width: int = 0
+    source_height: int = 0
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
     # ``None`` si l'identité. On garde un type ``object`` pour ne
@@ -293,8 +296,13 @@ class RenderPlan:
     # Identifiants des médias introuvables (supprimés de la bibliothèque) dont un clip actif dépend :
     # l'interface les tolère (clip hors ligne), mais un export refuse un plan qui en porte.
     missing_media: tuple[str, ...] = field(default_factory=tuple)
+    empty_slots: tuple[str, ...] = field(default_factory=tuple)
+    """Clips d'emplacement de template encore vides (rendus comme cartes, :mod:`core.template_slots`)."""
     # Flou de mouvement de la séquence (:class:`core.motion_blur.MotionBlurSettings`).
     motion_blur: object = None
+    # Normalisation de loudness d'un export (réglage du preset, jamais du projet) : gain statique mesuré par
+    # :mod:`core.loudness`, ajouté après le Master ; le limiteur final descend alors à −1 dBFS.
+    loudness_gain_db: float | None = None
 
     def nested(self, key: str) -> "NestedSequencePlan | None":
         """Sous-plan de clé ``key`` (``None`` si inconnu)."""
@@ -437,6 +445,7 @@ def build_render_plan(
         nested_sequences=builder.registry(),
         warnings=tuple(dict.fromkeys(builder.warnings)),
         missing_media=tuple(dict.fromkeys(builder.missing_media)),
+        empty_slots=tuple(dict.fromkeys(builder.empty_slots)),
     )
 
 
@@ -461,6 +470,7 @@ class _PlanBuilder:
         self.required: dict[str, float] = {}
         self.warnings: list[str] = []
         self.missing_media: list[str] = []
+        self.empty_slots: list[str] = []
         self._tracking_contexts: dict[str, object] = {}
 
     def tracking_context(self, sequence):
@@ -656,6 +666,13 @@ class _PlanBuilder:
                     )
                     continue
                 asset = assets_by_id.get(clip.asset_id)
+                if asset is None and clip.template_slot and track.type == "video":
+                    # Emplacement de template vide : une carte (calque Qt) tient sa place, même animation.
+                    if show_video:
+                        graphics_layers.append(_slot_layer(clip, track, track_index, sequence,
+                                                           self.effective(clip, sequence)))
+                    self.empty_slots.append(clip.id)
+                    continue
                 if asset is None:
                     # Média supprimé de la bibliothèque (les clips sont conservés, hors ligne) ou
                     # fichier retouché à la main : le clip ne montre rien, il ne fait pas échouer le plan
@@ -688,6 +705,8 @@ class _PlanBuilder:
                                 time_remapping=clip.time_remapping,
                                 time_map=clip.time_map if clip.is_time_remapped else None,
                                 source_frames=_frame_count(asset.duration, asset.fps),
+                                source_width=int(asset.width or 0),
+                                source_height=int(asset.height or 0),
                                 effects=tuple(clip.effects),
                                 # Étalonnage couleur (tâche 29) : si le clip ne
                                 # porte pas de ``ColorGrade``, on garde ``None``
@@ -807,6 +826,8 @@ class _PlanBuilder:
                     time_remapping=clip.time_remapping,
                     time_map=clip.time_map if clip.is_time_remapped else None,
                     source_frames=_frame_count(inner.duration, inner.fps),
+                    source_width=int(inner.width),
+                    source_height=int(inner.height),
                     effects=tuple(clip.effects),
                     color_grade=getattr(clip, "color_grade", None),
                     compositing=getattr(clip, "compositing", None),
@@ -857,6 +878,14 @@ def _graphic_layer(
         role=role,
         label=clip.label,
     )
+
+
+def _slot_layer(clip: Clip, track, track_index: int, sequence, state) -> GraphicLayer:
+    """Carte d'un emplacement vide : un calque de texte à la taille du cadre, animé comme le clip."""
+    from .template_slots import slot_card
+
+    layer = _graphic_layer(clip, track, track_index, state=state)
+    return replace(layer, graphic=slot_card(clip, int(sequence.width), int(sequence.height)))
 
 
 def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[GraphicLayer]:

@@ -158,7 +158,10 @@ class TrackingContext:
         size = self.media_size(clip)
         if size is None:
             return None
-        return fit_box(size[0], size[1], self.width, self.height)
+        # Cadrage « remplir » : la fenêtre de base du clip (un pan animé n'est pas suivi par les repères du tracking).
+        transform = getattr(clip, "transform", None)
+        return fit_box(size[0], size[1], self.width, self.height, fill=bool(getattr(transform, "fill", False)),
+                       pan_x=float(getattr(transform, "pan_x", 0.0)), pan_y=float(getattr(transform, "pan_y", 0.0)))
 
     def link_sources(self, target_clip, link: TrackLink) -> list:
         """Clips existants que ``link`` suit, dans l'ordre (le clip cible lui-même pour une liaison propre).

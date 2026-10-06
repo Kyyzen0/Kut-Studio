@@ -48,6 +48,10 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
   (`core/retime_layers.prepare_plan`, dans un fil, annulable, avec progression) dans un fichier sans perte que le graphe relit :
   l'export, l'aperçu fidèle (seulement la fenêtre du segment) et les scopes lisent les mêmes images. Un clip qui n'en a pas
   besoin (200 %, arrêt…) reste dans le graphe d'échantillonnage, qui produit alors exactement les mêmes images.
+* **Sortie d'un autre format que la séquence** (séquence 16:9 exportée avec un preset vertical) : la composition se fait au
+  format de la séquence, réduite sans déformation (`composition_size`), puis des bandes complètent la sortie. Clips,
+  calques et positions gardent leurs proportions ; pour remplir un cadre vertical, on travaille dans une séquence 9:16
+  ([social-video.md](social-video.md)).
 * Le **moniteur temps réel** est un approximatif assumé (il doit tenir la cadence) : l'image qui fait foi est
   celle de l'aperçu fidèle, puis celle de l'export.
 
@@ -79,6 +83,10 @@ coupé ? ») vit dans `core` ; le mixin de la fenêtre l'appelle, attrape son re
 | Aspect de l'interface | mesures : `ui/design_system.py` ; couleurs : `ui/theme.py` (`ThemePalette`, feuille de style globale, `qt_palette`, `OVERLAY`) ; changement de thème à chaud : `ui/theming.py` ; composants communs : `ui/panel_header.py`, `ui/empty_state.py`, `ui/search_field.py`, `ui/properties_widgets/section_box.py` | tous les widgets de `ui/` (aucune couleur ni mesure en dur : propriétés Qt `variant` / `role` / `state`) | `test_design_tokens.py` (jetons, contrastes, cliquet des couleurs en dur), `test_theme_live_switch.py`, `test_design_components.py` ; bilan et limites : [design-qa-final.md](design-qa-final.md) |
 | Dette de typage | liste `ignore_errors` de `pyproject.toml`, **identique** à `tests/mypy_debt_baseline.txt` | CI (`mypy`) | `test_typing_ratchet.py` (aucun module n'y entre, un module propre n'y revient pas) |
 | Préférences utilisateur | `core/user_settings.py`, **hors** du `.kut` | fenêtre, préférences | `test_user_settings.py` |
+| Loudness d'un export | la cible est un réglage du preset (`RenderPresetSpec.loudness_lufs`) ; la mesure EBU R 128 vient du **graphe audio de l'export** (`core/loudness.py`), le gain statique est porté par le plan (`loudness_gain_db`, dans l'empreinte) puis limité à −1 dBFS (`LOUDNESS_LIMITER`) | file de rendu (étape de préparation), détail du job | `test_loudness.py` (vrai FFmpeg : −14 ± 0,5 LUFS) |
+| Emplacement de template vide | `Clip.template_slot` + média absent : `build_render_plan` le dessine en carte (`core/template_slots.py`) et le liste dans `RenderPlan.empty_slots` — jamais un « média introuvable » | export, aperçu fidèle, moniteur, avertissement à l'export | `test_template_slots.py` |
+| Calques générés depuis des données | `Sequence.generated_groups` (`{id: {kind, data, clips}}`) : le classement (`core/leaderboard.py`) se réédite en remplaçant ses calques | éditeur de classement | `test_project_templates.py`, `test_template_ui.py` |
+| Bibliothèque SFX | synthèse déterministe (`core/sfx_synth.py`, graine par son, `SYNTH_VERSION` dans le nom) dans `user_data_dir()` (`KUT_STUDIO_DATA_DIR`) : un fichier absent est refait à l'identique | onglet SFX, templates, placement sur les cuts | `test_sfx.py` |
 | Annuler / rétablir | `ProjectHistory` (`core/edit_history.py`) : instantanés du projet, `_saved_index` pour l'état « enregistré » | barre du haut, titre, fermeture | `test_edit_history.py`, `test_unsaved_changes_prompt.py` |
 | Journal d'erreurs | `core/diagnostics_log.py` (`user_log_dir()`) | `main.py`, `sys.excepthook`, threads | `test_diagnostics_log.py` |
 | Version de l'application, convention des releases | `core/app_version.py` (`APP_VERSION`, SemVer, comparée par `core/versioning.py`) ; noms des paquets, cibles et `SHA256SUMS.txt` dans `core/release_assets.py` ([updates.md](updates.md)) | recherche de mises à jour, À propos, `build.py` (`Info.plist`), `tools/release` (tag, archives, empreintes) | `test_versioning.py`, `test_release_assets.py`, `test_release_tools.py`, `test_release_workflow.py` (le tag doit égaler `APP_VERSION`) |
@@ -184,6 +192,11 @@ renvoyée à la recréation.
   l'ancienne atténuation s'exporte maintenant **plus fort**, jusqu'à +6 dB pour un clip seul et davantage avec plusieurs
   couches. Le limiteur évite l'écrêtage mais pas la surprise : il faut redescendre ce gain pour retrouver le niveau voulu.
   Les autres projets sortent enfin au niveau de leur source.
+
+## Vidéo sociale
+
+Formats verticaux, grille rythmique, texte TikTok, lumière, templates, SFX, loudness et livrables d'export :
+[social-video.md](social-video.md) (où vit chaque chose, stratégie de parité aperçu = export = GPU, versions de cache).
 
 ## Format `.kut`
 

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from .audio_automation import TrackAutomation, coerce_track_automation
 
 if TYPE_CHECKING:
+    from .beat_grid import BeatGrid
     from .compositing import Compositing
     from .multicam_model import MulticamSource
     from .effects_model import ClipEffect
@@ -353,6 +354,10 @@ class Clip:
     # (:attr:`Sequence.multicam`). Vide : le premier angle de la source. Sans effet sur une séquence ordinaire.
     # Un « changement d'angle » est une coupe ordinaire dont la moitié droite reçoit un autre ``angle_id``.
     angle_id: str = ""
+    # --- Templates ---
+    # Emplacement de template (``slot-03``…) : tant que son média manque, le clip est rendu comme une carte
+    # d'emplacement (:mod:`core.template_slots`) ; y déposer un média le remplace en gardant timing, animation et effets.
+    template_slot: str = ""
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -651,12 +656,15 @@ class Track:
         return self.type == "subtitle"
 
 
+MARKER_CATEGORIES = frozenset({"standard", "todo", "chapter", "music_cue", "cover"})
+
+
 @dataclass
 class Marker:
     """Repère posé sur la règle de la timeline.
 
-    ``category`` prépare des couleurs futures (``standard``, ``todo``,
-    ``chapter``). L'interface n'en distingue qu'une pour l'instant.
+    ``category`` : ``standard``, ``todo``, ``chapter``, ``music_cue`` (repère de musique posé par un template :
+    drop, montée, fin) ou ``cover`` (image de couverture exportée avec une vidéo sociale).
     """
 
     id: str
@@ -667,7 +675,7 @@ class Marker:
     def __post_init__(self) -> None:
         if self.time_seconds < 0.0:
             raise ValueError("Un marqueur ne peut pas être avant 0 seconde.")
-        if self.category not in {"standard", "todo", "chapter"}:
+        if self.category not in MARKER_CATEGORIES:
             self.category = "standard"
 
 
@@ -732,6 +740,11 @@ class Sequence:
     # Description des angles quand la séquence est une **source Multicam** (``None`` : séquence ordinaire).
     # Le décalage d'un angle est la position de ses clips : il n'est stocké nulle part ailleurs.
     multicam: MulticamSource | None = None
+    # --- Vidéo sociale ---
+    # Grille rythmique (:class:`core.beat_grid.BeatGrid`) : tempo et calage ; ``None`` : pas de grille.
+    beat_grid: BeatGrid | None = None
+    # Calques générés à partir de données (classement…) : ``{id: {"kind", "data", "clips"}}``, pour les rééditer.
+    generated_groups: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():
@@ -747,6 +760,8 @@ class Sequence:
             self.guides = []
         if self.motion_blur is None:
             self.motion_blur = _default_motion_blur()
+        if self.generated_groups is None:
+            self.generated_groups = {}
 
     @property
     def duration(self) -> float:

@@ -48,8 +48,12 @@ def test_real_gpu_matches_the_reference(api):
         pytest.skip(f"GPU {api} indisponible : {next(iter(errors.values()))}")
     assert not errors, errors
     for key, value in result["cases"].items():
-        # 10 bits stockés en 16 bits : quelques niveaux d'écart de quantification au plus.
-        assert value["mean"] < 1.0 and value["max"] < 6.0, (key, value)
+        # 10 bits stockés en 16 bits : quelques niveaux d'écart de quantification au plus. Le bloom multiplie ce qui
+        # dépasse son seuil (gain 2,4 ici) donc l'écart de quantification aussi ; le heat haze arrondit un décalage à
+        # l'entier inférieur, et une ligne qui tombe pile sur une frontière peut glisser d'un pixel de plus.
+        # Mesuré (Metal, OpenGL) : bloom 1,15 / 7,4 au pire, heat haze 0,70 / 6,5.
+        mean_limit, max_limit = (1.5, 10.0) if ("glow" in key or "haze" in key) else (1.0, 6.0)
+        assert value["mean"] < mean_limit and value["max"] < max_limit, (key, value)
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")

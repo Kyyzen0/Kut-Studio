@@ -480,6 +480,43 @@ def _new_sidechain_id() -> str:
     return _new_id("duck")
 
 
+DUCKING_PRESETS: dict[str, DuckingConfig] = {
+    # Musique d'ambiance sous une voix posée : discret, remonte lentement.
+    "gentle": DuckingConfig(threshold_db=-30.0, reduction_db=6.0, attack_seconds=0.08, release_seconds=0.6),
+    # Voix off sur musique : le réglage par défaut d'un montage parlé.
+    "voice_over_music": DuckingConfig(threshold_db=-28.0, reduction_db=12.0, attack_seconds=0.05, release_seconds=0.4),
+    # Vidéo sociale : la musique s'efface net sous chaque phrase et revient sur le temps suivant.
+    "social_punchy": DuckingConfig(threshold_db=-32.0, reduction_db=18.0, attack_seconds=0.02, release_seconds=0.25),
+}
+"""Réglages de ducking prêts à l'emploi (clés de traduction ``ducking.preset.<id>``)."""
+
+
+def duck_music_under_voice(project, preset: str = "voice_over_music") -> list[DuckingSidechain]:
+    """« Ducker la musique sous la voix » : chaque piste musique baisse sous chaque piste voix, avec le preset.
+
+    Une association qui existe déjà reçoit le nouveau réglage (pas de doublon). Retourne les associations concernées."""
+    config = DUCKING_PRESETS[preset]
+    tracks = [track for track in project.tracks if track.type == "audio"]
+    music = [track for track in tracks if str(getattr(track.audio_role, "value", track.audio_role)) == "music"]
+    voices = [track for track in tracks if str(getattr(track.audio_role, "value", track.audio_role)) == "voice"]
+    if not music or not voices:
+        raise AudioAutomationError("Il faut une piste « musique » et une piste « voix » (rôle de la piste).")
+    bucket = project.ducking_sidechains
+    result = []
+    for music_track in music:
+        for voice in voices:
+            index = next((i for i, item in enumerate(bucket)
+                          if item.music_track_id == music_track.id and item.voice_track_id == voice.id), None)
+            if index is None:
+                sidechain = DuckingSidechain(_new_sidechain_id(), music_track.id, voice.id, config)
+                bucket.append(sidechain)
+            else:
+                sidechain = DuckingSidechain(bucket[index].id, music_track.id, voice.id, config, True)
+                bucket[index] = sidechain
+            result.append(sidechain)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Opérations de service
 # ---------------------------------------------------------------------------
@@ -707,6 +744,8 @@ class AudioAutomationService:
 
 
 __all__ = [
+    "DUCKING_PRESETS",
+    "duck_music_under_voice",
     # Erreurs
     "AudioAutomationCycleError",
     "AudioAutomationError",

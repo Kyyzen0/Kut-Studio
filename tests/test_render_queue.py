@@ -195,11 +195,13 @@ def test_there_is_no_paused_status():
 
 def test_required_presets_exist_with_the_expected_settings():
     by_id = {spec.id: spec for spec in builtin_presets()}
-    assert {"h264_1080p", "h264_1440p", "h264_4k", "youtube", "tiktok", "prores_master"} <= set(by_id)
+    assert {"h264_1080p", "h264_1440p", "h264_4k", "youtube", "tiktok", "prores_master", "tiktok_60", "reels",
+            "shorts", "instagram_feed_4_5", "square"} <= set(by_id)
     assert by_id["h264_1080p"].resolution == (1920, 1080)
     assert by_id["h264_1440p"].resolution == (2560, 1440)
     assert by_id["h264_4k"].resolution == (3840, 2160)
     assert by_id["tiktok"].resolution == (1080, 1920)
+    assert by_id["instagram_feed_4_5"].resolution == (1080, 1350) and by_id["square"].resolution == (1080, 1080)
     assert (by_id["prores_master"].container, by_id["prores_master"].video_codec) == ("mov", "prores_ks")
     assert CUSTOM_PRESET_ID not in by_id  # Custom est construit, pas figé
 
@@ -457,8 +459,9 @@ def test_ffmpeg_error_marks_the_job_failed_with_a_readable_message(qtbot, queue,
 
 
 def test_one_failing_job_does_not_stop_the_rest_of_the_queue(qtbot, queue, tmp_path, monkeypatch):
-    monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "bad")
-    ok1, bad, ok2 = (_enqueue(queue, tmp_path, n) for n in ("ok1.mp4", "bad.mp4", "ok2.mp4"))
+    # Marqueur hors de l'alphabet hexadécimal : « bad » apparaissait parfois dans l'identifiant d'un job (aa220bade959).
+    monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "broken")
+    ok1, bad, ok2 = (_enqueue(queue, tmp_path, n) for n in ("ok1.mp4", "broken.mp4", "ok2.mp4"))
     queue.start_all()
     _wait_idle(qtbot, queue)
     assert [j.status for j in (ok1, bad, ok2)] == [
@@ -604,8 +607,8 @@ def test_remove_deletes_the_job_and_its_snapshot_but_not_a_running_one(qtbot, qu
 
 
 def test_clear_finished_keeps_failures_unless_asked(qtbot, queue, tmp_path, monkeypatch):
-    monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "bad")
-    jobs = [_enqueue(queue, tmp_path, n) for n in ("ok.mp4", "bad.mp4", "wait.mp4")]
+    monkeypatch.setenv("FAKE_FFMPEG_FAIL_ON", "broken")      # hors de l'hexadécimal des identifiants de job
+    jobs = [_enqueue(queue, tmp_path, n) for n in ("ok.mp4", "broken.mp4", "wait.mp4")]
     queue.cancel(jobs[2].id)
     queue.start_all()
     _wait_idle(qtbot, queue)

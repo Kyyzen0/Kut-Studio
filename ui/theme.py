@@ -782,6 +782,7 @@ class OverlayColors:
     guide: str = "#50C8FF"
     safe_action: str = "#FFD200"
     safe_title: str = "#00DCFF"
+    platform_zone: str = "#FF3C5A"     # zone couverte par l'interface d'une plateforme (TikTok, Reels, Shorts)
     centre: str = "#FFFFFF"
     grid: str = "#FFFFFF"
     snap: str = "#FF3CA0"               # ligne de magnétisme pendant un glisser

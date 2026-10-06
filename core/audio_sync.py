@@ -211,7 +211,7 @@ def _iter_pcm(
         raise AudioSyncError(reason)
 
 
-def _read_window(path: str, start: float, duration: float, cancelled: Callable[[], bool]) -> FloatArray:
+def read_window(path: str, start: float, duration: float, cancelled: Callable[[], bool]) -> FloatArray:
     np = _numpy()
     blocks = list(_iter_pcm(path, max(0.0, start), duration, cancelled))
     return np.concatenate(blocks) if blocks else np.zeros(0, dtype=np.float32)
@@ -461,8 +461,8 @@ def measure_pair(
     shortfall = max(0.0, target.source.start - tgt_start)
     tgt_start += shortfall
     window_seconds = frames / ENVELOPE_RATE
-    ref_pcm = _read_window(reference.source.path, ref_start, window_seconds, cancelled)
-    tgt_pcm = _read_window(target.source.path, tgt_start, window_seconds + 2 * margin, cancelled)
+    ref_pcm = read_window(reference.source.path, ref_start, window_seconds, cancelled)
+    tgt_pcm = read_window(target.source.path, tgt_start, window_seconds + 2 * margin, cancelled)
     if ref_pcm.size < SAMPLE_RATE or tgt_pcm.size < SAMPLE_RATE:
         return _Pair(lag_seconds, min(coarse.confidence, 0.45), detail + " ; fenêtre fine trop courte")
     # La fenêtre cible a été décodée ``margin`` plus tôt (moins la butée à 0) : à décalage vrai égal au décalage grossier,

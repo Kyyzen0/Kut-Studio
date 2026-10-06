@@ -73,6 +73,32 @@ def user_cache_dir(
     return Path(env.get("XDG_CACHE_HOME", home_path / ".cache")) / "kut-studio"
 
 
+def user_data_dir(
+    custom: str | os.PathLike[str] | None = None,
+    *,
+    platform_name: str | None = None,
+    environment: Mapping[str, str] | None = None,
+    home: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Répertoire des **données** de l'utilisateur (bibliothèque de SFX…), sans le créer.
+
+    À la différence du cache, son contenu est référencé par les projets : il n'est jamais purgé. Ce qui y est produit
+    reste recalculable (un SFX synthétisé se régénère à l'identique), mais un projet ne doit pas le perdre en route."""
+    if custom is not None:
+        return Path(custom)
+    platform_name, env, home_path = _context(
+        platform_name=platform_name, environment=environment, home=home
+    )
+    override = env.get("KUT_STUDIO_DATA_DIR")
+    if override:
+        return Path(override)
+    if platform_name.startswith("win"):
+        return Path(env.get("APPDATA", home_path / "AppData" / "Roaming")) / "Kut-Studio" / "Data"
+    if platform_name == "darwin":
+        return home_path / "Library" / "Application Support" / "Kut-Studio" / "Data"
+    return Path(env.get("XDG_DATA_HOME", home_path / ".local" / "share")) / "kut-studio"
+
+
 def user_log_dir(
     custom: str | os.PathLike[str] | None = None,
     *,
@@ -126,4 +152,17 @@ def system_font_dirs(
     )
 
 
-__all__ = ["system_font_dirs", "user_cache_dir", "user_config_dir", "user_log_dir"]
+def bundled_assets_dir(*parts: str) -> Path:
+    """Dossier ``assets/<parts>`` livré avec l'application : celui du dépôt, ou celui de l'application construite
+    (PyInstaller le décompresse sous ``sys._MEIPASS``). Shaders, polices embarquées…"""
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        candidate = Path(bundle, "assets", *parts)
+        if candidate.exists():
+            return candidate
+    return Path(__file__).resolve().parent.parent.joinpath("assets", *parts)
+
+
+__all__ = [
+    "bundled_assets_dir", "system_font_dirs", "user_cache_dir", "user_config_dir", "user_data_dir", "user_log_dir",
+]

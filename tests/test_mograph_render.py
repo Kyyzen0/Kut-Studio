@@ -550,6 +550,22 @@ def test_editing_one_element_keeps_the_other_streams_cached():
     assert _stream_files(project)[0] != first[0]
 
 
+def test_a_new_raster_version_renames_every_frame_and_segment(monkeypatch):
+    """Un dessin modifié (même état, autres pixels) ne ressert ni les images ni les segments de l'ancien dessin."""
+    import core.mograph_raster as raster
+    from core.filter_graph import fingerprint_plan
+
+    project = _project()
+    _shape(project)
+    (before,) = _stream_files(project)
+    segment = fingerprint_plan(build_render_plan(project), width=W, height=H, fps=10, quality="standard")
+    monkeypatch.setattr(raster, "RASTER_VERSION", raster.RASTER_VERSION + 1)
+    (after,) = _stream_files(project)
+    names = {line for line in before.read_text().splitlines() if line.startswith("file 'f-")}
+    assert names.isdisjoint(line for line in after.read_text().splitlines() if line.startswith("file 'f-"))
+    assert fingerprint_plan(build_render_plan(project), width=W, height=H, fps=10, quality="standard") != segment
+
+
 def test_segment_fingerprint_follows_parents_masks_and_motion_blur():
     from core.filter_graph import fingerprint_plan
     from core.mograph_layers import set_parent

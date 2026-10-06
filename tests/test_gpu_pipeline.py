@@ -161,18 +161,26 @@ def _yuv_frame(width, height):
                E(EffectType.BLUR, intensity=2.0), E(EffectType.VIGNETTE, intensity=0.6), E(EffectType.SEPIA)],
      1.2, 7.0),
 ])
-def _ffmpeg_vs_reference(effects):
-    """``(moyenne, p99)`` de l'écart, en niveaux 8 bits, entre le filtre FFmpeg de l'export et la formule GPU."""
+def _ffmpeg_vs_reference(effects, *, full_chroma: bool = False):
+    """``(moyenne, p99)`` de l'écart, en niveaux 8 bits, entre le filtre FFmpeg de l'export et la formule GPU.
+
+    ``full_chroma`` : source 4:4:4, pour un effet qui passe lui-même en 4:4:4 (le comparer à une source 4:2:0
+    mesurerait le suréchantillonnage de la chroma de swscale, interpolée, contre celle de la référence, recopiée).
+    """
     np = pytest.importorskip("numpy")
     from core.export_engine import _build_clip_effect_filters
     from core.gpu_effects import reference_layer
 
     width, height = 320, 180
     codes = _yuv_frame(width, height)
-    raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
+    if full_chroma:
+        raw, pix_fmt = codes[..., 0].tobytes() + codes[..., 1].tobytes() + codes[..., 2].tobytes(), "yuv444p"
+    else:
+        raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
+        pix_fmt = "yuv420p"
     chain = _build_clip_effect_filters(tuple(effects))
     completed = subprocess.run(
-        ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}",
+        ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", pix_fmt, "-s", f"{width}x{height}",
          "-i", "-", "-vf", (chain + "," if chain else "") + "format=rgb24", "-f", "rawvideo", "-"],
         input=raw, capture_output=True, check=True,
     )
@@ -214,6 +222,12 @@ def test_the_ffmpeg_conversion_alone_stays_within_one_grey_level():
     ("chain", [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.3),
                E(EffectType.BLUR, intensity=2.0), E(EffectType.VIGNETTE, intensity=0.6), E(EffectType.SEPIA)],
      1.2, 7.0),
+    # Vidéo sociale : bloom (sous-graphe split / lutrgb / gblur / blend), aberration (rgbashift), heat haze (geq).
+    ("glow", [E(EffectType.GLOW, threshold=0.5, radius=6.0, intensity=1.2)], 1.5, 8.0),
+    ("chromatic_aberration", [E(EffectType.CHROMATIC_ABERRATION, intensity=5.0)], 1.0, 4.0),
+
+    ("glow_then_vignette", [E(EffectType.GLOW, threshold=0.4, radius=3.0, intensity=0.8),
+                            E(EffectType.VIGNETTE, intensity=0.5)], 1.5, 8.0),
 ])
 def test_gpu_effects_match_the_ffmpeg_filters_of_the_export(name, effects, mean_limit, p99_limit):
     """Cohérence effet par effet : formule GPU (référence) contre filtre FFmpeg de l'export.
@@ -224,6 +238,15 @@ def test_gpu_effects_match_the_ffmpeg_filters_of_the_export(name, effects, mean_
     mean, p99 = _ffmpeg_vs_reference(effects)
     base_mean, base_p99 = _swscale_conversion_error()
     assert mean <= mean_limit + base_mean and p99 <= p99_limit + base_p99, (name, mean, p99, base_mean, base_p99)
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("speed, time", [(0.0, 0.0), (9.0, 0.0)])
+def test_the_gpu_heat_haze_matches_the_geq_of_the_export(speed, time):
+    """Heat haze : même décalage entier par ligne que le ``geq`` de l'export (source 4:4:4, voir le helper)."""
+    effects = [E(EffectType.HEAT_HAZE, amplitude=6.0, frequency=0.08, speed=speed, top=0.2, span=0.5)]
+    mean, p99 = _ffmpeg_vs_reference(effects, full_chroma=True)
+    assert mean <= 0.6 and p99 <= 3.0, (mean, p99)
 
 
 # --- Plan de passes ------------------------------------------------------------------------------------------
@@ -313,6 +336,11 @@ def test_reference_composites_geometry_opacity_and_mattes():
     ({"scale": 0.8}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4),
                       E(EffectType.VIGNETTE, intensity=0.5)], 6.0),
     ({}, [E(EffectType.BLUR, intensity=2.0), E(EffectType.SEPIA)], 4.0),
+    # Effets lumineux sur un clip réduit : le heat haze déforme l'image du clip (avant son échelle), le bloom et
+    # l'aberration agissent après (pixels de l'export).
+    ({"scale": 0.7}, [E(EffectType.HEAT_HAZE, amplitude=4.0, frequency=0.07, speed=0.0, top=0.1, span=0.5),
+                      E(EffectType.GLOW, threshold=0.5, radius=3.0, intensity=1.0),
+                      E(EffectType.CHROMATIC_ABERRATION, intensity=2.0)], 6.0),
 ])
 def test_gpu_preview_matches_the_export_frame(tmp_path, transform, effects, color_limit):
     """Même clip, même instant : image de l'export contre image du pipeline GPU.

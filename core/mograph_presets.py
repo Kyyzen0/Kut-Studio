@@ -6,7 +6,9 @@ forme JSON que le presse-papiers des calques
 (:class:`core.mograph_layers.LayerClipboard`). L'appliquer revient à
 **coller** ces calques à la tête de lecture.
 
-- presets intégrés : construits par du code (toujours à jour avec le modèle) ;
+- presets intégrés : construits par du code (toujours à jour avec le modèle), **sur la toile du projet** où on les
+  applique : en vertical, le bandeau se recentre et tient dans un cadre 1080 px de large ; la catégorie « Vertical »
+  ajoute les titres d'une vidéo sociale (contour extérieur, mot en couleur, karaoké) ;
 - presets utilisateur : fichiers JSON dans ``<config>/mograph_presets`` ;
   « Enregistrer comme preset » sur un calque ou un groupe en crée un.
 """
@@ -44,8 +46,12 @@ class MographPreset:
 # ---------------------------------------------------------------------------
 
 
-def _scratch() -> Project:
-    return Project("preset", 1920, 1080, 30.0)
+def _scratch(width: int = 1920, height: int = 1080) -> Project:
+    return Project("preset", int(width), int(height), 30.0)
+
+
+def _portrait(project: Project) -> bool:
+    return project.height > project.width
 
 
 def _kf(name: str, t: float, value: float, interpolation=InterpolationType.EASE_OUT) -> TransformKeyframe:
@@ -79,33 +85,79 @@ def _boxed_title(project: Project) -> list[str]:
 
 
 def _lower_third(project: Project) -> list[str]:
+    width = 860 if _portrait(project) else 720
     bar = add_layer(project, GraphicType.SHAPE, at=0.0, duration=5.0, shape=ShapeKind.ROUNDED_RECTANGLE)
-    for name, value in (("width", 720), ("height", 140), ("corner_radius", 16.0), ("fill_color", "#36E6C3E6")):
+    for name, value in (("width", width), ("height", 140), ("corner_radius", 16.0), ("fill_color", "#36E6C3E6")):
         update_graphic(bar, name, value)
     bar.label = "Bandeau"
     name = add_layer(project, GraphicType.TEXT, at=0.0, duration=5.0)
     for field, value in (
         ("text", "Prénom Nom"), ("font_size", 40), ("bold", True), ("align_h", "left"),
-        ("width", 660), ("height", 60), ("fill_color", "#061514"),
+        ("width", width - 60), ("height", 60), ("fill_color", "#061514"),
     ):
         update_graphic(name, field, value)
     name.transform = ClipTransform(position_y=-0.012)
     name.label = "Nom"
     role = add_layer(project, GraphicType.TEXT, at=0.0, duration=5.0)
     for field, value in (
-        ("text", "Fonction"), ("font_size", 26), ("align_h", "left"), ("width", 660), ("height", 40),
+        ("text", "Fonction"), ("font_size", 26), ("align_h", "left"), ("width", width - 60), ("height", 40),
         ("fill_color", "#0B2B27"),
     ):
         update_graphic(role, field, value)
     role.transform = ClipTransform(position_y=0.03)
     role.label = "Fonction"
     group = group_layers(project, [bar.id, name.id, role.id], name="Lower third")
-    group.transform = ClipTransform(position_x=-0.28, position_y=0.33)
+    # Vertical : centré, au-dessus de la légende des plateformes (qui couvre le bas du cadre).
+    x, y, from_x = (0.0, 0.22, -1.0) if _portrait(project) else (-0.28, 0.33, -0.75)
+    group.transform = ClipTransform(position_x=x, position_y=y)
     group.transform_keyframes = [
-        _kf("position_x", 0.0, -0.75), _kf("position_x", 0.6, -0.28),
+        _kf("position_x", 0.0, from_x), _kf("position_x", 0.6, x),
         _kf("opacity", 0.0, 0.0), _kf("opacity", 0.3, 1.0),
     ]
     return [group.id]
+
+
+def _social_text(project: Project, text: str, size: int, y: float, duration: float = 3.0) -> Clip:
+    """Texte de vidéo sociale : Anton, contour noir **extérieur**, ombre portée, centré, taille au texte."""
+    clip = add_layer(project, GraphicType.TEXT, at=0.0, duration=duration)
+    for field, value in (
+        ("text", text), ("font_family", "Anton"), ("font_size", size), ("autosize", True), ("stroke_width", 6),
+        ("stroke_color", "#05060A"), ("stroke_position", "outside"), ("shadow_offset_x", 0), ("shadow_offset_y", 5),
+        ("shadow_blur", 14.0), ("shadow_color", "#000000E0"),
+    ):
+        update_graphic(clip, field, value)
+    clip.transform = ClipTransform(position_y=y)
+    return clip
+
+
+def _tiktok_title(project: Project) -> list[str]:
+    from .text_animations import apply_text_animation
+
+    title = _social_text(project, "TITRE", 140, -0.25)
+    apply_text_animation(title, "pop_in")
+    title.label = "Titre TikTok"
+    return [title.id]
+
+
+def _highlighted_word(project: Project) -> list[str]:
+    from .text_animations import apply_text_animation
+
+    line = _social_text(project, "un mot en couleur", 88, -0.15)
+    update_graphic(line, "highlight_words", (2,))
+    update_graphic(line, "highlight_color", "#22B8FF")
+    apply_text_animation(line, "word_by_word")
+    line.label = "Mot en couleur"
+    return [line.id]
+
+
+def _karaoke_caption(project: Project) -> list[str]:
+    from .text_animations import apply_text_animation
+
+    caption = _social_text(project, "les paroles suivent la voix", 64, 0.27, duration=4.0)
+    update_graphic(caption, "highlight_color", "#FFD84D")
+    apply_text_animation(caption, "karaoke")
+    caption.label = "Sous-titre karaoké"
+    return [caption.id]
 
 
 def _callout(project: Project) -> list[str]:
@@ -153,13 +205,17 @@ _BUILTINS: tuple[tuple[str, str, Callable[[Project], list[str]]], ...] = (
     ("Titre espacé animé", "Titres", _tracking_reveal),
     ("Lower third", "Habillage", _lower_third),
     ("Call-out", "Annotations", _callout),
+    ("Titre TikTok", "Vertical", _tiktok_title),
+    ("Mot en couleur", "Vertical", _highlighted_word),
+    ("Sous-titre karaoké", "Vertical", _karaoke_caption),
 )
 
 
-def builtin_presets() -> list[MographPreset]:
+def builtin_presets(width: int = 1920, height: int = 1080) -> list[MographPreset]:
+    """Presets intégrés construits sur une toile ``width × height`` (celle du projet qui les reçoit)."""
     presets = []
     for name, category, build in _BUILTINS:
-        project = _scratch()
+        project = _scratch(width, height)
         ids = build(project)
         presets.append(MographPreset(name, category, copy_layers(project, ids), builtin=True))
     return presets
@@ -246,7 +302,11 @@ def all_presets(settings_dir=None) -> list[MographPreset]:
 
 
 def apply_preset(project: Project, preset: MographPreset, *, at: float) -> list[Clip]:
-    """Ajoute les calques du preset à ``at`` (nouveaux identifiants)."""
+    """Ajoute les calques du preset à ``at`` (nouveaux identifiants) ; un preset intégré est reconstruit sur la toile
+    du projet (un bandeau 16:9 sortirait d'un cadre vertical)."""
+    if preset.builtin:
+        preset = next((item for item in builtin_presets(project.width, project.height) if item.name == preset.name),
+                      preset)
     return paste_layers(project, preset.clipboard, at=at)
 
 

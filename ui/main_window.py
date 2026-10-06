@@ -102,6 +102,10 @@ from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
 from ui.main_window_mixins.hardware_preview import HardwarePreviewMixin
 from ui.main_window_mixins.updates import UpdatesMixin
+from ui.main_window_mixins.social import SocialMixin
+from ui.main_window_mixins.social_audio import SocialAudioMixin
+from ui.main_window_mixins.templates import TemplatesMixin
+from ui.main_window_mixins.beat_grid import BeatGridMixin
 from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
@@ -131,6 +135,10 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 
 class MainWindow(
+    BeatGridMixin,
+    SocialMixin,
+    SocialAudioMixin,
+    TemplatesMixin,
     UpdatesMixin,
     HardwarePreviewMixin,
     TrackingMixin,
@@ -194,6 +202,7 @@ class MainWindow(
         self._init_encoding(loaded_settings)
         self._flow_backend_request = loaded_settings.flow_backend      # avant le moteur d'aperçu et le moteur d'export
         self._time_ripple_timeline = loaded_settings.time_ripple_timeline
+        self._init_social(loaded_settings)
         # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
         self._init_hardware_preview(loaded_settings)
         self._init_animation()
@@ -509,6 +518,8 @@ class MainWindow(
         self.properties_panel.graphic_property_changed.connect(
             self.on_graphic_property_changed
         )
+        self.properties_panel.text_animation_requested.connect(self.apply_text_animation_to_clip)
+        self.properties_panel.voice_sync_requested.connect(self.sync_text_on_voice)
         # Tâche 22 : bibliothèque d'effets et presets.
         # ``UserPresetStore`` conserve la liste des presets utilisateur
         # en mémoire et persiste à chaque mutation.
@@ -538,6 +549,7 @@ class MainWindow(
         self.project_panel.audio_effect_apply_requested.connect(
             self.on_audio_effect_preset_apply_requested
         )
+        self._connect_sfx_library()
         self.project_panel.audio_effect_preset_save_requested.connect(
             self.on_audio_effect_preset_save_requested
         )
@@ -614,6 +626,7 @@ class MainWindow(
         self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
+        self.set_platform_zones(self._platform_zones)               # zones de plateforme mémorisées (préférences)
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
         self._init_tracking()
 
@@ -1173,6 +1186,8 @@ class MainWindow(
             self.project_label.setText(display_name)
         if self.project is not None:
             self.project_label.setToolTip(self.project.active_sequence.name)
+            sequence = self.project.active_sequence
+            self.properties_panel.set_sequence_info(sequence.width, sequence.height, sequence.fps)
         if self.project_dirty:
             self.saved_indicator.setText(i18n.translate("topbar.dirty"))
             self.saved_indicator.setToolTip(i18n.translate("topbar.dirty_tooltip"))
@@ -1534,6 +1549,7 @@ class MainWindow(
         for menu in (file_menu, edit_menu, sequence_menu):
             menu_bar.addMenu(menu)
         self._build_layers_menu(menu_bar)
+        self._build_social_menu(menu_bar)
         menu_bar.addMenu(window_menu)
 
         # Menu Édition : entrée Préférences (à la fin de la barre).
@@ -1665,6 +1681,8 @@ class MainWindow(
     def _sync_preview_to_timeline(self) -> list:
         """Synchronise le moniteur puis l'aperçu des calques et la surcouche."""
         self._viewer_composited = False
+        sequence = self.project.active_sequence
+        self.preview_panel.set_frame_format(sequence.width, sequence.height, sequence.fps)
         result = self._sync_preview_core()
         self._after_preview_sync()
         return result
@@ -1762,6 +1780,7 @@ class MainWindow(
                 clip_local_time=float(self.playhead_seconds) - float(clip_obj.timeline_start),
                 clip_duration=clip_obj.duration,
             )
+            self.preview_panel.set_effect_time(float(self.playhead_seconds) - float(clip_obj.timeline_start))
             self.preview_panel.apply_transform(
                 position_x=evaluated.position_x,
                 position_y=evaluated.position_y,
@@ -1774,6 +1793,9 @@ class MainWindow(
                 scale_y=evaluated.scale_y,
                 flip_h=evaluated.flip_h,
                 flip_v=evaluated.flip_v,
+                fill=evaluated.fill,
+                pan_x=evaluated.pan_x,
+                pan_y=evaluated.pan_y,
             )
             self.preview_panel.set_effects(clip_obj.effects)
             if self.preview_panel.gpu_active:
@@ -2094,6 +2116,10 @@ class MainWindow(
             **self._multicam_shortcut_handlers(),
             **self._mograph_shortcut_handlers(),
             **self._time_shortcut_handlers(),
+            **self._social_shortcut_handlers(),
+            **self._beat_shortcut_handlers(),
+            **self._social_audio_shortcut_handlers(),
+            **self._templates_shortcut_handlers(),
         }
 
     def _select_all_clips(self) -> None:

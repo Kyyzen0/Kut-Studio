@@ -414,6 +414,9 @@ def make_main_window(width: int, height: int, *, scopes: bool = True, rich: bool
         isolate_user_config()
 
     app = QApplication.instance() or QApplication([])
+    from core.bundled_fonts import register_bundled_fonts
+
+    register_bundled_fonts()                      # comme main.py : avant la première fenêtre, jamais en cours de route
     window = MainWindow()
     window.timeline_timer.stop()
     if rich:

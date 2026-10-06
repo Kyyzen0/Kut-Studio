@@ -87,8 +87,11 @@ def test_registry_lists_advanced_properties_skew_only_for_graphics():
     video = [t.id for t in targets_for("video")]
     graphics = [t.id for t in targets_for("graphics")]
     assert video[:5] == list(ANIMATABLE_PROPERTIES)
-    assert set(ADVANCED_TRANSFORM_PROPERTIES) - {"skew"} <= set(video)
+    assert set(ADVANCED_TRANSFORM_PROPERTIES) - {"skew", "fill"} <= set(video)
     assert "skew" not in video and "skew" in graphics
+    # Cadrage d'un média : pan animable sur la vidéo seulement ; « remplir » est un réglage, sans courbe.
+    assert {"pan_x", "pan_y"} <= set(video) and not {"pan_x", "pan_y"} & set(graphics)
+    assert "fill" not in video and "fill" not in graphics
     assert "graphic.tracking" in graphics and "graphic.tracking" not in video
 
 

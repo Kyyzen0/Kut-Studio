@@ -96,7 +96,39 @@ class SharpenOp:
     amount: float
 
 
-NeighborhoodOp = BlurOp | SharpenOp
+@dataclass(frozen=True)
+class GlowOp:
+    """Bloom (``glow``) : seuil puis gain en RVB, flou de σ pixels de l'export, ajouté à l'image."""
+
+    sigma: float
+    threshold: float
+    intensity: float
+
+    @property
+    def gain(self) -> float:
+        return self.intensity / max(0.05, 1.0 - self.threshold)
+
+
+@dataclass(frozen=True)
+class ShiftOp:
+    """Aberration chromatique (``rgbashift``) : rouge décalé vers la droite, bleu vers la gauche (pixels de l'export,
+    arrondis à l'entier comme à l'export)."""
+
+    pixels: float
+
+
+@dataclass(frozen=True)
+class HazeOp:
+    """Heat haze (``geq``) : ligne ``Y`` décalée de ``⌊A·sin(Y·f + phase)·rampe(Y/H)⌋`` pixels de l'export."""
+
+    amplitude: float
+    frequency: float
+    phase: float
+    top: float
+    span: float
+
+
+NeighborhoodOp = BlurOp | SharpenOp | GlowOp | ShiftOp | HazeOp
 
 
 @dataclass(frozen=True)
@@ -121,20 +153,22 @@ class EffectProgram:
         """Passes de rendu du calque (préparation + voisinage + composition)."""
         passes = 1
         for op in self.neighborhood:
-            passes += 2 if isinstance(op, BlurOp) else 1
+            passes += 2 if isinstance(op, BlurOp) else 4 if isinstance(op, GlowOp) else 1
         return passes + 1
 
 
-def program_for(effects, *, vignette_extent: float = VIGNETTE_NATURAL) -> EffectProgram:
+def program_for(effects, *, vignette_extent: float = VIGNETTE_NATURAL, time: float = 0.0) -> EffectProgram:
     """Programme GPU des effets **actifs** d'un clip, dans leur ordre.
 
     ``vignette_extent`` : rayon de référence de la vignette en fraction de la
     diagonale du calque (:data:`VIGNETTE_EXPORT` pour un clip vidéo).
+    ``time`` : temps du clip (secondes), pour les effets qui bougent (heat haze).
     """
     from .effects_model import EffectType
 
     segments: list[list[PointOp]] = [[]]
     neighborhood: list[NeighborhoodOp] = []
+    hazes: list[NeighborhoodOp] = []
     unsupported: list[str] = []
     for effect in effects or ():
         if not getattr(effect, "enabled", True):
@@ -164,11 +198,31 @@ def program_for(effects, *, vignette_extent: float = VIGNETTE_NATURAL) -> Effect
             if amount != 0.0:
                 neighborhood.append(SharpenOp(amount))
                 segments.append([])
+        elif kind is EffectType.GLOW:
+            if float(params.get("intensity", 0.0)) > 0.0:
+                neighborhood.append(GlowOp(float(params.get("radius", 0.0)), float(params.get("threshold", 0.6)),
+                                           float(params.get("intensity", 1.0))))
+                segments.append([])
+        elif kind is EffectType.CHROMATIC_ABERRATION:
+            if round(float(params.get("intensity", 0.0))):
+                neighborhood.append(ShiftOp(float(round(float(params.get("intensity", 0.0))))))
+                segments.append([])
+        elif kind is EffectType.HEAT_HAZE:
+            if float(params.get("amplitude", 0.0)) > 0.0:
+                hazes.append(HazeOp(
+                    float(params.get("amplitude", 0.0)), float(params.get("frequency", 0.045)),
+                    float(time) * float(params.get("speed", 0.0)), float(params.get("top", 0.35)),
+                    max(0.01, float(params.get("span", 0.4))),
+                ))
         else:
             unsupported.append(str(getattr(kind, "value", kind)))
     for segment in segments:
         if len(segment) > MAX_POINT_OPS:
             raise ValueError("trop d'opérations ponctuelles pour une passe")
+    # Le heat haze déforme l'image du clip elle-même : à l'export, avant échelle, rotation et tout autre effet. Il passe
+    # donc en tête du programme, chaque heat haze suivi d'un segment vide (le dernier, des opérations du clip).
+    segments = [[] for _ in hazes] + segments
+    neighborhood = hazes + neighborhood
     return EffectProgram(tuple(tuple(s) for s in segments), tuple(neighborhood), tuple(unsupported))
 
 
@@ -288,6 +342,7 @@ def reference_layer(
     pixel_scale: tuple[float, float] = (1.0, 1.0),
     chroma_scale: tuple[float, float] = (2.0, 2.0),
     start_space: int = SPACE_YUV,
+    layer_scale: tuple[float, float] | None = None,
 ):
     """Calque après effets, en RVB 0..1 (H, W, 3) — même calcul que les shaders.
 
@@ -299,6 +354,7 @@ def reference_layer(
         chroma_scale: sous-échantillonnage de la chroma du flux (σ chroma = σ × facteur).
         start_space: espace de ``yuv`` (``SPACE_RGB`` pour un calque d'effets, qui
             part de la composition RVB).
+        layer_scale: texels par pixel du calque **avant** son échelle (heat haze) ; défaut : ``pixel_scale``.
     """
     from .gpu_frames import invert4
 
@@ -312,9 +368,15 @@ def reference_layer(
     for index, segment in enumerate(program.segments):
         if index > 0:
             op = program.neighborhood[index - 1]
-            if space != SPACE_YUV:
+            if space != SPACE_YUV and not isinstance(op, (GlowOp, ShiftOp)):
                 pixels, space = _convert(np, pixels, rgb_to_yuv), SPACE_YUV
-            if isinstance(op, BlurOp):
+            if isinstance(op, (GlowOp, ShiftOp)):
+                if space != SPACE_RGB:
+                    pixels = _convert(np, pixels, yuv_to_rgb)
+                pixels, space = _reference_rgb_op(np, pixels, op, pixel_scale), SPACE_RGB
+            elif isinstance(op, HazeOp):
+                pixels = _reference_haze(np, pixels, op, layer_scale or pixel_scale)
+            elif isinstance(op, BlurOp):
                 blurred = []
                 for channel, factor in ((0, (1.0, 1.0)), (1, chroma_scale), (2, chroma_scale)):
                     plane = pixels[..., channel]
@@ -336,6 +398,51 @@ def reference_layer(
     if space == SPACE_YUV:
         pixels = _convert(np, pixels, yuv_to_rgb)
     return pixels
+
+
+def _shift_columns(np, plane, shift):
+    """Colonne ``x`` ← colonne ``x − shift`` (bord recopié, interpolation linéaire pour un décalage fractionnaire)."""
+    width = plane.shape[1]
+    source = np.clip(np.arange(width) - shift, 0.0, width - 1.0)
+    low = np.floor(source).astype(int)
+    high = np.minimum(low + 1, width - 1)
+    t = (source - low).reshape((1, -1) + (1,) * (plane.ndim - 2))
+    return plane[:, low] * (1.0 - t) + plane[:, high] * t
+
+
+def _reference_rgb_op(np, pixels, op, pixel_scale):
+    """Bloom et aberration chromatique, en RVB (comme ``format=gbrap`` à l'export)."""
+    if isinstance(op, ShiftOp):
+        shift = op.pixels * pixel_scale[0]
+        out = pixels.copy()
+        out[..., 0] = _shift_columns(np, pixels[..., 0], shift)
+        out[..., 2] = _shift_columns(np, pixels[..., 2], -shift)
+        return out
+    bright = np.clip((pixels - op.threshold) * op.gain, 0.0, 1.0)
+    radius_x, wx = gblur_weights(op.sigma * pixel_scale[0])
+    radius_y, wy = gblur_weights(op.sigma * pixel_scale[1])
+    if radius_x:
+        bright = _blur_axis(np, bright, wx, radius_x, 1)
+    if radius_y:
+        bright = _blur_axis(np, bright, wy, radius_y, 0)
+    return np.clip(pixels + bright, 0.0, 1.0)
+
+
+def haze_shift(op: HazeOp, export_row, export_height: float):
+    """Décalage (pixels de l'export, entier) de la ligne ``export_row`` : la formule du ``geq`` de l'export."""
+    np = _np()
+    ramp = np.clip((export_row / export_height - op.top) / op.span, 0.0, 1.0)
+    return np.floor(op.amplitude * np.sin(export_row * op.frequency + op.phase) * ramp)
+
+
+def _reference_haze(np, pixels, op: HazeOp, pixel_scale):
+    height = pixels.shape[0]
+    rows = (np.arange(height) + 0.5) / pixel_scale[1] - 0.5
+    shifts = haze_shift(op, rows, height / pixel_scale[1]) * pixel_scale[0]
+    out = np.empty_like(pixels)
+    for y in range(height):
+        out[y] = _shift_columns(np, pixels[y:y + 1], shifts[y])[0]
+    return out
 
 
 @dataclass(frozen=True)
@@ -385,11 +492,15 @@ __all__ = [
     "BlurOp",
     "EffectProgram",
     "EffectSupport",
+    "GlowOp",
+    "HazeOp",
     "PointOp",
+    "ShiftOp",
     "SharpenOp",
     "effect_support",
     "gaussian_weights",
     "gblur_weights",
+    "haze_shift",
     "program_for",
     "reference_layer",
 ]

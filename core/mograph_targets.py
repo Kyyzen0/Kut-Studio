@@ -39,6 +39,12 @@ GRAPHIC_ANIMATABLE: tuple[tuple[str, float, float, float, float, frozenset], ...
     ("shadow_offset_x", 4.0, -256.0, 256.0, 1.0, _TEXT),
     ("shadow_offset_y", 4.0, -256.0, 256.0, 1.0, _TEXT),
     ("shadow_blur", 0.0, 0.0, 200.0, 0.5, _TEXT),
+    ("reveal", 1.0, 0.0, 1.0, 0.01, _TEXT),
+    ("light_speed", 1.0, 0.0, 10.0, 0.05, frozenset({GraphicType.LIGHT})),
+    ("light_angle", 0.0, -360.0, 360.0, 1.0, frozenset({GraphicType.LIGHT})),
+    ("light_density", 1.0, 0.1, 4.0, 0.05, frozenset({GraphicType.LIGHT})),
+    ("glow_radius", 0.0, 0.0, 400.0, 1.0, _SHAPES | _TEXT),
+    ("glow_strength", 1.0, 0.0, 4.0, 0.05, _SHAPES | _TEXT),
 )
 """Propriétés intrinsèques animables (les couleurs restent statiques)."""
 

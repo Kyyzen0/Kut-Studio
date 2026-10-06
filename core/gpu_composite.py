@@ -40,8 +40,11 @@ from .gpu_effects import (
     SPACE_YUV,
     BlurOp,
     EffectProgram,
+    GlowOp,
+    HazeOp,
     PointOp,
     SharpenOp,
+    ShiftOp,
     gblur_weights,
 )
 from .gpu_frames import LAYOUTS, column_major, invert4, yuv_to_rgb_matrix
@@ -208,6 +211,7 @@ class Uniforms:
     comp: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 1.0)
     blur: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     misc: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    reserved: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     weights_luma: tuple[float, ...] = ()
     weights_chroma: tuple[float, ...] = ()
     ops: tuple[PointOp, ...] = ()
@@ -219,7 +223,7 @@ class Uniforms:
         data: list[float] = [
             *column_major(self.yuv_to_rgb), *column_major(rgb_to_yuv), *column_major(inverse),
             *self.target, *self.source, *self.fit, *self.pad, *self.state, *self.comp, *self.blur,
-            *self.misc, 0.0, 0.0, 0.0, 0.0,
+            *self.misc, *self.reserved,
         ]
         data += _padded(self.weights_luma, 100) + _padded(self.weights_chroma, 100)
         ops = [value for op in self.ops for value in op.packed()]
@@ -290,7 +294,7 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
         current, space = _effect_passes(
             passes, textures, f"layer{index}", (f"src:{layer.source}",), layout, source.width, source.height,
             matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
-            (width, height), _supersample(source, (width, height), layer.fit, scale), index,
+            (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
         )
         target = "canvas1" if canvas == "canvas0" else "canvas0"
         inputs = (current, f"matte:{layer.matte}" if layer.matte else "none", canvas)
@@ -327,8 +331,12 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
 
 
 def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, source_height, matrix, fit_uv,
-                   program, pixel, chroma, size, taps, index):
-    """Passes « prep » puis voisinage d'un calque ; retourne ``(texture, espace)`` du résultat."""
+                   program, pixel, chroma, size, taps, index, layer_pixel=None):
+    """Passes « prep » puis voisinage d'un calque ; retourne ``(texture, espace)`` du résultat.
+
+    ``pixel`` : texels par pixel de l'export **à l'échelle du clip** (flou, bloom, aberration) ; ``layer_pixel`` :
+    texels par pixel du calque avant son échelle (heat haze, qui déforme l'image du clip elle-même)."""
+    layer_pixel = layer_pixel or pixel
     width, height = size
     work_a, work_b = f"{name}a", f"{name}b"
     textures[work_a] = TextureSpec(WORKING_FORMAT, width, height)
@@ -374,8 +382,59 @@ def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, so
                 ops=following,
             ).pack(), index))
             current, other = other, current
+        elif isinstance(op, ShiftOp):
+            passes.append(PassSpec("shift", other, (current,), Uniforms(
+                yuv_to_rgb=matrix,
+                target=(float(width), float(height), 1.0, 0.0),
+                state=(float(space), float(next_space), float(len(following)), 0.0),
+                misc=(float(op.pixels * pixel[0]), 0.0, 0.0, 0.0),
+                ops=following,
+            ).pack(), index))
+            current, other = other, current
+        elif isinstance(op, HazeOp):
+            passes.append(PassSpec("haze", other, (current,), Uniforms(
+                yuv_to_rgb=matrix,
+                target=(float(width), float(height), 1.0, 0.0),
+                state=(float(space), float(next_space), float(len(following)), 0.0),
+                misc=(float(op.amplitude), float(op.frequency), float(op.phase), float(layer_pixel[0])),
+                reserved=(float(op.top), float(op.span), float(layer_pixel[1]), 0.0),
+                ops=following,
+            ).pack(), index))
+            current, other = other, current
+        elif isinstance(op, GlowOp):
+            current = _glow_passes(passes, textures, name, op, current, other, space, next_space, following, matrix,
+                                   pixel, size, index)
+            other = work_b if current == work_a else work_a
         space = next_space
     return current, space
+
+
+def _glow_passes(passes, textures, name, op: GlowOp, current, other, space, next_space, following, matrix, pixel,
+                 size, index) -> str:
+    """Bloom : seuil et gain (RVB) → flou horizontal → flou vertical → ajout à l'image ; retourne la texture du
+    résultat. Deux textures de travail en plus (le halo et son flou intermédiaire)."""
+    width, height = size
+    bright, scratch = f"{name}c", f"{name}d"
+    textures.setdefault(bright, TextureSpec(WORKING_FORMAT, width, height))
+    textures.setdefault(scratch, TextureSpec(WORKING_FORMAT, width, height))
+    base = dict(yuv_to_rgb=matrix, target=(float(width), float(height), 1.0, 0.0))
+    passes.append(PassSpec("glow", bright, (current,), Uniforms(
+        **base, state=(float(space), float(SPACE_RGB), 0.0, 0.0),
+        misc=(0.0, float(op.threshold), float(op.gain), 0.0),
+    ).pack(), index))
+    source, target = bright, scratch
+    for dx, dy, scale in ((1.0, 0.0, pixel[0]), (0.0, 1.0, pixel[1])):
+        radius, weights = gblur_weights(op.sigma * scale)
+        passes.append(PassSpec("blur", target, (source,), Uniforms(
+            **base, state=(float(SPACE_RGB), float(SPACE_RGB), 0.0, 0.0),
+            blur=(dx, dy, float(radius), float(radius)), weights_luma=weights, weights_chroma=weights,
+        ).pack(), index))
+        source, target = target, source
+    passes.append(PassSpec("glow", other, (current, source), Uniforms(
+        **base, state=(float(space), float(next_space), float(len(following)), 0.0),
+        misc=(1.0, 0.0, 0.0, 0.0), ops=following,
+    ).pack(), index))
+    return other
 
 
 def _end_space(space: int, ops) -> int:
@@ -470,6 +529,7 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
             rgb = reference_layer(
                 layer_px, layer.program, yuv_to_rgb=matrix,
                 pixel_scale=(scale / abs(layer.effect_scale[0]), scale / abs(layer.effect_scale[1])),
+                layer_scale=(scale, scale),
                 chroma_scale=source.chroma_scale,
             )
         else:

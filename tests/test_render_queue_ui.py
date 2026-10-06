@@ -583,3 +583,17 @@ def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, mon
     assert len(stamps) > 30  # ~2 s de rendu à 20 ms de période
     assert max(gaps) < 0.35  # jamais de gel perceptible de la boucle Qt
     assert queue.jobs[0].status is JobStatus.COMPLETED
+
+
+def test_social_options_follow_the_preset_and_can_be_unticked(export_panel):
+    combo = export_panel.preset_combo
+    combo.setCurrentIndex(combo.findData("reels"))
+    checks = (export_panel.loudness_check, export_panel.preview_copy_check, export_panel.cover_check)
+    assert all(check.isChecked() for check in checks)
+    spec = export_panel.current_spec()
+    assert (spec.loudness_lufs, spec.preview_copy, spec.cover) == (-14.0, True, True)
+    export_panel.preview_copy_check.setChecked(False)
+    assert export_panel.current_spec().preview_copy is False and export_panel.current_spec().cover is True
+    combo.setCurrentIndex(combo.findData("youtube"))
+    assert not any(check.isChecked() for check in checks)
+    assert all(check.text() and not check.text().startswith("render.") for check in checks)

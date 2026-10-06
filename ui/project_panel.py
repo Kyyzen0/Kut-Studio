@@ -77,6 +77,7 @@ from ui.project_panel_widgets.transition_library import (
     _form_label,
 )  # noqa: F401
 from ui.search_field import SearchField
+from ui.sfx_library import SfxLibraryView
 from ui.project_panel_widgets.effects_library_view import (
     EffectPresetCard,
     EffectsLibraryView,
@@ -88,6 +89,12 @@ from ui.i18n import translate
 
 BROWSE_MIN_HEIGHT = 84
 """Hauteur plancher (px) du bloc dossiers / filtres / tags : en dessous il défile (voir ``ShrinkableScrollArea``)."""
+
+
+def _audio_modes() -> tuple[tuple[str, str], ...]:
+    """Onglets de la section Audio : fichiers du projet, effets audio, bibliothèque SFX."""
+    return (("files", translate("library.audio_files")), ("effects", translate("audio_effects.section")),
+            ("sfx", translate("sfx.section")))
 
 
 class ProjectPanel(QWidget):
@@ -108,6 +115,8 @@ class ProjectPanel(QWidget):
     audio_effect_preset_save_requested = Signal()
     audio_effect_preset_delete_requested = Signal(str)
     audio_effect_favorite_toggled = Signal(str)
+    sfx_add_requested = Signal(str)  # identifiant du SFX, posé à la tête de lecture
+    sfx_on_cuts_requested = Signal(list)  # identifiants du SFX, un par cut de la piste vidéo
     effect_preset_save_requested = Signal()  # MainWindow ouvre le dialogue
     effect_preset_delete_requested = Signal(str)  # preset_id
     # Bibliothèque de transitions (tâche 23)
@@ -365,7 +374,7 @@ class ProjectPanel(QWidget):
         audio_mode_layout.setContentsMargins(Spacing.sm, Spacing.xs, Spacing.sm, 0)
         audio_mode_layout.setSpacing(Spacing.xs)
         self.audio_mode_buttons: dict[str, QPushButton] = {}
-        for mode, label in (("files", translate("library.audio_files")), ("effects", translate("audio_effects.section"))):
+        for mode, label in _audio_modes():
             button = QPushButton(label)
             button.setObjectName("scopeTab")
             button.setCheckable(True)
@@ -422,6 +431,12 @@ class ProjectPanel(QWidget):
         # Séquences du projet (page 7) : créer, ouvrir, imbriquer.
         self.sequence_view = SequenceLibraryView(self)
         self.content_stack.addWidget(self.sequence_view)
+
+        # Bibliothèque SFX synthétisés (page 8), troisième onglet de la section Audio.
+        self.sfx_view = SfxLibraryView(self)
+        self.content_stack.addWidget(self.sfx_view)
+        self.sfx_view.add_requested.connect(self.sfx_add_requested)
+        self.sfx_view.on_cuts_requested.connect(self.sfx_on_cuts_requested)
         # Chaque page est faite pour défiler : on neutralise leur
         # ``minimumSizeHint`` (l'éditeur de sous-titres réclame 360 px),
         # sinon la pile réserve cette hauteur et la grille de vignettes
@@ -431,6 +446,7 @@ class ProjectPanel(QWidget):
             self.bin_videos, self.bin_audios, self.subtitle_view,
             self.effects_view, self.transition_view,
             self.graphics_view, self.audio_effects_view, self.sequence_view,
+            self.sfx_view,
         ):
             page.setMinimumHeight(0)
             page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -766,11 +782,11 @@ class ProjectPanel(QWidget):
             return
         self._section_id = section_id
         self._title_label.setText(translate(f"rail.{section_id}"))      # le titre du panneau dit la page affichée
-        if page_index == 1 and self._audio_mode == "effects":
-            page_index = 6
+        if page_index == 1:
+            page_index = {"effects": 6, "sfx": 8}.get(self._audio_mode, 1)
         self._active_page_index = page_index
         self.content_stack.setCurrentIndex(page_index)
-        self.audio_mode_row.setVisible(page_index in {1, 6})
+        self.audio_mode_row.setVisible(page_index in {1, 6, 8})
         show_asset_chrome = page_index in {0, 1}
         self.library_search_row.setVisible(show_asset_chrome)
         self.library_browse_content.setVisible(show_asset_chrome)
@@ -900,8 +916,9 @@ class ProjectPanel(QWidget):
         self._quick_import.setAccessibleName(translate("preview.import"))
         for button, key in zip(self.scope_tab_buttons, ("panel.project", "transitions.category.favorites")):
             button.setText(translate(key))
-        for mode, key in (("files", "library.audio_files"), ("effects", "audio_effects.section")):
-            self.audio_mode_buttons[mode].setText(translate(key))
+        for mode, label in _audio_modes():
+            self.audio_mode_buttons[mode].setText(label)
+        self.sfx_view.retranslate()
         self.search_field.setPlaceholderText(translate("library.search_placeholder"))
         self.manage_tags_button.setText(translate("library.manage_tags"))
         self.import_button.setText("  " + translate("library.import"))
@@ -1143,6 +1160,9 @@ class ProjectPanel(QWidget):
         elif self._active_page_index == 6:
             count = self.audio_effects_view.preset_count()
             label_word = translate("library.word.preset") if count <= 1 else translate("library.word.preset_many")
+        elif self._active_page_index == 8:
+            count = self.sfx_view.list.count()
+            label_word = translate("library.word.sound") if count <= 1 else translate("library.word.sound_many")
         elif self._active_page_index == 7:
             count = len(self.sequence_view.entries())
             label_word = translate("library.word.sequence") if count <= 1 else translate("library.word.sequence_many")

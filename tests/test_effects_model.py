@@ -118,7 +118,7 @@ def _effect(effect_type, effect_id: str = "fx-1", **kwargs) -> ClipEffect:
 
 
 def test_six_effect_types_are_available() -> None:
-    """Le catalogue expose exactement les six effets attendus."""
+    """Le catalogue expose exactement les six effets historiques et les trois effets lumineux (vidéo sociale)."""
     assert {member.value for member in EffectType} == {
         "color_correction",
         "blur",
@@ -126,6 +126,9 @@ def test_six_effect_types_are_available() -> None:
         "vignette",
         "black_and_white",
         "sepia",
+        "glow",
+        "chromatic_aberration",
+        "heat_haze",
     }
 
 

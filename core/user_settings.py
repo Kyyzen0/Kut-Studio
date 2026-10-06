@@ -247,6 +247,12 @@ def _coerce_shortcuts(value: object) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
+DEFAULT_PHOTO_DURATION: float = 5.0
+"""Durée d'une photo importée (secondes) : l'ancienne valeur fixe."""
+
+PHOTO_DURATION_RANGE: tuple[float, float] = (0.5, 60.0)
+
+
 @dataclass(frozen=True)
 class UserSettings:
     """Préférences utilisateur globales.
@@ -272,6 +278,10 @@ class UserSettings:
             vérification automatique la tait, une recherche manuelle la montre toujours.
         last_update_check: heure (secondes depuis l'epoch) de la dernière recherche réussie, 0 si jamais.
         cache_max_gb: budget disque global des caches, en Go.
+        photo_duration: durée d'une photo importée sur la timeline (secondes).
+        photo_fill: une photo importée remplit le cadre (l'excédent sort du cadre) au lieu d'y tenir entière.
+        photo_ken_burns: une photo importée reçoit un mouvement Ken Burns (:mod:`core.ken_burns`).
+        platform_zones: plateforme dont le viewer montre les zones masquées (``""`` : aucune).
         shortcuts: écarts aux raccourcis par défaut, ``{id_commande:
             [raccourcis]}`` (voir :mod:`core.shortcuts`). Une liste vide
             retire volontairement le raccourci de la commande.
@@ -307,6 +317,11 @@ class UserSettings:
     include_prereleases: bool = DEFAULT_INCLUDE_PRERELEASES
     skipped_update_version: str = ""
     last_update_check: float = 0.0
+    # --- Vidéo sociale (absents des fichiers antérieurs : défauts) ---
+    photo_duration: float = DEFAULT_PHOTO_DURATION
+    photo_fill: bool = False
+    photo_ken_burns: bool = False
+    platform_zones: str = ""
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -314,6 +329,18 @@ DEFAULT_MASTER_GAIN_DB: float = 0.0
 
 MAX_MASTER_GAIN_DB: float = 12.0
 """Borne haute du gain Master, alignée sur celle des pistes."""
+
+
+def _coerce_photo_duration(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return DEFAULT_PHOTO_DURATION
+    return max(PHOTO_DURATION_RANGE[0], min(PHOTO_DURATION_RANGE[1], float(value)))
+
+
+def _coerce_platform_zones(value: object) -> str:
+    from .canvas_guides import PLATFORMS
+
+    return value if isinstance(value, str) and value in PLATFORMS else ""
 
 
 def _coerce_master_gain(value: object) -> float:
@@ -485,6 +512,10 @@ def load_user_settings(
         include_prereleases=_coerce_bool(data.get("include_prereleases", DEFAULT_INCLUDE_PRERELEASES)),
         skipped_update_version=_coerce_skipped_version(data.get("skipped_update_version")),
         last_update_check=_coerce_timestamp(data.get("last_update_check")),
+        photo_duration=_coerce_photo_duration(data.get("photo_duration")),
+        photo_fill=_coerce_bool(data.get("photo_fill", False)),
+        photo_ken_burns=_coerce_bool(data.get("photo_ken_burns", False)),
+        platform_zones=_coerce_platform_zones(data.get("platform_zones")),
     )
 
 
@@ -542,6 +573,10 @@ def save_user_settings(
             include_prereleases=_coerce_bool(settings.include_prereleases),
             skipped_update_version=_coerce_skipped_version(settings.skipped_update_version),
             last_update_check=_coerce_timestamp(settings.last_update_check),
+            photo_duration=_coerce_photo_duration(settings.photo_duration),
+            photo_fill=_coerce_bool(settings.photo_fill),
+            photo_ken_burns=_coerce_bool(settings.photo_ken_burns),
+            platform_zones=_coerce_platform_zones(settings.platform_zones),
         )
     )
     fd, tmp_name = tempfile.mkstemp(
