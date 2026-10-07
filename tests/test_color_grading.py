@@ -63,7 +63,7 @@ from core.color_grading import (
     save_color_preset_data,
 )
 from core.edit_history import ProjectHistory
-from core.export_engine import _build_color_grade_filters
+from core.export_engine import _build_color_grade_filters, _build_lut3d_filter
 from core.lut_importer import (
     CubeLUT,
     LUT_3D_SIZE_KEY,
@@ -1047,9 +1047,11 @@ def test_ffmpeg_applies_the_handed_over_lut(tmp_path, bom_first) -> None:
     source = tmp_path / "invert.cube"
     source.write_bytes((b"\xef\xbb\xbf" if bom_first else b"") + body.encode("utf-8"))
     lut = ffmpeg_readable_lut(source, cache_dir=tmp_path / "cache")
+    # Le filtre de l'export lui-même : il échappe le chemin (``C:`` sous Windows serait lu comme une option).
+    lut_filter = _build_lut3d_filter(LUTResource.from_path(lut))
     done = subprocess.run(
         [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=4x4:d=0.04", "-vf",
-         f"lut3d=file='{lut.as_posix()}',format=rgb24", "-frames:v", "1", "-f", "rawvideo", "-"],
+         f"{lut_filter},format=rgb24", "-frames:v", "1", "-f", "rawvideo", "-"],
         capture_output=True, timeout=60,
     )
     assert done.returncode == 0, done.stderr.decode(errors="replace")
