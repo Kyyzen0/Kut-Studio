@@ -231,6 +231,9 @@ def test_progress_is_reported_during_generation(tmp_path, source):
     # La notification de request() part du thread appelant et relit l'état courant :
     # avec un worker instantané elle peut arriver après la fin (READY, 100) — seule
     # la séquence du worker est déterministe.
+    # _generate rend la main dès que le disque dit READY ; la notification finale du worker part juste après
+    # (retrait de _active, invalidation, notification) : on l'attend (CI macOS, run 37667588029 : [0, 25, 50, 75]).
+    assert _wait(lambda: any(name == "kut-proxy" and p == 100 for name, _s, p in seen))
     assert [p for name, _s, p in seen if name == "kut-proxy"] == [0, 25, 50, 75, 100]
     assert all((p == 100) == (s is ProxyState.READY) for _n, s, p in seen)   # 100 % seulement une fois prêt
     manager.shutdown()
