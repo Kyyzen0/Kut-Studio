@@ -42,6 +42,15 @@ ensuite déclenche `.github/workflows/release.yml`.
 - L'application Windows construite a de nouveau son icône (le fichier `.ico` n'était jamais généré).
 - Un projet `.kut` qui contient une clé inconnue est refusé comme tout fichier abîmé (`ValueError`, message clair),
   y compris quand le chargement est appelé hors de l'interface.
+- Supprimer ou enregistrer un preset d'effets ou de transition n'ajoute plus d'étape « Annuler » qui ne défaisait
+  rien, et ne fait plus perdre « Rétablir » : une modification annulée juste avant peut toujours être rétablie.
+- Marquer ou démarquer une transition comme favorite l'annonce (« … ajoutée aux favoris », « … retirée des
+  favoris ») au lieu d'afficher « Transition ajoutée. » alors qu'aucune transition n'était posée.
+- Sous Windows, *Supprimer le proxy* (bibliothèque) ne laisse plus de fichier derrière lui quand un antivirus ou
+  l'indexation tient un instant le fichier tout juste écrit : la suppression est réessayée, et un fichier qui reste
+  verrouillé est signalé dans le journal de diagnostic au lieu de passer pour supprimé.
+- Fermer la fenêtre pendant qu'un segment d'aperçu fidèle se calcule ne peut plus faire planter l'application : la
+  fermeture annule le rendu et attend la fin de son thread avant de détruire la fenêtre.
 
 ## [0.2.0] - 2026-10-06
 

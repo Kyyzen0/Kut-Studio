@@ -203,27 +203,7 @@ HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Apply an audio effect preset",
         "Aplicar un preset de efecto de audio",
     ),
-    "history.preset.user_save": _t(
-        "Enregistrer un preset utilisateur",
-        "Save a user preset",
-        "Guardar un preset de usuario",
-    ),
-    "history.preset.user_delete": _t(
-        "Supprimer un preset utilisateur",
-        "Delete a user preset",
-        "Eliminar un preset de usuario",
-    ),
     "history.transition.add": _t("Ajouter une transition", "Add a transition", "Añadir una transición"),
-    "history.transition.save_custom": _t(
-        "Enregistrer une transition personnalisée",
-        "Save a custom transition",
-        "Guardar una transición personalizada",
-    ),
-    "history.transition.delete_custom": _t(
-        "Supprimer une transition personnalisée",
-        "Delete a custom transition",
-        "Eliminar una transición personalizada",
-    ),
     "history.subtitle.apply_template": _t(
         "Appliquer un modèle de sous-titre",
         "Apply a subtitle template",

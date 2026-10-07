@@ -170,7 +170,12 @@ DIALOGS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Transition “{name}” added.",
         "Transición «{name}» añadida.",
     ),
-    "status.transition.added": _t("Transition ajoutée.", "Transition added.", "Transición añadida."),
+    "status.transition.favorite_added": _t(
+        "« {name} » ajoutée aux favoris.", "“{name}” added to favorites.", "«{name}» añadida a favoritos."
+    ),
+    "status.transition.favorite_removed": _t(
+        "« {name} » retirée des favoris.", "“{name}” removed from favorites.", "«{name}» quitada de favoritos."
+    ),
     "status.template.saved": _t(
         "Modèle « {name} » enregistré.",
         "Template “{name}” saved.",

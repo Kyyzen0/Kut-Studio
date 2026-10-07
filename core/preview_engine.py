@@ -136,6 +136,11 @@ class PreviewEngine:
         with self._lock:
             self._listeners.append(callback)
 
+    def unsubscribe(self, callback):
+        """Désabonne ``callback`` (comparé par identité). Un rappel déjà en cours d'appel n'est pas interrompu."""
+        with self._lock:
+            self._listeners[:] = [listener for listener in self._listeners if listener is not callback]
+
     def _count_cached(self):
         """Nombre de segments actuellement sur disque (0 si inconnu)."""
         stats = getattr(self.cache, "stats", None)

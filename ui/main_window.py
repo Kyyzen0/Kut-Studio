@@ -888,11 +888,6 @@ class MainWindow(
             if owner is not None:
                 getattr(owner, method)()
 
-        def cancel_previews():
-            engine = attr("preview_engine")
-            if engine is not None:
-                engine.cancel_all()
-
         def clean_scope_files():
             cleanup_temporary_paths(attr("_scope_temporary_paths") or ())
             self._scope_temporary_paths = ()
@@ -907,7 +902,9 @@ class MainWindow(
             ("file de rendu", self.render_queue.shutdown),
             ("encodage", self._shutdown_encoding),
             ("aperçu matériel", self._shutdown_hardware_preview),
-            ("pompe d'aperçu", self._stop_preview_pump),
+            # Désabonne la fenêtre, annule les rendus d'aperçu puis attend leur thread (dans cet ordre, voir
+            # _stop_preview_pump) : un segment en cours ne notifie jamais une fenêtre en cours de destruction.
+            ("pompe et rendus d'aperçu", self._stop_preview_pump),
             ("proxies", shutdown_proxies),
             ("mises à jour", self._shutdown_updates),
             ("espaces de travail", lambda: call("workspace", "shutdown")),
@@ -918,7 +915,6 @@ class MainWindow(
             ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
             ("minuteur debug", lambda: stop_timer("_debug_timer")),
             ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
-            ("rendus d'aperçu", cancel_previews),
             ("pistage", self._cancel_tracking_jobs),
             ("analyse du flux optique", self._cancel_flow_analysis),
             ("thème de la timeline", lambda: call("timeline_panel", "unsubscribe_from_theme")),

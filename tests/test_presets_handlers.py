@@ -196,20 +196,33 @@ def test_deleting_a_user_look_asks_first_and_honours_no(window, dialogs, config_
     assert "Mon look" not in _saved(config_dir, USER_PRESETS_FILE)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Bogue : supprimer (ou enregistrer) un preset d'effets ou de transition appelle _record_history alors que le projet "
-    "ne change pas. L'entrée ajoutée ne défait rien (le preset reste supprimé du fichier) et vide la pile de "
-    "rétablissement. Les presets audio et de texte, eux, n'écrivent rien dans l'historique."))
-def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(window, dialogs):
-    preset = _user_look(window)
+def _transition_preset(window):
+    preset = make_user_transition_preset(name="Fondu maison", description="", transition_type="crossfade",
+                                         default_duration=0.75)
+    window.transition_preset_store.add_user_preset(preset)
+    return preset
+
+
+# Corrigé par le commit « Presets : enregistrer ou supprimer un preset n'entre plus dans l'historique » (lot 6) :
+# ce test était un xfail strict qui documentait le bogue.
+@pytest.mark.parametrize(("make", "signal"), [
+    (_user_look, "effect_preset_delete_requested"),
+    (_transition_preset, "transition_preset_delete_requested"),
+])
+def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(window, dialogs, make, signal):
+    """Un preset vit dans le dossier de l'utilisateur, pas dans le projet : sa suppression ne s'annule pas par
+    Ctrl+Z, n'ajoute pas d'entrée vide, et laisse « Rétablir » disponible."""
+    preset = make(window)
     window.timeline_panel.rename_track_requested.emit("V2", "B-roll")
     window.undo_last()
     assert window.history.can_redo
     undo_label = window.history.undo_label
 
-    window.project_panel.effect_preset_delete_requested.emit(preset.id)
+    getattr(window.project_panel, signal).emit(preset.id)
 
-    assert window.user_preset_store.get(preset.id) is None, "le preset est bien supprimé"
+    store = window.user_preset_store if signal.startswith("effect") else window.transition_preset_store
+    lookup = store.get if signal.startswith("effect") else store.get_preset
+    assert lookup(preset.id) is None, "le preset est bien supprimé"
     assert window.history.undo_label == undo_label
     assert window.history.can_redo
 
@@ -316,8 +329,8 @@ def test_a_transition_preset_goes_between_the_two_selected_clips_of_a_track(wind
     [transition] = window.project.transitions
     assert (transition.from_clip_id, transition.to_clip_id) == ("intro", "plan_a")
     assert transition.duration == pytest.approx(0.5)
-    preset = window.transition_preset_store.get_preset("crossfade")
-    assert _status(window) == i18n.translate("status.transition.added_named", name=preset.name)
+    assert _status(window) == i18n.translate(
+        "status.transition.added_named", name=i18n.translate("transitions.preset.crossfade.name"))
     assert window.history.undo_label == i18n.translate("history.transition.add")
     window.undo_last()
     assert window.project.transitions == []
@@ -398,9 +411,7 @@ def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(window
 
 
 def test_deleting_transition_presets_locks_builtins_and_confirms_user_ones(window, dialogs, config_dir):
-    preset = make_user_transition_preset(name="Fondu maison", description="", transition_type="crossfade",
-                                         default_duration=0.75)
-    window.transition_preset_store.add_user_preset(preset)
+    preset = _transition_preset(window)
 
     window.project_panel.transition_preset_delete_requested.emit("crossfade")
     assert window.transition_preset_store.get_preset("crossfade") is not None
@@ -426,14 +437,31 @@ def test_a_transition_favorite_is_toggled_and_persisted(window, config_dir):
     assert "wipe_left" not in window.transition_preset_store.favorites()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Bogue : on_transition_favorite_toggled affiche status.transition.added (« Transition ajoutée. ») après avoir "
-    "seulement basculé un favori ; aucune transition n'est posée. Aucune clé i18n de statut n'existe pour les favoris."))
-def test_toggling_a_favorite_does_not_claim_a_transition_was_added(window):
-    window.project_panel.transition_favorite_toggled.emit("wipe_left")
+# Corrigé par le commit « Transitions : basculer un favori le dit, au lieu d'annoncer une transition » (lot 6) :
+# ce test était un xfail strict qui documentait le bogue.
+def test_toggling_a_favorite_says_so_instead_of_claiming_a_transition_was_added(window):
+    name = i18n.translate("transitions.preset.wipe_left.name")
 
+    window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert window.project.transitions == []
-    assert _status(window) != i18n.translate("status.transition.added")
+    assert _status(window) == i18n.translate("status.transition.favorite_added", name=name)
+
+    window.project_panel.transition_favorite_toggled.emit("wipe_left")
+    assert _status(window) == i18n.translate("status.transition.favorite_removed", name=name)
+
+
+def test_favorite_messages_name_builtins_in_the_interface_language_and_users_as_typed(window):
+    """Revue de la PR #51 : en anglais, un intégré s'appelait encore « Balayage gauche » (nom français du cœur)."""
+    previous = i18n.current_language()
+    i18n.set_language("en")
+    try:
+        window.project_panel.transition_favorite_toggled.emit("wipe_left")
+        assert _status(window) == "“Wipe left” added to favorites."
+        user = _transition_preset(window)
+        window.project_panel.transition_favorite_toggled.emit(user.id)
+        assert _status(window) == "“Fondu maison” added to favorites."
+    finally:
+        i18n.set_language(previous)
 
 
 # --- modèles de texte ---------------------------------------------------------------------------------------------
