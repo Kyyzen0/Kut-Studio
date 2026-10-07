@@ -1,7 +1,8 @@
 """Cliquet de couverture (``tools/coverage_ratchet.py``) : régression bloquante, progrès signalé, entrées validées.
 
 Aucun test ne lance une vraie mesure : les rapports ``coverage.json`` sont fabriqués ici, au format de coverage.py
-(``meta.branch_coverage``, ``totals``, ``files[nom].summary``).
+(``meta.branch_coverage``, ``totals``, ``files[nom].summary``). La baseline réelle du dépôt est seulement relue,
+pour qu'un fichier mal édité à la main échoue ici plutôt qu'en CI.
 """
 
 from __future__ import annotations
@@ -131,6 +132,11 @@ def test_unreadable_files_raise_input_errors(tmp_path: Path) -> None:
     broken.write_text("{", encoding="utf-8")
     with pytest.raises(ratchet.RatchetInputError, match="illisible"):
         ratchet.load_baseline(broken)
+
+
+def test_the_repository_baseline_is_valid() -> None:
+    baseline = ratchet.load_baseline(ratchet.BASELINE_PATH)
+    assert 0 < baseline.total_percent <= 100
 
 
 # ---------------------------------------------------------------------------
