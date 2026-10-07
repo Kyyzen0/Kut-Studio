@@ -31,6 +31,14 @@ HARDWARE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "GPU preview unavailable ({detail}): back to CPU.",
         "Vista previa GPU no disponible ({detail}): vuelta a la CPU.",
     ),
+    "preview.gpu_suspended": _t(
+        "Aperçu GPU suspendu après un arrêt brutal : l'aperçu passe par le CPU, plus lent. "
+        "Pour réessayer : Préférences › Performance › Matériel › Rendu de l'aperçu › GPU.",
+        "GPU preview suspended after an unexpected shutdown: the preview runs on the CPU, which is slower. "
+        "To try again: Preferences › Performance › Hardware › Preview rendering › GPU.",
+        "Vista previa GPU suspendida tras un cierre inesperado: la vista previa usa la CPU, más lenta. "
+        "Para reintentarlo: Preferencias › Rendimiento › Hardware › Renderizado de la vista previa › GPU.",
+    ),
     "preview.memory_pressure": _t(
         "Mémoire saturée : caches libérés, aperçu allégé.",
         "Memory is low: caches freed, lighter preview.",
@@ -72,6 +80,9 @@ HARDWARE_TRANSLATIONS: dict[str, dict[str, str]] = {
     "preview.reason.no_window_system": _t("pas de contexte graphique (plateforme Qt sans fenêtre)",
                                           "no graphics context (Qt platform without a window system)",
                                           "sin contexto gráfico (plataforma Qt sin ventanas)"),
+    "preview.reason.previous_crash": _t("suspendu après un arrêt brutal avec le GPU actif",
+                                        "suspended after an unexpected shutdown with the GPU active",
+                                        "suspendido tras un cierre inesperado con la GPU activa"),
     "preview.reason.gpu_failed": _t("le GPU a échoué pendant la session", "the GPU failed during the session",
                                     "la GPU falló durante la sesión"),
     "preview.reason.gpu": _t("GPU en attente de sa première image", "GPU waiting for its first frame",
