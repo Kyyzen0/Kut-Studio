@@ -146,6 +146,51 @@ def test_save_srt_writes_utf8(tmp_path: Path):
     assert reloaded == cues
 
 
+_FOREIGN_SRT = "1\r\n00:00:01,000 --> 00:00:02,500\r\nÇa marche, déjà vu\r\n\r\n2\r\n00:00:03,000 --> 00:00:04,000\r\nFin\r\n"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"\xef\xbb\xbf" + _FOREIGN_SRT.encode("utf-8"),
+        b"\xff\xfe" + _FOREIGN_SRT.encode("utf-16-le"),
+        _FOREIGN_SRT.encode("cp1252"),
+    ],
+    ids=["utf8-bom", "utf16-le-bom", "cp1252"],
+)
+def test_load_srt_reads_files_from_other_tools(tmp_path: Path, data: bytes):
+    """Un SRT du Bloc-notes / Subtitle Edit (BOM, UTF-16) ou un vieux SRT Windows-1252 garde sa première cue."""
+    target = tmp_path / "foreign.srt"
+    target.write_bytes(data)
+    assert load_srt(str(target)) == [
+        SubtitleCue(start=1.0, end=2.5, text="Ça marche, déjà vu"),
+        SubtitleCue(start=3.0, end=4.0, text="Fin"),
+    ]
+
+
+def test_parse_srt_ignores_a_leading_bom():
+    """Une BOM restée dans la chaîne ne masque pas l'indice de la première cue."""
+    assert parse_srt("\ufeff1\n00:00:00,000 --> 00:00:01,000\nA\n") == [SubtitleCue(start=0.0, end=1.0, text="A")]
+
+
+def test_save_srt_is_atomic(tmp_path: Path, monkeypatch):
+    """Un échec en cours d'écriture laisse l'ancien SRT intact."""
+    from core import atomic_io
+
+    target = tmp_path / "subs.srt"
+    save_srt([SubtitleCue(start=0.0, end=1.0, text="Ancien")], str(target))
+    before = target.read_bytes()
+
+    def fail_replace(src, dst):
+        raise OSError("disque plein")
+
+    monkeypatch.setattr(atomic_io.os, "replace", fail_replace)
+    with pytest.raises(OSError):
+        save_srt([SubtitleCue(start=0.0, end=1.0, text="Nouveau")], str(target))
+    assert target.read_bytes() == before
+    assert [p.name for p in tmp_path.iterdir()] == ["subs.srt"]
+
+
 def test_subtitle_cue_rejects_end_before_start():
     """Un cue avec ``end <= start`` est refusé par ``__post_init__``."""
     with pytest.raises(ValueError, match="strictement supérieure"):

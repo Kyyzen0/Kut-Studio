@@ -5,7 +5,7 @@ Ce module implémente un sous-ensemble strict du format SubRip :
 - timecodes ``HH:MM:SS,mmm`` (virgule décimale, précision milliseconde) ;
 - indices incrémentés à partir de 1 ;
 - texte multi-ligne ;
-- encodage UTF-8.
+- écriture en UTF-8 ; lecture tolérante (BOM UTF-8/UTF-16, Windows-1252, voir :mod:`core.text_decoding`).
 
 Les fonctions exposées sont volontairement minimales :
 
@@ -24,6 +24,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from .atomic_io import atomic_write_text
+from .text_decoding import decode_text_bytes
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +87,7 @@ def parse_srt(content: str) -> list[SubtitleCue]:
     Raises:
         ValueError: si un timecode est mal formé ou si ``end <= start``.
     """
-    text = content.replace("\r\n", "\n").replace("\r", "\n")
+    text = content.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
     blocks = _split_blocks(text)
     raw_cues: list[SubtitleCue] = []
     for block in blocks:
@@ -187,18 +190,17 @@ def _format_timecode(seconds: float) -> str:
 
 
 def load_srt(file_path: str) -> list[SubtitleCue]:
-    """Charge un fichier SRT UTF-8 et retourne la liste des cues."""
-    path = Path(file_path)
-    content = path.read_text(encoding="utf-8")
-    return parse_srt(content)
+    """Charge un fichier SRT et retourne la liste des cues.
+
+    L'encodage est deviné par :func:`~core.text_decoding.decode_text_bytes` : UTF-8 avec ou sans BOM, UTF-16 avec
+    BOM (« Unicode » du Bloc-notes) et Windows-1252 des vieux SRT.
+    """
+    return parse_srt(decode_text_bytes(Path(file_path).read_bytes()))
 
 
 def save_srt(cues: list[SubtitleCue], file_path: str) -> None:
-    """Sérialise ``cues`` dans ``file_path`` au format SRT UTF-8."""
-    path = Path(file_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = format_srt(cues)
-    path.write_text(content, encoding="utf-8")
+    """Sérialise ``cues`` dans ``file_path`` au format SRT UTF-8, de façon atomique (le dossier est créé)."""
+    atomic_write_text(file_path, format_srt(cues))
 
 
 # ---------------------------------------------------------------------------

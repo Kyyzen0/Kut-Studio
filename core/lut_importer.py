@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
+from .text_decoding import decode_text_bytes
+
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -148,12 +150,9 @@ def parse_cube_lut(path: str | Path) -> CubeLUT:
         )
     data = file_path.read_bytes()
     sha1 = hashlib.sha1(data).hexdigest()
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise LUTImportBadFormat(
-            f"Le fichier n'est pas UTF‑8 valide : {file_path}"
-        ) from exc
+    # BOM (Bloc-notes, Resolve sous Windows) et ``TITLE`` accentué en Windows-1252 sont acceptés : FFmpeg
+    # ``lut3d`` lit ces fichiers tels quels, seul l'en-tête doit être reconnu ici.
+    text = decode_text_bytes(data)
 
     title = file_path.stem
     size: int | None = None

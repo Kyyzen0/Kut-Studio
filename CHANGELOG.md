@@ -39,6 +39,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- L'import d'un sous-titre `.srt` ou d'une LUT `.cube` enregistré par le Bloc-notes Windows ou Subtitle Edit
+  fonctionne : la marque d'encodage (BOM), l'UTF-16 « Unicode » et les vieux fichiers en Windows-1252 sont acceptés.
+  Avant, la première réplique d'un SRT avec BOM était refusée et la LUT était déclarée invalide.
+- L'export des sous-titres en `.srt` ne laisse plus un fichier tronqué si l'écriture échoue en cours de route.
 - L'application Windows construite a de nouveau son icône (le fichier `.ico` n'était jamais généré).
 - Un projet `.kut` qui contient une clé inconnue est refusé comme tout fichier abîmé (`ValueError`, message clair),
   y compris quand le chargement est appelé hors de l'interface.

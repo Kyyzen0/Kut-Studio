@@ -68,6 +68,7 @@ from core.lut_importer import (
     CubeLUT,
     LUT_3D_SIZE_KEY,
     LUTImportBadFormat,
+    LUTImportError,
     LUTImportMissingFile,
     LUTImportUnsupported,
     MAX_LUT_SIZE,
@@ -237,6 +238,33 @@ def test_parse_cube_lut_happy_path(tmp_path) -> None:
     assert parsed.title == "Identity"
     assert parsed.size == 2
     assert len(parsed.entries) == 2 * 2 * 2 * 3
+
+
+@pytest.mark.parametrize(
+    "encode",
+    [
+        lambda text: b"\xef\xbb\xbf" + text.encode("utf-8"),
+        lambda text: b"\xef\xbb\xbf" + text.replace("\n", "\r\n").encode("utf-8"),
+        lambda text: text.encode("cp1252"),
+    ],
+    ids=["utf8-bom", "utf8-bom-crlf", "cp1252"],
+)
+def test_parse_cube_lut_accepts_bom_and_windows_1252(tmp_path, encode) -> None:
+    """Un ``.cube`` enregistré par le Bloc-notes (BOM, CRLF) ou au titre en Windows-1252 est importé."""
+    cube = tmp_path / "windows.cube"
+    cube.write_bytes(encode(_cube_text(size=2, title="Négatif")))
+    parsed = parse_cube_lut(cube)
+    assert parsed.title == "Négatif"
+    assert parsed.size == 2
+    assert len(parsed.entries) == 2 * 2 * 2 * 3
+
+
+def test_parse_cube_lut_rejects_binary_content(tmp_path) -> None:
+    """Le décodage tolérant ne fait pas accepter un fichier binaire : l'en-tête reste refusé."""
+    cube = tmp_path / "image.cube"
+    cube.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\xff\xd8")
+    with pytest.raises(LUTImportError):
+        parse_cube_lut(cube)
 
 
 def test_parse_cube_lut_rejects_1d(tmp_path) -> None:
