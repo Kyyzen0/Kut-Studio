@@ -68,3 +68,66 @@ def test_the_workflow_keeps_read_only_permissions_and_major_pinned_actions() -> 
     actions = re.findall(r"^\s+(?:- )?uses: (\S+)", text, re.MULTILINE)
     assert actions, "aucune action trouvée : l'analyse du fichier est en défaut"
     assert all(re.fullmatch(r"[\w./-]+@v\d+", action) for action in actions), actions
+
+
+# ---------------------------------------------------------------------------
+# Couverture de code (docs/coverage.md) : mesurée une fois, sur Linux, et bloquante par son cliquet.
+# ---------------------------------------------------------------------------
+
+
+def _steps(job: str) -> list[str]:
+    """Texte de chaque étape d'un job (élément de liste à six espaces d'indentation sous ``steps:``)."""
+    steps: list[list[str]] = []
+    for line in _without_comments(job).splitlines():
+        if line.startswith("      - "):
+            steps.append([line])
+        elif steps:
+            steps[-1].append(line)
+    return ["\n".join(step) for step in steps]
+
+
+def _condition(step: str) -> str | None:
+    match = re.search(r"^\s+if: (.+?)\s*$", step, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _matrix_steps() -> list[str]:
+    return _steps(_jobs()["test-and-build"])
+
+
+def test_coverage_is_measured_once_on_linux_with_the_same_condition_as_mypy() -> None:
+    steps = _matrix_steps()
+    mypy = [step for step in steps if "python -m mypy" in step]
+    assert len(mypy) == 1, "l'étape mypy sert de référence à la condition Linux"
+    linux_only = _condition(mypy[0])
+    assert linux_only == "runner.os == 'Linux'"
+
+    suites = [step for step in steps if "python -m pytest" in step]
+    covered = [step for step in suites if "--cov" in step]
+    plain = [step for step in suites if "--cov" not in step]
+    assert len(covered) == 1 and len(plain) == 1, "une suite instrumentée (Linux) et une suite nue (macOS, Windows)"
+    assert _condition(covered[0]) == linux_only
+    assert _condition(plain[0]) == "runner.os != 'Linux'", "macOS et Windows lancent toujours toute la suite"
+    for flag in ("--cov-branch", "--cov-report=json", "--cov-report=xml", "--timeout=600", "-n auto"):
+        assert flag in covered[0], f"{flag} manque à la suite instrumentée"
+    assert "--timeout=600" in plain[0] and "-n auto" in plain[0]
+
+
+def test_the_coverage_ratchet_blocks_the_linux_job_and_reports_even_on_failure() -> None:
+    steps = _matrix_steps()
+    ratchets = [step for step in steps if "tools/coverage_ratchet.py coverage.json" in step]
+    assert len(ratchets) == 1
+    ratchet = ratchets[0]
+    assert _condition(ratchet) == "runner.os == 'Linux'"
+    assert "continue-on-error" not in ratchet, "un cliquet non bloquant laisserait la couverture régresser en silence"
+    assert re.search(r"^\s+shell: bash\s*$", ratchet, re.MULTILINE), "bash explicite = pipefail : « | tee » garde le code"
+    assert any("GITHUB_STEP_SUMMARY" in step and "coverage-ratchet.txt" in step for step in steps)
+    uploads = [step for step in steps if "upload-artifact" in step and "coverage.json" in step]
+    assert len(uploads) == 1 and "coverage.xml" in uploads[0]
+    assert re.search(r"retention-days: 7\b", uploads[0])
+    assert "runner.os == 'Linux'" in (_condition(uploads[0]) or "")
+
+
+def test_the_libass_job_does_not_measure_coverage() -> None:
+    job = _without_comments(_jobs()["macos-libass"])
+    assert "--cov" not in job and "coverage_ratchet" not in job
