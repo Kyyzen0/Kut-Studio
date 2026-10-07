@@ -386,7 +386,7 @@ def test_the_ducking_voice_submix_also_sums(monkeypatch):
     # Deux clips voix et la base silencieuse qui fait durer la clé jusqu'au bout de la timeline.
     assert ("[av0_base][a1_key][a2_key]amix=inputs=3:duration=first:dropout_transition=0:normalize=0,"
             "aformat=channel_layouts=stereo:sample_rates=48000[av0]") in graph
-    assert "[a0][a0_sc0]sidechaincompress" in graph
+    assert "[a0]apad[a0_duck_scin];[a0_duck_scin][a0_sc0]sidechaincompress" in graph
 
 
 def test_every_ducking_label_is_produced_once_and_read_once(monkeypatch):

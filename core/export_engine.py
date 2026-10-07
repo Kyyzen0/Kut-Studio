@@ -1416,7 +1416,7 @@ def _compose_plan_graph(
 
         video_label = f"{p}bg"
         if plan.video_layers:
-            display_layers = _build_transition_layers(parts, plan, prefix=p)
+            display_layers = _build_transition_layers(parts, plan, prefix=p, fps=fps)
             previous_label = f"{p}bg"
             for layer_index, (label, layer) in enumerate(display_layers):
                 is_last = layer_index == len(display_layers) - 1
@@ -1563,7 +1563,7 @@ def _compose_plan_graph(
                 branch_output = output if len(active) == 1 else f"{p}a{audio_index}_duck{j}"
                 parts.append(_build_ducking_chain(
                     sc, voice_label=voice_keys[sc.voice_track_id].pop(), main_label=branch,
-                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}",
+                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}", duration=duration,
                 ))
                 ducked_branches.append(branch_output)
             if len(active) > 1:
@@ -1682,10 +1682,16 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
 
 
 def _build_transition_layers(
-    parts: list[str], plan: RenderPlan, prefix: str = ""
+    parts: list[str], plan: RenderPlan, prefix: str = "", fps: float = 30.0
 ) -> list[tuple[str, RenderLayer]]:
-    """Remplace deux couches liées par leur flux ``xfade`` FFmpeg."""
+    """Remplace deux couches liées par leur flux ``xfade`` FFmpeg.
+
+    ``xfade`` exige une cadence connue sur ses deux entrées. FFmpeg 7.0 / 7.1 l'efface à chaque ``setpts`` (8.0 l'a rendu
+    optionnel : ``strip_fps``) et refusait donc *toute* transition (« current rate of 1/0 is invalid »). Le ``fps`` qui
+    suit la redonne ; sur un flux déjà conformé à cette cadence, il ne duplique ni ne retire aucune image.
+    """
     p = prefix
+    rate = ffmpeg_rate(fps)
     by_id = {layer.clip_id: (index, layer) for index, layer in enumerate(plan.video_layers)}
     replacements: dict[int, tuple[str, RenderLayer]] = {}
     hidden: set[int] = set()
@@ -1702,8 +1708,8 @@ def _build_transition_layers(
         offset = max(0.0, from_layer.timeline_end - from_layer.timeline_start - transition.duration)
         label = f"{p}transition{transition_index}"
         parts.append(
-            f"[{p}v{from_index}]setpts=PTS-STARTPTS[{p}ta{transition_index}];"
-            f"[{p}v{to_index}]setpts=PTS-STARTPTS[{p}tb{transition_index}];"
+            f"[{p}v{from_index}]setpts=PTS-STARTPTS,fps={rate}[{p}ta{transition_index}];"
+            f"[{p}v{to_index}]setpts=PTS-STARTPTS,fps={rate}[{p}tb{transition_index}];"
             f"[{p}ta{transition_index}][{p}tb{transition_index}]"
             f"xfade=transition={name}:duration={_format_seconds(transition.duration)}:"
             f"offset={_format_seconds(offset)},"
@@ -2007,8 +2013,10 @@ def _build_layer_filter(
         hold = max(hold, 1.0 / float(fps))
         parts.append(f"{_build_freeze_video_filter(layer)},")
         parts.append(f"{frame_fit},")
-        parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
+        # ``fps`` avant ``tpad`` : ``tpad`` compte les images à ajouter avec la cadence d'entrée, que ``setpts`` efface
+        # sous FFmpeg 7.x ; il n'en ajoutait alors aucune (une image puis du noir pendant tout l'arrêt sur image).
         parts.append(f"fps={ffmpeg_rate(fps)},")
+        parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
         parts.append(f"trim=duration={hold:.6f},")
         parts.append("setpts=PTS-STARTPTS,")
     elif time_map is not None:
@@ -2784,7 +2792,9 @@ def _ducking_config(sidechain):
     return getattr(sidechain, "config", None) or DuckingConfig()
 
 
-def _build_ducking_chain(sidechain, voice_label: str, main_label: str, output_label: str, key_label: str) -> str:
+def _build_ducking_chain(
+    sidechain, voice_label: str, main_label: str, output_label: str, key_label: str, duration: float
+) -> str:
     """Filtres d'un ducking : ``[voix]`` atténue ``[musique]`` vers ``[sortie]``.
 
     ``sidechaincompress`` prend la musique sur son entrée 0 et la voix (la *clé*) sur son entrée 1. Les réglages de
@@ -2796,6 +2806,12 @@ def _build_ducking_chain(sidechain, voice_label: str, main_label: str, output_la
     (``aeval``, sans latence) : la voix atténue la musique en proportion de son dépassement du seuil, jusqu'à
     ``reduction_db`` exactement. La clé n'est jamais entendue, son écrêtage est inaudible. ``makeup=1`` : pas de
     compensation, c'est le principe du ducking.
+
+    ``sidechaincompress`` se termine dès que l'*une* de ses entrées se termine et jette ce qu'il gardait en attente : la
+    musique arrive souvent au bout avant que la clé (voix mixée) ne la rattrape, et FFmpeg (multithread depuis 7.0) les
+    fait avancer à des rythmes qui varient d'un export à l'autre. La fin de la musique était coupée au hasard (jusqu'à
+    1,3 s mesurée sur 6 s). Les deux entrées sont donc prolongées sans fin (``apad``) et la sortie coupée à ``duration``,
+    la durée de la timeline : le compresseur commence toujours sa sortie à 0.
     """
     config = _ducking_config(sidechain)
     threshold = _clamp(10.0 ** (float(config.threshold_db) / 20.0), SIDECHAIN_THRESHOLD_RANGE)
@@ -2805,10 +2821,12 @@ def _build_ducking_chain(sidechain, voice_label: str, main_label: str, output_la
     overshoot_db = float(config.reduction_db) * ratio / (ratio - 1.0) if ratio > 1.0 else 0.0
     ceiling = f"{threshold * 10.0 ** (overshoot_db / 20.0):.6f}"
     clip = "|".join(f"clip(val({channel}),-{ceiling},{ceiling})" for channel in (0, 1))
+    padded_main = f"{output_label}_scin"
     return (
-        f"[{voice_label}]aeval=exprs='{clip}'[{key_label}];"
-        f"[{main_label}][{key_label}]sidechaincompress=threshold={threshold:.6f}:ratio={ratio:.3f}:"
-        f"attack={attack:.3f}:release={release:.3f}:makeup=1[{output_label}]"
+        f"[{voice_label}]aeval=exprs='{clip}',apad[{key_label}];"
+        f"[{main_label}]apad[{padded_main}];"
+        f"[{padded_main}][{key_label}]sidechaincompress=threshold={threshold:.6f}:ratio={ratio:.3f}:"
+        f"attack={attack:.3f}:release={release:.3f}:makeup=1,atrim=end={_format_seconds(duration)}[{output_label}]"
     )
 
 

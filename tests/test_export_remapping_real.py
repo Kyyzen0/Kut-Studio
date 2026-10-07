@@ -56,7 +56,7 @@ def _color_at(project, t: float, dx: int = 0) -> str:
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
         command += ["-i", path]
-    command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-f", "rawvideo", "-"]
+    command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
     completed = subprocess.run(command, capture_output=True, timeout=60)
     assert completed.returncode == 0, completed.stderr.decode(errors="replace")[-600:]
     data = completed.stdout

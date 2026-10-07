@@ -104,12 +104,12 @@ def render(project, width, height, cache, *, prepared=None, cancelled=None, wind
     streams = preparation.streams if preparation is not None else prepared
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, width, height, FPS, None, prepared=streams)
     graph += f";[{video}]format=yuv420p[probe]"
-    if audio:
-        graph += f";[{audio}]anullsink"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for item in inputs:
         command += ["-i", item]
-    command += ["-filter_complex", graph, "-map", "[probe]", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
+    command += ["-filter_complex", graph, "-map", "[probe]", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
+    if audio:                                   # 2de sortie plutôt qu'un puits : FFmpeg 7.x avorte sur un puits nourri par un son généré
+        command += ["-map", f"[{audio}]", "-f", "null", "-"]
     done = subprocess.run(command, capture_output=True, timeout=300)
     assert done.returncode == 0, done.stderr.decode(errors="replace")[-800:]
     size = width * height * 3 // 2

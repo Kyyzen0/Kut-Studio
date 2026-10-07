@@ -326,7 +326,9 @@ class TestAudioTimeStage:
         layer = _make_audio_layer(time_remapping=TimeRemapping(
             freeze_mode=FreezeFrameMode.FREEZE, freeze_source_time=5.0, freeze_duration=3.0))
         chain = _build_audio_filter(0, layer, 0, 100.0)
-        assert "anullsrc" in chain and "apad=whole_dur=3,atrim=end=3" in chain and "volume=0" not in chain
+        # Silence fabriqué en vidant la source (``atrim=end=0``) : pas de puits ``anullsink`` (FFmpeg 7.x avorte).
+        assert "atrim=end=0" in chain and "apad=whole_dur=3,atrim=end=3" in chain and "volume=0" not in chain
+        assert "anullsink" not in chain
 
     def test_the_sound_can_keep_its_own_time_while_only_the_picture_is_remapped(self):
         layer = _make_audio_layer(time_remapping=TimeRemapping(speed=2.0, remap_audio=False))
@@ -413,7 +415,7 @@ class TestBuildAudioFilterIntegration:
             ),
         )
         filter_str = _build_audio_filter(0, layer, 0, 100.0)
-        assert "anullsrc" in filter_str and "volume=0" not in filter_str
+        assert "atrim=end=0" in filter_str and "volume=0" not in filter_str and "anullsink" not in filter_str
 
 
 class TestLayerOffset:

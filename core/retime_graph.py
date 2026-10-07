@@ -186,8 +186,9 @@ def _run_chain(
     if run.kind is RunKind.HOLD:
         frame = nearest_frame(run.s0, fs, last_frame)
         return (
+            # ``fps`` avant ``tpad`` : sans cadence connue (``setpts`` l'efface sous FFmpeg 7.x), ``tpad`` n'ajoute rien.
             f"trim=start={_fmt((frame - TRIM_START_MARGIN) / fs)}:end={_fmt((frame + TRIM_END_MARGIN) / fs)},setpts=PTS-STARTPTS,"
-            f"tpad=stop_mode=clone:stop_duration={_fmt(min(ticks / fps + 1.0, 3600.0))},fps={_fmt(fps)},"
+            f"fps={_fmt(fps)},tpad=stop_mode=clone:stop_duration={_fmt(min(ticks / fps + 1.0, 3600.0))},"
             f"trim=end_frame={ticks},setpts=PTS-STARTPTS"
         )
     low, high = sorted((run.s0, run.s1))
@@ -408,6 +409,16 @@ def _silence(duration: float) -> str:
     )
 
 
+def _silence_reading(source_duration: float) -> str:
+    """Silence de ``source_duration`` secondes fabriqué *à partir* d'une entrée qu'il vide sans rien en garder.
+
+    Remplace ``[entrée]anullsink`` : FFmpeg 7.0 / 7.1 avorte (« Assertion best_input >= 0 failed ») sur un graphe dont un
+    puits est alimenté par une source interne (le son généré d'une séquence imbriquée). ``atrim=end=0`` ferme l'entrée
+    aussitôt, ``apad`` donne la durée exacte : aucun puits, même résultat sur toutes les versions.
+    """
+    return f"atrim=end=0,asetpts=PTS-STARTPTS,{_AUDIO_FORMAT},apad=whole_dur={_fmt(source_duration)}"
+
+
 def _audio_piece_chain(piece: Piece, kind: RunKind, *, extend: float, preserve_pitch: bool) -> str:
     """Un morceau à vitesse constante : portion de source, sens, tempo. ``extend`` : recouvrement du fondu (secondes de timeline)."""
     speed = abs(piece.speed)
@@ -461,12 +472,13 @@ def audio_stage(
         return AudioStage((f"{_silence(duration)},{tail}[{out}]",), out)
     count = len(segments)
     chains: list[str] = []
-    # Seuls les morceaux qui jouent de la source la consomment (un silence n'en lit rien) : ``asplit`` n'a que ces sorties,
-    # et une entrée que personne ne lit (arrêt sur image sur une séquence imbriquée) est refermée par ``anullsink``.
+    # Seuls les morceaux qui jouent de la source la consomment (un silence n'en lit rien) : ``asplit`` n'a que ces sorties.
+    # Une entrée que personne ne lit (arrêt sur image sur une séquence imbriquée) est vidée par le premier silence
+    # (``_silence_reading``) : pas de puits ``anullsink``, qui fait avorter FFmpeg 7.x quand une source interne l'alimente.
     consuming = [i for i, (piece, kind) in enumerate(segments) if kind is not RunKind.HOLD and abs(piece.speed) >= MIN_AUDIO_SPEED]
     entries: dict[int, str] = {}
     if len(consuming) == 0:
-        chains.append(f"[{source_label}]anullsink")
+        entries[0] = source_label
     elif len(consuming) == 1:
         entries[consuming[0]] = source_label
     else:
@@ -479,7 +491,11 @@ def audio_stage(
         joined = not last and (piece.t1 - piece.t0) > 3 * AUDIO_CROSSFADE and (
             segments[index + 1][0].t1 - segments[index + 1][0].t0
         ) > 3 * AUDIO_CROSSFADE
-        body = _audio_piece_chain(piece, kind, extend=AUDIO_CROSSFADE if joined else 0.0, preserve_pitch=preserve_pitch)
+        extend = AUDIO_CROSSFADE if joined else 0.0
+        if index in entries and not consuming:
+            body = _silence_reading(piece.t1 - piece.t0 + extend)
+        else:
+            body = _audio_piece_chain(piece, kind, extend=extend, preserve_pitch=preserve_pitch)
         label = f"{prefix}p{index}"
         if index in entries:
             chains.append(f"[{entries[index]}]{body}[{label}]")

@@ -19,6 +19,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Au démarrage, la barre d'état prévient quand l'aperçu GPU reste suspendu après un plantage, et indique le réglage
   qui le rétablit (*Préférences › Performance › Matériel › Rendu de l'aperçu › GPU*) ; le diagnostic matériel le
   nomme en toutes lettres.
+- Développement : la CI teste aussi FFmpeg 7.1 et Python 3.13 (Debian 13), en plus de FFmpeg 6.1 et de la dernière
+  version sous Python 3.11.
 - Développement : mesure de la couverture de code (`core/` et `ui/`, branches comprises) et cliquet en CI qui bloque
   toute baisse, sans service externe ([docs/coverage.md](docs/coverage.md)).
 
@@ -39,6 +41,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Avec FFmpeg 7.0 ou 7.1 (Debian 13, Ubuntu récents, `ffmpeg@7` de Homebrew) : l'export d'un projet contenant une
+  transition échouait (« current rate of 1/0 is invalid ») ; un arrêt sur image n'affichait qu'une image puis du noir ;
+  un arrêt sur image d'une séquence imbriquée faisait planter FFmpeg ; l'interpolation lisait des images source
+  dupliquées ou manquantes, plus sombres de deux niveaux.
+- Le ducking ne coupe plus au hasard la fin de la musique : selon l'ordre dans lequel FFmpeg terminait la musique et
+  la voix, jusqu'à 1,3 s de musique disparaissait en fin de timeline (toutes versions de FFmpeg).
 - L'export garde la cadence du projet. Les presets (YouTube, H.264, ProRes Master, réseaux sociaux…) exportaient
   toujours à 30 ou 60 i/s : un projet en 25, 23,976 ou 29,97 i/s ressortait avec des images dupliquées et des
   saccades. Ils suivent désormais la cadence de la séquence ; seul « TikTok 60 fps » impose la sienne, et le panneau

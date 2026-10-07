@@ -392,14 +392,18 @@ class _Decoder:
         chain = [window, "setpts=PTS-STARTPTS"]
         if request.conform:
             chain.append(request.conform)
-        chain.append("format=rgb24")
+        # ``gbrp`` puis ``-pix_fmt rgb24`` (simple réagencement des plans) : la conversion directe YUV → rgb24 de swscale
+        # passe sous FFmpeg 7.x (arm64) par un chemin imprécis, deux niveaux trop sombre ; YUV → gbrp est exacte partout.
+        chain.append("format=gbrp")
         return [
             _ffmpeg(), "-nostdin", "-hide_banner", "-v", "error",
             # ``-copyts`` garde les horodatages du média après le saut (le ``trim`` ci-dessous les attend absolus) ; ``-start_at_zero``
             # les compte depuis le début du *flux*, comme le graphe principal, et non depuis l'horloge du conteneur (MPEG-TS : 1,4 s).
             *(["-ss", _seconds(seek)] if seek > 0 else []), "-copyts", "-start_at_zero", "-i", request.media_path,
             "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", ",".join(chain),
-            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            # Une image par image décodée : sans cadence déclarée (``setpts`` l'efface sous FFmpeg 7.x), une sortie
+            # ``rawvideo`` serait remise à 25 i/s, avec des images dupliquées ou perdues.
+            "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
         ]
 
     def frames(self) -> Generator[tuple[int, Frame8], None, None]:

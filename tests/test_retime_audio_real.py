@@ -58,11 +58,11 @@ def exported_audio(project) -> np.ndarray:
     plan = build_render_plan(project)
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     assert audio, "le graphe doit produire une piste audio"
-    graph += f";[{video}]nullsink"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
         command += ["-i", path]
-    command += ["-filter_complex", graph, "-map", f"[{audio}]", "-f", "s16le", "-ar", str(RATE), "-ac", "2", "-"]
+    command += ["-filter_complex", graph, "-map", f"[{audio}]", "-f", "s16le", "-ar", str(RATE), "-ac", "2", "-",
+                "-map", f"[{video}]", "-f", "null", "-"]       # une 2de sortie plutôt qu'un puits (FFmpeg 7.x)
     done = subprocess.run(command, capture_output=True, timeout=120)
     assert done.returncode == 0, done.stderr.decode(errors="replace")[-800:]
     samples = np.frombuffer(done.stdout, dtype=np.int16).reshape(-1, 2)[:, 0].astype(np.float64)
