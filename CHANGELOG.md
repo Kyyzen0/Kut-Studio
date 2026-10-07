@@ -39,6 +39,15 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Un export dont la source n'est pas balisée BT.709 (capture d'écran, vidéo SD, montage fait seulement de titres et
+  de formes, séquence vide) n'est plus assombri : la conversion de couleur de sortie lui retirait près de 2 niveaux
+  avec FFmpeg 9 et près de 4 avec FFmpeg 7.1 (Mac Apple Silicon). Les sources BT.709 ne changent pas, et
+  les modes de fusion, les séquences imbriquées et les scopes donnent maintenant les mêmes couleurs quelle que soit la
+  version de FFmpeg. L'export est aussi plus rapide (environ −20 % en 1080p H.264, −15 % en ProRes, mesuré sur Mac) ;
+  l'aperçu fidèle, qui compose avec le même graphe, en profite.
+- À l'export, la position d'un clip est arrondie au pixel le plus proche ; elle était ramenée au pixel pair inférieur,
+  si bien qu'un déplacement lent avançait par pas de 2 pixels et qu'une vidéo stabilisée tremblait d'un pixel une
+  image sur deux.
 - L'application Windows construite a de nouveau son icône (le fichier `.ico` n'était jamais généré).
 - Un projet `.kut` qui contient une clé inconnue est refusé comme tout fichier abîmé (`ValueError`, message clair),
   y compris quand le chargement est appelé hors de l'interface.

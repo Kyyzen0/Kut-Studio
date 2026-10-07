@@ -97,7 +97,7 @@ def test_preview_and_export_show_the_same_values_at_every_frame(window, tmp_path
     applied = []
     window.preview_panel.apply_transform = lambda **values: applied.append(values)
     graph = _filter_graph(window, tmp_path)
-    x_expression = graph.split("x='(W-w)/2+(", 1)[1].split(")*1920.0", 1)[0]
+    x_expression = graph.split("x='round((W-w)/2+(", 1)[1].split(")*1920.0", 1)[0]
     opacity_expression = graph.split("geq=", 1)[1].split("a='", 1)[1].split("'", 1)[0]
     rotation_expression = graph.split("rotate=a='", 1)[1].split("*0.0174", 1)[0]
     clip = _clip(window)

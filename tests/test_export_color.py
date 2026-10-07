@@ -35,6 +35,18 @@ def source(tmp_path_factory):
     return str(path)
 
 
+@pytest.fixture(scope="module")
+def untagged_source(tmp_path_factory):
+    """Source sans balise de couleur (capture d'écran, vidéo SD, image générée) : FFmpeg la lit en BT.601."""
+    path = tmp_path_factory.mktemp("color") / "src_untagged.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0xDD5C1D:s={W}x{H}:d=2:r={FPS},format=rgb24",
+         "-vf", "scale=out_color_matrix=bt601:out_range=tv,format=yuv420p,setparams=colorspace=unknown:range=unknown",
+         "-c:v", "libx264", "-crf", "10", str(path)], check=True, timeout=60)
+    assert _tags(path) == ("unknown", "unknown", "unknown")
+    return str(path)
+
+
 def _plan(source_path):
     asset = MediaAsset(id="a", path=source_path, name="s", duration=2.0, width=W, height=H, fps=float(FPS),
                        media_type="video", has_audio=False)
@@ -44,11 +56,15 @@ def _plan(source_path):
     return build_render_plan(project)
 
 
-def _decoded_as_bt709(path) -> tuple[int, int, int]:
-    """Pixel central tel que le voit un lecteur qui décode en BT.709, plage limitée."""
+def _decoded_as_bt709(path, matrix: str = "bt709") -> tuple[int, int, int]:
+    """Pixel central tel que le voit un lecteur qui décode en BT.709 (ou ``matrix``), plage limitée.
+
+    ``full_chroma_int`` comme ``core.hardware_validation`` : sans lui, ``accurate_rnd`` vers ``rgb24`` lit lui-même deux
+    niveaux trop sombre (mesuré, FFmpeg 7.1 et 9 : (219, 91, 27) au lieu de (221, 92, 29) pour la source non balisée).
+    """
     data = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-vf",
-         "scale=in_color_matrix=bt709:in_range=tv:flags=accurate_rnd,format=rgb24", "-frames:v", "1",
+         f"scale=in_color_matrix={matrix}:in_range=tv:flags=accurate_rnd+full_chroma_int,format=rgb24", "-frames:v", "1",
          "-f", "rawvideo", "-"], capture_output=True, timeout=60, check=True).stdout
     offset = ((H // 2) * W + W // 2) * 3
     return tuple(data[offset:offset + 3])
@@ -60,6 +76,12 @@ def _tags(path) -> tuple[str, ...]:
          "stream=color_space,color_primaries,color_transfer", "-of", "csv=p=0", str(path)],
         capture_output=True, text=True, timeout=30, check=True).stdout.strip()
     return tuple(out.split(","))
+
+
+def _pixel_format(path) -> str:
+    return subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=pix_fmt", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, timeout=30, check=True).stdout.strip()
 
 
 def _export(source_path, tmp_path, fmt, name):
@@ -75,15 +97,34 @@ def _close(actual, expected, tolerance=3):
     return all(abs(a - e) <= tolerance for a, e in zip(actual, expected))
 
 
-@pytest.mark.parametrize("fmt, name", [(ExportFormat.MP4_H264, "out.mp4"), (ExportFormat.MOV_PRORES, "out.mov"),
-                                       (ExportFormat.MOV_H264, "out_h264.mov")])
-def test_an_export_keeps_the_colours_of_a_bt709_source(source, tmp_path, fmt, name):
+FORMATS = [(ExportFormat.MP4_H264, "out.mp4", "yuv420p"), (ExportFormat.MOV_PRORES, "out.mov", "yuv444p10le"),
+           (ExportFormat.MOV_H264, "out_h264.mov", "yuv420p")]
+
+
+@pytest.mark.parametrize("fmt, name, pixel_format", FORMATS)
+def test_an_export_keeps_the_colours_of_a_bt709_source(source, tmp_path, fmt, name, pixel_format):
     reference = _decoded_as_bt709(source)
     assert _close(reference, ORIGINAL, 5)                       # la source elle-même est fidèle (±5 : encodage avec perte)
     output = _export(source, tmp_path, fmt, name)
     assert _tags(output) == ("bt709", "bt709", "bt709"), "le flux doit être balisé BT.709"
     actual = _decoded_as_bt709(output)
     assert _close(actual, reference), f"{fmt.name} : export {actual} ≠ source {reference} (avant : (229, 98, 20))"
+    # La composition est en RVBA : laissé à la négociation, libx264 recevait du yuv444p (« High 4:4:4 Predictive »,
+    # illisible pour QuickTime, Safari, iOS). Le format remis à l'encodeur est celui d'avant, fixé.
+    assert _pixel_format(output) == pixel_format
+
+
+@pytest.mark.parametrize("fmt, name, pixel_format", FORMATS)
+def test_an_untagged_source_is_not_darkened_by_the_export(untagged_source, tmp_path, fmt, name, pixel_format):
+    """Régression : la composition en 4:2:0 lue en BT.601 changeait de matrice YUV → YUV en sortie, ce que swscale
+    arrondit vers le sombre (−2 niveaux par canal avec FFmpeg 9, jusqu'à −3,6 avec FFmpeg 7.1 sur arm64). Composée en
+    RVBA, la sortie n'a plus qu'une conversion RVB → YUV, exacte : ±1 ici, que l'ancienne sortie dépassait."""
+    reference = _decoded_as_bt709(untagged_source, matrix="bt601")
+    assert _close(reference, ORIGINAL, 5)
+    output = _export(untagged_source, tmp_path, fmt, name)
+    actual = _decoded_as_bt709(output)
+    assert _close(actual, reference, 1), f"{fmt.name} : export {actual} ≠ source {reference}"
+    assert _pixel_format(output) == pixel_format
 
 
 def test_a_preview_segment_has_the_same_colours_and_tags_as_the_export(source, tmp_path):

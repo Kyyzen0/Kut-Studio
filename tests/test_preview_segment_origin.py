@@ -99,7 +99,7 @@ def test_segment_graph_starts_at_its_origin(tmp_path):
                                     duration=SEGMENT, output_path=str(tmp_path / "s.mp4"))
     graph = command[command.index("-filter_complex") + 1]
     background = next(part for part in graph.split(";") if part.startswith("color=c=black:"))
-    assert background.endswith("trim=start=4.0[bg]")
+    assert background.endswith("trim=start=4.0,format=rgba[bg]")         # composition en RVBA dès le fond
     assert command[command.index("-ss") + 1] == "4.000"     # la sortie se cale toujours sur le segment
 
 

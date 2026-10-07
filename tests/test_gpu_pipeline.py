@@ -181,10 +181,12 @@ def _ffmpeg_vs_reference(effects, *, full_chroma: bool = False):
     chain = _build_clip_effect_filters(tuple(effects))
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", pix_fmt, "-s", f"{width}x{height}",
-         "-i", "-", "-vf", (chain + "," if chain else "") + "format=rgb24", "-f", "rawvideo", "-"],
+         "-i", "-", "-vf", (chain + "," if chain else "") + "format=rgba", "-f", "rawvideo", "-"],
         input=raw, capture_output=True, check=True,
     )
-    expected = np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 3) / 255.0
+    # ``rgba`` comme le calque de l'export (``_build_layer_filter``) : swscale ne convertit pas vers ``rgb24`` et ``rgba``
+    # avec le même code partout (voir ``_swscale_conversion_error``).
+    expected = np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
     full = codes.astype(float) / 255.0  # chroma 2×2 dupliquée, comme la conversion de FFmpeg ici
     got = reference_layer(full, program_for(effects), yuv_to_rgb=yuv_to_rgb_matrix())
     diff = np.abs(got - expected) * 255
@@ -195,17 +197,27 @@ def _ffmpeg_vs_reference(effects, *, full_chroma: bool = False):
 def _swscale_conversion_error():
     """Écart du cas « sans effet » : l'arrondi à virgule fixe de swscale propre à CE FFmpeg.
 
-    Il s'ajoute à chaque cas. Mesuré : 0,87 de moyenne / 2,4 de p99 / 3 au maximum avec FFmpeg 6.1 et 7.1
-    (Ubuntu, Windows), moins de 0,5 / 2 avec le FFmpeg récent de macOS. Les seuils ci-dessous ne portaient
-    que sur ce dernier : ils faisaient échouer la CI sur les deux autres systèmes sans qu'aucune formule
-    ne diffère. L'écart reste sous un niveau de gris en moyenne : invisible, mais mesuré plutôt qu'ignoré.
+    Il s'ajoute à chaque cas. La conversion mesurée est celle de l'export, YUV 4:2:0 → ``rgba``. Moyenne / p99 :
+
+    - FFmpeg 9.0 et 7.1 sur arm64 (macOS) : 0,30 / 1,1 ;
+    - code C de swscale, sans SIMD (``-cpuflags 0``, FFmpeg 9 comme 7.1) : 1,07 / 2,6, un peu plus d'un niveau ;
+    - FFmpeg 6.1 et 7.1 sur x86-64 (Ubuntu, Windows), mesuré vers ``rgb24`` avant le passage à ``rgba`` : 0,87 / 2,4.
+
+    ``rgb24`` n'est pas un équivalent : FFmpeg 7.1 sur arm64 n'a pas de code NEON pour lui et y donnait 1,07 / 2,6,
+    alors que l'export n'emprunte jamais cette conversion. Les seuils ne portaient d'abord que sur le FFmpeg de macOS :
+    ils faisaient échouer la CI sur les autres systèmes sans qu'aucune formule ne diffère. L'écart reste sous un niveau
+    de gris en moyenne : invisible, mais mesuré plutôt qu'ignoré.
     """
     return _ffmpeg_vs_reference(())
 
 
 @needs_ffmpeg
 def test_the_ffmpeg_conversion_alone_stays_within_one_grey_level():
-    """Garde-fou du calibrage : sans effet, aucune version de swscale ne doit s'écarter de la référence."""
+    """Garde-fou du calibrage : sans effet, aucune version de swscale ne doit s'écarter de la référence.
+
+    Le seuil n'est pas relevé pour le code C de swscale (1,07 mesuré) : une plateforme sans SIMD pour cette conversion
+    doit se voir ici plutôt que s'ajouter en silence au budget de chaque effet.
+    """
     mean, p99 = _swscale_conversion_error()
     assert mean <= 1.0 and p99 <= 3.0, (mean, p99)
 

@@ -157,7 +157,7 @@ par `split` / `asplit` (un label FFmpeg ne se lit qu'une fois). Le besoin est
 calculé des parents vers les enfants (`_nested_demand`) : une séquence dont
 personne n'écoute le son ne construit pas son mixage. Une séquence imbriquée
 est rendue à **sa** résolution × (taille d'export / taille de la séquence
-racine), sur `color=black@0,format=yuva420p` ; son cadrage dans le parent
+racine), sur `color=black@0,format=rgba` (composition en RVBA, comme la racine) ; son cadrage dans le parent
 utilise un `pad` transparent. Préfixe de labels unique par sous-plan (`n0_`,
 `n1_`…) ; la racine garde les labels historiques.
 

@@ -101,11 +101,27 @@ LOGGER = logging.getLogger("kut_studio.encoding")
 _ffmpeg_path = find_media_tool("ffmpeg")
 
 
+OUTPUT_PIXEL_FORMAT = "yuv420p"
+"""Format des images remises à l'encodeur H.264 / HEVC (logiciel ou matériel ; QSV et VAAPI le recopient en nv12).
+
+Fixé, et non laissé à la négociation : la composition est en RVBA, et FFmpeg choisirait alors le format qui perd le
+moins, ``yuv444p`` pour libx264 (profil « High 4:4:4 Predictive », illisible pour QuickTime, Safari, iOS et la
+plupart des décodeurs matériels)."""
+
+PRORES_PIXEL_FORMAT = "yuv444p10le"
+"""Format remis à ``prores_ks`` : celui qu'il retenait déjà d'une composition 4:2:0 (mesuré, FFmpeg 7.1 et 9)."""
+
 OUTPUT_COLOR_STAGE = (
     "scale=out_color_matrix=bt709:out_range=tv,"
+    f"format={OUTPUT_PIXEL_FORMAT},"
     "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv"
 )
 """Dernière étape du graphe vidéo : conversion RVB → YUV en BT.709, plage limitée, puis propriétés des images.
+
+La composition arrive en RVBA (voir :func:`_compose_plan_graph`) : c'est la seule conversion RVB → YUV du graphe,
+exacte avec toutes les versions de swscale. Composer en YUV obligeait ici à changer de matrice YUV → YUV, ce que
+swscale arrondit vers le sombre (−1,3 niveau avec FFmpeg 9, −2,7 avec FFmpeg 7.1 sur arm64, mesurés sur une source
+non balisée ou BT.601).
 
 ``setparams`` pose primaires et transfert sur les images elles-mêmes : selon la version de FFmpeg, les
 options de ligne de commande (:data:`OUTPUT_COLOR_TAGS`) ne suffisent pas (le flux sortait balisé
@@ -117,12 +133,21 @@ OUTPUT_COLOR_TAGS = (
 """Balises posées sur le flux encodé : un lecteur décode alors avec la matrice utilisée à l'encodage."""
 
 
-def with_output_color_stage(filter_complex: str, video_label: str) -> tuple[str, str]:
+def output_pixel_format(codec: str) -> str:
+    """Format des images remises à l'encodeur de la famille ``codec`` (voir :data:`OUTPUT_PIXEL_FORMAT`)."""
+    return PRORES_PIXEL_FORMAT if codec == "prores_ks" else OUTPUT_PIXEL_FORMAT
+
+
+def with_output_color_stage(
+    filter_complex: str, video_label: str, pixel_format: str = OUTPUT_PIXEL_FORMAT
+) -> tuple[str, str]:
     """Ajoute au graphe l'étape de conversion BT.709 ; renvoie ``(graphe, nouvelle étiquette vidéo)``.
 
     Partagée par l'export et l'aperçu : les deux restent « le même graphe », y compris pour la couleur.
+    ``pixel_format`` : format remis à l'encodeur (:func:`output_pixel_format`).
     """
-    return f"{filter_complex};[{video_label}]{OUTPUT_COLOR_STAGE}[vcolor]", "vcolor"
+    stage = OUTPUT_COLOR_STAGE.replace(f"format={OUTPUT_PIXEL_FORMAT},", f"format={pixel_format},")
+    return f"{filter_complex};[{video_label}]{stage}[vcolor]", "vcolor"
 
 
 def _ffmpeg_command_prefix() -> list[str]:
@@ -855,7 +880,9 @@ class ExportEngine(QObject):
         # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
         # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
         # un fichier HD comme du 709 affichait des couleurs décalées (rouge +11 niveaux mesurés).
-        filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
+        filter_complex, video_label = with_output_color_stage(
+            filter_complex, video_label, output_pixel_format(encoder.codec)
+        )
         if encoder.video_filter:
             filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
             video_label = "vencoded"
@@ -1354,6 +1381,12 @@ def _compose_plan_graph(
     (``bg``, ``v0``, ``vout``, ``aout``…). Une séquence imbriquée reçoit un
     préfixe unique (``n0_``…), un fond transparent et pas de gain Master.
 
+    La composition se fait en RVBA (fond ``format=rgba``, ``overlay`` en ``format=rgb``) : les calques le sont déjà, et
+    la seule conversion vers YUV est celle de la sortie (:data:`OUTPUT_COLOR_STAGE`). Composé en 4:2:0, chaque calque
+    y était converti, la chroma sous-échantillonnée à chaque ``overlay``, et la sortie changeait de matrice YUV → YUV,
+    ce que swscale arrondit vers le sombre (jusqu'à −2,7 niveaux avec FFmpeg 7.1 sur arm64) ; c'est aussi plus rapide
+    (−22 % de temps de filtres mesuré en 1080p, FFmpeg 7.1 comme 9).
+
     ``origin`` (racine seulement) : le fond ne commence qu'à cet instant (``trim``, horodatages gardés), si bien que
     toute la composition en aval, calques et fusions compris, ne travaille que sur les images utiles. Les calques
     arrivent avant lui ; les filtres de synchronisation (``overlay``, ``blend``…) écartent leurs images antérieures.
@@ -1385,11 +1418,11 @@ def _compose_plan_graph(
         if nested:
             parts.append(
                 f"color=c=black@0:s={width}x{height}:r={fps_text}{bg_duration},"
-                f"format=yuva420p[{p}bg]"
+                f"format=rgba[{p}bg]"
             )
         else:
             parts.append(
-                f"color=c=black:s={width}x{height}:r={fps_text}{bg_duration}{head_trim}[{p}bg]"
+                f"color=c=black:s={width}x{height}:r={fps_text}{bg_duration}{head_trim},format=rgba[{p}bg]"
             )
 
         for layer_index, layer in enumerate(plan.video_layers):
@@ -1441,7 +1474,7 @@ def _compose_plan_graph(
                 else:
                     parts.append(
                         f"[{previous_label}][{label}]"
-                        f"overlay={overlay_args}[{next_label}]"
+                        f"overlay={overlay_args}:format=rgb[{next_label}]"
                     )
                 previous_label = next_label
             video_label = f"{p}vout"
@@ -2551,8 +2584,11 @@ def _build_overlay_args(
         if anchor is not None:
             x_expr = f"{x_expr}+({anchor[0]})"
             y_expr = f"{y_expr}+({anchor[1]})"
+    # ``overlay`` tronque la position vers zéro ; en RVBA (voir ``_compose_plan_graph``), sans le masquage aux pixels
+    # pairs du 4:2:0, une position calculée juste sous un entier (−9,9999 pour −10, une stabilisation) restait décalée
+    # d'un pixel. Arrondie, elle est au plus près (±0,5 px), sans biais.
     return (
-        f"x='{x_expr}':y='{y_expr}':eval=frame:eof_action=pass"
+        f"x='round({x_expr})':y='round({y_expr})':eval=frame:eof_action=pass"
     )
 
 
