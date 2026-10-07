@@ -12,18 +12,21 @@ import json
 import os
 
 
-def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export", prepared=None):
+def build_filter_complex(plan, output_width, output_height, fps, srt_path=None, quality="export", prepared=None,
+                         origin=0.0):
     """Construit le -filter_complex via le moteur d'export (parite).
 
     ``quality`` ne regle que le flou de mouvement des calques motion
     graphics (brouillon : desactive) ; le reste du graphe est identique.
     ``prepared`` : flux d'images intermediaires deja fabriques (voir
     ``core.retime_layers``), par identifiant de clip.
+    ``origin`` : premier instant utile (debut d'un segment) ; voir
+    ``ExportEngine._build_filter_complex``.
     """
     from .export_engine import ExportEngine
 
     return ExportEngine._build_filter_complex(
-        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared
+        plan, output_width, output_height, fps, srt_path, quality=quality, prepared=prepared, origin=origin
     )
 
 
@@ -108,7 +111,9 @@ def build_preview_command(plan, **kwargs):
     output_path = str(kwargs.get("output_path", ""))
     srt_path = kwargs.get("srt_path", None)
     out_w, out_h = preview_output_size(width, height, quality)
-    result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality, prepared=kwargs.get("prepared"))
+    # Le segment ne compose qu'à partir de son début : son coût ne dépend plus de sa position sur la timeline.
+    result = build_filter_complex(plan, out_w, out_h, fps, srt_path, quality=quality, prepared=kwargs.get("prepared"),
+                                  origin=max(0.0, start))
     filter_complex, video_label, audio_label, input_paths = result
     # Même conversion et mêmes balises que l'export (BT.709) : l'aperçu montre les couleurs de l'export.
     filter_complex, video_label = with_output_color_stage(filter_complex, video_label)

@@ -173,6 +173,18 @@ demandes lointaines (un rendu déjà démarré n'est jamais interrompu). Pendant
 lecture rien n'est lancé. Les segments sont rendus par un plan **fenêtré** : un
 segment de 2 s n'ouvre plus les milliers de médias d'un gros montage.
 
+Un segment est aussi **composé à partir de son début** (`origin`, voir
+`ExportEngine._build_filter_complex`) : le fond est coupé à cet instant (`trim`,
+horodatages gardés), les flux de calques écartent leurs images antérieures avant
+toute conversion, et aucune image de calque n'est rastérisée avant. Auparavant le
+graphe composait la timeline depuis 0 puis jetait le début (`-ss` de sortie) : le
+coût d'un segment croissait avec sa position. Mesuré sur un montage social de 31 s
+(54 calques, 540×960) : segment à 16 s 3,7 → 0,9 s, à 24 s 5,7 → 1,4 s, sorties
+identiques au bit près (`tests/test_preview_segment_origin.py`). L'export
+(`origin = 0`) garde son graphe à l'octet près. Reste proportionnel à la position :
+le décodage d'un clip commencé avant le segment, depuis son propre début (voir
+[ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md), temps local par calque).
+
 ## 5. Timeline sur gros projets
 
 Coûts analysés puis mesurés (voir §7) ; parcours complets remplacés :

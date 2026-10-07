@@ -947,6 +947,7 @@ class ExportEngine(QObject):
         prepared: Mapping[str, PreparedStream] | None = None,
         *,
         audio_only: bool = False,
+        origin: float = 0.0,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
@@ -963,6 +964,11 @@ class ExportEngine(QObject):
         sous-titres via libass.
 
         ``audio_only`` : seulement le mixage (mesure de loudness) ; ``video_label`` est alors vide.
+
+        ``origin`` : premier instant (secondes de timeline) dont la sortie a besoin, celui d'un segment d'aperçu.
+        L'image composée n'est fabriquée qu'à partir de là ; avant, FFmpeg composait tout depuis 0 pour le jeter
+        ensuite (``-ss`` de sortie), et le coût d'un segment croissait avec sa position. Les images gardées sont
+        identiques : mêmes horodatages, mêmes filtres. ``0`` (export) : le graphe historique, à l'octet près.
 
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
@@ -996,7 +1002,7 @@ class ExportEngine(QObject):
         )
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
-            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only,
+            add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
         )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
@@ -1340,6 +1346,7 @@ def _compose_plan_graph(
     add_input=None,
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
+    origin: float = 0.0,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1347,11 +1354,18 @@ def _compose_plan_graph(
     (``bg``, ``v0``, ``vout``, ``aout``…). Une séquence imbriquée reçoit un
     préfixe unique (``n0_``…), un fond transparent et pas de gain Master.
 
+    ``origin`` (racine seulement) : le fond ne commence qu'à cet instant (``trim``, horodatages gardés), si bien que
+    toute la composition en aval, calques et fusions compris, ne travaille que sur les images utiles. Les calques
+    arrivent avant lui ; les filtres de synchronisation (``overlay``, ``blend``…) écartent leurs images antérieures.
+
     Returns:
         ``(label vidéo, label audio)`` finaux du plan (chaîne vide pour un
         flux non demandé).
     """
     duration = plan.duration
+    origin = float(origin) if not nested and origin and origin > 0 else 0.0
+    # Coupe du fond : rien ne se compose avant ``origin``. Absente pour l'export (graphe inchangé).
+    head_trim = f",trim=start={_format_seconds(origin)}" if origin > 0 else ""
     if nested:
         # Au moins une image : une séquence vide reste un flux fini.
         duration = max(duration, 1.0 / float(fps or 30.0))
@@ -1375,7 +1389,7 @@ def _compose_plan_graph(
             )
         else:
             parts.append(
-                f"color=c=black:s={width}x{height}:r={fps_text}{bg_duration}[{p}bg]"
+                f"color=c=black:s={width}x{height}:r={fps_text}{bg_duration}{head_trim}[{p}bg]"
             )
 
         for layer_index, layer in enumerate(plan.video_layers):
@@ -1416,7 +1430,7 @@ def _compose_plan_graph(
                     # ``core.mograph_ffmpeg.blend_onto``).
                     canvas_duration = _format_seconds(max(duration, 1.0 / float(fps or 30)))
                     parts.append(
-                        f"color=c=black@0:s={width}x{height}:r={fps_text}:d={canvas_duration},"
+                        f"color=c=black@0:s={width}x{height}:r={fps_text}:d={canvas_duration}{head_trim},"
                         f"format=rgba[{p}bc{layer_index}];"
                         f"[{p}bc{layer_index}][{label}]overlay={overlay_args}:format=rgb[{p}bt{layer_index}]"
                     )
@@ -1439,7 +1453,7 @@ def _compose_plan_graph(
         bg_seconds = duration if duration > 0 else 1.0 / float(fps or 30)
         video_label = compose_graphics(
             parts, plan, width, height, fps, video_label, add_input,
-            prefix=p, quality=quality, duration=bg_seconds, nested=nested,
+            prefix=p, quality=quality, duration=bg_seconds, nested=nested, origin=origin,
         )
 
     if not want_audio:

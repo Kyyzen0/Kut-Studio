@@ -135,9 +135,9 @@ def blend_onto(
     )
 
 
-def _stream_label(parts, add_input, path, fps, duration, label) -> str:
+def _stream_label(parts, add_input, path, fps, duration, label, origin: float = 0.0) -> str:
     index = add_input(path)
-    parts.append(f"[{index}:v]{stream_input_filter(fps, duration)}[{label}]")
+    parts.append(f"[{index}:v]{stream_input_filter(fps, duration, origin)}[{label}]")
     return label
 
 
@@ -154,10 +154,13 @@ def compose_graphics(
     quality: str = "export",
     duration: float,
     nested: bool = False,
+    origin: float = 0.0,
 ) -> str:
     """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``.
 
     ``nested`` : le dessous est le cadre **transparent** d'une séquence imbriquée (et non un fond opaque).
+    ``origin`` : ``video_label`` ne commence qu'à cet instant (segment d'aperçu) ; aucune image de calque n'est
+    rastérisée avant, et un élément terminé avant lui n'entre pas dans le graphe.
     """
     layers = getattr(plan, "graphics_layers", ()) or ()
     if not any(getattr(layer, "role", "draw") == "draw" for layer in layers):
@@ -176,22 +179,25 @@ def compose_graphics(
     for index, element in enumerate(program):
         tag = f"{p}mg{index}"
         out = f"{p}mgout{index}"
+        if element.end <= origin:
+            continue  # fini avant la première image utile : il n'en touche aucune
+        start = max(element.start, origin)
         if element.kind == "adjustment":
             current = _compose_adjustment(
                 parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested,
-                pixel_scale=_pixel_scale(renderer, plan),
+                pixel_scale=_pixel_scale(renderer, plan), start=start, origin=origin,
             )
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
         path = write_stream(
             width=width, height=height, fps=float(fps), duration=duration,
-            start=element.start, end=element.end,
+            start=start, end=element.end,
             frame_key=lambda t, ids=ids: renderer.frame_key(ids, t) if renderer.any_active(ids, t) else None,
             render=lambda t, ids=ids, blend=apply_blend: renderer.render(ids, t, blend_modes=blend),
             salt=element.kind,
         )
-        label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s")
+        label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s", origin)
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True,
                               pixel_scale=_pixel_scale(renderer, plan), label=tag)
         label = _apply_chain(parts, label, chain, tag)
@@ -207,17 +213,17 @@ def _pixel_scale(renderer, plan) -> float:
 
 def _compose_adjustment(
     parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out,
-    *, nested: bool = False, pixel_scale: float = 1.0,
+    *, nested: bool = False, pixel_scale: float = 1.0, start: float | None = None, origin: float = 0.0,
 ) -> str:
     clip_id = element.clip_id
     path = write_stream(
         width=renderer.width, height=renderer.height, fps=float(fps), duration=duration,
-        start=element.start, end=element.end,
+        start=element.start if start is None else start, end=element.end,
         frame_key=lambda t: renderer.coverage_key(clip_id, t),
         render=lambda t: renderer.render_coverage(clip_id, t),
         salt="adjustment",
     )
-    coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov")
+    coverage = _stream_label(parts, add_input, path, fps, duration, f"{tag}cov", origin)
     chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=False, pixel_scale=pixel_scale,
                           label=tag)
     if nested:
