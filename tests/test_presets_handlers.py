@@ -437,14 +437,17 @@ def test_a_transition_favorite_is_toggled_and_persisted(window, config_dir):
     assert "wipe_left" not in window.transition_preset_store.favorites()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Bogue : on_transition_favorite_toggled affiche status.transition.added (« Transition ajoutée. ») après avoir "
-    "seulement basculé un favori ; aucune transition n'est posée. Aucune clé i18n de statut n'existe pour les favoris."))
-def test_toggling_a_favorite_does_not_claim_a_transition_was_added(window):
-    window.project_panel.transition_favorite_toggled.emit("wipe_left")
+# Corrigé par le commit « Transitions : basculer un favori le dit, au lieu d'annoncer une transition » (lot 6) :
+# ce test était un xfail strict qui documentait le bogue.
+def test_toggling_a_favorite_says_so_instead_of_claiming_a_transition_was_added(window):
+    name = window.transition_preset_store.get_preset("wipe_left").name
 
+    window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert window.project.transitions == []
-    assert _status(window) != i18n.translate("status.transition.added")
+    assert _status(window) == i18n.translate("status.transition.favorite_added", name=name)
+
+    window.project_panel.transition_favorite_toggled.emit("wipe_left")
+    assert _status(window) == i18n.translate("status.transition.favorite_removed", name=name)
 
 
 # --- modèles de texte ---------------------------------------------------------------------------------------------

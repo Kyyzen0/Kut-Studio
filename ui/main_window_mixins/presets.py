@@ -434,11 +434,14 @@ class PresetsMixin:
     def on_transition_favorite_toggled(self, preset_id: str) -> None:
         """Bascule l'état favori d'un preset (intégré ou utilisateur)."""
         try:
-            self.transition_preset_store.toggle_favorite(preset_id)
+            favorite = self.transition_preset_store.toggle_favorite(preset_id)
         except KeyError as exc:
             self.statusBar().showMessage(str(exc), 5000)
             return
-        self.statusBar().showMessage(i18n.translate("status.transition.added"), 3000)
+        # Dit ce qui vient de se passer : un favori basculé, pas une transition posée.
+        preset = self.transition_preset_store.get_preset(preset_id)
+        key = "status.transition.favorite_added" if favorite else "status.transition.favorite_removed"
+        self.statusBar().showMessage(i18n.translate(key, name=preset.name if preset else preset_id), 3000)
 
     def _on_text_presets_changed(self) -> None:
         """Répercute les mutations du store vers la bibliothèque."""
