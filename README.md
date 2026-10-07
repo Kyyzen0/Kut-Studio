@@ -225,6 +225,14 @@ python -m tools.i18n_audit --summary        # hard-coded UI texts (the baseline 
 python -m tools.perf.hardware_validation    # tests YOUR GPU encoders: mini export read back with ffprobe
 ```
 
+Code coverage (`core/` + `ui/`, branches included) is opt-in so the suite stays fast; a ratchet in CI
+blocks any drop below `tests/coverage_baseline.json`, with no third-party service. How to run it, update the
+baseline and read platform-specific gaps: [docs/coverage.md](docs/coverage.md).
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m pytest -q -n auto --cov --cov-branch --cov-report=term-missing:skip-covered
+```
+
 The suite (over 3,200 tests) covers the project model, timeline, `.kut`
 I/O, render plan, color, scopes, audio, UI integration and the FFmpeg export
 pipeline, including parity tests that render with a real FFmpeg and read back
@@ -447,6 +455,12 @@ python -m ruff check .
 python -m mypy                              # core/ ; la dette connue est listée dans pyproject.toml (elle ne peut que diminuer)
 python -m tools.i18n_audit --summary        # textes d’interface en dur (baseline vide : un nouveau fait échouer les tests)
 python -m tools.perf.hardware_validation    # teste VOS encodeurs GPU : mini export relu avec ffprobe
+```
+
+La couverture de code (`core/` + `ui/`, branches comprises) se mesure à la demande pour que la suite reste rapide ; un cliquet en CI bloque toute baisse sous `tests/coverage_baseline.json`, sans service tiers. Lancer la mesure, mettre à jour la baseline et lire les trous propres à une plateforme : [docs/coverage.md](docs/coverage.md).
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m pytest -q -n auto --cov --cov-branch --cov-report=term-missing:skip-covered
 ```
 
 La suite (plus de 3 200 tests) couvre le modèle de projet, la timeline, les E/S `.kut`, le plan de rendu, la couleur, les scopes, l’audio, l’intégration de l’interface et le pipeline d’export FFmpeg, y compris des tests de parité qui rendent avec un vrai FFmpeg et relisent les pixels, et un faux FFmpeg pour les pannes. Sur une machine sans écran, définissez `QT_QPA_PLATFORM=offscreen`. Où vit chaque information et quel test la garde : [docs/architecture.md](docs/architecture.md).

@@ -27,6 +27,7 @@ from core.render_queue_store import RenderQueueStore
 from ui import i18n
 from ui.export_panel import ExportPanel
 from ui.render_queue_panel import RenderQueuePanel, format_duration, format_size
+from timing_budget import WALL_CI_FACTOR, budget
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_FFMPEG = ROOT / "tests" / "fixtures" / "fake_ffmpeg.py"
@@ -576,9 +577,16 @@ def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, mon
     window.launch_export()
     launch_call = time.perf_counter() - started
     queue = window.render_queue
+    # Le clic rend la main avant la fin du rendu (2 s), quelle que soit la vitesse du runner : la file tourne et le job
+    # n'est pas terminé (sa préparation et le lancement de FFmpeg sont différés à la boucle Qt).
+    assert queue.is_running
+    assert queue.jobs[0].status in (JobStatus.WAITING, JobStatus.RENDERING)
     qtbot.waitUntil(lambda: not queue.is_running, timeout=TIMEOUT)
     ticker.stop()
-    assert launch_call < 0.5  # le clic rend la main immédiatement
+    # Ceinture et bretelles, en temps mural : 0,010 s mesuré en local (0,017 s sous couverture), 0,93 s observé sur
+    # un runner Windows chargé. Budget 0,5 s, 1,5 s en CI.
+    limit = budget(0.5, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0)
+    assert launch_call < limit, f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s)"
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
     assert len(stamps) > 30  # ~2 s de rendu à 20 ms de période
     assert max(gaps) < 0.35  # jamais de gel perceptible de la boucle Qt

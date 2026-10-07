@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import dataclasses
 import threading
-import os
 import time
 
 import pytest
+from timing_budget import WALL_CI_FACTOR, best_cpu_seconds, budget
 
 from core.scopes import (
     ColorSpace,
@@ -525,17 +525,27 @@ def test_analyzer_submit_does_not_block_the_caller() -> None:
     prend plusieurs secondes.
     """
     release = threading.Event()
+    extracted = threading.Event()
 
     def slow_extractor(request: ScopeRequest) -> ScopeFrame:
         release.wait(timeout=3.0)
+        extracted.set()
         return _solid_frame(4, 4, (10, 10, 10))
 
     analyzer = ScopeAnalyzer(min_interval=0.0, extractor=slow_extractor)
     start = time.perf_counter()
     analyzer.submit(playhead=0.0, ffmpeg_command=["fake"], force=True)
     submit_elapsed = time.perf_counter() - start
-    assert submit_elapsed < 0.2, (
-        f"submit a bloqué le thread appelant ({submit_elapsed:.3f}s)"
+    # La propriété elle-même, indépendante de la vitesse du runner : quand submit
+    # rend la main, l'extraction (bloquée jusqu'à ``release``) n'est pas finie.
+    assert not extracted.is_set(), "submit a attendu la fin de l'extraction"
+    # Ceinture et bretelles, en temps MURAL : attendre ne coûte pas de CPU, un
+    # submit bloquant passerait un budget CPU. 0,1 ms mesuré en local (avec ou
+    # sans couverture) ; seule la préemption d'un runner partagé compte, pas
+    # l'instrumentation (quelques lignes exécutées). Un submit bloquant coûte 3 s.
+    limit = budget(0.2, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0)
+    assert submit_elapsed < limit, (
+        f"submit a bloqué le thread appelant ({submit_elapsed:.3f}s, budget {limit:.2f}s)"
     )
     # Le travail est bien en cours, dans le thread de travail.
     deadline = time.monotonic() + 2.0
@@ -859,15 +869,14 @@ def test_realistic_frame_analysis_is_fast_enough() -> None:
     deviendrait le goulot d'étranglement.
     """
     frame = _ramp_frame(320, 180)
-    # Meilleur de 3 essais : sous `pytest -n auto`, un essai isolé peut être
-    # préempté par les autres workers (0,535 s observé sur un runner Windows).
-    timings = []
-    for _ in range(3):
-        start = time.perf_counter()
-        analyze_frame(frame, columns=320, vectorscope_bins=128)
-        timings.append(time.perf_counter() - start)
-    elapsed = min(timings)
-    assert elapsed < 0.5, f"Analyse trop lente : {elapsed:.3f}s"
+    # Temps CPU du meilleur de 3 essais (comme le test 1080p) : le temps mural
+    # comptait la préemption par les autres workers xdist (0,535 s observé sur
+    # un runner Windows, 0,80 s sur le run couvert Linux). Mesuré le 2026-10-07
+    # sur un Mac M : 0,042 s (0,05 à 0,07 s avec 8 processus en parallèle) ;
+    # 0,206 s sous le traceur C de coverage.py (Python 3.11, branches).
+    elapsed = best_cpu_seconds(lambda: analyze_frame(frame, columns=320, vectorscope_bins=128))
+    limit = budget(0.5)
+    assert elapsed < limit, f"Analyse trop lente : {elapsed:.3f}s (budget {limit:.2f}s)"
 
 
 # ---------------------------------------------------------------------------
@@ -921,20 +930,19 @@ def test_1080p_analysis_stays_within_realtime_budget() -> None:
         pixels.append((state % 256, (state >> 8) % 256, (state >> 16) % 256))
     frame = ScopeFrame(width=1920, height=1080, pixels=tuple(pixels))
     # Temps CPU (et non mural) du meilleur de trois essais : insensible à la
-    # charge des autres workers de tests et d'un runner de CI partagé, sans
-    # relâcher le budget.
-    timings = []
-    for _ in range(3):
-        start = time.process_time()
-        result = analyze_frame(frame, columns=320, vectorscope_bins=128)
-        timings.append(time.process_time() - start)
-    elapsed = min(timings)
-    assert sum(result.histogram_luma) <= MAX_SCOPE_SAMPLES * 1.1
-    # Budget nominal de 250 ms. Les runners de CI partagés (et les workers
-    # xdist qui s'y répartissent les cœurs) sont jusqu'à deux fois plus lents :
-    # on y garde une marge pour ne détecter que les vraies régressions.
-    budget = 0.6 if os.environ.get("CI") else 0.25
-    assert elapsed < budget, f"Analyse 1080p trop lente : {elapsed:.3f}s"
+    # préemption par les autres workers de tests et d'un runner de CI partagé.
+    results: list[ScopeAnalysis] = []
+    elapsed = best_cpu_seconds(
+        lambda: results.append(analyze_frame(frame, columns=320, vectorscope_bins=128))
+    )
+    assert sum(results[-1].histogram_luma) <= MAX_SCOPE_SAMPLES * 1.1
+    # Budget nominal de 250 ms (0,057 s mesuré le 2026-10-07 sur un Mac M,
+    # 0,10 à 0,13 s avec 8 processus en parallèle), ×2,4 sur un runner de CI
+    # partagé (0,6 s). Le run couvert de la CI Linux a mesuré 0,872 s : le
+    # traceur C de coverage.py (Python 3.11) multiplie ce temps par ~4
+    # (0,059 → 0,233 s en local), d'où la majoration d'instrumentation (3 s).
+    limit = budget(0.25)
+    assert elapsed < limit, f"Analyse 1080p trop lente : {elapsed:.3f}s (budget {limit:.2f}s)"
 
 
 def test_sampled_1080p_histogram_stays_representative() -> None:

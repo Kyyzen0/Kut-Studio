@@ -62,8 +62,44 @@ jobs:
         run: python -m mypy
 
       # --timeout : un test qui se bloque (thread ou FFmpeg orphelin) échoue au lieu de geler la CI 30 minutes.
+      # La couverture n'est mesurée qu'une fois, sur Linux comme mypy : le code propre à macOS / Windows y apparaît
+      # non couvert, c'est attendu (docs/coverage.md). Les autres OS lancent la suite sans instrumentation.
+      - name: Run test suite (with coverage)
+        if: runner.os == 'Linux'
+        run: python -m pytest -q -n auto --timeout=600 --durations=15 --cov --cov-branch --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=json
+
       - name: Run test suite
+        if: runner.os != 'Linux'
         run: python -m pytest -q -n auto --timeout=600 --durations=15
+
+      # Cliquet : le total (lignes + branches) ne descend pas sous tests/coverage_baseline.json. Le texte est gardé
+      # pour le résumé de l'exécution, écrit même quand le cliquet échoue (c'est là qu'il sert).
+      - name: Coverage ratchet
+        if: runner.os == 'Linux'
+        shell: bash
+        run: python tools/coverage_ratchet.py coverage.json 2>&1 | tee coverage-ratchet.txt
+
+      - name: Coverage summary
+        if: ${{ !cancelled() && runner.os == 'Linux' && hashFiles('coverage-ratchet.txt') != '' }}
+        shell: bash
+        run: |
+          {
+            echo "### Couverture de code (core/ + ui/)"
+            echo '```'
+            cat coverage-ratchet.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-${{ runner.os }}
+          path: |
+            coverage.xml
+            coverage.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Source UI smoke test
         run: python main.py --smoke-test
