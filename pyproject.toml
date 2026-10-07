@@ -14,6 +14,9 @@ files = ["core"]
 ignore_missing_imports = true
 follow_imports = "silent"
 show_error_codes = true
+# Le corps des fonctions sans annotation est vérifié aussi (sinon mypy les saute en entier : un ``.append`` sur un
+# tuple ou un ``None`` non gardé y passait inaperçu).
+check_untyped_defs = true
 
 # Dette de typage connue (erreurs existantes avant la phase de stabilisation).
 # RÈGLE : on retire un module de cette liste dès qu'il est propre ; on n'en ajoute jamais.

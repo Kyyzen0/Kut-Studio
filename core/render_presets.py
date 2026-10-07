@@ -9,6 +9,10 @@ C'est le seul endroit où l'on ajoute ou modifie un preset.
 Les valeurs de qualité suivent le moteur : ``quality`` est un CRF pour
 H.264 et le numéro de profil pour ProRes (3 = HQ). ``Custom`` n'est pas
 un preset figé : :func:`custom_preset` valide des réglages libres.
+
+**Cadence.** Un preset suit la cadence de la séquence exportée (``fps=None``) : exporter un projet en 25 ou 23,976 i/s
+à 30 i/s dupliquait des images à intervalle irrégulier, d'où des saccades. Seul un preset qui annonce sa cadence dans
+son nom (« TikTok 60 fps ») ou un Custom réglé à la main en imposent une ; :meth:`RenderPresetSpec.output_fps` résout.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from .export_engine import ExportFormat, ExportPreset
+from .timecode import format_fps
 from .video_encoders import HardwareEncoder, coerce_hardware
 
 CUSTOM_PRESET_ID = "custom"
@@ -53,7 +58,7 @@ class RenderPresetSpec:
         video_codec: ``"h264"`` ou ``"prores_ks"``.
         audio_codec: voir :data:`SUPPORTED_AUDIO_CODECS`.
         width / height: résolution de sortie.
-        fps: images par seconde.
+        fps: images par seconde, ``None`` : la cadence de la séquence exportée (voir :meth:`output_fps`).
         quality: CRF (H.264) ou profil (ProRes).
         audio_bitrate: débit audio FFmpeg (``"192k"``).
         hardware: famille d'encodeur demandée.
@@ -67,7 +72,7 @@ class RenderPresetSpec:
     audio_codec: str
     width: int
     height: int
-    fps: int
+    fps: float | None
     quality: int
     audio_bitrate: str = "192k"
     hardware: str = HardwareEncoder.CPU.value
@@ -85,7 +90,7 @@ class RenderPresetSpec:
             raise ValueError(f"Codec audio non pris en charge : {self.audio_codec}")
         if self.width <= 0 or self.height <= 0:
             raise ValueError("La résolution d'export doit être positive.")
-        if self.fps <= 0:
+        if self.fps is not None and not float(self.fps) > 0.0:   # rejette aussi NaN
             raise ValueError("La fréquence d'images doit être supérieure à zéro.")
         object.__setattr__(self, "hardware", coerce_hardware(self.hardware).value)
         if self.loudness_lufs is not None and not -40.0 <= float(self.loudness_lufs) <= -5.0:
@@ -99,8 +104,26 @@ class RenderPresetSpec:
     def resolution(self) -> tuple[int, int]:
         return (self.width, self.height)
 
-    def export_parts(self) -> tuple[ExportFormat, ExportPreset, int]:
-        """Configuration consommée par ``ExportRequest`` : format, preset, fps."""
+    @property
+    def follows_project_fps(self) -> bool:
+        """``True`` quand le preset exporte à la cadence de la séquence plutôt qu'à une cadence fixe."""
+        return self.fps is None
+
+    def output_fps(self, project_fps: float) -> float:
+        """Cadence de la vidéo exportée : celle du preset, sinon ``project_fps`` (la cadence de la séquence).
+
+        Raises:
+            ValueError: le preset suit la séquence et ``project_fps`` n'est pas une cadence valable.
+        """
+        if self.fps is not None:
+            return float(self.fps)
+        rate = float(project_fps)
+        if not rate > 0.0 or rate == float("inf"):
+            raise ValueError(f"Cadence de la séquence invalide : {project_fps!r}.")
+        return rate
+
+    def export_parts(self, project_fps: float) -> tuple[ExportFormat, ExportPreset, float]:
+        """Configuration consommée par ``ExportRequest`` : format, preset, fps (résolu avec ``project_fps``)."""
         return (
             self.export_format,
             ExportPreset(
@@ -109,13 +132,20 @@ class RenderPresetSpec:
                 crf=self.quality,
                 audio_bitrate=self.audio_bitrate,
             ),
-            self.fps,
+            self.output_fps(project_fps),
         )
 
-    def summary(self) -> str:
-        """Résumé court, ex. ``MP4 · H.264 · 1920×1080 · 30 fps``."""
+    def summary(self, fps: float | None = None) -> str:
+        """Résumé court, ex. ``MP4 · H.264 · 1920×1080 · 29.97 fps``.
+
+        ``fps`` remplace la cadence du preset (la cadence résolue d'un preset qui suit la séquence) ; sans cadence connue,
+        le résumé s'arrête à la résolution.
+        """
         codec = {"h264": "H.264", "prores_ks": "ProRes"}.get(self.video_codec, self.video_codec)
-        return f"{self.container.upper()} · {codec} · {self.width}×{self.height} · {self.fps} fps"
+        text = f"{self.container.upper()} · {codec} · {self.width}×{self.height}"
+        rate = fps if fps is not None else self.fps
+        label = format_fps(rate) if rate is not None else ""
+        return f"{text} · {label} fps" if label else text
 
 
 def _h264(preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
@@ -131,20 +161,26 @@ def _social(preset_id, name, width, height, fps, description):
                    preview_copy=True, cover=True)
 
 
+PROJECT_FPS: None = None
+"""Cadence d'un preset qui suit la séquence exportée (lisibilité de la table ci-dessous)."""
+
 _BUILTIN: tuple[RenderPresetSpec, ...] = (
-    _h264("h264_1080p", "H.264 1080p", 1920, 1080, 30, 20, description="Full HD, bon équilibre taille / qualité."),
-    _h264("h264_1440p", "H.264 1440p", 2560, 1440, 30, 20, description="QHD pour les écrans haute résolution."),
-    _h264("h264_4k", "H.264 4K", 3840, 2160, 30, 20, description="UHD ; rendu long et fichier volumineux."),
-    _h264("youtube", "YouTube", 1920, 1080, 30, 18, description="MP4 H.264 1080p, qualité élevée, démarrage rapide."),
-    _social("tiktok", "TikTok / Vertical", 1080, 1920, 30, "Vidéo verticale 1080×1920."),
-    _social("tiktok_60", "TikTok 60 fps", 1080, 1920, 60, "Vidéo verticale 1080×1920 à 60 images/s."),
-    _social("reels", "Instagram Reels", 1080, 1920, 30, "Reels 1080×1920."),
-    _social("shorts", "YouTube Shorts", 1080, 1920, 60, "Shorts 1080×1920 à 60 images/s."),
-    _social("instagram_feed_4_5", "Instagram 4:5", 1080, 1350, 30, "Fil Instagram en portrait 1080×1350."),
-    _social("square", "Carré 1:1", 1080, 1080, 30, "Format carré 1080×1080."),
+    _h264("h264_1080p", "H.264 1080p", 1920, 1080, PROJECT_FPS, 20,
+          description="Full HD, bon équilibre taille / qualité."),
+    _h264("h264_1440p", "H.264 1440p", 2560, 1440, PROJECT_FPS, 20,
+          description="QHD pour les écrans haute résolution."),
+    _h264("h264_4k", "H.264 4K", 3840, 2160, PROJECT_FPS, 20, description="UHD ; rendu long et fichier volumineux."),
+    _h264("youtube", "YouTube", 1920, 1080, PROJECT_FPS, 18,
+          description="MP4 H.264 1080p, qualité élevée, démarrage rapide."),
+    _social("tiktok", "TikTok / Vertical", 1080, 1920, PROJECT_FPS, "Vidéo verticale 1080×1920."),
+    _social("tiktok_60", "TikTok 60 fps", 1080, 1920, 60.0, "Vidéo verticale 1080×1920 à 60 images/s."),
+    _social("reels", "Instagram Reels", 1080, 1920, PROJECT_FPS, "Reels 1080×1920."),
+    _social("shorts", "YouTube Shorts", 1080, 1920, PROJECT_FPS, "Shorts 1080×1920."),
+    _social("instagram_feed_4_5", "Instagram 4:5", 1080, 1350, PROJECT_FPS, "Fil Instagram en portrait 1080×1350."),
+    _social("square", "Carré 1:1", 1080, 1080, PROJECT_FPS, "Format carré 1080×1080."),
     RenderPresetSpec(
         "prores_master", "ProRes Master", "mov", "prores_ks", "aac",
-        1920, 1080, 30, 3, "256k",
+        1920, 1080, PROJECT_FPS, 3, "256k",
         description="Intermédiaire de qualité maximale (ProRes 422 HQ).",
     ),
 )
@@ -177,15 +213,15 @@ def custom_preset(
     audio_codec: str = "aac",
     width: int = 1920,
     height: int = 1080,
-    fps: int = 30,
+    fps: float | None = PROJECT_FPS,
     quality: int = 20,
     audio_bitrate: str = "192k",
     hardware: str = HardwareEncoder.CPU.value,
 ) -> RenderPresetSpec:
-    """Construit un preset ``custom`` après validation (lève ``ValueError``)."""
+    """Construit un preset ``custom`` après validation (lève ``ValueError``) ; ``fps=None`` : cadence de la séquence."""
     return RenderPresetSpec(
         CUSTOM_PRESET_ID, "Custom", container, video_codec, audio_codec,
-        int(width), int(height), int(fps), int(quality), audio_bitrate, hardware,
+        int(width), int(height), None if fps is None else float(fps), int(quality), audio_bitrate, hardware,
         description="Réglages libres.",
     )
 

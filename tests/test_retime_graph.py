@@ -41,7 +41,7 @@ def rendered_indices(time_map, *, fps: float = 30.0, source_fps: float = 30.0, f
     command = [
         "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
         f"color=c=black:s={SIZE}x{SIZE}:r={source_fps}:d={frames / source_fps},geq=lum='mod(N,256)':cb=128:cr=128,format=yuv420p",
-        "-filter_complex", graph, "-map", f"[{stage.label}]", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-",
+        "-filter_complex", graph, "-map", f"[{stage.label}]", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-",
     ]
     done = subprocess.run(command, capture_output=True, check=False)
     assert done.returncode == 0, done.stderr.decode()[-600:]

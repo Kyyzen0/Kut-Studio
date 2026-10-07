@@ -162,6 +162,7 @@ class SequencesMixin:
         try:
             dependents = dependent_nested_clip_ids(self.project, self.project.active_sequence_id)
         except Exception:
+            LOGGER.debug("Clips dépendant de la séquence non trouvés : leurs aperçus ne sont pas invalidés", exc_info=True)
             return
         for clip_id in dependents:
             self._invalidate_preview_for_clip(clip_id)

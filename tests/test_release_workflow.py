@@ -142,3 +142,54 @@ def test_no_certificate_key_or_token_is_tracked_in_the_repository():
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for pattern in ("*.p12", "*.p8", "*.pfx", "*.cer", "release-assets/"):
         assert pattern in ignored
+
+
+# ---------------------------------------------------------------------------
+# Dépendances figées : un même tag reconstruit les mêmes paquets (constraints.txt).
+# ---------------------------------------------------------------------------
+
+
+def _requirements(path: Path) -> list[str]:
+    """Spécifications d'un fichier requirements (``-r`` suivi, commentaires et lignes vides ignorés)."""
+    specs: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line.startswith("-r "):
+            specs += _requirements(path.parent / line[3:].strip())
+        elif line:
+            specs.append(line)
+    return specs
+
+
+def _pins() -> dict[str, str]:
+    from packaging.utils import canonicalize_name
+
+    pins: dict[str, str] = {}
+    for spec in _requirements(ROOT / "constraints.txt"):
+        name, separator, version = spec.partition("==")
+        assert separator and version and not re.search(r"[<>!~*,;]", version), f"contrainte non figée : {spec}"
+        key = canonicalize_name(name)
+        assert key not in pins, f"contrainte en double : {spec}"
+        pins[key] = version
+    return pins
+
+
+def test_the_release_installs_the_pinned_constraints():
+    build = _jobs()["build"]
+    installs = re.findall(r"pip install [^\n]*", build)
+    assert installs and all("-c constraints.txt" in line for line in installs), installs
+
+
+def test_every_direct_dependency_is_pinned_inside_its_allowed_range():
+    """Une plage élargie dans requirements*.txt sans mettre constraints.txt à jour ferait construire autre chose."""
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    pins = _pins()
+    for spec in _requirements(ROOT / "requirements-dev.txt"):
+        requirement = Requirement(spec)
+        version = pins.get(canonicalize_name(requirement.name))
+        assert version is not None, f"{requirement.name} n'est pas figé dans constraints.txt"
+        assert requirement.specifier.contains(version, prereleases=True), (
+            f"constraints.txt fige {requirement.name}=={version}, hors de la plage « {requirement.specifier} »"
+        )

@@ -173,8 +173,9 @@ def stream_input_filter(fps, duration: float, origin: float = 0.0) -> str:
     toute conversion, avec les mêmes horodatages pour celles qui restent. ``0`` : la chaîne historique, inchangée.
     """
     from .export_engine import _format_seconds
+    from .timecode import ffmpeg_rate
 
-    fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+    fps_text = ffmpeg_rate(fps)
     length = _format_seconds(max(duration, 1.0 / float(fps or 30)))
     if origin > 0:
         return (

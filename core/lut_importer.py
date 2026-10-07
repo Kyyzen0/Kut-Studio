@@ -31,6 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
+from .atomic_io import atomic_open
+from .platform_paths import user_cache_dir
+from .text_decoding import decode_text_bytes
+
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -148,12 +152,9 @@ def parse_cube_lut(path: str | Path) -> CubeLUT:
         )
     data = file_path.read_bytes()
     sha1 = hashlib.sha1(data).hexdigest()
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise LUTImportBadFormat(
-            f"Le fichier n'est pas UTF‑8 valide : {file_path}"
-        ) from exc
+    # BOM (Bloc-notes, Resolve sous Windows) et ``TITLE`` accentué en Windows-1252 sont acceptés : FFmpeg
+    # ``lut3d`` lit ces fichiers tels quels, seul l'en-tête doit être reconnu ici.
+    text = decode_text_bytes(data)
 
     title = file_path.stem
     size: int | None = None
@@ -264,6 +265,31 @@ def _parse_int(value: str, raw_line: str) -> int:
         ) from exc
 
 
+def ffmpeg_readable_lut(path: str | Path, cache_dir: str | Path | None = None) -> Path:
+    """Chemin d'un ``.cube`` que FFmpeg ``lut3d`` lit tel quel : l'original, ou sa copie normalisée en UTF-8 sans BOM.
+
+    :func:`parse_cube_lut` accepte une BOM, l'UTF-16 et le Windows-1252 ; FFmpeg, lui, lit des octets : il ne reconnaît
+    pas ``LUT_3D_SIZE`` derrière une BOM ni en UTF-16, et l'export échouait sur une LUT pourtant « importée ». Quand le
+    décodage a changé les octets, une copie UTF-8 est écrite dans le cache (``luts/``, nommée par son empreinte : une
+    même LUT n'est écrite qu'une fois) ; la ressource du clip pointe vers elle et l'enregistrement du projet la recopie
+    dans le projet comme n'importe quelle LUT.
+
+    Raises:
+        OSError: lecture de la source ou écriture de la copie impossible.
+    """
+    source = Path(path)
+    data = source.read_bytes()
+    canonical = decode_text_bytes(data).encode("utf-8")
+    if canonical == data:
+        return source
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", source.stem).strip("-._") or "lut"
+    target = user_cache_dir(cache_dir) / "luts" / f"{hashlib.sha1(canonical).hexdigest()[:16]}-{stem}.cube"
+    if not target.is_file() or target.read_bytes() != canonical:
+        with atomic_open(target, "wb") as handle:              # octets exacts (pas de \r\n ajouté sous Windows)
+            handle.write(canonical)
+    return target
+
+
 __all__ = [
     "DOMAIN_MAX_KEY",
     "DOMAIN_MIN_KEY",
@@ -277,5 +303,6 @@ __all__ = [
     "MIN_LUT_SIZE",
     "TITLE_KEY",
     "CubeLUT",
+    "ffmpeg_readable_lut",
     "parse_cube_lut",
 ]

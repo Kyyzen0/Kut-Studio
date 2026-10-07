@@ -7,6 +7,9 @@ Périmètre : ``core/``, ``ui/``, ``main.py`` et ``build.py`` (``tests/`` et ``t
   60 blocs de ce genre cachaient par exemple un aperçu jamais rafraîchi après une édition. Un bloc qui reste tolérant
   mais journalise (``LOGGER.debug(..., exc_info=True)``) est accepté. Les ``except OSError: pass`` de nettoyage, qui
   visent une erreur précise, ne sont pas concernés.
+* **except-silent** : la même chose déguisée. Un ``except`` large dont le corps n'appelle rien, ne relève rien et
+  n'utilise pas l'exception (``return None``, ``return []``, ``continue``, ``valeur = défaut``) l'efface aussi bien
+  qu'un ``pass`` : en 2026-10, 26 blocs de ce genre coupaient par exemple le préchargement de l'aperçu sans trace.
 * **assert** : une assertion disparaît sous ``python -O`` ; l'invariant qu'elle gardait ne protège plus rien. On
   écrit une garde (``if x is None: return``) ou on lève une vraie exception (``RuntimeError``).
 
@@ -23,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ALLOWLIST = ROOT / "tests" / "silent_failures_allowlist.json"
 BROAD_EXCEPTIONS = frozenset({"Exception", "BaseException"})
-RULES = frozenset({"except-pass", "assert"})
+RULES = frozenset({"except-pass", "except-silent", "assert"})
 
 
 def _production_files() -> list[Path]:
@@ -47,6 +50,14 @@ def _does_nothing(body: list[ast.stmt]) -> bool:
     )
 
 
+def _is_silent(handler: ast.ExceptHandler) -> bool:
+    """Ni appel (journal, repli calculé), ni ``raise``, ni lecture de l'exception : rien ne garde la trace de l'erreur."""
+    nodes = [node for statement in handler.body for node in ast.walk(statement)]
+    if any(isinstance(node, (ast.Call, ast.Raise)) for node in nodes):
+        return False
+    return not (handler.name and any(isinstance(node, ast.Name) and node.id == handler.name for node in nodes))
+
+
 class _Scanner(ast.NodeVisitor):
     """Relève les contrevenants avec leur portée (``Classe.methode``) : l'identifiant stable de l'allowlist."""
 
@@ -68,6 +79,8 @@ class _Scanner(ast.NodeVisitor):
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if _is_broad(node) and _does_nothing(node.body):
             self._record("except-pass", node)
+        elif _is_broad(node) and _is_silent(node):
+            self._record("except-silent", node)
         self.generic_visit(node)
 
     def visit_Assert(self, node: ast.Assert) -> None:
@@ -109,6 +122,18 @@ def test_no_broad_except_swallows_an_error_silently():
         "Gardez la tolérance mais journalisez ce qui a échoué et la conséquence : "
         "LOGGER.debug(\"…\", exc_info=True) pour une tolérance voulue, LOGGER.warning pour un échec à voir. "
         "Sinon, ajoutez le site à tests/silent_failures_allowlist.json avec sa raison."
+    )
+
+
+def test_no_broad_except_hides_an_error_behind_a_default_value():
+    allowed = _allowed_keys()
+    found = [v for v in _violations() if v[1] == "except-silent" and v[:3] not in allowed]
+    assert not found, (
+        f"{len(found)} « except » large(s) qui renvoient une valeur par défaut sans rien journaliser.\n"
+        f"{_report(found)}\n"
+        "Journalisez l'échec et sa conséquence (LOGGER.debug(\"…\", exc_info=True)), ou visez l'erreur attendue "
+        "(except ImportError / OSError / ValueError). Un import interne ne se met pas dans un try : s'il échoue, "
+        "c'est un bug à voir. Sinon, ajoutez le site à tests/silent_failures_allowlist.json avec sa raison."
     )
 
 
@@ -176,6 +201,38 @@ class Panel:
         except OSError:
             pass
 
+    def default_value(self):
+        try:
+            return work()
+        except Exception:
+            return []
+
+    def skip(self):
+        for item in items:
+            try:
+                work(item)
+            except Exception:
+                continue
+
+    def fallback_from_the_error(self):
+        try:
+            return work()
+        except Exception as error:
+            return str(error)
+
+    def logged_default(self):
+        try:
+            return work()
+        except Exception:
+            LOGGER.debug("échec", exc_info=True)
+            return None
+
+    def narrow_default(self):
+        try:
+            import optional_module
+        except ImportError:
+            return None
+
 def check(value):
     assert value is not None
 '''
@@ -184,6 +241,8 @@ def check(value):
         ("except-pass", "Panel.bare"),
         ("except-pass", "Panel.ellipsis"),
         ("except-pass", "Panel.tuple_and_base"),
+        ("except-silent", "Panel.default_value"),
+        ("except-silent", "Panel.skip"),
         ("assert", "check"),
     ]
 

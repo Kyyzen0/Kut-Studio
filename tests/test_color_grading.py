@@ -63,11 +63,12 @@ from core.color_grading import (
     save_color_preset_data,
 )
 from core.edit_history import ProjectHistory
-from core.export_engine import _build_color_grade_filters
+from core.export_engine import _build_color_grade_filters, _build_lut3d_filter
 from core.lut_importer import (
     CubeLUT,
     LUT_3D_SIZE_KEY,
     LUTImportBadFormat,
+    LUTImportError,
     LUTImportMissingFile,
     LUTImportUnsupported,
     MAX_LUT_SIZE,
@@ -237,6 +238,33 @@ def test_parse_cube_lut_happy_path(tmp_path) -> None:
     assert parsed.title == "Identity"
     assert parsed.size == 2
     assert len(parsed.entries) == 2 * 2 * 2 * 3
+
+
+@pytest.mark.parametrize(
+    "encode",
+    [
+        lambda text: b"\xef\xbb\xbf" + text.encode("utf-8"),
+        lambda text: b"\xef\xbb\xbf" + text.replace("\n", "\r\n").encode("utf-8"),
+        lambda text: text.encode("cp1252"),
+    ],
+    ids=["utf8-bom", "utf8-bom-crlf", "cp1252"],
+)
+def test_parse_cube_lut_accepts_bom_and_windows_1252(tmp_path, encode) -> None:
+    """Un ``.cube`` enregistré par le Bloc-notes (BOM, CRLF) ou au titre en Windows-1252 est importé."""
+    cube = tmp_path / "windows.cube"
+    cube.write_bytes(encode(_cube_text(size=2, title="Négatif")))
+    parsed = parse_cube_lut(cube)
+    assert parsed.title == "Négatif"
+    assert parsed.size == 2
+    assert len(parsed.entries) == 2 * 2 * 2 * 3
+
+
+def test_parse_cube_lut_rejects_binary_content(tmp_path) -> None:
+    """Le décodage tolérant ne fait pas accepter un fichier binaire : l'en-tête reste refusé."""
+    cube = tmp_path / "image.cube"
+    cube.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\xff\xd8")
+    with pytest.raises(LUTImportError):
+        parse_cube_lut(cube)
 
 
 def test_parse_cube_lut_rejects_1d(tmp_path) -> None:
@@ -967,3 +995,97 @@ def test_undo_redo_for_reset_grade() -> None:
     history.record(project, "Réinitialiser l'étalonnage")
     # Après reset, ``color_grade`` est un ColorGrade identité.
     assert project.tracks[0].clips[0].color_grade.is_identity()
+
+
+@pytest.mark.parametrize(
+    "encode",
+    [
+        lambda text: b"\xef\xbb\xbf" + text.encode("utf-8"),
+        lambda text: b"\xff\xfe" + text.encode("utf-16-le"),
+        lambda text: text.encode("cp1252"),
+    ],
+    ids=["utf8-bom", "utf16", "cp1252"],
+)
+def test_a_lut_ffmpeg_cannot_read_is_handed_over_as_a_utf8_copy(tmp_path, encode) -> None:
+    """FFmpeg ``lut3d`` lit des octets : derrière une BOM ou en UTF-16, ``LUT_3D_SIZE`` ne lui dit rien (l'export
+    échouait). La copie normalisée porte le même contenu, en UTF-8 sans BOM, et n'est écrite qu'une fois."""
+    from core.lut_importer import ffmpeg_readable_lut
+
+    # ``LUT_3D_SIZE`` en tête (ce qui fait échouer FFmpeg derrière une BOM), titre accentué (cp1252 diffère d'UTF-8).
+    text = 'LUT_3D_SIZE 2\nTITLE "Négatif"\n' + _cube_text(size=2).split("LUT_3D_SIZE 2\n", 1)[1]
+    source = tmp_path / "windows.cube"
+    source.write_bytes(encode(text))
+    copy = ffmpeg_readable_lut(source, cache_dir=tmp_path / "cache")
+    assert copy != source and copy.parent == tmp_path / "cache" / "luts"
+    assert copy.read_bytes() == text.encode("utf-8")
+    assert parse_cube_lut(copy).entries == parse_cube_lut(source).entries
+    stamp = copy.stat().st_mtime_ns
+    assert ffmpeg_readable_lut(source, cache_dir=tmp_path / "cache") == copy and copy.stat().st_mtime_ns == stamp
+
+
+def test_a_plain_utf8_lut_is_used_in_place(tmp_path) -> None:
+    from core.lut_importer import ffmpeg_readable_lut
+
+    source = tmp_path / "plain.cube"
+    source.write_text(_cube_text(size=2, title="Identity"), encoding="utf-8")
+    assert ffmpeg_readable_lut(source, cache_dir=tmp_path / "cache") == source
+    assert not (tmp_path / "cache").exists()
+
+
+@pytest.mark.parametrize("bom_first", [True, False], ids=["bom-then-size", "plain"])
+def test_ffmpeg_applies_the_handed_over_lut(tmp_path, bom_first) -> None:
+    """De bout en bout : la LUT remise à FFmpeg s'applique (sans copie, BOM + LUT_3D_SIZE en tête échouait)."""
+    import shutil
+    import subprocess
+
+    from core.lut_importer import ffmpeg_readable_lut
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg indisponible")
+    body = "LUT_3D_SIZE 2\n" + "".join(f"{1 - r} {1 - g} {1 - b}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1))
+    source = tmp_path / "invert.cube"
+    source.write_bytes((b"\xef\xbb\xbf" if bom_first else b"") + body.encode("utf-8"))
+    lut = ffmpeg_readable_lut(source, cache_dir=tmp_path / "cache")
+    # Le filtre de l'export lui-même : il échappe le chemin (``C:`` sous Windows serait lu comme une option).
+    lut_filter = _build_lut3d_filter(LUTResource.from_path(lut))
+    done = subprocess.run(
+        [ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=4x4:d=0.04", "-vf",
+         f"{lut_filter},format=rgb24", "-frames:v", "1", "-f", "rawvideo", "-"],
+        capture_output=True, timeout=60,
+    )
+    assert done.returncode == 0, done.stderr.decode(errors="replace")
+    red, green, blue = done.stdout[:3]
+    assert red <= 4 and green >= 251 and blue >= 251, (red, green, blue)   # rouge inversé : cyan (arrondi YUV ± 2)
+
+
+def test_importing_a_notepad_lut_attaches_the_copy_ffmpeg_can_read(qtbot, monkeypatch, tmp_path) -> None:
+    """Dans l'application : une LUT avec BOM est importée, et le clip pointe vers sa copie UTF-8 (celle que l'export
+    donne à FFmpeg), pas vers l'original qu'il ne saurait pas lire."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from ui.main_window import MainWindow
+
+    monkeypatch.setenv("KUT_STUDIO_CONFIG_DIR", str(tmp_path / "config"))
+    warnings: list[tuple] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: warnings.append(args))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    if getattr(window, "timeline_timer", None) is not None:
+        window.timeline_timer.stop()
+    window.project = Project(
+        name="lut", width=64, height=36, fps=25.0,
+        media_assets=[MediaAsset(id="a", path=str(tmp_path / "a.mp4"), name="a", duration=2.0,
+                                 width=64, height=36, fps=25.0, media_type="video")],
+        tracks=[Track(id="V1", name="V1", type="video",
+                      clips=[Clip(id="c1", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)])],
+    )
+    source = tmp_path / "notepad.cube"
+    source.write_bytes(b"\xef\xbb\xbf" + ("LUT_3D_SIZE 2\n" + _cube_text(size=2).split("LUT_3D_SIZE 2\n", 1)[1]).encode())
+
+    window.on_lut_loaded("c1", str(source))
+
+    assert not warnings
+    lut = ColorGradingService().get_grade(window.project, "c1").lut
+    assert lut is not None and Path(lut.source_path) != source
+    assert Path(lut.source_path).read_bytes() == source.read_bytes()[3:]

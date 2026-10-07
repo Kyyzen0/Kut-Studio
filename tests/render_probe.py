@@ -39,7 +39,7 @@ def render_frame(plan, width: int, height: int, t: float, *, fps: int = 25, qual
     command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
     for path in inputs:
         command += ["-i", path]
-    command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-f", "rawvideo", "-"]
+    command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
     completed = subprocess.run(command, capture_output=True, timeout=120)
     assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
     return np.frombuffer(completed.stdout, dtype=np.uint8).reshape(height, width, 3)

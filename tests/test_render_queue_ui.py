@@ -323,7 +323,7 @@ def test_choosing_a_preset_changes_the_request_the_engine_receives(export_panel,
         export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(preset_id))
         spec = get_preset(preset_id)
         request = export_panel.build_request(plan, str(tmp_path / "x.mp4"))
-        assert request.preset.resolution == spec.resolution and request.fps == spec.fps
+        assert request.preset.resolution == spec.resolution and request.fps == spec.output_fps(plan.fps)
         assert request.format.container == spec.container
         # ProRes n'a que l'encodeur CPU : « Automatique » n'y est pas proposé.
         assert request.hardware == ("cpu" if spec.video_codec == "prores_ks" else "auto")
@@ -334,7 +334,7 @@ def test_custom_controls_only_show_for_the_custom_preset(export_panel):
     export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
     assert not export_panel.custom_frame.isHidden()
     export_panel.resolution_combo.setCurrentText("1280 × 720 (HD)")
-    export_panel.fps_combo.setCurrentText("24")
+    export_panel.fps_combo.setCurrentIndex(export_panel.fps_combo.findData(24.0))
     export_panel.quality_combo.setCurrentText("Élevée")
     spec = export_panel.current_spec()
     assert spec.id == CUSTOM_PRESET_ID and spec.resolution == (1280, 720)
@@ -483,7 +483,7 @@ def test_direct_engine_export_still_works(qtbot, fake_ffmpeg, monkeypatch, tmp_p
 
     window = _window(qtbot, monkeypatch, tmp_path)
     spec = get_preset("h264_1080p")
-    fmt, preset, fps = spec.export_parts()
+    fmt, preset, fps = spec.export_parts(window.project.fps)
     output = tmp_path / "direct.mp4"
     done: list[str] = []
     window.export_engine.finished_ok.connect(done.append)
@@ -605,3 +605,34 @@ def test_social_options_follow_the_preset_and_can_be_unticked(export_panel):
     combo.setCurrentIndex(combo.findData("youtube"))
     assert not any(check.isChecked() for check in checks)
     assert all(check.text() and not check.text().startswith("render.") for check in checks)
+
+
+def test_export_panel_follows_the_sequence_rate_by_default(export_panel):
+    """Par défaut le preset suit la séquence : son résumé affiche la cadence de la séquence active."""
+    export_panel.set_project_fps(25.0)
+    assert "1920×1080 · 25 fps" in export_panel.preset_summary.text()
+    assert i18n.translate("render.export.fps_follows_project") in export_panel.preset_summary.text()
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
+    assert export_panel.fps_combo.currentData() is None and export_panel.current_spec().follows_project_fps
+    assert [export_panel.fps_combo.itemData(i) for i in range(1, export_panel.fps_combo.count())] == [
+        23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0]
+
+
+def test_export_panel_warns_when_an_imposed_rate_differs_from_the_sequence(export_panel, tmp_path):
+    from core.render_plan import build_render_plan
+    from ui.social_dialogs import fps_text
+
+    def warning(project: float, output: float) -> str:
+        return i18n.translate("render.export.fps_mismatch", project=fps_text(project), output=fps_text(output))
+
+    export_panel.set_project_fps(25.0)
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData("tiktok_60"))
+    assert warning(25.0, 60.0) in export_panel.preset_summary.text()
+    export_panel.set_project_fps(60.0)
+    assert export_panel.preset_summary.text().count("\n") == 1          # résumé + description, sans avertissement
+    export_panel.preset_combo.setCurrentIndex(export_panel.preset_combo.findData(CUSTOM_PRESET_ID))
+    export_panel.fps_combo.setCurrentIndex(export_panel.fps_combo.findData(29.97))
+    assert warning(60.0, 29.97) in export_panel.preset_summary.text()  # suit les réglages Custom sans changer de preset
+    assert "29.97 fps" in export_panel.preset_summary.text()
+    plan = build_render_plan(_project(tmp_path))
+    assert export_panel.build_request(plan, str(tmp_path / "x.mp4")).fps == 29.97

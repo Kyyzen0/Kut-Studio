@@ -93,7 +93,8 @@ jobs:
         run: choco install ffmpeg --no-progress -y
 
       - name: Install Python dependencies
-        run: python -m pip install --upgrade pip -r requirements-dev.txt
+        # Versions figées (constraints.txt) : un même tag reconstruit les mêmes paquets, quelle que soit la date.
+        run: python -m pip install --upgrade pip -r requirements-dev.txt -c constraints.txt
 
       # Les mêmes contrôles que la CI : une release ne part que d'un état vert.
       - name: Lint (ruff)

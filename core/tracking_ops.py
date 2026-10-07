@@ -575,7 +575,7 @@ def bake_link(project, clip_id: str, link_id: str) -> int:
 
 def _changed_properties(clip, transform_frames, animation) -> set[str]:
     def group(frames):
-        grouped: dict[str, tuple] = {}
+        grouped: dict[str, list] = {}
         for kf in frames:
             grouped.setdefault(kf.property_name, []).append(kf)
         return {k: tuple(v) for k, v in grouped.items()}

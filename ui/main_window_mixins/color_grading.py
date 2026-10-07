@@ -226,6 +226,7 @@ class ColorGradingMixin:
         )
         from core.lut_importer import (
             LUTImportError,
+            ffmpeg_readable_lut,
             parse_cube_lut,
         )
 
@@ -239,8 +240,9 @@ class ColorGradingMixin:
             _main_window().QMessageBox.warning(self, "LUT", translate("dialog.lut.invalid", error=exc))
             return
         try:
+            # FFmpeg lit le fichier tel quel : une LUT avec BOM ou en UTF-16 passe par sa copie UTF-8.
             resource = LUTResource.from_path(
-                lut_path,
+                ffmpeg_readable_lut(lut_path),
                 title=parsed.title,
                 project_root=self.project_io_root()
                 if hasattr(self, "project_io_root")

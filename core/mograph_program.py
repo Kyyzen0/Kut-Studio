@@ -27,11 +27,14 @@ fidèle et l'export produisent les mêmes éléments.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from .blend_modes import BlendMode, coerce_blend_mode
 from .graphics import GraphicOverlay, GraphicType
 from .mograph_scene import GraphicsScene
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ def _grade_active(grade) -> bool:
 
         return bool(_build_color_grade_filters(grade))
     except Exception:
+        LOGGER.debug("Filtres d'étalonnage non construits : étalonnage traité comme actif", exc_info=True)
         return True
 
 

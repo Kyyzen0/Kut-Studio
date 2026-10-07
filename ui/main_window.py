@@ -1684,6 +1684,7 @@ class MainWindow(
         self._viewer_composited = False
         sequence = self.project.active_sequence
         self.preview_panel.set_frame_format(sequence.width, sequence.height, sequence.fps)
+        self.export_panel.set_project_fps(sequence.fps)
         result = self._sync_preview_core()
         self._after_preview_sync()
         return result

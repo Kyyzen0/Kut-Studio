@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .platform_paths import user_cache_dir
 
 LOGGER = logging.getLogger("kut_studio.gpu")
@@ -165,10 +166,7 @@ class GpuCrashGuard:
 
     def _write(self, data: dict) -> None:
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.path.with_name(self.path.name + ".tmp")
-            temporary.write_text(json.dumps(data), encoding="utf-8")
-            os.replace(temporary, self.path)
+            atomic_write_text(self.path, json.dumps(data), durable=False)
         except OSError:
             LOGGER.debug("Garde GPU : écriture impossible (%s)", self.path)
 

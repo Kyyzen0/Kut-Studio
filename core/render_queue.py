@@ -255,6 +255,7 @@ class RenderQueue(QObject):
             sequence_id=sequence.id,
             sequence_name=sequence.name,
             cover_seconds=_cover_seconds(sequence, playhead_seconds, plan.duration),
+            project_fps=float(sequence.fps),
         )
         job.snapshot_path = str(self._store.write_snapshot(job.id, project))
         self._jobs.append(job)

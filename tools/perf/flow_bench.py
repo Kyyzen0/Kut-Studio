@@ -338,7 +338,8 @@ def _render(args: dict) -> dict:
     command = ["ffmpeg", "-v", "error", "-y"]
     for item in inputs:
         command += ["-i", item]
-    command += ["-filter_complex", f"{graph};[{audio}]anullsink", "-map", f"[{video}]", "-f", "null", "-"]
+    # Deux sorties plutôt qu'un puits : FFmpeg 7.x avorte sur un ``anullsink`` nourri par un son généré (``aevalsrc``).
+    command += ["-filter_complex", graph, "-map", f"[{video}]", "-f", "null", "-", "-map", f"[{audio}]", "-f", "null", "-"]
     began = time.perf_counter()
     subprocess.run(command, check=True, capture_output=True, timeout=1800)
     encode_seconds = time.perf_counter() - began
