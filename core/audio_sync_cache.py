@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .atomic_io import atomic_open
 from .cache_keys import SignatureMemo, source_signature
 from .platform_paths import user_cache_dir
 
@@ -96,18 +97,11 @@ class AudioSyncCache:
         import numpy as np
 
         path = self._path(key)
-        temporary = path.with_name(path.name + ".tmp")
         try:
-            self._directory.mkdir(parents=True, exist_ok=True)
-            with temporary.open("wb") as handle:  # un objet fichier : ``np.save("x.tmp")`` ajouterait ``.npy``
+            with atomic_open(path, "wb", durable=False) as handle:  # un objet fichier : ``np.save`` n'ajoute pas ``.npy``
                 np.save(handle, np.ascontiguousarray(array, dtype=np.float32), allow_pickle=False)
-            os.replace(temporary, path)
         except OSError as exc:
             LOGGER.warning("Cache de synchronisation : écriture impossible (%s)", exc)
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
 
     # -- gestion du budget (même contrat que les autres couches de ``CacheManager``) -------------------------------
 

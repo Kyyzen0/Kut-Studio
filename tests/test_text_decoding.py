@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from core import atomic_io
-from core.atomic_io import atomic_write_text
+from core.atomic_io import atomic_open, atomic_write_json, atomic_write_text
 from core.text_decoding import decode_text_bytes
 
 SAMPLE = "Café — « déjà » vu\r\nligne 2\n"
@@ -72,3 +72,37 @@ def test_atomic_write_text_cleans_up_on_encoding_error(tmp_path: Path) -> None:
         atomic_write_text(target, "€", encoding="ascii")
     assert target.read_text(encoding="utf-8") == "ancien"
     assert sorted(os.listdir(tmp_path)) == ["file.txt"]
+
+
+def test_atomic_open_writes_binary_and_skips_fsync_for_a_cache(tmp_path: Path, monkeypatch) -> None:
+    """``durable=False`` (cache) : toujours atomique, sans ``fsync`` ; ``durable=True`` le garde."""
+    calls: list[int] = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(atomic_io.os, "fsync", lambda fd: (calls.append(fd), real_fsync(fd)))
+    with atomic_open(tmp_path / "cache" / "a.bin", "wb", durable=False) as handle:
+        handle.write(b"\x00\x01")
+    assert (tmp_path / "cache" / "a.bin").read_bytes() == b"\x00\x01" and calls == []
+    atomic_write_text(tmp_path / "b.txt", "x")
+    assert len(calls) == 1
+
+
+def test_atomic_open_keeps_the_target_when_the_block_fails(tmp_path: Path) -> None:
+    target = tmp_path / "a.bin"
+    target.write_bytes(b"ancien")
+    with pytest.raises(RuntimeError):
+        with atomic_open(target, "wb") as handle:
+            handle.write(b"moit")
+            raise RuntimeError("coupure")
+    assert target.read_bytes() == b"ancien" and sorted(os.listdir(tmp_path)) == ["a.bin"]
+    with pytest.raises(ValueError):
+        with atomic_open(target, "a"):
+            pass
+
+
+def test_atomic_write_json_keeps_accents_and_creates_nothing_when_serialization_fails(tmp_path: Path) -> None:
+    target = tmp_path / "réglages.json"
+    atomic_write_json(target, {"nom": "Été"})
+    assert target.read_text(encoding="utf-8") == '{\n  "nom": "Été"\n}'
+    with pytest.raises(ValueError):
+        atomic_write_json(tmp_path / "nan.json", {"x": float("nan")}, allow_nan=False)
+    assert sorted(os.listdir(tmp_path)) == ["réglages.json"]

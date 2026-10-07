@@ -29,6 +29,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .hardware_encoding import (
     LOGGER,
     SCHEMA_VERSION,
@@ -236,10 +237,7 @@ class CapabilityService:
     def _write_disk(self, capabilities: HardwareCapabilities) -> None:
         path = self.cache_path
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(capabilities.to_dict(), indent=1), encoding="utf-8")
-            os.replace(temporary, path)
+            atomic_write_text(path, json.dumps(capabilities.to_dict(), indent=1), durable=False)
         except OSError as error:  # un cache illisible ne doit jamais bloquer un export
             LOGGER.warning("Cache des capacités non écrit : %s", error)
 

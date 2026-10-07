@@ -21,9 +21,9 @@ import copy
 import json
 import os
 import shutil
-import tempfile
 from pathlib import Path
 
+from .atomic_io import atomic_write_json
 from .platform_paths import user_config_dir
 from .project_io import save_project
 from .project_model import Project
@@ -88,22 +88,7 @@ class RenderQueueStore:
         """Écrit la file de façon atomique (un échec ne tronque jamais le fichier)."""
         self.directory.mkdir(parents=True, exist_ok=True)
         payload = {"version": SCHEMA_VERSION, "jobs": [job.to_dict() for job in jobs]}
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f"{QUEUE_FILE}.", suffix=".tmp", dir=str(self.directory)
-        )
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, indent=2, ensure_ascii=False)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp_path, self.queue_file)
-        except Exception:
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-            raise
+        atomic_write_json(self.queue_file, payload)
 
     @staticmethod
     def _set_aside(path: Path) -> None:

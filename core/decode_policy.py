@@ -58,6 +58,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .hardware_decoding import (
     CODEC_BY_ID,
     DECODE_LABELS,
@@ -554,10 +555,7 @@ class DecodeProfile:
             }
         path = self.path
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(payload, indent=1), encoding="utf-8")
-            os.replace(temporary, path)
+            atomic_write_text(path, json.dumps(payload, indent=1), durable=False)
         except OSError as error:
             LOGGER.debug("Mesures de décodage non écrites : %s", error)
 

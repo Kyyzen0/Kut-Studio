@@ -25,10 +25,11 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from pathlib import Path
+
+from .atomic_io import atomic_write_text
 
 
 # ---------------------------------------------------------------------------
@@ -502,22 +503,7 @@ def save_workspace_state(
     """Sauvegarde l'espace de travail (écriture atomique)."""
     path = workspace_file_path(settings_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent)
-    )
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(state.to_json())
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
-    except Exception:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-        raise
+    atomic_write_text(path, state.to_json())
     return path
 
 
@@ -602,22 +588,7 @@ def save_named_workspace(
     """Enregistre un espace de travail sous un nom."""
     path = named_workspace_path(name, settings_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent)
-    )
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(state.normalized().to_json())
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
-    except Exception:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-        raise
+    atomic_write_text(path, state.normalized().to_json())
     return path
 
 
