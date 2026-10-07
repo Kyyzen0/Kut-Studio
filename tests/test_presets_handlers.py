@@ -13,6 +13,7 @@ import json
 
 import pytest
 from main_window_harness import build_window, install_dialogs
+from PySide6.QtWidgets import QDialog
 
 from core.audio_effects_library import AUDIO_EFFECT_PRESETS_FILE
 from core.effects_library import USER_PRESETS_FILE, EffectCategory, snapshot_clip_preset
@@ -24,9 +25,10 @@ from ui.project_panel_widgets.effects_library_view import SavePresetDialog
 from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog
 
 ACCEPTED_ON_INSTANCE = (
-    "Bogue : presets.py compare le résultat du dialogue à « dialog.Accepted » (lignes 222 et 387). Avec PySide6 6.11 "
-    "(requirements.txt : >=6.6,<7), une énumération ne se lit plus sur une instance : AttributeError dès que le "
-    "dialogue se ferme, et le preset n'est jamais enregistré. « QDialog.Accepted » (sur la classe) fonctionne."
+    "Bogue : presets.py compare le résultat du dialogue à « dialog.Accepted » (lignes 222 et 387). Avec le PySide6 "
+    "installé (constaté avec 6.11 ; requirements.txt : >=6.6,<7), une énumération ne se lit plus sur une instance : "
+    "AttributeError dès que le dialogue se ferme, et le preset n'est jamais enregistré. « QDialog.Accepted » (sur la "
+    "classe) fonctionne."
 )
 
 
@@ -43,6 +45,20 @@ def config_dir(tmp_path):
 @pytest.fixture
 def window(qtbot, monkeypatch, config_dir, dialogs):
     return build_window(qtbot, monkeypatch, config_dir)
+
+
+@pytest.fixture
+def xfail_if_enums_are_not_read_on_instances(qapp, request):
+    """xfail strict **seulement** si le PySide6 installé refuse ``instance.Accepted`` (le bogue est alors présent).
+
+    ``requirements.txt`` admet des versions où ``dialog.Accepted`` fonctionne encore : le test y doit passer, et un
+    xfail strict inconditionnel l'y ferait échouer (XPASS). On constate le comportement au lieu de deviner la version.
+    """
+    probe = QDialog()
+    broken = not hasattr(probe, "Accepted")
+    probe.deleteLater()
+    if broken:
+        request.applymarker(pytest.mark.xfail(strict=True, reason=ACCEPTED_ON_INSTANCE))
 
 
 def _accept_dialog(monkeypatch, dialog_class, fill) -> None:
@@ -133,7 +149,7 @@ def test_saving_a_clip_without_effects_explains_and_writes_nothing(window, dialo
     assert not (config_dir / USER_PRESETS_FILE).exists()
 
 
-@pytest.mark.xfail(strict=True, reason=ACCEPTED_ON_INSTANCE)
+@pytest.mark.usefixtures("xfail_if_enums_are_not_read_on_instances")
 def test_saving_the_clip_look_from_the_dialog_writes_a_user_preset(window, monkeypatch, qtbot, config_dir):
     _select(window, "intro")
     window.project_panel.effect_apply_requested.emit("cinema")
@@ -357,7 +373,7 @@ def test_an_unknown_transition_preset_is_reported(window):
     assert _status(window) == i18n.translate("transitions.library.no_results")
 
 
-@pytest.mark.xfail(strict=True, reason=ACCEPTED_ON_INSTANCE)
+@pytest.mark.usefixtures("xfail_if_enums_are_not_read_on_instances")
 def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(window, monkeypatch, qtbot, config_dir):
     _make_intro_and_plan_a_adjacent(window)
     _select(window, "intro", "plan_a")

@@ -258,12 +258,14 @@ def test_an_unknown_audio_effect_type_is_refused_with_a_message(window, voice, d
 def test_an_out_of_range_effect_parameter_is_refused_and_the_value_kept(window, voice):
     window.properties_panel.audio_effect_add_requested.emit(voice, "compressor")
     [effect] = find_clip(window.project, voice).audio_effects
+    before = float(effect.params["threshold_db"])     # copie du scalaire : un dict muté sur place passerait sinon
     steps = _steps(window)
 
     window.properties_panel.audio_effect_parameter_changed.emit(voice, effect.id, "threshold_db", 2.0)
 
     [kept] = find_clip(window.project, voice).audio_effects
-    assert kept.params["threshold_db"] == pytest.approx(effect.params["threshold_db"])
+    assert kept.params["threshold_db"] == pytest.approx(before)
+    assert effect.params["threshold_db"] == pytest.approx(before), "l'effet d'origine n'est pas muté non plus"
     assert "threshold_db" in window.statusBar().currentMessage()
     assert _steps(window) == steps
 
