@@ -119,7 +119,9 @@ disque, annulé. Délais : 20 s pour l'API, 30 s sans donnée pour un téléchar
 
 ## 6. Publier une version
 
-1. Mettre `APP_VERSION` à jour dans `core/app_version.py` (ex. `0.2.0`), fusionner dans `main`, attendre la CI verte.
+1. Mettre `APP_VERSION` à jour dans `core/app_version.py` (ex. `0.2.0`) et, dans le même commit, renommer la section
+   `[Unreleased]` de `CHANGELOG.md` en `[0.2.0] - AAAA-MM-JJ` puis rouvrir une section `[Unreleased]` vide ;
+   fusionner dans `main`, attendre la CI verte.
 2. Facultatif mais conseillé : *Actions › Release › Run workflow* sur `main`. C'est une **construction d'essai** : les
    trois paquets, `SHA256SUMS.txt` et les notes sont produits en artefacts, **rien n'est publié**.
 3. Créer et pousser le tag : `git tag v0.2.0 && git push origin v0.2.0`.

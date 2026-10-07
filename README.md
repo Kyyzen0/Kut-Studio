@@ -4,7 +4,7 @@
 
 Kut-Studio is a desktop video editor with a clean dark interface and a focused workflow: a project library, preview monitor, properties inspector, and multi-track timeline.
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/PySide6-%E2%89%A56.6-41CD52.svg)](https://doc.qt.io/qtforpython-6/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#requirements)
 [![Last commit](https://img.shields.io/github/last-commit/Kyyzen0/kut-studio)](https://github.com/Kyyzen0/kut-studio/commits/main)
@@ -56,7 +56,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 
 ## 📋 Requirements
 
-- Python **3.10+**
+- Python **3.11+** (tested in CI on 3.11)
 - `pip`
 - **FFmpeg + ffprobe** available from your `PATH` (required for media import,
   faithful preview, scopes and export). Burned-in subtitles need an FFmpeg built
@@ -117,7 +117,8 @@ The version comes from `core/app_version.py` (single source).
 GitHub release. macOS packages are signed with a Developer ID and notarized only
 when the signing secrets are configured; otherwise the release notes say clearly
 that they are not notarized. A manual run builds everything without publishing.
-Procedure and secrets: [docs/updates.md](docs/updates.md).
+Procedure and secrets: [docs/updates.md](docs/updates.md). What changed in each version:
+[CHANGELOG.md](CHANGELOG.md).
 
 To embed local FFmpeg binaries in a build, set `KUT_STUDIO_FFMPEG_DIR` to a
 folder containing `ffmpeg` and `ffprobe` (`.exe` on Windows) before running
@@ -265,7 +266,7 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 
 ## 🤝 Contributing
 
-Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request.
+Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request. Setup, the checks the test suite enforces (ratchets and guards), commit style and what CI requires: [CONTRIBUTING.md](CONTRIBUTING.md) (in French, with an English summary).
 
 ---
 
@@ -320,7 +321,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 
 ## 📋 Pré-requis
 
-- Python **3.10+**
+- Python **3.11+** (testé en CI sur 3.11)
 - `pip`
 - **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
   l’import, l’aperçu fidèle, les scopes et l’export. L’incrustation de
@@ -382,7 +383,8 @@ La version vient de `core/app_version.py` (source unique).
 release GitHub. Les paquets macOS ne sont signés Developer ID et notarisés que si
 les secrets de signature sont configurés ; sinon les notes de la release disent
 clairement qu’ils ne sont pas notarisés. Un lancement manuel construit tout sans
-rien publier. Procédure et secrets : [docs/updates.md](docs/updates.md).
+rien publier. Procédure et secrets : [docs/updates.md](docs/updates.md). Les changements de chaque version :
+[CHANGELOG.md](CHANGELOG.md).
 
 Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
 contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
@@ -483,7 +485,7 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 
 ## 🤝 Contribution
 
-Les contributions et signalements de bugs sont les bienvenus. Créez une branche, faites une modification ciblée, lancez les tests puis ouvrez une pull request.
+Les contributions et signalements de bugs sont les bienvenus. Créez une branche, faites une modification ciblée, lancez les tests puis ouvrez une pull request. Installation, gardes et cliquets vérifiés par la suite, style des commits et exigences de la CI : [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <p align="center">
   Fait avec ❤️ et PySide6

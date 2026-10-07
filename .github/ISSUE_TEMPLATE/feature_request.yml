@@ -1,0 +1,27 @@
+name: Idée / Feature request
+description: Proposer une fonctionnalité ou une amélioration. Suggest a feature or an improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Le besoin / The problem
+      description: Ce que vous essayez de faire et ce qui vous en empêche aujourd'hui.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Ce que vous proposez / Proposal
+      description: Le comportement attendu, vu de l'utilisateur. Une capture ou une maquette aide.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Contournements actuels / Workarounds
+      description: Comment vous faites aujourd'hui, ou ce que fait un autre logiciel.
+  - type: markdown
+    attributes:
+      value: |
+        La feuille de route est dans le README ; la façon de contribuer, dans [CONTRIBUTING.md](https://github.com/Kyyzen0/Kut-Studio/blob/main/CONTRIBUTING.md).

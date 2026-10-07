@@ -1,0 +1,62 @@
+name: Bogue / Bug report
+description: Quelque chose ne fonctionne pas comme prévu. Something does not work as expected.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Ce qui se passe / What happens
+      description: Ce que vous avez fait, ce que vous attendiez, ce qui s'est produit (message d'erreur exact si possible).
+      placeholder: |
+        1. Importer une vidéo 4K…
+        2. …
+        Attendu : … / Obtenu : …
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Système / OS
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Version du système / OS version
+      placeholder: macOS 15.5, Windows 11 24H2, Ubuntu 24.04…
+  - type: input
+    id: app-version
+    attributes:
+      label: Version de Kut-Studio
+      description: Aide › À propos de Kut-Studio, ou le commit si vous lancez depuis les sources.
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: ffmpeg
+    attributes:
+      label: Version de FFmpeg
+      description: Première ligne de `ffmpeg -version`.
+      placeholder: ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Journal de diagnostic / Diagnostic log
+      description: |
+        La fin de `kut-studio.log` (le dossier peut être remplacé par `KUT_STUDIO_LOG_DIR`) :
+        macOS `~/Library/Logs/Kut-Studio/` · Windows `%LOCALAPPDATA%\Kut-Studio\Logs\` ·
+        Linux `$XDG_STATE_HOME/kut-studio/` (par défaut `~/.local/state/kut-studio/`).
+      render: text
+  - type: markdown
+    attributes:
+      value: |
+        **Avant de joindre un projet `.kut`** : il enregistre le chemin de chaque média tel qu'il a été importé, en
+        général complet (nom d'utilisateur, noms de dossiers). Relisez-le, ou joignez plutôt un projet minimal qui
+        reproduit le bogue. *A `.kut` file contains your media paths: check it before attaching it.*
