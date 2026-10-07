@@ -4,7 +4,7 @@
 
 Kut-Studio is a desktop video editor with a clean dark interface and a focused workflow: a project library, preview monitor, properties inspector, and multi-track timeline.
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/PySide6-%E2%89%A56.6-41CD52.svg)](https://doc.qt.io/qtforpython-6/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](#requirements)
 [![Last commit](https://img.shields.io/github/last-commit/Kyyzen0/kut-studio)](https://github.com/Kyyzen0/kut-studio/commits/main)
@@ -56,7 +56,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 
 ## 📋 Requirements
 
-- Python **3.10+**
+- Python **3.11+** (tested in CI on 3.11)
 - `pip`
 - **FFmpeg + ffprobe** available from your `PATH` (required for media import,
   faithful preview, scopes and export). Burned-in subtitles need an FFmpeg built
@@ -320,7 +320,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 
 ## 📋 Pré-requis
 
-- Python **3.10+**
+- Python **3.11+** (testé en CI sur 3.11)
 - `pip`
 - **FFmpeg et ffprobe** accessibles dans le `PATH` — nécessaires pour
   l’import, l’aperçu fidèle, les scopes et l’export. L’incrustation de
