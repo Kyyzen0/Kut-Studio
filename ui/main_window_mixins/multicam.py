@@ -100,6 +100,7 @@ class MulticamMixin:
         try:
             return str(proxies.resolve(path, need_audio=False, divisor=4))
         except Exception:  # noqa: BLE001 - un proxy illisible ne doit pas priver la tuile de son image
+            LOGGER.debug("Proxy illisible pour %s : la tuile lit l'original", path, exc_info=True)
             return path
 
     def _sync_multicam_audio(self, top_clip, active_clips) -> None:

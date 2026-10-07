@@ -100,6 +100,7 @@ def _sysctl_int(name: str) -> int | None:
             return None
         return int(value.value) if size.value == 8 else int(value.value & 0xFFFFFFFF)
     except Exception:
+        LOGGER.debug("sysctl %s illisible : mémoire inconnue", name, exc_info=True)
         return None
 
 

@@ -33,7 +33,8 @@ ensuite déclenche `.github/workflows/release.yml`.
   l'écoute de l'aperçu (rien n'est enregistré ni exporté), il va de 0 à 100 %, et son libellé passe au-dessus du
   curseur pour ne plus élargir l'inspecteur dans les petites fenêtres.
 - Les échecs que l'application tolère sans s'arrêter (un aperçu qui ne se rafraîchit pas, un rendu d'arrière-plan
-  qui ne s'annule pas…) laissent désormais une trace dans le journal de diagnostic au lieu de passer inaperçus.
+  qui ne s'annule pas, un préchargement de l'aperçu abandonné, des scopes non calculés, un panneau des calques
+  vide…) laissent désormais une trace dans le journal de diagnostic au lieu de passer inaperçus.
 - L'édition de l'automation de volume de piste n'est plus présentée comme disponible : l'interface ne l'expose pas
   encore. Elle est inscrite à la feuille de route ; le ducking des presets réseaux sociaux reste disponible.
 - Python 3.11 est annoncé comme version minimale pour lancer Kut-Studio depuis les sources : la documentation

@@ -776,6 +776,7 @@ class DecodeContext:
         try:
             capabilities = self.capabilities_provider()
         except Exception:
+            LOGGER.debug("Capacités matérielles illisibles : décodage CPU pour %s", path, exc_info=True)
             capabilities = None
         stream = self.probe.get(path) if capabilities is not None else None
         return choose_decoder(self.mode, capabilities=capabilities, stream=stream, purpose=purpose,

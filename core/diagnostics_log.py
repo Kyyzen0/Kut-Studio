@@ -126,7 +126,7 @@ def _qt_versions() -> str:
         import PySide6
 
         return f"PySide6 {PySide6.__version__}"
-    except Exception:  # noqa: BLE001 - le diagnostic ne doit jamais empêcher de démarrer
+    except (ImportError, AttributeError):  # le diagnostic ne doit jamais empêcher de démarrer
         return "PySide6 indisponible"
 
 

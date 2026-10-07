@@ -242,6 +242,7 @@ class MotionGraphicsMixin:
                 self.project, window=(t, t + 1e-3), window_index=self._ensure_timeline_index(),
             )
         except Exception:
+            LOGGER.debug("Plan à %.3f s non construit : aucun calque dessiné dans le moniteur", t, exc_info=True)
             plan = None
         drawable = plan is not None and any(layer.role == "draw" for layer in plan.graphics_layers)
         panel.set_graphics_present(drawable)
@@ -416,6 +417,7 @@ class MotionGraphicsMixin:
         try:
             nodes = layer_tree(self.project)
         except Exception:
+            LOGGER.debug("Arbre des calques non construit : panneau vide", exc_info=True)
             nodes = []
         selected = self._primary_selected_id()
         names = {}
@@ -483,6 +485,7 @@ class MotionGraphicsMixin:
         try:
             return parent_candidates(self.project, clip_id)
         except Exception:
+            LOGGER.debug("Parents possibles de %s non calculés : liste vide", clip_id, exc_info=True)
             return []
 
     # ------------------------------------------------------------------

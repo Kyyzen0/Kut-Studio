@@ -318,6 +318,7 @@ def _has_alpha(path: str) -> bool:
     try:
         info = default_context().probe.get(path)
     except Exception:  # noqa: BLE001 - une sonde qui échoue ne doit pas empêcher la préparation
+        LOGGER.debug("Sonde de transparence en échec pour %s : média traité comme opaque", path, exc_info=True)
         return False
     return info is not None and info.pix_fmt.startswith(_ALPHA_FORMATS)
 

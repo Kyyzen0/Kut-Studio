@@ -352,6 +352,7 @@ class PerformanceMixin:
                 self.project, float(self.playhead_seconds)
             )
         except Exception:
+            LOGGER.debug("Clips actifs non déterminés : pas de proxy plus léger demandé", exc_info=True)
             return
         asset_by_path = {a.path: a for a in self.project.media_assets if a.path}
         for clip in active:

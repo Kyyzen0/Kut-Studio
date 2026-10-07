@@ -40,8 +40,11 @@ puis un test de cohérence contre le filtre FFmpeg de l'export.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+LOGGER = logging.getLogger(__name__)
 
 OP_NONE = 0
 OP_EQ = 1
@@ -471,6 +474,7 @@ def _grade_is_identity(grade) -> bool:
         try:
             return bool(checker())
         except Exception:
+            LOGGER.debug("is_identity() a échoué : l'étalonnage est traité comme actif", exc_info=True)
             return False
     if isinstance(checker, bool):
         return checker

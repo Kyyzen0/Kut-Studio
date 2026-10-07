@@ -149,6 +149,7 @@ class PreviewEngine:
         try:
             return max(0, int(stats().get("entries", 0)))
         except Exception:
+            LOGGER.debug("Statistiques du cache d'aperçu illisibles : 0 segment compté", exc_info=True)
             return 0
 
     def _snapshot(self):
@@ -294,6 +295,7 @@ class PreviewEngine:
                 known = bool(ffmpeg_supports_subtitles())
             except Exception:
                 # Build inconnue : on laisse FFmpeg trancher au rendu.
+                LOGGER.debug("Prise en charge des sous-titres inconnue : FFmpeg tranchera au rendu", exc_info=True)
                 known = True
             with self._lock:
                 self._subtitles_supported = known
@@ -514,6 +516,7 @@ class PreviewEngine:
                 try:
                     removed = int(invalidate_all())
                 except Exception:
+                    LOGGER.debug("Vidage du cache d'aperçu en échec : aucun segment retiré", exc_info=True)
                     removed = 0
         with self._lock:
             victims = [
