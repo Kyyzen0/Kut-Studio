@@ -247,6 +247,20 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.export.resolution": {"fr": "Résolution", "en": "Resolution", "es": "Resolución"},
     "render.export.quality": {"fr": "Qualité", "en": "Quality", "es": "Calidad"},
     "render.export.fps": {"fr": "Images/seconde", "en": "Frames/second", "es": "Fotogramas/segundo"},
+    "render.export.fps_project": {"fr": "Cadence du projet", "en": "Project frame rate", "es": "Velocidad del proyecto"},
+    "render.export.fps_follows_project": {
+        "fr": "Exporté à la cadence de la séquence, sans image dupliquée.",
+        "en": "Exported at the sequence frame rate, with no duplicated frames.",
+        "es": "Exportado a la velocidad de la secuencia, sin fotogramas duplicados.",
+    },
+    "render.export.fps_mismatch": {
+        "fr": "La séquence est à {project} : l'export à {output} répète ou saute des images (saccades). "
+              "Choisissez « Cadence du projet » pour les éviter.",
+        "en": "The sequence runs at {project}: exporting at {output} repeats or drops frames (judder). "
+              "Choose “Project frame rate” to avoid it.",
+        "es": "La secuencia va a {project}: exportar a {output} repite u omite fotogramas (tirones). "
+              "Elija «Velocidad del proyecto» para evitarlo.",
+    },
     "menu.window": {"fr": "Fe&nêtre", "en": "&Window", "es": "Ve&ntana"},
     "menu.item.new": {"fr": "Nouveau", "en": "New", "es": "Nuevo"},
     "menu.item.open": {"fr": "Ouvrir...", "en": "Open...", "es": "Abrir..."},

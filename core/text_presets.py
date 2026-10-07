@@ -26,12 +26,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from .atomic_io import atomic_write_json
 from .text_style import (
     TextAlignment,
     TextStyle,
@@ -444,24 +444,7 @@ def save_user_text_presets(
         for preset in presets
         if not preset.builtin
     ]
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f"{target.name}.",
-        suffix=".tmp",
-        dir=str(base),
-    )
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
-            json.dump(payload, tmp_file, indent=2, ensure_ascii=False)
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-        os.replace(tmp_path, target)
-    except Exception:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-        raise
+    atomic_write_json(target, payload)
     return target
 
 

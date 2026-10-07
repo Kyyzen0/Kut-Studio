@@ -114,15 +114,15 @@ class DiskPreviewCache:
         self.hits = 0
         self.misses = 0
         self._lock = threading.RLock()
-        self._index = None  # nom -> [taille, dernier usage en ns] ; chargé à la demande
+        self._index: dict[str, list[int]] | None = None  # nom -> [taille, dernier usage en ns] ; chargé à la demande
         self._total = 0
         self._dir_mtime = None  # date du dossier à la dernière synchronisation
 
     # -- index -----------------------------------------------------------------
 
-    def rescan(self):
-        """Reconstruit l'index depuis le disque (après une modification externe)."""
-        index = {}
+    def rescan(self) -> dict[str, list[int]]:
+        """Reconstruit l'index depuis le disque (après une modification externe) et le retourne."""
+        index: dict[str, list[int]] = {}
         total = 0
         try:
             with os.scandir(self.directory) as entries:
@@ -141,6 +141,7 @@ class DiskPreviewCache:
             self._index = index
             self._total = total
             self._dir_mtime = self._read_dir_mtime()
+        return index
 
     def _read_dir_mtime(self):
         try:
@@ -157,10 +158,8 @@ class DiskPreviewCache:
         if self._index is not None and self._read_dir_mtime() != self._dir_mtime:
             self.rescan()
 
-    def _ensure_index(self):
-        if self._index is None:
-            self.rescan()
-        return self._index
+    def _ensure_index(self) -> dict[str, list[int]]:
+        return self._index if self._index is not None else self.rescan()
 
     def _forget(self, name):
         entry = self._index.pop(name, None) if self._index is not None else None
@@ -319,8 +318,9 @@ class DiskPreviewCache:
         # Un segment unique plus gros que le budget est conservé : mieux
         # vaut un aperçu que rien ; l'éviction ne vaut qu'à partir de 2 fichiers.
         stuck: set[str] = set()                      # segments impossibles à supprimer pour l'instant
-        while self._total > self.budget_bytes and len(self._index) - len(stuck) > 1:
-            name = min((n for n in self._index if n not in stuck), key=lambda n: self._index[n][1])
+        index = self._ensure_index()
+        while self._total > self.budget_bytes and len(index) - len(stuck) > 1:
+            name = min((n for n in index if n not in stuck), key=lambda n: index[n][1])
             if self._unlink(name):
                 self._forget(name)
                 evicted += 1
@@ -360,7 +360,7 @@ class DiskPreviewCache:
         with self._lock:
             self._ensure_index()
             self._sync_if_changed()
-            index = self._index
+            index = self._ensure_index()
             return [
                 (self.directory / name, entry[0], entry[1])
                 for name, entry in index.items()
@@ -381,7 +381,7 @@ class DiskPreviewCache:
         with self._lock:
             self._ensure_index()
             self._sync_if_changed()
-            index = self._index
+            index = self._ensure_index()
             return {
                 "entries": len(index),
                 "bytes": self._total,

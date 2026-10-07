@@ -26,11 +26,14 @@ passage en RVB planaire (``gbrp``) pour ``blend`` n'est qu'une recopie, sans con
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from .blend_modes import BlendMode, coerce_blend_mode, ffmpeg_blend_mode
 from .mograph_program import GraphicsElement, graphics_program
 from .mograph_stream import ensure_qt_gui, stream_input_filter, write_stream
+
+LOGGER = logging.getLogger(__name__)
 
 AddInput = Callable[[str], int]
 
@@ -319,6 +322,7 @@ def prepare_graphics_streams(plan, width: int, height: int, fps) -> bool:
         ExportEngine._build_filter_complex(plan, width, height, fps, None)
         return True
     except Exception:
+        LOGGER.debug("Graphe d'export non construit : flux motion graphics non préparés", exc_info=True)
         return False
 
 

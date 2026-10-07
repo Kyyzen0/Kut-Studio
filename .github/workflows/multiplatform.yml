@@ -132,6 +132,57 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Deuxième version majeure de FFmpeg et de Python. La matrice teste FFmpeg 6.1 (Ubuntu) et la dernière version
+  # (Homebrew, Chocolatey) sous Python 3.11 ; FFmpeg 7.0 / 7.1 se comporte autrement : ``setpts`` y efface la cadence
+  # (xfade refusait toute transition, une sortie rawvideo était remise à 25 i/s) et un puits nourri par une source
+  # interne fait avorter ffmpeg. Debian 13 (trixie) fournit FFmpeg 7.1 et Python 3.13 : c'est l'environnement d'un
+  # utilisateur Linux récent. La version est vérifiée : une mise à jour de l'image vers une autre majeure fait échouer
+  # le job au lieu de lui faire tester autre chose en silence. Bloquant, sans dépendance sur la matrice.
+  linux-ffmpeg7:
+    name: Debian 13 / FFmpeg 7.1 / Python 3.13
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    timeout-minutes: 30
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      # git avant actions/checkout : sans lui l'action télécharge une archive, et les tests qui lisent « git ls-files »
+      # n'auraient pas de dépôt. Bibliothèques : ce que PySide6 (QtGui, QtMultimedia) charge en mode offscreen.
+      - name: Install FFmpeg, Python and the Qt runtime
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git ffmpeg python3 python3-venv \
+            libegl1 libgl1 libglib2.0-0t64 libdbus-1-3 libxkbcommon0 libfontconfig1 fonts-dejavu-core \
+            libpulse0 libasound2t64 libva2 libva-drm2 libxrender1 libxi6 libsm6 libx11-6 libx11-xcb1
+
+      - uses: actions/checkout@v5
+
+      - name: Verify FFmpeg 7 and Python 3.13
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version="$(ffmpeg -hide_banner -version)"   # pas de « ffmpeg | head » : SIGPIPE + pipefail
+          echo "$version" | head -n 1
+          python3 --version
+          case "$version" in
+            "ffmpeg version 7."*) ;;
+            *) echo "::error::ce job doit tester FFmpeg 7.x"; exit 1 ;;
+          esac
+          python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 13) else "ce job doit tester Python 3.13")'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip -r requirements-dev.txt
+
+      - name: Run test suite
+        run: python -m pytest -q -n auto --timeout=600 --durations=15 -rfE
+
   # Couverture réelle des sous-titres (libass) sur macOS. Le FFmpeg Homebrew du job « macos-latest » ci-dessus
   # n'a pas libass : les tests de sous-titres s'y sautent. Ce job installe ffmpeg-full (bouteille de
   # homebrew-core, avec libass), l'expose à l'application et n'exécute que les tests marqués « libass ».

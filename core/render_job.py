@@ -173,7 +173,7 @@ class RenderJob:
     audio_codec: str
     width: int
     height: int
-    fps: int
+    fps: float
     quality: int
     audio_bitrate: str
     hardware: str = HardwareEncoder.CPU.value
@@ -234,8 +234,19 @@ class RenderJob:
         sequence_id: str = "",
         sequence_name: str = "",
         cover_seconds: float = 0.0,
+        project_fps: float | None = None,
     ) -> RenderJob:
-        """Crée un job ``WAITING`` à partir d'un preset."""
+        """Crée un job ``WAITING`` à partir d'un preset.
+
+        ``project_fps`` est la cadence de la séquence rendue : un preset qui la suit (``spec.fps is None``) en a besoin,
+        le job garde la cadence résolue (l'instantané ne change plus).
+
+        Raises:
+            ValueError: le preset suit la séquence et ``project_fps`` manque ou est invalide.
+        """
+        if spec.follows_project_fps and project_fps is None:
+            raise ValueError(f"Le preset « {spec.name} » suit la cadence de la séquence : project_fps est requis.")
+        fps = spec.output_fps(project_fps if project_fps is not None else 0.0)
         stamp = time.time() if now is None else now
         return cls(
             id=new_job_id(),
@@ -248,7 +259,7 @@ class RenderJob:
             audio_codec=spec.audio_codec,
             width=spec.width,
             height=spec.height,
-            fps=spec.fps,
+            fps=fps,
             quality=spec.quality,
             audio_bitrate=spec.audio_bitrate,
             hardware=spec.hardware,
@@ -465,8 +476,8 @@ class RenderJob:
         export_format_for(container, video_codec)  # lève ValueError si inexploitable
         width = _int(data.get("width"), 1920)
         height = _int(data.get("height"), 1080)
-        fps = _int(data.get("fps"), 30)
-        if width <= 0 or height <= 0 or fps <= 0:
+        fps = _float(data.get("fps"), 30.0)   # entier dans les files écrites avant les cadences NTSC (29,97…)
+        if width <= 0 or height <= 0 or not 0.0 < fps < float("inf"):
             raise ValueError("Job de rendu invalide : résolution ou fréquence incorrecte.")
         return cls(
             id=job_id,

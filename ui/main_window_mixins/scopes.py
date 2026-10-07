@@ -119,6 +119,7 @@ class ScopesMixin:
             render_plan = self.get_render_plan(at=playhead)
         except Exception:
             # Projet sans média, plan incomplet : rien à analyser.
+            LOGGER.debug("Plan à la tête de lecture non construit : scopes non analysés", exc_info=True)
             return None
         if not getattr(render_plan, "video_layers", ()):
             return None

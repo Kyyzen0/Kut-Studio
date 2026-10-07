@@ -1046,7 +1046,7 @@ class ThemeManager:
         """Demande à Qt le thème système, avec import paresseux."""
         try:
             from PySide6.QtCore import QCoreApplication
-        except Exception:
+        except ImportError:
             return "dark"
         app = QCoreApplication.instance()
         if app is None:

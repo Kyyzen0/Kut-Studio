@@ -564,7 +564,7 @@ def test_nested_sequence_with_its_own_resolution_is_scaled_like_a_media():
     insert_sequence_clip(project, "intro", "V2", 0.0)
     plan = build_render_plan(project)
     graph, *_ = ExportEngine._build_filter_complex(plan, 960, 540, 30, None)
-    assert "color=c=black@0:s=640x360:r=25.0" in graph
+    assert "color=c=black@0:s=640x360:r=25:" in graph
 
 
 def test_render_plan_can_target_any_sequence():

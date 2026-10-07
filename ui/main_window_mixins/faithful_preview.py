@@ -98,6 +98,7 @@ class FaithfulPreviewMixin:
             self._preview_pump_timer.timeout.connect(self._pump_preview_queue)
             self._preview_pump_timer.start()
         except Exception:
+            LOGGER.debug("Aperçu fidèle indisponible : moteur non démarré", exc_info=True)
             self.preview_engine = None
 
     def _pump_preview_queue(self) -> None:
@@ -187,15 +188,14 @@ class FaithfulPreviewMixin:
         Chaque job porte la priorité de son rang. Le coût est celui d'un
         plan *fenêtré* par segment, pas du projet entier.
         """
-        try:
-            from core.preview_segments import build_segment_job
-        except Exception:
-            return []
+        from core.preview_segments import build_segment_job
+
         planner = self._prefetch_planner()
         try:
             duration = float(self._ensure_timeline_index().duration)
             requests = planner.plan(center, duration=duration, velocity=velocity)
         except Exception:
+            LOGGER.debug("Plan de préchargement non calculé à %.3f s : rien n'est préchargé", center, exc_info=True)
             return []
         resolver = self._preview_resolver()
         jobs = []
@@ -207,6 +207,7 @@ class FaithfulPreviewMixin:
                     timeline_index=self._ensure_timeline_index(), flow_preference=self._flow_preference(),
                 )
             except Exception:
+                LOGGER.debug("Segment %s non construit : préchargement sauté pour ce segment", request.index, exc_info=True)
                 continue
             if job is not None:
                 job.priority = request.priority
@@ -267,14 +268,12 @@ class FaithfulPreviewMixin:
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return None
-        try:
-            from core.preview_segments import (
-                build_segment_job,
-                segment_params_hash,
-                segment_plan,
-            )
-        except Exception:
-            return None
+        from core.preview_segments import (
+            build_segment_job,
+            segment_params_hash,
+            segment_plan,
+        )
+
         resolver = self._preview_resolver()
         job = None
         for candidate in getattr(self, "_last_preview_jobs", ()):
@@ -305,10 +304,12 @@ class FaithfulPreviewMixin:
                 if job is None:
                     return None
         except Exception:
+            LOGGER.debug("Segment de l'aperçu non construit à %.3f s : pas d'image en cache", timeline_time, exc_info=True)
             return None
         try:
             path = engine.cache.lookup(job.key)
         except Exception:
+            LOGGER.debug("Cache d'aperçu illisible : segment traité comme absent", exc_info=True)
             path = None
         if path is None:
             return None
@@ -330,6 +331,7 @@ class FaithfulPreviewMixin:
                 flow_preference=self._flow_preference(),
             )
         except Exception:
+            LOGGER.debug("Empreinte des réglages d'aperçu non calculée", exc_info=True)
             return None
 
     def _present_cached_preview_at(self, timeline_time: float) -> bool:

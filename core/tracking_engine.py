@@ -44,6 +44,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .platform_paths import user_cache_dir
 from .tracking_frames import (
     AnalysisGeometry,
@@ -232,15 +233,10 @@ class TrackingCache:
             path = self._path(key)
         except OSError:  # dossier de cache inutilisable : le résultat reste valable, il n'est juste pas gardé
             return
-        temporary = path.with_suffix(".tmp")
         try:
-            temporary.write_text(json.dumps(payload), encoding="utf-8")
-            os.replace(temporary, path)
+            atomic_write_text(path, json.dumps(payload), durable=False)
         except OSError:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+            LOGGER.debug("Cache de tracking : entrée %s non écrite, le résultat reste valable", key, exc_info=True)
 
     # -- vue « gestionnaire de cache » -------------------------------------------------------
 

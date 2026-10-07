@@ -198,6 +198,29 @@ def format_fps(fps: float, decimal: str = ".") -> str:
     return text.replace(".", decimal)
 
 
+def ffmpeg_rate(fps: float) -> str:
+    """Cadence pour une option FFmpeg de type *video rate* (``fps=``, ``color=r=``), exacte aux cadences NTSC.
+
+    FFmpeg convertit un décimal en fraction (``av_d2q``) : ``29.97`` devenait ``2997/100``, une cadence qui n'existe pas
+    et qui dérive de la vraie (``30000/1001``), et c'est elle qui balisait le fichier exporté. Une cadence reconnue est
+    donc écrite en fraction exacte (``30000/1001``, ``25``), une autre en décimal court (``12.5``). Réservé aux options
+    de cadence : une fraction n'a pas sa place dans une expression (``setpts``) où ``/`` est une division.
+    """
+    rate = FrameRate.try_from_fps(fps)
+    if rate is not None:
+        exact = rate.fps
+        return str(exact.numerator) if exact.denominator == 1 else f"{exact.numerator}/{exact.denominator}"
+    return f"{float(fps):.6f}".rstrip("0").rstrip(".")
+
+
+def same_frame_rate(first: float, second: float) -> bool:
+    """Deux cadences désignent-elles la même ? ``29.97`` et ``29.970029…`` (30000/1001) oui ; ``29.97`` et ``30`` non."""
+    a, b = FrameRate.try_from_fps(first), FrameRate.try_from_fps(second)
+    if a is not None and b is not None:
+        return a.fps == b.fps
+    return math.isclose(float(first), float(second), rel_tol=_SNAP_TOLERANCE)
+
+
 # ---------------------------------------------------------------------------
 # Texte
 # ---------------------------------------------------------------------------

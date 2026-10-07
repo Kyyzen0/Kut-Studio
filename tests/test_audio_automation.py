@@ -795,7 +795,7 @@ def test_volume_envelope_stays_flat_with_many_points() -> None:
 
 
 def _options(chain: str) -> dict[str, str]:
-    compressor = re.search(r"sidechaincompress=([^\[]*)\[", chain)
+    compressor = re.search(r"sidechaincompress=([^,\[]*)[,\[]", chain)
     assert compressor, chain
     return dict(item.split("=", 1) for item in compressor.group(1).split(":"))
 
@@ -810,18 +810,27 @@ def test_ducking_chain_takes_the_voice_on_its_second_input() -> None:
     """``sidechaincompress`` n'a pas d'option ``sidechain`` : la clé est son entrée 1, la musique son entrée 0."""
     chain = _build_ducking_chain(
         _sidechain(DuckingConfig(threshold_db=-25.0, reduction_db=10.0)),
-        voice_label="av0", main_label="a0", output_label="a0_duck", key_label="a0_sc0",
+        voice_label="av0", main_label="a0", output_label="a0_duck", key_label="a0_sc0", duration=6.0,
     )
-    key, compressor = chain.split(";")
-    assert key.startswith("[av0]aeval=") and key.endswith("[a0_sc0]")
-    assert compressor.startswith("[a0][a0_sc0]sidechaincompress=") and compressor.endswith("[a0_duck]")
+    key, music, compressor = chain.split(";")
+    assert key.startswith("[av0]aeval=") and key.endswith(",apad[a0_sc0]")
+    assert music == "[a0]apad[a0_duck_scin]"
+    assert compressor.startswith("[a0_duck_scin][a0_sc0]sidechaincompress=") and compressor.endswith(",atrim=end=6.0[a0_duck]")
     assert "sidechain=" not in chain
+
+
+def test_ducking_keeps_the_end_of_the_music_whatever_input_ends_first() -> None:
+    """``sidechaincompress`` s'arrête dès que l'une de ses entrées s'arrête : la fin de la musique était coupée au hasard
+    (multithread FFmpeg). Les deux entrées sont prolongées et la sortie coupée à la durée de la timeline."""
+    chain = _build_ducking_chain(_sidechain(), voice_label="v", main_label="m", output_label="o", key_label="k",
+                                 duration=12.5)
+    assert ",apad[k]" in chain and "[m]apad[o_scin]" in chain and chain.endswith("atrim=end=12.5[o]")
 
 
 def test_ducking_chain_speaks_ffmpeg_units() -> None:
     """Seuil en amplitude linéaire, attaque et relâchement en millisecondes, pas de gain de compensation."""
     options = _options(_build_ducking_chain(
-        _sidechain(), voice_label="av0", main_label="a0", output_label="o", key_label="k",
+        _sidechain(), voice_label="av0", main_label="a0", output_label="o", key_label="k", duration=6.0,
     ))
     assert float(options["threshold"]) == pytest.approx(0.1, rel=1e-4)       # -20 dB
     assert float(options["ratio"]) == pytest.approx(20.0)
@@ -840,7 +849,7 @@ def test_ducking_chain_speaks_ffmpeg_units() -> None:
 def test_every_ducking_setting_stays_inside_ffmpeg_ranges(config) -> None:
     """Une option hors bornes refuse le graphe entier : ``ffmpeg -h filter=sidechaincompress``."""
     options = _options(_build_ducking_chain(
-        _sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k",
+        _sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k", duration=6.0,
     ))
     assert 0.000976563 <= float(options["threshold"]) <= 1.0
     assert 1.0 <= float(options["ratio"]) <= 20.0
@@ -853,7 +862,8 @@ def test_the_key_is_clipped_where_the_reduction_reaches_its_maximum() -> None:
     """Le compresseur atténue de ``dépassement * (1 - 1/ratio)`` : écrêter la clé à ``seuil + R*ratio/(ratio-1)``
     plafonne l'atténuation à ``reduction_db`` exactement."""
     config = DuckingConfig(threshold_db=-20.0, reduction_db=12.0)
-    chain = _build_ducking_chain(_sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k")
+    chain = _build_ducking_chain(_sidechain(config), voice_label="av0", main_label="a0", output_label="o", key_label="k",
+                                 duration=6.0)
     ceiling = float(re.search(r"clip\(val\(0\),-([\d.]+),", chain).group(1))
     overshoot = 20.0 * math.log10(ceiling / 0.1)
     assert overshoot * (1.0 - 1.0 / config.ratio) == pytest.approx(12.0, abs=1e-3)

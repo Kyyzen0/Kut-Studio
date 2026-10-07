@@ -59,7 +59,18 @@ def test_the_main_matrix_is_unchanged_and_does_not_require_libass() -> None:
     assert "fail-fast: false" in matrix
     assert "KUT_STUDIO_REQUIRE_LIBASS" not in matrix, "la matrice principale saute sans libass (macOS) comme avant"
     assert "|| brew install ffmpeg" in matrix, "la matrice garde l'installation du FFmpeg Homebrew sans libass"
-    assert set(jobs) == {"test-and-build", "macos-libass"}
+    assert set(jobs) == {"test-and-build", "macos-libass", "linux-ffmpeg7"}
+
+
+def test_the_ffmpeg7_job_really_tests_ffmpeg_7_and_python_3_13_and_blocks() -> None:
+    """FFmpeg 7.0 / 7.1 se comporte autrement que 6.1 et 8+ (``setpts`` efface la cadence) : le job le garde testé."""
+    job = _without_comments(_jobs()["linux-ffmpeg7"])
+    assert "container: debian:trixie" in job
+    assert '"ffmpeg version 7."*) ;;' in job, "une autre version majeure doit faire échouer le job, pas passer en silence"
+    assert "sys.version_info[:2] == (3, 13)" in job
+    assert re.search(r"python -m pytest -q -n auto --timeout=\d+", job), "toute la suite, avec un délai par test"
+    assert "continue-on-error" not in job and not re.search(r"^\s+needs:", job, re.MULTILINE)
+    assert re.search(r"^\s+timeout-minutes: \d+\s*$", job, re.MULTILINE)
 
 
 def test_the_workflow_keeps_read_only_permissions_and_major_pinned_actions() -> None:

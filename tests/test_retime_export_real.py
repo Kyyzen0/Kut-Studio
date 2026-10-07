@@ -61,12 +61,12 @@ def exported_indices(project) -> list[int]:
     plan = build_render_plan(project)
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     graph += f";[{video}]format=yuv420p[probe]"
-    if audio:
-        graph += f";[{audio}]anullsink"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
         command += ["-i", path]
-    command += ["-filter_complex", graph, "-map", "[probe]", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
+    command += ["-filter_complex", graph, "-map", "[probe]", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
+    if audio:                                   # 2de sortie plutôt qu'un puits : FFmpeg 7.x avorte sur un puits nourri par un son généré
+        command += ["-map", f"[{audio}]", "-f", "null", "-"]
     done = subprocess.run(command, capture_output=True, timeout=120)
     assert done.returncode == 0, done.stderr.decode(errors="replace")[-800:]
     size = W * H * 3 // 2

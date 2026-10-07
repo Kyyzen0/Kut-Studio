@@ -19,8 +19,8 @@ def test_normalize_fps(value, expected):
     assert result == expected and (isinstance(result, int) == isinstance(expected, int))
 
 
-@pytest.mark.parametrize("fps", [23.976, 29.97, 59.94])
-def test_a_fractional_project_rate_reaches_the_preview_job_and_the_graph(tmp_path, fps):
+@pytest.mark.parametrize(("fps", "exact"), [(23.976, "24000/1001"), (29.97, "30000/1001"), (59.94, "60000/1001")])
+def test_a_fractional_project_rate_reaches_the_preview_job_and_the_graph(tmp_path, fps, exact):
     project = _project(tmp_path)
     project.tracks[1].clips.clear()            # pas de sous-titre : il exigerait un fichier SRT temporaire
     project.fps = fps
@@ -30,7 +30,7 @@ def test_a_fractional_project_rate_reaches_the_preview_job_and_the_graph(tmp_pat
                                     start=0.0, duration=2.0, output_path=str(tmp_path / "o.mp4"))
     graph = command[command.index("-filter_complex") + 1] if "-filter_complex" in command else open(
         command[command.index("-filter_complex_script") + 1], encoding="utf-8").read()
-    assert f"fps={fps}" in graph
+    assert f"fps={exact}" in graph and f"r={exact}" in graph   # fraction exacte : FFmpeg lirait 29.97 comme 2997/100
     assert f"fps={int(fps)}," not in graph and f"fps={int(fps)}[" not in graph
 
 

@@ -1517,6 +1517,7 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
 
     class _Plan:
         video_layers = (object(),)
+        fps = 30.0
 
     def fake_plan(at=None):
         captured["plan_at"] = at

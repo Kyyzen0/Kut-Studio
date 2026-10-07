@@ -198,7 +198,7 @@ class TimeEditingMixin:
         la grille d'analyse, donc une analyse faite à une autre taille n'épargnerait aucun calcul à l'export."""
         panel = getattr(self, "export_panel", None)
         if panel is not None:
-            _format, preset, fps = panel.current_spec().export_parts()
+            _format, preset, fps = panel.current_spec().export_parts(self.project.fps)
             width, height = preset.resolution
             return int(width), int(height), float(fps)
         return int(self.project.width), int(self.project.height), float(self.project.fps)

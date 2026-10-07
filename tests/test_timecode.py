@@ -424,3 +424,25 @@ def test_the_midnight_shift_uses_the_day_of_the_camera_that_wrapped():
     assert right["early"] - right["late"] == pytest.approx(60 * 1001 / 30000, abs=1e-9)
     assert abs((wrong["early"] - wrong["late"]) - (right["early"] - right["late"])) > 80.0
 
+
+
+# --- Cadence pour FFmpeg ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fps", "expected"),
+    [(29.97, "30000/1001"), (30000 / 1001, "30000/1001"), (23.976, "24000/1001"), (59.94, "60000/1001"),
+     (25, "25"), (30.0, "30"), (12.5, "12.5"), (15, "15")],
+)
+def test_ffmpeg_rate_is_exact_for_ntsc_rates(fps, expected):
+    """FFmpeg lirait « 29.97 » comme 2997/100 : une cadence reconnue est écrite en fraction exacte."""
+    from core.timecode import ffmpeg_rate
+
+    assert ffmpeg_rate(fps) == expected
+
+
+def test_same_frame_rate_tolerates_rounded_ntsc_rates_only():
+    from core.timecode import same_frame_rate
+
+    assert same_frame_rate(29.97, 30000 / 1001) and same_frame_rate(25, 25.0) and same_frame_rate(12.5, 12.5)
+    assert not same_frame_rate(29.97, 30.0) and not same_frame_rate(23.976, 24.0) and not same_frame_rate(12.5, 15)
