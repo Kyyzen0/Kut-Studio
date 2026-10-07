@@ -563,6 +563,83 @@ def test_delete_removes_the_files_and_the_state(manager, source, tmp_path):
     assert manager.usage_bytes() == 0
 
 
+# Course delete / génération (CI Windows, run 37651934087 : le second delete() rendait True). Reproduction
+# déterministe : on injecte les délais et les refus qu'un runner Windows produit au hasard.
+
+
+def _hold_sidecar(monkeypatch, failures: int) -> list[str]:
+    """Le marqueur tout juste écrit est tenu par un autre processus (antivirus, indexation) : ses ``failures``
+    premières suppressions échouent comme une violation de partage Windows, puis il se libère."""
+    import core.proxy_manager as module
+
+    refused: list[str] = []
+    real_unlink = Path.unlink
+
+    def unlink(path, *args, **kwargs):
+        if path.suffix == ".json" and path.parent.name == "proxies" and len(refused) < failures:
+            refused.append(path.name)
+            raise PermissionError(13, "The process cannot access the file because it is being used", str(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.Path, "unlink", unlink)
+    return refused
+
+
+def test_ready_is_reported_only_once_the_worker_has_written_and_released_everything(tmp_path, source, monkeypatch):
+    """Hypothèses écartées : un READY annoncé avant la promotion ou le marqueur, ou une fin de worker (invalidation,
+    notification) qui réécrirait après le retrait de ``_active``. Avec des délais injectés à ces deux endroits, READY
+    n'apparaît qu'une fois tout écrit et le travail retiré : delete() ne trouve plus rien à la seconde fois."""
+    manager = _manager(tmp_path)
+    real_write = manager._write_sidecar
+    real_invalidate = manager._invalidate_disk_state
+
+    def slow_write(*args, **kwargs):
+        time.sleep(0.15)                        # promotion faite, marqueur pas encore écrit
+        real_write(*args, **kwargs)
+
+    def slow_invalidate(*args, **kwargs):
+        if threading.current_thread().name.startswith("kut-proxy"):
+            time.sleep(0.15)                    # fin de worker retardée, après le retrait de _active
+        real_invalidate(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "_write_sidecar", slow_write)
+    monkeypatch.setattr(manager, "_invalidate_disk_state", slow_invalidate)
+    try:
+        info = _generate(manager, source)
+        assert info.state is ProxyState.READY
+        final, _partial, sidecar = manager._paths(info.source_path, get_profile(info.profile_id))
+        assert final.is_file() and sidecar.is_file(), "READY n'est lu que sur un proxy complet"
+        assert manager.delete(source) is True
+        time.sleep(0.3)                         # la fin retardée du worker a le temps de passer
+        assert manager.delete(source) is False
+        assert not final.exists() and not sidecar.exists()
+    finally:
+        manager.shutdown()
+
+
+def test_delete_retries_a_marker_held_for_a_moment_by_another_process(manager, source, monkeypatch):
+    """Cause reproduite : sous Windows, le marqueur tout juste écrit était tenu un instant ; son effacement échouait
+    en silence, delete() rendait True quand même, et le second delete() le retrouvait (True au lieu de False)."""
+    info = _generate(manager, source)
+    refused = _hold_sidecar(monkeypatch, failures=3)
+
+    assert manager.delete(source) is True
+    assert refused, "la violation de partage a bien été injectée"
+    assert manager.delete(source) is False
+    final, partial, sidecar = manager._paths(info.source_path, get_profile(info.profile_id))
+    assert not final.exists() and not partial.exists() and not sidecar.exists()
+
+
+def test_a_marker_held_beyond_the_retry_window_is_reported_not_hidden(manager, source, monkeypatch, caplog):
+    _generate(manager, source)
+    _hold_sidecar(monkeypatch, failures=10_000)
+
+    with caplog.at_level("WARNING", logger="kut_studio.proxy"):
+        assert manager.delete(source) is True
+
+    assert any("supprimer" in record.getMessage() for record in caplog.records)
+
+
 def test_inventory_and_usage_report_complete_proxies_only(manager, source, tmp_path):
     info = _generate(manager, source)
     (tmp_path / "proxies" / "proxy-x.partial.mp4").write_bytes(b"1234")

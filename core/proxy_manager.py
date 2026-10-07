@@ -66,6 +66,9 @@ REPLACE_ATTEMPTS = 6
 REPLACE_DELAY_SECONDS = 0.05
 """Sous Windows, deux ``os.replace`` simultanés vers la même destination (deux instances qui promeuvent le même
 proxy), ou un antivirus qui inspecte le fichier, échouent de façon transitoire avec ``PermissionError``."""
+DELETE_RETRY_SECONDS = 0.5
+"""Même cause à la suppression : un fichier tout juste écrit (le marqueur surtout) peut être tenu un instant par un
+autre processus, et ``unlink`` échoue. On réessaie pendant cette fenêtre, seulement pour les fichiers qui résistent."""
 PARTIAL_STALE_SECONDS = 600.0
 """Âge au-delà duquel un fichier partiel est considéré abandonné. FFmpeg qui écrit le met à jour en continu : un
 fichier récent peut appartenir à une génération en cours dans **une autre instance** de l'application."""
@@ -697,16 +700,31 @@ class ProxyManager:
                 if (source, profile.id) not in self._active:
                     break
             time.sleep(0.01)
-        removed = False
-        for target in self._paths(source, profile):
-            if target.exists():
-                self._remove(target)
-                removed = True
+        targets = [target for target in self._paths(source, profile) if target.exists()]
+        self._remove_all(targets)
         with self._lock:
             self._errors.pop((source, profile.id), None)
         self._invalidate_disk_state(source, profile.id)
         self._notify(source, profile.id)
-        return removed
+        return bool(targets)
+
+    def _remove_all(self, targets: list[Path]) -> list[Path]:
+        """Supprime ``targets`` ; réessaie pendant :data:`DELETE_RETRY_SECONDS` ceux qui résistent. Rend les restants.
+
+        Avant, un échec (violation de partage sous Windows) était ignoré : le fichier restait alors que l'appelant
+        le croyait supprimé, et un second ``delete()`` le retrouvait (CI Windows, run 37651934087).
+        """
+        leftovers = [target for target in targets if not self._remove(target)]
+        deadline = time.monotonic() + DELETE_RETRY_SECONDS
+        while leftovers and time.monotonic() < deadline:
+            time.sleep(0.02)
+            leftovers = [target for target in leftovers if not self._remove(target)]
+        if leftovers:
+            LOGGER.warning(
+                "Proxy : impossible de supprimer %s (fichier tenu par un autre processus ?)",
+                ", ".join(str(target) for target in leftovers),
+            )
+        return leftovers
 
     def delete_all(self) -> int:
         """Supprime tous les proxies du dossier. Retourne le nombre de fichiers retirés."""
@@ -714,10 +732,8 @@ class ProxyManager:
         self._wait_idle()
         removed = 0
         if self.directory.is_dir():
-            for entry in list(self.directory.iterdir()):
-                if entry.name.startswith("proxy-") and entry.is_file():
-                    self._remove(entry)
-                    removed += 1
+            entries = [entry for entry in self.directory.iterdir() if entry.name.startswith("proxy-") and entry.is_file()]
+            removed = len(entries) - len(self._remove_all(entries))
         with self._lock:
             self._disk_cache.clear()
             self._errors.clear()
