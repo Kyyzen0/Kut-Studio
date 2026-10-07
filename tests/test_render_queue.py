@@ -125,14 +125,14 @@ def _pid_alive(pid: int) -> bool:
 def test_job_is_created_from_a_preset_with_all_the_expected_fields(tmp_path):
     spec = get_preset("youtube")
     job = RenderJob.create(
-        spec=spec, snapshot_path=str(tmp_path / "p.kut"), output_path=_out(tmp_path, "yt.mp4"),
+        project_fps=25.0, spec=spec, snapshot_path=str(tmp_path / "p.kut"), output_path=_out(tmp_path, "yt.mp4"),
         project_name="Mon film", duration_seconds=12.5, master_gain_db=-3.0, now=1000.0,
     )
     assert job.id and job.status is JobStatus.WAITING and job.progress == 0
     assert job.name == "Mon film · YouTube"
     assert job.file_name == "yt.mp4"
     assert (job.container, job.video_codec, job.audio_codec) == ("mp4", "h264", "aac")
-    assert job.resolution == (1920, 1080) and job.fps == 30 and job.quality == 18
+    assert job.resolution == (1920, 1080) and job.fps == 25.0 and job.quality == 18  # cadence de la séquence
     assert job.preset_id == "youtube" and job.hardware == "cpu"
     assert job.created_at == 1000.0 and job.started_at is None and job.finished_at is None
     assert job.error_message == "" and job.result is None
@@ -141,13 +141,13 @@ def test_job_is_created_from_a_preset_with_all_the_expected_fields(tmp_path):
 
 def test_job_ids_are_unique(tmp_path):
     spec = default_preset()
-    ids = {RenderJob.create(spec=spec, snapshot_path="x", output_path="y.mp4").id for _ in range(50)}
+    ids = {RenderJob.create(project_fps=30.0, spec=spec, snapshot_path="x", output_path="y.mp4").id for _ in range(50)}
     assert len(ids) == 50
 
 
 def test_job_serialization_round_trips_every_state(tmp_path):
     job = RenderJob.create(
-        spec=get_preset("prores_master"), snapshot_path="s.kut", output_path="o.mov",
+        project_fps=30.0, spec=get_preset("prores_master"), snapshot_path="s.kut", output_path="o.mov",
         project_name="P", duration_seconds=3.0, now=10.0,
     )
     assert RenderJob.from_dict(json.loads(json.dumps(job.to_dict()))) == job
@@ -208,9 +208,9 @@ def test_required_presets_exist_with_the_expected_settings():
 
 def test_presets_only_produce_configuration_for_the_existing_engine():
     for spec in builtin_presets():
-        export_format, export_preset, fps = spec.export_parts()
+        export_format, export_preset, fps = spec.export_parts(25.0)
         assert isinstance(export_format, ExportFormat)
-        assert export_preset.resolution == spec.resolution and fps == spec.fps
+        assert export_preset.resolution == spec.resolution and fps == (spec.fps or 25.0)
         assert export_format.container == spec.container and export_format.codec == spec.video_codec
 
 
@@ -220,11 +220,11 @@ def test_preset_drives_the_engine_command_without_extra_ffmpeg_logic(tmp_path):
 
     for preset_id, expected_codec in (("tiktok", "libx264"), ("prores_master", "prores_ks")):
         job = RenderJob.create(
-            spec=get_preset(preset_id), snapshot_path="s", output_path=_out(tmp_path, f"{preset_id}.mov"),
+            project_fps=30.0, spec=get_preset(preset_id), snapshot_path="s", output_path=_out(tmp_path, f"{preset_id}.mov"),
         )
         command = ExportEngine()._build_command(job.to_request(build_render_plan(project)))
         assert command[command.index("-c:v") + 1] == expected_codec
-    tiktok = RenderJob.create(spec=get_preset("tiktok"), snapshot_path="s", output_path=_out(tmp_path, "t.mp4"))
+    tiktok = RenderJob.create(project_fps=30.0, spec=get_preset("tiktok"), snapshot_path="s", output_path=_out(tmp_path, "t.mp4"))
     command = ExportEngine()._build_command(tiktok.to_request(build_render_plan(project)))
     assert any("1080" in part and "1920" in part for part in command)
 
@@ -252,7 +252,7 @@ def test_every_planned_hardware_family_is_accepted_by_the_data_model():
     }
     for family in HardwareEncoder:
         spec = custom_preset(hardware=family.value)
-        job = RenderJob.create(spec=spec, snapshot_path="s", output_path="o.mp4")
+        job = RenderJob.create(project_fps=30.0, spec=spec, snapshot_path="s", output_path="o.mp4")
         assert RenderJob.from_dict(job.to_dict()).hardware == family.value
     assert coerce_hardware("garbage") is HardwareEncoder.CPU
 
@@ -274,7 +274,7 @@ def test_cpu_choice_is_unchanged_and_unknown_codecs_are_rejected():
 
 def test_store_round_trip_skips_invalid_jobs_and_drops_duplicates(tmp_path):
     store = RenderQueueStore(tmp_path / "q")
-    good = RenderJob.create(spec=default_preset(), snapshot_path="s", output_path="o.mp4")
+    good = RenderJob.create(project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4")
     store.save([good])
     data = json.loads(store.queue_file.read_text(encoding="utf-8"))
     data["jobs"] += [{"id": "broken"}, good.to_dict(), "junk"]
@@ -829,7 +829,7 @@ def test_a_crafted_queue_file_cannot_delete_outside_the_queue_directory(tmp_path
     victim.mkdir()
     (victim / "important.txt").write_text("à garder", encoding="utf-8")
     store = RenderQueueStore(tmp_path / "q")
-    good = RenderJob.create(spec=default_preset(), snapshot_path="s", output_path="o.mp4")
+    good = RenderJob.create(project_fps=30.0, spec=default_preset(), snapshot_path="s", output_path="o.mp4")
     store.save([good])
     data = json.loads(store.queue_file.read_text(encoding="utf-8"))
     for bad in ("../../victime", str(victim)):
@@ -902,3 +902,104 @@ def test_an_unexpected_error_while_preparing_fails_the_job_instead_of_blocking_t
     _wait_idle(qtbot, queue)
     assert job.status is JobStatus.FAILED and job.error_kind == ErrorKind.INVALID
     assert "plan impossible" in job.error_message
+
+
+# --- Cadence d'export : la séquence, pas 30 i/s figés ------------------------------------------
+
+
+def test_builtin_presets_follow_the_sequence_frame_rate_except_the_one_that_names_it():
+    """Exporter un projet 25 / 23,976 i/s à 30 i/s dupliquait des images : seul « TikTok 60 fps » impose sa cadence."""
+    imposed = {spec.id: spec.fps for spec in builtin_presets() if not spec.follows_project_fps}
+    assert imposed == {"tiktok_60": 60.0}
+    youtube = get_preset("youtube")
+    assert youtube.output_fps(25.0) == 25.0 and youtube.output_fps(30000 / 1001) == 30000 / 1001
+    assert get_preset("tiktok_60").output_fps(25.0) == 60.0
+    with pytest.raises(ValueError):
+        youtube.output_fps(0.0)
+
+
+def test_custom_preset_accepts_ntsc_rates_and_the_sequence_rate():
+    assert custom_preset(fps=29.97).fps == 29.97 and custom_preset().follows_project_fps
+    assert custom_preset(width=1280, height=720, fps=23.976).summary().endswith("1280×720 · 23.976 fps")
+    assert get_preset("youtube").summary().endswith("1920×1080")          # cadence inconnue : non affichée
+    assert get_preset("youtube").summary(fps=30000 / 1001).endswith("· 29.97 fps")
+    for bad in (0, -25.0, float("nan")):
+        with pytest.raises(ValueError):
+            custom_preset(fps=bad)
+
+
+def test_a_job_needs_the_sequence_rate_for_a_preset_that_follows_it():
+    with pytest.raises(ValueError, match="project_fps"):
+        RenderJob.create(spec=get_preset("youtube"), snapshot_path="s", output_path="o.mp4")
+    fixed = RenderJob.create(spec=get_preset("tiktok_60"), snapshot_path="s", output_path="o.mp4")
+    assert fixed.fps == 60.0
+
+
+def test_job_frame_rate_survives_the_queue_file_and_old_integer_rates_still_load():
+    job = RenderJob.create(project_fps=29.97, spec=get_preset("youtube"), snapshot_path="s", output_path="o.mp4")
+    data = json.loads(json.dumps(job.to_dict()))
+    assert RenderJob.from_dict(data).fps == 29.97
+    data["fps"] = 25                                     # file écrite avant les cadences décimales
+    assert RenderJob.from_dict(data).fps == 25.0
+    for bad in (0, -1, "inf"):
+        data["fps"] = bad
+        with pytest.raises(ValueError):
+            RenderJob.from_dict(data)
+    data["fps"] = "illisible"                            # comme avant : valeur par défaut
+    assert RenderJob.from_dict(data).fps == 30.0
+
+
+def test_enqueue_resolves_the_rate_of_the_rendered_sequence(queue, tmp_path):
+    project = _project(tmp_path)
+    project.fps = 25.0
+    job = queue.enqueue(project, get_preset("youtube"), _out(tmp_path, "pal.mp4"))
+    assert job.fps == 25.0
+
+
+def test_ntsc_rates_reach_ffmpeg_as_exact_fractions(tmp_path):
+    """« 29.97 » devenait 2997/100 chez FFmpeg : le graphe écrit la fraction exacte 30000/1001."""
+    from core.render_plan import build_render_plan
+
+    project = _project(tmp_path)
+    project.fps = 29.97
+    job = RenderJob.create(project_fps=project.fps, spec=get_preset("youtube"), snapshot_path="s",
+                           output_path=_out(tmp_path, "ntsc.mp4"))
+    command = " ".join(ExportEngine()._build_command(job.to_request(build_render_plan(project))))
+    assert "fps=30000/1001" in command and "r=30000/1001" in command
+    assert "29.97" not in command
+
+
+@pytest.mark.parametrize(
+    ("source_rate", "project_fps", "expected"),
+    [("25", 25.0, "25/1"), ("30000/1001", 29.97, "30000/1001"), ("24000/1001", 23.976, "24000/1001")],
+    ids=["25", "29.97", "23.976"],
+)
+def test_real_export_keeps_the_sequence_frame_rate(qtbot, make_queue, tmp_path, source_rate, project_fps, expected):
+    """De bout en bout : un preset qui suit la séquence écrit un fichier à la cadence exacte de la séquence."""
+    ffmpeg, ffprobe = _real_ffmpeg()
+    source = tmp_path / "src.mp4"
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"testsrc2=s=160x90:r={source_rate}:d=1",
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-shortest", str(source)],
+        check=True, capture_output=True,
+    )
+    project = Project(
+        name="Cadence", width=160, height=90, fps=project_fps,
+        media_assets=[MediaAsset(id="s", path=str(source), name="src", duration=1.0,
+                                 width=160, height=90, fps=project_fps, media_type="video")],
+        tracks=[Track(id="V1", name="V1", type="video", clips=[
+            Clip(id="c", asset_id="s", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=1.0)])],
+    )
+    queue = make_queue()
+    job = queue.enqueue(project, custom_preset(width=160, height=90, quality=30, audio_bitrate="96k"),
+                        _out(tmp_path, "rate.mp4"))
+    queue.start_all()
+    _wait_idle(qtbot, queue, timeout=60000)
+    assert job.status is JobStatus.COMPLETED, job.error_message
+    rate = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+         "-of", "default=nw=1:nk=1", job.output_path],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert rate == expected

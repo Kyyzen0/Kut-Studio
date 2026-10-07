@@ -27,8 +27,9 @@ W, H, FPS, SECONDS = 96, 160, 10, 3.0
 
 
 def test_social_presets_deliver_the_platform_frame_with_loudness_copy_and_cover():
-    expected = {"tiktok": (1080, 1920, 30), "tiktok_60": (1080, 1920, 60), "reels": (1080, 1920, 30),
-                "shorts": (1080, 1920, 60), "instagram_feed_4_5": (1080, 1350, 30), "square": (1080, 1080, 30)}
+    # Cadence ``None`` : celle de la séquence (seul « TikTok 60 fps » l'impose, il l'annonce dans son nom).
+    expected = {"tiktok": (1080, 1920, None), "tiktok_60": (1080, 1920, 60.0), "reels": (1080, 1920, None),
+                "shorts": (1080, 1920, None), "instagram_feed_4_5": (1080, 1350, None), "square": (1080, 1080, None)}
     for preset_id, (width, height, fps) in expected.items():
         spec = get_preset(preset_id)
         assert (spec.width, spec.height, spec.fps) == (width, height, fps), preset_id
@@ -40,7 +41,7 @@ def test_social_presets_deliver_the_platform_frame_with_loudness_copy_and_cover(
 
 def test_deliverable_options_survive_the_queue_file_and_old_jobs_load_without_them():
     spec = with_deliverables(get_preset("youtube"), preview_copy=True, cover=False)
-    job = RenderJob.create(spec=spec, snapshot_path="s", output_path="o.mp4", cover_seconds=2.5)
+    job = RenderJob.create(project_fps=30.0, spec=spec, snapshot_path="s", output_path="o.mp4", cover_seconds=2.5)
     job.extras, job.extras_error = ["o-couverture.jpg"], "x"
     again = RenderJob.from_dict(json.loads(json.dumps(job.to_dict())))
     assert (again.preview_copy, again.cover, again.cover_seconds, again.extras, again.extras_error) == (

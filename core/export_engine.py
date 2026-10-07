@@ -71,6 +71,7 @@ from .transitions import TransitionType
 from .frame_interpolation import plan_interpolation
 from .retime_graph import RetimeError, audio_stage, video_stage
 from .time_map import time_map_for
+from .timecode import ffmpeg_rate
 from .time_remapping import FreezeFrameMode, TimeInterpolation, get_ffmpeg_freeze_filter
 from .tool_paths import find_media_tool
 from .hardware_encoding import looks_like_encoder_failure, redact_command
@@ -366,7 +367,7 @@ class ExportRequest:
         output_path: Chemin du fichier de sortie.
         format: Format / codec cible.
         preset: Préréglage de résolution et de qualité.
-        fps: Fréquence d'images cible de la sortie.
+        fps: Fréquence d'images cible de la sortie (``29.97``, ``30000/1001`` en flottant : décimale acceptée).
         hardware: famille d'encodeur demandée (``"cpu"``, ``"auto"``,
             ``"videotoolbox"``…, voir :mod:`core.video_encoders`). ``auto``
             retombe sur le CPU si l'encodeur matériel échoue au lancement ;
@@ -377,12 +378,12 @@ class ExportRequest:
     output_path: str
     format: ExportFormat
     preset: ExportPreset
-    fps: int = 30
+    fps: float = 30.0
     hardware: str = "cpu"
 
     def __post_init__(self) -> None:
         """Rejette les paramètres invalides avant le lancement de FFmpeg."""
-        if self.fps <= 0:
+        if not 0.0 < float(self.fps) < float("inf"):   # rejette aussi NaN
             raise ValueError("La fréquence d'images doit être supérieure à zéro.")
         width, height = self.preset.resolution
         if width <= 0 or height <= 0:
@@ -941,7 +942,7 @@ class ExportEngine(QObject):
         plan: RenderPlan,
         output_width: int,
         output_height: int,
-        fps: int,
+        fps: float,
         srt_path: str | None,
         quality: str = "export",
         prepared: Mapping[str, PreparedStream] | None = None,
@@ -1372,7 +1373,7 @@ def _compose_plan_graph(
     p = prefix
     video_label = ""
     audio_label = ""
-    fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
+    fps_text = ffmpeg_rate(fps)
     # Pixels de sortie par pixel de la séquence (aperçu réduit, export à une autre taille) : les effets en pixels suivent.
     pixel_scale = width / float(max(1, plan.width or width))
     if add_input is None:
@@ -1892,7 +1893,7 @@ def _build_layer_filter(
     input_index: int | None,
     width: int,
     height: int,
-    fps: int,
+    fps: float,
     *,
     source: str | None = None,
     label: str | None = None,
@@ -2007,7 +2008,7 @@ def _build_layer_filter(
         parts.append(f"{_build_freeze_video_filter(layer)},")
         parts.append(f"{frame_fit},")
         parts.append(f"tpad=stop_mode=clone:stop_duration={hold:.6f},")
-        parts.append(f"fps={fps},")
+        parts.append(f"fps={ffmpeg_rate(fps)},")
         parts.append(f"trim=duration={hold:.6f},")
         parts.append("setpts=PTS-STARTPTS,")
     elif time_map is not None:
@@ -2031,7 +2032,7 @@ def _build_layer_filter(
             f"trim=start={source_in}:end={source_out},",
             "setpts=PTS-STARTPTS,",
             f"{frame_fit},",
-            f"fps={fps},",
+            f"fps={ffmpeg_rate(fps)},",
             "setpts=PTS-STARTPTS,",
         ]
 

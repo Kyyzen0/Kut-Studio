@@ -370,9 +370,9 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Vertical 1080×1920, sonido a −14 LUFS, copia ligera y portada.",
     ),
     "render.preset.desc.shorts": _t(
-        "Vertical 1080×1920 à 60 images/s, son à −14 LUFS, copie légère et couverture.",
-        "Vertical 1080×1920 at 60 fps, sound at −14 LUFS, light copy and cover.",
-        "Vertical 1080×1920 a 60 fps, sonido a −14 LUFS, copia ligera y portada.",
+        "Vertical 1080×1920, son à −14 LUFS, copie légère et couverture.",
+        "Vertical 1080×1920, sound at −14 LUFS, light copy and cover.",
+        "Vertical 1080×1920, sonido a −14 LUFS, copia ligera y portada.",
     ),
     "render.preset.desc.instagram_feed_4_5": _t(
         "Portrait 1080×1350 pour le fil, son à −14 LUFS, copie légère et couverture.",

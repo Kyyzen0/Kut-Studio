@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from core.render_job import JobStatus, RenderJob
 from core.render_presets import get_preset
+from core.timecode import format_fps
 from core.render_queue import RenderQueue
 from ui import i18n
 from ui.design_system import ButtonVariant, Iconography, Sizes, Spacing, StatusKind
@@ -371,8 +372,8 @@ class RenderQueuePanel(QWidget):
         lines = [f"{job.name}", i18n.translate("render.detail.output", path=job.output_path)]
         spec = get_preset(job.preset_id)
         lines.append(
-            spec.summary() if spec is not None
-            else f"{job.container.upper()} · {job.width}×{job.height} · {job.fps} fps"
+            spec.summary(fps=job.fps) if spec is not None
+            else f"{job.container.upper()} · {job.width}×{job.height} · {format_fps(job.fps)} fps"
         )
         if job.encoder_label:
             lines.append(i18n.translate("render.detail.encoder", encoder=job.encoder_label))

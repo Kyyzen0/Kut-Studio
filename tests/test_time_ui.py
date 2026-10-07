@@ -822,7 +822,7 @@ def test_the_analysis_is_made_at_the_size_of_the_selected_export_so_the_export_r
 
     preset = ExportPreset("Petit", (160, 90), 8, "96k")                                     # autre taille que le projet (320 × 180)
     monkeypatch.setattr(flow_window.export_panel, "current_spec",
-                        lambda: SimpleNamespace(export_parts=lambda: (ExportFormat.MP4_H264, preset, 30)))
+                        lambda: SimpleNamespace(export_parts=lambda _project_fps: (ExportFormat.MP4_H264, preset, 30)))
     flow_window.on_time_command("c1", "analyze")
     qtbot.waitUntil(lambda: flow_window._flow_job is None, timeout=60000)
     assert "Flux optique analysé" in flow_window.statusBar().currentMessage()

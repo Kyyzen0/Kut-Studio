@@ -29,8 +29,10 @@ from core.render_presets import (
 )
 from core.loudness import SOCIAL_TARGET_LUFS
 from core.hardware_encoding import HardwareCapabilities, HardwareEncoder
+from core.timecode import same_frame_rate
 from core.video_encoders import encoder_options
 from ui import i18n
+from ui.social_dialogs import SEQUENCE_FRAME_RATES, fps_text
 from ui.design_system import ButtonVariant, Sizes, Spacing, StatusKind
 from ui.icons import IconButton, IconName
 from ui.theme import COLORS, set_role, set_state, set_variant
@@ -84,6 +86,7 @@ class ExportPanel(QWidget):
         super().__init__(parent)
         self._capabilities: HardwareCapabilities | None = None
         self._encoder_choice = HardwareEncoder.AUTO.value
+        self._project_fps = 30.0
         self.setObjectName("export_panel")
         self.setStyleSheet(
             f"QWidget#export_panel {{ background: {COLORS['panel']}; border-left: 1px solid {COLORS['border']}; }}"
@@ -163,9 +166,14 @@ class ExportPanel(QWidget):
         for quality_id in _QUALITY_PRESETS:
             self.quality_combo.addItem(i18n.translate(_QUALITY_LABEL_KEYS[quality_id]), quality_id)
         self.quality_combo.setCurrentIndex(self.quality_combo.findData("standard"))
+        # « Cadence du projet » d'abord (et par défaut) : une cadence imposée qui diffère de la séquence saccade.
         self.fps_combo = QComboBox()
-        self.fps_combo.addItems(["24", "25", "30", "60"])
-        self.fps_combo.setCurrentText("30")
+        self.fps_combo.setObjectName("exportFpsCombo")
+        self.fps_combo.addItem("", userData=None)
+        for rate in SEQUENCE_FRAME_RATES:
+            self.fps_combo.addItem(fps_text(rate), userData=rate)
+        for combo in (self.format_combo, self.resolution_combo, self.quality_combo, self.fps_combo):
+            combo.currentIndexChanged.connect(self._on_custom_changed)
         self._custom_labels = {
             "format": QLabel(), "resolution": QLabel(), "quality": QLabel(), "fps": QLabel(),
         }
@@ -294,6 +302,9 @@ class ExportPanel(QWidget):
             )
         for key, label in self._custom_labels.items():
             label.setText(tr(f"render.export.{key}"))
+        self.fps_combo.setItemText(0, tr("render.export.fps_project"))
+        for index in range(1, self.fps_combo.count()):
+            self.fps_combo.setItemText(index, fps_text(self.fps_combo.itemData(index)))
         self.loudness_check.setText(tr("render.export.loudness", lufs=f"{SOCIAL_TARGET_LUFS:g}".replace("-", "−")))
         self.loudness_check.setToolTip(tr("render.export.loudness_tooltip"))
         self.preview_copy_check.setText(tr("render.export.preview_copy"))
@@ -328,7 +339,7 @@ class ExportPanel(QWidget):
             video_codec=export_format.codec,
             width=width,
             height=height,
-            fps=int(self.fps_combo.currentText()),
+            fps=self.fps_combo.currentData(),
             quality=crf,
             audio_bitrate=audio_bitrate,
         )
@@ -344,11 +355,28 @@ class ExportPanel(QWidget):
         self._rebuild_encoder_options()
         self._update_summary()
 
+    def _on_custom_changed(self, *_args) -> None:
+        if self.current_preset_id() == CUSTOM_PRESET_ID:
+            self._rebuild_encoder_options()                 # le format choisit les encodeurs proposés (ProRes : CPU)
+            self._update_summary()
+
+    def set_project_fps(self, fps: float) -> None:
+        """Cadence de la séquence active : celle des presets qui la suivent, et la référence de l'avertissement."""
+        rate = float(fps)
+        if rate > 0.0 and rate != self._project_fps:
+            self._project_fps = rate
+            self._update_summary()
+
     def _update_summary(self) -> None:
+        tr = i18n.translate
         preset_id = self.current_preset_id()
         spec = self.current_spec()
-        description = i18n.translate(f"render.preset.desc.{preset_id}")
-        self.preset_summary.setText(f"{spec.summary()}\n{description}")
+        lines = [spec.summary(fps=spec.output_fps(self._project_fps)), tr(f"render.preset.desc.{preset_id}")]
+        if spec.follows_project_fps:
+            lines.append(tr("render.export.fps_follows_project"))
+        elif spec.fps is not None and not same_frame_rate(spec.fps, self._project_fps):
+            lines.append(tr("render.export.fps_mismatch", project=fps_text(self._project_fps), output=fps_text(spec.fps)))
+        self.preset_summary.setText("\n".join(lines))
 
     # ------------------------------------------------------------------
     # Encodeur (Automatique, CPU, matériel détecté)
@@ -401,7 +429,7 @@ class ExportPanel(QWidget):
         composition vidéo est entièrement décrite par le plan de rendu.
         """
         spec = self.current_spec()
-        export_format, preset, fps = spec.export_parts()
+        export_format, preset, fps = spec.export_parts(render_plan.fps)
         return ExportRequest(
             render_plan=render_plan,
             output_path=output_path,

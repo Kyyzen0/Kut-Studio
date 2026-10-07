@@ -39,6 +39,13 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- L'export garde la cadence du projet. Les presets (YouTube, H.264, ProRes Master, réseaux sociaux…) exportaient
+  toujours à 30 ou 60 i/s : un projet en 25, 23,976 ou 29,97 i/s ressortait avec des images dupliquées et des
+  saccades. Ils suivent désormais la cadence de la séquence ; seul « TikTok 60 fps » impose la sienne, et le panneau
+  Export prévient quand une cadence imposée diffère de la séquence. Le preset Custom propose « Cadence du projet »
+  (par défaut), 23,976, 29,97, 50 et 59,94 i/s.
+- Une vidéo exportée en 29,97, 23,976 ou 59,94 i/s porte sa cadence exacte (30000/1001…) au lieu d'une valeur
+  approchée (2997/100) que certains lecteurs et logiciels de montage signalent comme non standard.
 - L'import d'un sous-titre `.srt` ou d'une LUT `.cube` enregistré par le Bloc-notes Windows ou Subtitle Edit
   fonctionne : la marque d'encodage (BOM), l'UTF-16 « Unicode » et les vieux fichiers en Windows-1252 sont acceptés.
   Avant, la première réplique d'un SRT avec BOM était refusée et la LUT était déclarée invalide.

@@ -216,7 +216,7 @@ def test_cpu_jobs_never_trigger_a_detection(qtbot, queue, tmp_path, with_videoto
 
 def test_render_job_serializes_the_hardware_information(tmp_path):
     job = RenderJob.create(
-        spec=with_hardware(get_preset("youtube"), "auto"), snapshot_path="/s.kut", output_path="/o.mp4"
+        project_fps=30.0, spec=with_hardware(get_preset("youtube"), "auto"), snapshot_path="/s.kut", output_path="/o.mp4"
     )
     job.encoder, job.hardware_used = "h264_videotoolbox", "videotoolbox"
     job.fallback_reason, job.diagnostics = "raison", "détail"
@@ -256,8 +256,8 @@ def test_old_render_queue_files_load_and_new_ones_roundtrip(tmp_path, make_queue
 def test_every_builtin_preset_is_still_valid_and_cpu_by_default():
     for spec in builtin_presets():
         assert spec.hardware == "cpu"
-        export_format, preset, fps = spec.export_parts()
-        assert preset.crf == spec.quality and fps == spec.fps
+        export_format, preset, fps = spec.export_parts(25.0)
+        assert preset.crf == spec.quality and fps == (spec.fps or 25.0)
     custom = custom_preset(hardware="auto")
     assert custom.hardware == "auto" and with_hardware(custom, "videotoolbox").hardware == "videotoolbox"
     assert custom_preset().hardware == "cpu" and custom_preset(hardware="inconnu").hardware == "cpu"
@@ -290,8 +290,8 @@ def test_vaapi_command_places_the_device_before_the_inputs_and_uploads_the_final
         runner=FakeFFmpeg("vaapi"), environment={},
     ))
     spec = with_hardware(get_preset("h264_1080p"), "vaapi")
-    export_format, preset, fps = spec.export_parts()
     plan = build_render_plan(_project(tmp_path))
+    export_format, preset, fps = spec.export_parts(plan.fps)
     engine = ExportEngine()
     engine._prepare_temporary_files(plan)
     command = engine._build_command(ExportRequest(plan, str(tmp_path / "o.mp4"), export_format, preset, fps, "vaapi"))
