@@ -48,6 +48,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - À l'export, la position d'un clip est arrondie au pixel le plus proche ; elle était ramenée au pixel pair inférieur,
   si bien qu'un déplacement lent avançait par pas de 2 pixels et qu'une vidéo stabilisée tremblait d'un pixel une
   image sur deux.
+- L'export ProRes Master est bien en ProRes 422 HQ (4:2:2 10 bits) : il sortait en 4:4:4 sous l'étiquette 422 HQ, et
+  le décodage matériel le refusait quand on réimportait le fichier.
 - L'application Windows construite a de nouveau son icône (le fichier `.ico` n'était jamais généré).
 - Un projet `.kut` qui contient une clé inconnue est refusé comme tout fichier abîmé (`ValueError`, message clair),
   y compris quand le chargement est appelé hors de l'interface.

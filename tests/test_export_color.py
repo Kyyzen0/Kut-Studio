@@ -97,7 +97,7 @@ def _close(actual, expected, tolerance=3):
     return all(abs(a - e) <= tolerance for a, e in zip(actual, expected))
 
 
-FORMATS = [(ExportFormat.MP4_H264, "out.mp4", "yuv420p"), (ExportFormat.MOV_PRORES, "out.mov", "yuv444p10le"),
+FORMATS = [(ExportFormat.MP4_H264, "out.mp4", "yuv420p"), (ExportFormat.MOV_PRORES, "out.mov", "yuv422p10le"),
            (ExportFormat.MOV_H264, "out_h264.mov", "yuv420p")]
 
 
@@ -110,8 +110,12 @@ def test_an_export_keeps_the_colours_of_a_bt709_source(source, tmp_path, fmt, na
     actual = _decoded_as_bt709(output)
     assert _close(actual, reference), f"{fmt.name} : export {actual} ≠ source {reference} (avant : (229, 98, 20))"
     # La composition est en RVBA : laissé à la négociation, libx264 recevait du yuv444p (« High 4:4:4 Predictive »,
-    # illisible pour QuickTime, Safari, iOS). Le format remis à l'encodeur est celui d'avant, fixé.
+    # illisible pour QuickTime, Safari, iOS) et ProRes du 4:4:4 sous l'étiquette 422 HQ. Le format est fixé.
     assert _pixel_format(output) == pixel_format
+    if fmt is ExportFormat.MOV_PRORES:
+        from core.hardware_decoding import codec_class
+
+        assert codec_class("prores", pixel_format) is not None   # réimporté, il garde le décodage matériel validé
 
 
 @pytest.mark.parametrize("fmt, name, pixel_format", FORMATS)

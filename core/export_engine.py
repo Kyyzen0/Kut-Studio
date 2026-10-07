@@ -108,8 +108,11 @@ Fixé, et non laissé à la négociation : la composition est en RVBA, et FFmpeg
 moins, ``yuv444p`` pour libx264 (profil « High 4:4:4 Predictive », illisible pour QuickTime, Safari, iOS et la
 plupart des décodeurs matériels)."""
 
-PRORES_PIXEL_FORMAT = "yuv444p10le"
-"""Format remis à ``prores_ks`` : celui qu'il retenait déjà d'une composition 4:2:0 (mesuré, FFmpeg 7.1 et 9)."""
+PRORES_PIXEL_FORMAT = "yuv422p10le"
+"""Format remis à ``prores_ks`` : 4:2:2 10 bits, celui du profil 3 (ProRes 422 HQ) qu'annonce le preset « ProRes Master ».
+
+Laissé à la négociation, ``prores_ks`` retenait ``yuv444p10le`` (mesuré, FFmpeg 7.1 et 9) : un fichier marqué 422 HQ
+mais en 4:4:4, que le décodage matériel validé refuse à la réimportation (``core.hardware_decoding.codec_class``)."""
 
 OUTPUT_COLOR_STAGE = (
     "scale=out_color_matrix=bt709:out_range=tv,"
