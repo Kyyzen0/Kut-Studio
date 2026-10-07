@@ -39,3 +39,21 @@ module = [
     "core.visual_effects",
 ]
 ignore_errors = true
+
+[tool.coverage.run]
+# Mesure de la couverture (pytest-cov) : jamais dans les options par défaut de pytest, la suite reste rapide sans.
+# Commande et cliquet : docs/coverage.md. main.py et build.py sont couverts par les smoke tests de la CI, pas par
+# pytest : les mesurer n'apprendrait rien.
+source = ["core", "ui"]
+branch = true
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_empty = true
+# S'ajoute aux exclusions par défaut (« # pragma: no cover » reste respecté).
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

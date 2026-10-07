@@ -15,6 +15,11 @@ dist/
 # Environnement virtuel et artefacts de test.
 .venv/
 .coverage
+.coverage.*
+coverage.json
+coverage.xml
+coverage-ratchet.txt
+htmlcov/
 .pytest_cache/
 
 graphify-out/
