@@ -776,7 +776,7 @@ def _anchor_points(clip, link, times, context):
     data = datas[0]
     if data.is_empty:
         return None
-    result = []
+    result: list[tuple[float, float] | None] = []
     for t in times:
         position = data.position_at_time(source_time(clip, t))
         if position is None:

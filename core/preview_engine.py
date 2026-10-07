@@ -27,8 +27,18 @@ import logging
 import os
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from .optical_flow import BackendPreference
 
 LOGGER = logging.getLogger("kut_studio.preview")
+
+
+class _Cancellable(Protocol):
+    """Jeton d'une tâche soumise (``core.task_queue.CancelToken`` ou celui d'une file injectée par les tests)."""
+
+    def cancel(self) -> None: ...
 
 # Nombre de segments pre-rendus autour de la tete de lecture.
 PREFETCH_SEGMENTS = 4
@@ -93,7 +103,7 @@ class PreviewEngine:
         # token_key -> clip proprietaire (invalidation chirurgicale).
         self._key_clips: dict[str, str] = {}
         # token_key -> jeton de la derniere soumission (annulation ciblee).
-        self._tokens: dict[str, object] = {}
+        self._tokens: dict[str, _Cancellable] = {}
         # token_key -> debut du segment (timeline) : sert a abandonner les
         # demandes devenues lointaines quand la tete de lecture bouge.
         self._key_starts: dict[str, float] = {}
@@ -116,11 +126,12 @@ class PreviewEngine:
         self._max_concurrent = max(1, int(kwargs.get("max_concurrent", 1)))
         # Images intermediaires (melange d'images, flux optique) : cache des vecteurs et backend demande.
         self._flow_cache_instance = kwargs.get("flow_cache")
-        self.flow_preference = kwargs.get("flow_preference")
-        if self.flow_preference is None:
+        preference = kwargs.get("flow_preference")
+        if preference is None:
             from .optical_flow import BackendPreference
 
-            self.flow_preference = BackendPreference.AUTO
+            preference = BackendPreference.AUTO
+        self.flow_preference: BackendPreference = preference
         """Backend de flux optique demandé (réglage de l'application, modifiable à chaud)."""
         self._paused = False
         self._last_error = ""
