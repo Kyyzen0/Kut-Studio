@@ -172,10 +172,13 @@ Windows (Authenticode) n'est pas signé à ce jour : c'est l'étape suivante pou
 
 ## 8. Site public
 
-Le site (`https://kut-studio.pages.dev`) propose aujourd'hui des liens nightly.link vers les artefacts de
-*Multiplatform*. Après la première release, il devrait pointer vers `https://github.com/Kyyzen0/Kut-Studio/releases/latest`
-(ou lire l'API pour lier directement les fichiers conventionnels de la dernière version) et rappeler
-`SHA256SUMS.txt`. Les sources du site ne sont pas dans ce dépôt.
+Le site (`https://kut-studio.pages.dev`) lie directement les fichiers d'une version précise. Constaté le 7 octobre 2026
+(pages `/`, `/en` et `/es`) : les trois paquets et `SHA256SUMS.txt` de **v0.1.0**
+(`…/releases/download/v0.1.0/…`) et ses notes (`…/releases/tag/v0.1.0`) ; plus aucun lien nightly.link. Ces liens
+sont écrits en dur (le script du site n'interroge pas l'API) : ils ne suivent pas la release v0.2.0 du 6 octobre et
+devront être mis à jour à chaque version, à moins de pointer vers `https://github.com/Kyyzen0/Kut-Studio/releases/latest`
+ou de lire l'API pour lier les fichiers conventionnels de la dernière version. Les sources du site ne sont pas dans ce
+dépôt.
 
 ## 9. Vérifications et limites connues
 
@@ -191,15 +194,24 @@ Le site (`https://kut-studio.pages.dev`) propose aujourd'hui des liens nightly.l
   validée par `codesign --verify --deep --strict`, moteurs TLS de Qt embarqués, smoke test réussi ; archive `ditto`
   conforme, `shasum -a 256 -c SHA256SUMS.txt` correct, signature intacte après extraction ;
 * une vraie recherche HTTPS vers `api.github.com` depuis l'application **construite** (configuration jetable) : réponse
-  lue, « à jour » (aucune release publiée à ce jour), date de recherche enregistrée ;
+  lue, « à jour » (aucune release n'était encore publiée), date de recherche enregistrée ;
 * la fluidité : un paquet réel de 54,6 Mo servi en local au plus vite, vérifié au fil de l'eau, n'a jamais bloqué la
   boucle d'événements plus de 23 ms (`fsync` et renommage compris) ;
 * les deux workflows validés contre le schéma officiel des workflows GitHub (`check-jsonschema`).
 
+**Exécuté sur GitHub Actions (releases v0.1.0 et v0.2.0)** : le workflow de release, déclenché par le push du tag, a
+réussi deux fois, tous jobs compris (tag et version, construction macos-arm64, windows-x64 et linux-x64, empreintes et
+notes, publication) : run 37294236977 pour v0.1.0 (publiée le 5 octobre 2026), run 37522688658 pour v0.2.0 (publiée le
+6 octobre 2026). Chaque release, ni brouillon ni préversion, porte les trois paquets conventionnels
+(`Kut-Studio-<version>-macos-arm64.zip`, `-windows-x64.zip`, `-linux-x64.tar.gz`) et `SHA256SUMS.txt` (vérifié le
+7 octobre 2026 avec `gh release view` et `gh run view`). Dans les deux runs, le job macOS a signalé l'absence de
+`MACOS_CERTIFICATE_P12_BASE64` et produit un paquet signé ad hoc, non notarisé, annoncé comme tel dans les notes.
+
 **Couvert seulement par simulation ou par lecture** : les chemins Windows et Linux (contexte d'installation, flux
 `Zone.Identifier` — un test réel ne s'exécute que sur la CI Windows —, archives `zip`/`tar.gz` construites par les tests
-mais jamais installées), les redirections HTTPS de GitHub vers son CDN pour un vrai paquet, le workflow de release
-(jamais exécuté : aucun tag n'a été créé), la signature Developer ID et la notarisation (aucun certificat disponible :
+mais jamais installées : aucune installation réelle des paquets publiés n'a été vérifiée sous Windows ni sous Linux),
+les redirections HTTPS de GitHub vers son CDN pour un vrai paquet, la signature Developer ID et la notarisation (aucun
+certificat disponible :
 le chemin « secrets présents » de `macos_signing.sh` n'a jamais tourné), les droits du runtime renforcé, et
 l'architecture `macos-x64` (aucun paquet construit : un Mac Intel est informé qu'il n'y en a pas). La construction
 locale utilisait Python 3.14 ; la CI et le workflow de release utilisent Python 3.11.
