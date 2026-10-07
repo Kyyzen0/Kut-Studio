@@ -21,6 +21,8 @@ ensuite déclenche `.github/workflows/release.yml`.
   nomme en toutes lettres.
 - Développement : la CI teste aussi FFmpeg 7.1 et Python 3.13 (Debian 13), en plus de FFmpeg 6.1 et de la dernière
   version sous Python 3.11.
+- Développement : une release installe des versions figées de ses dépendances (`constraints.txt`) ; un même tag
+  reconstruit les mêmes paquets.
 - Développement : mesure de la couverture de code (`core/` et `ui/`, branches comprises) et cliquet en CI qui bloque
   toute baisse, sans service externe ([docs/coverage.md](docs/coverage.md)).
 

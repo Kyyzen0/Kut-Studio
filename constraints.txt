@@ -1,0 +1,36 @@
+# Versions exactes des dépendances pour construire une release (.github/workflows/release.yml : pip install -c).
+# requirements*.txt gardent des plages (la CI teste les dernières versions compatibles) ; ce fichier fige l'ensemble
+# qu'une release installe, pour qu'un même tag reconstruise les mêmes paquets. Source : le dernier run vert de la CI
+# sur main sous Python 3.11 (les trois systèmes ont installé ces mêmes versions). Mise à jour : docs/updates.md § 6.
+# Un paquet propre à un système (pefile, macholib…) n'est installé que là où il sert : une contrainte ne fait que fixer
+# sa version.
+PySide6==6.11.2
+PySide6_Addons==6.11.2
+PySide6_Essentials==6.11.2
+shiboken6==6.11.2
+numpy==2.4.6
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+altgraph==0.17.5
+macholib==1.16.4
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3
+pytest==9.1.1
+pytest-qt==4.5.0
+pytest-xdist==3.8.0
+pytest-timeout==2.4.0
+pytest-cov==7.1.0
+coverage==7.16.2
+execnet==2.1.2
+iniconfig==2.3.1
+pluggy==1.6.0
+pygments==2.21.0
+colorama==0.4.6
+ruff==0.16.10
+mypy==2.4.0
+mypy_extensions==1.1.0
+librt==0.16.0
+ast-serialize==0.12.1
+pathspec==1.1.1
+typing_extensions==4.16.0
