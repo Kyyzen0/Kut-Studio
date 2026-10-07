@@ -117,7 +117,8 @@ The version comes from `core/app_version.py` (single source).
 GitHub release. macOS packages are signed with a Developer ID and notarized only
 when the signing secrets are configured; otherwise the release notes say clearly
 that they are not notarized. A manual run builds everything without publishing.
-Procedure and secrets: [docs/updates.md](docs/updates.md).
+Procedure and secrets: [docs/updates.md](docs/updates.md). What changed in each version:
+[CHANGELOG.md](CHANGELOG.md).
 
 To embed local FFmpeg binaries in a build, set `KUT_STUDIO_FFMPEG_DIR` to a
 folder containing `ffmpeg` and `ffprobe` (`.exe` on Windows) before running
@@ -382,7 +383,8 @@ La version vient de `core/app_version.py` (source unique).
 release GitHub. Les paquets macOS ne sont signés Developer ID et notarisés que si
 les secrets de signature sont configurés ; sinon les notes de la release disent
 clairement qu’ils ne sont pas notarisés. Un lancement manuel construit tout sans
-rien publier. Procédure et secrets : [docs/updates.md](docs/updates.md).
+rien publier. Procédure et secrets : [docs/updates.md](docs/updates.md). Les changements de chaque version :
+[CHANGELOG.md](CHANGELOG.md).
 
 Pour embarquer FFmpeg, définissez `KUT_STUDIO_FFMPEG_DIR` vers un dossier
 contenant `ffmpeg` et `ffprobe` (`.exe` sous Windows) avant de lancer
