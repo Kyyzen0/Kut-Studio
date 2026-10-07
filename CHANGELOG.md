@@ -49,6 +49,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Sous Windows, *Supprimer le proxy* (bibliothèque) ne laisse plus de fichier derrière lui quand un antivirus ou
   l'indexation tient un instant le fichier tout juste écrit : la suppression est réessayée, et un fichier qui reste
   verrouillé est signalé dans le journal de diagnostic au lieu de passer pour supprimé.
+- Fermer la fenêtre pendant qu'un segment d'aperçu fidèle se calcule ne peut plus faire planter l'application : la
+  fermeture annule le rendu et attend la fin de son thread avant de détruire la fenêtre.
 
 ## [0.2.0] - 2026-10-06
 

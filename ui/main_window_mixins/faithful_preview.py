@@ -36,9 +36,17 @@ class _PreviewPump:
     def kick(self) -> None:
         self._wake.set()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
+        """Arrête le thread et l'**attend** (``timeout`` secondes) ; ``False`` s'il tourne encore.
+
+        Sans attente, un segment en cours finissait après la fermeture et notifiait une fenêtre en cours de
+        destruction : erreur de segmentation (CI Linux, run 37667588029).
+        """
         self._stop.set()
         self._wake.set()
+        if self._thread is not threading.current_thread():
+            self._thread.join(timeout)
+        return not self._thread.is_alive()
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -81,7 +89,9 @@ class FaithfulPreviewMixin:
             # Les rendus tournent dans un thread : l'état revient au thread Qt par signal.
             self._preview_events = _PreviewEvents(self)
             self._preview_events.state.connect(self._on_preview_engine_state)
-            self.preview_engine.subscribe(self._preview_events.state.emit)
+            # Gardé pour le désabonner par identité à la fermeture (voir _stop_preview_pump).
+            self._preview_listener = self._preview_events.state.emit
+            self.preview_engine.subscribe(self._preview_listener)
             self._preview_pump = _PreviewPump(self.preview_engine)
             self._preview_pump_timer = QTimer(self)
             self._preview_pump_timer.setInterval(150)
@@ -97,9 +107,22 @@ class FaithfulPreviewMixin:
             pump.kick()
 
     def _stop_preview_pump(self) -> None:
+        """Fermeture : plus aucune notification vers la fenêtre, puis arrêt **attendu** du thread de rendu.
+
+        Ordre voulu : désabonner la fenêtre (un segment qui finit ne la notifie plus), annuler les rendus (leur FFmpeg
+        est tué, le thread rend la main vite), puis attendre le thread. Avant, il était seulement prié de s'arrêter :
+        un segment en cours se terminait pendant la destruction de la fenêtre et émettait un signal sur un objet Qt
+        détruit (erreur de segmentation, CI Linux, run 37667588029).
+        """
+        engine = getattr(self, "preview_engine", None)
+        listener = getattr(self, "_preview_listener", None)
+        if engine is not None:
+            if listener is not None:
+                engine.unsubscribe(listener)
+            engine.cancel_all()
         pump = getattr(self, "_preview_pump", None)
-        if pump is not None:
-            pump.stop()
+        if pump is not None and not pump.stop():
+            LOGGER.warning("Fermeture : le thread de rendu d'aperçu tourne encore après 5 s ; il est abandonné")
         timer = getattr(self, "_preview_pump_timer", None)
         if timer is not None:
             timer.stop()
