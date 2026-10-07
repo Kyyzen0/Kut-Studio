@@ -234,12 +234,12 @@ class PresetsMixin:
         except ValueError as exc:
             self._report_edit_refused(exc)
             return
+        # Un preset vit dans le dossier de l'utilisateur, pas dans le projet : rien à annuler, donc pas d'entrée
+        # d'historique (une entrée vide vidait la pile « Rétablir »). Même règle que les presets audio et de texte.
         try:
             self.user_preset_store.add(preset)
         except ValueError as exc:
             self._report_edit_refused(exc)
-            return
-        self._record_history(i18n.translate("history.preset.user_save"))
 
     def on_effect_preset_delete_requested(self, preset_id: str) -> None:
         """Supprime un preset utilisateur après confirmation."""
@@ -266,8 +266,6 @@ class PresetsMixin:
             self.user_preset_store.remove(preset_id)
         except KeyError as exc:
             self._report_edit_refused(exc)
-            return
-        self._record_history(i18n.translate("history.preset.user_delete"))
 
     def add_transition_from_library(self, preset_id: str, duration: float) -> None:
         """Pose un preset de transition entre les deux clips sélectionnés.
@@ -399,12 +397,11 @@ class PresetsMixin:
         except ValueError as exc:
             self.statusBar().showMessage(str(exc), 5000)
             return
+        # Fichier de presets, pas projet : pas d'entrée d'historique (voir on_effect_preset_save_requested).
         try:
             self.transition_preset_store.add_user_preset(preset)
         except ValueError as exc:
             self.statusBar().showMessage(str(exc), 5000)
-            return
-        self._record_history(i18n.translate("history.transition.save_custom"))
 
     def on_transition_preset_delete_requested(self, preset_id: str) -> None:
         """Supprime un preset utilisateur après confirmation."""
@@ -433,8 +430,6 @@ class PresetsMixin:
             self.transition_preset_store.remove_user_preset(preset_id)
         except KeyError as exc:
             self.statusBar().showMessage(str(exc), 5000)
-            return
-        self._record_history(i18n.translate("history.transition.delete_custom"))
 
     def on_transition_favorite_toggled(self, preset_id: str) -> None:
         """Bascule l'état favori d'un preset (intégré ou utilisateur)."""

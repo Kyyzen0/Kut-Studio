@@ -196,20 +196,33 @@ def test_deleting_a_user_look_asks_first_and_honours_no(window, dialogs, config_
     assert "Mon look" not in _saved(config_dir, USER_PRESETS_FILE)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Bogue : supprimer (ou enregistrer) un preset d'effets ou de transition appelle _record_history alors que le projet "
-    "ne change pas. L'entrée ajoutée ne défait rien (le preset reste supprimé du fichier) et vide la pile de "
-    "rétablissement. Les presets audio et de texte, eux, n'écrivent rien dans l'historique."))
-def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(window, dialogs):
-    preset = _user_look(window)
+def _transition_preset(window):
+    preset = make_user_transition_preset(name="Fondu maison", description="", transition_type="crossfade",
+                                         default_duration=0.75)
+    window.transition_preset_store.add_user_preset(preset)
+    return preset
+
+
+# Corrigé par le commit « Presets : enregistrer ou supprimer un preset n'entre plus dans l'historique » (lot 6) :
+# ce test était un xfail strict qui documentait le bogue.
+@pytest.mark.parametrize(("make", "signal"), [
+    (_user_look, "effect_preset_delete_requested"),
+    (_transition_preset, "transition_preset_delete_requested"),
+])
+def test_deleting_a_preset_neither_adds_an_undo_step_nor_drops_the_redo_stack(window, dialogs, make, signal):
+    """Un preset vit dans le dossier de l'utilisateur, pas dans le projet : sa suppression ne s'annule pas par
+    Ctrl+Z, n'ajoute pas d'entrée vide, et laisse « Rétablir » disponible."""
+    preset = make(window)
     window.timeline_panel.rename_track_requested.emit("V2", "B-roll")
     window.undo_last()
     assert window.history.can_redo
     undo_label = window.history.undo_label
 
-    window.project_panel.effect_preset_delete_requested.emit(preset.id)
+    getattr(window.project_panel, signal).emit(preset.id)
 
-    assert window.user_preset_store.get(preset.id) is None, "le preset est bien supprimé"
+    store = window.user_preset_store if signal.startswith("effect") else window.transition_preset_store
+    lookup = store.get if signal.startswith("effect") else store.get_preset
+    assert lookup(preset.id) is None, "le preset est bien supprimé"
     assert window.history.undo_label == undo_label
     assert window.history.can_redo
 
@@ -398,9 +411,7 @@ def test_saving_a_transition_preset_prefills_from_the_clips_and_writes_it(window
 
 
 def test_deleting_transition_presets_locks_builtins_and_confirms_user_ones(window, dialogs, config_dir):
-    preset = make_user_transition_preset(name="Fondu maison", description="", transition_type="crossfade",
-                                         default_duration=0.75)
-    window.transition_preset_store.add_user_preset(preset)
+    preset = _transition_preset(window)
 
     window.project_panel.transition_preset_delete_requested.emit("crossfade")
     assert window.transition_preset_store.get_preset("crossfade") is not None
