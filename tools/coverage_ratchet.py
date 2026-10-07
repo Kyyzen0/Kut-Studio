@@ -11,15 +11,16 @@ Le rapport ``coverage.json`` est celui de ``pytest --cov --cov-branch --cov-repo
 
     {"total_percent": 71.3, "updated": "2026-10-07", "reason": "..."}
 
-* total mesuré **sous** la baseline : code 1, avec l'écart, les fichiers qui laissent le plus de lignes non
-  exécutées et la procédure de mise à jour ;
+* total mesuré **sous la baseline moins la tolérance de bruit** (:data:`NOISE_TOLERANCE`) : code 1, avec l'écart,
+  les fichiers qui laissent le plus de lignes non exécutées et la procédure de mise à jour ;
 * total **au-dessus** d'au moins un dixième : code 0, en invitant à relever la baseline (le cliquet ne remonte que
   si on le remonte : c'est ce qui empêche de reperdre le terrain gagné) ;
 * rapport ou baseline illisible : code 2, avec ce qui ne va pas. Un rapport sans couverture de branches est refusé :
   son total (lignes seules) n'est pas comparable à la baseline et passerait le cliquet à tort.
 
-La baseline est toujours arrondie **au dixième inférieur** du total mesuré : un peu de marge contre le bruit d'une
-exécution à l'autre, jamais plus indulgente que la mesure. Le script n'importe rien du dépôt : il se lance aussi
+La baseline est toujours arrondie **au dixième inférieur** du total mesuré, jamais plus indulgente que la mesure.
+Le bruit d'une exécution à l'autre est absorbé par une tolérance **fixe** : l'arrondi seul laissait une marge qui
+dépendait de la mesure (de 0 à 0,1 point). Le script n'importe rien du dépôt : il se lance aussi
 bien en ``python tools/coverage_ratchet.py`` qu'en ``python -m tools.coverage_ratchet``.
 """
 
@@ -37,6 +38,10 @@ ROOT = Path(__file__).resolve().parent.parent
 BASELINE_PATH = ROOT / "tests" / "coverage_baseline.json"
 BASELINE_KEYS = ("total_percent", "updated", "reason")
 TOP_FILES = 10
+# Bruit d'une exécution à l'autre, sans changement de code : 85,24 puis 85,20 % sur deux runs Linux de la CI
+# (2026-10-07), soit 33 lignes et branches sur 73 248, toutes dans du code exécuté par des threads d'arrière-plan
+# (aperçus de médias, superviseur, scopes) qui finissent ou non avant la fin de leur test. Marge : deux fois ce bruit.
+NOISE_TOLERANCE = 0.1
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -74,10 +79,16 @@ class CoverageReport:
 class Comparison:
     measured: float
     baseline: float
+    tolerance: float = NOISE_TOLERANCE
+
+    @property
+    def threshold(self) -> float:
+        """Total en dessous duquel il y a régression (arrondi : 85.2 - 0.1 vaut 85.1, pas 85.10000000000001)."""
+        return round(self.baseline - self.tolerance, 6)
 
     @property
     def regressed(self) -> bool:
-        return self.measured < self.baseline
+        return self.measured < self.threshold
 
     @property
     def delta(self) -> float:
@@ -223,16 +234,22 @@ Mettre à jour la baseline (docs/coverage.md) :
     puis commitez tests/coverage_baseline.json avec la raison dans le message."""
 
 
+def _points(delta: float) -> str:
+    """Écart signé en points ; une décimale de plus quand deux afficheraient « -0.00 » pour un écart réel."""
+    return f"{delta:+.3f}" if 0 < abs(delta) < 0.005 else f"{delta:+.2f}"
+
+
 def format_report(comparison: Comparison, report: CoverageReport, baseline: Baseline) -> str:
     """Texte affiché par le cliquet (console de la CI et résumé de l'exécution)."""
     lines = [
         f"Couverture totale (lignes + branches, core/ + ui/) : {comparison.measured:.2f} %",
         f"Baseline : {baseline.total_percent:.1f} % (mise à jour le {baseline.updated} : {baseline.reason})",
+        f"Seuil : {comparison.threshold:.1f} % (baseline - tolérance de bruit de {comparison.tolerance:.1f} point)",
         "",
     ]
     if comparison.regressed:
         lines += [
-            f"RÉGRESSION : {comparison.delta:+.2f} point(s) sous la baseline.",
+            f"RÉGRESSION : {_points(comparison.delta)} point(s) sous la baseline.",
             "",
             f"Les {TOP_FILES} fichiers avec le plus de lignes non couvertes :",
             format_table(top_missing(report.files)),
@@ -241,12 +258,13 @@ def format_report(comparison: Comparison, report: CoverageReport, baseline: Base
         ]
     elif comparison.suggested_baseline is not None:
         lines += [
-            f"Progrès : {comparison.delta:+.2f} point(s). Relevez la baseline à {comparison.suggested_baseline:.1f} % "
+            f"Progrès : {_points(comparison.delta)} point(s). Relevez la baseline à {comparison.suggested_baseline:.1f} % "
             "pour garder ce terrain :",
             '  python tools/coverage_ratchet.py coverage.json --update-baseline --reason "nouveaux tests de …"',
         ]
     else:
-        lines.append(f"OK : pas de régression ({comparison.delta:+.2f} point(s)).")
+        noise = " (sous la baseline, dans la tolérance de bruit)" if comparison.delta < 0 else ""
+        lines.append(f"OK : pas de régression ({_points(comparison.delta)} point(s){noise}).")
     return "\n".join(lines)
 
 

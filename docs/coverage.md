@@ -38,15 +38,21 @@ Exclusions (`[tool.coverage.report]`) : les lignes `# pragma: no cover`, les blo
 
 | Situation | Code de sortie | Ce qui s'affiche |
 | --- | --- | --- |
-| total **sous** la baseline | 1 (la CI échoue) | l'écart, les 10 fichiers avec le plus de lignes non couvertes, la procédure ci-dessous |
+| total sous la baseline **moins 0,1 point** (tolérance de bruit) | 1 (la CI échoue) | l'écart, les 10 fichiers avec le plus de lignes non couvertes, la procédure ci-dessous |
 | total au-dessus d'au moins 0,1 point | 0 | invitation à relever la baseline (valeur proposée) |
-| total stable | 0 | « OK » et l'écart |
+| total stable, ou sous la baseline de moins de 0,1 point | 0 | « OK » et l'écart |
 | rapport ou baseline invalide, rapport sans branches | 2 | ce qui ne va pas |
 
 Comme les autres cliquets du dépôt (dette mypy, textes d'interface en dur), il ne sert pas à viser un chiffre mais à
 **empêcher la régression silencieuse** : du code ajouté sans test fait baisser le total et se voit dans la pull request.
-La baseline est toujours le total mesuré **arrondi au dixième inférieur** (un peu de marge contre le bruit, jamais plus
-indulgente que la mesure).
+La baseline est toujours le total mesuré **arrondi au dixième inférieur** (jamais plus indulgente que la mesure).
+
+Le total varie un peu d'une exécution à l'autre **sans changement de code** : 85,24 puis 85,20 % sur deux runs Linux
+de la CI le 2026-10-07, soit 33 lignes et branches sur 73 248. Elles sont toutes dans du code exécuté par des threads
+d'arrière-plan (aperçus de médias, superviseur de processus, scopes) qui finissent ou non avant la fin de leur test.
+Le cliquet tolère donc un écart **fixe** de 0,1 point sous la baseline (`NOISE_TOLERANCE`, deux fois le bruit observé) ;
+l'arrondi seul laissait une marge variable, de 0 à 0,1 point selon la mesure. Rendre ces tests déterministes
+(attendre la fin des aperçus) réduirait ce bruit.
 
 En CI (`.github/workflows/multiplatform.yml`, job en matrice), seul **Linux** mesure, avec la même condition que mypy ;
 macOS et Windows lancent la suite sans instrumentation. Sur Linux : le cliquet bloque le job, son texte est ajouté au

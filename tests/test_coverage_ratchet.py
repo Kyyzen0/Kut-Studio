@@ -52,11 +52,21 @@ def _write(path: Path, data: object) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_a_total_below_the_baseline_is_a_regression() -> None:
-    comparison = ratchet.compare(ratchet.parse_report(_report(69.95)), ratchet.parse_baseline(_baseline(70.0)))
+def test_a_total_below_the_baseline_minus_the_noise_tolerance_is_a_regression() -> None:
+    comparison = ratchet.compare(ratchet.parse_report(_report(69.89)), ratchet.parse_baseline(_baseline(70.0)))
     assert comparison.regressed
-    assert comparison.delta == pytest.approx(-0.05)
+    assert comparison.threshold == 69.9
+    assert comparison.delta == pytest.approx(-0.11)
     assert comparison.suggested_baseline is None
+
+
+def test_run_to_run_noise_below_the_baseline_is_tolerated() -> None:
+    """85,24 puis 85,198 % sur deux runs Linux identiques : le second ne doit pas faire échouer la CI."""
+    baseline = ratchet.parse_baseline(_baseline(85.2))
+    for measured in (85.19823066841415, 85.1):  # le run observé, puis pile sur le seuil (85.2 - 0.1 en flottants)
+        comparison = ratchet.compare(ratchet.parse_report(_report(measured)), baseline)
+        assert not comparison.regressed, measured
+    assert ratchet.compare(ratchet.parse_report(_report(85.0999)), baseline).regressed
 
 
 def test_equal_or_slightly_higher_totals_pass_without_suggesting_a_new_baseline() -> None:
@@ -191,6 +201,21 @@ def test_a_stable_report_says_ok() -> None:
     baseline = ratchet.parse_baseline(_baseline(70.0))
     text = ratchet.format_report(ratchet.compare(report, baseline), report, baseline)
     assert "OK : pas de régression (+0.04 point(s))." in text
+
+
+def test_a_tiny_gap_is_not_displayed_as_zero() -> None:
+    report = ratchet.parse_report(_report(85.19823066841415))
+    baseline = ratchet.parse_baseline(_baseline(85.2))
+    text = ratchet.format_report(ratchet.compare(report, baseline), report, baseline)
+    assert "-0.002 point(s)" in text and "-0.00 " not in text
+
+
+def test_a_report_within_the_noise_tolerance_says_so() -> None:
+    report = ratchet.parse_report(_report(69.95))
+    baseline = ratchet.parse_baseline(_baseline(70.0))
+    text = ratchet.format_report(ratchet.compare(report, baseline), report, baseline)
+    assert "Seuil : 69.9 %" in text
+    assert "OK : pas de régression (-0.05 point(s) (sous la baseline, dans la tolérance de bruit))." in text
 
 
 # ---------------------------------------------------------------------------
