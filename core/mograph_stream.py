@@ -166,15 +166,22 @@ def write_stream(
     return str(playlist)
 
 
-def stream_input_filter(fps, duration: float) -> str:
-    """Filtres qui calent un flux ``.ffconcat`` sur la cadence et la durée du rendu."""
+def stream_input_filter(fps, duration: float, origin: float = 0.0) -> str:
+    """Filtres qui calent un flux ``.ffconcat`` sur la cadence et la durée du rendu.
+
+    ``origin`` > 0 (segment d'aperçu) : les images d'avant ``origin`` sont écartées dès la sortie de ``fps``, avant
+    toute conversion, avec les mêmes horodatages pour celles qui restent. ``0`` : la chaîne historique, inchangée.
+    """
     from .export_engine import _format_seconds
 
     fps_text = fps if isinstance(fps, int) else _format_seconds(float(fps))
-    return (
-        f"fps={fps_text},format=rgba,tpad=stop=-1:stop_mode=clone,"
-        f"trim=duration={_format_seconds(max(duration, 1.0 / float(fps or 30)))},setpts=PTS-STARTPTS"
-    )
+    length = _format_seconds(max(duration, 1.0 / float(fps or 30)))
+    if origin > 0:
+        return (
+            f"fps={fps_text},setpts=PTS-STARTPTS,trim=start={_format_seconds(origin)},format=rgba,"
+            f"tpad=stop=-1:stop_mode=clone,trim=end={length}"
+        )
+    return f"fps={fps_text},format=rgba,tpad=stop=-1:stop_mode=clone,trim=duration={length},setpts=PTS-STARTPTS"
 
 
 def still_playlist(playlist: str, t: float) -> str:

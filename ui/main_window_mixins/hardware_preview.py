@@ -34,6 +34,8 @@ from ui import i18n
 LOGGER = logging.getLogger("kut_studio.gpu")
 
 MEMORY_POLL_MS = 5000
+GPU_SUSPENDED_MESSAGE_MS = 15000
+"""Durée du message « aperçu GPU suspendu » : assez pour lire le chemin du réglage."""
 MAX_MEASUREMENTS_PER_SESSION = 4
 
 
@@ -115,6 +117,16 @@ class HardwarePreviewMixin:
             self._gpu_guard.disarm()
         self._resolved_preview = resolved
         LOGGER.info("Rendu de l'aperçu : %s (%s)", resolved.label, resolved.reason)
+        if resolved.reason == "previous_crash":
+            # Sans ce message, le repli ne se voyait que dans le diagnostic : l'aperçu restait lent sans explication,
+            # session après session, alors qu'un choix explicite de « GPU » le rétablit.
+            try:
+                self.statusBar().showMessage(i18n.translate("preview.gpu_suspended"), GPU_SUSPENDED_MESSAGE_MS)
+            except Exception:
+                LOGGER.debug(
+                    "Message d'aperçu GPU suspendu dans la barre d'état en échec : repli CPU sans avertissement visible",
+                    exc_info=True,
+                )
         if not getattr(self, "is_playing", False):
             try:
                 self._sync_preview_to_timeline()
@@ -505,6 +517,7 @@ _REASON_KEYS = {
     "disabled": "preview.reason.disabled",
     "no_window_system": "preview.reason.no_window_system",
     "gpu_failed": "preview.reason.gpu_failed",
+    "previous_crash": "preview.reason.previous_crash",
     "gpu": "preview.reason.gpu",
 }
 
