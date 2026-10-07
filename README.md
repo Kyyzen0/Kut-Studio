@@ -266,7 +266,7 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 
 ## 🤝 Contributing
 
-Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request.
+Contributions and bug reports are welcome. Create a branch, make a focused change, run the test suite, then open a pull request. Setup, the checks the test suite enforces (ratchets and guards), commit style and what CI requires: [CONTRIBUTING.md](CONTRIBUTING.md) (in French, with an English summary).
 
 ---
 
@@ -485,7 +485,7 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 
 ## 🤝 Contribution
 
-Les contributions et signalements de bugs sont les bienvenus. Créez une branche, faites une modification ciblée, lancez les tests puis ouvrez une pull request.
+Les contributions et signalements de bugs sont les bienvenus. Créez une branche, faites une modification ciblée, lancez les tests puis ouvrez une pull request. Installation, gardes et cliquets vérifiés par la suite, style des commits et exigences de la CI : [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <p align="center">
   Fait avec ❤️ et PySide6
