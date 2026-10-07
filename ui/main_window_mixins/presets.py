@@ -25,6 +25,14 @@ def _main_window():
     return main_window
 
 
+def _transition_preset_label(preset) -> str:
+    """Nom affiché d'un preset de transition : traduit pour un intégré (``preset.name`` est le français de
+    ``core``), tel que saisi pour un preset utilisateur."""
+    if preset.builtin:
+        return i18n.translate(f"transitions.preset.{preset.id}.name")
+    return preset.name
+
+
 class PresetsMixin:
     """Mixin de ``MainWindow`` (presets)."""
 
@@ -331,7 +339,7 @@ class PresetsMixin:
         self._mark_dirty()
         self.timeline_panel.select_transition(transition.id)
         self.statusBar().showMessage(
-            i18n.translate("status.transition.added_named", name=preset.name), 3000
+            i18n.translate("status.transition.added_named", name=_transition_preset_label(preset)), 3000
         )
 
     def on_transition_preset_save_requested(self) -> None:
@@ -441,7 +449,8 @@ class PresetsMixin:
         # Dit ce qui vient de se passer : un favori basculé, pas une transition posée.
         preset = self.transition_preset_store.get_preset(preset_id)
         key = "status.transition.favorite_added" if favorite else "status.transition.favorite_removed"
-        self.statusBar().showMessage(i18n.translate(key, name=preset.name if preset else preset_id), 3000)
+        name = _transition_preset_label(preset) if preset else preset_id
+        self.statusBar().showMessage(i18n.translate(key, name=name), 3000)
 
     def _on_text_presets_changed(self) -> None:
         """Répercute les mutations du store vers la bibliothèque."""

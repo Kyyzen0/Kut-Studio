@@ -329,8 +329,8 @@ def test_a_transition_preset_goes_between_the_two_selected_clips_of_a_track(wind
     [transition] = window.project.transitions
     assert (transition.from_clip_id, transition.to_clip_id) == ("intro", "plan_a")
     assert transition.duration == pytest.approx(0.5)
-    preset = window.transition_preset_store.get_preset("crossfade")
-    assert _status(window) == i18n.translate("status.transition.added_named", name=preset.name)
+    assert _status(window) == i18n.translate(
+        "status.transition.added_named", name=i18n.translate("transitions.preset.crossfade.name"))
     assert window.history.undo_label == i18n.translate("history.transition.add")
     window.undo_last()
     assert window.project.transitions == []
@@ -440,7 +440,7 @@ def test_a_transition_favorite_is_toggled_and_persisted(window, config_dir):
 # Corrigé par le commit « Transitions : basculer un favori le dit, au lieu d'annoncer une transition » (lot 6) :
 # ce test était un xfail strict qui documentait le bogue.
 def test_toggling_a_favorite_says_so_instead_of_claiming_a_transition_was_added(window):
-    name = window.transition_preset_store.get_preset("wipe_left").name
+    name = i18n.translate("transitions.preset.wipe_left.name")
 
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert window.project.transitions == []
@@ -448,6 +448,20 @@ def test_toggling_a_favorite_says_so_instead_of_claiming_a_transition_was_added(
 
     window.project_panel.transition_favorite_toggled.emit("wipe_left")
     assert _status(window) == i18n.translate("status.transition.favorite_removed", name=name)
+
+
+def test_favorite_messages_name_builtins_in_the_interface_language_and_users_as_typed(window):
+    """Revue de la PR #51 : en anglais, un intégré s'appelait encore « Balayage gauche » (nom français du cœur)."""
+    previous = i18n.current_language()
+    i18n.set_language("en")
+    try:
+        window.project_panel.transition_favorite_toggled.emit("wipe_left")
+        assert _status(window) == "“Wipe left” added to favorites."
+        user = _transition_preset(window)
+        window.project_panel.transition_favorite_toggled.emit(user.id)
+        assert _status(window) == "“Fondu maison” added to favorites."
+    finally:
+        i18n.set_language(previous)
 
 
 # --- modèles de texte ---------------------------------------------------------------------------------------------
