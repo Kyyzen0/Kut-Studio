@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-10-08
+
+Version corrective : la lecture d'un montage chargé redevient fluide quand les scopes sont affichés.
+
 ### Fixed
 
 - La lecture d'un montage riche en titres et calques (l'edit vertical « Night Race », par exemple) n'est plus
@@ -157,7 +161,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Kyyzen0/Kut-Studio/releases/tag/v0.1.0

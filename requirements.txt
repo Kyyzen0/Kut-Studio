@@ -1,3 +1,7 @@
-PySide6>=6.6,<7
+# Plafond < 6.12 : PySide6 6.12.0 (sorti le 2026-10-08) a une erreur de comptage de références qui fait planter
+# l'interpréteur (« Fatal Python error: bool_dealloc ») en CI Linux, à la fermeture d'un worker et dans l'audit de
+# l'interface (tools.ui_audit, code -6). À lever dès qu'une 6.12.x passe toute la CI ; la release reste figée par
+# constraints.txt (6.11.2).
+PySide6>=6.6,<6.12
 # Tracking 2D (analyse uniquement, importé à la demande) : corrélation par FFT.
 numpy>=1.26
