@@ -6,6 +6,7 @@ Aucun test n'écrit dans le registre ni dans le profil réel : le registre et le
 from __future__ import annotations
 
 import configparser
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -29,12 +30,20 @@ class FakeRegistry:
 
 
 class RecordingRunner:
-    def __init__(self) -> None:
+    """Lanceur de substitution : enregistre les commandes, et répond avec le code de sortie prévu."""
+
+    def __init__(self, failing: dict[str, tuple[int, bytes]] | None = None, raising: dict[str, Exception] | None = None):
         self.calls: list[list[str]] = []
+        self.failing = failing or {}
+        self.raising = raising or {}
 
     def __call__(self, command, **options):
         self.calls.append(list(command))
-        return None
+        name = str(command[0]).rsplit("/", 1)[-1]
+        if name in self.raising:
+            raise self.raising[name]
+        code, stderr = self.failing.get(name, (0, b""))
+        return subprocess.CompletedProcess(list(command), code, b"", stderr)
 
 
 def test_only_windows_and_linux_get_the_association(tmp_path):
@@ -106,7 +115,8 @@ def test_linux_association_writes_two_files_under_the_data_home_and_refreshes_da
     ]
 
 
-def test_running_the_association_twice_leaves_the_same_files(tmp_path):
+def test_running_the_association_twice_leaves_the_same_files(tmp_path, monkeypatch):
+    _with_tools(monkeypatch, ALL_TOOLS)
     first = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
     before = (tmp_path / "applications" / "kut-studio.desktop").read_text(encoding="utf-8")
     second = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
@@ -121,6 +131,52 @@ def test_a_profile_that_cannot_be_written_is_reported_not_raised(tmp_path):
         platform="linux", command=COMMAND, data_home=blocker / "data", runner=RecordingRunner(),
     )
     assert result.status == "failed" and result.detail
+
+
+ALL_TOOLS = {
+    "update-mime-database": "/usr/bin/update-mime-database",
+    "update-desktop-database": "/usr/bin/update-desktop-database",
+    "xdg-mime": "/usr/bin/xdg-mime",
+}
+
+
+def _with_tools(monkeypatch, tools):
+    monkeypatch.setattr(association.shutil, "which", lambda name: tools.get(name))
+
+
+def test_a_failing_mime_refresh_fails_the_association_with_the_tool_output(tmp_path, monkeypatch):
+    # Un échec silencieux donnait « associé » alors que le système ignorait encore le type .kut.
+    _with_tools(monkeypatch, ALL_TOOLS)
+    runner = RecordingRunner(failing={"update-mime-database": (2, b"base verrouillee")})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
+    assert result.status == "failed"
+    assert result.detail == "update-mime-database a échoué (code 2) : base verrouillee"
+
+
+def test_a_default_application_refused_by_xdg_mime_fails_the_association(tmp_path, monkeypatch):
+    _with_tools(monkeypatch, ALL_TOOLS)
+    runner = RecordingRunner(failing={"xdg-mime": (1, b"type inconnu")})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
+    assert result.status == "failed" and "xdg-mime a échoué" in result.detail
+
+
+def test_a_missing_mime_tool_fails_the_association(tmp_path, monkeypatch):
+    _with_tools(monkeypatch, {key: value for key, value in ALL_TOOLS.items() if key != "update-mime-database"})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
+    assert result.status == "failed" and result.detail == "update-mime-database introuvable"
+
+
+def test_missing_optional_tools_do_not_fail_the_association(tmp_path, monkeypatch):
+    _with_tools(monkeypatch, {"update-mime-database": ALL_TOOLS["update-mime-database"]})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=RecordingRunner())
+    assert result.status == "associated"
+
+
+def test_a_tool_that_times_out_is_reported_not_raised(tmp_path, monkeypatch):
+    _with_tools(monkeypatch, ALL_TOOLS)
+    runner = RecordingRunner(raising={"update-desktop-database": subprocess.TimeoutExpired("cmd", 30)})
+    result = associate_project_files(platform="linux", command=COMMAND, data_home=tmp_path, runner=runner)
+    assert result.status == "failed" and "update-desktop-database" in result.detail
 
 
 def test_source_run_launches_main_py(monkeypatch):

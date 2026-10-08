@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -169,21 +170,53 @@ def associate_project_files(
         for path, text in linux_files(launch, home).items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        _refresh_linux_databases(home, runner)
+        failures = _refresh_linux_databases(home, runner)
+        if failures:
+            return AssociationResult("failed", " ; ".join(failures))
         return AssociationResult("associated")
     except OSError as error:
         return AssociationResult("failed", str(error) or type(error).__name__)
 
 
-def _refresh_linux_databases(home: Path, runner: Runner) -> None:
-    """Rafraîchit les bases MIME et d'applications quand les outils sont là ; sans eux, rien ne casse."""
-    for tool, directory in (
-        ("update-mime-database", home / "mime"),
-        ("update-desktop-database", home / "applications"),
-    ):
+def _refresh_linux_databases(home: Path, runner: Runner) -> list[str]:
+    """Rafraîchit les bases MIME et d'applications, puis fixe l'application par défaut. Retourne les échecs.
+
+    L'outil MIME est indispensable : sans lui le type ``.kut`` n'est pas reconnu. L'outil des applications et
+    ``xdg-mime`` améliorent l'association : absents, ils ne sont pas exigés. Un outil présent qui échoue est toujours
+    un échec : le système ne l'aurait pas enregistré.
+    """
+    steps = (
+        (("update-mime-database", str(home / "mime")), True),
+        (("update-desktop-database", str(home / "applications")), False),
+    )
+    failures: list[str] = []
+    for (tool, *arguments), required in steps:
         found = shutil.which(tool)
-        if found:
-            runner([found, str(directory)], check=False, capture_output=True, timeout=30)
+        if found is None:
+            if required:
+                failures.append(f"{tool} introuvable")
+            continue
+        failures += _run_step([found, *arguments], runner)
     xdg_mime = shutil.which("xdg-mime")
     if xdg_mime:
-        runner([xdg_mime, "default", DESKTOP_FILE, MIME_TYPE], check=False, capture_output=True, timeout=30)
+        failures += _run_step([xdg_mime, "default", DESKTOP_FILE, MIME_TYPE], runner)
+    return failures
+
+
+def _run_step(command: list[str], runner: Runner) -> list[str]:
+    """Lance une étape et retourne son échec éventuel (vide si elle a réussi)."""
+    try:
+        completed = runner(command, check=False, capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as error:
+        return [f"{Path(command[0]).name} : {error}"]
+    if completed.returncode == 0:
+        return []
+    detail = _text(completed.stderr or completed.stdout).strip()
+    suffix = f" : {detail}" if detail else ""
+    return [f"{Path(command[0]).name} a échoué (code {completed.returncode}){suffix}"]
+
+
+def _text(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
