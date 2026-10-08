@@ -232,6 +232,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "render.preset.h264_1080p": {"fr": "H.264 1080p", "en": "H.264 1080p", "es": "H.264 1080p"},
     "render.preset.h264_1440p": {"fr": "H.264 1440p", "en": "H.264 1440p", "es": "H.264 1440p"},
     "render.preset.h264_4k": {"fr": "H.264 4K", "en": "H.264 4K", "es": "H.264 4K"},
+    "render.preset.h265_1080p": {"fr": "H.265 1080p", "en": "H.265 1080p", "es": "H.265 1080p"},
+    "render.preset.h265_4k": {"fr": "H.265 4K", "en": "H.265 4K", "es": "H.265 4K"},
+    "render.preset.desc.h265_1080p": {
+        "fr": "Full HD en HEVC : fichier plus léger, qualité visuelle comparable à H.264 1080p.",
+        "en": "Full HD in HEVC: smaller file, visual quality comparable to H.264 1080p.",
+        "es": "Full HD en HEVC: archivo más ligero, calidad visual comparable a H.264 1080p.",
+    },
+    "render.preset.desc.h265_4k": {
+        "fr": "UHD en HEVC : fichier plus léger que H.264 4K ; l'encodage CPU est plus lent.",
+        "en": "UHD in HEVC: smaller file than H.264 4K; CPU encoding is slower.",
+        "es": "UHD en HEVC: archivo más ligero que H.264 4K; la codificación por CPU es más lenta.",
+    },
     "render.preset.youtube": {"fr": "YouTube", "en": "YouTube", "es": "YouTube"},
     "render.preset.tiktok": {"fr": "TikTok / Vertical 1080×1920", "en": "TikTok / Vertical 1080×1920", "es": "TikTok / Vertical 1080×1920"},
     "render.preset.prores_master": {"fr": "ProRes Master", "en": "ProRes Master", "es": "ProRes Master"},

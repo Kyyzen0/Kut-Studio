@@ -350,6 +350,7 @@ class ExportFormat(Enum):
     """Décrit les combinaisons conteneur / codec prises en charge."""
 
     MP4_H264 = ("mp4", "h264", "medium", 18)
+    MP4_HEVC = ("mp4", "hevc", "medium", 18)
     MOV_PRORES = ("mov", "prores_ks", "", 3)
     MOV_H264 = ("mov", "h264", "medium", 18)
 
@@ -867,11 +868,12 @@ class ExportEngine(QObject):
 
         # L'encodeur est choisi avant les entrées : certains (VAAPI) demandent une
         # initialisation matérielle placée avant ``-i`` et un filtre final.
-        is_h264 = request.format.codec == "h264"
+        # H.264 et HEVC prennent le CRF du preset ; ``video_encoders`` convertit celui de HEVC (+4).
+        preset_crf = request.format.codec in ("h264", "hevc")
         encoder = resolve_video_encoder(
             request.format.codec,
             speed_preset=request.format.preset,
-            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            quality=request.preset.crf if preset_crf else request.format.quality_value,
             hardware=request.hardware,
             width=width,
             height=height,
@@ -1205,11 +1207,11 @@ class ExportEngine(QObject):
         LOGGER.warning("Repli CPU : %s", reason)
         self.last_diagnostics = self._error_output[-800:]
         self._fallback_used = True
-        is_h264 = request.format.codec == "h264"
+        preset_crf = request.format.codec in ("h264", "hevc")
         cpu = cpu_choice(
             request.format.codec,
             speed_preset=request.format.preset,
-            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            quality=request.preset.crf if preset_crf else request.format.quality_value,
             requested=choice.requested,
             fallback_reason=reason,
         )
