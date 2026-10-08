@@ -12,7 +12,7 @@ validé au chargement par :mod:`core.versioning` (``tests/test_versioning.py``).
 from __future__ import annotations
 
 APP_NAME = "Kut-Studio"
-APP_VERSION = "0.2.5"
+APP_VERSION = "0.2.6"
 GITHUB_REPOSITORY = "Kyyzen0/Kut-Studio"
 """Dépôt ``propriétaire/nom`` dont les GitHub Releases publient les paquets."""
 WEBSITE_URL = "https://kut-studio.pages.dev"
