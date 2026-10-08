@@ -17,6 +17,7 @@ Le résultat est une suggestion : l'utilisateur la voit sur la règle et la corr
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -145,4 +146,88 @@ def detect_tempo(
                          estimate.confidence)
 
 
-__all__ = ["TempoEstimate", "detect_tempo", "estimate_tempo", "onset_strength"]
+def plays_at_media_speed(clip: Any) -> bool:
+    """``True`` si un instant de la timeline et l'instant lu dans le média avancent ensemble (vitesse 1, sans retiming).
+
+    La grille déduite d'une musique (:meth:`TempoEstimate.grid_for_clip`) n'est juste que pour un tel clip : retimé,
+    inversé, figé, imbriqué ou accéléré, ses temps ne tombent plus aux mêmes instants de la timeline."""
+    return not (
+        clip.is_time_remapped or clip.has_speed_curve or clip.is_reversed or clip.is_frozen or clip.is_nested
+        or abs(clip.speed - 1.0) > 1e-9
+    )
+
+
+@dataclass(frozen=True)
+class TempoDetectionSnapshot:
+    """État d'une mesure, lu par l'interface : ``queued``, ``running``, ``finished``, ``cancelled`` ou ``failed``."""
+
+    state: str
+    message: str
+    result: TempoEstimate | None
+
+
+class TempoDetectionJob:
+    """Mesure du tempo d'une musique pour la file d'analyse : annulation (FFmpeg tué aussitôt) et résultat.
+
+    Même contrat que :class:`core.scene_detection.SceneDetectionJob` : l'interface lit :meth:`snapshot` sur un minuteur.
+    Le décodage et l'estimation durent une à quelques secondes, sans étape mesurable : pas de progression chiffrée.
+    """
+
+    def __init__(
+        self, path: str, *, start: float, duration: float, beats_per_bar: int = 4, session_id: str = "",
+    ) -> None:
+        if duration <= 0:
+            raise ValueError("Durée de mesure nulle")
+        self.session_id = session_id
+        self._path = path
+        self._start = float(start)
+        self._duration = float(duration)
+        self._beats_per_bar = int(beats_per_bar)
+        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+        self._state = "queued"
+        self._message = ""
+        self._result: TempoEstimate | None = None
+
+    def cancel(self) -> None:
+        self._cancel.set()
+        with self._lock:
+            if self._state == "queued":
+                self._state = "cancelled"
+
+    def snapshot(self) -> TempoDetectionSnapshot:
+        with self._lock:
+            return TempoDetectionSnapshot(self._state, self._message, self._result)
+
+    def run(self, token: object = None) -> None:
+        from .audio_sync import SyncCancelled
+
+        with self._lock:
+            if self._cancel.is_set() or self._state == "cancelled":
+                self._state = "cancelled"
+                return
+            self._state = "running"
+        try:
+            estimate = detect_tempo(
+                self._path, start=self._start, duration=self._duration, beats_per_bar=self._beats_per_bar,
+                cancelled=self._cancel.is_set,
+            )
+        except SyncCancelled:
+            self._finish("cancelled")
+            return
+        except Exception as error:  # noqa: BLE001 - une musique illisible ne doit pas bloquer la file d'analyse
+            self._finish("failed", message=str(error) or type(error).__name__)
+            return
+        self._finish("cancelled" if self._cancel.is_set() else "finished", result=estimate)
+
+    def _finish(self, state: str, *, result: TempoEstimate | None = None, message: str = "") -> None:
+        with self._lock:
+            self._state = state
+            self._result = result if state == "finished" else None
+            self._message = message
+
+
+__all__ = [
+    "TempoDetectionJob", "TempoDetectionSnapshot", "TempoEstimate", "detect_tempo", "estimate_tempo",
+    "onset_strength", "plays_at_media_speed",
+]
