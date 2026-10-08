@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Sequence
 
 from .atomic_io import atomic_write_json
+from .favorites import set_favorite_member
 from .transitions import TransitionType
 from .platform_paths import user_config_dir
 
@@ -867,17 +868,9 @@ class TransitionPresetStore:
         preset utilisateur connu sont silencieusement rejetés : on ne
         garde pas d'identifiants orphelins en persistance.
         """
-        if favorite:
-            # On n'autorise les favoris que pour des presets existants.
-            if not self._preset_exists(preset_id):
-                raise KeyError(f"Preset '{preset_id}' introuvable.")
-            if preset_id in self._favorites:
-                return False
-            self._favorites.add(preset_id)
-        else:
-            if preset_id not in self._favorites:
-                return False
-            self._favorites.remove(preset_id)
+        # Les favoris ne visent que des presets existants : la règle est dans ``set_favorite_member``.
+        if not set_favorite_member(self._favorites, preset_id, favorite, exists=self._preset_exists):
+            return False
         self._persist()
         self._notify_changed()
         return True

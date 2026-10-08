@@ -59,11 +59,9 @@ from ui.library_organization_widgets import (
 from ui.theme import COLORS, label_style, set_role
 from ui.project_panel_widgets.asset_bin import (
     AssetBin,
-    _format_asset_caption,
-    _format_duration,
-    _make_asset_thumbnail,
 )  # noqa: F401
 from ui.project_panel_widgets.subtitle_library import SubtitleLibraryView  # noqa: F401
+from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.project_panel_widgets.sequence_library import SequenceLibraryView
 from ui.project_panel_widgets.text_presets_view import (
     TextPresetCard,
@@ -937,19 +935,9 @@ class ProjectPanel(QWidget):
         accent: bool = False,
         tooltip: str | None = None,
     ) -> IconButton:
-        button = IconButton(
-            icon=icon,
-            tooltip=tooltip or text,
-            size=Sizes.icon_button,
-            accent=accent,
-            square=False,
-        )
-        button.setText(f"  {text}")
-        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        button.setMinimumHeight(Sizes.button_md)
+        # Remplissage propre au panneau projet ; les bibliothèques gardent le style par défaut.
+        button = make_wide_button(icon, text, accent=accent, tooltip=tooltip)
         button.setStyleSheet("QToolButton { padding: 4px 4px; }")
-        # Le bouton s'étend pour suivre la largeur du panneau parent.
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return button
 
     # ------------------------------------------------------------------

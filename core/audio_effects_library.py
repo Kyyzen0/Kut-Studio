@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from .atomic_io import atomic_write_json
+from .favorites import set_favorite_member
 from .platform_paths import user_config_dir
 
 from .audio_effects_model import (
@@ -627,16 +628,8 @@ class AudioEffectPresetStore:
 
     def set_favorite(self, preset_id: str, favorite: bool) -> bool:
         """Ajoute ou retire ``preset_id`` des favoris."""
-        if favorite:
-            if not self._preset_exists(preset_id):
-                raise KeyError(f"Preset '{preset_id}' introuvable.")
-            if preset_id in self._favorites:
-                return False
-            self._favorites.add(preset_id)
-        else:
-            if preset_id not in self._favorites:
-                return False
-            self._favorites.remove(preset_id)
+        if not set_favorite_member(self._favorites, preset_id, favorite, exists=self._preset_exists):
+            return False
         self._persist()
         self._notify_changed()
         return True

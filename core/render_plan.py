@@ -348,20 +348,6 @@ class NestedSequencePlan:
 # ---------------------------------------------------------------------------
 
 
-def _find_asset(project: Project, asset_id: str) -> MediaAsset:
-    """Retourne le :class:`MediaAsset` correspondant à ``asset_id``.
-
-    Raises:
-        KeyError: si aucun média du projet ne porte cet identifiant.
-    """
-    for asset in project.media_assets:
-        if asset.id == asset_id:
-            return asset
-    raise KeyError(
-        f"Média '{asset_id}' introuvable dans le projet '{project.name}'."
-    )
-
-
 # ---------------------------------------------------------------------------
 # API publique
 # ---------------------------------------------------------------------------

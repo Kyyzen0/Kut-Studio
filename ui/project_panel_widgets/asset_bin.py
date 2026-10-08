@@ -422,15 +422,6 @@ def _format_duration(seconds: float | None) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def _format_asset_caption(asset: MediaAsset) -> str:
-    """Construit un libellé court (nom + durée) pour la grille."""
-    duration = _format_duration(asset.duration)
-    name = (asset.name or translate("library.asset.unnamed")).strip()
-    if len(name) > 24:
-        name = name[:23] + "…"
-    return f"{name}\n{duration}"
-
-
 def _make_asset_thumbnail(asset: MediaAsset, size: int = 40) -> QIcon:
     """Génère une vignette carrée stylisée pour un asset.
 
