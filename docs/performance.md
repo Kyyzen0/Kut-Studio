@@ -230,6 +230,20 @@ original n'est **pas** réduit (Qt ne sait pas décoder moins cher) ; le niveau
 baissé n'allège alors que les scopes. C'est pourquoi proxies et qualité Auto vont
 ensemble.
 
+**Le tic de lecture reste léger, scopes visibles ou non.** Le fil de l'interface
+ne fait, pour une analyse de scopes, que lire l'état de l'application (plan à la
+tête de lecture, réglages d'export : quelques millisecondes) ; la commande d'image
+est fabriquée par le thread de l'analyseur (`ScopeRequest.command_factory`), à la
+taille que l'analyse échantillonne (`scope_frame_size`), en ne rastérisant les
+calques que jusqu'à l'image voulue (`horizon`). Pendant la lecture, une analyse ne
+part que si l'analyseur est libre et l'est resté 4 fois la durée de la précédente
+(`BACKGROUND_SHARE`) : l'analyse en Python pur dispute le verrou de l'interpréteur
+au fil de l'interface. La tête de lecture avance du temps réellement écoulé (pas
+d'un pas fixe de 40 ms) : un tic en retard saute une image au lieu de ralentir la
+lecture et de forcer un recalage du lecteur. Mesuré sur l'edit « Singapore GP
+2026 » (19 plans, ~60 calques), scopes visibles : pire tic 4,6 s → 8 ms, 1,2 s →
+8,0 s de lecture en 8 s (`tests/test_playback_responsiveness.py`).
+
 ## 7. Résultats
 
 Voir [`docs/perf/RESULTS.md`](perf/RESULTS.md).

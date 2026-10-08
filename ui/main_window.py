@@ -130,6 +130,10 @@ SCOPES_MIN_INTERVAL: float = 0.1
 """Intervalle minimal (secondes) entre deux analyses pendant la lecture."""
 
 SCOPES_COLUMNS: int = 320
+PLAYBACK_TICK_SECONDS = 0.04
+"""Intervalle du minuteur de lecture, et pas d'un tic sans horloge de référence (tic forcé hors lecture, tests)."""
+MAX_PLAYBACK_STEP_SECONDS = 0.5
+"""Pas maximal d'un tic : après un gel (veille, débogueur), la tête de lecture ne saute pas au-delà."""
 """Nombre de colonnes des waveform / parade."""
 
 SCOPES_VECTORSCOPE_BINS: int = 128
@@ -693,7 +697,8 @@ class MainWindow(
         # en pause réévaluait toute la timeline et repeignait l'interface
         # 25 fois par seconde sans que rien ne change.
         self.timeline_timer = QTimer(self)
-        self.timeline_timer.setInterval(40)
+        self.timeline_timer.setInterval(round(PLAYBACK_TICK_SECONDS * 1000))
+        self._playback_clock: float | None = None
         self.timeline_timer.timeout.connect(self._tick_playback)
 
         self._autosave_timer = QTimer(self)
@@ -1656,9 +1661,13 @@ class MainWindow(
             self.runtime.diagnostics.note_playback_tick(tick_time)
             self._observe_playback_quality(tick_time)
             duration = self._ensure_timeline_index().duration
-            # 40 ms = intervalle du timer ; on consomme un delta fixe
-            # pour rester stable face aux variations de wall-clock.
-            next_playhead = self.playhead_seconds + 0.04
+            # La tête de lecture avance du temps **réellement** écoulé depuis le tic précédent. Avec un pas fixe de
+            # 40 ms, un tic en retard ralentissait la lecture ; le lecteur vidéo, lui, avance en temps réel, et
+            # l'écart (> 200 ms) se soldait par un recalage forcé du lecteur : une saccade visible.
+            last = self._playback_clock
+            step = PLAYBACK_TICK_SECONDS if last is None else min(MAX_PLAYBACK_STEP_SECONDS, max(0.0, tick_time - last))
+            self._playback_clock = tick_time
+            next_playhead = self.playhead_seconds + step
             if duration > 0.0 and next_playhead >= duration:
                 self.playhead_seconds = duration
                 self._pause_internal()
@@ -1905,6 +1914,7 @@ class MainWindow(
     def _pause_internal(self) -> None:
         """Met la lecture en pause sans toucher au playhead."""
         self.is_playing = False
+        self._playback_clock = None
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.pause()
@@ -1995,6 +2005,7 @@ class MainWindow(
     def stop_playback(self):
         """Stop : playhead à 0, aperçu synchronisé, lecture arrêtée."""
         self.is_playing = False
+        self._playback_clock = None
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.stop()
@@ -2022,6 +2033,7 @@ class MainWindow(
         if timeline_duration(self.project) <= 0.0:
             return
         self.is_playing = True
+        self._playback_clock = time.perf_counter()
         self.timeline_timer.start()
         self._sync_preview_to_timeline()
         self.preview_panel.player.play()
