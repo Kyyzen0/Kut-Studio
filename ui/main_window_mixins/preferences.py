@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from core.user_settings import UserSettings, VALID_LANGUAGES, VALID_THEME_MODES
 from dataclasses import replace
 from ui.theming import retheme_application
@@ -101,6 +101,7 @@ class PreferencesMixin:
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         dialog.update_check_changed.connect(self.set_update_check_enabled)
         dialog.update_prereleases_changed.connect(self.set_update_include_prereleases)
+        dialog.file_association_requested.connect(self._associate_project_files)
         self._preferences_dialog = dialog
         # « finished » part à la fermeture, avant que WA_DeleteOnClose ne détruise l'objet C++ :
         # attendre le retour d'exec() laisserait une fenêtre où la référence pointe sur un objet mort.
@@ -109,6 +110,22 @@ class PreferencesMixin:
             dialog.exec()
         finally:
             self._preferences_dialog = None
+
+    def _associate_project_files(self) -> None:
+        """Associe ``.kut`` à l'application (Windows, Linux) sur demande, et annonce le résultat."""
+        from core.file_association import associate_project_files
+
+        result = associate_project_files()
+        parent = self._preferences_dialog or self
+        if result.status == "associated":
+            QMessageBox.information(
+                parent, i18n.translate("prefs.files.done_title"), i18n.translate("prefs.files.done_text"),
+            )
+        else:
+            QMessageBox.warning(
+                parent, i18n.translate("prefs.files.failed_title"),
+                i18n.translate("prefs.files.failed_text", error=result.detail or result.status),
+            )
 
     def _restore_default_preferences(self) -> None:
         """Restaure les réglages affichés par la boîte Préférences.
