@@ -19,6 +19,9 @@ calque est donc d'abord posé sur un cadre transparent, puis ::
     f = blend(calque, fond)              # en RVB planaire, calque en 1er flux
     sortie = overlay(fond, f avec l'alpha du calque)
            = fond·(1 − α) + f·α          # formule séparable du W3C, comme Qt
+
+Chaque ``overlay`` sort en RVBA (``format=rgb``), comme la composition des pistes : le fond arrive en RVBA, et son
+passage en RVB planaire (``gbrp``) pour ``blend`` n'est qu'une recopie, sans conversion ni arrondi de swscale.
 """
 
 from __future__ import annotations
@@ -102,7 +105,7 @@ def blend_onto(
     """
     mode = coerce_blend_mode(mode)
     if mode is BlendMode.NORMAL:
-        parts.append(f"[{bottom}][{top}]overlay=0:0:eof_action=pass[{out}]")
+        parts.append(f"[{bottom}][{top}]overlay=0:0:eof_action=pass:format=rgb[{out}]")
         return
     if transparent_bottom:
         parts.append(
@@ -114,9 +117,9 @@ def blend_onto(
             f"[{tag}tp][{tag}bp]blend=all_mode={ffmpeg_blend_mode(mode)}:shortest=0:repeatlast=1,"
             f"format=gbrap[{tag}f];"
             f"[{tag}f][{tag}ta]alphamerge[{tag}fa];"
-            f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass[{tag}mix];"      # résultat fusionné
-            f"[{tag}b3][{tag}t3]overlay=0:0:eof_action=pass[{tag}plain];"    # résultat en mode Normal
-            f"[{tag}b4]alphaextract,format=gbrp[{tag}ab];"                   # opacité du dessous, comme pondération
+            f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass:format=rgb[{tag}mix];"    # résultat fusionné
+            f"[{tag}b3][{tag}t3]overlay=0:0:eof_action=pass:format=rgb[{tag}plain];"  # résultat en mode Normal
+            f"[{tag}b4]alphaextract,format=gbrp[{tag}ab];"                            # opacité du dessous, comme pondération
             f"[{tag}plain]split[{tag}n1][{tag}n2];"
             f"[{tag}n2]alphaextract[{tag}na];"
             f"[{tag}n1]format=gbrp[{tag}np];"
@@ -134,7 +137,7 @@ def blend_onto(
         f"[{tag}tp][{tag}bp]blend=all_mode={ffmpeg_blend_mode(mode)}:shortest=0:repeatlast=1,"
         f"format=gbrap[{tag}f];"
         f"[{tag}f][{tag}ta]alphamerge[{tag}fa];"
-        f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass[{out}]"
+        f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass:format=rgb[{out}]"
     )
 
 
@@ -241,7 +244,7 @@ def _compose_adjustment(
             f"[{tag}ca][{tag}ba]blend=all_mode=multiply:shortest=0:repeatlast=1[{tag}al];"
             f"[{processed}]format=rgba[{tag}pr];"
             f"[{tag}pr][{tag}al]alphamerge[{tag}pa];"
-            f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass[{out}]"
+            f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass:format=rgb[{out}]"
         )
         return out
     parts.append(f"[{current}]split[{tag}a][{tag}b]")
@@ -250,7 +253,7 @@ def _compose_adjustment(
         f"[{coverage}]alphaextract[{tag}ca];"
         f"[{processed}]format=rgba[{tag}pr];"
         f"[{tag}pr][{tag}ca]alphamerge[{tag}pa];"
-        f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass[{out}]"
+        f"[{tag}a][{tag}pa]overlay=0:0:eof_action=pass:format=rgb[{out}]"
     )
     return out
 

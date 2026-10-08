@@ -238,8 +238,8 @@ def test_position_animation_uses_export_size_and_clip_local_time(engine, tmp_pat
     filter_complex = command[command.index("-filter_complex") + 1]
 
     # Calque centré (comme l'aperçu), puis décalé de position × largeur d'export.
-    assert "x='(W-w)/2+(" in filter_complex and "y='(H-h)/2+(" in filter_complex
-    x_expression = filter_complex.split("x='(W-w)/2+(", 1)[1].split(")*320.0", 1)[0]
+    assert "x='round((W-w)/2+(" in filter_complex and "y='round((H-h)/2+(" in filter_complex
+    x_expression = filter_complex.split("x='round((W-w)/2+(", 1)[1].split(")*320.0", 1)[0]
     assert "(t-2.0)" in x_expression                                # temps local au clip
     assert evaluate_expression(x_expression, t=2.5) == pytest.approx(0.25)
     assert "*320.0" in filter_complex
