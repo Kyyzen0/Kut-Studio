@@ -15,7 +15,6 @@ s'interbloquerait expirerait sur le timeout global de pytest.
 
 import threading
 
-import pytest
 
 from core.task_queue import (
     PRIORITY_BACKGROUND,

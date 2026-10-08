@@ -17,7 +17,6 @@ import pytest
 
 from core.edit_history import ProjectHistory
 from core.export_engine import _ffmpeg_transition_name
-from core.library_organization import LibraryOrganization
 from core.project_io import CURRENT_VERSION, load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import RenderTransition

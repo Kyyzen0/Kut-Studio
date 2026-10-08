@@ -6,7 +6,6 @@ from core.project_factory import create_default_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.timeline_operations import cut_clip, move_clip
 from core.timeline_view_model import (
-    TimelineClipView,
     build_clip_views,
     color_key_for_clip,
 )

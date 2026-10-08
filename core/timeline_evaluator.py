@@ -103,20 +103,6 @@ class ActiveClip:
 # ---------------------------------------------------------------------------
 
 
-def _find_asset(project: Project, asset_id: str) -> MediaAsset:
-    """Retourne le ``MediaAsset`` correspondant à ``asset_id``.
-
-    Raises:
-        KeyError: si aucun média du projet ne porte cet identifiant.
-    """
-    for asset in project.media_assets:
-        if asset.id == asset_id:
-            return asset
-    raise KeyError(
-        f"Média '{asset_id}' introuvable dans le projet '{project.name}'."
-    )
-
-
 def _is_active(clip: Clip, time_seconds: float) -> bool:
     """Vrai si ``clip`` couvre l'instant ``time_seconds``.
 

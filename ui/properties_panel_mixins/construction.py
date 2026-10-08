@@ -36,8 +36,6 @@ from ui.properties_widgets.common import (  # noqa: F401 - réexports de compati
 )
 from ui.properties_widgets.diamond_button import _DiamondButton
 from ui.properties_widgets.time_section import TimeSection
-from ui.properties_widgets.common import _PROPERTY_RANGES
-from ui.properties_widgets.diamond_button import _DiamondButton
 
 TRACKING_TAB = 6
 """Onglet « Suivi » (menu « ••• »)."""

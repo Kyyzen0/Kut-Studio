@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.app_version import APP_VERSION
+from core.file_association import file_association_supported
 from core.user_settings import (
     DEFAULT_CHECK_UPDATES,
     DEFAULT_INCLUDE_PRERELEASES,
@@ -199,7 +200,10 @@ class PreferencesDialog(QDialog):
     render_quality_changed = Signal(str)
     update_check_changed = Signal(bool)
     update_prereleases_changed = Signal(bool)
+    file_association_requested = Signal()
     restore_defaults_requested = Signal()
+    # Groupe « Fichiers de projet » : construit seulement sous Windows et Linux (voir _build_ui).
+    files_box: QGroupBox | None = None
 
     def __init__(
         self,
@@ -296,6 +300,8 @@ class PreferencesDialog(QDialog):
         for choice in _CHOICE_GROUPS:
             layout.addWidget(self._build_choice_group(choice))
         layout.addWidget(self._build_updates_group())
+        if file_association_supported():
+            layout.addWidget(self._build_file_association_group())
 
         # ----- Bouton "Restaurer les réglages par défaut" -----------------
         actions_row = QHBoxLayout()
@@ -390,6 +396,21 @@ class PreferencesDialog(QDialog):
             box_layout.addWidget(widget)
         return self.updates_box
 
+    def _build_file_association_group(self) -> QGroupBox:
+        """Groupe « Fichiers de projet » : un bouton qui associe les ``.kut`` à l'application (Windows, Linux)."""
+        self.files_box = QGroupBox()
+        box_layout = QVBoxLayout(self.files_box)
+        box_layout.setSpacing(6)
+        box_layout.setContentsMargins(14, 12, 14, 12)
+        self.files_note = QLabel()
+        self.files_note.setWordWrap(True)
+        set_role(self.files_note, TextRoles.label_secondary)
+        self.files_button = QPushButton()
+        self.files_button.clicked.connect(self.file_association_requested)
+        box_layout.addWidget(self.files_note)
+        box_layout.addWidget(self.files_button)
+        return self.files_box
+
     def _on_check_updates_toggled(self, checked: bool) -> None:
         if bool(checked) != self.current_check_updates:
             self.current_check_updates = bool(checked)
@@ -455,6 +476,10 @@ class PreferencesDialog(QDialog):
         self.check_updates_box.setText(translate("prefs.updates.check"))
         self.prereleases_box.setText(translate("prefs.updates.prereleases"))
         self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
+        if self.files_box is not None:
+            self.files_box.setTitle(translate("prefs.files.title"))
+            self.files_note.setText(translate("prefs.files.note"))
+            self.files_button.setText(translate("prefs.files.button"))
         self.restore_button.setText(translate("prefs.restore_defaults"))
         self.close_button.setText(translate("prefs.close"))
 

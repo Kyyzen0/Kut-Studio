@@ -18,7 +18,7 @@ from __future__ import annotations
 import zlib
 from dataclasses import dataclass
 
-from .project_model import Clip, Project, Track
+from .project_model import Clip, Project
 from .time_map import speed_keyframes
 
 

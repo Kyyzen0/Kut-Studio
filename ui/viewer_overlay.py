@@ -22,7 +22,7 @@ import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QGraphicsObject
 
 from core.canvas_guides import (

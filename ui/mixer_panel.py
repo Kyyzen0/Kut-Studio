@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Track
-from ui.design_system import Iconography, Radius, Sizes, Spacing
+from ui.design_system import Iconography, Radius, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName
 from ui.panel_header import PanelHeader

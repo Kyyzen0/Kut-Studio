@@ -250,7 +250,10 @@ def test_the_diagnostic_tool_runs_without_any_gpu_and_reports_in_text_and_json(t
     assert "aucun : ce FFmpeg n'expose aucun encodeur matériel" in text and "[RÉUSSI] CPU (libx264) · MP4" in text
     data = json.loads(target.read_text(encoding="utf-8"))
     cpu = [run for run in data["runs"] if run["backend"] == "cpu"]
-    assert [run["outcome"] for run in cpu] == ["passed", "passed"] and [run["container"] for run in cpu] == ["mp4", "mov"]
+    # Trois témoins CPU : H.264 en MP4, H.264 en MOV, et HEVC en MP4 (libx265).
+    assert [run["outcome"] for run in cpu] == ["passed"] * 3
+    assert [run["container"] for run in cpu] == ["mp4", "mov", "mp4"]
+    assert [run["encoder"] for run in cpu] == ["libx264", "libx264", "libx265"]
     assert cpu[0]["obtained_tags"] == GOOD_TAGS and len(cpu[0]["pixels"]) == 3
     assert {run["outcome"] for run in data["runs"] if run["backend"] != "cpu"} == {"skipped"}
     assert data["exit_code"] == 0 and data["validated_hardware"] == []

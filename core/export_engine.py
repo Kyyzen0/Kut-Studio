@@ -41,7 +41,6 @@ import math
 import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,7 +84,6 @@ from .video_encoders import (
 )
 from .visual_effects import (
     max_transform_value,
-    ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
     build_ffmpeg_expression,
@@ -352,6 +350,7 @@ class ExportFormat(Enum):
     """Décrit les combinaisons conteneur / codec prises en charge."""
 
     MP4_H264 = ("mp4", "h264", "medium", 18)
+    MP4_HEVC = ("mp4", "hevc", "medium", 18)
     MOV_PRORES = ("mov", "prores_ks", "", 3)
     MOV_H264 = ("mov", "h264", "medium", 18)
 
@@ -450,7 +449,7 @@ class ExportEngine(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._process = QProcess(self)
-        self._process.setProcessChannelMode(QProcess.SeparateChannels)
+        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._read_progress)
         self._process.readyReadStandardError.connect(self._read_error)
         self._process.finished.connect(self._process_finished)
@@ -465,7 +464,7 @@ class ExportEngine(QObject):
         self._duration_seconds = 0.0
         self._cancel_requested = False
         self._temporary_files: list[str] = []
-        self.last_encoder_choice = None
+        self.last_encoder_choice: EncoderChoice | None = None
         """Dernier :class:`~core.video_encoders.EncoderChoice` construit."""
         self.last_error_kind = ""
         """``"encoder"`` si le dernier échec vient d'un encodeur choisi explicitement."""
@@ -499,7 +498,7 @@ class ExportEngine(QObject):
     @property
     def is_running(self) -> bool:
         """``True`` tant qu'un processus FFmpeg tourne pour cet export, ou que ses images intermédiaires se calculent."""
-        return self._preparing or self._process.state() != QProcess.NotRunning
+        return self._preparing or self._process.state() != QProcess.ProcessState.NotRunning
 
     @property
     def process_id(self) -> int:
@@ -515,7 +514,7 @@ class ExportEngine(QObject):
         dernier écrivait est alors ramassé au démarrage suivant, par ``FlowCache.cleanup_orphans``).
         """
         preparation_stopped = self._stop_preparation(timeout_ms / 1000.0)
-        if self._process.state() == QProcess.NotRunning:
+        if self._process.state() == QProcess.ProcessState.NotRunning:
             self._release_supervision()
             self._cleanup_temporary_files()
             return preparation_stopped
@@ -536,7 +535,7 @@ class ExportEngine(QObject):
         - le dossier de sortie est introuvable ;
         - la build FFmpeg ne supporte pas ``subtitles`` (libass requis).
         """
-        if self._preparing or self._process.state() != QProcess.NotRunning:
+        if self._preparing or self._process.state() != QProcess.ProcessState.NotRunning:
             self.failed.emit("Un export est déjà en cours.")
             return
 
@@ -604,7 +603,7 @@ class ExportEngine(QObject):
             self.status_changed.emit("Annulation de l'export...")
             self._prepare_cancel.set()       # le fil s'arrête à l'image suivante : ``_on_preparation_finished`` émet ``cancelled``
             return
-        if self._process.state() == QProcess.NotRunning:
+        if self._process.state() == QProcess.ProcessState.NotRunning:
             return
         self._cancel_requested = True
         self.status_changed.emit("Annulation de l'export...")
@@ -869,11 +868,12 @@ class ExportEngine(QObject):
 
         # L'encodeur est choisi avant les entrées : certains (VAAPI) demandent une
         # initialisation matérielle placée avant ``-i`` et un filtre final.
-        is_h264 = request.format.codec == "h264"
+        # H.264 et HEVC prennent le CRF du preset ; ``video_encoders`` convertit celui de HEVC (+4).
+        preset_crf = request.format.codec in ("h264", "hevc")
         encoder = resolve_video_encoder(
             request.format.codec,
             speed_preset=request.format.preset,
-            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            quality=request.preset.crf if preset_crf else request.format.quality_value,
             hardware=request.hardware,
             width=width,
             height=height,
@@ -1099,7 +1099,7 @@ class ExportEngine(QObject):
 
     def _read_progress(self) -> None:
         """Parse la sortie standard et émet ``progress_changed`` bornée."""
-        output = bytes(self._process.readAllStandardOutput()).decode(
+        output = bytes(self._process.readAllStandardOutput().data()).decode(
             "utf-8", errors="replace"
         )
         self._progress_buffer += output
@@ -1115,7 +1115,7 @@ class ExportEngine(QObject):
 
     def _read_error(self) -> None:
         """Collecte les diagnostics FFmpeg pour un éventuel message d'erreur."""
-        error = bytes(self._process.readAllStandardError()).decode(
+        error = bytes(self._process.readAllStandardError().data()).decode(
             "utf-8", errors="replace"
         )
         self._error_output = (self._error_output + error).strip()
@@ -1140,7 +1140,7 @@ class ExportEngine(QObject):
             self.cancelled.emit()
             self._cleanup_temporary_files()
             return
-        if exit_status != QProcess.NormalExit or exit_code != 0:
+        if exit_status != QProcess.ExitStatus.NormalExit or exit_code != 0:
             if request is not None and self._should_fall_back():
                 self._fall_back_to_cpu(request)
                 return
@@ -1164,7 +1164,7 @@ class ExportEngine(QObject):
         """Émet ``failed`` pour une erreur de niveau QProcess."""
         if self._cancel_requested:
             return
-        if error == QProcess.FailedToStart:
+        if error == QProcess.ProcessError.FailedToStart:
             LOGGER.error("Export : FFmpeg n'a pas pu démarrer")
             self._cleanup_temporary_files()
             self.failed.emit("Impossible de démarrer ffmpeg.")
@@ -1196,6 +1196,8 @@ class ExportEngine(QObject):
 
     def _fall_back_to_cpu(self, request: ExportRequest) -> None:
         choice = self.last_encoder_choice
+        if choice is None:  # ``_should_fall_back`` ne laisse passer que si un encodeur a été choisi
+            return
         detail = _last_line(self._error_output)
         reason = (
             f"{choice.label} n'a pas pu démarrer"
@@ -1205,11 +1207,11 @@ class ExportEngine(QObject):
         LOGGER.warning("Repli CPU : %s", reason)
         self.last_diagnostics = self._error_output[-800:]
         self._fallback_used = True
-        is_h264 = request.format.codec == "h264"
+        preset_crf = request.format.codec in ("h264", "hevc")
         cpu = cpu_choice(
             request.format.codec,
             speed_preset=request.format.preset,
-            quality=request.preset.crf if is_h264 else request.format.quality_value,
+            quality=request.preset.crf if preset_crf else request.format.quality_value,
             requested=choice.requested,
             fallback_reason=reason,
         )
@@ -1518,20 +1520,20 @@ def _compose_plan_graph(
         # ``amix`` divise chaque entrée par leur nombre : sans ``normalize=0`` un clip seul sort 6 dB sous sa source.
         # Un FFmpeg qui ne connaît pas l'option passe par le repli de l'étage final (voir plus bas).
         amix_sums = _ffmpeg_filter_has_option("amix", "normalize")
-        for audio_index, layer in enumerate(plan.audio_layers):
-            if layer.nested_key:
+        for audio_index, audio_layer in enumerate(plan.audio_layers):
+            if audio_layer.nested_key:
                 parts.append(
                     _build_audio_filter(
-                        audio_index, layer, None, duration,
-                        source=sources.take_audio(layer.nested_key),
+                        audio_index, audio_layer, None, duration,
+                        source=sources.take_audio(audio_layer.nested_key),
                         label=f"{p}a{audio_index}",
                     )
                 )
             else:
-                input_index = path_to_index[layer.source_path]
+                input_index = path_to_index[audio_layer.source_path]
                 parts.append(
                     _build_audio_filter(
-                        audio_index, layer, input_index, duration,
+                        audio_index, audio_layer, input_index, duration,
                         label=f"{p}a{audio_index}" if p else None,
                     )
                 )
@@ -1548,10 +1550,10 @@ def _compose_plan_graph(
         for i, lay in enumerate(plan.audio_layers):
             layers_by_track.setdefault(lay.track_id, []).append(i)
         ducked: list[tuple[int, list]] = []
-        for audio_index, layer in enumerate(plan.audio_layers):
+        for audio_index, audio_layer in enumerate(plan.audio_layers):
             # Une voix sans clip n'a rien à faire entendre au compresseur ; une réduction nulle ne réduit rien.
             active = [
-                sc for sc in (getattr(layer, "ducking_sidechains", ()) or ())
+                sc for sc in (getattr(audio_layer, "ducking_sidechains", ()) or ())
                 if getattr(sc, "enabled", True) and layers_by_track.get(sc.voice_track_id)
                 and float(_ducking_config(sc).reduction_db) > 0.0
             ]
@@ -2019,7 +2021,7 @@ def _build_layer_filter(
     matte_parts: list[str] = []
     matte_label = None
     compositing = layer.compositing
-    if compositing is not None and getattr(compositing, "masks", ()) and add_input is not None:
+    if compositing is not None and compositing.masks and add_input is not None:
         matte_label = video_matte_label(
             matte_parts, layer, width, height, fps, add_input, f"{output_label}_matte"
         )
@@ -2145,7 +2147,7 @@ def _build_color_grade_filters(grade) -> str:
         chaîne vide si l'identité totale.
     """
     # Import paresseux pour éviter les cycles d'imports.
-    from .color_grading import ColorGrade, ColorGradingError
+    from .color_grading import ColorGrade
 
     if grade is None or not isinstance(grade, ColorGrade):
         return ""

@@ -35,7 +35,7 @@ from ui import i18n
 from ui.design_system import ButtonVariant, Iconography, Sizes, Spacing, StatusKind
 from ui.empty_state import EmptyState
 from ui.icons import IconName, make_icon
-from ui.theme import COLORS, label_style, set_role, set_state, set_variant
+from ui.theme import COLORS, set_role, set_state, set_variant
 
 _JOB_ID_ROLE = Qt.UserRole
 _COLUMNS = ("name", "preset", "status", "progress", "output", "encoder")

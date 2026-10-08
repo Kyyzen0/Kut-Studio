@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -174,7 +173,6 @@ def test_export_full_pipeline_emits_finished_ok(
     window.timeline_panel.set_project(window.project)
 
     from core.export_engine import (
-        ExportEngine,
         ExportFormat,
         ExportPreset,
         ExportRequest,
@@ -208,7 +206,6 @@ def test_export_with_no_exportable_clips_emits_failed(
     window.timeline_panel.set_project(window.project)
 
     from core.export_engine import (
-        ExportEngine,
         ExportFormat,
         ExportPreset,
         ExportRequest,

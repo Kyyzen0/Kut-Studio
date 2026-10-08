@@ -13,11 +13,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from core.library_organization import (
-    AssetAssignment,
-    AssetUsage,
-    LibraryFolder,
     LibraryOrganization,
-    LibraryTag,
 )
 from core.project_model import MediaAsset, Project, Track
 from ui.library_organization_widgets import (
@@ -26,7 +22,6 @@ from ui.library_organization_widgets import (
     FILTER_USED,
     FILTER_VIDEO,
     AssetContextMenuBuilder,
-    AssetUsageBadge,
     FilterChipBar,
     FolderTreeWidget,
     TagManagerDialog,

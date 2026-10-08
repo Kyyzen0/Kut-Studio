@@ -138,6 +138,12 @@ class ProjectFilesMixin:
             return
         self._load_project_from_path(path)
 
+    def open_external_project(self, path: str) -> None:
+        """Ouvre un projet que le système a confié à l'application (Finder, double-clic, ligne de commande)."""
+        self._load_project_from_path(path)
+        self.raise_()
+        self.activateWindow()
+
     def _load_project_from_path(self, path: str) -> None:
         """Charge ``path`` et remplace ``self.project`` uniquement en cas de succès.
 

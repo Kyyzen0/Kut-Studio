@@ -30,7 +30,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, TypedDict
 
 from .hardware_decoding import (
     CODEC_BY_ID,
@@ -645,6 +645,16 @@ def validate_capability(
     return replace(capability, validated=False, detail=_short_error(output.stderr) or "échec")
 
 
+class _ScanIdentity(TypedDict):
+    """Champs communs à tous les résultats d'une détection (ce qui identifie l'installation scannée)."""
+
+    platform: str
+    machine: str
+    scanned_at: float
+    fingerprint: str
+    validated: bool
+
+
 def detect_capabilities(
     command: Sequence[str] | None,
     *,
@@ -671,10 +681,10 @@ def detect_capabilities(
     platform_value = platform_name or sys.platform
     machine_value = machine or platform_module.machine()
     stamp = time.time() if now is None else now
-    base = dict(
-        platform=platform_value, machine=machine_value, scanned_at=stamp,
-        fingerprint=fingerprint, validated=validate,
-    )
+    base: _ScanIdentity = {
+        "platform": platform_value, "machine": machine_value, "scanned_at": stamp,
+        "fingerprint": fingerprint, "validated": validate,
+    }
     if not command:
         LOGGER.info("Détection matérielle : FFmpeg introuvable")
         return HardwareCapabilities(error="ffmpeg_missing", **base)

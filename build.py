@@ -96,7 +96,7 @@ def build_command(
     return command
 
 
-def macos_info_overrides(version: str = APP_VERSION) -> dict[str, str]:
+def macos_info_overrides(version: str = APP_VERSION) -> dict[str, object]:
     """Entrées d'``Info.plist`` ajoutées au bundle construit."""
     parsed = Version.parse(version)
     return {
@@ -104,6 +104,15 @@ def macos_info_overrides(version: str = APP_VERSION) -> dict[str, str]:
         # Numérique seulement (MAJEUR.MINEUR.CORRECTIF) : macOS compare ce champ entre deux versions.
         "CFBundleVersion": parsed.core,
         "NSMicrophoneUsageDescription": MICROPHONE_USAGE,
+        # Double-clic et « Ouvrir avec » sur un .kut : le Finder lance l'application, qui reçoit le fichier.
+        "CFBundleDocumentTypes": [
+            {
+                "CFBundleTypeName": "Projet Kut-Studio",
+                "CFBundleTypeExtensions": ["kut"],
+                "CFBundleTypeRole": "Editor",
+                "LSHandlerRank": "Owner",
+            }
+        ],
     }
 
 

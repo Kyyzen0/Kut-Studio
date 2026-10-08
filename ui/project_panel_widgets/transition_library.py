@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -24,9 +23,10 @@ from PySide6.QtWidgets import (
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import DIALOG_MARGINS, Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
-from ui.icons import IconButton, IconName, make_icon
+from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
+from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.search_field import SearchField
 
 
@@ -170,7 +170,7 @@ class TransitionLibraryView(QWidget):
         duration_layout.addWidget(self.duration_spin, 1)
         actions_layout.addWidget(duration_row)
 
-        self.add_button = self._make_wide_button(
+        self.add_button = make_wide_button(
             IconName.PLUS,
             translate("transitions.library.apply"),
             accent=True,
@@ -179,7 +179,7 @@ class TransitionLibraryView(QWidget):
         self.add_button.clicked.connect(self._emit_add_requested)
         actions_layout.addWidget(self.add_button)
 
-        self.save_button = self._make_wide_button(
+        self.save_button = make_wide_button(
             IconName.SAVE,
             translate("transitions.library.save"),
             accent=False,
@@ -235,27 +235,6 @@ class TransitionLibraryView(QWidget):
     # ------------------------------------------------------------------
     # Helpers privés
     # ------------------------------------------------------------------
-
-    def _make_wide_button(
-        self,
-        icon: IconName,
-        text: str,
-        *,
-        accent: bool = False,
-        tooltip: str | None = None,
-    ) -> IconButton:
-        button = IconButton(
-            icon=icon,
-            tooltip=tooltip or text,
-            size=Sizes.icon_button,
-            accent=accent,
-            square=False,
-        )
-        button.setText(f"  {text}")
-        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        button.setMinimumHeight(Sizes.button_md)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return button
 
     def _make_filter_button(self, label: str, key: str) -> QPushButton:
         button = QPushButton(label)

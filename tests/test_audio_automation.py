@@ -31,7 +31,6 @@ from core.audio_automation import (
     AudioAutomationRangeError,
     AudioAutomationService,
     AutomationPoint,
-    DEFAULT_GAIN_MIN_DB,
     DuckingConfig,
     DuckingSidechain,
     MAX_DUCKING_ATTACK_S,
@@ -43,7 +42,6 @@ from core.audio_automation import (
     MIN_DUCKING_REDUCTION_DB,
     MIN_DUCKING_RELEASE_S,
     MIN_DUCKING_THRESHOLD_DB,
-    MIN_POINT_FADE_SECONDS,
     TRACK_ROLE_LABELS,
     TrackAutomation,
     TrackRole,
@@ -52,8 +50,6 @@ from core.edit_history import ProjectHistory
 from core.export_engine import (
     _build_ducking_chain,
     _build_track_volume_envelope,
-    _format_db,
-    _format_seconds,
 )
 from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track

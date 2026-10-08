@@ -1,7 +1,7 @@
 """Tests pour ``core.project_factory.create_default_project``."""
 
 from core.project_factory import create_default_project
-from core.project_model import Clip, MediaAsset, Project, Track
+from core.project_model import Clip, MediaAsset
 
 
 def test_default_project_has_four_tracks_V1_V2_A1_S1():

@@ -13,10 +13,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
@@ -25,19 +23,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.effects_library import UserPresetStore
 from core.library_organization import (
     AssetUsage,
     LibraryOrganization,
     collect_missing_assets,
     is_asset_missing,
-    usage_map,
 )
 from core.project_model import MediaAsset
 from ui.adaptive_layout import ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
 from ui.design_system import Sizes, Spacing
-from ui.icons import IconButton, IconLabel, IconName
+from ui.icons import IconButton, IconName
 from ui.audio_effects_library import AudioEffectsLibraryView
 from ui.graphics_library import GraphicsLibraryView
 from ui.library_organization_widgets import (
@@ -52,37 +48,23 @@ from ui.library_organization_widgets import (
     AssetUsageBadge,
     FilterChipBar,
     FolderTreeWidget,
-    TagManagerDialog,
     compute_badges,
     prompt_for_folder_name,
 )
 from ui.theme import COLORS, label_style, set_role
 from ui.project_panel_widgets.asset_bin import (
     AssetBin,
-    _format_asset_caption,
-    _format_duration,
-    _make_asset_thumbnail,
 )  # noqa: F401
 from ui.project_panel_widgets.subtitle_library import SubtitleLibraryView  # noqa: F401
+from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.project_panel_widgets.sequence_library import SequenceLibraryView
-from ui.project_panel_widgets.text_presets_view import (
-    TextPresetCard,
-    TextPresetLibraryView,
-)  # noqa: F401
 from ui.project_panel_widgets.transition_library import (
-    SaveTransitionPresetDialog,
     TransitionLibraryView,
-    TransitionPresetCard,
-    _transition_accent,
-    _form_label,
 )  # noqa: F401
 from ui.search_field import SearchField
 from ui.sfx_library import SfxLibraryView
 from ui.project_panel_widgets.effects_library_view import (
-    EffectPresetCard,
     EffectsLibraryView,
-    SavePresetDialog,
-    _category_accent,
 )  # noqa: F401
 from ui.i18n import translate
 
@@ -937,19 +919,9 @@ class ProjectPanel(QWidget):
         accent: bool = False,
         tooltip: str | None = None,
     ) -> IconButton:
-        button = IconButton(
-            icon=icon,
-            tooltip=tooltip or text,
-            size=Sizes.icon_button,
-            accent=accent,
-            square=False,
-        )
-        button.setText(f"  {text}")
-        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        button.setMinimumHeight(Sizes.button_md)
+        # Remplissage propre au panneau projet ; les bibliothèques gardent le style par défaut.
+        button = make_wide_button(icon, text, accent=accent, tooltip=tooltip)
         button.setStyleSheet("QToolButton { padding: 4px 4px; }")
-        # Le bouton s'étend pour suivre la largeur du panneau parent.
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return button
 
     # ------------------------------------------------------------------

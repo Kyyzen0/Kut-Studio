@@ -11,7 +11,6 @@ from core.hardware_cache import CapabilityService, set_default_service
 from core.hardware_encoding import HardwareCapabilities, HardwareEncoder, detect_capabilities
 from core.render_job import ErrorKind, JobStatus
 from core.render_presets import get_preset, with_hardware
-from core.render_queue_store import RenderQueueStore
 from core.user_settings import load_user_settings
 from ui import i18n
 from ui.export_panel import ExportPanel

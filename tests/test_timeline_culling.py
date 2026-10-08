@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.project_factory import create_default_project

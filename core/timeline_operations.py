@@ -719,12 +719,10 @@ def _validate_track_asset_compatibility(asset: MediaAsset, track: Track) -> None
 
 from .subtitle_io import SubtitleCue  # noqa: E402  (import local pour cycle)
 from .visual_effects import (  # noqa: E402  (import local pour cycle)
-    ANIMATABLE_PROPERTIES,
     TRANSFORM_PROPERTY_NAMES,
     ClipTransform,
     TransformKeyframe,
     copy_keyframe,
-    evaluate_transform,
     retime_transform_keyframes,
     split_transform_keyframes,
 )

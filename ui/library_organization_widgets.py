@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -63,10 +62,9 @@ from core.library_organization import (
 from core.workspace_state import MIN_SIZE, PanelId
 from ui.design_system import DIALOG_MARGINS, Radius, Spacing
 from ui.i18n import translate
-from ui.icons import IconButton, IconName, make_icon
+from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import set_single_default
 from ui.theme import COLORS, label_style
-from ui.i18n import translate
 
 
 # Identifiants Qt ``UserRole`` utilisés pour mapper les entrées

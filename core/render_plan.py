@@ -39,6 +39,7 @@ pure, réutilisable par tout consommateur (FFmpeg via
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 
 from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project, Sequence
@@ -48,6 +49,10 @@ from .time_map import TimeMap
 from .time_remapping import TimeRemapping
 from .transitions import TransitionType
 from .visual_effects import ClipTransform, TransformKeyframe
+
+if TYPE_CHECKING:
+    # Typage seulement : le plan de rendu ne dépend pas du module ``compositing`` à l'exécution.
+    from .compositing import Compositing
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +110,7 @@ class RenderLayer:
     # ``None`` si l'identité. On garde un type ``object`` pour ne
     # pas coupler le plan de rendu au module ``color_grading``.
     color_grade: object = None
-    compositing: object = None
+    compositing: Compositing | None = None
     # Séquence imbriquée : clé du :class:`NestedSequencePlan` dont le rendu
     # composite remplace le fichier source (``source_path`` est alors vide).
     nested_key: str = ""
@@ -231,7 +236,7 @@ class GraphicLayer:
     transform: ClipTransform = field(default_factory=ClipTransform)
     transform_keyframes: tuple[TransformKeyframe, ...] = field(default_factory=tuple)
     animation: tuple = field(default_factory=tuple)
-    compositing: object = None
+    compositing: Compositing | None = None
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     color_grade: object = None
     role: str = "draw"
@@ -346,20 +351,6 @@ class NestedSequencePlan:
 # ---------------------------------------------------------------------------
 # Helpers privés
 # ---------------------------------------------------------------------------
-
-
-def _find_asset(project: Project, asset_id: str) -> MediaAsset:
-    """Retourne le :class:`MediaAsset` correspondant à ``asset_id``.
-
-    Raises:
-        KeyError: si aucun média du projet ne porte cet identifiant.
-    """
-    for asset in project.media_assets:
-        if asset.id == asset_id:
-            return asset
-    raise KeyError(
-        f"Média '{asset_id}' introuvable dans le projet '{project.name}'."
-    )
 
 
 # ---------------------------------------------------------------------------

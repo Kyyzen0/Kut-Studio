@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -29,9 +28,10 @@ from core.effects_library import (
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import DIALOG_MARGINS, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
-from ui.icons import IconButton, IconName, make_icon
+from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
+from ui.project_panel_widgets.wide_button import make_wide_button
 from ui.search_field import SearchField
 
 
@@ -307,14 +307,14 @@ class EffectsLibraryView(QWidget):
         actions_layout = QVBoxLayout(actions)
         actions_layout.setContentsMargins(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm)
         actions_layout.setSpacing(Spacing.xs)
-        self.apply_button = self._make_wide_button(
+        self.apply_button = make_wide_button(
             IconName.PLUS, translate("effects.library.apply"), accent=True,
             tooltip=translate("effects.library.apply"),
         )
         self.apply_button.clicked.connect(self._emit_apply_requested)
         actions_layout.addWidget(self.apply_button)
 
-        self.save_button = self._make_wide_button(
+        self.save_button = make_wide_button(
             IconName.SAVE, translate("effects.library.save"), accent=False,
             tooltip=translate("effects.library.save"),
         )
@@ -362,27 +362,6 @@ class EffectsLibraryView(QWidget):
     # ------------------------------------------------------------------
     # Helpers privés
     # ------------------------------------------------------------------
-
-    def _make_wide_button(
-        self,
-        icon: IconName,
-        text: str,
-        *,
-        accent: bool = False,
-        tooltip: str | None = None,
-    ) -> IconButton:
-        button = IconButton(
-            icon=icon,
-            tooltip=tooltip or text,
-            size=Sizes.icon_button,
-            accent=accent,
-            square=False,
-        )
-        button.setText(f"  {text}")
-        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        button.setMinimumHeight(Sizes.button_md)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return button
 
     def _make_category_button(
         self,

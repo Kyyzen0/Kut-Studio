@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.graphics import GraphicOverlay, GraphicType, ShapeKind
+from core.graphics import GraphicOverlay, GraphicType
 from ui import i18n
 from ui.design_system import Spacing
 from ui.layers_panel import SHAPE_CHOICES

@@ -14,6 +14,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Export H.265 (HEVC) : deux presets MP4, « H.265 1080p » et « H.265 4K ». Ils suivent le même choix d'encodeur que
+  H.264 (matériel quand la machine le valide, CPU sinon) ; à qualité visuelle comparable, le fichier est plus léger.
+- Ouverture d'un projet `.kut` par double-clic : depuis le Finder sous macOS. Sous Windows et Linux, le bouton
+  « Associer les projets .kut » des préférences écrit l'association dans le profil de l'utilisateur, sans droits
+  administrateur.
+
 ## [0.2.6] - 2026-10-08
 
 Version corrective : la lecture d'un montage chargé redevient fluide quand les scopes sont affichés.

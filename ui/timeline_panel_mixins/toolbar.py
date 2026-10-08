@@ -18,7 +18,6 @@ from ui.timeline_widgets.common import (
     _current_palette,
     _minus_icon,
 )
-from ui.timeline_widgets.common import _current_palette, _minus_icon
 
 class ToolbarMixin:
     """Mixin de ``TimelinePanel`` : barre d'outils de la timeline : construction, thème, bouton lecture."""

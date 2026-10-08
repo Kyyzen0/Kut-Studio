@@ -6,7 +6,6 @@ import pytest
 
 from core.time_remapping import (
     DEFAULT_SPEED,
-    MAX_REVERSE_DURATION_SECONDS,
     MAX_SPEED,
     MIN_SPEED,
     FreezeFrameMode,

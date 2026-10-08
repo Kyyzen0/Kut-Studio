@@ -31,10 +31,9 @@ teinte de peau se situe alors à ~+123° sur le cercle des teintes.
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable, Sequence
+from typing import Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -796,16 +795,16 @@ def compute_vectorscope(
         count += 1
     if count > 0:
         maximum = 0.0
-        for row in grid:
-            for value in row:
+        for grid_row in grid:
+            for value in grid_row:
                 if value > maximum:
                     maximum = value
         if maximum > 0.0:
             inv = 1.0 / maximum
-            for row in grid:
+            for grid_row in grid:
                 for index in range(size):
-                    row[index] *= inv
-    return tuple(tuple(row) for row in grid)
+                    grid_row[index] *= inv
+    return tuple(tuple(grid_row) for grid_row in grid)
 
 
 # ---------------------------------------------------------------------------

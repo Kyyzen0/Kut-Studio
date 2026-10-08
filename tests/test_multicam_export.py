@@ -27,7 +27,7 @@ from core.multicam_ops import (
     switch_angle,
 )
 from core.preview_segments import segment_plan
-from core.project_model import Clip, MediaAsset, Project, Track
+from core.project_model import MediaAsset, Project, Track
 from core.render_plan import build_render_plan
 from core.sequences import create_sequence_from_selection
 from core.timeline_operations import trim_clip_right

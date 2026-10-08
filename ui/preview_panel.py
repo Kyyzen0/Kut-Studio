@@ -32,16 +32,15 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QLabel,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from ui.design_system import Iconography, Sizes, Spacing, Typography, Weights
+from ui.design_system import Sizes, Spacing, Typography, Weights
 from ui.empty_state import EmptyState
 from ui.icons import IconButton, IconName
 from ui.panel_header import PanelHeader
-from ui.theme import COLORS, label_style, monospace_font_family, set_role
+from ui.theme import COLORS, monospace_font_family, set_role
 from ui.tracking_overlay import TrackingOverlay
 from ui.viewer_overlay import ViewerOverlay
 from ui.i18n import translate

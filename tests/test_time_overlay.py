@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.animation import InterpolationType, Keyframe
 from core.project_model import Clip, MediaAsset, Project, Track
-from core.time_map import SPEED_PROPERTY
 from core.time_ops import add_speed_point
 from core.time_remapping import FreezeFrameMode, TimeInterpolation, TimeRemapping
 from core.timeline_view_model import build_clip_views

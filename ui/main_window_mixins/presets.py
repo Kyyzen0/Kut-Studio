@@ -15,7 +15,8 @@ from core.text_style import TextStyle
 from core.timeline_operations import find_clip
 from core.transition_presets import make_user_transition_preset
 from ui import i18n
-from ui.project_panel import SavePresetDialog, SaveTransitionPresetDialog
+from ui.project_panel_widgets.effects_library_view import SavePresetDialog
+from ui.project_panel_widgets.transition_library import SaveTransitionPresetDialog
 
 
 def _main_window():
@@ -519,7 +520,6 @@ class PresetsMixin:
         text = preset.default_text or preset.name
         self.add_subtitle_at_playhead(text, 3.0)
         # Si un clip vient d'être créé, on lui applique le style du modèle.
-        from core.timeline_operations import find_clip
 
         subtitle_track = next(
             (t for t in self.project.tracks if t.type == "subtitle"), None

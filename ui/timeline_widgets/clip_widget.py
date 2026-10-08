@@ -332,7 +332,7 @@ class ClipWidget(QWidget):
             for which in ("in", "out"):
                 if self._fade_hit_rect(which).contains(event.position()):
                     self.drag_mode = f"fade-{which}"
-                    self.drag_start_x = event.globalPos().x()
+                    self.drag_start_x = int(event.globalPosition().x())
                     self.drag_original_fade = self.fade_seconds(which)
                     parent.begin_drag(self.view.id)
                     parent._select_from_pointer(
@@ -342,13 +342,13 @@ class ClipWidget(QWidget):
                     return
         if parent.tool == "slip" and not locked:
             self.drag_mode = "slip"
-            self.drag_start_x = event.globalPos().x()
+            self.drag_start_x = int(event.globalPosition().x())
             parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
             event.accept()
             return
         if parent.tool == "slide" and not locked:
             self.drag_mode = "slide"
-            self.drag_start_x = event.globalPos().x()
+            self.drag_start_x = int(event.globalPosition().x())
             self.drag_original_start = self.view.start
             self.drag_original_end = self.view.end
             self.pending_start = self.view.start
@@ -359,7 +359,7 @@ class ClipWidget(QWidget):
             return
         if parent.tool == "roll" and not locked:
             self.drag_mode = "roll-left" if x <= self.handle_width else "roll-right"
-            self.drag_start_x = event.globalPos().x()
+            self.drag_start_x = int(event.globalPosition().x())
             self.drag_original_start = self.view.start
             self.drag_original_end = self.view.end
             parent._select_from_pointer(self.view.id, event.modifiers(), drag=False)
@@ -395,7 +395,7 @@ class ClipWidget(QWidget):
             self.drag_mode = "trim-right"
         else:
             self.drag_mode = "move"
-        self.drag_start_x = event.globalPos().x()
+        self.drag_start_x = int(event.globalPosition().x())
         self.drag_original_start = self.view.start
         self.drag_original_end = self.view.end
         self.pending_start = self.view.start
@@ -414,7 +414,7 @@ class ClipWidget(QWidget):
         scale = parent.pixels_per_second * parent.zoom
         if scale <= 0:
             return
-        delta_seconds = (event.globalPos().x() - self.drag_start_x) / scale
+        delta_seconds = (int(event.globalPosition().x()) - self.drag_start_x) / scale
         if self.drag_mode == "keyframes":
             parent.preview_keyframe_drag(self._keyframe_anchor_time, delta_seconds, self.view.id)
             event.accept()
@@ -426,7 +426,7 @@ class ClipWidget(QWidget):
             proposed = max(0.0, self.drag_original_start + delta_seconds)
             proposed = parent.snap_time(proposed, anchor_id=self.view.id)
             delta = proposed - self.drag_original_start
-            parent.preview_group_move(self.view.id, delta, event.globalPos().y())
+            parent.preview_group_move(self.view.id, delta, int(event.globalPosition().y()))
         elif self.drag_mode == "slip":
             parent.preview_slip(self, delta_seconds)
         elif self.drag_mode == "slide":

@@ -36,6 +36,13 @@ def main():
     register_bundled_fonts()
     window = MainWindow()
     window.show()
+    # Projet confié par le système : Finder (macOS), double-clic ou « Ouvrir avec » (Windows, Linux).
+    from ui.external_open import install_external_open, project_path_from_arguments
+
+    install_external_open(app, window.open_external_project)
+    startup_project = project_path_from_arguments(sys.argv[1:])
+    if startup_project is not None:
+        window.open_external_project(startup_project)
     if "--smoke-test" in sys.argv:
         app.processEvents()
         window.close()

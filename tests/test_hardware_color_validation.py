@@ -78,7 +78,10 @@ def _required() -> frozenset[HardwareEncoder]:
         pytest.fail(str(error))
 
 
-@pytest.mark.parametrize("export_format", [ExportFormat.MP4_H264, ExportFormat.MOV_H264], ids=["mp4", "mov"])
+@pytest.mark.parametrize(
+    "export_format", [ExportFormat.MP4_H264, ExportFormat.MOV_H264, ExportFormat.MP4_HEVC],
+    ids=["mp4", "mov", "mp4-hevc"],
+)
 @pytest.mark.parametrize("backend", VALIDATED_BACKENDS, ids=lambda backend: backend.value)
 def test_an_export_with_each_available_encoder_is_tagged_bt709_and_keeps_its_colours(
     backend, export_format, capabilities, tools, source, tmp_path
@@ -95,7 +98,7 @@ def test_an_export_with_each_available_encoder_is_tagged_bt709_and_keeps_its_col
 
     assert result.outcome is Outcome.PASSED, format_validation(result)
     # Rien de vide : l'encodeur attendu a réellement produit un fichier, relu champ par champ et pixel par pixel.
-    assert result.encoder_used == FFMPEG_ENCODER_NAMES[("h264", backend)]
+    assert result.encoder_used == FFMPEG_ENCODER_NAMES[(export_format.codec, backend)]
     assert result.returncode == 0 and result.size_bytes > 0
     assert result.expected_tags == expected_color_tags() == BT709_LIMITED
     assert {name: result.obtained_tags.get(name) for name in BT709_LIMITED} == BT709_LIMITED

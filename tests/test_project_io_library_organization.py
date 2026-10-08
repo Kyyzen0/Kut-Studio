@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from core.library_organization import (
     AssetAssignment,
@@ -33,7 +32,7 @@ from core.project_io import (
     project_payload,
     save_project,
 )
-from core.project_model import Clip, MediaAsset, Project, Track
+from core.project_model import MediaAsset, Project, Track
 
 
 # ---------------------------------------------------------------------------

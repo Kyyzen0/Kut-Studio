@@ -39,6 +39,7 @@ from ui.theme import COLORS, set_role, set_state, set_variant
 
 _FORMAT_LABELS = {
     ExportFormat.MP4_H264: "MP4 · H.264",
+    ExportFormat.MP4_HEVC: "MP4 · H.265",
     ExportFormat.MOV_PRORES: "MOV · ProRes",
     ExportFormat.MOV_H264: "MOV · H.264",
 }
@@ -399,7 +400,7 @@ class ExportPanel(QWidget):
 
     def _codec_family(self) -> str:
         codec = self._base_spec().video_codec
-        return "prores_ks" if codec == "prores_ks" else "h264"
+        return codec if codec in ("prores_ks", "hevc") else "h264"
 
     def _rebuild_encoder_options(self) -> None:
         options = encoder_options(self._codec_family(), self._capabilities or HardwareCapabilities())

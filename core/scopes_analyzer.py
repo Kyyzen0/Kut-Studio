@@ -27,11 +27,9 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from .process_supervisor import supervised_run

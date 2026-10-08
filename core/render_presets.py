@@ -29,7 +29,11 @@ DEFAULT_PRESET_ID = "h264_1080p"
 SUPPORTED_AUDIO_CODECS: tuple[str, ...] = ("aac",)
 """Codecs audio que le moteur sait écrire (PCM viendra avec ProRes)."""
 
-_VIDEO_CODEC_ALIASES = {"h264": "h264", "libx264": "h264", "prores": "prores_ks", "prores_ks": "prores_ks"}
+_VIDEO_CODEC_ALIASES = {
+    "h264": "h264", "libx264": "h264",
+    "hevc": "hevc", "h265": "hevc", "libx265": "hevc",
+    "prores": "prores_ks", "prores_ks": "prores_ks",
+}
 
 
 def export_format_for(container: str, video_codec: str) -> ExportFormat:
@@ -55,11 +59,11 @@ class RenderPresetSpec:
         id: identifiant stable (stocké dans les jobs).
         name: nom affichable par défaut (l'interface peut le traduire).
         container: ``"mp4"`` ou ``"mov"``.
-        video_codec: ``"h264"`` ou ``"prores_ks"``.
+        video_codec: ``"h264"``, ``"hevc"`` ou ``"prores_ks"``.
         audio_codec: voir :data:`SUPPORTED_AUDIO_CODECS`.
         width / height: résolution de sortie.
         fps: images par seconde, ``None`` : la cadence de la séquence exportée (voir :meth:`output_fps`).
-        quality: CRF (H.264) ou profil (ProRes).
+        quality: CRF (H.264 et HEVC ; HEVC l'applique avec +4) ou profil (ProRes).
         audio_bitrate: débit audio FFmpeg (``"192k"``).
         hardware: famille d'encodeur demandée.
         description: phrase d'aide.
@@ -141,18 +145,27 @@ class RenderPresetSpec:
         ``fps`` remplace la cadence du preset (la cadence résolue d'un preset qui suit la séquence) ; sans cadence connue,
         le résumé s'arrête à la résolution.
         """
-        codec = {"h264": "H.264", "prores_ks": "ProRes"}.get(self.video_codec, self.video_codec)
+        codec = {"h264": "H.264", "hevc": "H.265", "prores_ks": "ProRes"}.get(self.video_codec, self.video_codec)
         text = f"{self.container.upper()} · {codec} · {self.width}×{self.height}"
         rate = fps if fps is not None else self.fps
         label = format_fps(rate) if rate is not None else ""
         return f"{text} · {label} fps" if label else text
 
 
-def _h264(preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
+def _mp4(codec, preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
+    """Preset MP4 à son AAC ; ``codec`` vaut ``"h264"`` ou ``"hevc"``."""
     return RenderPresetSpec(
-        preset_id, name, "mp4", "h264", "aac", width, height, fps, quality, audio,
+        preset_id, name, "mp4", codec, "aac", width, height, fps, quality, audio,
         description=description, loudness_lufs=loudness,
     )
+
+
+def _h264(preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
+    return _mp4("h264", preset_id, name, width, height, fps, quality, audio, description, loudness)
+
+
+def _hevc(preset_id, name, width, height, fps, quality, audio="192k", description="", loudness=None):
+    return _mp4("hevc", preset_id, name, width, height, fps, quality, audio, description, loudness)
 
 
 def _social(preset_id, name, width, height, fps, description):
@@ -170,6 +183,10 @@ _BUILTIN: tuple[RenderPresetSpec, ...] = (
     _h264("h264_1440p", "H.264 1440p", 2560, 1440, PROJECT_FPS, 20,
           description="QHD pour les écrans haute résolution."),
     _h264("h264_4k", "H.264 4K", 3840, 2160, PROJECT_FPS, 20, description="UHD ; rendu long et fichier volumineux."),
+    _hevc("h265_1080p", "H.265 1080p", 1920, 1080, PROJECT_FPS, 20,
+          description="Full HD en HEVC : fichier plus léger, qualité visuelle comparable à H.264 1080p."),
+    _hevc("h265_4k", "H.265 4K", 3840, 2160, PROJECT_FPS, 20,
+          description="UHD en HEVC : fichier plus léger que H.264 4K ; l'encodage CPU est plus lent."),
     _h264("youtube", "YouTube", 1920, 1080, PROJECT_FPS, 18,
           description="MP4 H.264 1080p, qualité élevée, démarrage rapide."),
     _social("tiktok", "TikTok / Vertical", 1080, 1920, PROJECT_FPS, "Vidéo verticale 1080×1920."),

@@ -1052,7 +1052,6 @@ class ThemeManager:
         if app is None:
             return "dark"
         try:
-            from PySide6.QtGui import Qt
             hints = app.styleHints()
             if hints is None:
                 return "dark"

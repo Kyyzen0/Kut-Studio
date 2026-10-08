@@ -4,8 +4,14 @@ extend-exclude = [".venv", "build", "dist", "graphify-out"]
 [tool.ruff.lint]
 # Règles de correction, sans bruit de style : noms indéfinis et erreurs de syntaxe (E9, F63, F7, F82),
 # variables inutilisées (F841, souvent une assertion ou un effet oublié), f-strings sans champ (F541),
-# ``raise`` sans chaînage dans un ``except`` (B904).
-select = ["E9", "F63", "F7", "F82", "F841", "F541", "B904"]
+# ``raise`` sans chaînage dans un ``except`` (B904), imports inutilisés (F401, souvent un reste de refactoring) et
+# noms redéfinis sans usage (F811, par exemple deux imports du même nom). Un réexport volontaire se marque
+# ``# noqa: F401 - raison`` : sans cette marque, ruff supprime l'import, et un autre module peut en dépendre.
+select = ["E9", "F63", "F7", "F82", "F401", "F811", "F841", "F541", "B904"]
+
+[tool.ruff.lint.per-file-ignores]
+# Les fixtures pytest reprennent le nom de la fixture en paramètre : F811 y est attendu, pas un défaut.
+"tests/*" = ["F811"]
 
 [tool.mypy]
 # Typage progressif : ``core`` est vérifié en entier ; la dette connue est listée ci-dessous.
@@ -26,18 +32,14 @@ module = [
     "core.audio_recorder",
     "core.blend_modes",
     "core.compositing",
-    "core.export_engine",
     "core.graphics",
     "core.hardware_cache",
-    "core.hardware_encoding",
     "core.lut_importer",
     "core.mograph_ffmpeg",
     "core.mograph_layers",
     "core.mograph_presets",
     "core.mograph_raster",
     "core.mograph_stream",
-    "core.render_queue",
-    "core.scopes",
     "core.scopes_analyzer",
     "core.visual_effects",
 ]
