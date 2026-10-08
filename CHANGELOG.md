@@ -18,6 +18,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - Export H.265 (HEVC) : deux presets MP4, « H.265 1080p » et « H.265 4K ». Ils suivent le même choix d'encodeur que
   H.264 (matériel quand la machine le valide, CPU sinon) ; à qualité visuelle comparable, le fichier est plus léger.
+- Ouverture d'un projet `.kut` par double-clic : depuis le Finder sous macOS, et sous Windows et Linux quand le
+  système lance l'application avec le fichier. Sous Windows et Linux, l'association du type `.kut` à l'application
+  reste à faire.
 
 ## [0.2.6] - 2026-10-08
 
