@@ -28,6 +28,10 @@ ensuite déclenche `.github/workflows/release.yml`.
   d'abord le tempo de la musique (le clip audio sélectionné, sinon la piste Musique), en arrière-plan et annulable, puis
   pose la grille et coupe les plans sélectionnés sur ses temps. La musique elle-même n'est pas coupée, et une seule
   annulation retire la grille et les coupes. « Couper tous les… » coupe tous les 2, 4 ou 8 temps.
+- Recadrage vertical qui suit le sujet : « Recadrer en suivant le tracker » (menu Réseaux sociaux) fait remplir le cadre
+  au clip sélectionné et anime son cadrage pour garder au centre le point suivi dans l'onglet Suivi. Un plan 16:9 devient
+  un plan 9:16 sans perdre son sujet, sans jamais montrer de bord noir. Le résultat est fait d'images-clés retouchables,
+  et s'annule en une fois.
 
 ## [0.2.6] - 2026-10-08
 

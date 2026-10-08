@@ -25,6 +25,12 @@ galerie à vignettes (ou « Projet vide »). Le projet a ses pistes nommées : V
 * **Remplir le cadre** (*Réseaux sociaux › Remplir le cadre (recadrer)*, ou l'inspecteur) : un plan 16:9 posé dans un cadre 9:16 est agrandi jusqu'à le couvrir (au lieu de bandes noires).
   *Cadrage X / Y* (−1 … 1, animables) déplace la fenêtre dans l'image : un **pan animé** recadre un plan horizontal en
   vertical.
+* **Recadrer en suivant le tracker** (*Réseaux sociaux*) : le pan suit un sujet. Poser un tracker sur le sujet et
+  l'analyser (onglet *Suivi*), puis lancer la commande : le clip remplit le cadre, et *Cadrage X* (ou *Y* pour un média
+  plus haut que le cadre) est animé pour garder le sujet au centre, trajectoire lissée et fenêtre bornée au média (jamais
+  de bord noir, le sujet peut seulement se décentrer près du bord de l'image). Le tracker choisi dans l'onglet *Suivi*
+  est suivi (le premier, sinon ; plusieurs trackers : leur moyenne). Le résultat est fait d'images-clés ordinaires,
+  retouchables ; corriger le tracker ensuite ne le met pas à jour : relancer la commande.
 * **Ken Burns** sur les photos (et les plans) sélectionnés ; *Photos* propose de remplir le cadre et de poser un
   Ken Burns à chaque import (*Photos importées*), avec une durée par défaut réglable (préférences de l'application, pas du projet).
 
@@ -118,6 +124,7 @@ information a une source, l'aperçu fidèle rend le graphe de l'export, les proc
 | Formats, projet social | `social_formats.py` | `social_dialogs.py`, `main_window_mixins/social.py` |
 | Zones de plateforme | `canvas_guides.py` (`PLATFORM_ZONES`) | `viewer_overlay.py` |
 | Remplir, pan | `ClipTransform.fill`, `pan_x` / `pan_y` (`visual_effects.py`) ; `export_engine.py` (crop exact) ; `tracking_motion.fit_box` (GPU) | inspecteur |
+| Recadrage suivi | `follow_reframe.py` (pan = 2 · (X − cadre / 2) / excédent − 1, lissé, borné) | mixin social |
 | Ken Burns | `ken_burns.py` | mixin social |
 | Grille rythmique | `beat_grid.py` (modèle), `beat_edit.py` (couper, répartir), `beat_detection.py` (numpy) | `beat_grid_dialog.py`, mixin `beat_grid.py`, règle |
 | Texte | `text_runs.py` (emojis, mots), `text_animations.py`, `word_timing.py`, `bundled_fonts.py` | `text_animation_editor.py` |
@@ -188,6 +195,6 @@ livrables (`test_social_deliverables.py` : couverture à l'image exacte, copie s
 
 * La normalisation ne s'applique qu'à l'export (l'aperçu garde le niveau du mixage).
 * Un emplacement de template n'accepte qu'une vidéo : une photo se pose sur une piste de titres.
-* Le pan de recadrage ne suit pas encore un point de tracking (il s'anime à la main).
+* Le recadrage suivi est figé en images-clés : corriger le tracker ensuite demande de relancer la commande.
 * Le karaoké calé sur la voix est une estimation (enveloppe d'énergie, pas de reconnaissance vocale).
 * Les noms des presets motion graphics intégrés ne sont pas traduits (comme les presets existants).

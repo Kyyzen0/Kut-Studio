@@ -518,6 +518,7 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("social_new_project", Category.SOCIAL, scope=_A),
     _cmd("sequence_settings", Category.SOCIAL, scope=_A),
     _cmd("social_fill_frame", Category.SOCIAL, scope=_A),
+    _cmd("social_follow_reframe", Category.SOCIAL, scope=_A),
     _cmd("social_ken_burns", Category.SOCIAL, scope=_A),
     _cmd("beat_grid", Category.SOCIAL, scope=_A),
     _cmd("beat_snap", Category.SOCIAL, scope=_A),
