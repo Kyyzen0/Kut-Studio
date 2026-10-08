@@ -34,6 +34,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from .atomic_io import atomic_write_text
 from .platform_paths import user_cache_dir
 
 CACHE_KIND = "mograph"
@@ -162,9 +163,9 @@ def write_stream(
     text = "\n".join(lines) + "\n"
     playlist = directory / f"s-{hashlib.sha1(text.encode('utf-8')).hexdigest()[:24]}.ffconcat"
     if not playlist.is_file():
-        temporary = playlist.with_name(f".{playlist.name}.{os.getpid()}.tmp")
-        temporary.write_text(text, encoding="utf-8")
-        os.replace(temporary, playlist)
+        # Temporaire unique (``mkstemp``) : les scopes et l'aperçu fidèle peuvent écrire la même liste au même moment,
+        # depuis deux threads ; un nom par processus faisait échouer l'un des deux ``os.replace``.
+        atomic_write_text(playlist, text, durable=False)
     return str(playlist)
 
 

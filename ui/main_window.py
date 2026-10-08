@@ -132,8 +132,6 @@ SCOPES_MIN_INTERVAL: float = 0.1
 SCOPES_COLUMNS: int = 320
 PLAYBACK_TICK_SECONDS = 0.04
 """Intervalle du minuteur de lecture, et pas d'un tic sans horloge de référence (tic forcé hors lecture, tests)."""
-MAX_PLAYBACK_STEP_SECONDS = 0.5
-"""Pas maximal d'un tic : après un gel (veille, débogueur), la tête de lecture ne saute pas au-delà."""
 """Nombre de colonnes des waveform / parade."""
 
 SCOPES_VECTORSCOPE_BINS: int = 128
@@ -1663,9 +1661,11 @@ class MainWindow(
             duration = self._ensure_timeline_index().duration
             # La tête de lecture avance du temps **réellement** écoulé depuis le tic précédent. Avec un pas fixe de
             # 40 ms, un tic en retard ralentissait la lecture ; le lecteur vidéo, lui, avance en temps réel, et
-            # l'écart (> 200 ms) se soldait par un recalage forcé du lecteur : une saccade visible.
+            # l'écart (> 200 ms) se soldait par un recalage forcé du lecteur : une saccade visible. Pas de plafond :
+            # après un gel de l'interface, le lecteur a avancé de tout ce temps, et une tête de lecture bornée le
+            # ferait reculer. La veille de la machine n'entre pas dans ``perf_counter`` (horloge monotone).
             last = self._playback_clock
-            step = PLAYBACK_TICK_SECONDS if last is None else min(MAX_PLAYBACK_STEP_SECONDS, max(0.0, tick_time - last))
+            step = PLAYBACK_TICK_SECONDS if last is None else max(0.0, tick_time - last)
             self._playback_clock = tick_time
             next_playhead = self.playhead_seconds + step
             if duration > 0.0 and next_playhead >= duration:

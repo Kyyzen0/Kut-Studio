@@ -66,6 +66,35 @@ def test_playback_requests_leave_the_analyzer_idle_most_of_the_time():
         analyzer.close()
 
 
+def test_two_threads_writing_the_same_layer_playlist_both_succeed(tmp_path, monkeypatch):
+    """Scopes et aperçu fidèle écrivent parfois la même liste ``.ffconcat`` au même moment, depuis deux threads."""
+    from core import mograph_stream
+
+    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path)
+    barrier = threading.Barrier(8)
+    errors: list[BaseException] = []
+    paths: list[str] = []
+
+    def write():
+        try:
+            barrier.wait(5)
+            paths.append(mograph_stream.write_stream(
+                width=4, height=4, fps=10.0, duration=1.0, start=0.0, end=1.0,
+                frame_key=lambda _t: None, render=lambda _t: None,
+            ))
+        except BaseException as error:  # noqa: BLE001 - le test rapporte toute erreur d'un thread
+            errors.append(error)
+
+    threads = [threading.Thread(target=write) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert errors == []
+    assert len(set(paths)) == 1 and len(paths) == 8
+    assert not list(tmp_path.glob("*.tmp"))                 # aucun temporaire laissé
+
+
 def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(tmp_path):
     built_on: list[int] = []
     leftover = tmp_path / "graphe.txt"
@@ -154,14 +183,17 @@ def window(qtbot, monkeypatch):
     return win
 
 
-@pytest.mark.parametrize(("late", "expected"), [(None, 0.04), (0.2, 0.2), (5.0, 0.5)])
+@pytest.mark.parametrize(("late", "expected"), [(None, 0.04), (0.2, 0.2), (5.0, 5.0)])
 def test_the_playhead_follows_real_time_not_the_number_of_ticks(window, late, expected):
-    """Un tic en retard ne ralentit plus la lecture (sinon le lecteur, en temps réel, était recalé de force)."""
+    """Un tic en retard ne ralentit plus la lecture (sinon le lecteur, en temps réel, était recalé de force).
+
+    Même après un long gel : le lecteur a avancé de tout ce temps, une tête de lecture bornée le ferait reculer.
+    """
     window.is_playing = True
-    window.playhead_seconds = 10.0
+    window.playhead_seconds = 1.0                           # le projet par défaut dure 12 s : 1 + 5 reste dedans
     window._playback_clock = None if late is None else time.perf_counter() - late
     window._tick_playback()
-    assert window.playhead_seconds - 10.0 == pytest.approx(expected, abs=0.03)
+    assert window.playhead_seconds - 1.0 == pytest.approx(expected, abs=0.03)
     window.is_playing = False
 
 
