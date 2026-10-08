@@ -14,6 +14,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- La lecture d'un montage riche en titres et calques (l'edit vertical « Night Race », par exemple) n'est plus
+  saccadée ni ne gèle l'application quand les scopes sont affichés : l'image analysée par les scopes était préparée
+  sur le fil de l'interface, jusqu'à plusieurs secondes par image. Elle est maintenant préparée en tâche de fond, à la
+  taille que l'analyse utilise, et la lecture suit l'horloge réelle (une image en retard est sautée au lieu de
+  ralentir la vidéo). Mesuré : de 1,2 s à 8 s de vidéo lues en 8 s.
+- Les scopes fonctionnent pour toutes les largeurs d'image : une largeur dont le triple n'est pas multiple de 4
+  (1366 px, par exemple) donnait une erreur « taille de buffer incohérente » et des scopes vides.
+
 ## [0.2.5] - 2026-10-08
 
 Version de consolidation après « Social Night » : surtout des correctifs d'export (couleurs, cadence, ProRes), de

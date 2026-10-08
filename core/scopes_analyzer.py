@@ -32,7 +32,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from .process_supervisor import supervised_run
 from .scopes import (
@@ -134,12 +134,23 @@ def png_to_scope_frame(
     # octets via ``bytes(rgb.constBits())`` pour éviter toute copie
     # supplémentaire si possible.
     raw = bytes(rgb.constBits())[: rgb.sizeInBytes()]
+    row, stride = rgb.width() * 3, rgb.bytesPerLine()
+    if stride != row:
+        # Qt aligne chaque ligne sur 4 octets : dès que ``largeur × 3`` n'en est pas un multiple (1366, 330…), des
+        # octets de remplissage suivent chaque ligne et l'image ne se lisait plus (« taille de buffer incohérente »).
+        raw = b"".join(raw[y * stride:y * stride + row] for y in range(rgb.height()))
     return ScopeFrame.from_rgb_bytes(raw, rgb.width(), rgb.height())
 
 
 # ---------------------------------------------------------------------------
 # Descripteurs
 # ---------------------------------------------------------------------------
+
+
+BACKGROUND_SHARE = 0.2
+"""Part de temps maximale des analyses non forcées (lecture) : après une analyse de durée ``d``, la suivante attend
+``d × (1 / part − 1)``, soit 4 × ``d``. Mesuré sur un montage lourd : sans cette borne, la lecture perdait un tic sur
+cinq au profit des scopes."""
 
 
 @dataclass(frozen=True)
@@ -165,6 +176,11 @@ class ScopeRequest:
         source: Étiquette du clip source (diagnostic).
         temporary_paths: Fichiers créés exclusivement pour cette demande,
             supprimés dès que l'analyse se termine ou est abandonnée.
+        command_factory: Fabrique ``() -> (commande, fichiers temporaires)``
+            appelée sur le thread de travail quand ``ffmpeg_command`` est
+            vide. Construire la commande (graphe, images des calques) peut
+            coûter bien plus que l'analyse : elle ne se fait plus sur le fil
+            de l'interface, et jamais pour une demande déjà obsolète.
     """
 
     request_id: int
@@ -177,6 +193,9 @@ class ScopeRequest:
     clip_tolerance: int = 0
     source: str = ""
     temporary_paths: tuple[str, ...] = ()
+    command_factory: Optional[Callable[[], tuple[Sequence[str], Sequence[str]]]] = field(
+        default=None, compare=False, repr=False,
+    )
 
 
 def cleanup_temporary_paths(paths: tuple[str, ...] | list[str]) -> None:
@@ -265,6 +284,10 @@ class ScopeAnalyzer:
         self._latest_id = 0
         # Identifiant de la demande en cours de traitement.
         self._current_id = 0
+        # Coût de la dernière analyse (construction + extraction + calcul) et instant de sa fin : sans ``force``, une
+        # nouvelle analyse attend que l'analyseur soit resté libre assez longtemps (voir ``BACKGROUND_SHARE``).
+        self._last_cost = 0.0
+        self._last_finished = 0.0
         self._last_launch_monotonic = 0.0
         # Statistiques (utile pour les tests de performance).
         self._launched = 0
@@ -331,11 +354,40 @@ class ScopeAnalyzer:
 
     # ----- API publique ---------------------------------------------------
 
+    def would_accept(self, *, force: bool = False) -> bool:
+        """Faut-il lancer une analyse maintenant (analyseur ouvert, libre, fréquence respectée) ?
+
+        À interroger **avant** de fabriquer la commande : la construire (plan, graphe, images des calques) coûte bien
+        plus que l'analyse elle-même, et la jeter ensuite revenait à payer ce prix pour rien, sur le fil de
+        l'interface, à chaque tic de lecture.
+
+        Sans ``force`` (lecture), l'analyseur doit aussi être **libre** : une demande lancée pendant qu'une autre est
+        en file ou en cours la rendait obsolète, si bien qu'aucune n'aboutissait sur un montage lourd (mesuré : 60
+        abandonnées sur 62 en 8 s) et que ce travail jeté disputait le verrou de l'interpréteur à la lecture. Les
+        scopes suivent donc la cadence que la machine tient. ``force`` (pause, réglage modifié) remplace toujours la
+        demande en cours : seule la dernière image compte.
+        """
+        with self._lock:
+            if self._closed:
+                return False
+            if force:
+                return True
+            if self._pending is not None or self._current_id != 0:
+                return False
+            now = time.monotonic()
+            # Part de temps bornée : l'analyse (Python pur) dispute le verrou de l'interpréteur au fil de l'interface.
+            rest = self._last_cost * (1.0 / BACKGROUND_SHARE - 1.0)
+            if now - self._last_finished < rest:
+                return False
+            if self._min_interval <= 0.0:
+                return True
+            return now - self._last_launch_monotonic >= self._min_interval
+
     def submit(
         self,
         *,
         playhead: float,
-        ffmpeg_command: list[str] | tuple[str, ...],
+        ffmpeg_command: list[str] | tuple[str, ...] = (),
         color_space: ColorSpace | str = ColorSpace.REC709,
         levels: VideoLevels | str = VideoLevels.VIDEO,
         columns: int = 320,
@@ -344,12 +396,16 @@ class ScopeAnalyzer:
         source: str = "",
         temporary_paths: tuple[str, ...] | list[str] = (),
         force: bool = False,
+        command_factory: Optional[Callable[[], tuple[Sequence[str], Sequence[str]]]] = None,
     ) -> Optional[ScopeRequest]:
         """Soumet une demande d'analyse.
 
         Args:
             playhead: Position sur la timeline.
             ffmpeg_command: Commande d'extraction de la frame.
+            command_factory: À la place de ``ffmpeg_command``, fabrique de
+                la commande appelée sur le thread de travail (voir
+                :class:`ScopeRequest`).
             force: Si ``True``, ignore la limitation de fréquence
                 (utile quand la lecture est en pause et qu'un
                 réglage vient de changer : on veut un refresh
@@ -380,6 +436,7 @@ class ScopeAnalyzer:
                 clip_tolerance=int(clip_tolerance),
                 source=str(source),
                 temporary_paths=tuple(str(path) for path in temporary_paths),
+                command_factory=command_factory,
             )
             self._next_id += 1
             # La nouvelle demande invalide tout ce qui est en cours.
@@ -513,6 +570,7 @@ class ScopeAnalyzer:
         self, request: ScopeRequest, frame: ScopeFrame | None,
     ) -> None:
         """Traite une demande : extraction puis calcul des scopes."""
+        started = time.monotonic()
         with self._lock:
             self._current_id = request.request_id
         try:
@@ -521,13 +579,21 @@ class ScopeAnalyzer:
             else:
                 if self._extractor is not None:
                     extracted = self._extractor(request)
-                else:
-                    if not request.ffmpeg_command:
-                        raise ScopeExtractionError(
-                            "Aucune commande FFmpeg fournie pour l'analyse."
-                        )
+                elif request.ffmpeg_command:
                     png = extract_frame_png(list(request.ffmpeg_command))
                     extracted = png_to_scope_frame(png)
+                elif request.command_factory is not None:
+                    with self._lock:
+                        obsolete = request.request_id < self._latest_id
+                        if obsolete:
+                            self._cancelled += 1
+                    if obsolete:
+                        return  # la tête de lecture a déjà bougé : la commande ne sera jamais construite
+                    extracted = self._extract_from_factory(request.command_factory)
+                else:
+                    raise ScopeExtractionError(
+                        "Aucune commande FFmpeg fournie pour l'analyse."
+                    )
                 self._emit(request, extracted)
         except BaseException as exc:  # noqa: BLE001 - le thread survit
             if self._on_error is not None:
@@ -535,9 +601,24 @@ class ScopeAnalyzer:
         finally:
             cleanup_temporary_paths(request.temporary_paths)
             with self._lock:
+                self._last_finished = time.monotonic()
+                self._last_cost = self._last_finished - started
                 self._current_id = 0
                 if self._pending is None:
                     self._idle.set()
+
+    @staticmethod
+    def _extract_from_factory(
+        factory: Callable[[], tuple[Sequence[str], Sequence[str]]],
+    ) -> ScopeFrame:
+        """Construit la commande sur ce thread, extrait l'image, puis supprime les fichiers de la commande."""
+        command, temporary = factory()
+        try:
+            if not command:
+                raise ScopeExtractionError("Aucune commande FFmpeg fournie pour l'analyse.")
+            return png_to_scope_frame(extract_frame_png(list(command)))
+        finally:
+            cleanup_temporary_paths(tuple(temporary))
 
     def _emit(self, request: ScopeRequest, frame: ScopeFrame) -> None:
         """Calcule les scopes et notifie le callback.

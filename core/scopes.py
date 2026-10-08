@@ -342,6 +342,18 @@ MAX_VECTORSCOPE_BINS = 512
 MAX_SCOPE_SAMPLES = 98_304
 
 
+def scope_frame_size(width: int, height: int, *, samples: int = 2 * MAX_SCOPE_SAMPLES) -> tuple[int, int]:
+    """Taille à laquelle composer l'image d'une analyse : au plus ``samples`` pixels, proportions gardées.
+
+    L'analyse ne lit de toute façon pas plus de :data:`MAX_SCOPE_SAMPLES` pixels ; composer l'image en 1080×1920
+    (2 millions de pixels, calques rastérisés compris) pour l'échantillonner ensuite coûtait ~10× le nécessaire. La
+    marge ×2 garde un sous-échantillonnage régulier sur une image déjà réduite. Jamais agrandie ; côtés pairs (YUV 4:2:0).
+    """
+    width, height = max(2, int(width)), max(2, int(height))
+    scale = min(1.0, (samples / float(width * height)) ** 0.5)
+    return max(2, int(width * scale) // 2 * 2), max(2, int(height * scale) // 2 * 2)
+
+
 def _coerce_columns(columns: int) -> int:
     value = int(columns)
     if value < 1:
