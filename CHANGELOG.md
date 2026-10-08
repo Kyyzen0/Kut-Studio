@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-09
+
+Montage vertical plus rapide : couper au rythme de la musique, recadrer un plan 16:9 en 9:16 en suivant le sujet, et
+sous-titrer une voix automatiquement, sur la machine. Aussi : export H.265, découpage aux changements de plan et
+ouverture des projets `.kut` par double-clic.
+
 ### Added
 
 - Export H.265 (HEVC) : deux presets MP4, « H.265 1080p » et « H.265 4K ». Ils suivent le même choix d'encodeur que
@@ -185,7 +191,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.1.0...v0.2.0
