@@ -107,6 +107,25 @@ def test_the_voice_becomes_karaoke_titles(qtbot, window, monkeypatch, tmp_path):
 
 
 @needs_ffmpeg
+@posix_only
+@pytest.mark.parametrize("edit", ["trim", "retime"])
+def test_a_voice_edited_during_the_transcription_gets_no_stale_lines(qtbot, window, monkeypatch, tmp_path, edit):
+    from core.time_remapping import TimeRemapping
+
+    _whisper_ready(monkeypatch, tmp_path)
+    _load(window, tmp_path)
+    window.transcribe_voice("subtitles")
+    voice = window.project.tracks[0].clips[0]
+    if edit == "trim":                                                # la boîte n'est pas modale : on rogne la voix
+        voice.source_out = 2.0
+    else:
+        voice.time_remapping = TimeRemapping(speed=2.0)
+    qtbot.waitUntil(lambda: window._transcription is None, timeout=60000)
+    assert _tracks_of(window, "subtitle") == []
+    assert window.statusBar().currentMessage() == i18n.translate("transcription.message.voice_changed")
+
+
+@needs_ffmpeg
 def test_without_whisper_the_user_is_told_how_to_install_it(window, monkeypatch, tmp_path):
     _load(window, tmp_path)
     monkeypatch.setattr("ui.main_window_mixins.auto_captions.find_whisper", lambda *_a, **_k: None)

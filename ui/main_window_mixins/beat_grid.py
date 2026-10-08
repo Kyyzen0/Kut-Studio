@@ -241,6 +241,9 @@ class BeatGridMixin:
         except KeyError as error:
             self._report_edit_refused(error)
             return
+        if not plays_at_media_speed(music):            # retimée pendant la mesure : la grille serait fausse
+            self._show_social_status("beat.message.music_retimed")
+            return
         # Une grille réglée à la main pendant la mesure l'emporte sur la mesure.
         grid = self._active_grid() or estimate.grid_for_clip(float(music.timeline_start), float(music.source_in))
         try:

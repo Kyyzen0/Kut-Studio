@@ -218,6 +218,11 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "La voz está retemporizada, invertida, congelada o a otra velocidad: los subtítulos no caerían en las palabras.",
     ),
     "transcription.message.cancelled": _t("Transcription annulée.", "Transcription cancelled.", "Transcripción cancelada."),
+    "transcription.message.voice_changed": _t(
+        "La voix a changé pendant la transcription (coupée, remplacée ou retimée) : relancez la commande.",
+        "The voice changed during the transcription (trimmed, replaced or retimed): run the command again.",
+        "La voz cambió durante la transcripción (recortada, sustituida o retemporizada): vuelva a lanzar el comando.",
+    ),
     "transcription.message.failed": _t("Transcription impossible : {error}", "Transcription failed: {error}",
                                        "No se pudo transcribir: {error}"),
     "transcription.message.nothing": _t("Aucune parole reconnue dans ce clip.", "No speech recognised in this clip.",

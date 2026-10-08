@@ -42,6 +42,12 @@ class _PendingTranscription(NamedTuple):
     sequence_id: str
     voice_id: str
     mode: str
+    window: tuple[str, float, float]
+    """Média et fenêtre source transcrits : si la voix change pendant la transcription, le résultat ne lui va plus."""
+
+
+def _source_window(clip) -> tuple[str, float, float]:
+    return (clip.asset_id, float(clip.source_in), float(clip.source_out))
 
 
 class AutoCaptionsMixin:
@@ -130,7 +136,7 @@ class AutoCaptionsMixin:
         timer.setInterval(100)
         timer.timeout.connect(self._poll_transcription)
         self._transcription = _PendingTranscription(
-            job, dialog, timer, self.project.active_sequence.id, clip.id, mode,
+            job, dialog, timer, self.project.active_sequence.id, clip.id, mode, _source_window(clip),
         )
         self.runtime.schedule_analysis(f"transcription:{clip.id}", job.run)
         timer.start()
@@ -200,6 +206,11 @@ class AutoCaptionsMixin:
             voice = find_clip(self.project, pending.voice_id)
         except KeyError as error:
             self._report_edit_refused(error)
+            return
+        # La boîte n'est pas modale : la voix a pu être rognée, remplacée ou retimée pendant la transcription. Ses mots
+        # ne tomberaient plus sur le son (des mots coupés seraient rabattus sur les bords du clip) : on ne pose rien.
+        if _source_window(voice) != pending.window or not plays_at_media_speed(voice):
+            self._show_social_status("transcription.message.voice_changed")
             return
         lines = caption_lines(voice, transcript.words)
         if not lines:

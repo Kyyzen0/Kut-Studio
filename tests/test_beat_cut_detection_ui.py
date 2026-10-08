@@ -123,6 +123,19 @@ def test_a_cancelled_measurement_changes_nothing(qtbot, window, tmp_path):
     assert window.statusBar().currentMessage() == i18n.translate("beat.message.detect_cancelled")
 
 
+@needs_ffmpeg
+def test_a_music_retimed_during_the_measurement_cuts_nothing(qtbot, window, tmp_path):
+    from core.time_remapping import TimeRemapping
+
+    _load(window, tmp_path)
+    window.cut_selection_on_beats(1)
+    window.project.tracks[1].clips[0].time_remapping = TimeRemapping(speed=2.0)   # la boîte n'est pas modale
+    qtbot.waitUntil(lambda: getattr(window, "_tempo_detection", None) is None, timeout=60000)
+    assert len(window.project.tracks[0].clips) == 1
+    assert window.project.active_sequence.beat_grid is None
+    assert window.statusBar().currentMessage() == i18n.translate("beat.message.music_retimed")
+
+
 def test_an_existing_grid_is_used_without_measuring(window, tmp_path):
     from core.beat_grid import BeatGrid
 
