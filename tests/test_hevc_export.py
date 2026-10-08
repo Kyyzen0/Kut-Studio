@@ -27,6 +27,13 @@ def test_hevc_is_an_mp4_format_under_both_names_and_not_a_mov_one():
         export_format_for("mov", "hevc")
 
 
+def test_hevc_is_part_of_the_end_to_end_hardware_validation():
+    # Un format absent de cette liste n'est jamais exporté par la chaîne réelle lors de la validation matérielle.
+    from core.hardware_validation import VALIDATED_FORMATS
+
+    assert ExportFormat.MP4_HEVC in VALIDATED_FORMATS
+
+
 def test_hevc_presets_are_mp4_hevc_and_say_so_in_their_summary():
     for preset_id in ("h265_1080p", "h265_4k"):
         spec = get_preset(preset_id)

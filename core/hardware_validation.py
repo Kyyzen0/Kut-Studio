@@ -73,8 +73,8 @@ SAMPLE_RADIUS = 4
 
 VALIDATED_BACKENDS: tuple[HardwareEncoder, ...] = (HardwareEncoder.CPU, *HARDWARE_BACKENDS)
 """Ordre du rapport : le témoin logiciel d'abord, puis chaque backend matériel."""
-VALIDATED_FORMATS: tuple[ExportFormat, ...] = (ExportFormat.MP4_H264, ExportFormat.MOV_H264)
-"""Les formats H.264 de l'application : MP4 et MOV n'écrivent pas les balises de la même façon."""
+VALIDATED_FORMATS: tuple[ExportFormat, ...] = (ExportFormat.MP4_H264, ExportFormat.MOV_H264, ExportFormat.MP4_HEVC)
+"""Les formats matériels de l'application : H.264 en MP4 et en MOV (balises différentes), HEVC en MP4 (``hvc1``)."""
 
 _FFPROBE_FIELDS = {
     "-colorspace": "color_space",
