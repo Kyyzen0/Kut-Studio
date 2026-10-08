@@ -14,6 +14,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-08
+
+Version de consolidation après « Social Night » : surtout des correctifs d'export (couleurs, cadence, ProRes), de
+compatibilité FFmpeg et de fiabilité.
+
 ### Added
 
 - Au démarrage, la barre d'état prévient quand l'aperçu GPU reste suspendu après un plantage, et indique le réglage
@@ -41,6 +46,10 @@ ensuite déclenche `.github/workflows/release.yml`.
   encore. Elle est inscrite à la feuille de route ; le ducking des presets réseaux sociaux reste disponible.
 - Python 3.11 est annoncé comme version minimale pour lancer Kut-Studio depuis les sources : la documentation
   indiquait 3.10, avec lequel l'application ne démarre pas.
+- Développement : une seule fonction d'écriture atomique (`core/atomic_io`) remplace quatorze copies ; quatre caches
+  JSON qui s'écrivaient par un nom temporaire fixe ne peuvent plus s'écraser entre deux instances. mypy vérifie aussi
+  le corps des fonctions non annotées, et un garde-fou refuse les `assert` en production et les `except` qui avalent
+  l'erreur sans laisser de trace.
 
 ### Fixed
 
@@ -138,6 +147,7 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Kyyzen0/Kut-Studio/releases/tag/v0.1.0
