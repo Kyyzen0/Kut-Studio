@@ -33,11 +33,13 @@ from __future__ import annotations
 import logging
 import os
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from .export_engine import ExportEngine, require_ffmpeg
+from .export_engine import ExportEngine, ExportRequest, require_ffmpeg
 from .project_io import load_project
 from .project_model import Project
 from .render_job import ErrorKind, JobStatus, RenderJob, RenderResult
@@ -99,10 +101,11 @@ class RenderQueue(QObject):
         self._current: RenderJob | None = None
         self._launched = False  # le moteur a-t-il été démarré pour _current ?
         # Préparation des calques motion graphics (fil séparé) avant ``start``.
-        self._prepare_executor = None
-        self._prepare_timer = None
-        self._preparing = None
-        self._finishing = None  # (job, résultat, future) : couverture et copie d'aperçu après le rendu
+        self._prepare_executor: ThreadPoolExecutor | None = None
+        self._prepare_timer: QTimer | None = None
+        self._preparing: tuple[RenderJob, ExportRequest, Future[Any]] | None = None
+        # (job, résultat, future) : couverture et copie d'aperçu après le rendu
+        self._finishing: tuple[RenderJob, RenderResult, Future[tuple[list[str], str]]] | None = None
         self._partial: str | None = None
         self._mode: str | None = None  # None, "all" ou "single"
         self._targets: set[str] = set()  # jobs d'une exécution « single »
@@ -522,32 +525,33 @@ class RenderQueue(QObject):
         self._engine.start(request)
 
     def _prepare_then_start(self, job: RenderJob, request) -> None:
-        self._ensure_worker()
-        future = self._prepare_executor.submit(_prepare_request, request, job.loudness_lufs)
+        executor, timer = self._ensure_worker()
+        future = executor.submit(_prepare_request, request, job.loudness_lufs)
         self._preparing = (job, request, future)
-        self._prepare_timer.start()
+        timer.start()
 
-    def _ensure_worker(self) -> None:
-        from concurrent.futures import ThreadPoolExecutor
-
-        if self._prepare_executor is None:
+    def _ensure_worker(self) -> tuple[ThreadPoolExecutor, QTimer]:
+        """Crée, à la première préparation, l'exécuteur et le minuteur de sondage ; les deux vont ensemble."""
+        if self._prepare_executor is None or self._prepare_timer is None:
             self._prepare_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kut-mograph")
             self._prepare_timer = QTimer(self)
             self._prepare_timer.setInterval(50)
             self._prepare_timer.timeout.connect(self._poll_preparation)
+        return self._prepare_executor, self._prepare_timer
 
     def _poll_preparation(self) -> None:
+        _, timer = self._ensure_worker()  # déjà créé : ce minuteur n'est connecté qu'à cette méthode
         if self._finishing is not None:
             self._poll_deliverables()
             return
         preparing = self._preparing
         if preparing is None:
-            self._prepare_timer.stop()
+            timer.stop()
             return
         job, request, future = preparing
         if not future.done():
             return
-        self._prepare_timer.stop()
+        timer.stop()
         self._preparing = None
         # Annulé, remplacé ou application en fermeture pendant la préparation.
         if self._current is not job or self._launched or self._closing:
@@ -632,7 +636,7 @@ class RenderQueue(QObject):
             return
         partial = self._partial or ""
 
-        def finish() -> None:
+        def finish() -> RenderResult | None:
             try:
                 if not os.path.isfile(partial):
                     raise OSError("le fichier rendu est introuvable")
@@ -643,7 +647,7 @@ class RenderQueue(QObject):
                     f"Le rendu est terminé mais le fichier n'a pas pu être écrit : {error}",
                     ErrorKind.IO,
                 )
-                return
+                return None
             choice = getattr(self._engine, "last_encoder_choice", None)
             now = time.time()
             result = RenderResult(
@@ -677,24 +681,27 @@ class RenderQueue(QObject):
     def _start_deliverables(self, job: RenderJob, result: RenderResult) -> None:
         from .social_deliverables import Deliverables, make_deliverables
 
-        self._ensure_worker()
+        executor, timer = self._ensure_worker()
         others = tuple(other.output_path for other in self._jobs if other is not job and not other.is_finished)
         wanted = Deliverables(preview_copy=job.preview_copy, cover=job.cover, cover_seconds=job.cover_seconds,
                               reserved=others)
-        future = self._prepare_executor.submit(
+        future = executor.submit(
             make_deliverables, job.output_path, wanted, width=job.width, height=job.height,
             duration=job.duration_seconds, fps=job.fps,
         )
         self._finishing = (job, result, future)
-        self._prepare_timer.start()
+        timer.start()
 
     def _poll_deliverables(self, *, abandon: bool = False) -> None:
+        if self._finishing is None:  # appelée seulement avec des livrables en cours : garde pour le typage
+            return
         job, result, future = self._finishing
         if not (future.done() or abandon):
             return
         self._finishing = None
         if not self._preparing:
-            self._prepare_timer.stop()
+            _, timer = self._ensure_worker()
+            timer.stop()
         if future.done() and not future.cancelled():
             try:
                 job.extras, job.extras_error = future.result()
@@ -798,7 +805,7 @@ class RenderQueue(QObject):
         self._closing = True
         self._mode = None
         self._targets.clear()
-        if self._prepare_executor is not None:
+        if self._prepare_executor is not None and self._prepare_timer is not None:
             # Une préparation de calques en cours ne retient pas la fermeture.
             self._prepare_timer.stop()
             self._preparing = None

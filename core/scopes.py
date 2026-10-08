@@ -795,16 +795,16 @@ def compute_vectorscope(
         count += 1
     if count > 0:
         maximum = 0.0
-        for row in grid:
-            for value in row:
+        for grid_row in grid:
+            for value in grid_row:
                 if value > maximum:
                     maximum = value
         if maximum > 0.0:
             inv = 1.0 / maximum
-            for row in grid:
+            for grid_row in grid:
                 for index in range(size):
-                    row[index] *= inv
-    return tuple(tuple(row) for row in grid)
+                    grid_row[index] *= inv
+    return tuple(tuple(grid_row) for grid_row in grid)
 
 
 # ---------------------------------------------------------------------------
