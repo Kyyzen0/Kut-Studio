@@ -304,6 +304,7 @@ class EncoderValidation:
     pixels: tuple[PixelCheck, ...] = ()
     fallback: str = ""
     output_path: str = ""
+    codec: str = ""
 
     @property
     def label(self) -> str:
@@ -326,6 +327,7 @@ class EncoderValidation:
             "pixel_tolerance": PIXEL_TOLERANCE,
             "fallback": self.fallback,
             "output_path": redact_path(self.output_path),
+            "codec": self.codec,
         }
 
 
@@ -528,7 +530,7 @@ def validate_encoder(
         fallback = cpu_choice(codec, speed_preset=export_format.preset, quality=VALIDATION_CRF,
                               requested=HardwareEncoder.AUTO).encoder
     base = EncoderValidation(
-        backend=backend, container=export_format.container,
+        backend=backend, container=export_format.container, codec=codec,
         encoder=FFMPEG_ENCODER_NAMES.get((codec, backend), ""), outcome=Outcome.SKIPPED,
         expected_tags=expected, fallback=fallback,
     )
@@ -673,9 +675,10 @@ def format_validation(run: EncoderValidation) -> str:
     return "\n".join(lines)
 
 
-def _fallback_text(run: EncoderValidation, witness: Mapping[str, Outcome]) -> str:
+def _fallback_text(run: EncoderValidation, witness: Mapping[tuple[str, str], Outcome]) -> str:
     """Ce que l'application ferait si cet encodeur échouait, et si ce repli marcherait ici."""
-    state = witness.get(run.container)
+    # Le témoin est celui du même codec et du même conteneur : H.264 et HEVC partagent le MP4, pas leur témoin.
+    state = witness.get((run.container, run.codec))
     if state is Outcome.PASSED:
         verdict = "le témoin CPU a réussi : le repli produirait un fichier correct"
     elif state is Outcome.FAILED:
@@ -724,7 +727,9 @@ def format_report(report: ValidationReport, *, workdir: str = "") -> str:
     ]
     if report.error:
         lines.append(f"  impossible : {report.error}")
-    witness = {run.container: run.outcome for run in report.runs if run.backend is HardwareEncoder.CPU}
+    witness = {
+        (run.container, run.codec): run.outcome for run in report.runs if run.backend is HardwareEncoder.CPU
+    }
     for run in report.runs:
         lines.extend(f"  {line}" for line in format_validation(run).splitlines())
         if run.fallback and run.returncode is not None:  # un encodeur jamais lancé n'a pas de repli à décrire
