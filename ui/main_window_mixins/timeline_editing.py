@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtWidgets import QInputDialog
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QInputDialog, QProgressDialog
 from core.timeline_editing import (
     add_marker,
     delete_clips,
@@ -27,6 +28,7 @@ from core.timeline_operations import (
     trim_clip_left,
     trim_clip_right,
 )
+from core.scene_detection import SceneDetectionJob, cut_clip_at_scenes, scene_cut_refusal
 from ui.i18n import translate
 
 
@@ -215,6 +217,97 @@ class TimelineEditingMixin:
             self._report_edit_refused(translate("status.clip.cut_none"))
             return
         self.cut_selected_clip(clip_id, self.timeline_panel.playhead_seconds)
+
+    def cut_at_scene_changes(self):
+        """Découpe le clip sélectionné à ses changements de plan (détection FFmpeg sur la file d'analyse)."""
+        clip_id = self.timeline_panel.selected_clip_id
+        if clip_id is None:
+            self._report_edit_refused(translate("status.clip.cut_none"))
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError as exc:
+            self._report_edit_refused(exc)
+            return
+        asset = next((item for item in self.project.media_assets if item.id == clip.asset_id), None)
+        reason = scene_cut_refusal(clip) or ("" if asset is not None else translate("status.clip.cut_none"))
+        if reason:
+            self._report_edit_refused(reason)
+            return
+        detections = getattr(self, "_scene_detections", None)
+        if detections is None:
+            detections = self._scene_detections = {}
+        key = f"scenes:{clip_id}"
+        if key in detections:
+            self._show_sequence_status(translate("scenes.running"))
+            return
+        from core.export_engine import require_ffmpeg
+
+        try:
+            job = SceneDetectionJob(
+                require_ffmpeg(), asset.path, start=clip.source_in,
+                duration=clip.source_out - clip.source_in, session_id=self.runtime.session_id,
+            )
+        except (ImportError, ValueError) as exc:
+            self._report_edit_refused(exc)
+            return
+        dialog = QProgressDialog(translate("scenes.progress.title"), translate("scenes.progress.cancel"), 0, 100, self)
+        dialog.setWindowTitle(translate("scenes.progress.title"))
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.canceled.connect(job.cancel)
+        timer = QTimer(self)
+        timer.setInterval(100)
+        timer.timeout.connect(lambda: self._poll_scene_detection(key))
+        detections[key] = (job, dialog, timer, clip_id)
+        self.runtime.schedule_analysis(key, job.run)
+        timer.start()
+        dialog.show()
+
+    def _poll_scene_detection(self, key: str) -> None:
+        pending = getattr(self, "_scene_detections", {}).get(key)
+        if pending is None:
+            return
+        job, dialog, timer, clip_id = pending
+        if job.session_id != self.runtime.session_id:  # le projet a changé entre-temps : résultat périmé
+            self._finish_scene_detection(key, dialog, timer)
+            return
+        snapshot = job.snapshot()
+        dialog.setValue(int(snapshot.progress * 100))
+        if snapshot.state not in {"finished", "cancelled", "failed"}:
+            return
+        self._finish_scene_detection(key, dialog, timer)
+        if snapshot.state == "cancelled":
+            self._show_sequence_status(translate("scenes.cancelled"))
+        elif snapshot.state == "failed":
+            self._report_edit_refused(translate("scenes.failed", error=snapshot.message))
+        else:
+            self._apply_scene_cuts(clip_id, snapshot.result or ())
+
+    def _finish_scene_detection(self, key: str, dialog, timer) -> None:
+        timer.stop()
+        dialog.close()
+        getattr(self, "_scene_detections", {}).pop(key, None)
+
+    def _apply_scene_cuts(self, clip_id: str, times) -> None:
+        if not times:
+            self._show_sequence_status(translate("scenes.none"))
+            return
+        followers = self._tracking_followers_of([clip_id])
+        try:
+            created = cut_clip_at_scenes(self.project, clip_id, times)
+        except (KeyError, ValueError) as exc:
+            self._report_edit_refused(exc)
+            return
+        self._record_history(translate("history.clip.scene_cut"))
+        if followers:
+            self._announce_tracking_followers(followers, cut=True)
+        self.timeline_panel.set_project(self.project)
+        self._update_timeline_duration()
+        self._mark_dirty()
+        self._restore_clip_selection(clip_id)
+        self._show_sequence_status(translate("scenes.done", count=len(created) + 1))
 
     def cut_selected_clip(self, clip_id, playhead_pos):
         followers = self._tracking_followers_of([clip_id])

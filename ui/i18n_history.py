@@ -240,6 +240,7 @@ HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "history.clip.trim_left": _t("Trim gauche", "Trim left", "Recortar a la izquierda"),
     "history.clip.trim_right": _t("Trim droit", "Trim right", "Recortar a la derecha"),
     "history.clip.cut": _t("Couper le clip", "Cut clip", "Cortar el clip"),
+    "history.clip.scene_cut": _t("Découper aux changements de plan", "Cut at scene changes", "Cortar en cambios de plan"),
     "history.transition.edit": _t("Modifier une transition", "Edit a transition", "Modificar una transición"),
     "history.transition.delete": _t("Supprimer une transition", "Delete a transition", "Eliminar una transición"),
     "history.tool.slip": _t("Slip", "Slip", "Slip"),

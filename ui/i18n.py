@@ -288,6 +288,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "menu.item.show_scopes": {"fr": "Afficher les scopes", "en": "Show scopes", "es": "Mostrar scopes"},
     "menu.item.add_clip": {"fr": "Ajouter un clip", "en": "Add clip", "es": "Añadir clip"},
     "menu.item.trim": {"fr": "Couper / Réduire", "en": "Cut / Trim", "es": "Cortar / Recortar"},
+    "menu.item.scene_cut": {"fr": "Découper aux changements de plan", "en": "Cut at scene changes", "es": "Cortar en cambios de plan"},
     "menu.item.marker": {"fr": "Marqueur", "en": "Marker", "es": "Marcador"},
     "menu.item.panels": {"fr": "Panneaux", "en": "Panels", "es": "Paneles"},
     "menu.item.restore_layout": {"fr": "Restaurer la disposition", "en": "Restore layout", "es": "Restaurar la disposición"},
