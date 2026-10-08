@@ -25,6 +25,12 @@ galerie à vignettes (ou « Projet vide »). Le projet a ses pistes nommées : V
 * **Remplir le cadre** (*Réseaux sociaux › Remplir le cadre (recadrer)*, ou l'inspecteur) : un plan 16:9 posé dans un cadre 9:16 est agrandi jusqu'à le couvrir (au lieu de bandes noires).
   *Cadrage X / Y* (−1 … 1, animables) déplace la fenêtre dans l'image : un **pan animé** recadre un plan horizontal en
   vertical.
+* **Recadrer en suivant le tracker** (*Réseaux sociaux*) : le pan suit un sujet. Poser un tracker sur le sujet et
+  l'analyser (onglet *Suivi*), puis lancer la commande : le clip remplit le cadre, et *Cadrage X* (ou *Y* pour un média
+  plus haut que le cadre) est animé pour garder le sujet au centre, trajectoire lissée et fenêtre bornée au média (jamais
+  de bord noir, le sujet peut seulement se décentrer près du bord de l'image). Le tracker choisi dans l'onglet *Suivi*
+  est suivi (le premier, sinon ; plusieurs trackers : leur moyenne). Le résultat est fait d'images-clés ordinaires,
+  retouchables ; corriger le tracker ensuite ne le met pas à jour : relancer la commande.
 * **Ken Burns** sur les photos (et les plans) sélectionnés ; *Photos* propose de remplir le cadre et de poser un
   Ken Burns à chaque import (*Photos importées*), avec une durée par défaut réglable (préférences de l'application, pas du projet).
 
@@ -47,6 +53,17 @@ Dans l'éditeur de graphiques d'un texte :
   machine à écrire, **karaoké** ; **mots mis en couleur** (indices fixes, couleur de surbrillance).
 * **Karaoké calé sur la voix** : *Synchroniser sur la voix* estime le temps de chaque mot à partir du clip voix sous le titre
   (segments voisés, alignement par programmation dynamique). C'est une estimation : les temps se corrigent un par un.
+* **Sous-titres automatiques** (*Réseaux sociaux › Sous-titres automatiques*) : la voix (le clip sélectionné s'il porte
+  du son, sinon le premier clip de la piste *Voix*) est transcrite **sur la machine** par whisper.cpp, puis posée en
+  lignes courtes (32 caractères, 3 s au plus, coupées aux fins de phrase et aux pauses) : en **sous-titres** sur une
+  piste de sous-titres, ou en **titres karaoké** (style vertical, chaque mot s'allume quand il est dit, au temps reconnu
+  et non estimé). Les lignes vont sur une piste libre, créée au besoin ; une annulation les retire toutes. Une voix
+  retimée ou inversée est refusée.
+  Installation : le programme `whisper-cli` (macOS : `brew install whisper-cpp`) et un modèle `ggml-*.bin` (par exemple
+  `ggml-base.bin`, 148 Mo, sur huggingface.co/ggerganov/whisper.cpp). Les deux se règlent dans *Préférences ›
+  Transcription* ; sans réglage, le programme est cherché comme FFmpeg (variable `KUT_STUDIO_WHISPER`, dossier `bin/`
+  de l'application, `PATH`) et le modèle dans le dossier `whisper` des données de l'application (ou
+  `KUT_STUDIO_WHISPER_MODEL`). Rien n'est téléchargé par l'application.
 * **Polices embarquées** (OFL) : Anton et Saira ExtraCondensed, identiques sur toutes les machines.
 * Presets motion graphics, catégorie **Vertical** : Titre TikTok, Mot en couleur, Sous-titre karaoké. Les presets
   intégrés sont reconstruits sur la toile du projet (le lower third se recentre en 9:16).
@@ -118,9 +135,11 @@ information a une source, l'aperçu fidèle rend le graphe de l'export, les proc
 | Formats, projet social | `social_formats.py` | `social_dialogs.py`, `main_window_mixins/social.py` |
 | Zones de plateforme | `canvas_guides.py` (`PLATFORM_ZONES`) | `viewer_overlay.py` |
 | Remplir, pan | `ClipTransform.fill`, `pan_x` / `pan_y` (`visual_effects.py`) ; `export_engine.py` (crop exact) ; `tracking_motion.fit_box` (GPU) | inspecteur |
+| Recadrage suivi | `follow_reframe.py` (pan = 2 · (X − cadre / 2) / excédent − 1, lissé, borné) | mixin social |
 | Ken Burns | `ken_burns.py` | mixin social |
 | Grille rythmique | `beat_grid.py` (modèle), `beat_edit.py` (couper, répartir), `beat_detection.py` (numpy) | `beat_grid_dialog.py`, mixin `beat_grid.py`, règle |
 | Texte | `text_runs.py` (emojis, mots), `text_animations.py`, `word_timing.py`, `bundled_fonts.py` | `text_animation_editor.py` |
+| Sous-titres automatiques | `transcription.py` (whisper.cpp : découverte, tâche, mots datés), `auto_captions.py` (lignes, pistes) | mixin `auto_captions.py`, `transcription_settings.py` (préférences) |
 | Lumière, impact | `light_layers.py`, `impact_fx.py`, effets `GLOW` / `CHROMATIC_ABERRATION` / `HEAT_HAZE` (`effects_model.py`) | bibliothèques Graphiques et Effets |
 | Templates | `project_templates.py`, `template_slots.py`, `leaderboard.py` | `template_gallery.py`, `leaderboard_dialog.py`, mixin `templates.py` |
 | SFX, ducking | `sfx_synth.py`, `sfx_placement.py`, `audio_automation.DUCKING_PRESETS` | `sfx_library.py`, mixin `social_audio.py` |
@@ -188,6 +207,9 @@ livrables (`test_social_deliverables.py` : couverture à l'image exacte, copie s
 
 * La normalisation ne s'applique qu'à l'export (l'aperçu garde le niveau du mixage).
 * Un emplacement de template n'accepte qu'une vidéo : une photo se pose sur une piste de titres.
-* Le pan de recadrage ne suit pas encore un point de tracking (il s'anime à la main).
-* Le karaoké calé sur la voix est une estimation (enveloppe d'énergie, pas de reconnaissance vocale).
+* Le recadrage suivi est figé en images-clés : corriger le tracker ensuite demande de relancer la commande.
+* *Synchroniser sur la voix* reste une estimation (enveloppe d'énergie) : elle garde le texte saisi. Les sous-titres
+  automatiques, eux, reconnaissent les mots (whisper.cpp), mais écrivent ce qu'ils entendent (un nom propre peut être
+  mal orthographié : « Kut Studio » devient « Q Studio »).
+* whisper.cpp n'est pas embarqué dans les paquets de l'application : il s'installe à part, comme le modèle.
 * Les noms des presets motion graphics intégrés ne sont pas traduits (comme les presets existants).

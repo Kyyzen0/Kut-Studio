@@ -322,6 +322,9 @@ class UserSettings:
     photo_fill: bool = False
     photo_ken_burns: bool = False
     platform_zones: str = ""
+    # --- Transcription locale (whisper.cpp) : vides = découverte automatique (core.transcription) ---
+    whisper_path: str = ""
+    whisper_model: str = ""
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -335,6 +338,11 @@ def _coerce_photo_duration(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
         return DEFAULT_PHOTO_DURATION
     return max(PHOTO_DURATION_RANGE[0], min(PHOTO_DURATION_RANGE[1], float(value)))
+
+
+def _coerce_path(value: object) -> str:
+    """Chemin de fichier saisi par l'utilisateur : texte nettoyé, ``""`` pour tout le reste (découverte automatique)."""
+    return value.strip()[:4096] if isinstance(value, str) else ""
 
 
 def _coerce_platform_zones(value: object) -> str:
@@ -516,6 +524,8 @@ def load_user_settings(
         photo_fill=_coerce_bool(data.get("photo_fill", False)),
         photo_ken_burns=_coerce_bool(data.get("photo_ken_burns", False)),
         platform_zones=_coerce_platform_zones(data.get("platform_zones")),
+        whisper_path=_coerce_path(data.get("whisper_path")),
+        whisper_model=_coerce_path(data.get("whisper_model")),
     )
 
 
@@ -577,6 +587,8 @@ def save_user_settings(
             photo_fill=_coerce_bool(settings.photo_fill),
             photo_ken_burns=_coerce_bool(settings.photo_ken_burns),
             platform_zones=_coerce_platform_zones(settings.platform_zones),
+            whisper_path=_coerce_path(settings.whisper_path),
+            whisper_model=_coerce_path(settings.whisper_model),
         )
     )
     atomic_write_json(target, payload)

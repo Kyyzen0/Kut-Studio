@@ -97,6 +97,7 @@ from ui.main_window_mixins.social import SocialMixin
 from ui.main_window_mixins.social_audio import SocialAudioMixin
 from ui.main_window_mixins.templates import TemplatesMixin
 from ui.main_window_mixins.beat_grid import BeatGridMixin
+from ui.main_window_mixins.auto_captions import AutoCaptionsMixin
 from core.decode_policy import DecodePurpose
 
 # Noms lus à l'appel par les mixins via ``_main_window()`` : des tests les
@@ -131,6 +132,7 @@ SCOPES_VECTORSCOPE_BINS: int = 128
 
 class MainWindow(
     BeatGridMixin,
+    AutoCaptionsMixin,
     SocialMixin,
     SocialAudioMixin,
     TemplatesMixin,
@@ -198,6 +200,7 @@ class MainWindow(
         self._flow_backend_request = loaded_settings.flow_backend      # avant le moteur d'aperçu et le moteur d'export
         self._time_ripple_timeline = loaded_settings.time_ripple_timeline
         self._init_social(loaded_settings)
+        self._init_auto_captions(loaded_settings)
         # Décodage matériel : réglé avant le premier QMediaPlayer (variable lue une fois par Qt).
         self._init_hardware_preview(loaded_settings)
         self._init_animation()
@@ -2130,6 +2133,7 @@ class MainWindow(
             **self._time_shortcut_handlers(),
             **self._social_shortcut_handlers(),
             **self._beat_shortcut_handlers(),
+            **self._auto_captions_shortcut_handlers(),
             **self._social_audio_shortcut_handlers(),
             **self._templates_shortcut_handlers(),
         }

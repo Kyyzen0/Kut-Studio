@@ -47,6 +47,7 @@ class SocialMixin:
             "social_new_project": self.new_social_project,
             "sequence_settings": self.edit_sequence_settings,
             "social_fill_frame": self.toggle_fill_frame_for_selection,
+            "social_follow_reframe": self.follow_subject_in_selection,
             "social_ken_burns": self.apply_ken_burns_to_selection,
             "impact_zoom": self.apply_impact_zoom_to_selection,
             "impact_shake": self.apply_shake_to_selection,
@@ -79,12 +80,14 @@ class SocialMixin:
         self._build_beat_menu(menu)
         menu.addSeparator()
         menu.addAction(self._command_action("social_fill_frame", "social.menu.fill_frame"))
+        menu.addAction(self._command_action("social_follow_reframe", "social.menu.follow_reframe"))
         menu.addAction(self._command_action("social_ken_burns", "social.menu.ken_burns"))
         impact = menu.addMenu(i18n.translate("impact.menu.title"))
         for command, key in (("impact_zoom", "impact.menu.zoom"), ("impact_shake", "impact.menu.shake"),
                              ("impact_flash", "impact.menu.flash"), ("impact_on_cuts", "impact.menu.on_cuts")):
             impact.addAction(self._command_action(command, key))
         self._build_social_audio_menu(menu)
+        self._build_auto_captions_menu(menu)
         menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
         menu.addAction(self._command_action("leaderboard", "leaderboard.menu"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
@@ -214,6 +217,47 @@ class SocialMixin:
         for clip in clips:
             clip.transform = clip.transform.with_property("fill", fill)
         self._after_social_edit(clips, "history.social.fill_on" if fill else "history.social.fill_off")
+
+    def follow_subject_in_selection(self) -> None:
+        """« Recadrer en suivant le tracker » : chaque clip vidéo sélectionné remplit le cadre, et sa fenêtre suit le
+        tracker choisi dans l'onglet Suivi (le premier, sinon) : un plan horizontal devient vertical sans perdre son
+        sujet (:mod:`core.follow_reframe`). Une seule entrée d'historique."""
+        from core.follow_reframe import ReframeRefused, apply_follow_reframe
+        from core.tracking_ops import tracking_of
+
+        clips = self._video_clips_of_selection()
+        if not clips:
+            self._show_social_status("social.message.no_video")
+            return
+        sequence = self.project.active_sequence
+        done: list[Clip] = []
+        refusal = ""
+        for clip in clips:
+            asset = next((item for item in self.project.media_assets if item.id == clip.asset_id), None)
+            tracking = tracking_of(clip)
+            trackers = [tracker for tracker in map(tracking.tracker, self._selected_tracker_ids(clip)) if tracker]
+            if asset is None or not trackers:
+                refusal = refusal or "social.message.reframe_no_tracker"
+                continue
+            try:
+                apply_follow_reframe(
+                    clip, trackers, media_size=(asset.width, asset.height),
+                    canvas_size=(sequence.width, sequence.height), fps=sequence.fps,
+                )
+            except ReframeRefused as error:
+                refusal = refusal or f"social.message.reframe_{error.reason}"
+                continue
+            done.append(clip)
+        if not done:
+            self._show_social_status(refusal)
+            return
+        self._after_social_edit(done, "history.social.follow_reframe")
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            message = i18n.translate("social.message.reframed", count=len(done))
+            if refusal:                                        # une partie de la sélection n'a pas pu suivre
+                message = f"{message} {i18n.translate(refusal)}"
+            bar.showMessage(message, 6000)
 
     def apply_ken_burns_to_selection(self) -> None:
         """« Ken Burns » : un mouvement lent sur les clips vidéo et photos sélectionnés."""

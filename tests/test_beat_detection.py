@@ -7,7 +7,14 @@ import time
 import numpy as np
 import pytest
 
-from core.beat_detection import ANALYSIS_RATE, detect_tempo, estimate_tempo
+from core.beat_detection import (
+    ANALYSIS_RATE,
+    TempoDetectionJob,
+    TempoDetectionSnapshot,
+    detect_tempo,
+    estimate_tempo,
+    plays_at_media_speed,
+)
 from render_probe import needs_ffmpeg
 
 RATE = ANALYSIS_RATE
@@ -73,18 +80,23 @@ def test_a_too_short_excerpt_is_refused():
         estimate_tempo(np.zeros(500))
 
 
-@needs_ffmpeg
-def test_detection_reads_a_real_file_through_ffmpeg(tmp_path):
-    import subprocess
+def write_wav(path, signal: np.ndarray) -> None:
+    """Écrit ``signal`` (mono, 8 kHz, dans [-1, 1]) en WAV 16 bits."""
     import wave
 
-    signal = drum_loop(120.0, 0.25, 20.0)
-    raw = tmp_path / "loop.wav"
-    with wave.open(str(raw), "wb") as handle:
+    with wave.open(str(path), "wb") as handle:
         handle.setnchannels(1)
         handle.setsampwidth(2)
         handle.setframerate(RATE)
         handle.writeframes((signal * 32767).astype("<i2").tobytes())
+
+
+@needs_ffmpeg
+def test_detection_reads_a_real_file_through_ffmpeg(tmp_path):
+    import subprocess
+
+    raw = tmp_path / "loop.wav"
+    write_wav(raw, drum_loop(120.0, 0.25, 20.0))
     music = tmp_path / "loop.m4a"                       # un vrai format compressé, rééchantillonné à la lecture
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-ar", "48000", "-c:a", "aac", "-b:a", "128k",
                     str(music)], check=True, timeout=60)
@@ -94,3 +106,51 @@ def test_detection_reads_a_real_file_through_ffmpeg(tmp_path):
     assert min(phase, 2.0 - phase) <= 0.03
     grid = estimate.grid_for_clip(timeline_start=10.0, source_in=2.0)
     assert grid.bpm == pytest.approx(120.0, abs=0.5)
+
+
+# --- Mesure sur la file d'analyse --------------------------------------------------------------------------------------
+
+
+def test_a_tempo_job_needs_a_duration():
+    with pytest.raises(ValueError):
+        TempoDetectionJob("music.wav", start=0.0, duration=0.0)
+
+
+def test_a_tempo_job_cancelled_before_it_runs_does_not_decode(tmp_path):
+    job = TempoDetectionJob(str(tmp_path / "absent.wav"), start=0.0, duration=5.0)
+    job.cancel()
+    job.run()
+    assert job.snapshot() == TempoDetectionSnapshot("cancelled", "", None)
+
+
+@needs_ffmpeg
+def test_a_tempo_job_measures_a_real_file(tmp_path):
+    music = tmp_path / "loop.wav"
+    write_wav(music, drum_loop(120.0, 0.25, 12.0))
+    job = TempoDetectionJob(str(music), start=1.0, duration=10.0, session_id="s")
+    assert job.snapshot().state == "queued"
+    job.run()
+    snapshot = job.snapshot()
+    assert snapshot.state == "finished" and snapshot.result is not None
+    assert snapshot.result.bpm == pytest.approx(120.0, abs=0.5)
+    phase = (snapshot.result.downbeat - 0.25) % 2.0              # en temps du média, malgré le départ à 1 s
+    assert min(phase, 2.0 - phase) <= 0.03
+
+
+@needs_ffmpeg
+def test_a_tempo_job_reports_an_unreadable_file(tmp_path):
+    broken = tmp_path / "broken.wav"
+    broken.write_bytes(b"pas du son")
+    job = TempoDetectionJob(str(broken), start=0.0, duration=5.0)
+    job.run()
+    snapshot = job.snapshot()
+    assert snapshot.state == "failed" and snapshot.message and snapshot.result is None
+
+
+def test_only_a_clip_played_at_media_speed_can_carry_a_measured_grid():
+    from core.project_model import Clip
+
+    clip = Clip(id="m", asset_id="a", track_id="A1", timeline_start=1.0, source_in=0.0, source_out=8.0)
+    assert plays_at_media_speed(clip)
+    clip.sequence_id = "seq"                                     # imbriqué : ses temps ne sont pas ceux du média
+    assert not plays_at_media_speed(clip)

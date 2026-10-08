@@ -33,6 +33,13 @@ camera solve, planar tracking, détection d'objets, génération de contenu.
    nécessaire (« La stabilisation agrandit l'image de 12 % »). *Stabilisation
    automatique* pose quatre trackers sur des détails contrastés, les analyse
    dans les deux sens puis stabilise.
+8. **Recadrage vertical** : *Réseaux sociaux › Recadrer en suivant le
+   tracker* fait remplir le cadre au clip et anime son pan (`pan_x` /
+   `pan_y`) pour garder le tracker sélectionné au centre
+   (`core/follow_reframe.py`, détails dans [social-video.md](social-video.md)).
+   Ce sont des images-clés figées, comme *Convertir en keyframes* ; le pan,
+   et non la position, reste exact à l'export (la fenêtre « remplir » est
+   rognée au cadre avant l'incrustation).
 
 Chaque action est **une** entrée d'historique (une analyse de 2 000 images
 aussi) ; un glisser dans le viewer n'en crée qu'une au relâchement.

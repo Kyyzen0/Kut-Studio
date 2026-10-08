@@ -24,6 +24,19 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Découpage aux changements de plan : « Découper aux changements de plan », dans le menu de séquence, coupe le clip
   sélectionné à chaque changement de plan détecté par FFmpeg (le clip d'origine garde le premier plan). Un clip retimé,
   inversé, figé ou imbriqué est refusé. L'opération s'annule comme les autres coupes.
+- Couper au rythme en deux clics : sans grille rythmique, « Couper sur les temps » (menu Grille rythmique) mesure
+  d'abord le tempo de la musique (le clip audio sélectionné, sinon la piste Musique), en arrière-plan et annulable, puis
+  pose la grille et coupe les plans sélectionnés sur ses temps. La musique elle-même n'est pas coupée, et une seule
+  annulation retire la grille et les coupes. « Couper tous les… » coupe tous les 2, 4 ou 8 temps.
+- Recadrage vertical qui suit le sujet : « Recadrer en suivant le tracker » (menu Réseaux sociaux) fait remplir le cadre
+  au clip sélectionné et anime son cadrage pour garder au centre le point suivi dans l'onglet Suivi. Un plan 16:9 devient
+  un plan 9:16 sans perdre son sujet, sans jamais montrer de bord noir. Le résultat est fait d'images-clés retouchables,
+  et s'annule en une fois.
+- Sous-titres automatiques, sans rien envoyer en ligne : *Réseaux sociaux › Sous-titres automatiques* transcrit la voix
+  avec whisper.cpp installé sur la machine, puis pose des lignes courtes, en sous-titres ou en titres karaoké où chaque
+  mot s'allume quand il est dit. Le programme `whisper-cli` et le modèle se règlent dans *Préférences › Transcription*
+  (ils sont aussi trouvés tout seuls : Homebrew, dossier de données de l'application). Une annulation retire toutes les
+  lignes.
 
 ## [0.2.6] - 2026-10-08
 

@@ -118,8 +118,13 @@ def _lower_third(project: Project) -> list[str]:
 
 
 def _social_text(project: Project, text: str, size: int, y: float, duration: float = 3.0) -> Clip:
-    """Texte de vidéo sociale : Anton, contour noir **extérieur**, ombre portée, centré, taille au texte."""
-    clip = add_layer(project, GraphicType.TEXT, at=0.0, duration=duration)
+    """Texte de vidéo sociale (:func:`style_social_text`), posé au début de la séquence."""
+    return style_social_text(add_layer(project, GraphicType.TEXT, at=0.0, duration=duration), text, size, y)
+
+
+def style_social_text(clip: Clip, text: str, size: int, y: float) -> Clip:
+    """Style des textes de vidéo sociale sur un calque texte : Anton, contour noir **extérieur**, ombre portée, centré,
+    taille au texte ; ``y`` est la position verticale (fraction de la hauteur du cadre, 0 = centre)."""
     for field, value in (
         ("text", text), ("font_family", "Anton"), ("font_size", size), ("autosize", True), ("stroke_width", 6),
         ("stroke_color", "#05060A"), ("stroke_position", "outside"), ("shadow_offset_x", 0), ("shadow_offset_y", 5),
@@ -313,5 +318,5 @@ def apply_preset(project: Project, preset: MographPreset, *, at: float) -> list[
 __all__ = [
     "MographPreset", "PRESET_FORMAT", "all_presets", "apply_preset", "builtin_presets",
     "clipboard_from_dict", "clipboard_to_dict", "delete_user_preset", "load_user_presets",
-    "presets_directory", "save_preset",
+    "presets_directory", "save_preset", "style_social_text",
 ]
