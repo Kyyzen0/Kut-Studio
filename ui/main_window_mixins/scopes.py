@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, Signal
+
+from core.scopes import scope_frame_size
 
 from core.scopes_analyzer import (
     ScopeAnalysis,
@@ -79,39 +82,34 @@ class ScopesMixin:
         # réanalyser la même image 10 fois par seconde.
         if not force and abs(playhead - self._last_scopes_playhead) < 1e-3:
             return
-        self._last_scopes_playhead = playhead
-        self._scope_temporary_paths = ()
-        command = self._build_scopes_ffmpeg_command(playhead)
-        if command is None:
+        # La limite de fréquence est vérifiée avant de fabriquer la commande, pas après : pendant la lecture, une
+        # demande refusée ne coûte plus rien au fil de l'interface.
+        if not self.scopes_analyzer.would_accept(force=force):
             return
-        temporary_paths = self._scope_temporary_paths
-        self._scope_temporary_paths = ()
-        accepted = self.scopes_analyzer.submit(
+        self._last_scopes_playhead = playhead
+        # Sur ce fil, seulement ce qui lit l'état de l'application (plan à la tête de lecture, réglages d'export) :
+        # quelques millisecondes. La commande elle-même (graphe, images des calques) est fabriquée par le thread de
+        # l'analyseur ; construite ici, elle gelait l'interface jusqu'à plusieurs secondes par tic de lecture.
+        factory = self._prepare_scopes_command(playhead)
+        if factory is None:
+            return
+        self.scopes_analyzer.submit(
             playhead=playhead,
-            ffmpeg_command=command,
+            command_factory=factory,
             color_space=self.scopes_panel._color_space,
             levels=self.scopes_panel.levels(),
             columns=_main_window().SCOPES_COLUMNS,
             vectorscope_bins=_main_window().SCOPES_VECTORSCOPE_BINS,
             source="timeline",
-            temporary_paths=temporary_paths,
             force=force,
         )
-        if accepted is None:
-            cleanup_temporary_paths(temporary_paths)
 
-    def _build_scopes_ffmpeg_command(
-        self, playhead: float,
-    ) -> list[str] | None:
-        """Construit la commande ``ffmpeg`` qui rend **une** frame composée.
+    def _prepare_scopes_command(self, playhead: float):
+        """Partie « fil de l'interface » de l'analyse : fabrique ``() -> (commande, fichiers temporaires)``, ou ``None``.
 
-        On réutilise le graphe de filtres de l'export (effets,
-        étalonnage, LUT, courbes) via
-        :meth:`core.export_engine.ExportEngine.build_frame_command`, afin
-        que les scopes reflètent exactement ce que le moniteur affiche.
-        La commande est volontairement limitée à une seule image PNG
-        sur stdout : l'analyse doit rester peu coûteuse, y compris
-        pendant la lecture.
+        Le plan à la tête de lecture et la requête d'export lisent l'état de l'application : ils sont pris ici, en
+        quelques millisecondes. La fabrique, elle, peut tourner sur n'importe quel thread : elle ne touche plus qu'à
+        ces objets figés et à son propre moteur.
         """
         try:
             # Le plan est ramené à l'origine à la tête de lecture : l'image voulue est la première du
@@ -123,7 +121,6 @@ class ScopesMixin:
             return None
         if not getattr(render_plan, "video_layers", ()):
             return None
-        frame_engine: _main_window().ExportEngine | None = None
         try:
             # Le chemin de sortie n'est jamais écrit (la sortie est un
             # PNG sur stdout) mais ``ExportRequest`` en exige un : on
@@ -131,21 +128,53 @@ class ScopesMixin:
             request = self.export_panel.build_request(
                 render_plan, os.path.join(tempfile.gettempdir(), "kut-frame.png")
             )
+            # L'analyse n'échantillonne que ~10⁵ pixels : l'image est composée à cette taille, pas en pleine
+            # définition (même graphe, effets en pixels mis à l'échelle comme dans un aperçu réduit).
+            reduced = scope_frame_size(*request.preset.resolution)
+            request = replace(request, preset=replace(request.preset, resolution=reduced))
             # Une instance dédiée évite qu'une analyse de scopes ne remplace
             # le SRT temporaire d'un export déjà en cours.
             frame_engine = _main_window().ExportEngine()
             frame_engine.flow_preference = self._flow_preference()
-            # Construite sur le fil de l'interface, à chaque déplacement de la tête de lecture : un clip interpolé y est lu en
-            # échantillonnage, comme dans le moniteur (voir ``build_frame_command``).
-            command = frame_engine.build_frame_command(request, 0.0)
-            self._scope_temporary_paths = frame_engine.take_temporary_files()
-            return command
         except Exception:
-            if frame_engine is not None:
-                cleanup_temporary_paths(frame_engine.take_temporary_files())
-            cleanup_temporary_paths(self._scope_temporary_paths)
-            self._scope_temporary_paths = ()
+            LOGGER.debug("Requête d'image des scopes non construite : scopes non analysés", exc_info=True)
             return None
+
+        def build() -> tuple[list[str], tuple[str, ...]]:
+            try:
+                # Un clip interpolé y est lu en échantillonnage, comme dans le moniteur (voir ``build_frame_command``).
+                command = frame_engine.build_frame_command(request, 0.0)
+            except Exception:
+                cleanup_temporary_paths(frame_engine.take_temporary_files())
+                raise
+            return command, tuple(frame_engine.take_temporary_files())
+
+        return build
+
+    def _build_scopes_ffmpeg_command(
+        self, playhead: float,
+    ) -> list[str] | None:
+        """Construit tout de suite la commande ``ffmpeg`` qui rend **une** frame composée (bloquant).
+
+        On réutilise le graphe de filtres de l'export (effets,
+        étalonnage, LUT, courbes) via
+        :meth:`core.export_engine.ExportEngine.build_frame_command`, afin
+        que les scopes reflètent exactement ce que le moniteur affiche.
+        L'analyse des scopes passe par :meth:`_prepare_scopes_command`, qui
+        construit la même commande hors du fil de l'interface. Les
+        fichiers temporaires de la commande sont rangés dans
+        ``_scope_temporary_paths``.
+        """
+        factory = self._prepare_scopes_command(playhead)
+        if factory is None:
+            return None
+        try:
+            command, temporary = factory()
+        except Exception:
+            LOGGER.debug("Commande d'image des scopes non construite", exc_info=True)
+            return None
+        self._scope_temporary_paths = temporary
+        return command
 
     def _persist_scopes_preferences(self) -> None:
         """Enregistre la disposition / les niveaux des scopes.

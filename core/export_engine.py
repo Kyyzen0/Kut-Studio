@@ -783,9 +783,13 @@ class ExportEngine(QObject):
             from .retime_layers import sampling_plan
 
             plan, prepared = sampling_plan(plan), None
+        rate = max(1.0, float(request.fps))
+        # Une seule image sort : les calques ne sont rastérisés que jusqu'à elle (une image de marge), pas sur toute
+        # leur durée. Avant, une analyse de scopes pendant la lecture écrivait des centaines d'images de calques.
+        horizon = (math.floor(max(0.0, float(playhead)) * rate + 1e-6) + 2) / rate
         filter_complex, video_label, audio_label, input_paths = (
             self._build_filter_complex(
-                plan, width, height, request.fps, self._current_srt_path, prepared=prepared
+                plan, width, height, request.fps, self._current_srt_path, prepared=prepared, horizon=horizon
             )
         )
         # Seule l'image est extraite : l'audio du graphe est consommé par un
@@ -979,6 +983,7 @@ class ExportEngine(QObject):
         *,
         audio_only: bool = False,
         origin: float = 0.0,
+        horizon: float | None = None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
@@ -1000,6 +1005,9 @@ class ExportEngine(QObject):
         L'image composée n'est fabriquée qu'à partir de là ; avant, FFmpeg composait tout depuis 0 pour le jeter
         ensuite (``-ss`` de sortie), et le coût d'un segment croissait avec sa position. Les images gardées sont
         identiques : mêmes horodatages, mêmes filtres. ``0`` (export) : le graphe historique, à l'octet près.
+
+        ``horizon`` : dernier instant dont la sortie a besoin (une seule image : scopes). Les images de calques au-delà
+        ne sont ni rastérisées ni écrites ; ``None`` (export, aperçu) : toute la durée des calques.
 
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
@@ -1034,6 +1042,7 @@ class ExportEngine(QObject):
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
             add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
+            horizon=horizon,
         )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
@@ -1378,6 +1387,7 @@ def _compose_plan_graph(
     quality: str = "export",
     prepared: Mapping[str, PreparedStream] | None = None,
     origin: float = 0.0,
+    horizon: float | None = None,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1491,6 +1501,7 @@ def _compose_plan_graph(
         video_label = compose_graphics(
             parts, plan, width, height, fps, video_label, add_input,
             prefix=p, quality=quality, duration=bg_seconds, nested=nested, origin=origin,
+            horizon=None if nested else horizon,
         )
 
     if not want_audio:

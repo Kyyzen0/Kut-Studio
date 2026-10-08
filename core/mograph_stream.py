@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -74,7 +75,8 @@ def _write_png(image, target: Path) -> None:
     if target.is_file() and target.stat().st_size > 0:
         _touch(target)
         return
-    temporary = target.with_name(f".{target.stem}.{os.getpid()}.tmp.png")
+    # Processus **et** thread : l'aperçu fidèle et les scopes rastérisent chacun dans leur thread, parfois la même image.
+    temporary = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.tmp.png")
     if not image.save(str(temporary), "PNG", 80):
         raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
     os.replace(temporary, target)

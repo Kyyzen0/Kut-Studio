@@ -161,12 +161,15 @@ def compose_graphics(
     duration: float,
     nested: bool = False,
     origin: float = 0.0,
+    horizon: float | None = None,
 ) -> str:
     """Compose la pile motion graphics de ``plan`` au-dessus de ``video_label``.
 
     ``nested`` : le dessous est le cadre **transparent** d'une séquence imbriquée (et non un fond opaque).
     ``origin`` : ``video_label`` ne commence qu'à cet instant (segment d'aperçu) ; aucune image de calque n'est
     rastérisée avant, et un élément terminé avant lui n'entre pas dans le graphe.
+    ``horizon`` : dernier instant utile (extraction d'une image) ; rien n'est rastérisé au-delà, et un élément qui
+    commence après n'entre pas dans le graphe.
     """
     layers = getattr(plan, "graphics_layers", ()) or ()
     if not any(getattr(layer, "role", "draw") == "draw" for layer in layers):
@@ -188,17 +191,20 @@ def compose_graphics(
         if element.end <= origin:
             continue  # fini avant la première image utile : il n'en touche aucune
         start = max(element.start, origin)
+        end = element.end if horizon is None else min(element.end, horizon)
+        if end <= start:
+            continue  # commence après la dernière image utile
         if element.kind == "adjustment":
             current = _compose_adjustment(
                 parts, renderer, element, current, add_input, fps, duration, tag, out, nested=nested,
-                pixel_scale=_pixel_scale(renderer, plan), start=start, origin=origin,
+                pixel_scale=_pixel_scale(renderer, plan), start=start, end=end, origin=origin,
             )
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
         path = write_stream(
             width=width, height=height, fps=float(fps), duration=duration,
-            start=start, end=element.end,
+            start=start, end=end,
             frame_key=lambda t, ids=ids: renderer.frame_key(ids, t) if renderer.any_active(ids, t) else None,
             render=lambda t, ids=ids, blend=apply_blend: renderer.render(ids, t, blend_modes=blend),
             salt=element.kind,
@@ -219,12 +225,13 @@ def _pixel_scale(renderer, plan) -> float:
 
 def _compose_adjustment(
     parts, renderer, element: GraphicsElement, current: str, add_input, fps, duration, tag, out,
-    *, nested: bool = False, pixel_scale: float = 1.0, start: float | None = None, origin: float = 0.0,
+    *, nested: bool = False, pixel_scale: float = 1.0, start: float | None = None, end: float | None = None,
+    origin: float = 0.0,
 ) -> str:
     clip_id = element.clip_id
     path = write_stream(
         width=renderer.width, height=renderer.height, fps=float(fps), duration=duration,
-        start=element.start if start is None else start, end=element.end,
+        start=element.start if start is None else start, end=element.end if end is None else end,
         frame_key=lambda t: renderer.coverage_key(clip_id, t),
         render=lambda t: renderer.render_coverage(clip_id, t),
         salt="adjustment",

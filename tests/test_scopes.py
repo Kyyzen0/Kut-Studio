@@ -1269,6 +1269,9 @@ class _FakeAnalyzer:
         self.cancelled = 0
         self.closed = False
 
+    def would_accept(self, *, force: bool = False) -> bool:
+        return not self.closed
+
     def submit(self, **kwargs) -> object:
         self.submits.append(kwargs)
         return kwargs
@@ -1316,10 +1319,11 @@ def _scopes_window(qtbot, monkeypatch):
     analyzer = _FakeAnalyzer()
     window.scopes_analyzer.close()
     window.scopes_analyzer = analyzer
-    window._build_scopes_ffmpeg_command = lambda playhead: [
+    # La commande est fabriquée par le thread de l'analyseur : la fenêtre ne lui remet qu'une fabrique.
+    window._prepare_scopes_command = lambda playhead: (lambda: ([
         "ffmpeg", "-i", "clip.mp4", "-frames:v", "1",
         "-f", "image2pipe", "-vcodec", "png", "-",
-    ]
+    ], ()))
     window._scopes_visible = True
     return window, analyzer
 
@@ -1398,7 +1402,8 @@ def test_request_scopes_analysis_submits_to_analyzer(
     assert submit["playhead"] == 3.0
     assert submit["levels"] is VideoLevels.VIDEO
     assert submit["force"] is True
-    assert submit["ffmpeg_command"][0] == "ffmpeg"
+    command, temporary = submit["command_factory"]()
+    assert command[0] == "ffmpeg" and temporary == ()
 
 
 def test_request_scopes_analysis_skips_identical_playhead(
