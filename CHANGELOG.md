@@ -21,6 +21,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Ouverture d'un projet `.kut` par double-clic : depuis le Finder sous macOS. Sous Windows et Linux, le bouton
   « Associer les projets .kut » des préférences écrit l'association dans le profil de l'utilisateur, sans droits
   administrateur.
+- Découpage aux changements de plan : « Découper aux changements de plan », dans le menu de séquence, coupe le clip
+  sélectionné à chaque changement de plan détecté par FFmpeg (le clip d'origine garde le premier plan). Un clip retimé,
+  inversé, figé ou imbriqué est refusé. L'opération s'annule comme les autres coupes.
 
 ## [0.2.6] - 2026-10-08
 

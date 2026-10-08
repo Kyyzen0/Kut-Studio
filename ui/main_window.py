@@ -1457,6 +1457,7 @@ class MainWindow(
         sequence_menu.addSeparator()
         for key, handler in (
             ("menu.item.add_clip", None),
+            ("menu.item.scene_cut", lambda: self.cut_at_scene_changes()),
             ("menu.item.trim", lambda: self.cut_at_playhead()),                         # Ctrl+K
             ("menu.item.marker", lambda: self.add_marker_at(self.playhead_seconds)),    # M
         ):

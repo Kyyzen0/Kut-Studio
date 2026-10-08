@@ -261,6 +261,29 @@ DIALOGS_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     "status.transition.deleted": _t("Transition supprimée.", "Transition deleted.", "Transición eliminada."),
     "dialog.marker.name_label": _t("Nom du marqueur", "Marker name", "Nombre del marcador"),
+    "scenes.progress.title": _t("Détection des plans", "Scene detection", "Detección de planos"),
+    "scenes.progress.cancel": _t("Annuler", "Cancel", "Cancelar"),
+    "scenes.running": _t(
+        "Une détection de plans est déjà en cours pour ce clip",
+        "A scene detection is already running for this clip",
+        "Ya hay una detección de planos en curso para este clip",
+    ),
+    "scenes.cancelled": _t("Détection des plans annulée", "Scene detection cancelled", "Detección de planos cancelada"),
+    "scenes.failed": _t(
+        "Détection des plans impossible : {error}",
+        "Scene detection failed: {error}",
+        "No se pudo detectar los planos: {error}",
+    ),
+    "scenes.none": _t(
+        "Aucun changement de plan dans ce clip",
+        "No scene change in this clip",
+        "Ningún cambio de plano en este clip",
+    ),
+    "scenes.done": _t(
+        "{count} plans créés à partir du clip",
+        "{count} shots created from the clip",
+        "{count} planos creados a partir del clip",
+    ),
     "status.clip.cut_none": _t(
         "Aucun clip sélectionné à couper",
         "No clip selected to cut",
