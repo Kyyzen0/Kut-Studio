@@ -95,6 +95,61 @@ def test_two_threads_writing_the_same_layer_playlist_both_succeed(tmp_path, monk
     assert not list(tmp_path.glob("*.tmp"))                 # aucun temporaire laissé
 
 
+def _layer_stream(tmp_path):
+    from core import mograph_stream
+
+    def render(_t):
+        image = QImage(4, 4, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor(10, 20, 30))
+        return image
+
+    return mograph_stream.write_stream(width=4, height=4, fps=10.0, duration=0.2, start=0.0, end=0.2,
+                                       frame_key=lambda _t: ("calque", 1), render=render)
+
+
+def test_a_writer_refused_by_windows_accepts_the_identical_file_of_the_winner(qapp, tmp_path, monkeypatch):
+    """Windows refuse de remplacer un fichier qu'un autre thread remplace au même instant (vu en CI) ; le nom étant
+    l'empreinte du contenu, le fichier du gagnant est le bon."""
+    import os
+    import shutil
+
+    from core import mograph_stream
+
+    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path)
+
+    def windows_replace(source, target):
+        shutil.copyfile(source, target)                     # l'autre écrivain a publié ce même contenu…
+        raise PermissionError(13, "Access is denied")       # …et Windows refuse le nôtre
+
+    monkeypatch.setattr(os, "replace", windows_replace)
+    playlist = _layer_stream(tmp_path)
+    monkeypatch.undo()
+    assert os.path.isfile(playlist)
+    assert list(tmp_path.glob("f-*.png"))
+    assert not [path for path in tmp_path.iterdir() if ".tmp" in path.name]
+
+
+def test_a_refusal_without_a_winner_is_reported_and_leaves_no_temporary(qapp, tmp_path, monkeypatch):
+    import os
+
+    from core import mograph_stream
+
+    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path)
+    monkeypatch.setattr(mograph_stream.time, "sleep", lambda _s: None)
+    calls: list[str] = []
+
+    def refused(source, _target):
+        calls.append(str(source))
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(os, "replace", refused)
+    with pytest.raises(PermissionError):
+        _layer_stream(tmp_path)
+    monkeypatch.undo()
+    assert len(calls) == mograph_stream.SHARED_WRITE_ATTEMPTS  # quelques essais, pas une boucle sans fin
+    assert not [path for path in tmp_path.iterdir() if ".tmp" in path.name]
+
+
 def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(tmp_path):
     built_on: list[int] = []
     leftover = tmp_path / "graphe.txt"

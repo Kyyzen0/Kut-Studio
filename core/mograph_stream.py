@@ -31,6 +31,7 @@ import hashlib
 import math
 import os
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -72,6 +73,29 @@ def _touch(path: Path) -> None:
         pass
 
 
+SHARED_WRITE_ATTEMPTS = 5
+"""Essais pour publier une entrée du cache qu'un autre thread publie au même instant (refus de Windows)."""
+
+
+def _publish_shared(target: Path, publish: Callable[[], object]) -> None:
+    """Publie une entrée du cache **nommée d'après son contenu**, que d'autres threads peuvent publier en même temps.
+
+    Windows refuse (``PermissionError``) de remplacer un fichier qu'un autre thread remplace ou lit au même instant ;
+    macOS et Linux remplacent sans erreur. Le nom étant l'empreinte du contenu, le fichier d'un écrivain concurrent est
+    identique au nôtre : dès qu'il existe, l'entrée est publiée. Sinon on réessaie brièvement.
+    """
+    for attempt in range(SHARED_WRITE_ATTEMPTS):
+        try:
+            publish()
+            return
+        except PermissionError:
+            if target.is_file():
+                return
+            if attempt == SHARED_WRITE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.01 * (attempt + 1))
+
+
 def _write_png(image, target: Path) -> None:
     if target.is_file() and target.stat().st_size > 0:
         _touch(target)
@@ -80,7 +104,14 @@ def _write_png(image, target: Path) -> None:
     temporary = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.tmp.png")
     if not image.save(str(temporary), "PNG", 80):
         raise OSError(f"Impossible d'écrire l'image de calque : {temporary}")
-    os.replace(temporary, target)
+    try:
+        _publish_shared(target, lambda: os.replace(temporary, target))
+    finally:
+        if temporary.exists():         # un écrivain concurrent l'a emporté : notre copie identique est en trop
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
 
 
 def _blank_png(width: int, height: int, directory: Path) -> str:
@@ -165,7 +196,7 @@ def write_stream(
     if not playlist.is_file():
         # Temporaire unique (``mkstemp``) : les scopes et l'aperçu fidèle peuvent écrire la même liste au même moment,
         # depuis deux threads ; un nom par processus faisait échouer l'un des deux ``os.replace``.
-        atomic_write_text(playlist, text, durable=False)
+        _publish_shared(playlist, lambda: atomic_write_text(playlist, text, durable=False))
     return str(playlist)
 
 
