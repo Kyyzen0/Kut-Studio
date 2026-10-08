@@ -53,6 +53,17 @@ Dans l'éditeur de graphiques d'un texte :
   machine à écrire, **karaoké** ; **mots mis en couleur** (indices fixes, couleur de surbrillance).
 * **Karaoké calé sur la voix** : *Synchroniser sur la voix* estime le temps de chaque mot à partir du clip voix sous le titre
   (segments voisés, alignement par programmation dynamique). C'est une estimation : les temps se corrigent un par un.
+* **Sous-titres automatiques** (*Réseaux sociaux › Sous-titres automatiques*) : la voix (le clip sélectionné s'il porte
+  du son, sinon le premier clip de la piste *Voix*) est transcrite **sur la machine** par whisper.cpp, puis posée en
+  lignes courtes (32 caractères, 3 s au plus, coupées aux fins de phrase et aux pauses) : en **sous-titres** sur une
+  piste de sous-titres, ou en **titres karaoké** (style vertical, chaque mot s'allume quand il est dit, au temps reconnu
+  et non estimé). Les lignes vont sur une piste libre, créée au besoin ; une annulation les retire toutes. Une voix
+  retimée ou inversée est refusée.
+  Installation : le programme `whisper-cli` (macOS : `brew install whisper-cpp`) et un modèle `ggml-*.bin` (par exemple
+  `ggml-base.bin`, 148 Mo, sur huggingface.co/ggerganov/whisper.cpp). Les deux se règlent dans *Préférences ›
+  Transcription* ; sans réglage, le programme est cherché comme FFmpeg (variable `KUT_STUDIO_WHISPER`, dossier `bin/`
+  de l'application, `PATH`) et le modèle dans le dossier `whisper` des données de l'application (ou
+  `KUT_STUDIO_WHISPER_MODEL`). Rien n'est téléchargé par l'application.
 * **Polices embarquées** (OFL) : Anton et Saira ExtraCondensed, identiques sur toutes les machines.
 * Presets motion graphics, catégorie **Vertical** : Titre TikTok, Mot en couleur, Sous-titre karaoké. Les presets
   intégrés sont reconstruits sur la toile du projet (le lower third se recentre en 9:16).
@@ -128,6 +139,7 @@ information a une source, l'aperçu fidèle rend le graphe de l'export, les proc
 | Ken Burns | `ken_burns.py` | mixin social |
 | Grille rythmique | `beat_grid.py` (modèle), `beat_edit.py` (couper, répartir), `beat_detection.py` (numpy) | `beat_grid_dialog.py`, mixin `beat_grid.py`, règle |
 | Texte | `text_runs.py` (emojis, mots), `text_animations.py`, `word_timing.py`, `bundled_fonts.py` | `text_animation_editor.py` |
+| Sous-titres automatiques | `transcription.py` (whisper.cpp : découverte, tâche, mots datés), `auto_captions.py` (lignes, pistes) | mixin `auto_captions.py`, `transcription_settings.py` (préférences) |
 | Lumière, impact | `light_layers.py`, `impact_fx.py`, effets `GLOW` / `CHROMATIC_ABERRATION` / `HEAT_HAZE` (`effects_model.py`) | bibliothèques Graphiques et Effets |
 | Templates | `project_templates.py`, `template_slots.py`, `leaderboard.py` | `template_gallery.py`, `leaderboard_dialog.py`, mixin `templates.py` |
 | SFX, ducking | `sfx_synth.py`, `sfx_placement.py`, `audio_automation.DUCKING_PRESETS` | `sfx_library.py`, mixin `social_audio.py` |
@@ -196,5 +208,8 @@ livrables (`test_social_deliverables.py` : couverture à l'image exacte, copie s
 * La normalisation ne s'applique qu'à l'export (l'aperçu garde le niveau du mixage).
 * Un emplacement de template n'accepte qu'une vidéo : une photo se pose sur une piste de titres.
 * Le recadrage suivi est figé en images-clés : corriger le tracker ensuite demande de relancer la commande.
-* Le karaoké calé sur la voix est une estimation (enveloppe d'énergie, pas de reconnaissance vocale).
+* *Synchroniser sur la voix* reste une estimation (enveloppe d'énergie) : elle garde le texte saisi. Les sous-titres
+  automatiques, eux, reconnaissent les mots (whisper.cpp), mais écrivent ce qu'ils entendent (un nom propre peut être
+  mal orthographié : « Kut Studio » devient « Q Studio »).
+* whisper.cpp n'est pas embarqué dans les paquets de l'application : il s'installe à part, comme le modèle.
 * Les noms des presets motion graphics intégrés ne sont pas traduits (comme les presets existants).

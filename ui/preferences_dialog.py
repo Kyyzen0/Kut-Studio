@@ -78,6 +78,7 @@ from ui.performance_settings import PerformanceSettingsTab
 from ui.shortcut_manager import ShortcutManager
 from ui.shortcuts_editor import ShortcutsEditor
 from ui.theme import set_role
+from ui.transcription_settings import TranscriptionSettingsGroup
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +202,8 @@ class PreferencesDialog(QDialog):
     update_check_changed = Signal(bool)
     update_prereleases_changed = Signal(bool)
     file_association_requested = Signal()
+    whisper_path_changed = Signal(str)
+    whisper_model_changed = Signal(str)
     restore_defaults_requested = Signal()
     # Groupe « Fichiers de projet » : construit seulement sous Windows et Linux (voir _build_ui).
     files_box: QGroupBox | None = None
@@ -214,6 +217,8 @@ class PreferencesDialog(QDialog):
         current_render_quality: str = "standard",
         current_check_updates: bool = DEFAULT_CHECK_UPDATES,
         current_include_prereleases: bool = DEFAULT_INCLUDE_PRERELEASES,
+        current_whisper_path: str = "",
+        current_whisper_model: str = "",
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
         performance_host=None,
@@ -239,6 +244,8 @@ class PreferencesDialog(QDialog):
         self.current_render_quality = current_render_quality
         self.current_check_updates = bool(current_check_updates)
         self.current_include_prereleases = bool(current_include_prereleases)
+        self.current_whisper_path = str(current_whisper_path or "")
+        self.current_whisper_model = str(current_whisper_model or "")
         self.setModal(True)
         self.setMinimumWidth(360)
         # Le dialogue est détruit à sa fermeture : ``show_preferences``
@@ -300,6 +307,10 @@ class PreferencesDialog(QDialog):
         for choice in _CHOICE_GROUPS:
             layout.addWidget(self._build_choice_group(choice))
         layout.addWidget(self._build_updates_group())
+        self.transcription_box = TranscriptionSettingsGroup(self.current_whisper_path, self.current_whisper_model)
+        self.transcription_box.whisper_path_changed.connect(self.whisper_path_changed)
+        self.transcription_box.whisper_model_changed.connect(self.whisper_model_changed)
+        layout.addWidget(self.transcription_box)
         if file_association_supported():
             layout.addWidget(self._build_file_association_group())
 
@@ -476,6 +487,7 @@ class PreferencesDialog(QDialog):
         self.check_updates_box.setText(translate("prefs.updates.check"))
         self.prereleases_box.setText(translate("prefs.updates.prereleases"))
         self.updates_note.setText(translate("prefs.updates.note", version=APP_VERSION))
+        self.transcription_box.retranslate()
         if self.files_box is not None:
             self.files_box.setTitle(translate("prefs.files.title"))
             self.files_note.setText(translate("prefs.files.note"))

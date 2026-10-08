@@ -32,6 +32,11 @@ ensuite déclenche `.github/workflows/release.yml`.
   au clip sélectionné et anime son cadrage pour garder au centre le point suivi dans l'onglet Suivi. Un plan 16:9 devient
   un plan 9:16 sans perdre son sujet, sans jamais montrer de bord noir. Le résultat est fait d'images-clés retouchables,
   et s'annule en une fois.
+- Sous-titres automatiques, sans rien envoyer en ligne : *Réseaux sociaux › Sous-titres automatiques* transcrit la voix
+  avec whisper.cpp installé sur la machine, puis pose des lignes courtes, en sous-titres ou en titres karaoké où chaque
+  mot s'allume quand il est dit. Le programme `whisper-cli` et le modèle se règlent dans *Préférences › Transcription*
+  (ils sont aussi trouvés tout seuls : Homebrew, dossier de données de l'application). Une annulation retire toutes les
+  lignes.
 
 ## [0.2.6] - 2026-10-08
 

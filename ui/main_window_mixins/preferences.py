@@ -58,6 +58,7 @@ class PreferencesMixin:
             **self._performance_settings_fields(),
             **self._update_settings_fields(),
             **self._social_settings_fields(),
+            **self._auto_captions_settings_fields(),
         )
 
     def _performance_settings_fields(self) -> dict:
@@ -89,6 +90,8 @@ class PreferencesMixin:
             current_render_quality=self._render_quality,
             current_check_updates=self._update_check_enabled,
             current_include_prereleases=self._update_include_prereleases,
+            current_whisper_path=getattr(self, "_whisper_path", ""),
+            current_whisper_model=getattr(self, "_whisper_model", ""),
             shortcut_manager=self.shortcuts,
             performance_host=self,
             parent=self,
@@ -102,6 +105,8 @@ class PreferencesMixin:
         dialog.update_check_changed.connect(self.set_update_check_enabled)
         dialog.update_prereleases_changed.connect(self.set_update_include_prereleases)
         dialog.file_association_requested.connect(self._associate_project_files)
+        dialog.whisper_path_changed.connect(self.set_whisper_path)
+        dialog.whisper_model_changed.connect(self.set_whisper_model)
         self._preferences_dialog = dialog
         # « finished » part à la fermeture, avant que WA_DeleteOnClose ne détruise l'objet C++ :
         # attendre le retour d'exec() laisserait une fenêtre où la référence pointe sur un objet mort.
@@ -151,6 +156,9 @@ class PreferencesMixin:
                 # Mémoire des mises à jour, pas des réglages : la version ignorée et l'heure de la dernière recherche.
                 skipped_update_version=snapshot.skipped_update_version,
                 last_update_check=snapshot.last_update_check,
+                # Emplacement de whisper.cpp et de son modèle : une installation, pas un goût.
+                whisper_path=snapshot.whisper_path,
+                whisper_model=snapshot.whisper_model,
             )
         )
 

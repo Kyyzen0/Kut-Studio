@@ -87,6 +87,7 @@ class SocialMixin:
                              ("impact_flash", "impact.menu.flash"), ("impact_on_cuts", "impact.menu.on_cuts")):
             impact.addAction(self._command_action(command, key))
         self._build_social_audio_menu(menu)
+        self._build_auto_captions_menu(menu)
         menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
         menu.addAction(self._command_action("leaderboard", "leaderboard.menu"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
