@@ -269,7 +269,7 @@ def test_invalidate_clip_keeps_other_clips_queued(tmp_path):
 
 def test_identical_request_during_render_does_not_cancel_it(tmp_path):
     """Un tick d'interface ne doit jamais annuler le rendu en vol."""
-    from core.preview_cache import DiskPreviewCache, PreviewSegmentKey
+    from core.preview_cache import DiskPreviewCache
     from core.preview_engine import PreviewEngine, PreviewJob
     from core.task_queue import TaskQueue
 

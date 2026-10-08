@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QScrollArea,
     QSlider,
-    QStyle,
     QTextEdit,
     QWidget,
 )

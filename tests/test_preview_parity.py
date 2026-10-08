@@ -7,7 +7,7 @@ def test_preview_command_uses_same_graph_as_export():
     import tempfile
 
     from core.export_engine import ExportEngine, with_output_color_stage
-    from core.filter_graph import build_filter_complex, build_preview_command
+    from core.filter_graph import build_preview_command
 
     from tests.test_preview_fidelity import _project_with_clip
 
@@ -102,7 +102,6 @@ def test_timeline_cache_dot(qtbot):
 
 def test_preview_window_schedules_segments(qtbot, tmp_path, monkeypatch):
     """La tête de lecture déclenche un préchargement non bloquant."""
-    import os
 
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "preview"))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")

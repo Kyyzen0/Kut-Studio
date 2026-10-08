@@ -16,8 +16,6 @@ import pytest
 
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.text_presets import (
-    TEXT_PRESETS_FILE,
-    TextPreset,
     TextPresetStore,
     builtin_text_preset_ids,
     builtin_text_presets,

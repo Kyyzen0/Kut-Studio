@@ -341,7 +341,7 @@ def test_render_plan_propagates_transform_and_keyframes():
 def engine(monkeypatch):
     """Crée un ``ExportEngine`` avec un binaire FFmpeg simulé."""
     monkeypatch.setattr(
-        export_engine.shutil, "which", lambda _: "/usr/bin/ffmpeg"
+        shutil, "which", lambda _: "/usr/bin/ffmpeg"
     )
     monkeypatch.setattr(export_engine, "_ffmpeg_path", "/usr/bin/ffmpeg")
     return ExportEngine()

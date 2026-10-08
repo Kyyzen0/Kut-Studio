@@ -11,12 +11,11 @@ texte à plusieurs lignes se lit « premier ligne = titre, le reste = aide » (`
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from ui.design_system import Iconography, ButtonVariant, Spacing
 from ui.icons import IconLabel, IconName
-from ui.theme import active_palette, set_role, set_variant
+from ui.theme import set_role, set_variant
 
 MAX_TEXT_WIDTH = 360
 """Largeur maximale du texte d'aide (px) : une ligne plus longue se lit mal et fait déborder une colonne étroite."""

@@ -212,7 +212,7 @@ def french_language():
 
 def test_hardware_diagnostics_follow_the_current_language(qtbot, monkeypatch, tmp_path, fake_proxies, french_language):
     """Le diagnostic copiable est calculé à la demande : il suit la langue, sans clé manquante ni repli."""
-    from core.memory_monitor import NORMAL, MemoryStatus
+    from core.memory_monitor import MemoryStatus
 
     # La mémoire libre est lue à chaque appel : sans lecture figée, deux appels successifs différaient de 0,1 Go
     # et le test, qui compare le texte français avant / après, échouait de façon intermittente.

@@ -19,7 +19,6 @@ from core.workspace_state import (
     DockArea,
     FloatingGeometry,
     PanelId,
-    PanelState,
     WorkspaceState,
     delete_named_workspace,
     list_named_workspaces,

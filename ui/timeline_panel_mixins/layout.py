@@ -4,7 +4,6 @@ from __future__ import annotations
 
 
 
-from core.cache_keys import file_exists
 from core.timeline_spatial import SnapIndex, SpanIndex
 from core.timeline_view_model import (
     TimelineClipView,
@@ -18,10 +17,6 @@ from ui.timeline_widgets.common import (
     _TRACK_TYPE_LABELS,
     _current_palette,
 )
-from ui.timeline_widgets.track_header import TrackRowHeader
-from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
-from ui.timeline_widgets.common import _COLLAPSED_HEIGHT, _CONTENT_TOP, _HEIGHTS, _TRACK_TYPE_LABELS, _current_palette
-from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.track_header import TrackRowHeader
 from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 

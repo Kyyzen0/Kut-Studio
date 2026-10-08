@@ -182,7 +182,6 @@ class ColorGradingMixin:
         from core.color_grading import (
             ColorGradingError,
             ColorGradingService,
-            ColorPresetStore,
         )
 
         clip, track = self._find_clip_and_track(clip_id)
@@ -220,7 +219,6 @@ class ColorGradingMixin:
     def on_lut_loaded(self, clip_id: str, lut_path: str) -> None:
         """Importe un LUT et l'attache au clip sélectionné."""
         from core.color_grading import (
-            ColorGrade,
             ColorGradingError,
             ColorGradingService,
         )

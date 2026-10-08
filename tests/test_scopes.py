@@ -29,8 +29,6 @@ from core.scopes import (
     ScopeFrame,
     ScopeResult,
     VideoLevels,
-    VIDEO_BLACK_POINT,
-    VIDEO_WHITE_POINT,
     analyze_frame,
     compute_alerts,
     compute_histogram,
@@ -1291,7 +1289,6 @@ def _window(qtbot, monkeypatch, config_dir=None):
     """
     import tempfile
 
-    from PySide6.QtWidgets import QMessageBox
 
     from ui.main_window import MainWindow
 

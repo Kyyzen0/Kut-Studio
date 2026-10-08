@@ -17,7 +17,7 @@ import pytest
 
 from core.preview_cache import DiskPreviewCache, PreviewSegmentKey
 from core.preview_engine import PreviewEngine
-from core.project_model import Clip, MediaAsset, Project, Track
+from core.project_model import Clip
 from core.render_plan import RenderLayer, build_render_plan
 from core.task_queue import TaskQueue
 from core.timeline_spatial import SnapIndex, SpanIndex

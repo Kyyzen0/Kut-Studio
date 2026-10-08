@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QColor, QImage, QPixmap
 
 from core.cache_keys import file_exists
 from core.media_previews import (

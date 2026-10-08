@@ -6,7 +6,7 @@ import pytest
 
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
-from core.project_model import Clip, MediaAsset, Project, Track
+from core.project_model import Clip, MediaAsset, Project
 from core.track_operations import (
     add_track,
     collect_track_ids,

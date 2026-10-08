@@ -49,7 +49,7 @@ from core.gpu_effects import (
     gblur_weights,
     program_for,
 )
-from core.gpu_frames import LAYOUTS, invert4, layout_for, yuv_to_rgb_matrix
+from core.gpu_frames import invert4, layout_for, yuv_to_rgb_matrix
 from core.memory_monitor import CRITICAL, NORMAL, WARNING, MemoryStatus, MemoryWatch, classify, pressure_actions, read_memory_status
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None

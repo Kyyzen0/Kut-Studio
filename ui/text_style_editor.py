@@ -26,14 +26,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
-    QFrame,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QSizePolicy,
-    QSpinBox,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
@@ -535,4 +531,3 @@ def _system_font_families() -> list[str]:
 
 # Imports différés : évite les cycles et garde un typage strict.
 from ui.design_system import Spacing  # noqa: E402  (import local)
-from ui.i18n import translate

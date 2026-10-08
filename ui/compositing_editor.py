@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
-    QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QPushButton,

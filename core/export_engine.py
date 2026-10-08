@@ -41,7 +41,6 @@ import math
 import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -77,7 +76,6 @@ from .tool_paths import find_media_tool
 from .hardware_encoding import looks_like_encoder_failure, redact_command
 from .optical_flow import BackendPreference
 from .video_encoders import (
-    EncoderChoice,
     EncoderUnavailableError,
     HardwareEncoder,
     cpu_choice,
@@ -85,7 +83,6 @@ from .video_encoders import (
 )
 from .visual_effects import (
     max_transform_value,
-    ANIMATABLE_PROPERTIES,
     ClipTransform,
     TransformKeyframe,
     build_ffmpeg_expression,
@@ -2145,7 +2142,7 @@ def _build_color_grade_filters(grade) -> str:
         chaîne vide si l'identité totale.
     """
     # Import paresseux pour éviter les cycles d'imports.
-    from .color_grading import ColorGrade, ColorGradingError
+    from .color_grading import ColorGrade
 
     if grade is None or not isinstance(grade, ColorGrade):
         return ""

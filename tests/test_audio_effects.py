@@ -8,7 +8,6 @@ import pytest
 
 from core.audio_effects_library import (
     AUDIO_EFFECT_PRESETS_FILE,
-    AudioEffectPreset,
     AudioEffectPresetCategory,
     AudioEffectPresetStore,
     BUILTIN_AUDIO_EFFECT_PRESETS_COUNT,
@@ -16,7 +15,6 @@ from core.audio_effects_library import (
     CATEGORY_LABELS,
     EFFECT_TYPE_CATEGORY,
     MAX_NAME_LENGTH,
-    builtin_audio_effect_preset_ids,
     builtin_audio_effect_presets,
     filter_audio_effect_presets,
     load_audio_effect_preset_data,
@@ -54,10 +52,8 @@ from core.audio_effects_model import (
 from core.edit_history import ProjectHistory
 from core.export_engine import (
     _build_clip_audio_effect_filters,
-    _format_db,
-    _format_seconds,
 )
-from core.project_io import CURRENT_VERSION, load_project, save_project
+from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import _build_audio_layer
 

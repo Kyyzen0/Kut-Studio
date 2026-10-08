@@ -19,7 +19,6 @@ from test_render_queue import (  # noqa: F401 - fixtures partagées
 )
 
 from core.hardware_cache import CapabilityService, set_default_service
-from core.hardware_encoding import HardwareEncoder
 from core.render_job import ErrorKind, JobStatus, RenderJob
 from core.render_presets import builtin_presets, custom_preset, get_preset, with_hardware
 from core.user_settings import UserSettings, load_user_settings, save_user_settings

@@ -25,7 +25,6 @@ from core.transition_presets import (
     CATEGORY_LABELS,
     MAX_DURATION,
     MIN_DURATION,
-    TRANSITION_PRESETS_FILE,
     TransitionPreset,
     TransitionPresetCategory,
     TransitionPresetStore,

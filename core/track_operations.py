@@ -32,8 +32,6 @@ Si l'utilisateur renomme une piste, son identifiant technique
 from __future__ import annotations
 
 import re
-import uuid
-from typing import Iterable
 
 
 # Type-check only : évite l'import circulaire.

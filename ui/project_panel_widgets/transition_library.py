@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -24,7 +23,7 @@ from PySide6.QtWidgets import (
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import DIALOG_MARGINS, Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
-from ui.icons import IconButton, IconName, make_icon
+from ui.icons import IconName, make_icon
 from ui.keyboard_navigation import let_tab_leave, set_single_default
 from ui.theme import COLORS, active_palette, label_style
 from ui.project_panel_widgets.wide_button import make_wide_button

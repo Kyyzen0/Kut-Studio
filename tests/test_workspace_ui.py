@@ -9,7 +9,6 @@ rattacher doit rendre exactement le même objet, sinon deux timelines
 divergeraient — ce qui est explicitement interdit.
 """
 
-import os
 
 import pytest
 from PySide6.QtWidgets import QMenu

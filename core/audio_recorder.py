@@ -131,7 +131,6 @@ class AudioRecorder:
             self._start_timer()
             return
         try:
-            from PySide6.QtCore import QTimer
             from PySide6.QtMultimedia import (
                 QAudioFormat,
                 QAudioSource,

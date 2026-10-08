@@ -1209,7 +1209,6 @@ def test_imported_media_asset_survives_save_and_load(
     qtbot, tmp_path, monkeypatch
 ) -> None:
     """Un MediaAsset importé est conservé après un aller-retour ``.kut``."""
-    from core.project_io import load_project
 
     window = _build_window(qtbot, monkeypatch)
     video_path = tmp_path / "clip.mp4"
@@ -2413,7 +2412,6 @@ def test_undo_shortcut_restores_previous_state(qtbot, monkeypatch) -> None:
     # Déclenchement du raccourci Ctrl+Z (Undo).
     window.undo_last()
     # Le clip est revenu à sa position initiale.
-    from core.timeline_evaluator import evaluate_timeline
     from core.timeline_operations import find_clip
 
     moved = find_clip(window.project, target_clip_id)

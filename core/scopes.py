@@ -31,10 +31,9 @@ teinte de peau se situe alors à ~+123° sur le cercle des teintes.
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable, Sequence
+from typing import Sequence
 
 
 # ---------------------------------------------------------------------------

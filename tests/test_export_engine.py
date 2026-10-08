@@ -5,6 +5,7 @@ traitement des événements ``QProcess``. Le moteur d'export ne lance
 aucun processus : les binaires FFmpeg sont mockés via ``monkeypatch``.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,7 @@ def qt_app():
 @pytest.fixture
 def engine(monkeypatch):
     """Retourne un ``ExportEngine`` avec un chemin ffmpeg simulé."""
-    monkeypatch.setattr(export_engine.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
     monkeypatch.setattr(export_engine, "_ffmpeg_path", "/usr/bin/ffmpeg")
     return ExportEngine()
 
@@ -489,7 +490,7 @@ def test_process_error_does_not_emit_failed_when_cancel_requested(engine):
 
 def test_start_emits_failed_when_plan_has_no_layers(engine, tmp_path, monkeypatch):
     """Un plan sans couches vidéo doit émettre ``failed`` synchroniquement."""
-    monkeypatch.setattr(export_engine.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
     monkeypatch.setattr(export_engine, "_ffmpeg_path", "/usr/bin/ffmpeg")
 
     engine = ExportEngine()
@@ -907,7 +908,7 @@ def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
     monkeypatch.setattr(
         engine_module, "_ffmpeg_supports_subtitles", lambda: False
     )
-    monkeypatch.setattr(engine_module.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
 
     sub = _subtitle_asset()
     video = _video_for_subtitle_export(str(tmp_path / "v.mp4"))

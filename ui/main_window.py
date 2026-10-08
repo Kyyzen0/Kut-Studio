@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
@@ -19,42 +19,33 @@ from PySide6.QtWidgets import (
 
 from core.autosave import AutosaveCoordinator
 from core.audio_effects_library import AudioEffectPresetStore
-from core.effects_library import EffectPreset, UserPresetStore
+from core.effects_library import UserPresetStore
 from core.edit_history import ProjectHistory
 from core.transition_presets import (
-    TransitionPreset,
     TransitionPresetStore,
-    builtin_transition_presets,
 )
 from core.text_presets import TextPresetStore
 from core.export_engine import ExportEngine
 from core.render_queue import RenderQueue
-from core.media_probe import probe_video
 from core.process_supervisor import shutdown_children
 from core.project_factory import create_default_project
 from core.project_model import Project
-from core.subtitle_io import parse_srt
 from core.shortcuts import ShortcutMap
-from core.scopes import ColorSpace, ScopeResult, VideoLevels
 from core.scopes_analyzer import (
     ScopeAnalyzer,
     cleanup_temporary_paths,
-    png_to_scope_frame,
 )
 from core.studio_runtime import StudioRuntime, peak_rss_bytes
 from core.audio_recorder import AudioRecorder
-from core.timeline_editing import apply_solo, remove_marker
+from core.timeline_editing import apply_solo
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
 from core.workspace_state import PanelId
-from core.timeline_operations import find_clip, snap_timeline_position
+from core.timeline_operations import find_clip
 from core.timeline_evaluator import (
-    ActiveClip,
     timeline_duration,
 )
 from core.user_settings import (
-    DEFAULT_LANGUAGE,
-    DEFAULT_THEME,
     UserSettings,
     load_user_settings,
 )
@@ -66,7 +57,7 @@ from ui.mixer_panel import MixerPanel
 from ui.preview_panel import PreviewPanel
 from ui.project_panel import ProjectPanel
 from ui.shortcut_manager import ShortcutManager
-from ui.scopes_panel import ScopeLayout, ScopeView, ScopesPanel
+from ui.scopes_panel import ScopesPanel
 from ui.properties_panel import PropertiesPanel
 from ui.timeline_panel import TimelinePanel
 from ui.viewer_host import ViewerHostSplitter

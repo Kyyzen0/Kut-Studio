@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QTreeWidget,

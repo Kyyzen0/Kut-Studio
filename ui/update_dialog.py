@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
 from core.release_assets import CHECKSUMS_FILE, OperatingSystem, Target
 from core.update_service import DownloadResult
 from core.updates import CheckResult, InstallContext, InstallKind, UpdateError, UpdateErrorKind, UpdateOffer
-from core.versioning import Version
 from ui import i18n
 from ui.design_system import DIALOG_MARGINS, ButtonVariant, Spacing, StatusKind, TextRoles
 from ui.keyboard_navigation import set_single_default
