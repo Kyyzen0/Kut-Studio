@@ -190,8 +190,8 @@ class ScopesMixin:
             # interrompre l'édition.
             pass
 
-    def toggle_scopes_visible(self) -> None:
-        """Affiche / masque le panneau de scopes."""
+    def toggle_scopes_visible(self, *, persist: bool = True) -> None:
+        """Affiche / masque le panneau de scopes (``persist=False`` : le temps d'une page, sans changer la préférence)."""
         self._scopes_visible = not self._scopes_visible
         self.scopes_panel.setVisible(self._scopes_visible)
         # L'action de menu reflète toujours l'état réel du splitter.
@@ -208,7 +208,8 @@ class ScopesMixin:
                 host.setSizes([420, 260])
             else:
                 host.setSizes([680, 0])
-        self._persist_scopes_preferences()
+        if persist:
+            self._persist_scopes_preferences()
         if self._scopes_visible:
             # On analyse immédiatement : l'utilisateur veut voir les
             # scopes tout de suite.

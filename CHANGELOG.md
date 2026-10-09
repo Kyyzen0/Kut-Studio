@@ -16,6 +16,18 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Page Couleur**, à la manière de DaVinci Resolve : grand moniteur et scopes au centre, l'inspecteur à gauche, les
+  nœuds et les roues à droite, la timeline en bas. On y passe par le bouton *Couleur* au centre de la barre
+  supérieure, par le rail ou par *Fenêtre › Page Couleur* ; *Montage* ramène la disposition de montage. Chaque page
+  garde la disposition qu'on lui laisse.
+- **Nœuds d'étalonnage** : un clip s'étalonne en plusieurs nœuds en série, chacun avec tous les réglages (roues,
+  exposition, courbes, LUT…). On ajoute un nœud après le nœud courant (Alt+S), on le contourne (Ctrl+D), on le nomme,
+  on le glisse à une autre place, on le réinitialise ou on le supprime, chaque geste en une étape d'historique.
+  L'inspecteur règle le nœud choisi. Le moniteur montre toute la chaîne en temps réel, quel que soit le nombre de
+  nœuds, et un clip qu'on ne découpe pas reste écrit dans le fichier comme avant.
+- **Roues lift / gamma / gain / offset** : le palet pousse les noirs, les tons moyens, les blancs ou tout le signal
+  vers une couleur (l'anneau suit le vectorscope), la molette en règle le niveau, Maj affine et le double-clic remet à
+  zéro. L'export applique la formule exacte, niveau par niveau.
 - Panneau **Historique** (*Fenêtre › Panneaux › Historique*) : toutes les étapes du montage, nommées, de l'ouverture du
   projet à la dernière modification. Un clic revient à une étape en une fois ; les étapes suivantes restent
   rétablissables (en italique) jusqu'à la prochaine modification, et l'état enregistré dans le fichier est marqué ●.
@@ -63,6 +75,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- La largeur d'un panneau déplacé dans une autre zone (l'inspecteur à gauche, par exemple) est gardée : elle était
+  attribuée aux Médias pour la zone de gauche et à l'inspecteur pour celle de droite, quel que soit le panneau qui s'y
+  trouvait.
 - Export : les titres et calques animés à 30 images/s sautaient une image sur six (et en doublaient une autre), une
   saccade visible dans tout pop-in, glissé ou karaoké. Chaque image de l'animation est maintenant exportée.
 - Export : un plan vidéo non tourné était légèrement flou (décalé d'un demi-pixel et moyenné, netteté −12 %). Il sort

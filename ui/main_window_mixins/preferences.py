@@ -49,7 +49,11 @@ class PreferencesMixin:
             render_quality=self._render_quality,
             master_gain_db=self._master_gain_db,
             master_muted=self._master_muted,
-            scopes_visible=bool(getattr(self, "_scopes_visible", False)),
+            # Sur la page Couleur, les scopes sont affichés le temps de la page : la préférence reste celle du Montage.
+            scopes_visible=bool(
+                getattr(self, "_scopes_visible", False) if getattr(self, "_scopes_on_edit_page", None) is None
+                else self._scopes_on_edit_page
+            ),
             scopes_layout=scopes_layout,
             scopes_view=scopes_view,
             scopes_levels=scopes_levels,

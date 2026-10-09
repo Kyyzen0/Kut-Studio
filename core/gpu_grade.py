@@ -1,7 +1,8 @@
 """Étalonnage dans le moniteur GPU : la chaîne d'étalonnage de l'export, cuite en LUT 3D par FFmpeg.
 
-L'export étalonne un calque avec ``eq`` → ``colorbalance`` → ``curves`` → ``lut3d``
-(:func:`core.export_engine._build_color_grade_filters`). Le moniteur GPU ne réécrit pas ces quatre filtres : FFmpeg
+L'export étalonne un calque avec ``eq`` → ``colorbalance`` → ``lutrgb`` (roues) → ``curves`` → ``lut3d``, nœud après
+nœud pour un clip étalonné par nœuds (:func:`core.export_engine._build_color_grade_filters`). Le moniteur GPU ne
+réécrit pas ces filtres : FFmpeg
 fait passer un **réseau de couleurs** — :data:`LUT_SIZE`\\ ³ codes, multiples de 5, dans l'espace d'entrée du calque —
 dans **cette chaîne exacte**, avec les propriétés de couleur du média ; ce qui ressort est une LUT 3D (couleur du
 calque → RVB étalonné) que la passe ``grade`` du shader lit avec une interpolation trilinéaire. Même principe que les
@@ -69,18 +70,21 @@ def grade_is_active(grade) -> bool:
 
 
 def lut_key(grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = "") -> str:
-    """Identité d'une LUT : la chaîne de l'export, le fichier ``.cube`` (taille, date), l'espace d'entrée."""
+    """Identité d'une LUT : la chaîne de l'export, les fichiers ``.cube`` (taille, date), l'espace d'entrée."""
+    from .color_nodes import luts_of
+
     chain = grade_filters(grade)
-    lut = getattr(grade, "lut", None)
-    stamp = ""
-    path = (getattr(lut, "source_path", None) or getattr(lut, "path", "")) if lut is not None else ""
-    if path:
+    stamps = []
+    for lut in luts_of(grade):                               # un par nœud qui en a un
+        path = lut.source_path or lut.path
+        if not path:
+            continue
         try:
             info = os.stat(path)
-            stamp = f"{info.st_size}:{info.st_mtime_ns}"
+            stamps.append(f"{info.st_size}:{info.st_mtime_ns}")
         except OSError:
-            stamp = "absent"
-    text = "|".join((chain, stamp, domain, colorspace or "", color_range or "", str(LUT_SIZE)))
+            stamps.append("absent")
+    text = "|".join((chain, ",".join(stamps), domain, colorspace or "", color_range or "", str(LUT_SIZE)))
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:20]
 
 

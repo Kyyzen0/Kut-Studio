@@ -248,14 +248,18 @@ def save_project(project: Project, file_path: str) -> None:
 def _materialize_project_luts(project: Project, project_root: Path) -> None:
     """Rend les LUTs d'un projet portables avant la sauvegarde."""
     from .color_grading import ColorGrade, copy_lut_into_project
+    from .color_nodes import luts_of, map_grades
+
+    def portable(grade: ColorGrade) -> ColorGrade:
+        if grade.lut is None:
+            return grade
+        return grade.with_lut(copy_lut_into_project(grade.lut, project_root))
 
     for track in project.all_tracks():
         for clip in track.clips:
             grade = getattr(clip, "color_grade", None)
-            if not isinstance(grade, ColorGrade) or grade.lut is None:
-                continue
-            portable = copy_lut_into_project(grade.lut, project_root)
-            clip.color_grade = grade.with_lut(portable)
+            if luts_of(grade):                               # un ColorGrade, ou chaque nœud d'un graphe
+                clip.color_grade = map_grades(grade, portable)
     portable_presets = []
     for preset in getattr(project, "color_presets", []) or []:
         grade = getattr(preset, "grade", None)
@@ -1298,13 +1302,17 @@ def _deserialize_audio_effects(raw: Any) -> list:
 
 
 def _color_grade_to_dict(grade) -> dict[str, Any] | None:
-    """Sérialise un :class:`ColorGrade` ou retourne ``None`` si neutre."""
+    """Sérialise un :class:`ColorGrade` ou un graphe de nœuds d'étalonnage ; ``None`` sinon."""
     if grade is None:
         return None
     # Import paresseux pour éviter les cycles d'imports.
-    from .color_grading import ColorGrade
+    from .color_grading import ColorGrade, wheels_to_dict
+    from .color_nodes import ColorNodeGraph, graph_to_dict
+    if isinstance(grade, ColorNodeGraph):
+        return graph_to_dict(grade, _color_grade_to_dict)
     if not isinstance(grade, ColorGrade):
         return None
+    wheels = wheels_to_dict(grade)
     return {
         "exposure": float(grade.exposure),
         "contrast": float(grade.contrast),
@@ -1338,6 +1346,7 @@ def _color_grade_to_dict(grade) -> dict[str, Any] | None:
             if grade.lut is not None else None
         ),
         "enabled": bool(grade.enabled),
+        **({"wheels": wheels} if wheels else {}),
     }
 
 
@@ -1356,7 +1365,7 @@ def _deserialize_color_presets(
 ) -> list:
     if not isinstance(raw, list):
         return []
-    from .color_grading import ColorPresetCategory, make_color_preset
+    from .color_grading import ColorGrade, ColorPresetCategory, make_color_preset
 
     loaded = []
     seen: set[str] = set()
@@ -1364,7 +1373,7 @@ def _deserialize_color_presets(
         if not isinstance(item, dict):
             continue
         grade = _deserialize_color_grade(item.get("grade"), project_root=project_root)
-        if grade is None:
+        if not isinstance(grade, ColorGrade):                # un preset est un réglage, pas un graphe de nœuds
             continue
         try:
             preset = make_color_preset(
@@ -1387,7 +1396,7 @@ def _deserialize_color_presets(
 def _deserialize_color_grade(
     raw: Any, *, project_root: Path | None = None,
 ):
-    """Reconstruit un :class:`ColorGrade` ou retourne ``None``.
+    """Reconstruit un :class:`ColorGrade` (ou un graphe de nœuds, clé ``nodes``) ou retourne ``None``.
 
     Les entrées invalides (paramètres hors bornes, points de courbe
     invalides, LUT corrompu) sont silencieusement ramenées à
@@ -1396,6 +1405,10 @@ def _deserialize_color_grade(
     """
     if raw is None:
         return None
+    if isinstance(raw, dict) and "nodes" in raw:
+        from .color_nodes import graph_from_dict
+
+        return graph_from_dict(raw, lambda node_raw: _deserialize_color_grade(node_raw, project_root=project_root))
     # Import paresseux.
     from .color_grading import (
         ColorCurve,
@@ -1403,6 +1416,7 @@ def _deserialize_color_grade(
         ColorGrade,
         ColorGradingError,
         LUTResource,
+        wheels_from_dict,
     )
 
     if not isinstance(raw, dict):
@@ -1490,6 +1504,7 @@ def _deserialize_color_grade(
             curves=curves,
             lut=lut,
             enabled=bool(raw.get("enabled", True)),
+            **wheels_from_dict(raw.get("wheels")),
         )
     except ColorGradingError:
         return None

@@ -51,6 +51,7 @@ class PanelId(str, Enum):
     INSPECTOR = "inspector"
     MIXER = "mixer"
     HISTORY = "history"
+    COLOR = "color"
 
     def label(self) -> str:
         """Nom lisible du panneau (utilisé dans les menus)."""
@@ -64,6 +65,7 @@ _PANEL_LABELS: dict[PanelId, str] = {
     PanelId.INSPECTOR: "Inspecteur",
     PanelId.MIXER: "Mixeur",
     PanelId.HISTORY: "Historique",
+    PanelId.COLOR: "Couleur",
 }
 
 
@@ -87,6 +89,8 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
     PanelId.MIXER: DockArea.BOTTOM,
     # L'historique aussi : une colonne à droite, ouverte depuis le menu Fenêtre.
     PanelId.HISTORY: DockArea.RIGHT,
+    # Nœuds et roues d'étalonnage : la colonne de droite de la page Couleur.
+    PanelId.COLOR: DockArea.RIGHT,
 }
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
@@ -97,6 +101,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.TIMELINE: 300,
     PanelId.MIXER: 320,
     PanelId.HISTORY: 240,
+    PanelId.COLOR: 440,
 }
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
@@ -107,10 +112,11 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.TIMELINE: 240,
     PanelId.MIXER: 320,
     PanelId.HISTORY: 200,
+    PanelId.COLOR: 340,
 }
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
-DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY})
+DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR})
 
 #: Taille de la barre d'outils d'options d'un panneau (px).
 PANEL_TOOLBAR_SIZE: int = 28
@@ -488,17 +494,21 @@ def load_workspace_state(
     settings_dir: str | os.PathLike[str] | None = None,
 ) -> WorkspaceState:
     """Charge l'espace de travail ; défaut si absent ou invalide."""
-    path = workspace_file_path(settings_dir)
+    return _read_state(workspace_file_path(settings_dir)) or WorkspaceState.default()
+
+
+def _read_state(path: Path) -> WorkspaceState | None:
+    """État lu d'un fichier ; ``None`` s'il est absent ou illisible."""
     if not path.exists():
-        return WorkspaceState.default()
+        return None
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError:
-        return WorkspaceState.default()
+        return None
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
-        return WorkspaceState.default()
+        return None
     return WorkspaceState.from_dict(data).normalized()
 
 
@@ -510,6 +520,61 @@ def save_workspace_state(
     path = workspace_file_path(settings_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, state.to_json())
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+#
+# Une page (à la manière de DaVinci Resolve) est une étape du travail avec sa
+# propre disposition : on passe du montage à l'étalonnage d'un clic, et chaque
+# page retrouve la disposition qu'on lui avait laissée. La page Montage garde
+# ``workspace.json`` (rien ne change pour qui ne quitte jamais le montage) ;
+# chaque autre page a son fichier ``workspace_<page>.json``.
+
+PAGE_EDIT: str = "edit"
+PAGE_COLOR: str = "color"
+PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR)
+
+
+def page_default_state(page: str) -> WorkspaceState:
+    """Disposition d'origine d'une page.
+
+    Couleur : grand moniteur au centre (les scopes dessous), l'inspecteur à
+    gauche pour les réglages primaires, les courbes et la LUT du nœud courant,
+    les nœuds et les roues à droite, la timeline en bas pour passer d'un plan à
+    l'autre ; les médias se replient.
+    """
+    state = WorkspaceState.default()
+    if page != PAGE_COLOR:
+        return state
+    return (
+        state.with_panel(PanelId.MEDIA, visible=False)
+        .with_panel(PanelId.INSPECTOR, area=DockArea.LEFT)
+        .with_panel(PanelId.COLOR, area=DockArea.RIGHT, visible=True)
+        .with_center_ratio(0.62)
+    )
+
+
+def page_state_path(page: str, settings_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Fichier de la disposition d'une page (``workspace.json`` pour le Montage)."""
+    main = workspace_file_path(settings_dir)
+    return main if page == PAGE_EDIT else main.with_name(f"workspace_{page}.json")
+
+
+def load_page_state(page: str, settings_dir: str | os.PathLike[str] | None = None) -> WorkspaceState:
+    """Disposition enregistrée d'une page, sinon sa disposition d'origine."""
+    return _read_state(page_state_path(page, settings_dir)) or page_default_state(page)
+
+
+def save_page_state(
+    page: str, state: WorkspaceState, settings_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Enregistre la disposition d'une page (écriture atomique)."""
+    path = page_state_path(page, settings_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, state.normalized().to_json())
     return path
 
 
@@ -647,7 +712,7 @@ def _builtin_workspace(name: str) -> WorkspaceState:
         # Flux de travail centré sur la timeline.
         return state.with_panel(PanelId.MEDIA, visible=False)
     if name == "color":
-        return state.with_panel(PanelId.MEDIA, visible=False)
+        return page_default_state(PAGE_COLOR)
     if name == "compact":
         return state.with_panel(PanelId.INSPECTOR, visible=False)
     return state
@@ -661,6 +726,9 @@ __all__ = [
     "FLOATING_TITLEBAR_SIZE",
     "FloatingGeometry",
     "MIN_SIZE",
+    "PAGES",
+    "PAGE_COLOR",
+    "PAGE_EDIT",
     "PANEL_TOOLBAR_SIZE",
     "PanelId",
     "PanelState",
@@ -671,9 +739,13 @@ __all__ = [
     "delete_named_workspace",
     "list_named_workspaces",
     "load_named_workspace",
+    "load_page_state",
     "load_workspace_state",
     "named_workspace_path",
+    "page_default_state",
+    "page_state_path",
     "save_named_workspace",
+    "save_page_state",
     "save_workspace_state",
     "workspace_display_name",
     "workspace_file_path",

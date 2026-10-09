@@ -19,7 +19,7 @@ from core import tracking_ops as tracking
 from core.audio_automation import AudioAutomationService, DuckingConfig, TrackRole
 from core.audio_effects_model import add_audio_effect_to_clip
 from core.canvas_guides import add_guide
-from core.color_grading import ColorGrade, ColorGradingService, make_user_color_preset
+from core.color_grading import ColorGrade, ColorGradingService, Wheel, make_user_color_preset
 from core.compositing import Compositing, Mask, MaskShape
 from core.effects_model import add_effect_to_clip, create_effect
 from core.library_organization import LibraryOrganization
@@ -66,7 +66,11 @@ def build_rich_project() -> Project:
     ops.set_transform_keyframe(project, second.id, "pan_x", 1.5, 0.5)
     add_effect_to_clip(project, first.id, "blur")
     add_audio_effect_to_clip(project, music.id, "compressor")
-    ColorGradingService().set_grade(project, first.id, ColorGrade.identity().with_field("exposure", 0.3))
+    ColorGradingService().set_grade(project, first.id, ColorGrade.identity().with_field("exposure", 0.3)
+                                    .with_wheel("lift", Wheel(0.05, 0.0, -0.05, 0.1)))
+    # Étalonnage par nœuds : deux nœuds en série, un nommé, l'autre contourné.
+    ColorGradingService().edit_nodes(project, second.id, lambda graph: graph.with_label("n1", "Balance")
+                                     .with_node_after("n1", ColorGrade(saturation=1.2, enabled=False))[0])
 
     compositing = Compositing(masks=(Mask(shape=MaskShape.ELLIPSE, feather=0.1, name="m1"),))
     third.compositing = compositing
@@ -142,5 +146,5 @@ def build_rich_project() -> Project:
     library.move_asset("av1", folder.id)
     library.add_tag_to_asset("av1", tag.id)
     project.color_presets.append(make_user_color_preset(
-        name="P", description="d", grade=ColorGrade.identity().with_field("contrast", 0.2)))
+        name="P", description="d", grade=ColorGrade(contrast=0.2, gain=Wheel(y=-0.1))))
     return project

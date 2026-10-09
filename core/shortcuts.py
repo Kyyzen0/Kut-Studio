@@ -459,6 +459,9 @@ COMMANDS: tuple[Command, ...] = (
     # Ctrl+Alt+S, « Enregistrer sous » garde Ctrl+Shift+S.
     _cmd("toggle_scopes", Category.VIEW, "Ctrl+Alt+S", scope=_A, application_wide=True),
     _cmd("preferences", Category.VIEW, "Ctrl+,", scope=_A, application_wide=True),
+    # Pages (Montage, Couleur) : sans touche par défaut, Maj+chiffre étant pris par les angles Multicam (AZERTY).
+    _cmd("page_edit", Category.VIEW, scope=_A, application_wide=True),
+    _cmd("page_color", Category.VIEW, scope=_A, application_wide=True),
     # --- Audio (sans raccourci par défaut) ---------------------------------
     _cmd("audio_record_toggle", Category.AUDIO),
     _cmd("audio_master_mute", Category.AUDIO),

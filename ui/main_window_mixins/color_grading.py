@@ -26,7 +26,23 @@ def _main_window():
 
 
 class ColorGradingMixin:
-    """Mixin de ``MainWindow`` (color_grading)."""
+    """Mixin de ``MainWindow`` (color_grading).
+
+    Chaque commande agit sur le **nœud courant** du clip (page Couleur, :mod:`ui.main_window_mixins.color_page`) ;
+    un clip sans nœuds n'en a qu'un.
+    """
+
+    def _color_node_for(self, clip_id: str) -> str | None:
+        """Nœud du clip que les commandes modifient : le nœud courant s'il y existe, sinon le premier."""
+        try:
+            graph = ColorGradingService().get_graph(self.project, clip_id)
+        except ColorGradingError:
+            return None
+        return graph.node_or_first(getattr(self, "_color_node_id", None)).id
+
+    def _color_grade_of(self, clip_id: str) -> ColorGrade:
+        """Réglage du nœud courant du clip."""
+        return ColorGradingService().get_grade(self.project, clip_id, self._color_node_for(clip_id))
 
     def _commit_color_grade(
         self, clip_id: str, grade: ColorGrade, label: str, *, coalesce: bool = False
@@ -39,7 +55,7 @@ class ColorGradingMixin:
             # distincte de cette action ponctuelle.
             self._finalize_color_history()
         try:
-            ColorGradingService().set_grade(self.project, clip_id, grade)
+            ColorGradingService().set_grade(self.project, clip_id, grade, self._color_node_for(clip_id))
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return False
@@ -101,7 +117,7 @@ class ColorGradingMixin:
         self, clip_id: str, field: str, value: float
     ) -> None:
         try:
-            current = ColorGradingService().get_grade(self.project, clip_id)
+            current = self._color_grade_of(clip_id)
             updated = current.with_field(field, float(value))
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
@@ -110,7 +126,7 @@ class ColorGradingMixin:
 
     def on_color_grade_enabled_changed(self, clip_id: str, enabled: bool) -> None:
         try:
-            current = ColorGradingService().get_grade(self.project, clip_id)
+            current = self._color_grade_of(clip_id)
         except ColorGradingError:
             return
         self._commit_color_grade(
@@ -121,7 +137,7 @@ class ColorGradingMixin:
         self, clip_id: str, channel: str, points: object
     ) -> None:
         try:
-            current = ColorGradingService().get_grade(self.project, clip_id)
+            current = self._color_grade_of(clip_id)
             curve = ColorCurve(points=tuple(tuple(point) for point in points))
             curves = current.curves._replace(channel, curve)
             updated = current.with_curves(curves)
@@ -149,7 +165,7 @@ class ColorGradingMixin:
                 grade_dict, project_root=self.project_io_root()
             )
         )
-        if grade is None:
+        if not isinstance(grade, ColorGrade):                # un graphe de nœuds ne remplace pas un nœud
             self._report_edit_refused(translate("status.color.invalid"))
             return
         self._commit_color_grade(clip_id, grade, translate("history.color.grade"))
@@ -167,7 +183,7 @@ class ColorGradingMixin:
         self._finalize_color_history()
         service = ColorGradingService()
         try:
-            service.reset_grade(self.project, clip_id)
+            service.reset_grade(self.project, clip_id, self._color_node_for(clip_id))
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
@@ -194,7 +210,7 @@ class ColorGradingMixin:
             return
         service = ColorGradingService()
         try:
-            service.apply_preset(self.project, clip_id, preset)
+            service.apply_preset(self.project, clip_id, preset, self._color_node_for(clip_id))
         except ColorGradingError as exc:
             self._report_edit_refused(exc)
             return
@@ -205,7 +221,7 @@ class ColorGradingMixin:
     def on_color_preset_save_requested(self, clip_id: str, name: str) -> None:
         self._finalize_color_history()
         try:
-            grade = ColorGradingService().get_grade(self.project, clip_id)
+            grade = self._color_grade_of(clip_id)
             preset = make_user_color_preset(name=name, description="", grade=grade)
             self.properties_panel.color_preset_store.add_user_preset(preset)
         except (ColorGradingError, OSError, ValueError) as exc:
@@ -252,13 +268,14 @@ class ColorGradingMixin:
         # On préserve les réglages existants du clip ; seul le LUT
         # est remplacé.
         service = ColorGradingService()
-        current = service.get_grade(self.project, clip_id)
+        node_id = self._color_node_for(clip_id)
+        current = service.get_grade(self.project, clip_id, node_id)
         # On reconstruit en s'assurant que le hash / la taille
         # reflètent le contenu lu (la valeur ``_from_path`` a déjà
         # re-calculé ces champs).
         try:
             updated = current.with_lut(resource)
-            service.set_grade(self.project, clip_id, updated)
+            service.set_grade(self.project, clip_id, updated, node_id)
         except ColorGradingError as exc:
             _main_window().QMessageBox.warning(self, "LUT", str(exc))
             return
@@ -268,7 +285,7 @@ class ColorGradingMixin:
 
     def on_color_lut_removed(self, clip_id: str) -> None:
         try:
-            current = ColorGradingService().get_grade(self.project, clip_id)
+            current = self._color_grade_of(clip_id)
         except ColorGradingError:
             return
         self._commit_color_grade(clip_id, current.with_lut(None), translate("history.color.remove_lut"))

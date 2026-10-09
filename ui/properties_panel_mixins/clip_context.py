@@ -189,6 +189,7 @@ class ClipContextMixin:
             self.speed_group.setEnabled(enabled_tr)
         finally:
             self._pop_signal_block()
+            self.clip_shown.emit()
         if pending_transform is not None and pending_keyframes is not None:
             self.update_transform_from_clip(
                 pending_transform,
