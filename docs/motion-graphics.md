@@ -156,6 +156,9 @@ trim → mise au cadre (scale + pad) → fps → remappage temporel
   → overlay à la position de l'ancrage (ou fusion)
 ```
 
+Un plan qui ne tourne jamais n'a pas de `rotate` (centré dans un cadre `hypot(iw,ih)` de côté impair, il était
+décalé d'un demi-pixel et flouté), et un plan opaque pas de filtre d'opacité.
+
 ### Écarts avec l'ordre « idéal »
 
 - Les **effets d'un calque graphique** s'appliquent après son transform (au
@@ -193,6 +196,23 @@ fusion est faite en RVB planaire, puis l'alpha du calque est réappliqué : le
 
 - **Export et aperçu fidèle** : le graphe FFmpeg lit les calques sous forme
   de flux `.ffconcat` (images PNG + durées) produits par le rastériseur Qt.
+  - **Cadence déclarée.** Chaque image de la liste porte `option framerate`
+    (d'où `-f concat -safe 0`, ajoutés par `export_engine.input_arguments`) :
+    une image PNG s'ouvre sinon à 25 i/s, et à 30 i/s deux images tombaient
+    sur le même tic de 40 ms (une image d'animation sur six sautée).
+  - **Élément limité à ses images visibles** (`write_span_stream`) : un flash
+    de 0,8 s n'entre dans le graphe que pendant ses 24 images. En mode Normal,
+    `overlay` laisse passer le dessous avant et après. En mode de fusion, la
+    fusion se calcule sur le dessous coupé à ces images (`trim` au rang
+    d'image), puis est complétée par des images transparentes d'une source
+    indépendante (`color`, `concat`, horodatages refaits par `setpts=N+…`) :
+    `overlay` n'attend jamais la fusion en retenant le dessous, et reste
+    désactivé (`enable`) hors de la fenêtre. Images identiques au bit près à
+    celles du flux complet (`tests/test_mograph_span.py`). Seule la fusion sur
+    le fond transparent d'une séquence imbriquée garde le flux complet.
+  - **Encodage PNG en parallèle** : le dessin reste dans le fil appelant,
+    l'encodage (≈ 80 % du coût d'une image, `QImage.save` libère le verrou de
+    l'interpréteur) part dans `WRITE_WORKERS` fils, avec une file bornée.
 - **Viewer interactif** (avant que le segment fidèle soit prêt, et pendant
   la lecture) : le même rastériseur dessine les calques au-dessus du lecteur
   vidéo. Approximations (moniteur CPU) : pas d'effets FFmpeg ni d'adjustment layers, fusion
