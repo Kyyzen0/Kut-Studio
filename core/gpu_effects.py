@@ -40,11 +40,8 @@ puis un test de cohérence contre le filtre FFmpeg de l'export.
 
 from __future__ import annotations
 
-import logging
 import math
-from dataclasses import dataclass, field
-
-LOGGER = logging.getLogger(__name__)
+from dataclasses import dataclass
 
 OP_NONE = 0
 OP_EQ = 1
@@ -346,8 +343,12 @@ def reference_layer(
     chroma_scale: tuple[float, float] = (2.0, 2.0),
     start_space: int = SPACE_YUV,
     layer_scale: tuple[float, float] | None = None,
+    keep_space: bool = False,
 ):
     """Calque après effets, en RVB 0..1 (H, W, 3) — même calcul que les shaders.
+
+    ``keep_space`` : rend ``(pixels, espace)`` dans l'espace où les effets ont laissé le calque (la passe
+    d'étalonnage le lit tel quel, sans aller-retour par le RVB).
 
     Args:
         yuv: tableau (H, W, 3) des codes Y, U, V normalisés (chroma à pleine résolution).
@@ -398,6 +399,8 @@ def reference_layer(
                 pixels[..., 0] = np.clip(luma + op.amount * (luma - blurred), 0.0, 1.0)
         for point_op in segment:
             pixels, space = _apply_point(np, pixels, space, point_op, yuv_to_rgb, rgb_to_yuv, coords)
+    if keep_space:
+        return pixels, space
     if space == SPACE_YUV:
         pixels = _convert(np, pixels, yuv_to_rgb)
     return pixels
@@ -448,39 +451,6 @@ def _reference_haze(np, pixels, op: HazeOp, pixel_scale):
     return out
 
 
-@dataclass(frozen=True)
-class EffectSupport:
-    """Ce que l'aperçu GPU sait montrer d'un clip (le reste : segments fidèles)."""
-
-    program: EffectProgram
-    color_grade: bool = False
-    notes: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def complete(self) -> bool:
-        return not self.program.unsupported and not self.color_grade
-
-
-def effect_support(effects, color_grade=None) -> EffectSupport:
-    """Programme GPU + ce qui reste réservé au rendu fidèle (étalonnage, effets inconnus)."""
-    program = program_for(effects)
-    grading = color_grade is not None and not _grade_is_identity(color_grade)
-    return EffectSupport(program, grading)
-
-
-def _grade_is_identity(grade) -> bool:
-    checker = getattr(grade, "is_identity", None)
-    if callable(checker):
-        try:
-            return bool(checker())
-        except Exception:
-            LOGGER.debug("is_identity() a échoué : l'étalonnage est traité comme actif", exc_info=True)
-            return False
-    if isinstance(checker, bool):
-        return checker
-    return False
-
-
 __all__ = [
     "BINOMIAL5",
     "MAX_BLUR_RADIUS",
@@ -495,13 +465,11 @@ __all__ = [
     "VIGNETTE_NATURAL",
     "BlurOp",
     "EffectProgram",
-    "EffectSupport",
     "GlowOp",
     "HazeOp",
     "PointOp",
     "ShiftOp",
     "SharpenOp",
-    "effect_support",
     "gaussian_weights",
     "gblur_weights",
     "haze_shift",

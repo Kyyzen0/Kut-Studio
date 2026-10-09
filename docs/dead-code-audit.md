@@ -68,7 +68,8 @@ la fin de l'audit. **Ce n'est pas une liste de suppressions** : beaucoup ont des
 d'extension, d'autres des gestionnaires d'interface jamais branchés. À instruire au cas par cas avec la même grille.
 
 * **Sans aucun appelant, sans test** : `core.animation_targets.all_targets`, `core.canvas_guides.remove_guide`,
-  `core.filter_graph.build_input_list`, `core.gpu_effects.gaussian_weights` et `effect_support`,
+  `core.filter_graph.build_input_list`, `core.gpu_effects.gaussian_weights` (et `effect_support`, supprimé le 2026-10-09 :
+  l'étalonnage passe désormais au moniteur GPU, voir `docs/gpu-preview.md`),
   `core.mograph_layers.move_layer` et `offset_animation`, `core.mograph_presets.delete_user_preset`,
   `core.mograph_stream.still_playlist`, `core.sequences.clip_media_type`, `nested_overflow` et `reachable_sequences`,
   `core.timeline_editing.marker_near`, `core.timeline_navigation.format_clock`, `core.timeline_operations.apply_clip_transform_on_move`

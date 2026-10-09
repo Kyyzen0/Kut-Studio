@@ -357,6 +357,7 @@ class FaithfulPreviewMixin:
             opacity=1.0,
         )
         self.preview_panel.set_effects(())
+        self.preview_panel.set_color_grade(None)
         # Idem pour la fusion, le masque et les calques d'effets du moniteur GPU : le segment les contient
         # déjà. Ceux du clip précédemment affiché (multiply, overlay, masque...) étaient redessinés par-dessus,
         # et un fond noir sous un « multiply » donnait du noir.

@@ -1808,6 +1808,7 @@ class MainWindow(
                 pan_y=evaluated.pan_y,
             )
             self.preview_panel.set_effects(clip_obj.effects)
+            self.preview_panel.set_color_grade(getattr(clip_obj, "color_grade", None))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
         if self.is_playing:

@@ -66,6 +66,7 @@ from core.gpu_composite import (
     present_uniforms,
 )
 from core.gpu_frames import LAYOUTS, QT_COLOR_RANGES, QT_COLOR_SPACES, layout_for
+from core.gpu_grade import DOMAIN_RGB, DOMAIN_YUV, LUT_SIZE, GradeLutCache
 from ui.i18n import translate
 
 LOGGER = logging.getLogger("kut_studio.gpu")
@@ -157,7 +158,7 @@ def describe_qt_frame(frame) -> tuple[str, int, int, str, str]:
 class RhiExecutor:
     """Ressources QRhi et exécution d'un :class:`~core.gpu_composite.FramePlan`."""
 
-    SHADERS = ("clear", "prep", "blur", "sharpen", "shift", "haze", "glow", "composite")
+    SHADERS = ("clear", "prep", "blur", "sharpen", "shift", "haze", "glow", "grade", "composite")
 
     def __init__(self, rhi: QRhi) -> None:
         self.rhi = rhi
@@ -535,6 +536,8 @@ class GpuPreviewWidget(QRhiWidget):
     """``(type, détail)`` : ``init``, ``render``, ``device_lost``, ``out_of_memory``."""
     ready = Signal(str)
     """Première image réussie (nom de l'API et du GPU)."""
+    gradeBaked = Signal()
+    """Une LUT d'étalonnage vient d'être cuite (émis depuis le fil de cuisson : connexion en file vers ``update``)."""
 
     def __init__(self, api: str = "metal", parent=None, cache_budget: int | None = None) -> None:
         super().__init__(parent)
@@ -543,6 +546,10 @@ class GpuPreviewWidget(QRhiWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.stats = FrameStats()
         self.cache = GpuTextureCache(cache_budget or 256 * 1024 * 1024, release=self._release_cached)
+        self.gradeBaked.connect(self.update, Qt.QueuedConnection)
+        self.grades = GradeLutCache(on_ready=self.gradeBaked.emit)
+        self._lut_images: OrderedDict[str, QImage] = OrderedDict()
+        self._last_luts: dict[str, str] = {}
         self.executor: RhiExecutor | None = None
         self._frame = CompositeFrame(1920, 1080)
         self._pending: dict[str, PendingFrame] = {}
@@ -645,9 +652,12 @@ class GpuPreviewWidget(QRhiWidget):
             frame = self._frame
             ready = [layer for layer in frame.layers
                      if executor.has_source(layer.source) and layer.source in self._sources]
-            frame = replace(frame, layers=tuple(ready), sources=tuple(self._sources.values()))
+            images = dict(self._mattes)
+            ready = [self._resolve_grade(layer, images) for layer in ready]
+            adjustments = tuple(self._resolve_grade(layer, images) for layer in frame.adjustments)
+            frame = replace(frame, layers=tuple(ready), sources=tuple(self._sources.values()), adjustments=adjustments)
             mattes = {}
-            for key, image in self._mattes.items():
+            for key, image in images.items():
                 texture, _cached = self.cache.acquire(("matte", key), image.width() * image.height() * 4,
                                                       lambda image=image: executor.new_matte_texture(batch, image))
                 mattes[key] = texture
@@ -665,6 +675,40 @@ class GpuPreviewWidget(QRhiWidget):
         if not self._confirmed:
             self._confirmed = True
             QTimer.singleShot(0, lambda: self.ready.emit(self.device_label()))
+
+    def _resolve_grade(self, layer, images: dict):
+        """Étalonnage demandé → passe ``grade`` si sa LUT est cuite (sinon le calque passe sans, le temps de la
+        cuisson). L'espace d'entrée de la LUT est celui du média (YUV et ses propriétés de couleur, ou RVB)."""
+        grade = getattr(layer, "grade", None)
+        if grade is None or getattr(layer, "grade_lut", ""):
+            return layer
+        source = self._sources.get(getattr(layer, "source", ""))
+        if source is not None and LAYOUTS.get(source.layout) is not None and LAYOUTS[source.layout].is_yuv:
+            options = {"domain": DOMAIN_YUV, "colorspace": source.colorspace, "color_range": source.color_range}
+        else:
+            options = {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}
+        found = self.grades.lookup(grade, **options)
+        slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
+        if found is None:
+            # Cuisson en cours (un curseur qu'on glisse) : la LUT précédente du calque, plutôt qu'un clignotement
+            # sans étalonnage ; aucune si le calque n'en a jamais eu.
+            previous = self._last_luts.get(slot)
+            if previous is not None and previous in self._lut_images and not self.grades.failed(grade, **options):
+                images[previous] = self._lut_images[previous]
+                return replace(layer, grade=None, grade_lut=previous)
+            return replace(layer, grade=None)
+        key, atlas = found
+        name = f"lut:{key}"
+        self._last_luts[slot] = name
+        image = self._lut_images.get(name)
+        if image is None:
+            size = LUT_SIZE
+            image = QImage(atlas, size * size, size, size * size * 3, QImage.Format.Format_RGB888).copy()
+            self._lut_images[name] = image
+            while len(self._lut_images) > 16:
+                self._lut_images.popitem(last=False)
+        images[name] = image
+        return replace(layer, grade=None, grade_lut=name)
 
     def releaseResources(self) -> None:  # noqa: N802 - API Qt
         # Qt libère les ressources quand le widget est masqué ou détaché, puis le recrée : en pause aucune

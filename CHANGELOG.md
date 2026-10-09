@@ -30,6 +30,12 @@ ensuite déclenche `.github/workflows/release.yml`.
   sous-titres automatiques et la coupe au rythme, et « Baisser sous… » pour baisser cette piste sous une autre
   (ducking par paire, qu'on peut aussi retirer).
 
+- Moniteur GPU : l'étalonnage se voit en temps réel, en lecture comme à l'arrêt (exposition, contraste,
+  saturation, température, teinte, ombres, hautes lumières, courbes et LUT `.cube`), sur le clip affiché comme sur
+  un calque d'effets. Le moniteur ne réimite pas l'étalonnage : FFmpeg passe un réseau de couleurs dans la chaîne
+  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,05 niveau en
+  moyenne.
+
 ### Changed
 
 - Courbe de volume : deux points sans maintien sont désormais reliés par une ligne droite. Avant, le volume sautait

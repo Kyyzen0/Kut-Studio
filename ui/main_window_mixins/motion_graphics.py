@@ -309,6 +309,7 @@ class MotionGraphicsMixin:
 
     def _sync_gpu_adjustments(self, plan, scene, t: float) -> None:
         """Calques d'effets actifs → moniteur GPU (effets sur la vidéo, couverture exacte)."""
+        from core.gpu_grade import grade_is_active
         from core.graphics import GraphicType
         from core.mograph_raster import MographRenderer
 
@@ -316,7 +317,8 @@ class MotionGraphicsMixin:
         layers = [
             layer for layer in plan.graphics_layers
             if getattr(getattr(layer, "graphic", None), "type", None) == GraphicType.ADJUSTMENT
-            and layer.timeline_start <= t < layer.timeline_end and getattr(layer, "effects", ())
+            and layer.timeline_start <= t < layer.timeline_end
+            and (getattr(layer, "effects", ()) or grade_is_active(getattr(layer, "color_grade", None)))
         ]
         if not layers:
             panel.set_adjustments(())
@@ -327,7 +329,8 @@ class MotionGraphicsMixin:
         for layer in layers:
             coverage = renderer.render_coverage(layer.clip_id, t)
             key = f"adjust:{layer.clip_id}:{width}x{height}:{renderer.coverage_key(layer.clip_id, t)!r}"
-            adjustments.append((key, tuple(layer.effects), coverage, 1.0))
+            grade = layer.color_grade if grade_is_active(getattr(layer, "color_grade", None)) else None
+            adjustments.append((key, tuple(layer.effects), coverage, 1.0, grade))
         panel.set_adjustments(adjustments)
 
     def _refresh_viewer_overlay(self, t: float) -> None:
