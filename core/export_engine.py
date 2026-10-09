@@ -2224,9 +2224,12 @@ def _build_color_grade_filters(grade, tag: str = "cg") -> str:
     # Import paresseux pour éviter les cycles d'imports.
     from .color_grading import ColorGrade
     from .color_nodes import ColorNodeGraph
-    from .color_render import Highlight, render_filters
+    from .color_render import Compare, Highlight, compare_filters, render_filters
     from .color_wheels import wheels_filter
 
+    if isinstance(grade, Compare):
+        # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.
+        return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k"), grade.split, tag)
     if isinstance(grade, (ColorNodeGraph, Highlight)):
         # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
         # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et

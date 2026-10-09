@@ -95,11 +95,6 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Shows in the viewer what the qualifier selects, the rest in grey. Does not affect the export.",
         "Muestra en el visor lo que selecciona el calificador, el resto en gris. No afecta a la exportación.",
     ),
-    "color.qualifier.highlight_unavailable": _t(
-        "Nécessite le moniteur GPU (Préférences › Performances).",
-        "Requires the GPU viewer (Preferences › Performance).",
-        "Requiere el visor GPU (Preferencias › Rendimiento).",
-    ),
     "color.qualifier.hue": _t("Teinte", "Hue", "Tono"),
     "color.qualifier.sat": _t("Saturation", "Saturation", "Saturación"),
     "color.qualifier.lum": _t("Luminance", "Luminance", "Luminancia"),

@@ -19,8 +19,9 @@ Opérations, toutes en ``gbrp`` 8 bits (les trois plans R, V, B ; mélanges exac
   qualifié pose **sa correction** ``G`` selon sa clé : ``maskedmerge(dessous, G, K)`` (prendre sa sortie, déjà mélangée
   à son entrée par la clé, adoucirait deux fois le bord) ; sans clé, elle recouvre.
 
-:class:`Highlight` (moniteur seulement) montre la sélection d'un nœud qualifié : sa sortie là où la clé le choisit,
-le reste en gris assombri.
+:class:`Highlight` montre la sélection d'un nœud qualifié : sa sortie là où la clé le choisit, le reste en gris
+assombri. :class:`Compare` montre l'image sans étalonnage à gauche d'une part de la largeur du clip. Tous deux ne
+servent qu'à l'aperçu (moniteur GPU, ou segments fidèles sans lui), jamais à l'export.
 """
 
 from __future__ import annotations
@@ -50,6 +51,33 @@ class Highlight:
 
     def is_identity(self) -> bool:
         return False
+
+
+@dataclass(frozen=True)
+class Compare:
+    """Avant / après dans l'aperçu fidèle (sans moniteur GPU) : à gauche de ``split`` (part de la largeur de l'image du
+    clip), l'image sans étalonnage ; ``value`` : l'étalonnage montré à droite (le clip, ou sa sélection montrée)."""
+
+    value: object
+    split: float
+
+    enabled = True
+
+    def is_identity(self) -> bool:
+        return False
+
+
+def compare_filters(graded: str, split: float, tag: str) -> str:
+    """``graded`` (la chaîne ou le sous-graphe de l'étalonnage) à droite, l'image d'origine à gauche de ``split`` ;
+    insérable dans une chaîne à virgules comme le reste."""
+    share = min(1.0, max(0.0, float(split)))
+    if not graded or share <= 0.0:
+        return graded
+    return (
+        f"split=2[{tag}o][{tag}i];[{tag}i]null,{graded}[{tag}g];"
+        f"[{tag}o]format=rgba,crop=w='max(2,trunc(iw*{share:.6f}/2)*2)':h=ih:x=0:y=0[{tag}l];"
+        f"[{tag}g]format=rgba[{tag}r];[{tag}r][{tag}l]overlay=x=0:y=0:format=rgb"
+    )
 
 
 class _Streams:

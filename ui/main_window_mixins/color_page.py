@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
-from core.color_render import Highlight
+from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
 from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES
 from ui.i18n import translate
@@ -30,6 +30,12 @@ class ColorPageMixin:
         self._color_node_id: str | None = None
         self._color_highlight = False                       # « afficher la sélection » (moniteur seulement)
         self._color_compare: float | None = None            # avant / après : part gauche sans étalonnage
+        from PySide6.QtCore import QTimer
+
+        self._compare_refresh = QTimer(self)                 # segments fidèles : après le dernier mouvement du trait
+        self._compare_refresh.setSingleShot(True)
+        self._compare_refresh.setInterval(250)
+        self._compare_refresh.timeout.connect(self._refresh_compare_preview)
         self._scopes_on_edit_page: bool | None = None
         self.color_panel = ColorPanel()
         editor = self.color_panel.nodes
@@ -156,20 +162,42 @@ class ColorPageMixin:
         panel.set_target(graph, graph.node_or_first(self._color_node_id).id, editable=not locked)
         panel.set_highlight(self._color_highlight)
         panel.set_compare(self._color_compare is not None)
-        gpu = getattr(self.preview_panel, "gpu_view", None) is not None
-        panel.qualifier.highlight_button.setEnabled(gpu and not locked)
-        panel.qualifier.highlight_button.setToolTip(translate(
-            "color.qualifier.highlight_tip" if gpu else "color.qualifier.highlight_unavailable"))
-        panel.compare_button.setEnabled(gpu)
-        panel.compare_button.setToolTip(translate("color.compare" if gpu else "color.qualifier.highlight_unavailable"))
 
     def _set_color_compare(self, split: float | None) -> None:
-        """Comparaison avant / après du moniteur : ``split`` (part gauche sans étalonnage) ou ``None`` (arrêtée)."""
+        """Comparaison avant / après : ``split`` (part gauche du cadre sans étalonnage) ou ``None`` (arrêtée). Le
+        moniteur GPU la montre aussitôt ; les segments fidèles (sans GPU, ou un montage hors de sa couverture) sont
+        recalculés un instant après le dernier mouvement du trait."""
+        changed = (split is None) != (self._color_compare is None) or split != self._color_compare
         self._color_compare = split
         self.preview_panel.set_grade_split(split)
         panel = getattr(self, "color_panel", None)
         if panel is not None:
             panel.set_compare(split is not None)
+        if changed:
+            self._compare_refresh.start()
+
+    def _refresh_compare_preview(self) -> None:
+        clip_id = self._color_clip_id()
+        if clip_id is not None:
+            self._refresh_color_monitor(clip_id)
+
+    def _preview_grade_overrides(self) -> dict | None:
+        """Ce que les segments fidèles montrent à la place de l'étalonnage du clip de la page Couleur : sa sélection
+        (:class:`Highlight`), l'avant / après (:class:`Compare`, dans l'image du clip) ; ``None`` : rien à remplacer."""
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return None
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return None
+        shown = self._monitor_color_grade(clip)
+        panel = getattr(self, "color_panel", None)
+        if self._color_compare is not None and panel is not None and panel.isVisible():
+            shown = Compare(shown, self.preview_panel.compare_split_in_layer(self._color_compare))
+        return None if shown is getattr(clip, "color_grade", None) else {clip_id: shown}
 
     def _monitor_color_grade(self, clip):
         """Ce que le moniteur montre pour ``clip`` : son étalonnage, ou la sélection du nœud courant quand *Afficher

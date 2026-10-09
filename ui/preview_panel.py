@@ -852,6 +852,33 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def _layer_values(self):
+        """Transform du clip affiché, tel que l'export et le moniteur le lisent (:func:`video_layer_matrix`)."""
+        from types import SimpleNamespace
+
+        advanced = self._applied_advanced
+        return SimpleNamespace(
+            position_x=self._applied_pos_x, position_y=self._applied_pos_y,
+            scale=self._applied_scale, rotation=self._applied_rotation, skew=0.0,
+            anchor_x=advanced.get("anchor_x", 0.5), anchor_y=advanced.get("anchor_y", 0.5),
+            scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
+            flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
+        )
+
+    def compare_split_in_layer(self, split: float) -> float:
+        """Part de la largeur de l'image du clip affiché qui tombe à gauche du trait ``split`` (part du cadre) : l'avant /
+        après des segments fidèles se fait dans l'image du clip (exact pour un clip qui ne tourne pas)."""
+        from core.gpu_composite import affine_inverse
+        from core.tracking_motion import video_layer_matrix
+
+        cw, ch = self._canvas_size
+        inverse = affine_inverse(tuple(video_layer_matrix(self._layer_values(), cw, ch)))
+        if inverse is None:
+            return min(1.0, max(0.0, float(split)))
+        a, _b, c, _d, e, _f = inverse
+        x = a * float(split) * cw + c * ch / 2.0 + e
+        return min(1.0, max(0.0, x / max(1.0, float(cw))))
+
     def set_adjustments(self, adjustments) -> None:
         """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité[, étalonnage])]`` (GPU
         seulement)."""
@@ -952,7 +979,6 @@ class PreviewPanel(QWidget):
         view = self.gpu_view
         if view is None:
             return
-        from types import SimpleNamespace
 
         from core.blend_modes import coerce_blend_mode
         from core.gpu_composite import CompositeFrame, CompositeLayer
@@ -963,13 +989,7 @@ class PreviewPanel(QWidget):
         layers = ()
         if self._gpu_source_size is not None and (self._timeline_preview_path or self._library_preview_path):
             advanced = self._applied_advanced
-            values = SimpleNamespace(
-                position_x=self._applied_pos_x, position_y=self._applied_pos_y,
-                scale=self._applied_scale, rotation=self._applied_rotation, skew=0.0,
-                anchor_x=advanced.get("anchor_x", 0.5), anchor_y=advanced.get("anchor_y", 0.5),
-                scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
-                flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
-            )
+            values = self._layer_values()
             box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch,
                           fill=bool(advanced.get("fill", False)),
                           pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))

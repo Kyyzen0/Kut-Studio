@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import os
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from .filter_graph import fingerprint_plan, normalize_fps
@@ -67,6 +67,19 @@ def apply_path_resolver(plan: RenderPlan, resolve: PathResolver | None) -> Rende
     return replace(plan, video_layers=video, audio_layers=audio, nested_sequences=nested)
 
 
+def apply_grade_overrides(plan: RenderPlan, overrides: Mapping[str, object] | None) -> RenderPlan:
+    """Copie de ``plan`` où l'étalonnage de certains clips est remplacé par ce que la page Couleur veut **montrer**
+    (sa sélection, ou l'avant / après : :mod:`core.color_render`). Aperçu seulement, comme les proxys ; le remplacement
+    fait partie de l'empreinte du segment (un segment montré ainsi n'est jamais servi pour le vrai rendu)."""
+    if not overrides:
+        return plan
+    video = tuple(
+        replace(layer, color_grade=overrides[layer.clip_id]) if layer.clip_id in overrides else layer
+        for layer in plan.video_layers
+    )
+    return replace(plan, video_layers=video)
+
+
 def segment_plan(
     project,
     start: float,
@@ -76,11 +89,13 @@ def segment_plan(
     master_muted: bool = False,
     resolver: PathResolver | None = None,
     timeline_index=None,
+    grade_overrides: Mapping[str, object] | None = None,
 ) -> RenderPlan:
     """Plan fenêtré (et proxifié) d'un segment ``[start, end)``.
 
     ``timeline_index`` (un :class:`~core.timeline_index.TimelineIndex`) rend la
-    construction indépendante du nombre de clips du montage.
+    construction indépendante du nombre de clips du montage ; ``grade_overrides`` :
+    :func:`apply_grade_overrides`.
     """
     plan = build_render_plan(
         project,
@@ -89,7 +104,7 @@ def segment_plan(
         window=(start, end),
         window_index=timeline_index,
     )
-    return apply_path_resolver(plan, resolver)
+    return apply_grade_overrides(apply_path_resolver(plan, resolver), grade_overrides)
 
 
 def media_identity(plan: RenderPlan) -> str:
@@ -163,6 +178,7 @@ def build_segment_job(
     segment_seconds: float = SEGMENT_SECONDS,
     timeline_index=None,
     flow_preference: object = "auto",
+    grade_overrides: Mapping[str, object] | None = None,
 ) -> PreviewJob | None:
     """Job du segment ``index`` de la grille, ou ``None`` s'il est vide.
 
@@ -174,7 +190,7 @@ def build_segment_job(
     plan = segment_plan(
         project, start, end,
         master_gain_db=master_gain_db, master_muted=master_muted, resolver=resolver,
-        timeline_index=timeline_index,
+        timeline_index=timeline_index, grade_overrides=grade_overrides,
     )
     if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
         return None
@@ -198,6 +214,7 @@ def build_segment_job(
 
 
 __all__ = [
+    "apply_grade_overrides",
     "apply_path_resolver",
     "build_segment_job",
     "media_identity",
