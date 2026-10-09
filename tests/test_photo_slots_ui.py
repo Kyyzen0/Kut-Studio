@@ -168,3 +168,52 @@ def test_the_photo_commands_are_in_the_social_photos_menu_and_rebindable(window,
     _choose(monkeypatch, photos[:1])
     slideshow.trigger()
     assert window.history.undo_label == i18n.translate("history.template.slideshow", count=1)
+
+
+def _plain_slot(window, photos, *, start: float = 60.0):
+    """Un emplacement rempli d'une photo sur V1, loin des clips du projet d'exemple."""
+    from core.project_model import Clip
+    from core.template_slots import fill_slot_with_photo
+
+    v1 = window.project.tracks[0]
+    v1.clips.append(Clip(id="slot", asset_id="", track_id=v1.id, timeline_start=start, source_in=0.0,
+                         source_out=2.0, label="01", template_slot="slot-01"))
+    fill_slot_with_photo(window.project, "slot", photos[0], (320, 240))
+    window._reload_timeline_preserving_selection()
+    window._update_timeline_duration()                  # la tête de lecture est bornée à la durée de la timeline
+    return v1
+
+
+def test_the_live_monitor_does_not_draw_a_photo_that_a_higher_video_track_covers(window, monkeypatch, photos, tmp_path):
+    from core.project_model import Clip, MediaAsset, Track
+
+    _plain_slot(window, photos)
+    seen = []
+    monkeypatch.setattr(window.preview_panel, "set_graphics_present", lambda present: seen.append(present))
+    window.playhead_seconds = 60.5
+    assert window.playhead_seconds == 60.5
+    window._refresh_viewer_graphics()
+    assert seen[-1] is True, "seule à cet instant, la photo est dessinée par le moniteur"
+    window.project.media_assets.append(MediaAsset("top", str(tmp_path / "top.mp4"), "top", 9.0, 320, 240, 30.0,
+                                                  "video"))
+    window.project.tracks.insert(1, Track(id="VX", name="VX", type="video", clips=[
+        Clip(id="above", asset_id="top", track_id="VX", timeline_start=60.0, source_in=0.0, source_out=2.0)]))
+    window._reload_timeline_preserving_selection()
+    window._refresh_viewer_graphics()
+    assert seen[-1] is False, "la vidéo de la piste au-dessus la couvre : rien à dessiner par-dessus"
+
+
+def test_dropping_a_library_photo_whose_file_is_gone_reports_it(window, photos, tmp_path):
+    from core.project_model import MediaAsset
+
+    v1 = _plain_slot(window, photos)
+    slot = next(clip for clip in v1.clips if clip.id == "slot")
+    before = slot.asset_id
+    window.project.media_assets.append(MediaAsset("gone", str(tmp_path / "partie.jpg"), "partie", 0.0, 320, 240, 30.0,
+                                                  "image"))
+    window.history.reset(window.project)
+    window.on_asset_dropped("gone", v1.id, 60.5)
+    assert slot.asset_id == before
+    assert window.statusBar().currentMessage() == i18n.translate("template.message.photo_missing", name="partie")
+    assert _steps(window) == 1
+

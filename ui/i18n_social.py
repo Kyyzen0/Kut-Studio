@@ -587,6 +587,11 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "No empty slot: select the slot to start placing the photos from.",
         "Ningún hueco vacío: seleccione el hueco desde el que colocar las fotos.",
     ),
+    "template.message.photo_missing": _t(
+        "Photo introuvable : « {name} » a été déplacée ou n'est plus accessible.",
+        "Photo not found: “{name}” was moved or is no longer reachable.",
+        "Foto no encontrada: «{name}» se ha movido o ya no es accesible.",
+    ),
     "template.message.photos_unreadable": _t(
         "Aucune de ces photos n'a pu être lue.", "None of these photos could be read.",
         "No se pudo leer ninguna de estas fotos.",

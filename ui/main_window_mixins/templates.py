@@ -70,6 +70,12 @@ class TemplatesMixin:
         except SlotError:
             self._show_social_status("template.message.slot_needs_media")
             return True
+        except FileNotFoundError:
+            # Photo de la bibliothèque déplacée ou hors ligne : refus annoncé, l'emplacement reste tel quel.
+            asset = next((item for item in self.project.media_assets if item.id == asset_id), None)
+            name = asset.name if asset is not None else asset_id
+            self.statusBar().showMessage(i18n.translate("template.message.photo_missing", name=name), 5000)
+            return True
         except KeyError:
             return False
         except ValueError as error:                         # piste verrouillée : le dépôt est refusé, rien n'est ajouté
