@@ -244,7 +244,10 @@ class MotionGraphicsMixin:
                 self.project, window=(t, t + 1e-3), window_index=self._ensure_timeline_index(),
             )
             # Photos d'emplacement : calques vidéo pour l'export, calques image ici (le lecteur ne décode pas de photo).
-            photos = photo_monitor_layers(plan)
+            # Qt les dessine par-dessus la vidéo du moniteur : une photo qu'une piste vidéo plus haute couvre à l'export
+            # n'est pas dessinée (le moniteur temps réel montre la vidéo du dessus, comme pour deux vidéos).
+            top_video = max((layer.track_index for layer in plan.video_layers if not layer.still), default=-1)
+            photos = tuple(layer for layer in photo_monitor_layers(plan) if layer.track_index > top_video)
             if photos:
                 plan = replace(plan, graphics_layers=(*photos, *plan.graphics_layers))
         except Exception:

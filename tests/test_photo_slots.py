@@ -162,6 +162,27 @@ def test_a_photo_slot_is_a_video_layer_of_the_plan_and_an_image_for_the_live_mon
     assert by_scan == by_index == [("s0", "graphics")], "le moniteur ne la confie pas au lecteur vidéo"
 
 
+def test_a_photo_slot_follows_the_solo_of_its_video_track(photo, tmp_path):
+    """Rangée en « graphics » pour le moniteur, une photo d'emplacement suit le solo de sa piste **vidéo**, comme dans le
+    plan de rendu : un V2 en solo la masque, un solo de piste graphique non."""
+    from core.timeline_editing import apply_solo
+
+    project = _project(1)
+    fill_slot_with_photo(project, "s0", photo, (300, 200))
+    project.media_assets.append(MediaAsset("v", str(tmp_path / "v.mp4"), "v", 9.0, W, H, 25.0, "video"))
+    project.tracks.append(Track(id="V2", name="V2", type="video", clips=[
+        Clip(id="other", asset_id="v", track_id="V2", timeline_start=5.0, source_in=0.0, source_out=1.0)]))
+    project.tracks.append(Track(id="G1", name="G1", type="graphics"))
+    active = build_timeline_index(project).active_at(project, 0.5)
+    assert [clip.clip_id for clip in apply_solo(project, active)] == ["s0"]
+    project.tracks[1].solo = True
+    assert apply_solo(project, active) == [], "V2 en solo : la photo de V1 disparaît, comme à l'export"
+    assert [layer.clip_id for layer in build_render_plan(project).video_layers] == ["other"]
+    project.tracks[1].solo = False
+    project.tracks[2].solo = True
+    assert [clip.clip_id for clip in apply_solo(project, active)] == ["s0"], "un solo graphique ne la masque pas"
+
+
 def test_a_photo_slot_survives_the_kut_file(photo, tmp_path):
     project = _project()
     fill_slot_with_photo(project, "s0", photo, (300, 200))
