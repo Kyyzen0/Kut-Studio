@@ -209,6 +209,9 @@ class ColorPageMixin:
         self._color_node_id = node_id
         self.properties_panel.set_color_node(node_id)
         self._refresh_color_panel()
+        clip_id = self._color_clip_id()
+        if self._color_highlight and clip_id is not None:
+            self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
     def _edit_color_nodes(self, change, label_key: str) -> bool:
         """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour."""

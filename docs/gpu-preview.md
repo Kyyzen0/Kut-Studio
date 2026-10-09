@@ -339,8 +339,10 @@ tient dans **une** LUT :
 3. la passe `grade` (après les effets, avant la composition, comme à l'export)
    convertit la couleur dans l'espace de la LUT puis la lit en trilinéaire :
    bilinéaire matérielle dans une tranche, puis entre les deux tranches voisines.
-   Pour la comparaison avant / après de la page Couleur, la part gauche du calque
-   (`CompositeLayer.grade_split`, uniforme `misc.z`) garde sa couleur d'origine.
+   Pour la comparaison avant / après de la page Couleur, ce qui tombe à gauche
+   du trait du viewer (`CompositeLayer.grade_split`, uniforme `misc.z`) garde sa
+   couleur d'origine : la passe le décide en coordonnées du cadre (matrice calque
+   → cadre dans `inverse_map`), même pour un calque déplacé ou tourné.
 
 La cuisson prend environ 30 ms, **hors du fil de l'interface**
 (`GradeLutCache`) : seule la dernière demande attend (glisser un curseur ne cuit

@@ -83,9 +83,12 @@ Le graphe a une seule sortie.
   d'écart moyen à la formule, 1 au plus. Écrire la table prend 87 ms, l'appliquer 2 ms par image 1080p. Le mode
   *Afficher la sélection* (`Highlight`) n'existe que pour le moniteur : la sélection garde sa couleur, le reste passe
   en gris assombri.
-- **Avant / après.** La passe `grade` du moniteur GPU laisse sans étalonnage la part gauche du calque (uniforme
-  `misc.z`), dans l'espace du calque. Un trait déplaçable la sépare dans le viewer. C'est un outil du moniteur GPU :
-  sans lui, le bouton est grisé et dit pourquoi.
+- **Avant / après.** La passe `grade` du moniteur GPU laisse sans étalonnage ce qui tombe à gauche du trait du
+  viewer (uniforme `misc.z`). Elle le décide en coordonnées du cadre, par la matrice calque → cadre que la composition
+  inverse ; la frontière reste donc sous le trait même pour un clip déplacé ou tourné. Le trait est déplaçable. C'est
+  un outil du moniteur GPU : sans lui, le bouton est grisé et dit pourquoi.
+- **Alpha.** Le sous-graphe à branches travaille en RVB ; l'alpha du clip (masques, coins laissés par une rotation)
+  passe à côté (`alphaextract` / `alphamerge`), comme il traverse une chaîne en série.
 - **Bande des plans.** Elle prend une vignette par clip vidéo, au milieu du clip. Ce sont celles de la timeline (même
   cache, même tâche de fond). Elle sert à passer d'un plan à l'autre, et une pastille marque un plan étalonné.
 

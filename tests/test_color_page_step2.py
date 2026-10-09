@@ -209,6 +209,20 @@ def test_showing_the_selection_changes_only_what_the_monitor_gets(window):
     assert window._monitor_color_grade(clip) is clip.color_grade, "panneau fermé : le vrai étalonnage"
 
 
+def test_choosing_another_node_refreshes_the_selection_shown(window, monkeypatch):
+    clip_id = _clip(window)
+    window.color_panel.nodes.add_requested.emit("n1")
+    window.on_color_highlight_toggled(True)
+    refreshed = []
+    monkeypatch.setattr(window, "_refresh_color_monitor", refreshed.append)
+    window.color_panel.nodes.request_select("n1")
+    assert refreshed == [clip_id], "la sélection montrée suit le nœud courant"
+    window.on_color_highlight_toggled(False)
+    refreshed.clear()
+    window.color_panel.nodes.request_select("n2")
+    assert refreshed == [], "sans sélection montrée, changer de nœud ne recuit rien"
+
+
 def test_before_after_splits_the_monitor_and_stops_on_the_edit_page(window):
     _clip(window)
     window._set_color_compare(0.5)

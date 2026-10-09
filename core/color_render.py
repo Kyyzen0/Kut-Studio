@@ -1,9 +1,13 @@
 """Rendu d'un étalonnage par nœuds : le graphe de filtres FFmpeg de l'export, que le moniteur cuit en LUT 3D.
 
 Un graphe sans mélangeur ni qualifieur est une chaîne : les filtres de chaque nœud actif, l'un après l'autre (étape 1).
-Sinon, le texte rendu reste **insérable dans une chaîne à virgules** comme avant (``null[e0];…;[sortie]null``) : la
-chaîne d'un clip, celle d'un calque, la cuisson du moniteur et l'empreinte du cache n'ont rien à changer. Chaque
-appelant donne un préfixe ``tag`` unique dans son graphe (les labels internes en dérivent).
+Sinon, le texte rendu reste **insérable dans une chaîne à virgules** comme avant (il commence par un filtre et finit
+par un filtre) : la chaîne d'un clip, celle d'un calque, la cuisson du moniteur et l'empreinte du cache n'ont rien à
+changer. Chaque appelant donne un préfixe ``tag`` unique dans son graphe (les labels internes en dérivent).
+
+L'alpha passe à côté des mélanges (``alphaextract`` à l'entrée, ``alphamerge`` à la sortie) : un clip masqué, ou dont
+une rotation laisse des coins transparents, le reste après un étalonnage à branches, comme après une chaîne (``eq``,
+``colorbalance``, ``lutrgb``, ``lut3d`` gardent l'alpha).
 
 Opérations, toutes en ``gbrp`` 8 bits (les trois plans R, V, B ; mélanges exacts au niveau près, mesurés) :
 
@@ -82,11 +86,13 @@ class _Streams:
             outputs = "".join(f"[{name}]" for name in names)
             return f",split={len(names)}{outputs}" if len(names) > 1 else outputs
 
-        chains = ["null" + produce(0)]
+        tag = self.tag
+        chains = [f"format=rgba,split=2[{tag}c][{tag}al]", f"[{tag}al]alphaextract[{tag}a]", f"[{tag}c]null" + produce(0)]
         for inputs, filters, output in ops:
             sources = "".join(f"[{labels[stream].pop(0)}]" for stream in inputs)
             chains.append(f"{sources}{filters}{produce(output)}")
-        chains.append(f"[{labels[result].pop(0)}]null")
+        chains.append(f"[{labels[result].pop(0)}]format=rgba[{tag}x]")
+        chains.append(f"[{tag}x][{tag}a]alphamerge")
         return ";".join(chains)
 
 

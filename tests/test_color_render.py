@@ -121,7 +121,8 @@ def test_labels_carry_the_callers_prefix_so_two_clips_never_collide():
     first, second = _build_color_grade_filters(graph, tag="v0cg"), _build_color_grade_filters(graph, tag="v1cg")
     labels = lambda text: {part.split("]")[0] for part in text.split("[")[1:]}  # noqa: E731
     assert labels(first) and not labels(first) & labels(second)
-    assert first.startswith("null[") and first.endswith("null"), "insérable dans une chaîne à virgules"
+    # Insérable dans une chaîne à virgules : commence et finit par un filtre (aucun label libre aux deux bouts).
+    assert not first.startswith("[") and not first.endswith("]") and first.split(";")[-1].endswith("alphamerge")
 
 
 # --- qualifieur ------------------------------------------------------------------------------------------------------
@@ -192,6 +193,24 @@ def test_two_clips_with_branched_nodes_export_together(tmp_path):
     graded = render_frame(build_render_plan(project), W, H, 1.3).astype(float)
     reference = render_frame(build_render_plan(plain), W, H, 1.3).astype(float)
     assert np.abs(graded - reference).mean() > 3, "le second clip est bien étalonné"
+
+
+@needs_ffmpeg
+def test_a_masked_clip_keeps_its_transparency_through_branched_nodes(tmp_path):
+    """Un masque (alpha posé avant l'étalonnage) : hors du masque, le fond noir reste visible ; le sous-graphe à
+    branches (en ``gbrp``, sans alpha) faisait reparaître le clip, opaque, sur tout le cadre."""
+    from core.compositing import Compositing, Mask, MaskShape
+
+    media = lavfi_video(tmp_path / "m.mp4", "color=c=0xB4643C:d=1", size=(W, H), seconds=1.0)
+    project = _project(media)
+    project.tracks[0].clips = project.tracks[0].clips[:1]
+    clip = project.tracks[0].clips[0]
+    clip.compositing = Compositing(masks=(Mask(shape=MaskShape.RECTANGLE, width=0.4, height=0.5),))
+    graph, top = as_graph(WARM).with_branch("n1", MixerKind.PARALLEL)
+    clip.color_grade = graph.with_grade(top, GREY).with_qualifier(top, BLUES)
+    frame = render_frame(build_render_plan(project), W, H, 0.4).astype(float)
+    assert frame[2:6, 2:6].max() < 8, "hors du masque : le fond, pas le clip"
+    assert frame[H // 2 - 2:H // 2 + 2, W // 2 - 2:W // 2 + 2].mean() > 40, "dans le masque : le clip étalonné"
 
 
 @needs_ffmpeg

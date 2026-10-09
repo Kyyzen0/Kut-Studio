@@ -330,7 +330,8 @@ void main() {
 GRADE = FRAGMENT_HEADER + """
 // Étalonnage de l'export (eq, colorbalance, courbes, LUT .cube) cuit en LUT 3D par FFmpeg (core/gpu_grade.py).
 // tex1 : atlas de N tranches N×N (x = c2·N + c1, y = c0) ; misc : N, espace de la LUT (0 YUV, 1 RVB), comparaison
-// avant / après (à gauche de misc.z, en part de la largeur, la couleur d'origine).
+// avant / après : là où le pixel tombe, dans le cadre (inverse_map : calque → cadre), à gauche de misc.z (part de la
+// largeur), la couleur d'origine — le trait du viewer, même pour un calque déplacé ou tourné.
 // Interpolation trilinéaire : bilinéaire matérielle dans une tranche, puis entre les deux tranches voisines.
 vec3 lut_slice(float slice, vec2 c10, float n) {
     vec2 uv = vec2((slice * n + c10.x * (n - 1.0) + 0.5) / (n * n), (c10.y * (n - 1.0) + 0.5) / n);
@@ -345,7 +346,8 @@ void main() {
     float z0 = floor(z);
     float z1 = min(z0 + 1.0, n - 1.0);
     vec3 rgb = mix(lut_slice(z0, c.yx, n), lut_slice(z1, c.yx, n), z - z0);
-    if (v_uv.x < misc.z) {
+    float canvas_x = (inverse_map * vec4(v_uv * target.xy, 0.0, 1.0)).x;
+    if (misc.z > 0.0 && canvas_x < misc.z * target.x) {
         rgb = clamp(to_space(original, int(state.x + 0.5), 1), 0.0, 1.0);
     }
     fragColor = vec4(to_space(rgb, 1, int(state.y + 0.5)), 1.0);

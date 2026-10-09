@@ -118,8 +118,8 @@ class CompositeLayer:
             moniteur le résout en ``grade_lut`` une fois l'espace du média connu (:mod:`core.gpu_grade`).
         grade_lut: clé de l'atlas de la LUT d'étalonnage (texture téléversée comme une matte) ou ``""`` : une passe
             ``grade`` s'insère alors entre les effets et la composition, comme à l'export.
-        grade_split: comparaison avant / après (page Couleur) : la part gauche du calque (0..1) reste sans
-            étalonnage ; 0 : tout est étalonné.
+        grade_split: comparaison avant / après (page Couleur) : la part gauche **du cadre** (0..1, là où le viewer
+            trace son trait) reste sans étalonnage, quel que soit le transform du calque ; 0 : tout est étalonné.
     """
 
     source: str
@@ -312,7 +312,7 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
         if layer.grade_lut:
             domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
             current, space = _grade_pass(passes, textures, f"layer{index}", current, space, domain, layer.grade_lut,
-                                         matrix, (width, height), index, split=layer.grade_split)
+                                         matrix, (width, height), index, split=layer.grade_split, to_canvas=forward)
         target = "canvas1" if canvas == "canvas0" else "canvas0"
         inputs = (current, f"matte:{layer.matte}" if layer.matte else "none", canvas)
         passes.append(PassSpec("composite", target, inputs, Uniforms(
@@ -458,11 +458,13 @@ def _glow_passes(passes, textures, name, op: GlowOp, current, other, space, next
 
 
 def _grade_pass(passes, textures, name, current, space, domain, lut, matrix, size, index,
-                *, split: float = 0.0) -> tuple[str, int]:
+                *, split: float = 0.0, to_canvas: Affine = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)) -> tuple[str, int]:
     """Étalonnage : la couleur du calque (après ses effets) passe dans la LUT cuite ; le résultat est en RVB.
 
     ``domain`` : espace d'entrée de la LUT (celui du calque à l'export : YUV pour une vidéo YUV, RVB sinon).
-    ``split`` : la part gauche du calque (0..1) laissée sans étalonnage (comparaison avant / après).
+    ``split`` : la part gauche du cadre (0..1) laissée sans étalonnage (comparaison avant / après) ; ``to_canvas`` :
+    pixel du calque → pixel du cadre (la matrice que la composition inverse), pour la décider là où le viewer trace
+    son trait, même pour un calque déplacé ou tourné.
     """
     from .gpu_grade import LUT_SIZE
 
@@ -471,6 +473,7 @@ def _grade_pass(passes, textures, name, current, space, domain, lut, matrix, siz
     textures.setdefault(target, TextureSpec(WORKING_FORMAT, width, height))
     passes.append(PassSpec("grade", target, (current, f"matte:{lut}"), Uniforms(
         yuv_to_rgb=matrix,
+        inverse_map=to_canvas,
         target=(float(width), float(height), 1.0, 0.0),
         state=(float(space), float(SPACE_RGB), 0.0, 0.0),
         misc=(float(LUT_SIZE), float(domain), float(min(1.0, max(0.0, split))), 0.0),
@@ -548,9 +551,10 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
 
     tables = luts or {}
 
-    def graded(pixels, space: int, domain: int, key: str, matrix, split: float = 0.0):
-        """La passe ``grade`` : couleur passée dans l'espace de la LUT (``domain``), puis lecture de l'atlas ; à gauche
-        de ``split`` (part de la largeur), la couleur d'origine en RVB (comparaison avant / après)."""
+    def graded(pixels, space: int, domain: int, key: str, matrix, split: float = 0.0, to_canvas=None):
+        """La passe ``grade`` : couleur passée dans l'espace de la LUT (``domain``), puis lecture de l'atlas ; là où le
+        pixel tombe à gauche de ``split`` (part de la largeur **du cadre**, par ``to_canvas``), la couleur d'origine en
+        RVB (comparaison avant / après)."""
         original = pixels
         if space != domain:
             m = np.array(matrix if domain == SPACE_RGB else invert4(matrix), dtype=np.float64)
@@ -561,8 +565,10 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
             if space != SPACE_RGB:
                 m = np.array(matrix, dtype=np.float64)
                 rgb = original @ m[:3, :3].T + m[:3, 3]
-            columns = (np.arange(result.shape[1]) + 0.5) / result.shape[1] < split
-            result = np.where(columns[None, :, None], np.clip(rgb, 0.0, 1.0), result)
+            a, _b, c, _d, e, _f = to_canvas or (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+            rows, columns = np.mgrid[0:result.shape[0], 0:result.shape[1]] + 0.5
+            before = (a * columns + c * rows + e) < split * result.shape[1]
+            result = np.where(before[..., None], np.clip(rgb, 0.0, 1.0), result)
         return result
 
     width, height = frame.render_size
@@ -588,6 +594,7 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         pad = np.array((16 / 255, 128 / 255, 128 / 255) if layout.is_yuv else (0.0, 0.0, 0.0))
         layer_px = np.where(inside[..., None], sampled, pad)
         grading = bool(layer.grade_lut) and layer.grade_lut in tables
+        forward = affine_mul((scale, 0, 0, scale, 0, 0), affine_mul(layer.matrix, (1 / scale, 0, 0, 1 / scale, 0, 0)))
         if layout.is_yuv:
             rgb = reference_layer(
                 layer_px, layer.program, yuv_to_rgb=matrix,
@@ -598,12 +605,11 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
             )
             if grading:
                 pixels, space = rgb
-                rgb = graded(pixels, space, SPACE_YUV, layer.grade_lut, matrix, layer.grade_split)
+                rgb = graded(pixels, space, SPACE_YUV, layer.grade_lut, matrix, layer.grade_split, forward)
         else:
-            rgb = graded(layer_px, SPACE_RGB, SPACE_RGB, layer.grade_lut, matrix, layer.grade_split) if grading \
-                else layer_px
+            rgb = graded(layer_px, SPACE_RGB, SPACE_RGB, layer.grade_lut, matrix, layer.grade_split, forward) \
+                if grading else layer_px
         # composite : matrice inverse, bord adouci, matte, opacité, fusion
-        forward = affine_mul((scale, 0, 0, scale, 0, 0), affine_mul(layer.matrix, (1 / scale, 0, 0, 1 / scale, 0, 0)))
         inverse = affine_inverse(forward)
         if inverse is None:
             continue
