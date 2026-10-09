@@ -399,7 +399,7 @@ def test_projects_without_animation_behave_exactly_as_before(window, tmp_path):
     window.seek_to_position(2.0)
     assert applied[-1]["opacity"] == 1.0 and applied[-1]["scale"] == 1.0
     graph = _filter_graph(window, tmp_path)
-    assert "geq=" not in graph and "colorchannelmixer=aa=1" in graph
+    assert "geq=" not in graph and "colorchannelmixer" not in graph   # opaque et fixe : aucun filtre d'opacité
 
 
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="FFmpeg requis")

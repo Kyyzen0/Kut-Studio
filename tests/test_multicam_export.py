@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest, _ffmpeg_command_prefix
+from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest, _ffmpeg_command_prefix, input_arguments
 from core.filter_graph import build_preview_command
 from core.multicam_model import AudioMode
 from core.multicam_ops import (
@@ -97,7 +97,7 @@ def _export(plan, path: Path) -> Path:
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     command = [*_ffmpeg_command_prefix(), "-y", "-v", "error"]
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]", "-c:a", "aac",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)]
     _run(command)

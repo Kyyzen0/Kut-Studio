@@ -18,7 +18,7 @@ import pytest
 from flow_scenes import Body, Scene, linear
 
 from core.animation import InterpolationType, Keyframe
-from core.export_engine import ExportEngine
+from core.export_engine import ExportEngine, input_arguments
 from core.flow_cache import FlowCache
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
@@ -106,7 +106,7 @@ def render(project, width, height, cache, *, prepared=None, cancelled=None, wind
     graph += f";[{video}]format=yuv420p[probe]"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     command += ["-filter_complex", graph, "-map", "[probe]", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
     if audio:                                   # 2de sortie plutôt qu'un puits : FFmpeg 7.x avorte sur un puits nourri par un son généré
         command += ["-map", f"[{audio}]", "-f", "null", "-"]

@@ -15,7 +15,7 @@ import subprocess
 
 import pytest
 
-from core.export_engine import ExportEngine, _ffmpeg_command_prefix
+from core.export_engine import ExportEngine, _ffmpeg_command_prefix, input_arguments
 from core.filter_graph import build_preview_command
 from core.preview_segments import segment_plan
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
@@ -68,7 +68,7 @@ def _render(plan, out_path) -> None:
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     command = [*_ffmpeg_command_prefix(), "-y", "-v", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out_path)]
     _run(command)

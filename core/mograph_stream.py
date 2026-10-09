@@ -32,11 +32,15 @@ import math
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 from .atomic_io import atomic_write_text
 from .platform_paths import user_cache_dir
+from .timecode import ffmpeg_rate
 
 CACHE_KIND = "mograph"
 
@@ -127,6 +131,121 @@ def _blank_png(width: int, height: int, directory: Path) -> str:
     return name
 
 
+WRITE_WORKERS = max(1, min(8, (os.cpu_count() or 2) - 1))
+"""Fils d'encodage des images PNG. ``QImage.save`` libère le verrou de l'interpréteur : l'encodage (≈ 80 % du coût
+d'une image pleine trame, 54 ms en 1080×1920) se fait en parallèle pendant que ce fil dessine la suivante. Le dessin
+reste dans le fil appelant (le moteur de rendu n'est pas partagé), les octets écrits sont ceux d'une écriture en série."""
+
+WRITE_BACKLOG = 2
+"""Images dessinées en attente d'encodage, par fil : borne la mémoire (8 Mo par image pleine trame en 1080p)."""
+
+
+def _write_frames(targets: list[tuple[Path, float]], render: Callable[[float], object]) -> None:
+    """Dessine (dans ce fil) puis encode (en parallèle) les images ``targets`` : ``(fichier, instant)``.
+
+    La première erreur d'écriture est relevée une fois les écritures déjà lancées terminées ; aucune n'est oubliée."""
+    if len(targets) <= 1 or WRITE_WORKERS <= 1:
+        for target, t in targets:
+            _write_png(render(t), target)
+        return
+    pending: deque[Future] = deque()
+    with ThreadPoolExecutor(max_workers=WRITE_WORKERS, thread_name_prefix="kut-png") as pool:
+        try:
+            for target, t in targets:
+                while len(pending) >= WRITE_WORKERS * WRITE_BACKLOG:
+                    pending.popleft().result()
+                pending.append(pool.submit(_write_png, render(t), target))
+            while pending:
+                pending.popleft().result()
+        finally:
+            for future in pending:
+                future.cancel()
+
+
+@dataclass(frozen=True)
+class SpanStream:
+    """Flux d'images limité aux images où un élément est visible (:func:`write_span_stream`).
+
+    ``first_frame`` : rang, sur la grille du rendu, de sa première image (instant ``first_frame / fps``) ;
+    ``frames`` : nombre d'images. Avant et après, FFmpeg n'a rien à composer : le dessous passe tel quel."""
+
+    playlist: str
+    first_frame: int
+    frames: int
+
+
+def _frame_runs(
+    *, width: int, height: int, fps: float, low: int, high: int, time_offset: float, salt: str,
+    frame_key: Callable[[float], object | None], blank: str,
+) -> tuple[list[list], dict[str, float]]:
+    """Plages ``[fichier, nombre d'images]`` des images ``low`` à ``high`` (exclue), et l'instant de la première
+    occurrence de chaque image à dessiner."""
+    from .mograph_raster import RASTER_VERSION
+
+    runs: list[list] = []
+    first_frames: dict[str, float] = {}
+    for index in range(low, high):
+        t = time_offset + index / fps
+        state = frame_key(t)
+        if state is None:
+            name = blank
+        else:
+            name = f"f-{_digest((RASTER_VERSION, salt, width, height, state))}.png"
+            first_frames.setdefault(name, t)
+        if runs and runs[-1][0] == name:
+            runs[-1][1] += 1
+        else:
+            runs.append([name, 1])
+    return runs, first_frames
+
+
+def _publish_playlist(directory: Path, runs: list[list], fps: float, first_frames: dict[str, float],
+                      render: Callable[[float], object]) -> str:
+    """Écrit les images manquantes puis la liste ``.ffconcat`` ; retourne son chemin."""
+    missing: list[tuple[Path, float]] = []
+    for name, t in first_frames.items():
+        target = directory / name
+        if target.is_file() and target.stat().st_size > 0:
+            _touch(target)
+        else:
+            missing.append((target, t))
+    _write_frames(missing, render)
+    # ``option framerate`` : une image PNG s'ouvre à 25 i/s par défaut, et la liste prend la base de temps de sa
+    # première image. À 30 i/s, deux images tombaient sur le même tic de 40 ms : l'animation sautait une image sur six
+    # (et en doublait une autre). À la cadence du rendu, chaque image a son propre tic.
+    rate = ffmpeg_rate(fps)
+    lines = ["ffconcat version 1.0"]
+    for name, frames in runs:
+        lines.extend((f"file '{name}'", f"option framerate {rate}", f"duration {frames / fps:.9f}"))
+    # La dernière entrée est répétée : sa durée est ainsi toujours appliquée.
+    lines.extend((f"file '{runs[-1][0]}'", f"option framerate {rate}"))
+    text = "\n".join(lines) + "\n"
+    playlist = directory / f"s-{hashlib.sha1(text.encode('utf-8')).hexdigest()[:24]}.ffconcat"
+    if not playlist.is_file():
+        # Temporaire unique (``mkstemp``) : les scopes et l'aperçu fidèle peuvent écrire la même liste au même moment,
+        # depuis deux threads ; un nom par processus faisait échouer l'un des deux ``os.replace``.
+        _publish_shared(playlist, lambda: atomic_write_text(playlist, text, durable=False))
+    return str(playlist)
+
+
+def frame_grid(fps: float, duration: float, origin: float = 0.0) -> tuple[int, int]:
+    """``(première image, fin exclue)`` d'une composition de ``duration`` s qui commence à ``origin`` (rangs d'images).
+
+    Même compte que le fond de la composition (``color=…:d=duration``, puis ``trim=start=origin``)."""
+    fps = float(fps) if fps and fps > 0 else 30.0
+    count = max(1, int(math.ceil(duration * fps - 1e-6)))
+    first = max(0, int(math.ceil(origin * fps - 1e-6))) if origin > 0 else 0
+    return min(first, count), count
+
+
+def _frame_range(fps: float, duration: float, start: float, end: float, time_offset: float) -> tuple[int, int, int]:
+    """``(nombre d'images du flux, première image utile, fin exclue)`` sur la grille du rendu."""
+    count = max(1, int(math.ceil(duration * fps - 1e-6)))
+    low = max(0, int(math.floor((start - time_offset) * fps - 1e-6)))
+    high = min(count, int(math.ceil((end - time_offset) * fps + 1e-6)))
+    return count, low, high
+
+
 def write_stream(
     *,
     width: int,
@@ -151,53 +270,60 @@ def write_stream(
             ``frame_key`` / ``render`` (0 = début de la timeline).
         salt: distingue deux flux de même état mais de nature différente.
     """
-    from .mograph_raster import RASTER_VERSION
-
     directory = cache_directory()
     fps = float(fps) if fps and fps > 0 else 30.0
-    count = max(1, int(math.ceil(duration * fps - 1e-6)))
+    count, low, high = _frame_range(fps, duration, start, end, time_offset)
     blank = _blank_png(width, height, directory)
-    runs: list[list] = []  # [nom de fichier, nombre d'images]
-    first_frames: dict[str, float] = {}
-    low = max(0, int(math.floor((start - time_offset) * fps - 1e-6)))
-    high = min(count, int(math.ceil((end - time_offset) * fps + 1e-6)))
+    runs, first_frames = _frame_runs(width=width, height=height, fps=fps, low=low, high=high,
+                                     time_offset=time_offset, salt=salt, frame_key=frame_key, blank=blank)
     if low > 0:
-        runs.append([blank, low])
-    for index in range(low, high):
-        t = time_offset + index / fps
-        state = frame_key(t)
-        if state is None:
-            name = blank
+        if runs and runs[0][0] == blank:
+            runs[0][1] += low
         else:
-            name = f"f-{_digest((RASTER_VERSION, salt, width, height, state))}.png"
-            first_frames.setdefault(name, t)
-        if runs and runs[-1][0] == name:
-            runs[-1][1] += 1
-        else:
-            runs.append([name, 1])
+            runs.insert(0, [blank, low])
     if high < count:
         if runs and runs[-1][0] == blank:
             runs[-1][1] += count - high
         else:
             runs.append([blank, count - high])
-    for name, t in first_frames.items():
-        target = directory / name
-        if target.is_file() and target.stat().st_size > 0:
-            _touch(target)
-        else:
-            _write_png(render(t), target)
-    lines = ["ffconcat version 1.0"]
-    for name, frames in runs:
-        lines.append(f"file '{name}'")
-        lines.append(f"duration {frames / fps:.9f}")
-    lines.append(f"file '{runs[-1][0]}'")  # la dernière durée est ainsi toujours appliquée
-    text = "\n".join(lines) + "\n"
-    playlist = directory / f"s-{hashlib.sha1(text.encode('utf-8')).hexdigest()[:24]}.ffconcat"
-    if not playlist.is_file():
-        # Temporaire unique (``mkstemp``) : les scopes et l'aperçu fidèle peuvent écrire la même liste au même moment,
-        # depuis deux threads ; un nom par processus faisait échouer l'un des deux ``os.replace``.
-        _publish_shared(playlist, lambda: atomic_write_text(playlist, text, durable=False))
-    return str(playlist)
+    return _publish_playlist(directory, runs, fps, first_frames, render)
+
+
+def write_span_stream(
+    *,
+    width: int,
+    height: int,
+    fps: float,
+    duration: float,
+    start: float,
+    end: float,
+    frame_key: Callable[[float], object | None],
+    render: Callable[[float], object],
+    salt: str = "",
+    first_frame: int = 0,
+) -> SpanStream | None:
+    """Comme :func:`write_stream`, mais le flux ne couvre que les images visibles (``None`` : aucune).
+
+    ``first_frame`` : première image de la composition (segment d'aperçu) ; le flux ne commence jamais avant.
+
+    Un élément affiché 0,8 s sur 31 s n'est plus composé, image transparente après image transparente, pendant tout le
+    rendu : le graphe le pose à son instant (:func:`span_input_filter`) et laisse passer le dessous ailleurs. Les images
+    composées sont identiques à celles du flux complet (une image transparente ne change rien au dessous)."""
+    directory = cache_directory()
+    fps = float(fps) if fps and fps > 0 else 30.0
+    _count, low, high = _frame_range(fps, duration, start, end, 0.0)
+    low = max(low, first_frame)
+    blank = _blank_png(width, height, directory)
+    runs, first_frames = _frame_runs(width=width, height=height, fps=fps, low=low, high=high,
+                                     time_offset=0.0, salt=salt, frame_key=frame_key, blank=blank)
+    if runs and runs[0][0] == blank:
+        low += runs.pop(0)[1]
+    if runs and runs[-1][0] == blank:
+        runs.pop()
+    if not runs:
+        return None
+    playlist = _publish_playlist(directory, runs, fps, first_frames, render)
+    return SpanStream(playlist, low, sum(frames for _name, frames in runs))
 
 
 def stream_input_filter(fps, duration: float, origin: float = 0.0) -> str:
@@ -207,7 +333,6 @@ def stream_input_filter(fps, duration: float, origin: float = 0.0) -> str:
     toute conversion, avec les mêmes horodatages pour celles qui restent. ``0`` : la chaîne historique, inchangée.
     """
     from .export_engine import _format_seconds
-    from .timecode import ffmpeg_rate
 
     fps_text = ffmpeg_rate(fps)
     length = _format_seconds(max(duration, 1.0 / float(fps or 30)))
@@ -217,6 +342,18 @@ def stream_input_filter(fps, duration: float, origin: float = 0.0) -> str:
             f"tpad=stop=-1:stop_mode=clone,trim=end={length}"
         )
     return f"fps={fps_text},format=rgba,tpad=stop=-1:stop_mode=clone,trim=duration={length},setpts=PTS-STARTPTS"
+
+
+def span_input_filter(fps, span: SpanStream) -> str:
+    """Filtres qui posent un flux limité (:class:`SpanStream`) à son instant, sur la cadence du rendu.
+
+    Après ``fps``, une image vaut un tic de la base de temps : ``+first_frame`` place la première image exactement sur
+    son rang, sans arrondi de secondes. Le flux s'arrête à sa dernière image ; ``overlay`` (``eof_action=pass``) et
+    ``blend`` (``shortest=1``) laissent alors passer le dessous."""
+    return (
+        f"fps={ffmpeg_rate(fps)},format=rgba,tpad=stop=-1:stop_mode=clone,trim=end_frame={span.frames},"
+        f"setpts=PTS-STARTPTS+{span.first_frame}"
+    )
 
 
 def still_playlist(playlist: str, t: float) -> str:
@@ -304,6 +441,6 @@ class MographFrameCache:
 
 
 __all__ = [
-    "CACHE_KIND", "MographFrameCache", "cache_directory", "ensure_qt_gui", "still_playlist",
-    "stream_input_filter", "write_stream",
+    "CACHE_KIND", "MographFrameCache", "SpanStream", "cache_directory", "ensure_qt_gui", "frame_grid", "span_input_filter",
+    "still_playlist", "stream_input_filter", "write_span_stream", "write_stream",
 ]

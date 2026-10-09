@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from core.export_engine import ExportEngine, _build_master_filter, _ffmpeg_command_prefix
+from core.export_engine import ExportEngine, _build_master_filter, _ffmpeg_command_prefix, input_arguments
 from core.filter_graph import build_preview_command
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
@@ -70,7 +70,7 @@ def _export(plan, path: Path, codec: str = "pcm_f32le") -> Path:
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     command = _ffmpeg()
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                 "-c:a", codec, str(path)]
     _run(command)

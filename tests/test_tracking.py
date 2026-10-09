@@ -735,7 +735,7 @@ def test_relinked_media_with_another_resolution_scales_the_track(media):
 
 
 def _export_frame(project: Project, t: float, tmp_path: Path):
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, input_arguments
 
     plan = build_render_plan(project)
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, int(FPS), None)
@@ -743,7 +743,7 @@ def _export_frame(project: Project, t: float, tmp_path: Path):
     out = tmp_path / f"frame-{t}.raw"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-f", "rawvideo", str(out)]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert completed.returncode == 0, completed.stderr

@@ -32,13 +32,13 @@ def lavfi_video(path: Path, source: str, *, size: tuple[int, int], fps: int = 25
 
 def render_frame(plan, width: int, height: int, t: float, *, fps: int = 25, quality: str = "export") -> np.ndarray:
     """Image RGB (``uint8``, ``height × width × 3``) du plan à ``t`` s, rendue par le graphe de l'export."""
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, input_arguments
 
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, width, height, fps, None, quality=quality)
     graph += f";[{video}]trim=start={t},setpts=PTS-STARTPTS,format=rgb24[probe];[{audio}]anullsink"
     command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
     completed = subprocess.run(command, capture_output=True, timeout=120)
     assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")

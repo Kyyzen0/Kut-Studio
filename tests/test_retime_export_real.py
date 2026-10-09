@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from core.animation import InterpolationType, Keyframe
-from core.export_engine import ExportEngine
+from core.export_engine import ExportEngine, input_arguments
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
 from core.retime_graph import frame_for_tick, ticks_in
@@ -63,7 +63,7 @@ def exported_indices(project) -> list[int]:
     graph += f";[{video}]format=yuv420p[probe]"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", "[probe]", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]
     if audio:                                   # 2de sortie plutôt qu'un puits : FFmpeg 7.x avorte sur un puits nourri par un son généré
         command += ["-map", f"[{audio}]", "-f", "null", "-"]
