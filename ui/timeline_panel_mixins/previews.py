@@ -68,6 +68,25 @@ class PreviewsMixin:
             self._pixmaps[key] = pixmap
         return pixmap
 
+    def clip_thumbnail(self, clip_id: str) -> QPixmap | None:
+        """Vignette du milieu d'un clip vidéo (bande des plans) : depuis le cache, sinon demandée en arrière-plan
+        (:attr:`previews_arrived` quand elle arrive) ; ``None`` en attendant ou sans média."""
+        runtime = self._runtime
+        view = self.find_view_by_id(clip_id)
+        clip = self.clip_model(clip_id)
+        if runtime is None or view is None or clip is None or not view.source_path or not file_exists(view.source_path):
+            return None
+        times = thumbnail_source_times(clip.source_in, clip.source_out, 1)
+        if not times:
+            return None
+        key = thumbnail_cache_key(view.source_path, times[0], 160)
+        data = runtime.cache.get(key)
+        if isinstance(data, (bytes, bytearray)):
+            return self.pixmap_for(key, data) if data else None
+        self._submit_preview(key, lambda token, path=view.source_path, time=times[0]: self._thumb_job(
+            token, path, time, key))
+        return None
+
     def _schedule_previews(self) -> None:
         runtime = self._runtime
         if runtime is None or self.project is None:
@@ -150,5 +169,6 @@ class PreviewsMixin:
         if items:
             for widget in self.clip_widgets.values():
                 widget.update()
+            self.previews_arrived.emit()
         if runtime.tasks.pending == 0 and not items and self._preview_timer is not None:
             self._preview_timer.stop()

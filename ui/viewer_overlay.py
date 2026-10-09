@@ -61,6 +61,7 @@ class ViewerOverlay(QGraphicsObject):
     layer_clicked = Signal(str)
     guide_moved = Signal(str, float)
     guide_released = Signal(str)
+    compare_moved = Signal(float)           # trait avant / après déplacé (part de la largeur)
 
     def __init__(self) -> None:
         super().__init__()
@@ -76,6 +77,7 @@ class ViewerOverlay(QGraphicsObject):
         self.show_guides = True
         self.snapping = True
         self.guides: list = []
+        self.compare_split: float | None = None   # trait avant / après (part de la largeur), None : aucun
         self.selection: SelectionGeometry | None = None
         self.layer_boxes: list[tuple[str, Matrix, tuple[float, float]]] = []
         self._snap_lines = []
@@ -111,6 +113,16 @@ class ViewerOverlay(QGraphicsObject):
             if hasattr(self, name):
                 setattr(self, name, bool(value))
         self.update()
+
+    def set_compare_split(self, split: float | None) -> None:
+        """Le trait de la comparaison avant / après (``None`` : aucun)."""
+        self.compare_split = None if split is None else min(1.0, max(0.0, float(split)))
+        self.update()
+
+    def _compare_x(self) -> float | None:
+        if self.compare_split is None:
+            return None
+        return self.canvas_rect.x() + self.compare_split * self.canvas_rect.width()
 
     def set_platform_zones(self, platform: str) -> None:
         """Montre les zones masquées par l'interface de ``platform`` (``""`` : aucune)."""
@@ -162,6 +174,8 @@ class ViewerOverlay(QGraphicsObject):
         if self.show_guides:
             for guide in self.guides:
                 path.addRect(self._guide_rect(guide).adjusted(-3, -3, 3, 3))
+        if (x := self._compare_x()) is not None:
+            path.addRect(QRectF(x - 5, self.canvas_rect.top(), 10, self.canvas_rect.height()))
         return path
 
     def _guide_rect(self, guide) -> QRectF:
@@ -218,6 +232,15 @@ class ViewerOverlay(QGraphicsObject):
                 halo_stroke(painter, overlay_qcolor(color, 190), 1.0, lambda zone=zone: painter.drawRect(zone), style=Qt.DashLine)
         if self.platform_zones:
             self._paint_platform_zones(painter)
+        if (x := self._compare_x()) is not None:
+            def divider(x=x) -> None:
+                painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+
+            halo_stroke(painter, overlay_qcolor(OVERLAY.centre, 230), 1.5, divider)
+            painter.setBrush(QBrush(overlay_qcolor(OVERLAY.handle_fill)))
+            halo_stroke(painter, overlay_qcolor(OVERLAY.centre, 230), 1.5,
+                        lambda: painter.drawEllipse(QPointF(x, rect.center().y()), HANDLE_RADIUS + 2, HANDLE_RADIUS + 2))
+            painter.setBrush(Qt.NoBrush)
         if self.show_center or self.show_safe_areas:
             centre = rect.center()
 
@@ -288,6 +311,9 @@ class ViewerOverlay(QGraphicsObject):
     # -- interactions ------------------------------------------------------------------------
 
     def _hit(self, point: QPointF) -> tuple[str, str] | None:
+        x = self._compare_x()
+        if x is not None and abs(point.x() - x) <= 5 and self.canvas_rect.top() <= point.y() <= self.canvas_rect.bottom():
+            return "compare", ""
         selection = self.selection
         if selection is not None and selection.editable:
             handles = self._handle_points(selection)
@@ -330,6 +356,10 @@ class ViewerOverlay(QGraphicsObject):
             event.ignore()
             return
         mode, target = hit
+        if mode == "compare":
+            self._drag = {"mode": "compare", "clip_id": "", "moved": False}
+            event.accept()
+            return
         if mode == "select":
             self.layer_clicked.emit(target)
             if self.selection is None or self.selection.clip_id != target or not self.selection.editable:
@@ -358,6 +388,10 @@ class ViewerOverlay(QGraphicsObject):
         if drag is None:
             return
         current = self.to_canvas(event.pos())
+        if drag["mode"] == "compare":
+            drag["moved"] = True
+            self.compare_moved.emit(min(0.98, max(0.02, current[0] / max(1.0, self.canvas_size[0]))))
+            return
         if drag["mode"] == "guide":
             guide = next((g for g in self.guides if g.id == drag["guide_id"]), None)
             if guide is None:
@@ -381,6 +415,8 @@ class ViewerOverlay(QGraphicsObject):
         self._snap_lines = []
         self.update()
         if drag is None:
+            return
+        if drag["mode"] == "compare":
             return
         if drag["mode"] == "guide":
             if drag["moved"]:

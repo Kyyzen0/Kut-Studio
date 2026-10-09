@@ -13,7 +13,7 @@ def _t(fr: str, en: str, es: str) -> dict[str, str]:
 
 _WHEEL_GESTURES = _t(
     "Palet : la couleur · molette : le niveau · double-clic : remise à zéro · Maj : réglage fin.",
-    "Puck: the colour · dial: the level · double-click: reset · Shift: fine adjustment.",
+    "Puck: the color · dial: the level · double-click: reset · Shift: fine adjustment.",
     "Disco: el color · rueda: el nivel · doble clic: restablecer · Mayús: ajuste fino.",
 )
 
@@ -65,6 +65,49 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "color.node.rename_label": _t("Nom (vide : aucun)", "Name (empty: none)", "Nombre (vacío: ninguno)"),
     "color.node.reset": _t("Réinitialiser le nœud", "Reset the node", "Restablecer el nodo"),
     "color.node.remove": _t("Supprimer le nœud (Suppr)", "Delete the node (Del)", "Eliminar el nodo (Supr)"),
+    "color.node.add_parallel": _t("Ajouter un nœud parallèle (Alt+P)", "Add a parallel node (Alt+P)",
+                                  "Añadir un nodo paralelo (Alt+P)"),
+    "color.node.add_layer": _t("Ajouter un nœud de calque (Alt+L)", "Add a layer node (Alt+L)",
+                               "Añadir un nodo de capa (Alt+L)"),
+    "color.mixer.parallel": _t(
+        "Mélangeur parallèle : chaque branche corrige la même image, les corrections s'additionnent.",
+        "Parallel mixer: each branch grades the same picture, and the corrections add up.",
+        "Mezclador paralelo: cada rama corrige la misma imagen y las correcciones se suman.",
+    ),
+    "color.mixer.layer": _t(
+        "Mélangeur de calques : la branche la plus basse passe dessus, là où son qualifieur la sélectionne.",
+        "Layer mixer: the lowest branch goes on top, wherever its qualifier selects it.",
+        "Mezclador de capas: la rama más baja pasa por encima, allí donde su calificador la selecciona.",
+    ),
+    "color.compare": _t(
+        "Comparer avant / après : à gauche du trait, l'image sans étalonnage (glisser le trait pour le déplacer).",
+        "Compare before / after: left of the line, the picture without grading (drag the line to move it).",
+        "Comparar antes / después: a la izquierda de la línea, la imagen sin corrección (arrastra la línea).",
+    ),
+    "color.tab.wheels": _t("Roues", "Wheels", "Ruedas"),
+    "color.tab.qualifier": _t("Qualificateur", "Qualifier", "Calificador"),
+    # --- Qualifieur ------------------------------------------------------------------------------------------------
+    "color.qualifier.enable": _t("Qualifier ce nœud", "Qualify this node", "Calificar este nodo"),
+    "color.qualifier.invert": _t("Inverser", "Invert", "Invertir"),
+    "color.qualifier.highlight": _t("Afficher la sélection", "Show the selection", "Mostrar la selección"),
+    "color.qualifier.highlight_tip": _t(
+        "Montre dans le moniteur ce que le qualifieur sélectionne, le reste en gris. N'agit pas sur l'export.",
+        "Shows in the viewer what the qualifier selects, the rest in grey. Does not affect the export.",
+        "Muestra en el visor lo que selecciona el calificador, el resto en gris. No afecta a la exportación.",
+    ),
+    "color.qualifier.highlight_unavailable": _t(
+        "Nécessite le moniteur GPU (Préférences › Performances).",
+        "Requires the GPU viewer (Preferences › Performance).",
+        "Requiere el visor GPU (Preferencias › Rendimiento).",
+    ),
+    "color.qualifier.hue": _t("Teinte", "Hue", "Tono"),
+    "color.qualifier.sat": _t("Saturation", "Saturation", "Saturación"),
+    "color.qualifier.lum": _t("Luminance", "Luminance", "Luminancia"),
+    "color.qualifier.center": _t("Centre", "Center", "Centro"),
+    "color.qualifier.width": _t("Largeur", "Width", "Ancho"),
+    "color.qualifier.soft": _t("Douceur", "Softness", "Suavidad"),
+    "color.qualifier.low": _t("Bas", "Low", "Bajo"),
+    "color.qualifier.high": _t("Haut", "High", "Alto"),
     # --- Roues -----------------------------------------------------------------------------------------------------
     "color.wheel.lift": _t("Lift", "Lift", "Lift"),
     "color.wheel.gamma": _t("Gamma", "Gamma", "Gamma"),
@@ -99,8 +142,13 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "history.color.node_move": _t("Déplacer un nœud", "Move a node", "Mover un nodo"),
     "history.color.node_reset": _t("Réinitialiser un nœud", "Reset a node", "Restablecer un nodo"),
     "history.color.wheel": _t("Roue {wheel}", "{wheel} wheel", "Rueda {wheel}"),
+    "history.color.node_parallel": _t("Ajouter un nœud parallèle", "Add a parallel node", "Añadir un nodo paralelo"),
+    "history.color.node_layer": _t("Ajouter un nœud de calque", "Add a layer node", "Añadir un nodo de capa"),
+    "history.color.qualifier": _t("Qualifieur", "Qualifier", "Calificador"),
     # --- Raccourcis et panneau -------------------------------------------------------------------------------------
     "shortcuts.command.page_edit": _t("Page Montage", "Edit page", "Página Edición"),
     "shortcuts.command.page_color": _t("Page Couleur", "Color page", "Página Color"),
     "workspace.panel.color": _t("Couleur", "Color", "Color"),
+    "workspace.panel.clips": _t("Plans", "Clips", "Planos"),
+    "color.strip.nodes": _t("{count} nœuds", "{count} nodes", "{count} nodos"),
 }

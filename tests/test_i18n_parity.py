@@ -152,7 +152,7 @@ _COGNATES_EN = {
     "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause", "Compositing", "Transition",
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
-    "Vertical", "Portrait", "Impact", "Amplitude", "Pages",
+    "Vertical", "Portrait", "Impact", "Amplitude", "Pages", "Luminance",
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante"}

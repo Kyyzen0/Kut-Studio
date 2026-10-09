@@ -52,6 +52,7 @@ class PanelId(str, Enum):
     MIXER = "mixer"
     HISTORY = "history"
     COLOR = "color"
+    CLIPS = "clips"
 
     def label(self) -> str:
         """Nom lisible du panneau (utilisé dans les menus)."""
@@ -66,6 +67,7 @@ _PANEL_LABELS: dict[PanelId, str] = {
     PanelId.MIXER: "Mixeur",
     PanelId.HISTORY: "Historique",
     PanelId.COLOR: "Couleur",
+    PanelId.CLIPS: "Plans",
 }
 
 
@@ -91,6 +93,8 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
     PanelId.HISTORY: DockArea.RIGHT,
     # Nœuds et roues d'étalonnage : la colonne de droite de la page Couleur.
     PanelId.COLOR: DockArea.RIGHT,
+    # Bande des plans : sous la timeline, sur la page Couleur.
+    PanelId.CLIPS: DockArea.BOTTOM,
 }
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
@@ -102,6 +106,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.MIXER: 320,
     PanelId.HISTORY: 240,
     PanelId.COLOR: 440,
+    PanelId.CLIPS: 124,
 }
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
@@ -113,10 +118,11 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.MIXER: 320,
     PanelId.HISTORY: 200,
     PanelId.COLOR: 340,
+    PanelId.CLIPS: 118,
 }
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
-DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR})
+DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR, PanelId.CLIPS})
 
 #: Taille de la barre d'outils d'options d'un panneau (px).
 PANEL_TOOLBAR_SIZE: int = 28
@@ -543,8 +549,8 @@ def page_default_state(page: str) -> WorkspaceState:
 
     Couleur : grand moniteur au centre (les scopes dessous), l'inspecteur à
     gauche pour les réglages primaires, les courbes et la LUT du nœud courant,
-    les nœuds et les roues à droite, la timeline en bas pour passer d'un plan à
-    l'autre ; les médias se replient.
+    les nœuds et les roues à droite, la timeline et la bande des plans en bas
+    pour passer d'un plan à l'autre ; les médias se replient.
     """
     state = WorkspaceState.default()
     if page != PAGE_COLOR:
@@ -553,6 +559,7 @@ def page_default_state(page: str) -> WorkspaceState:
         state.with_panel(PanelId.MEDIA, visible=False)
         .with_panel(PanelId.INSPECTOR, area=DockArea.LEFT)
         .with_panel(PanelId.COLOR, area=DockArea.RIGHT, visible=True)
+        .with_panel(PanelId.CLIPS, area=DockArea.BOTTOM, visible=True)
         .with_center_ratio(0.62)
     )
 

@@ -1,21 +1,23 @@
-"""Éditeur de nœuds d'étalonnage : la chaîne d'un clip, de la source à la sortie.
+"""Éditeur de nœuds d'étalonnage : le graphe d'un clip, de la source à la sortie.
 
-Une scène ``QGraphicsView`` (la composition nodale réutilisera la même vue, avec des nœuds placés librement) : un nœud
-par réglage, numéroté dans l'ordre de la chaîne, relié au précédent et au suivant. Le nœud courant (bordure d'accent)
-est celui que les roues et l'inspecteur modifient ; un nœud contourné est en pointillé, atténué ; une pastille
-signale un nœud qui change l'image.
+Une scène ``QGraphicsView`` (la composition nodale réutilisera la même vue). Disposition : une colonne par
+profondeur (un nœud après tout ce qui l'alimente), une rangée par branche ; les entrées basses d'un mélangeur sont
+dessinées plus bas (en calques, la plus basse passe dessus, comme dans DaVinci Resolve). Les correcteurs sont
+numérotés dans l'ordre de calcul ; le nœud courant (bordure d'accent) est celui que les roues, le qualifieur et
+l'inspecteur modifient ; un nœud contourné est en pointillé ; une pastille signale un nœud qui change l'image, une
+clé un nœud qualifié. Les mélangeurs (ronds : ``+`` parallèle, ``≡`` calques) ne se règlent pas.
 
-L'éditeur ne modifie rien lui-même : il émet des demandes (sélection, ajout, suppression, contournement, nom,
-déplacement, remise à zéro) que la fenêtre applique au projet, avec une étape d'historique, puis réaffiche le graphe
-(:meth:`NodeEditor.set_graph`). Une demande née d'un geste sur un nœud part après la fin de l'événement : la scène
-reconstruite détruit le nœud, qui ne doit plus être en train de le traiter. Au clavier, tant qu'il a le focus : Alt+S
-ajoute un nœud après le nœud courant, Ctrl+D le contourne, Suppr le supprime (et jamais le clip de la timeline),
-Entrée le renomme.
+L'éditeur ne modifie rien lui-même : il émet des demandes (sélection, ajout en série ou en branche, suppression,
+contournement, nom, déplacement, remise à zéro) que la fenêtre applique au projet, avec une étape d'historique, puis
+réaffiche le graphe (:meth:`NodeEditor.set_graph`). Une demande née d'un geste sur un nœud part après la fin de
+l'événement : la scène reconstruite détruit le nœud, qui ne doit plus être en train de le traiter. Glisser un nœud le
+déplace dans sa suite en série. Au clavier, tant qu'il a le focus : Alt+S ajoute un nœud en série, Alt+P en
+parallèle, Alt+L en calque, Ctrl+D contourne, Suppr supprime (et jamais le clip de la timeline), Entrée renomme.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -28,35 +30,71 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.color_nodes import MAX_LABEL_LENGTH, ColorNode, ColorNodeGraph
-from ui.design_system import Radius, Typography, Weights
+from core.color_nodes import MAX_LABEL_LENGTH, ColorMixer, ColorNode, ColorNodeGraph, MixerKind
+from ui.design_system import Iconography, Radius, Typography, Weights
 from ui.i18n import translate
+from ui.icons import IconName, make_icon
 from ui.theme import COLORS
 
 NODE_WIDTH = 96.0
 NODE_HEIGHT = 56.0
 NODE_GAP = 44.0
+ROW_GAP = 22.0
+MIXER_RADIUS = 13.0
 TERMINAL_RADIUS = 7.0
 PORT_RADIUS = 4.0
 MIN_ZOOM = 0.5
 
 
 def node_number(position: int) -> str:
-    """Numéro affiché d'un nœud (``01``, ``02``…) : son rang dans la chaîne."""
+    """Numéro affiché d'un nœud (``01``, ``02``…) : son rang dans l'ordre de calcul."""
     return f"{position + 1:02d}"
 
 
-class _NodeItem(QGraphicsItem):
-    """Un nœud de la chaîne ; glissé à l'horizontale pour changer sa place."""
+def layout(graph: ColorNodeGraph) -> dict[str, tuple[int, int]]:
+    """``{nœud: (colonne, rangée)}`` : colonne = profondeur, rangée = branche (entrées d'un mélangeur de haut en bas)."""
+    column: dict[str, int] = {}
+    for node in graph.order():
+        sources = [link.source for link in graph.inputs(node.id)]
+        column[node.id] = max((column[source] + 1 for source in sources), default=0)
+    row: dict[str, int] = {}
 
-    def __init__(self, editor: "NodeEditor", node: ColorNode, position: int) -> None:
+    def place(node_id: str, at: int) -> int:
+        if node_id in row:
+            return at
+        row[node_id] = at
+        lowest = at
+        for index, link in enumerate(graph.inputs(node_id)):
+            lowest = max(lowest, place(link.source, at if index == 0 else lowest + 1))
+        return lowest
+
+    place(graph.sink.id, 0)
+    return {node_id: (column[node_id], row.get(node_id, 0)) for node_id in column}
+
+
+def _cell(column: int, row: int) -> QPointF:
+    return QPointF(2 * TERMINAL_RADIUS + NODE_GAP + column * (NODE_WIDTH + NODE_GAP), row * (NODE_HEIGHT + ROW_GAP))
+
+
+class _NodeItem(QGraphicsItem):
+    """Un correcteur ; glissé à l'horizontale pour changer sa place dans sa suite en série."""
+
+    def __init__(self, editor: "NodeEditor", node: ColorNode, position: int, home: QPointF) -> None:
         super().__init__()
         self.editor = editor
         self.node = node
         self.position = position
+        self.home = home
         self._press_x: float | None = None
+        self.setPos(home)
         self.setCursor(Qt.OpenHandCursor)
         self.setToolTip(translate("color.node.tip"))
+
+    def input_port(self, _port: int = 0) -> QPointF:
+        return self.pos() + QPointF(0.0, NODE_HEIGHT / 2)
+
+    def output_port(self) -> QPointF:
+        return self.pos() + QPointF(NODE_WIDTH, NODE_HEIGHT / 2)
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - API Qt
         return QRectF(-PORT_RADIUS - 1, -3, NODE_WIDTH + 2 * PORT_RADIUS + 2, NODE_HEIGHT + 6)
@@ -78,6 +116,8 @@ class _NodeItem(QGraphicsItem):
         painter.setFont(number_font)
         painter.setPen(QColor(COLORS["muted_strong"] if enabled else COLORS["disabled_text"]))
         painter.drawText(QRectF(8, 5, NODE_WIDTH - 16, 14), Qt.AlignLeft | Qt.AlignVCenter, node_number(self.position))
+        if self.node.restricted():
+            make_icon(IconName.KEY, size=Iconography.xs).paint(painter, QRect(int(NODE_WIDTH) - 34, 6, 12, 12))
         if self.node.is_active():
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(COLORS["accent"]))
@@ -125,15 +165,49 @@ class _NodeItem(QGraphicsItem):
         self.editor.request_rename(self.node.id)
 
 
+class _MixerItem(QGraphicsItem):
+    """Un mélangeur : un rond, ``+`` (parallèle) ou ``≡`` (calques) ; ses entrées arrivent sur sa gauche."""
+
+    def __init__(self, mixer: ColorMixer, home: QPointF, inputs: int) -> None:
+        super().__init__()
+        self.mixer = mixer
+        self.inputs = max(1, inputs)
+        self.setPos(home + QPointF(NODE_WIDTH / 2 - MIXER_RADIUS, NODE_HEIGHT / 2 - MIXER_RADIUS))
+        self.setToolTip(translate(f"color.mixer.{mixer.kind.value}"))
+
+    def input_port(self, port: int = 0) -> QPointF:
+        spread = (port - (self.inputs - 1) / 2) * min(8.0, 2 * MIXER_RADIUS / self.inputs)
+        return self.pos() + QPointF(0.0, MIXER_RADIUS + spread)
+
+    def output_port(self) -> QPointF:
+        return self.pos() + QPointF(2 * MIXER_RADIUS, MIXER_RADIUS)
+
+    def boundingRect(self) -> QRectF:  # noqa: N802 - API Qt
+        return QRectF(-2, -2, 2 * MIXER_RADIUS + 4, 2 * MIXER_RADIUS + 4)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        painter.setPen(QPen(QColor(COLORS["border_strong"]), 1.2))
+        painter.setBrush(QColor(COLORS["surface"]))
+        painter.drawEllipse(QRectF(0, 0, 2 * MIXER_RADIUS, 2 * MIXER_RADIUS))
+        font = QFont(painter.font())
+        font.setPixelSize(Typography.body)
+        font.setWeight(QFont.Weight(Weights.bold))
+        painter.setFont(font)
+        painter.setPen(QColor(COLORS["muted_strong"]))
+        symbol = "+" if self.mixer.kind is MixerKind.PARALLEL else "≡"
+        painter.drawText(QRectF(0, 0, 2 * MIXER_RADIUS, 2 * MIXER_RADIUS), Qt.AlignCenter, symbol)
+
+
 class NodeEditor(QGraphicsView):
-    """Chaîne de nœuds d'un clip ; n'émet que des demandes, la fenêtre les applique."""
+    """Graphe de nœuds d'un clip ; n'émet que des demandes, la fenêtre les applique."""
 
     node_selected = Signal(str)
-    add_requested = Signal(str)                    # après ce nœud ("" : en fin de chaîne)
+    add_requested = Signal(str)                    # en série après ce nœud ("" : après la sortie)
+    branch_requested = Signal(str, str)            # à côté de ce nœud, mélangeur ``parallel`` ou ``layer``
     remove_requested = Signal(str)
     toggle_requested = Signal(str)
     rename_requested = Signal(str, str)
-    move_requested = Signal(str, int)
+    move_requested = Signal(str, int)              # rang dans sa suite en série
     reset_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -148,7 +222,8 @@ class NodeEditor(QGraphicsView):
         self.graph: ColorNodeGraph | None = None
         self.current_id: str | None = None
         self._items: list[_NodeItem] = []
-        self._links: list[QGraphicsPathItem] = []
+        self._mixers: list[_MixerItem] = []
+        self._links: list[tuple[QGraphicsPathItem, str | None, str | None, int]] = []
         self._terminals: tuple[QPointF, QPointF] = (QPointF(), QPointF())
         self.setAccessibleName(translate("color.nodes.title"))
         self._paint_background()
@@ -166,33 +241,41 @@ class NodeEditor(QGraphicsView):
             return
         scene = self.scene()
         scene.clear()
-        self._items, self._links = [], []
+        self._items, self._mixers, self._links = [], [], []
         if graph is None:
             return
-        chain = graph.order()
-        start_x = 2 * TERMINAL_RADIUS + NODE_GAP
-        for position, node in enumerate(chain):
-            item = _NodeItem(self, node, position)
-            item.setPos(start_x + position * (NODE_WIDTH + NODE_GAP), 0.0)
+        places = layout(graph)
+        numbers = {node.id: index for index, node in enumerate(node for node in graph.order()
+                                                                   if isinstance(node, ColorNode))}
+        for node in graph.order():
+            column, row = places[node.id]
+            if isinstance(node, ColorNode):
+                item: _NodeItem | _MixerItem = _NodeItem(self, node, numbers[node.id], _cell(column, row))
+                self._items.append(item)
+            else:
+                item = _MixerItem(node, _cell(column, row), len(graph.inputs(node.id)))
+                self._mixers.append(item)
             scene.addItem(item)
-            self._items.append(item)
-        end_x = start_x + len(chain) * (NODE_WIDTH + NODE_GAP)          # bord droit du dernier nœud + un écart
-        self._terminals = (QPointF(TERMINAL_RADIUS, NODE_HEIGHT / 2), QPointF(end_x + TERMINAL_RADIUS, NODE_HEIGHT / 2))
-        for _link in range(len(chain) + 1):
-            link = QGraphicsPathItem()
-            link.setPen(QPen(QColor(COLORS["muted"]), 1.5))
-            link.setZValue(-1)
-            scene.addItem(link)
-            self._links.append(link)
+        rightmost = max(item.output_port().x() for item in (*self._items, *self._mixers))
+        self._terminals = (QPointF(TERMINAL_RADIUS, NODE_HEIGHT / 2),
+                           QPointF(rightmost + NODE_GAP, self._item(graph.sink.id).output_port().y()))
+        wires = [(None, node.id, 0) for node in graph.nodes if not graph.inputs(node.id)]
+        wires += [(link.source, link.target, link.port) for link in graph.links]
+        wires.append((graph.sink.id, None, 0))
+        for source, target, port in wires:
+            wire = QGraphicsPathItem()
+            wire.setPen(QPen(QColor(COLORS["muted"]), 1.5))
+            wire.setZValue(-1)
+            scene.addItem(wire)
+            self._links.append((wire, source, target, port))
         self._add_terminals()
         self.update_links()
-        bounds = scene.itemsBoundingRect().adjusted(-12, -12, 12, 12)
-        scene.setSceneRect(bounds)
+        scene.setSceneRect(scene.itemsBoundingRect().adjusted(-12, -12, 12, 12))
         self._fit()
 
     def _fit(self) -> None:
-        """Toute la chaîne visible : réduite jusqu'à :data:`MIN_ZOOM` si la place manque (puis défilement), jamais
-        agrandie."""
+        """Tout le graphe visible : réduit jusqu'à :data:`MIN_ZOOM` si la place manque (puis défilement), jamais
+        agrandi."""
         bounds = self.scene().sceneRect()
         viewport = self.viewport().rect()
         if bounds.isEmpty() or viewport.isEmpty():
@@ -220,21 +303,20 @@ class NodeEditor(QGraphicsView):
             width = caption.boundingRect().width()
             caption.setPos(point.x() - width / 2, point.y() + TERMINAL_RADIUS + 3)
 
+    def _item(self, node_id: str) -> _NodeItem | _MixerItem:
+        return next(item for item in (*self._items, *self._mixers)
+                    if (item.node.id if isinstance(item, _NodeItem) else item.mixer.id) == node_id)
+
     def update_links(self) -> None:
-        """Retrace les liens (source → nœuds → sortie), dans l'ordre affiché des nœuds."""
-        if not self._links:
-            return
-        ordered = sorted(self._items, key=lambda item: item.x())
-        points = [self._terminals[0]]
-        for item in ordered:
-            points += [QPointF(item.x(), NODE_HEIGHT / 2), QPointF(item.x() + NODE_WIDTH, NODE_HEIGHT / 2)]
-        points.append(self._terminals[1])
-        for index, link in enumerate(self._links):
-            start, end = points[2 * index], points[2 * index + 1]
+        """Retrace chaque lien, de la sortie de sa source (ou de l'image du clip) à l'entrée de sa cible (ou à la
+        sortie)."""
+        for wire, source, target, port in self._links:
+            start = self._item(source).output_port() if source is not None else self._terminals[0]
+            end = self._item(target).input_port(port) if target is not None else self._terminals[1]
             path = QPainterPath(start)
             bend = max(12.0, abs(end.x() - start.x()) / 2)
             path.cubicTo(QPointF(start.x() + bend, start.y()), QPointF(end.x() - bend, end.y()), end)
-            link.setPath(path)
+            wire.setPath(path)
 
     def _paint_background(self) -> None:
         self.setBackgroundBrush(QColor(COLORS["panel_alt"]))
@@ -255,7 +337,7 @@ class NodeEditor(QGraphicsView):
     def request_rename(self, node_id: str) -> None:
         if self.graph is None or not self.isEnabled():
             return
-        label = self._ask_label(self.graph.node(node_id).label)
+        label = self._ask_label(self.graph.corrector(node_id).label)
         if label is not None:
             cleaned = label.strip()[:MAX_LABEL_LENGTH]
             QTimer.singleShot(0, lambda: self.rename_requested.emit(node_id, cleaned))
@@ -267,14 +349,18 @@ class NodeEditor(QGraphicsView):
         return text if accepted else None
 
     def drop(self, item: _NodeItem) -> None:
-        """Fin d'un glisser : la place du nœud parmi les autres, d'après son centre."""
-        center = item.x() + NODE_WIDTH / 2
-        index = sum(1 for other in self._items if other is not item and other.x() + NODE_WIDTH / 2 < center)
-        if index != item.position:
+        """Fin d'un glisser : la place du nœud dans sa suite en série, d'après son centre."""
+        if self.graph is None:
+            return
+        run = self.graph.serial_run(item.node.id)
+        centers = {other.node.id: other.x() + NODE_WIDTH / 2 for other in self._items if other.node.id in run}
+        index = sum(1 for node_id, center in centers.items()
+                    if node_id != item.node.id and center < centers[item.node.id])
+        if index != run.index(item.node.id):
             node_id = item.node.id
             QTimer.singleShot(0, lambda: self.move_requested.emit(node_id, index))
         else:
-            item.setX(2 * TERMINAL_RADIUS + NODE_GAP + item.position * (NODE_WIDTH + NODE_GAP))
+            item.setPos(item.home)
             self.update_links()
 
     def _node_at(self, view_pos) -> _NodeItem | None:
@@ -295,13 +381,17 @@ class NodeEditor(QGraphicsView):
         menu.exec(event.globalPos())
 
     def build_menu(self, node_id: str | None) -> QMenu:
-        """Menu contextuel d'un nœud (``None`` : fond de l'éditeur, on ajoute en fin de chaîne)."""
+        """Menu contextuel d'un nœud (``None`` : fond de l'éditeur, on ajoute après la sortie)."""
         menu = QMenu(self)
         add = menu.addAction(translate("color.node.add"))
         add.triggered.connect(lambda: self.add_requested.emit(node_id or ""))
         if node_id is None or self.graph is None:
             return menu
-        enabled = self.graph.node(node_id).enabled
+        for kind in (MixerKind.PARALLEL, MixerKind.LAYER):
+            branch = menu.addAction(translate(f"color.node.add_{kind.value}"))
+            branch.triggered.connect(lambda _checked=False, value=kind.value: self.branch_requested.emit(node_id, value))
+        menu.addSeparator()
+        enabled = self.graph.corrector(node_id).enabled
         toggle = menu.addAction(translate("color.node.bypass" if enabled else "color.node.enable"))
         toggle.triggered.connect(lambda: self.toggle_requested.emit(node_id))
         rename = menu.addAction(translate("color.node.rename"))
@@ -310,7 +400,7 @@ class NodeEditor(QGraphicsView):
         reset.triggered.connect(lambda: self.reset_requested.emit(node_id))
         menu.addSeparator()
         remove = menu.addAction(translate("color.node.remove"))
-        remove.setEnabled(len(self.graph.nodes) > 1)
+        remove.setEnabled(len(self.graph.correctors) > 1)
         remove.triggered.connect(lambda: self.remove_requested.emit(node_id))
         return menu
 
@@ -332,14 +422,17 @@ class NodeEditor(QGraphicsView):
     def _command_for(self, event):
         if self.graph is None or not self.isEnabled():
             return None
-        current = self.current_id or self.graph.nodes[0].id
+        current = self.graph.node_or_first(self.current_id).id
         key, modifiers = event.key(), event.modifiers()
         if key in (Qt.Key_Delete, Qt.Key_Backspace) and not modifiers:
-            return (lambda: self.remove_requested.emit(current)) if len(self.graph.nodes) > 1 else (lambda: None)
+            return (lambda: self.remove_requested.emit(current)) if len(self.graph.correctors) > 1 else (lambda: None)
         if key in (Qt.Key_Return, Qt.Key_Enter) and not modifiers:
             return lambda: self.request_rename(current)
-        if key == Qt.Key_S and modifiers == Qt.AltModifier:
-            return lambda: self.add_requested.emit(current)
+        if modifiers == Qt.AltModifier and key in (Qt.Key_S, Qt.Key_P, Qt.Key_L):
+            if key == Qt.Key_S:
+                return lambda: self.add_requested.emit(current)
+            kind = MixerKind.PARALLEL if key == Qt.Key_P else MixerKind.LAYER
+            return lambda: self.branch_requested.emit(current, kind.value)
         if key == Qt.Key_D and modifiers == Qt.ControlModifier:      # Cmd+D sur macOS
             return lambda: self.toggle_requested.emit(current)
         return None

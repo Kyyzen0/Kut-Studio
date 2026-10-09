@@ -167,6 +167,7 @@ class PreviewPanel(QWidget):
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
         self._gpu_grade = None
+        self._gpu_grade_split = 0.0          # comparaison avant / après (page Couleur) : part gauche sans étalonnage
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
         self._gpu_blend_layers: tuple = ()
         self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
@@ -843,6 +844,14 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_grade_split(self, split: float | None) -> None:
+        """Comparaison avant / après (GPU seulement) : la part gauche du clip affiché (0..1) reste sans étalonnage,
+        un trait la sépare dans le viewer ; ``None`` : comparaison arrêtée."""
+        self._gpu_grade_split = 0.0 if split is None else min(1.0, max(0.0, float(split)))
+        self.overlay.set_compare_split(split)
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
     def set_adjustments(self, adjustments) -> None:
         """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité[, étalonnage])]`` (GPU
         seulement)."""
@@ -985,6 +994,7 @@ class PreviewPanel(QWidget):
                 effect_scale=(values.scale * values.scale_x, values.scale * values.scale_y),
                 matte=matte_key,
                 grade=self._gpu_grade,
+                grade_split=self._gpu_grade_split if self._gpu_grade is not None else 0.0,
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
             layers = layers + self._gpu_graphics_layers(cw, ch, mattes)
