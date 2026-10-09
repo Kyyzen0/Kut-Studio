@@ -865,6 +865,21 @@ class PreviewPanel(QWidget):
             flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
         )
 
+    def canvas_to_media(self, x: float, y: float, media_width: int, media_height: int) -> tuple[float, float] | None:
+        """Pixel du média du clip affiché sous le point ``(x, y)`` du cadre (pipette) ; ``None`` hors de son image."""
+        from core.color_pick import canvas_to_media
+        from core.tracking_motion import fit_box, video_layer_matrix
+
+        cw, ch = self._canvas_size
+        advanced = self._applied_advanced
+        fit = fit_box(media_width, media_height, cw, ch, fill=bool(advanced.get("fill", False)),
+                      pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
+        return canvas_to_media((x, y), tuple(video_layer_matrix(self._layer_values(), cw, ch)), fit)
+
+    def set_pick_mode(self, active: bool) -> None:
+        """Pipette du qualificateur : le prochain clic dans le cadre donne un point (``overlay.color_picked``)."""
+        self.overlay.set_pick_mode(active)
+
     def compare_split_in_layer(self, split: float) -> float:
         """Part de la largeur de l'image du clip affiché qui tombe à gauche du trait ``split`` (part du cadre) : l'avant /
         après des segments fidèles se fait dans l'image du clip (exact pour un clip qui ne tourne pas)."""

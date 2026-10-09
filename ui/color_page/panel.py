@@ -31,6 +31,7 @@ class ColorPanel(QWidget):
     wheel_changed = Signal(str, object)
     qualifier_changed = Signal(object)
     highlight_toggled = Signal(bool)
+    pick_toggled = Signal(bool)
     compare_toggled = Signal(bool)                     # comparaison avant / après dans le moniteur
     shown = Signal()                                   # affiché : la fenêtre le remet sur le clip courant
 
@@ -65,6 +66,7 @@ class ColorPanel(QWidget):
         self.qualifier = QualifierEditor()
         self.qualifier.changed.connect(self.qualifier_changed)
         self.qualifier.highlight_toggled.connect(self.highlight_toggled)
+        self.qualifier.pick_toggled.connect(self.pick_toggled)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("color_tabs")
         self.tabs.setDocumentMode(True)

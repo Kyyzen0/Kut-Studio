@@ -94,6 +94,7 @@ class IconName(str, Enum):
     DIAMOND = "diamond"
     KEY = "key"
     COMPARE = "compare"
+    PIPETTE = "pipette"
     PROJECT = "project"
     TIMER = "timer"
     LIST = "list"
@@ -480,6 +481,14 @@ _SVG_TEMPLATES: dict[str, str] = {
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
         '<circle cx="8" cy="12" r="4"/>'
         '<path d="M12 12h9M17 12v4M21 12v3"/></svg>'
+    ),
+    IconName.PIPETTE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L17 9l-2-2z"/>'
+        '<path d="m13 5 6 6"/>'
+        '<path d="M15 9 6.5 17.5 4 20l2.5-2.5"/></svg>'
     ),
     IconName.COMPARE: (
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '

@@ -62,6 +62,7 @@ class ViewerOverlay(QGraphicsObject):
     guide_moved = Signal(str, float)
     guide_released = Signal(str)
     compare_moved = Signal(float)           # trait avant / après déplacé (part de la largeur)
+    color_picked = Signal(float, float, bool)  # pipette : point du cadre (pixels), Maj (élargir)
 
     def __init__(self) -> None:
         super().__init__()
@@ -78,6 +79,7 @@ class ViewerOverlay(QGraphicsObject):
         self.snapping = True
         self.guides: list = []
         self.compare_split: float | None = None   # trait avant / après (part de la largeur), None : aucun
+        self.pick_mode = False                    # pipette : un clic dans le cadre prend la couleur
         self.selection: SelectionGeometry | None = None
         self.layer_boxes: list[tuple[str, Matrix, tuple[float, float]]] = []
         self._snap_lines = []
@@ -112,6 +114,13 @@ class ViewerOverlay(QGraphicsObject):
         for name, value in flags.items():
             if hasattr(self, name):
                 setattr(self, name, bool(value))
+        self.update()
+
+    def set_pick_mode(self, active: bool) -> None:
+        """Pipette : le prochain clic dans le cadre donne un point (:attr:`color_picked`) au lieu de sélectionner."""
+        self.prepareGeometryChange()
+        self.pick_mode = bool(active)
+        self.setCursor(Qt.CrossCursor if self.pick_mode else Qt.ArrowCursor)
         self.update()
 
     def set_compare_split(self, split: float | None) -> None:
@@ -176,6 +185,8 @@ class ViewerOverlay(QGraphicsObject):
                 path.addRect(self._guide_rect(guide).adjusted(-3, -3, 3, 3))
         if (x := self._compare_x()) is not None:
             path.addRect(QRectF(x - 5, self.canvas_rect.top(), 10, self.canvas_rect.height()))
+        if self.pick_mode:
+            path.addRect(self.canvas_rect)
         return path
 
     def _guide_rect(self, guide) -> QRectF:
@@ -311,6 +322,8 @@ class ViewerOverlay(QGraphicsObject):
     # -- interactions ------------------------------------------------------------------------
 
     def _hit(self, point: QPointF) -> tuple[str, str] | None:
+        if self.pick_mode and self.canvas_rect.contains(point):
+            return "pick", ""
         x = self._compare_x()
         if x is not None and abs(point.x() - x) <= 5 and self.canvas_rect.top() <= point.y() <= self.canvas_rect.bottom():
             return "compare", ""
@@ -342,7 +355,7 @@ class ViewerOverlay(QGraphicsObject):
                 "move": Qt.SizeAllCursor, "rotate": Qt.CrossCursor, "anchor": Qt.CrossCursor,
                 "tl": Qt.SizeFDiagCursor, "br": Qt.SizeFDiagCursor, "tr": Qt.SizeBDiagCursor,
                 "bl": Qt.SizeBDiagCursor, "t": Qt.SizeVerCursor, "b": Qt.SizeVerCursor,
-                "l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor, "select": Qt.PointingHandCursor,
+                "l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor, "select": Qt.PointingHandCursor, "pick": Qt.CrossCursor,
             }.get(hit[0], Qt.SplitHCursor)
             if hit[0] == "guide":
                 guide = next((g for g in self.guides if g.id == hit[1]), None)
@@ -356,6 +369,12 @@ class ViewerOverlay(QGraphicsObject):
             event.ignore()
             return
         mode, target = hit
+        if mode == "pick":
+            canvas_x, canvas_y = self.to_canvas(event.pos())
+            extend = bool(event.modifiers() & Qt.ShiftModifier)
+            self.color_picked.emit(float(canvas_x), float(canvas_y), extend)
+            event.accept()
+            return
         if mode == "compare":
             self._drag = {"mode": "compare", "clip_id": "", "moved": False}
             event.accept()

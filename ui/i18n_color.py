@@ -95,6 +95,15 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Shows in the viewer what the qualifier selects, the rest in grey. Does not affect the export.",
         "Muestra en el visor lo que selecciona el calificador, el resto en gris. No afecta a la exportación.",
     ),
+    "color.qualifier.pick": _t("Pipette", "Eyedropper", "Cuentagotas"),
+    "color.qualifier.pick_tip": _t(
+        "Cliquez dans le viewer : la couleur qui arrive à ce nœud sous le clic est sélectionnée. Maj + clic élargit "
+        "la sélection jusqu'à elle.",
+        "Click in the viewer: the color reaching this node under the click is selected. Shift + click widens the "
+        "selection to it.",
+        "Haz clic en el visor: se selecciona el color que llega a este nodo bajo el clic. Mayús + clic amplía la "
+        "selección hasta él.",
+    ),
     "color.qualifier.hue": _t("Teinte", "Hue", "Tono"),
     "color.qualifier.sat": _t("Saturation", "Saturation", "Saturación"),
     "color.qualifier.lum": _t("Luminance", "Luminance", "Luminancia"),
@@ -140,6 +149,12 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "history.color.node_parallel": _t("Ajouter un nœud parallèle", "Add a parallel node", "Añadir un nodo paralelo"),
     "history.color.node_layer": _t("Ajouter un nœud de calque", "Add a layer node", "Añadir un nodo de capa"),
     "history.color.qualifier": _t("Qualifieur", "Qualifier", "Calificador"),
+    "history.color.pick": _t("Pipette du qualifieur", "Qualifier eyedropper", "Cuentagotas del calificador"),
+    "status.color.pick_outside": _t("Pipette : le clic est hors de l'image du clip.",
+                                    "Eyedropper: the click is outside the clip's picture.",
+                                    "Cuentagotas: el clic está fuera de la imagen del clip."),
+    "status.color.pick_failed": _t("Pipette : couleur illisible ({error}).", "Eyedropper: color unreadable ({error}).",
+                                   "Cuentagotas: color ilegible ({error})."),
     # --- Raccourcis et panneau -------------------------------------------------------------------------------------
     "shortcuts.command.page_edit": _t("Page Montage", "Edit page", "Página Edición"),
     "shortcuts.command.page_color": _t("Page Couleur", "Color page", "Página Color"),

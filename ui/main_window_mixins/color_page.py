@@ -7,7 +7,10 @@ reste choisi d'un clip à l'autre : un clip qui a un nœud de ce nom le montre, 
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+import logging
+import threading
+
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from core.color_grading import ColorGradingError, ColorGradingService
@@ -17,7 +20,28 @@ from core.node_graph import NodeGraphError
 from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES
 from ui.i18n import translate
 
+LOGGER = logging.getLogger(__name__)
+
 _COLOR_TAB = 1                                       # onglet Couleur de l'inspecteur
+
+
+class _PickResults(QObject):
+    """Lecture de la pipette hors du fil de l'interface ; :attr:`done` y revient (connexion en file d'attente)."""
+
+    done = Signal(object)
+
+    def run(self, request) -> None:
+        from core.color_pick import ColorPickError, sample_node_input
+
+        clip_id, node_id, extend, path, source_time, (x, y), upstream = request
+        try:
+            outcome = (clip_id, node_id, extend, sample_node_input(path, source_time, x, y, upstream), None)
+        except ColorPickError as error:
+            outcome = (clip_id, node_id, extend, None, str(error))
+        try:
+            self.done.emit(outcome)
+        except RuntimeError:                                 # fenêtre fermée pendant la lecture : plus personne
+            LOGGER.debug("Pipette : fenêtre fermée avant la fin de la lecture, couleur abandonnée")
 
 
 class ColorPageMixin:
@@ -50,6 +74,10 @@ class ColorPageMixin:
         self.color_panel.wheel_changed.connect(self.on_color_wheel_changed)
         self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
         self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
+        self.color_panel.pick_toggled.connect(self.preview_panel.set_pick_mode)
+        self.preview_panel.overlay.color_picked.connect(self.on_color_picked)
+        self._pick_results = _PickResults(self)
+        self._pick_results.done.connect(self._apply_color_pick)
         self.color_panel.compare_toggled.connect(lambda shown: self._set_color_compare(0.5 if shown else None))
         self.preview_panel.overlay.compare_moved.connect(self._set_color_compare)
         self.color_panel.shown.connect(self._refresh_color_panel)
@@ -115,6 +143,7 @@ class ColorPageMixin:
                 rail.set_active("edit")
             self._show_page_scopes(False)
             self._set_color_compare(None)                   # la comparaison est un outil de la page Couleur
+            self._stop_color_pick()
 
     def _show_page_scopes(self, color_page: bool) -> None:
         """Scopes affichés sur la page Couleur ; en revenant au Montage, l'état qu'on y avait laissé."""
@@ -332,6 +361,56 @@ class ColorPageMixin:
         clip_id = self._color_clip_id()
         if clip_id is not None:
             self._refresh_color_monitor(clip_id)
+
+    # -- pipette ------------------------------------------------------------------------------------------------
+
+    def _stop_color_pick(self) -> None:
+        self.preview_panel.set_pick_mode(False)
+        self.color_panel.qualifier.set_picking(False)
+
+    def on_color_picked(self, x: float, y: float, extend: bool) -> None:
+        """Clic de la pipette dans le viewer : la couleur qui arrive au nœud courant sous ce point est lue en arrière-
+        plan (FFmpeg), puis le qualifieur du nœud l'entoure (Maj : il s'élargit jusqu'à elle). Une prise par clic."""
+        from core.color_pick import upstream_graph
+        from core.timeline_operations import find_clip
+
+        self._stop_color_pick()
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        asset = next((item for item in self.project.media_assets if item.id == clip.asset_id), None)
+        if asset is None or not asset.path:
+            return
+        point = self.preview_panel.canvas_to_media(x, y, int(asset.width), int(asset.height))
+        if point is None:
+            self.statusBar().showMessage(translate("status.color.pick_outside"), 4000)
+            return
+        graph = as_graph(clip.color_grade)
+        node = graph.node_or_first(self._color_node_id)
+        local = float(self.playhead_seconds) - float(clip.timeline_start)
+        source_time = clip.time_map.source_time(local)
+        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream_graph(graph, node.id))
+        threading.Thread(target=self._pick_results.run, args=(request,), daemon=True, name="kut-color-pick").start()
+
+    def _apply_color_pick(self, outcome) -> None:
+        """Résultat de la pipette (fil de l'interface) : le qualifieur du nœud, en une étape d'historique."""
+        from core.color_pick import qualifier_around
+
+        clip_id, node_id, extend, rgb, error = outcome
+        if error is not None or clip_id != self._color_clip_id():
+            if error is not None:
+                self.statusBar().showMessage(translate("status.color.pick_failed", error=error), 6000)
+            return
+        try:
+            base = ColorGradingService().get_graph(self.project, clip_id).corrector(node_id).qualifier
+        except (ColorGradingError, NodeGraphError):
+            return
+        qualifier = qualifier_around(rgb, base, extend=extend)
+        self._edit_color_nodes(lambda graph: graph.with_qualifier(node_id, qualifier), "history.color.pick")
 
     def on_color_wheel_changed(self, name: str, wheel) -> None:
         """Une roue du nœud courant bouge : rafale regroupée en une étape, comme les curseurs de l'inspecteur."""

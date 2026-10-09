@@ -86,3 +86,61 @@ def test_the_compare_line_is_converted_into_the_picture_of_a_moved_clip(window):
     panel._applied_scale = 1.0
     assert panel.compare_split_in_layer(0.3) == pytest.approx(0.3)
 
+
+
+# --- pipette ---------------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def blue_window(window, tmp_path):
+    """La fenêtre, son premier clip pointé sur un vrai média bleu uni (le projet d'exemple n'a pas de fichiers)."""
+    from render_probe import lavfi_video
+
+    clip = window.project.tracks[0].clips[0]
+    asset = next(item for item in window.project.media_assets if item.id == clip.asset_id)
+    media = lavfi_video(tmp_path / "blue.mp4", "color=c=0x3366CC:d=10", size=(64, 36), seconds=10.0)
+    asset.path, asset.width, asset.height = str(media), 64, 36
+    return window
+
+
+def test_the_eyedropper_sets_the_qualifier_from_a_click_in_the_viewer(qtbot, blue_window):
+    window = blue_window
+    clip_id = _clip(window)
+    window.color_panel.qualifier.pick_button.click()
+    overlay = window.preview_panel.overlay
+    assert overlay.pick_mode, "le prochain clic dans le viewer prend la couleur"
+    width, height = window.project.width, window.project.height
+    steps = len(window.history.entries())
+    overlay.color_picked.emit(width / 2, height / 2, False)
+    assert not overlay.pick_mode and not window.color_panel.qualifier.pick_button.isChecked(), "une prise par clic"
+    from core.timeline_operations import find_clip
+
+    def qualified():
+        grade = find_clip(window.project, clip_id).color_grade
+        return bool(getattr(grade, "correctors", None)) and grade.correctors[0].qualifier is not None
+
+    qtbot.waitUntil(qualified, timeout=10000)
+    qualifier = find_clip(window.project, clip_id).color_grade.correctors[0].qualifier
+    assert qualifier.use_hue and abs(qualifier.hue_center - 220.0) < 6, qualifier
+    assert len(window.history.entries()) == steps + 1
+    from ui import i18n
+
+    assert window.history.undo_label == i18n.translate("history.color.pick")
+
+
+def test_a_click_outside_the_clip_picture_says_so(blue_window, monkeypatch):
+    window = blue_window
+    _clip(window)
+    monkeypatch.setattr(window.preview_panel, "canvas_to_media", lambda *args: None)
+    window.color_panel.qualifier.pick_button.click()
+    window.preview_panel.overlay.color_picked.emit(1.0, 1.0, False)
+    from ui import i18n
+
+    assert window.statusBar().currentMessage() == i18n.translate("status.color.pick_outside")
+
+
+def test_leaving_the_colour_page_stops_the_eyedropper(window):
+    _clip(window)
+    window.color_panel.qualifier.pick_button.click()
+    window.switch_page(PAGE_EDIT)
+    assert not window.preview_panel.overlay.pick_mode

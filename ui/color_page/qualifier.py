@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.color_qualifier import Qualifier
-from ui.design_system import Spacing
+from ui.design_system import Iconography, Spacing
 from ui.i18n import translate
+from ui.icons import IconName, make_icon
 from ui.theme import COLORS, set_role
 
 _CHANNELS = ("hue", "sat", "lum")
@@ -177,6 +178,7 @@ class QualifierEditor(QWidget):
 
     changed = Signal(object)
     highlight_toggled = Signal(bool)
+    pick_toggled = Signal(bool)                       # pipette : le prochain clic dans le viewer prend la couleur
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -196,9 +198,16 @@ class QualifierEditor(QWidget):
         self.highlight_button.setObjectName("chipButton")
         self.highlight_button.setCheckable(True)
         self.highlight_button.toggled.connect(self.highlight_toggled)
+        self.pick_button = QToolButton()
+        self.pick_button.setObjectName("chipButton")
+        self.pick_button.setCheckable(True)
+        self.pick_button.setIcon(make_icon(IconName.PIPETTE, size=Iconography.sm))
+        self.pick_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.pick_button.toggled.connect(self.pick_toggled)
         top.addWidget(self.enabled_check)
         top.addStretch(1)
         top.addWidget(self.invert_check)
+        top.addWidget(self.pick_button)
         top.addWidget(self.highlight_button)
         root.addLayout(top)
 
@@ -256,6 +265,12 @@ class QualifierEditor(QWidget):
             self._updating = False
         self._sync_enabled()
 
+    def set_picking(self, picking: bool) -> None:
+        """État du bouton *Pipette* (la fenêtre l'arrête après une prise), sans émettre."""
+        self.pick_button.blockSignals(True)
+        self.pick_button.setChecked(picking)
+        self.pick_button.blockSignals(False)
+
     def _sync_enabled(self) -> None:
         active = self._qualifier is not None and self._qualifier.enabled
         for widget in (self.invert_check, *self.channel_checks.values(), *self.bars.values(), *self.spins.values()):
@@ -265,6 +280,8 @@ class QualifierEditor(QWidget):
         self.enabled_check.setText(translate("color.qualifier.enable"))
         self.invert_check.setText(translate("color.qualifier.invert"))
         self.highlight_button.setText(translate("color.qualifier.highlight"))
+        self.pick_button.setText(translate("color.qualifier.pick"))
+        self.pick_button.setToolTip(translate("color.qualifier.pick_tip"))
         self.highlight_button.setToolTip(translate("color.qualifier.highlight_tip"))
         for channel in _CHANNELS:
             self.channel_checks[channel].setText(translate(f"color.qualifier.{channel}"))
