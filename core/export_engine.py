@@ -2204,6 +2204,12 @@ def _build_color_grade_filters(grade) -> str:
     )
     # 2. colorbalance : température/teinte agissent sur les tons moyens ;
     # ombres et hautes lumières utilisent leurs options FFmpeg dédiées.
+    # Sans ``pl=1`` (« conserver la luminosité ») : FFmpeg y met la
+    # saturation à zéro dès qu'un canal vaut 0 ou 255 après réglage (un
+    # rouge saturé sortait gris) et y annule les ombres et hautes lumières,
+    # qui décalent les trois canaux d'autant (la luminosité rendue efface
+    # le réglage). Température et teinte, décalages rouge / bleu opposés,
+    # gardent d'elles-mêmes la luminosité (0,06 niveau d'écart mesuré).
     rm, gm, bm = _compute_colorbalance_offsets(
         float(grade.temperature), float(grade.hue)
     )
@@ -2221,7 +2227,7 @@ def _build_color_grade_filters(grade) -> str:
             f"rm={_format_seconds(rm)}:gm={_format_seconds(gm)}:"
             f"bm={_format_seconds(bm)}:"
             f"rh={_format_seconds(highlight)}:gh={_format_seconds(highlight)}:"
-            f"bh={_format_seconds(highlight)}:pl=1"
+            f"bh={_format_seconds(highlight)}"
         )
     # 3. courbes par canal : on émet un filtre ``curves`` par canal
     # actif (s'écarte de l'identité). Les courbes master / R / V / B

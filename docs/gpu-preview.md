@@ -346,21 +346,27 @@ le montrent).
 
 Mesuré (`tests/test_gpu_grade.py`, vidéo 4:2:0 étalonnée : exposition,
 contraste, saturation, température, ombres, courbe en S, LUT `.cube`) contre
-l'export réel : **0,05 niveau** d'écart moyen, **1,2** au 99ᵉ centile, sur les
-zones où la chroma ne change pas brusquement. Aux bords francs de chroma,
+l'export réel, sur une mire aux couleurs saturées : **0,1 à 0,15 niveau**
+d'écart moyen, **3 à 4** au 99ᵉ centile, sur les zones où la chroma ne change
+pas brusquement. Les écarts restants sont au bord du gamut : là où l'étalonnage
+écrête un canal, l'interpolation entre deux nœuds adoucit le coude de quelques
+niveaux. Aux bords francs de chroma,
 l'écart est celui du moniteur sans étalonnage (chroma traitée à pleine
 résolution, voir plus haut) : la LUT n'y ajoute rien. Sur le vrai GPU
 (`tools/gpu/selfcheck.py`, cas `grade`, LUT non linéaire de test) : 0,3 niveau
 en moyenne et moins de 2 au pire, Metal et OpenGL, NV12 / YUV420P / P010.
 
-**Défaut d'FFmpeg dans l'export, que la LUT ne reproduit qu'en partie.** Avec
-`pl=1` (conserver la luminosité), `colorbalance` met la saturation à zéro dès
-qu'un canal vaut exactement 0 ou 255 : un rouge saturé (230, 40, 20) passé en
-saturation 1,3 avec une température sort **gris** (128, 128, 128). L'export émet
-`pl=1` dès qu'une température, une teinte, des ombres ou des hautes lumières
-sont réglées. Les nœuds de la LUT ont ce gris, mais l'interpolation entre un nœud
-gris et un nœud coloré adoucit la cassure : là, le moniteur et l'export
-diffèrent. C'est l'export qu'il faudra corriger.
+**Défaut de l'export trouvé en chemin, corrigé (2026-10-09).** L'export
+appelait `colorbalance` avec `pl=1` (conserver la luminosité). FFmpeg y met la
+saturation à zéro dès qu'un canal vaut exactement 0 ou 255 après réglage : un
+rouge saturé (230, 40, 20) passé en saturation 1,3 avec une température sortait
+**gris** (128, 128, 128) — sur une mire saturée, 50 à 88 % des pixels. La même
+option annulait les **ombres** et **hautes lumières**, qui décalent les trois
+canaux d'autant : la luminosité rétablie effaçait le réglage. `pl=1` est retiré ;
+température et teinte, décalages rouge / bleu opposés, gardent d'elles-mêmes la
+luminosité (0,06 niveau d'écart mesuré hors pixels grisés). Tests de rendu réel :
+`tests/test_color_grade_export.py`. Le moniteur suit sans rien changer : il cuit
+la chaîne de l'export.
 
 ## Aperçu GPU contre export
 
@@ -646,9 +652,9 @@ toutes les variantes.
 - **Étalonnage** : le moniteur CPU ne le montre toujours qu'avec les segments
   fidèles ; sur GPU, l'étalonnage d'un calque motion graphics (dessiné par Qt)
   aussi. Chaque nouveau réglage demande une cuisson (≈ 30 ms, hors du fil de
-  l'interface) : pendant ce temps, la LUT précédente reste affichée. Là où
-  `colorbalance` grise un canal saturé dans l'export (défaut décrit plus haut),
-  le moniteur adoucit la cassure.
+  l'interface) : pendant ce temps, la LUT précédente reste affichée. Au bord du
+  gamut, là où l'étalonnage écrête un canal, la LUT adoucit le coude de quelques
+  niveaux.
 - **Une copie CPU par plan et par image** (limite de PySide6 6.11). Elle coûte
   environ 3 ms en 4K P010 ; pas de copie zéro depuis le décodeur de Qt.
 - **Décodage du moniteur** : un nouveau mode ne s'applique qu'au prochain

@@ -154,9 +154,11 @@ def test_the_baked_lut_is_what_the_export_renders(tmp_path, tags):
     flat = _flat_chroma(yuv)
     error = np.abs(shown - exported)[flat] * 255
     assert flat.mean() > 0.6
-    # Mesuré : 0,05 / 1,2 avec FFmpeg 9 ; 0,18 / 4,2 avec FFmpeg 6.1 (CI Ubuntu), aux coudes des couleurs écrêtées.
+    # Mire aux couleurs saturées : là où l'étalonnage écrête un canal (bord du gamut), l'interpolation entre deux
+    # nœuds de la LUT adoucit le coude de quelques niveaux. Mesuré : 0,11 à 0,15 de moyenne, 3,3 à 4,0 au 99ᵉ centile.
     assert error.mean() < 0.3 and np.percentile(error, 99) < 5.0, (error.mean(), np.percentile(error, 99))
-    assert np.abs(plain - exported).mean() * 255 > 40, "l'étalonnage change vraiment l'image"
+    # ≈ 10 niveaux sur cette mire déjà saturée (111 quand ``colorbalance`` avait ``pl=1`` : presque tout était du gris).
+    assert np.abs(plain - exported).mean() * 255 > 5, "l'étalonnage change vraiment l'image"
 
 
 def _plan(media, grade):
@@ -169,8 +171,8 @@ def _plan(media, grade):
 def test_a_grade_on_an_effects_layer_is_baked_in_rgb_like_the_export_applies_it(tmp_path):
     """Calque d'effets étalonné : l'export étalonne la composition RVB en dessous ; la LUT est cuite en RVB.
 
-    Sans ``colorbalance`` : avec ``pl=1``, FFmpeg rend gris un pixel dont un canal touche 0 ou 255 (défaut connu,
-    docs/gpu-preview.md) ; une LUT interpole à travers cette cassure, l'écart n'y dit rien du chemin RVB testé ici.
+    Étalonnage complet, ``colorbalance`` compris : depuis qu'il n'a plus ``pl=1`` (qui grisait un pixel dont un canal
+    touchait 0 ou 255, une cassure que la LUT ne pouvait qu'adoucir), la fonction est continue.
     """
     from core.graphics import add_graphic_clip
     from core.render_plan import build_render_plan
@@ -182,7 +184,7 @@ def test_a_grade_on_an_effects_layer_is_baked_in_rgb_like_the_export_applies_it(
     project = _clip_project(str(media), None)
     plain = render_frame(build_render_plan(project), W, H, 0.4).astype(float) / 255.0
     adjustment = add_graphic_clip(project, "adjustment", timeline_start=0.0, duration=2.0)
-    grade = _grade(tmp_path, balance=False)
+    grade = _grade(tmp_path)
     adjustment.color_grade = grade
     exported = render_frame(build_render_plan(project), W, H, 0.4).astype(float) / 255.0
     shown = sample_atlas(atlas_array(bake_grade_lut(grade, domain=DOMAIN_RGB)), plain)
