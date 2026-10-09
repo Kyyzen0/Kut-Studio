@@ -21,7 +21,7 @@ Kut-Studio is a desktop video editor with a clean dark interface and a focused w
 - ⚙️ **Inspector** — Clip, Color, Effects and Audio tabs, plus Graphics and Compositing (masks, chroma key, blend modes).
 - 🎨 **Color grading and scopes** — Color controls, `.cube` 3D LUT import, and waveform / histogram / vectorscope monitoring.
 - 🔀 **Transitions and effects** — Transition presets (including crossfade), an effects library and time remapping.
-- 🔊 **Audio** — Mixer, audio effects with a preset library (favorites and your own presets), ducking through the social-video presets and voice-over recording.
+- 🔊 **Audio** — Mixer, a **volume curve** per track drawn under its clips (double-click to add a point, drag to move it), track roles, audio effects with a preset library (favorites and your own presets), ducking per track pair or through the social-video presets, and voice-over recording.
 - 🔤 **Text and graphics** — Styled titles, text presets, and SRT subtitle import and export.
 - 💾 **Projects** — Native `.kut` save and load with autosave and backward-compatible loading of older format versions.
 - 📤 **Export and render queue** — MP4 (H.264 or H.265/HEVC), MOV (H.264) and MOV (ProRes) through FFmpeg, with presets (H.264 1080p/1440p/4K, H.265 1080p/4K, YouTube, TikTok, TikTok 60 fps, Instagram Reels, YouTube Shorts, Instagram 4:5, Square 1:1, ProRes Master, Custom) and a persistent, reorderable render queue. See [docs/render-queue.md](docs/render-queue.md).
@@ -261,7 +261,6 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 - Motion graphics: per-character text animation, animated colors and mask vertices, effects inside groups
 - Optical flow, next steps (the backend interface is ready, nothing else is started): Metal / CUDA / Vulkan / OpenCL / CoreML backends, neural interpolation, real-time blending and flow in the GPU monitor, motion blur and stabilisation built on the same flow. See [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
 - Social video, next steps: reframing pan driven by a tracked point, photos in template slots, speech recognition for karaoke timing, loudness-normalized preview
-- Audio automation editing: the model, render plan and export already handle track volume automation and ducking, but the interface cannot edit them yet (the handlers exist and are not connected; see [docs/track-automation.md](docs/track-automation.md))
 - Multicam, next steps (the architecture leaves room, nothing is started): automatic multicam proxies, 16+ angles with a tuned grid, remote cameras and live capture, LTC synchronization, advanced waveform fingerprints, collaboration. See [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contributing
@@ -286,7 +285,7 @@ Kut-Studio est un éditeur vidéo de bureau à l’interface sombre. Son flux de
 - ⚙️ **Inspecteur** — Onglets Clip, Couleur, Effets et Audio, plus Graphiques et Compositing (masques, chroma key, modes de fusion).
 - 🎨 **Étalonnage et scopes** — Réglages couleur, import de LUT 3D `.cube`, et monitoring waveform / histogramme / vectorscope.
 - 🔀 **Transitions et effets** — Presets de transitions (dont fondu enchaîné), bibliothèque d’effets et remapping temporel.
-- 🔊 **Audio** — Mixeur, effets audio avec bibliothèque de préréglages (favoris et presets personnels), ducking via les presets réseaux sociaux et enregistrement de voix off.
+- 🔊 **Audio** — Mixeur, **courbe de volume** par piste dessinée sous ses clips (double-clic pour poser un point, glisser pour le déplacer), rôle des pistes, effets audio avec bibliothèque de préréglages (favoris et presets personnels), ducking par paire de pistes ou via les presets réseaux sociaux, et enregistrement de voix off.
 - 🔤 **Texte et graphiques** — Titres stylés, presets de texte, import et export de sous-titres SRT.
 - 💾 **Projets** — Sauvegarde et chargement `.kut` natifs, avec autosave et chargement rétrocompatible des anciennes versions du format.
 - 📤 **Export et file de rendu** — MP4 (H.264 ou H.265/HEVC), MOV (H.264) et MOV (ProRes) via FFmpeg, avec des presets (H.264 1080p/1440p/4K, H.265 1080p/4K, YouTube, TikTok, TikTok 60 fps, Instagram Reels, YouTube Shorts, Instagram 4:5, Carré 1:1, ProRes Master, Custom) et une file de rendu persistante et réordonnable. Voir [docs/render-queue.md](docs/render-queue.md).
@@ -480,7 +479,6 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 - Motion graphics : animation caractère par caractère, couleurs et sommets de masque animés, effets à l'intérieur des groupes
 - Flux optique, suite (l’interface de backend est prête, rien d’autre n’est commencé) : backends Metal / CUDA / Vulkan / OpenCL / CoreML, interpolation neuronale, mélange et flux en temps réel dans le moniteur GPU, flou de mouvement et stabilisation fondés sur le même flux. Voir [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
 - Vidéo sociale, suite : pan de recadrage piloté par un point de tracking, photos dans les emplacements de template, reconnaissance vocale pour le karaoké, aperçu normalisé en loudness
-- Édition de l'automation audio : le modèle, le plan de rendu et l'export gèrent déjà l'automation du volume des pistes et le ducking, mais l'interface ne permet pas encore de les éditer (les gestionnaires existent sans être connectés ; voir [docs/track-automation.md](docs/track-automation.md))
 - Multicam, suite (l'architecture laisse la place, rien n'est commencé) : proxys Multicam automatiques, 16 angles et plus avec une grille réglée, caméras distantes et capture en direct, synchronisation LTC, empreintes sonores avancées, collaboration. Voir [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contribution

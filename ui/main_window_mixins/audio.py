@@ -48,6 +48,14 @@ class AudioMixin:
         timeline = self.timeline_panel
         timeline.fade_changed_requested.connect(self.on_clip_fade_from_timeline)
         timeline.reset_clip_fades_requested.connect(self.on_clip_fades_reset)
+        # Courbe de volume (bande sous les clips d'une piste audio) et menu ⋯ des pistes audio.
+        timeline.automation_point_added.connect(self.on_track_automation_point_added)
+        timeline.automation_point_removed.connect(self.on_track_automation_point_removed)
+        timeline.automation_point_updated.connect(self.on_track_automation_point_updated)
+        timeline.automation_point_moved.connect(self.on_track_automation_point_moved)
+        timeline.automation_cleared.connect(self.on_track_automation_cleared)
+        timeline.track_role_changed.connect(self.on_track_role_changed)
+        timeline.ducking_pair_toggled.connect(self.on_ducking_pair_toggled)
 
         # Le volume Master est une préférence d'interface, pas du projet :
         # il vit dans les réglages utilisateur, jamais dans le ``.kut``.
@@ -105,9 +113,9 @@ class AudioMixin:
                 self.project, track.id, time_seconds, gain_db, fade_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
+            self._refuse_automation_edit(exc)
             return
-        self._record_audio_change(i18n.translate("history.audio.automation_add"))
+        self._after_automation_edit(track.id, "history.audio.automation_add")
 
     def on_track_automation_point_removed(
         self, track_id: str, time_seconds: float
@@ -125,9 +133,9 @@ class AudioMixin:
                 self.project, track.id, time_seconds
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
+            self._refuse_automation_edit(exc)
             return
-        self._record_audio_change(i18n.translate("history.audio.automation_remove"))
+        self._after_automation_edit(track.id, "history.audio.automation_remove")
 
     def on_track_automation_point_updated(
         self, track_id: str, time_seconds: float,
@@ -147,9 +155,59 @@ class AudioMixin:
                 gain_db=gain_db, fade_seconds=fade_seconds,
             )
         except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
+            self._refuse_automation_edit(exc)
             return
-        self._record_audio_change(i18n.translate("history.audio.automation_edit"))
+        self._after_automation_edit(track.id, "history.audio.automation_edit")
+
+    def on_track_automation_point_moved(
+        self, track_id: str, time_seconds: float, new_time: float, gain_db: float,
+    ) -> None:
+        """Glisser d'un point dans la bande : nouvel instant et nouveau gain, une entrée d'historique."""
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked:
+            return
+        from core.audio_automation import AudioAutomationError, AudioAutomationService
+
+        try:
+            AudioAutomationService().move_automation_point(self.project, track.id, time_seconds, new_time, gain_db)
+        except AudioAutomationError as exc:
+            self._refuse_automation_edit(exc)
+            return
+        self._after_automation_edit(track.id, "history.audio.automation_edit")
+
+    def on_track_automation_cleared(self, track_id: str) -> None:
+        """« Effacer la courbe » : la piste revient à son volume seul."""
+        track = self._find_audio_track(track_id)
+        if track is None or track.locked or track.automation.is_empty():
+            return
+        from core.audio_automation import AudioAutomationService
+
+        AudioAutomationService().clear_automation(self.project, track.id)
+        self._after_automation_edit(track.id, "history.audio.automation_clear")
+
+    def _refuse_automation_edit(self, error: Exception) -> None:
+        _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(error))
+        self.timeline_panel.refresh_clip_widgets()          # la bande retrouve la courbe du modèle
+
+    def _after_automation_edit(self, track_id: str, label_key: str) -> None:
+        """Historique, bande de la piste (gardée visible même vidée) et aperçu, qui entend la nouvelle courbe."""
+        self._record_audio_change(i18n.translate(label_key))
+        self.timeline_panel.keep_automation_visible(track_id)
+        self.timeline_panel.refresh_clip_widgets()
+        self._sync_preview_to_timeline()
+
+    def on_ducking_pair_toggled(self, music_track_id: str, voice_track_id: str, enabled: bool) -> None:
+        """Menu ⋯ « Baisser sous… » : crée ou retire l'association de ducking de cette paire de pistes."""
+        if enabled:
+            self.on_ducking_sidechain_added(music_track_id, voice_track_id)
+            return
+        sidechain = next(
+            (item for item in getattr(self.project, "ducking_sidechains", [])
+             if item.music_track_id == music_track_id and item.voice_track_id == voice_track_id),
+            None,
+        )
+        if sidechain is not None:
+            self.on_ducking_sidechain_removed(sidechain.id)
 
     def on_ducking_sidechain_added(
         self, music_track_id: str, voice_track_id: str,
@@ -176,6 +234,7 @@ class AudioMixin:
             _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.ducking_add"))
+        self._sync_preview_to_timeline()
 
     def on_ducking_sidechain_removed(self, sidechain_id: str) -> None:
         from core.audio_automation import (
@@ -189,30 +248,7 @@ class AudioMixin:
             _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
             return
         self._record_audio_change(i18n.translate("history.audio.ducking_remove"))
-
-    def on_ducking_config_changed(
-        self, sidechain_id: str,
-        threshold_db: float, reduction_db: float,
-        attack_seconds: float, release_seconds: float,
-    ) -> None:
-        from core.audio_automation import (
-            AudioAutomationError,
-            AudioAutomationService,
-            DuckingConfig,
-        )
-        service = AudioAutomationService()
-        try:
-            config = DuckingConfig(
-                threshold_db=threshold_db,
-                reduction_db=reduction_db,
-                attack_seconds=attack_seconds,
-                release_seconds=release_seconds,
-            )
-            service.update_ducking_config(self.project, sidechain_id, config)
-        except AudioAutomationError as exc:
-            _main_window().QMessageBox.warning(self, i18n.translate("dialog.title.mix"), str(exc))
-            return
-        self._record_audio_change(i18n.translate("history.audio.ducking_edit"))
+        self._sync_preview_to_timeline()
 
     def on_track_pan_changed(self, track_id: str, value: float) -> None:
         track = self._find_audio_track(track_id)

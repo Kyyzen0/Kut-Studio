@@ -234,9 +234,10 @@ GOLDEN_FILTERS = [
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
     "asetnsamples=n=256:p=0,volume='pow(10,(lte(t,1.500000)*(-6.0000)+gt(t,1.500000)*lte(t,3.000000)*"
     "(-6.0000+(-6.0000)*(t-1.500000)/1.500000)+gt(t,3.000000)*(-12.0000))/20)':eval=frame,asetpts=PTS+0.0/TB[a0]",
+    # Deux points de maintien nul : une ligne droite de 0 à -3 dB (jusqu'au 2026-10-09, un saut juste après 0 s).
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
-    "asetnsamples=n=256:p=0,volume='pow(10,(lte(t,0.000000)*0.0000+gt(t,0.000000)*(-3.0000))/20)':eval=frame,"
-    "asetpts=PTS+0.0/TB[a1]",
+    "asetnsamples=n=256:p=0,volume='pow(10,(lte(t,0.000000)*0.0000+gt(t,0.000000)*lte(t,1.000000)*"
+    "(0.0000+(-3.0000)*(t-0.000000)/1.000000)+gt(t,1.000000)*(-3.0000))/20)':eval=frame,asetpts=PTS+0.0/TB[a1]",
     "[3:a]atrim=start=0.0:end=6.0,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo:sample_rates=48000,"
     "volume=-9.000dB,asetpts=PTS+0.0/TB[a2]",
 ]

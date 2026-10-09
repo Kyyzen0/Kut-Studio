@@ -86,9 +86,14 @@ d'extension, d'autres des gestionnaires d'interface jamais branchés. À instrui
   `toggle_reverse`, `remove_freeze_frame`, `can_be_frozen`, `get_speed_from_preset`, `estimate_ffmpeg_memory_usage`) ;
   `enabled_effects`, `clip_effects` et `clip_audio_effects` (`core/effects_model.py`, `core/audio_effects_model.py`), `effect_category`,
   `builtin_preset_ids` et `combined_library` (`core/effects_library.py`).
-* **Gestionnaires d'interface jamais connectés** (méthodes) : `ui/main_window_mixins/audio.py` définit
+* **Gestionnaires d'interface jamais connectés** (méthodes) : `ui/main_window_mixins/audio.py` définissait
   `on_track_role_changed`, `on_track_automation_point_added/removed/updated`, `on_ducking_sidechain_added/removed` et
-  `on_ducking_config_changed`, qu'aucun signal du mixeur ne déclenche. Ce n'est pas du code mort à supprimer mais une fonction
-  à moitié branchée (le service `AudioAutomationService`, le plan de rendu et l'export de l'automation et du ducking, eux, sont
-  vivants et testés) : l'interface ne permet pas encore d'éditer l'automation ni le ducking.
+  `on_ducking_config_changed`, qu'aucun signal ne déclenchait : une fonction à moitié branchée (le service, le plan de
+  rendu et l'export de l'automation et du ducking étaient vivants et testés). *Réglé le 2026-10-09* : la courbe de volume
+  s'édite dans une bande sous les clips des pistes audio (`ui/timeline_widgets/automation_lane.py`), qui émet
+  ajout / suppression / modification (et `on_track_automation_point_moved`, `on_track_automation_cleared`) ; le menu ⋯ d'une
+  piste audio règle son rôle (`on_track_role_changed`) et « Baisser sous… » crée ou retire le ducking d'une paire
+  (`on_ducking_sidechain_added/removed`). `on_ducking_config_changed` est **supprimé** : le réglage d'un ducking passe par
+  les presets du menu Réseaux sociaux › Audio (`duck_music_under_voice`, qui met à jour les paires existantes). Tests :
+  `tests/test_automation_lane_ui.py`.
 * 136 méthodes de classe sont dans le même cas (accesseurs `ui/project_panel.py`, `ui/workspace/manager.py`, etc.), non détaillées ici.

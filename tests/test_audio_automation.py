@@ -28,7 +28,9 @@ import pytest
 
 from core.audio_automation import (
     AudioAutomationError,
+    AudioAutomationOverlapError,
     AudioAutomationRangeError,
+    AudioAutomationUnknownIdError,
     AudioAutomationService,
     AutomationPoint,
     DuckingConfig,
@@ -45,6 +47,7 @@ from core.audio_automation import (
     TRACK_ROLE_LABELS,
     TrackAutomation,
     TrackRole,
+    automation_pieces,
 )
 from core.edit_history import ProjectHistory
 from core.export_engine import (
@@ -279,7 +282,8 @@ def test_gain_at_after_last_point_returns_last_gain() -> None:
     assert automation.gain_at(4.001) == 0.0
 
 
-def test_gain_at_zero_fade_returns_destination_gain() -> None:
+def test_gain_at_zero_hold_is_a_straight_line_between_the_points() -> None:
+    """Maintien nul (le défaut, ce que pose l'éditeur de la timeline) : ligne droite d'un point à l'autre."""
     automation = TrackAutomation(
         track_id="T1",
         points=[
@@ -287,11 +291,28 @@ def test_gain_at_zero_fade_returns_destination_gain() -> None:
             AutomationPoint(time_seconds=4.0, gain_db=0.0, fade_seconds=0.0),
         ],
     )
-    assert automation.gain_at(3.0) == 0.0
+    assert automation.gain_at(2.5) == pytest.approx(-4.5)
+    assert automation.gain_at(3.0) == pytest.approx(-3.0)
+    assert automation.gain_at(4.0) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("probe", [2.3, 2.9, 3.6])
+def test_gain_at_is_continuous_in_the_hold(probe) -> None:
+    """Un maintien qui tend vers 0 donne la ligne droite du maintien nul : pas de cas particulier à 0.
+
+    Avant, un maintien nul sautait au gain d'arrivée juste après le point précédent, alors qu'un maintien de 1 µs
+    donnait presque la ligne droite : la courbe changeait du tout au tout pour une différence inaudible.
+    """
+    def curve(hold: float) -> TrackAutomation:
+        return TrackAutomation(track_id="T1", points=[AutomationPoint(2.0, -6.0), AutomationPoint(4.0, 0.0, hold)])
+
+    assert curve(1e-6).gain_at(probe) == pytest.approx(curve(0.0).gain_at(probe), abs=1e-4)
+    assert curve(2.0 - 1e-6).gain_at(probe) == pytest.approx(curve(2.0).gain_at(probe), abs=1e-4)
+    assert curve(2.0).gain_at(probe) == -6.0, "un maintien qui atteint le point : saut à l'instant du point"
 
 
 def test_gain_at_with_fade_keeps_previous_gain_during_fade() -> None:
-    """Pendant la fenêtre de fondu déclarée sur le point destination,
+    """Pendant le maintien déclaré sur le point destination,
     on conserve le gain du point précédent."""
     automation = TrackAutomation(
         track_id="T1",
@@ -325,6 +346,52 @@ def test_gain_at_after_fade_interpolates_linearly() -> None:
 def test_gain_at_empty_automation_returns_zero() -> None:
     automation = TrackAutomation(track_id="T1")
     assert automation.gain_at(2.0) == 0.0
+
+
+@pytest.mark.parametrize("points", [
+    [AutomationPoint(1.0, -3.0)],
+    [AutomationPoint(0.0, 0.0), AutomationPoint(2.0, -12.0), AutomationPoint(3.0, -12.0), AutomationPoint(5.0, 4.0)],
+    [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -12.0, 0.5), AutomationPoint(4.0, -6.0, 3.0)],
+])
+def test_the_pieces_trace_exactly_the_curve_of_gain_at(points) -> None:
+    """Les morceaux (tracé de la timeline, expression de l'export) donnent ``gain_at`` en tout instant."""
+    curve = TrackAutomation(track_id="T1", points=list(points))
+    pieces = automation_pieces(curve.points)
+    for step in range(700):
+        t = -0.5 + step * 0.01 + 0.005
+        lo, hi, a, b = next(piece for piece in pieces if piece[0] < t <= piece[1])
+        expected = a if a == b else a + (b - a) * (t - lo) / (hi - lo)
+        assert expected == pytest.approx(curve.gain_at(t), abs=1e-9), t
+    assert pieces[0][0] == -math.inf and pieces[-1][1] == math.inf
+
+
+def test_moving_a_point_keeps_its_hold_and_the_order() -> None:
+    curve = TrackAutomation(track_id="T1", points=[
+        AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0, 0.5), AutomationPoint(3.0, 0.0),
+    ])
+    moved = curve.move_point(2.0, 3.5, -9.0)
+    assert moved == AutomationPoint(3.5, -9.0, 0.5)
+    assert [p.time_seconds for p in curve.points] == [1.0, 3.0, 3.5]
+    assert curve.move_point(3.5, 3.5, -3.0).gain_db == -3.0, "un geste vertical garde l'instant"
+
+
+def test_a_point_cannot_be_moved_onto_another_or_from_nowhere() -> None:
+    curve = TrackAutomation(track_id="T1", points=[AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)])
+    with pytest.raises(AudioAutomationOverlapError):
+        curve.move_point(2.0, 1.0, -6.0)
+    with pytest.raises(AudioAutomationUnknownIdError):
+        curve.move_point(1.5, 1.7, 0.0)
+    with pytest.raises(AudioAutomationRangeError):
+        curve.move_point(2.0, -1.0, 0.0)
+    assert curve.points == [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -6.0)], "un refus ne touche à rien"
+
+
+def test_the_service_moves_a_point_of_an_audio_track() -> None:
+    project = Project("p", tracks=[Track("A1", "A1", "audio")])
+    service = AudioAutomationService()
+    service.add_automation_point(project, "A1", 1.0, -3.0)
+    service.move_automation_point(project, "A1", 1.0, 2.0, -6.0)
+    assert project.tracks[0].automation.points == [AutomationPoint(2.0, -6.0)]
 
 
 # ---------------------------------------------------------------------------
@@ -737,7 +804,11 @@ def _envelope_gain(filter_str: str | None, t: float) -> float:
 
 
 CURVES = [
-    pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0)], id="saut"),
+    pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0)], id="rampe"),
+    pytest.param([AutomationPoint(0.0, -6.0), AutomationPoint(2.0, 0.0, 2.0)], id="saut"),
+    pytest.param(
+        [AutomationPoint(0.5, 0.0), AutomationPoint(3.5, -12.0), AutomationPoint(6.5, 3.0)], id="elastique",
+    ),
     pytest.param([AutomationPoint(1.0, -3.0), AutomationPoint(2.0, 0.0, 0.5)], id="fondu"),
     pytest.param(
         [AutomationPoint(1.0, 0.0), AutomationPoint(2.0, -12.0, 0.5), AutomationPoint(4.0, -12.0),

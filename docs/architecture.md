@@ -176,8 +176,9 @@ renvoyée à la recréation.
   dessous, l'atténuation suit le dépassement. Mesuré : −11,94 dB pour 12 dB réglés, −5,98 pour 6. Un clip voix et un
   sous-mixage lu plusieurs fois passent par `asplit` (une sortie FFmpeg ne se lit qu'une fois).
 * **Automation de piste** : un filtre `volume` dans la chaîne du clip, **avant** `adelay` — son `t` part de 0 au début du
-  clip, la courbe (temps de la timeline) y est ramenée. La courbe est exactement `TrackAutomation.gain_at`, écrite en somme
-  de morceaux disjoints (`gt(t,a)*lte(t,b)*dB`, pas d'imbrication) puis convertie en facteur par `pow(10,dB/20)` : un nombre
+  clip, la courbe (temps de la timeline) y est ramenée. La courbe est exactement `TrackAutomation.gain_at`, découpée par
+  `automation_pieces` (la même découpe trace la courbe dans la timeline) et écrite en somme
+  de morceaux disjoints (`gt(t,a)*lte(t,b)*dB`, pas d'imbrication ; une rampe coupée par le début du clip garde ses bornes) puis convertie en facteur par `pow(10,dB/20)` : un nombre
   nu est un facteur pour `volume` (`volume=-6` multipliait par −6). Gain constant : `volume=<g>dB`. `eval=frame` réévalue
   par trame et une trame WAV dure ~85 ms : `asetnsamples=n=256` découpe en trames de 5 ms, la rampe suit `gain_at` à 0,1 dB.
 * **Ces graphes se testent en rendant** : `tests/test_export_audio_level.py` exporte et mesure (ducking, automation, aperçu).

@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QObject, QProcess, Signal
 
 from . import process_supervisor
+from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
@@ -2730,41 +2731,6 @@ def _build_audio_filter(
     return ";".join([*pre_chains, head + ",".join(steps) + f"[{output_label}]"])
 
 
-def _automation_pieces(points) -> list[tuple[float, float, float, float]]:
-    """Découpe la courbe de :meth:`TrackAutomation.gain_at` en morceaux ``(début, fin, gain_début, gain_fin)``.
-
-    Chaque morceau couvre l'intervalle ``]début, fin]`` (temps de la timeline, bornes infinies aux deux extrémités) ;
-    le gain y varie linéairement **en dB** de ``gain_début`` à ``gain_fin`` (égaux pour un palier). La découpe suit
-    exactement ``gain_at`` : gain du premier point avant lui, du dernier après lui ; entre deux points, le gain précédent
-    est tenu jusqu'à ``précédent + fondu`` puis rejoint linéairement le point courant ; un fondu nul est un saut juste
-    après le point précédent ; un fondu qui atteint le point courant le change en saut à l'instant de ce point.
-    """
-    first, last = points[0], points[-1]
-    pieces = [(-math.inf, float(first.time_seconds), float(first.gain_db), float(first.gain_db))]
-    for previous, current in zip(points, points[1:]):
-        start, end = float(previous.time_seconds), float(current.time_seconds)
-        before, after = float(previous.gain_db), float(current.gain_db)
-        fade = float(current.fade_seconds)
-        if end <= start:
-            continue
-        if fade <= 0.0:
-            pieces.append((start, end, after, after))
-        elif start + fade >= end:
-            pieces.append((start, end, before, before))
-        else:
-            pieces.append((start, start + fade, before, before))
-            pieces.append((start + fade, end, before, after))
-    pieces.append((float(last.time_seconds), math.inf, float(last.gain_db), float(last.gain_db)))
-    merged = [pieces[0]]
-    for piece in pieces[1:]:
-        lo, _, a, b = merged[-1]
-        if a == b == piece[2] == piece[3]:      # deux paliers égaux qui se suivent : un seul terme dans l'expression
-            merged[-1] = (lo, piece[1], a, b)
-        else:
-            merged.append(piece)
-    return merged
-
-
 def _expr_number(value: float, digits: int = 6) -> str:
     """Nombre d'une expression FFmpeg, entre parenthèses s'il est négatif (``t-(-1.5)`` plutôt que ``t--1.5``)."""
     text = f"{value:.{digits}f}"
@@ -2778,7 +2744,7 @@ def _build_track_volume_envelope(
 ) -> str | None:
     """Filtre ``volume`` qui applique au clip l'automation de sa piste, ou ``None`` s'il n'y a rien à appliquer.
 
-    La courbe est celle de :meth:`TrackAutomation.gain_at` (voir :func:`_automation_pieces`), réduite aux morceaux qui
+    La courbe est celle de :meth:`TrackAutomation.gain_at` (voir :func:`core.audio_automation.automation_pieces`), réduite aux morceaux qui
     touchent le clip. Le filtre est placé dans la chaîne du clip, **avant** ``adelay`` : son ``t`` part de 0 au début du
     clip ; les temps de la timeline sont donc ramenés au clip (``- timeline_start``).
 
@@ -2794,30 +2760,32 @@ def _build_track_volume_envelope(
     length = max(0.0, float(duration))
     local = [
         (lo - clip_start, hi - clip_start, a, b)
-        for lo, hi, a, b in _automation_pieces(points)
+        for lo, hi, a, b in automation_pieces(points)
         if hi - clip_start >= 0.0 and lo - clip_start < length
     ]
     if not local:  # clip de durée nulle posé exactement sur une borne : rien d'audible
         return None
-    # Le premier et le dernier morceau gardés couvrent ce qui déborde du clip : leurs bornes extérieures ne servent plus.
-    local[0] = (-math.inf, *local[0][1:])
-    local[-1] = (local[-1][0], math.inf, *local[-1][2:])
     if len(local) == 1 and abs(local[0][2] - local[0][3]) < 1e-9:
         gain = _clamp_db(local[0][2])
         return f"volume={_format_db(gain)}dB" if abs(gain) > 1e-6 else None
 
     terms: list[str] = []
-    for lo, hi, a, b in local:
+    last = len(local) - 1
+    for index, (lo, hi, a, b) in enumerate(local):
         if abs(a - b) < 1e-9:
             value = _expr_number(a, 4)
         else:
+            # Une rampe garde ses vraies bornes (entre deux points, finies) même quand le clip commence ou finit en
+            # son milieu : seule sa *condition* extérieure saute ci-dessous (avant : ``t-(-inf)``, refusé par FFmpeg).
             value = (
                 f"({a:.4f}+{_expr_number(b - a, 4)}*(t-{_expr_number(lo)})/{hi - lo:.6f})"
             )
+        # Le premier et le dernier morceau gardés couvrent ce qui déborde du clip : leurs bornes extérieures ne
+        # servent plus.
         conditions = []
-        if lo != -math.inf:
+        if index > 0:
             conditions.append(f"gt(t,{lo:.6f})")
-        if hi != math.inf:
+        if index < last:
             conditions.append(f"lte(t,{hi:.6f})")
         terms.append("*".join([*conditions, value]))
     # ``eval=frame`` réévalue une fois par trame, et une trame peut durer ~85 ms (paquets WAV) : la rampe serait un
