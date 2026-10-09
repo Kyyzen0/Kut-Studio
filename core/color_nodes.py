@@ -165,14 +165,20 @@ def graph_to_dict(graph: ColorNodeGraph, grade_to_dict: Callable[[ColorGrade], o
     }
 
 
+def _items(value: object) -> list | tuple:
+    """Une liste du fichier, ou rien (un nombre, un texte, un objet ne se parcourent pas comme des nœuds)."""
+    return value if isinstance(value, (list, tuple)) else ()
+
+
 def graph_from_dict(raw: dict, grade_from_dict: Callable[[object], ColorGrade | None]) -> ColorNodeGraph | None:
     """Relit :func:`graph_to_dict` ; un nœud illisible est neutre, un graphe sans nœud valide donne ``None``.
 
-    Des liens qui ne forment pas la chaîne (un fichier d'une version future, avec des nœuds parallèles) : la chaîne
+    ``nodes`` / ``links`` qui ne sont pas des listes (fichier abîmé ou modifié à la main) comptent comme vides : le
+    projet s'ouvre, le clip sans étalonnage plutôt que pas du tout. Des liens qui ne forment pas la chaîne (un fichier d'une version future, avec des nœuds parallèles) : la chaîne
     est refaite dans l'ordre du fichier, avec un avertissement, plutôt que de perdre l'étalonnage.
     """
     nodes: list[ColorNode] = []
-    for item in raw.get("nodes") or ():
+    for item in _items(raw.get("nodes")):
         if not isinstance(item, dict):
             continue
         try:
@@ -183,7 +189,7 @@ def graph_from_dict(raw: dict, grade_from_dict: Callable[[object], ColorGrade | 
     if not nodes:
         return None
     links = []
-    for entry in raw.get("links") or ():
+    for entry in _items(raw.get("links")):
         if isinstance(entry, (list, tuple)) and len(entry) == 3:
             links.append(NodeLink(str(entry[0]), str(entry[1]), int(entry[2]) if str(entry[2]).isdigit() else 0))
     try:

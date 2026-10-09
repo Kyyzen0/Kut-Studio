@@ -198,6 +198,24 @@ def test_a_project_saved_before_the_nodes_opens_as_a_plain_grade():
     assert _deserialize_color_grade(old) == ColorGrade(exposure=0.25)
 
 
+@pytest.mark.parametrize("broken", [3, "n1", {"id": "n1"}, None, True], ids=["nombre", "texte", "objet", "nul", "bool"])
+def test_a_project_with_malformed_nodes_or_links_still_opens(tmp_path, broken):
+    """Fichier abîmé ou modifié à la main : ``nodes`` / ``links`` qui ne sont pas des listes ne font pas échouer
+    l'ouverture du projet (avant : ``TypeError`` en les parcourant)."""
+    project = _project(tmp_path)
+    project.tracks[0].clips[0].color_grade = as_graph(WARM).with_node_after("n1")[0]
+    target = tmp_path / "p.kut"
+    save_project(project, str(target))
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    grade = payload["project"]["sequences"][0]["tracks"][0]["clips"][0]["color_grade"]
+    grade["links"] = broken
+    target.write_text(json.dumps(payload), encoding="utf-8")
+    assert [node.id for node in load_project(str(target)).tracks[0].clips[0].color_grade.order()] == ["n1", "n2"]
+    grade["nodes"] = broken
+    target.write_text(json.dumps(payload), encoding="utf-8")
+    assert load_project(str(target)).tracks[0].clips[0].color_grade is None
+
+
 def test_links_from_a_future_version_fall_back_to_the_file_order():
     """Des nœuds parallèles (étape 2) relus par cette version : remis en série plutôt que perdus."""
     raw = {"nodes": [{"id": "n1", "grade": {"exposure": 0.5}}, {"id": "n2", "grade": {"saturation": 0.5}},
