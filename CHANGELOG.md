@@ -16,6 +16,18 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Nœuds parallèles et de calque** (page Couleur) :
+  - **Alt+P** ajoute un nœud à côté du nœud courant ; les deux corrigent la même image et leurs corrections
+    s'additionnent.
+  - **Alt+L** fait un calque : la branche du dessous passe dessus, là où son qualifieur la sélectionne.
+  - Les branches se réunissent par un mélangeur, qui disparaît quand il n'en reste qu'une. Le moniteur montre tout le
+    graphe en temps réel, et l'export calcule chaque mélange au niveau près.
+- **Qualificateur** : un nœud peut ne corriger qu'une partie de l'image, choisie par plages de teinte, de saturation
+  et de luminance, avec leur douceur. Les plages se glissent sur des bandes colorées, et on peut inverser la sélection.
+  *Afficher la sélection* montre dans le moniteur ce qui est choisi, le reste en gris.
+- **Avant / après** : un trait sépare le moniteur, l'image sans étalonnage à gauche ; on le glisse pour le déplacer.
+- **Bande des plans** sur la page Couleur : une vignette par plan vidéo, numérotée, marquée quand le plan est
+  étalonné. Un clic passe à ce plan (sélectionné, tête de lecture à son début).
 - **Page Couleur**, à la manière de DaVinci Resolve : grand moniteur et scopes au centre, l'inspecteur à gauche, les
   nœuds et les roues à droite, la timeline en bas. On y passe par le bouton *Couleur* au centre de la barre
   supérieure, par le rail ou par *Fenêtre › Page Couleur* ; *Montage* ramène la disposition de montage. Chaque page

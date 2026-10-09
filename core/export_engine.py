@@ -2078,7 +2078,7 @@ def _build_layer_filter(
     # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
     # afin de garantir un rendu stable quel que soit l'ordre des
     # opérations demandé par l'utilisateur.
-    color_grade_filters = _build_color_grade_filters(layer.color_grade)
+    color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg")
     from .compositing import build_ffmpeg_filters, chroma_key_filters
     matte_parts: list[str] = []
     matte_label = None
@@ -2182,7 +2182,7 @@ def _build_layer_filter(
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
-def _build_color_grade_filters(grade) -> str:
+def _build_color_grade_filters(grade, tag: str = "cg") -> str:
     """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
 
     L'ordre est déterministe et identique pour tous les clips :
@@ -2210,6 +2210,7 @@ def _build_color_grade_filters(grade) -> str:
     Args:
         grade: instance de :class:`ColorGrade`, graphe de nœuds
             (:class:`core.color_nodes.ColorNodeGraph`) ou ``None`` (identité).
+        tag: préfixe des labels d'un graphe à branches (:mod:`core.color_render`).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
@@ -2218,12 +2219,15 @@ def _build_color_grade_filters(grade) -> str:
     # Import paresseux pour éviter les cycles d'imports.
     from .color_grading import ColorGrade
     from .color_nodes import ColorNodeGraph
+    from .color_render import Highlight, render_filters
     from .color_wheels import wheels_filter
 
-    if isinstance(grade, ColorNodeGraph):
-        # Nœuds en série : la chaîne de chaque nœud actif, dans l'ordre (un
-        # graphe d'un seul nœud rend donc les pixels de son ColorGrade).
-        return ",".join(_build_color_grade_filters(node.grade) for node in grade.order() if node.is_active())
+    if isinstance(grade, (ColorNodeGraph, Highlight)):
+        # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
+        # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et
+        # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
+        # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
+        return render_filters(grade, tag, _build_color_grade_filters)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:

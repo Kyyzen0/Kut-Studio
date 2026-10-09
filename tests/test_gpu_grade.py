@@ -252,6 +252,50 @@ def test_the_reference_reads_the_atlas_at_the_lattice_addresses():
         < 2e-3, "après la sépia (calque en RVB), la passe repasse en YUV pour lire la LUT"
 
 
+def test_before_after_leaves_the_left_part_of_the_layer_ungraded():
+    """Comparaison avant / après (page Couleur) : à gauche de la part demandée, la couleur d'origine en RVB ; à droite,
+    l'étalonnage. Une LUT qui inverse les couleurs rend la frontière évidente."""
+    from dataclasses import replace
+
+    n = LUT_SIZE
+    codes = np.arange(n) * CODE_STEP / 255.0
+    c0, c2, c1 = np.meshgrid(codes, codes, codes, indexing="ij")
+    m = np.array(yuv_to_rgb_matrix())
+    inverted = 1.0 - np.clip(np.stack((c0, c1, c2), axis=-1) @ m[:3, :3].T + m[:3, 3], 0, 1)
+    atlas = inverted.reshape(n, n * n, 3)
+    yuv = np.dstack((np.full((36, 64), 0.6), np.full((36, 64), 0.4), np.full((36, 64), 0.55)))
+    plain = reference_frame(_frame(), {"v": yuv})
+    whole = reference_frame(_frame(grade_lut="lut:k"), {"v": yuv}, luts={"lut:k": atlas})
+    frame = _frame(grade_lut="lut:k")
+    split = replace(frame, layers=(replace(frame.layers[0], grade_split=0.25),))
+    compared = reference_frame(split, {"v": yuv}, luts={"lut:k": atlas})
+    assert np.abs(compared[:, :15] - plain[:, :15]).max() < 1e-6, "avant : sans étalonnage"
+    assert np.abs(compared[:, 17:] - whole[:, 17:]).max() < 1e-6, "après : étalonné"
+    grade = plan_frame(split).passes[2]
+    assert grade.shader == "grade" and grade != plan_frame(frame).passes[2], "la part passe au shader (misc.z)"
+
+
+def test_before_after_follows_the_viewer_line_for_a_moved_layer():
+    """Calque décalé de 20 px vers la droite, partage à la moitié du cadre (x = 32) : le trait du viewer, pas la
+    moitié du calque (qui tomberait en x = 52)."""
+    from dataclasses import replace
+
+    n = LUT_SIZE
+    codes = np.arange(n) * CODE_STEP / 255.0
+    c0, c2, c1 = np.meshgrid(codes, codes, codes, indexing="ij")
+    m = np.array(yuv_to_rgb_matrix())
+    atlas = (1.0 - np.clip(np.stack((c0, c1, c2), axis=-1) @ m[:3, :3].T + m[:3, 3], 0, 1)).reshape(n, n * n, 3)
+    yuv = np.dstack((np.full((36, 64), 0.6), np.full((36, 64), 0.4), np.full((36, 64), 0.55)))
+    base = _frame(grade_lut="lut:k")
+    moved = replace(base, layers=(replace(base.layers[0], matrix=(1.0, 0.0, 0.0, 1.0, 20.0, 0.0)),))
+    plain = reference_frame(replace(moved, layers=(replace(moved.layers[0], grade_lut=""),)), {"v": yuv})
+    whole = reference_frame(moved, {"v": yuv}, luts={"lut:k": atlas})
+    split = reference_frame(replace(moved, layers=(replace(moved.layers[0], grade_split=0.5),)), {"v": yuv},
+                            luts={"lut:k": atlas})
+    assert np.abs(split[:, 22:31] - plain[:, 22:31]).max() < 1e-6, "avant le trait : sans étalonnage"
+    assert np.abs(split[:, 33:62] - whole[:, 33:62]).max() < 1e-6, "après le trait : étalonné"
+
+
 def _sepia():
     from core.effects_model import ClipEffect, EffectType
 

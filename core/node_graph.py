@@ -83,6 +83,10 @@ class NodeGraph(Generic[N]):
         """Liens qui arrivent sur ``node_id``, par entrée."""
         return tuple(sorted((link for link in self.links if link.target == node_id), key=lambda link: link.port))
 
+    def outputs(self, node_id: str) -> tuple[NodeLink, ...]:
+        """Liens qui partent de ``node_id`` (un nœud peut alimenter plusieurs branches)."""
+        return tuple(link for link in self.links if link.source == node_id)
+
     def order(self) -> tuple[N, ...]:
         """Ordre de calcul : chaque nœud après ceux qui l'alimentent ; à égalité, l'ordre de création (stable)."""
         position = {node.id: index for index, node in enumerate(self.nodes)}

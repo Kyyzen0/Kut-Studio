@@ -1,6 +1,7 @@
 # ADR-0002 : un socle nodal pour l'étalonnage et la composition, et des pages
 
-**Statut :** Accepté. L'étape 1 est livrée (page Couleur, nœuds en série, roues).
+**Statut :** Accepté. Les étapes 1 (page Couleur, nœuds en série, roues) et 2 (nœuds parallèles et de calque,
+qualifieur, avant / après, bande des plans) sont livrées.
 **Date :** 2026-10-09
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -38,19 +39,58 @@ deux modèles nodaux s'appuient sur ce socle, ainsi qu'un seul éditeur : `ui/co
 
 ### 2. Étalonnage par nœuds, par clip
 
-`clip.color_grade` porte un `ColorGrade` **ou** un `ColorNodeGraph` (`core/color_nodes.py`). Chaque nœud est un
-`ColorGrade` complet, et son drapeau `enabled` sert à contourner le nœud.
+`clip.color_grade` porte un `ColorGrade` **ou** un `ColorNodeGraph` (`core/color_nodes.py`). Le graphe a deux sortes
+de nœuds :
+- les **correcteurs**, chacun un `ColorGrade` complet, dont le drapeau `enabled` sert à contourner le nœud, avec un
+  qualifieur facultatif ;
+- les **mélangeurs**, parallèles ou de calques, qui réunissent au moins deux branches.
 
-- **Une seule forme à la fois.** Un graphe d'un seul nœud sans nom redevient un `ColorGrade` (`simplify`). Un clip
-  qu'on n'a pas découpé s'écrit donc dans le fichier exactement comme avant, et un ancien projet s'ouvre à l'identique.
-- **Export.** La chaîne de chaque nœud actif s'applique dans l'ordre du graphe. Un graphe d'un nœud rend les pixels de
-  son `ColorGrade`.
+Le graphe a une seule sortie.
+
+- **Une seule forme à la fois.** Un graphe d'un seul nœud sans nom ni qualifieur redevient un `ColorGrade`
+  (`simplify`). Un clip qu'on n'a pas découpé s'écrit donc dans le fichier exactement comme avant, et un ancien projet
+  s'ouvre à l'identique.
+- **Export.** Un graphe en série reste une chaîne : les filtres de chaque nœud actif, l'un après l'autre. Un graphe à
+  branches devient un sous-graphe (`split`, `mix`, `maskedmerge`, en `gbrp`), écrit sous une forme insérable dans une
+  chaîne à virgules (`null[e0];…;[sortie]null`). La chaîne d'un clip, celle d'un calque et la cuisson du moniteur
+  l'acceptent sans changement (`core/color_render.py`).
 - **Moniteur.** La chaîne entière est cuite dans **une** LUT 3D. Tout graphe dont chaque nœud agit pixel par pixel
-  (série, et demain parallèle ou calque, puisqu'un mélange de deux branches reste une fonction du pixel) coûte une
-  seule lecture de LUT, quel que soit le nombre de nœuds. Rien n'est à réécrire en shader : le temps réel vient du
+  coûte une seule lecture de LUT, quel que soit le nombre de nœuds : série, parallèle, calques et qualifieurs, puisque
+  la clé et un mélange de branches ne dépendent que du pixel. Rien n'est à réécrire en shader : le temps réel vient du
   socle lui-même.
-- **Nœuds spatiaux.** Les fenêtres, les flous et les qualifieurs adoucis dépendent des pixels voisins et ne tiennent
-  pas dans une LUT. Ils deviendront des passes GPU (étape 3), comme les mattes de masques aujourd'hui.
+- **Nœuds spatiaux.** Les fenêtres, le flou d'une clé et la netteté dépendent des pixels voisins et ne tiennent pas
+  dans une LUT. Ils deviendront des passes GPU (étape 3), comme les mattes de masques aujourd'hui.
+
+#### Mélangeurs et qualifieur (étape 2)
+
+- **Parallèle.** Chaque branche corrige l'image de leur point de séparation `S` (le dominateur du mélangeur), et les
+  corrections s'additionnent : `S + Σ(Bᵢ − S)`, écrêté une seule fois à la fin. FFmpeg le calcule exactement avec
+  `mix`, aux poids `1 … 1 −(n−1)` (mesuré au niveau près sur FFmpeg 9 et 7.1). Une moyenne aurait divisé chaque
+  correction par le nombre de branches.
+- **Calques.** La branche de l'entrée la plus haute, dessinée la plus basse comme dans Resolve, passe sur les autres.
+  Si son dernier nœud est qualifié, elle pose **sa correction** `G` selon sa clé : `maskedmerge(dessous, G, K)`.
+  Reprendre sa sortie, déjà mélangée à son entrée par la clé, aurait adouci deux fois le bord. Sans clé, elle
+  recouvre ce qui est dessous, qui n'est alors pas calculé.
+- **Qualifieur TSL** (`core/color_qualifier.py`). La clé se calcule ainsi :
+  - la teinte, circulaire : un gris n'en a pas ;
+  - la saturation, prise comme la chroma `max − min` : un pixel sombre et bruité n'est pas « saturé » ;
+  - la luminance Rec. 709 ;
+  - pour chacune, une plage avec une douceur linéaire ;
+  - la clé est le produit des trois, inversable.
+
+  Le nœud corrige `entrée + K·(étalonné − entrée)`. À l'export, la clé est tabulée en LUT 3D 65³ (`lut3d`
+  tétraédrique), dans un fichier du cache nommé par son contenu. La correction reste exacte. Mesuré : 0,05 niveau
+  d'écart moyen à la formule, 1 au plus. Écrire la table prend 87 ms, l'appliquer 2 ms par image 1080p. Le mode
+  *Afficher la sélection* (`Highlight`) n'existe que pour le moniteur : la sélection garde sa couleur, le reste passe
+  en gris assombri.
+- **Avant / après.** La passe `grade` du moniteur GPU laisse sans étalonnage ce qui tombe à gauche du trait du
+  viewer (uniforme `misc.z`). Elle le décide en coordonnées du cadre, par la matrice calque → cadre que la composition
+  inverse ; la frontière reste donc sous le trait même pour un clip déplacé ou tourné. Le trait est déplaçable. C'est
+  un outil du moniteur GPU : sans lui, le bouton est grisé et dit pourquoi.
+- **Alpha.** Le sous-graphe à branches travaille en RVB ; l'alpha du clip (masques, coins laissés par une rotation)
+  passe à côté (`alphaextract` / `alphamerge`), comme il traverse une chaîne en série.
+- **Bande des plans.** Elle prend une vignette par clip vidéo, au milieu du clip. Ce sont celles de la timeline (même
+  cache, même tâche de fond). Elle sert à passer d'un plan à l'autre, et une pastille marque un plan étalonné.
 
 ### 3. Roues lift / gamma / gain / offset : la formule « Grade »
 
@@ -102,7 +142,8 @@ AZERTY.
 - **Positives.**
   - Une correction s'empile sans toucher aux autres, et se contourne d'un geste.
   - Les roues sont exactes à l'export et en temps réel dans le moniteur.
-  - Le modèle de fichier est stable pour l'étape 2 : les liens sont déjà écrits.
+  - Le modèle de fichier est resté stable entre les étapes 1 et 2 : les liens étaient déjà écrits, l'étape 2 n'a
+    ajouté que les mélangeurs et le qualifieur des nœuds.
   - Le même socle servira la composition.
 - **Négatives et limites connues.**
   - La chaîne de chaque nœud passe par des filtres 8 bits, et `eq` convertit en YUV et revient. Chaque nœud peut
@@ -110,15 +151,17 @@ AZERTY.
     16 bits ou en flottant sera à mesurer.
   - La température passe par `colorbalance`, dont les tons moyens n'agissent plus quand max + min dépasse ≈ 202/255 :
     un gris moyen ne se réchauffe pas. Les roues n'ont pas cette limite.
-  - Cette version n'écrit que des nœuds en série. Un fichier d'une version future, avec des nœuds parallèles, est
-    relu en série avec un avertissement plutôt que de perdre l'étalonnage.
+  - Un graphe invalide, ou d'une forme qu'une version plus ancienne ne connaît pas, est relu avec ses correcteurs en
+    série et un avertissement, plutôt que de perdre l'étalonnage. Une version d'avant l'étape 2 relit ainsi un graphe
+    à branches.
+  - Avant / après et *Afficher la sélection* n'existent que dans le moniteur GPU.
 
 ## Étapes
 
 1. **Livrée.** Pages Montage et Couleur, socle de graphe, nœuds en série (ajouter, contourner, nommer, déplacer,
    réinitialiser, supprimer, chacun en une étape d'historique), roues, inspecteur réglant le nœud courant.
-2. Nœuds parallèles et nœuds de calque (mélangeurs), qualifieur TSL, comparaison avant / après, bande de vignettes
-   des plans.
+2. **Livrée.** Nœuds parallèles et nœuds de calque (Alt+P, Alt+L), qualifieur TSL et *Afficher la sélection*,
+   comparaison avant / après dans le moniteur, bande des plans.
 3. Nœuds spatiaux : fenêtres (formes, suivies par le tracking), flou et netteté, en passes GPU.
 4. Composition nodale : type de clip, nœuds de fusion, de transformation, de masque et de clé, conversion calques →
    nœuds.

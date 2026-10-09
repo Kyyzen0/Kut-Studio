@@ -11,6 +11,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from core.color_grading import ColorGradingError, ColorGradingService
+from core.color_nodes import MixerKind, as_graph
+from core.color_render import Highlight
 from core.node_graph import NodeGraphError
 from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES
 from ui.i18n import translate
@@ -22,22 +24,36 @@ class ColorPageMixin:
     """Mixin de ``MainWindow`` (page Couleur)."""
 
     def _init_color_page(self) -> None:
+        from ui.color_page.clip_strip import ClipStrip
         from ui.color_page.panel import ColorPanel
 
         self._color_node_id: str | None = None
+        self._color_highlight = False                       # « afficher la sélection » (moniteur seulement)
+        self._color_compare: float | None = None            # avant / après : part gauche sans étalonnage
         self._scopes_on_edit_page: bool | None = None
         self.color_panel = ColorPanel()
         editor = self.color_panel.nodes
         editor.node_selected.connect(self.on_color_node_selected)
         editor.add_requested.connect(self.on_color_node_add)
+        editor.branch_requested.connect(self.on_color_node_branch)
         editor.remove_requested.connect(self.on_color_node_remove)
         editor.toggle_requested.connect(self.on_color_node_toggle)
         editor.rename_requested.connect(self.on_color_node_rename)
         editor.move_requested.connect(self.on_color_node_move)
         editor.reset_requested.connect(self.on_color_node_reset)
         self.color_panel.wheel_changed.connect(self.on_color_wheel_changed)
+        self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
+        self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
+        self.color_panel.compare_toggled.connect(lambda shown: self._set_color_compare(0.5 if shown else None))
+        self.preview_panel.overlay.compare_moved.connect(self._set_color_compare)
         self.color_panel.shown.connect(self._refresh_color_panel)
         self.properties_panel.clip_shown.connect(self._refresh_color_panel)
+        self.clip_strip = ClipStrip()
+        self.clip_strip.thumbnail_provider = self.timeline_panel.clip_thumbnail
+        self.clip_strip.clip_requested.connect(self.timeline_panel.select_clip)
+        self.clip_strip.shown.connect(self._refresh_clip_strip)
+        self.timeline_panel.previews_arrived.connect(self.clip_strip.refresh_thumbnails)
+        self.properties_panel.clip_shown.connect(self._refresh_clip_strip)
 
     # -- pages --------------------------------------------------------------------------------------------------
 
@@ -73,6 +89,7 @@ class ColorPageMixin:
             button.setText(translate(f"page.{page}"))
             button.setToolTip(translate(f"page.{page}.tip"))
         self.color_panel.retranslate()
+        self.clip_strip.retranslate()
 
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
@@ -91,6 +108,7 @@ class ColorPageMixin:
             if rail.active() == "color":
                 rail.set_active("edit")
             self._show_page_scopes(False)
+            self._set_color_compare(None)                   # la comparaison est un outil de la page Couleur
 
     def _show_page_scopes(self, color_page: bool) -> None:
         """Scopes affichés sur la page Couleur ; en revenant au Montage, l'état qu'on y avait laissé."""
@@ -136,6 +154,53 @@ class ColorPageMixin:
             return
         locked = bool(getattr(self.properties_panel.selected_clip, "locked", False))
         panel.set_target(graph, graph.node_or_first(self._color_node_id).id, editable=not locked)
+        panel.set_highlight(self._color_highlight)
+        panel.set_compare(self._color_compare is not None)
+        gpu = getattr(self.preview_panel, "gpu_view", None) is not None
+        panel.qualifier.highlight_button.setEnabled(gpu and not locked)
+        panel.qualifier.highlight_button.setToolTip(translate(
+            "color.qualifier.highlight_tip" if gpu else "color.qualifier.highlight_unavailable"))
+        panel.compare_button.setEnabled(gpu)
+        panel.compare_button.setToolTip(translate("color.compare" if gpu else "color.qualifier.highlight_unavailable"))
+
+    def _set_color_compare(self, split: float | None) -> None:
+        """Comparaison avant / après du moniteur : ``split`` (part gauche sans étalonnage) ou ``None`` (arrêtée)."""
+        self._color_compare = split
+        self.preview_panel.set_grade_split(split)
+        panel = getattr(self, "color_panel", None)
+        if panel is not None:
+            panel.set_compare(split is not None)
+
+    def _monitor_color_grade(self, clip):
+        """Ce que le moniteur montre pour ``clip`` : son étalonnage, ou la sélection du nœud courant quand *Afficher
+        la sélection* est coché pour le clip de la page Couleur (jamais à l'export)."""
+        value = getattr(clip, "color_grade", None)
+        panel = getattr(self, "color_panel", None)
+        if not self._color_highlight or panel is None or not panel.isVisible():
+            return value
+        if clip is None or getattr(clip, "id", None) != self._color_clip_id():
+            return value
+        graph = as_graph(value)
+        node = graph.node_or_first(self._color_node_id)
+        return Highlight(graph, node.id) if node.qualifier is not None and node.qualifier.enabled else value
+
+    def _refresh_clip_strip(self, *_args) -> None:
+        """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""
+        from shiboken6 import isValid
+
+        from core.color_nodes import ColorNodeGraph
+        from core.gpu_grade import grade_is_active
+        from ui.color_page.clip_strip import StripClip
+
+        strip = getattr(self, "clip_strip", None)
+        if strip is None or not isValid(strip) or not strip.isVisible():
+            return
+        views = sorted((view for view in self.timeline_panel.clip_views if view.track_type == "video"),
+                       key=lambda view: (view.start, view.track_id))
+        clips = [StripClip(view.id, view.label, grade_is_active(view.color_grade),
+                           len(view.color_grade.correctors) if isinstance(view.color_grade, ColorNodeGraph) else 1)
+                 for view in views]
+        strip.set_clips(clips, self._color_clip_id())
 
     # -- nœuds --------------------------------------------------------------------------------------------------
 
@@ -144,6 +209,9 @@ class ColorPageMixin:
         self._color_node_id = node_id
         self.properties_panel.set_color_node(node_id)
         self._refresh_color_panel()
+        clip_id = self._color_clip_id()
+        if self._color_highlight and clip_id is not None:
+            self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
     def _edit_color_nodes(self, change, label_key: str) -> bool:
         """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour."""
@@ -176,6 +244,17 @@ class ColorPageMixin:
         if not self._edit_color_nodes(add, "history.color.node_add"):
             self._color_node_id = previous
 
+    def on_color_node_branch(self, node_id: str, kind: str) -> None:
+        """Un nœud parallèle ou de calque à côté de ``node_id`` (Alt+P, Alt+L) ; il devient le nœud courant."""
+        def branch(graph):
+            branched, new_id = graph.with_branch(node_id, MixerKind(kind))
+            self._color_node_id = new_id
+            return branched
+
+        previous = self._color_node_id
+        if not self._edit_color_nodes(branch, f"history.color.node_{kind}"):
+            self._color_node_id = previous
+
     def on_color_node_remove(self, node_id: str) -> None:
         self._edit_color_nodes(lambda graph: graph.without(node_id), "history.color.node_remove")
 
@@ -202,6 +281,29 @@ class ColorPageMixin:
         from core.color_grading import ColorGrade
 
         self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade()), "history.color.node_reset")
+
+    def on_color_qualifier_changed(self, qualifier) -> None:
+        """Le qualifieur du nœud courant change : rafale regroupée en une étape, moniteur à jour."""
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return
+        _clip, track = self._find_clip_and_track(clip_id)
+        if track is None or track.locked:
+            return
+        node_id = self._color_node_for(clip_id)
+        try:
+            ColorGradingService().edit_nodes(self.project, clip_id, lambda graph: graph.with_qualifier(node_id, qualifier))
+        except (ColorGradingError, NodeGraphError) as exc:
+            self._report_edit_refused(exc)
+            return
+        self._schedule_color_history(translate("history.color.qualifier"), clip_id)
+        self._refresh_color_monitor(clip_id)
+
+    def on_color_highlight_toggled(self, shown: bool) -> None:
+        self._color_highlight = bool(shown)
+        clip_id = self._color_clip_id()
+        if clip_id is not None:
+            self._refresh_color_monitor(clip_id)
 
     def on_color_wheel_changed(self, name: str, wheel) -> None:
         """Une roue du nœud courant bouge : rafale regroupée en une étape, comme les curseurs de l'inspecteur."""

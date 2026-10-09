@@ -179,15 +179,15 @@ class ColorMixin:
         graph = as_graph(grade)
         node = graph.node_or_first(self._color_node_id)
         self._current_color_grade = node.grade
-        if len(graph.nodes) > 1:
+        if len(graph.correctors) > 1:
             from ui.color_page.node_editor import node_number
 
             self.color_node_label.setText(translate(
                 "inspector.color.node", number=node_number(graph.position(node.id)),
-                count=node_number(len(graph.nodes) - 1),
+                count=node_number(len(graph.correctors) - 1),
                 label=f" · {node.label}" if node.label else "",
             ))
-        self.color_node_label.setVisible(len(graph.nodes) > 1)
+        self.color_node_label.setVisible(len(graph.correctors) > 1)
         self._allow_color_signals = False
         try:
             self.color_enabled_check.setChecked(self._current_color_grade.enabled)

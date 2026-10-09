@@ -77,9 +77,11 @@ def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 
             chain.append(f"__ALPHA_SAFE__{text}")
         else:
             chain.append(f"format=yuva444p,{text}")
-    grade_text = _build_color_grade_filters(grade) if grade is not None else ""
+    grade_text = _build_color_grade_filters(grade, tag=f"{label}cg") if grade is not None else ""
     if grade_text:
-        chain.append(grade_text if not preserve_alpha else f"format=yuva444p,{grade_text}")
+        # Un sous-graphe à branches (nœuds parallèles, qualifieurs) garde l'alpha lui-même (core.color_render).
+        branched = ";" in grade_text
+        chain.append(grade_text if not preserve_alpha or branched else f"format=yuva444p,{grade_text}")
     return chain
 
 

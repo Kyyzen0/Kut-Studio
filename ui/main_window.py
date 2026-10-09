@@ -653,6 +653,7 @@ class MainWindow(
         self.workspace.register(PanelId.MIXER, self.mixer_panel)
         self.workspace.register(PanelId.HISTORY, self.history_panel)
         self.workspace.register(PanelId.COLOR, self.color_panel)
+        self.workspace.register(PanelId.CLIPS, self.clip_strip)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
@@ -1830,7 +1831,7 @@ class MainWindow(
                 pan_y=evaluated.pan_y,
             )
             self.preview_panel.set_effects(clip_obj.effects)
-            self.preview_panel.set_color_grade(getattr(clip_obj, "color_grade", None))
+            self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
         if self.is_playing:

@@ -83,6 +83,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     _is_timeline_host = True
 
     seek_requested = Signal(float)
+    previews_arrived = Signal()          # vignettes ou formes d'onde arrivées dans le cache (bande des plans)
     clip_selected = Signal(str)
     transition_selected = Signal(str)
     move_clip_requested = Signal(str, float)

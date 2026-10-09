@@ -52,6 +52,10 @@ def cases():
         ("grade", [], (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, BlendMode.NORMAL),
         ("grade_after_effects", [effect(EffectType.BLUR, intensity=1.5), effect(EffectType.SEPIA)],
          (0.8, 0.0, 0.0, 0.8, 20.0, 10.0), 0.9, BlendMode.NORMAL),
+        # Comparaison avant / après (page Couleur) : les 40 % de gauche du cadre sans étalonnage, calque droit puis
+        # tourné et réduit (le partage suit le trait du viewer, pas le calque).
+        ("grade_compare", [], (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, BlendMode.NORMAL),
+        ("grade_compare_moved", [], rotation, 1.0, BlendMode.NORMAL),
     ]
 
 
@@ -88,7 +92,8 @@ def run(api: str, width: int = 320, height: int = 180) -> dict:
             graded = name.startswith("grade")
             layer = CompositeLayer("v", matrix, (0, 0, width, height), opacity, blend, program_for(effects),
                                    (abs(matrix[0]) or 1.0, abs(matrix[3]) or 1.0),
-                                   grade_lut="lut:test" if graded else "")
+                                   grade_lut="lut:test" if graded else "",
+                                   grade_split=0.4 if name.startswith("grade_compare") else 0.0)
             adjustments = ()
             mattes, images, luts = {}, {}, {}
             if graded:
