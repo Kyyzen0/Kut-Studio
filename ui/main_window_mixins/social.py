@@ -91,6 +91,9 @@ class SocialMixin:
         menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
         menu.addAction(self._command_action("leaderboard", "leaderboard.menu"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
+        photos.addAction(self._command_action("photo_slideshow", "template.photos.slideshow_menu"))
+        photos.addAction(self._command_action("photo_fill_slots", "template.photos.fill_menu"))
+        photos.addSeparator()
         for key, attribute in (("social.menu.photo_fill", "_photo_fill"), ("social.menu.photo_ken_burns", "_photo_ken_burns")):
             action = self._labelled_action(key)
             action.setCheckable(True)

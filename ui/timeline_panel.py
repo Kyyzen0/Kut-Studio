@@ -126,6 +126,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     sequence_forward_requested = Signal()
     sequence_parent_requested = Signal()
     sequence_dropped = Signal(str, str, float)   # séquence glissée : (séquence, piste, temps)
+    photos_dropped = Signal(object, str, float)   # photos du Finder sur un emplacement : (chemins, piste, temps)
     # --- Multicam ---
     multicam_replace_requested = Signal(str, int)   # (segment, rang de l'angle, 0 = Angle 1) : « Remplacer par l'angle »
     multicam_flatten_requested = Signal(str)        # « Aplatir le segment Multicam »

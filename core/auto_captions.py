@@ -21,10 +21,10 @@ from dataclasses import dataclass, replace
 
 from .graphics import MAX_TEXT_WORDS, GraphicType, add_graphic_clip
 from .mograph_presets import style_social_text
-from .project_model import Clip, Project, Track
+from .project_model import Clip, Project
 from .text_animations import apply_text_animation
 from .timeline_operations import add_subtitle_clip
-from .track_operations import add_track
+from .track_operations import free_track
 from .tracking_motion import local_time_for_source
 from .transcription import Word, group_words
 
@@ -80,7 +80,7 @@ def add_subtitle_lines(project: Project, lines: Sequence[CaptionLine]) -> list[C
     """Une ligne par clip de sous-titre, sur une piste de sous-titres libre sur toute la plage (créée au besoin)."""
     if not lines:
         return []
-    track = _free_track(project, "subtitle", lines[0].start, lines[-1].end)
+    track = free_track(project, "subtitle", lines[0].start, lines[-1].end)
     return [add_subtitle_clip(project, line.text, line.start, line.end - line.start, track_id=track.id) for line in lines]
 
 
@@ -88,7 +88,7 @@ def add_karaoke_lines(project: Project, lines: Sequence[CaptionLine]) -> list[Cl
     """Une ligne par titre karaoké (style vidéo sociale), sur une piste de titres libre sur toute la plage."""
     if not lines:
         return []
-    track = _free_track(project, "graphics", lines[0].start, lines[-1].end)
+    track = free_track(project, "graphics", lines[0].start, lines[-1].end)
     created = []
     for line in lines:
         clip = add_graphic_clip(project, GraphicType.TEXT, timeline_start=line.start, duration=line.end - line.start,
@@ -103,16 +103,6 @@ def add_karaoke_lines(project: Project, lines: Sequence[CaptionLine]) -> list[Cl
         clip.label = line.text
         created.append(clip)
     return created
-
-
-def _free_track(project: Project, track_type: str, start: float, end: float) -> Track:
-    """Première piste du type, déverrouillée et visible, sans clip sur ``[start, end]`` ; sinon une nouvelle piste."""
-    for track in project.tracks:
-        if track.type != track_type or track.locked or not track.visible:
-            continue
-        if all(clip.timeline_start >= end or clip.timeline_start + clip.duration <= start for clip in track.clips):
-            return track
-    return add_track(project, track_type)
 
 
 __all__ = [

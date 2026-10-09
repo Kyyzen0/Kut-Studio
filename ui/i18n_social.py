@@ -578,9 +578,33 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "6 s: a question, a bouncing 👇, two pills to pick in the comments.",
         "6 s: una pregunta, 👇 que rebota, dos píldoras para elegir en comentarios.",
     ),
-    "template.message.slot_needs_video": _t(
-        "Un emplacement de template attend une vidéo.", "A template slot expects a video.",
-        "Un hueco de plantilla espera un vídeo.",
+    "template.message.slot_needs_media": _t(
+        "Un emplacement de template attend une vidéo ou une photo.", "A template slot expects a video or a photo.",
+        "Un hueco de plantilla espera un vídeo o una foto.",
+    ),
+    "template.message.no_empty_slot": _t(
+        "Aucun emplacement vide : sélectionnez l'emplacement à partir duquel poser les photos.",
+        "No empty slot: select the slot to start placing the photos from.",
+        "Ningún hueco vacío: seleccione el hueco desde el que colocar las fotos.",
+    ),
+    "template.message.photos_unreadable": _t(
+        "Aucune de ces photos n'a pu être lue.", "None of these photos could be read.",
+        "No se pudo leer ninguna de estas fotos.",
+    ),
+    "template.photos.choose": _t("Choisir des photos", "Choose photos", "Elegir fotos"),
+    "template.photos.fill_menu": _t(
+        "Remplir les emplacements avec des photos…", "Fill the slots with photos…", "Rellenar los huecos con fotos…",
+    ),
+    "template.photos.slideshow_menu": _t("Diaporama photo…", "Photo slideshow…", "Presentación de fotos…"),
+    "shortcuts.command.photo_fill_slots": _t(
+        "Remplir les emplacements avec des photos", "Fill the slots with photos", "Rellenar los huecos con fotos",
+    ),
+    "shortcuts.command.photo_slideshow": _t("Diaporama photo", "Photo slideshow", "Presentación de fotos"),
+    "history.template.fill_photos": _t(
+        "Photos dans {count} emplacement(s)", "Photos in {count} slot(s)", "Fotos en {count} hueco(s)",
+    ),
+    "history.template.slideshow": _t(
+        "Diaporama de {count} photo(s)", "Slideshow of {count} photo(s)", "Presentación de {count} foto(s)",
     ),
     "template.message.empty_slots": _t(
         "{count} emplacement(s) encore vide(s) : ils sortiront comme des cartes numérotées.",

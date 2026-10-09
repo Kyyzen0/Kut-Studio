@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from .project_model import Clip, MediaAsset, Project, Sequence
+from .project_model import Clip, MediaAsset, Project, Sequence, Track
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +111,14 @@ def _is_active(clip: Clip, time_seconds: float) -> bool:
     ``timeline_start + duration`` et n'est plus actif à cet instant.
     """
     return clip.timeline_start <= time_seconds < clip.timeline_start + clip.duration
+
+
+def active_track_type(clip: Clip, track: Track) -> str:
+    """Type de piste vu par le moniteur : une photo d'emplacement de template (un calque image porté par un clip de
+    piste vidéo, :mod:`core.template_slots`) est un calque graphique, pas une vidéo que le lecteur devrait décoder."""
+    if track.type == "video" and getattr(clip, "graphic", None) is not None:
+        return "graphics"
+    return track.type
 
 
 def _build_active_clip(
@@ -238,7 +246,7 @@ def _evaluate_sequence(
                 _build_active_clip(
                     clip=clip,
                     track_index=track_index,
-                    track_type=track.type,
+                    track_type=active_track_type(clip, track),
                     source_path=asset.path,
                     time_seconds=time_seconds,
                 )

@@ -20,6 +20,12 @@ ensuite déclenche `.github/workflows/release.yml`.
   volume », ouverte d'office quand la piste a déjà une courbe). Double-clic pour poser un point, glisser pour le
   déplacer (Maj : gain seul), Suppr ou clic droit pour le retirer, le remettre à 0 dB ou effacer la courbe. La courbe
   dessinée est exactement celle que l'export applique ; chaque geste s'annule en une fois.
+- Photos dans les emplacements des templates : glisser des photos du Finder sur un emplacement le remplit, lui puis
+  les emplacements vides qui suivent ; aussi *Réseaux sociaux › Photos › Remplir les emplacements avec des photos…*.
+  Chaque photo remplit le cadre avec un Ken Burns ; le Night Look et les titres du template restent par-dessus.
+- *Réseaux sociaux › Photos › Diaporama photo…* : un plan par photo choisie, à la tête de lecture, une mesure chacun
+  sur la grille rythmique (sinon la durée des photos des préférences), en Ken Burns. Chaque plan reste un emplacement
+  où redéposer une autre photo ou une vidéo.
 - Menu ⋯ d'une piste audio : son rôle (voix, musique, effets sonores, autre), que lisent le ducking automatique, les
   sous-titres automatiques et la coupe au rythme, et « Baisser sous… » pour baisser cette piste sous une autre
   (ducking par paire, qu'on peut aussi retirer).

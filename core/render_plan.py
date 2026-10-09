@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project, Sequence
 from .subtitle_io import SubtitleCue
+from .template_slots import is_photo_slot
 from .text_style import TextStyle
 from .time_map import TimeMap
 from .time_remapping import TimeRemapping
@@ -656,6 +657,13 @@ class _PlanBuilder:
                         show_audio=show_audio,
                     )
                     continue
+                if track.type == "video" and is_photo_slot(clip):
+                    # Emplacement rempli par une photo : son calque image, à la place de la carte (même rastériseur
+                    # que les photos importées ; le son n'existe pas).
+                    if show_video:
+                        graphics_layers.append(_photo_slot_layer(clip, track, track_index,
+                                                                 self.effective(clip, sequence)))
+                    continue
                 asset = assets_by_id.get(clip.asset_id)
                 if asset is None and clip.template_slot and track.type == "video":
                     # Emplacement de template vide : une carte (calque Qt) tient sa place, même animation.
@@ -877,6 +885,11 @@ def _slot_layer(clip: Clip, track, track_index: int, sequence, state) -> Graphic
 
     layer = _graphic_layer(clip, track, track_index, state=state)
     return replace(layer, graphic=slot_card(clip, int(sequence.width), int(sequence.height)))
+
+
+def _photo_slot_layer(clip: Clip, track, track_index: int, state) -> GraphicLayer:
+    """Photo d'un emplacement : son calque image, animé et étalonné comme le clip (Ken Burns compris)."""
+    return replace(_graphic_layer(clip, track, track_index, state=state), graphic=clip.graphic)
 
 
 def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[GraphicLayer]:

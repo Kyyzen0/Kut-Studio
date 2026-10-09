@@ -406,8 +406,23 @@ def visible_video_track_ids(project: "Project") -> list[str]:
     ]
 
 
+def free_track(project: "Project", track_type: str, start: float, end: float) -> "Track":
+    """Première piste du type, déverrouillée et visible, sans clip sur ``[start, end]`` ; sinon une nouvelle piste.
+
+    Ce que posent d'un bloc les commandes qui créent plusieurs clips (sous-titres automatiques, diaporama photo) :
+    jamais par-dessus un clip existant, jamais sur une piste qu'on a protégée ou masquée.
+    """
+    for track in project.tracks:
+        if track.type != track_type or track.locked or not track.visible:
+            continue
+        if all(clip.timeline_start >= end or clip.timeline_start + clip.duration <= start for clip in track.clips):
+            return track
+    return add_track(project, track_type)
+
+
 __all__ = [
     "add_track",
+    "free_track",
     "remove_track",
     "rename_track",
     "move_track",

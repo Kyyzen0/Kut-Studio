@@ -29,6 +29,7 @@ from .timeline_evaluator import (
     ActiveClip,
     _build_active_clip,
     _is_active,
+    active_track_type,
     expand_nested_clip,
 )
 
@@ -183,7 +184,7 @@ class TimelineIndex:
                     _build_active_clip(
                         clip=clip,
                         track_index=entry.track_index,
-                        track_type=track.type,
+                        track_type=active_track_type(clip, track),
                         source_path=asset.path,
                         time_seconds=time_seconds,
                     )
