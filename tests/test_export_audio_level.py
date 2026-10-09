@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 from core import export_engine
-from core.export_engine import SAFETY_LIMITER, ExportEngine, _ffmpeg_command_prefix, _ffmpeg_filter_has_option
+from core.export_engine import ExportEngine, SAFETY_LIMITER, _ffmpeg_command_prefix, _ffmpeg_filter_has_option, input_arguments
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
 from core.render_plan import build_render_plan
 from core.sequences import insert_sequence_clip
@@ -87,7 +87,7 @@ def _export(plan, path: Path, codec: str = "aac") -> Path:
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     command = _ffmpeg()
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                 "-c:a", codec, str(path)]
     _run(command)

@@ -28,14 +28,23 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from .blend_modes import BlendMode, coerce_blend_mode, ffmpeg_blend_mode
 from .mograph_program import GraphicsElement, graphics_program
-from .mograph_stream import ensure_qt_gui, stream_input_filter, write_stream
+from .mograph_stream import (
+    ensure_qt_gui, frame_grid, span_input_filter, stream_input_filter, write_span_stream, write_stream,
+)
+from .timecode import ffmpeg_rate
 
 LOGGER = logging.getLogger(__name__)
 
 AddInput = Callable[[str], int]
+
+LIMIT_TO_VISIBLE_SPAN = True
+"""Un élément graphique n'entre dans le graphe que pendant ses images visibles (:func:`write_span_stream`). Faux : le
+flux couvre toute la durée du rendu, transparent hors de l'élément ; c'est la référence des tests de parité (mêmes
+images au bit près)."""
 
 
 def _fmt(value: float) -> str:
@@ -93,8 +102,30 @@ def _apply_chain(parts: list[str], source: str, chain: list[str], tag: str) -> s
     return current
 
 
+@dataclass(frozen=True)
+class SpanWindow:
+    """Place d'un calque limité à ses images visibles (:class:`~core.mograph_stream.SpanStream`) dans la composition.
+
+    Rangs d'images sur la grille du rendu : la composition va de ``first`` à ``count`` (exclu), le calque de ``start`` à
+    ``end`` (exclu), avec ``first <= start < end <= count``."""
+
+    first: int
+    start: int
+    end: int
+    count: int
+    width: int
+    height: int
+    fps: float
+
+    def seconds(self, frame: int) -> str:
+        """Instant à mi-chemin entre l'image ``frame - 1`` et ``frame`` : une borne de ``trim`` ou de ``between``
+        sans ambiguïté d'arrondi."""
+        return _fmt((frame - 0.5) / float(self.fps))
+
+
 def blend_onto(
-    parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str, *, transparent_bottom: bool = False
+    parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str, *, transparent_bottom: bool = False,
+    window: SpanWindow | None = None,
 ) -> None:
     """Fusionne le flux RGBA ``top`` (taille du cadre) sur ``bottom``.
 
@@ -102,10 +133,19 @@ def blend_onto(
     n'a rien à fusionner là où il n'y a rien : le calque s'y affiche tel quel (comme en mode Normal), et le
     mélange n'agit qu'à proportion de l'opacité du dessous (formule W3C : ``(1-αb)·Cs + αb·B(Cb, Cs)``).
     Sans cela, un Produit sur du vide donnait du noir.
+
+    ``window`` : ``top`` ne couvre que les images où le calque est visible (voir :func:`_blend_window`). Pas de fusion
+    d'un tel calque sur un fond transparent (mode Normal excepté).
     """
     mode = coerce_blend_mode(mode)
     if mode is BlendMode.NORMAL:
+        # Hors de ``top`` (avant sa première image, après sa fin), ``overlay`` laisse passer le dessous.
         parts.append(f"[{bottom}][{top}]overlay=0:0:eof_action=pass:format=rgb[{out}]")
+        return
+    if window is not None:
+        if transparent_bottom:
+            raise ValueError("Un calque limité à sa durée ne se fusionne pas sur un fond transparent.")
+        _blend_window(parts, bottom, top, mode, out, tag, window)
         return
     if transparent_bottom:
         parts.append(
@@ -138,6 +178,56 @@ def blend_onto(
         f"format=gbrap[{tag}f];"
         f"[{tag}f][{tag}ta]alphamerge[{tag}fa];"
         f"[{tag}b1][{tag}fa]overlay=0:0:eof_action=pass:format=rgb[{out}]"
+    )
+
+
+def _blend_window(parts: list[str], bottom: str, top: str, mode: BlendMode, out: str, tag: str,
+                  window: SpanWindow) -> None:
+    """Fusion d'un calque limité à ses images visibles : la chaîne de fusion ne travaille que sur elles.
+
+    La fusion se calcule à partir du dessous ; elle n'existe donc qu'une fois le dessous arrivé à sa première image.
+    Sans précaution, ``overlay`` attendrait cette image en retenant toutes celles du dessous (8 Mo l'image en 1080p).
+    Le résultat de la fusion est donc complété, avant et après, par des images transparentes d'une source indépendante
+    (``color``, dessinée une fois) : ``concat`` les lit l'une après l'autre, sans rien attendre. ``concat`` réécrit les
+    horodatages selon les versions de FFmpeg (base 1/1 000 000 en 7.1) : ils sont refaits d'après le rang de chaque image
+    (``setpts=N+first``), exact puisque chaque tronçon a son nombre d'images. Hors de la fenêtre, ``overlay`` est
+    désactivé (``enable``) : il laisse passer le dessous sans le parcourir.
+
+    Images identiques, au bit près, à celles de la fusion du flux complet (``tests/test_mograph_span.py``)."""
+    rate = ffmpeg_rate(window.fps)
+    size = f"{window.width}x{window.height}"
+    start, end = window.seconds(window.start), window.seconds(window.end)
+    # Le dessous est coupé au rang d'image, compté depuis la première image de la composition : une coupe en
+    # secondes (``trim=end=``) perdait la dernière image de la composition.
+    cut = [f"start_frame={window.start - window.first}"] if window.start > window.first else []
+    if window.end < window.count:
+        cut.append(f"end_frame={window.end - window.first}")
+    trim = f"trim={':'.join(cut)}," if cut else ""
+    parts.append(
+        f"[{top}]format=rgba,split[{tag}t1][{tag}t2];"
+        f"[{tag}t2]alphaextract[{tag}ta];"
+        f"[{bottom}]split[{tag}b1][{tag}b2];"
+        f"[{tag}b2]{trim}format=gbrp[{tag}bp];"
+        f"[{tag}t1]format=gbrp[{tag}tp];"
+        f"[{tag}tp][{tag}bp]blend=all_mode={ffmpeg_blend_mode(mode)}:shortest=0:repeatlast=1,"
+        f"format=gbrap[{tag}f];"
+        f"[{tag}f][{tag}ta]alphamerge,format=rgba,setsar=1[{tag}mid]"
+    )
+    pieces: list[str] = []
+    for name, frames in (("pre", window.start - window.first), ("mid", 0), ("post", window.count - window.end)):
+        if name == "mid":
+            pieces.append(f"[{tag}mid]")
+        elif frames > 0:
+            parts.append(f"color=c=black@0:s={size}:r={rate},format=rgba,trim=end_frame={frames},setsar=1[{tag}{name}]")
+            pieces.append(f"[{tag}{name}]")
+    merged = f"{tag}mid"
+    if len(pieces) > 1:
+        merged = f"{tag}fa"
+        parts.append(
+            f"{''.join(pieces)}concat=n={len(pieces)}:v=1:a=0,settb=expr=1/({rate}),setpts=N+{window.first}[{merged}]"
+        )
+    parts.append(
+        f"[{tag}b1][{merged}]overlay=0:0:eof_action=pass:format=rgb:enable='between(t,{start},{end})'[{out}]"
     )
 
 
@@ -183,6 +273,7 @@ def compose_graphics(
         motion_blur=getattr(plan, "motion_blur", None),
     )
     program = graphics_program(scene)
+    first, count = frame_grid(float(fps), duration, origin)
     current = video_label
     p = prefix
     for index, element in enumerate(program):
@@ -202,18 +293,30 @@ def compose_graphics(
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
-        path = write_stream(
+        stream = dict(
             width=width, height=height, fps=float(fps), duration=duration,
             start=start, end=end,
             frame_key=lambda t, ids=ids: renderer.frame_key(ids, t) if renderer.any_active(ids, t) else None,
             render=lambda t, ids=ids, blend=apply_blend: renderer.render(ids, t, blend_modes=blend),
             salt=element.kind,
         )
-        label = _stream_label(parts, add_input, path, fps, duration, f"{tag}s", origin)
+        # Limité à ses images visibles, un élément ne coûte rien ailleurs (les effets du calque ne dépendent que de
+        # l'image et de son instant ``T``, gardé tel quel). Seule la fusion sur fond transparent garde le flux complet.
+        window = None
+        if LIMIT_TO_VISIBLE_SPAN and (not nested or coerce_blend_mode(element.blend) is BlendMode.NORMAL):
+            span = write_span_stream(**stream, first_frame=first)
+            if span is None:
+                continue  # jamais visible : le dessous passe tel quel
+            window = SpanWindow(first, span.first_frame, span.first_frame + span.frames, count, width, height,
+                                float(fps))
+            label = f"{tag}s"
+            parts.append(f"[{add_input(span.playlist)}:v]{span_input_filter(fps, span)}[{label}]")
+        else:
+            label = _stream_label(parts, add_input, write_stream(**stream), fps, duration, f"{tag}s", origin)
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True,
                               pixel_scale=_pixel_scale(renderer, plan), label=tag)
         label = _apply_chain(parts, label, chain, tag)
-        blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested)
+        blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested, window=window)
         current = out
     return current
 

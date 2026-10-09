@@ -97,7 +97,9 @@ def build_preview_command(plan, **kwargs):
     from .export_engine import (
         OUTPUT_COLOR_TAGS,
         _ffmpeg_command_prefix,
+        decoder_threads,
         filter_graph_arguments,
+        input_arguments,
         with_output_color_stage,
     )
     from .preview_render import preview_crf, preview_preset
@@ -119,10 +121,11 @@ def build_preview_command(plan, **kwargs):
     filter_complex, video_label = with_output_color_stage(filter_complex, video_label)
     command = [*_ffmpeg_command_prefix(), "-y", "-hide_banner", "-loglevel", "error"]
     input_args = kwargs.get("input_args")
+    threads = decoder_threads(input_paths)
     for path in input_paths:
         if callable(input_args):
             command.extend(input_args(path))
-        command.extend(["-i", path])
+        command.extend(input_arguments(path, threads=threads))
     temporary_files = kwargs.get("temporary_files")
     command.extend(filter_graph_arguments(filter_complex, temporary_files if temporary_files is not None else []))
     command.extend(["-map", "[" + video_label + "]"])
@@ -193,7 +196,7 @@ def _raster_version() -> int:
     return RASTER_VERSION
 
 
-RENDER_ENGINE_VERSION = 9
+RENDER_ENGINE_VERSION = 10
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
@@ -212,7 +215,10 @@ un facteur) ; un segment mis en cache avec l'ancien graphe (qui n'a jamais pu ê
 8 : un effet réglé en pixels (σ du flou) suit la taille de rendu (pixels de sortie par pixel de la séquence) ; un segment
 d'aperçu réduit mis en cache avec un flou deux ou quatre fois trop large est ignoré.
 9 : une échelle animée donne à ``rotate`` un cadre fixe, celui de la plus grande image du clip (il valait la taille de la
-première image : un clip qui grandissait était rogné) ; les segments mis en cache avec l'ancien cadre sont ignorés."""
+première image : un clip qui grandissait était rogné) ; les segments mis en cache avec l'ancien cadre sont ignorés.
+10 : les listes d'images de calques déclarent leur cadence (à 30 i/s, une image d'animation sur six était sautée) et un
+plan qui ne tourne jamais n'a plus de ``rotate`` (un demi-pixel de flou) ; les segments mis en cache avec la saccade ou
+le flou sont ignorés."""
 
 
 def fingerprint_plan(plan, **kwargs):

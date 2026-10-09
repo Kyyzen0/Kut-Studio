@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from core.export_engine import ExportEngine
+from core.export_engine import ExportEngine, input_arguments
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
 from core.time_remapping import FreezeFrameMode, TimeRemapping
@@ -55,7 +55,7 @@ def _color_at(project, t: float, dx: int = 0) -> str:
     graph += f";[{video}]trim=start={t},setpts=PTS-STARTPTS,format=rgb24[probe];[{audio}]anullsink"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
     completed = subprocess.run(command, capture_output=True, timeout=60)
     assert completed.returncode == 0, completed.stderr.decode(errors="replace")[-600:]

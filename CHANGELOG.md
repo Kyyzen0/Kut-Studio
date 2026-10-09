@@ -42,8 +42,18 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Courbe de volume : deux points sans maintien sont désormais reliés par une ligne droite. Avant, le volume sautait
   au niveau du point suivant dès le point précédent. Seuls des projets écrits à la main ou par script sont concernés :
   aucune interface ne posait de points jusqu'ici.
+- Moteur de rendu plus rapide et plus sobre, à images identiques : le premier export de trois montages réels est
+  38 à 60 % plus rapide (un TikTok de 31 s à 54 calques graphiques passe de 98 s à 41 s), et FFmpeg utilise jusqu'à
+  deux fois moins de mémoire ; les segments d'aperçu fidèle se calculent jusqu'à 44 % plus vite. Un titre, un flash
+  ou une forme n'est plus composé que pendant les images où il est visible, les images des calques sont écrites en
+  parallèle et les médias d'un montage se partagent les fils de décodage.
 
 ### Fixed
+
+- Export : les titres et calques animés à 30 images/s sautaient une image sur six (et en doublaient une autre), une
+  saccade visible dans tout pop-in, glissé ou karaoké. Chaque image de l'animation est maintenant exportée.
+- Export : un plan vidéo non tourné était légèrement flou (décalé d'un demi-pixel et moyenné, netteté −12 %). Il sort
+  désormais avec les pixels de son média.
 
 - Étalonnage à l'export : une couleur saturée réchauffée ou refroidie (température, teinte, ombres ou hautes
   lumières réglées) ne sort plus grise. Un rouge vif passé en saturation 1,3 avec une température devenait un gris

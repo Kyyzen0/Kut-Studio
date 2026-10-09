@@ -68,7 +68,7 @@ def parse_ebur128(text: str) -> LoudnessMeasure:
 
 def measure_command(plan, fps: int, *, width: int | None = None, height: int | None = None) -> list[str]:
     """Commande FFmpeg qui mesure le mixage du plan (graphe de l'export, sans l'image)."""
-    from .export_engine import ExportEngine, _ffmpeg_command_prefix
+    from .export_engine import ExportEngine, _ffmpeg_command_prefix, input_arguments
 
     ffmpeg = find_media_tool("ffmpeg")
     if ffmpeg is None:
@@ -80,7 +80,7 @@ def measure_command(plan, fps: int, *, width: int | None = None, height: int | N
     graph += f";[{audio}]ebur128=peak=true:framelog=quiet[lm]"
     command = [*_ffmpeg_command_prefix(), "-nostdin", "-hide_banner", "-nostats"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     return command + ["-filter_complex", graph, "-map", "[lm]", "-f", "null", "-"]
 
 

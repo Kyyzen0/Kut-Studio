@@ -220,8 +220,13 @@ def test_no_clip_message_returns_in_a_real_gap(window):
     assert window.preview_panel.empty_state.isVisible()
 
 
-def test_empty_state_follows_layers_but_never_covers_a_video(window):
+def test_empty_state_follows_layers_but_never_covers_a_video(window, monkeypatch):
     panel = window.preview_panel
+    # Le vrai lecteur chargeait ``/tmp/clip.mp4`` (absent) dans un fil natif d'AVFoundation ou de Media Foundation,
+    # encore actif quand qtbot fermait la fenêtre : plantage natif du worker en CI (macOS, Windows). Seul le message
+    # importe ici, réglé avant tout appel au lecteur.
+    monkeypatch.setattr(panel.player, "setSource", lambda *_a, **_k: None)
+    monkeypatch.setattr(panel.player, "setPosition", lambda *_a, **_k: None)
     panel.show_no_active_clip()
     assert panel.empty_state.isVisible()
     panel.set_graphics_present(True)  # des calques arrivent : le message s'efface

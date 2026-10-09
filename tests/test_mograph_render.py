@@ -404,7 +404,7 @@ def test_program_splits_only_where_ffmpeg_must_see_below():
 def _ffmpeg_frame(project: Project, t: float, tmp_path: Path):
     from PySide6.QtGui import QImage
 
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, input_arguments
 
     plan = build_render_plan(project)
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, 10, None)
@@ -412,7 +412,7 @@ def _ffmpeg_frame(project: Project, t: float, tmp_path: Path):
     out = tmp_path / f"frame-{t}.png"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", "[probe]", "-frames:v", "1", str(out)]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert completed.returncode == 0, completed.stderr

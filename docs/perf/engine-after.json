@@ -1,0 +1,45 @@
+{
+  "machine": "Darwin arm64, 10 cœurs",
+  "python": "3.14.7",
+  "ffmpeg": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "scenarios": {
+    "social": {
+      "size": [
+        1080,
+        1920,
+        30.0,
+        12.0
+      ],
+      "layers": [
+        3,
+        7,
+        1
+      ],
+      "layers_cold_s": 17.23,
+      "layers_warm_s": 0.04,
+      "export": {
+        "wall_s": 9.39,
+        "cpu_s": 80.39,
+        "rss_mb": 1773
+      },
+      "export_cold_s": 26.62,
+      "segments": {
+        "0": {
+          "wall_s": 0.31,
+          "cpu_s": 1.74,
+          "rss_mb": 271
+        },
+        "3": {
+          "wall_s": 0.67,
+          "cpu_s": 4.03,
+          "rss_mb": 312
+        },
+        "5": {
+          "wall_s": 0.35,
+          "cpu_s": 2.01,
+          "rss_mb": 302
+        }
+      }
+    }
+  }
+}

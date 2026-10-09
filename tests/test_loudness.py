@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from core.export_engine import ExportEngine
+from core.export_engine import ExportEngine, input_arguments
 from core.loudness import LoudnessMeasure, measure_plan, normalization_gain, parse_ebur128
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.render_plan import build_render_plan
@@ -73,7 +73,7 @@ def test_the_measure_is_the_loudness_of_the_exported_mix(tmp_path):
     out = tmp_path / "plain.mkv"
     command = ["ffmpeg", "-y", "-v", "error"]
     for path in inputs:
-        command += ["-i", path]
+        command += input_arguments(path)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]", "-c:v", "libx264", "-c:a",
                 "pcm_s16le", str(out)]
     subprocess.run(command, check=True, timeout=120)

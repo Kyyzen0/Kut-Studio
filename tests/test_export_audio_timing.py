@@ -14,7 +14,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from core.export_engine import ExportEngine, _ffmpeg_command_prefix
+from core.export_engine import ExportEngine, _ffmpeg_command_prefix, input_arguments
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track
 from core.render_plan import build_render_plan
 from core.sequences import insert_sequence_clip
@@ -46,7 +46,7 @@ def _export(plan, path):
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
     command = [*_ffmpeg_command_prefix(), "-y", "-v", "error"]
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]", "-c:v", "libx264",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", str(path)]
     _run(command)

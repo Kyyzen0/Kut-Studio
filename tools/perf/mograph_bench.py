@@ -135,7 +135,7 @@ def scenario(name: str) -> Project:
 
 
 def measure(name: str, *, ffmpeg: bool) -> dict:
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, input_arguments
     from core.mograph_layers import layer_tree, scene_for_project
     from core.mograph_raster import MographRenderer, scene_for_plan
     from core.render_plan import build_render_plan
@@ -164,7 +164,7 @@ def measure(name: str, *, ffmpeg: bool) -> dict:
             out = Path(cache) / "out.mp4"
             command = ["ffmpeg", "-y", "-loglevel", "error"]
             for path in inputs:
-                command += ["-i", path]
+                command += input_arguments(path)
             command += [
                 "-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]",
                 "-c:v", "libx264", "-preset", "veryfast", "-t", str(DURATION), str(out),

@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.export_engine import ExportEngine  # noqa: E402
+from core.export_engine import ExportEngine, input_arguments  # noqa: E402
 from core.filter_graph import fingerprint_plan  # noqa: E402
 from core.preview_segments import segment_plan  # noqa: E402
 from core.project_model import Clip, MediaAsset, Project, Sequence, Track  # noqa: E402
@@ -162,7 +162,7 @@ def bench_export(workdir: Path) -> dict[str, float]:
         graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, 320, 180, 25, None)
         command = ["ffmpeg", "-v", "error", "-y"]
         for path in inputs:
-            command += ["-i", path]
+            command += input_arguments(path)
         command += ["-filter_complex", graph, "-map", f"[{video}]", "-map", f"[{audio}]",
                     "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(workdir / f"{name}.mp4")]
         started = time.perf_counter()

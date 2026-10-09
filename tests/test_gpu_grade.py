@@ -155,8 +155,11 @@ def test_the_baked_lut_is_what_the_export_renders(tmp_path, tags):
     error = np.abs(shown - exported)[flat] * 255
     assert flat.mean() > 0.6
     # Mire aux couleurs saturées : là où l'étalonnage écrête un canal (bord du gamut), l'interpolation entre deux
-    # nœuds de la LUT adoucit le coude de quelques niveaux. Mesuré : 0,11 à 0,15 de moyenne, 3,3 à 4,0 au 99ᵉ centile.
-    assert error.mean() < 0.3 and np.percentile(error, 99) < 5.0, (error.mean(), np.percentile(error, 99))
+    # nœuds de la LUT adoucit le coude de quelques niveaux (3,3 à 4,0 au 99ᵉ centile). En moyenne, l'écart vient surtout
+    # de la chroma 4:2:0, que l'export convertit en RVB à la manière de la plateforme et la référence en 4:4:4 :
+    # mesuré 0,08 à 0,18 (FFmpeg 7.1 et 9, arm64), 0,32 (FFmpeg 6.1, x86, CI). Jusqu'au 2026-10-09, un demi-pixel de flou
+    # sur tout plan fixe (``rotate``) lissait cet écart.
+    assert error.mean() < 0.4 and np.percentile(error, 99) < 5.0, (error.mean(), np.percentile(error, 99))
     # ≈ 10 niveaux sur cette mire déjà saturée (111 quand ``colorbalance`` avait ``pl=1`` : presque tout était du gris).
     assert np.abs(plain - exported).mean() * 255 > 5, "l'étalonnage change vraiment l'image"
 

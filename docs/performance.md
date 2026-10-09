@@ -29,7 +29,7 @@ nouveaux :
 | Timeline | `core/timeline_spatial.py`, `core/timeline_index.py` (`clips_overlapping`), `ui/timeline_panel_mixins/` |
 | Qualité adaptative | `core/preview_adaptive.py`, `core/preview_quality.py` |
 | Interface | `ui/performance_settings.py` (préférences), menu contextuel des médias, menu *Fenêtre* |
-| Mesure | `tools/perf/` (`synthetic.py`, `bench.py`), `docs/perf/*.json` |
+| Mesure | `tools/perf/` (`synthetic.py`, `bench.py`, `engine_bench.py`), `docs/perf/*.json` |
 
 ## 1. Mesurer d'abord
 
@@ -246,7 +246,7 @@ lecture et de forcer un recalage du lecteur. Mesuré sur l'edit « Singapore GP
 
 ## 7. Résultats
 
-Voir [`docs/perf/RESULTS.md`](perf/RESULTS.md).
+Voir [`docs/perf/RESULTS.md`](perf/RESULTS.md), et pour le moteur de rendu le §10.
 
 ## 8. Robustesse testée
 
@@ -275,3 +275,73 @@ retire un partiel qu'au bout de dix minutes sans écriture), **segment d'aperçu
   culling).
 - Accélération matérielle : réalisée depuis (encodage : [hardware-encoding.md](hardware-encoding.md) ; décodage et
   aperçu GPU : [gpu-preview.md](gpu-preview.md)).
+
+## 10. Moteur de rendu : calques, graphe FFmpeg, export (2026-10-09)
+
+Mesuré de bout en bout par `tools/perf/engine_bench.py` (scénario social déterministe ; `--project` pour un vrai
+montage, en lecture seule). Références : `docs/perf/engine-before.json` (`main` avant ce chantier) et
+`docs/perf/engine-after.json`, Apple M4 10 cœurs, FFmpeg 9.0.2.
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m tools.perf.engine_bench --out docs/perf/engine-after.json
+```
+
+### Ce qui coûtait
+
+Profil d'un TikTok réel de 31 s (1080×1920, 54 calques graphiques), cache des calques vide :
+
+- **Écriture des images de calques : 79 %** des 48 s de préparation (`QImage.save`, 54 ms par PNG pleine trame) ;
+- **éléments courts composés pendant tout le rendu** : 7 flashs en Addition de 0,2 à 0,8 s passaient, image
+  transparente après image transparente, dans une chaîne de fusion pleine trame pendant 31 s (104 s de CPU et
+  6,7 Go de mémoire pour 4 s d'images visibles) ;
+- **décodeurs** : un fil par cœur et par média, chaque fil gardant ses images (1,5 Go pour 19 plans) ;
+- **`rotate` sur les plans fixes** : un cadre de 2 203 px, et un demi-pixel de flou (voir *Corrigé*).
+
+### Ce qui a changé
+
+| Changement | Module | Images |
+| --- | --- | --- |
+| Encodage PNG dans `WRITE_WORKERS` fils (`QImage.save` libère le verrou de l'interpréteur), file bornée | `core/mograph_stream.py` | octets identiques |
+| Élément graphique limité à ses images visibles ; fusion calculée sur le dessous coupé au rang d'image, complétée par des images transparentes d'une source indépendante (`overlay` n'attend jamais en retenant le dessous) | `core/mograph_stream.py`, `core/mograph_ffmpeg.py` | identiques au bit près (FFmpeg 9 et 7.1, `tests/test_mograph_span.py`) |
+| Budget de fils de décodage : plusieurs médias se partagent les cœurs (2 fils au moins), 2 par liste d'images | `core/export_engine.py` (`decoder_threads`, `input_arguments`) | identiques |
+| Plus de `rotate` pour un plan qui ne tourne jamais, ni de `colorchannelmixer` pour un plan opaque | `core/export_engine.py` | plus nettes (voir *Corrigé*) |
+
+Corrigé au passage :
+
+- les listes `.ffconcat` déclarent leur cadence (`option framerate`, d'où `-f concat -safe 0`) : une image PNG
+  s'ouvre à 25 i/s et, à 30 i/s, une image d'animation sur six était sautée ;
+- un plan fixe était posé au centre d'un cadre de côté impair (1080p, 720p) : décalé d'un demi-pixel et moyenné
+  sur 2×2 pixels (netteté −12 %).
+
+### Résultats
+
+Premier export (cache des calques vide), H.264 CPU CRF 18, `medium` :
+
+| Montage | Avant | Après | Gain |
+| --- | ---: | ---: | ---: |
+| Banc social (12 s, 1080×1920) | 44,0 s | 26,6 s | −39 % |
+| TikTok réel, 54 calques (31 s) | 98 s | 41 s | −58 % |
+| TikTok réel, 19 plans Ken Burns (35 s) | 85 s | 52 s | −38 % |
+| Présentation, 96 calques (35 s, 1920×1080) | 49 s | 20 s | −60 % |
+
+FFmpeg seul (cache des calques plein, ce que coûte un nouvel export après une retouche) :
+
+| Montage | Durée | CPU | Mémoire |
+| --- | ---: | ---: | ---: |
+| Banc social | 15,5 → 9,4 s (−40 %) | 114 → 80 s (−29 %) | 5,4 → 1,8 Go (−67 %) |
+| TikTok, 54 calques | 49,8 → 27,7 s (−44 %) | 348 → 252 s (−28 %) | 4,5 → 2,4 Go (−47 %) |
+| TikTok, 19 plans | 31,7 → 27,1 s (−15 %) | 250 → 220 s (−12 %) | 4,5 → 3,0 Go (−32 %) |
+| Présentation | 8,3 → 8,2 s | 60 → 61 s | 0,87 → 0,79 Go |
+
+Segments d'aperçu fidèle (2 s, qualité standard) : −19 à −44 % sur le banc, −25 à −38 % sur le TikTok à 54 calques,
+−6 à −16 % ailleurs.
+
+### Ce qui reste
+
+- **Encodage** : x264 `medium` domine maintenant l'export des montages vidéo (Présentation, 19 plans). L'encodeur
+  matériel (`hardware-encoding.md`) est le levier, pas le graphe.
+- **Dessin des calques à froid** : le contour des sous-titres (`QPainter.strokePath`, 4 ms par appel) domine. Les
+  appels `QPainter` gardent le verrou de l'interpréteur (mesuré : aucun gain à dessiner dans plusieurs fils) ; la suite
+  est l'étape « calques en textures » de l'[ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md).
+- **Plans à échelle animée** (Ken Burns, zoom d'impact) : `rotate` y sert de cadre fixe (2 384 px pour du 1080×1920),
+  avec le même demi-pixel quand la largeur mise à l'échelle est impaire.

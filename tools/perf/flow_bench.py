@@ -305,7 +305,7 @@ def _render(args: dict) -> dict:
     """Un clip de 2 s ralenti à 25 % rendu de bout en bout (préparation + graphe + FFmpeg) par le mode demandé."""
     import shutil
 
-    from core.export_engine import ExportEngine
+    from core.export_engine import ExportEngine, input_arguments
     from core.flow_cache import FlowCache
     from core.project_model import Clip, MediaAsset, Project, Track
     from core.render_plan import build_render_plan
@@ -337,7 +337,7 @@ def _render(args: dict) -> dict:
     graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, width, height, fps, None, prepared=preparation.streams)
     command = ["ffmpeg", "-v", "error", "-y"]
     for item in inputs:
-        command += ["-i", item]
+        command += input_arguments(item)
     # Deux sorties plutôt qu'un puits : FFmpeg 7.x avorte sur un ``anullsink`` nourri par un son généré (``aevalsrc``).
     command += ["-filter_complex", graph, "-map", f"[{video}]", "-f", "null", "-", "-map", f"[{audio}]", "-f", "null", "-"]
     began = time.perf_counter()

@@ -45,7 +45,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -212,6 +212,34 @@ def _ffmpeg_major_version() -> int | None:
         major = None
     cache[prefix] = major
     return major
+
+
+def input_arguments(path: str, *, threads: int = 0) -> list[str]:
+    """Arguments FFmpeg d'une entrée du graphe : ``-i chemin``.
+
+    Une liste d'images de calques (``.ffconcat``, :mod:`core.mograph_stream`) déclare la cadence de ses images
+    (``option framerate``), ce que le démultiplexeur ``concat`` n'accepte qu'avec ``-safe 0``. Les listes sont écrites
+    par Kut-Studio dans son cache, avec des noms de fichiers relatifs. Deux fils de décodage par liste : autant de vitesse
+    qu'avec un fil par cœur, et chaque fil de plus gardait ses images pleine trame (−0,5 Go mesuré sur 9 listes 1080p).
+
+    ``threads`` : fils de décodage d'un média (:func:`decoder_threads`) ; 0 laisse le choix à FFmpeg.
+    """
+    if path.endswith(".ffconcat"):
+        return ["-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
+    return [*(["-threads", str(threads)] if threads > 0 else []), "-i", path]
+
+
+def decoder_threads(paths: Sequence[str]) -> int:
+    """Fils de décodage de chaque média d'un graphe qui en lit ``paths`` (0 : réglage de FFmpeg).
+
+    Un décodeur vidéo prend par défaut un fil par cœur, et chaque fil garde ses images. Or un montage n'affiche que
+    quelques plans à la fois : 19 plans H.264 1080×1920 gardaient ainsi 1,5 Go de plus, sans aucun gain de vitesse
+    (mesuré). Plusieurs médias se partagent donc les cœurs, deux fils au moins chacun ; un média seul garde le
+    réglage de FFmpeg."""
+    media = [path for path in paths if not path.endswith(".ffconcat")]
+    if len(media) <= 1:
+        return 0
+    return max(2, (os.cpu_count() or 2) // len(media))
 
 
 def filter_graph_arguments(filter_complex: str, temporary_files: list[str]) -> list[str]:
@@ -812,8 +840,9 @@ class ExportEngine(QObject):
             "-loglevel",
             "error",
         ]
+        threads = decoder_threads(input_paths)
         for path in input_paths:
-            command.extend(["-i", path])
+            command.extend(input_arguments(path, threads=threads))
         command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
         command.extend(["-map", f"[{mapped}]"])
         command.extend([
@@ -883,8 +912,9 @@ class ExportEngine(QObject):
         self.last_encoder_choice = encoder
         command.extend(encoder.pre_input_args)
 
+        threads = decoder_threads(input_paths)
         for path in input_paths:
-            command.extend(["-i", path])
+            command.extend(input_arguments(path, threads=threads))
 
         # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
         # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
@@ -1999,10 +2029,10 @@ def _build_layer_filter(
     4. ``pad`` qui ajoute des bandes noires si nécessaire ;
     5. ``fps`` qui force la fréquence d'images cible ;
     6. ``scale`` animé (variation autour de la valeur de base) ;
-    7. ``rotate`` animé ;
+    7. ``rotate`` animé (absent pour un calque qui ne tourne jamais) ;
     8. effets visuels activés du clip, dans leur ordre ;
     9. ``format=rgba`` pour permettre la composition alpha ;
-    10. ``colorchannelmixer`` pour l'opacité animée ;
+    10. ``colorchannelmixer`` pour l'opacité animée (absent si opaque) ;
     11. ``setpts=PTS+timeline_start/TB`` qui décale la couche à sa
        position sur la timeline.
 
@@ -2138,13 +2168,15 @@ def _build_layer_filter(
     parts.append(f"{scale_expr},")
     if flip_filters:
         parts.append(f"{flip_filters},")
-    parts.append(f"{rotation_expr},")
+    if rotation_expr:
+        parts.append(f"{rotation_expr},")
     if effect_filters:
         parts.append(f"{effect_filters},")
     if color_grade_filters:
         parts.append(f"{color_grade_filters},")
     parts.append(f"{','.join(compositing_filters)},")
-    parts.append(f"{opacity_expr},")
+    if opacity_expr:
+        parts.append(f"{opacity_expr},")
     parts.append(f"setpts=PTS+{timeline_start}[{output_label}]")
 
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
@@ -2510,11 +2542,19 @@ def _build_animated_rotation_expr(
     *,
     canvas: tuple[int, int] | None = None,
 ) -> str:
-    """Génère un filtre ``rotate`` animé (degrés) ; ``canvas`` fixe sa taille de sortie (échelle animée)."""
+    """Génère un filtre ``rotate`` animé (degrés) ; ``canvas`` fixe sa taille de sortie (échelle animée).
+
+    Vide pour un calque qui ne tourne jamais (angle nul, sans image-clé) et dont l'échelle est fixe : ``rotate`` le
+    posait au centre d'un cadre ``hypot(iw,ih)``, d'un côté impair en 1080p (2 203 px), soit un demi-pixel de décalage
+    sur chaque axe ; l'interpolation bilinéaire floutait alors tout le plan (moyenne de 2×2 pixels, netteté −12 %
+    mesurée), et le cadre plus que doublait les pixels des filtres suivants. ``overlay`` centre le calque lui-même."""
+    rotation_keyframes = [kf for kf in keyframes if kf.property_name == "rotation"]
+    if not rotation_keyframes and float(transform.rotation) == 0.0 and canvas is None:
+        return ""
     expr = build_ffmpeg_expression(
         "rotation",
         transform.rotation,
-        [kf for kf in keyframes if kf.property_name == "rotation"],
+        rotation_keyframes,
         time_var="t",
     )
     # ``rotate`` accepte une expression en radians via ``a=...``. On
@@ -2536,7 +2576,8 @@ def _build_animated_opacity_expr(
 ) -> str:
     """Génère le filtre qui applique l'opacité alpha sur le layer vidéo.
 
-    Deux cas :
+    Trois cas :
+    - Opaque sans image-clé : aucun filtre (chaîne vide).
     - Pas d'image-clé : ``colorchannelmixer`` accepte la valeur
       littérale ; rendu rapide.
     - Avec images-clés : on passe par ``geq`` car ``colorchannelmixer``
@@ -2545,6 +2586,8 @@ def _build_animated_opacity_expr(
     """
     opacity_keyframes = [kf for kf in keyframes if kf.property_name == "opacity"]
     if not opacity_keyframes:
+        if float(transform.opacity) == 1.0:
+            return ""  # opaque : multiplier l'alpha par 1 ne change aucun pixel
         # Cas statique : literal accepté par colorchannelmixer, plus
         # performant que ``geq``.
         return f"colorchannelmixer=aa={_format_seconds(transform.opacity)}"
