@@ -7,10 +7,10 @@ le signaler comme média introuvable : l'aperçu, l'export et le moniteur GPU mo
 rastériseur. Y déposer un média le remplit en gardant tout le reste.
 
 Une **photo** remplit aussi un emplacement (:func:`fill_slot_with_photo`) : le clip garde sa place, sa durée, ses effets
-et son étalonnage, et porte un calque image (``clip.graphic``) que le plan de rendu dessine **à la place de la carte**,
-par le même rastériseur que les photos importées : un Ken Burns y glisse au sous-pixel (pas d'escalier d'échelle
-entière comme avec ``scale`` d'FFmpeg), et le calque d'effets « Night Look » posé au-dessus s'y applique comme à une
-vidéo. Une vidéo déposée ensuite sur l'emplacement reprend la place de la photo.
+et son étalonnage ; son média est l'image (``media_type == "image"``), que le plan de rendu traite **comme une vidéo**
+(calque vidéo à sa place parmi les pistes, transitions, cadrage « remplir », Ken Burns) et qu'FFmpeg répète sur toute
+la durée du plan. Le clip porte aussi un calque image (``clip.graphic``) : le moniteur temps réel, qui ne décode pas de
+photo, le dessine avec le rastériseur des calques. Une vidéo déposée ensuite sur l'emplacement reprend la place.
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ from .project_model import Clip, MediaAsset, Project
 from .timeline_operations import _ensure_track_editable, _find_track_for_clip
 
 PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
-"""Images qu'un emplacement accepte (celles que lit le rastériseur Qt, comme « Importer une image »)."""
+"""Images qu'un emplacement accepte (lues par FFmpeg pour le rendu, par Qt pour le moniteur temps réel)."""
+
+PHOTO_ASSET_PREFIX = "photo-asset-"
+"""Préfixe des médias créés pour les photos d'emplacement (les seuls que le remplacement d'une photo retire)."""
 
 SLOT_INK = "#16294AF0"
 SLOT_BLUE = "#22B8FF"
@@ -97,6 +100,9 @@ def fill_slot(project: Project, clip_id: str, asset_id: str) -> Clip:
     asset = next((item for item in project.media_assets if item.id == asset_id), None)
     if asset is None:
         raise KeyError(asset_id)
+    if asset.media_type == "image" and asset.path and asset.width and asset.height:
+        # Une photo de la bibliothèque (celle d'un autre emplacement…) : même chemin que depuis le Finder.
+        return fill_slot_with_photo(project, clip_id, asset.path, (int(asset.width), int(asset.height)))
     if asset.media_type != "video" or not asset.width or not asset.height:
         raise SlotError("Un emplacement de template attend une vidéo ou une photo.")
     clip = next((item for track in project.tracks for item in track.clips if item.id == clip_id), None)
@@ -144,16 +150,21 @@ def fill_slot_with_photo(
                          source_path=resolved),
         width=width, height=height,
     )
-    asset = MediaAsset(
-        id=f"graphic-asset-{uuid.uuid4().hex[:12]}", path=resolved, name=source.stem or "Photo",
-        duration=clip.duration, width=width, height=height, fps=float(project.fps), media_type="graphic",
-    )
     previous = clip.asset_id
-    project.media_assets.append(asset)
+    asset = next((item for item in project.media_assets
+                  if item.media_type == "image" and item.path == resolved), None)
+    if asset is None:
+        asset = MediaAsset(
+            id=f"{PHOTO_ASSET_PREFIX}{uuid.uuid4().hex[:12]}", path=resolved, name=source.stem or "Photo",
+            duration=0.0, width=image_width, height=image_height, fps=float(project.fps), media_type="image",
+        )
+        project.media_assets.append(asset)
     clip.asset_id = asset.id
     clip.graphic = graphic
     clip.source_in, clip.source_out = 0.0, clip.duration
-    _drop_unused_photo_asset(project, previous)
+    clip.transform = replace(clip.transform, fill=True)
+    if previous != asset.id:
+        _drop_unused_photo_asset(project, previous)
     if ken_burns:
         apply_ken_burns([clip])
     return clip
@@ -168,15 +179,21 @@ def fill_slots_with_photos(
 
     Les photos en trop sont ignorées ; retourne les emplacements remplis (une photo illisible est sautée, pas l'
     emplacement)."""
+    locked = {track.id for track in project.tracks if track.locked}
     if start_clip_id is None:
-        targets = empty_slots(project)
+        targets = [clip for clip in empty_slots(project) if clip.track_id not in locked]
     else:
         start = next((clip for track in project.tracks for clip in track.clips if clip.id == start_clip_id), None)
         if start is None or not start.template_slot:
             raise KeyError(start_clip_id)
+        track, _index = _find_track_for_clip(project, start.id)
+        _ensure_track_editable(project, track)             # refus avant toute modification : rien n'est rempli
         key = (start.timeline_start, start.track_id)
+        # Les emplacements d'une piste verrouillée sont sautés d'avance : un refus au milieu laisserait les premiers
+        # remplis sans entrée d'historique.
         targets = [start, *(clip for clip in empty_slots(project)
-                            if clip.id != start.id and (clip.timeline_start, clip.track_id) > key)]
+                            if clip.id != start.id and clip.track_id not in locked
+                            and (clip.timeline_start, clip.track_id) > key)]
     filled: list[Clip] = []
     pending = iter(targets)
     target = next(pending, None)
@@ -249,9 +266,9 @@ def add_photo_slideshow(
 
 
 def _drop_unused_photo_asset(project: Project, asset_id: str) -> None:
-    """Retire le média technique d'une photo remplacée, s'il ne sert plus à aucun clip (jamais un média importé)."""
+    """Retire le média d'une photo d'emplacement remplacée, s'il ne sert plus à aucun clip (jamais un autre média)."""
     asset = next((item for item in project.media_assets if item.id == asset_id), None)
-    if asset is None or asset.media_type != "graphic":
+    if asset is None or not asset.id.startswith(PHOTO_ASSET_PREFIX):
         return
     used = any(clip.asset_id == asset_id for sequence in project.sequences for track in sequence.tracks
                for clip in track.clips)

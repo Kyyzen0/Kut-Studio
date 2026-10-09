@@ -260,7 +260,7 @@ application even after `kill -9`: [docs/process-supervision.md](docs/process-sup
 - Windows code signing (Authenticode) and a reliable automatic installation of updates (numbered releases, macOS signing / notarization when secrets are configured and verified update downloads are in place: [docs/updates.md](docs/updates.md))
 - Motion graphics: per-character text animation, animated colors and mask vertices, effects inside groups
 - Optical flow, next steps (the backend interface is ready, nothing else is started): Metal / CUDA / Vulkan / OpenCL / CoreML backends, neural interpolation, real-time blending and flow in the GPU monitor, motion blur and stabilisation built on the same flow. See [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
-- Social video, next steps: loudness-normalized preview, transitions between photo slots
+- Social video, next steps: loudness-normalized preview
 - Multicam, next steps (the architecture leaves room, nothing is started): automatic multicam proxies, 16+ angles with a tuned grid, remote cameras and live capture, LTC synchronization, advanced waveform fingerprints, collaboration. See [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contributing
@@ -478,7 +478,7 @@ Certains tests dépendent de la machine et **se sautent avec leur raison** au li
 - Signature du code Windows (Authenticode) et installation automatique fiable des mises à jour (releases numérotées, signature / notarisation macOS quand les secrets sont configurés et téléchargement vérifié des mises à jour sont en place : [docs/updates.md](docs/updates.md))
 - Motion graphics : animation caractère par caractère, couleurs et sommets de masque animés, effets à l'intérieur des groupes
 - Flux optique, suite (l’interface de backend est prête, rien d’autre n’est commencé) : backends Metal / CUDA / Vulkan / OpenCL / CoreML, interpolation neuronale, mélange et flux en temps réel dans le moniteur GPU, flou de mouvement et stabilisation fondés sur le même flux. Voir [docs/optical-flow.md](docs/optical-flow.md#architecture-future).
-- Vidéo sociale, suite : aperçu normalisé en loudness, transitions entre photos d'emplacement
+- Vidéo sociale, suite : aperçu normalisé en loudness
 - Multicam, suite (l'architecture laisse la place, rien n'est commencé) : proxys Multicam automatiques, 16 angles et plus avec une grille réglée, caméras distantes et capture en direct, synchronisation LTC, empreintes sonores avancées, collaboration. Voir [docs/multicam.md](docs/multicam.md#architecture-future).
 
 ## 🤝 Contribution

@@ -117,6 +117,11 @@ class RenderLayer:
     nested_key: str = ""
     # Animation générique du clip (masques animés…), voir ``Clip.animation``.
     animation: tuple = field(default_factory=tuple)
+    # Image fixe (photo d'un emplacement de template) : FFmpeg la répète (``loop``) sur toute la durée du clip ; tout
+    # le reste (cadrage, Ken Burns, effets, étalonnage, transitions, ordre des pistes) est celui d'une vidéo.
+    still: bool = False
+    # Calque image équivalent (``GraphicOverlay``) : ce que dessine le moniteur temps réel, qui ne décode pas de photo.
+    photo: object = None
 
     @property
     def is_nested(self) -> bool:
@@ -657,13 +662,6 @@ class _PlanBuilder:
                         show_audio=show_audio,
                     )
                     continue
-                if track.type == "video" and is_photo_slot(clip):
-                    # Emplacement rempli par une photo : son calque image, à la place de la carte (même rastériseur
-                    # que les photos importées ; le son n'existe pas).
-                    if show_video:
-                        graphics_layers.append(_photo_slot_layer(clip, track, track_index,
-                                                                 self.effective(clip, sequence)))
-                    continue
                 asset = assets_by_id.get(clip.asset_id)
                 if asset is None and clip.template_slot and track.type == "video":
                     # Emplacement de template vide : une carte (calque Qt) tient sa place, même animation.
@@ -720,6 +718,8 @@ class _PlanBuilder:
                                     state.animation if state is not None
                                     else tuple(getattr(clip, "animation", ()) or ())
                                 ),
+                                still=asset.media_type == "image",
+                                photo=clip.graphic if is_photo_slot(clip) else None,
                             )
                         )
                     # Un solo audio ne laisse passer que les pistes audio armées
@@ -887,9 +887,20 @@ def _slot_layer(clip: Clip, track, track_index: int, sequence, state) -> Graphic
     return replace(layer, graphic=slot_card(clip, int(sequence.width), int(sequence.height)))
 
 
-def _photo_slot_layer(clip: Clip, track, track_index: int, state) -> GraphicLayer:
-    """Photo d'un emplacement : son calque image, animé et étalonné comme le clip (Ken Burns compris)."""
-    return replace(_graphic_layer(clip, track, track_index, state=state), graphic=clip.graphic)
+def photo_monitor_layers(plan: "RenderPlan") -> tuple[GraphicLayer, ...]:
+    """Photos d'emplacement du plan en calques image, pour le moniteur temps réel (qui ne décode pas de photo).
+
+    L'export, l'aperçu fidèle et le moniteur GPU (segments) les rendent en calques vidéo, à leur place parmi les pistes
+    vidéo ; le moniteur temps réel les dessine par le rastériseur des calques, avec la même animation."""
+    return tuple(
+        GraphicLayer(
+            clip_id=layer.clip_id, track_id=layer.track_id, track_index=layer.track_index,
+            timeline_start=layer.timeline_start, timeline_end=layer.timeline_end, graphic=layer.photo,
+            transform=layer.transform, transform_keyframes=layer.transform_keyframes, animation=layer.animation,
+            compositing=layer.compositing, effects=layer.effects, color_grade=layer.color_grade,
+        )
+        for layer in plan.video_layers if layer.photo is not None
+    )
 
 
 def _rig_layers(tracks, drawn: list[GraphicLayer], effective=None) -> list[GraphicLayer]:

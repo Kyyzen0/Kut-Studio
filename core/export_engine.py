@@ -1465,7 +1465,7 @@ def _compose_plan_graph(
 
         video_label = f"{p}bg"
         if plan.video_layers:
-            display_layers = _build_transition_layers(parts, plan, prefix=p, fps=fps)
+            display_layers = _build_transition_layers(parts, plan, prefix=p, fps=fps, frame=(width, height))
             previous_label = f"{p}bg"
             for layer_index, (label, layer) in enumerate(display_layers):
                 is_last = layer_index == len(display_layers) - 1
@@ -1732,13 +1732,20 @@ def _build_input_list(plan: RenderPlan) -> tuple[list[str], dict[str, int]]:
 
 
 def _build_transition_layers(
-    parts: list[str], plan: RenderPlan, prefix: str = "", fps: float = 30.0
+    parts: list[str], plan: RenderPlan, prefix: str = "", fps: float = 30.0,
+    frame: tuple[int, int] | None = None,
 ) -> list[tuple[str, RenderLayer]]:
     """Remplace deux couches liées par leur flux ``xfade`` FFmpeg.
 
     ``xfade`` exige une cadence connue sur ses deux entrées. FFmpeg 7.0 / 7.1 l'efface à chaque ``setpts`` (8.0 l'a rendu
     optionnel : ``strip_fps``) et refusait donc *toute* transition (« current rate of 1/0 is invalid »). Le ``fps`` qui
     suit la redonne ; sur un flux déjà conformé à cette cadence, il ne duplique ni ne retire aucune image.
+
+    ``frame`` (taille du cadre) : chaque couche est d'abord posée **à sa place** sur un cadre transparent, puis les deux
+    cadres sont fondus et le résultat posé en 0, 0. Fondre les couches elles-mêmes exigeait deux calques de même taille,
+    placés pareil : une échelle animée (zoom d'impact, Ken Burns) ou deux échelles différentes donnaient deux cadres de
+    ``rotate`` de tailles différentes, et FFmpeg refusait tout le graphe ; le second clip aurait de toute façon été posé
+    à la place du premier.
     """
     p = prefix
     rate = ffmpeg_rate(fps)
@@ -1757,15 +1764,33 @@ def _build_transition_layers(
         name = _ffmpeg_transition_name(transition)
         offset = max(0.0, from_layer.timeline_end - from_layer.timeline_start - transition.duration)
         label = f"{p}transition{transition_index}"
+        sides = {"a": (from_index, from_layer), "b": (to_index, to_layer)}
+        inputs = {}
+        for side, (index, layer) in sides.items():
+            tag = f"{p}t{side}{transition_index}"
+            if frame is None:
+                parts.append(f"[{p}v{index}]setpts=PTS-STARTPTS,fps={rate}[{tag}]")
+            else:
+                width, height = frame
+                length = max(1.0 / max(float(fps), 1.0), layer.timeline_end - layer.timeline_start)
+                parts.append(
+                    f"color=c=black@0:s={width}x{height}:r={rate}:d={_format_seconds(length)},"
+                    f"setpts=PTS+{_format_offset(layer.timeline_start)},format=rgba[{tag}c];"
+                    f"[{tag}c][{p}v{index}]overlay={_build_overlay_args(layer, width, height)}:format=rgb,"
+                    f"setpts=PTS-STARTPTS,fps={rate}[{tag}]"
+                )
+            inputs[side] = tag
         parts.append(
-            f"[{p}v{from_index}]setpts=PTS-STARTPTS,fps={rate}[{p}ta{transition_index}];"
-            f"[{p}v{to_index}]setpts=PTS-STARTPTS,fps={rate}[{p}tb{transition_index}];"
-            f"[{p}ta{transition_index}][{p}tb{transition_index}]"
+            f"[{inputs['a']}][{inputs['b']}]"
             f"xfade=transition={name}:duration={_format_seconds(transition.duration)}:"
             f"offset={_format_seconds(offset)},"
             f"setpts=PTS+{_format_offset(from_layer.timeline_start)}[{label}]"
         )
-        replacements[min(from_index, to_index)] = (label, from_layer)
+        # Posé tel quel : chaque couche est déjà à sa place dans le cadre fondu.
+        placed = from_layer if frame is None else replace(
+            from_layer, transform=ClipTransform(), transform_keyframes=(), animation=(),
+        )
+        replacements[min(from_index, to_index)] = (label, placed)
         hidden.update({from_index, to_index})
     result: list[tuple[str, RenderLayer]] = []
     for index, layer in enumerate(plan.video_layers):
@@ -2084,9 +2109,11 @@ def _build_layer_filter(
         retime_chains = stage.chains
         parts = [f"[{stage.label}]"]
     else:
-        # Cas normal : un clip non remappé est conformé à la cadence du projet.
+        # Cas normal : un clip non remappé est conformé à la cadence du projet. Une photo (image fixe) n'a qu'une
+        # image : ``loop`` la répète, horodatée, pour que ``trim`` puis ``fps`` en tirent toute la durée du clip.
         parts = [
             f"[{source_label}]",
+            *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
             f"trim=start={source_in}:end={source_out},",
             "setpts=PTS-STARTPTS,",
             f"{frame_fit},",

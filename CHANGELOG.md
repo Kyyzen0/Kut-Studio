@@ -22,7 +22,8 @@ ensuite déclenche `.github/workflows/release.yml`.
   dessinée est exactement celle que l'export applique ; chaque geste s'annule en une fois.
 - Photos dans les emplacements des templates : glisser des photos du Finder sur un emplacement le remplit, lui puis
   les emplacements vides qui suivent ; aussi *Réseaux sociaux › Photos › Remplir les emplacements avec des photos…*.
-  Chaque photo remplit le cadre avec un Ken Burns ; le Night Look et les titres du template restent par-dessus.
+  Chaque photo remplit le cadre avec un Ken Burns, se place parmi les pistes vidéo comme une vidéo et accepte les
+  transitions ; le Night Look et les titres du template restent par-dessus.
 - *Réseaux sociaux › Photos › Diaporama photo…* : un plan par photo choisie, à la tête de lecture, une mesure chacun
   sur la grille rythmique (sinon la durée des photos des préférences), en Ken Burns. Chaque plan reste un emplacement
   où redéposer une autre photo ou une vidéo.
@@ -46,6 +47,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - Export : un clip audio qui commençait au milieu d'une rampe de la courbe de volume faisait échouer l'export
   (expression `volume` invalide).
+- Export : une transition entre deux plans dont l'un a une échelle animée (zoom d'impact des templates, Ken Burns)
+  ou une autre échelle que l'autre faisait échouer tout l'export ; le second plan est aussi posé à sa propre place
+  pendant la transition, et non plus à celle du premier.
 
 ## [0.2.7] - 2026-10-09
 

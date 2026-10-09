@@ -176,11 +176,12 @@ Trois points d'architecture méritent d'être connus :
 * **Carte d'emplacement** : un clip de piste vidéo dont `template_slot` est renseigné et dont le média manque n'est pas
   un « média introuvable » : `build_render_plan` le remplace par un calque de texte à la taille du cadre
   (`template_slots.slot_card`), animé comme le clip. `RenderPlan.empty_slots` les liste. Rempli par une photo, le clip
-  porte un calque image (`clip.graphic`, `template_slots.is_photo_slot`) que le plan dessine à la place de la carte, par
-  le rastériseur des photos importées : le Ken Burns y glisse au sous-pixel, sans l'escalier d'échelle entière du
-  `scale` d'FFmpeg, et le calque d'effets posé au-dessus s'y applique. Les évaluateurs de timeline la rangent parmi les
-  calques graphiques (`timeline_evaluator.active_track_type`) : le moniteur temps réel la dessine, le lecteur vidéo ne
-  tente pas de la décoder.
+  a pour média l'image (`media_type == "image"`, à sa taille d'origine) : le plan en fait un **calque vidéo** comme un
+  autre (`RenderLayer.still`), à sa place parmi les pistes vidéo, avec cadrage « remplir », Ken Burns, effets,
+  étalonnage et transitions ; FFmpeg répète l'image (`loop`) sur toute la durée du plan. Le clip porte aussi un calque
+  image (`clip.graphic`, `template_slots.is_photo_slot`) pour le moniteur temps réel, qui ne décode pas de photo : les
+  évaluateurs de timeline rangent le clip parmi les calques graphiques (`timeline_evaluator.active_track_type`) et le
+  moniteur le dessine par le rastériseur des calques (`render_plan.photo_monitor_layers`).
 * **Loudness** : la mesure est faite par le graphe audio de l'export (`_build_filter_complex(..., audio_only=True)`), à
   l'étape de préparation de la file ; le plan porte ensuite `loudness_gain_db` (dans l'empreinte). C'est un réglage
   d'export : l'aperçu n'est pas normalisé.
@@ -226,7 +227,6 @@ livrables (`test_social_deliverables.py` : couverture à l'image exacte, copie s
 ## Limites connues
 
 * La normalisation ne s'applique qu'à l'export (l'aperçu garde le niveau du mixage).
-* Pas de transition entre deux photos d'emplacement (ce sont des calques graphiques) : les plans se coupent net.
 * Une photo glissée du Finder ailleurs que sur un emplacement n'est pas importée : elle passe par l'import d'image de
   l'onglet Graphiques de la bibliothèque.
 * Le recadrage suivi est figé en images-clés : corriger le tracker ensuite demande de relancer la commande.

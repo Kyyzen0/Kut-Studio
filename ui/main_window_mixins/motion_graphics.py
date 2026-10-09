@@ -236,11 +236,17 @@ class MotionGraphicsMixin:
         t = float(self.playhead_seconds)
         composited = bool(getattr(self, "_viewer_composited", False))
         try:
-            from core.render_plan import build_render_plan
+            from dataclasses import replace
+
+            from core.render_plan import build_render_plan, photo_monitor_layers
 
             plan = build_render_plan(
                 self.project, window=(t, t + 1e-3), window_index=self._ensure_timeline_index(),
             )
+            # Photos d'emplacement : calques vidéo pour l'export, calques image ici (le lecteur ne décode pas de photo).
+            photos = photo_monitor_layers(plan)
+            if photos:
+                plan = replace(plan, graphics_layers=(*photos, *plan.graphics_layers))
         except Exception:
             LOGGER.debug("Plan à %.3f s non construit : aucun calque dessiné dans le moniteur", t, exc_info=True)
             plan = None

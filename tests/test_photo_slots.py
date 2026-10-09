@@ -11,7 +11,7 @@ from core.graphics import GraphicType
 from core.ken_burns import photo_size
 from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
-from core.render_plan import build_render_plan
+from core.render_plan import build_render_plan, photo_monitor_layers
 from core.template_slots import (
     SlotError,
     add_photo_slideshow,
@@ -71,8 +71,12 @@ def test_a_photo_fills_a_slot_and_keeps_its_place_and_effects(photo):
     assert clip.graphic.source_path == str(photo.resolve())
     assert (clip.graphic.width, clip.graphic.height) == photo_size(300, 200, W, H, fill=True), "la photo remplit"
     asset = next(item for item in project.media_assets if item.id == clip.asset_id)
-    assert asset.media_type == "graphic" and asset.path == str(photo.resolve())
+    assert asset.media_type == "image" and asset.path == str(photo.resolve())
+    assert (asset.width, asset.height) == (300, 200), "taille d'origine : le cadrage « remplir » vient du clip"
+    assert clip.transform.fill
     assert [slot.id for slot in empty_slots(project)] == ["s1", "s2"]
+    second = fill_slot_with_photo(project, "s1", photo, (300, 200))
+    assert second.asset_id == clip.asset_id, "la même photo, un seul média"
 
 
 def test_a_photo_gets_a_ken_burns_that_replaces_the_impact_zoom(photo):
@@ -86,11 +90,17 @@ def test_a_photo_gets_a_ken_burns_that_replaces_the_impact_zoom(photo):
     assert still.transform_keyframes == []
 
 
-def test_a_video_then_takes_the_place_of_the_photo_and_the_photo_media_goes(photo, tmp_path):
+def test_a_video_then_takes_the_place_of_the_photo_and_the_photo_media_goes(photo, tmp_path, qapp):
+    from PySide6.QtGui import QColor, QImage
+
     project = _project()
     fill_slot_with_photo(project, "s0", photo, (300, 200))
     first_photo = _clip(project, "s0").asset_id
-    fill_slot_with_photo(project, "s0", photo, (300, 200))
+    other = tmp_path / "autre.png"
+    image = QImage(40, 30, QImage.Format_RGB32)
+    image.fill(QColor("#336699"))
+    assert image.save(str(other))
+    fill_slot_with_photo(project, "s0", other, (40, 30))
     assert first_photo not in {asset.id for asset in project.media_assets}, "une photo remplacée ne reste pas"
     project.media_assets.append(MediaAsset("v", str(tmp_path / "v.mp4"), "v", 10.0, 1920, 1080, 25.0, "video"))
     clip = fill_slot(project, "s0", "v")
@@ -134,14 +144,18 @@ def test_several_photos_go_one_per_slot_in_timeline_order(photo):
 # --- rendu ----------------------------------------------------------------------------------------------------------
 
 
-def test_a_photo_slot_is_an_image_layer_of_the_plan_and_a_graphic_for_the_monitor(photo):
+def test_a_photo_slot_is_a_video_layer_of_the_plan_and_an_image_for_the_live_monitor(photo):
     project = _project()
     fill_slot_with_photo(project, "s0", photo, (300, 200))
     plan = build_render_plan(project)
     assert plan.empty_slots == ("s1", "s2") and plan.missing_media == ()
-    assert not [layer for layer in plan.video_layers if layer.clip_id == "s0"], "jamais décodée comme une vidéo"
-    layer = next(layer for layer in plan.graphics_layers if layer.clip_id == "s0")
-    assert layer.graphic.type == GraphicType.IMAGE and layer.transform_keyframes
+    (layer,) = [layer for layer in plan.video_layers if layer.clip_id == "s0"]
+    assert layer.still and layer.source_path == str(photo.resolve()) and layer.transform.fill
+    assert (layer.source_width, layer.source_height) == (300, 200) and layer.transform_keyframes
+    assert not [item for item in plan.graphics_layers if item.clip_id == "s0" and item.role == "draw"]
+    (monitor,) = photo_monitor_layers(plan)
+    assert monitor.clip_id == "s0" and monitor.graphic.type == GraphicType.IMAGE
+    assert monitor.transform_keyframes == layer.transform_keyframes
 
     by_scan = [(clip.clip_id, clip.track_type) for clip in evaluate_timeline(project, 0.5)]
     by_index = [(clip.clip_id, clip.track_type) for clip in build_timeline_index(project).active_at(project, 0.5)]
@@ -156,8 +170,7 @@ def test_a_photo_slot_survives_the_kut_file(photo, tmp_path):
     loaded = load_project(path)
     clip = _clip(loaded, "s0")
     assert is_photo_slot(clip) and clip.graphic.source_path == str(photo.resolve())
-    assert [layer.clip_id for layer in build_render_plan(loaded).graphics_layers if layer.graphic.type == GraphicType.IMAGE] \
-        == ["s0"]
+    assert [layer.clip_id for layer in build_render_plan(loaded).video_layers if layer.still] == ["s0"]
 
 
 @needs_ffmpeg
@@ -179,6 +192,65 @@ def test_the_export_shows_the_photo_filling_the_frame_and_moving(photo, tmp_path
     fill_slot(project, "s0", "v")
     refilled = render_frame(build_render_plan(project), W, H, 0.5).astype(int)
     assert refilled[..., 2].mean() > 200 and refilled[..., 0].mean() < 40, "la vidéo a repris la place"
+
+
+def _two_colour_photos(tmp_path, qapp):
+    from PySide6.QtGui import QColor, QImage
+
+    paths = []
+    for name, colour in (("rouge", "#E01010"), ("vert", "#10E010")):
+        image = QImage(160, 90, QImage.Format_RGB32)
+        image.fill(QColor(colour))
+        path = tmp_path / f"{name}.png"
+        assert image.save(str(path))
+        paths.append(path)
+    return paths
+
+
+@needs_ffmpeg
+def test_a_transition_between_two_photo_slots_is_rendered(tmp_path, qapp):
+    """Une photo d'emplacement est un calque vidéo : le fondu enchaîné entre deux photos se rend comme entre deux plans."""
+    from core.transitions import add_transition
+
+    red, green = _two_colour_photos(tmp_path, qapp)
+    project = _project(2)
+    fill_slot_with_photo(project, "s0", red, (160, 90), ken_burns=False)
+    fill_slot_with_photo(project, "s1", green, (160, 90), ken_burns=False)
+    add_transition(project, "s0", "s1", duration=0.4)
+    plan = build_render_plan(project)
+    assert len(plan.transitions) == 1, "la transition n'est plus écartée du plan"
+    middle = render_frame(plan, W, H, 0.8).astype(int)[H // 2, W // 2]
+    assert 60 < middle[0] < 200 and 60 < middle[1] < 200, ("mélange des deux photos", middle)
+
+
+@needs_ffmpeg
+def test_a_photo_slot_stays_under_the_video_tracks_above_it(photo, tmp_path):
+    """Comme une vidéo à sa place : une piste vidéo au-dessus de l'emplacement le couvre (avant : la photo passait
+    par-dessus toutes les pistes vidéo)."""
+    project = _project(1)
+    fill_slot_with_photo(project, "s0", photo, (300, 200), ken_burns=False)
+    blue = lavfi_video(tmp_path / "blue.mp4", "color=c=blue", size=(W, H), seconds=2.0)
+    project.media_assets.append(MediaAsset("b", str(blue), "b", 2.0, W, H, 25.0, "video"))
+    project.tracks.append(Track(id="V2", name="V2", type="video", clips=[
+        Clip(id="top", asset_id="b", track_id="V2", timeline_start=0.0, source_in=0.0, source_out=1.0)]))
+    frame = render_frame(build_render_plan(project), W, H, 0.5).astype(int)
+    assert frame[..., 2].mean() > 200 and frame[..., 0].mean() < 40, "la vidéo de V2 couvre la photo de V1"
+
+
+def test_photos_skip_the_slots_of_a_locked_track_and_a_locked_start_changes_nothing(photo):
+    """Plusieurs pistes d'emplacements, l'une verrouillée : ses emplacements sont sautés d'avance ; partir d'un
+    emplacement verrouillé est refusé avant toute modification (rien de rempli sans entrée d'historique)."""
+    project = _project(2)
+    project.tracks.append(Track(id="V2", name="V2", type="video", locked=True, clips=[
+        Clip(id="locked", asset_id="", track_id="V2", timeline_start=0.5, source_in=0.0, source_out=1.0,
+             label="L", template_slot="slot-L")]))
+    filled = fill_slots_with_photos(project, [(photo, (300, 200))] * 3)
+    assert [clip.id for clip in filled] == ["s0", "s1"]
+    assert not is_photo_slot(_clip(project, "locked"))
+    before = len(project.media_assets)
+    with pytest.raises(ValueError):
+        fill_slots_with_photos(project, [(photo, (300, 200))], start_clip_id="locked")
+    assert len(project.media_assets) == before and not is_photo_slot(_clip(project, "locked"))
 
 
 # --- diaporama --------------------------------------------------------------------------------------------------------
