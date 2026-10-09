@@ -18,9 +18,9 @@ from PySide6.QtWidgets import (
 
 from core.color_grading import (
     ColorCurve,
-    ColorGrade,
     ColorPresetStore,
 )
+from core.color_nodes import as_graph
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Spacing
 from ui.icons import IconName
@@ -37,6 +37,13 @@ class ColorMixin:
         root = QVBoxLayout(group)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.sm)
+
+        # Clip étalonné par nœuds : ces réglages sont ceux du nœud courant (page Couleur), on le dit.
+        self.color_node_label = QLabel()
+        self.color_node_label.setWordWrap(True)
+        self.color_node_label.setStyleSheet(label_style(11, "accent", 600))
+        self.color_node_label.hide()
+        root.addWidget(self.color_node_label)
 
         self.color_enabled_check = QCheckBox(translate("history.color.enable"))
         self.color_enabled_check.setChecked(True)
@@ -161,8 +168,26 @@ class ColorMixin:
         self.color_preset_store.merge_user_presets(list(presets or []))
         self._refresh_color_presets()
 
+    def set_color_node(self, node_id: str | None) -> None:
+        """Nœud courant (page Couleur) : les réglages affichés deviennent les siens."""
+        self._color_node_id = node_id
+        self.update_color_grade_from_clip(self._color_value)
+
     def update_color_grade_from_clip(self, grade: object) -> None:
-        self._current_color_grade = grade if isinstance(grade, ColorGrade) else ColorGrade.identity()
+        """Affiche l'étalonnage d'un clip : son ``ColorGrade``, ou le nœud courant de son graphe de nœuds."""
+        self._color_value = grade
+        graph = as_graph(grade)
+        node = graph.node_or_first(self._color_node_id)
+        self._current_color_grade = node.grade
+        if len(graph.nodes) > 1:
+            from ui.color_page.node_editor import node_number
+
+            self.color_node_label.setText(translate(
+                "inspector.color.node", number=node_number(graph.position(node.id)),
+                count=node_number(len(graph.nodes) - 1),
+                label=f" · {node.label}" if node.label else "",
+            ))
+        self.color_node_label.setVisible(len(graph.nodes) > 1)
         self._allow_color_signals = False
         try:
             self.color_enabled_check.setChecked(self._current_color_grade.enabled)

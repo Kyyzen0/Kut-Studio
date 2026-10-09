@@ -42,6 +42,8 @@ from PySide6.QtWidgets import (
 from core.workspace_state import (
     DEFAULT_SIZE,
     MIN_SIZE,
+    PAGE_EDIT,
+    PAGES,
     DockArea,
     FloatingGeometry,
     PanelId,
@@ -49,9 +51,11 @@ from core.workspace_state import (
     delete_named_workspace,
     list_named_workspaces,
     load_named_workspace,
+    load_page_state,
     load_workspace_state,
+    page_default_state,
     save_named_workspace,
-    save_workspace_state,
+    save_page_state,
 )
 from ui.icons import IconName
 from ui.i18n import translate
@@ -294,6 +298,9 @@ class WorkspaceManager(QObject):
         # Disposition sauvegardée avant maximisation, pour pouvoir
         # restaurer exactement l'espace de travail précédent.
         self._pre_maximize: WorkspaceState | None = None
+        # Page affichée (Montage, Couleur…) et disposition laissée sur chacune.
+        self._page = PAGE_EDIT
+        self._page_states: dict[str, WorkspaceState] = {}
         self._suspend_capture = False
         self._root: QWidget | None = None
         self._splitters: list[QSplitter] = []
@@ -676,13 +683,44 @@ class WorkspaceManager(QObject):
         self._refresh_dependents()
 
     def reset_layout(self) -> None:
-        """Rétablit la disposition par défaut."""
+        """Rétablit la disposition d'origine de la page affichée."""
         self._pre_maximize = None
         for panel in list(self._windows):
             self.dock_panel(panel)
-        self._commit(WorkspaceState.default())
+        self._commit(page_default_state(self._page))
         self._apply_state(self._state)
         self._refresh_dependents()
+
+    # ------------------------------------------------------------------
+    # Pages
+    # ------------------------------------------------------------------
+
+    @property
+    def page(self) -> str:
+        """Page affichée (:data:`core.workspace_state.PAGES`)."""
+        return self._page
+
+    def switch_page(self, page: str) -> bool:
+        """Passe à une autre page : la disposition de la page quittée est gardée, celle de la page ouverte reprend
+        telle qu'on l'avait laissée (sa disposition d'origine la première fois)."""
+        if page not in PAGES or page == self._page:
+            return False
+        self._page_states[self._page] = self._layout_to_keep()
+        target = self._page_states.get(page) or load_page_state(page, self._settings_dir)
+        self._pre_maximize = None
+        for panel in list(self._windows):
+            window = self._windows.pop(panel)
+            _close_floating_window(window, self._hosts[panel])
+        self._page = page
+        self._apply_state(target)
+        self._refresh_dependents()
+        return True
+
+    def _layout_to_keep(self) -> WorkspaceState:
+        """La disposition à retrouver plus tard : jamais un panneau resté maximisé."""
+        if self._state.maximized is not None:
+            return self._pre_maximize or self._state.with_maximized(None)
+        return self.capture_state()
 
     # ------------------------------------------------------------------
     # Équilibrage
@@ -1091,13 +1129,14 @@ class WorkspaceManager(QObject):
         if top is not None and top.width() > 0:
             sizes = top.sizes()
             if len(sizes) == 3 and sizes[1] > 0:
-                state = state.with_panel(
-                    PanelId.MEDIA, size=max(MIN_SIZE[PanelId.MEDIA], sizes[0])
-                )
-                state = state.with_panel(
-                    PanelId.INSPECTOR,
-                    size=max(MIN_SIZE[PanelId.INSPECTOR], sizes[2]),
-                )
+                # La largeur d'une zone est celle de son premier panneau (comme
+                # ``_zone_width`` la relit) : Médias et Inspecteur ne sont pas
+                # toujours à gauche et à droite (page Couleur), et une zone vide
+                # (largeur 0) ne réécrit rien.
+                for area, size in ((DockArea.LEFT, sizes[0]), (DockArea.RIGHT, sizes[2])):
+                    panels = self._state.visible_panels(area)
+                    if panels and size > 0:
+                        state = state.with_panel(panels[0], size=max(MIN_SIZE[panels[0]], size))
         if root is not None and root.height() > 0:
             sizes = root.sizes()
             if len(sizes) == 2 and sum(sizes) > 0:
@@ -1155,10 +1194,12 @@ class WorkspaceManager(QObject):
         return delete_named_workspace(name, self._settings_dir)
 
     def save(self) -> None:
-        """Persiste l'espace de travail courant."""
+        """Persiste la disposition de chaque page visitée (le Montage dans ``workspace.json``)."""
         self._state = self.capture_state()
+        self._page_states[self._page] = self._state
         try:
-            save_workspace_state(self._state, self._settings_dir)
+            for page, state in self._page_states.items():
+                save_page_state(page, state, self._settings_dir)
         except OSError:
             # Une préférence non persistée ne doit jamais empêcher la
             # fermeture de l'application.

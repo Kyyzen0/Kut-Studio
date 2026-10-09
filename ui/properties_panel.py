@@ -115,6 +115,8 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
     color_lut_import_requested = Signal(str, str)
     color_lut_remove_requested = Signal(str)
     color_grade_reset_requested = Signal(str)
+    # Fin de ``show_clip`` : la page Couleur suit le clip que montre l'inspecteur.
+    clip_shown = Signal()
     # Calques graphiques (tâche 32)
     graphic_property_changed = Signal(str, str, object)
     compositing_changed = Signal(str, object)
@@ -147,6 +149,8 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self._audio_effect_param_widgets: dict[str, QDoubleSpinBox] = {}
         self._allow_audio_effect_signals = True
         self._current_color_grade = ColorGrade.identity()
+        self._color_value: object = None                 # ColorGrade ou graphe de nœuds du clip affiché
+        self._color_node_id: str | None = None           # nœud courant (choisi sur la page Couleur)
         self._allow_color_signals = True
         self.color_preset_store = ColorPresetStore()
         self._group_titles: list[tuple] = []  # (QGroupBox, clé i18n) : réécrits par ``retranslate``

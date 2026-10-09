@@ -85,6 +85,13 @@ MAX_CURVE_VALUE: float = 1.0
 CHANNELS: tuple[str, ...] = ("master", "red", "green", "blue")
 """Canaux reconnus par :class:`ColorCurves`."""
 
+# Roues lift / gamma / gain / offset : chaque composante (R, V, B et le
+# maître Y) est un delta borné ; la formule est dans :mod:`core.color_wheels`.
+WHEEL_MIN: float = -1.0
+WHEEL_MAX: float = 1.0
+WHEELS: tuple[str, ...] = ("lift", "gamma", "gain", "offset")
+"""Roues d'un :class:`ColorGrade`, dans l'ordre de l'interface."""
+
 
 # Longueur max d'un nom (preset ou projet utilisateur).
 MAX_NAME_LENGTH: int = 64
@@ -469,6 +476,46 @@ def copy_lut_into_project(
 
 
 # ---------------------------------------------------------------------------
+# Roues d'étalonnage
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Wheel:
+    """Une roue lift / gamma / gain / offset : un décalage par canal et un maître.
+
+    ``r`` / ``g`` / ``b`` viennent du palet (direction de teinte), ``y`` de la
+    molette sous la roue (les trois canaux ensemble). Toutes les composantes
+    sont dans ``[-1, 1]`` ; ``Wheel()`` est neutre.
+    """
+
+    r: float = 0.0
+    g: float = 0.0
+    b: float = 0.0
+    y: float = 0.0
+
+    def __post_init__(self) -> None:
+        for name in ("r", "g", "b", "y"):
+            object.__setattr__(self, name, _coerce_range(
+                float(getattr(self, name)), f"wheel.{name}",
+                minimum=WHEEL_MIN, maximum=WHEEL_MAX,
+            ))
+
+    def is_neutral(self) -> bool:
+        return self.r == 0.0 and self.g == 0.0 and self.b == 0.0 and self.y == 0.0
+
+    def as_list(self) -> list[float]:
+        return [self.r, self.g, self.b, self.y]
+
+    @classmethod
+    def from_list(cls, raw: object) -> "Wheel":
+        """Lit ``[r, g, b, y]`` (fichier) ; lève :class:`ColorGradingError` si invalide."""
+        if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+            raise ColorGradingRangeError(f"Roue invalide : {raw!r}.")
+        return cls(*(_require_finite(value, "wheel") for value in raw))
+
+
+# ---------------------------------------------------------------------------
 # ColorGrade (état complet appliqué à un clip)
 # ---------------------------------------------------------------------------
 
@@ -501,6 +548,8 @@ class ColorGrade:
         lut: LUT optionnel ; ``None`` = aucun LUT appliqué.
         enabled: ``False`` neutralise tout l'étalonnage sans le
             supprimer.
+        lift / gamma / gain / offset: roues primaires (noirs, tons
+            moyens, blancs, tout le signal), cf. :mod:`core.color_wheels`.
     """
 
     exposure: float = 0.0
@@ -513,8 +562,15 @@ class ColorGrade:
     curves: ColorCurves = field(default_factory=ColorCurves)
     lut: LUTResource | None = None
     enabled: bool = True
+    lift: Wheel = field(default_factory=Wheel)
+    gamma: Wheel = field(default_factory=Wheel)
+    gain: Wheel = field(default_factory=Wheel)
+    offset: Wheel = field(default_factory=Wheel)
 
     def __post_init__(self) -> None:
+        for name in WHEELS:
+            if not isinstance(getattr(self, name), Wheel):
+                raise ColorGradingRangeError(f"Roue {name!r} invalide.")
         object.__setattr__(self, "exposure", _coerce_range(
             float(self.exposure), "exposure",
             minimum=EXPOSURE_MIN, maximum=EXPOSURE_MAX,
@@ -561,7 +617,17 @@ class ColorGrade:
             and self.highlights == 0.0
             and self.curves.is_identity()
             and self.lut is None
+            and self.wheels_are_neutral()
         )
+
+    def wheels_are_neutral(self) -> bool:
+        return all(getattr(self, name).is_neutral() for name in WHEELS)
+
+    def with_wheel(self, name: str, wheel: Wheel) -> "ColorGrade":
+        """Retourne un clone avec la roue ``name`` (lift, gamma, gain, offset) remplacée."""
+        if name not in WHEELS:
+            raise ColorGradingError(f"Roue inconnue : {name!r}.")
+        return ColorGrade(**{**self.__dict__, name: wheel})
 
     def with_field(self, name: str, value: float) -> "ColorGrade":
         """Retourne un clone avec un champ simple mis à jour."""
@@ -974,7 +1040,26 @@ def _dict_to_curve(raw: object) -> ColorCurve:
         return ColorCurve.identity()
 
 
+def wheels_to_dict(grade: ColorGrade) -> dict[str, list[float]]:
+    """Roues non neutres ``{nom: [r, g, b, y]}`` (vide : la clé n'est pas écrite, les fichiers restent identiques)."""
+    return {name: getattr(grade, name).as_list() for name in WHEELS if not getattr(grade, name).is_neutral()}
+
+
+def wheels_from_dict(raw: object) -> dict[str, Wheel]:
+    """Roues lues d'un fichier ; une roue illisible ou hors bornes est ignorée (neutre)."""
+    if not isinstance(raw, dict):
+        return {}
+    wheels: dict[str, Wheel] = {}
+    for name in WHEELS:
+        try:
+            wheels[name] = Wheel.from_list(raw.get(name))
+        except ColorGradingError:
+            continue
+    return wheels
+
+
 def _grade_to_dict(grade: ColorGrade) -> dict[str, object]:
+    wheels = wheels_to_dict(grade)
     return {
         "exposure": float(grade.exposure),
         "contrast": float(grade.contrast),
@@ -1004,6 +1089,7 @@ def _grade_to_dict(grade: ColorGrade) -> dict[str, object]:
             else None
         ),
         "enabled": bool(grade.enabled),
+        **({"wheels": wheels} if wheels else {}),
     }
 
 
@@ -1048,6 +1134,7 @@ def _dict_to_grade(raw: object) -> ColorGrade:
             curves=curves,
             lut=lut,
             enabled=bool(raw.get("enabled", True)),
+            **wheels_from_dict(raw.get("wheels")),
         )
     except ColorGradingError:
         return ColorGrade.identity()
@@ -1291,14 +1378,6 @@ class ColorPresetStore:
 # ---------------------------------------------------------------------------
 
 
-def _color_grade_or_default(value: object) -> ColorGrade:
-    if isinstance(value, ColorGrade):
-        return value
-    if value is None:
-        return ColorGrade.identity()
-    return ColorGrade.identity()
-
-
 @dataclass
 class ColorGradingService:
     """Service haut‑niveau : opérations CRUD sur les :class:`ColorGrade`.
@@ -1306,22 +1385,45 @@ class ColorGradingService:
     Le service manipule ``clip.color_grade`` directement. Chaque
     mutation retourne le nouveau :class:`ColorGrade` pour permettre
     à l'appelant de chaîner des vérifications.
+
+    Un clip étalonné par nœuds (:mod:`core.color_nodes`) : ``node_id``
+    désigne le nœud lu ou modifié (absent ou inconnu : le premier). Un
+    clip sans nœuds se comporte comme un graphe d'un seul nœud, et y
+    revient dès qu'il n'en a plus qu'un sans nom (fichier inchangé).
     """
 
     def __init__(self) -> None:
         pass
 
-    def get_grade(self, project, clip_id: str) -> ColorGrade:
-        """Retourne l'étalonnage du clip (neutre si manquant)."""
+    def get_grade(self, project, clip_id: str, node_id: str | None = None) -> ColorGrade:
+        """Retourne l'étalonnage du clip, ou de son nœud ``node_id`` (neutre si manquant)."""
+        return self.get_graph(project, clip_id).node_or_first(node_id).grade
+
+    def get_graph(self, project, clip_id: str):
+        """Les nœuds d'étalonnage du clip (un seul, ``n1``, s'il n'a qu'un réglage)."""
+        from .color_nodes import as_graph
+
         clip = self._find_clip(project, clip_id)
         if clip is None:
             raise ColorGradingError(f"Clip '{clip_id}' introuvable.")
-        return _color_grade_or_default(getattr(clip, "color_grade", None))
+        return as_graph(getattr(clip, "color_grade", None))
 
     def set_grade(
-        self, project, clip_id: str, grade: ColorGrade | None,
+        self, project, clip_id: str, grade: ColorGrade | None, node_id: str | None = None,
     ) -> ColorGrade:
-        """Définit l'étalonnage d'un clip."""
+        """Définit l'étalonnage d'un clip (de son nœud ``node_id``)."""
+        value = grade or ColorGrade.identity()
+        self.edit_nodes(project, clip_id, lambda graph: graph.with_grade(graph.node_or_first(node_id).id, value))
+        return value
+
+    def edit_nodes(self, project, clip_id: str, change):
+        """Applique ``change`` (graphe → graphe) aux nœuds du clip ; rend le nouveau graphe.
+
+        Lève :class:`ColorGradingError` (clip absent, verrouillé) ou
+        :class:`core.node_graph.NodeGraphError` (opération refusée).
+        """
+        from .color_nodes import simplify
+
         clip = self._find_clip(project, clip_id)
         if clip is None:
             raise ColorGradingError(f"Clip '{clip_id}' introuvable.")
@@ -1329,24 +1431,25 @@ class ColorGradingService:
             raise ColorGradingError(
                 f"Le clip '{clip_id}' est verrouillé."
             )
-        object.__setattr__(clip, "color_grade", grade or ColorGrade.identity())
-        return clip.color_grade
+        graph = change(self.get_graph(project, clip_id))
+        object.__setattr__(clip, "color_grade", simplify(graph))
+        return graph
 
-    def reset_grade(self, project, clip_id: str) -> ColorGrade:
-        """Réinitialise l'étalonnage d'un clip à l'identité."""
-        return self.set_grade(project, clip_id, ColorGrade.identity())
+    def reset_grade(self, project, clip_id: str, node_id: str | None = None) -> ColorGrade:
+        """Réinitialise l'étalonnage d'un clip (de son nœud ``node_id``) à l'identité."""
+        return self.set_grade(project, clip_id, ColorGrade.identity(), node_id)
 
     def apply_preset(
-        self, project, clip_id: str, preset: ColorPreset,
+        self, project, clip_id: str, preset: ColorPreset, node_id: str | None = None,
     ) -> ColorGrade:
         """Applique un preset au clip (en gardant le LUT s'il y en a un)."""
         if preset is None:
             raise ColorGradingError("Le preset est obligatoire.")
         # Les presets intégrés n'embarquent pas de LUT et préservent donc
         # celui du clip. Un preset utilisateur qui en contient un l'applique.
-        current = self.get_grade(project, clip_id)
+        current = self.get_grade(project, clip_id, node_id)
         merged = preset.grade.with_lut(preset.grade.lut or current.lut)
-        return self.set_grade(project, clip_id, merged)
+        return self.set_grade(project, clip_id, merged, node_id)
 
     def _find_clip(self, project, clip_id: str):
         # Petite méthode utilitaire : on cherche le clip dans toutes
@@ -1389,6 +1492,9 @@ __all__ = [
     "SHADOWS_MIN",
     "TEMPERATURE_MAX",
     "TEMPERATURE_MIN",
+    "WHEELS",
+    "WHEEL_MAX",
+    "WHEEL_MIN",
     # Modèles
     "ColorCurve",
     "ColorCurves",
@@ -1397,6 +1503,7 @@ __all__ = [
     "ColorPresetCategory",
     "ColorPresetStore",
     "LUTResource",
+    "Wheel",
     # Helpers
     "builtin_color_preset_ids",
     "builtin_color_presets",
@@ -1407,6 +1514,8 @@ __all__ = [
     "make_color_preset",
     "make_user_color_preset",
     "save_color_preset_data",
+    "wheels_from_dict",
+    "wheels_to_dict",
     # Service
     "ColorGradingService",
 ]

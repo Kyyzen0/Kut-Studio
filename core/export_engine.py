@@ -2195,6 +2195,8 @@ def _build_color_grade_filters(grade) -> str:
     2. ``colorbalance`` — température + teinte + ombres + hautes
        lumières. Émis uniquement si non neutres, pour ne pas allonger
        la chaîne inutilement.
+    2 bis. ``lutrgb`` — roues lift / gamma / gain / offset
+       (:mod:`core.color_wheels`), uniquement si une roue a bougé.
     3. ``curves`` — courbes master / R / V / B. Émises uniquement si
        la courbe s'écarte de l'identité (tolérance 1e‑3).
     4. ``lut3d`` — application du LUT ``.cube``. Émise uniquement si
@@ -2206,7 +2208,8 @@ def _build_color_grade_filters(grade) -> str:
     d'étalonnage (eq → colorbalance → courbes → LUT).
 
     Args:
-        grade: instance de :class:`ColorGrade` ou ``None`` (identité).
+        grade: instance de :class:`ColorGrade`, graphe de nœuds
+            (:class:`core.color_nodes.ColorNodeGraph`) ou ``None`` (identité).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
@@ -2214,7 +2217,13 @@ def _build_color_grade_filters(grade) -> str:
     """
     # Import paresseux pour éviter les cycles d'imports.
     from .color_grading import ColorGrade
+    from .color_nodes import ColorNodeGraph
+    from .color_wheels import wheels_filter
 
+    if isinstance(grade, ColorNodeGraph):
+        # Nœuds en série : la chaîne de chaque nœud actif, dans l'ordre (un
+        # graphe d'un seul nœud rend donc les pixels de son ColorGrade).
+        return ",".join(_build_color_grade_filters(node.grade) for node in grade.order() if node.is_active())
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:
@@ -2261,6 +2270,11 @@ def _build_color_grade_filters(grade) -> str:
             f"rh={_format_seconds(highlight)}:gh={_format_seconds(highlight)}:"
             f"bh={_format_seconds(highlight)}"
         )
+    # 2 bis. roues lift / gamma / gain / offset : une table exacte par canal
+    # (``lutrgb``), émise seulement si une roue a bougé.
+    wheels = wheels_filter(grade)
+    if wheels:
+        filters.append(wheels)
     # 3. courbes par canal : on émet un filtre ``curves`` par canal
     # actif (s'écarte de l'identité). Les courbes master / R / V / B
     # sont composées : FFmpeg applique la première au signal

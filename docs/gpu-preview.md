@@ -319,11 +319,14 @@ Le GPU réel s'écarte de cette référence de moins de 1/255 en moyenne.
 
 ### Étalonnage : la chaîne de l'export, cuite en LUT 3D
 
-L'export étalonne un calque avec `eq` → `colorbalance` → `curves` → `lut3d`
-(`_build_color_grade_filters`). Réécrire ces quatre filtres en shader aurait fait
+L'export étalonne un calque avec `eq` → `colorbalance` → `lutrgb` (roues lift /
+gamma / gain / offset) → `curves` → `lut3d` (`_build_color_grade_filters`) ; un
+clip étalonné par nœuds enchaîne cette suite nœud après nœud (voir
+[color.md](color.md)). Réécrire ces filtres en shader aurait fait
 diverger le moniteur au premier détail (arrondis 8 bits d'`eq`, interpolation de
 `curves`, `lut3d` tétraédrique…). Le moniteur ne les réécrit donc pas
-(`core/gpu_grade.py`) :
+(`core/gpu_grade.py`), et la chaîne entière, quel que soit le nombre de nœuds,
+tient dans **une** LUT :
 
 1. un **réseau de couleurs** — 52³ nœuds, des codes 8 bits entiers (multiples de
    5) dans l'espace d'entrée du calque — passe dans **cette chaîne exacte**, par

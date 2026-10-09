@@ -140,6 +140,8 @@ _LOANWORDS = {
     "Trackers", "Template", "Tempo", "Light leak", "Flash", "Bloom", "Grain", "Whoosh", "Drop", "SPRINT 🔥",
     "Tracking {direction} ({trackers})", "Vectorscope", "Vignette", "Vintage", "Viewer", "Waveform", "Zoom",
     "{label} · transform",
+    # Roues d'étalonnage : les logiciels d'étalonnage gardent ces noms anglais en français et en espagnol.
+    "Lift", "Gamma", "Gain", "Offset",
 }
 # Cognats : le mot s'écrit pareil en français et en anglais.
 _COGNATES_EN = {
@@ -150,7 +152,7 @@ _COGNATES_EN = {
     "Parent", "Source", "Transform", "Transitions", "TRANSITION", "Pause", "Compositing", "Transition",
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
-    "Vertical", "Portrait", "Impact", "Amplitude",
+    "Vertical", "Portrait", "Impact", "Amplitude", "Pages",
 }
 # Cognats français / espagnol.
 _COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante"}

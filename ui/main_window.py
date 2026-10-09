@@ -40,7 +40,7 @@ from core.audio_recorder import AudioRecorder
 from core.timeline_editing import apply_solo
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
-from core.workspace_state import PanelId
+from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PanelId
 from core.timeline_operations import find_clip
 from core.timeline_evaluator import (
     timeline_duration,
@@ -83,6 +83,7 @@ from ui.main_window_mixins.presets import PresetsMixin
 from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
+from ui.main_window_mixins.color_page import ColorPageMixin
 from ui.main_window_mixins.multicam import MulticamMixin
 from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
 from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
@@ -145,6 +146,7 @@ class MainWindow(
     MulticamMixin,
     MulticamCreationMixin,
     MulticamSettingsMixin,
+    ColorPageMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -638,6 +640,8 @@ class MainWindow(
         self.history_panel = HistoryPanel()
         self.history_panel.entries_provider = lambda: self.history.entries()
         self.history_panel.state_requested.connect(self.go_to_history_state)
+        # Page Couleur : nœuds d'étalonnage et roues du clip affiché par l'inspecteur.
+        self._init_color_page()
         self.workspace = WorkspaceManager(self)
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
@@ -648,6 +652,7 @@ class MainWindow(
         self.workspace.register(PanelId.TIMELINE, self.timeline_panel)
         self.workspace.register(PanelId.MIXER, self.mixer_panel)
         self.workspace.register(PanelId.HISTORY, self.history_panel)
+        self.workspace.register(PanelId.COLOR, self.color_panel)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
@@ -737,12 +742,14 @@ class MainWindow(
         - ``media`` : on affiche le panneau Médias ;
         - ``audio`` / ``text`` / ``effects`` / ``transitions`` : on rend
           le panneau Médias visible et on y affiche le contenu demandé ;
-        - ``color`` / ``graphics`` : on ouvre directement l'onglet
-          correspondant de l'inspecteur ;
-        - ``edit`` / ``templates`` :
-          aucune action concrète disponible aujourd'hui — on laisse
-          l'état actif visuellement et on affiche un message discret
-          pour rester honnête vis-à-vis de l'utilisateur.
+        - ``color`` : la page Couleur (nœuds, roues, scopes, onglet
+          Couleur de l'inspecteur) ; ``edit`` : la page Montage ; toute
+          autre section ramène au Montage, où vivent ses outils ;
+        - ``graphics`` : on ouvre directement l'onglet correspondant de
+          l'inspecteur ;
+        - ``templates`` : aucune action concrète disponible aujourd'hui —
+          on laisse l'état actif visuellement et on affiche un message
+          discret pour rester honnête vis-à-vis de l'utilisateur.
         """
         # Le rail et la navigation supérieure représentent les mêmes
         # espaces de travail. La synchronisation est bidirectionnelle :
@@ -759,13 +766,15 @@ class MainWindow(
             for index, button in enumerate(self.top_nav_buttons):
                 button.setChecked(index == top_nav_index)
 
-        inspector_tab = {"color": 1, "audio": 3, "graphics": 4}.get(section_id)
+        self.switch_page(PAGE_COLOR if section_id == "color" else PAGE_EDIT)
+        if section_id in ("color", "edit"):
+            return
+
+        inspector_tab = {"audio": 3, "graphics": 4}.get(section_id)
         if inspector_tab is not None:
             if not self.workspace.is_visible(PanelId.INSPECTOR):
                 self.workspace.set_panel_visible(PanelId.INSPECTOR, True)
             self.properties_panel._select_inspector_tab(inspector_tab)
-            if section_id == "color":
-                return
 
         if section_id in (
             "media", "audio", "text", "effects", "transitions", "graphics", "sequences"
@@ -1072,6 +1081,9 @@ class MainWindow(
         saved_layout.addWidget(self.saved_indicator)
         layout.addWidget(sequence_box)
         layout.addWidget(saved_box)
+        layout.addStretch(1)
+        # --- Pages (Montage | Couleur), au centre ---------------------
+        layout.addWidget(self._build_page_switcher())
         layout.addStretch(1)
 
         # --- Historique, disposition, réglages et export ---------------
@@ -1486,6 +1498,10 @@ class MainWindow(
         reset_action = self._labelled_action("menu.item.reset_layout")
         reset_action.triggered.connect(self.reset_workspace_layout)
         window_menu.addAction(reset_action)
+        window_menu.addSeparator()
+        # Pages (Montage, Couleur) : aussi au centre de la barre supérieure.
+        for page in ("edit", "color"):
+            window_menu.addAction(self._command_action(f"page_{page}", f"shortcuts.command.page_{page}"))
         window_menu.addSeparator()
         # Scopes de monitoring couleur (tâche 31). L'action reste
         # checkable pour refléter l'état du splitter sans qu'on ait à
@@ -2124,6 +2140,7 @@ class MainWindow(
             "zoom_fit": lambda: timeline().fit_timeline(),
             "toggle_scopes": self.toggle_scopes_visible,
             "preferences": self.show_preferences,
+            **self._page_shortcut_handlers(),
             # Audio
             "audio_record_toggle": lambda: timeline().record_button.click(),
             "audio_master_mute": self.toggle_master_mute,
@@ -2261,6 +2278,7 @@ class MainWindow(
         for button, key in zip(self.top_nav_buttons, self._TOP_NAV_KEYS):
             button.setText(i18n.translate(key))
         self._retranslate_update_notice()
+        self._retranslate_page_switcher()
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:
