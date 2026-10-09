@@ -75,19 +75,82 @@ def test_serial_editing_keeps_a_single_chain():
     graph, second = as_graph(WARM).with_node_after("n1", DESATURATED)
     graph, third = graph.with_node_after("n1")                        # inséré entre n1 et n2
     assert [node.id for node in graph.order()] == ["n1", third, second]
-    assert graph.links == (NodeLink("n1", third), NodeLink(third, second))
+    assert set(graph.links) == {NodeLink("n1", third), NodeLink(third, second)}
     moved = graph.moved(second, 0)
     assert [node.id for node in moved.order()] == [second, "n1", third]
     closed = graph.without(third)
-    assert closed.links == (NodeLink("n1", second),), "la chaîne se referme"
+    assert set(closed.links) == {NodeLink("n1", second)}, "la chaîne se referme"
     with pytest.raises(NodeGraphError):
         as_graph(WARM).without("n1")
 
 
-def test_a_colour_graph_refuses_parallel_links_until_step_two():
+def test_branches_that_never_meet_again_or_a_node_with_two_inputs_are_refused():
+    """Deux sorties (branches sans mélangeur), un correcteur à deux entrées, un mélangeur à une seule branche."""
+    from core.color_nodes import ColorMixer
+
     nodes = (ColorNode("n1"), ColorNode("n2"), ColorNode("n3"))
+    for links in ((NodeLink("n1", "n2"), NodeLink("n1", "n3")),
+                  (NodeLink("n1", "n3", 0), NodeLink("n2", "n3", 1))):
+        with pytest.raises(NodeGraphError):
+            ColorNodeGraph(nodes=nodes, links=links)
     with pytest.raises(NodeGraphError):
-        ColorNodeGraph(nodes=nodes, links=(NodeLink("n1", "n2"), NodeLink("n1", "n3")))
+        ColorNodeGraph(nodes=(*nodes[:2], ColorMixer("m1")), links=(NodeLink("n1", "n2"), NodeLink("n2", "m1")))
+
+
+def test_a_branch_gets_a_mixer_and_more_branches_join_it():
+    from core.color_nodes import MixerKind
+
+    graph, second = as_graph(WARM).with_node_after("n1")
+    graph, third = graph.with_branch(second, MixerKind.PARALLEL)
+    mixer = graph.mixers[0]
+    assert graph.split_point(mixer.id) == "n1" and graph.sink.id == mixer.id
+    assert [link.source for link in graph.inputs(mixer.id)] == [second, third]
+    graph, fourth = graph.with_branch(third, MixerKind.PARALLEL)
+    assert len(graph.mixers) == 1 and [link.source for link in graph.inputs(mixer.id)] == [second, third, fourth]
+    layered, top = graph.with_branch(fourth, MixerKind.LAYER)
+    assert {item.kind for item in layered.mixers} == {MixerKind.PARALLEL, MixerKind.LAYER}, "un autre type s'imbrique"
+    assert layered.split_point(next(item.id for item in layered.mixers if item.kind is MixerKind.LAYER)) == "n1"
+    after, fifth = graph.with_node_after(None)
+    assert after.sink.id == fifth and after.input_of(fifth) == mixer.id, "en fin de chaîne : après le mélangeur"
+    assert [node.id for node in graph.correctors] and graph.node_or_first(mixer.id).id == "n1", "un mélangeur ne se règle pas"
+
+
+def test_deleting_a_branch_node_closes_the_mixer_when_one_branch_is_left():
+    from core.color_nodes import MixerKind
+
+    graph, second = as_graph(WARM).with_branch("n1", MixerKind.PARALLEL)
+    graph, third = graph.with_branch(second, MixerKind.PARALLEL)
+    fewer = graph.without(third)
+    assert [link.port for link in fewer.inputs(fewer.mixers[0].id)] == [0, 1], "les entrées restent 0, 1"
+    single = fewer.without(second)
+    assert not single.mixers and [node.id for node in single.nodes] == ["n1"]
+    deep, inner = graph.with_node_after(second)
+    assert deep.input_of(inner) == second and deep.without(second).input_of(inner) is None, "la branche continue"
+
+
+def test_a_node_moves_along_its_own_serial_run_only():
+    from core.color_nodes import MixerKind
+
+    graph, second = as_graph(WARM).with_node_after("n1")
+    graph, third = graph.with_node_after(second)
+    graph, branch = graph.with_branch(third, MixerKind.PARALLEL)
+    # ``branch`` a la même entrée que ``third`` : la série s'arrête là où ``second`` alimente deux branches.
+    assert graph.serial_run(second) == ["n1", second] and graph.serial_run(third) == [third]
+    moved = graph.moved(second, 0)
+    assert [node.id for node in moved.order()][:2] == [second, "n1"]
+    assert moved.split_point(moved.mixers[0].id) == "n1", "les branches partent du nœud qui est maintenant devant elles"
+    assert graph.moved(third, 5) is graph, "seul dans sa suite : rien ne bouge"
+
+
+def test_a_qualifier_or_a_mixer_keeps_the_graph_form_and_luts_are_mapped_through_mixers(tmp_path):
+    from core.color_nodes import MixerKind, map_grades
+    from core.color_qualifier import Qualifier
+
+    qualified = as_graph(WARM).with_qualifier("n1", Qualifier(lum_low=0.5))
+    assert simplify(qualified) is qualified, "un qualifieur se garde"
+    graph, other = as_graph(WARM).with_branch("n1", MixerKind.LAYER)
+    mapped = map_grades(graph, lambda grade: grade.with_field("contrast", 0.1))
+    assert mapped.mixers == graph.mixers and all(node.grade.contrast == 0.1 for node in mapped.correctors)
 
 
 def test_the_export_chains_the_active_nodes_in_order():

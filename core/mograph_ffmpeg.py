@@ -77,8 +77,11 @@ def _effect_chain(effects, grade, *, preserve_alpha: bool, pixel_scale: float = 
             chain.append(f"__ALPHA_SAFE__{text}")
         else:
             chain.append(f"format=yuva444p,{text}")
-    grade_text = _build_color_grade_filters(grade) if grade is not None else ""
-    if grade_text:
+    grade_text = _build_color_grade_filters(grade, tag=f"{label}cg") if grade is not None else ""
+    if grade_text and preserve_alpha and ";" in grade_text:
+        # Nœuds à branches : leurs mélanges travaillent en RVB sans alpha ; l'alpha du calque passe à côté.
+        chain.append(f"__ALPHA_SAFE__{grade_text}")
+    elif grade_text:
         chain.append(grade_text if not preserve_alpha else f"format=yuva444p,{grade_text}")
     return chain
 

@@ -75,7 +75,7 @@ def lut_key(grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_rang
 
     chain = grade_filters(grade)
     stamps = []
-    for lut in luts_of(grade):                               # un par nœud qui en a un
+    for lut in luts_of(getattr(grade, "graph", grade)):     # un par nœud qui en a un (sélection montrée comprise)
         path = lut.source_path or lut.path
         if not path:
             continue
