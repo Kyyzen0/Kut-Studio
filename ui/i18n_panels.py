@@ -18,6 +18,7 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     "workspace.panel.media": _t("Médias", "Media", "Medios"),
     "workspace.panel.inspector": _t("Inspecteur", "Inspector", "Inspector"),
     "workspace.panel.mixer": _t("Mixeur", "Mixer", "Mezclador"),
+    "workspace.panel.history": _t("Historique", "History", "Historial"),
     "workspace.area.left": _t("Zone gauche", "Left area", "Zona izquierda"),
     "workspace.area.center": _t("Zone centrale", "Centre area", "Zona central"),
     "workspace.area.right": _t("Zone droite", "Right area", "Zona derecha"),

@@ -50,6 +50,7 @@ class PanelId(str, Enum):
     MEDIA = "media"
     INSPECTOR = "inspector"
     MIXER = "mixer"
+    HISTORY = "history"
 
     def label(self) -> str:
         """Nom lisible du panneau (utilisé dans les menus)."""
@@ -62,6 +63,7 @@ _PANEL_LABELS: dict[PanelId, str] = {
     PanelId.MEDIA: "Médias",
     PanelId.INSPECTOR: "Inspecteur",
     PanelId.MIXER: "Mixeur",
+    PanelId.HISTORY: "Historique",
 }
 
 
@@ -83,6 +85,8 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
     # Le mixeur démarre replié : il n'occupe de la place que lorsque
     # l'utilisateur l'ouvre, sans leAnon disruptive pour l'édition.
     PanelId.MIXER: DockArea.BOTTOM,
+    # L'historique aussi : une colonne à droite, ouverte depuis le menu Fenêtre.
+    PanelId.HISTORY: DockArea.RIGHT,
 }
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
@@ -92,6 +96,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.INSPECTOR: 300,
     PanelId.TIMELINE: 300,
     PanelId.MIXER: 320,
+    PanelId.HISTORY: 240,
 }
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
@@ -101,10 +106,11 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.INSPECTOR: 280,
     PanelId.TIMELINE: 240,
     PanelId.MIXER: 320,
+    PanelId.HISTORY: 200,
 }
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
-DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER})
+DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY})
 
 #: Taille de la barre d'outils d'options d'un panneau (px).
 PANEL_TOOLBAR_SIZE: int = 28

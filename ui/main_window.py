@@ -633,6 +633,11 @@ class MainWindow(
         # la disposition. Il enregistre les quatre panneaux existants
         # (mêmes objets, mêmes signaux) puis compose les zones dock.
         self.mixer_panel = MixerPanel()
+        from ui.history_panel import HistoryPanel
+
+        self.history_panel = HistoryPanel()
+        self.history_panel.entries_provider = lambda: self.history.entries()
+        self.history_panel.state_requested.connect(self.go_to_history_state)
         self.workspace = WorkspaceManager(self)
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
@@ -642,6 +647,7 @@ class MainWindow(
         self.workspace.register(PanelId.INSPECTOR, self.properties_panel)
         self.workspace.register(PanelId.TIMELINE, self.timeline_panel)
         self.workspace.register(PanelId.MIXER, self.mixer_panel)
+        self.workspace.register(PanelId.HISTORY, self.history_panel)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
@@ -2231,6 +2237,7 @@ class MainWindow(
         mixer = getattr(self, "mixer_panel", None)
         if mixer is not None:
             mixer.update_translations()
+        self.history_panel.retranslate()
         self._sync_workspace_menu()
         self.timeline_panel.sequence_bar.retranslate()
         self.project_panel.sequence_view.retranslate()

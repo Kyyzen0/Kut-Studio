@@ -100,6 +100,9 @@ class HistoryMixin:
             self.undo_button.setEnabled(self.history.can_undo)
         if hasattr(self, "redo_button"):
             self.redo_button.setEnabled(self.history.can_redo)
+        panel = getattr(self, "history_panel", None)
+        if panel is not None:
+            panel.refresh()                  # fermé ou déjà détruit (fermeture de la fenêtre) : rien
         self._refresh_history_tooltips()
         # Synchronise le flag ``project_dirty`` avec l'historique.
         self.project_dirty = self.history.is_dirty
@@ -146,6 +149,14 @@ class HistoryMixin:
         """Annule la dernière opération enregistrée."""
         self._finalize_pending_edit_sessions()
         snapshot = self.history.undo()
+        if snapshot is None:
+            return
+        self._apply_history_snapshot(snapshot, self.history.undo_label or "")
+
+    def go_to_history_state(self, index: int) -> None:
+        """Revient à l'état ``index`` du panneau Historique, en une fois (autant d'Annuler ou de Rétablir)."""
+        self._finalize_pending_edit_sessions()
+        snapshot = self.history.go_to(index)
         if snapshot is None:
             return
         self._apply_history_snapshot(snapshot, self.history.undo_label or "")

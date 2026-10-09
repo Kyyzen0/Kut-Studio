@@ -31,6 +31,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Optional
 
 from .project_model import Project
@@ -38,6 +39,25 @@ from .project_model import Project
 
 MAX_HISTORY = 100
 """Nombre maximal d'opérations conservées dans l'historique."""
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """Un état de l'historique, tel que le panneau Historique le montre.
+
+    Attributes:
+        index: rang de l'état, du plus ancien (0, l'état initial) au plus récent (voir :meth:`ProjectHistory.entries`).
+        label: libellé de l'opération qui a produit cet état (vide pour l'état initial).
+        current: c'est l'état affiché.
+        undone: l'état a été annulé ; il reste rétablissable jusqu'à la prochaine édition.
+        saved: c'est l'état du fichier ``.kut`` sur disque.
+    """
+
+    index: int
+    label: str
+    current: bool
+    undone: bool
+    saved: bool
 
 
 class ProjectHistory:
@@ -216,6 +236,52 @@ class ProjectHistory:
         next_snapshot = self._redo_stack.pop()
         self._undo_stack.append(next_snapshot)
         restored = _deepcopy_project(next_snapshot.project)
+        self._project = restored
+        return restored
+
+    def entries(self) -> list[HistoryEntry]:
+        """Les états de l'historique, du plus ancien au plus récent.
+
+        D'abord ceux de la pile d'annulation (le dernier est l'état courant), puis ceux qu'on peut rétablir, dans
+        l'ordre où :meth:`redo` les rendrait. L'état initial est le premier (``index`` 0, libellé vide).
+        """
+        current = len(self._undo_stack) - 1
+        states = [*self._undo_stack, *reversed(self._redo_stack)]
+        return [
+            HistoryEntry(
+                index=index,
+                label=state.label if index > 0 else "",
+                current=index == current,
+                undone=index > current,
+                saved=index == self._saved_index,
+            )
+            for index, state in enumerate(states)
+        ]
+
+    def go_to(self, index: int) -> Optional[Project]:
+        """Revient à l'état ``index`` de :meth:`entries`, en une fois.
+
+        Autant d'annulations (``index`` antérieur) ou de rétablissements (``index`` dans la branche annulée) qu'il en
+        faut, mais une seule copie du projet : sauter vingt étapes ne copie pas vingt projets. Les états entre les deux
+        restent rétablissables. Comme pour :meth:`undo`, on reste dans la séquence de l'opération annulée la plus proche
+        de l'état visé.
+
+        Returns:
+            Le projet restauré, ou ``None`` si ``index`` est l'état courant ou n'existe pas.
+        """
+        current = len(self._undo_stack) - 1
+        if not 0 <= index < current + 1 + len(self._redo_stack) or index == current:
+            return None
+        self._merge_key = None
+        if index < current:
+            for _step in range(current - index):
+                self._redo_stack.append(self._undo_stack.pop())
+            restored = _deepcopy_project(self._undo_stack[-1].project)
+            _keep_active_sequence(restored, self._redo_stack[-1].project.active_sequence_id)
+        else:
+            for _step in range(index - current):
+                self._undo_stack.append(self._redo_stack.pop())
+            restored = _deepcopy_project(self._undo_stack[-1].project)
         self._project = restored
         return restored
 
