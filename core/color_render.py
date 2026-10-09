@@ -33,7 +33,8 @@ from .color_grading import ColorGrade
 from .color_nodes import ColorMixer, ColorNode, ColorNodeGraph, MixerKind
 from .color_qualifier import key_cube_path
 
-GREY_HIGHLIGHT = "colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11,lutrgb=r='val*0.45+20':g='val*0.45+20':b='val*0.45+20'"
+GREY_HIGHLIGHT = ("colorchannelmixer=.3:.59:.11:0:.3:.59:.11:0:.3:.59:.11,"
+                  "lutrgb=r='val*0.45+0.08*maxval':g='val*0.45+0.08*maxval':b='val*0.45+0.08*maxval'")
 """Hors sélection (mode « afficher la sélection ») : la luminance, assombrie, en gris."""
 
 

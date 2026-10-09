@@ -231,7 +231,7 @@ def test_an_effects_layer_with_branched_nodes_keeps_the_picture_under_it(tmp_pat
 def test_the_monitor_bakes_a_branched_graph_and_shows_the_selection(tmp_path):
     graph, top = as_graph(WARM).with_branch("n1", MixerKind.PARALLEL)
     graph = graph.with_grade(top, GREY).with_qualifier(top, BLUES)
-    plain = atlas_array(bake_grade_lut(ColorGrade(), domain=DOMAIN_RGB))
+    plain = atlas_array(bake_grade_lut(ColorGrade(contrast=0.001), domain=DOMAIN_RGB))     # (presque) neutre
     baked = atlas_array(bake_grade_lut(graph, domain=DOMAIN_RGB))
     shown = atlas_array(bake_grade_lut(Highlight(graph, top), domain=DOMAIN_RGB))
     assert np.abs(baked - plain).mean() * 255 > 5

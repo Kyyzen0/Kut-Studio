@@ -60,12 +60,29 @@ def test_the_shadows_and_highlights_sliders_change_the_picture(tmp_path):
 
 
 @needs_ffmpeg
-def test_temperature_still_warms_without_changing_the_lightness(tmp_path):
-    """Température : rouge plus, bleu moins ; décalages opposés, la luminosité (max + min) ne bouge pas.
+@pytest.mark.parametrize("color", ["0x5A4632", "0x808080", "0xC8C0B8"], ids=["sombre", "gris-moyen", "clair"])
+def test_temperature_warms_every_tone_without_changing_its_luminance(tmp_path, color):
+    """Température : une balance des blancs sur toute l'image (rouge plus, bleu moins), la luminance Rec. 709 garde sa
+    valeur. Jusqu'au 2026-10-10 elle passait par les tons moyens de ``colorbalance``, nuls dès que max + min dépasse
+    ≈ 202 : un gris moyen (128) ou un ton clair ne se réchauffaient pas du tout."""
+    source = _rendered(tmp_path, color, None)
+    warm = _rendered(tmp_path, color, ColorGrade(temperature=40.0))
+    assert warm[0] > source[0] + 5 and warm[2] < source[2] - 5, (source, warm)
+    luma = np.array([0.2126, 0.7152, 0.0722])
+    assert abs(warm @ luma - source @ luma) < 2.0, (source @ luma, warm @ luma)
 
-    Un ton moyen au sens de ``colorbalance`` : son poids de « tons moyens » dépend de max + min (pas de leur moyenne),
-    et s'annule au-dessus de ≈ 200 (un (140, 110, 90) n'y est plus)."""
-    source = _rendered(tmp_path, "0x5A4632", None)
-    warm = _rendered(tmp_path, "0x5A4632", ColorGrade(temperature=40.0))
-    assert warm[0] > source[0] + 5 and warm[2] < source[2] - 5
-    assert abs((warm.max() + warm.min()) - (source.max() + source.min())) < 4
+
+@needs_ffmpeg
+def test_hue_rotates_the_colours():
+    """Teinte : une rotation (un rouge passe vers le jaune, un bleu vers le magenta), pas un second réglage de
+    température (jusqu'au 2026-10-10, la teinte décalait le rouge et le bleu comme elle)."""
+    import subprocess
+
+    pixels = np.array([[[220, 40, 40], [40, 40, 220]]], dtype=np.uint8)
+    chain = _build_color_grade_filters(ColorGrade(hue=40.0))
+    done = subprocess.run(["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "2x1", "-i", "-",
+                           "-vf", chain, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], input=pixels.tobytes(),
+                          capture_output=True, check=True)
+    red, blue = np.frombuffer(done.stdout, np.uint8).reshape(2, 3).astype(int)
+    assert red[1] > 60 and red[2] < 60, f"le rouge tourne vers le jaune : {red}"
+    assert blue[0] > 60 and blue[1] < 60, f"le bleu tourne vers le magenta : {blue}"
