@@ -127,3 +127,11 @@ def test_no_waveform_is_invented_before_the_envelope_is_ready(timeline):
     widget = panel.clip_widgets["c"]
     widget.repaint()
     assert getattr(widget, "_waveform_polygon", None) is None
+
+
+def test_a_speed_curve_that_turns_back_reads_each_column_between_its_own_edges():
+    """Une courbe de vitesse peut passer en négatif : le temps du média repart en arrière au milieu du clip."""
+    envelope = AudioEnvelope(500, bytes([0, 10, 255, 20, 0, 0, 90, 0]))
+    # Aller jusqu'à 14 ms, puis retour : chaque colonne lit sa propre tranche, pas une crête voisine.
+    edges = [0.0, 0.004, 0.008, 0.014, 0.010, 0.006, 0.002]
+    assert column_peaks(envelope, edges) == pytest.approx([10 / 255, 1.0, 90 / 255, 90 / 255, 20 / 255, 1.0])

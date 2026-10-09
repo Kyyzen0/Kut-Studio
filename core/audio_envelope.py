@@ -121,25 +121,45 @@ def _peaks(samples, *, partial: bool = False) -> bytes:
 
 def column_peaks(envelope: AudioEnvelope, edges: Sequence[float], *, gain: float = 1.0) -> list[float]:
     """Crête (0 à 1) de chaque colonne dont ``edges`` donne les bornes en secondes du média (``len(edges) - 1``
-    colonnes). Les bornes vont dans un seul sens (un clip inversé les donne décroissantes) ; une colonne plus étroite
-    qu'une crête prend la crête qui la contient ; au-delà de la fin du média, 0 (rien d'inventé). ``gain`` : facteur
-    linéaire du clip, plafonné à la pleine échelle."""
+    colonnes). Les bornes peuvent changer de sens (clip inversé, courbe de vitesse qui passe en négatif) : chaque
+    colonne couvre la tranche de média entre ses deux bornes ; une colonne plus étroite qu'une crête prend la crête qui
+    la contient ; au-delà de la fin du média, 0 (rien d'inventé). ``gain`` : facteur linéaire du clip, plafonné à la
+    pleine échelle."""
     import numpy as np
 
     if len(edges) < 2 or not envelope:
         return []
-    peaks = np.frombuffer(envelope.peaks, dtype=np.uint8)
+    peaks = np.append(np.frombuffer(envelope.peaks, dtype=np.uint8), np.uint8(0))
     times = np.asarray(edges, dtype=np.float64)
-    reverse = bool(times[-1] < times[0])
-    if reverse:
-        times = times[::-1]
-    # Crêtes ``[i, i + 1)`` de chaque colonne : ``reduceat`` prend le maximum de chaque tranche, et la crête de départ
-    # quand la tranche est vide (colonne plus fine qu'une crête). La sentinelle nulle, juste après la dernière crête,
-    # est ce que voit une colonne au-delà de la fin du média.
-    index = np.clip(np.floor(times * envelope.rate).astype(np.int64), 0, len(peaks))
-    values = np.maximum.reduceat(np.append(peaks, np.uint8(0)), index)[:-1]
+    index = np.clip(np.floor(times * envelope.rate).astype(np.int64), 0, len(peaks) - 1)
+    # Un sens à la fois : ``reduceat`` exige des bornes ordonnées. Les colonnes sont découpées là où le temps du média
+    # change de sens ; chaque tronçon est monotone.
+    steps = np.sign(np.diff(index))
+    turns = [0]
+    direction = 0
+    for position, step in enumerate(steps):
+        if step and direction and step != direction:
+            turns.append(position)
+        if step:
+            direction = step
+    turns.append(len(index) - 1)
+    values = np.concatenate([_run_peaks(peaks, index[a:b + 1]) for a, b in zip(turns, turns[1:])])
     result = np.minimum(1.0, values.astype(np.float64) / 255.0 * max(0.0, float(gain)))
-    return (result[::-1] if reverse else result).tolist()
+    return result.tolist()
+
+
+def _run_peaks(peaks, index):
+    """Crêtes des colonnes d'un tronçon monotone ``index`` (rangs de crêtes de ses bornes, croissants ou décroissants).
+
+    ``reduceat`` prend le maximum de chaque tranche ``[i, i + 1)``, et la crête de départ quand la tranche est vide
+    (colonne plus fine qu'une crête). La sentinelle nulle, juste après la dernière crête, est ce que voit une colonne
+    au-delà de la fin du média."""
+    import numpy as np
+
+    reverse = bool(index[-1] < index[0])
+    ordered = index[::-1] if reverse else index
+    values = np.maximum.reduceat(peaks, ordered)[:-1]
+    return values[::-1] if reverse else values
 
 
 __all__ = [

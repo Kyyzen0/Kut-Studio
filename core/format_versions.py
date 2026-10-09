@@ -7,14 +7,16 @@ séquence d'origine (``Sequence.format_source``) pour être retrouvée, réutili
 
 Mise en page, des règles simples et prévisibles :
 
-1. **Plans vidéo plein cadre** (échelle ≥ 1, au centre) : cadrage « remplir », sans bandes. Une incrustation (image
-   dans l'image) garde sa taille relative au cadre.
+1. **Plans vidéo plein cadre** (échelle ≥ 1 du début à la fin, au centre, sans rotation) : cadrage « remplir », sans
+   bandes. Une incrustation (image dans l'image), ou un plan qui rétrécit ou tourne pendant le clip, garde sa taille
+   relative au cadre.
 2. **Calques graphiques** : toute leur mise en page est mise à l'échelle du nouveau cadre, d'un même facteur et autour
    du centre (« contenir » : ``min(L1/L0, H1/H0)``, 56 % du 9:16 au 1:1 ou au 16:9). Espacements et proportions sont
    gardés : les lignes d'un titre ne se tassent pas l'une sur l'autre quand le cadre perd de la hauteur.
 3. **Zones de la plateforme** (:data:`core.canvas_guides.PLATFORM_ZONES`) : un titre, une forme, un sticker qui
    tomberait sous l'interface (légende et boutons de TikTok…) est ramené dans la zone libre. Les calques qui se
-   chevauchent bougent ensemble (un bandeau et son texte), du même décalage, animation comprise. Les calques plein cadre
+   chevauchent bougent ensemble (un bandeau et son texte), du même décalage, animation comprise ; un groupe ou une
+   hiérarchie de calques bouge par sa racine, d'après l'étendue de tous ses calques. Les calques plein cadre
    (lumière, grain, fond) et les décors qui traversent le cadre ne bougent pas.
 """
 
@@ -113,11 +115,16 @@ def _fill_full_frame_clips(version: Sequence) -> list[LayoutChange]:
             continue
         for clip in track.clips:
             transform = clip.transform
-            animated_position = any(kf.property_name in ("position_x", "position_y") for kf in clip.transform_keyframes)
+            keyframes = clip.transform_keyframes
+            animated_position = any(kf.property_name in ("position_x", "position_y") for kf in keyframes)
+            # Un plan qui rétrécit (incrustation qui arrive) ou tourne pendant le clip n'est pas plein cadre ; un Ken
+            # Burns, qui ne fait que zoomer au-delà de 1, l'est.
+            shrinks = any(kf.property_name in ("scale", "scale_x", "scale_y") and kf.value < 0.999 for kf in keyframes)
+            turns = any(kf.property_name == "rotation" and kf.value for kf in keyframes)
             full_frame = (
                 min(transform.scale, transform.scale * transform.scale_x, transform.scale * transform.scale_y) >= 0.999
                 and abs(transform.position_x) < 1e-3 and abs(transform.position_y) < 1e-3
-                and not animated_position and not transform.rotation
+                and not animated_position and not transform.rotation and not shrinks and not turns
             )
             if full_frame and not transform.fill:
                 clip.transform = replace(transform, fill=True)
@@ -126,24 +133,50 @@ def _fill_full_frame_clips(version: Sequence) -> list[LayoutChange]:
 
 
 def _full_frame_layers(project: Project, sequence: Sequence) -> frozenset[str]:
-    """Calques de premier niveau qui couvrent le cadre de ``sequence`` (au moins :data:`FULL_FRAME_SHARE` dans les deux
-    sens, au milieu de leur durée), et les lumières (grain, fuites, flashs : dessinées sur tout le cadre)."""
-    scene = _scene_of(project, sequence)
+    """Racines (calques sans parent ni groupe) qui sont des **fonds** : ce qu'elles dessinent couvre le cadre de
+    ``sequence`` (au moins :data:`FULL_FRAME_SHARE` dans les deux sens, au milieu de leur durée), ou ne sont que de la
+    lumière (grain, fuites, flashs : dessinés sur tout le cadre). Un groupe se juge à ce que ses calques dessinent, pas
+    à sa boîte (celle d'un groupe est le cadre entier)."""
     covering = set()
-    for clip in _graphic_clips(sequence):
+    for root, (box, _span, _text, lights_only) in _root_extents(project, sequence, letters=False).items():
+        if lights_only or (box[2] - box[0] >= FULL_FRAME_SHARE and box[3] - box[1] >= FULL_FRAME_SHARE):
+            covering.add(root)
+    return frozenset(covering)
+
+
+def _root_extents(project: Project, sequence: Sequence, *, letters: bool) -> dict[str, tuple]:
+    """Par racine : rectangle normalisé de ce que dessinent la racine et ses descendants (au milieu de la durée de
+    chacun ; ``letters`` : les lettres d'un texte, sinon sa boîte), plage de temps, présence d'un texte, et si elle ne
+    dessine que de la lumière (alors son rectangle est le cadre). Un calque rattaché à un plan vidéo (il suit le plan)
+    n'a pas de racine graphique : il n'y figure pas."""
+    from .mograph_scene import map_box
+
+    scene = _scene_of(project, sequence)
+    clips = {clip.id: clip for clip in _graphic_clips(sequence)}
+    gathered: dict[str, list] = {}
+    for clip in clips.values():
         graphic = clip.graphic
-        if graphic.parent_id or graphic.group_id or clip.id not in scene.layers:
+        if clip.id not in scene.layers or graphic.is_container:
             continue
+        chain = scene.ancestors(clip.id)
+        root = chain[-1] if chain else clip.id
+        if root not in clips:
+            continue
+        entry = gathered.setdefault(root, [[], [], False, True])
+        entry[1].append((clip.timeline_start, clip.timeline_start + clip.duration))
         if graphic.type == GraphicType.LIGHT:
-            covering.add(clip.id)
             continue
         evaluated = scene.evaluate(clip.id, clip.timeline_start + clip.duration / 2.0)
-        from .mograph_scene import map_box
-
-        x0, y0, x1, y1 = map_box(evaluated.world, *evaluated.box)
-        if (x1 - x0) >= FULL_FRAME_SHARE * sequence.width and (y1 - y0) >= FULL_FRAME_SHARE * sequence.height:
-            covering.add(clip.id)
-    return frozenset(covering)
+        x0, y0, x1, y1 = _visible_extent(evaluated) if letters else map_box(evaluated.world, *evaluated.box)
+        entry[0].append((x0 / sequence.width, y0 / sequence.height, x1 / sequence.width, y1 / sequence.height))
+        entry[2] = entry[2] or graphic.type == GraphicType.TEXT
+        entry[3] = False
+    result = {}
+    for root, (boxes, spans, has_text, lights_only) in gathered.items():
+        box = (0.0, 0.0, 1.0, 1.0) if not boxes else (
+            min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+        result[root] = (box, (min(x for x, _y in spans), max(y for _x, y in spans)), has_text, lights_only)
+    return result
 
 
 def _scene_of(project: Project, sequence: Sequence):
@@ -175,8 +208,9 @@ def _fit_graphics(
 
     Les espacements et proportions entre calques sont gardés : rien ne se chevauche ni ne sort du cadre qui ne le
     faisait déjà. (Garder la taille des textes en pixels et la position en fraction du cadre tassait les lignes d'un
-    titre l'une sur l'autre dès que le cadre perdait de la hauteur : 9:16 vers 1:1 ou 16:9.) Les calques enfants
-    (parent, groupe) gardent leur décalage en pixels par rapport à leur parent, qui porte le facteur.
+    titre l'une sur l'autre dès que le cadre perdait de la hauteur : 9:16 vers 1:1 ou 16:9.) Un calque enfant (parent,
+    groupe) garde son décalage **dans le repère de son parent** : c'est le parent qui porte le facteur, et le groupe
+    entier change d'échelle d'un bloc (son décalage à l'écran suit le même facteur que tout le reste).
 
     Les fonds plein cadre (``backgrounds`` : image, lumière, grain qui couvraient le cadre d'origine) **couvrent** le
     nouveau cadre, comme un plan vidéo en mode « remplir » (``max(L1/L0, H1/H0)``) : réduits avec le reste, ils
@@ -191,7 +225,8 @@ def _fit_graphics(
         graphic = clip.graphic
         factor = cover if clip.id in backgrounds else contain
         if graphic.parent_id or graphic.group_id:
-            # Décalage en fraction du cadre, multiplié ensuite par l'échelle du parent : on garde ses pixels.
+            # Décalage en fraction du cadre, multiplié ensuite par l'échelle du parent : on garde ses pixels dans le
+            # repère du parent, que le facteur du parent met à l'échelle avec lui.
             _rescale_position(clip, lambda x: x * w0 / w1, lambda y: y * h0 / h1)
             continue
         if graphic.layout == LayerLayout.LEGACY:
@@ -331,29 +366,18 @@ def _shift(clip, dx: float, dy: float) -> None:
 
 
 def _layer_boxes(project: Project, version: Sequence) -> dict[str, tuple[tuple[float, float, float, float], tuple, bool]]:
-    """Rectangle normalisé (au milieu de sa durée), plage de temps et nature (texte ?) de chaque calque de premier niveau
-    à placer.
+    """Par calque **racine** (sans parent ni groupe) à placer : rectangle normalisé de ce qu'il montre, lui et ses
+    descendants (les lettres d'un texte), plage de temps, et s'il contient du texte.
 
-    Les calques plein cadre (fonds, lumière, grain), les décors qui traversent le cadre d'un bord à l'autre, les
-    conteneurs et les calques rattachés à un parent sont écartés : ils suivent le cadre ou leur parent."""
-    scene = _scene_of(project, version)
+    Un groupe ou une hiérarchie de calques se place par sa racine : la décaler déplace tout le reste. Une racine de
+    lumière, plein cadre (fond) ou qui traverse le cadre d'un bord à l'autre (décor) est écartée."""
     result = {}
-    for clip in _graphic_clips(version):
-        graphic = clip.graphic
-        if graphic.parent_id or graphic.group_id or graphic.is_container or graphic.type == GraphicType.LIGHT:
-            continue
-        if clip.id not in scene.layers:
-            continue
-        middle = clip.timeline_start + clip.duration / 2.0
-        evaluated = scene.evaluate(clip.id, middle)
-        x0, y0, x1, y1 = _visible_extent(evaluated)
-        box = (x0 / version.width, y0 / version.height, x1 / version.width, y1 / version.height)
-        if box[2] - box[0] >= FULL_FRAME_SHARE and box[3] - box[1] >= FULL_FRAME_SHARE:
-            continue                                      # fond plein cadre
+    for root, (box, span, has_text, lights_only) in _root_extents(project, version, letters=True).items():
+        if lights_only or (box[2] - box[0] >= FULL_FRAME_SHARE and box[3] - box[1] >= FULL_FRAME_SHARE):
+            continue                                      # lumière, fond plein cadre
         if (box[0] < 0.0 and box[2] > 1.0) or (box[1] < 0.0 and box[3] > 1.0):
             continue                                      # décor qui traverse le cadre d'un bord à l'autre
-        result[clip.id] = (box, (clip.timeline_start, clip.timeline_start + clip.duration),
-                           graphic.type == GraphicType.TEXT)
+        result[root] = (box, span, has_text)
     return result
 
 

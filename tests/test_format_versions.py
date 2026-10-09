@@ -12,6 +12,7 @@ from core.format_versions import (
     find_format_version,
 )
 from core.graphics import GraphicOverlay, GraphicType, add_graphic_clip, update_graphic
+from core.mograph_layers import group_layers
 from core.project_io import load_project, save_project
 from core.project_model import Clip, MediaAsset, Project, Track
 from core.visual_effects import ClipTransform, TransformKeyframe
@@ -85,14 +86,15 @@ def test_the_layers_keep_their_proportions_and_a_background_covers_the_frame():
     assert gap_after == pytest.approx(gap_before * contain, rel=0.02), "les lignes restent espacées"
 
 
-def test_a_child_layer_keeps_its_pixel_offset_from_its_parent():
+def test_a_child_layer_keeps_its_offset_in_its_parent_space():
     project = _vertical_project()
-    parent = _graphics(project.active_sequence)[1]
+    parent = next(clip for clip in _graphics(project.active_sequence) if clip.graphic.text == "HAUT")
     child = add_graphic_clip(project, "shape", timeline_start=0.0, duration=10.0)
     child.graphic = GraphicOverlay(type=GraphicType.SHAPE, width=100, height=100, parent_id=parent.id)
     child.transform = ClipTransform(position_x=0.1, position_y=0.05)
     version, _changes = create_format_version(project, project.active_sequence.id, "landscape")
     moved = next(clip for clip in _graphics(version) if clip.graphic.parent_id)
+    # Même décalage en pixels du repère du parent (fraction × largeur du cadre) ; à l'écran, le facteur du parent.
     assert moved.transform.position_x * 1920 == pytest.approx(0.1 * 1080)
     assert moved.transform.position_y * 1080 == pytest.approx(0.05 * 1920)
     assert moved.transform.scale == pytest.approx(1.0), "son parent porte le facteur"
@@ -157,3 +159,68 @@ def test_the_dialog_creates_the_versions_and_queues_one_export_per_format(window
     assert window.project.active_sequence_id == source.id
     window.export_format_versions()                      # les versions existent : réutilisées, pas dupliquées
     assert len(window.project.sequences) == 3
+
+
+def test_a_shot_that_shrinks_or_turns_during_the_clip_is_not_filled():
+    project = _vertical_project()
+    plein, incrust = project.tracks[0].clips
+    plein.transform_keyframes = [TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 2.0, 1.1)]  # Ken Burns
+    incrust.transform = ClipTransform()
+    incrust.transform_keyframes = [TransformKeyframe("scale", 0.0, 1.0), TransformKeyframe("scale", 2.0, 0.4)]
+    version, _changes = create_format_version(project, project.active_sequence.id, "landscape")
+    assert [clip.transform.fill for clip in version.tracks[0].clips] == [True, False]
+    project = _vertical_project()
+    project.tracks[0].clips[0].transform_keyframes = [TransformKeyframe("rotation", 0.0, 0.0),
+                                                      TransformKeyframe("rotation", 2.0, 15.0)]
+    version, _changes = create_format_version(project, project.active_sequence.id, "landscape")
+    assert not version.tracks[0].clips[0].transform.fill
+
+
+def test_a_group_scales_as_one_block_its_children_keep_their_place_in_it():
+    """L'enfant garde son décalage dans le repère du parent : à l'écran, il suit le même facteur que le parent."""
+    from core.format_versions import _scene_of
+    from core.mograph_scene import map_box
+
+    project = _vertical_project()
+    parent = next(clip for clip in _graphics(project.active_sequence) if clip.graphic.text == "HAUT")
+    child = add_graphic_clip(project, "shape", timeline_start=0.0, duration=10.0)
+    child.graphic = GraphicOverlay(type=GraphicType.SHAPE, width=100, height=100, parent_id=parent.id)
+    child.transform = ClipTransform(position_x=0.1)
+
+    def offset_and_width(sequence):
+        scene = _scene_of(project, sequence)
+        clips = _graphics(sequence)
+        parent_id = next(clip.id for clip in clips if clip.graphic.text == parent.graphic.text
+                         and clip.graphic.type == GraphicType.TEXT)
+        child_id = next(clip.id for clip in clips if clip.graphic.parent_id)
+        p = map_box(scene.evaluate(parent_id, 1.0).world, *scene.evaluate(parent_id, 1.0).box)
+        c = map_box(scene.evaluate(child_id, 1.0).world, *scene.evaluate(child_id, 1.0).box)
+        return (c[0] + c[2]) / 2 - (p[0] + p[2]) / 2, p[2] - p[0]
+
+    before_offset, before_width = offset_and_width(project.active_sequence)
+    version, _changes = create_format_version(project, project.active_sequence.id, "landscape")
+    after_offset, after_width = offset_and_width(version)
+    assert after_width == pytest.approx(before_width * 1080 / 1920)
+    assert after_offset / after_width == pytest.approx(before_offset / before_width), "le groupe garde sa forme"
+
+
+def test_a_grouped_title_under_the_platform_buttons_moves_by_its_group():
+    """Un titre groupé est placé par son groupe (avant : membres et groupe écartés, jamais déplacés)."""
+    project = Project(name="Deck", width=1920, height=1080, fps=30.0)
+    lines = []
+    for index, y in enumerate((-0.05, 0.05)):
+        line = add_graphic_clip(project, "text", timeline_start=0.0, duration=5.0)
+        update_graphic(line, "text", f"LIGNE {index}")
+        update_graphic(line, "font_size", 80)
+        update_graphic(line, "width", 400)
+        update_graphic(line, "height", 100)
+        line.transform = ClipTransform(position_x=0.35, position_y=y)
+        lines.append(line)
+    group = group_layers(project, [line.id for line in lines])
+    version, changes = create_format_version(project, project.active_sequence.id, "vertical")
+    moved = {change.clip_id for change in changes if change.kind == "safe_zone"}
+    groups = [clip for clip in _graphics(version) if clip.graphic.type == GraphicType.GROUP]
+    assert moved == {groups[0].id}, "le groupe bouge, ses membres le suivent"
+    boxes = _layer_boxes(project, version)
+    assert boxes[groups[0].id][0][2] <= 940 / 1080 + 1e-6, "sorti de la colonne de boutons de TikTok (x ≥ 940 px)"
+    assert group.id not in moved
