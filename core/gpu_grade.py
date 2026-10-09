@@ -8,8 +8,9 @@ calque → RVB étalonné) que la passe ``grade`` du shader lit avec une interpo
 mattes de masques, rastérisées par le code de l'export : le moniteur ne peut pas diverger d'une formule qu'il
 n'implémente pas.
 
-Mesuré contre l'export réel (vidéo 4:2:0 étalonnée : exposition, contraste, saturation, température, ombres, LUT
-``.cube``) : 0,05 niveau d'écart moyen, 1,2 au 99ᵉ centile, sur les zones où la chroma ne change pas brusquement. Aux
+Mesuré contre l'export réel (mire 4:2:0 aux couleurs saturées, étalonnée : exposition, contraste, saturation,
+température, ombres, LUT ``.cube``) : 0,1 à 0,15 niveau d'écart moyen, 3 à 4 au 99ᵉ centile, sur les zones où la chroma
+ne change pas brusquement ; le reste est au bord du gamut, où l'interpolation adoucit le coude d'un écrêtage. Aux
 bords francs de chroma, l'écart est celui du moniteur sans étalonnage (il traite la chroma à pleine résolution, l'export
 après sous-échantillonnage) : la LUT n'y ajoute rien.
 
@@ -108,8 +109,8 @@ def bake_command(ffmpeg: str, chain: str, *, domain: str, colorspace: str = "", 
         head, pixel_format = f"setparams={':'.join(params)},", "yuv444p"
     else:
         # Comme la composition RVBA de l'export (calque d'effets) : FFmpeg choisit lui-même les conversions (yuva444p
-        # pour ``eq``, puis le RVB de ``colorbalance``). Les imposer changerait le chemin, et avec lui les pixels où
-        # ``colorbalance`` (``pl=1``) rend gris un canal à 0 ou à 255 : la LUT ne suivrait plus l'export.
+        # pour ``eq``, puis le RVB de ``colorbalance``). Les imposer changerait le chemin, donc les arrondis : la LUT
+        # ne suivrait plus l'export au niveau près.
         head, pixel_format = "", "rgba"
     return [
         ffmpeg, "-hide_banner", "-nostdin", "-v", "error", "-f", "rawvideo", "-pix_fmt", pixel_format,

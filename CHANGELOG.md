@@ -34,8 +34,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Moniteur GPU : l'étalonnage se voit en temps réel, en lecture comme à l'arrêt (exposition, contraste,
   saturation, température, teinte, ombres, hautes lumières, courbes et LUT `.cube`), sur le clip affiché comme sur
   un calque d'effets. Le moniteur ne réimite pas l'étalonnage : FFmpeg passe un réseau de couleurs dans la chaîne
-  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,05 niveau en
-  moyenne.
+  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,1 à 0,15 niveau
+  en moyenne.
 
 ### Changed
 
@@ -45,6 +45,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Étalonnage à l'export : une couleur saturée réchauffée ou refroidie (température, teinte, ombres ou hautes
+  lumières réglées) ne sort plus grise. Un rouge vif passé en saturation 1,3 avec une température devenait un gris
+  moyen ; sur des images très colorées, la moitié des pixels pouvait l'être.
+- Étalonnage : les curseurs « Ombres » et « Hautes lumières » agissent enfin sur l'image. Ils étaient annulés à
+  l'export (et donc dans l'aperçu) : un projet qui les avait réglés change d'aspect.
 - Export : un clip audio qui commençait au milieu d'une rampe de la courbe de volume faisait échouer l'export
   (expression `volume` invalide).
 - Export : une transition entre deux plans dont l'un a une échelle animée (zoom d'impact des templates, Ken Burns)
