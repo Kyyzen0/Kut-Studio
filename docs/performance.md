@@ -11,7 +11,7 @@ nouveaux :
                        └───────────────────────────┬────────────────────────────┘
                                                    │
  ProxyManager ── états / génération FFmpeg ──┐     │        CacheManager (budget disque, LRU, purge, stats)
- (core/proxy_*.py)                           │     │          ├─ MemoryCache      sondes · miniatures · ondes
+ (core/proxy_*.py)                           │     │          ├─ MemoryCache      sondes · miniatures · enveloppes audio
                                              ▼     ▼          ├─ DiskPreviewCache segments d'aperçu fidèles (index)
  aperçu : resolve(path) → proxy valide | original  │          └─ ProxyManager     proxies (LRU, projet ouvert épinglé)
  export : TOUJOURS l'original                      │
@@ -129,7 +129,7 @@ l'export (`ProxyProfile.hardware` est déjà accepté et retombe sur le CPU).
 
 | Couche | Contenu | Clé / invalidation | Éviction |
 | --- | --- | --- | --- |
-| mémoire (`MemoryCache`) | sondes, miniatures, ondes | `core/cache_keys.py` : chemin + **signature** du fichier (date + taille) | LRU, budget d'octets (profil) |
+| mémoire (`MemoryCache`) | sondes, miniatures, enveloppes audio (formes d'onde, une par fichier : `core/audio_envelope.py`) | `core/cache_keys.py` : chemin + **signature** du fichier (date + taille) | LRU, budget d'octets (profil) |
 | disque « preview » | segments d'aperçu fidèles | clip + plage alignée + qualité + empreinte **du segment** | LRU (index), budget propre + budget global |
 | disque « proxies » | proxies médias | chemin + empreinte du profil, marqueur de signature | LRU (dernier usage), budget global ; proxies du projet ouvert **épinglés** |
 | disque « tracking » | résultats d'analyse de tracking (`core/tracking_engine.py`) | média + signature + plage + position de départ + zones / réglages + version de l'algorithme | LRU (dernier usage), budget global ; jamais indispensable (les données vivent dans le `.kut`, voir `docs/tracking.md`) |

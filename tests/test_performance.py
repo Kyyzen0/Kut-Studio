@@ -170,7 +170,7 @@ def test_scroll_zoom_playhead_and_selection_never_iterate_every_clip(qtbot, monk
     import ui.timeline_panel_mixins.previews as previews
 
     monkeypatch.setattr(previews, "extract_thumbnail", lambda *_a, **_k: b"")
-    monkeypatch.setattr(previews, "extract_waveform_peaks", lambda *_a, **_k: ())
+    monkeypatch.setattr(previews, "extract_envelope", lambda *_a, **_k: None)
     panel = _panel(qtbot, 3_000)
     views = _CountingList(panel.clip_views)
     panel.clip_views = views                              # même contenu, instrumenté

@@ -11,15 +11,15 @@ import pytest
 from core.cache_keys import (
     MISSING_TOKEN,
     SignatureMemo,
+    audio_envelope_key,
     file_exists,
     probe_key,
     proxy_key,
     thumbnail_key,
-    waveform_key,
 )
 from core.cache_manager import KIND_PREVIEW, KIND_PROXY, CacheManager
 from core.cache_store import MemoryCache
-from core.media_previews import thumbnail_cache_key, waveform_cache_key
+from core.media_previews import audio_envelope_cache_key, thumbnail_cache_key
 from core.preview_cache import DiskPreviewCache, PreviewSegmentKey
 from core.project_model import Clip, MediaAsset, Project, Track
 
@@ -96,11 +96,11 @@ def test_derived_keys_change_with_the_source_file_and_only_with_it(tmp_path):
     media.write_bytes(b"x" * 10)
     other.write_bytes(b"y" * 10)
     before_thumb = thumbnail_key(str(media), 1.234, 160, memo)
-    before_wave = waveform_key(str(media), 64, memo)
+    before_wave = audio_envelope_key(str(media), memo)
     untouched = thumbnail_key(str(other), 1.234, 160, memo)
     media.write_bytes(b"x" * 11)
     assert thumbnail_key(str(media), 1.234, 160, memo) != before_thumb
-    assert waveform_key(str(media), 64, memo) != before_wave
+    assert audio_envelope_key(str(media), memo) != before_wave
     assert thumbnail_key(str(other), 1.234, 160, memo) == untouched   # invalidation précise
 
 
@@ -110,7 +110,7 @@ def test_keys_are_deterministic_and_quantize_the_time(tmp_path):
     media.write_bytes(b"x")
     assert thumbnail_key(str(media), 1.04, 160, memo) == thumbnail_key(str(media), 0.96, 160, memo)
     assert thumbnail_key(str(media), 1.0, 160, memo) != thumbnail_key(str(media), 1.0, 320, memo)
-    assert waveform_key(str(media), 64, memo) == waveform_key(str(media), 64, memo)
+    assert audio_envelope_key(str(media), memo) == audio_envelope_key(str(media), memo)
 
 
 def test_missing_files_get_a_stable_key_instead_of_an_error(tmp_path):
@@ -126,7 +126,7 @@ def test_media_previews_and_cache_keys_are_the_single_shared_definition(tmp_path
 
     default_signatures.invalidate()
     assert thumbnail_cache_key(str(media), 2.0, 160) == thumbnail_key(str(media), 2.0, 160)
-    assert waveform_cache_key(str(media), 32) == waveform_key(str(media), 32)
+    assert audio_envelope_cache_key(str(media)) == audio_envelope_key(str(media))
     import core.media_cache as media_cache
 
     # Les anciennes définitions dupliquées ont disparu.

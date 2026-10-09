@@ -6,14 +6,13 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
 
 from core.cache_keys import file_exists
+from core.audio_envelope import extract_envelope
 from core.media_previews import (
+    audio_envelope_cache_key,
     extract_thumbnail,
-    extract_waveform_peaks,
     thumbnail_cache_key,
     thumbnail_slots,
     thumbnail_source_times,
-    waveform_bins,
-    waveform_cache_key,
 )
 from core.task_queue import PRIORITY_VISIBLE
 from core.timeline_view_model import (
@@ -85,14 +84,12 @@ class PreviewsMixin:
             if self.track_is_collapsed(view.track_id):
                 continue
             if view.track_type == "audio":
-                bins = waveform_bins(max(widget.width(), 16), self.track_height_mode(view.track_id))
-                key = waveform_cache_key(view.source_path, bins)
+                # Une enveloppe par fichier, quelle que soit la largeur du clip : zoomer ne recalcule rien.
+                key = audio_envelope_cache_key(view.source_path)
                 if runtime.cache.get(key) is None:
                     self._submit_preview(
                         key,
-                        lambda token, path=view.source_path, count=bins, cache_key=key: self._waveform_job(
-                            token, path, count, cache_key
-                        ),
+                        lambda token, path=view.source_path, cache_key=key: self._envelope_job(token, path, cache_key),
                     )
             elif view.track_type == "video" and filmstrips:
                 clip = self.clip_model(view.id)
@@ -121,16 +118,14 @@ class PreviewsMixin:
         if not self._preview_timer.isActive():
             self._preview_timer.start()
 
-    def _waveform_job(self, token, path: str, bins: int, key: str) -> None:
+    def _envelope_job(self, token, path: str, key: str) -> None:
         if token.cancelled or self._runtime is None:
             return
-        peaks = extract_waveform_peaks(path, bins)
-        self._runtime.mailbox.push(
-            key,
-            peaks if peaks else (),
-            max(32, bins * 8),
-            session_id=self._runtime.session_id,
-        )
+        envelope = extract_envelope(path, cancelled=lambda: token.cancelled)
+        if token.cancelled or self._runtime is None:
+            return
+        # Une enveloppe vide (sans son, illisible) est gardée aussi : le fichier n'est pas redécodé à chaque défilement.
+        self._runtime.mailbox.push(key, envelope, max(64, len(envelope.peaks)), session_id=self._runtime.session_id)
 
     def _thumb_job(self, token, path: str, instant: float, key: str) -> None:
         if token.cancelled or self._runtime is None:

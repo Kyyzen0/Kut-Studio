@@ -151,9 +151,9 @@ def thumbnail_key(
     return f"thumb:{os.path.abspath(path)}:{_token(path, memo)}:{quantized}:{int(width)}"
 
 
-def waveform_key(path: str, bins: int, memo: SignatureMemo | None = None) -> str:
-    """Clé d'une forme d'onde pour ``bins`` colonnes."""
-    return f"wave:{os.path.abspath(path)}:{_token(path, memo)}:{int(bins)}"
+def audio_envelope_key(path: str, memo: SignatureMemo | None = None) -> str:
+    """Clé de l'enveloppe de crête d'un fichier (:mod:`core.audio_envelope`) : une par fichier, toutes échelles."""
+    return f"envelope:{os.path.abspath(path)}:{_token(path, memo)}"
 
 
 def proxy_key(path: str, profile_fingerprint: str) -> str:
@@ -180,5 +180,5 @@ __all__ = [
     "proxy_key",
     "source_signature",
     "thumbnail_key",
-    "waveform_key",
+    "audio_envelope_key",
 ]

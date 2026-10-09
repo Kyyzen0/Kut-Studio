@@ -1,14 +1,14 @@
 """Prévisualisations de médias pour la timeline.
 
-Les waveforms et les vignettes ne sont jamais calculées pendant le
-dessin. Ce module décide combien il en faut, réduit des échantillons
-déjà lus, et sait extraire des pics ou une image via FFmpeg lorsque
-l'appelant le demande explicitement.
+Les formes d'onde et les vignettes ne sont jamais calculées pendant le
+dessin. Ce module décide combien de vignettes il faut et sait extraire
+une image via FFmpeg lorsque l'appelant le demande explicitement ; la
+forme d'onde vient de l'enveloppe de crête du fichier
+(:mod:`core.audio_envelope`), une par fichier, lue à toutes les échelles.
 
-Le profil léger coupe les vignettes (``filmstrips=False``). Les
-waveforms restent disponibles, avec moins de colonnes sur une piste
-compacte. Un fichier absent ou un FFmpeg manquant retourne ``None`` :
-l'interface affiche alors le clip sans prévisualisation.
+Le profil léger coupe les vignettes (``filmstrips=False``) ; les formes
+d'onde restent. Un fichier absent ou un FFmpeg manquant retourne ``None``
+(une enveloppe vide) : l'interface affiche alors le clip sans prévisualisation.
 """
 
 from __future__ import annotations
@@ -17,17 +17,9 @@ import os
 import shutil
 import subprocess
 
-from .cache_keys import thumbnail_key, waveform_key
+from .cache_keys import audio_envelope_key, thumbnail_key
 from .process_supervisor import supervised_run
 from .tool_paths import bundled_tool_path
-
-
-def waveform_bins(pixel_width: int, height_mode: str) -> int:
-    """Nombre de colonnes, quantifié pour ne pas recalculer à chaque pixel."""
-    caps = {"compact": 64, "normal": 192, "large": 384}
-    cap = caps.get(height_mode, 192)
-    raw = max(16, min(cap, int(pixel_width)))
-    return max(16, (raw // 16) * 16)
 
 
 def thumbnail_slots(pixel_width: int, *, enabled: bool) -> int:
@@ -47,95 +39,14 @@ def thumbnail_source_times(source_in: float, source_out: float, slots: int) -> l
     return [float(source_in) + span * (index + 0.5) / slots for index in range(slots)]
 
 
-def synthetic_peaks(seed: str, bins: int) -> tuple[float, ...]:
-    """Forme d'onde de repli, stable pour un même identifiant de clip.
-
-    Elle s'affiche quand le fichier est absent ou que FFmpeg ne peut pas
-    décoder. Ce n'est pas le signal source : c'est un dessin déterministe
-    pour que la piste audio ne reste pas vide.
-    """
-    import hashlib
-    import math
-
-    count = max(1, int(bins))
-    digest = hashlib.sha256(seed.encode("utf-8")).digest()
-    peaks: list[float] = []
-    for index in range(count):
-        byte = digest[index % len(digest)]
-        wave = 0.55 + 0.45 * abs(math.sin(index * 0.37 + byte / 40.0))
-        peaks.append(max(0.08, min(1.0, (byte / 255.0) * wave)))
-    return tuple(peaks)
-
-
-def peaks_from_samples(samples, bins: int) -> tuple[float, ...]:
-    """Réduit une suite d'échantillons en pics normalisés entre 0 et 1."""
-    count = len(samples)
-    if bins <= 0 or count <= 0:
-        return ()
-    peaks: list[float] = []
-    for index in range(bins):
-        start = int(index * count / bins)
-        end = max(start + 1, int((index + 1) * count / bins))
-        chunk = samples[start:end]
-        if not chunk:
-            continue
-        peaks.append(min(1.0, max(abs(float(value)) for value in chunk)))
-    return tuple(peaks)
-
-
-def waveform_cache_key(path: str, bins: int) -> str:
-    """Clé stable tant que le fichier et le nombre de colonnes ne changent pas."""
-    return waveform_key(path, bins)
+def audio_envelope_cache_key(path: str) -> str:
+    """Clé de l'enveloppe de crête du fichier (forme d'onde, :mod:`core.audio_envelope`)."""
+    return audio_envelope_key(path)
 
 
 def thumbnail_cache_key(path: str, time_seconds: float, width: int) -> str:
     """Clé stable d'une vignette. Le temps est quantifié au dixième."""
     return thumbnail_key(path, time_seconds, width)
-
-
-def extract_waveform_peaks(path: str, bins: int) -> tuple[float, ...] | None:
-    """Décode un aperçu audio mono à 200 Hz et le réduit en pics.
-
-    Le décodage est borné par un timeout. Il doit être appelé hors du
-    thread d'interface.
-    """
-    ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
-    if ffmpeg is None or not os.path.isfile(path):
-        return None
-    try:
-        completed = supervised_run(
-            [
-                ffmpeg,
-                "-v",
-                "error",
-                "-i",
-                path,
-                "-ac",
-                "1",
-                "-ar",
-                "200",
-                "-f",
-                "f32le",
-                "pipe:1",
-            ],
-            capture_output=True,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    raw = completed.stdout
-    if completed.returncode != 0 or not raw:
-        return None
-    import array
-
-    usable = len(raw) - (len(raw) % 4)
-    if usable <= 0:
-        return None
-    samples = array.array("f")
-    samples.frombytes(raw[:usable])
-    peaks = peaks_from_samples(samples, bins)
-    return peaks or None
 
 
 def extract_thumbnail(path: str, time_seconds: float, width: int = 160) -> bytes | None:
