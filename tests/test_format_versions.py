@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from core.format_versions import (
@@ -152,7 +154,7 @@ def test_the_dialog_creates_the_versions_and_queues_one_export_per_format(window
     source = window.project.active_sequence
     source.width, source.height = 1080, 1920
     window.export_format_versions()
-    names = sorted(job.output_path.rsplit("/", 1)[-1] for job in window.render_queue.jobs)
+    names = sorted(Path(job.output_path).name for job in window.render_queue.jobs)
     assert names == ["Montage_16x9.mp4", "Montage_1x1.mp4", "Montage_9x16.mp4"]
     assert len(window.project.sequences) == 3
     assert window.history.undo_label == "Versions de format"
