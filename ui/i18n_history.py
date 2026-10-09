@@ -64,7 +64,11 @@ HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     "history.audio.ducking_add": _t("Ajouter un ducking", "Add ducking", "Añadir ducking"),
     "history.audio.ducking_remove": _t("Supprimer un ducking", "Delete ducking", "Eliminar ducking"),
-    "history.audio.ducking_edit": _t("Modifier le ducking", "Edit ducking", "Modificar el ducking"),
+    "history.audio.automation_clear": _t(
+        "Effacer la courbe de volume",
+        "Clear the volume curve",
+        "Borrar la curva de volumen",
+    ),
     "history.audio.effect_add": _t("Ajouter un effet audio", "Add an audio effect", "Añadir un efecto de audio"),
     "history.audio.effect_remove": _t(
         "Supprimer un effet audio",

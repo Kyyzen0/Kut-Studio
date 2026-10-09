@@ -18,6 +18,7 @@ optionnel, et le rendu CPU historique reste en place comme repli.
 | Décodage de l'export | **toujours CPU** (déterministe) | — |
 | Transform, opacité, recadrage du moniteur | `QGraphicsVideoItem` (raster Qt) | shaders QRhi |
 | Effets, fusion, masques, calques d'effets du moniteur | segments fidèles (FFmpeg, exacts) | shaders QRhi, en temps réel |
+| Étalonnage (réglages, courbes, LUT `.cube`) du moniteur | segments fidèles (FFmpeg, exacts) | LUT 3D cuite par la chaîne de l'export, lue par un shader |
 | Encodage | inchangé (voir [hardware-encoding.md](hardware-encoding.md)) | inchangé |
 
 Préférences > Performance > **Matériel** propose trois réglages et le diagnostic :
@@ -266,9 +267,12 @@ Par rapport au moniteur CPU, le moniteur GPU montre **en temps réel** :
   en cache GPU tant que les masques ne bougent pas.
 - **Calques d'effets** : leurs effets s'appliquent à la vidéo en dessous, à
   travers leur couverture, comme `_compose_adjustment` à l'export.
+- **Étalonnage** (depuis le 2026-10-09) : exposition, contraste, saturation,
+  température, teinte, ombres, hautes lumières, courbes et LUT `.cube`, du clip
+  affiché comme d'un calque d'effets. La chaîne de l'export est cuite en LUT 3D
+  par FFmpeg lui-même (voir « Étalonnage » plus bas), en lecture comme à l'arrêt.
 
 **Ce qui reste au rendu fidèle** :
-- l'étalonnage couleur (courbes, LUT) ;
 - les transitions ;
 - la composition exacte de plusieurs pistes vidéo superposées : le moniteur
   temps réel, CPU comme GPU, montre le clip du dessus ;
@@ -312,6 +316,51 @@ Ces formules ont été **retrouvées par la mesure**, pas supposées. Exemples :
 | chaîne correction + flou + vignette + sépia | 0,66 | 4,4 |
 
 Le GPU réel s'écarte de cette référence de moins de 1/255 en moyenne.
+
+### Étalonnage : la chaîne de l'export, cuite en LUT 3D
+
+L'export étalonne un calque avec `eq` → `colorbalance` → `curves` → `lut3d`
+(`_build_color_grade_filters`). Réécrire ces quatre filtres en shader aurait fait
+diverger le moniteur au premier détail (arrondis 8 bits d'`eq`, interpolation de
+`curves`, `lut3d` tétraédrique…). Le moniteur ne les réécrit donc pas
+(`core/gpu_grade.py`) :
+
+1. un **réseau de couleurs** — 52³ nœuds, des codes 8 bits entiers (multiples de
+   5) dans l'espace d'entrée du calque — passe dans **cette chaîne exacte**, par
+   FFmpeg, avec les propriétés de couleur du média (`setparams` : matrice et
+   plage) ; un calque RVB (média RVB, calque d'effets) part en RVBA, comme la
+   composition de l'export ;
+2. le résultat est une LUT 3D (couleur du calque → RVB étalonné), rangée en
+   **atlas 2D** (52 tranches côte à côte, 2704 × 52) et téléversée comme une
+   matte : aucune texture 3D, valable sur tous les backends ;
+3. la passe `grade` (après les effets, avant la composition, comme à l'export)
+   convertit la couleur dans l'espace de la LUT puis la lit en trilinéaire :
+   bilinéaire matérielle dans une tranche, puis entre les deux tranches voisines.
+
+La cuisson prend environ 30 ms, **hors du fil de l'interface**
+(`GradeLutCache`) : seule la dernière demande attend (glisser un curseur ne cuit
+pas les valeurs intermédiaires), la LUT précédente reste affichée pendant la
+cuisson (pas de clignotement sans étalonnage), un échec est mémorisé (LUT
+illisible, FFmpeg absent : le calque passe sans étalonnage, les segments fidèles
+le montrent).
+
+Mesuré (`tests/test_gpu_grade.py`, vidéo 4:2:0 étalonnée : exposition,
+contraste, saturation, température, ombres, courbe en S, LUT `.cube`) contre
+l'export réel : **0,05 niveau** d'écart moyen, **1,2** au 99ᵉ centile, sur les
+zones où la chroma ne change pas brusquement. Aux bords francs de chroma,
+l'écart est celui du moniteur sans étalonnage (chroma traitée à pleine
+résolution, voir plus haut) : la LUT n'y ajoute rien. Sur le vrai GPU
+(`tools/gpu/selfcheck.py`, cas `grade`, LUT non linéaire de test) : 0,3 niveau
+en moyenne et moins de 2 au pire, Metal et OpenGL, NV12 / YUV420P / P010.
+
+**Défaut d'FFmpeg dans l'export, que la LUT ne reproduit qu'en partie.** Avec
+`pl=1` (conserver la luminosité), `colorbalance` met la saturation à zéro dès
+qu'un canal vaut exactement 0 ou 255 : un rouge saturé (230, 40, 20) passé en
+saturation 1,3 avec une température sort **gris** (128, 128, 128). L'export émet
+`pl=1` dès qu'une température, une teinte, des ombres ou des hautes lumières
+sont réglées. Les nœuds de la LUT ont ce gris, mais l'interpolation entre un nœud
+gris et un nœud coloré adoucit la cassure : là, le moniteur et l'export
+diffèrent. C'est l'export qu'il faudra corriger.
 
 ## Aperçu GPU contre export
 
@@ -541,6 +590,10 @@ texture de 8 Mo à chaque image.
   - préférences, pression mémoire, changement de projet ;
   - rendu des segments hors du thread d'interface ;
   - format `.kut` inchangé.
+- `tests/test_gpu_grade.py` et `tests/test_gpu_grade_ui.py`, sans GPU : la LUT
+  cuite contre l'export réel (clip YUV, calque d'effets RVB), réseau, commande,
+  clé, passe `grade` et référence, cache de cuisson (fil, dernière demande,
+  échec mémorisé), LUT précédente gardée pendant une cuisson, câblage.
 - `tests/test_gpu_hardware.py`, **optionnel** : vrai GPU (Metal et OpenGL ici),
   et décodage matériel au bit près. Actif sur un Mac de développement hors CI,
   ou partout avec `KUT_STUDIO_GPU_TESTS=1`. La CI n'a jamais besoin d'un GPU.
@@ -575,8 +628,6 @@ toutes les variantes.
    un dans `tools/gpu/selfcheck.py` pour le GPU réel.
 
 **Plus tard** (non implémenté, points d'entrée prévus) :
-- LUT 3D : une texture 3D lue par une opération ponctuelle ;
-- étalonnage : courbes en texture 1D ;
 - scopes GPU : une passe qui lit le cadre composé et réduit en histogramme ;
 - tracking ou flot optique : passes de voisinage sur les textures de travail ;
 - rendu 3D : une passe de plus avant `present`.
@@ -590,8 +641,14 @@ toutes les variantes.
 - **Calques d'effets** : sur GPU, ils s'appliquent à la vidéo, pas aux calques
   motion graphics situés dessous. Ces calques sont dessinés par Qt au-dessus du
   GPU.
-- **Hors temps réel** : l'étalonnage couleur, les transitions, les sous-titres
-  libass et la composition de séquences imbriquées restent au rendu fidèle.
+- **Hors temps réel** : les transitions, les sous-titres libass et la
+  composition de séquences imbriquées restent au rendu fidèle.
+- **Étalonnage** : le moniteur CPU ne le montre toujours qu'avec les segments
+  fidèles ; sur GPU, l'étalonnage d'un calque motion graphics (dessiné par Qt)
+  aussi. Chaque nouveau réglage demande une cuisson (≈ 30 ms, hors du fil de
+  l'interface) : pendant ce temps, la LUT précédente reste affichée. Là où
+  `colorbalance` grise un canal saturé dans l'export (défaut décrit plus haut),
+  le moniteur adoucit la cassure.
 - **Une copie CPU par plan et par image** (limite de PySide6 6.11). Elle coûte
   environ 3 ms en 4K P010 ; pas de copie zéro depuis le décodeur de Qt.
 - **Décodage du moniteur** : un nouveau mode ne s'applique qu'au prochain

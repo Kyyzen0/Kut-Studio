@@ -4,7 +4,11 @@
   et relaie ses signaux ;
 - accepte le dépôt d'une séquence de la bibliothèque (et d'un média) sur une
   piste : la position et la piste sont calculées sous le pointeur, la
-  fenêtre principale valide et applique l'opération.
+  fenêtre principale valide et applique l'opération ;
+- accepte des **photos** glissées du Finder / de l'explorateur, mais seulement
+  au-dessus d'un emplacement de template (elles le remplissent, lui et les
+  emplacements vides qui suivent) ; ailleurs, les fichiers vont à la fenêtre,
+  qui les importe.
 
 Les signaux sont déclarés sur :class:`ui.timeline_panel.TimelinePanel`.
 """
@@ -13,6 +17,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint
 
+from core.template_slots import is_photo_path, slot_at
 from ui.timeline_widgets.sequence_bar import SequenceNavigationBar
 
 SEQUENCE_MIME = "application/x-kut-studio-sequence-id"
@@ -53,13 +58,24 @@ class SequencesTimelineMixin:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _dropped_payload(mime) -> tuple[str, str] | None:
+    def _dropped_payload(mime) -> tuple[str, object] | None:
         for kind, mime_type in (("sequence", SEQUENCE_MIME), ("asset", ASSET_MIME)):
             if mime.hasFormat(mime_type):
                 value = bytes(mime.data(mime_type)).decode("utf-8", "replace").strip()
                 if value:
                     return kind, value
+        if mime.hasUrls():
+            paths = [url.toLocalFile() for url in mime.urls() if url.isLocalFile()]
+            if paths and all(is_photo_path(path) for path in paths):
+                return "photos", paths
         return None
+
+    def _photo_slot_under(self, position: QPoint) -> tuple[str, float] | None:
+        """``(piste, temps)`` d'un emplacement de template sous ``position``, sinon ``None``."""
+        target = self.drop_target_at(position)
+        if target is None or self.project is None or slot_at(self.project, *target) is None:
+            return None
+        return target
 
     def drop_target_at(self, position: QPoint) -> tuple[str, float] | None:
         """``(piste, temps)`` sous ``position`` (coordonnées du panneau)."""
@@ -83,10 +99,12 @@ class SequencesTimelineMixin:
         event.acceptProposedAction()
 
     def dragMoveEvent(self, event) -> None:
-        if self._dropped_payload(event.mimeData()) is None:
+        payload = self._dropped_payload(event.mimeData())
+        if payload is None:
             event.ignore()
             return
-        target = self.drop_target_at(event.position().toPoint())
+        position = event.position().toPoint()
+        target = self._photo_slot_under(position) if payload[0] == "photos" else self.drop_target_at(position)
         if target is None:
             event.ignore()
             return
@@ -94,7 +112,13 @@ class SequencesTimelineMixin:
 
     def dropEvent(self, event) -> None:
         payload = self._dropped_payload(event.mimeData())
-        target = self.drop_target_at(event.position().toPoint()) if payload else None
+        position = event.position().toPoint()
+        if payload is None:
+            target = None
+        elif payload[0] == "photos":
+            target = self._photo_slot_under(position)
+        else:
+            target = self.drop_target_at(position)
         if payload is None or target is None:
             event.ignore()
             return
@@ -102,6 +126,8 @@ class SequencesTimelineMixin:
         track_id, seconds = target
         if kind == "sequence":
             self.sequence_dropped.emit(value, track_id, seconds)
+        elif kind == "photos":
+            self.photos_dropped.emit(list(value), track_id, seconds)
         else:
             self.asset_dropped.emit(value, track_id, seconds)
         event.acceptProposedAction()

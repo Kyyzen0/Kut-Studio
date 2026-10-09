@@ -97,6 +97,21 @@ timeline la remplit en gardant sa place, son zoom d'impact, ses effets et le cad
 raccourcit le plan). À l'ajout d'un export, la barre d'état signale les emplacements encore vides : ils sortiraient comme
 des cartes.
 
+**Photos** : glisser des photos du Finder (ou de l'explorateur) **sur un emplacement** le remplit, lui puis les
+emplacements vides qui le suivent, une photo chacun, dans l'ordre de la sélection. *Réseaux sociaux › Photos ›
+Remplir les emplacements avec des photos…* fait de même depuis un sélecteur de fichiers (à partir de l'emplacement
+sélectionné, sinon dans les vides). Une photo **remplit** le cadre et reçoit un **Ken Burns** (zoom ou balayage lent, le
+sens alterne d'un plan à l'autre), qui remplace le zoom d'impact : une photo immobile paraîtrait figée là où une vidéo
+bougeait. Le plan garde sa place, sa durée, ses effets et son étalonnage ; le Night Look et les titres du template
+passent par-dessus. Une vidéo déposée ensuite reprend la place de la photo.
+
+**Diaporama photo** (*Réseaux sociaux › Photos › Diaporama photo…*) : un emplacement par photo choisie, bord à bord, à
+la tête de lecture, sur la première piste vidéo libre. Avec une grille rythmique, le premier plan part du temps suivant
+et chaque photo dure **une mesure** (les photos changent sur la musique) ; sans grille, la durée des photos des
+préférences. Chaque plan est un emplacement : on y redépose une autre photo ou une vidéo, et une photo illisible laisse
+sa carte. Pour un diaporama sur votre musique : posez-la, mesurez son tempo (*Grille rythmique…*, ou *Couper sur les
+temps* qui la mesure), puis *Diaporama photo…*.
+
 **Classement** (*Réseaux sociaux › Classement…*) : sur un calque du classement, rouvre son tableau (rang, nom, valeur,
 couleur de la palette, durée) ; sinon en crée un à la tête de lecture. Valider remplace les calques du classement.
 
@@ -160,7 +175,13 @@ Trois points d'architecture méritent d'être connus :
 
 * **Carte d'emplacement** : un clip de piste vidéo dont `template_slot` est renseigné et dont le média manque n'est pas
   un « média introuvable » : `build_render_plan` le remplace par un calque de texte à la taille du cadre
-  (`template_slots.slot_card`), animé comme le clip. `RenderPlan.empty_slots` les liste.
+  (`template_slots.slot_card`), animé comme le clip. `RenderPlan.empty_slots` les liste. Rempli par une photo, le clip
+  a pour média l'image (`media_type == "image"`, à sa taille d'origine) : le plan en fait un **calque vidéo** comme un
+  autre (`RenderLayer.still`), à sa place parmi les pistes vidéo, avec cadrage « remplir », Ken Burns, effets,
+  étalonnage et transitions ; FFmpeg répète l'image (`loop`) sur toute la durée du plan. Le clip porte aussi un calque
+  image (`clip.graphic`, `template_slots.is_photo_slot`) pour le moniteur temps réel, qui ne décode pas de photo : les
+  évaluateurs de timeline rangent le clip parmi les calques graphiques (`timeline_evaluator.active_track_type`) et le
+  moniteur le dessine par le rastériseur des calques (`render_plan.photo_monitor_layers`).
 * **Loudness** : la mesure est faite par le graphe audio de l'export (`_build_filter_complex(..., audio_only=True)`), à
   l'étape de préparation de la file ; le plan porte ensuite `loudness_gain_db` (dans l'empreinte). C'est un réglage
   d'export : l'aperçu n'est pas normalisé.
@@ -206,7 +227,8 @@ livrables (`test_social_deliverables.py` : couverture à l'image exacte, copie s
 ## Limites connues
 
 * La normalisation ne s'applique qu'à l'export (l'aperçu garde le niveau du mixage).
-* Un emplacement de template n'accepte qu'une vidéo : une photo se pose sur une piste de titres.
+* Une photo glissée du Finder ailleurs que sur un emplacement n'est pas importée : elle passe par l'import d'image de
+  l'onglet Graphiques de la bibliothèque.
 * Le recadrage suivi est figé en images-clés : corriger le tracker ensuite demande de relancer la commande.
 * *Synchroniser sur la voix* reste une estimation (enveloppe d'énergie) : elle garde le texte saisi. Les sous-titres
   automatiques, eux, reconnaissent les mots (whisper.cpp), mais écrivent ce qu'ils entendent (un nom propre peut être

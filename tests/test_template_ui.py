@@ -74,7 +74,7 @@ def test_dropping_a_video_on_a_slot_fills_it_in_one_undo_step(window, monkeypatc
     window.project.media_assets.append(MediaAsset("a", str(tmp_path / "a.wav"), "a", 9.0, 0, 0, 0.0, "audio", True))
     window.on_asset_dropped("a", "V1", 2.0)
     assert window.project.tracks[0].clips[0].asset_id == ""
-    assert window.statusBar().currentMessage() == i18n.translate("template.message.slot_needs_video")
+    assert window.statusBar().currentMessage() == i18n.translate("template.message.slot_needs_media")
 
 
 def test_the_export_reports_the_slots_still_empty(window, monkeypatch):

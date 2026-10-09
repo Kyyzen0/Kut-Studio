@@ -14,6 +14,43 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Courbe de volume des pistes audio, dans la timeline : une bande sous les clips (menu ⋯ de la piste › « Courbe de
+  volume », ouverte d'office quand la piste a déjà une courbe). Double-clic pour poser un point, glisser pour le
+  déplacer (Maj : gain seul), Suppr ou clic droit pour le retirer, le remettre à 0 dB ou effacer la courbe. La courbe
+  dessinée est exactement celle que l'export applique ; chaque geste s'annule en une fois.
+- Photos dans les emplacements des templates : glisser des photos du Finder sur un emplacement le remplit, lui puis
+  les emplacements vides qui suivent ; aussi *Réseaux sociaux › Photos › Remplir les emplacements avec des photos…*.
+  Chaque photo remplit le cadre avec un Ken Burns, se place parmi les pistes vidéo comme une vidéo et accepte les
+  transitions ; le Night Look et les titres du template restent par-dessus.
+- *Réseaux sociaux › Photos › Diaporama photo…* : un plan par photo choisie, à la tête de lecture, une mesure chacun
+  sur la grille rythmique (sinon la durée des photos des préférences), en Ken Burns. Chaque plan reste un emplacement
+  où redéposer une autre photo ou une vidéo.
+- Menu ⋯ d'une piste audio : son rôle (voix, musique, effets sonores, autre), que lisent le ducking automatique, les
+  sous-titres automatiques et la coupe au rythme, et « Baisser sous… » pour baisser cette piste sous une autre
+  (ducking par paire, qu'on peut aussi retirer).
+
+- Moniteur GPU : l'étalonnage se voit en temps réel, en lecture comme à l'arrêt (exposition, contraste,
+  saturation, température, teinte, ombres, hautes lumières, courbes et LUT `.cube`), sur le clip affiché comme sur
+  un calque d'effets. Le moniteur ne réimite pas l'étalonnage : FFmpeg passe un réseau de couleurs dans la chaîne
+  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,05 niveau en
+  moyenne.
+
+### Changed
+
+- Courbe de volume : deux points sans maintien sont désormais reliés par une ligne droite. Avant, le volume sautait
+  au niveau du point suivant dès le point précédent. Seuls des projets écrits à la main ou par script sont concernés :
+  aucune interface ne posait de points jusqu'ici.
+
+### Fixed
+
+- Export : un clip audio qui commençait au milieu d'une rampe de la courbe de volume faisait échouer l'export
+  (expression `volume` invalide).
+- Export : une transition entre deux plans dont l'un a une échelle animée (zoom d'impact des templates, Ken Burns)
+  ou une autre échelle que l'autre faisait échouer tout l'export ; le second plan est aussi posé à sa propre place
+  pendant la transition, et non plus à celle du premier.
+
 ## [0.2.7] - 2026-10-09
 
 Montage vertical plus rapide : couper au rythme de la musique, recadrer un plan 16:9 en 9:16 en suivant le sujet, et

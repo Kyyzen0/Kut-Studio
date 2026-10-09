@@ -41,6 +41,7 @@ from ui.timeline_panel_mixins.previews import PreviewsMixin
 from ui.timeline_panel_mixins.keyframes import KeyframesTimelineMixin
 from ui.timeline_panel_mixins.sequences import SequencesTimelineMixin
 from ui.timeline_panel_mixins.time_menu import TimeMenuMixin
+from ui.timeline_panel_mixins.automation import AutomationTimelineMixin
 from ui.timeline_widgets.clip_widget import ClipWidget
 from ui.timeline_widgets.common import (  # noqa: F401 - réexports de compatibilité
     _COLLAPSED_HEIGHT,
@@ -62,7 +63,7 @@ from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 # ---------------------------------------------------------------------------
 
 
-class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, TimeMenuMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, QWidget):
+class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, TimeMenuMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, AutomationTimelineMixin, QWidget):
     """Timeline de Kut-Studio, pilotée par un ``Project``.
 
     Le panneau orchestre :
@@ -125,6 +126,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     sequence_forward_requested = Signal()
     sequence_parent_requested = Signal()
     sequence_dropped = Signal(str, str, float)   # séquence glissée : (séquence, piste, temps)
+    photos_dropped = Signal(object, str, float)   # photos du Finder sur un emplacement : (chemins, piste, temps)
     # --- Multicam ---
     multicam_replace_requested = Signal(str, int)   # (segment, rang de l'angle, 0 = Angle 1) : « Remplacer par l'angle »
     multicam_flatten_requested = Signal(str)        # « Aplatir le segment Multicam »
@@ -132,6 +134,14 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     multicam_viewer_requested = Signal(str)         # double-clic sur un segment : montrer le moniteur Multicam
     multicam_settings_requested = Signal()          # « Réglages Multicam… »
     time_command_requested = Signal(str, str, object)   # (clip, commande, argument) : menu « Vitesse » (core.time_commands)
+    # --- Courbes de volume et menu audio des pistes (bande sous les clips) ---
+    automation_point_added = Signal(str, float, float, float)     # (piste, temps, gain dB, maintien)
+    automation_point_removed = Signal(str, float)                 # (piste, temps)
+    automation_point_updated = Signal(str, float, float, float)   # (piste, temps, gain dB, maintien)
+    automation_point_moved = Signal(str, float, float, float)     # (piste, ancien temps, nouveau temps, gain dB)
+    automation_cleared = Signal(str)
+    track_role_changed = Signal(str, str)                         # (piste, rôle : voice / music / sfx / other)
+    ducking_pair_toggled = Signal(str, str, bool)                 # (piste baissée, piste qui la baisse, actif)
 
     def __init__(self, project: Project | None = None, parent=None):
         super().__init__(parent)
@@ -179,6 +189,7 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
         self.selected_clip_id: str | None = None
         self.selected_clip_ids: set[str] = set()
         self._init_keyframe_state()
+        self._init_automation_state()
         self._selection_anchor: str | None = None
         self.tool = "select"
         self.ripple_enabled = False

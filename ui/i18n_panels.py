@@ -139,6 +139,25 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     "timeline.track.collapsed": _t("Réduite", "Collapsed", "Contraída"),
     "timeline.track.actions": _t("Actions de la piste", "Track actions", "Acciones de la pista"),
     "timeline.track.collapse_toggle": _t("Réduire ou développer", "Collapse or expand", "Contraer o expandir"),
+    "timeline.track.role": _t("Rôle de la piste", "Track role", "Función de la pista"),
+    "timeline.track.role.voice": _t("Voix", "Voice", "Voz"),
+    "timeline.track.role.music": _t("Musique", "Music", "Música"),
+    "timeline.track.role.sfx": _t("Effets sonores", "Sound effects", "Efectos de sonido"),
+    "timeline.track.role.other": _t("Autre", "Other", "Otro"),
+    "timeline.track.duck_under": _t("Baisser sous…", "Duck under…", "Atenuar bajo…"),
+    # --- Courbe de volume (bande sous les clips d'une piste audio) ---------------------------------------------------
+    "timeline.automation.show": _t("Courbe de volume", "Volume curve", "Curva de volumen"),
+    "timeline.automation.lane": _t("Courbe de volume de la piste", "Track volume curve", "Curva de volumen de la pista"),
+    "timeline.automation.hint": _t(
+        "Courbe de volume : double-cliquez pour poser un point, glissez-le pour le déplacer (Maj : gain seul).",
+        "Volume curve: double-click to add a point, drag it to move it (Shift: gain only).",
+        "Curva de volumen: haga doble clic para añadir un punto y arrástrelo para moverlo (Mayús: solo ganancia).",
+    ),
+    "timeline.automation.point_tip": _t("{gain} dB à {time}", "{gain} dB at {time}", "{gain} dB en {time}"),
+    "timeline.automation.add_point": _t("Ajouter un point ici", "Add a point here", "Añadir un punto aquí"),
+    "timeline.automation.remove_point": _t("Supprimer le point", "Delete point", "Eliminar el punto"),
+    "timeline.automation.reset_point": _t("Remettre à 0 dB", "Reset to 0 dB", "Restablecer a 0 dB"),
+    "timeline.automation.clear": _t("Effacer la courbe", "Clear curve", "Borrar la curva"),
     # --- Visionneuse -------------------------------------------------------------------------------------------------
     "preview.no_clip": _t(
         "Aucun clip sous la tête de lecture\nDéplacez la tête de lecture ou sélectionnez un clip dans la timeline.",

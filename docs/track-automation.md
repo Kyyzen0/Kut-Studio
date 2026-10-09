@@ -1,8 +1,7 @@
 # `Track.automation` : une seule représentation
 
-> **Statut** : l'édition UI n'est pas encore câblée ; les handlers existent mais ne sont connectés à aucun signal — voir
-> [docs/dead-code-audit.md](dead-code-audit.md). Le modèle, le plan de rendu et l'export de l'automation (et du ducking)
-> sont, eux, vivants et testés ; l'édition est inscrite à la feuille de route du README.
+> **Statut** : la courbe s'édite dans la timeline (2026-10-09) — voir « Édition dans la timeline » en fin de document.
+> Le modèle, le plan de rendu et l'export de l'automation (et du ducking) sont vivants et testés.
 
 Point ouvert du rapport de stabilisation : « `Track.automation` a deux représentations (liste de points ou
 `TrackAutomation`) ; la normalisation est faite à l'usage plutôt qu'au chargement ».
@@ -52,3 +51,30 @@ courbes).
 
 * Écrire `object.__setattr__(track, "automation", [...])` contourne la normalisation : plus aucun appelant ne le fait.
 * Les modules typés (mypy) doivent affecter une `TrackAutomation` : la liste n'est acceptée qu'à l'exécution, par tolérance.
+
+## Édition dans la timeline (2026-10-09)
+
+**La courbe.** Une bande sous les clips d'une piste audio (`ui/timeline_widgets/automation_lane.py`), affichée dès que la
+courbe a des points ou à la demande (menu ⋯ de la piste › « Courbe de volume » ; ce choix d'affichage n'est ni dans le
+`.kut` ni dans l'historique). Double-clic : un point au gain et à l'instant pointés (aimanté comme un clip, calé sur une
+image) ; glisser : temps et gain sans dépasser les voisins (Maj : gain seul) ; Suppr ou le menu contextuel : supprimer,
+remettre à 0 dB, effacer la courbe. Un geste, une entrée d'historique. La bande trace
+`core.audio_automation.automation_pieces`, la fonction dont l'export tire son expression `volume` : ce qu'on voit est ce
+qu'on entend. Échelle verticale : −24 à +12 dB (`DEFAULT_GAIN_MIN_DB` / `DEFAULT_GAIN_MAX_DB`).
+
+**Sémantique du maintien (`fade_seconds`).** Entre deux points, le gain précédent est tenu `fade_seconds` (celui du point
+d'arrivée) puis rejoint le point d'arrivée en ligne droite. Jusqu'au 2026-10-09, un maintien **nul** était un cas à part :
+le gain sautait à celui du point d'arrivée juste après le point précédent, alors qu'un maintien d'une microseconde donnait
+presque la ligne droite. Un maintien nul est désormais la ligne droite (la courbe varie continûment avec le maintien), ce
+que pose l'éditeur ; un maintien qui atteint le point d'arrivée reste un saut à son instant. Aucune interface ne créait
+de points avant cette date : seuls des projets écrits à la main ou par script peuvent changer d'écoute.
+
+**Correctif d'export au passage.** Un clip qui commençait au milieu d'une rampe recevait `t-(-inf)` dans son expression
+`volume` (la borne extérieure du premier morceau était remplacée par −∞ avant d'écrire la rampe) : FFmpeg refusait le
+graphe. La rampe garde maintenant ses vraies bornes, seule sa condition extérieure saute
+(`test_a_rubber_band_ramp_is_heard_from_a_clip_that_starts_in_its_middle`, rendu réel).
+
+**Menu ⋯ d'une piste audio.** « Rôle de la piste » (voix, musique, effets sonores, autre : ce que lisent le ducking
+automatique, les sous-titres automatiques et la coupe au rythme) et « Baisser sous… » (ducking de cette piste sous une
+autre, réglage par défaut ; les presets du menu Réseaux sociaux › Audio règlent ensuite toutes les paires).
+

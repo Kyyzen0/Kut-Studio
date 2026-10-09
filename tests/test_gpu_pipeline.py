@@ -626,15 +626,21 @@ def test_every_shader_variant_loads():
 
 
 def test_planning_a_frame_is_cheap():
-    """Budget large (runner partagé) : planifier 4 calques avec effets reste sous 5 ms."""
+    """Budget large (runner partagé) : planifier 4 calques avec effets reste sous 5 ms.
+
+    Le meilleur de cinq séries : une série isolée mesure aussi la charge du runner (5,6 ms relevées une fois sous
+    Windows, pour 0,25 ms en temps normal), le meilleur de cinq mesure le coût du plan."""
     program = program_for([E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.2, saturation=1.1),
                            E(EffectType.BLUR, intensity=4.0), E(EffectType.VIGNETTE, intensity=0.4)])
     frame = CompositeFrame(1920, 1080, 0.5, tuple(_layer(program=program) for _ in range(4)), (SOURCE,))
     plan_frame(frame)
-    started = time.perf_counter()
-    for _ in range(50):
-        plan_frame(frame)
-    assert (time.perf_counter() - started) / 50 < 0.005
+    timings = []
+    for _ in range(5):
+        started = time.perf_counter()
+        for _ in range(50):
+            plan_frame(frame)
+        timings.append((time.perf_counter() - started) / 50)
+    assert min(timings) < 0.005, timings
 
 
 def test_rendering_and_export_modules_never_import_numpy_or_the_gpu_ui():

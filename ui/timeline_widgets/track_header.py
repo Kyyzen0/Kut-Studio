@@ -49,6 +49,9 @@ class TrackRowHeader(QFrame):
     def __init__(self, track: Track, parent=None) -> None:
         super().__init__(parent)
         self.track = track
+        self.menu_extender = None
+        """``(menu, identifiant de piste) -> None`` : entrées du menu ⋯ qui dépendent du projet (voir la timeline)."""
+        self._extra_actions: list = []
         self.setFrameShape(QFrame.NoFrame)
         self.setFixedHeight(Sizes.timeline_track_height + 6)
         # Fond du panneau + filet de séparation bas : donne une limite
@@ -237,9 +240,28 @@ class TrackRowHeader(QFrame):
             action.triggered.connect(
                 lambda _checked=False, cb=callback: cb()
             )
+        # Entrées qui dépendent du projet (courbe de volume, rôle, ducking d'une piste audio) : posées par la timeline
+        # à chaque ouverture, pour refléter l'état courant (une annulation a pu le changer).
+        menu.aboutToShow.connect(lambda m=menu: self._extend_menu(m))
+        self._more_menu = menu
         more_btn.setMenu(menu)
         more_btn.setPopupMode(IconButton.ToolButtonPopupMode.InstantPopup)
         layout.addWidget(more_btn)
+
+    def _extend_menu(self, menu: QMenu) -> None:
+        """Remplace les entrées dynamiques du menu ⋯ par celles du ``menu_extender`` (posé par la timeline)."""
+        for action in self._extra_actions:
+            menu.removeAction(action)
+            submenu = action.menu()
+            if submenu is not None:
+                submenu.deleteLater()
+            action.deleteLater()
+        self._extra_actions = []
+        if self.menu_extender is None:
+            return
+        before = set(menu.actions())
+        self.menu_extender(menu, self.track.id)
+        self._extra_actions = [action for action in menu.actions() if action not in before]
 
     @staticmethod
     def _prefix_for_type(track_type: str) -> str:

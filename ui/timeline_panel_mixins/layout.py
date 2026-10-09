@@ -158,6 +158,7 @@ class LayoutMixin:
             self._rebuild_track_headers()
             self._cached_header_signature = signature
         self._sync_mounted_clips(refresh_views=True)
+        self._sync_automation_lanes()
         self._layout_children()
         self._sync_transition_widgets()
 
@@ -250,6 +251,7 @@ class LayoutMixin:
             header.move_down_requested.connect(self.move_track_down_requested)
             header.remove_requested.connect(self.remove_track_requested)
             header.rename_requested.connect(self._on_rename_requested)
+            header.menu_extender = self.extend_track_menu
             self.track_header_widgets[track.id] = header
 
     def _visibility_window(
@@ -450,6 +452,7 @@ class LayoutMixin:
             widget.setGeometry(*self.clip_rect(view, view.start, view.end))
             widget.raise_()
         self._layout_transition_widgets()
+        self._layout_automation_lanes()
         self._publish_overlay()
         self._schedule_previews()
         self._sync_ruler()
@@ -481,10 +484,15 @@ class LayoutMixin:
         if accepted and new_name and new_name != track.name:
             self.rename_track_requested.emit(track_id, new_name.strip())
 
-    def row_height_of(self, track) -> int:
+    def clip_height_of(self, track) -> int:
+        """Hauteur des clips d'une piste (la rangée moins la bande d'automation)."""
         if getattr(track, "collapsed", False):
             return _COLLAPSED_HEIGHT
         return _HEIGHTS.get(getattr(track, "height_mode", "normal"), self.track_height)
+
+    def row_height_of(self, track) -> int:
+        """Hauteur de la rangée d'une piste : ses clips, puis sa courbe de volume si elle est affichée."""
+        return self.clip_height_of(track) + self.automation_lane_height(track)
 
     def row_top(self, index: int) -> int:
         top = _CONTENT_TOP
@@ -508,7 +516,7 @@ class LayoutMixin:
         index = view.track_index if track_index is None else track_index
         height = self.track_height
         if self.project is not None and 0 <= index < len(self.project.tracks):
-            height = self.row_height_of(self.project.tracks[index])
+            height = self.clip_height_of(self.project.tracks[index])
         scale = self.pixels_per_second * self.zoom
         x = int(self.left_margin + start * scale)
         width = max(40, int((end - start) * scale))

@@ -5,10 +5,9 @@ timeline branchés par ``_connect_audio_controls``, effets audio de l'inspecteur
 ``social_audio.py`` et la prise de voix off de ``recording.py`` (``timeline_panel.record_requested``), avec une vraie
 ``AudioRecorder`` sur une source synthétique.
 
-Volontairement **hors** de ces tests : ``on_track_role_changed``, ``on_track_automation_point_added/removed/updated``,
-``on_ducking_sidechain_added/removed`` et ``on_ducking_config_changed``. Aucun signal ne les déclenche
-(docs/dead-code-audit.md) : les tester gonflerait la couverture sans rien garantir à l'utilisateur. Leur sort (câblage
-ou retrait) se décide à part.
+La courbe de volume (``on_track_automation_point_*``), le rôle des pistes et « Baisser sous… » (ducking par paire) sont
+couverts par ``tests/test_automation_lane_ui.py`` : leurs gestes partent de la bande sous les clips et du menu ⋯ des
+pistes audio.
 """
 
 from __future__ import annotations

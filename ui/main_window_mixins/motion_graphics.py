@@ -236,11 +236,20 @@ class MotionGraphicsMixin:
         t = float(self.playhead_seconds)
         composited = bool(getattr(self, "_viewer_composited", False))
         try:
-            from core.render_plan import build_render_plan
+            from dataclasses import replace
+
+            from core.render_plan import build_render_plan, photo_monitor_layers
 
             plan = build_render_plan(
                 self.project, window=(t, t + 1e-3), window_index=self._ensure_timeline_index(),
             )
+            # Photos d'emplacement : calques vidéo pour l'export, calques image ici (le lecteur ne décode pas de photo).
+            # Qt les dessine par-dessus la vidéo du moniteur : une photo qu'une piste vidéo plus haute couvre à l'export
+            # n'est pas dessinée (le moniteur temps réel montre la vidéo du dessus, comme pour deux vidéos).
+            top_video = max((layer.track_index for layer in plan.video_layers if not layer.still), default=-1)
+            photos = tuple(layer for layer in photo_monitor_layers(plan) if layer.track_index > top_video)
+            if photos:
+                plan = replace(plan, graphics_layers=(*photos, *plan.graphics_layers))
         except Exception:
             LOGGER.debug("Plan à %.3f s non construit : aucun calque dessiné dans le moniteur", t, exc_info=True)
             plan = None
@@ -309,6 +318,7 @@ class MotionGraphicsMixin:
 
     def _sync_gpu_adjustments(self, plan, scene, t: float) -> None:
         """Calques d'effets actifs → moniteur GPU (effets sur la vidéo, couverture exacte)."""
+        from core.gpu_grade import grade_is_active
         from core.graphics import GraphicType
         from core.mograph_raster import MographRenderer
 
@@ -316,7 +326,8 @@ class MotionGraphicsMixin:
         layers = [
             layer for layer in plan.graphics_layers
             if getattr(getattr(layer, "graphic", None), "type", None) == GraphicType.ADJUSTMENT
-            and layer.timeline_start <= t < layer.timeline_end and getattr(layer, "effects", ())
+            and layer.timeline_start <= t < layer.timeline_end
+            and (getattr(layer, "effects", ()) or grade_is_active(getattr(layer, "color_grade", None)))
         ]
         if not layers:
             panel.set_adjustments(())
@@ -327,7 +338,8 @@ class MotionGraphicsMixin:
         for layer in layers:
             coverage = renderer.render_coverage(layer.clip_id, t)
             key = f"adjust:{layer.clip_id}:{width}x{height}:{renderer.coverage_key(layer.clip_id, t)!r}"
-            adjustments.append((key, tuple(layer.effects), coverage, 1.0))
+            grade = layer.color_grade if grade_is_active(getattr(layer, "color_grade", None)) else None
+            adjustments.append((key, tuple(layer.effects), coverage, 1.0, grade))
         panel.set_adjustments(adjustments)
 
     def _refresh_viewer_overlay(self, t: float) -> None:

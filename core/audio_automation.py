@@ -55,10 +55,9 @@ from enum import Enum
 DEFAULT_GAIN_MIN_DB: float = -24.0
 DEFAULT_GAIN_MAX_DB: float = 12.0
 
-# Bornes du fondu d'un point d'automation : 0 = coupure immédiate entre
-# les deux points adjacents, 5 s = interpolation très douce. On plafonne
-# volontairement à 5 s pour éviter qu'un fondu mal calibré rende la
-# piste muette pendant plusieurs secondes.
+# Bornes du maintien d'un point d'automation (``fade_seconds``) : 0 = rampe
+# droite depuis le point précédent (la courbe d'un éditeur « élastique »),
+# davantage = le gain précédent est tenu avant la rampe. Plafonné à 5 s.
 MAX_POINT_FADE_SECONDS: float = 5.0
 MIN_POINT_FADE_SECONDS: float = 0.0
 
@@ -188,10 +187,13 @@ class AutomationPoint:
 
     Attributes:
         time_seconds: Position du point sur la timeline (>= 0).
-        gain_db: Gain appliqué à partir de ce point (dB).
-        fade_seconds: Durée du fondu entre ce point et le précédent.
-            ``0`` = coupure immédiate (gain constant jusqu'au point
-            suivant). Doit rester dans
+        gain_db: Gain atteint à ce point (dB), tenu après le dernier point.
+        fade_seconds: Comment la courbe arrive du point précédent : le gain
+            précédent est **tenu** ``fade_seconds`` secondes, puis rejoint
+            ce point en ligne droite. ``0`` (défaut) = ligne droite depuis
+            le point précédent ; un maintien qui atteint ce point = saut à
+            l'instant du point. Le nom est historique (format ``.kut``).
+            Doit rester dans
             ``[MIN_POINT_FADE_SECONDS, MAX_POINT_FADE_SECONDS]``.
     """
 
@@ -233,10 +235,10 @@ class TrackAutomation:
     :meth:`remove_point` maintiennent cet invariant.
 
     L'évaluation :meth:`gain_at` interpole linéairement entre les
-    points qui entourent ``time_seconds``. Avant le premier point, le
-    gain est nul (``-inf`` n'est pas un gain valide : on retourne
-    ``DEFAULT_GAIN_MIN_DB``). Après le dernier point, le gain est
-    celui du dernier point.
+    points qui entourent ``time_seconds`` (après le maintien éventuel du
+    point d'arrivée, voir :class:`AutomationPoint`). Avant le premier
+    point, le gain est celui du premier point ; après le dernier, celui
+    du dernier.
 
     C'est la **forme canonique** de :attr:`core.project_model.Track.automation` :
     chaque piste en porte une (vide par défaut). ``track_id`` n'est qu'une
@@ -315,19 +317,39 @@ class TrackAutomation:
             f"Aucun point d'automation à {time_seconds} s pour {self.track_id!r}."
         )
 
+    def move_point(self, time_seconds: float, new_time: float, gain_db: float) -> AutomationPoint:
+        """Déplace le point situé à ``time_seconds`` vers ``(new_time, gain_db)``, maintien gardé.
+
+        Le point ne saute pas par-dessus un autre : un instant déjà pris par un autre point est refusé
+        (:class:`AudioAutomationOverlapError`), plutôt que d'écraser ce point en silence comme :meth:`add_point`.
+        """
+        index = next((i for i, p in enumerate(self.points) if abs(p.time_seconds - time_seconds) < 1e-9), None)
+        if index is None:
+            raise AudioAutomationUnknownIdError(
+                f"Aucun point d'automation à {time_seconds} s pour {self.track_id!r}."
+            )
+        moved = AutomationPoint(new_time, gain_db, self.points[index].fade_seconds)
+        if any(i != index and abs(p.time_seconds - moved.time_seconds) < 1e-9 for i, p in enumerate(self.points)):
+            raise AudioAutomationOverlapError(
+                f"Un point d'automation existe déjà à {moved.time_seconds} s pour {self.track_id!r}."
+            )
+        self.points[index] = moved
+        self.points.sort(key=lambda p: p.time_seconds)
+        return moved
+
     def is_empty(self) -> bool:
         return not self.points
 
     def gain_at(self, time_seconds: float) -> float:
         """Retourne le gain (dB) appliqué à ``time_seconds``.
 
-        Avant le premier point, retourne ``DEFAULT_GAIN_MIN_DB``
-        (silence). Après le dernier, retourne le gain du dernier
-        point. Entre deux points, on interpole linéairement sur la
-        fenêtre ``[t_prev + fade_prev, t_curr]`` (le fondu déclaré sur
-        le point *destination* détermine la durée pendant laquelle on
-        passe de ``gain_prev`` à ``gain_curr`` ; en deçà, on conserve
-        ``gain_prev``).
+        Avant le premier point, le gain du premier point ; après le
+        dernier, celui du dernier. Entre deux points, le gain précédent
+        est tenu ``fade_seconds`` (celui du point d'arrivée) puis rejoint
+        le point d'arrivée en ligne droite : un maintien nul est une ligne
+        droite d'un point à l'autre, un maintien qui atteint le point
+        d'arrivée un saut à son instant. :func:`automation_pieces` découpe
+        exactement la même courbe (export, éditeur de la timeline).
         """
         if not self.points:
             return 0.0
@@ -339,24 +361,58 @@ class TrackAutomation:
             previous = self.points[index - 1]
             current = self.points[index]
             if time_seconds <= current.time_seconds:
-                fade = float(current.fade_seconds)
-                if fade <= 0.0:
-                    return float(current.gain_db)
-                # Avant la fin du fondu, on conserve le gain précédent.
-                if time_seconds <= previous.time_seconds + fade:
+                # Le gain précédent est tenu jusqu'à la fin du maintien.
+                ramp_start = previous.time_seconds + max(0.0, float(current.fade_seconds))
+                if time_seconds <= ramp_start:
                     return float(previous.gain_db)
-                # Au-delà, on interpole linéairement entre la fin du
-                # fondu et le point courant.
-                fade_end = previous.time_seconds + fade
-                span = current.time_seconds - fade_end
+                # Puis ligne droite jusqu'au point courant.
+                span = current.time_seconds - ramp_start
                 if span <= 0.0:
                     return float(current.gain_db)
-                progress = (time_seconds - fade_end) / span
+                progress = (time_seconds - ramp_start) / span
                 progress = max(0.0, min(1.0, progress))
                 return float(previous.gain_db) + progress * (
                     float(current.gain_db) - float(previous.gain_db)
                 )
         return float(self.points[-1].gain_db)
+
+
+def automation_pieces(points) -> list[tuple[float, float, float, float]]:
+    """Découpe la courbe de :meth:`TrackAutomation.gain_at` en morceaux ``(début, fin, gain_début, gain_fin)``.
+
+    Chaque morceau couvre l'intervalle ``]début, fin]`` (temps de la timeline, bornes infinies aux deux extrémités) ;
+    le gain y varie linéairement **en dB** de ``gain_début`` à ``gain_fin`` (égaux pour un palier). La découpe suit
+    exactement ``gain_at`` : gain du premier point avant lui, du dernier après lui ; entre deux points, le gain précédent
+    est tenu jusqu'à ``précédent + maintien`` puis rejoint linéairement le point courant ; un maintien nul est une ligne
+    droite depuis le point précédent ; un maintien qui atteint le point courant le change en saut à l'instant de ce
+    point. Deux paliers égaux qui se suivent sont fusionnés. ``points`` est trié par temps et non vide.
+
+    L'export en tire son expression ``volume`` et la timeline le tracé de la courbe : ce qu'on voit est ce qu'on entend.
+    """
+    first, last = points[0], points[-1]
+    pieces = [(-math.inf, float(first.time_seconds), float(first.gain_db), float(first.gain_db))]
+    for previous, current in zip(points, points[1:]):
+        start, end = float(previous.time_seconds), float(current.time_seconds)
+        before, after = float(previous.gain_db), float(current.gain_db)
+        hold = max(0.0, float(current.fade_seconds))
+        if end <= start:
+            continue
+        if start + hold >= end:
+            pieces.append((start, end, before, before))
+        elif hold > 0.0:
+            pieces.append((start, start + hold, before, before))
+            pieces.append((start + hold, end, before, after))
+        else:
+            pieces.append((start, end, before, after))
+    pieces.append((float(last.time_seconds), math.inf, float(last.gain_db), float(last.gain_db)))
+    merged = [pieces[0]]
+    for piece in pieces[1:]:
+        lo, _, a, b = merged[-1]
+        if a == b == piece[2] == piece[3]:      # deux paliers égaux qui se suivent : un seul terme dans l'expression
+            merged[-1] = (lo, piece[1], a, b)
+        else:
+            merged.append(piece)
+    return merged
 
 
 def coerce_track_automation(value: object, track_id: str = "") -> TrackAutomation:
@@ -542,21 +598,16 @@ class AudioAutomationService:
         """Définit le rôle d'une piste et retourne la valeur stockée."""
         track = self._find_audio_track(project, track_id)
         normalized = TrackRole(role)
-        # ``track.audio_role`` est introduit par la tâche 28 ; les
-        # projets anciens (v10- et jusqu'à v11.0) n'ont pas encore
-        # ce champ. On l'ajoute dynamiquement pour rester
-        # rétro-compatible avec les snapshots d'historique.
-        if not hasattr(track, "audio_role") or track.audio_role is None:
-            object.__setattr__(track, "audio_role", normalized)
-        else:
-            object.__setattr__(track, "audio_role", normalized)
-        return track.audio_role
+        # Le modèle stocke une chaîne (``Track.audio_role``, comme ``project_io`` au chargement) : jamais l'énumération,
+        # qu'une piste rechargée n'aurait plus.
+        track.audio_role = normalized.value
+        return normalized
 
     def get_track_role(self, project, track_id: str) -> TrackRole:
-        """Lit le rôle d'une piste (défaut : ``OTHER``)."""
+        """Lit le rôle d'une piste (défaut : ``OTHER``), qu'il soit stocké en chaîne ou en énumération."""
         track = self._find_audio_track(project, track_id)
-        role = getattr(track, "audio_role", None)
-        return role if isinstance(role, TrackRole) else TrackRole.OTHER
+        role = str(getattr(getattr(track, "audio_role", None), "value", getattr(track, "audio_role", "")))
+        return TrackRole(role) if role in {item.value for item in TrackRole} else TrackRole.OTHER
 
     # ----- Automation ----------------------------------------------------
 
@@ -606,6 +657,18 @@ class AudioAutomationService:
         return automation.update_point(
             time_seconds, gain_db=gain_db, fade_seconds=fade_seconds
         )
+
+    def move_automation_point(
+        self,
+        project,
+        track_id: str,
+        time_seconds: float,
+        new_time: float,
+        gain_db: float,
+    ) -> AutomationPoint:
+        """Déplace un point existant (temps et gain), maintien conservé."""
+        automation = self.ensure_automation(project, track_id)
+        return automation.move_point(time_seconds, new_time, gain_db)
 
     def clear_automation(self, project, track_id: str) -> None:
         """Vide la courbe d'automation d'une piste."""
@@ -758,6 +821,7 @@ __all__ = [
     "DuckingSidechain",
     "TrackAutomation",
     "TrackRole",
+    "automation_pieces",
     "coerce_track_automation",
     # Constantes
     "DEFAULT_GAIN_MAX_DB",

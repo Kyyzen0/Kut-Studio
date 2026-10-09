@@ -421,6 +421,7 @@ class MainWindow(
         self.timeline_panel.trim_clip_left_requested.connect(self.on_trim_left_requested)
         self.timeline_panel.trim_clip_right_requested.connect(self.on_trim_right_requested)
         self.timeline_panel.asset_dropped.connect(self.on_asset_dropped)
+        self.timeline_panel.photos_dropped.connect(self.fill_slots_from_photo_drop)
         # Tâche 14 : opérations de pistes (ajout, suppression,
         # verrouillage, visibilité, mute, déplacement, renommage).
         self.timeline_panel.add_track_requested.connect(self.on_add_track_requested)
@@ -1807,6 +1808,7 @@ class MainWindow(
                 pan_y=evaluated.pan_y,
             )
             self.preview_panel.set_effects(clip_obj.effects)
+            self.preview_panel.set_color_grade(getattr(clip_obj, "color_grade", None))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
         if self.is_playing:

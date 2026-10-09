@@ -18,6 +18,7 @@ les tests : la logique entière est vérifiable sans GPU.
     décodage (plans YUV) ─▶ prep : YUV → calque (adaptation + bandes du pad,
                               suréchantillonnage, opérations ponctuelles)
                          ─▶ voisinage : flou H/V, netteté (0..n passes)
+                         ─▶ grade : étalonnage, LUT 3D cuite par FFmpeg (core.gpu_grade)
                          ─▶ composite : matrice inverse, matte, opacité, fusion
     toutes les couches ─▶ present : cadre → widget (letterbox)
 
@@ -113,6 +114,10 @@ class CompositeLayer:
         program: effets GPU (:func:`core.gpu_effects.program_for`).
         effect_scale: échelle du calque à l'export (σ du flou en pixels de l'export).
         matte: clé d'une texture de matte (alpha des masques, espace calque) ou ``""``.
+        grade: étalonnage du clip (:class:`core.color_grading.ColorGrade`) que le moniteur doit montrer ; le
+            moniteur le résout en ``grade_lut`` une fois l'espace du média connu (:mod:`core.gpu_grade`).
+        grade_lut: clé de l'atlas de la LUT d'étalonnage (texture téléversée comme une matte) ou ``""`` : une passe
+            ``grade`` s'insère alors entre les effets et la composition, comme à l'export.
     """
 
     source: str
@@ -123,6 +128,8 @@ class CompositeLayer:
     program: EffectProgram = field(default_factory=EffectProgram)
     effect_scale: tuple[float, float] = (1.0, 1.0)
     matte: str = ""
+    grade: object = None
+    grade_lut: str = ""
 
 
 @dataclass(frozen=True)
@@ -137,6 +144,9 @@ class AdjustmentLayer:
     program: EffectProgram
     matte: str = ""
     opacity: float = 1.0
+    grade: object = None
+    """Étalonnage du calque d'effets (appliqué après ses effets, en RVB, comme à l'export)."""
+    grade_lut: str = ""
 
 
 @dataclass(frozen=True)
@@ -296,6 +306,10 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
             (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
         )
+        if layer.grade_lut:
+            domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
+            current, space = _grade_pass(passes, textures, f"layer{index}", current, space, domain, layer.grade_lut,
+                                         matrix, (width, height), index)
         target = "canvas1" if canvas == "canvas0" else "canvas0"
         inputs = (current, f"matte:{layer.matte}" if layer.matte else "none", canvas)
         passes.append(PassSpec("composite", target, inputs, Uniforms(
@@ -309,7 +323,7 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
         ).pack(), index))
         canvas = target
     for number, adjustment in enumerate(frame.adjustments):
-        if adjustment.program.is_identity or adjustment.opacity <= 0.0:
+        if (adjustment.program.is_identity and not adjustment.grade_lut) or adjustment.opacity <= 0.0:
             continue
         index = len(frame.layers) + number
         current, space = _effect_passes(
@@ -317,6 +331,9 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             yuv_to_rgb_matrix(), (0.0, 0.0, 1.0, 1.0), adjustment.program, (scale, scale), (1.0, 1.0),
             (width, height), 1.0, index,
         )
+        if adjustment.grade_lut:
+            current, space = _grade_pass(passes, textures, f"adjust{number}", current, space, SPACE_RGB,
+                                         adjustment.grade_lut, yuv_to_rgb_matrix(), (width, height), index)
         target = "canvas1" if canvas == "canvas0" else "canvas0"
         inputs = (current, f"matte:{adjustment.matte}" if adjustment.matte else "none", canvas)
         passes.append(PassSpec("composite", target, inputs, Uniforms(
@@ -437,6 +454,25 @@ def _glow_passes(passes, textures, name, op: GlowOp, current, other, space, next
     return other
 
 
+def _grade_pass(passes, textures, name, current, space, domain, lut, matrix, size, index) -> tuple[str, int]:
+    """Étalonnage : la couleur du calque (après ses effets) passe dans la LUT cuite ; le résultat est en RVB.
+
+    ``domain`` : espace d'entrée de la LUT (celui du calque à l'export : YUV pour une vidéo YUV, RVB sinon).
+    """
+    from .gpu_grade import LUT_SIZE
+
+    width, height = size
+    target = f"{name}b" if current == f"{name}a" else f"{name}a"
+    textures.setdefault(target, TextureSpec(WORKING_FORMAT, width, height))
+    passes.append(PassSpec("grade", target, (current, f"matte:{lut}"), Uniforms(
+        yuv_to_rgb=matrix,
+        target=(float(width), float(height), 1.0, 0.0),
+        state=(float(space), float(SPACE_RGB), 0.0, 0.0),
+        misc=(float(LUT_SIZE), float(domain), 0.0, 0.0),
+    ).pack(), index))
+    return target, SPACE_RGB
+
+
 def _end_space(space: int, ops) -> int:
     for op in ops:
         space = op.space
@@ -492,16 +528,27 @@ def _bilinear(np, image, x, y):
     return top * (1 - ty) + bottom * ty
 
 
-def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = None):
+def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = None, luts: dict | None = None):
     """Image RVB (H, W, 3) que les passes de :func:`plan_frame` doivent produire.
 
     ``sources[id]`` : tableau (h, w, 3) des codes YUV normalisés (chroma pleine
     résolution) — ou RVB pour une source ``rgba``/``bgra``. ``mattes[clé]`` :
-    tableau (H, W) d'alpha 0..1 à la résolution de rendu.
+    tableau (H, W) d'alpha 0..1 à la résolution de rendu. ``luts[clé]`` : atlas
+    d'étalonnage (:func:`core.gpu_grade.atlas_array`) des calques qui ont un ``grade_lut``.
     """
     import numpy as np
 
     from .gpu_effects import reference_layer
+    from .gpu_grade import sample_atlas
+
+    tables = luts or {}
+
+    def graded(pixels, space: int, domain: int, key: str, matrix):
+        """La passe ``grade`` : couleur passée dans l'espace de la LUT (``domain``), puis lecture de l'atlas."""
+        if space != domain:
+            m = np.array(matrix if domain == SPACE_RGB else invert4(matrix), dtype=np.float64)
+            pixels = np.clip(pixels @ m[:3, :3].T + m[:3, 3], 0.0, 1.0)
+        return sample_atlas(tables[key], pixels)
 
     width, height = frame.render_size
     scale = width / float(max(1, frame.canvas_width))
@@ -525,15 +572,20 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         sampled = _bilinear(np, data, fu * source.width, fv * source.height)
         pad = np.array((16 / 255, 128 / 255, 128 / 255) if layout.is_yuv else (0.0, 0.0, 0.0))
         layer_px = np.where(inside[..., None], sampled, pad)
+        grading = bool(layer.grade_lut) and layer.grade_lut in tables
         if layout.is_yuv:
             rgb = reference_layer(
                 layer_px, layer.program, yuv_to_rgb=matrix,
                 pixel_scale=(scale / abs(layer.effect_scale[0]), scale / abs(layer.effect_scale[1])),
                 layer_scale=(scale, scale),
                 chroma_scale=source.chroma_scale,
+                keep_space=grading,
             )
+            if grading:
+                pixels, space = rgb
+                rgb = graded(pixels, space, SPACE_YUV, layer.grade_lut, matrix)
         else:
-            rgb = layer_px
+            rgb = graded(layer_px, SPACE_RGB, SPACE_RGB, layer.grade_lut, matrix) if grading else layer_px
         # composite : matrice inverse, bord adouci, matte, opacité, fusion
         forward = affine_mul((scale, 0, 0, scale, 0, 0), affine_mul(layer.matrix, (1 / scale, 0, 0, 1 / scale, 0, 0)))
         inverse = affine_inverse(forward)
@@ -551,10 +603,13 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         blended = _blend(np, BLEND_CODES[coerce_blend_mode(layer.blend)], canvas, np.clip(color, 0, 1))
         canvas = canvas * (1.0 - alpha[..., None]) + blended * alpha[..., None]
     for adjustment in frame.adjustments:
-        if adjustment.program.is_identity or adjustment.opacity <= 0.0:
+        if (adjustment.program.is_identity and not adjustment.grade_lut) or adjustment.opacity <= 0.0:
             continue
         processed = reference_layer(canvas, adjustment.program, yuv_to_rgb=yuv_to_rgb_matrix(),
                                     pixel_scale=(scale, scale), chroma_scale=(1.0, 1.0), start_space=SPACE_RGB)
+        if adjustment.grade_lut and adjustment.grade_lut in tables:
+            processed = graded(np.clip(processed, 0, 1), SPACE_RGB, SPACE_RGB, adjustment.grade_lut,
+                               yuv_to_rgb_matrix())
         alpha = np.full((height, width), float(adjustment.opacity))
         if adjustment.matte and mattes is not None and adjustment.matte in mattes:
             alpha = alpha * np.asarray(mattes[adjustment.matte], dtype=np.float64)

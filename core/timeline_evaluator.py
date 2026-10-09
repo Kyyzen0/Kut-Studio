@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from .project_model import Clip, MediaAsset, Project, Sequence
+from .project_model import Clip, MediaAsset, Project, Sequence, Track
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +111,14 @@ def _is_active(clip: Clip, time_seconds: float) -> bool:
     ``timeline_start + duration`` et n'est plus actif à cet instant.
     """
     return clip.timeline_start <= time_seconds < clip.timeline_start + clip.duration
+
+
+def active_track_type(clip: Clip, track: Track) -> str:
+    """Type de piste vu par le moniteur : une photo d'emplacement de template (un calque image porté par un clip de
+    piste vidéo, :mod:`core.template_slots`) est un calque graphique, pas une vidéo que le lecteur devrait décoder."""
+    if track.type == "video" and getattr(clip, "graphic", None) is not None:
+        return "graphics"
+    return track.type
 
 
 def _build_active_clip(
@@ -238,12 +246,20 @@ def _evaluate_sequence(
                 _build_active_clip(
                     clip=clip,
                     track_index=track_index,
-                    track_type=track.type,
+                    track_type=active_track_type(clip, track),
                     source_path=asset.path,
                     time_seconds=time_seconds,
                 )
             )
     return active
+
+
+def _solo_kind(clip, video_tracks: set[str]) -> str:
+    """Type de piste qui décide du solo : une photo d'emplacement (rangée en ``graphics`` pour le moniteur, voir
+    :func:`active_track_type`) suit le solo de **sa piste vidéo**, comme dans le plan de rendu."""
+    if clip.track_type == "graphics" and clip.track_id in video_tracks:
+        return "video"
+    return clip.track_type
 
 
 def apply_track_solo(tracks, active_clips: list) -> list:
@@ -254,10 +270,13 @@ def apply_track_solo(tracks, active_clips: list) -> list:
             solo_ids.setdefault(track.type, set()).add(track.id)
     if not solo_ids:
         return list(active_clips)
-    return [
-        clip for clip in active_clips
-        if solo_ids.get(clip.track_type) is None or clip.track_id in solo_ids[clip.track_type]
-    ]
+    video_tracks = {track.id for track in tracks if track.type == "video"}
+    kept = []
+    for clip in active_clips:
+        kind = _solo_kind(clip, video_tracks)
+        if solo_ids.get(kind) is None or clip.track_id in solo_ids[kind]:
+            kept.append(clip)
+    return kept
 
 
 def _map_to_parent(clip: Clip, low: float, high: float) -> tuple[float, float]:
@@ -310,7 +329,13 @@ def expand_nested_clip(
     visible_tracks = child.tracks
     if not track_filter.is_identity:
         kept: list[ActiveClip] = []
+        video_tracks = {item.id for item in child.tracks if item.type == "video"}
         for entry in entries:
+            if _solo_kind(entry, video_tracks) == "video" and entry.track_type == "graphics":
+                # Photo d'emplacement : une image, jamais de son ; masquée avec l'image de sa piste.
+                if entry.track_id not in track_filter.hide_video:
+                    kept.append(entry)
+                continue
             if entry.track_type == "video" and entry.track_id in track_filter.hide_video:
                 if entry.track_id not in track_filter.hide_audio:
                     # Image masquée mais son retenu (politique audio fixe ou mixte) : il reste une entrée **audio**, que le

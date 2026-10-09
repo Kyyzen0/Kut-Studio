@@ -166,6 +166,7 @@ class PreviewPanel(QWidget):
         self._gpu_matte: tuple[str, object] | None = None
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
+        self._gpu_grade = None
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
         self._gpu_blend_layers: tuple = ()
         self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
@@ -833,8 +834,18 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_color_grade(self, grade) -> None:
+        """Étalonnage du clip affiché (GPU seulement) : le moniteur le montre en direct par une LUT cuite par la
+        chaîne de l'export (:mod:`core.gpu_grade`) ; ``None`` ou un étalonnage neutre : rien."""
+        from core.gpu_grade import grade_is_active
+
+        self._gpu_grade = grade if grade_is_active(grade) else None
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
     def set_adjustments(self, adjustments) -> None:
-        """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité)]`` (GPU seulement)."""
+        """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité[, étalonnage])]`` (GPU
+        seulement)."""
         self._gpu_adjustments = tuple(adjustments or ())
         if self.gpu_view is not None:
             self._update_gpu_composite()
@@ -973,6 +984,7 @@ class PreviewPanel(QWidget):
                 program=program,
                 effect_scale=(values.scale * values.scale_x, values.scale * values.scale_y),
                 matte=matte_key,
+                grade=self._gpu_grade,
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
             layers = layers + self._gpu_graphics_layers(cw, ch, mattes)
@@ -988,14 +1000,15 @@ class PreviewPanel(QWidget):
         from core.gpu_effects import program_for
 
         layers = []
-        for key, effects, coverage, opacity in self._gpu_adjustments:
+        for key, effects, coverage, opacity, *rest in self._gpu_adjustments:
             try:
                 program = program_for(effects)
             except ValueError:
                 continue
             if coverage is not None:
                 mattes[key] = coverage
-            layers.append(AdjustmentLayer(program, key if coverage is not None else "", float(opacity)))
+            grade = rest[0] if rest else None
+            layers.append(AdjustmentLayer(program, key if coverage is not None else "", float(opacity), grade=grade))
         return tuple(layers)
 
     def current_applied_transform(self) -> dict[str, float]:

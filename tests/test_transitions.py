@@ -82,3 +82,40 @@ def test_export_filter_contains_requested_xfade(transition_type, ffmpeg_name):
     add_transition(project, "a", "b")
     delete_clip(project, "b")
     assert project.transitions == []
+
+
+# --- Rendu réel : transitions entre calques transformés ----------------------------------------------------------
+
+
+@pytest.mark.skipif(__import__("shutil").which("ffmpeg") is None, reason="FFmpeg absent : rendu réel impossible")
+def test_a_transition_after_an_impact_zoom_renders_and_keeps_each_clip_in_its_place(tmp_path):
+    """Avant le 2026-10-09, ``xfade`` fondait les deux calques eux-mêmes : une échelle animée (zoom d'impact, Ken
+    Burns) donnait deux cadres de ``rotate`` de tailles différentes et FFmpeg refusait tout l'export ; et le second
+    clip aurait été posé à la place du premier. Chaque calque est maintenant posé à sa place, puis les cadres fondus."""
+    import numpy as np
+    from render_probe import lavfi_video, render_frame
+
+    from core.animation import InterpolationType
+    from core.visual_effects import ClipTransform, TransformKeyframe
+
+    width, height = 96, 54
+    red = lavfi_video(tmp_path / "red.mp4", "color=c=red", size=(width, height), seconds=2.0)
+    blue = lavfi_video(tmp_path / "blue.mp4", "color=c=blue", size=(width, height), seconds=2.0)
+    project = Project("t", width=width, height=height, fps=25.0, media_assets=[
+        MediaAsset("r", str(red), "r", 2.0, width, height, 25.0, "video"),
+        MediaAsset("b", str(blue), "b", 2.0, width, height, 25.0, "video"),
+    ], tracks=[Track("V1", "V1", "video", clips=[
+        Clip("a", "r", "V1", 0.0, 0.0, 1.0,
+             transform_keyframes=[TransformKeyframe("scale", 0.0, 1.2, InterpolationType.EASE_OUT),
+                                  TransformKeyframe("scale", 0.3, 1.0, InterpolationType.LINEAR)]),
+        Clip("b", "b", "V1", 1.0, 0.0, 1.0, transform=ClipTransform(scale=0.5, position_x=0.25)),
+    ])])
+    add_transition(project, "a", "b", duration=0.4)
+    plan = build_render_plan(project)
+    during = render_frame(plan, width, height, 0.8).astype(int)
+    after = render_frame(plan, width, height, 0.98).astype(int)
+    right, left = after[height // 2, width * 3 // 4], after[height // 2, width // 8]
+    assert right[2] > 150 and right[0] < 80, ("le second clip, réduit, est à droite", right)
+    assert left.max() < 40, ("rien à gauche à la fin : le premier clip est fondu, le second ailleurs", left)
+    assert during[height // 2, width // 8][0] > 40, "pendant le fondu, le premier clip est encore visible"
+    assert np.abs(during - after).mean() > 5

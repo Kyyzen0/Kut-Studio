@@ -315,6 +315,28 @@ def test_track_automation_dips_the_music_by_its_points(media, tmp_path):
 
 
 @requires_ffmpeg
+def test_a_rubber_band_ramp_is_heard_from_a_clip_that_starts_in_its_middle(media, tmp_path):
+    """Courbe de l'éditeur de la timeline (maintiens nuls : lignes droites) ; le clip commence au milieu de la rampe.
+
+    Avant : la rampe coupée par le début du clip devenait ``t-(-inf)`` dans l'expression, et FFmpeg refusait le graphe.
+    """
+    from core.audio_automation import AudioAutomationService
+
+    project = _project(media, [_clip("half", 1, 1.5, 4.0)])
+    service = AudioAutomationService()
+    for time, gain in ((0.5, 0.0), (2.5, -12.0), (4.5, 0.0)):
+        service.add_automation_point(project, "A1", time, gain)
+    out = _export(build_render_plan(project), tmp_path / "ramp.mkv", codec="pcm_f32le")
+    source = _level_db(media["half"], 0.3, 0.6)
+    curve = project.tracks[1].automation
+    for start, length in ((1.55, 0.05), (2.0, 0.05), (2.48, 0.04), (3.5, 0.05), (4.4, 0.05)):
+        expected = curve.gain_at(start + length / 2)
+        heard = _level_db(out, start, length) - source
+        assert heard == pytest.approx(expected, abs=TOLERANCE_DB), (start, expected, heard)
+    assert curve.gain_at(1.5) == pytest.approx(-6.0), "le clip entre bien au milieu de la descente"
+
+
+@requires_ffmpeg
 def test_a_clip_past_the_last_automation_point_is_attenuated_not_inverted(media, tmp_path):
     """Gain constant sur tout le clip : ``volume=-6`` (sans ``dB``) multipliait par -6, soit +15,6 dB en opposition."""
     from core.audio_automation import AudioAutomationService
