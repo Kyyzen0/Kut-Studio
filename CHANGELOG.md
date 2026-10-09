@@ -16,6 +16,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- Panneau **Historique** (*Fenêtre › Panneaux › Historique*) : toutes les étapes du montage, nommées, de l'ouverture du
+  projet à la dernière modification. Un clic revient à une étape en une fois ; les étapes suivantes restent
+  rétablissables (en italique) jusqu'à la prochaine modification, et l'état enregistré dans le fichier est marqué ●.
+- *Réseaux sociaux › Exporter en plusieurs formats…* : une version du montage par format coché (9:16, 4:5, 1:1, 16:9),
+  mise en page pour son cadre, puis un export par format dans la file de rendu (`nom_9x16.mp4`, `nom_1x1.mp4`…). Les
+  plans remplissent l'image, titres et calques gardent leurs proportions (mis à l'échelle ensemble, sans se tasser),
+  les fonds couvrent le cadre, et ce qui tomberait sous l'interface de la plateforme ou hors du cadre est déplacé
+  quand c'est possible sans rien recouvrir. Chaque version reste une séquence du projet, à retoucher avant l'export.
 - Courbe de volume des pistes audio, dans la timeline : une bande sous les clips (menu ⋯ de la piste › « Courbe de
   volume », ouverte d'office quand la piste a déjà une courbe). Double-clic pour poser un point, glisser pour le
   déplacer (Maj : gain seul), Suppr ou clic droit pour le retirer, le remettre à 0 dB ou effacer la courbe. La courbe
@@ -39,6 +47,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- Formes d'onde des clips audio : elles montrent enfin **le son que le clip fait entendre**, à l'endroit où on
+  l'entend : la portion de média du clip (et non tout le fichier étiré), sa vitesse et son sens, son gain, avec une
+  crête toutes les 2 ms, nette à tous les zooms pour caler une coupe sur un coup de caisse claire. Avant, le son était
+  réduit aux basses et la forme d'onde affichée avant le calcul était inventée ; un clip dont le son n'est pas encore
+  lu reste maintenant plat.
 - Courbe de volume : deux points sans maintien sont désormais reliés par une ligne droite. Avant, le volume sautait
   au niveau du point suivant dès le point précédent. Seuls des projets écrits à la main ou par script sont concernés :
   aucune interface ne posait de points jusqu'ici.

@@ -511,6 +511,8 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
         **({"beat_grid": beat_grid_to_dict(sequence.beat_grid)} if getattr(sequence, "beat_grid", None) else {}),
         # Calques générés depuis des données (classement) : présent seulement s'il y en a.
         **({"generated_groups": sequence.generated_groups} if getattr(sequence, "generated_groups", None) else {}),
+        # Version de format : présent seulement pour une version (séquence d'origine).
+        **({"format_source": sequence.format_source} if getattr(sequence, "format_source", "") else {}),
         "markers": [
             {
                 "id": marker.id,
@@ -752,6 +754,8 @@ def _deserialize_sequence(
     # --- Grille rythmique : absente d'un ancien fichier (ou abîmée) → pas de grille.
     sequence.beat_grid = beat_grid_from_dict(data.get("beat_grid"))
     sequence.generated_groups = _generated_groups_from(data.get("generated_groups"))
+    source = data.get("format_source", "")
+    sequence.format_source = source if isinstance(source, str) else ""
     # --- Ducking automatique (tâche 28) ---
     # Une version antérieure (avant v11.1) ne porte pas cette clé :
     # on retombe sur une liste vide. Les entrées invalides sont

@@ -22,7 +22,7 @@ from core.timeline_navigation import (
     step_frames,
 )
 from core.timeline_view_model import build_clip_views
-from core.media_previews import peaks_from_samples, thumbnail_slots, waveform_bins
+from core.media_previews import thumbnail_slots
 from core.project_io import load_project, save_project
 
 
@@ -124,8 +124,6 @@ def test_delete_several_clips_and_preview_budgets():
     assert all(clip.id not in {"intro", "plan_a"} for track in project.tracks for clip in track.clips)
     assert thumbnail_slots(100, enabled=False) == 0
     assert thumbnail_slots(400, enabled=True) >= 1
-    assert waveform_bins(500, "compact") <= 64
-    assert peaks_from_samples([0.0, 0.5, -1.0, 0.2], 2)[1] == 1.0
 
 
 def test_audio_cannot_move_onto_a_video_track():
@@ -228,15 +226,6 @@ def test_audio_solo_reaches_the_export_plan():
     )
     plan = build_render_plan(project)
     assert {layer.clip_id for layer in plan.audio_layers} == {"voix"}
-
-
-def test_synthetic_waveform_exists_without_a_media_file():
-    from core.media_previews import synthetic_peaks
-
-    peaks = synthetic_peaks("intro", 32)
-    assert len(peaks) == 32
-    assert all(0.0 < peak <= 1.0 for peak in peaks)
-    assert synthetic_peaks("intro", 32) == peaks
 
 
 def test_shortcuts_are_resolved_in_one_place():

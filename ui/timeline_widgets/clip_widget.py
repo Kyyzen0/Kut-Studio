@@ -11,11 +11,10 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QLabel, QWidget
 
 from core.media_previews import (
+    audio_envelope_cache_key,
     thumbnail_cache_key,
     thumbnail_slots,
     thumbnail_source_times,
-    waveform_bins,
-    waveform_cache_key,
 )
 from core.timeline_view_model import TimelineClipView
 from ui.theme import BLACK, mix_colors, set_stylesheet_if_changed
@@ -29,6 +28,7 @@ from ui.timeline_widgets.clip_style import (
 from ui.timeline_widgets.common import _color_for_track_type, _current_palette
 from ui.timeline_widgets.nested_clip import handle_nested_double_click, paint_nested_decoration
 from ui.timeline_widgets.time_overlay import paint_time_overlays
+from ui.timeline_widgets.waveform import paint_waveform
 
 LOGGER = logging.getLogger(__name__)
 
@@ -514,7 +514,7 @@ class ClipWidget(QWidget):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        self._paint_media_preview()
+        self._paint_media_preview(event.rect())
         self._paint_fade_handles()
         self._paint_effect_badge()
         self._paint_time_remapping_badges()
@@ -604,8 +604,8 @@ class ClipWidget(QWidget):
             painter.drawPolygon(polygon)
         painter.end()
 
-    def _paint_media_preview(self) -> None:
-        """Dessine une waveform ou des vignettes déjà en cache.
+    def _paint_media_preview(self, exposed: QRect | None = None) -> None:
+        """Dessine une forme d'onde ou des vignettes déjà en cache.
 
         Rien n'est calculé ici. L'absence de cache laisse le clip plat.
         """
@@ -619,33 +619,11 @@ class ClipWidget(QWidget):
         painter = QPainter(self)
         painter.setClipRect(self.rect().adjusted(2, 2, -2, -2))
         if self.view.track_type == "audio":
-            mode = parent.track_height_mode(self.view.track_id)
-            bins = waveform_bins(self.width(), mode)
-            peaks = None
+            envelope = None
             if runtime is not None and path and os.path.isfile(path):
-                peaks = runtime.cache.get(waveform_cache_key(path, bins))
-            if not peaks:
-                from core.media_previews import synthetic_peaks
-
-                peaks = synthetic_peaks(self.view.id, bins)
-            if peaks:
-                # La forme d'onde accompagne le clip sans le dominer : la couleur du thème, translucide, et seulement sous la bande du
-                # nom (le titre du clip reste lisible, aucune barre ne passe derrière).
-                painter.setPen(Qt.NoPen)
-                wave = QColor(_current_palette().clip_audio_wave)
-                wave.setAlpha(120)
-                painter.setBrush(wave)
-                step = max(1, self.width() / max(1, len(peaks)))
-                region = max(8.0, self.height() - _TITLE_BAND - 3)
-                mid = _TITLE_BAND + region / 2
-                for index, peak in enumerate(peaks):
-                    bar = max(1.0, float(peak) * region * 0.9)
-                    painter.drawRect(
-                        int(4 + index * step),
-                        int(mid - bar / 2),
-                        max(1, int(step) - 1),
-                        int(bar),
-                    )
+                envelope = runtime.cache.get(audio_envelope_cache_key(path))
+            if envelope:
+                paint_waveform(self, painter, parent, envelope, exposed or self.rect(), title_band=_TITLE_BAND)
         elif self.view.track_type == "video":
             filmstrips = True if runtime is None else runtime.resolved_profile().filmstrips
             if filmstrips:

@@ -745,6 +745,9 @@ class Sequence:
     beat_grid: BeatGrid | None = None
     # Calques générés à partir de données (classement…) : ``{id: {"kind", "data", "clips"}}``, pour les rééditer.
     generated_groups: dict = field(default_factory=dict)
+    # Version de format (:mod:`core.format_versions`) : identifiant de la séquence dont elle est la mise en page dans un
+    # autre cadre (9:16, 1:1…) ; ``""`` pour une séquence ordinaire.
+    format_source: str = ""
 
     def __post_init__(self) -> None:
         if not str(self.id or "").strip():

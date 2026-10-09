@@ -22,6 +22,40 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
                                   "Nuevo proyecto para redes sociales…"),
     "social.menu.sequence_settings": _t("Réglages de la séquence…", "Sequence settings…", "Ajustes de la secuencia…"),
     "social.menu.zones": _t("Zones de la plateforme", "Platform safe zones", "Zonas de la plataforma"),
+    "social.menu.format_versions": _t("Exporter en plusieurs formats…", "Export in several formats…",
+                                      "Exportar en varios formatos…"),
+    "social.formats.title": _t("Exporter en plusieurs formats", "Export in several formats", "Exportar en varios formatos"),
+    "social.formats.intro": _t(
+        "Chaque format reçoit sa propre séquence, mise en page pour son cadre : les plans remplissent l'image, titres "
+        "et calques gardent leurs proportions, et ce qui tomberait sous l'interface de la plateforme est déplacé. "
+        "Les versions restent dans le projet : retouchez-les avant l'export si besoin.",
+        "Each format gets its own sequence, laid out for its frame: shots fill the picture, titles and layers keep "
+        "their proportions, and whatever would fall under the platform's interface is moved. The versions stay in "
+        "the project: touch them up before exporting if needed.",
+        "Cada formato recibe su propia secuencia, maquetada para su encuadre: los planos llenan la imagen, títulos y "
+        "capas conservan sus proporciones y lo que quedaría bajo la interfaz de la plataforma se desplaza. Las "
+        "versiones quedan en el proyecto: retócalas antes de exportar si hace falta.",
+    ),
+    "social.formats.this_one": _t("{format} — ce montage", "{format} — this edit", "{format} — este montaje"),
+    "social.formats.existing": _t("{format} — version existante", "{format} — existing version",
+                                  "{format} — versión existente"),
+    "social.formats.relayout": _t(
+        "Refaire la mise en page des versions existantes (leurs retouches seront perdues)",
+        "Redo the layout of existing versions (their touch-ups will be lost)",
+        "Rehacer la maquetación de las versiones existentes (se perderán sus retoques)",
+    ),
+    "social.formats.create": _t("Créer les versions", "Create the versions", "Crear las versiones"),
+    "social.formats.export": _t("Créer et ajouter à la file de rendu", "Create and add to the render queue",
+                                "Crear y añadir a la cola de render"),
+    "social.formats.done": _t(
+        "{versions} version(s) de format prête(s) ({moved} calque(s) déplacé(s)) ; {exports} export(s) ajouté(s) à la "
+        "file de rendu.",
+        "{versions} format version(s) ready ({moved} layer(s) moved); {exports} export(s) added to the render queue.",
+        "{versions} versión(es) de formato lista(s) ({moved} capa(s) movida(s)); {exports} exportación(es) añadida(s) "
+        "a la cola de render.",
+    ),
+    "social.formats.errors_title": _t("Exports non ajoutés", "Exports not added", "Exportaciones no añadidas"),
+    "social.formats.error": _t("{format} : {error}", "{format}: {error}", "{format}: {error}"),
     "social.menu.fill_frame": _t("Remplir le cadre (recadrer)", "Fill the frame (reframe)", "Llenar el cuadro (reencuadrar)"),
     "social.menu.follow_reframe": _t("Recadrer en suivant le tracker", "Reframe following the tracker",
                                      "Reencuadrar siguiendo el tracker"),
@@ -605,6 +639,8 @@ SOCIAL_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Remplir les emplacements avec des photos", "Fill the slots with photos", "Rellenar los huecos con fotos",
     ),
     "shortcuts.command.photo_slideshow": _t("Diaporama photo", "Photo slideshow", "Presentación de fotos"),
+    "shortcuts.command.social_format_versions": _t("Exporter en plusieurs formats", "Export in several formats",
+                                                   "Exportar en varios formatos"),
     "history.template.fill_photos": _t(
         "Photos dans {count} emplacement(s)", "Photos in {count} slot(s)", "Fotos en {count} hueco(s)",
     ),

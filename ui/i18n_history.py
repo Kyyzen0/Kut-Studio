@@ -13,6 +13,18 @@ def _t(fr: str, en: str, es: str) -> dict[str, str]:
 
 
 HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
+    # --- Panneau Historique ------------------------------------------------------------------------------------------
+    "history.panel.title": _t("Historique", "History", "Historial"),
+    "history.panel.hint": _t(
+        "Cliquez une étape pour y revenir ; les étapes suivantes restent rétablissables jusqu'à la prochaine "
+        "modification.",
+        "Click a step to go back to it; the later steps can be redone until the next edit.",
+        "Haz clic en un paso para volver a él; los pasos siguientes se pueden rehacer hasta la próxima edición.",
+    ),
+    "history.panel.initial": _t("Ouverture du projet", "Project opened", "Apertura del proyecto"),
+    "history.panel.saved": _t("État enregistré dans le fichier", "State saved to the file", "Estado guardado en el archivo"),
+    "history.panel.undone": _t("Annulée : rétablissable", "Undone: can be redone", "Deshecho: se puede rehacer"),
+    "history.format_versions": _t("Versions de format", "Format versions", "Versiones de formato"),
     # --- Images-clés et courbes d'animation --------------------------------------------------------------------------
     "history.keyframes.edit": _t("Modifier les images-clés", "Edit keyframes", "Modificar fotogramas clave"),
     "history.keyframes.tangents": _t("Modifier les tangentes", "Edit tangents", "Modificar tangentes"),
