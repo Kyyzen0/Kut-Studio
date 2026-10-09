@@ -1,4 +1,5 @@
-"""Boîtes de dialogue de la vidéo sociale : nouveau projet (format, cadence, zones de plateforme) et réglages de séquence.
+"""Boîtes de dialogue de la vidéo sociale : nouveau projet (format, cadence, zones de plateforme), réglages de séquence,
+export en plusieurs formats.
 
 Le nouveau projet ne demande que l'essentiel : un nom, un **format** (le cadre de la séquence), une cadence, et la
 plateforme dont le viewer montrera les zones masquées. Les templates s'y ajoutent quand il y en a (``templates``).
@@ -12,6 +13,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -233,7 +235,79 @@ class SequenceSettingsDialog(QDialog):
         return width - width % 2, height - height % 2, float(self.fps_combo.currentData())
 
 
+@dataclass(frozen=True)
+class FormatVersionsChoice:
+    """Réponse de « Exporter en plusieurs formats… »."""
+
+    formats: tuple[str, ...]
+    relayout: bool
+    enqueue: bool
+
+
+class FormatVersionsDialog(QDialog):
+    """Formats à livrer : une version par format (séquence mise en page pour son cadre), puis un export chacun.
+
+    ``source_format`` : format du montage d'origine (``""`` si son cadre n'est pas un format social) ; ``existing`` :
+    formats dont une version existe déjà (réutilisée telle quelle, retouches comprises, sauf « refaire »)."""
+
+    def __init__(self, source_format: str, existing: set[str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(translate("social.formats.title"))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(*DIALOG_MARGINS)
+        layout.setSpacing(Spacing.md)
+        intro = QLabel(translate("social.formats.intro"))
+        intro.setWordWrap(True)
+        intro.setStyleSheet(label_style(11, "muted", 500))
+        layout.addWidget(intro)
+        self.format_boxes: dict[str, QCheckBox] = {}
+        for entry in SOCIAL_FORMATS:
+            text = format_choice_text(entry.id)
+            if entry.id == source_format:
+                text = translate("social.formats.this_one", format=text)
+            elif entry.id in existing:
+                text = translate("social.formats.existing", format=text)
+            box = QCheckBox(text)
+            box.setObjectName(f"format_version_{entry.id}")
+            box.setChecked(True)
+            box.toggled.connect(self._sync_buttons)
+            self.format_boxes[entry.id] = box
+            layout.addWidget(box)
+        self.relayout_box = QCheckBox(translate("social.formats.relayout"))
+        self.relayout_box.setVisible(bool(existing - {source_format}))
+        layout.addWidget(self.relayout_box)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        self.buttons.button(QDialogButtonBox.Cancel).setText(translate("social.dialog.cancel"))
+        self.create_button = self.buttons.addButton(translate("social.formats.create"), QDialogButtonBox.ActionRole)
+        self.export_button = self.buttons.addButton(translate("social.formats.export"), QDialogButtonBox.AcceptRole)
+        self.create_button.clicked.connect(lambda: self._finish(enqueue=False))
+        self.export_button.clicked.connect(lambda: self._finish(enqueue=True))
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+        set_single_default(self, self.export_button)
+        self._enqueue = True
+        self._source_format = source_format
+        self._sync_buttons()
+
+    def _sync_buttons(self, *_args) -> None:
+        chosen = self._chosen()
+        self.export_button.setEnabled(bool(chosen))
+        # Créer des versions n'a de sens que pour un autre format que celui du montage.
+        self.create_button.setEnabled(any(format_id != self._source_format for format_id in chosen))
+
+    def _chosen(self) -> tuple[str, ...]:
+        return tuple(format_id for format_id, box in self.format_boxes.items() if box.isChecked())
+
+    def _finish(self, *, enqueue: bool) -> None:
+        self._enqueue = enqueue
+        self.accept()
+
+    def choice(self) -> FormatVersionsChoice:
+        return FormatVersionsChoice(self._chosen(), self.relayout_box.isChecked(), self._enqueue)
+
+
 __all__ = [
-    "SEQUENCE_FRAME_RATES", "SequenceSettingsDialog", "SocialProjectChoice", "SocialProjectDialog",
+    "SEQUENCE_FRAME_RATES", "FormatVersionsChoice", "FormatVersionsDialog", "SequenceSettingsDialog",
+    "SocialProjectChoice", "SocialProjectDialog",
     "format_choice_text", "fps_text", "platform_items",
 ]

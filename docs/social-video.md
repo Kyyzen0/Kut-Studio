@@ -136,6 +136,21 @@ couleur de la palette, durée) ; sinon en crée un à la tête de lecture. Valid
 * **Copie d'aperçu** (`<nom>-apercu.mp4`) : 720 px sur le petit côté, moins de 30 Mo, taille vérifiée.
 * **Couverture** (`<nom>-couverture.jpg`) : l'image au marqueur *Couverture* (*Réseaux sociaux › Couverture à la tête de
   lecture* ; un seul par séquence), sinon à la tête de lecture lors de l'ajout de l'export.
+* **Plusieurs formats** (*Réseaux sociaux › Exporter en plusieurs formats…*) : une **version** par format coché
+  (9:16, 4:5, 1:1, 16:9), c'est-à-dire une séquence du projet à ce cadre, mise en page pour lui, puis un export par
+  format dans la file de rendu (`<nom>_9x16.mp4`, `<nom>_1x1.mp4`…, preset TikTok, Instagram 4:5, Carré 1:1 ou
+  YouTube). Les versions restent dans le projet : on les ouvre, on retouche, on réexporte ; relancer la commande les
+  réutilise telles quelles (case « Refaire la mise en page » pour repartir du montage d'origine). Mise en page
+  (`core/format_versions.py`) :
+  * un plan plein cadre **remplit** le nouveau cadre ; une incrustation garde sa taille relative ;
+  * toute la mise en page des calques (titres, formes, stickers) est mise à l'échelle **d'un même facteur**
+    (« contenir » : ×0,5625 du 9:16 au 1:1 ou au 16:9) : espacements et proportions gardés, rien ne se tasse ni ne se
+    chevauche ; un fond plein cadre (image, lumière, grain) **couvre** le cadre ; un calque enfant garde son décalage
+    en pixels par rapport à son parent ;
+  * ce qui tomberait sous l'interface de la plateforme du format (légende, boutons de TikTok) ou un texte qui
+    sortirait du cadre est déplacé : les calques qui se chevauchent bougent ensemble, du plus petit déplacement qui
+    divise au moins par deux ce qu'ils perdent, sans jamais recouvrir un autre calque ni bouger de plus de 20 % du
+    cadre ; sinon ils restent, et les zones du viewer montrent quoi reprendre à la main.
 
 ## Architecture
 
@@ -159,6 +174,7 @@ information a une source, l'aperçu fidèle rend le graphe de l'export, les proc
 | Templates | `project_templates.py`, `template_slots.py`, `leaderboard.py` | `template_gallery.py`, `leaderboard_dialog.py`, mixin `templates.py` |
 | SFX, ducking | `sfx_synth.py`, `sfx_placement.py`, `audio_automation.DUCKING_PRESETS` | `sfx_library.py`, mixin `social_audio.py` |
 | Loudness, livrables | `loudness.py`, `social_deliverables.py`, `render_presets.py`, `render_queue.py` | `export_panel.py`, `render_queue_panel.py` |
+| Versions de format | `format_versions.py` (mise en page, `Sequence.format_source`) | `FormatVersionsDialog` (`social_dialogs.py`), mixin social |
 
 ### Parité aperçu = export = GPU
 
@@ -207,6 +223,7 @@ Trois points d'architecture méritent d'être connus :
 | `fill`, `pan_x`, `pan_y` | transform du clip | faux, 0, 0 |
 | `beat_grid` | séquence | absent (pas de grille) |
 | `generated_groups` | séquence | absent |
+| `format_source` (séquence d'origine d'une version de format) | séquence | absent (séquence ordinaire) |
 | `template_slot` | clip | absent |
 | `stroke_position`, `word_reveal`, `reveal`, `highlight_*`, `word_times`, `glow_*`, `light_*` | calque graphique | rendu des anciens fichiers inchangé |
 | catégories de marqueur `music_cue`, `cover` | marqueur | `standard` |

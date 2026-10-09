@@ -132,6 +132,9 @@ def build_rich_project() -> Project:
         Clip("slot-01", "", "V1", 60.0, 0.0, 1.0, label="01", template_slot="slot-01"))
     project.markers.append(Marker("m-cover", 4.0, "C", "cover"))
     build_leaderboard(project, Leaderboard((LeaderboardRow("1", "A", "9 PTS"),), start=20.0, duration=3.0, id="lb-rich"))
+    # Version de format : une séquence liée à sa séquence d'origine (``Sequence.format_source``).
+    version = create_sequence(project, "Version 1:1", width=1080, height=1080)
+    version.format_source = project.active_sequence.id
 
     library = LibraryOrganization(project)
     folder = library.create_folder("F")

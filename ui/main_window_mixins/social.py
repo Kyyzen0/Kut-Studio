@@ -18,7 +18,7 @@ from core.sequences import set_sequence_format
 from core.social_formats import create_social_project
 from core.timeline_operations import find_clip
 from ui import i18n
-from ui.social_dialogs import SequenceSettingsDialog, SocialProjectDialog, platform_items
+from ui.social_dialogs import FormatVersionsDialog, SequenceSettingsDialog, SocialProjectDialog, platform_items
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class SocialMixin:
             "impact_flash": self.add_flash_at_playhead,
             "impact_on_cuts": self.apply_impact_on_cuts_of_track,
             "cover_marker": self.set_cover_at_playhead,
+            "social_format_versions": self.export_format_versions,
         }
 
     # -- menu --------------------------------------------------------------------------------------------------------
@@ -89,6 +90,7 @@ class SocialMixin:
         self._build_social_audio_menu(menu)
         self._build_auto_captions_menu(menu)
         menu.addAction(self._command_action("cover_marker", "social.menu.cover_here"))
+        menu.addAction(self._command_action("social_format_versions", "social.menu.format_versions"))
         menu.addAction(self._command_action("leaderboard", "leaderboard.menu"))
         photos = menu.addMenu(i18n.translate("social.menu.photos"))
         photos.addAction(self._command_action("photo_slideshow", "template.photos.slideshow_menu"))
@@ -132,6 +134,76 @@ class SocialMixin:
             action.setChecked(True)
         if changed:
             self._persist_social_preferences()
+
+    # -- versions de format ------------------------------------------------------------------------------------------
+
+    def export_format_versions(self) -> None:
+        """« Exporter en plusieurs formats… » : une version par format (séquence mise en page pour son cadre), puis un
+        export de chacune dans la file de rendu. Depuis une version, c'est sa séquence d'origine qui est déclinée."""
+        from pathlib import Path
+
+        import ui.main_window as main_window
+        from core.format_versions import FORMAT_PRESETS, create_format_version, find_format_version, format_of
+        from core.render_presets import get_preset
+        from core.social_formats import SOCIAL_FORMATS, social_format
+
+        self._finalize_pending_edit_sessions()
+        project = self.project
+        source = project.active_sequence
+        origin = project.get_sequence(source.format_source) if source.format_source else None
+        source = origin or source
+        source_format = format_of(source)
+        source_id = source_format.id if source_format else ""
+        existing = {entry.id for entry in SOCIAL_FORMATS if find_format_version(project, source.id, entry.id)}
+        dialog = FormatVersionsDialog(source_id, existing, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        choice = dialog.choice()
+        base = ""
+        if choice.enqueue:
+            spec = get_preset(FORMAT_PRESETS[choice.formats[0]])
+            base = self._ask_export_path(spec) if spec is not None else ""
+            if not base:
+                return
+        targets = []
+        made = moved = 0
+        for format_id in choice.formats:
+            if format_id == source_id:
+                targets.append((format_id, source))
+                continue
+            version = find_format_version(project, source.id, format_id)
+            if version is None or choice.relayout:
+                version, changes = create_format_version(project, source.id, format_id)
+                made += 1
+                moved += sum(1 for change in changes if change.kind == "safe_zone")
+            targets.append((format_id, version))
+        if made:
+            self._record_history(i18n.translate("history.format_versions"))
+            refresh = getattr(self, "_refresh_sequence_ui", None)
+            if callable(refresh):
+                refresh()
+        jobs, errors = [], []
+        if choice.enqueue:
+            stem, suffix = Path(base).stem, Path(base).suffix or ".mp4"
+            for format_id, sequence in targets:
+                spec = get_preset(FORMAT_PRESETS[format_id])
+                ratio = social_format(format_id).ratio.replace(":", "x")
+                output = str(Path(base).with_name(f"{stem}_{ratio}{suffix}"))
+                try:
+                    jobs.append(self.render_queue.enqueue(
+                        project, spec, output, master_gain_db=self._master_gain_db, master_muted=self._master_muted,
+                        sequence_id=sequence.id, playhead_seconds=float(self.playhead_seconds),
+                    ))
+                except (ValueError, OSError, KeyError) as error:
+                    errors.append(i18n.translate("social.formats.error", format=social_format(format_id).ratio,
+                                                 error=error))
+        self.statusBar().showMessage(
+            i18n.translate("social.formats.done", versions=len(targets) - (1 if source_id in choice.formats else 0),
+                           moved=moved, exports=len(jobs)),
+            10000,
+        )
+        if errors:
+            main_window.QMessageBox.warning(self, i18n.translate("social.formats.errors_title"), "\n".join(errors))
 
     # -- nouveau projet, séquence ----------------------------------------------------------------------------------
 
