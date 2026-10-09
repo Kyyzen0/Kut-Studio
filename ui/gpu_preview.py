@@ -536,8 +536,6 @@ class GpuPreviewWidget(QRhiWidget):
     """``(type, détail)`` : ``init``, ``render``, ``device_lost``, ``out_of_memory``."""
     ready = Signal(str)
     """Première image réussie (nom de l'API et du GPU)."""
-    gradeBaked = Signal()
-    """Une LUT d'étalonnage vient d'être cuite (émis depuis le fil de cuisson : connexion en file vers ``update``)."""
 
     def __init__(self, api: str = "metal", parent=None, cache_budget: int | None = None) -> None:
         super().__init__(parent)
@@ -546,8 +544,11 @@ class GpuPreviewWidget(QRhiWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.stats = FrameStats()
         self.cache = GpuTextureCache(cache_budget or 256 * 1024 * 1024, release=self._release_cached)
-        self.gradeBaked.connect(self.update, Qt.QueuedConnection)
-        self.grades = GradeLutCache(on_ready=self.gradeBaked.emit)
+        # Le fil de cuisson ne touche à aucun objet Qt (il ne garde même pas de référence au widget : la dernière,
+        # lâchée dans ce fil, détruirait le widget hors du fil de l'interface) ; le widget se redessine tant qu'une
+        # cuisson est en cours (voir ``_poll_grades``).
+        self.grades = GradeLutCache()
+        self._grade_poll_pending = False
         self._lut_images: OrderedDict[str, QImage] = OrderedDict()
         self._last_luts: dict[str, str] = {}
         self.executor: RhiExecutor | None = None
@@ -689,6 +690,8 @@ class GpuPreviewWidget(QRhiWidget):
             options = {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}
         found = self.grades.lookup(grade, **options)
         slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
+        if found is None and not self.grades.failed(grade, **options):
+            self._poll_grades()
         if found is None:
             # Cuisson en cours (un curseur qu'on glisse) : la LUT précédente du calque, plutôt qu'un clignotement
             # sans étalonnage ; aucune si le calque n'en a jamais eu.
@@ -709,6 +712,17 @@ class GpuPreviewWidget(QRhiWidget):
                 self._lut_images.popitem(last=False)
         images[name] = image
         return replace(layer, grade=None, grade_lut=name)
+
+    def _poll_grades(self) -> None:
+        """Une cuisson est en cours : nouvelle image dans 40 ms, qui reprendra la LUT dès qu'elle est prête."""
+        if self._grade_poll_pending:
+            return
+        self._grade_poll_pending = True
+        QTimer.singleShot(40, self, self._grade_poll_tick)
+
+    def _grade_poll_tick(self) -> None:
+        self._grade_poll_pending = False
+        self.update()
 
     def releaseResources(self) -> None:  # noqa: N802 - API Qt
         # Qt libère les ressources quand le widget est masqué ou détaché, puis le recrée : en pause aucune

@@ -115,6 +115,34 @@ def test_while_a_new_grade_bakes_the_previous_lut_stays_on_screen(widget):
     slower.set()
 
 
+def test_a_bake_that_ends_after_the_widget_is_gone_touches_no_qt_object(qtbot):
+    """Le fil de cuisson ne garde aucune référence au widget : s'il lâchait la dernière, Qt détruirait le widget hors du
+    fil de l'interface (plantage natif en CI, à la fin d'un test sans rapport). Le widget, lui, se redessine tant qu'une
+    cuisson est en cours."""
+    from ui.gpu_preview import GpuPreviewWidget
+
+    release, done = threading.Event(), threading.Event()
+
+    def bake(grade, **_options):
+        release.wait(5)
+        done.set()
+        return bytes(LUT_SIZE * LUT_SIZE * LUT_SIZE * 3)
+
+    widget = GpuPreviewWidget(api="metal")
+    widget._sources["main"] = VideoSource("main", "nv12", 64, 36, "bt709", "video")
+    widget.grades = cache = GradeLutCache(bake=bake)
+    widget._resolve_grade(_layer(GRADE), {})
+    assert widget._grade_poll_pending, "une cuisson en cours : une nouvelle image est demandée"
+    assert cache._on_ready is None, "le cache (donc le fil de cuisson) ne connaît pas le widget"
+    widget.deleteLater()
+    del widget
+    qtbot.wait(100)                                      # le widget est détruit, sa minuterie avec lui
+    release.set()
+    assert done.wait(5)
+    assert _wait(lambda: cache.lookup(GRADE, domain=DOMAIN_YUV, colorspace="bt709", color_range="video") is not None)
+    qtbot.wait(50)                                       # aucune trace Qt du fil après coup
+
+
 def test_a_grade_that_cannot_be_baked_is_simply_not_shown(widget):
     widget.grades = GradeLutCache(bake=_Baker(fail=True))
     widget._resolve_grade(_layer(GRADE), {})

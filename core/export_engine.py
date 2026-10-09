@@ -1741,11 +1741,12 @@ def _build_transition_layers(
     optionnel : ``strip_fps``) et refusait donc *toute* transition (« current rate of 1/0 is invalid »). Le ``fps`` qui
     suit la redonne ; sur un flux déjà conformé à cette cadence, il ne duplique ni ne retire aucune image.
 
-    ``frame`` (taille du cadre) : chaque couche est d'abord posée **à sa place** sur un cadre transparent, puis les deux
-    cadres sont fondus et le résultat posé en 0, 0. Fondre les couches elles-mêmes exigeait deux calques de même taille,
-    placés pareil : une échelle animée (zoom d'impact, Ken Burns) ou deux échelles différentes donnaient deux cadres de
+    ``frame`` (taille du cadre) : quand les deux couches n'ont pas la même géométrie (échelle animée — zoom d'impact,
+    Ken Burns —, ou transforms différents), chaque couche est d'abord posée **à sa place** sur un cadre transparent, puis
+    les deux cadres sont fondus et le résultat posé en 0, 0. Fondre ces couches elles-mêmes donnait deux cadres de
     ``rotate`` de tailles différentes, et FFmpeg refusait tout le graphe ; le second clip aurait de toute façon été posé
-    à la place du premier.
+    à la place du premier. Deux couches de même géométrie (le cas courant) gardent le fondu direct : ses conversions de
+    couleur sont celles qu'éprouvent les tests de rendu sur FFmpeg 6.1, 7.1 et 9.
     """
     p = prefix
     rate = ffmpeg_rate(fps)
@@ -1768,7 +1769,7 @@ def _build_transition_layers(
         inputs = {}
         for side, (index, layer) in sides.items():
             tag = f"{p}t{side}{transition_index}"
-            if frame is None:
+            if frame is None or _same_geometry(from_layer, to_layer):
                 parts.append(f"[{p}v{index}]setpts=PTS-STARTPTS,fps={rate}[{tag}]")
             else:
                 width, height = frame
@@ -1786,8 +1787,8 @@ def _build_transition_layers(
             f"offset={_format_seconds(offset)},"
             f"setpts=PTS+{_format_offset(from_layer.timeline_start)}[{label}]"
         )
-        # Posé tel quel : chaque couche est déjà à sa place dans le cadre fondu.
-        placed = from_layer if frame is None else replace(
+        # Cadres transparents : chaque couche est déjà à sa place dans le fondu, qui se pose tel quel.
+        placed = from_layer if frame is None or _same_geometry(from_layer, to_layer) else replace(
             from_layer, transform=ClipTransform(), transform_keyframes=(), animation=(),
         )
         replacements[min(from_index, to_index)] = (label, placed)
@@ -1800,6 +1801,11 @@ def _build_transition_layers(
             continue
         result.append((f"{p}v{index}", layer))
     return result
+
+
+def _same_geometry(first: RenderLayer, second: RenderLayer) -> bool:
+    """Deux couches de même cadre et de même placement : transform identique, aucune image-clé de transform."""
+    return not first.transform_keyframes and not second.transform_keyframes and first.transform == second.transform
 
 
 def _ffmpeg_transition_name(transition: RenderTransition) -> str:
