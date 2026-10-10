@@ -72,6 +72,8 @@ def unsupported(plan, scene) -> list[str]:
             missing.append(f"étalonnage ({name})")
         if getattr(layer.compositing, "masks", ()):
             missing.append(f"masques ({name})")
+        if getattr(getattr(layer.compositing, "chroma_key", None), "enabled", False):
+            missing.append(f"incrustation chroma-key ({name})")
         if layer.still or layer.is_nested:
             missing.append(f"image fixe ou imbrication ({name})")
         if layer.animation:
@@ -147,13 +149,26 @@ class ClipDecoder:
         self.process.wait()
 
 
-def yuv_frame(data: bytes, width: int, height: int):
-    """``QVideoFrame`` YUV420P remplie avec ``data`` (plans Y, U, V serrés) : une copie, sans conversion."""
+def yuv_frame(data: bytes, width: int, height: int, color: tuple[str, str] = ("", "")):
+    """``QVideoFrame`` YUV420P remplie avec ``data`` (plans Y, U, V serrés) : une copie, sans conversion.
+
+    ``color`` : ``(espace, plage)`` sondés (:func:`probe_color`), posés sur le format comme le ferait le lecteur de
+    Qt ; sans eux, :func:`ui.gpu_preview.describe_qt_frame` les lirait inconnus et le GPU convertirait en BT.601."""
     import numpy as np
     from PySide6.QtCore import QSize
     from PySide6.QtMultimedia import QVideoFrame, QVideoFrameFormat
 
-    frame = QVideoFrame(QVideoFrameFormat(QSize(width, height), QVideoFrameFormat.PixelFormat.Format_YUV420P))
+    from core.gpu_frames import QT_COLOR_RANGES, QT_COLOR_SPACES
+
+    fmt = QVideoFrameFormat(QSize(width, height), QVideoFrameFormat.PixelFormat.Format_YUV420P)
+    space, rng = color
+    spaces = {value: key for key, value in QT_COLOR_SPACES.items() if key != "ColorSpace_AdobeRgb"}
+    ranges = {value: key for key, value in QT_COLOR_RANGES.items()}
+    if space in spaces:
+        fmt.setColorSpace(getattr(QVideoFrameFormat.ColorSpace, spaces[space]))
+    if rng in ranges:
+        fmt.setColorRange(getattr(QVideoFrameFormat.ColorRange, ranges[rng]))
+    frame = QVideoFrame(fmt)
     if not frame.map(QVideoFrame.MapMode.WriteOnly):
         raise RuntimeError("QVideoFrame YUV420P non mappable")
     try:
@@ -302,7 +317,7 @@ class GpuExporter:
                 continue
             source = f"clip:{layer.clip_id}"
             started = time.perf_counter()
-            self.widget.set_video_frame(source, yuv_frame(data, decoder.width, decoder.height))
+            self.widget.set_video_frame(source, yuv_frame(data, decoder.width, decoder.height, decoder.color))
             self.timings.upload_s += time.perf_counter() - started
             values = evaluate_transform(layer.transform, layer.transform_keyframes, local,
                                         layer.timeline_end - layer.timeline_start)
@@ -476,9 +491,12 @@ def run_gpu(project, workdir: Path, ffmpeg: str, ffprobe: str, *, seconds: float
     output = workdir / f"gpu_video_t{raster_threads}.mp4"
     encoder = Encoder(ffmpeg, output, exporter.width, exporter.height, exporter.fps, hardware)
     started = time.perf_counter()
+    device = ""
     try:
         for index in range(count):
             encoder.push(exporter.frame(index))
+            if not device:
+                device = exporter.widget.device_label()  # avant ``close`` : ``release_gpu`` oublie l'exécuteur
             if index % 30 == 0:
                 app.processEvents()
         compose_s = time.perf_counter() - started
@@ -491,7 +509,7 @@ def run_gpu(project, workdir: Path, ffmpeg: str, ffprobe: str, *, seconds: float
         "output": str(output),
         "frames": count,
         "encoder": encoder.label,
-        "device": exporter.widget.device_label() if hasattr(exporter.widget, "device_label") else api,
+        "device": device or api,
         "wall_s": round(wall, 2),
         "fps": round(count / wall, 1),
         "compose_s": round(compose_s, 2),

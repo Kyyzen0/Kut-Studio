@@ -48,32 +48,41 @@ Le gain se limite à ×1,5 parce que l'essai garde la rastérisation actuelle. L
 | Préparation des envois, conversion de la relecture | 0,4 s | 2 % |
 | Attente du décodage / de l'encodage | 0,3 s | 2 % |
 
-Le décodage et l'encodage, dans leurs propres fils et processus, ne coûtent presque rien en attente.
+Le décodage et l'encodage, dans leurs propres fils et processus, ne coûtent presque rien en attente. Durées mesurées
+machine au repos, deux fois concordantes (19,7 et 19,3 s) ; une relance avec une autre charge sur la machine (tests en
+parallèle) a donné 29 s contre 48,6 s pour la référence : seuls les rapports comptent.
 
 ### Fidélité
 
 **Images brutes, sans encodeur** (sortie GPU contre `tests/render_probe.render_frame`, le graphe d'export) :
 
-| Image | PSNR | Écart moyen | Écart max |
-| --- | ---: | ---: | ---: |
-| 279 (9,3 s) | 53,1 dB | 0,32 / 255 | **1** / 255 |
-| 480 (16,0 s) | 53,0 dB | 0,33 / 255 | **1** / 255 |
-| 46 (1,5 s) | 39,0 dB | 2,2 / 255 | 58 / 255 |
-| 558 (18,6 s) | 39,7 dB | 2,3 / 255 | 43 / 255 |
-| 800 (26,7 s) | 43,6 dB | 1,3 / 255 | 30 / 255 |
+| Image | Contenu | PSNR | Écart moyen | 99ᵉ centile | Écart max |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 279 (9,3 s) | calques seuls | 53,1 dB | 0,32 / 255 | 1 | **1** / 255 |
+| 480 (16,0 s) | calques seuls (photo) | 53,0 dB | 0,33 / 255 | 1 | **1** / 255 |
+| 46 (1,5 s) | vidéo + calques | 40,1 dB | 2,2 / 255 | 4 | 55 / 255 |
+| 558 (18,6 s) | vidéo + calques | 40,5 dB | 2,2 / 255 | 4 | 42 / 255 |
+| 800 (26,7 s) | vidéo + calques | 43,6 dB | 1,4 / 255 | 3 | 28 / 255 |
 
-Sur les images 279 et 480, l'écart ne dépasse pas l'arrondi. Sur les autres, il vient d'une seule cause, vérifiée pixel
-par pixel : **le passage de la chroma 4:2:0 en pleine résolution.** Le GPU interpole la chroma (bilinéaire), alors
-que swscale, à l'export, répète chaque échantillon sur son bloc de 2×2. Les deux résultats ne diffèrent que sur les
-plans à grain chromatique (`print_hook.mp4`, `services_bg.mp4`). Exemple au pixel (740, 482) de l'image 46 : la
-vidéo vaut (212, 164, 45) pour swscale et (195, 167, 96) avec `scale=flags=bilinear+full_chroma_int`, ce que voit le
-GPU. La fusion en Incrustation par-dessus est exacte dans les deux rendus. Cet écart existe **aussi dans le moniteur
-actuel** : les tests de parité ne le voient pas parce que leurs mires ont une chroma constante par bloc de 2×2
-(`tests/gpu_harness.make_frame`).
+**Calques graphiques** : entre 3 et 17 s, le montage n'a aucun clip vidéo. Les images 279 et 480 n'ont que des
+calques, bandes et modes de fusion compris, et le GPU les reproduit à l'arrondi près.
 
-**Fichiers encodés** : PSNR moyen 42,5 dB, SSIM 0,981. Pour comparaison, ré-encoder la référence au même débit avec
+**Vidéo** : l'écart restant vient du **passage de la chroma 4:2:0 en pleine résolution**, vérifié pixel par pixel sur
+l'image 46, avec la même signature (bleu bien plus bas côté référence) aux pires pixels des images 558 et 800. Le GPU
+interpole la chroma (bilinéaire), alors que swscale, à l'export, répète chaque échantillon sur son bloc de 2×2. Les
+deux ne diffèrent nettement que sur les plans à grain chromatique (les trois clips de ce montage en ont). Exemple au
+pixel (740, 482) de l'image 46 : la vidéo vaut (212, 164, 45) pour swscale et (195, 167, 96) avec
+`scale=flags=bilinear+full_chroma_int`, ce que voit le GPU. La fusion en Incrustation par-dessus est exacte dans les
+deux rendus. Cet écart existe **aussi dans le moniteur actuel** : les tests de parité ne le voient pas parce que leurs
+mires ont une chroma constante par bloc de 2×2 (`tests/gpu_harness.make_frame`).
+
+Les images vidéo arrivent au GPU avec l'espace et la plage sondés sur la source (BT.709, plage limitée ici), comme
+celles du lecteur de Qt. Une première version de l'essai les laissait inconnus, donc convertis en BT.601 : l'écart
+était un peu plus grand (image 46 : 39,0 dB, 99ᵉ centile 8).
+
+**Fichiers encodés** : PSNR moyen 42,5 dB, SSIM 0,981 (avec et sans l'espace sondé, à cette précision). Pour comparaison, ré-encoder la référence au même débit avec
 VideoToolbox donne 47,8 dB. Le « pire » moment (16 s, 35,8 dB) est un plan à photo très texturée qui commence sur une
-image clé : c'est du bruit d'encodage, l'image brute y est exacte à 1/255 près. À l'œil, sur la planche-contact, les
+image clé : c'est du bruit d'encodage, l'image brute y est exacte à 1/255 près (calques seuls). À l'œil, sur la planche-contact, les
 deux rendus sont identiques.
 
 **Déterminisme** : les exports à 0, 4 et 8 fils de rastérisation donnent des images décodées identiques au bit près
