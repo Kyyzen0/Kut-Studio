@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ LOGGER = logging.getLogger(__name__)
 _PRIORITY_AT_PLAYHEAD = 5
 _PRIORITY_SAME_COMPOSITION = 30
 _PRIORITY_OTHER = 100
+
+# Un morceau lu en lecture repasse par le cache disque (durée de vie, dernier usage pour le LRU) au plus une fois par
+# seconde : à chaque image, ce serait une écriture sur disque 25 fois par seconde.
+_LOOKUP_SECONDS = 1.0
 
 
 @dataclass
@@ -30,6 +35,7 @@ class _CompositionCache:
     signature: tuple
     jobs: list
     paths: dict[int, str] = field(default_factory=dict)
+    looked_up: dict[int, float] = field(default_factory=dict)
 
 
 class CompositionCacheMixin:
@@ -46,13 +52,15 @@ class CompositionCacheMixin:
         return str(getattr(views.get(clip_id), "node_id", "") or "")
 
     def _composition_cache_signature(self, site) -> tuple:
-        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, médias lus."""
+        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, et les médias
+        lus **avec leur identité sur disque** (date, taille) : un fichier remplacé au même chemin refait les morceaux,
+        comme il refait les segments fidèles."""
         paths = {asset.id: asset.path for asset in self.project.media_assets}
         sequence = site.sequence
         return (
             self._composition_view_of(site.clip.id), str(self._render_quality), sequence.width, sequence.height,
             float(sequence.fps), str(self._flow_preference()),
-            tuple(sorted(paths.get(asset_id, "") for asset_id in site.clip.media_ids())),
+            tuple(sorted(_file_identity(paths.get(asset_id, "")) for asset_id in site.clip.media_ids())),
         )
 
     def _schedule_composition_caches(self, center: float) -> None:
@@ -150,7 +158,25 @@ class CompositionCacheMixin:
         path = cache.paths.get(index)
         if path is None:
             return None
-        if not os.path.isfile(path):                        # évincé du cache disque : il sera redemandé
+        now = time.monotonic()
+        if now - cache.looked_up.get(index, float("-inf")) >= _LOOKUP_SECONDS:
+            # Par le cache disque : un morceau périmé n'est plus servi, celui qu'on lit reste le plus récent du LRU.
+            engine = getattr(self, "preview_engine", None)
+            found = engine.cache.lookup(cache.jobs[index].key) if engine is not None else None
+            cache.looked_up[index] = now
+            if found is None:
+                cache.paths.pop(index, None)                # il sera redemandé à l'arrêt
+                return None
+            path = cache.paths[index] = str(found)
+        elif not os.path.isfile(path):                      # évincé entre deux passages par le cache
             cache.paths.pop(index, None)
             return None
         return path, index * CHUNK_SECONDS, (index + 1) * CHUNK_SECONDS
+
+
+def _file_identity(path: str) -> tuple:
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return (path, None, None)
+    return (path, stat.st_mtime_ns, stat.st_size)
