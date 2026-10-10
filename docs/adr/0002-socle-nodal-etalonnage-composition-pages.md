@@ -1,8 +1,8 @@
 # ADR-0002 : un socle nodal pour l'étalonnage et la composition, et des pages
 
 **Statut :** Accepté. Les étapes 1 (page Couleur, nœuds en série, roues), 2 (nœuds parallèles et de calque,
-qualifieur, avant / après, bande des plans) et 3 (fenêtres, flou et netteté ; limites des étapes 1 et 2 levées) sont
-livrées.
+qualifieur, avant / après, bande des plans), 3 (fenêtres, flou et netteté ; limites des étapes 1 et 2 levées) et 4
+(composition nodale, page Composition) sont livrées.
 **Date :** 2026-10-09
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -157,6 +157,32 @@ Une **composition nodale** sera un clip de la timeline, comme un clip Fusion :
 conversion **à sens unique** calques → nœuds fera d'un groupe de pistes ou de calques une composition nodale. Il n'y
 aura pas de synchronisation dans les deux sens : deux sources de vérité finiraient par diverger.
 
+#### Ce que l'étape 4 a décidé (livrée)
+
+Détail et usage : [composition.md](../composition.md).
+
+- **Un clip de composition** porte `Clip.composition` (immuable, partagé par les coupes et l'historique) : un
+  `CompositionGraph` sur le socle commun, une durée, l'animation de ses masques. Sources : média, calque graphique,
+  couleur unie ; traitements : transformation, masque, incrustation, effets, étalonnage ; fusion à deux entrées
+  (fond, premier plan) ; une sortie. Le fichier passe en version 17 (clé `composition`, absente partout ailleurs).
+- **Les sources sont des séquences imbriquées d'un seul clip**, planifiées par le constructeur de plan de la timeline et
+  composées comme une séquence imbriquée : proxies, images fixes, médias manquants, calques graphiques, fenêtres des
+  segments sont ceux de la timeline, sans rien réimplémenter. Seuls les nœuds sont compilés (`core/composition_render`),
+  avec les briques de l'export (placement d'un clip, `blend_onto`, matte des masques, chaîne des calques graphiques).
+  Le résultat est exact, et l'aperçu fidèle, qui compile ce même graphe, l'est aussi.
+- **Moniteur** : le choix fait avec l'utilisateur est « fidèle d'abord ». À l'arrêt, les segments fidèles montrent
+  l'image exacte, ou celle d'un nœud choisi (aperçu seulement, `composition_views`). En lecture, le moniteur temps réel
+  montre la source principale, comme pour un montage à plusieurs pistes. Composer plusieurs vidéos décodées en temps
+  réel sur GPU devient une étape à part : le compositeur GPU sait gérer plusieurs sources, le moniteur ne lui en donne
+  qu'une.
+- **Page Composition**, troisième page, comme Fusion : moniteur, nœuds et inspecteur du nœud à droite, timeline en bas.
+  On ajoute un nœud après le nœud choisi (un traitement s'y glisse, une source vient par-dessus par une fusion) ou on
+  relie les nœuds à la souris. La disposition des nœuds est automatique, par profondeur.
+- **Conversion** : une branche par calque (source → masques → transformation → effets → étalonnage → incrustation) et
+  une fusion par calque au-dessus, avec son mode. Mesuré : 1,5 niveau d'écart moyen au plus avec l'image des calques.
+  Elle refuse ce qu'une composition ne porte pas encore (imbrication, remappage, tracking, fenêtres d'étalonnage,
+  groupes, calques d'effets) plutôt que de l'approcher.
+
 ### 5. Pages
 
 Une page est une étape du travail avec **sa** disposition : Montage et Couleur aujourd'hui, Audio ensuite. La page
@@ -206,7 +232,8 @@ AZERTY.
 3. **Livrée.** Fenêtres (rectangle, ellipse, forme libre, douceur, suivies par le tracking), flou et netteté, en
    passes GPU et exacts à l'export ; pipette du qualifieur ; *Afficher la sélection* et avant / après sans moniteur
    GPU ; température et teinte corrigées ; un arrondi de moins par nœud.
-4. Composition nodale : type de clip, nœuds de fusion, de transformation, de masque et de clé, conversion calques →
-   nœuds.
+4. **Livrée.** Composition nodale : type de clip, nœuds de source, de fusion, de transformation, de masque, de clé,
+   d'effets et d'étalonnage, conversion calques → nœuds, page Composition. Restent pour plus tard : le temps réel GPU à
+   plusieurs sources, le placement libre des nœuds, l'édition des courbes d'animation dans la composition.
 5. Page Audio. D'abord un aperçu audio fidèle : le mixage rendu par le graphe audio de l'export, par morceaux. Puis
    inserts de piste, égaliseur paramétrique, sonie en direct et bus.
