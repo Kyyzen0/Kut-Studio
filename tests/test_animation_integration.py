@@ -468,8 +468,11 @@ def test_the_installed_ffmpeg_accepts_the_filter_script_option(tmp_path):
     graph = f"[0:v]format=gray,geq=lum='255*({expression})'[v]"
     assert len(graph) > 20_000
     arguments = filter_graph_arguments(graph, files)
+    # Image de 16×16 : geq évalue l'expression à chaque pixel, et à la taille par défaut (320×240) ce calcul seul
+    # prenait de 33 à 163 s sous Windows en CI. Une somme non équilibrée échoue dès l'initialisation du graphe,
+    # quelle que soit la taille de l'image : le contrôle est le même.
     completed = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=d=0.1",
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1",
          *arguments, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True,
     )
     assert completed.returncode == 0, completed.stderr
@@ -480,13 +483,16 @@ def test_the_installed_ffmpeg_accepts_the_filter_script_option(tmp_path):
 def test_real_export_of_a_heavily_animated_clip(qtbot, tmp_path):
     from test_export_integration import _wait_for_export
 
+    # 32×18 : l'opacité animée passe par geq, évalué à chaque pixel de chaque image. En 64×36, ce calcul prenait
+    # jusqu'à 106 s sous Windows en CI, près des 120 s d'attente ci-dessous. Les 125 images, les deux expressions de
+    # 500 images-clés et le graphe passé par fichier ne dépendent pas de la taille.
     white = tmp_path / "white.mp4"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
-                    "color=c=white:s=64x36:r=25:d=5", "-pix_fmt", "yuv420p", str(white)], check=True)
-    asset = MediaAsset(id="w", path=str(white), name="w", duration=5.0, width=64, height=36,
+                    "color=c=white:s=32x18:r=25:d=5", "-pix_fmt", "yuv420p", str(white)], check=True)
+    asset = MediaAsset(id="w", path=str(white), name="w", duration=5.0, width=32, height=18,
                        fps=25.0, media_type="video")
     clip = Clip(id="c", asset_id="w", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=5.0)
-    project = Project(name="many", width=64, height=36, fps=25.0, media_assets=[asset],
+    project = Project(name="many", width=32, height=18, fps=25.0, media_assets=[asset],
                       tracks=[Track(id="V1", name="V1", type="video", clips=[clip])])
     kinds = list(I)
     for index in range(500):
@@ -495,7 +501,7 @@ def test_real_export_of_a_heavily_animated_clip(qtbot, tmp_path):
     output = tmp_path / "out.mp4"
     engine = ExportEngine()
     request = ExportRequest(build_render_plan(project), str(output), ExportFormat.MP4_H264,
-                            ExportPreset("T", (64, 36), 20, "96k"), 25)
+                            ExportPreset("T", (32, 18), 20, "96k"), 25)
     finished, failed = _wait_for_export(engine, timeout_ms=120000, start=lambda: engine.start(request))
     assert finished and not failed, failed
     assert output.stat().st_size > 0
