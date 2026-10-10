@@ -1551,6 +1551,45 @@ def test_scopes_ffmpeg_command_extracts_a_single_png_frame(
     ]
 
 
+def test_a_dropped_analysis_never_destroys_a_qt_object_off_the_interface_thread(
+    qtbot, monkeypatch,
+) -> None:
+    """La fabrique d'une analyse meurt sur le thread d'analyse : elle ne doit posséder aucun ``QObject``.
+
+    Un ``ExportEngine`` par analyse, détruit là-bas, prenait un verrou de Qt puis attendait le GIL, pendant que le fil
+    de l'interface, GIL en main, attendait ce verrou dans un ``connect`` : interblocage (gel du job Windows de la
+    release 0.3.0, reproduit en local par la suite complète).
+    """
+    import threading
+
+    from PySide6.QtCore import QObject
+
+    window = _window(qtbot, monkeypatch)
+
+    class _Plan:
+        video_layers = (object(),)
+        fps = 30.0
+
+    monkeypatch.setattr(window, "get_render_plan", lambda at=None: _Plan())
+    monkeypatch.setattr("ui.main_window.ExportEngine.build_frame_command",
+                        lambda _engine, request, playhead: ["ffmpeg", "-"])
+    factories = [window._prepare_scopes_command(1.0), window._prepare_scopes_command(2.0)]
+    owned = {id(cell.cell_contents): cell.cell_contents for factory in factories
+             for cell in factory.__closure__ or () if isinstance(cell.cell_contents, QObject)}
+    assert list(owned.values()) == [window._scopes_engine], "un seul moteur, celui de la fenêtre"
+    assert window._scopes_engine.parent() is window
+    engine = window._scopes_engine
+
+    def drop():                                            # comme le thread d'analyse en fin de demande
+        factories[0]()
+        factories.clear()
+
+    worker = threading.Thread(target=drop)
+    worker.start()
+    worker.join(5.0)
+    assert not worker.is_alive() and engine.parent() is window, "le moteur survit à la demande"
+
+
 def test_scopes_ffmpeg_command_returns_none_without_video(
     qtbot, monkeypatch,
 ) -> None:
