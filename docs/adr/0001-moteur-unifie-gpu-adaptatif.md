@@ -223,6 +223,11 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
    matrice, lumière et grain en shaders, compositeur CPU allégé. Critère : le montage Onlyfab joue sans « Calcul de
    l'aperçu » sur la machine minimale.
+   *Essai fait le 2026-10-10* ([docs/perf/gpu-export-spike.md](../perf/gpu-export-spike.md)) : l'export Onlyfab
+   composé par l'exécuteur actuel est ×1,5 plus rapide et exact à 1/255 près, hormis la chroma 4:2:0, interpolée par
+   le GPU et répétée par swscale. Il reste deux goulots : la rastérisation, bloquée par le GIL (57 %, 223 contenus
+   distincts pour 1 499 rastérisations), puis la relecture synchrone (34 %). Les textures par contenu passent donc en
+   premier.
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
 6. [ ] **Étape 4 : export par le moteur.** Encodeur matériel, mode « Export de référence » ; tests de parité GPU /
    référence sur le corpus de rendu existant.

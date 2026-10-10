@@ -271,7 +271,7 @@ def bench_monitor(path: Path, seconds: float) -> dict:
 CACHE_SCRIPT = r'''
 import json, sys, time
 sys.path.insert(0, sys.argv[1])
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QImage, QColor, QPainter
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
@@ -286,6 +286,8 @@ results = {}
 for mode in ("no_cache", "cache"):
     widget = GpuPreviewWidget(api=sys.argv[2])
     widget.setFixedColorBufferSize(QSize(W, H))
+    # Jamais montré, le widget recréerait un QRhi à chaque grabFramebuffer : le cache mesuré serait celui d'un autre.
+    widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True); widget.resize(64, 64); widget.show()
     dpr = widget.devicePixelRatioF() or 1.0
     widget.set_canvas_rect((0, 0, W / dpr, H / dpr), (0, 0, 0))
     frame = make_frame(codes, "nv12")
