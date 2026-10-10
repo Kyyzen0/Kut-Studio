@@ -93,6 +93,10 @@ def build_preview_command(plan, **kwargs):
     ``-i`` : c'est par la que passe le decodage materiel (``-hwaccel``, voir
     :mod:`core.decode_policy`). Les images decodees sont telechargees en
     memoire systeme : le graphe, lui, ne change pas.
+
+    ``keyframe_interval`` (images) fixe la distance entre images clés : un
+    fichier long, lu et parcouru par le moniteur (cache d'une composition),
+    se positionne vite partout.
     """
     from .export_engine import (
         OUTPUT_COLOR_TAGS,
@@ -144,6 +148,9 @@ def build_preview_command(plan, **kwargs):
             *OUTPUT_COLOR_TAGS,
         ]
     )
+    keyframe_interval = kwargs.get("keyframe_interval")
+    if keyframe_interval:
+        command.extend(["-g", str(int(keyframe_interval)), "-keyint_min", str(int(keyframe_interval))])
     command.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k"])
     if start > 0:
         command.extend(["-ss", "%.3f" % max(0.0, start)])

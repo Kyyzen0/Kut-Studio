@@ -26,6 +26,7 @@ from dataclasses import dataclass
 
 from .project_model import Clip, Project, Sequence, Track
 from .timeline_evaluator import (
+    CompositionSource,
     ActiveClip,
     _build_active_clip,
     _is_active,
@@ -66,6 +67,9 @@ class TimelineIndex:
         # Index des séquences imbriquées, construits à la première lecture.
         self._sub_indexes: dict[str, TimelineIndex] = {}
         self._project = project
+        # Cache des compositions (``core.timeline_evaluator.CompositionSource``), lu à chaque requête : l'index survit
+        # aux éditions, le cache change avec elles.
+        self.composition_source: CompositionSource | None = None
         end = 0.0
         for track_index, track in enumerate(self.sequence.tracks):
             decorated = list(enumerate(track.clips))
@@ -127,6 +131,7 @@ class TimelineIndex:
         if index is None or index.sequence is not sequence:
             index = TimelineIndex(self._project, sequence)
             self._sub_indexes[sequence.id] = index
+        index.composition_source = self.composition_source     # le cache des compositions vaut aussi dedans
         return index
 
     def active_at(
@@ -179,7 +184,8 @@ class TimelineIndex:
                     )
                     continue
                 if clip.composition is not None:
-                    active.extend(expand_composition_clip(clip, track, entry.track_index, time_seconds, assets))
+                    active.extend(expand_composition_clip(clip, track, entry.track_index, time_seconds, assets,
+                                                          self.composition_source))
                     continue
                 asset = assets.get(clip.asset_id)
                 if asset is None:

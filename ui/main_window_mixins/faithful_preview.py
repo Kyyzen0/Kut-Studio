@@ -137,6 +137,10 @@ class FaithfulPreviewMixin:
         was_computing = bool(getattr(self, "_preview_was_computing", False))
         self._preview_was_computing = computing
         try:
+            self._refresh_composition_cache_paths()
+        except Exception:
+            LOGGER.debug("Morceaux des compositions non relevés : ils le seront au prochain rendu", exc_info=True)
+        try:
             if computing:
                 panel.set_render_state(True, i18n.translate("preview.computing"))
             else:
@@ -372,6 +376,7 @@ class FaithfulPreviewMixin:
     def _refresh_preview_cache_state(self) -> None:
         """Invalide/actualise l'état du cache après une modification."""
         self._schedule_preview_around(float(getattr(self, "playhead_seconds", 0.0)))
+        self._schedule_composition_caches(float(getattr(self, "playhead_seconds", 0.0)))
 
     def _invalidate_preview_for_clip(self, clip_id: str) -> None:
         """Invalide uniquement les segments affectés + annule l'obsolète."""
