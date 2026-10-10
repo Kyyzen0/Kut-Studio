@@ -179,6 +179,27 @@ def test_an_unconnected_or_empty_graph_is_transparent_and_a_trimmed_clip_reads_i
     assert abs(frame[18, 32] - [200, 30, 30]).max() <= 6, "à 0,3 s du clip : 1,3 s de la composition, le média"
 
 
+def test_slip_and_roll_are_bounded_by_the_composition():
+    """Un clip de composition n'a pas de média : glisser et rouler prennent la durée de la composition pour source."""
+    from core.timeline_editing import roll_edit, slip_clip
+
+    graph = _graph(SolidNode("s"), links=(("s", OUTPUT_ID),))
+    comp, after = Clip("c", "", "V1", 0.0, 1.0, 2.0), Clip("d", "", "V1", 1.0, 0.0, 1.0)
+    comp.composition = after.composition = Composition(graph, 4.0)
+    project = Project("p", width=W, height=H, fps=25.0, tracks=[Track("V1", "V1", "video", clips=[comp, after])])
+    slip_clip(project, "c", 10.0)
+    assert (comp.source_in, comp.source_out) == pytest.approx((3.0, 4.0)), "borné par la fin de la composition"
+    slip_clip(project, "c", -2.5)
+    roll_edit(project, "c", "right", 1.5)
+    assert comp.source_out == pytest.approx(2.0) and after.timeline_start == pytest.approx(1.5)
+    assert after.source_in == pytest.approx(0.5)
+
+
+def test_a_key_colour_is_six_hexadecimal_digits():
+    assert ChromaKey(color="#00ff7f").color == "#00FF7F"
+    assert ChromaKey(color="#ZZZZZZ").color == "#00FF00", "« chromakey=0xZZZZZZ » ferait échouer FFmpeg"
+
+
 @needs_ffmpeg
 def test_the_composition_plays_the_sound_of_its_media(tmp_path):
     media = tmp_path / "av.mp4"
@@ -194,6 +215,12 @@ def test_the_composition_plays_the_sound_of_its_media(tmp_path):
     muted = _graph(MediaNode("m", "v", 0.0, 0.0, 1.0, muted=True), links=(("m", OUTPUT_ID),))
     assert not [layer for layer in build_render_plan(_project(media, muted, has_audio=True)).audio_layers
                 if layer.nested_key]
+    shown = _graph(MediaNode("m", "v", 0.0, 0.0, 1.0, gain_db=-6.0), SolidNode("s"), MergeNode("f"),
+                   MediaNode("d", "v", 0.0, 0.0, 1.0), links=(("m", "f", 0), ("s", "f", 1), ("f", OUTPUT_ID)))
+    for views in (None, {"c": "s"}):                       # montrer la couleur unie ne coupe pas le son du média
+        plan = build_render_plan(_project(media, shown, has_audio=True), composition_views=views)
+        sub = plan.nested(next(layer.nested_key for layer in plan.audio_layers if layer.nested_key))
+        assert [layer.gain_db for layer in sub.plan.audio_layers] == pytest.approx([-6.0]), "« d », détaché, se tait"
 
 
 @needs_ffmpeg

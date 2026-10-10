@@ -61,8 +61,9 @@ def _time(value: object, default: float = 0.0) -> float:
 class MediaNode:
     """Un média du projet : sa source de ``source_in`` à ``source_out``, posée à l'instant ``start`` de la
     composition, adaptée au cadre comme un clip : bandes transparentes, ou cadrage « remplir » (``fill``, ``pan_x``,
-    ``pan_y``, comme le transform avancé d'un clip). Son son (``gain_db``, ``muted``) passe dans celui du clip de
-    composition, quel que soit le graphe."""
+    ``pan_y``, comme le transform avancé d'un clip). S'il est relié à la sortie, son son (``gain_db``, ``muted``) passe
+    dans celui du clip de composition, tel quel : les traitements de l'image ne le touchent pas. Un média détaché
+    ne sonne pas, comme il ne se voit pas."""
 
     id: str
     asset_id: str = ""

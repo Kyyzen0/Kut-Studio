@@ -859,7 +859,8 @@ class _PlanBuilder:
                 synthetic = _composition_source(sequence, clip, node)
                 if synthetic is not None:
                     sources.append((node.id, sub_plan(f"{base}:{node.id}{suffix}", synthetic).key))
-        sound = _composition_sound(sequence, clip, nodes, self.assets_by_id)
+        # le son suit la sortie, jamais le nœud montré : choisir un nœud à voir ne change pas ce qu'on entend
+        sound = _composition_sound(sequence, clip, composition.graph.rendered(), self.assets_by_id)
         audio = sub_plan(f"{base}:audio{suffix}", sound) if sound is not None else None
         entry = self.entries.get(key)
         if entry is None:
@@ -1004,8 +1005,8 @@ def _composition_source(sequence: Sequence, clip: Clip, node) -> Sequence | None
 
 
 def _composition_sound(sequence: Sequence, clip: Clip, nodes, assets_by_id) -> Sequence | None:
-    """Le son d'une composition : chaque média relié à l'image, non muet et qui a du son, sur sa propre piste audio, à
-    son instant."""
+    """Le son d'une composition : chaque média relié à la sortie (``nodes``), non muet et qui a du son, sur sa propre
+    piste audio, à son instant."""
     from .composition import MediaNode
 
     tracks: list[Track] = []

@@ -60,8 +60,9 @@ clip par clip : des calques sur des pistes, ou des nœuds dans un clip de compos
 
   Une image lue plusieurs fois passe par un `split`. Le résultat est lu comme une séquence imbriquée : le clip de
   composition reçoit ensuite le traitement de tout clip.
-- **Son.** Chaque média relié à l'image, non muet, sonne à son instant avec son gain ; le mixage est celui d'une
-  séquence imbriquée, puis le clip applique ses propres réglages audio.
+- **Son.** Chaque média relié à la sortie, non muet, sonne à son instant avec son gain ; un média détaché se tait,
+  comme il ne se voit pas. Le nœud montré dans le viewer ne change pas le son. Le mixage est celui d'une séquence
+  imbriquée, puis le clip applique ses propres réglages audio.
 - **Moniteur.** À l'arrêt, l'aperçu fidèle montre l'image exacte (il compile le même graphe). En lecture, le moniteur
   temps réel montre la **source principale** de la composition (le premier média actif, le fond en général), comme il
   montre la piste du haut d'un montage à plusieurs pistes. Le temps réel GPU à plusieurs sources est une étape à part.

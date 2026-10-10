@@ -116,3 +116,20 @@ def test_the_node_view_lays_out_columns_and_finds_ports():
     assert view.output_at(view._items["m"].output_port()) == "m"
     assert view.output_at(view._items[OUTPUT_ID].output_port()) is None, "la sortie n'a pas de sortie"
     assert view.input_at(QPointF(-500, -500)) is None
+
+
+def test_the_key_colour_is_sent_only_once_it_is_a_whole_hexadecimal_colour(qtbot):
+    from core.composition import KeyNode
+    from ui.composition_page.inspector import NodeInspector
+
+    inspector = NodeInspector()
+    qtbot.addWidget(inspector)
+    inspector.set_node(KeyNode("i"))
+    sent = []
+    inspector.changed.connect(lambda node, _field: sent.append(node.key.color))
+    edit = inspector.key_color.lineEdit()
+    edit.clear()
+    qtbot.keyClicks(edit, "#zz00f")
+    assert edit.text() == "#00f" and not sent, "lettres refusées, couleur incomplète gardée pour soi"
+    qtbot.keyClicks(edit, "f7f")
+    assert sent == ["#00FF7F"]

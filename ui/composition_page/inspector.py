@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QRegularExpression, Signal
+from PySide6.QtGui import QColor, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.blend_modes import BLEND_MODES, blend_label_key
-from core.compositing import CHROMA_KEY_COLORS, ChromaKey, Compositing
+from core.compositing import CHROMA_KEY_COLORS, ChromaKey, Compositing, is_hex_color
 from core.composition import (
     EffectsNode,
     GradeNode,
@@ -205,7 +205,9 @@ class NodeInspector(QWidget):
         self.key_color.setEditable(True)
         for color in CHROMA_KEY_COLORS:
             self.key_color.addItem(color)
-        self.key_color.currentTextChanged.connect(lambda text: self._edit_key(color=text))
+        self.key_color.setValidator(QRegularExpressionValidator(QRegularExpression(r"#[0-9A-Fa-f]{0,6}"), self))
+        self.key_color.currentTextChanged.connect(              # une couleur en cours de frappe n'est pas envoyée
+            lambda text: self._edit_key(color=text.upper()) if is_hex_color(text) else None)
         fields["key_color"] = (self.key_color, "comp.field.key_color", None)
         form.addRow(QLabel(), self.key_color)
         for name, key in (("tolerance", "comp.field.tolerance"), ("softness", "comp.field.softness"),
