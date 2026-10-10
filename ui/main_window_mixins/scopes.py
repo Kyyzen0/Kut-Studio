@@ -104,12 +104,28 @@ class ScopesMixin:
             force=force,
         )
 
-    def _prepare_scopes_command(self, playhead: float):
+    def _scopes_frame_engine(self):
+        """Le moteur qui bâtit les commandes d'image des scopes sur le thread d'analyse : un seul, enfant de la fenêtre.
+
+        Il est détruit avec elle, sur le fil de l'interface. Un moteur par analyse, capturé par la fabrique, mourait
+        sur le thread d'analyse quand celui-ci lâchait la demande : le destructeur du ``QObject`` y tenait un verrou de
+        Qt et attendait le GIL (``disconnectNotify`` du ``QProcess``), pendant que le fil de l'interface, GIL en main,
+        attendait ce même verrou dans un ``connect``. Interblocage : rien ne bougeait plus, même le délai de pytest
+        (gel du job Windows de la release 0.3.0, reproduit en local).
+        """
+        engine = getattr(self, "_scopes_engine", None)
+        if engine is None:
+            engine = _main_window().ExportEngine(self)
+            self._scopes_engine = engine
+        return engine
+
+    def _prepare_scopes_command(self, playhead: float, engine=None):
         """Partie « fil de l'interface » de l'analyse : fabrique ``() -> (commande, fichiers temporaires)``, ou ``None``.
 
         Le plan à la tête de lecture et la requête d'export lisent l'état de l'application : ils sont pris ici, en
         quelques millisecondes. La fabrique, elle, peut tourner sur n'importe quel thread : elle ne touche plus qu'à
-        ces objets figés et à son propre moteur.
+        ces objets figés et au moteur des scopes (:meth:`_scopes_frame_engine`, ou ``engine``), qu'elle ne possède
+        pas : ce n'est jamais elle qui le détruit.
         """
         try:
             # Le plan est ramené à l'origine à la tête de lecture : l'image voulue est la première du
@@ -134,7 +150,7 @@ class ScopesMixin:
             request = replace(request, preset=replace(request.preset, resolution=reduced))
             # Une instance dédiée évite qu'une analyse de scopes ne remplace
             # le SRT temporaire d'un export déjà en cours.
-            frame_engine = _main_window().ExportEngine()
+            frame_engine = engine if engine is not None else self._scopes_frame_engine()
             frame_engine.flow_preference = self._flow_preference()
         except Exception:
             LOGGER.debug("Requête d'image des scopes non construite : scopes non analysés", exc_info=True)
@@ -165,7 +181,8 @@ class ScopesMixin:
         fichiers temporaires de la commande sont rangés dans
         ``_scope_temporary_paths``.
         """
-        factory = self._prepare_scopes_command(playhead)
+        # Tout de suite, sur ce fil : un moteur à soi, que le thread d'analyse ne partage pas.
+        factory = self._prepare_scopes_command(playhead, engine=_main_window().ExportEngine())
         if factory is None:
             return None
         try:

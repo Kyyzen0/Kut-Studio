@@ -33,6 +33,12 @@ ensuite déclenche `.github/workflows/release.yml`.
   quand un blocage natif tient le GIL ; dans le workflow de release, l'étape des tests échoue à 45 min au lieu de
   laisser le job s'épuiser à 75 min ([docs/updates.md](docs/updates.md)).
 
+### Fixed
+
+- L'application pouvait se figer pour de bon quand les scopes étaient affichés : l'objet qui prépare l'image analysée
+  était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage de 50 min
+  des tests Windows de la release 0.3.0.
+
 ## [0.3.0] - 2026-10-10
 
 La **page Couleur**, à la manière de DaVinci Resolve : nœuds d'étalonnage en série, en parallèle et en calques, roues
