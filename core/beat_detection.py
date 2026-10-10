@@ -153,7 +153,7 @@ def plays_at_media_speed(clip: Any) -> bool:
     inversé, figé, imbriqué ou accéléré, ses temps ne tombent plus aux mêmes instants de la timeline."""
     return not (
         clip.is_time_remapped or clip.has_speed_curve or clip.is_reversed or clip.is_frozen or clip.is_nested
-        or abs(clip.speed - 1.0) > 1e-9
+        or clip.is_composition or abs(clip.speed - 1.0) > 1e-9
     )
 
 

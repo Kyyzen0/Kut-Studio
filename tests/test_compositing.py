@@ -26,8 +26,8 @@ def test_compositing_kut_round_trip_and_old_default(tmp_path):
     path = tmp_path / "x.kut"; save_project(project, str(path))
     # Le compositing reste un champ optionnel ; la version 15 (motion
     # graphics) est la version courante du format.
-    assert CURRENT_VERSION == 16
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 16
+    assert CURRENT_VERSION == 17
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 17
     restored = load_project(str(path)).tracks[0].clips[0]
     assert restored.compositing == comp
     assert build_render_plan(load_project(str(path))).video_layers[0].compositing == comp

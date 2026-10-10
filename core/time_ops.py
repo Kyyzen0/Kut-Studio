@@ -412,10 +412,10 @@ def clear_speed_curve(project: Project, clip_id: str) -> None:
 
 def ensure_interpolation_possible(clip: Clip, interpolation: TimeInterpolation) -> None:
     """Refuse un mode d'images intermédiaires que ce clip ne saurait produire (jamais accepté pour échouer à l'export)."""
-    if clip.is_nested and interpolation is not TimeInterpolation.SAMPLING:
+    if (clip.is_nested or clip.is_composition) and interpolation is not TimeInterpolation.SAMPLING:
         raise ValueError(
-            "Le mélange d'images et le flux optique ne s'appliquent pas à une séquence imbriquée (son image n'est pas un "
-            "fichier) : ouvrez-la et réglez ses clips, ou exportez-la d'abord."
+            "Le mélange d'images et le flux optique ne s'appliquent pas à une séquence imbriquée ni à une composition "
+            "(son image n'est pas un fichier) : ouvrez-la et réglez ses clips, ou exportez-la d'abord."
         )
 
 

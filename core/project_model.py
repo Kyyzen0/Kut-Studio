@@ -20,6 +20,7 @@ from .audio_automation import TrackAutomation, coerce_track_automation
 if TYPE_CHECKING:
     from .beat_grid import BeatGrid
     from .compositing import Compositing
+    from .composition import Composition
     from .multicam_model import MulticamSource
     from .effects_model import ClipEffect
     from .graphics import GraphicOverlay
@@ -358,6 +359,11 @@ class Clip:
     # Emplacement de template (``slot-03``…) : tant que son média manque, le clip est rendu comme une carte
     # d'emplacement (:mod:`core.template_slots`) ; y déposer un média le remplace en gardant timing, animation et effets.
     template_slot: str = ""
+    # --- Composition nodale ---
+    # :class:`core.composition.Composition` : l'image du clip sort d'un graphe de nœuds (``asset_id`` vide, comme un
+    # clip de séquence imbriquée) et ``source_in`` / ``source_out`` sont des temps de la composition. Immuable :
+    # partagée par les snapshots. ``None`` : clip ordinaire.
+    composition: Composition | None = None
 
     def __post_init__(self) -> None:
         """Empêche les configurations qui produiraient une durée nulle ou négative."""
@@ -509,6 +515,17 @@ class Clip:
     def is_nested(self) -> bool:
         """Le clip référence-t-il une séquence plutôt qu'un média ?"""
         return bool(self.sequence_id)
+
+    @property
+    def is_composition(self) -> bool:
+        """L'image du clip sort-elle d'une composition nodale (pas de média) ?"""
+        return self.composition is not None
+
+    def media_ids(self) -> tuple[str, ...]:
+        """Les médias que le clip montre : le sien, ou ceux des nœuds de sa composition."""
+        if self.composition is not None:
+            return tuple(sorted(self.composition.media_ids()))
+        return (self.asset_id,) if self.asset_id else ()
 
     @property
     def is_audio_affected(self) -> bool:

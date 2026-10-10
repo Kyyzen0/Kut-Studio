@@ -1328,6 +1328,13 @@ def _nested_demand(plan: RenderPlan) -> tuple[dict[str, int], dict[str, int]]:
     count(plan.video_layers, need_video)
     count(plan.audio_layers, need_audio)
     for entry in reversed(getattr(plan, "nested_sequences", ())):
+        composition = getattr(entry, "composition", None)
+        if composition is not None:
+            # Composition nodale : chacune de ses sources est lue une fois, par le nœud qui la porte.
+            if need_video.get(entry.key):
+                for _node, key in composition.sources:
+                    need_video[key] = need_video.get(key, 0) + 1
+            continue
         if need_video.get(entry.key):
             count(entry.plan.video_layers, need_video)
         if need_audio.get(entry.key):
@@ -1379,6 +1386,17 @@ def _build_nested_sources(
         inner = entry.plan
         prefix = f"n{index}_"
         width, height, fps = nested_geometry(inner, output_width, output_height, plan)
+        if getattr(entry, "composition", None) is not None:
+            # Composition nodale : son graphe compilé lit le rendu de ses sources (entrées placées avant elle).
+            from .composition_render import compile_composition
+
+            if want_video:
+                label = compile_composition(
+                    parts, entry, width, height, fps, sources.take_video, add_input, tag=prefix,
+                    pixel_scale=width / float(max(1, inner.width)),
+                )
+                sources.video[entry.key] = _fan_out(parts, label, want_video, "split")
+            continue
         video_label, audio_label = _compose_plan_graph(
             parts, inner, width, height, fps, path_to_index, sources,
             prefix=prefix, nested=True,

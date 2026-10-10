@@ -106,13 +106,15 @@ def _source_bounds(project: Project, clip: Clip) -> tuple[str, float]:
         if sequence is None:
             return "la séquence (introuvable)", float(clip.source_out)
         return f"la séquence '{sequence.name}'", float(sequence.duration)
+    if clip.composition is not None:
+        return "la composition", float(clip.composition.duration)
     asset = _find_asset(project, clip.asset_id)
     return f"du média '{asset.name}'", float(asset.duration)
 
 
 def _clip_media_type(project: Project, clip: Clip) -> str:
-    """Type de source pour la validation du remappage (séquence = vidéo)."""
-    if clip.sequence_id:
+    """Type de source pour la validation du remappage (séquence, composition = vidéo)."""
+    if clip.sequence_id or clip.composition is not None:
         return "video"
     return _find_asset(project, clip.asset_id).media_type
 
@@ -125,6 +127,10 @@ def _validate_track_clip_compatibility(project: Project, clip: Clip, track: Trac
                 f"Une séquence imbriquée ne peut aller que sur une piste vidéo ou "
                 f"audio (piste '{track.id}' de type '{track.type}')."
             )
+        return
+    if clip.composition is not None:
+        if track.type != "video":
+            raise ValueError(f"Une composition ne peut aller que sur une piste vidéo (piste '{track.id}').")
         return
     _validate_track_asset_compatibility(_find_asset(project, clip.asset_id), track)
 
@@ -348,8 +354,8 @@ def _apply_restriction(clip: Clip, restriction: Restriction) -> None:
 def _carried_properties(clip: Clip, *, copy: bool = False) -> dict:
     """Propriétés qu'une coupe ou une duplication doit conserver.
 
-    Effets, effets audio, étalonnage, calque graphique, composition, style
-    texte et référence de séquence imbriquée. ``copy`` duplique les listes
+    Effets, effets audio, étalonnage, calque graphique, compositing, style
+    texte, référence de séquence imbriquée et composition nodale. ``copy`` duplique les listes
     modifiables pour que les deux clips restent indépendants.
     """
     from copy import deepcopy
@@ -362,6 +368,7 @@ def _carried_properties(clip: Clip, *, copy: bool = False) -> dict:
         "compositing": clip.compositing,
         "text_style": clip.text_style,
         "sequence_id": clip.sequence_id,
+        "composition": clip.composition,             # immuable : les deux moitiés la partagent
         # Multicam : un segment coupé en deux garde l'angle de départ ; le changement d'angle est la seule
         # différence que l'opération de bascule applique ensuite à la moitié droite.
         "angle_id": clip.angle_id,

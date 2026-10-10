@@ -328,4 +328,4 @@ def test_faithful_preview_renders_off_the_interface_thread(qtbot, monkeypatch, t
 def test_project_format_is_unchanged_by_the_gpu_work():
     from core.project_io import CURRENT_VERSION
 
-    assert CURRENT_VERSION == 16  # préférences hors projet : les anciens projets s'ouvrent tels quels
+    assert CURRENT_VERSION == 17  # préférences hors projet : les anciens projets s'ouvrent tels quels

@@ -30,6 +30,7 @@ from .timeline_evaluator import (
     _build_active_clip,
     _is_active,
     active_track_type,
+    expand_composition_clip,
     expand_nested_clip,
 )
 
@@ -176,6 +177,9 @@ class TimelineIndex:
                             lambda child: self._sub_index(child).duration,
                         )
                     )
+                    continue
+                if clip.composition is not None:
+                    active.extend(expand_composition_clip(clip, track, entry.track_index, time_seconds, assets))
                     continue
                 asset = assets.get(clip.asset_id)
                 if asset is None:

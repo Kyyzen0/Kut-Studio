@@ -306,7 +306,7 @@ def test_animation_roundtrips_through_a_kut_file(tmp_path):
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
     stored = raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["transform_keyframes"]
-    assert raw["version"] == 16
+    assert raw["version"] == 17
     assert {"interpolation", "tangent_mode", "id"} <= set(stored[0])
     reloaded = load_project(str(path))
     clip, original = _clip(reloaded), _clip(project)

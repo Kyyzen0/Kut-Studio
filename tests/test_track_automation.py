@@ -146,7 +146,7 @@ def test_every_supported_version_loads_an_automation_in_canonical_form(tmp_path,
 
 
 def test_the_format_is_unchanged(tmp_path):
-    assert CURRENT_VERSION == 16
+    assert CURRENT_VERSION == 17
     project = Project(name="f", tracks=[Track("M1", "M1", "audio")])
     AudioAutomationService().add_automation_point(project, "M1", 1.0, -6.0, 0.2)
     track = project_payload(project)["project"]["sequences"][0]["tracks"][0]

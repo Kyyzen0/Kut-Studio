@@ -237,6 +237,9 @@ def _evaluate_sequence(
                     )
                 )
                 continue
+            if clip.composition is not None:
+                active.extend(expand_composition_clip(clip, track, track_index, time_seconds, assets))
+                continue
             asset = assets.get(clip.asset_id)
             if asset is None:
                 raise KeyError(
@@ -292,6 +295,36 @@ def _map_to_parent(clip: Clip, low: float, high: float) -> tuple[float, float]:
         return start, end
     a, b = time_map.timeline_span_of(low, high)
     return max(start, start + a), min(end, start + b)
+
+
+def expand_composition_clip(clip: Clip, track, track_index: int, time_seconds: float, assets) -> list[ActiveClip]:
+    """Entrée active d'un clip de composition pour le moniteur en direct : sa **source principale** à cet instant (le
+    premier média du graphe actif à ce moment-là, le fond en général). L'image composée, elle, vient des segments
+    fidèles (comme pour une séquence imbriquée)."""
+    from .composition import MediaNode
+    from .sequences import nested_source_time
+
+    composition = clip.composition
+    if composition is None or track.type != "video":
+        return []
+    inner_time = nested_source_time(clip, time_seconds)
+    if inner_time is None or not 0.0 <= inner_time < composition.duration:
+        return []
+    for node in composition.graph.rendered():
+        if not isinstance(node, MediaNode) or not node.start <= inner_time < node.start + node.duration:
+            continue
+        asset = assets.get(node.asset_id)
+        if asset is None:
+            continue
+        low, high = _map_to_parent(clip, node.start, node.start + node.duration)
+        return [ActiveClip(
+            clip_id=f"{clip.id}:{node.id}", asset_id=node.asset_id, track_id=track.id, track_type="video",
+            track_index=track_index, source_path=asset.path,
+            source_time=node.source_in + (inner_time - node.start), timeline_start=low,
+            timeline_end=max(low, high), text="", root_clip_id=clip.id, nested_path=(clip.id,), sequence_id="",
+            silent=node.muted,
+        )]
+    return []
 
 
 def expand_nested_clip(

@@ -210,10 +210,14 @@ class DragToolsMixin:
         remove = menu.addAction(translate("action.delete"))
         menu.addSeparator()
         nest = menu.addAction(translate("sequence.action.nest_selection"))
+        convert = menu.addAction(translate("comp.action.convert"))
         view = self.find_view_by_id(clip_id)
         open_nested = None
         if view is not None and getattr(view, "sequence_id", ""):
             open_nested = menu.addAction(translate("sequence.action.open_nested"))
+        open_composition = None
+        if view is not None and getattr(view, "is_composition", False):
+            open_composition = menu.addAction(translate("comp.action.open"))
         create_multicam = menu.addAction(translate("multicam.menu.create"))
         create_multicam.setEnabled(len(self.selected_clip_ids) >= 2)
         replace_actions, flatten, settings = self._add_multicam_menu_entries(menu, view)
@@ -233,6 +237,10 @@ class DragToolsMixin:
                 window.delete_selected_clip_with_check()
         elif chosen is nest:
             self.nest_selection_requested.emit()
+        elif chosen is convert:
+            self.composition_convert_requested.emit()
+        elif open_composition is not None and chosen is open_composition:
+            self.composition_open_requested.emit(clip_id)
         elif open_nested is not None and chosen is open_nested:
             self.nested_open_requested.emit(clip_id)
         elif chosen is create_multicam:

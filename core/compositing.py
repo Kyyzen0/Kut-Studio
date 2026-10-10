@@ -160,6 +160,10 @@ class Mask:
             object.__setattr__(self, "id", new_mask_id())
 
 
+CHROMA_KEY_COLORS: tuple[str, ...] = ("#00FF00", "#0000FF")
+"""Les fonds d'incrustation habituels (vert, bleu), proposés en premier."""
+
+
 @dataclass(frozen=True)
 class ChromaKey:
     enabled: bool = False
@@ -343,7 +347,7 @@ def build_ffmpeg_filters(value: Compositing, width: int, height: int) -> list[st
 
 
 __all__ = [
-    "BlendMode", "ChromaKey", "Compositing", "DEFAULT_POLYGON", "MASK_PROPERTIES",
+    "BlendMode", "CHROMA_KEY_COLORS", "ChromaKey", "Compositing", "DEFAULT_POLYGON", "MASK_PROPERTIES",
     "MASK_PROPERTY_ORDER", "MASK_PROPERTY_SPECS", "Mask", "MaskKeyframe", "MaskMode",
     "MaskShape", "build_ffmpeg_filters", "chroma_key_filters", "compositing_from_dict",
     "compositing_to_dict", "evaluate_mask", "evaluate_mask_at", "mask_from_dict",

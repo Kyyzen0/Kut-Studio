@@ -121,6 +121,8 @@ class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin
     keyframes_move_requested = Signal(object, float)
     # --- Séquences imbriquées ---
     nested_open_requested = Signal(str)          # double-clic / menu : ouvrir le clip imbriqué
+    composition_open_requested = Signal(str)     # double-clic / menu : ouvrir la composition du clip
+    composition_convert_requested = Signal()     # menu : convertir la sélection en composition
     nest_selection_requested = Signal()          # « Créer une séquence à partir de la sélection »
     sequence_open_requested = Signal(str)        # fil d'Ariane / menu des séquences
     sequence_back_requested = Signal()

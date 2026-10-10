@@ -448,11 +448,21 @@ def video_window_label(
     return label
 
 
+def _has_mask_node(composition) -> bool:
+    from .composition import MaskNode
+
+    return any(isinstance(node, MaskNode) and node.masks for node in composition.graph.nodes)
+
+
 def needs_graphics_preparation(plan) -> bool:
     """Le plan contient-il des calques, masques ou fenêtres d'étalonnage à rastériser avant FFmpeg ?"""
     from .color_render import windowed_nodes
 
-    plans = [plan] + [entry.plan for entry in getattr(plan, "nested_sequences", ()) or ()]
+    entries = tuple(getattr(plan, "nested_sequences", ()) or ())
+    if any(getattr(entry, "composition", None) is not None and _has_mask_node(entry.composition)
+           for entry in entries):
+        return True                                       # masques d'une composition nodale
+    plans = [plan] + [entry.plan for entry in entries]
     for current in plans:
         if any(getattr(layer, "role", "draw") == "draw" for layer in getattr(current, "graphics_layers", ()) or ()):
             return True
