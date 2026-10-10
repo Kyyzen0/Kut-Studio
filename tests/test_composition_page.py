@@ -197,6 +197,7 @@ def test_playback_reads_the_rendered_composition_and_undo_reuses_it(window, qtbo
 
 def test_a_replaced_media_file_or_an_expired_chunk_is_not_served(window, qtbot, tmp_path):
     import os
+    import time
 
     from core.sequences import nested_source_time
     from core.timeline_operations import find_clip
@@ -227,8 +228,12 @@ def test_a_replaced_media_file_or_an_expired_chunk_is_not_served(window, qtbot, 
     qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
     assert ready()[0] != first and len(rendered) > renders
 
+    # Morceau périmé : daté de deux minutes pour une durée de vie d'une. Une durée de vie de 1 µs ne suffisait pas sous
+    # Windows : la lecture précédente venait de toucher le fichier, et l'horloge y avance par pas de ~15 ms (âge nul).
+    stale = time.time() - 120.0
+    os.utime(ready()[0], (stale, stale))
     window._comp_caches[clip_id].looked_up.clear()         # repasse par le cache disque
-    engine.cache.ttl_seconds = 1e-6                        # morceau périmé
+    engine.cache.ttl_seconds = 60.0
     assert ready() is None
 
 
