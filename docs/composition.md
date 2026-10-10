@@ -64,8 +64,24 @@ clip par clip : des calques sur des pistes, ou des nœuds dans un clip de compos
   comme il ne se voit pas. Le nœud montré dans le viewer ne change pas le son. Le mixage est celui d'une séquence
   imbriquée, puis le clip applique ses propres réglages audio.
 - **Moniteur.** À l'arrêt, l'aperçu fidèle montre l'image exacte (il compile le même graphe). En lecture, le moniteur
-  temps réel montre la **source principale** de la composition (le premier média actif, le fond en général), comme il
-  montre la piste du haut d'un montage à plusieurs pistes. Le temps réel GPU à plusieurs sources est une étape à part.
+  temps réel lit le **cache de rendu** de la composition (ci-dessous) ; tant qu'il n'est pas prêt, il montre sa
+  **source principale** (le premier média actif, le fond en général), comme il montre la piste du haut d'un montage à
+  plusieurs pistes.
+- **Cache de rendu** (`core/composition_cache.py`), comme le cache « Fusion Output » de DaVinci Resolve. Le moniteur
+  temps réel n'a qu'un décodeur : il ne compose pas plusieurs vidéos en direct. La sortie de chaque composition est donc
+  rendue d'avance, à l'arrêt, en arrière-plan :
+  - par **morceaux de 10 s** de son temps propre, celui sous la tête de lecture d'abord (juste après le segment fidèle),
+    à la qualité d'aperçu, une image clé toutes les 12 images pour que le moniteur s'y positionne vite ;
+  - par le chemin des segments fidèles : un projet d'un seul clip **neutre** (la composition posée à 0, sans les
+    réglages du clip), donc le graphe de l'export, les proxys et l'empreinte des segments ; le son de la composition est
+    dans le morceau ;
+  - dans le cache des segments d'aperçu (budget, LRU, durée de vie), sous un propriétaire à part : déplacer, couper ou
+    régler le clip, ou modifier le reste du montage, ne le refait pas ; modifier la composition le refait (les demandes
+    de l'ancienne version sont abandonnées) ; annuler la modification resservit l'ancien morceau, sans rendu.
+
+  En lecture, le moniteur lit le morceau comme un média de la taille du cadre, sans proxy, et applique par-dessus le
+  transform, les effets, l'étalonnage et les masques du clip, comme l'export. Le nœud montré par la page Composition a
+  son propre cache.
 - **Fichier** (version 17). Un clip de composition a la clé `composition` : `{"duration", "nodes": [{"id", "kind",
   "label"?, …réglages}], "links": [[source, cible, entrée]], "animation"?}`. Un nœud illisible est retiré seul, un
   lien incohérent ignoré, une sortie perdue recréée : un fichier abîmé s'ouvre avec ce qui se lit encore.
@@ -99,16 +115,21 @@ effets audio des clips convertis ne suivent pas (signalé).
 | `core/composition_render.py` | compilation du graphe en sous-graphe FFmpeg |
 | `core/composition_ops.py` | conversion des calques, composition vide |
 | `core/render_plan.py` | sources en séquences d'un clip, entrée de la composition, son, nœud montré (`composition_views`) |
-| `core/timeline_evaluator.py` | source principale pour le moniteur en direct |
+| `core/composition_cache.py` | cache de rendu : morceaux, clip neutre, clé indépendante du clip |
+| `core/timeline_evaluator.py` | moniteur en direct : morceau prêt (`composition_source`), sinon source principale |
 | `ui/composition_page/` | éditeur de nœuds, inspecteur du nœud, panneau |
 | `ui/main_window_mixins/composition_page.py` | page, édition, commandes, aperçu du nœud choisi |
+| `ui/main_window_mixins/composition_cache.py` | demande des morceaux à l'arrêt, morceau prêt servi au moniteur |
 
 Tests : `tests/test_composition.py` (modèle, fichier, chaque nœud rendu par le vrai FFmpeg, son, segments, nœud
-montré, fidélité de la conversion) ; `tests/test_composition_page.py` (interface).
+montré, fidélité de la conversion) ; `tests/test_composition_cache.py` (morceaux, clé, moniteur en direct, morceau
+réel égal à l'export) ; `tests/test_composition_page.py` (interface, lecture du cache, annulation).
 
 ## Limites
 
-- Le temps réel ne montre que la source principale ; l'image composée est celle des segments fidèles, à l'arrêt.
+- Juste après une modification, la lecture montre la source principale le temps que le morceau se rende. Mesuré
+  (Apple M4, 10 s d'une composition 1080p : deux sources, une transformation, une fusion) : 1,5 s en Brouillon, 2,4 s
+  en Standard, 6,1 s en Haute. Rien ne se rend pendant la lecture.
 - Les nœuds sont placés automatiquement (une colonne par profondeur) ; on ne les déplace pas à la main.
 - Les images-clés d'une transformation ou d'un masque reprises de la conversion restent ; l'inspecteur règle leur
   valeur de départ, sans éditeur de courbes pour l'instant.

@@ -356,8 +356,8 @@ class PerformanceMixin:
             return
         asset_by_path = {a.path: a for a in self.project.media_assets if a.path}
         for clip in active:
-            if clip.track_type != "video" or not clip.source_path:
-                continue
+            if clip.track_type != "video" or not clip.source_path or clip.rendered:
+                continue                                    # un morceau de composition n'a pas de proxy
             asset = asset_by_path.get(clip.source_path)
             duration = float(getattr(asset, "duration", 0.0) or 0.0)
             self.proxies.request_lighter(clip.source_path, divisor, duration=duration)

@@ -84,6 +84,7 @@ from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.color_page import ColorPageMixin
+from ui.main_window_mixins.composition_cache import CompositionCacheMixin
 from ui.main_window_mixins.composition_page import CompositionPageMixin
 from ui.main_window_mixins.multicam import MulticamMixin
 from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
@@ -149,6 +150,7 @@ class MainWindow(
     MulticamSettingsMixin,
     ColorPageMixin,
     CompositionPageMixin,
+    CompositionCacheMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -1749,6 +1751,10 @@ class MainWindow(
             len(active_clips),
         )
         active_clips = apply_solo(self.project, active_clips)
+        if not self.is_playing:
+            # Quoi que montre le moniteur à l'arrêt (segment fidèle, média manquant…), la lecture lira les morceaux
+            # rendus des compositions : ils se préparent maintenant.
+            self._schedule_composition_caches(float(self.playhead_seconds))
 
         # Les segments produits par le moteur fidèle contiennent déjà la
         # composition complète (effets, couleur, graphiques, sous-titres et
@@ -1782,8 +1788,9 @@ class MainWindow(
         # Aperçu : proxy prêt ou original, le moins coûteux à décoder qui reste
         # assez net (voir ``preview_source_for`` ; repli silencieux sur
         # l'original si le proxy est absent, supprimé ou obsolète).
+        # Un morceau du cache d'une composition est déjà un rendu d'aperçu : pas de proxy.
         self.preview_panel.preview_at(
-            self.preview_source_for(
+            top_clip.source_path if top_clip.rendered else self.preview_source_for(
                 top_clip.source_path, divisor=self.runtime.preview_divisor(),
                 purpose=DecodePurpose.REALTIME,
             ),
@@ -1877,6 +1884,7 @@ class MainWindow(
             or self._timeline_index_project_id != project_id
         ):
             self._timeline_index = build_timeline_index(self.project)
+            self._timeline_index.composition_source = self._composition_cache_source
             self._timeline_index_project_id = project_id
             self.runtime.note_project_size(
                 media_count=len(self.project.media_assets),

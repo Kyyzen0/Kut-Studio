@@ -25,7 +25,9 @@ ensuite déclenche `.github/workflows/release.yml`.
     la souris ; **+** ajoute un nœud après le nœud choisi (une source vient par-dessus par une fusion).
   - *Convertir en composition* (clic droit dans la timeline, ou *Séquence*) : les clips vidéo et calques choisis
     deviennent les nœuds d'un seul clip, avec la même image. *Nouvelle composition* en crée une vide.
-  - L'export et l'aperçu à l'arrêt sont exacts ; en lecture, le moniteur montre la source principale.
+  - L'export et l'aperçu à l'arrêt sont exacts. En lecture, le moniteur lit la composition rendue d'avance en
+    arrière-plan (comme le cache Fusion de Resolve), avec les réglages du clip appliqués en direct ; le temps de ce
+    rendu, après une modification, il montre la source principale.
   - Les projets passent au format 17 : une version plus ancienne de Kut-Studio ne les ouvre plus.
 - Développement : un test bloqué en CI écrit la pile Python de tous ses threads dans le journal avant son délai, même
   quand un blocage natif tient le GIL ; dans le workflow de release, l'étape des tests échoue à 45 min au lieu de

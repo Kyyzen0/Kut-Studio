@@ -26,6 +26,7 @@ fautif : jamais de récursion infinie.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from .project_model import Clip, MediaAsset, Project, Sequence, Track
@@ -34,6 +35,12 @@ from .project_model import Clip, MediaAsset, Project, Sequence, Track
 # ---------------------------------------------------------------------------
 # Vue immuable d'un clip actif
 # ---------------------------------------------------------------------------
+
+
+CompositionSource = Callable[[Clip, float], "tuple[str, float, float] | None"]
+"""``(clip de composition, instant de la composition) -> (fichier, début, fin)`` : le morceau rendu de sa composition
+qui couvre cet instant (début et fin en temps de la composition), ou ``None`` s'il n'est pas prêt. Voir
+:mod:`core.composition_cache`."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +78,8 @@ class ActiveClip:
             Multicam écarte le son de cette piste (ex. enregistreur externe
             retenu à la place du son de la caméra). Vrai uniquement pour une
             entrée vidéo vue à travers une source Multicam.
+        rendered: ``source_path`` est un rendu de Kut-Studio (morceau du cache d'une composition), pas un média du
+            projet : il se lit tel quel, sans proxy.
     """
 
     clip_id: str
@@ -87,6 +96,7 @@ class ActiveClip:
     nested_path: tuple[str, ...] = ()
     sequence_id: str = ""
     silent: bool = False
+    rendered: bool = False
 
     @property
     def owner_clip_id(self) -> str:
@@ -155,7 +165,8 @@ def _build_active_clip(
 
 
 def evaluate_timeline(
-    project: Project, time_seconds: float, *, sequence_id: str | None = None
+    project: Project, time_seconds: float, *, sequence_id: str | None = None,
+    composition_source: CompositionSource | None = None,
 ) -> list[ActiveClip]:
     """Retourne les clips actifs à ``time_seconds``, dans l'ordre des pistes.
 
@@ -182,6 +193,8 @@ def evaluate_timeline(
     Args:
         project: projet à évaluer (non muté).
         time_seconds: instant de timeline à évaluer (en secondes, >= 0).
+        composition_source: le cache des compositions (voir :data:`CompositionSource`) ; sans lui, un clip de
+            composition montre sa source principale.
 
     Returns:
         Liste de :class:`ActiveClip` dans l'ordre des pistes du projet
@@ -207,7 +220,7 @@ def evaluate_timeline(
             raise KeyError(f"Séquence '{sequence_id}' introuvable dans le projet.")
         sequence = found
     assets = {asset.id: asset for asset in project.media_assets}
-    return _evaluate_sequence(project, sequence, time_seconds, assets, (sequence.id,))
+    return _evaluate_sequence(project, sequence, time_seconds, assets, (sequence.id,), composition_source)
 
 
 def _evaluate_sequence(
@@ -216,6 +229,7 @@ def _evaluate_sequence(
     time_seconds: float,
     assets: dict[str, MediaAsset],
     stack: tuple[str, ...],
+    composition_source: CompositionSource | None = None,
 ) -> list[ActiveClip]:
     """Évaluation linéaire d'une séquence (descend dans les imbrications)."""
     active: list[ActiveClip] = []
@@ -232,13 +246,14 @@ def _evaluate_sequence(
                     expand_nested_clip(
                         project, clip, track, track_index, time_seconds, stack,
                         lambda child, inner_time, inner_stack: _evaluate_sequence(
-                            project, child, inner_time, assets, inner_stack
+                            project, child, inner_time, assets, inner_stack, composition_source
                         ),
                     )
                 )
                 continue
             if clip.composition is not None:
-                active.extend(expand_composition_clip(clip, track, track_index, time_seconds, assets))
+                active.extend(expand_composition_clip(clip, track, track_index, time_seconds, assets,
+                                                      composition_source))
                 continue
             asset = assets.get(clip.asset_id)
             if asset is None:
@@ -297,10 +312,16 @@ def _map_to_parent(clip: Clip, low: float, high: float) -> tuple[float, float]:
     return max(start, start + a), min(end, start + b)
 
 
-def expand_composition_clip(clip: Clip, track, track_index: int, time_seconds: float, assets) -> list[ActiveClip]:
-    """Entrée active d'un clip de composition pour le moniteur en direct : sa **source principale** à cet instant (le
-    premier média du graphe actif à ce moment-là, le fond en général). L'image composée, elle, vient des segments
-    fidèles (comme pour une séquence imbriquée)."""
+def expand_composition_clip(
+    clip: Clip, track, track_index: int, time_seconds: float, assets,
+    composition_source: CompositionSource | None = None,
+) -> list[ActiveClip]:
+    """Entrée active d'un clip de composition pour le moniteur en direct.
+
+    Le morceau rendu de sa composition qui couvre cet instant (``composition_source``, l'image composée exacte), lu
+    comme un média de la taille du cadre ; sinon, tant qu'il n'est pas prêt, sa **source principale** (le premier
+    média du graphe actif à ce moment-là, le fond en général). Les réglages du clip lui-même (transform, effets,
+    étalonnage) s'appliquent par-dessus, comme pour tout clip."""
     from .composition import MediaNode
     from .sequences import nested_source_time
 
@@ -310,6 +331,15 @@ def expand_composition_clip(clip: Clip, track, track_index: int, time_seconds: f
     inner_time = nested_source_time(clip, time_seconds)
     if inner_time is None or not 0.0 <= inner_time < composition.duration:
         return []
+    rendered = composition_source(clip, inner_time) if composition_source is not None else None
+    if rendered is not None:
+        path, low, high = rendered
+        start, end = _map_to_parent(clip, low, min(high, composition.duration))
+        return [ActiveClip(
+            clip_id=clip.id, asset_id="", track_id=track.id, track_type="video", track_index=track_index,
+            source_path=path, source_time=inner_time - low, timeline_start=start, timeline_end=max(start, end),
+            text="", root_clip_id=clip.id, nested_path=(clip.id,), sequence_id="", rendered=True,
+        )]
     for node in composition.graph.rendered():
         if not isinstance(node, MediaNode) or not node.start <= inner_time < node.start + node.duration:
             continue
@@ -404,6 +434,7 @@ def expand_nested_clip(
                 sequence_id=entry.sequence_id or child.id,
                 silent=entry.silent
                 or (entry.track_type == "video" and entry.track_id in track_filter.hide_audio),
+                rendered=entry.rendered,
             )
         )
     return mapped

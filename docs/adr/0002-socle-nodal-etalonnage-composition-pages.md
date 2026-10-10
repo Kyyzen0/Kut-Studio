@@ -172,9 +172,14 @@ Détail et usage : [composition.md](../composition.md).
   Le résultat est exact, et l'aperçu fidèle, qui compile ce même graphe, l'est aussi.
 - **Moniteur** : le choix fait avec l'utilisateur est « fidèle d'abord ». À l'arrêt, les segments fidèles montrent
   l'image exacte, ou celle d'un nœud choisi (aperçu seulement, `composition_views`). En lecture, le moniteur temps réel
-  montre la source principale, comme pour un montage à plusieurs pistes. Composer plusieurs vidéos décodées en temps
-  réel sur GPU devient une étape à part : le compositeur GPU sait gérer plusieurs sources, le moniteur ne lui en donne
-  qu'une.
+  montrait d'abord la source principale, comme pour un montage à plusieurs pistes.
+- **Lecture : un cache de rendu** (choix fait avec l'utilisateur, 2026-10-10). Le moniteur temps réel n'a qu'un
+  décodeur ; composer plusieurs vidéos décodées en direct demanderait d'abord plusieurs décodeurs synchronisés (étape 2
+  de l'ADR-0001). Comme le cache « Fusion Output » de Resolve, la sortie de chaque composition est donc rendue d'avance,
+  par morceaux de 10 s de son temps, par le graphe de l'export (`core/composition_cache.py`), puis lue par le moniteur
+  à la place de la source principale, un seul flux comme avant ; les réglages du clip s'appliquent par-dessus, en direct.
+  Le cache ne dépend que du contenu de la composition : déplacer ou couper le clip ne le refait pas, annuler une
+  modification le resservit. La composition en direct de plusieurs sources reste à l'ADR-0001.
 - **Page Composition**, troisième page, comme Fusion : moniteur, nœuds et inspecteur du nœud à droite, timeline en bas.
   On ajoute un nœud après le nœud choisi (un traitement s'y glisse, une source vient par-dessus par une fusion) ou on
   relie les nœuds à la souris. La disposition des nœuds est automatique, par profondeur.
@@ -233,7 +238,8 @@ AZERTY.
    passes GPU et exacts à l'export ; pipette du qualifieur ; *Afficher la sélection* et avant / après sans moniteur
    GPU ; température et teinte corrigées ; un arrondi de moins par nœud.
 4. **Livrée.** Composition nodale : type de clip, nœuds de source, de fusion, de transformation, de masque, de clé,
-   d'effets et d'étalonnage, conversion calques → nœuds, page Composition. Restent pour plus tard : le temps réel GPU à
-   plusieurs sources, le placement libre des nœuds, l'édition des courbes d'animation dans la composition.
+   d'effets et d'étalonnage, conversion calques → nœuds, page Composition ; en lecture, le cache de rendu des
+   compositions. Restent pour plus tard : le placement libre des nœuds, l'édition des courbes d'animation dans la
+   composition (la composition en direct de plusieurs sources relève de l'ADR-0001).
 5. Page Audio. D'abord un aperçu audio fidèle : le mixage rendu par le graphe audio de l'export, par morceaux. Puis
    inserts de piste, égaliseur paramétrique, sonie en direct et bus.

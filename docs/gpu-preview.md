@@ -688,7 +688,8 @@ toutes les variantes.
 - **Moniteur temps réel** : une seule piste vidéo (celle du dessus), en CPU
   comme en GPU. La composition exacte de plusieurs pistes vidéo superposées,
   avec leurs modes de fusion, reste au rendu fidèle. Le mode de fusion du clip
-  affiché s'applique contre le fond noir du cadre.
+  affiché s'applique contre le fond noir du cadre. Un clip de composition, lui,
+  est lu par son cache de rendu (voir [composition.md](composition.md)).
 - **Calques d'effets** : sur GPU, ils s'appliquent à la vidéo, pas aux calques
   motion graphics situés dessous. Ces calques sont dessinés par Qt au-dessus du
   GPU.

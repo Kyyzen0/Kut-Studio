@@ -133,3 +133,57 @@ def test_the_key_colour_is_sent_only_once_it_is_a_whole_hexadecimal_colour(qtbot
     assert edit.text() == "#00f" and not sent, "lettres refusées, couleur incomplète gardée pour soi"
     qtbot.keyClicks(edit, "f7f")
     assert sent == ["#00FF7F"]
+
+
+def test_playback_reads_the_rendered_composition_and_undo_reuses_it(window, qtbot, monkeypatch, tmp_path):
+    from core.composition_cache import cache_owner
+    from core.sequences import nested_source_time
+    from core.timeline_operations import find_clip
+
+    _ids, result = _converted(window)
+    clip_id = result.clip.id
+    engine = window.preview_engine
+    rendered = []
+
+    def fake_render(job, token):                           # instantané : seul l'ordonnancement est testé ici
+        rendered.append(job.key.clip_id)
+        out = tmp_path / f"render-{len(rendered)}.mp4"
+        out.write_bytes(b"\0" * 64)
+        return str(out)
+
+    engine.render_fn = fake_render
+    engine._uses_default_render = False
+    shown = []
+    monkeypatch.setattr(window.preview_panel, "preview_at",
+                        lambda path, t, playing=False: shown.append((path, t, playing)))
+    window.is_playing = False
+    clip = find_clip(window.project, clip_id)
+    window.playhead_seconds = clip.timeline_start + 0.5
+    inner = nested_source_time(clip, window.playhead_seconds)
+
+    def ready():
+        return window._composition_cache_source(find_clip(window.project, clip_id), inner)
+
+    window._schedule_composition_caches(window.playhead_seconds)
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    chunk = ready()[0]
+    assert cache_owner(clip_id) in rendered
+    window.is_playing = True                               # la lecture lit le morceau, sans proxy
+    try:
+        window._sync_preview_core()
+    finally:
+        window.is_playing = False
+    assert shown[-1][0] == chunk and shown[-1][1] == pytest.approx(inner)
+
+    graph = find_clip(window.project, clip_id).composition.graph
+    media = next(node for node in graph.nodes if isinstance(node, MediaNode))
+    window.on_comp_node_selected(media.id)
+    window.composition_panel.nodes.add_requested.emit("transform", media.id)
+    assert ready() is None or ready()[0] != chunk, "composition modifiée : plus l'ancien morceau"
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    assert ready()[0] != chunk
+    renders = len(rendered)
+    window.undo_last()
+    window._schedule_composition_caches(window.playhead_seconds)
+    assert ready() is not None and ready()[0] == chunk, "annuler : le morceau d'avant resservi"
+    assert len(rendered) == renders, "sans nouveau rendu"

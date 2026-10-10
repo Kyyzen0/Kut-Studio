@@ -70,6 +70,12 @@ class PreviewJob:
     srt_path: str | None = None
     priority: int = 100
     """Urgence dans la file (plus petit = plus urgent), voir :mod:`core.prefetch`."""
+    keyframe_interval: int | None = None
+    """Distance entre images clés du fichier rendu (``None`` : celle de l'encodeur), voir
+    :func:`core.filter_graph.build_preview_command`."""
+    anchored: bool = True
+    """``start`` est un instant de la timeline : :meth:`PreviewEngine.cancel_outside` abandonne le job quand la tête de
+    lecture s'en éloigne. ``False`` pour un rendu qui ne suit pas la tête (morceau d'une composition)."""
 
 
 @dataclass
@@ -245,7 +251,8 @@ class PreviewEngine:
             generation = self._generation_seq
             self._generations[token_key] = generation
             self._key_clips[token_key] = str(getattr(key, "clip_id", ""))
-            self._key_starts[token_key] = float(getattr(job, "start", 0.0))
+            if getattr(job, "anchored", True):
+                self._key_starts[token_key] = float(getattr(job, "start", 0.0))
             epoch = self._epoch
 
         def _run(token):
@@ -388,6 +395,40 @@ class PreviewEngine:
                     "Annulation d'un rendu d'aperçu en échec : FFmpeg peut tourner jusqu'à son délai et laisser son fichier temporaire",
                     exc_info=True,
                 )
+        if victims:
+            self._notify()
+        return len(victims)
+
+    def cancel_owner(self, owner, keep=()):
+        """Abandonne les rendus (en file ou en cours) du propriétaire ``owner``, sauf les clés ``keep``.
+
+        Sans toucher au cache : un rendu remplacé par une version plus récente (une composition modifiée) ne doit pas
+        occuper la file, mais ce qui est déjà sur disque reste valable pour son contenu (annuler la modification le
+        resservira). Retourne le nombre de rendus abandonnés."""
+        from .preview_cache import segment_key_string
+
+        owner = str(owner)
+        kept = {"preview:" + segment_key_string(key) for key in keep}
+        with self._lock:
+            victims = [token_key for token_key, clip in self._key_clips.items()
+                       if clip == owner and token_key not in kept]
+            tokens = [self._tokens[token_key] for token_key in victims if token_key in self._tokens]
+            for token_key in victims:
+                self._forget_locked(token_key)
+        cancel_key = getattr(self.tasks, "cancel_key", None)
+        for token_key in victims:
+            if callable(cancel_key):
+                try:
+                    cancel_key(token_key)
+                except Exception:
+                    LOGGER.warning("Annulation de la tâche d'aperçu %s en échec : elle peut encore s'exécuter pour rien",
+                                   token_key, exc_info=True)
+        for token in tokens:
+            try:
+                token.cancel()
+            except Exception:
+                LOGGER.warning("Annulation d'un rendu d'aperçu en échec : FFmpeg peut tourner jusqu'à son délai",
+                               exc_info=True)
         if victims:
             self._notify()
         return len(victims)
@@ -680,6 +721,7 @@ class PreviewEngine:
                     temporary_files=graph_files,
                     input_args=lambda path: args_for(path) if path in media else (),
                     prepared=prepared or None,
+                    keyframe_interval=getattr(job, "keyframe_interval", None),
                 )
 
             def run(command):
