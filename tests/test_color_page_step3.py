@@ -286,3 +286,40 @@ def test_the_viewer_handles_turn_a_gesture_into_the_typed_values():
     overlay.set_window(geometry)
     assert overlay._window_hit(overlay.to_scene(100, 50)) == "w_move"
     assert overlay._window_hit(overlay.to_scene(140, 30)) == "w_tr"
+
+
+def test_removing_a_node_drops_the_state_of_its_windows_and_reset_clears_its_blur(qtbot, window):
+    from dataclasses import replace
+
+    from core.animation import Keyframe
+    from core.compositing import MaskShape, mask_property_id
+    from core.timeline_operations import find_clip
+    from core.tracking_model import ClipTracking, TrackLink, TrackTarget
+
+    clip_id = _clip(window)
+    _windows_tab(window).add_buttons[MaskShape.RECTANGLE].click()
+    first = _node(window, clip_id)
+    window_id = first.windows[0].id
+    window.on_color_node_add(first.id)                              # le nœud fenêtré devient supprimable
+    clip = find_clip(window.project, clip_id)
+    clip.animation = [Keyframe(mask_property_id(window_id, "width"), 0.0, 0.3)]
+    clip.tracking = replace(clip.tracking or ClipTracking(),
+                            links=(TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),))
+    window._record_history("préparation")
+    window.on_color_node_remove(first.id)
+    clip = find_clip(window.project, clip_id)
+    assert not clip.animation and not clip.tracking.links, "le nœud emporte l'état de ses fenêtres"
+
+    second = clip.color_grade if not hasattr(clip.color_grade, "correctors") else clip.color_grade.correctors[0]
+    node_id = getattr(second, "id", "n1")
+    window.on_color_node_selected(node_id)
+    window.color_panel.detail.spins["blur"].setValue(3.0)
+    window.color_panel.detail.spins["sharpen"].setValue(1.0)
+    window._finalize_color_history()
+    node = _node(window, clip_id)
+    assert (node.blur, node.sharpen) == (3.0, 1.0)
+    window.on_color_node_reset(node.id)
+    grade = find_clip(window.project, clip_id).color_grade
+    reset = grade.correctors[0] if hasattr(grade, "correctors") else None
+    assert reset is None or (reset.blur, reset.sharpen) == (0.0, 0.0), "réinitialisé : plus de flou ni de netteté"
+    assert window.color_panel.detail.spins["blur"].value() == 0.0

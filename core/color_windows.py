@@ -66,3 +66,24 @@ def window_coverage(project, clip_id: str, windows, timeline_time: float, point:
     if matte is None:
         return 1.0
     return ((matte.pixel(0, 0) >> 24) & 0xFF) / 255.0
+
+
+def window_ids(value) -> set[str]:
+    """Identifiants des fenêtres des nœuds d'un étalonnage (graphe ou réglage simple)."""
+    from .color_nodes import windows_of
+
+    return {window.id for window in windows_of(value)}
+
+
+def forget_windows(clip, ids) -> None:
+    """Les fenêtres ``ids`` ont quitté l'étalonnage de ``clip`` : leurs images-clés ``mask.<id>.*`` et leurs liaisons
+    de tracking partent avec elles (sinon : liaisons cassées dans le panneau Tracking, avertissements « masque
+    absent » au rendu). Quel que soit le geste : supprimer la fenêtre, son nœud, coller un autre étalonnage."""
+    gone = set(ids)
+    if not gone:
+        return
+    clip.animation = [kf for kf in clip.animation
+                      if not (kf.property_name.startswith("mask.") and kf.property_name.split(".")[1] in gone)]
+    tracking = getattr(clip, "tracking", None)
+    if tracking is not None and any(link.mask_id in gone for link in tracking.links):
+        clip.tracking = replace(tracking, links=tuple(link for link in tracking.links if link.mask_id not in gone))

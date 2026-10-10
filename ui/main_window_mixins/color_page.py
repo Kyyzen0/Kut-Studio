@@ -278,9 +278,12 @@ class ColorPageMixin:
         if self._color_highlight and clip_id is not None:
             self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
-    def _edit_color_nodes(self, change, label_key: str, *, also=None) -> bool:
+    def _edit_color_nodes(self, change, label_key: str) -> bool:
         """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour.
-        ``also(clip_id)`` : ce qui change avec, dans la même étape (avant qu'elle soit enregistrée)."""
+        Une fenêtre qui disparaît (elle, ou son nœud) emporte ses images-clés et ses liaisons de tracking, dans la
+        même étape (avant qu'elle soit enregistrée)."""
+        from core.color_windows import forget_windows, window_ids
+
         clip_id = self._color_clip_id()
         if clip_id is None:
             return False
@@ -288,13 +291,14 @@ class ColorPageMixin:
         if track is None or track.locked:                    # comme pour les réglages : piste verrouillée, rien
             return False
         self._finalize_color_history()
+        clip = _clip
+        before = window_ids(getattr(clip, "color_grade", None))
         try:
             ColorGradingService().edit_nodes(self.project, clip_id, change)
         except (ColorGradingError, NodeGraphError) as exc:
             self._report_edit_refused(exc)
             return False
-        if also is not None:
-            also(clip_id)
+        forget_windows(clip, before - window_ids(clip.color_grade))
         self.properties_panel.set_color_node(self._color_node_id)
         self._record_history(translate(label_key))
         self._reload_timeline_preserving_selection(clip_id)
@@ -348,7 +352,10 @@ class ColorPageMixin:
     def on_color_node_reset(self, node_id: str) -> None:
         from core.color_grading import ColorGrade
 
-        self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade()), "history.color.node_reset")
+        # Un nœud réinitialisé ne change plus l'image : réglage neutre, ni flou ni netteté (sa sélection, qualifieur et
+        # fenêtres, reste en place).
+        self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade())
+                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset")
 
     def on_color_qualifier_changed(self, qualifier) -> None:
         """Le qualifieur du nœud courant change : rafale regroupée en une étape, moniteur à jour."""
@@ -395,29 +402,8 @@ class ColorPageMixin:
         if clip_id is None:
             return
         node_id = self._color_node_for(clip_id)
-        kept = {window.id for window in windows}
-        try:
-            removed = {window.id for window in ColorGradingService().get_graph(self.project, clip_id)
-                       .corrector(node_id).windows} - kept
-        except (ColorGradingError, NodeGraphError):
-            return
-        self._edit_color_nodes(lambda graph: graph.with_windows(node_id, windows), label_key,
-                               also=(lambda edited: self._forget_windows(edited, removed)) if removed else None)
+        self._edit_color_nodes(lambda graph: graph.with_windows(node_id, windows), label_key)
         self._refresh_window_editing()
-
-    def _forget_windows(self, clip_id: str, window_ids: set[str]) -> None:
-        """Images-clés ``mask.<id>.*`` et liaisons de tracking des fenêtres supprimées (dans la même étape)."""
-        from dataclasses import replace
-
-        from core.timeline_operations import find_clip
-
-        clip = find_clip(self.project, clip_id)
-        clip.animation = [kf for kf in clip.animation
-                          if not (kf.property_name.startswith("mask.") and kf.property_name.split(".")[1] in window_ids)]
-        tracking = getattr(clip, "tracking", None)
-        if tracking is not None and any(link.mask_id in window_ids for link in tracking.links):
-            clip.tracking = replace(tracking, links=tuple(link for link in tracking.links
-                                                          if link.mask_id not in window_ids))
 
     def on_color_detail_changed(self, blur: float, sharpen: float) -> None:
         self._edit_current_node(lambda graph, node_id: graph.with_detail(node_id, blur=blur, sharpen=sharpen),

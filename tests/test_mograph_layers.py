@@ -179,6 +179,33 @@ def test_attributes_copy_transform_effects_masks_and_keyframes():
     assert mask_property_id(new_mask.id, "feather") in names and "graphic.tracking" in names
 
 
+def test_attributes_keep_colour_windows_and_their_keyframes_apart_from_masks():
+    """Les fenêtres des nœuds d'étalonnage voyagent avec l'étalonnage (« effets ») : leurs images-clés aussi, et celles
+    des fenêtres remplacées partent avec leurs liaisons ; coller des masques ne touche pas aux fenêtres du clip."""
+    from dataclasses import replace
+
+    from core.color_grading import ColorGrade
+    from core.color_nodes import ColorNode, ColorNodeGraph
+    from core.tracking_model import ClipTracking, TrackLink, TrackTarget
+
+    project = _project()
+    source, target, _c = _three(project)
+    window, old = Mask(), Mask()
+    source.color_grade = ColorNodeGraph.serial((ColorNode("n1", ColorGrade(exposure=0.3), windows=(window,)),))
+    source.animation = [Keyframe(mask_property_id(window.id, "position_x"), 0, 0.2)]
+    target.color_grade = ColorNodeGraph.serial((ColorNode("n1", ColorGrade(exposure=0.1), windows=(old,)),))
+    target.animation = [Keyframe(mask_property_id(old.id, "width"), 0, 0.3)]
+    target.tracking = replace(ClipTracking(), links=(TrackLink(tracker_ids=("t",), target=TrackTarget.MASK,
+                                                               mask_id=old.id),))
+    paste_attributes(project, [target.id], copy_attributes(project, source.id), ("masks",))
+    assert [kf.property_name for kf in target.animation] == [mask_property_id(old.id, "width")], \
+        "coller des masques garde les images-clés des fenêtres"
+    paste_attributes(project, [target.id], copy_attributes(project, source.id), ("effects",))
+    assert target.color_grade.correctors[0].windows == (window,)
+    assert [kf.property_name for kf in target.animation] == [mask_property_id(window.id, "position_x")]
+    assert not target.tracking.links, "la fenêtre remplacée emporte sa liaison"
+
+
 def test_presets_apply_and_user_presets_round_trip(tmp_path):
     project = _project()
     presets = builtin_presets()

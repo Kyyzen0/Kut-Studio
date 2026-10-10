@@ -718,6 +718,7 @@ class AttributeClipboard:
     masks: tuple = ()
     mask_animation: tuple = ()
     animation: tuple = ()
+    window_animation: tuple = ()           # images-clés des fenêtres des nœuds d'étalonnage (avec l'étalonnage)
 
 
 def copy_attributes(project: Project, clip_id: str) -> AttributeClipboard:
@@ -728,6 +729,7 @@ def copy_attributes(project: Project, clip_id: str) -> AttributeClipboard:
         kf for kf in clip.animation if kf.property_name.split(".")[1:2] and kf.property_name.startswith("mask.")
         and kf.property_name.split(".")[1] in mask_ids
     )
+    windows = _window_ids(clip.color_grade)
     return AttributeClipboard(
         transform=clip.transform,
         transform_keyframes=tuple(clip.transform_keyframes),
@@ -736,7 +738,20 @@ def copy_attributes(project: Project, clip_id: str) -> AttributeClipboard:
         masks=masks,
         mask_animation=mask_animation,
         animation=tuple(kf for kf in clip.animation if not kf.property_name.startswith("mask.")),
+        window_animation=tuple(kf for kf in clip.animation if _mask_key_of(kf) in windows),
     )
+
+
+def _mask_key_of(keyframe) -> str:
+    """L'identifiant du masque (ou de la fenêtre) d'une image-clé ``mask.<id>.<propriété>`` ; "" sinon."""
+    parts = keyframe.property_name.split(".")
+    return parts[1] if len(parts) > 2 and parts[0] == "mask" else ""
+
+
+def _window_ids(grade) -> set[str]:
+    from .color_windows import window_ids        # paresseux : le qualifieur importe numpy
+
+    return window_ids(grade)
 
 
 def paste_attributes(project: Project, clip_ids: list[str], clipboard: AttributeClipboard, kinds) -> int:
@@ -760,12 +775,23 @@ def paste_attributes(project: Project, clip_ids: list[str], clipboard: Attribute
                 ClipEffect(id=uuid.uuid4().hex[:10], type=e.type, enabled=e.enabled, params=dict(e.params))
                 for e in clipboard.effects
             ]
+            # L'étalonnage arrive avec ses fenêtres et leurs images-clés ; celles qu'il remplace partent avec leur état.
+            from .color_windows import forget_windows
+
+            # Une fenêtre que le clip a déjà (les deux moitiés d'une coupe) garde sa liaison de tracking.
+            pasted = _window_ids(clipboard.color_grade)
+            forget_windows(clip, _window_ids(clip.color_grade) - pasted)
             clip.color_grade = clipboard.color_grade
+            kept = [kf for kf in clip.animation if _mask_key_of(kf) not in pasted]
+            kept.extend(replace(kf, id="") for kf in clipboard.window_animation if _mask_key_of(kf) in pasted)
+            clip.animation = sorted(kept, key=lambda k: (k.property_name, k.time_seconds))
         if "masks" in kinds:
             renamed = {m.id: new_mask_id() for m in clipboard.masks}
             masks = tuple(replace(m, id=renamed[m.id]) for m in clipboard.masks)
+            replaced = {m.id for m in getattr(clip.compositing, "masks", ())}
             clip.compositing = replace(clip.compositing, masks=masks)
-            kept = [kf for kf in clip.animation if not kf.property_name.startswith("mask.")]
+            # Les images-clés des masques remplacés partent ; celles des fenêtres d'étalonnage restent.
+            kept = [kf for kf in clip.animation if _mask_key_of(kf) not in replaced]
             for kf in clipboard.mask_animation:
                 _prefix, mask_id, name = kf.property_name.split(".", 2)
                 if mask_id in renamed:
