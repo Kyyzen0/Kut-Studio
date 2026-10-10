@@ -35,6 +35,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Un projet modifié ou venu d'ailleurs ne peut plus injecter de filtres FFmpeg.** Les identifiants des nœuds
+  d'étalonnage et de composition, lus tels quels dans le fichier `.kut`, servaient d'étiquettes au graphe de l'export,
+  de l'aperçu fidèle et des scopes : un identifiant forgé pouvait y ajouter un filtre (lecture d'un fichier local…).
+  Un identifiant doit maintenant tenir en 64 caractères ASCII (lettres, chiffres, `_`) ; les nôtres (`n1`, `f2`…)
+  n'ont pas changé. À l'ouverture, un nœud de composition qui ne les respecte pas est retiré avec ses liens, et une
+  chaîne d'étalonnage est renumérotée sans perdre un réglage (un avertissement va au journal).
+- Une composition dure au plus une heure : une durée démesurée dans un fichier faisait construire, à l'arrêt de la
+  lecture, un morceau d'aperçu par tranche de 10 s, jusqu'à saturer la mémoire. La durée d'un fichier est ramenée à une
+  heure (un temps qui n'est pas un nombre fini, comme `Infinity`, est lu comme illisible) ; *Convertir en composition*
+  et *Nouvelle composition* refusent plus long, au lieu de couper.
 - L'application pouvait se figer pour de bon quand les scopes étaient affichés : l'objet qui prépare l'image analysée
   était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage de 50 min
   des tests Windows de la release 0.3.0.

@@ -16,6 +16,7 @@ from render_probe import lavfi_video, needs_ffmpeg, render_frame
 from core.color_grading import ColorGrade
 from core.compositing import ChromaKey, Compositing, Mask, MaskShape
 from core.composition import (
+    MAX_DURATION,
     OUTPUT_ID,
     Composition,
     CompositionGraph,
@@ -121,6 +122,78 @@ def test_a_damaged_composition_opens_with_what_still_reads():
     raw["nodes"][0] = {"id": OUTPUT_ID, "kind": "solid"}      # la sortie perdue, son identifiant repris
     lost = composition_from_dict(raw, _composition_codec())
     assert lost.graph.output.id != OUTPUT_ID and lost.graph.has_node(OUTPUT_ID)
+
+
+# Les identifiants d'un fichier .kut deviennent des étiquettes de ``-filter_complex`` : chacun de ceux-ci ouvrirait un
+# autre filtre (le premier lit un fichier local). « n1\n » : ``$`` en regex le laisserait passer.
+HOSTILE_IDS = ("a]null,movie=filename=/etc/hosts[b", "a,b", "a;b", "a'b", "a b", "a=b", "a:b", "a\\b", "a[b", "é",
+               "n1\n", "-1", "x" * 65)
+
+
+@pytest.mark.parametrize("bad", HOSTILE_IDS)
+def test_a_node_id_must_be_writable_in_a_filter_graph(bad):
+    with pytest.raises(NodeGraphError, match="non admis"):
+        CompositionGraph.empty().with_added(SolidNode(bad))
+
+
+def test_the_ids_the_editor_makes_are_still_accepted():
+    graph = CompositionGraph.empty()
+    for good in ("n1", "f2", "g10", "comp_7", "A", "x" * 64):
+        graph = graph.with_added(SolidNode(good))
+    assert graph.has_node("x" * 64) and graph.has_node(OUTPUT_ID) and graph.next_id("f") == "f3"
+
+
+def test_a_hostile_node_id_in_the_file_is_dropped_and_never_reaches_the_export_graph():
+    from core.composition import composition_from_dict, composition_to_dict
+    from core.export_engine import ExportEngine
+    from core.project_io import _composition_codec
+
+    payload = HOSTILE_IDS[0]
+    graph = _graph(SolidNode("s", "#336699"), SolidNode("t", "#993366"), MergeNode("f"),
+                   links=(("s", "f", 0), ("t", "f", 1), ("f", OUTPUT_ID)))
+    raw = composition_to_dict(Composition(graph, 1.0), _composition_codec())
+    for entry in raw["nodes"]:
+        entry["id"] = payload if entry["id"] == "s" else entry["id"]
+    raw["links"] = [[payload if end == "s" else end for end in link[:2]] + list(link[2:]) for link in raw["links"]]
+    back = composition_from_dict(raw, _composition_codec())
+    assert back is not None and not back.graph.has_node(payload), "le nœud est retiré, avec ses liens"
+    assert back.graph.has_node("t") and back.graph.input_of("f", 1) == "t", "le reste de la composition se lit"
+    comp = Clip("c", "", "V1", 0.0, 0.0, 1.0)
+    comp.composition = back
+    project = Project("p", width=W, height=H, fps=25.0, tracks=[Track("V1", "V1", "video", clips=[comp])])
+    text = ExportEngine._build_filter_complex(build_render_plan(project), W, H, 25, None)[0]
+    assert "movie" not in text and "/etc/hosts" not in text
+
+
+def test_the_duration_of_a_composition_is_bounded():
+    import json
+
+    from core.composition import composition_from_dict
+    from core.project_io import _composition_codec
+
+    assert Composition(duration=1e12).duration == MAX_DURATION
+    assert Composition(duration=MAX_DURATION).duration == MAX_DURATION
+    assert Composition(duration=0.0).duration == pytest.approx(1e-3)
+    # JSON accepte « Infinity », « NaN » et « 1e999 » : un temps qui n'est pas fini vaut sa valeur par défaut.
+    assert Composition(duration=float("inf")).duration == 1.0 and Composition(duration=float("nan")).duration == 1.0
+    assert MediaNode("m", "v", float("inf"), 0.0, float("inf")).start == 0.0
+    for text in ('{"nodes": [], "duration": 1e12}', '{"nodes": [], "duration": 1e999}'):
+        assert composition_from_dict(json.loads(text), _composition_codec()).duration <= MAX_DURATION
+
+
+def test_a_composition_longer_than_the_maximum_is_refused_not_truncated():
+    assets = [MediaAsset("v", "/m.mp4", "v", 9999.0, W, H, 25.0, "video")]
+    clips = [Clip("a", "v", "V1", 0.0, 0.0, 1.0), Clip("b", "v", "V1", MAX_DURATION, 0.0, 1.0)]
+    project = Project("p", width=W, height=H, fps=25.0, media_assets=assets,
+                      tracks=[Track("V1", "V1", "video", clips=clips)])
+    with pytest.raises(CompositionError, match="minutes"):
+        convert_to_composition(project, ["a", "b"])
+    assert [clip.id for clip in project.tracks[0].clips] == ["a", "b"], "rien n'est modifié"
+    empty = Project("p", width=W, height=H, fps=25.0, tracks=[Track("V1", "V1", "video")])
+    with pytest.raises(CompositionError, match="minutes"):
+        create_composition(empty, "V1", 0.0, MAX_DURATION + 1.0)
+    assert not empty.tracks[0].clips
+    assert create_composition(empty, "V1", 0.0, MAX_DURATION).composition.duration == MAX_DURATION
 
 
 # --- rendu -----------------------------------------------------------------------------------------------------------

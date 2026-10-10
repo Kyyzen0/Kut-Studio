@@ -24,6 +24,7 @@ Rendu : :mod:`core.composition_render` (graphe FFmpeg exact de l'export, donc de
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -31,7 +32,7 @@ from typing import Any
 from .blend_modes import BlendMode, coerce_blend_mode
 from .color_grading import ColorGrade
 from .compositing import ChromaKey, Mask, mask_from_dict, mask_to_dict
-from .node_graph import NodeGraph, NodeGraphError, NodeLink
+from .node_graph import NodeGraph, NodeGraphError, NodeLink, is_safe_id
 from .visual_effects import ClipTransform
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +41,10 @@ OUTPUT_ID = "output"
 MAX_LABEL_LENGTH = 32
 BACKGROUND_PORT = 0
 FOREGROUND_PORT = 1
+MAX_DURATION = 3600.0
+"""Durée maximale d'une composition (s). Le cache d'aperçu la rend d'avance par morceaux de 10 s : une heure en fait
+360, qu'on construit d'un coup à l'arrêt de la lecture (mesuré : ≈ 2 s et 22 Mo), alors que 24 h en feraient 8 640
+(≈ 48 s et 530 Mo). Même ordre de grandeur que la limite du remappage inverse (``MAX_REVERSE_DURATION_SECONDS``)."""
 
 
 def _label(value: object) -> str:
@@ -47,11 +52,12 @@ def _label(value: object) -> str:
 
 
 def _time(value: object, default: float = 0.0) -> float:
+    """Un temps en secondes, positif ou nul et fini : ``inf`` et ``nan`` (que JSON accepte) valent ``default``."""
     try:
         number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
-    return max(0.0, number) if number == number else default
+    return max(0.0, number) if math.isfinite(number) else default
 
 
 # --- Nœuds -----------------------------------------------------------------------------------------------------------
@@ -398,7 +404,7 @@ class Composition:
     def __post_init__(self) -> None:
         if not isinstance(self.graph, CompositionGraph):
             raise NodeGraphError("Composition sans graphe.")
-        object.__setattr__(self, "duration", max(1e-3, _time(self.duration, 1.0)))
+        object.__setattr__(self, "duration", min(MAX_DURATION, max(1e-3, _time(self.duration, 1.0))))
         object.__setattr__(self, "animation", tuple(self.animation or ()))
 
     def with_graph(self, graph: CompositionGraph) -> "Composition":
@@ -510,6 +516,8 @@ def _node_from(entry: dict, codec: CompositionCodec) -> CompNode | None:
     label = entry.get("label", "")
     if not node_id:
         return None
+    if not is_safe_id(node_id):                             # retiré avec ses liens, comme tout nœud illisible
+        raise NodeGraphError(f"Identifiant de nœud non admis : {node_id[:40]!r}.")
     if kind == "output":
         return OutputNode(node_id)
     if kind == "media":
@@ -580,7 +588,11 @@ def composition_from_dict(raw: object, codec: CompositionCodec) -> Composition |
         except (NodeGraphError, TypeError, ValueError):
             continue
     animation = tuple(kf for item in _items(raw.get("animation")) if (kf := codec.animation_from(item)) is not None)
-    return Composition(graph, raw.get("duration", 1.0), animation)  # type: ignore[arg-type]
+    composition = Composition(graph, raw.get("duration", 1.0), animation)  # type: ignore[arg-type]
+    if _time(raw.get("duration", 1.0), 1.0) > MAX_DURATION:
+        LOGGER.warning("Durée de composition ramenée à %s s : %r dépasse le maximum.", MAX_DURATION,
+                       raw.get("duration"))
+    return composition
 
 
 def map_composition_grades(composition: Composition, change: Callable[[object], object]) -> Composition:

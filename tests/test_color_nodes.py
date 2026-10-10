@@ -11,7 +11,8 @@ from render_probe import lavfi_video, needs_ffmpeg, render_frame
 
 from core.color_grading import ColorGrade, ColorGradingError, ColorGradingService, LUTResource, Wheel
 from core.color_nodes import ColorNode, ColorNodeGraph, as_graph, graph_from_dict, luts_of, simplify
-from core.export_engine import _build_color_grade_filters
+from core.compositing import Mask, MaskShape
+from core.export_engine import ExportEngine, _build_color_grade_filters
 from core.gpu_grade import grade_is_active, lut_key
 from core.node_graph import NodeGraph, NodeGraphError, NodeLink
 from core.project_io import _deserialize_color_grade, load_project, save_project
@@ -288,3 +289,40 @@ def test_links_from_a_future_version_fall_back_to_the_file_order():
     assert graph is not None and [node.id for node in graph.order()] == ["n1", "n2", "n3"]
     assert graph.node("n1").grade.exposure == 0.5 and graph.node("n3").grade == ColorGrade()
     assert graph_from_dict({"nodes": []}, _deserialize_color_grade) is None
+
+
+HOSTILE_ID = "a]null,movie=filename=/etc/hosts[b"      # ferme l'étiquette FFmpeg, puis ajoute un filtre qui lit un fichier
+
+
+def test_a_node_id_that_is_not_a_safe_label_is_renumbered_and_the_grades_are_kept():
+    """Les identifiants d'un .kut deviennent des étiquettes de ``-filter_complex`` (la matte d'une fenêtre) : un
+    identifiant qui n'est pas ASCII alphanumérique ou « _ » remet le graphe en série, numéroté, sans perdre un réglage."""
+    with pytest.raises(NodeGraphError, match="non admis"):
+        ColorNodeGraph.serial([ColorNode(HOSTILE_ID)])
+    for bad in ("a,b", "a;b", "a'b", "a b", "a[b", "é", "n1\n", "x" * 65):
+        with pytest.raises(NodeGraphError):
+            ColorNodeGraph.serial([ColorNode(bad)])
+    raw = {"nodes": [{"id": HOSTILE_ID, "grade": {"exposure": 0.5}}, {"id": "n2", "grade": {"saturation": 0.5}}],
+           "links": [[HOSTILE_ID, "n2", 0]]}
+    graph = graph_from_dict(raw, _deserialize_color_grade)
+    assert [node.id for node in graph.order()] == ["n1", "n2"]
+    assert graph.node("n1").grade.exposure == 0.5 and graph.node("n2").grade.saturation == 0.5
+
+
+def test_a_hostile_node_id_in_the_file_never_reaches_the_window_matte_label(tmp_path):
+    """``{output_label}_w{node_id}`` : l'étiquette de la matte d'une fenêtre est construite avec l'identifiant du nœud."""
+    window = Mask(shape=MaskShape.RECTANGLE, position_x=0.25, position_y=0.5, width=0.5, height=1.0)
+    clip = Clip("c", "v", "V1", 0.0, 0.0, 1.0)
+    clip.color_grade = ColorNodeGraph.serial([ColorNode("nod1", ColorGrade(exposure=0.4), windows=(window,))])
+    project = Project("p", width=W, height=H, fps=25.0,
+                      media_assets=[MediaAsset("v", str(tmp_path / "absent.mp4"), "v", 1.0, W, H, 25.0, "video")],
+                      tracks=[Track("V1", "V1", "video", clips=[clip])])
+    target = tmp_path / "p.kut"
+    save_project(project, str(target))
+    target.write_text(target.read_text(encoding="utf-8").replace('"nod1"', json.dumps(HOSTILE_ID)), encoding="utf-8")
+    loaded = load_project(str(target))
+    graph = loaded.tracks[0].clips[0].color_grade
+    assert [node.id for node in graph.order()] == ["n1"] and graph.node("n1").windows == (window,), "réglage gardé"
+    text = ExportEngine._build_filter_complex(build_render_plan(loaded), W, H, 25, None)[0]
+    assert "movie" not in text and "/etc/hosts" not in text
+    assert "_wn1]" in text, "la fenêtre est bien rendue, sous l'identifiant renuméroté"

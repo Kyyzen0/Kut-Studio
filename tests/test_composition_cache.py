@@ -11,7 +11,7 @@ from dataclasses import replace
 import pytest
 from render_probe import needs_ffmpeg
 
-from core.composition import OUTPUT_ID, Composition, CompositionGraph, MediaNode, SolidNode
+from core.composition import MAX_DURATION, OUTPUT_ID, Composition, CompositionGraph, MediaNode, SolidNode
 from core.effects_model import ClipEffect, EffectType
 from core.composition_cache import (
     CHUNK_SECONDS,
@@ -53,6 +53,12 @@ def _site(project: Project, clip: Clip) -> CompositionSite:
 def test_chunks_cover_the_composition_time():
     assert chunk_count(25.0) == 3 and chunk_count(20.0) == 2 and chunk_count(0.5) == 1
     assert [chunk_index(t) for t in (0.0, 9.999, 10.0, 24.9)] == [0, 0, 1, 2]
+
+
+def test_a_hostile_duration_cannot_make_a_huge_chunk_list():
+    """``range(chunk_count(durée))`` construit un job d'aperçu par morceau, d'un coup, à l'arrêt de la lecture."""
+    for duration in (1e9, 1e12, float("inf")):
+        assert chunk_count(Composition(duration=duration).duration) <= chunk_count(MAX_DURATION) == 360
 
 
 def test_a_chunk_renders_the_composition_alone_on_a_neutral_clip():
