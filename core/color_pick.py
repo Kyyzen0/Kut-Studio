@@ -3,8 +3,9 @@
 Le qualifieur d'un nœud lit **son entrée** (:mod:`core.color_qualifier`) : la pipette prend donc la couleur du média
 sous le clic (moyenne d'un carré de :data:`SAMPLE_SIZE` pixels, un pixel seul est trop bruité), à l'instant source de
 la tête de lecture, passée par les nœuds qui **précèdent** le nœud courant (:func:`upstream_graph`) — par FFmpeg et la
-chaîne de l'export, comme tout le reste. Les effets du clip n'y passent pas (un flou sur un carré de 5 pixels ne
-voudrait rien dire) : la couleur est celle qu'ils reçoivent.
+chaîne de l'export, comme tout le reste. Les effets du clip, le flou et la netteté des nœuds n'y passent pas (flouter
+un carré de 5 pixels ne voudrait rien dire) : la couleur est celle qu'ils reçoivent. Une fenêtre d'un nœud en amont
+agit par sa couverture au point du clic (:func:`core.color_windows.window_coverage`).
 
 :func:`qualifier_around` en fait des plages : la teinte à ±15° (douceur 20°), la saturation et la luminance autour de
 leurs valeurs ; un gris n'a pas de teinte, seules saturation et luminance le prennent. ``extend`` (Maj + clic) élargit
@@ -15,11 +16,12 @@ from __future__ import annotations
 
 import math
 import subprocess
+from collections.abc import Mapping
 from dataclasses import replace
 
 import numpy as np
 
-from .color_nodes import ColorNodeGraph
+from .color_nodes import ColorNode, ColorNodeGraph
 from .color_qualifier import LUMA_709, Qualifier
 
 SAMPLE_SIZE = 5
@@ -67,10 +69,18 @@ def sample_command(ffmpeg: str, path: str, source_time: float, x: float, y: floa
             "-i", path, "-frames:v", "1", "-vf", ",".join(filters), "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
 
 
+def pick_graph(upstream: ColorNodeGraph) -> ColorNodeGraph:
+    """Les nœuds en amont, sans flou ni netteté (sur un carré de quelques pixels, ils ne voudraient rien dire)."""
+    return replace(upstream, nodes=tuple(
+        replace(node, blur=0.0, sharpen=0.0) if isinstance(node, ColorNode) else node for node in upstream.nodes
+    ))
+
+
 def sample_node_input(path: str, source_time: float, x: float, y: float, upstream: ColorNodeGraph | None, *,
-                      ffmpeg: str | None = None) -> tuple[float, float, float]:
+                      windows: Mapping[str, float] | None = None, ffmpeg: str | None = None) -> tuple[float, float, float]:
     """Couleur (R, V, B en 0..1) qui arrive au nœud sous ``(x, y)`` ; :class:`ColorPickError` si elle n'a pas pu
-    être lue."""
+    être lue. ``windows`` : la couverture, au point du clic, des fenêtres de chaque nœud fenêtré en amont."""
+    from .color_render import WindowSourceMissing
     from .export_engine import _build_color_grade_filters
     from .process_supervisor import supervised_run
     from .tool_paths import find_media_tool
@@ -78,7 +88,11 @@ def sample_node_input(path: str, source_time: float, x: float, y: float, upstrea
     tool = ffmpeg or find_media_tool("ffmpeg")
     if not tool:
         raise ColorPickError("FFmpeg introuvable.")
-    chain = _build_color_grade_filters(upstream, tag="pick") if upstream is not None else ""
+    try:
+        chain = _build_color_grade_filters(pick_graph(upstream), tag="pick", windows=dict(windows or {})) \
+            if upstream is not None else ""
+    except WindowSourceMissing as error:
+        raise ColorPickError(str(error)) from error
     command = sample_command(tool, path, source_time, x, y, chain)
     try:
         done = supervised_run(command, capture_output=True, timeout=PICK_TIMEOUT_SECONDS)
@@ -139,16 +153,23 @@ def _hue_covering(center: float, width: float, hue: float) -> tuple[float, float
     return (center + (low + high) / 2.0) % 360.0, min(360.0, high - low)
 
 
-def canvas_to_media(point: tuple[float, float], layer_matrix, fit) -> tuple[float, float] | None:
-    """Pixel du média sous ``point`` (pixels du cadre) : matrice calque → cadre inversée, puis la place du média dans le
-    calque (:class:`core.tracking_motion.FitBox`) ; ``None`` hors de l'image du clip."""
+def canvas_to_layer(point: tuple[float, float], layer_matrix) -> tuple[float, float] | None:
+    """Point du calque (pixels de la séquence, avant sa transformation) sous ``point`` (pixels du cadre)."""
     a, b, c, d, e, f = layer_matrix
     determinant = a * d - b * c
     if abs(determinant) < 1e-12:
         return None
     x, y = point[0] - e, point[1] - f
-    lx = (d * x - c * y) / determinant
-    ly = (-b * x + a * y) / determinant
+    return (d * x - c * y) / determinant, (-b * x + a * y) / determinant
+
+
+def canvas_to_media(point: tuple[float, float], layer_matrix, fit) -> tuple[float, float] | None:
+    """Pixel du média sous ``point`` (pixels du cadre) : matrice calque → cadre inversée, puis la place du média dans le
+    calque (:class:`core.tracking_motion.FitBox`) ; ``None`` hors de l'image du clip."""
+    layer = canvas_to_layer(point, layer_matrix)
+    if layer is None:
+        return None
+    lx, ly = layer
     mx = (lx - fit.offset_x) / fit.scale_x
     my = (ly - fit.offset_y) / fit.scale_y
     width, height = fit.width / fit.scale_x, fit.height / fit.scale_y

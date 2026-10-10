@@ -876,6 +876,15 @@ class PreviewPanel(QWidget):
                       pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
         return canvas_to_media((x, y), tuple(video_layer_matrix(self._layer_values(), cw, ch)), fit)
 
+    def canvas_to_layer(self, x: float, y: float) -> tuple[float, float] | None:
+        """Point du calque du clip affiché (pixels de la séquence, avant sa transformation) sous ``(x, y)`` du cadre :
+        là où se lisent ses masques et les fenêtres de ses nœuds."""
+        from core.color_pick import canvas_to_layer
+        from core.tracking_motion import video_layer_matrix
+
+        cw, ch = self._canvas_size
+        return canvas_to_layer((x, y), tuple(video_layer_matrix(self._layer_values(), cw, ch)))
+
     def set_pick_mode(self, active: bool) -> None:
         """Pipette du qualificateur : le prochain clic dans le cadre donne un point (``overlay.color_picked``)."""
         self.overlay.set_pick_mode(active)

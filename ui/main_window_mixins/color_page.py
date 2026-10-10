@@ -33,9 +33,10 @@ class _PickResults(QObject):
     def run(self, request) -> None:
         from core.color_pick import ColorPickError, sample_node_input
 
-        clip_id, node_id, extend, path, source_time, (x, y), upstream = request
+        clip_id, node_id, extend, path, source_time, (x, y), upstream, windows = request
         try:
-            outcome = (clip_id, node_id, extend, sample_node_input(path, source_time, x, y, upstream), None)
+            rgb = sample_node_input(path, source_time, x, y, upstream, windows=windows)
+            outcome = (clip_id, node_id, extend, rgb, None)
         except ColorPickError as error:
             outcome = (clip_id, node_id, extend, None, str(error))
         try:
@@ -393,8 +394,26 @@ class ColorPageMixin:
         node = graph.node_or_first(self._color_node_id)
         local = float(self.playhead_seconds) - float(clip.timeline_start)
         source_time = clip.time_map.source_time(local)
-        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream_graph(graph, node.id))
+        upstream = upstream_graph(graph, node.id)
+        windows = self._pick_window_coverage(clip_id, upstream, x, y)
+        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream, windows)
         threading.Thread(target=self._pick_results.run, args=(request,), daemon=True, name="kut-color-pick").start()
+
+    def _pick_window_coverage(self, clip_id: str, upstream, x: float, y: float) -> dict[str, float]:
+        """Couverture, au point du clic, des fenêtres de chaque nœud fenêtré en amont (rastérisée ici, un pixel : le
+        fil de la pipette n'a plus qu'à lancer FFmpeg)."""
+        from core.color_render import windowed_nodes
+        from core.color_windows import window_coverage
+
+        if upstream is None:
+            return {}
+        layer_point = self.preview_panel.canvas_to_layer(x, y)
+        coverage = {}
+        for node_id in windowed_nodes(upstream):
+            windows = upstream.corrector(node_id).windows
+            coverage[node_id] = 0.0 if layer_point is None else window_coverage(
+                self.project, clip_id, windows, float(self.playhead_seconds), layer_point)
+        return coverage
 
     def _apply_color_pick(self, outcome) -> None:
         """Résultat de la pipette (fil de l'interface) : le qualifieur du nœud, en une étape d'historique."""

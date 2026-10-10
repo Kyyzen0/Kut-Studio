@@ -57,7 +57,7 @@ from . import process_supervisor
 from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
-from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
+from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
 from .render_plan import (
     AudioLayer,
     GraphicLayer,
@@ -2078,9 +2078,24 @@ def _build_layer_filter(
     # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
     # afin de garantir un rendu stable quel que soit l'ordre des
     # opérations demandé par l'utilisateur.
-    color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg")
     from .compositing import build_ffmpeg_filters, chroma_key_filters
     matte_parts: list[str] = []
+    # Fenêtres des nœuds d'étalonnage : une matte par nœud fenêtré, passée par la géométrie du clip (l'étalonnage
+    # s'applique après échelle et rotation : la fenêtre, posée en espace calque comme un masque, les suit).
+    from .color_render import graph_of, windowed_nodes
+
+    window_labels: dict[str, str] = {}
+    windowed = windowed_nodes(layer.color_grade)
+    graph = graph_of(layer.color_grade)
+    if windowed and graph is not None and add_input is not None:
+        geometry = ",".join(text for text in (scale_expr, flip_filters, rotation_expr) if text)
+        for node_id in windowed:
+            window_labels[node_id] = video_window_label(
+                matte_parts, layer, graph.corrector(node_id).windows, width, height, fps, add_input,
+                f"{output_label}_w{node_id}", geometry,
+            )
+    color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg",
+                                                     windows=window_labels, pixel_scale=pixel_scale)
     matte_label = None
     compositing = layer.compositing
     if compositing is not None and compositing.masks and add_input is not None:
@@ -2182,7 +2197,7 @@ def _build_layer_filter(
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
-def _build_color_grade_filters(grade, tag: str = "cg") -> str:
+def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0) -> str:
     """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
 
     L'ordre est déterministe et identique pour tous les clips ; chaque
@@ -2216,6 +2231,11 @@ def _build_color_grade_filters(grade, tag: str = "cg") -> str:
         grade: instance de :class:`ColorGrade`, graphe de nœuds
             (:class:`core.color_nodes.ColorNodeGraph`) ou ``None`` (identité).
         tag: préfixe des labels d'un graphe à branches (:mod:`core.color_render`).
+        windows: source de la matte des fenêtres de chaque nœud fenêtré
+            (:func:`core.color_render.windowed_nodes`) : label d'un flux
+            aligné sur l'image étalonnée, ou couverture constante.
+        pixel_scale: pixels de sortie par pixel de la séquence (σ du flou
+            d'un nœud, réglé à la taille de la séquence).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
@@ -2229,13 +2249,14 @@ def _build_color_grade_filters(grade, tag: str = "cg") -> str:
 
     if isinstance(grade, Compare):
         # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.
-        return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k"), grade.split, tag)
+        return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k", windows=windows,
+                                                          pixel_scale=pixel_scale), grade.split, tag)
     if isinstance(grade, (ColorNodeGraph, Highlight)):
         # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
         # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et
         # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
         # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
-        return render_filters(grade, tag, _build_color_grade_filters)
+        return render_filters(grade, tag, _build_color_grade_filters, windows=windows, pixel_scale=pixel_scale)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:
