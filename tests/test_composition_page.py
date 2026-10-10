@@ -226,9 +226,13 @@ def test_a_replaced_media_file_or_an_expired_chunk_is_not_served(window, qtbot, 
     assert ready() is None or ready()[0] != first, "l'ancien rendu n'est plus servi"
     qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
     assert ready()[0] != first and len(rendered) > renders
+    current = ready()[0]
 
     window._comp_caches[clip_id].looked_up.clear()         # repasse par le cache disque
-    engine.cache.ttl_seconds = 1e-6                        # morceau périmé
+    # Périmé par la date du fichier, pas par un TTL de 1 µs : l'horloge de Windows (1 à 16 ms) ne le départage pas
+    # d'une consultation qui vient de « toucher » le morceau, qui restait alors servi.
+    os.utime(current, ns=(1, 1))
+    engine.cache.ttl_seconds = 1.0
     assert ready() is None
 
 
