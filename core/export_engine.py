@@ -57,7 +57,7 @@ from . import process_supervisor
 from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
 from .effects_model import ClipEffect, EffectType
-from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label
+from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
 from .render_plan import (
     AudioLayer,
     GraphicLayer,
@@ -2078,9 +2078,24 @@ def _build_layer_filter(
     # (ordre déterministe : effets créatifs d'abord, étalonnage ensuite)
     # afin de garantir un rendu stable quel que soit l'ordre des
     # opérations demandé par l'utilisateur.
-    color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg")
     from .compositing import build_ffmpeg_filters, chroma_key_filters
     matte_parts: list[str] = []
+    # Fenêtres des nœuds d'étalonnage : une matte par nœud fenêtré, passée par la géométrie du clip (l'étalonnage
+    # s'applique après échelle et rotation : la fenêtre, posée en espace calque comme un masque, les suit).
+    from .color_render import graph_of, windowed_nodes
+
+    window_labels: dict[str, str] = {}
+    windowed = windowed_nodes(layer.color_grade)
+    graph = graph_of(layer.color_grade)
+    if windowed and graph is not None and add_input is not None:
+        geometry = ",".join(text for text in (scale_expr, flip_filters, rotation_expr) if text)
+        for node_id in windowed:
+            window_labels[node_id] = video_window_label(
+                matte_parts, layer, graph.corrector(node_id).windows, width, height, fps, add_input,
+                f"{output_label}_w{node_id}", geometry,
+            )
+    color_grade_filters = _build_color_grade_filters(layer.color_grade, tag=f"{output_label}cg",
+                                                     windows=window_labels, pixel_scale=pixel_scale)
     matte_label = None
     compositing = layer.compositing
     if compositing is not None and compositing.masks and add_input is not None:
@@ -2182,99 +2197,110 @@ def _build_layer_filter(
     return ";".join([*matte_parts, *retime_chains, "".join(parts)])
 
 
-def _build_color_grade_filters(grade, tag: str = "cg") -> str:
+def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_scale: float = 1.0) -> str:
     """Construit la chaîne de filtres FFmpeg pour un :class:`ColorGrade`.
 
-    L'ordre est déterministe et identique pour tous les clips :
+    L'ordre est déterministe et identique pour tous les clips ; chaque
+    filtre n'est émis que s'il change quelque chose :
 
-    1. ``eq`` — exposition + contraste + saturation (toujours émis,
-       même avec les valeurs par défaut, pour garantir une chaîne
-       stable quand l'utilisateur active puis désactive un champ ;
-       les valeurs sont au défaut, FFmpeg traite le neutre comme
-       une no‑op visuelle).
-    2. ``colorbalance`` — température + teinte + ombres + hautes
-       lumières. Émis uniquement si non neutres, pour ne pas allonger
-       la chaîne inutilement.
-    2 bis. ``lutrgb`` — roues lift / gamma / gain / offset
-       (:mod:`core.color_wheels`), uniquement si une roue a bougé.
-    3. ``curves`` — courbes master / R / V / B. Émises uniquement si
-       la courbe s'écarte de l'identité (tolérance 1e‑3).
+    1. ``eq`` — exposition (gamma ``2^EV``), contraste, saturation ; plus
+       émis au neutre (jusqu'au 2026-10-10 il l'était toujours) : son
+       aller-retour YUV coûtait un arrondi à chaque nœud. Mesuré sur cinq
+       nœuds de roues : 0,50 niveau d'écart moyen à la formule (2 au plus,
+       l'arrondi de chaque nœud), contre 1,16 (6 au plus) avant. Une chaîne
+       en 16 bits n'aurait gagné que 0,2 niveau : ``eq``, ``hue`` et
+       ``lutrgb`` y perdent l'alpha, ``lut3d`` y retombe en 8 bits et
+       swscale tramerait le retour en 8 bits.
+    1 bis. ``hue`` — teinte : une vraie rotation des teintes, en degrés.
+    2. ``colorbalance`` — ombres et hautes lumières.
+    2 bis. ``colorchannelmixer`` — température : une balance des blancs sur
+       toute l'image (gain rouge / bleu opposés, le vert compense : la
+       luminance d'un gris ne bouge pas). ``colorbalance`` (avant le
+       2026-10-10) ne la faisait agir que sur ses tons moyens, nuls dès que
+       max + min dépasse ≈ 202/255 : un gris moyen ne se réchauffait pas ;
+       la teinte y décalait aussi rouge et bleu, comme une seconde
+       température, au lieu de tourner les teintes.
+    2 ter. ``lutrgb`` — roues lift / gamma / gain / offset
+       (:mod:`core.color_wheels`).
+    3. ``curves`` — courbes master / R / V / B (tolérance 1e‑3).
     4. ``lut3d`` — application du LUT ``.cube``. Émise uniquement si
        un LUT est attaché et que le fichier source existe ; un LUT
        ``missing`` est ignoré pour ne pas planter l'export.
-
-    Les filtres sont séparés par des virgules : FFmpeg les compose
-    dans l'ordre, ce qui correspond à l'ordre naturel d'un pipeline
-    d'étalonnage (eq → colorbalance → courbes → LUT).
 
     Args:
         grade: instance de :class:`ColorGrade`, graphe de nœuds
             (:class:`core.color_nodes.ColorNodeGraph`) ou ``None`` (identité).
         tag: préfixe des labels d'un graphe à branches (:mod:`core.color_render`).
+        windows: source de la matte des fenêtres de chaque nœud fenêtré
+            (:func:`core.color_render.windowed_nodes`) : label d'un flux
+            aligné sur l'image étalonnée, ou couverture constante.
+        pixel_scale: pixels de sortie par pixel de la séquence (σ du flou
+            d'un nœud, réglé à la taille de la séquence).
 
     Returns:
         Chaîne prête à être concaténée dans un pipeline, ou
-        chaîne vide si l'identité totale.
+        chaîne vide si l'étalonnage ne change rien.
     """
     # Import paresseux pour éviter les cycles d'imports.
     from .color_grading import ColorGrade
     from .color_nodes import ColorNodeGraph
-    from .color_render import Highlight, render_filters
+    from .color_render import Compare, FilterChain, Highlight, compare_filters, render_filters
     from .color_wheels import wheels_filter
 
+    if isinstance(grade, FilterChain):
+        return grade.text                       # une étape d'un graphe spatial, cuite par le moniteur
+
+    if isinstance(grade, Compare):
+        # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.
+        return compare_filters(_build_color_grade_filters(grade.value, tag=f"{tag}k", windows=windows,
+                                                          pixel_scale=pixel_scale), grade.split, tag)
     if isinstance(grade, (ColorNodeGraph, Highlight)):
         # Nœuds : en série, la chaîne de chaque nœud actif (un graphe d'un
         # seul nœud rend les pixels de son ColorGrade) ; mélangeurs et
         # qualifieurs : un sous-graphe, insérable lui aussi dans une chaîne,
         # aux labels préfixés par ``tag`` (unique dans le graphe de l'appelant).
-        return render_filters(grade, tag, _build_color_grade_filters)
+        return render_filters(grade, tag, _build_color_grade_filters, windows=windows, pixel_scale=pixel_scale)
     if grade is None or not isinstance(grade, ColorGrade):
         return ""
     if not grade.enabled:
         return ""
-    # Optimisation : aucun filtre émis si tout est neutre, sauf ``eq``
-    # qui reste toujours présent pour préserver la parité du pipeline
-    # (cf. note dans la docstring). On continue à optimiser les autres
-    # filtres.
     filters: list[str] = []
     # 1. eq : l'exposition en stops est traduite en gamma (2**EV),
     # ce qui reste dans les bornes réelles du filtre même à ±2 EV.
     # Contraste et saturation sont des multiplicateurs centrés sur 1.
-    eq_contrast = _format_seconds(1.0 + float(grade.contrast))
-    eq_saturation = _format_seconds(float(grade.saturation))
-    eq_gamma = _format_seconds(2.0 ** float(grade.exposure))
-    filters.append(
-        f"eq=contrast={eq_contrast}:saturation={eq_saturation}:"
-        f"gamma={eq_gamma}"
-    )
-    # 2. colorbalance : température/teinte agissent sur les tons moyens ;
-    # ombres et hautes lumières utilisent leurs options FFmpeg dédiées.
-    # Sans ``pl=1`` (« conserver la luminosité ») : FFmpeg y met la
-    # saturation à zéro dès qu'un canal vaut 0 ou 255 après réglage (un
-    # rouge saturé sortait gris) et y annule les ombres et hautes lumières,
-    # qui décalent les trois canaux d'autant (la luminosité rendue efface
-    # le réglage). Température et teinte, décalages rouge / bleu opposés,
-    # gardent d'elles-mêmes la luminosité (0,06 niveau d'écart mesuré).
-    rm, gm, bm = _compute_colorbalance_offsets(
-        float(grade.temperature), float(grade.hue)
-    )
+    if grade.exposure or grade.contrast or grade.saturation != 1.0:
+        eq_contrast = _format_seconds(1.0 + float(grade.contrast))
+        eq_saturation = _format_seconds(float(grade.saturation))
+        eq_gamma = _format_seconds(2.0 ** float(grade.exposure))
+        filters.append(
+            f"eq=contrast={eq_contrast}:saturation={eq_saturation}:"
+            f"gamma={eq_gamma}"
+        )
+    # 1 bis. teinte : rotation de la chroma (degrés).
+    if abs(float(grade.hue)) > 1e-3:
+        filters.append(f"hue=h={_format_seconds(float(grade.hue))}")
+    # 2. colorbalance : ombres et hautes lumières. Sans ``pl=1`` (« conserver
+    # la luminosité ») : FFmpeg y met la saturation à zéro dès qu'un canal vaut
+    # 0 ou 255 après réglage (un rouge saturé sortait gris) et y annule les
+    # ombres et hautes lumières, qui décalent les trois canaux d'autant.
     shadow = max(-1.0, min(1.0, float(grade.shadows)))
     highlight = max(-1.0, min(1.0, float(grade.highlights)))
-    if (
-        any(abs(v) > 1e-3 for v in (rm, gm, bm))
-        or abs(shadow) > 1e-3
-        or abs(highlight) > 1e-3
-    ):
+    if abs(shadow) > 1e-3 or abs(highlight) > 1e-3:
         filters.append(
             "colorbalance="
             f"rs={_format_seconds(shadow)}:gs={_format_seconds(shadow)}:"
             f"bs={_format_seconds(shadow)}:"
-            f"rm={_format_seconds(rm)}:gm={_format_seconds(gm)}:"
-            f"bm={_format_seconds(bm)}:"
             f"rh={_format_seconds(highlight)}:gh={_format_seconds(highlight)}:"
             f"bh={_format_seconds(highlight)}"
         )
-    # 2 bis. roues lift / gamma / gain / offset : une table exacte par canal
+    # 2 bis. température : balance des blancs sur toute l'image.
+    if abs(float(grade.temperature)) > 1e-3:
+        red, green, blue = temperature_gains(float(grade.temperature))
+        filters.append(
+            f"colorchannelmixer=rr={_format_seconds(red)}:"
+            f"gg={_format_seconds(green)}:bb={_format_seconds(blue)}"
+        )
+    # 2 ter. roues lift / gamma / gain / offset : une table exacte par canal
     # (``lutrgb``), émise seulement si une roue a bougé.
     wheels = wheels_filter(grade)
     if wheels:
@@ -2295,6 +2321,18 @@ def _build_color_grade_filters(grade, tag: str = "cg") -> str:
         if lut_filter:
             filters.append(lut_filter)
     return ",".join(filters)
+
+
+TEMPERATURE_REACH = 0.3
+"""Gain rouge (et baisse du bleu) à la température maximale (100) : ×1,3 et ×0,7."""
+
+
+def temperature_gains(temperature: float) -> tuple[float, float, float]:
+    """Gains R, V, B de la température (-100 froid … 100 chaud) : rouge et bleu opposés, le vert compense pour que la
+    luminance Rec. 709 d'un gris ne bouge pas (``0,2126·R + 0,7152·V + 0,0722·B`` constant)."""
+    amount = TEMPERATURE_REACH * max(-1.0, min(1.0, temperature / 100.0))
+    green = 1.0 - amount * (0.2126 - 0.0722) / 0.7152
+    return 1.0 + amount, green, 1.0 - amount
 
 
 def _curve_is_identity(curve, *, tolerance: float = 1e-3) -> bool:
@@ -2341,38 +2379,6 @@ def _build_lut3d_filter(lut) -> str | None:
         return None
     safe = _escape_filter_path(path)
     return f"lut3d=file='{safe}'"
-
-
-def _compute_colorbalance_offsets(
-    temperature: float, hue: float,
-) -> tuple[float, float, float]:
-    """Convertit (température, teinte) en offsets RGB ``colorbalance``.
-
-    Le delta de température module le canal rouge vs bleu ; la teinte
-    applique une légère rotation cyan/magenta. On reste conservateur :
-    un delta de 100 ≈ ±0.20 sur le canal concerné.
-    """
-    # Température : +1 rouge, +0 vert, -1 bleu (simplification).
-    red = max(-0.5, min(0.5, temperature / 200.0))
-    blue = -red
-    green = 0.0
-    # Teinte : applique une dominante cyan/magenta. FFmpeg
-    # ``colorbalance`` attend des deltas par canal primaire.
-    if hue > 0:
-        # Vers le magenta : rouge +, bleu -.
-        red += hue / 360.0
-        blue -= hue / 360.0
-    elif hue < 0:
-        # Vers le cyan : rouge -, bleu +.
-        red += hue / 360.0
-        blue -= hue / 360.0
-    # On borne chaque canal à [-0.5, 0.5] : FFmpeg applique sans
-    # broncher des deltas plus larges mais l'UX resterait illisible.
-    return (
-        max(-0.5, min(0.5, red)),
-        max(-0.5, min(0.5, green)),
-        max(-0.5, min(0.5, blue)),
-    )
 
 
 def _glow_filter(params, pixel_scale: float, label: str) -> str:

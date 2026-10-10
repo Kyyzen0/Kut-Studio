@@ -408,14 +408,58 @@ def video_matte_label(
     return label
 
 
+def video_window_label(
+    parts: list[str], layer, windows, width: int, height: int, fps, add_input: AddInput, label: str, geometry: str,
+) -> str:
+    """Matte des fenêtres d'un nœud d'étalonnage, en temps local : la couverture dans les trois plans ``gbrp``.
+
+    Rastérisée comme les masques du clip (même code, même animation : images-clés ``mask.<id>.*`` du clip, dont celles
+    que dérive le tracking), en espace calque, puis passée par ``geometry`` — l'échelle, les miroirs et la rotation du
+    clip, les mêmes filtres : elle tombe ainsi pixel pour pixel sur l'image que l'étalonnage reçoit (après eux)."""
+    ensure_qt_gui()
+    from .compositing import Compositing
+    from .mograph_raster import render_layer_matte
+    from .mograph_scene import GraphicsScene
+    from .render_plan import GraphicLayer
+
+    duration = max(1.0 / float(fps or 30), layer.timeline_end - layer.timeline_start)
+    rig = GraphicLayer(
+        clip_id=layer.clip_id, track_id=layer.track_id, track_index=layer.track_index,
+        timeline_start=0.0, timeline_end=duration, graphic=None,
+        animation=tuple(getattr(layer, "animation", ()) or ()), compositing=Compositing(masks=tuple(windows)),
+    )
+    scene = GraphicsScene((rig,), width, height)
+
+    def key(t: float):
+        return ("window", repr(scene.evaluate(layer.clip_id, t).masks))
+
+    path = write_stream(
+        width=width, height=height, fps=float(fps), duration=duration, start=0.0, end=duration,
+        frame_key=key, render=lambda t: render_layer_matte(scene, layer.clip_id, t, width, height),
+        salt="window",
+    )
+    index = add_input(path)
+    # L'alpha de la matte dans R, V et B (coefficients 0 et 1 : exact), puis les plans RVB tels quels.
+    chain = [f"[{index}:v]{stream_input_filter(fps, duration)}", "format=rgba",
+             "colorchannelmixer=rr=0:ra=1:gg=0:ga=1:bb=0:ba=1", "format=gbrp"]
+    if geometry:
+        chain.append(geometry)
+    parts.append(f"{','.join(chain)},format=gbrp[{label}]")
+    return label
+
+
 def needs_graphics_preparation(plan) -> bool:
-    """Le plan contient-il des calques ou masques à rastériser avant FFmpeg ?"""
+    """Le plan contient-il des calques, masques ou fenêtres d'étalonnage à rastériser avant FFmpeg ?"""
+    from .color_render import windowed_nodes
+
     plans = [plan] + [entry.plan for entry in getattr(plan, "nested_sequences", ()) or ()]
     for current in plans:
         if any(getattr(layer, "role", "draw") == "draw" for layer in getattr(current, "graphics_layers", ()) or ()):
             return True
         for layer in current.video_layers:
             if getattr(getattr(layer, "compositing", None), "masks", ()):
+                return True
+            if windowed_nodes(getattr(layer, "color_grade", None)):
                 return True
     return False
 
@@ -439,6 +483,6 @@ def prepare_graphics_streams(plan, width: int, height: int, fps) -> bool:
 
 
 __all__ = [
-    "blend_onto", "compose_graphics", "needs_graphics_preparation", "prepare_graphics_streams",
+    "blend_onto", "compose_graphics", "needs_graphics_preparation", "prepare_graphics_streams", "video_window_label",
     "video_matte_label",
 ]

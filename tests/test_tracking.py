@@ -502,6 +502,29 @@ def test_mask_follows_the_subject_in_layer_space(media):
 
 
 @needs_ffmpeg
+def test_a_colour_node_window_follows_the_subject_like_a_mask(media):
+    """Une fenêtre d'un nœud d'étalonnage est une cible de tracking comme un masque : même liaison, mêmes images-clés
+    dérivées (``mask.<id>.*``), que la matte de l'étalonnage lit à l'export."""
+    from core.animation_targets import animation_curves
+    from core.color_grading import ColorGrade
+    from core.color_nodes import ColorNode, ColorNodeGraph
+    from core.compositing import evaluate_mask_at
+
+    project, ids, _result = _tracked_project(media)
+    clip = _clip(project)
+    window = Mask(position_x=80 / W, position_y=60 / H, width=0.1, height=0.1)
+    clip.color_grade = ColorNodeGraph.serial((ColorNode("n1", ColorGrade(exposure=0.5), windows=(window,)),))
+    entry = next(item for item in ops.link_targets(project, "v") if item["clip_id"] == "v")
+    assert (TrackTarget.MASK, window.id) in entry["targets"] and "n1" in entry["masks"][window.id]
+    ops.add_link(project, "v", "v", ids, target=TrackTarget.MASK, mask_id=window.id, timeline_time=0.0)
+    layer = build_render_plan(project).video_layers[0]
+    curves = animation_curves(type("V", (), {"animation": layer.animation})())
+    evaluated = evaluate_mask_at(window, curves, 20 / FPS)
+    assert evaluated.position_x * W == pytest.approx(80 + 40, abs=0.3)
+    assert evaluated.position_y * H == pytest.approx(60 + 20, abs=0.3)
+
+
+@needs_ffmpeg
 def test_anchor_link_pins_the_tracked_point(media):
     project, ids, _result = _tracked_project(media)
     clip = _clip(project)

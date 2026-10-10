@@ -117,7 +117,42 @@ def run(api: str, width: int = 320, height: int = 180) -> dict:
             diff = np.abs(got - reference) * 255
             results["cases"][key] = {"mean": float(diff.mean()), "max": float(diff.max())}
     results["cases"]["rgba/light_add"] = _light_case(api, width, height, codes)
+    for layout in ("nv12", "p010"):
+        results["cases"][f"{layout}/grade_graph"] = _graph_case(api, width, height, codes, layout)
     return results
+
+
+def _graph_case(api: str, width: int, height: int, codes, layout: str) -> dict:
+    """Graphe d'étalonnage spatial (page Couleur) : LUT, clé (LUT × fenêtre), flou, netteté RVB, mélange par la clé,
+    somme parallèle écrêtée, avant / après, sur un calque tourné (core/gpu_color_graph.py)."""
+    import numpy as np
+
+    from core.gpu_color_graph import GpuColorPass
+    from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame
+    from core.gpu_effects import program_for
+    from tests.gpu_harness import make_frame, reference_codes, render_gpu
+
+    _bytes, image, table = synthetic_lut()
+    window, window_image = _half_matte(width, height)
+    passes = (
+        GpuColorPass("lut", 1, (0,), lut="lut:test"),
+        GpuColorPass("key", 2, (0,), lut="lut:test", window="win"),
+        GpuColorPass("blur", 3, (1,), amount=2.0),
+        GpuColorPass("sharpen", 4, (3,), amount=1.2),
+        GpuColorPass("mix", 5, (0, 4, 2)),
+        GpuColorPass("add", 6, (5, 1, 0), clamp=True),
+    )
+    rotation = (0.8 * 0.97, 0.8 * 0.26, -0.8 * 0.26, 0.8 * 0.97, 40.0, 0.0)
+    layer = CompositeLayer("v", rotation, (0, 0, width, height), program=program_for(()), effect_scale=(0.8, 0.8),
+                           grade_passes=passes, grade_result=6, grade_split=0.35)
+    frame = CompositeFrame(width, height, 1.0, (layer,), (VideoSource("v", layout, width, height),), (0.1, 0.2, 0.3))
+    got, failures = render_gpu(frame, {"v": make_frame(codes, layout)}, {"lut:test": image, "win": window_image},
+                               api=api)
+    if got is None:
+        return {"error": str(failures)}
+    reference = reference_frame(frame, {"v": reference_codes(codes)}, {"win": window}, {"lut:test": table})
+    diff = np.abs(got - reference) * 255
+    return {"mean": float(diff.mean()), "max": float(diff.max())}
 
 
 def _light_case(api: str, width: int, height: int, codes) -> dict:

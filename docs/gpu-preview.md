@@ -345,11 +345,49 @@ tient dans **une** LUT :
    → cadre dans `inverse_map`), même pour un calque déplacé ou tourné.
 
 La cuisson prend environ 30 ms, **hors du fil de l'interface**
-(`GradeLutCache`) : seule la dernière demande attend (glisser un curseur ne cuit
-pas les valeurs intermédiaires), la LUT précédente reste affichée pendant la
-cuisson (pas de clignotement sans étalonnage), un échec est mémorisé (LUT
-illisible, FFmpeg absent : le calque passe sans étalonnage, les segments fidèles
-le montrent).
+(`GradeLutCache`) : une seule demande attend par emplacement (le calque, ou une
+étape d'un graphe spatial ; glisser un curseur ne cuit pas les valeurs
+intermédiaires), la plus récente passe d'abord, la LUT précédente reste affichée
+pendant la cuisson (pas de clignotement sans étalonnage), un échec est mémorisé
+(LUT illisible, FFmpeg absent : le calque passe sans étalonnage, les segments
+fidèles le montrent).
+
+#### Graphe spatial : fenêtres, flou, netteté
+
+Une LUT est une fonction de la seule couleur. Dès qu'un nœud a une fenêtre
+(position), un flou ou une netteté (voisinage), `core/gpu_color_graph.py`
+compile le graphe **nœud par nœud**, comme le sous-graphe de l'export
+([color.md](color.md)), en opérations sur des emplacements (0 : le calque après
+ses effets) :
+
+| Opération | Passe | Ce qu'elle fait |
+| --- | --- | --- |
+| `lut` | `grade` | le réglage d'un nœud : sa chaîne de l'export, cuite en LUT (domaine du média depuis l'emplacement 0, RVB ensuite) |
+| `key` | `colorkey` | la clé : LUT de la clé du qualifieur (même table `.cube` que l'export) × alpha de la matte des fenêtres |
+| `blur` | `blur` ×2 | le flou de `gblur`, mêmes poids sur R, V et B |
+| `sharpen` | `sharpen` | la netteté sur R, V et B, image réfléchie au bord comme `convolution` |
+| `mix` | `colormix` 0 | `A + K·(B − A)` (`maskedmerge`) |
+| `add` | `colormix` 1 | `A + (B − S)`, écrêté à la dernière branche (`mix` aux poids `1 … 1 −(n−1)`) |
+
+La matte des fenêtres est rastérisée à chaque image par le code de l'export
+(`core/color_windows.window_matte`, animation et tracking compris), en espace
+calque comme la matte des masques, puis téléversée comme elle ; une fenêtre
+immobile n'est rastérisée qu'une fois. Avant / après ajoute une passe `colormix`
+2 sur le résultat. Les textures de travail sont rendues au lot dès leur dernière
+lecture : dix nœuds fenêtrés n'en gardent que quelques-unes. Pendant une cuisson,
+le programme précédent reste affiché, avec la matte de l'image courante (une
+fenêtre suivie bouge à chaque image).
+
+Mesuré (`tests/test_gpu_color_graph.py`) : la référence contre l'export réel,
+sur une image à chroma uniforme, 1,1 niveau d'écart moyen pour un nœud fenêtré
+suivi d'une branche parallèle floutée et d'un contraste affûté (chaque opération
+seule : 0,3 à 0,8), 1,8 sur un clip réduit (FFmpeg 9, arm64) ; sur x86, les
+chemins SIMD de FFmpeg arrondissent autrement : 1,8 plein cadre (CI, FFmpeg 6.1
+et 7.1). Sur une image colorée, l'écart de
+base (chroma 4:2:0 reconstruite différemment, ≈ 1 à 2 niveaux) est amplifié par
+la netteté, sans autre écart. Le vrai GPU contre la référence
+(`tools/gpu/selfcheck.py`, cas `grade_graph`, calque tourné) : 0,3 niveau en
+NV12, 0,5 en P010 (Metal).
 
 Mesuré (`tests/test_gpu_grade.py`, vidéo 4:2:0 étalonnée : exposition,
 contraste, saturation, température, ombres, courbe en S, LUT `.cube`) contre

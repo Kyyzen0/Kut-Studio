@@ -222,8 +222,30 @@ float binomial(int offset) {
     return 1.0 / 16.0;
 }
 
+// Nœud d'étalonnage (misc.y > 0) : les trois canaux, en RVB (state.x : espace de l'entrée), l'image réfléchie au
+// bord comme la ``convolution`` de l'export (le pixel du bord n'est pas répété).
+vec2 reflected_uv(vec2 offset) {
+    vec2 last = target.xy - 1.0;
+    vec2 p = abs(v_uv * target.xy - 0.5 + offset);
+    p = last - abs(last - p);
+    return (p + 0.5) / target.xy;
+}
+
 void main() {
     vec2 texel = 1.0 / target.xy;
+    if (misc.y > 0.5) {
+        int from_space = int(state.x + 0.5);
+        vec3 soft = vec3(0.0);
+        for (int j = -2; j <= 2; ++j) {
+            for (int i = -2; i <= 2; ++i) {
+                vec3 tap = texture(tex0, reflected_uv(vec2(float(i), float(j)))).rgb;
+                soft += to_space(tap, from_space, 1) * (binomial(i) * binomial(j));
+            }
+        }
+        vec3 rgb = to_space(texture(tex0, v_uv).rgb, from_space, 1);
+        fragColor = vec4(clamp(rgb + misc.x * (rgb - soft), 0.0, 1.0), 1.0);
+        return;
+    }
     float blurred = 0.0;
     for (int j = -2; j <= 2; ++j) {
         for (int i = -2; i <= 2; ++i) {
@@ -327,30 +349,79 @@ void main() {
 }
 """
 
-GRADE = FRAGMENT_HEADER + """
-// Étalonnage de l'export (eq, colorbalance, courbes, LUT .cube) cuit en LUT 3D par FFmpeg (core/gpu_grade.py).
-// tex1 : atlas de N tranches N×N (x = c2·N + c1, y = c0) ; misc : N, espace de la LUT (0 YUV, 1 RVB), comparaison
-// avant / après : là où le pixel tombe, dans le cadre (inverse_map : calque → cadre), à gauche de misc.z (part de la
-// largeur), la couleur d'origine — le trait du viewer, même pour un calque déplacé ou tourné.
+LUT = """
+// LUT 3D cuite par FFmpeg (core/gpu_grade.py), dans tex1 : atlas de N tranches N×N (x = c2·N + c1, y = c0).
 // Interpolation trilinéaire : bilinéaire matérielle dans une tranche, puis entre les deux tranches voisines.
 vec3 lut_slice(float slice, vec2 c10, float n) {
     vec2 uv = vec2((slice * n + c10.x * (n - 1.0) + 0.5) / (n * n), (c10.y * (n - 1.0) + 0.5) / n);
     return texture(tex1, uv).rgb;
 }
 
-void main() {
-    vec3 original = texture(tex0, v_uv).rgb;
-    vec3 c = clamp(to_space(original, int(state.x + 0.5), int(misc.y + 0.5)), 0.0, 1.0);
-    float n = misc.x;
+vec3 sample_lut(vec3 c, float n) {
     float z = c.z * (n - 1.0);
     float z0 = floor(z);
     float z1 = min(z0 + 1.0, n - 1.0);
-    vec3 rgb = mix(lut_slice(z0, c.yx, n), lut_slice(z1, c.yx, n), z - z0);
+    return mix(lut_slice(z0, c.yx, n), lut_slice(z1, c.yx, n), z - z0);
+}
+"""
+
+GRADE = FRAGMENT_HEADER + LUT + """
+// Étalonnage de l'export (eq, colorbalance, courbes, LUT .cube) cuit en LUT 3D ; misc : N, espace de la LUT (0 YUV,
+// 1 RVB), comparaison avant / après : là où le pixel tombe, dans le cadre (inverse_map : calque → cadre), à gauche de
+// misc.z (part de la largeur), la couleur d'origine — le trait du viewer, même pour un calque déplacé ou tourné.
+void main() {
+    vec3 original = texture(tex0, v_uv).rgb;
+    vec3 c = clamp(to_space(original, int(state.x + 0.5), int(misc.y + 0.5)), 0.0, 1.0);
+    vec3 rgb = sample_lut(c, misc.x);
     float canvas_x = (inverse_map * vec4(v_uv * target.xy, 0.0, 1.0)).x;
     if (misc.z > 0.0 && canvas_x < misc.z * target.x) {
         rgb = clamp(to_space(original, int(state.x + 0.5), 1), 0.0, 1.0);
     }
     fragColor = vec4(to_space(rgb, 1, int(state.y + 0.5)), 1.0);
+}
+"""
+
+COLORKEY = FRAGMENT_HEADER + LUT + """
+// Clé d'un nœud d'étalonnage (core/gpu_color_graph.py) : la LUT de la clé de son qualifieur (tex1, si misc.z > 0 ; lue
+// dans l'espace misc.y, entrée tex0 dans l'espace state.x) × la matte de ses fenêtres (alpha de tex2, si misc.w > 0).
+void main() {
+    float k = 1.0;
+    if (misc.z > 0.5) {
+        vec3 c = clamp(to_space(texture(tex0, v_uv).rgb, int(state.x + 0.5), int(misc.y + 0.5)), 0.0, 1.0);
+        k = sample_lut(c, misc.x).r;
+    }
+    if (misc.w > 0.5) {
+        k = k * texture(tex2, v_uv).a;
+    }
+    fragColor = vec4(k, k, k, 1.0);
+}
+"""
+
+COLORMIX = FRAGMENT_HEADER + """
+// Mélanges du graphe d'étalonnage (core/gpu_color_graph.py), en RVB ; state : espaces de tex0, tex1, tex2, puis le mode.
+// 0 : tex0 + clé·(tex1 − tex0), la clé dans tex2 (maskedmerge) ; 1 : tex0 + (tex1 − tex2), écrêté si misc.x > 0 (la
+// somme des branches parallèles, écrêtée une fois) ; 2 : avant / après, tex0 à gauche du trait (misc.y : part de la
+// largeur du cadre, inverse_map : calque → cadre), tex1 à droite.
+void main() {
+    vec3 a = to_space(texture(tex0, v_uv).rgb, int(state.x + 0.5), 1);
+    vec3 b = to_space(texture(tex1, v_uv).rgb, int(state.y + 0.5), 1);
+    vec3 c = to_space(texture(tex2, v_uv).rgb, int(state.z + 0.5), 1);
+    int mode = int(state.w + 0.5);
+    vec3 result = b;
+    if (mode == 0) {
+        result = a + c.r * (b - a);
+    } else if (mode == 1) {
+        result = a + (b - c);
+        if (misc.x > 0.5) {
+            result = clamp(result, 0.0, 1.0);
+        }
+    } else {
+        float canvas_x = (inverse_map * vec4(v_uv * target.xy, 0.0, 1.0)).x;
+        if (canvas_x < misc.y * target.x) {
+            result = clamp(a, 0.0, 1.0);
+        }
+    }
+    fragColor = vec4(result, 1.0);
 }
 """
 
@@ -376,6 +447,8 @@ SHADERS: dict[str, tuple[str, str]] = {
     "haze.frag": ("frag", HAZE),
     "glow.frag": ("frag", GLOW),
     "grade.frag": ("frag", GRADE),
+    "colorkey.frag": ("frag", COLORKEY),
+    "colormix.frag": ("frag", COLORMIX),
     "composite.frag": ("frag", COMPOSITE),
     "present.frag": ("frag", PRESENT),
 }

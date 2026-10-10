@@ -94,6 +94,10 @@ class IconName(str, Enum):
     DIAMOND = "diamond"
     KEY = "key"
     COMPARE = "compare"
+    PIPETTE = "pipette"
+    WINDOW_RECT = "window_rect"
+    WINDOW_ELLIPSE = "window_ellipse"
+    WINDOW_POLYGON = "window_polygon"
     PROJECT = "project"
     TIMER = "timer"
     LIST = "list"
@@ -480,6 +484,37 @@ _SVG_TEMPLATES: dict[str, str] = {
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
         '<circle cx="8" cy="12" r="4"/>'
         '<path d="M12 12h9M17 12v4M21 12v3"/></svg>'
+    ),
+    IconName.PIPETTE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L17 9l-2-2z"/>'
+        '<path d="m13 5 6 6"/>'
+        '<path d="M15 9 6.5 17.5 4 20l2.5-2.5"/></svg>'
+    ),
+    IconName.WINDOW_RECT: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="4" y="6" width="16" height="12" rx="1"/>'
+        '<path d="M2 4h2M2 4v2M22 20h-2M22 20v-2"/></svg>'
+    ),
+    IconName.WINDOW_ELLIPSE: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>'
+        '<ellipse cx="12" cy="12" rx="5.5" ry="3.5" stroke-dasharray="2 2" opacity="0.6"/></svg>'
+    ),
+    IconName.WINDOW_POLYGON: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 3.5 20.5 9.5 17 20H7L3.5 9.5Z"/>'
+        '<circle cx="12" cy="3.5" r="1.2" fill="currentColor"/>'
+        '<circle cx="20.5" cy="9.5" r="1.2" fill="currentColor"/>'
+        '<circle cx="3.5" cy="9.5" r="1.2" fill="currentColor"/></svg>'
     ),
     IconName.COMPARE: (
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '

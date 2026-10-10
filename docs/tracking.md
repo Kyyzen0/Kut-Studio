@@ -24,10 +24,13 @@ camera solve, planar tracking, détection d'objets, génération de contenu.
    fait.
 5. Si le suivi est **incertain** (points orange) ou **perdu** (croix rouge),
    corriger le point à la main sur l'image fautive, puis relancer depuis là.
-6. **Appliquer** : choisir la cible (calque, clip, masque, point d'ancrage),
-   cocher Position (Rotation / Échelle avec deux trackers sélectionnés),
-   puis **Lier** (la cible suit, et suivra les corrections) ou **Convertir
-   en keyframes** (valeurs figées, indépendantes du tracker).
+6. **Appliquer** : choisir la cible (calque, clip, masque, fenêtre d'un nœud
+   d'étalonnage, point d'ancrage), cocher Position (Rotation / Échelle avec
+   deux trackers sélectionnés), puis **Lier** (la cible suit, et suivra les
+   corrections) ou **Convertir en keyframes** (valeurs figées, indépendantes
+   du tracker). Une fenêtre de la page Couleur ([color.md](color.md)) est un
+   masque pour le tracking : même liaison (`mask_id`), mêmes images-clés
+   dérivées `mask.<id>.*`, que l'étalonnage lit à l'export et dans le moniteur.
 7. **Stabilisation** : cocher *Stabiliser ce clip*, choisir la compensation,
    le lissage et le traitement des bords. Le panneau indique l'agrandissement
    nécessaire (« La stabilisation agrandit l'image de 12 % »). *Stabilisation

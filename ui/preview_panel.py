@@ -167,6 +167,7 @@ class PreviewPanel(QWidget):
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
         self._gpu_grade = None
+        self._gpu_windows: dict[str, tuple[str, object]] = {}
         self._gpu_grade_split = 0.0          # comparaison avant / après (page Couleur) : part gauche sans étalonnage
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
         self._gpu_blend_layers: tuple = ()
@@ -844,6 +845,17 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_grade_windows(self, windows: dict[str, tuple[str, object]]) -> None:
+        """Mattes des fenêtres des nœuds de l'étalonnage montré (``{nœud: (clé, QImage)}``, espace calque, taille de
+        rendu ; GPU seulement). Une matte inchangée ne change rien."""
+        windows = dict(windows or {})
+        if {node: key for node, (key, _image) in windows.items()} == \
+                {node: key for node, (key, _image) in self._gpu_windows.items()}:
+            return
+        self._gpu_windows = windows
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
     def set_grade_split(self, split: float | None) -> None:
         """Comparaison avant / après (GPU seulement) : la part gauche du clip affiché (0..1) reste sans étalonnage,
         un trait la sépare dans le viewer ; ``None`` : comparaison arrêtée."""
@@ -851,6 +863,57 @@ class PreviewPanel(QWidget):
         self.overlay.set_compare_split(split)
         if self.gpu_view is not None:
             self._update_gpu_composite()
+
+    def _layer_values(self):
+        """Transform du clip affiché, tel que l'export et le moniteur le lisent (:func:`video_layer_matrix`)."""
+        from types import SimpleNamespace
+
+        advanced = self._applied_advanced
+        return SimpleNamespace(
+            position_x=self._applied_pos_x, position_y=self._applied_pos_y,
+            scale=self._applied_scale, rotation=self._applied_rotation, skew=0.0,
+            anchor_x=advanced.get("anchor_x", 0.5), anchor_y=advanced.get("anchor_y", 0.5),
+            scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
+            flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
+        )
+
+    def canvas_to_media(self, x: float, y: float, media_width: int, media_height: int) -> tuple[float, float] | None:
+        """Pixel du média du clip affiché sous le point ``(x, y)`` du cadre (pipette) ; ``None`` hors de son image."""
+        from core.color_pick import canvas_to_media
+        from core.tracking_motion import fit_box, video_layer_matrix
+
+        cw, ch = self._canvas_size
+        advanced = self._applied_advanced
+        fit = fit_box(media_width, media_height, cw, ch, fill=bool(advanced.get("fill", False)),
+                      pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
+        return canvas_to_media((x, y), tuple(video_layer_matrix(self._layer_values(), cw, ch)), fit)
+
+    def canvas_to_layer(self, x: float, y: float) -> tuple[float, float] | None:
+        """Point du calque du clip affiché (pixels de la séquence, avant sa transformation) sous ``(x, y)`` du cadre :
+        là où se lisent ses masques et les fenêtres de ses nœuds."""
+        from core.color_pick import canvas_to_layer
+        from core.tracking_motion import video_layer_matrix
+
+        cw, ch = self._canvas_size
+        return canvas_to_layer((x, y), tuple(video_layer_matrix(self._layer_values(), cw, ch)))
+
+    def set_pick_mode(self, active: bool) -> None:
+        """Pipette du qualificateur : le prochain clic dans le cadre donne un point (``overlay.color_picked``)."""
+        self.overlay.set_pick_mode(active)
+
+    def compare_split_in_layer(self, split: float) -> float:
+        """Part de la largeur de l'image du clip affiché qui tombe à gauche du trait ``split`` (part du cadre) : l'avant /
+        après des segments fidèles se fait dans l'image du clip (exact pour un clip qui ne tourne pas)."""
+        from core.gpu_composite import affine_inverse
+        from core.tracking_motion import video_layer_matrix
+
+        cw, ch = self._canvas_size
+        inverse = affine_inverse(tuple(video_layer_matrix(self._layer_values(), cw, ch)))
+        if inverse is None:
+            return min(1.0, max(0.0, float(split)))
+        a, _b, c, _d, e, _f = inverse
+        x = a * float(split) * cw + c * ch / 2.0 + e
+        return min(1.0, max(0.0, x / max(1.0, float(cw))))
 
     def set_adjustments(self, adjustments) -> None:
         """Calques d'effets actifs : ``[(clé, effets, couverture QImage | None, opacité[, étalonnage])]`` (GPU
@@ -952,7 +1015,6 @@ class PreviewPanel(QWidget):
         view = self.gpu_view
         if view is None:
             return
-        from types import SimpleNamespace
 
         from core.blend_modes import coerce_blend_mode
         from core.gpu_composite import CompositeFrame, CompositeLayer
@@ -963,13 +1025,7 @@ class PreviewPanel(QWidget):
         layers = ()
         if self._gpu_source_size is not None and (self._timeline_preview_path or self._library_preview_path):
             advanced = self._applied_advanced
-            values = SimpleNamespace(
-                position_x=self._applied_pos_x, position_y=self._applied_pos_y,
-                scale=self._applied_scale, rotation=self._applied_rotation, skew=0.0,
-                anchor_x=advanced.get("anchor_x", 0.5), anchor_y=advanced.get("anchor_y", 0.5),
-                scale_x=advanced.get("scale_x", 1.0), scale_y=advanced.get("scale_y", 1.0),
-                flip_h=advanced.get("flip_h", False), flip_v=advanced.get("flip_v", False),
-            )
+            values = self._layer_values()
             box = fit_box(self._gpu_source_size[0], self._gpu_source_size[1], cw, ch,
                           fill=bool(advanced.get("fill", False)),
                           pan_x=advanced.get("pan_x", 0.0), pan_y=advanced.get("pan_y", 0.0))
@@ -978,6 +1034,11 @@ class PreviewPanel(QWidget):
             if self._gpu_matte is not None:
                 matte_key, image = self._gpu_matte
                 mattes[matte_key] = image
+            windows = []
+            if self._gpu_grade is not None:
+                for node_id, (window_key, image) in self._gpu_windows.items():
+                    mattes[window_key] = image
+                    windows.append((node_id, window_key))
             from core.gpu_effects import VIGNETTE_EXPORT
 
             try:
@@ -995,6 +1056,7 @@ class PreviewPanel(QWidget):
                 matte=matte_key,
                 grade=self._gpu_grade,
                 grade_split=self._gpu_grade_split if self._gpu_grade is not None else 0.0,
+                grade_windows=tuple(windows),
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
             layers = layers + self._gpu_graphics_layers(cw, ch, mattes)

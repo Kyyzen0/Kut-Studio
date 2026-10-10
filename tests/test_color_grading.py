@@ -761,20 +761,18 @@ def test_grade_filters_includes_eq_for_identity_with_curves() -> None:
     curves = ColorCurves(red=custom_curve)
     grade_obj = ColorGrade(curves=curves)
     filters = _build_color_grade_filters(grade_obj)
-    assert "eq=" in filters
-    assert "curves=" in filters
+    assert "eq=" not in filters, "un eq neutre coûtait un aller-retour YUV en 8 bits"
+    assert filters.startswith("curves=")
 
 
-def test_grade_filters_emits_colorbalance_for_temperature() -> None:
-    grade = ColorGrade(temperature=20.0)
-    filters = _build_color_grade_filters(grade)
-    assert "colorbalance=" in filters
+def test_grade_filters_turn_temperature_into_a_white_balance() -> None:
+    filters = _build_color_grade_filters(ColorGrade(temperature=20.0))
+    assert "colorchannelmixer=rr=1.06:" in filters and "colorbalance=" not in filters
 
 
-def test_grade_filters_emits_colorbalance_for_hue() -> None:
-    grade = ColorGrade(hue=10.0)
-    filters = _build_color_grade_filters(grade)
-    assert "colorbalance=" in filters
+def test_grade_filters_turn_hue_into_a_rotation() -> None:
+    filters = _build_color_grade_filters(ColorGrade(hue=10.0))
+    assert "hue=h=10.0" in filters and "colorbalance=" not in filters
 
 
 def test_grade_filters_emits_colorbalance_for_shadows() -> None:
@@ -849,7 +847,7 @@ def test_grade_filters_chain_includes_lut_after_curves() -> None:
     new_points[8] = (new_points[8][0], 0.9)
     custom_curve = ColorCurve(points=tuple(new_points))
     grade = ColorGrade(
-        temperature=10.0,
+        shadows=0.1,
         curves=ColorCurves(red=custom_curve),
     ).with_lut(
         LUTResource(path="x.cube", title="X", sha1="0" * 40, size=10)
@@ -872,15 +870,11 @@ def test_grade_filters_with_b_and_w_preset() -> None:
     assert "saturation=0.0" in filters
 
 
-def test_grade_filters_identity_only_emits_eq() -> None:
-    """L'identité totale (aucun preset, aucune courbe modifiée) ne
-    produit que ``eq`` (toujours présent pour la stabilité du
-    pipeline). On s'attend donc à un filtre non vide mais limité."""
-    filters = _build_color_grade_filters(ColorGrade.identity())
-    assert "eq=" in filters
-    assert "colorbalance=" not in filters
-    assert "curves=" not in filters
-    assert "lut3d=" not in filters
+def test_grade_filters_identity_emits_nothing() -> None:
+    """L'identité totale ne produit aucun filtre (jusqu'au 2026-10-10, un
+    ``eq`` neutre restait, et son aller-retour YUV en 8 bits coûtait un
+    arrondi sans rien changer)."""
+    assert _build_color_grade_filters(ColorGrade.identity()) == ""
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg indisponible")

@@ -1,6 +1,8 @@
-"""Panneau Couleur : les nœuds d'étalonnage du clip sélectionné, les roues et le qualifieur de son nœud courant.
+"""Panneau Couleur : les nœuds d'étalonnage du clip sélectionné ; les roues, le qualifieur, les fenêtres, le flou et
+la netteté de son nœud courant.
 
-En colonne (page Couleur, à droite) les nœuds sont au-dessus des onglets *Roues* / *Qualificateur* ; en bande large
+En colonne (page Couleur, à droite) les nœuds sont au-dessus des onglets *Roues* / *Qualificateur* / *Fenêtres* /
+*Flou* ; en bande large
 (zone du bas) ils sont à gauche. Le bouton ``+`` ajoute un nœud en série ; sa flèche propose aussi un nœud parallèle
 ou de calque. Le panneau ne lit ni ne modifie le projet : la fenêtre lui donne le graphe du clip
 (:meth:`ColorPanel.set_target`) et applique ce qu'il demande (signaux de l'éditeur de nœuds, :attr:`wheel_changed`,
@@ -17,6 +19,7 @@ from core.color_nodes import ColorNodeGraph, MixerKind
 from ui.color_page.node_editor import NodeEditor, node_number
 from ui.color_page.qualifier import QualifierEditor
 from ui.color_page.wheels import ColorWheels
+from ui.color_page.windows import DetailEditor, WindowsEditor
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -31,6 +34,10 @@ class ColorPanel(QWidget):
     wheel_changed = Signal(str, object)
     qualifier_changed = Signal(object)
     highlight_toggled = Signal(bool)
+    pick_toggled = Signal(bool)
+    windows_changed = Signal(object, str)              # fenêtres du nœud courant, clé d'historique
+    window_selected = Signal(str)                      # fenêtre éditée dans le viewer ("" : aucune)
+    detail_changed = Signal(float, float)              # flou, netteté du nœud courant
     compare_toggled = Signal(bool)                     # comparaison avant / après dans le moniteur
     shown = Signal()                                   # affiché : la fenêtre le remet sur le clip courant
 
@@ -65,11 +72,21 @@ class ColorPanel(QWidget):
         self.qualifier = QualifierEditor()
         self.qualifier.changed.connect(self.qualifier_changed)
         self.qualifier.highlight_toggled.connect(self.highlight_toggled)
+        self.qualifier.pick_toggled.connect(self.pick_toggled)
+        self.windows = WindowsEditor()
+        self.windows.changed.connect(self.windows_changed)
+        self.windows.selected.connect(lambda _window_id: self.window_selected.emit(self.editing_window()))
+        self.windows.highlight_toggled.connect(self.highlight_toggled)
+        self.detail = DetailEditor()
+        self.detail.changed.connect(self.detail_changed)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("color_tabs")
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self.wheels, translate("color.tab.wheels"))
         self.tabs.addTab(self.qualifier, translate("color.tab.qualifier"))
+        self.tabs.addTab(self.windows, translate("color.tab.windows"))
+        self.tabs.addTab(self.detail, translate("color.tab.detail"))
+        self.tabs.currentChanged.connect(lambda _index: self.window_selected.emit(self.editing_window()))
         self.splitter = QSplitter(Qt.Vertical)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setHandleWidth(6)
@@ -109,8 +126,8 @@ class ColorPanel(QWidget):
         self.hint.setVisible(graph is None)
         self.splitter.setVisible(graph is not None)
         active = graph is not None and editable
-        for widget in (self.nodes, self.wheels, self.qualifier, self.add_button, self.bypass_button,
-                       self.reset_button):
+        for widget in (self.nodes, self.wheels, self.qualifier, self.windows, self.detail, self.add_button,
+                       self.bypass_button, self.reset_button):
             widget.setEnabled(active)
         if graph is None or current_id is None:
             self.node_caption.clear()
@@ -118,6 +135,8 @@ class ColorPanel(QWidget):
             self.bypass_button.setChecked(False)
             self.wheels.set_wheels({})
             self.qualifier.set_qualifier(None)
+            self.windows.set_windows(())
+            self.detail.set_detail(0.0, 0.0)
             return
         node = graph.node_or_first(current_id)
         self.remove_button.setEnabled(active and len(graph.correctors) > 1)
@@ -127,6 +146,12 @@ class ColorPanel(QWidget):
         self.node_caption.setText(f"{caption} · {node.label}" if node.label else caption)
         self.wheels.set_wheels({name: getattr(node.grade, name) for name in WHEELS})
         self.qualifier.set_qualifier(node.qualifier)
+        self.windows.set_windows(node.windows)
+        self.detail.set_detail(node.blur, node.sharpen)
+
+    def editing_window(self) -> str:
+        """La fenêtre que le viewer édite : celle choisie dans l'onglet *Fenêtres*, s'il est affiché ("" sinon)."""
+        return self.windows.current_id() if self.tabs.currentWidget() is self.windows else ""
 
     def set_compare(self, shown: bool) -> None:
         """État du bouton de comparaison avant / après (la fenêtre en garde la valeur), sans émettre."""
@@ -140,6 +165,7 @@ class ColorPanel(QWidget):
         button.blockSignals(True)
         button.setChecked(shown)
         button.blockSignals(False)
+        self.windows.set_highlight(shown)
 
     def retranslate(self) -> None:
         self.header.title_label.setText(translate("color.panel.title"))
@@ -150,8 +176,11 @@ class ColorPanel(QWidget):
         self.nodes.setAccessibleName(translate("color.nodes.title"))
         self.wheels.retranslate()
         self.qualifier.retranslate()
-        self.tabs.setTabText(0, translate("color.tab.wheels"))
-        self.tabs.setTabText(1, translate("color.tab.qualifier"))
+        self.windows.retranslate()
+        self.detail.retranslate()
+        for index, key in enumerate(("color.tab.wheels", "color.tab.qualifier", "color.tab.windows",
+                                     "color.tab.detail")):
+            self.tabs.setTabText(index, translate(key))
         self.add_actions["serial"].setText(translate("color.node.add"))
         for kind in (MixerKind.PARALLEL, MixerKind.LAYER):
             self.add_actions[kind.value].setText(translate(f"color.node.add_{kind.value}"))

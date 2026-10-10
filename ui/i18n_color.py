@@ -86,6 +86,66 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     "color.tab.wheels": _t("Roues", "Wheels", "Ruedas"),
     "color.tab.qualifier": _t("Qualificateur", "Qualifier", "Calificador"),
+    "color.tab.windows": _t("Fenêtres", "Windows", "Ventanas"),
+    "color.tab.detail": _t("Flou", "Blur", "Desenfoque"),
+    # --- Fenêtres, flou --------------------------------------------------------------------------------------------
+    "color.window.add_rectangle": _t("Ajouter une fenêtre rectangulaire", "Add a rectangle window",
+                                     "Añadir una ventana rectangular"),
+    "color.window.add_ellipse": _t("Ajouter une fenêtre elliptique", "Add an ellipse window",
+                                   "Añadir una ventana elíptica"),
+    "color.window.add_polygon": _t("Ajouter une forme libre (glisser ses sommets dans le viewer)",
+                                   "Add a free shape (drag its points in the viewer)",
+                                   "Añadir una forma libre (arrastra sus vértices en el visor)"),
+    "color.window.remove": _t("Supprimer la fenêtre", "Delete the window", "Eliminar la ventana"),
+    "color.window.name": _t("Fenêtre {index}", "Window {index}", "Ventana {index}"),
+    "color.window.shape.rectangle": _t("Rectangle", "Rectangle", "Rectángulo"),
+    "color.window.shape.ellipse": _t("Ellipse", "Ellipse", "Elipse"),
+    "color.window.shape.polygon": _t("Forme libre", "Free shape", "Forma libre"),
+    "color.window.inverted": _t("inversée", "inverted", "invertida"),
+    "color.window.invert": _t("Inverser (corriger l'extérieur)", "Invert (grade the outside)",
+                              "Invertir (corregir el exterior)"),
+    "color.window.operation": _t("Combinaison avec les fenêtres au-dessus", "Combination with the windows above",
+                                 "Combinación con las ventanas de arriba"),
+    "color.window.mode.add": _t("Ajouter", "Add", "Añadir"),
+    "color.window.mode.subtract": _t("Soustraire", "Subtract", "Restar"),
+    "color.window.mode.intersect": _t("Intersection", "Intersect", "Intersección"),
+    "color.window.position_x": _t("Position X", "Position X", "Posición X"),
+    "color.window.position_y": _t("Position Y", "Position Y", "Posición Y"),
+    "color.window.width": _t("Largeur", "Width", "Ancho"),
+    "color.window.height": _t("Hauteur", "Height", "Alto"),
+    "color.window.rotation": _t("Rotation", "Rotation", "Rotación"),
+    "color.window.feather": _t("Douceur", "Softness", "Suavidad"),
+    "color.window.empty": _t(
+        "Aucune fenêtre : le nœud corrige toute l'image (ou ce que son qualifieur sélectionne).",
+        "No window: the node grades the whole picture (or what its qualifier selects).",
+        "Sin ventana: el nodo corrige toda la imagen (o lo que selecciona su calificador).",
+    ),
+    "color.window.hint": _t(
+        "Dans le viewer : glisser la fenêtre la déplace, ses poignées changent sa taille (Maj : proportions) et sa "
+        "rotation. Pour qu'elle suive un objet : panneau Tracking, « Lier à », puis la fenêtre.",
+        "In the viewer: drag the window to move it, its handles change its size (Shift: proportions) and rotation. "
+        "To make it follow an object: Tracking panel, “Link to”, then the window.",
+        "En el visor: arrastra la ventana para moverla, sus tiradores cambian su tamaño (Mayús: proporciones) y su "
+        "rotación. Para que siga un objeto: panel Tracking, «Vincular a» y la ventana.",
+    ),
+    "color.window.highlight_tip": _t(
+        "Montre dans le moniteur ce que la clé du nœud (qualifieur × fenêtres) sélectionne, le reste en gris. N'agit "
+        "pas sur l'export.",
+        "Shows in the viewer what the node's key (qualifier × windows) selects, the rest in grey. Does not affect the "
+        "export.",
+        "Muestra en el visor lo que selecciona la clave del nodo (calificador × ventanas), el resto en gris. No afecta "
+        "a la exportación.",
+    ),
+    "color.detail.blur": _t("Flou", "Blur", "Desenfoque"),
+    "color.detail.sharpen": _t("Netteté", "Sharpen", "Nitidez"),
+    "color.detail.hint": _t(
+        "Le flou et la netteté agissent sur la correction du nœud, là où sa clé (qualifieur × fenêtres) la "
+        "sélectionne : une fenêtre inversée floute l'arrière-plan. Flou en pixels de la séquence.",
+        "Blur and sharpen act on the node's correction, wherever its key (qualifier × windows) selects it: an "
+        "inverted window blurs the background. Blur in sequence pixels.",
+        "El desenfoque y la nitidez actúan sobre la corrección del nodo, allí donde su clave (calificador × ventanas) "
+        "la selecciona: una ventana invertida desenfoca el fondo. Desenfoque en píxeles de la secuencia.",
+    ),
     # --- Qualifieur ------------------------------------------------------------------------------------------------
     "color.qualifier.enable": _t("Qualifier ce nœud", "Qualify this node", "Calificar este nodo"),
     "color.qualifier.invert": _t("Inverser", "Invert", "Invertir"),
@@ -95,10 +155,14 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Shows in the viewer what the qualifier selects, the rest in grey. Does not affect the export.",
         "Muestra en el visor lo que selecciona el calificador, el resto en gris. No afecta a la exportación.",
     ),
-    "color.qualifier.highlight_unavailable": _t(
-        "Nécessite le moniteur GPU (Préférences › Performances).",
-        "Requires the GPU viewer (Preferences › Performance).",
-        "Requiere el visor GPU (Preferencias › Rendimiento).",
+    "color.qualifier.pick": _t("Pipette", "Eyedropper", "Cuentagotas"),
+    "color.qualifier.pick_tip": _t(
+        "Cliquez dans le viewer : la couleur qui arrive à ce nœud sous le clic est sélectionnée. Maj + clic élargit "
+        "la sélection jusqu'à elle.",
+        "Click in the viewer: the color reaching this node under the click is selected. Shift + click widens the "
+        "selection to it.",
+        "Haz clic en el visor: se selecciona el color que llega a este nodo bajo el clic. Mayús + clic amplía la "
+        "selección hasta él.",
     ),
     "color.qualifier.hue": _t("Teinte", "Hue", "Tono"),
     "color.qualifier.sat": _t("Saturation", "Saturation", "Saturación"),
@@ -145,6 +209,18 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "history.color.node_parallel": _t("Ajouter un nœud parallèle", "Add a parallel node", "Añadir un nodo paralelo"),
     "history.color.node_layer": _t("Ajouter un nœud de calque", "Add a layer node", "Añadir un nodo de capa"),
     "history.color.qualifier": _t("Qualifieur", "Qualifier", "Calificador"),
+    "history.color.pick": _t("Pipette du qualifieur", "Qualifier eyedropper", "Cuentagotas del calificador"),
+    "history.color.window_add": _t("Ajouter une fenêtre", "Add a window", "Añadir una ventana"),
+    "history.color.window_remove": _t("Supprimer une fenêtre", "Delete a window", "Eliminar una ventana"),
+    "history.color.window": _t("Fenêtre", "Window", "Ventana"),
+    "history.color.window_drag": _t("Ajuster une fenêtre dans le viewer", "Adjust a window in the viewer",
+                                    "Ajustar una ventana en el visor"),
+    "history.color.detail": _t("Flou et netteté", "Blur and sharpen", "Desenfoque y nitidez"),
+    "status.color.pick_outside": _t("Pipette : le clic est hors de l'image du clip.",
+                                    "Eyedropper: the click is outside the clip's picture.",
+                                    "Cuentagotas: el clic está fuera de la imagen del clip."),
+    "status.color.pick_failed": _t("Pipette : couleur illisible ({error}).", "Eyedropper: color unreadable ({error}).",
+                                   "Cuentagotas: color ilegible ({error})."),
     # --- Raccourcis et panneau -------------------------------------------------------------------------------------
     "shortcuts.command.page_edit": _t("Page Montage", "Edit page", "Página Edición"),
     "shortcuts.command.page_color": _t("Page Couleur", "Color page", "Página Color"),

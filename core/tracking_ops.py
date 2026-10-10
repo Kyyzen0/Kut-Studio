@@ -469,9 +469,15 @@ def link_targets(project, source_clip_id: str) -> list[dict]:
                 targets.append((TrackTarget.TRANSFORM, ""))
             for mask in getattr(clip.compositing, "masks", ()) or ():
                 targets.append((TrackTarget.MASK, mask.id))
+            masks = {m.id: (m.name or m.shape.value) for m in getattr(clip.compositing, "masks", ()) or ()}
+            # Fenêtres des nœuds d'étalonnage : des masques à suivre.
+            for node in getattr(getattr(clip, "color_grade", None), "correctors", ()):
+                for window in node.windows:
+                    targets.append((TrackTarget.MASK, window.id))
+                    masks[window.id] = window.name or f"{node.label or node.id} · {window.shape.value}"
             result.append({
                 "clip_id": clip.id, "label": clip.label or clip.id, "kind": track.type, "targets": targets,
-                "masks": {m.id: (m.name or m.shape.value) for m in getattr(clip.compositing, "masks", ()) or ()},
+                "masks": masks,
             })
     return result
 
@@ -515,8 +521,11 @@ def add_link(
     if target == TrackTarget.ANCHOR and not same:
         raise TrackingError("Le point d'ancrage ne peut suivre que les trackers de son propre clip.")
     if target == TrackTarget.MASK:
+        from .color_nodes import window_by_id              # paresseux : le qualifieur importe numpy
+
         compositing = getattr(target_clip, "compositing", None)
-        if compositing is None or compositing.mask_by_id(mask_id) is None:
+        if (compositing is None or compositing.mask_by_id(mask_id) is None) and \
+                window_by_id(getattr(target_clip, "color_grade", None), mask_id) is None:
             raise TrackingError("Masque introuvable.")
     if (rotation or scale) and len(ids) < 2:
         raise TrackingError("Rotation et échelle demandent au moins deux trackers.")

@@ -198,6 +198,7 @@ class FaithfulPreviewMixin:
             LOGGER.debug("Plan de préchargement non calculé à %.3f s : rien n'est préchargé", center, exc_info=True)
             return []
         resolver = self._preview_resolver()
+        overrides = self._preview_grade_overrides()
         jobs = []
         for request in requests:
             try:
@@ -205,6 +206,7 @@ class FaithfulPreviewMixin:
                     self.project, request.index,
                     quality=self._render_quality, resolver=resolver,
                     timeline_index=self._ensure_timeline_index(), flow_preference=self._flow_preference(),
+                    grade_overrides=overrides,
                 )
             except Exception:
                 LOGGER.debug("Segment %s non construit : préchargement sauté pour ce segment", request.index, exc_info=True)
@@ -275,6 +277,7 @@ class FaithfulPreviewMixin:
         )
 
         resolver = self._preview_resolver()
+        overrides = self._preview_grade_overrides()
         job = None
         for candidate in getattr(self, "_last_preview_jobs", ()):
             start = float(getattr(candidate, "start", 0.0))
@@ -287,7 +290,7 @@ class FaithfulPreviewMixin:
                 end = job.start + job.duration
                 fresh = segment_params_hash(
                     segment_plan(self.project, job.start, end, resolver=resolver,
-                                 timeline_index=self._ensure_timeline_index()),
+                                 timeline_index=self._ensure_timeline_index(), grade_overrides=overrides),
                     self.project, self._render_quality, end, flow_preference=self._flow_preference(),
                 )
                 if getattr(getattr(job, "key", None), "params_hash", None) != fresh:
@@ -300,6 +303,7 @@ class FaithfulPreviewMixin:
                     self.project, planner.index_of(timeline_time),
                     quality=self._render_quality, resolver=resolver,
                     timeline_index=self._ensure_timeline_index(), flow_preference=self._flow_preference(),
+                    grade_overrides=overrides,
                 )
                 if job is None:
                     return None

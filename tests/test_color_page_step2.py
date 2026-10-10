@@ -262,15 +262,6 @@ def test_the_compare_line_is_dragged_in_the_viewer(qtbot, window):
     assert moved.args[0] == pytest.approx(0.25) and overlay._drag is None
 
 
-def test_without_the_gpu_monitor_the_monitor_only_tools_say_why(window):
-    _clip(window)
-    if window.preview_panel.gpu_view is not None:
-        pytest.skip("moniteur GPU actif sur cette machine")
-    assert not window.color_panel.compare_button.isEnabled()
-    assert not window.color_panel.qualifier.highlight_button.isEnabled()
-    assert window.color_panel.compare_button.toolTip() == i18n.translate("color.qualifier.highlight_unavailable")
-
-
 def test_the_clip_strip_lists_the_video_shots_and_jumps_to_one(window):
     _clip(window)
     strip = window.clip_strip

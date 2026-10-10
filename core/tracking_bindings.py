@@ -682,6 +682,10 @@ def _compute_state(clip, context: TrackingContext, tracking: ClipTracking) -> Ef
             derived.update(("anchor_x", "anchor_y"))
         elif link.target == TrackTarget.MASK:
             mask = compositing.mask_by_id(link.mask_id) if compositing is not None else None
+            if mask is None:                            # une fenêtre d'un nœud d'étalonnage : même animation
+                from .color_nodes import window_by_id      # paresseux : le qualifieur importe numpy
+
+                mask = window_by_id(getattr(clip, "color_grade", None), link.mask_id)
             if mask is None:
                 warnings.append("tracking.link.missing_mask")
                 continue

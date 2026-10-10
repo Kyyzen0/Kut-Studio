@@ -80,9 +80,11 @@ def test_the_wheels_come_after_colorbalance_and_before_the_curves():
     from core.color_grading import ColorCurve, ColorCurves
 
     bent = ColorCurve(points=((0.0, 0.0), (0.5, 0.6), (1.0, 1.0)))
-    grade = ColorGrade(temperature=20.0, curves=ColorCurves(master=bent), gain=Wheel(y=0.2))
+    grade = ColorGrade(exposure=0.2, hue=5.0, shadows=0.1, temperature=20.0, curves=ColorCurves(master=bent),
+                       gain=Wheel(y=0.2))
     chain = _build_color_grade_filters(grade)
-    assert chain.index("eq=") < chain.index("colorbalance=") < chain.index("lutrgb=") < chain.index("curves=")
+    order = ["eq=", "hue=", "colorbalance=", "colorchannelmixer=", "lutrgb=", "curves="]
+    assert [chain.index(stage) for stage in order] == sorted(chain.index(stage) for stage in order)
 
 
 # --- formule, au niveau près ----------------------------------------------------------------------------------------
@@ -143,15 +145,41 @@ def test_an_exported_clip_takes_the_wheels(tmp_path):
 
 @needs_ffmpeg
 def test_the_monitor_lut_carries_the_wheels():
-    """La LUT du moniteur est cuite par la chaîne de l'export : avec les roues, elle vaut la formule appliquée à la LUT
-    sans les roues (ce qui les précède dans la chaîne, ``eq`` et sa conversion YUV comprise), au niveau près."""
+    """La LUT du moniteur est cuite par la chaîne de l'export : aux nœuds du réseau RVB, elle vaut la formule des roues
+    au niveau près (plus d'``eq`` neutre ni de son aller-retour YUV devant les roues)."""
+    from core.gpu_grade import CODE_STEP, LUT_SIZE
+
     grade = GRADES["les-quatre"]
-    before = np.rint(atlas_array(bake_grade_lut(ColorGrade(), domain=DOMAIN_RGB)) * 255.0)
-    after = np.rint(atlas_array(bake_grade_lut(grade, domain=DOMAIN_RGB)) * 255.0)
-    tie = np.abs(_exact(grade, before) - np.floor(_exact(grade, before)) - 0.5) < 1e-9
-    error = np.abs(after - _expected(grade, before))
-    assert error[~tie].max() == 0 and error[tie].max(initial=0) <= 1, error.max()
-    assert np.abs(after - before).mean() > 5, "les roues changent vraiment la LUT"
+    n, codes = LUT_SIZE, np.arange(LUT_SIZE) * CODE_STEP
+    c0, c1, c2 = np.meshgrid(codes, codes, codes, indexing="ij")
+    lattice = np.stack((c0, c1, c2), axis=-1).astype(float)
+    baked = np.rint(atlas_array(bake_grade_lut(grade, domain=DOMAIN_RGB)) * 255.0)
+    shown = baked.reshape(n, n, n, 3).transpose(0, 2, 1, 3)               # atlas[c₀, c₂·N + c₁]
+    error = np.abs(shown - _exact(grade, lattice).clip(0, 255))
+    assert error.max() <= 0.51 and error.mean() < 0.3, (error.mean(), error.max())
+
+
+@needs_ffmpeg
+def test_five_serial_nodes_drift_by_no_more_than_their_own_roundings():
+    """Cinq nœuds de roues en série contre la formule composée en flottant : seul l'arrondi de chaque nœud reste.
+    Jusqu'au 2026-10-10, chaque nœud passait aussi par un ``eq`` neutre (aller-retour YUV) : 1,16 niveau d'écart moyen,
+    6 au plus ; mesuré ensuite 0,50 et 2."""
+    from core.color_nodes import ColorNode, ColorNodeGraph
+
+    grades = [ColorGrade(gain=Wheel(0.05, 0.0, -0.05, 0.1)), ColorGrade(gamma=Wheel(y=0.15)),
+              ColorGrade(lift=Wheel(y=0.05)), ColorGrade(gain=Wheel(y=-0.08)),
+              ColorGrade(gamma=Wheel(-0.03, 0.02, 0.01, -0.1))]
+    image = np.random.default_rng(3).integers(0, 256, (32, 48, 3), dtype=np.uint8)
+    ideal = image.astype(float)
+    for grade in grades:
+        ideal = _exact(grade, ideal).clip(0, 255)
+    graph = ColorNodeGraph.serial(ColorNode(f"n{index + 1}", grade) for index, grade in enumerate(grades))
+    done = subprocess.run(["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "48x32", "-i", "-",
+                           "-vf", _build_color_grade_filters(graph), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                          input=image.tobytes(), capture_output=True, check=True)
+    error = np.abs(np.frombuffer(done.stdout, np.uint8).reshape(32, 48, 3) - ideal)
+    assert error.mean() < 0.7 and error.max() <= 2.5, (error.mean(), error.max())
+    assert "eq=" not in _build_color_grade_filters(graph)
 
 
 # --- palet --------------------------------------------------------------------------------------------------------

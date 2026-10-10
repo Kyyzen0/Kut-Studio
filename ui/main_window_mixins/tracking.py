@@ -285,6 +285,10 @@ class TrackingMixin:
         ]
         if link.target == TrackTarget.MASK:
             mask = clip.compositing.mask_by_id(link.mask_id) if clip.compositing is not None else None
+            if mask is None:
+                from core.color_nodes import window_by_id
+
+                mask = window_by_id(getattr(clip, "color_grade", None), link.mask_id)
             target = _tr("tracking.target.mask", label="", mask=getattr(mask, "name", "") or link.mask_id).strip(" ·")
         elif link.target == TrackTarget.ANCHOR:
             target = _tr("tracking.target.anchor")

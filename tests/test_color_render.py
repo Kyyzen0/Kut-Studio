@@ -110,6 +110,39 @@ def test_a_layer_without_key_covers_everything_below():
     assert "gain" not in text and np.array_equal(_render(text), _alone(GREY)), "le calque recouvert n'est pas calculé"
 
 
+@needs_ffmpeg
+def test_compare_keeps_the_original_left_of_its_share_and_grades_the_rest():
+    """Avant / après des segments fidèles (sans moniteur GPU) : à gauche de la part demandée, l'image d'origine ; à
+    droite, l'étalonnage montré (ici un graphe à branches)."""
+    from core.color_render import Compare
+
+    graph, other = as_graph(WARM).with_branch("n1", MixerKind.PARALLEL)
+    graph = graph.with_grade(other, GREY)
+    rendered = _render(_build_color_grade_filters(Compare(graph, 0.5), tag="v0cg"))
+    graded = _render(_build_color_grade_filters(graph))
+    assert np.array_equal(rendered[:, :24], _IMAGE[:, :24].astype(float)), "avant : l'image d'origine"
+    assert np.array_equal(rendered[:, 24:], graded[:, 24:]), "après : l'étalonnage"
+    assert _build_color_grade_filters(Compare(ColorGrade(), 0.5)) == "", "rien à comparer : rien à rendre"
+
+
+def test_preview_overrides_replace_only_the_shown_clip_and_change_its_segment_key(tmp_path):
+    from core.color_render import Highlight
+    from core.preview_segments import apply_grade_overrides, build_segment_job
+
+    project = _project(tmp_path / "m.mp4")
+    project.tracks[0].clips[1].timeline_start = 1.0
+    project.tracks[0].clips[0].color_grade = WARM.with_wheel("gamma", Wheel())
+    graph = as_graph(WARM).with_qualifier("n1", BLUES)
+    plan = build_render_plan(project)
+    shown = apply_grade_overrides(plan, {"c": Highlight(graph, "n1")})
+    grades = {layer.clip_id: layer.color_grade for layer in shown.video_layers}
+    assert isinstance(grades["c"], Highlight) and grades["d"] is None
+    assert apply_grade_overrides(plan, None) is plan
+    plain = build_segment_job(project, 0, quality="draft")
+    overridden = build_segment_job(project, 0, quality="draft", grade_overrides={"c": Highlight(graph, "n1")})
+    assert plain.key.params_hash != overridden.key.params_hash, "jamais servi pour le vrai rendu, ni l'inverse"
+
+
 def test_a_graph_that_changes_nothing_has_no_filters_and_nothing_to_show():
     graph, other = as_graph(ColorGrade()).with_branch("n1", MixerKind.PARALLEL)
     graph = graph.with_qualifier(other, BLUES)
@@ -231,7 +264,7 @@ def test_an_effects_layer_with_branched_nodes_keeps_the_picture_under_it(tmp_pat
 def test_the_monitor_bakes_a_branched_graph_and_shows_the_selection(tmp_path):
     graph, top = as_graph(WARM).with_branch("n1", MixerKind.PARALLEL)
     graph = graph.with_grade(top, GREY).with_qualifier(top, BLUES)
-    plain = atlas_array(bake_grade_lut(ColorGrade(), domain=DOMAIN_RGB))
+    plain = atlas_array(bake_grade_lut(ColorGrade(contrast=0.001), domain=DOMAIN_RGB))     # (presque) neutre
     baked = atlas_array(bake_grade_lut(graph, domain=DOMAIN_RGB))
     shown = atlas_array(bake_grade_lut(Highlight(graph, top), domain=DOMAIN_RGB))
     assert np.abs(baked - plain).mean() * 255 > 5

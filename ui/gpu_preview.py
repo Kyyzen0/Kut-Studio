@@ -158,7 +158,7 @@ def describe_qt_frame(frame) -> tuple[str, int, int, str, str]:
 class RhiExecutor:
     """Ressources QRhi et exécution d'un :class:`~core.gpu_composite.FramePlan`."""
 
-    SHADERS = ("clear", "prep", "blur", "sharpen", "shift", "haze", "glow", "grade", "composite")
+    SHADERS = ("clear", "prep", "blur", "sharpen", "shift", "haze", "glow", "grade", "colorkey", "colormix", "composite")
 
     def __init__(self, rhi: QRhi) -> None:
         self.rhi = rhi
@@ -551,6 +551,7 @@ class GpuPreviewWidget(QRhiWidget):
         self._grade_poll_pending = False
         self._lut_images: OrderedDict[str, QImage] = OrderedDict()
         self._last_luts: dict[str, str] = {}
+        self._last_programs: dict[str, tuple[tuple, int, tuple[str, ...]]] = {}
         self.executor: RhiExecutor | None = None
         self._frame = CompositeFrame(1920, 1080)
         self._pending: dict[str, PendingFrame] = {}
@@ -679,15 +680,22 @@ class GpuPreviewWidget(QRhiWidget):
 
     def _resolve_grade(self, layer, images: dict):
         """Étalonnage demandé → passe ``grade`` si sa LUT est cuite (sinon le calque passe sans, le temps de la
-        cuisson). L'espace d'entrée de la LUT est celui du média (YUV et ses propriétés de couleur, ou RVB)."""
+        cuisson). L'espace d'entrée de la LUT est celui du média (YUV et ses propriétés de couleur, ou RVB). Un graphe
+        spatial (fenêtres, flou, netteté) devient des passes (:mod:`core.gpu_color_graph`)."""
+        from core.export_engine import _build_color_grade_filters
+        from core.gpu_color_graph import compile_program
+
         grade = getattr(layer, "grade", None)
-        if grade is None or getattr(layer, "grade_lut", ""):
+        if grade is None or getattr(layer, "grade_lut", "") or getattr(layer, "grade_passes", ()):
             return layer
         source = self._sources.get(getattr(layer, "source", ""))
         if source is not None and LAYOUTS.get(source.layout) is not None and LAYOUTS[source.layout].is_yuv:
             options = {"domain": DOMAIN_YUV, "colorspace": source.colorspace, "color_range": source.color_range}
         else:
             options = {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}
+        program = compile_program(grade, _build_color_grade_filters)
+        if program is not None:
+            return self._resolve_program(layer, program, options, images)
         found = self.grades.lookup(grade, **options)
         slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
         if found is None and not self.grades.failed(grade, **options):
@@ -703,15 +711,64 @@ class GpuPreviewWidget(QRhiWidget):
         key, atlas = found
         name = f"lut:{key}"
         self._last_luts[slot] = name
+        images[name] = self._atlas_image(name, atlas)
+        return replace(layer, grade=None, grade_lut=name)
+
+    def _atlas_image(self, name: str, atlas: bytes) -> QImage:
         image = self._lut_images.get(name)
         if image is None:
             size = LUT_SIZE
             image = QImage(atlas, size * size, size, size * size * 3, QImage.Format.Format_RGB888).copy()
             self._lut_images[name] = image
-            while len(self._lut_images) > 16:
+            while len(self._lut_images) > 48:
                 self._lut_images.popitem(last=False)
-        images[name] = image
-        return replace(layer, grade=None, grade_lut=name)
+        else:
+            self._lut_images.move_to_end(name)
+        return image
+
+    def _resolve_program(self, layer, program, options: dict, images: dict):
+        """Un graphe spatial : chaque étape à cuire l'est comme la LUT d'un calque (une attente par étape), la matte
+        de chaque fenêtre vient de ``layer.grade_windows`` (rastérisée par l'export). Tant qu'il manque quelque chose,
+        le programme précédent du calque (s'il est encore complet), sinon le calque sans étalonnage."""
+        from core.gpu_color_graph import INPUT, GpuColorPass
+
+        rgb = {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}
+        windows = dict(getattr(layer, "grade_windows", ()) or ())
+        slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
+        passes = []
+        complete = True
+        for step in program.steps:
+            lut = ""
+            if step.bake is not None:
+                wanted = options if step.inputs[0] == INPUT else rgb
+                found = self.grades.lookup(step.bake, **wanted, slot=f"{slot}:{step.target}")
+                if found is None:
+                    if self.grades.failed(step.bake, **wanted):
+                        return replace(layer, grade=None)
+                    complete = False
+                    self._poll_grades()
+                    continue
+                lut = f"lut:{found[0]}"
+                images[lut] = self._atlas_image(lut, found[1])
+            window = windows.get(step.window, "") if step.window else ""
+            if step.window and window not in images:
+                complete = False
+                continue
+            passes.append(GpuColorPass(step.op, step.target, step.inputs, lut, window, step.amount, step.clamp))
+        if complete:
+            self._last_programs[slot] = (tuple(passes), program.result, tuple(step.window for step in program.steps))
+            return replace(layer, grade=None, grade_passes=tuple(passes), grade_result=program.result)
+        previous = self._last_programs.get(slot)
+        if previous is None:
+            return replace(layer, grade=None)
+        # Le programme précédent, avec la matte de cette image (une fenêtre animée ou suivie change à chaque image).
+        shown = tuple(replace(item, window=windows.get(node, item.window)) if node else item
+                      for item, node in zip(previous[0], previous[2]))
+        if all((not item.lut or item.lut in self._lut_images) and (not item.window or item.window in images)
+               for item in shown):
+            images.update({item.lut: self._lut_images[item.lut] for item in shown if item.lut})
+            return replace(layer, grade=None, grade_passes=shown, grade_result=previous[1])
+        return replace(layer, grade=None)
 
     def _poll_grades(self) -> None:
         """Une cuisson est en cours : nouvelle image dans 40 ms, qui reprendra la LUT dès qu'elle est prête."""

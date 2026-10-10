@@ -10,14 +10,16 @@ les nœuds, et tout clip qu'on n'a pas découpé), soit un :class:`ColorNodeGrap
 Le graphe a deux sortes de nœuds :
 
 - :class:`ColorNode` (correcteur) : un ``ColorGrade`` complet (roues, courbes, LUT…), ``grade.enabled`` le contourne,
-  un :class:`~core.color_qualifier.Qualifier` facultatif limite ce qu'il corrige. Une entrée au plus (aucune : l'image
-  du clip) ;
+  un :class:`~core.color_qualifier.Qualifier` facultatif et des **fenêtres** (formes de :class:`~core.compositing.Mask`,
+  en espace calque, animables et suivies par le tracking) limitent ce qu'il corrige ; un **flou** ou une **netteté**
+  s'appliquent à sa correction, avant la clé. Une entrée au plus (aucune : l'image du clip) ;
 - :class:`ColorMixer` (mélangeur) : réunit au moins deux branches. **Parallèle** : chaque branche corrige la même image
   (celle du point où elles se séparent) et les corrections s'additionnent. **Calques** : la branche de l'entrée la plus
   haute passe sur les autres, là où sa clé (son qualifieur) la sélectionne ; sans clé elle les recouvre.
 
-Le graphe a une seule sortie (le nœud que rien ne suit). Rendu : :mod:`core.color_render` (export exact, moniteur par
-une LUT 3D unique, quelle que soit la forme du graphe : chaque nœud ne dépend que du pixel).
+Le graphe a une seule sortie (le nœud que rien ne suit). Rendu : :mod:`core.color_render` (export exact) ; le moniteur
+cuit tout graphe qui ne dépend que du pixel en une LUT 3D unique, et passe par les passes de
+:mod:`core.gpu_color_graph` dès qu'un nœud a une fenêtre, un flou ou une netteté (:meth:`ColorNode.spatial`).
 """
 
 from __future__ import annotations
@@ -29,12 +31,17 @@ from enum import Enum
 
 from .color_grading import ColorGrade, LUTResource
 from .color_qualifier import Qualifier
+from .compositing import Mask, mask_from_dict, mask_to_dict
 from .node_graph import NodeGraph, NodeGraphError, NodeLink
 
 LOGGER = logging.getLogger(__name__)
 
 MAX_LABEL_LENGTH = 32
 FIRST_NODE_ID = "n1"
+MAX_BLUR = 50.0
+"""σ du flou d'un nœud, en pixels de la séquence (comme l'effet Flou)."""
+MAX_SHARPEN = 5.0
+"""Force de la netteté d'un nœud (comme l'effet Netteté)."""
 
 
 class MixerKind(str, Enum):
@@ -42,33 +49,71 @@ class MixerKind(str, Enum):
     LAYER = "layer"
 
 
+def _bounded(value: object, high: float) -> float:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(high, number)) if number == number else 0.0
+
+
 @dataclass(frozen=True)
 class ColorNode:
-    """Un nœud correcteur : un réglage complet, un nom facultatif, un qualifieur facultatif."""
+    """Un nœud correcteur : un réglage complet, un nom, un qualifieur, des fenêtres, un flou et une netteté (tous
+    facultatifs).
+
+    La sortie vaut ``I + K·(D(G(I)) − I)`` : ``G`` le réglage, ``D`` le flou puis la netteté de la correction, ``K`` la
+    clé (qualifieur × fenêtres, 1 sans l'un ni l'autre). Contourner le nœud (``grade.enabled``) contourne le tout.
+    """
 
     id: str
     grade: ColorGrade = field(default_factory=ColorGrade)
     label: str = ""
     qualifier: Qualifier | None = None
+    windows: tuple[Mask, ...] = ()
+    blur: float = 0.0
+    sharpen: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.grade, ColorGrade):
             raise NodeGraphError(f"Nœud d'étalonnage invalide : {self.id!r}.")
         if self.qualifier is not None and not isinstance(self.qualifier, Qualifier):
             raise NodeGraphError(f"Qualifieur invalide sur le nœud {self.id!r}.")
+        windows = tuple(self.windows or ())
+        if not all(isinstance(window, Mask) for window in windows):
+            raise NodeGraphError(f"Fenêtre invalide sur le nœud {self.id!r}.")
+        object.__setattr__(self, "windows", windows)
         object.__setattr__(self, "label", str(self.label).strip()[:MAX_LABEL_LENGTH])
+        object.__setattr__(self, "blur", _bounded(self.blur, MAX_BLUR))
+        object.__setattr__(self, "sharpen", _bounded(self.sharpen, MAX_SHARPEN))
 
     @property
     def enabled(self) -> bool:
         return self.grade.enabled
 
-    def is_active(self) -> bool:
-        """Change-t-il l'image ? (activé et pas neutre)"""
+    def grades(self) -> bool:
+        """Son réglage change-t-il les couleurs ? (activé et pas neutre)"""
         return self.grade.enabled and not self.grade.is_identity()
 
+    def filters(self) -> bool:
+        """Floute-t-il ou rend-il plus net ? (activé)"""
+        return self.grade.enabled and (self.blur > 0.0 or self.sharpen > 0.0)
+
+    def is_active(self) -> bool:
+        """Change-t-il l'image ? (activé, et un réglage, un flou ou une netteté)"""
+        return self.grades() or self.filters()
+
     def restricted(self) -> bool:
-        """Le qualifieur limite-t-il la correction ?"""
-        return self.qualifier is not None and self.qualifier.restricts()
+        """Le qualifieur ou une fenêtre limitent-ils la correction ?"""
+        return bool(self.windows) or (self.qualifier is not None and self.qualifier.restricts())
+
+    def spatial(self) -> bool:
+        """Dépend-il d'autre chose que la couleur du pixel (fenêtre, flou, netteté) ? Le moniteur ne peut alors plus
+        cuire le graphe en une LUT 3D."""
+        return bool(self.windows) or self.blur > 0.0 or self.sharpen > 0.0
+
+    def window(self, window_id: str) -> Mask | None:
+        return next((window for window in self.windows if window.id == window_id), None)
 
 
 @dataclass(frozen=True)
@@ -264,6 +309,22 @@ class ColorNodeGraph(NodeGraph[AnyNode]):
     def with_qualifier(self, node_id: str, qualifier: Qualifier | None) -> "ColorNodeGraph":
         return self.with_node(replace(self.corrector(node_id), qualifier=qualifier))
 
+    def with_windows(self, node_id: str, windows: Iterable[Mask]) -> "ColorNodeGraph":
+        return self.with_node(replace(self.corrector(node_id), windows=tuple(windows)))
+
+    def with_detail(self, node_id: str, *, blur: float | None = None, sharpen: float | None = None) -> "ColorNodeGraph":
+        node = self.corrector(node_id)
+        return self.with_node(replace(node, blur=node.blur if blur is None else blur,
+                                      sharpen=node.sharpen if sharpen is None else sharpen))
+
+    def is_spatial(self) -> bool:
+        """Un nœud actif dépend-il du voisinage ou de la position (fenêtre, flou, netteté) ?"""
+        return any(node.enabled and node.spatial() for node in self.correctors)
+
+    def window_owner(self, window_id: str) -> ColorNode | None:
+        """Le nœud qui porte la fenêtre ``window_id``."""
+        return next((node for node in self.correctors if node.window(window_id) is not None), None)
+
 
 def _chain_links(nodes: tuple[ColorNode, ...]) -> tuple[NodeLink, ...]:
     return tuple(NodeLink(first.id, second.id) for first, second in zip(nodes, nodes[1:]))
@@ -305,11 +366,11 @@ def as_graph(value: object) -> ColorNodeGraph:
 
 
 def simplify(graph: ColorNodeGraph) -> ColorGrade | ColorNodeGraph:
-    """La forme la plus simple : un seul nœud sans nom ni qualifieur redevient son ``ColorGrade`` (fichier identique
-    à avant)."""
+    """La forme la plus simple : un seul nœud sans nom, qualifieur, fenêtre, flou ni netteté redevient son
+    ``ColorGrade`` (fichier identique à avant)."""
     if len(graph.nodes) == 1:
         only = graph.correctors[0]
-        if not only.label and only.qualifier is None:
+        if not only.label and only.qualifier is None and not only.spatial():
             return only.grade
     return graph
 
@@ -334,13 +395,26 @@ def luts_of(value: object) -> tuple[LUTResource, ...]:
     return tuple(grade.lut for grade in grades_of(value) if grade.lut is not None)
 
 
+def window_by_id(value: object, window_id: str) -> Mask | None:
+    """La fenêtre ``window_id`` d'un nœud du clip (cible d'une liaison de tracking, comme un masque)."""
+    return next((window for window in windows_of(value) if window.id == window_id), None)
+
+
+def windows_of(value: object) -> tuple[Mask, ...]:
+    """Toutes les fenêtres des nœuds d'un clip (leurs images-clés vivent dans ``Clip.animation``, ``mask.<id>.*``)."""
+    if isinstance(value, ColorNodeGraph):
+        return tuple(window for node in value.correctors for window in node.windows)
+    return ()
+
+
 # ---------------------------------------------------------------------------
 # Fichier
 # ---------------------------------------------------------------------------
 
 
 def graph_to_dict(graph: ColorNodeGraph, grade_to_dict: Callable[[ColorGrade], object]) -> dict[str, object]:
-    """``{"nodes": [{id, label?, grade, qualifier?} | {id, mixer}], "links": [[source, cible, entrée]]}`` ;
+    """``{"nodes": [{id, label?, grade, qualifier?, windows?, blur?, sharpen?} | {id, mixer}], "links": [[source, cible,
+    entrée]]}`` ;
     ``grade_to_dict`` : le codec du fichier (chemins de LUT relatifs au projet, ou absolus pour un preset)."""
     entries: list[dict[str, object]] = []
     for node in graph.nodes:
@@ -353,6 +427,12 @@ def graph_to_dict(graph: ColorNodeGraph, grade_to_dict: Callable[[ColorGrade], o
         entry["grade"] = grade_to_dict(node.grade)
         if node.qualifier is not None:
             entry["qualifier"] = node.qualifier.to_dict()
+        if node.windows:
+            entry["windows"] = [mask_to_dict(window) for window in node.windows]
+        if node.blur:
+            entry["blur"] = node.blur
+        if node.sharpen:
+            entry["sharpen"] = node.sharpen
         entries.append(entry)
     return {"nodes": entries, "links": [[link.source, link.target, link.port] for link in graph.links]}
 
@@ -360,6 +440,18 @@ def graph_to_dict(graph: ColorNodeGraph, grade_to_dict: Callable[[ColorGrade], o
 def _items(value: object) -> list | tuple:
     """Une liste du fichier, ou rien (un nombre, un texte, un objet ne se parcourent pas comme des nœuds)."""
     return value if isinstance(value, (list, tuple)) else ()
+
+
+def _windows_from(raw: object) -> tuple[Mask, ...]:
+    """Les fenêtres lisibles d'un nœud (une fenêtre abîmée est ignorée, pas le nœud)."""
+    windows = []
+    for item in _items(raw):
+        if isinstance(item, dict):
+            try:
+                windows.append(mask_from_dict(item))
+            except (TypeError, ValueError):
+                continue
+    return tuple(windows)
 
 
 def graph_from_dict(raw: dict, grade_from_dict: Callable[[object], ColorGrade | None]) -> ColorNodeGraph | None:
@@ -379,7 +471,9 @@ def graph_from_dict(raw: dict, grade_from_dict: Callable[[object], ColorGrade | 
                 nodes.append(ColorMixer(str(item.get("id", "")), item.get("mixer")))  # type: ignore[arg-type]
             else:
                 nodes.append(ColorNode(str(item.get("id", "")), grade_from_dict(item.get("grade")) or ColorGrade(),
-                                       str(item.get("label", "")), Qualifier.from_dict(item.get("qualifier"))))
+                                       str(item.get("label", "")), Qualifier.from_dict(item.get("qualifier")),
+                                       _windows_from(item.get("windows")), _bounded(item.get("blur"), MAX_BLUR),
+                                       _bounded(item.get("sharpen"), MAX_SHARPEN)))
         except NodeGraphError:
             continue
     correctors = [node for node in nodes if isinstance(node, ColorNode)]

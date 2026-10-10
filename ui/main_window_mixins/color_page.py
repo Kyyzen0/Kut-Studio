@@ -7,17 +7,42 @@ reste choisi d'un clip à l'autre : un clip qui a un nœud de ce nom le montre, 
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+import logging
+import threading
+
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
-from core.color_render import Highlight
+from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
 from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES
 from ui.i18n import translate
 
+LOGGER = logging.getLogger(__name__)
+
 _COLOR_TAB = 1                                       # onglet Couleur de l'inspecteur
+
+
+class _PickResults(QObject):
+    """Lecture de la pipette hors du fil de l'interface ; :attr:`done` y revient (connexion en file d'attente)."""
+
+    done = Signal(object)
+
+    def run(self, request) -> None:
+        from core.color_pick import ColorPickError, sample_node_input
+
+        clip_id, node_id, extend, path, source_time, (x, y), upstream, windows = request
+        try:
+            rgb = sample_node_input(path, source_time, x, y, upstream, windows=windows)
+            outcome = (clip_id, node_id, extend, rgb, None)
+        except ColorPickError as error:
+            outcome = (clip_id, node_id, extend, None, str(error))
+        try:
+            self.done.emit(outcome)
+        except RuntimeError:                                 # fenêtre fermée pendant la lecture : plus personne
+            LOGGER.debug("Pipette : fenêtre fermée avant la fin de la lecture, couleur abandonnée")
 
 
 class ColorPageMixin:
@@ -30,6 +55,12 @@ class ColorPageMixin:
         self._color_node_id: str | None = None
         self._color_highlight = False                       # « afficher la sélection » (moniteur seulement)
         self._color_compare: float | None = None            # avant / après : part gauche sans étalonnage
+        from PySide6.QtCore import QTimer
+
+        self._compare_refresh = QTimer(self)                 # segments fidèles : après le dernier mouvement du trait
+        self._compare_refresh.setSingleShot(True)
+        self._compare_refresh.setInterval(250)
+        self._compare_refresh.timeout.connect(self._refresh_compare_preview)
         self._scopes_on_edit_page: bool | None = None
         self.color_panel = ColorPanel()
         editor = self.color_panel.nodes
@@ -44,6 +75,15 @@ class ColorPageMixin:
         self.color_panel.wheel_changed.connect(self.on_color_wheel_changed)
         self.color_panel.qualifier_changed.connect(self.on_color_qualifier_changed)
         self.color_panel.highlight_toggled.connect(self.on_color_highlight_toggled)
+        self.color_panel.pick_toggled.connect(self.preview_panel.set_pick_mode)
+        self.preview_panel.overlay.color_picked.connect(self.on_color_picked)
+        self._pick_results = _PickResults(self)
+        self._pick_results.done.connect(self._apply_color_pick)
+        self.color_panel.windows_changed.connect(self.on_color_windows_changed)
+        self.color_panel.window_selected.connect(lambda _window_id: self._refresh_window_editing())
+        self.color_panel.detail_changed.connect(self.on_color_detail_changed)
+        self.preview_panel.overlay.window_dragged.connect(self.on_color_window_dragged)
+        self.preview_panel.overlay.window_released.connect(lambda *_args: self._finalize_color_history())
         self.color_panel.compare_toggled.connect(lambda shown: self._set_color_compare(0.5 if shown else None))
         self.preview_panel.overlay.compare_moved.connect(self._set_color_compare)
         self.color_panel.shown.connect(self._refresh_color_panel)
@@ -109,6 +149,8 @@ class ColorPageMixin:
                 rail.set_active("edit")
             self._show_page_scopes(False)
             self._set_color_compare(None)                   # la comparaison est un outil de la page Couleur
+            self._stop_color_pick()
+        self._refresh_window_editing()
 
     def _show_page_scopes(self, color_page: bool) -> None:
         """Scopes affichés sur la page Couleur ; en revenant au Montage, l'état qu'on y avait laissé."""
@@ -156,20 +198,42 @@ class ColorPageMixin:
         panel.set_target(graph, graph.node_or_first(self._color_node_id).id, editable=not locked)
         panel.set_highlight(self._color_highlight)
         panel.set_compare(self._color_compare is not None)
-        gpu = getattr(self.preview_panel, "gpu_view", None) is not None
-        panel.qualifier.highlight_button.setEnabled(gpu and not locked)
-        panel.qualifier.highlight_button.setToolTip(translate(
-            "color.qualifier.highlight_tip" if gpu else "color.qualifier.highlight_unavailable"))
-        panel.compare_button.setEnabled(gpu)
-        panel.compare_button.setToolTip(translate("color.compare" if gpu else "color.qualifier.highlight_unavailable"))
 
     def _set_color_compare(self, split: float | None) -> None:
-        """Comparaison avant / après du moniteur : ``split`` (part gauche sans étalonnage) ou ``None`` (arrêtée)."""
+        """Comparaison avant / après : ``split`` (part gauche du cadre sans étalonnage) ou ``None`` (arrêtée). Le
+        moniteur GPU la montre aussitôt ; les segments fidèles (sans GPU, ou un montage hors de sa couverture) sont
+        recalculés un instant après le dernier mouvement du trait."""
+        changed = (split is None) != (self._color_compare is None) or split != self._color_compare
         self._color_compare = split
         self.preview_panel.set_grade_split(split)
         panel = getattr(self, "color_panel", None)
         if panel is not None:
             panel.set_compare(split is not None)
+        if changed:
+            self._compare_refresh.start()
+
+    def _refresh_compare_preview(self) -> None:
+        clip_id = self._color_clip_id()
+        if clip_id is not None:
+            self._refresh_color_monitor(clip_id)
+
+    def _preview_grade_overrides(self) -> dict | None:
+        """Ce que les segments fidèles montrent à la place de l'étalonnage du clip de la page Couleur : sa sélection
+        (:class:`Highlight`), l'avant / après (:class:`Compare`, dans l'image du clip) ; ``None`` : rien à remplacer."""
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return None
+        from core.timeline_operations import find_clip
+
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return None
+        shown = self._monitor_color_grade(clip)
+        panel = getattr(self, "color_panel", None)
+        if self._color_compare is not None and panel is not None and panel.isVisible():
+            shown = Compare(shown, self.preview_panel.compare_split_in_layer(self._color_compare))
+        return None if shown is getattr(clip, "color_grade", None) else {clip_id: shown}
 
     def _monitor_color_grade(self, clip):
         """Ce que le moniteur montre pour ``clip`` : son étalonnage, ou la sélection du nœud courant quand *Afficher
@@ -182,7 +246,8 @@ class ColorPageMixin:
             return value
         graph = as_graph(value)
         node = graph.node_or_first(self._color_node_id)
-        return Highlight(graph, node.id) if node.qualifier is not None and node.qualifier.enabled else value
+        selects = (node.qualifier is not None and node.qualifier.enabled) or bool(node.windows)
+        return Highlight(graph, node.id) if selects else value
 
     def _refresh_clip_strip(self, *_args) -> None:
         """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""
@@ -214,7 +279,11 @@ class ColorPageMixin:
             self._refresh_color_monitor(clip_id)            # la sélection montrée est celle du nouveau nœud
 
     def _edit_color_nodes(self, change, label_key: str) -> bool:
-        """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour."""
+        """Applique ``change`` (graphe → graphe) aux nœuds du clip affiché : une étape d'historique, moniteur à jour.
+        Une fenêtre qui disparaît (elle, ou son nœud) emporte ses images-clés et ses liaisons de tracking, dans la
+        même étape (avant qu'elle soit enregistrée)."""
+        from core.color_windows import forget_windows, window_ids
+
         clip_id = self._color_clip_id()
         if clip_id is None:
             return False
@@ -222,11 +291,14 @@ class ColorPageMixin:
         if track is None or track.locked:                    # comme pour les réglages : piste verrouillée, rien
             return False
         self._finalize_color_history()
+        clip = _clip
+        before = window_ids(getattr(clip, "color_grade", None))
         try:
             ColorGradingService().edit_nodes(self.project, clip_id, change)
         except (ColorGradingError, NodeGraphError) as exc:
             self._report_edit_refused(exc)
             return False
+        forget_windows(clip, before - window_ids(clip.color_grade))
         self.properties_panel.set_color_node(self._color_node_id)
         self._record_history(translate(label_key))
         self._reload_timeline_preserving_selection(clip_id)
@@ -280,7 +352,10 @@ class ColorPageMixin:
     def on_color_node_reset(self, node_id: str) -> None:
         from core.color_grading import ColorGrade
 
-        self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade()), "history.color.node_reset")
+        # Un nœud réinitialisé ne change plus l'image : réglage neutre, ni flou ni netteté (sa sélection, qualifieur et
+        # fenêtres, reste en place).
+        self._edit_color_nodes(lambda graph: graph.with_grade(node_id, ColorGrade())
+                               .with_detail(node_id, blur=0.0, sharpen=0.0), "history.color.node_reset")
 
     def on_color_qualifier_changed(self, qualifier) -> None:
         """Le qualifieur du nœud courant change : rafale regroupée en une étape, moniteur à jour."""
@@ -299,11 +374,185 @@ class ColorPageMixin:
         self._schedule_color_history(translate("history.color.qualifier"), clip_id)
         self._refresh_color_monitor(clip_id)
 
+    def _edit_current_node(self, change, label_key: str) -> None:
+        """Une rafale d'édition du nœud courant (champ, curseur, glisser dans le viewer) : une étape d'historique."""
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return
+        _clip, track = self._find_clip_and_track(clip_id)
+        if track is None or track.locked:
+            return
+        node_id = self._color_node_for(clip_id)
+        try:
+            ColorGradingService().edit_nodes(self.project, clip_id, lambda graph: change(graph, node_id))
+        except (ColorGradingError, NodeGraphError) as exc:
+            self._report_edit_refused(exc)
+            return
+        self._schedule_color_history(translate(label_key), clip_id)
+        self._refresh_color_monitor(clip_id)
+
+    def on_color_windows_changed(self, windows, label_key: str) -> None:
+        """Les fenêtres du nœud courant : ajouter ou supprimer est une étape (une fenêtre supprimée emporte ses
+        images-clés et ses liaisons de tracking) ; un réglage de champ, une rafale."""
+        if label_key == "history.color.window":
+            self._edit_current_node(lambda graph, node_id: graph.with_windows(node_id, windows), label_key)
+            self._refresh_window_editing()
+            return
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return
+        node_id = self._color_node_for(clip_id)
+        self._edit_color_nodes(lambda graph: graph.with_windows(node_id, windows), label_key)
+        self._refresh_window_editing()
+
+    def on_color_detail_changed(self, blur: float, sharpen: float) -> None:
+        self._edit_current_node(lambda graph, node_id: graph.with_detail(node_id, blur=blur, sharpen=sharpen),
+                                "history.color.detail")
+
+    def on_color_window_dragged(self, node_id: str, window_id: str, values: dict) -> None:
+        """Glisser une fenêtre ou ses poignées dans le viewer : les valeurs saisies, une étape par geste."""
+        from dataclasses import replace
+
+        def change(graph, _current):
+            node = graph.corrector(node_id)
+            return graph.with_windows(node_id, tuple(
+                replace(window, **values, id=window.id) if window.id == window_id else window
+                for window in node.windows))
+
+        self._edit_current_node(change, "history.color.window_drag")
+        clip_id = self._color_clip_id()
+        if clip_id is not None:
+            try:
+                node = ColorGradingService().get_graph(self.project, clip_id).corrector(node_id)
+            except (ColorGradingError, NodeGraphError):
+                return
+            self.color_panel.windows.set_windows(node.windows, window_id)
+        self._refresh_window_editing()
+
+    def _window_editing(self):
+        """``(clip, nœud, fenêtre)`` édités dans le viewer : page Couleur, onglet *Fenêtres*, une fenêtre choisie."""
+        panel = getattr(self, "color_panel", None)
+        if panel is None or self.workspace.page != PAGE_COLOR or not panel.isVisible():
+            return None
+        window_id = panel.editing_window()
+        clip_id = self._color_clip_id()
+        if not window_id or clip_id is None:
+            return None
+        try:
+            graph = ColorGradingService().get_graph(self.project, clip_id)
+        except ColorGradingError:
+            return None
+        node = graph.node_or_first(self._color_node_id)
+        return (clip_id, node, window_id) if node.window(window_id) is not None else None
+
+    def _refresh_window_editing(self) -> None:
+        refresh = getattr(self, "_refresh_viewer_overlay", None)
+        if refresh is not None:
+            refresh(float(self.playhead_seconds))
+
+    def _refresh_window_overlay(self, t: float, scene) -> bool:
+        """Montre dans le viewer la fenêtre éditée (évaluée à ``t``) ; ``True`` : elle remplace les poignées du clip."""
+        from core.color_windows import window_scene
+        from core.compositing import MASK_PROPERTY_ORDER
+        from ui.viewer_overlay import WindowGeometry
+
+        overlay = self.preview_panel.overlay
+        editing = self._window_editing()
+        layer = scene.layers.get(editing[0]) if editing is not None else None
+        if editing is None or layer is None or not (layer.timeline_start - 1e-9 <= t < layer.timeline_end):
+            overlay.set_window(None)
+            return False
+        clip_id, node, window_id = editing
+        base = node.window(window_id)
+        try:
+            shown = next(item for item in window_scene(self.project, clip_id, node.windows).evaluate(clip_id, t).masks
+                         if item.id == window_id)
+        except (StopIteration, KeyError):
+            shown = base
+        evaluated = scene.evaluate(clip_id, t)
+        locked = bool(getattr(self.properties_panel.selected_clip, "locked", False))
+        overlay.set_window(WindowGeometry(
+            node_id=node.id, window_id=window_id, world=evaluated.world, box=evaluated.box, shape=base.shape.value,
+            values={name: getattr(shown, name) for name in MASK_PROPERTY_ORDER},
+            base={name: getattr(base, name) for name in MASK_PROPERTY_ORDER},
+            points=tuple(base.points), editable=not locked,
+        ))
+        return True
+
     def on_color_highlight_toggled(self, shown: bool) -> None:
         self._color_highlight = bool(shown)
+        self.color_panel.set_highlight(self._color_highlight)   # même état sur les onglets Qualificateur et Fenêtres
         clip_id = self._color_clip_id()
         if clip_id is not None:
             self._refresh_color_monitor(clip_id)
+
+    # -- pipette ------------------------------------------------------------------------------------------------
+
+    def _stop_color_pick(self) -> None:
+        self.preview_panel.set_pick_mode(False)
+        self.color_panel.qualifier.set_picking(False)
+
+    def on_color_picked(self, x: float, y: float, extend: bool) -> None:
+        """Clic de la pipette dans le viewer : la couleur qui arrive au nœud courant sous ce point est lue en arrière-
+        plan (FFmpeg), puis le qualifieur du nœud l'entoure (Maj : il s'élargit jusqu'à elle). Une prise par clic."""
+        from core.color_pick import upstream_graph
+        from core.timeline_operations import find_clip
+
+        self._stop_color_pick()
+        clip_id = self._color_clip_id()
+        if clip_id is None:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        asset = next((item for item in self.project.media_assets if item.id == clip.asset_id), None)
+        if asset is None or not asset.path:
+            return
+        point = self.preview_panel.canvas_to_media(x, y, int(asset.width), int(asset.height))
+        if point is None:
+            self.statusBar().showMessage(translate("status.color.pick_outside"), 4000)
+            return
+        graph = as_graph(clip.color_grade)
+        node = graph.node_or_first(self._color_node_id)
+        local = float(self.playhead_seconds) - float(clip.timeline_start)
+        source_time = clip.time_map.source_time(local)
+        upstream = upstream_graph(graph, node.id)
+        windows = self._pick_window_coverage(clip_id, upstream, x, y)
+        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream, windows)
+        threading.Thread(target=self._pick_results.run, args=(request,), daemon=True, name="kut-color-pick").start()
+
+    def _pick_window_coverage(self, clip_id: str, upstream, x: float, y: float) -> dict[str, float]:
+        """Couverture, au point du clic, des fenêtres de chaque nœud fenêtré en amont (rastérisée ici, un pixel : le
+        fil de la pipette n'a plus qu'à lancer FFmpeg)."""
+        from core.color_render import windowed_nodes
+        from core.color_windows import window_coverage
+
+        if upstream is None:
+            return {}
+        layer_point = self.preview_panel.canvas_to_layer(x, y)
+        coverage = {}
+        for node_id in windowed_nodes(upstream):
+            windows = upstream.corrector(node_id).windows
+            coverage[node_id] = 0.0 if layer_point is None else window_coverage(
+                self.project, clip_id, windows, float(self.playhead_seconds), layer_point)
+        return coverage
+
+    def _apply_color_pick(self, outcome) -> None:
+        """Résultat de la pipette (fil de l'interface) : le qualifieur du nœud, en une étape d'historique."""
+        from core.color_pick import qualifier_around
+
+        clip_id, node_id, extend, rgb, error = outcome
+        if error is not None or clip_id != self._color_clip_id():
+            if error is not None:
+                self.statusBar().showMessage(translate("status.color.pick_failed", error=error), 6000)
+            return
+        try:
+            base = ColorGradingService().get_graph(self.project, clip_id).corrector(node_id).qualifier
+        except (ColorGradingError, NodeGraphError):
+            return
+        qualifier = qualifier_around(rgb, base, extend=extend)
+        self._edit_color_nodes(lambda graph: graph.with_qualifier(node_id, qualifier), "history.color.pick")
 
     def on_color_wheel_changed(self, name: str, wheel) -> None:
         """Une roue du nœud courant bouge : rafale regroupée en une étape, comme les curseurs de l'inspecteur."""
