@@ -14,30 +14,19 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
+La **page Couleur**, à la manière de DaVinci Resolve : nœuds d'étalonnage en série, en parallèle et en calques, roues
+lift / gamma / gain / offset, qualificateur et sa pipette, fenêtres suivies par le tracking, flou et netteté,
+avant / après, le tout en temps réel dans le moniteur GPU et exact à l'export. Aussi : un moteur de rendu jusqu'à
+60 % plus rapide au premier export, le panneau Historique, l'export en plusieurs formats sociaux, la courbe de
+volume dans la timeline, des photos dans les templates et des formes d'onde exactes.
+
+**À savoir** : les réglages *Température* et *Teinte* sont devenus une vraie balance des blancs et une vraie rotation
+des teintes ; un projet qui les utilisait s'affiche et s'exporte différemment (voir *Changed*).
+
 ### Added
 
-- **Fenêtres** (page Couleur, onglet *Fenêtres*) : un rectangle, une ellipse ou une forme libre limite la correction
-  d'un nœud. On la glisse, l'agrandit et la tourne dans le viewer (les sommets d'une forme libre aussi), on l'adoucit,
-  on l'inverse pour corriger l'extérieur, on en combine plusieurs. Avec le qualificateur, seul ce que les deux
-  sélectionnent est corrigé. Une fenêtre suit un objet comme un masque : panneau Tracking, *Lier à*, la fenêtre.
-- **Flou et netteté** d'un nœud (onglet *Flou*) : ils agissent sur sa correction, là où sa fenêtre ou son
-  qualificateur la sélectionnent ; une fenêtre inversée floute l'arrière-plan. Temps réel dans le moniteur GPU, exacts
-  à l'export.
-- **Pipette** du qualificateur : un clic dans le viewer sélectionne la couleur qui arrive au nœud sous le clic ;
-  Maj + clic élargit la sélection jusqu'à elle.
-
-- **Nœuds parallèles et de calque** (page Couleur) :
-  - **Alt+P** ajoute un nœud à côté du nœud courant ; les deux corrigent la même image et leurs corrections
-    s'additionnent.
-  - **Alt+L** fait un calque : la branche du dessous passe dessus, là où son qualifieur la sélectionne.
-  - Les branches se réunissent par un mélangeur, qui disparaît quand il n'en reste qu'une. Le moniteur montre tout le
-    graphe en temps réel, et l'export calcule chaque mélange au niveau près.
-- **Qualificateur** : un nœud peut ne corriger qu'une partie de l'image, choisie par plages de teinte, de saturation
-  et de luminance, avec leur douceur. Les plages se glissent sur des bandes colorées, et on peut inverser la sélection.
-  *Afficher la sélection* montre dans le moniteur ce qui est choisi, le reste en gris.
-- **Avant / après** : un trait sépare le moniteur, l'image sans étalonnage à gauche ; on le glisse pour le déplacer.
-- **Bande des plans** sur la page Couleur : une vignette par plan vidéo, numérotée, marquée quand le plan est
-  étalonné. Un clic passe à ce plan (sélectionné, tête de lecture à son début).
 - **Page Couleur**, à la manière de DaVinci Resolve : grand moniteur et scopes au centre, l'inspecteur à gauche, les
   nœuds et les roues à droite, la timeline en bas. On y passe par le bouton *Couleur* au centre de la barre
   supérieure, par le rail ou par *Fenêtre › Page Couleur* ; *Montage* ramène la disposition de montage. Chaque page
@@ -50,6 +39,32 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Roues lift / gamma / gain / offset** : le palet pousse les noirs, les tons moyens, les blancs ou tout le signal
   vers une couleur (l'anneau suit le vectorscope), la molette en règle le niveau, Maj affine et le double-clic remet à
   zéro. L'export applique la formule exacte, niveau par niveau.
+- **Nœuds parallèles et de calque** (page Couleur) :
+  - **Alt+P** ajoute un nœud à côté du nœud courant ; les deux corrigent la même image et leurs corrections
+    s'additionnent.
+  - **Alt+L** fait un calque : la branche du dessous passe dessus, là où son qualifieur la sélectionne.
+  - Les branches se réunissent par un mélangeur, qui disparaît quand il n'en reste qu'une. Le moniteur montre tout le
+    graphe en temps réel, et l'export calcule chaque mélange au niveau près.
+- **Qualificateur** : un nœud peut ne corriger qu'une partie de l'image, choisie par plages de teinte, de saturation
+  et de luminance, avec leur douceur. Les plages se glissent sur des bandes colorées, et on peut inverser la sélection.
+  *Afficher la sélection* montre dans le moniteur ce qui est choisi, le reste en gris.
+- **Pipette** du qualificateur : un clic dans le viewer sélectionne la couleur qui arrive au nœud sous le clic ;
+  Maj + clic élargit la sélection jusqu'à elle.
+- **Fenêtres** (page Couleur, onglet *Fenêtres*) : un rectangle, une ellipse ou une forme libre limite la correction
+  d'un nœud. On la glisse, l'agrandit et la tourne dans le viewer (les sommets d'une forme libre aussi), on l'adoucit,
+  on l'inverse pour corriger l'extérieur, on en combine plusieurs. Avec le qualificateur, seul ce que les deux
+  sélectionnent est corrigé. Une fenêtre suit un objet comme un masque : panneau Tracking, *Lier à*, la fenêtre.
+- **Flou et netteté** d'un nœud (onglet *Flou*) : ils agissent sur sa correction, là où sa fenêtre ou son
+  qualificateur la sélectionnent ; une fenêtre inversée floute l'arrière-plan. Temps réel dans le moniteur GPU, exacts
+  à l'export.
+- **Avant / après** : un trait sépare le moniteur, l'image sans étalonnage à gauche ; on le glisse pour le déplacer.
+- **Bande des plans** sur la page Couleur : une vignette par plan vidéo, numérotée, marquée quand le plan est
+  étalonné. Un clic passe à ce plan (sélectionné, tête de lecture à son début).
+- Moniteur GPU : l'étalonnage se voit en temps réel, en lecture comme à l'arrêt (exposition, contraste,
+  saturation, température, teinte, ombres, hautes lumières, courbes et LUT `.cube`), sur le clip affiché comme sur
+  un calque d'effets. Le moniteur ne réimite pas l'étalonnage : FFmpeg passe un réseau de couleurs dans la chaîne
+  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,1 à 0,15 niveau
+  en moyenne.
 - Panneau **Historique** (*Fenêtre › Panneaux › Historique*) : toutes les étapes du montage, nommées, de l'ouverture du
   projet à la dernière modification. Un clic revient à une étape en une fois ; les étapes suivantes restent
   rétablissables (en italique) jusqu'à la prochaine modification, et l'état enregistré dans le fichier est marqué ●.
@@ -72,12 +87,6 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Menu ⋯ d'une piste audio : son rôle (voix, musique, effets sonores, autre), que lisent le ducking automatique, les
   sous-titres automatiques et la coupe au rythme, et « Baisser sous… » pour baisser cette piste sous une autre
   (ducking par paire, qu'on peut aussi retirer).
-
-- Moniteur GPU : l'étalonnage se voit en temps réel, en lecture comme à l'arrêt (exposition, contraste,
-  saturation, température, teinte, ombres, hautes lumières, courbes et LUT `.cube`), sur le clip affiché comme sur
-  un calque d'effets. Le moniteur ne réimite pas l'étalonnage : FFmpeg passe un réseau de couleurs dans la chaîne
-  exacte de l'export, et le résultat (une LUT 3D) est lu par le GPU. Écart mesuré avec l'export : 0,1 à 0,15 niveau
-  en moyenne.
 
 ### Changed
 
@@ -112,7 +121,6 @@ ensuite déclenche `.github/workflows/release.yml`.
   saccade visible dans tout pop-in, glissé ou karaoké. Chaque image de l'animation est maintenant exportée.
 - Export : un plan vidéo non tourné était légèrement flou (décalé d'un demi-pixel et moyenné, netteté −12 %). Il sort
   désormais avec les pixels de son média.
-
 - Étalonnage à l'export : une couleur saturée réchauffée ou refroidie (température, teinte, ombres ou hautes
   lumières réglées) ne sort plus grise. Un rouge vif passé en saturation 1,3 avec une température devenait un gris
   moyen ; sur des images très colorées, la moitié des pixels pouvait l'être.
@@ -301,7 +309,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...v0.3.0
 [0.2.7]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.0...v0.2.5
