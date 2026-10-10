@@ -17,6 +17,7 @@ from core.color_grading import ColorGrade
 from core.compositing import ChromaKey, Compositing, Mask, MaskShape
 from core.composition import (
     MAX_DURATION,
+    MIN_RANGE,
     OUTPUT_ID,
     Composition,
     CompositionGraph,
@@ -174,11 +175,46 @@ def test_the_duration_of_a_composition_is_bounded():
     assert Composition(duration=1e12).duration == MAX_DURATION
     assert Composition(duration=MAX_DURATION).duration == MAX_DURATION
     assert Composition(duration=0.0).duration == pytest.approx(1e-3)
-    # JSON accepte « Infinity », « NaN » et « 1e999 » : un temps qui n'est pas fini vaut sa valeur par défaut.
+    # Le chargeur de projet refuse déjà « Infinity », « NaN » et « 1e999 » (ValueError) ; construite à la main ou
+    # par json.loads, une composition lit un temps qui n'est pas fini comme illisible : sa valeur par défaut.
     assert Composition(duration=float("inf")).duration == 1.0 and Composition(duration=float("nan")).duration == 1.0
     assert MediaNode("m", "v", float("inf"), 0.0, float("inf")).start == 0.0
     for text in ('{"nodes": [], "duration": 1e12}', '{"nodes": [], "duration": 1e999}'):
         assert composition_from_dict(json.loads(text), _composition_codec()).duration <= MAX_DURATION
+
+
+def test_a_clamped_composition_does_not_leave_its_clip_longer_than_its_content(tmp_path):
+    """Le clip qui porte une composition ramenée à une heure à la lecture ne doit pas viser plus loin : il
+    occuperait la timeline sans rien montrer après l'heure. Un clip tout entier après reste un clip (``Clip`` refuse
+    ``source_out <= source_in`` : le projet entier ne s'ouvrirait plus)."""
+    import json
+
+    from core.project_io import load_project, save_project
+
+    project = _project(tmp_path / "absent.mp4", _graph(SolidNode("s", "#336699"), links=(("s", OUTPUT_ID),)),
+                       duration=2.0)
+    path = tmp_path / "p.kut"
+    save_project(project, str(path))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    long = 2 * MAX_DURATION
+
+    def reload(source_in: float, source_out: float, duration: float = long) -> Clip:
+        raw = payload["project"]["sequences"][0]["tracks"][0]["clips"][0]
+        raw["composition"]["duration"] = duration
+        raw["source_in"], raw["source_out"] = source_in, source_out
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return load_project(str(path)).tracks[0].clips[0]
+
+    clip = reload(0.0, long)
+    assert clip.composition.duration == MAX_DURATION
+    assert (clip.source_in, clip.source_out) == (0.0, MAX_DURATION) and clip.duration == MAX_DURATION
+    assert (reload(1000.0, long).source_in, reload(1000.0, long).source_out) == (1000.0, MAX_DURATION), "coupé au bout"
+    stub = reload(MAX_DURATION + 400.0, long)
+    assert stub.source_out == MAX_DURATION and stub.duration == pytest.approx(MIN_RANGE), "le projet s'ouvre"
+    kept = reload(10.0, 20.0)
+    assert (kept.source_in, kept.source_out) == (10.0, 20.0), "un clip qui tient dans la composition n'est pas touché"
+    short = reload(0.0, 2.0, duration=2.0)
+    assert (short.source_in, short.source_out, short.composition.duration) == (0.0, 2.0, 2.0)
 
 
 def test_a_composition_longer_than_the_maximum_is_refused_not_truncated():

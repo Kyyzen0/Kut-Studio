@@ -595,6 +595,25 @@ def composition_from_dict(raw: object, codec: CompositionCodec) -> Composition |
     return composition
 
 
+MIN_RANGE = 0.04
+"""Plus petite plage source qu'un clip de composition garde quand rien de lui ne reste dans la composition."""
+
+
+def fit_source_range(composition: Composition, source_in: float, source_out: float) -> tuple[float, float]:
+    """La plage ``source_in``..``source_out`` du clip qui porte ``composition``, ramenée dans sa durée.
+
+    Seule une composition **ramenée à** :data:`MAX_DURATION` à la lecture peut être dépassée par son clip (l'éditeur
+    borne tout le reste : ``slip``, ``roll``) ; sans cela, il occuperait la timeline sans rien montrer au-delà. Un
+    clip tout entier après la fin garde une plage de :data:`MIN_RANGE` à la fin, car ``Clip`` refuse
+    ``source_out <= source_in`` et le chargement, strict, ferait échouer le projet entier. Les autres plages ne
+    changent pas."""
+    if composition.duration < MAX_DURATION or source_out <= composition.duration:
+        return source_in, source_out
+    fitted = (min(source_in, composition.duration - MIN_RANGE), composition.duration)
+    LOGGER.warning("Plage source du clip de composition ramenée de %s-%s s à %s-%s s.", source_in, source_out, *fitted)
+    return fitted
+
+
 def map_composition_grades(composition: Composition, change: Callable[[object], object]) -> Composition:
     """``composition`` avec ``change`` appliqué à l'étalonnage de chaque :class:`GradeNode` (LUT rendues portables…)."""
     nodes = tuple(replace(node, grade=change(node.grade)) if isinstance(node, GradeNode) else node

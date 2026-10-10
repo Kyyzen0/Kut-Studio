@@ -967,10 +967,14 @@ def _deserialize_clip(
         clip_kwargs["tracking"] = ClipTracking.from_dict(raw_clip.get("tracking"))
     # Composition nodale (v17) : lecture tolérante, un nœud abîmé est retiré seul.
     if track_type == "video" and raw_clip.get("composition") is not None:
-        from .composition import composition_from_dict
+        from .composition import composition_from_dict, fit_source_range
 
-        clip_kwargs["composition"] = composition_from_dict(
-            raw_clip.get("composition"), _composition_codec(project_root))
+        composition = composition_from_dict(raw_clip.get("composition"), _composition_codec(project_root))
+        clip_kwargs["composition"] = composition
+        source_in, source_out = clip_kwargs.get("source_in"), clip_kwargs.get("source_out")
+        if (composition is not None and isinstance(source_in, (int, float))
+                and isinstance(source_out, (int, float))):           # le reste est refusé par Clip, comme avant
+            clip_kwargs["source_in"], clip_kwargs["source_out"] = fit_source_range(composition, source_in, source_out)
     return Clip(**clip_kwargs)
 
 
