@@ -270,3 +270,19 @@ def test_a_proxy_that_stops_being_served_refreshes_the_composition(window, qtbot
     assert ready() is None or ready()[0] != stale
     qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
     assert ready()[0] != stale and len(rendered) > renders
+
+
+def test_closing_the_window_on_the_composition_page_logs_no_shutdown_error(window, caplog):
+    """La page Composition n'affiche pas l'inspecteur : son hôte n'a plus de parent Qt. La fermeture ne le détruit plus
+    avant les étapes d'arrêt qui s'en servent (« analyse du flux optique ») : aucune ne journalise d'erreur."""
+    import logging
+
+    import shiboken6
+
+    window.switch_page(PAGE_COMPOSITION)
+    inspector = window.properties_panel
+    assert not window.isAncestorOf(inspector), "l'inspecteur est hors de la page : c'est le cas couvert"
+    with caplog.at_level(logging.ERROR, logger="ui.main_window"):
+        assert window.close()
+    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR] == []
+    assert shiboken6.isValid(inspector.time_section.analyze_button), "détruit avec la fenêtre, jamais avant"

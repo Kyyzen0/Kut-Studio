@@ -1215,6 +1215,13 @@ class WorkspaceManager(QObject):
         for window in list(self._windows.values()):
             _close_floating_window(window, self._hosts[window.panel])
         self._windows.clear()
+        # Un hôte absent de la disposition (panneau masqué, détaché, ou que la page n'affiche pas : l'inspecteur sur la
+        # page Composition) n'a plus de parent Qt : ``_hosts`` est seul à le garder en vie, et le vider le détruirait
+        # avant les étapes d'arrêt suivantes de la fenêtre, qui s'en servent encore. Rendu à la fenêtre (caché), il
+        # disparaît avec elle.
+        for host in self._hosts.values():
+            if host.parent() is None:
+                host.setParent(self._window)
         self._hosts.clear()
         self._panels.clear()
         self._zones.clear()

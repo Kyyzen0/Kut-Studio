@@ -38,6 +38,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 - L'application pouvait se figer pour de bon quand les scopes étaient affichés : l'objet qui prépare l'image analysée
   était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage de 50 min
   des tests Windows de la release 0.3.0.
+- Fermer l'application depuis la page Composition, ou avec l'inspecteur ou le viewer masqué ou détaché, n'écrit plus
+  d'erreur dans le journal : ces panneaux étaient détruits avant les dernières étapes de la fermeture, qui s'en
+  servent encore.
 
 ## [0.3.0] - 2026-10-10
 
