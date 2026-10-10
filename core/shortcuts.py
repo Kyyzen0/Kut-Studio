@@ -462,6 +462,7 @@ COMMANDS: tuple[Command, ...] = (
     # Pages (Montage, Couleur) : sans touche par défaut, Maj+chiffre étant pris par les angles Multicam (AZERTY).
     _cmd("page_edit", Category.VIEW, scope=_A, application_wide=True),
     _cmd("page_color", Category.VIEW, scope=_A, application_wide=True),
+    _cmd("page_composition", Category.VIEW, scope=_A, application_wide=True),
     # --- Audio (sans raccourci par défaut) ---------------------------------
     _cmd("audio_record_toggle", Category.AUDIO),
     _cmd("audio_master_mute", Category.AUDIO),
@@ -488,6 +489,8 @@ COMMANDS: tuple[Command, ...] = (
     # --- Séquences (imbrication et navigation) ----------------------------
     _cmd("sequence_new", Category.SEQUENCES, scope=_A),
     _cmd("sequence_nest_selection", Category.SEQUENCES, "Ctrl+Shift+N", scope=_A),
+    _cmd("composition_convert", Category.SEQUENCES, scope=_A),
+    _cmd("composition_new", Category.SEQUENCES, scope=_A),
     _cmd("sequence_open_nested", Category.SEQUENCES, "Ctrl+Alt+Down", scope=_A),
     _cmd("sequence_parent", Category.SEQUENCES, "Ctrl+Alt+Up", scope=_A),
     _cmd("sequence_back", Category.SEQUENCES, "Alt+Left", scope=_A),

@@ -98,6 +98,7 @@ class IconName(str, Enum):
     WINDOW_RECT = "window_rect"
     WINDOW_ELLIPSE = "window_ellipse"
     WINDOW_POLYGON = "window_polygon"
+    NODES = "nodes"
     PROJECT = "project"
     TIMER = "timer"
     LIST = "list"
@@ -515,6 +516,15 @@ _SVG_TEMPLATES: dict[str, str] = {
         '<circle cx="12" cy="3.5" r="1.2" fill="currentColor"/>'
         '<circle cx="20.5" cy="9.5" r="1.2" fill="currentColor"/>'
         '<circle cx="3.5" cy="9.5" r="1.2" fill="currentColor"/></svg>'
+    ),
+    IconName.NODES: (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<rect x="2.5" y="4" width="6" height="5" rx="1.2"/>'
+        '<rect x="2.5" y="15" width="6" height="5" rx="1.2"/>'
+        '<rect x="15.5" y="9.5" width="6" height="5" rx="1.2"/>'
+        '<path d="M8.5 6.5c4 0 3 5.5 7 5.5M8.5 17.5c4 0 3-5.5 7-5.5"/></svg>'
     ),
     IconName.COMPARE: (
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '

@@ -17,7 +17,7 @@ from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
 from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
-from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES
+from core.workspace_state import PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
@@ -130,6 +130,9 @@ class ColorPageMixin:
             button.setToolTip(translate(f"page.{page}.tip"))
         self.color_panel.retranslate()
         self.clip_strip.retranslate()
+        composition_panel = getattr(self, "composition_panel", None)
+        if composition_panel is not None:
+            composition_panel.retranslate()
 
     def switch_page(self, page: str) -> None:
         """Passe à la page ``page`` : sa disposition, l'onglet Couleur et les scopes sur la page Couleur."""
@@ -150,6 +153,8 @@ class ColorPageMixin:
             self._show_page_scopes(False)
             self._set_color_compare(None)                   # la comparaison est un outil de la page Couleur
             self._stop_color_pick()
+            if self.workspace.page == PAGE_COMPOSITION:
+                self._refresh_composition_panel()
         self._refresh_window_editing()
 
     def _show_page_scopes(self, color_page: bool) -> None:
@@ -165,7 +170,8 @@ class ColorPageMixin:
             self.toggle_scopes_visible(persist=False)
 
     def _page_shortcut_handlers(self) -> dict:
-        return {"page_edit": lambda: self.switch_page(PAGE_EDIT), "page_color": lambda: self.switch_page(PAGE_COLOR)}
+        return {"page_edit": lambda: self.switch_page(PAGE_EDIT), "page_color": lambda: self.switch_page(PAGE_COLOR),
+                "page_composition": lambda: self.switch_page(PAGE_COMPOSITION)}
 
     # -- panneau ------------------------------------------------------------------------------------------------
 
@@ -219,7 +225,11 @@ class ColorPageMixin:
 
     def _preview_grade_overrides(self) -> dict | None:
         """Ce que les segments fidèles montrent à la place de l'étalonnage du clip de la page Couleur : sa sélection
-        (:class:`Highlight`), l'avant / après (:class:`Compare`, dans l'image du clip) ; ``None`` : rien à remplacer."""
+        (:class:`Highlight`), l'avant / après (:class:`Compare`, dans l'image du clip) ; ``None`` : rien à remplacer.
+        Sur la page Composition : le nœud choisi, s'il est montré (:class:`core.composition.CompositionView`)."""
+        composition = self._composition_preview_overrides()
+        if composition is not None:
+            return composition
         clip_id = self._color_clip_id()
         if clip_id is None:
             return None

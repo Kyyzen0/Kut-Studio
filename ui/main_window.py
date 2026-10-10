@@ -40,7 +40,7 @@ from core.audio_recorder import AudioRecorder
 from core.timeline_editing import apply_solo
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
-from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PanelId
+from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES, PanelId
 from core.timeline_operations import find_clip
 from core.timeline_evaluator import (
     timeline_duration,
@@ -84,6 +84,7 @@ from ui.main_window_mixins.track_management import TrackManagementMixin
 from ui.main_window_mixins.audio import AudioMixin
 from ui.main_window_mixins.color_grading import ColorGradingMixin
 from ui.main_window_mixins.color_page import ColorPageMixin
+from ui.main_window_mixins.composition_page import CompositionPageMixin
 from ui.main_window_mixins.multicam import MulticamMixin
 from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
 from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
@@ -147,6 +148,7 @@ class MainWindow(
     MulticamCreationMixin,
     MulticamSettingsMixin,
     ColorPageMixin,
+    CompositionPageMixin,
     ColorGradingMixin,
     AudioMixin,
     TrackManagementMixin,
@@ -642,6 +644,8 @@ class MainWindow(
         self.history_panel.state_requested.connect(self.go_to_history_state)
         # Page Couleur : nœuds d'étalonnage et roues du clip affiché par l'inspecteur.
         self._init_color_page()
+        # Page Composition : nœuds du clip de composition choisi.
+        self._init_composition_page()
         self.workspace = WorkspaceManager(self)
         self.workspace.register(PanelId.MEDIA, self.project_panel)
         # Le dock « viewer » contient le viewer **et** le panneau de
@@ -654,6 +658,7 @@ class MainWindow(
         self.workspace.register(PanelId.HISTORY, self.history_panel)
         self.workspace.register(PanelId.COLOR, self.color_panel)
         self.workspace.register(PanelId.CLIPS, self.clip_strip)
+        self.workspace.register(PanelId.COMPOSITION, self.composition_panel)
         self._connect_audio_controls()
         self.mixer_panel.set_project(self.project)
         workspace_root = self.workspace.build()
@@ -1454,6 +1459,9 @@ class MainWindow(
             "sequence_nest_selection", "sequence.action.nest_selection"
         )
         sequence_menu.addAction(self.nest_selection_action)
+        # Composition nodale : convertir la sélection, ou en créer une vide.
+        sequence_menu.addAction(self._command_action("composition_convert", "comp.action.convert"))
+        sequence_menu.addAction(self._command_action("composition_new", "comp.panel.new"))
         sequence_menu.addAction(
             self._command_action("sequence_open_nested", "sequence.action.open_nested")
         )
@@ -1500,8 +1508,8 @@ class MainWindow(
         reset_action.triggered.connect(self.reset_workspace_layout)
         window_menu.addAction(reset_action)
         window_menu.addSeparator()
-        # Pages (Montage, Couleur) : aussi au centre de la barre supérieure.
-        for page in ("edit", "color"):
+        # Pages (Montage, Couleur, Composition) : aussi au centre de la barre supérieure.
+        for page in PAGES:
             window_menu.addAction(self._command_action(f"page_{page}", f"shortcuts.command.page_{page}"))
         window_menu.addSeparator()
         # Scopes de monitoring couleur (tâche 31). L'action reste
@@ -2142,6 +2150,7 @@ class MainWindow(
             "toggle_scopes": self.toggle_scopes_visible,
             "preferences": self.show_preferences,
             **self._page_shortcut_handlers(),
+            **self._composition_shortcut_handlers(),
             # Audio
             "audio_record_toggle": lambda: timeline().record_button.click(),
             "audio_master_mute": self.toggle_master_mute,

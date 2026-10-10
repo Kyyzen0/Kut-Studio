@@ -110,8 +110,13 @@ if TYPE_CHECKING:
 FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
-CURRENT_VERSION = 16
+CURRENT_VERSION = 17
 """Version courante du format public ``.kut``.
+
+La version 17 ajoute la composition nodale (voir ``docs/composition.md``) : clé
+``composition`` d'un clip de composition (graphe de nœuds, durée, animation
+de ses masques). Absente pour tout autre clip ; un fichier v16 ou antérieur
+s'ouvre donc sans changement.
 
 La version 16 ajoute le tracking 2D (voir ``docs/tracking.md``) : clé
 ``tracking`` d'un clip (trackers et leurs données compressées, liaisons
@@ -142,7 +147,7 @@ l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -260,6 +265,11 @@ def _materialize_project_luts(project: Project, project_root: Path) -> None:
             grade = getattr(clip, "color_grade", None)
             if luts_of(grade):                               # un ColorGrade, ou chaque nœud d'un graphe
                 clip.color_grade = map_grades(grade, portable)
+            if clip.composition is not None:                 # les nœuds d'étalonnage d'une composition aussi
+                from .composition import map_composition_grades
+
+                clip.composition = map_composition_grades(
+                    clip.composition, lambda value: map_grades(value, portable) if luts_of(value) else value)
     portable_presets = []
     for preset in getattr(project, "color_presets", []) or []:
         grade = getattr(preset, "grade", None)
@@ -475,7 +485,29 @@ def _clip_to_dict(clip: Clip) -> dict[str, Any]:
         **({"template_slot": clip.template_slot} if clip.template_slot else {}),
         # Tracking (v16) : présent seulement si le clip en porte.
         **_tracking_entry(getattr(clip, "tracking", None)),
+        # Composition nodale (v17) : présente seulement sur un clip de composition.
+        **({"composition": _composition_to_dict(clip.composition)} if clip.composition is not None else {}),
     }
+
+
+def _composition_codec(project_root: Path | None = None):
+    """Les codecs du fichier que la composition nodale réutilise (:class:`core.composition.CompositionCodec`)."""
+    from .composition import CompositionCodec
+
+    return CompositionCodec(
+        transform_to=_transform_to_dict, transform_from=_dict_to_transform,
+        keyframe_to=_keyframe_to_dict, keyframe_from=_dict_to_keyframe, animation_from=_dict_to_generic_keyframe,
+        effect_to=_effect_to_dict, effects_from=_deserialize_clip_effects,
+        grade_to=_color_grade_to_dict,
+        grade_from=lambda raw: _deserialize_color_grade(raw, project_root=project_root),
+        graphic_to=_graphic_to_dict, graphic_from=_dict_to_graphic,
+    )
+
+
+def _composition_to_dict(composition) -> dict[str, Any]:
+    from .composition import composition_to_dict
+
+    return composition_to_dict(composition, _composition_codec())
 
 
 def _tracking_entry(tracking) -> dict[str, Any]:
@@ -857,7 +889,7 @@ def _deserialize_clip(
         for key, value in raw_clip.items()
         if key not in {
             "transform", "transform_keyframes", "time_remapping", "effects",
-            "graphic", "compositing", "animation", "tracking", "angle_id", "template_slot",
+            "graphic", "compositing", "animation", "tracking", "angle_id", "template_slot", "composition",
         }
         and key in _CLIP_KNOWN_FIELDS
     }
@@ -933,6 +965,12 @@ def _deserialize_clip(
         from .tracking_model import ClipTracking
 
         clip_kwargs["tracking"] = ClipTracking.from_dict(raw_clip.get("tracking"))
+    # Composition nodale (v17) : lecture tolérante, un nœud abîmé est retiré seul.
+    if track_type == "video" and raw_clip.get("composition") is not None:
+        from .composition import composition_from_dict
+
+        clip_kwargs["composition"] = composition_from_dict(
+            raw_clip.get("composition"), _composition_codec(project_root))
     return Clip(**clip_kwargs)
 
 

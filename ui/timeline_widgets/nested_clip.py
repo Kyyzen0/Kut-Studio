@@ -97,9 +97,14 @@ def _paint_angle_marker(painter: QPainter, widget, view) -> None:
 
 
 def handle_nested_double_click(widget, event) -> bool:
-    """Ouvre la séquence d'un clip imbriqué ; ``True`` si l'événement est traité."""
+    """Ouvre la séquence d'un clip imbriqué, ou la composition d'un clip de composition ; ``True`` si l'événement
+    est traité."""
     view = widget.view
     parent = widget.parent_timeline
+    if parent is not None and event.button() == Qt.LeftButton and getattr(view, "is_composition", False):
+        parent.composition_open_requested.emit(view.id)        # une composition s'ouvre sur la page Composition
+        event.accept()
+        return True
     if not getattr(view, "sequence_id", "") or parent is None:
         return False
     if event.button() != Qt.LeftButton:

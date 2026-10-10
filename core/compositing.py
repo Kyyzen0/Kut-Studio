@@ -23,6 +23,7 @@ faite par :mod:`core.mograph_raster`.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field, fields, replace
 from enum import Enum
@@ -160,6 +161,15 @@ class Mask:
             object.__setattr__(self, "id", new_mask_id())
 
 
+CHROMA_KEY_COLORS: tuple[str, ...] = ("#00FF00", "#0000FF")
+"""Les fonds d'incrustation habituels (vert, bleu), proposés en premier."""
+
+
+def is_hex_color(text: str) -> bool:
+    """``#RRGGBB`` : six chiffres hexadécimaux (casse indifférente)."""
+    return re.fullmatch(r"#[0-9A-Fa-f]{6}", str(text)) is not None
+
+
 @dataclass(frozen=True)
 class ChromaKey:
     enabled: bool = False
@@ -170,7 +180,7 @@ class ChromaKey:
 
     def __post_init__(self):
         color = str(self.color).upper()
-        if len(color) != 7 or not color.startswith("#"):
+        if not is_hex_color(color):                         # « #ZZZZZZ » irait tel quel dans ``chromakey=0x…``
             color = "#00FF00"
         object.__setattr__(self, "color", color)
         for name in ("tolerance", "softness", "spill_suppression"):
@@ -343,7 +353,7 @@ def build_ffmpeg_filters(value: Compositing, width: int, height: int) -> list[st
 
 
 __all__ = [
-    "BlendMode", "ChromaKey", "Compositing", "DEFAULT_POLYGON", "MASK_PROPERTIES",
+    "BlendMode", "CHROMA_KEY_COLORS", "ChromaKey", "Compositing", "DEFAULT_POLYGON", "MASK_PROPERTIES",
     "MASK_PROPERTY_ORDER", "MASK_PROPERTY_SPECS", "Mask", "MaskKeyframe", "MaskMode",
     "MaskShape", "build_ffmpeg_filters", "chroma_key_filters", "compositing_from_dict",
     "compositing_to_dict", "evaluate_mask", "evaluate_mask_at", "mask_from_dict",

@@ -679,7 +679,7 @@ def test_serialization_roundtrip_is_compact_and_survives_without_cache(media, tm
     path = tmp_path / "suivi.kut"
     save_project(project, str(path))
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["version"] == 16
+    assert raw["version"] == 17
     tracker_json = json.dumps(raw["project"]["sequences"][0]["tracks"][0]["clips"][0]["tracking"])
     assert len(tracker_json) < 2500  # 40 images : quelques octets par image
     TrackingCache().purge()

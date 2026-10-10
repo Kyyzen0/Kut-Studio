@@ -97,7 +97,7 @@ class TimeMenuMixin:
             action.setCheckable(True)
             action.setChecked(remapping.interpolation is mode)
             action.setToolTip(translate(f"time.interpolation.{mode.value}.tip"))
-            action.setEnabled(not (clip.is_nested and mode is not TimeInterpolation.SAMPLING))
+            action.setEnabled(not ((clip.is_nested or clip.is_composition) and mode is not TimeInterpolation.SAMPLING))
             actions[action] = (TimeCommand.INTERPOLATION.value, mode.value)
         flowing = remapping.interpolation is TimeInterpolation.OPTICAL_FLOW
         quality = submenu.addMenu(translate("time.menu.quality"))

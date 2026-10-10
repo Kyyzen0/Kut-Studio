@@ -63,7 +63,7 @@ def media_of(project, clip):
 def trackable_clip(project, clip_id: str):
     """Le clip vidéo (média vidéo, non imbriqué) qui peut porter des trackers."""
     clip, track = find_clip_and_track(project, clip_id)
-    if track.type != "video" or clip.sequence_id:
+    if track.type != "video" or clip.sequence_id or clip.composition is not None:
         raise TrackingError("Le tracking s'applique à un clip vidéo.")
     asset = media_of(project, clip)
     if asset is None or asset.media_type not in ("video", "image") or asset.width <= 0:

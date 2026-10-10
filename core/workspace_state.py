@@ -53,6 +53,7 @@ class PanelId(str, Enum):
     HISTORY = "history"
     COLOR = "color"
     CLIPS = "clips"
+    COMPOSITION = "composition"
 
     def label(self) -> str:
         """Nom lisible du panneau (utilisé dans les menus)."""
@@ -68,6 +69,7 @@ _PANEL_LABELS: dict[PanelId, str] = {
     PanelId.HISTORY: "Historique",
     PanelId.COLOR: "Couleur",
     PanelId.CLIPS: "Plans",
+    PanelId.COMPOSITION: "Composition",
 }
 
 
@@ -95,6 +97,8 @@ DEFAULT_AREA: dict[PanelId, DockArea] = {
     PanelId.COLOR: DockArea.RIGHT,
     # Bande des plans : sous la timeline, sur la page Couleur.
     PanelId.CLIPS: DockArea.BOTTOM,
+    # Nœuds de composition et inspecteur du nœud : la colonne de droite de la page Composition.
+    PanelId.COMPOSITION: DockArea.RIGHT,
 }
 
 #: Taille préférée initiale (px) — sert au premier démarrage.
@@ -107,6 +111,7 @@ DEFAULT_SIZE: dict[PanelId, int] = {
     PanelId.HISTORY: 240,
     PanelId.COLOR: 440,
     PanelId.CLIPS: 124,
+    PanelId.COMPOSITION: 520,
 }
 
 #: Taille minimale d'un panneau : en dessous, le panneau devient inutilisable.
@@ -119,10 +124,12 @@ MIN_SIZE: dict[PanelId, int] = {
     PanelId.HISTORY: 200,
     PanelId.COLOR: 340,
     PanelId.CLIPS: 118,
+    PanelId.COMPOSITION: 360,
 }
 
 #: Panneaux repliés au premier démarrage (désactivés à l'ouverture).
-DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR, PanelId.CLIPS})
+DEFAULT_HIDDEN: frozenset[PanelId] = frozenset({PanelId.MIXER, PanelId.HISTORY, PanelId.COLOR, PanelId.CLIPS,
+                                                PanelId.COMPOSITION})
 
 #: Taille de la barre d'outils d'options d'un panneau (px).
 PANEL_TOOLBAR_SIZE: int = 28
@@ -541,7 +548,8 @@ def save_workspace_state(
 
 PAGE_EDIT: str = "edit"
 PAGE_COLOR: str = "color"
-PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR)
+PAGE_COMPOSITION: str = "composition"
+PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR, PAGE_COMPOSITION)
 
 
 def page_default_state(page: str) -> WorkspaceState:
@@ -550,9 +558,17 @@ def page_default_state(page: str) -> WorkspaceState:
     Couleur : grand moniteur au centre (les scopes dessous), l'inspecteur à
     gauche pour les réglages primaires, les courbes et la LUT du nœud courant,
     les nœuds et les roues à droite, la timeline et la bande des plans en bas
-    pour passer d'un plan à l'autre ; les médias se replient.
+    pour passer d'un plan à l'autre ; les médias se replient. Composition :
+    le moniteur, les nœuds et l'inspecteur du nœud à droite, la timeline.
     """
     state = WorkspaceState.default()
+    if page == PAGE_COMPOSITION:
+        # Composition : le moniteur au centre, les nœuds et l'inspecteur du nœud choisi à droite, la timeline en bas.
+        return (
+            state.with_panel(PanelId.MEDIA, visible=False)
+            .with_panel(PanelId.INSPECTOR, visible=False)
+            .with_panel(PanelId.COMPOSITION, area=DockArea.RIGHT, visible=True)
+        )
     if page != PAGE_COLOR:
         return state
     return (

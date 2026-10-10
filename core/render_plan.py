@@ -38,11 +38,12 @@ pure, réutilisable par tout consommateur (FFmpeg via
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from .effects_model import ClipEffect
-from .project_model import Clip, MediaAsset, Project, Sequence
+from .project_model import Clip, MediaAsset, Project, Sequence, Track
 from .subtitle_io import SubtitleCue
 from .template_slots import is_photo_slot
 from .text_style import TextStyle
@@ -331,6 +332,22 @@ class RenderPlan:
 
 
 @dataclass(frozen=True)
+class CompositionRender:
+    """Ce qu'il faut pour compiler une composition nodale (:mod:`core.composition_render`) : son graphe, l'animation
+    de ses masques, et la clé du sous-plan de chaque source (un média, un calque graphique, rendus comme une séquence
+    imbriquée d'un seul clip)."""
+
+    graph: object
+    animation: tuple = ()
+    sources: tuple[tuple[str, str], ...] = ()
+    sink: str = ""
+    """Le nœud montré (aperçu du nœud choisi, page Composition) ; vide : la sortie."""
+
+    def source_key(self, node_id: str) -> str | None:
+        return next((key for node, key in self.sources if node == node_id), None)
+
+
+@dataclass(frozen=True)
 class NestedSequencePlan:
     """Rendu d'une séquence imbriquée, partagé par toutes ses instances.
 
@@ -345,6 +362,8 @@ class NestedSequencePlan:
             demandé par ses instances : au-delà de la fin de la séquence, le
             rendu est transparent et silencieux (jamais une image répétée).
         depth: Niveau d'imbrication (1 = clip de la séquence racine).
+        composition: Une composition nodale (``plan`` n'en donne alors que la taille, la cadence et la durée) ; ses
+            sources sont d'autres entrées du registre, placées avant elle.
     """
 
     key: str
@@ -352,6 +371,7 @@ class NestedSequencePlan:
     name: str
     plan: RenderPlan
     depth: int = 1
+    composition: CompositionRender | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +392,7 @@ def build_render_plan(
     window: tuple[float, float] | None = None,
     window_index=None,
     sequence_id: str | None = None,
+    composition_views: Mapping[str, str] | None = None,
 ) -> RenderPlan:
     """Construit un :class:`RenderPlan` à partir d'un :class:`Project`.
 
@@ -414,6 +435,8 @@ def build_render_plan(
             Avec ``window``, il évite de parcourir tous les clips de chaque
             piste : le coût devient O(log n + clips de la fenêtre).
         sequence_id: séquence à rendre (la séquence active par défaut).
+        composition_views: ``{clip: nœud}`` : pour l'aperçu, la composition
+            de ces clips montre ce nœud au lieu de sa sortie.
 
     Returns:
         Le :class:`RenderPlan` correspondant au projet.
@@ -429,6 +452,7 @@ def build_render_plan(
             raise KeyError(f"Séquence '{sequence_id}' introuvable dans le projet.")
         sequence = found
     builder = _PlanBuilder(project, window_index)
+    builder.composition_views = dict(composition_views or {})
     plan = builder.build(
         sequence,
         window=window,
@@ -468,6 +492,7 @@ class _PlanBuilder:
         self.warnings: list[str] = []
         self.missing_media: list[str] = []
         self.empty_slots: list[str] = []
+        self.composition_views: dict[str, str] = {}
         self._tracking_contexts: dict[str, object] = {}
 
     def tracking_context(self, sequence):
@@ -652,6 +677,14 @@ class _PlanBuilder:
                     continue
                 if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                     continue
+                if clip.composition is not None:
+                    if track.type == "video":
+                        self._add_composition_clip(
+                            clip, track, track_index, sequence, low, high, window is not None, stack,
+                            video_layers, audio_layers, audio_solo=audio_solo, sidechains=sidechains_for(track.id),
+                            show_video=show_video, show_audio=show_audio,
+                        )
+                    continue
                 if clip.sequence_id:
                     self._add_nested_clip(
                         clip, track, track_index, low, high, window is not None, stack,
@@ -783,6 +816,96 @@ class _PlanBuilder:
             motion_blur=getattr(sequence, "motion_blur", None),
         )
 
+    def _composition_entries(
+        self, clip: Clip, sequence: Sequence, low: float, high: float, windowed: bool, stack: tuple[str, ...],
+    ) -> tuple[NestedSequencePlan, NestedSequencePlan | None]:
+        """Entrées du registre d'un clip de composition : chaque source rendue comme une séquence imbriquée d'un seul
+        clip (placées avant elle), la composition elle-même, et son son (``None`` : muette). Une même composition à la
+        même plage n'est planifiée qu'une fois."""
+        from .composition import GraphicNode, MediaNode
+        from .sequences import nested_source_window
+
+        composition = clip.composition
+        if composition is None:                              # appelée pour un clip de composition seulement
+            raise ValueError(f"Le clip {clip.id} n'est pas une composition.")
+        fps = float(sequence.fps) if sequence.fps > 0 else 30.0
+        window: tuple[float, float] | None = None
+        suffix = ""
+        if windowed:
+            a, b = nested_source_window(clip, low, high)
+            margin = 1.0 / fps
+            window = (max(0.0, a - margin), b + margin)
+            suffix = f"@{window[0]:.4f}:{window[1]:.4f}"
+        base = f"comp:{clip.id}"
+        view = self.composition_views.get(clip.id, "")
+        if view and not composition.graph.has_node(view):
+            view = ""
+        key = base + suffix + (f"#{view}" if view else "")
+        nodes = composition.graph.rendered(view or None)
+
+        def sub_plan(sub_key: str, synthetic: Sequence) -> NestedSequencePlan:
+            entry = self.entries.get(sub_key)
+            if entry is None:
+                inner = self.build(synthetic, window=window, window_index=None, stack=stack)
+                entry = NestedSequencePlan(key=sub_key, sequence_id="", name=synthetic.name,
+                                           plan=replace(inner, duration=composition.duration), depth=len(stack))
+                self.entries[sub_key] = entry
+            self.required[sub_key] = max(self.required.get(sub_key, 0.0), composition.duration)
+            return entry
+
+        sources = []
+        for node in nodes:
+            if isinstance(node, (MediaNode, GraphicNode)):
+                synthetic = _composition_source(sequence, clip, node)
+                if synthetic is not None:
+                    sources.append((node.id, sub_plan(f"{base}:{node.id}{suffix}", synthetic).key))
+        # le son suit la sortie, jamais le nœud montré : choisir un nœud à voir ne change pas ce qu'on entend
+        sound = _composition_sound(sequence, clip, composition.graph.rendered(), self.assets_by_id)
+        audio = sub_plan(f"{base}:audio{suffix}", sound) if sound is not None else None
+        entry = self.entries.get(key)
+        if entry is None:
+            entry = NestedSequencePlan(
+                key=key, sequence_id="", name=clip.label or "composition", depth=len(stack),
+                plan=RenderPlan(width=sequence.width, height=sequence.height, fps=fps,
+                                duration=composition.duration),
+                composition=CompositionRender(composition.graph, composition.animation, tuple(sources), view),
+            )
+            self.entries[key] = entry
+        self.required[key] = max(self.required.get(key, 0.0), composition.duration)
+        if audio is not None and not audio.plan.audio_layers:
+            audio = None
+        return entry, audio
+
+    def _add_composition_clip(
+        self, clip: Clip, track, track_index: int, sequence: Sequence, low: float, high: float, windowed: bool,
+        stack: tuple[str, ...], video_layers: list, audio_layers: list, *, audio_solo: set, sidechains: list,
+        show_video: bool = True, show_audio: bool = True,
+    ) -> None:
+        """Couches d'un clip de composition : son image (le graphe compilé, lu comme une séquence imbriquée) et son son
+        (celui de ses médias), avec le transform, les effets, l'étalonnage et les masques du clip."""
+        entry, audio = self._composition_entries(clip, sequence, low, high, windowed, stack)
+        inner = entry.plan
+        state = self.effective(clip, sequence)
+        if show_video:
+            video_layers.append(RenderLayer(
+                clip_id=clip.id, asset_id="", track_id=track.id, track_index=track_index, source_path="",
+                source_in=clip.source_in, source_out=clip.source_out, timeline_start=clip.timeline_start,
+                timeline_end=clip.timeline_start + clip.duration, source_fps=float(inner.fps),
+                transform=clip.transform,
+                transform_keyframes=(state.transform_keyframes if state is not None
+                                     else tuple(clip.transform_keyframes)),
+                time_remapping=clip.time_remapping, time_map=clip.time_map if clip.is_time_remapped else None,
+                source_frames=_frame_count(inner.duration, inner.fps), source_width=int(inner.width),
+                source_height=int(inner.height), effects=tuple(clip.effects),
+                color_grade=getattr(clip, "color_grade", None),
+                compositing=state.compositing if state is not None else getattr(clip, "compositing", None),
+                nested_key=entry.key,
+                animation=state.animation if state is not None else tuple(getattr(clip, "animation", ()) or ()),
+            ))
+        if audio is not None and show_audio and not track.muted and not audio_solo:
+            layer = _build_audio_layer(clip, None, track.id, track_index, track, ducking_sidechains=sidechains)
+            audio_layers.append(replace(layer, source_fps=float(inner.fps), nested_key=audio.key))
+
     def _add_nested_clip(
         self,
         clip: Clip,
@@ -851,6 +974,57 @@ class _PlanBuilder:
             audio_layers.append(
                 replace(layer, source_fps=float(inner.fps), nested_key=entry.key)
             )
+
+
+def _composition_source(sequence: Sequence, clip: Clip, node) -> Sequence | None:
+    """La séquence synthétique d'un seul clip qui rend la source ``node`` d'une composition (un média sur une piste
+    vidéo, un calque graphique sur une piste graphique), au temps de la composition ; ``None`` : plage vide."""
+    from .compositing import Compositing
+    from .composition import GraphicNode, MediaNode
+
+    try:
+        if isinstance(node, MediaNode):
+            track = Track(id="C1", name="C1", type="video", clips=[Clip(
+                id=f"{clip.id}:{node.id}", asset_id=node.asset_id, track_id="C1", timeline_start=node.start,
+                source_in=node.source_in, source_out=node.source_out, label=node.label or node.id,
+                transform=ClipTransform(fill=node.fill, pan_x=node.pan_x, pan_y=node.pan_y),
+            )])
+        elif isinstance(node, GraphicNode):
+            track = Track(id="C1", name="C1", type="graphics", clips=[Clip(
+                id=f"{clip.id}:{node.id}", asset_id="", track_id="C1", timeline_start=node.start, source_in=0.0,
+                source_out=node.duration, label=node.label or node.id, graphic=node.graphic,
+                transform=node.transform, transform_keyframes=list(node.transform_keyframes),
+                animation=list(node.animation), compositing=Compositing(masks=node.masks),
+            )])
+        else:
+            return None
+    except ValueError:                                       # plage vide : la source ne montre rien
+        return None
+    return Sequence(id=f"comp:{clip.id}:{node.id}", name=node.label or node.id, width=sequence.width,
+                    height=sequence.height, fps=sequence.fps, tracks=[track])
+
+
+def _composition_sound(sequence: Sequence, clip: Clip, nodes, assets_by_id) -> Sequence | None:
+    """Le son d'une composition : chaque média relié à la sortie (``nodes``), non muet et qui a du son, sur sa propre
+    piste audio, à son instant."""
+    from .composition import MediaNode
+
+    tracks: list[Track] = []
+    for node in nodes:
+        if not isinstance(node, MediaNode) or node.muted or node.duration <= 0:
+            continue
+        asset = assets_by_id.get(node.asset_id)
+        if asset is None or not asset.has_audio:
+            continue
+        track_id = f"A{len(tracks) + 1}"
+        tracks.append(Track(id=track_id, name=track_id, type="audio", clips=[Clip(
+            id=f"{clip.id}:{node.id}:audio", asset_id=node.asset_id, track_id=track_id, timeline_start=node.start,
+            source_in=node.source_in, source_out=node.source_out, gain_db=node.gain_db,
+        )]))
+    if not tracks:
+        return None
+    return Sequence(id=f"comp:{clip.id}:audio", name="audio", width=sequence.width, height=sequence.height,
+                    fps=sequence.fps, tracks=tracks)
 
 
 def _graphic_layer(

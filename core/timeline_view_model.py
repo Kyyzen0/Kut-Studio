@@ -112,10 +112,17 @@ class TimelineClipView:
     # Points de la courbe de vitesse (keyframes ``time.speed``, temps local du clip) : l'inspecteur en donne le nombre et la
     # timeline en dessine la courbe. Vide pour un clip à vitesse constante.
     speed_points: tuple = ()
+    # --- Composition nodale ---
+    # Nombre de nœuds de la composition du clip (``0`` : clip ordinaire). La timeline la marque.
+    composition_nodes: int = 0
 
     @property
     def is_nested(self) -> bool:
         return bool(self.sequence_id)
+
+    @property
+    def is_composition(self) -> bool:
+        return self.composition_nodes > 0
 
     @property
     def is_multicam(self) -> bool:
@@ -123,6 +130,8 @@ class TimelineClipView:
 
 
 NESTED_CLIP_COLOR = "#C9A227"
+COMPOSITION_CLIP_COLOR = "#8F6BD8"
+"""Clip de composition nodale (violet : ni un média, ni une séquence imbriquée)."""
 """Couleur des clips imbriqués : distincte de la palette des médias."""
 
 BROKEN_NESTED_CLIP_COLOR = "#B5474B"
@@ -185,6 +194,8 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                         angle_index = source.index_of(angle.id)
                         angle_name = angle.name
                         angle_color = angle.color_index
+            elif clip.composition is not None:
+                color = COMPOSITION_CLIP_COLOR
             views.append(
                 TimelineClipView(
                     id=clip.id,
@@ -222,6 +233,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     angle_name=angle_name,
                     angle_color_index=angle_color,
                     speed_points=speed_keyframes(clip),
+                    composition_nodes=len(clip.composition.graph.nodes) if clip.composition is not None else 0,
                 )
             )
     return views

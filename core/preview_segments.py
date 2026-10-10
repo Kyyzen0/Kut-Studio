@@ -97,14 +97,22 @@ def segment_plan(
     construction indépendante du nombre de clips du montage ; ``grade_overrides`` :
     :func:`apply_grade_overrides`.
     """
+    from .composition import CompositionView
+
+    # Page Composition : un nœud montré à la place de la sortie change le sous-plan de la composition, pas la couche.
+    views = {clip_id: value.node_id for clip_id, value in (grade_overrides or {}).items()
+             if isinstance(value, CompositionView)}
+    grades = {clip_id: value for clip_id, value in (grade_overrides or {}).items()
+              if not isinstance(value, CompositionView)}
     plan = build_render_plan(
         project,
         master_gain_db=master_gain_db,
         master_muted=master_muted,
         window=(start, end),
         window_index=timeline_index,
+        composition_views=views,
     )
-    return apply_grade_overrides(apply_path_resolver(plan, resolver), grade_overrides)
+    return apply_grade_overrides(apply_path_resolver(plan, resolver), grades)
 
 
 def media_identity(plan: RenderPlan) -> str:

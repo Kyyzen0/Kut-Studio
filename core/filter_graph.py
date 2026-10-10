@@ -349,6 +349,8 @@ def fingerprint_plan(plan, **kwargs):
                     quality=quality,
                     flow_preference=flow_preference,
                 ),
+                # Composition nodale : son graphe (nœuds, réglages, liens) et l'animation de ses masques.
+                "composition": repr(getattr(entry, "composition", None)),
             }
             for entry in getattr(plan, "nested_sequences", ()) or ()
         ],

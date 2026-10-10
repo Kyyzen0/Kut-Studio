@@ -280,7 +280,8 @@ class SocialMixin:
 
     def _video_clips_of_selection(self) -> list[Clip]:
         video_ids = {clip.id for track in self.project.tracks if track.type == "video" for clip in track.clips}
-        return [clip for clip in self._selected_clips() if clip.id in video_ids and not clip.sequence_id]
+        return [clip for clip in self._selected_clips()
+                if clip.id in video_ids and not clip.sequence_id and clip.composition is None]
 
     def toggle_fill_frame_for_selection(self) -> None:
         """« Remplir le cadre » : bascule le cadrage des clips vidéo sélectionnés (tous suivent le premier)."""

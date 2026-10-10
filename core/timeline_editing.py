@@ -187,12 +187,14 @@ def _neighbors(project: Project, clip_id: str):
 
 
 def _asset_duration(project: Project, clip) -> float:
-    """Durée de la source du clip (média, ou séquence imbriquée)."""
+    """Durée de la source du clip (média, séquence imbriquée ou composition)."""
     if getattr(clip, "sequence_id", ""):
         from .sequences import clip_source_limit
 
         limit = clip_source_limit(project, clip)
         return float(limit) if limit is not None else float(clip.source_out)
+    if getattr(clip, "composition", None) is not None:      # pas de média : la durée de la composition
+        return float(clip.composition.duration)
     return float(_find_asset(project, clip.asset_id).duration)
 
 

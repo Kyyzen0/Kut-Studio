@@ -844,7 +844,7 @@ def compute_usage(project: Project, asset_id: str) -> AssetUsage:
     seen_track_ids: set[str] = set()
     for track in project.all_tracks():
         for clip in track.clips:
-            if clip.asset_id != asset_id:
+            if asset_id not in clip.media_ids():          # le média du clip, ou ceux de sa composition
                 continue
             usage.clip_count += 1
             if clip.id not in seen_clip_ids:
@@ -870,17 +870,18 @@ def usage_map(project: Project) -> Mapping[str, AssetUsage]:
     seen_track_ids: dict[str, set[str]] = {asset.id: set() for asset in project.media_assets}
     for track in project.all_tracks():
         for clip in track.clips:
-            usage = usages.get(clip.asset_id)
-            if usage is None:
-                # Clip pointant vers un média inconnu : on l'ignore.
-                continue
-            usage.clip_count += 1
-            if clip.id not in seen_clip_ids[clip.asset_id]:
-                usage.clip_ids.append(clip.id)
-                seen_clip_ids[clip.asset_id].add(clip.id)
-            if track.id not in seen_track_ids[clip.asset_id]:
-                usage.track_ids.append(track.id)
-                seen_track_ids[clip.asset_id].add(track.id)
+            for asset_id in clip.media_ids():            # le média du clip, ou ceux de sa composition
+                usage = usages.get(asset_id)
+                if usage is None:
+                    # Clip pointant vers un média inconnu : on l'ignore.
+                    continue
+                usage.clip_count += 1
+                if clip.id not in seen_clip_ids[asset_id]:
+                    usage.clip_ids.append(clip.id)
+                    seen_clip_ids[asset_id].add(clip.id)
+                if track.id not in seen_track_ids[asset_id]:
+                    usage.track_ids.append(track.id)
+                    seen_track_ids[asset_id].add(track.id)
     return usages
 
 

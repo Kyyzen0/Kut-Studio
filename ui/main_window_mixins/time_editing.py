@@ -367,7 +367,8 @@ class TimeEditingMixin:
                 continue
             for clip in track.clips:
                 mode = clip.time_remapping.interpolation
-                if mode is TimeInterpolation.SAMPLING or not clip.is_time_remapped or clip.is_nested:
+                if mode is TimeInterpolation.SAMPLING or not clip.is_time_remapped or clip.is_nested \
+                        or clip.is_composition:
                     continue
                 if not clip.timeline_start <= position < clip.timeline_start + clip.duration:
                     continue
