@@ -14,6 +14,20 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image par
+  un graphe de nœuds.
+  - Sources : un média du projet, un texte, une couleur unie. Traitements : transformation, masque, incrustation,
+    effets, étalonnage. Fusion du premier plan sur le fond, avec son mode et son opacité. Le son des médias suit.
+  - **Page Composition** (bouton *Composition* en haut, *Fenêtre*, ou double-clic sur le clip violet) : les nœuds, les
+    réglages du nœud choisi, et le viewer qui montre la sortie ou, à la demande, le nœud choisi. On relie les nœuds à
+    la souris ; **+** ajoute un nœud après le nœud choisi (une source vient par-dessus par une fusion).
+  - *Convertir en composition* (clic droit dans la timeline, ou *Séquence*) : les clips vidéo et calques choisis
+    deviennent les nœuds d'un seul clip, avec la même image. *Nouvelle composition* en crée une vide.
+  - L'export et l'aperçu à l'arrêt sont exacts ; en lecture, le moniteur montre la source principale.
+  - Les projets passent au format 17 : une version plus ancienne de Kut-Studio ne les ouvre plus.
+
 ## [0.3.0] - 2026-10-10
 
 La **page Couleur**, à la manière de DaVinci Resolve : nœuds d'étalonnage en série, en parallèle et en calques, roues
