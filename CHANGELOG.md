@@ -16,6 +16,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Fenêtres** (page Couleur, onglet *Fenêtres*) : un rectangle, une ellipse ou une forme libre limite la correction
+  d'un nœud. On la glisse, l'agrandit et la tourne dans le viewer (les sommets d'une forme libre aussi), on l'adoucit,
+  on l'inverse pour corriger l'extérieur, on en combine plusieurs. Avec le qualificateur, seul ce que les deux
+  sélectionnent est corrigé. Une fenêtre suit un objet comme un masque : panneau Tracking, *Lier à*, la fenêtre.
+- **Flou et netteté** d'un nœud (onglet *Flou*) : ils agissent sur sa correction, là où sa fenêtre ou son
+  qualificateur la sélectionnent ; une fenêtre inversée floute l'arrière-plan. Temps réel dans le moniteur GPU, exacts
+  à l'export.
+- **Pipette** du qualificateur : un clic dans le viewer sélectionne la couleur qui arrive au nœud sous le clic ;
+  Maj + clic élargit la sélection jusqu'à elle.
+
 - **Nœuds parallèles et de calque** (page Couleur) :
   - **Alt+P** ajoute un nœud à côté du nœud courant ; les deux corrigent la même image et leurs corrections
     s'additionnent.
@@ -71,6 +81,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- Étalonnage, **Température** : une vraie balance des blancs, qui réchauffe ou refroidit toute l'image sans changer
+  la luminosité d'un gris. Avant, elle n'agissait presque pas sur les tons moyens clairs (un gris moyen ne se
+  réchauffait pas). **Teinte** fait maintenant tourner les teintes (le rouge vers le jaune…) ; elle agissait comme
+  une seconde température. Un projet qui utilisait ces deux réglages s'affiche et s'exporte différemment.
+- *Afficher la sélection* et la comparaison avant / après marchent aussi sans moniteur GPU (l'aperçu fidèle les
+  rend) ; elles étaient grisées.
+- Plusieurs nœuds d'étalonnage arrondissent moins : un réglage neutre (exposition, contraste, saturation) ne fait plus
+  d'aller-retour par le YUV. Sur cinq nœuds, 0,5 niveau d'écart moyen à la formule au lieu de 1,2.
 - Formes d'onde des clips audio : elles montrent enfin **le son que le clip fait entendre**, à l'endroit où on
   l'entend : la portion de média du clip (et non tout le fichier étiré), sa vitesse et son sens, son gain, avec une
   crête toutes les 2 ms, nette à tous les zooms pour caler une coupe sur un coup de caisse claire. Avant, le son était

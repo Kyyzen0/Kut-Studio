@@ -1,7 +1,8 @@
 # ADR-0002 : un socle nodal pour l'étalonnage et la composition, et des pages
 
-**Statut :** Accepté. Les étapes 1 (page Couleur, nœuds en série, roues) et 2 (nœuds parallèles et de calque,
-qualifieur, avant / après, bande des plans) sont livrées.
+**Statut :** Accepté. Les étapes 1 (page Couleur, nœuds en série, roues), 2 (nœuds parallèles et de calque,
+qualifieur, avant / après, bande des plans) et 3 (fenêtres, flou et netteté ; limites des étapes 1 et 2 levées) sont
+livrées.
 **Date :** 2026-10-09
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -58,8 +59,9 @@ Le graphe a une seule sortie.
   coûte une seule lecture de LUT, quel que soit le nombre de nœuds : série, parallèle, calques et qualifieurs, puisque
   la clé et un mélange de branches ne dépendent que du pixel. Rien n'est à réécrire en shader : le temps réel vient du
   socle lui-même.
-- **Nœuds spatiaux.** Les fenêtres, le flou d'une clé et la netteté dépendent des pixels voisins et ne tiennent pas
-  dans une LUT. Ils deviendront des passes GPU (étape 3), comme les mattes de masques aujourd'hui.
+- **Nœuds spatiaux.** Les fenêtres, le flou et la netteté dépendent de la position ou des pixels voisins et ne
+  tiennent pas dans une LUT. Ils sont des passes GPU (étape 3, ci-dessous) ; les graphes qui n'en ont pas restent une
+  LUT unique.
 
 #### Mélangeurs et qualifieur (étape 2)
 
@@ -81,16 +83,51 @@ Le graphe a une seule sortie.
   Le nœud corrige `entrée + K·(étalonné − entrée)`. À l'export, la clé est tabulée en LUT 3D 65³ (`lut3d`
   tétraédrique), dans un fichier du cache nommé par son contenu. La correction reste exacte. Mesuré : 0,05 niveau
   d'écart moyen à la formule, 1 au plus. Écrire la table prend 87 ms, l'appliquer 2 ms par image 1080p. Le mode
-  *Afficher la sélection* (`Highlight`) n'existe que pour le moniteur : la sélection garde sa couleur, le reste passe
-  en gris assombri.
+  *Afficher la sélection* (`Highlight`) n'existe que pour l'aperçu, jamais à l'export : la sélection garde sa couleur,
+  le reste passe en gris assombri.
 - **Avant / après.** La passe `grade` du moniteur GPU laisse sans étalonnage ce qui tombe à gauche du trait du
   viewer (uniforme `misc.z`). Elle le décide en coordonnées du cadre, par la matrice calque → cadre que la composition
-  inverse ; la frontière reste donc sous le trait même pour un clip déplacé ou tourné. Le trait est déplaçable. C'est
-  un outil du moniteur GPU : sans lui, le bouton est grisé et dit pourquoi.
+  inverse ; la frontière reste donc sous le trait même pour un clip déplacé ou tourné. Le trait est déplaçable. Sans
+  moniteur GPU, l'aperçu fidèle le rend depuis l'étape 3.
 - **Alpha.** Le sous-graphe à branches travaille en RVB ; l'alpha du clip (masques, coins laissés par une rotation)
   passe à côté (`alphaextract` / `alphamerge`), comme il traverse une chaîne en série.
 - **Bande des plans.** Elle prend une vignette par clip vidéo, au milieu du clip. Ce sont celles de la timeline (même
   cache, même tâche de fond). Elle sert à passer d'un plan à l'autre, et une pastille marque un plan étalonné.
+
+#### Fenêtres, flou et netteté (étape 3)
+
+- **Modèle.** Un correcteur porte des fenêtres (`core.compositing.Mask` : rectangle, ellipse, forme libre, douceur,
+  inversion, opérations), un flou (σ en pixels de la séquence, comme l'effet Flou) et une netteté (force de l'effet
+  Netteté). Sa sortie : `I + K·(D(G(I)) − I)`, `D` le flou puis la netteté de la correction, `K` la clé du qualifieur
+  multipliée par la matte des fenêtres. Une fenêtre est **un masque** : même rastériseur, mêmes images-clés
+  (`mask.<id>.*` du clip), même cible de tracking. Rien de nouveau à maintenir : l'édition, l'animation et le suivi
+  des masques valent pour elle.
+- **Espace calque.** Une fenêtre est posée sur l'image du clip, comme un masque, et la suit quand le clip bouge. À
+  l'export, l'étalonnage vient après l'échelle et la rotation (les effets en ont besoin) : la matte passe par **les
+  mêmes filtres** que l'image (`scale`, miroirs, `rotate`) et tombe pixel pour pixel sur elle. Déplacer l'étalonnage
+  avant l'échelle aurait changé l'ordre effets → étalonnage que le moniteur et les projets existants suivent.
+- **Export exact.** Flou = `gblur` (le filtre de l'effet Flou). Netteté = `convolution` 5 × 5 sur R, V, B, avec le noyau
+  binomial d'`unsharp` : `unsharp` ne lit pas le `gbrp`, FFmpeg aurait inséré une conversion YUV. Mesurés égaux à leur
+  formule au niveau près.
+- **Moniteur.** Le graphe est compilé nœud par nœud (`core/gpu_color_graph.py`) : une LUT par réglage (la chaîne de
+  l'export, cuite comme toujours), une clé (LUT du qualifieur × matte), les passes de flou et de netteté, des mélanges
+  exacts (`colorkey`, `colormix`). Le moniteur ne réimite donc toujours aucune formule d'étalonnage. Mesuré :
+  référence contre export 1,1 niveau d'écart moyen (chroma uniforme ; chaque opération seule 0,3 à 0,8), vrai GPU
+  Metal contre référence 0,3 (NV12) et 0,5 (P010).
+
+#### Limites des étapes 1 et 2, levées (étape 3)
+
+- **Température et teinte.** La température passait par `colorbalance`, dont les tons moyens n'agissent plus quand
+  max + min dépasse ≈ 202/255 (un gris moyen ne se réchauffait pas), et la teinte y décalait aussi rouge et bleu,
+  comme une seconde température. Température : une balance des blancs par `colorchannelmixer` (gains rouge et bleu
+  opposés, le vert compense pour garder la luminance Rec. 709 d'un gris). Teinte : une vraie rotation (`hue=h`).
+- **Arrondis entre nœuds.** Un `eq` neutre était toujours émis : son aller-retour YUV coûtait un arrondi par nœud. Il
+  ne l'est plus. Mesuré sur cinq nœuds de roues : 0,50 niveau d'écart moyen à la formule (2 au plus) contre 1,16 (6).
+  Une chaîne en 16 bits a été essayée et écartée : elle n'aurait gagné que 0,2 niveau, `eq`, `hue` et `lutrgb` y
+  perdent l'alpha, `lut3d` y retombe en 8 bits et swscale tramerait le retour en 8 bits.
+- **Outils sans moniteur GPU.** *Afficher la sélection* et avant / après passent par l'aperçu fidèle : ses segments
+  sont rendus avec la valeur montrée (`Highlight`, `Compare`, `preview_segments.apply_grade_overrides`).
+- **Pipette du qualifieur.** La couleur qui arrive au nœud sous le clic, lue par FFmpeg à travers les nœuds en amont.
 
 ### 3. Roues lift / gamma / gain / offset : la formule « Grade »
 
@@ -146,15 +183,19 @@ AZERTY.
     ajouté que les mélangeurs et le qualifieur des nœuds.
   - Le même socle servira la composition.
 - **Négatives et limites connues.**
-  - La chaîne de chaque nœud passe par des filtres 8 bits, et `eq` convertit en YUV et revient. Chaque nœud peut
-    donc ajouter un niveau d'arrondi. Le moniteur n'en a pas : sa LUT est cuite par cette même chaîne. Une chaîne en
-    16 bits ou en flottant sera à mesurer.
-  - La température passe par `colorbalance`, dont les tons moyens n'agissent plus quand max + min dépasse ≈ 202/255 :
-    un gris moyen ne se réchauffe pas. Les roues n'ont pas cette limite.
+  - La chaîne de chaque nœud reste en 8 bits : un nœud actif peut ajouter un demi-niveau d'arrondi (mesuré : 0,5 en
+    moyenne sur cinq nœuds). Le moniteur, lui, cuit cette même chaîne.
   - Un graphe invalide, ou d'une forme qu'une version plus ancienne ne connaît pas, est relu avec ses correcteurs en
     série et un avertissement, plutôt que de perdre l'étalonnage. Une version d'avant l'étape 2 relit ainsi un graphe
-    à branches.
-  - Avant / après et *Afficher la sélection* n'existent que dans le moniteur GPU.
+    à branches ; une version d'avant l'étape 3 ignore les fenêtres, le flou et la netteté (le nœud corrige alors toute
+    l'image). Une ancienne version ne peut pas mieux faire.
+  - Une fenêtre suit l'échelle, les miroirs et la rotation du clip, pas une déformation de son image (heat haze).
+  - Le moniteur évalue un graphe spatial en environ trois passes par nœud, avec des textures de travail recyclées ;
+    un graphe sans fenêtre, flou ni netteté garde son unique LUT.
+  - Sur une image colorée, l'export et le moniteur reconstruisent la chroma 4:2:0 chacun à leur manière (≈ 1 à 2
+    niveaux, déjà sans étalonnage) ; la netteté amplifie cet écart.
+  - La pipette ignore le flou et la netteté des nœuds en amont (sur 5 × 5 pixels, ils ne voudraient rien dire).
+  - Seuls les clips vidéo ont des nœuds, donc des fenêtres ; un calque d'effets garde un réglage simple.
 
 ## Étapes
 
@@ -162,7 +203,9 @@ AZERTY.
    réinitialiser, supprimer, chacun en une étape d'historique), roues, inspecteur réglant le nœud courant.
 2. **Livrée.** Nœuds parallèles et nœuds de calque (Alt+P, Alt+L), qualifieur TSL et *Afficher la sélection*,
    comparaison avant / après dans le moniteur, bande des plans.
-3. Nœuds spatiaux : fenêtres (formes, suivies par le tracking), flou et netteté, en passes GPU.
+3. **Livrée.** Fenêtres (rectangle, ellipse, forme libre, douceur, suivies par le tracking), flou et netteté, en
+   passes GPU et exacts à l'export ; pipette du qualifieur ; *Afficher la sélection* et avant / après sans moniteur
+   GPU ; température et teinte corrigées ; un arrondi de moins par nœud.
 4. Composition nodale : type de clip, nœuds de fusion, de transformation, de masque et de clé, conversion calques →
    nœuds.
 5. Page Audio. D'abord un aperçu audio fidèle : le mixage rendu par le graphe audio de l'export, par morceaux. Puis
