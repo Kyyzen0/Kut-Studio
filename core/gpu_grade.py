@@ -75,7 +75,8 @@ def lut_key(grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_rang
 
     chain = grade_filters(grade)
     stamps = []
-    for lut in luts_of(getattr(grade, "graph", grade)):     # un par nœud qui en a un (sélection montrée comprise)
+    # Un par nœud qui en a un (sélection montrée comprise), ou ceux d'une étape d'un graphe spatial.
+    for lut in luts_of(getattr(grade, "graph", grade)) or tuple(getattr(grade, "luts", ())):
         path = lut.source_path or lut.path
         if not path:
             continue
@@ -184,22 +185,24 @@ class GradeLutCache:
 
     ``lookup`` rend l'atlas s'il est prêt, sinon lance (ou met en file) sa cuisson et rend ``None`` : le moniteur
     affiche le calque sans étalonnage le temps d'une cuisson (≈ 30 ms), puis ``on_ready`` (appelé depuis le fil de
-    cuisson) demande une nouvelle image. Pendant un glisser de curseur, seule la dernière valeur attend : les
-    intermédiaires ne sont jamais cuites. Un échec est mémorisé (pas de nouvel essai à chaque image).
+    cuisson) demande une nouvelle image. Une demande attend **par emplacement** (``slot`` : le calque, ou une étape d'un
+    graphe spatial, qui en demande plusieurs à la fois) : pendant un glisser de curseur, seule la dernière valeur de
+    l'emplacement attend, les intermédiaires ne sont jamais cuites ; la plus récente passe d'abord. Un échec est
+    mémorisé (pas de nouvel essai à chaque image).
     """
 
-    def __init__(self, on_ready: Callable[[], None] | None = None, *, capacity: int = 16,
+    def __init__(self, on_ready: Callable[[], None] | None = None, *, capacity: int = 48,
                  bake: Callable[..., bytes] = bake_grade_lut) -> None:
         self._on_ready = on_ready
         self._capacity = max(1, int(capacity))
         self._bake = bake
         self._lock = threading.Lock()
         self._ready: OrderedDict[str, bytes | None] = OrderedDict()
-        self._pending: tuple[str, object, dict] | None = None
+        self._pending: OrderedDict[str, tuple[str, object, dict]] = OrderedDict()
         self._busy = False
 
-    def lookup(self, grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = ""
-               ) -> tuple[str, bytes] | None:
+    def lookup(self, grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = "",
+               slot: str = "") -> tuple[str, bytes] | None:
         options = {"domain": domain, "colorspace": colorspace, "color_range": color_range}
         key = lut_key(grade, **options)
         with self._lock:
@@ -207,7 +210,8 @@ class GradeLutCache:
                 self._ready.move_to_end(key)
                 atlas = self._ready[key]
                 return (key, atlas) if atlas is not None else None
-            self._pending = (key, grade, options)
+            self._pending[slot] = (key, grade, options)
+            self._pending.move_to_end(slot)
             if self._busy:
                 return None
             self._busy = True
@@ -223,10 +227,10 @@ class GradeLutCache:
     def _work(self) -> None:
         while True:
             with self._lock:
-                job, self._pending = self._pending, None
-                if job is None:
+                if not self._pending:
                     self._busy = False
                     return
+                _slot, job = self._pending.popitem(last=True)
                 if job[0] in self._ready:
                     continue
             key, grade, options = job

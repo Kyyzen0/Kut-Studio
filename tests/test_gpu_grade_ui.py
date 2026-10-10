@@ -169,3 +169,47 @@ def test_the_main_window_gives_the_monitor_the_grade_of_the_clip_under_the_playh
     clip.color_grade = None
     window._sync_preview_to_timeline()
     assert window.preview_panel._gpu_grade is None
+
+
+def test_a_spatial_graph_becomes_passes_once_every_step_is_baked_and_its_window_is_there(widget, qapp):
+    """Fenêtre et flou : une LUT par étape (domaine du média depuis l'image du calque, RVB ensuite), la matte des
+    fenêtres venue du calque ; tant qu'il manque une pièce, le calque passe sans étalonnage (ou garde le programme
+    précédent)."""
+    from PySide6.QtGui import QImage
+
+    from core.color_grading import Wheel
+    from core.color_nodes import ColorNode, ColorNodeGraph
+    from core.compositing import Mask
+
+    baker = _Baker()
+    widget.grades = GradeLutCache(bake=baker)
+    graph = ColorNodeGraph.serial((ColorNode("n1", GRADE, windows=(Mask(),)),))
+    graph, second = graph.with_node_after("n1", ColorGrade(gain=Wheel(y=0.2)))
+    from dataclasses import replace
+
+    graph = graph.with_node(replace(graph.corrector(second), blur=2.0))
+    matte = QImage(64, 36, QImage.Format.Format_ARGB32_Premultiplied)
+    layer = replace(_layer(graph), grade_windows=(("n1", "window:n1"),))
+    images = {"window:n1": matte}
+    assert widget._resolve_grade(layer, dict(images)).grade_passes == (), "rien de cuit : pas encore de passes"
+    ready = None
+    for _ in range(500):
+        ready = widget._resolve_grade(layer, dict(images))
+        if ready.grade_passes:
+            break
+        threading.Event().wait(0.01)
+    assert ready is not None and ready.grade_passes and ready.grade is None
+    assert {call["domain"] for call in baker.calls} == {DOMAIN_YUV, DOMAIN_RGB}, "le 2ᵉ nœud lit une image RVB"
+    ops = [step.op for step in ready.grade_passes]
+    assert ops == ["lut", "key", "mix", "lut", "blur"] and ready.grade_passes[1].window == "window:n1"
+    slower = threading.Event()
+    widget.grades._bake = lambda grade, **options: (slower.wait(5), bytes(LUT_SIZE ** 3 * 3))[1]
+    moved = {"window:n1@2": matte}                     # la fenêtre a bougé, et un réglage change (cuisson en cours)
+    changed = replace(layer, grade=graph.with_grade("n1", GRADE.with_field("exposure", 0.9)),
+                      grade_windows=(("n1", "window:n1@2"),))
+    during = widget._resolve_grade(changed, moved)
+    assert [step.op for step in during.grade_passes] == ops, "pendant la cuisson : le programme précédent"
+    assert during.grade_passes[1].window == "window:n1@2", "… avec la matte de cette image"
+    slower.set()
+    assert widget._resolve_grade(replace(layer, grade_windows=()), {}).grade_passes == (), \
+        "sans sa matte, rien ne peut être dessiné : le calque passe sans étalonnage"

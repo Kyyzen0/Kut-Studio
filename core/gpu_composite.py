@@ -120,6 +120,11 @@ class CompositeLayer:
             ``grade`` s'insère alors entre les effets et la composition, comme à l'export.
         grade_split: comparaison avant / après (page Couleur) : la part gauche **du cadre** (0..1, là où le viewer
             trace son trait) reste sans étalonnage, quel que soit le transform du calque ; 0 : tout est étalonné.
+        grade_passes: graphe d'étalonnage spatial (fenêtres, flou, netteté) résolu par le moniteur
+            (:class:`core.gpu_color_graph.GpuColorPass`, atlas et mattes téléversés) ; remplace ``grade_lut``.
+        grade_result: l'emplacement du résultat de ``grade_passes``.
+        grade_windows: ``((nœud, clé de matte), …)`` : la matte des fenêtres de chaque nœud fenêtré de ``grade``
+            (espace calque, à la résolution de rendu), téléversée comme une matte.
     """
 
     source: str
@@ -133,6 +138,9 @@ class CompositeLayer:
     grade: object = None
     grade_lut: str = ""
     grade_split: float = 0.0
+    grade_passes: tuple = ()
+    grade_result: int = 0
+    grade_windows: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -309,7 +317,11 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
             (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
         )
-        if layer.grade_lut:
+        if layer.grade_passes:
+            domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
+            current, space = _color_graph_passes(passes, textures, f"layer{index}", current, space, domain, layer,
+                                                 matrix, (width, height), index, pixel, forward)
+        elif layer.grade_lut:
             domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
             current, space = _grade_pass(passes, textures, f"layer{index}", current, space, domain, layer.grade_lut,
                                          matrix, (width, height), index, split=layer.grade_split, to_canvas=forward)
@@ -481,6 +493,96 @@ def _grade_pass(passes, textures, name, current, space, domain, lut, matrix, siz
     return target, SPACE_RGB
 
 
+def _color_graph_passes(passes, textures, name, current, space, domain, layer: CompositeLayer, matrix, size, index,
+                        pixel, to_canvas: Affine) -> tuple[str, int]:
+    """Passes d'un graphe d'étalonnage spatial (:mod:`core.gpu_color_graph`) ; retourne ``(texture, RVB)``.
+
+    L'emplacement 0 est ``current`` (le calque après ses effets, dans l'espace ``space``) ; chaque autre emplacement
+    prend une texture de travail, rendue au lot dès sa dernière lecture : un graphe de dix nœuds n'en garde que
+    quelques-unes. Une LUT lue depuis l'emplacement 0 est dans l'espace du média (``domain``), les autres en RVB.
+    ``grade_split`` ajoute la comparaison avant / après sur le résultat.
+    """
+    from .gpu_color_graph import INPUT
+    from .gpu_grade import LUT_SIZE
+
+    width, height = size
+    steps = layer.grade_passes
+    last_use = {INPUT: len(steps)}
+    for number, step in enumerate(steps):
+        for slot in step.inputs:
+            last_use[slot] = number
+    last_use[layer.grade_result] = len(steps)
+    free: list[str] = []
+    made = 0
+    slots: dict[int, tuple[str, int]] = {INPUT: (current, space)}
+    base = dict(yuv_to_rgb=matrix, target=(float(width), float(height), 1.0, 0.0))
+
+    def texture() -> str:
+        nonlocal made
+        if free:
+            return free.pop()
+        made += 1
+        texture_name = f"{name}g{made}"
+        textures.setdefault(texture_name, TextureSpec(WORKING_FORMAT, width, height))
+        return texture_name
+
+    for number, step in enumerate(steps):
+        sources = [slots[slot] for slot in step.inputs]
+        lut_domain = float(domain if step.inputs[0] == INPUT else SPACE_RGB)
+        target = texture()
+        if step.op == "lut":
+            source, source_space = sources[0]
+            passes.append(PassSpec("grade", target, (source, f"matte:{step.lut}"), Uniforms(
+                **base, state=(float(source_space), float(SPACE_RGB), 0.0, 0.0),
+                misc=(float(LUT_SIZE), lut_domain, 0.0, 0.0),
+            ).pack(), index))
+        elif step.op == "key":
+            source, source_space = sources[0]
+            passes.append(PassSpec("colorkey", target, (
+                source, f"matte:{step.lut}" if step.lut else "none", f"matte:{step.window}" if step.window else "none",
+            ), Uniforms(
+                **base, state=(float(source_space), float(SPACE_RGB), 0.0, 0.0),
+                misc=(float(LUT_SIZE), lut_domain, 1.0 if step.lut else 0.0, 1.0 if step.window else 0.0),
+            ).pack(), index))
+        elif step.op == "blur":
+            source, source_space = sources[0]
+            between = texture()
+            for axis, (dx, dy) in enumerate(((1.0, 0.0), (0.0, 1.0))):
+                radius, weights = gblur_weights(step.amount * pixel[axis])
+                read, write = (source, between) if axis == 0 else (between, target)
+                passes.append(PassSpec("blur", write, (read,), Uniforms(
+                    **base, state=(float(source_space), float(source_space if axis == 0 else SPACE_RGB), 0.0, 0.0),
+                    blur=(dx, dy, float(radius), float(radius)), weights_luma=weights, weights_chroma=weights,
+                ).pack(), index))
+            free.append(between)
+        elif step.op == "sharpen":
+            source, source_space = sources[0]
+            passes.append(PassSpec("sharpen", target, (source,), Uniforms(
+                **base, state=(float(source_space), float(SPACE_RGB), 0.0, 0.0), misc=(float(step.amount), 1.0, 0.0, 0.0),
+            ).pack(), index))
+        else:                                                   # mix, add
+            (first, first_space), (second, second_space), (third, third_space) = sources
+            passes.append(PassSpec("colormix", target, (first, second, third), Uniforms(
+                **base, state=(float(first_space), float(second_space), float(third_space),
+                               0.0 if step.op == "mix" else 1.0),
+                misc=(1.0 if step.clamp else 0.0, 0.0, 0.0, 0.0),
+            ).pack(), index))
+        slots[step.target] = (target, SPACE_RGB)
+        for slot in set(step.inputs):
+            if slot != INPUT and last_use.get(slot) == number:
+                free.append(slots[slot][0])
+    result, result_space = slots[layer.grade_result]
+    split = min(1.0, max(0.0, float(layer.grade_split)))
+    if split > 0.0:
+        target = texture()
+        passes.append(PassSpec("colormix", target, (current, result, "none"), Uniforms(
+            **base, inverse_map=to_canvas, state=(float(space), float(result_space), float(SPACE_RGB), 2.0),
+            misc=(0.0, split, 0.0, 0.0),
+        ).pack(), index))
+        result, result_space = target, SPACE_RGB
+    return result, result_space
+
+
 def _end_space(space: int, ops) -> int:
     for op in ops:
         space = op.space
@@ -534,6 +636,68 @@ def _bilinear(np, image, x, y):
     top = image[y0, x0] * (1 - tx) + image[y0, x1] * tx
     bottom = image[y1, x0] * (1 - tx) + image[y1, x1] * tx
     return top * (1 - ty) + bottom * ty
+
+
+def _reference_color_graph(np, pixels, space: int, domain: int, layer: CompositeLayer, matrix, texel, to_canvas,
+                           graded, mattes: dict):
+    """Les passes de :func:`_color_graph_passes` en numpy (``graded`` : la passe ``grade`` de la référence)."""
+    from .gpu_color_graph import INPUT
+    from .gpu_effects import gblur_weights as weights_for
+
+    m = np.array(matrix, dtype=np.float64)
+
+    def rgb_of(values, values_space):
+        return values if values_space == SPACE_RGB else np.clip(values @ m[:3, :3].T + m[:3, 3], 0.0, 1.0)
+
+    binomial = np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0
+    height, width = pixels.shape[:2]
+    slots = {INPUT: (np.asarray(pixels, dtype=np.float64), space)}
+    for step in layer.grade_passes:
+        sources = [slots[slot] for slot in step.inputs]
+        lut_domain = domain if step.inputs[0] == INPUT else SPACE_RGB
+        values, values_space = sources[0]
+        if step.op == "lut":
+            result = graded(values, values_space, lut_domain, step.lut, matrix)
+        elif step.op == "key":
+            key = np.ones((height, width))
+            if step.lut:
+                key = graded(values, values_space, lut_domain, step.lut, matrix)[..., 0]
+            if step.window:
+                key = key * np.asarray(mattes[step.window], dtype=np.float64)
+            result = np.repeat(key[..., None], 3, axis=2)
+        elif step.op == "blur":
+            result = values
+            for axis in (1, 0):                                 # horizontal puis vertical, bords recopiés
+                radius, half = weights_for(step.amount * texel[1 - axis])
+                padded = np.pad(result, [(radius, radius) if a == axis else (0, 0) for a in range(3)], mode="edge")
+                length = result.shape[axis]
+                taken = [np.take(padded, np.arange(radius + k, radius + k + length), axis=axis)
+                         for k in range(-radius, radius + 1)]
+                result = sum(half[abs(k)] * tap for k, tap in zip(range(-radius, radius + 1), taken))
+            result = rgb_of(result, values_space)
+        elif step.op == "sharpen":
+            rgb = rgb_of(values, values_space)
+            padded = np.pad(rgb, ((2, 2), (2, 2), (0, 0)), mode="reflect")
+            rows = sum(binomial[i] * padded[i:i + height] for i in range(5))
+            soft = sum(binomial[j] * rows[:, j:j + width] for j in range(5))
+            result = np.clip(rgb + step.amount * (rgb - soft), 0.0, 1.0)
+        else:
+            a, b, c = (rgb_of(v, v_space) for v, v_space in sources)
+            if step.op == "mix":
+                result = a + c[..., :1] * (b - a)
+            else:
+                result = a + (b - c)
+                if step.clamp:
+                    result = np.clip(result, 0.0, 1.0)
+        slots[step.target] = (result, SPACE_RGB)
+    result, _space = slots[layer.grade_result]
+    split = min(1.0, max(0.0, float(layer.grade_split)))
+    if split > 0.0:
+        a, _b, c, _d, e, _f = to_canvas
+        rows, columns = np.mgrid[0:height, 0:width] + 0.5
+        before = (a * columns + c * rows + e) < split * width
+        result = np.where(before[..., None], rgb_of(np.asarray(pixels, dtype=np.float64), space), result)
+    return result
 
 
 def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = None, luts: dict | None = None):
@@ -593,19 +757,28 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         sampled = _bilinear(np, data, fu * source.width, fv * source.height)
         pad = np.array((16 / 255, 128 / 255, 128 / 255) if layout.is_yuv else (0.0, 0.0, 0.0))
         layer_px = np.where(inside[..., None], sampled, pad)
-        grading = bool(layer.grade_lut) and layer.grade_lut in tables
+        programmed = bool(layer.grade_passes)
+        grading = not programmed and bool(layer.grade_lut) and layer.grade_lut in tables
         forward = affine_mul((scale, 0, 0, scale, 0, 0), affine_mul(layer.matrix, (1 / scale, 0, 0, 1 / scale, 0, 0)))
+        texel = (scale / abs(layer.effect_scale[0]), scale / abs(layer.effect_scale[1]))
         if layout.is_yuv:
             rgb = reference_layer(
                 layer_px, layer.program, yuv_to_rgb=matrix,
-                pixel_scale=(scale / abs(layer.effect_scale[0]), scale / abs(layer.effect_scale[1])),
+                pixel_scale=texel,
                 layer_scale=(scale, scale),
                 chroma_scale=source.chroma_scale,
-                keep_space=grading,
+                keep_space=grading or programmed,
             )
             if grading:
                 pixels, space = rgb
                 rgb = graded(pixels, space, SPACE_YUV, layer.grade_lut, matrix, layer.grade_split, forward)
+            elif programmed:
+                pixels, space = rgb
+                rgb = _reference_color_graph(np, pixels, space, SPACE_YUV, layer, matrix, texel, forward, graded,
+                                             mattes or {})
+        elif programmed:
+            rgb = _reference_color_graph(np, layer_px, SPACE_RGB, SPACE_RGB, layer, matrix, texel, forward, graded,
+                                         mattes or {})
         else:
             rgb = graded(layer_px, SPACE_RGB, SPACE_RGB, layer.grade_lut, matrix, layer.grade_split, forward) \
                 if grading else layer_px

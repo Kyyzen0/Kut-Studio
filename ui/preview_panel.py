@@ -167,6 +167,7 @@ class PreviewPanel(QWidget):
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
         self._gpu_grade = None
+        self._gpu_windows: dict[str, tuple[str, object]] = {}
         self._gpu_grade_split = 0.0          # comparaison avant / après (page Couleur) : part gauche sans étalonnage
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
         self._gpu_blend_layers: tuple = ()
@@ -844,6 +845,17 @@ class PreviewPanel(QWidget):
         if self.gpu_view is not None:
             self._update_gpu_composite()
 
+    def set_grade_windows(self, windows: dict[str, tuple[str, object]]) -> None:
+        """Mattes des fenêtres des nœuds de l'étalonnage montré (``{nœud: (clé, QImage)}``, espace calque, taille de
+        rendu ; GPU seulement). Une matte inchangée ne change rien."""
+        windows = dict(windows or {})
+        if {node: key for node, (key, _image) in windows.items()} == \
+                {node: key for node, (key, _image) in self._gpu_windows.items()}:
+            return
+        self._gpu_windows = windows
+        if self.gpu_view is not None:
+            self._update_gpu_composite()
+
     def set_grade_split(self, split: float | None) -> None:
         """Comparaison avant / après (GPU seulement) : la part gauche du clip affiché (0..1) reste sans étalonnage,
         un trait la sépare dans le viewer ; ``None`` : comparaison arrêtée."""
@@ -1022,6 +1034,11 @@ class PreviewPanel(QWidget):
             if self._gpu_matte is not None:
                 matte_key, image = self._gpu_matte
                 mattes[matte_key] = image
+            windows = []
+            if self._gpu_grade is not None:
+                for node_id, (window_key, image) in self._gpu_windows.items():
+                    mattes[window_key] = image
+                    windows.append((node_id, window_key))
             from core.gpu_effects import VIGNETTE_EXPORT
 
             try:
@@ -1039,6 +1056,7 @@ class PreviewPanel(QWidget):
                 matte=matte_key,
                 grade=self._gpu_grade,
                 grade_split=self._gpu_grade_split if self._gpu_grade is not None else 0.0,
+                grade_windows=tuple(windows),
             ),)
             adjustments = self._gpu_adjustment_layers(mattes)
             layers = layers + self._gpu_graphics_layers(cw, ch, mattes)

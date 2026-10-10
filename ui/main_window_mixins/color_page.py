@@ -240,7 +240,8 @@ class ColorPageMixin:
             return value
         graph = as_graph(value)
         node = graph.node_or_first(self._color_node_id)
-        return Highlight(graph, node.id) if node.qualifier is not None and node.qualifier.enabled else value
+        selects = (node.qualifier is not None and node.qualifier.enabled) or bool(node.windows)
+        return Highlight(graph, node.id) if selects else value
 
     def _refresh_clip_strip(self, *_args) -> None:
         """Les plans vidéo de la séquence affichée, dans l'ordre du montage, et le plan de l'inspecteur."""

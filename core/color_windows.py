@@ -36,6 +36,12 @@ def window_scene(project, clip_id: str, windows):
     return GraphicsScene((replace(layer, compositing=Compositing(masks=tuple(windows))),), project.width, project.height)
 
 
+def window_matte_key(project, clip_id: str, windows, timeline_time: float, width: int, height: int) -> str:
+    """Identité de la matte de :func:`window_matte` : les fenêtres évaluées à cet instant et la taille."""
+    evaluated = window_scene(project, clip_id, windows).evaluate(clip_id, timeline_time).masks
+    return f"window:{clip_id}:{width}x{height}:{evaluated!r}"
+
+
 def window_matte(project, clip_id: str, windows, timeline_time: float, width: int, height: int):
     """``(clé, QImage)`` de la matte des fenêtres à ``timeline_time``, à la taille ``width × height`` (alpha : la
     couverture). La clé suit les fenêtres évaluées : une fenêtre immobile n'est rastérisée qu'une fois."""

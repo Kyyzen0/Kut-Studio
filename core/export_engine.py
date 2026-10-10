@@ -2244,8 +2244,11 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     # Import paresseux pour éviter les cycles d'imports.
     from .color_grading import ColorGrade
     from .color_nodes import ColorNodeGraph
-    from .color_render import Compare, Highlight, compare_filters, render_filters
+    from .color_render import Compare, FilterChain, Highlight, compare_filters, render_filters
     from .color_wheels import wheels_filter
+
+    if isinstance(grade, FilterChain):
+        return grade.text                       # une étape d'un graphe spatial, cuite par le moniteur
 
     if isinstance(grade, Compare):
         # Avant / après de l'aperçu fidèle : l'étalonnage montré, l'image d'origine à gauche du partage.

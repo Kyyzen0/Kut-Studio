@@ -71,6 +71,20 @@ class Highlight:
 
 
 @dataclass(frozen=True)
+class FilterChain:
+    """Une chaîne de filtres déjà écrite, que le moniteur cuit telle quelle en LUT (passes d'un graphe spatial,
+    :mod:`core.gpu_color_graph`) ; ``luts`` : les fichiers ``.cube`` qu'elle lit (identité de la LUT cuite)."""
+
+    text: str
+    luts: tuple = ()
+
+    enabled = True
+
+    def is_identity(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True)
 class Compare:
     """Avant / après dans l'aperçu fidèle (sans moniteur GPU) : à gauche de ``split`` (part de la largeur de l'image du
     clip), l'image sans étalonnage ; ``value`` : l'étalonnage montré à droite (le clip, ou sa sélection montrée)."""

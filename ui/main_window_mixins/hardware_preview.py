@@ -218,6 +218,37 @@ class HardwarePreviewMixin:
         if has_masks or getattr(clip, "tracking", None) is not None:
             matte = self._clip_matte(clip, timeline_time)
         self.preview_panel.set_layer_compositing(blend, matte)
+        self.preview_panel.set_grade_windows(self._clip_windows(clip, timeline_time))
+
+    def _clip_windows(self, clip, timeline_time: float) -> dict:
+        """``{nœud: (clé, QImage)}`` : la matte des fenêtres de chaque nœud fenêtré de l'étalonnage montré, rastérisée
+        comme à l'export (même code, même animation) ; une fenêtre immobile n'est rastérisée qu'une fois."""
+        from core.color_render import graph_of, windowed_nodes
+        from core.color_windows import window_matte, window_matte_key
+
+        grade = self._monitor_color_grade(clip)
+        graph = graph_of(grade)
+        if graph is None or not graph.is_spatial():
+            return {}
+        width, height = self.preview_panel.gpu_render_size()
+        cache = getattr(self, "_window_mattes", None)
+        if cache is None:
+            cache = self._window_mattes = {}
+        result = {}
+        for node_id in windowed_nodes(grade):
+            windows = graph.corrector(node_id).windows
+            try:
+                key = window_matte_key(self.project, clip.id, windows, timeline_time, width, height)
+                image = cache.get(key)
+                if image is None:
+                    key, image = window_matte(self.project, clip.id, windows, timeline_time, width, height)
+                    cache[key] = image
+                    while len(cache) > 8:
+                        cache.pop(next(iter(cache)))
+                result[node_id] = (key, image)
+            except Exception as error:  # une fenêtre fautive ne bloque jamais le viewer
+                LOGGER.debug("Matte de fenêtre indisponible : %s", error)
+        return result
 
     def _clip_matte(self, clip, timeline_time: float):
         """``(clé, QImage)`` de la matte du clip, rastérisée comme à l'export (même code)."""
