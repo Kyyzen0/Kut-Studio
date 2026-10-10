@@ -51,16 +51,24 @@ class CompositionCacheMixin:
         views = self._composition_preview_overrides() or {}
         return str(getattr(views.get(clip_id), "node_id", "") or "")
 
-    def _composition_cache_signature(self, site) -> tuple:
-        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, et les médias
-        lus **avec leur identité sur disque** (date, taille) : un fichier remplacé au même chemin refait les morceaux,
-        comme il refait les segments fidèles."""
+    def _composition_cache_signature(self, site, resolver=None) -> tuple:
+        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, et les fichiers
+        **réellement lus** avec leur identité sur disque (date, taille) : chaque média et ce que ``resolver`` (les
+        proxys) sert à sa place, pour l'image et pour le son. Un fichier remplacé au même chemin, ou un proxy qui cesse
+        d'être servi (le gestionnaire garde son état deux secondes), change la signature : les morceaux sont refaits,
+        comme les segments fidèles. C'est ce que lisent les jobs, pas seulement la source."""
         paths = {asset.id: asset.path for asset in self.project.media_assets}
+        files: set[tuple] = set()
+        for asset_id in site.clip.media_ids():
+            path = paths.get(asset_id, "")
+            files.add(_file_identity(path))
+            if resolver is not None and path:
+                files.add(_file_identity(resolver(path)))
+                files.add(_file_identity(resolver(path, need_audio=True)))
         sequence = site.sequence
         return (
             self._composition_view_of(site.clip.id), str(self._render_quality), sequence.width, sequence.height,
-            float(sequence.fps), str(self._flow_preference()),
-            tuple(sorted(_file_identity(paths.get(asset_id, "")) for asset_id in site.clip.media_ids())),
+            float(sequence.fps), str(self._flow_preference()), tuple(sorted(files, key=repr)),
         )
 
     def _schedule_composition_caches(self, center: float) -> None:
@@ -88,7 +96,7 @@ class CompositionCacheMixin:
         for site in composition_sites(self.project):
             clip = site.clip
             seen.add(clip.id)
-            signature = self._composition_cache_signature(site)
+            signature = self._composition_cache_signature(site, resolver)
             cache = caches.get(clip.id)
             if cache is None or cache.composition is not clip.composition or cache.signature != signature:
                 try:

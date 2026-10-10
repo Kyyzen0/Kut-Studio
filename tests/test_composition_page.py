@@ -230,3 +230,43 @@ def test_a_replaced_media_file_or_an_expired_chunk_is_not_served(window, qtbot, 
     window._comp_caches[clip_id].looked_up.clear()         # repasse par le cache disque
     engine.cache.ttl_seconds = 1e-6                        # morceau périmé
     assert ready() is None
+
+
+def test_a_proxy_that_stops_being_served_refreshes_the_composition(window, qtbot, monkeypatch, tmp_path):
+    """Le gestionnaire de proxys garde son état deux secondes : juste après un remplacement, il sert encore l'ancien
+    proxy. La signature suit ce qui est réellement lu ; quand l'ancien proxy n'est plus servi, les morceaux sont
+    refaits."""
+    from core.sequences import nested_source_time
+    from core.timeline_operations import find_clip
+
+    _ids, result = _converted(window)
+    clip_id = result.clip.id
+    rendered = _fake_renders(window.preview_engine, tmp_path)
+    clip = find_clip(window.project, clip_id)
+    media_id = next(node.asset_id for node in clip.composition.graph.nodes if isinstance(node, MediaNode))
+    asset = next(asset for asset in window.project.media_assets if asset.id == media_id)
+    source, proxy = tmp_path / "source.mp4", tmp_path / "source.proxy.mp4"
+    source.write_bytes(b"v1")
+    proxy.write_bytes(b"proxy of v1")
+    asset.path = str(source)
+    served = {"proxy": True}
+    monkeypatch.setattr(window, "_preview_resolver", lambda: (
+        lambda path, need_audio=False: str(proxy) if path == str(source) and served["proxy"] else path))
+    window.is_playing = False
+    window.playhead_seconds = clip.timeline_start + 0.5
+    inner = nested_source_time(clip, window.playhead_seconds)
+
+    def ready():
+        return window._composition_cache_source(find_clip(window.project, clip_id), inner)
+
+    window._schedule_composition_caches(window.playhead_seconds)
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    stale = ready()[0]
+    source.write_bytes(b"version 2")                       # remplacé ; le proxy, lui, est encore servi
+    window._schedule_composition_caches(window.playhead_seconds)
+    renders = len(rendered)
+    served["proxy"] = False                                # deux secondes plus tard : l'original est lu
+    window._schedule_composition_caches(window.playhead_seconds)
+    assert ready() is None or ready()[0] != stale
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    assert ready()[0] != stale and len(rendered) > renders
