@@ -450,10 +450,17 @@ par bloc 2×2 **du calque** (à la taille du cadre, donc indépendamment de la
 taille de la source et de la résolution de rendu), au centre du bloc
 (`layer_chroma_grid`, `misc.xy` du shader). Quand l'échelle du clip
 redimensionne le calque, l'export convertit dans son `scale` animé (chemin
-redimensionné de swscale) et rééchantillonne la chroma : le moniteur garde
-alors l'interpolation bilinéaire, le modèle le plus proche. Rotation, miroirs et
-déplacement ne changent rien (`rotate` et `overlay` travaillent après la
-conversion). Le heat haze de l'export passe en `yuva444p` avec
+redimensionné de swscale), qui traite les axes différemment : la chroma y reste
+recopiée par paires en largeur mais interpolée en hauteur. Le moniteur garde
+donc les blocs en largeur tant que la largeur du calque ne change pas (*Scale Y*
+seul), et interpole sinon, le modèle le plus proche. Rotation, miroirs et
+déplacement ne changent rien : `rotate` et `overlay` travaillent après la
+conversion, sur l'image RVB **écrêtée**. Le moniteur convertit donc lui aussi le
+calque en RVB avant la passe composite (`layer_composite_space`) ; il gardait le
+YUV, et interpolait des couleurs hors gamut que l'export avait déjà écrêtées.
+Seule exception : un calque **tourné avec des effets**. Un effet qui ne
+travaille qu'en YUV (`eq`…) place `rotate` avant la conversion, qui tourne alors
+les plans 4:2:0 ; le moniteur y garde l'interpolation, comme avant. Le heat haze de l'export passe en `yuva444p` avec
 `scale=flags=neighbor` : avec le `bicubic` par défaut, il était seul à
 interpoler la chroma, et un grain changeait de 20 niveaux en activant l'effet.
 Tout filtre d'export qui passe de 4:2:0 à 4:4:4 doit faire de même.
@@ -463,9 +470,12 @@ pire cas), écart moyen à l'image de l'export réel :
 
 | Calque | Règle commune | Chroma interpolée (avant) |
 |---|---|---|
-| sans échelle (identité, déplacé, bandes, tourné de 15°) | **0,3 à 0,8** | 19 à 28 |
+| sans échelle (identité, déplacé, bandes, tourné de 15° sans effet) | **0,3 à 0,8** | 19 à 28 |
 | source réduite ou agrandie par l'adaptation | **12 à 13** | 17 à 23 |
 | échelle de clip 0,7, avec ou sans rotation | 12 à 22 (interpolée) | identique ; recopiée : 21 à 30 |
+| *Scale Y* 0,7 seul (blocs gardés en largeur) | 15,7 | 25,1 |
+| *Scale X* 0,7 seul (interpolée) | 19,5 | identique ; blocs gardés en hauteur : 23,3 |
+| tourné de 15° avec une correction (interpolée) | 14,6 | identique ; recopiée : 30,5 |
 
 Sur la mire lisse, l'identité passe de 1,9 à 0,4 niveau. Le vrai GPU suit la
 référence (`selfcheck`, cas `letterbox` : source plus grande, centrée, à

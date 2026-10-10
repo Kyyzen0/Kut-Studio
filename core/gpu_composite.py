@@ -283,22 +283,52 @@ def affine_inverse(m: Affine) -> Affine | None:
     return (ia, ib, ic, id_, -(ia * e + ic * f), -(ib * e + id_ * f))
 
 
+def _resampled_axes(layer: CompositeLayer) -> tuple[bool, bool]:
+    """``(x, y)`` : l'export rééchantillonne-t-il le calque YUV sur cet axe avant sa conversion ``format=rgba`` ?
+
+    Sans échelle de clip, ``scale`` et ``pad`` gardent la taille du cadre et la conversion se fait à taille égale :
+    rien n'est rééchantillonné, ``rotate`` et ``overlay`` interpolent ensuite l'image RVB. L'échelle du clip passe par
+    un ``scale`` animé qui rééchantillonne en YUV et convertit en même temps ; il recopie la chroma par paires en
+    largeur tant que la largeur ne change pas, et l'interpole toujours en hauteur. Un calque **tourné** avec des
+    effets : un effet qui ne travaille qu'en YUV (``eq``…) place ``rotate`` avant la conversion, qui rééchantillonne
+    alors les plans 4:2:0 ; le détail dépend de la négociation des formats de FFmpeg, on garde l'interpolation.
+    """
+    a, b, c, d, _e, _f = layer.matrix
+    resized_x = abs(math.hypot(a, b) - 1.0) > 1e-4
+    resized_y = abs(math.hypot(c, d) - 1.0) > 1e-4
+    turned = (abs(b) > 1e-6 or abs(c) > 1e-6) and not layer.program.is_identity
+    return (resized_x or turned, resized_x or resized_y or turned)
+
+
 def layer_chroma_grid(source: VideoSource, layer: CompositeLayer, canvas_width: int,
                       canvas_height: int) -> tuple[float, float]:
-    """Blocs de chroma où la passe prep lit la chroma sous-échantillonnée (``misc.xy``), ``(0, 0)`` : interpolée.
+    """Blocs de chroma où la passe prep lit la chroma sous-échantillonnée (``misc.xy``), 0 : interpolée sur cet axe.
 
     La règle de l'export (``docs/gpu-preview.md``, « Chroma 4:2:0 ») : la conversion ``format=rgba`` du calque
     (swscale, à taille égale) **recopie** chaque échantillon de chroma 4:2:0 sur son bloc 2×2, sur la grille du calque
-    à la taille du cadre (média adapté, bandes du ``pad`` sur des pixels pairs), avant ``rotate`` et ``overlay``. Le
-    moniteur lit donc la chroma une fois par bloc, au centre du bloc. Quand l'échelle du clip redimensionne le calque,
-    la conversion se fait dans ce ``scale`` (chemin redimensionné de swscale) : la chroma y est rééchantillonnée, et
-    l'interpolation bilinéaire en est le modèle le plus proche. Interpoler dans tous les cas, côté export, coûterait ×4
-    sur la conversion et dépend de la version de swscale (faux dans le code C de FFmpeg 7.1).
+    à la taille du cadre (média adapté, bandes du ``pad`` sur des pixels pairs). Le moniteur lit donc la chroma une
+    fois par bloc, au centre du bloc, sauf sur un axe que l'export rééchantillonne d'abord (:func:`_resampled_axes`) :
+    l'interpolation bilinéaire en est alors le modèle le plus proche. Mesuré sur une mire à grain, écart à l'export :
+    Scale Y 0,7 seul, 15,7 niveaux en gardant les blocs en largeur contre 25,1 en interpolant ; Scale X 0,7 seul, 19,5
+    en interpolant tout contre 23,3 en gardant les blocs en hauteur. Interpoler dans tous les cas, côté export,
+    coûterait ×4 sur la conversion et dépend de la version de swscale (faux dans le code C de FFmpeg 7.1).
     """
-    a, b, c, d, _e, _f = layer.matrix
-    if abs(math.hypot(a, b) - 1.0) > 1e-4 or abs(math.hypot(c, d) - 1.0) > 1e-4:
-        return (0.0, 0.0)
-    return source.chroma_grid(canvas_width, canvas_height)
+    grid = source.chroma_grid(canvas_width, canvas_height)
+    resampled_x, resampled_y = _resampled_axes(layer)
+    return (0.0 if resampled_x else grid[0], 0.0 if resampled_y else grid[1])
+
+
+def layer_composite_space(layer: CompositeLayer) -> int | None:
+    """Espace du calque lu par la passe composite, ``None`` : celui où les effets le laissent (YUV sans effet RVB).
+
+    L'ordre de l'export suit :func:`_resampled_axes`. Rien de rééchantillonné : le calque passe en RVB (``format=rgba``,
+    écrêté) **avant** que ``rotate`` et ``overlay`` ne l'interpolent ; le moniteur le convertit donc à la fin de ses
+    passes. Sinon, FFmpeg interpole le YUV puis convertit : la composite fait de même. Un étalonnage garde l'espace de
+    sa LUT.
+    """
+    if layer.grade_passes or layer.grade_lut or any(_resampled_axes(layer)):
+        return None
+    return SPACE_RGB
 
 
 def _supersample(source: VideoSource, render: tuple[int, int], fit: tuple[float, ...], scale: float) -> float:
@@ -340,6 +370,7 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
             (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
             chroma_grid=layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height),
+            final_space=layer_composite_space(layer),
         )
         if layer.grade_passes:
             domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
@@ -387,12 +418,14 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
 
 
 def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, source_height, matrix, fit_uv,
-                   program, pixel, chroma, size, taps, index, layer_pixel=None, chroma_grid=(0.0, 0.0)):
+                   program, pixel, chroma, size, taps, index, layer_pixel=None, chroma_grid=(0.0, 0.0),
+                   final_space: int | None = None):
     """Passes « prep » puis voisinage d'un calque ; retourne ``(texture, espace)`` du résultat.
 
     ``pixel`` : texels par pixel de l'export **à l'échelle du clip** (flou, bloom, aberration) ; ``layer_pixel`` :
     texels par pixel du calque avant son échelle (heat haze, qui déforme l'image du clip elle-même) ;
-    ``chroma_grid`` : :func:`layer_chroma_grid`."""
+    ``chroma_grid`` : :func:`layer_chroma_grid` ; ``final_space`` : espace imposé à la sortie de la dernière passe
+    (``None`` : celui où les effets laissent le calque)."""
     layer_pixel = layer_pixel or pixel
     width, height = size
     work_a, work_b = f"{name}a", f"{name}b"
@@ -400,7 +433,7 @@ def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, so
     start_space = SPACE_YUV if layout.is_yuv else SPACE_RGB
     pad = (16 / 255, 128 / 255, 128 / 255, 1.0) if layout.is_yuv else (0.0, 0.0, 0.0, 1.0)
     segment = program.segments[0]
-    out_space = SPACE_YUV if program.neighborhood else _end_space(start_space, segment)
+    out_space = SPACE_YUV if program.neighborhood else _final(final_space, _end_space(start_space, segment))
     passes.append(PassSpec("prep", work_a, prep_inputs, Uniforms(
         yuv_to_rgb=matrix,
         target=(float(width), float(height), 1.0, taps),
@@ -415,7 +448,8 @@ def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, so
     for step, op in enumerate(program.neighborhood):
         textures.setdefault(work_b, TextureSpec(WORKING_FORMAT, width, height))
         following = program.segments[step + 1]
-        next_space = SPACE_YUV if step + 1 < len(program.neighborhood) else _end_space(SPACE_YUV, following)
+        next_space = SPACE_YUV if step + 1 < len(program.neighborhood) \
+            else _final(final_space, _end_space(SPACE_YUV, following))
         if isinstance(op, BlurOp):
             for axis, (dx, dy) in enumerate(((1.0, 0.0), (0.0, 1.0))):
                 rl, wl = gblur_weights(op.sigma * pixel[axis])
@@ -609,6 +643,10 @@ def _color_graph_passes(passes, textures, name, current, space, domain, layer: C
     return result, result_space
 
 
+def _final(forced: int | None, space: int) -> int:
+    return space if forced is None else forced
+
+
 def _end_space(space: int, ops) -> int:
     for op in ops:
         space = op.space
@@ -737,7 +775,7 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
     """
     import numpy as np
 
-    from .gpu_effects import reference_layer
+    from .gpu_effects import _convert, reference_layer
     from .gpu_grade import sample_atlas
 
     tables = luts or {}
@@ -800,21 +838,28 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         grading = not programmed and bool(layer.grade_lut) and layer.grade_lut in tables
         forward = affine_mul((scale, 0, 0, scale, 0, 0), affine_mul(layer.matrix, (1 / scale, 0, 0, 1 / scale, 0, 0)))
         texel = (scale / abs(layer.effect_scale[0]), scale / abs(layer.effect_scale[1]))
+        # ``rgb`` : le calque tel que la passe composite le lit, dans l'espace ``layer_space`` où les passes l'ont
+        # laissé (YUV sans effet qui passe en RVB) ; la composite l'interpole **puis** le convertit, comme le shader
+        # (convertir d'abord écrêtait les couleurs hors gamut avant l'interpolation : jusqu'à 68 niveaux d'écart
+        # sur une mire à chroma aléatoire, calque réduit en hauteur).
+        layer_space = SPACE_RGB
         if layout.is_yuv:
-            rgb = reference_layer(
+            pixels, space = reference_layer(
                 layer_px, layer.program, yuv_to_rgb=matrix,
                 pixel_scale=texel,
                 layer_scale=(scale, scale),
                 chroma_scale=source.chroma_scale,
-                keep_space=grading or programmed,
+                keep_space=True,
             )
             if grading:
-                pixels, space = rgb
                 rgb = graded(pixels, space, SPACE_YUV, layer.grade_lut, matrix, layer.grade_split, forward)
             elif programmed:
-                pixels, space = rgb
                 rgb = _reference_color_graph(np, pixels, space, SPACE_YUV, layer, matrix, texel, forward, graded,
                                              mattes or {})
+            else:
+                rgb, layer_space = pixels, space
+                if layer_composite_space(layer) == SPACE_RGB and space != SPACE_RGB:
+                    rgb, layer_space = _convert(np, pixels, matrix), SPACE_RGB
         elif programmed:
             rgb = _reference_color_graph(np, layer_px, SPACE_RGB, SPACE_RGB, layer, matrix, texel, forward, graded,
                                          mattes or {})
@@ -829,6 +874,8 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         lx = a * cx + c * cy + e
         ly = b * cx + d * cy + f
         color = _bilinear(np, rgb, lx, ly)
+        if layer_space != SPACE_RGB:
+            color = _convert(np, color, matrix)
         coverage = np.clip(np.minimum(np.minimum(lx, width - lx), np.minimum(ly, height - ly)) + 0.5, 0.0, 1.0)
         alpha = coverage * float(layer.opacity)
         if layer.matte and mattes is not None and layer.matte in mattes:

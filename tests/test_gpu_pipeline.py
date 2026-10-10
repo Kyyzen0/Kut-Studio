@@ -43,6 +43,8 @@ from core.gpu_composite import (
 from core.gpu_effects import (
     OP_COLOR_MATRIX,
     OP_EQ,
+    SPACE_RGB,
+    SPACE_YUV,
     BlurOp,
     SharpenOp,
     eq_plane,
@@ -361,10 +363,12 @@ def test_uniform_block_layout_is_stable():
 
 def test_prep_reads_420_chroma_once_per_block_of_the_layer():
     """``misc.xy`` de la passe prep : blocs de chroma du calque (taille du cadre), quelles que soient la résolution de
-    rendu et la taille de la source, même tourné ou déplacé ; rien (chroma interpolée) pour une source RVB ou un
-    calque que l'échelle du clip redimensionne (l'export rééchantillonne alors sa chroma)."""
-    def prep_misc(source, matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)):
-        frame = CompositeFrame(320, 180, 0.5, (_layer(matrix=matrix),), (source,))
+    rendu et la taille de la source, même tourné ou déplacé ; rien (chroma interpolée) pour une source RVB. Un calque
+    que l'échelle du clip redimensionne garde ses blocs en largeur tant que sa largeur ne change pas (le ``scale`` de
+    l'export y recopie la chroma par paires), jamais en hauteur (il l'y interpole). Tourné avec des effets : chroma
+    interpolée (l'export peut tourner les plans 4:2:0 avant la conversion)."""
+    def prep_misc(source, matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), effects=()):
+        frame = CompositeFrame(320, 180, 0.5, (_layer(matrix=matrix, program=program_for(list(effects))),), (source,))
         prep = next(step for step in plan_frame(frame).passes if step.shader == "prep")
         return struct.unpack_from("<4f", prep.uniforms, 76 * 4)  # trois mat4, puis target … blur : misc
 
@@ -373,7 +377,26 @@ def test_prep_reads_420_chroma_once_per_block_of_the_layer():
     assert prep_misc(VideoSource("v", "p010", 320, 180)) == (160.0, 90.0, 0.0, 0.0)
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), turned) == (160.0, 90.0, 0.0, 0.0)
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.7, 0.0, 0.0, 0.7, 48.0, 27.0)) == (0.0,) * 4
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (1.0, 0.0, 0.0, 0.6, 0.0, 36.0)) == (160.0, 0.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.6, 0.0, 0.0, 1.0, 64.0, 0.0)) == (0.0,) * 4
+    sepia = [E(EffectType.SEPIA)]
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), effects=sepia) == (160.0, 90.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), turned, sepia) == (0.0,) * 4
     assert prep_misc(VideoSource("v", "rgba", 320, 180)) == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_unresized_layers_reach_the_composite_in_rgb_like_the_export():
+    """L'export convertit en RVB (écrêté) avant que ``rotate`` / ``overlay`` n'interpolent un calque sans échelle ; un
+    calque redimensionné est interpolé en YUV par son ``scale``, puis converti. La passe qui précède la composite suit.
+    Sur la mire à grain tournée de 15° : 0,76 niveau d'écart à l'export en RVB, 2,7 en interpolant le YUV."""
+    def composite_space(matrix):
+        frame = CompositeFrame(320, 180, 1.0, (_layer(matrix=matrix),), (VideoSource("v", "yuv420p", 320, 180),))
+        composite = next(step for step in plan_frame(frame).passes if step.shader == "composite")
+        return struct.unpack_from("<f", composite.uniforms, 64 * 4)[0]  # state.x : espace lu
+
+    turned = (math.cos(0.3), math.sin(0.3), -math.sin(0.3), math.cos(0.3), 40.0, -7.0)
+    assert composite_space(turned) == SPACE_RGB
+    assert composite_space((0.7, 0.0, 0.0, 0.7, 48.0, 27.0)) == SPACE_YUV
 
 
 def test_inverse_map_targets_layer_pixels():
@@ -429,11 +452,18 @@ def test_reference_composites_geometry_opacity_and_mattes():
     # de clip, chroma recopiée par bloc 2×2 du calque, comme l'export : 0,2 à 0,8 mesuré, contre 19 à 32 en
     # l'interpolant (l'ancien moniteur). Avec une échelle, l'export rééchantillonne la chroma dans son ``scale`` :
     # interpolée, 12,2 mesuré (21,3 en la recopiant) ; une approximation, bornée pour qu'elle ne se dégrade pas.
+    # Une seule dimension redimensionnée : ce ``scale`` recopie la chroma par paires en largeur, l'interpole en
+    # hauteur. Scale Y seul : blocs gardés en largeur, 15,7 (25,1 tout interpolé) ; Scale X seul : tout interpolé,
+    # 19,5 (23,3 en gardant les blocs en hauteur). Tourné avec un effet YUV : chroma interpolée, 14,6 (30,5 recopiée).
     ({}, [], 1.5, "grain"),
     ({"rotation": 15.0, "position_x": 0.1}, [], 1.5, "grain"),
     ({}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4)], 1.5, "grain"),
     ({}, [E(EffectType.HEAT_HAZE, amplitude=4.0, frequency=0.07, speed=0.0, top=0.1, span=0.5)], 1.5, "grain"),
     ({"position_x": 0.1, "position_y": -0.05, "scale": 0.7, "rotation": 15.0, "opacity": 0.8}, [], 14.0, "grain"),
+    ({"scale_y": 0.7}, [], 18.0, "grain"),
+    ({"scale_x": 0.7}, [], 21.0, "grain"),
+    ({"rotation": 15.0}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4)], 16.0,
+     "grain"),
 ])
 def test_gpu_preview_matches_the_export_frame(tmp_path, transform, effects, color_limit, pattern):
     """Même clip, même instant : image de l'export contre image du pipeline GPU.

@@ -40,6 +40,8 @@ def cases():
          (0.5, 0.0, 0.0, 0.5, 40.0, 30.0), 1.0, BlendMode.DIFFERENCE),
         ("black_white_overlay", [effect(EffectType.BLACK_AND_WHITE)], (1.0, 0.0, 0.0, 1.0, 12.0, -6.0), 0.6,
          BlendMode.OVERLAY),
+        # Hauteur seule réduite (Scale Y) : chroma 4:2:0 en blocs sur la largeur, interpolée en hauteur.
+        ("squash_y", [], (1.0, 0.0, 0.0, 0.6, 0.0, 36.0), 1.0, BlendMode.NORMAL),
         # Vidéo sociale : bloom (4 passes), aberration chromatique, heat haze, puis une vignette après chacun.
         ("glow_aberration", [effect(EffectType.GLOW, threshold=0.5, radius=4.0, intensity=1.2),
                              effect(EffectType.CHROMATIC_ABERRATION, intensity=4.0),
