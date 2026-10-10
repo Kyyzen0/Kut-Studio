@@ -62,15 +62,18 @@ jobs:
         run: python -m mypy
 
       # --timeout : un test qui se bloque (thread ou FFmpeg orphelin) échoue au lieu de geler la CI 30 minutes.
+      # -o faulthandler_timeout : 3 min avant, la pile Python de tous les threads du worker part dans le journal. C'est
+      # la seule trace d'un blocage natif qui tient le GIL (le minuteur de pytest-timeout ne part pas), et sous xdist
+      # pytest-timeout tue le worker sans que sa propre pile n'atteigne le journal. Le test n'est pas interrompu.
       # La couverture n'est mesurée qu'une fois, sur Linux comme mypy : le code propre à macOS / Windows y apparaît
       # non couvert, c'est attendu (docs/coverage.md). Les autres OS lancent la suite sans instrumentation.
       - name: Run test suite (with coverage)
         if: runner.os == 'Linux'
-        run: python -m pytest -q -n auto --timeout=600 --durations=15 --cov --cov-branch --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=json
+        run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420 --durations=15 --cov --cov-branch --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=json
 
       - name: Run test suite
         if: runner.os != 'Linux'
-        run: python -m pytest -q -n auto --timeout=600 --durations=15
+        run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420 --durations=15
 
       # Cliquet : le total (lignes + branches) ne descend pas sous tests/coverage_baseline.json. Le texte est gardé
       # pour le résumé de l'exécution, écrit même quand le cliquet échoue (c'est là qu'il sert).
@@ -181,7 +184,7 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip -r requirements-dev.txt
 
       - name: Run test suite
-        run: python -m pytest -q -n auto --timeout=600 --durations=15 -rfE
+        run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420 --durations=15 -rfE
 
   # Couverture réelle des sous-titres (libass) sur macOS. Le FFmpeg Homebrew du job « macos-latest » ci-dessus
   # n'a pas libass : les tests de sous-titres s'y sautent. Ce job installe ffmpeg-full (bouteille de
@@ -285,8 +288,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # --timeout : le premier rendu libass construit le cache de polices (fontconfig), lent sur un runner neuf.
+      # faulthandler_timeout, sous ce délai : la pile d'un blocage natif, comme pour la matrice ci-dessus.
       - name: Run subtitle tests (libass required)
-        run: python -m pytest -q -m libass -rs -p no:cacheprovider --timeout=300 --junitxml="$RUNNER_TEMP/libass-junit.xml"
+        run: python -m pytest -q -m libass -rs -p no:cacheprovider --timeout=300 -o faulthandler_timeout=240 --junitxml="$RUNNER_TEMP/libass-junit.xml"
 
       # Défense en profondeur : même si la variable était retirée, un job où des tests sont sautés ou trop peu
       # nombreux (marque perdue) ne doit pas rester vert.

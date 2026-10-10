@@ -27,6 +27,9 @@ ensuite déclenche `.github/workflows/release.yml`.
     deviennent les nœuds d'un seul clip, avec la même image. *Nouvelle composition* en crée une vide.
   - L'export et l'aperçu à l'arrêt sont exacts ; en lecture, le moniteur montre la source principale.
   - Les projets passent au format 17 : une version plus ancienne de Kut-Studio ne les ouvre plus.
+- Développement : un test bloqué en CI écrit la pile Python de tous ses threads dans le journal avant son délai, même
+  quand un blocage natif tient le GIL ; dans le workflow de release, l'étape des tests échoue à 45 min au lieu de
+  laisser le job s'épuiser à 75 min ([docs/updates.md](docs/updates.md)).
 
 ## [0.3.0] - 2026-10-10
 
