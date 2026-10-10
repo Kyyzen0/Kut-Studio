@@ -135,6 +135,21 @@ def test_the_key_colour_is_sent_only_once_it_is_a_whole_hexadecimal_colour(qtbot
     assert sent == ["#00FF7F"]
 
 
+def _fake_renders(engine, tmp_path) -> list:
+    """Rendus instantanés : seul l'ordonnancement est testé ici."""
+    rendered: list = []
+
+    def fake_render(job, token):
+        rendered.append(job.key.clip_id)
+        out = tmp_path / f"render-{len(rendered)}.mp4"
+        out.write_bytes(b"\0" * 64)
+        return str(out)
+
+    engine.render_fn = fake_render
+    engine._uses_default_render = False
+    return rendered
+
+
 def test_playback_reads_the_rendered_composition_and_undo_reuses_it(window, qtbot, monkeypatch, tmp_path):
     from core.composition_cache import cache_owner
     from core.sequences import nested_source_time
@@ -143,16 +158,7 @@ def test_playback_reads_the_rendered_composition_and_undo_reuses_it(window, qtbo
     _ids, result = _converted(window)
     clip_id = result.clip.id
     engine = window.preview_engine
-    rendered = []
-
-    def fake_render(job, token):                           # instantané : seul l'ordonnancement est testé ici
-        rendered.append(job.key.clip_id)
-        out = tmp_path / f"render-{len(rendered)}.mp4"
-        out.write_bytes(b"\0" * 64)
-        return str(out)
-
-    engine.render_fn = fake_render
-    engine._uses_default_render = False
+    rendered = _fake_renders(engine, tmp_path)
     shown = []
     monkeypatch.setattr(window.preview_panel, "preview_at",
                         lambda path, t, playing=False: shown.append((path, t, playing)))
@@ -187,3 +193,80 @@ def test_playback_reads_the_rendered_composition_and_undo_reuses_it(window, qtbo
     window._schedule_composition_caches(window.playhead_seconds)
     assert ready() is not None and ready()[0] == chunk, "annuler : le morceau d'avant resservi"
     assert len(rendered) == renders, "sans nouveau rendu"
+
+
+def test_a_replaced_media_file_or_an_expired_chunk_is_not_served(window, qtbot, tmp_path):
+    import os
+
+    from core.sequences import nested_source_time
+    from core.timeline_operations import find_clip
+
+    _ids, result = _converted(window)
+    clip_id = result.clip.id
+    engine = window.preview_engine
+    rendered = _fake_renders(engine, tmp_path)
+    clip = find_clip(window.project, clip_id)
+    media_id = next(node.asset_id for node in clip.composition.graph.nodes if isinstance(node, MediaNode))
+    asset = next(asset for asset in window.project.media_assets if asset.id == media_id)
+    asset.path = str(tmp_path / "source.mp4")
+    (tmp_path / "source.mp4").write_bytes(b"v1")
+    window.is_playing = False
+    window.playhead_seconds = clip.timeline_start + 0.5
+    inner = nested_source_time(clip, window.playhead_seconds)
+
+    def ready():
+        return window._composition_cache_source(find_clip(window.project, clip_id), inner)
+
+    window._schedule_composition_caches(window.playhead_seconds)
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    first, renders = ready()[0], len(rendered)
+    (tmp_path / "source.mp4").write_bytes(b"version 2")    # remplacé au même chemin
+    os.utime(tmp_path / "source.mp4", ns=(1, 1))
+    window._schedule_composition_caches(window.playhead_seconds)
+    assert ready() is None or ready()[0] != first, "l'ancien rendu n'est plus servi"
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    assert ready()[0] != first and len(rendered) > renders
+
+    window._comp_caches[clip_id].looked_up.clear()         # repasse par le cache disque
+    engine.cache.ttl_seconds = 1e-6                        # morceau périmé
+    assert ready() is None
+
+
+def test_a_proxy_that_stops_being_served_refreshes_the_composition(window, qtbot, monkeypatch, tmp_path):
+    """Le gestionnaire de proxys garde son état deux secondes : juste après un remplacement, il sert encore l'ancien
+    proxy. La signature suit ce qui est réellement lu ; quand l'ancien proxy n'est plus servi, les morceaux sont
+    refaits."""
+    from core.sequences import nested_source_time
+    from core.timeline_operations import find_clip
+
+    _ids, result = _converted(window)
+    clip_id = result.clip.id
+    rendered = _fake_renders(window.preview_engine, tmp_path)
+    clip = find_clip(window.project, clip_id)
+    media_id = next(node.asset_id for node in clip.composition.graph.nodes if isinstance(node, MediaNode))
+    asset = next(asset for asset in window.project.media_assets if asset.id == media_id)
+    source, proxy = tmp_path / "source.mp4", tmp_path / "source.proxy.mp4"
+    source.write_bytes(b"v1")
+    proxy.write_bytes(b"proxy of v1")
+    asset.path = str(source)
+    served = {"proxy": True}
+    monkeypatch.setattr(window, "_preview_resolver", lambda: (
+        lambda path, need_audio=False: str(proxy) if path == str(source) and served["proxy"] else path))
+    window.is_playing = False
+    window.playhead_seconds = clip.timeline_start + 0.5
+    inner = nested_source_time(clip, window.playhead_seconds)
+
+    def ready():
+        return window._composition_cache_source(find_clip(window.project, clip_id), inner)
+
+    window._schedule_composition_caches(window.playhead_seconds)
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    stale = ready()[0]
+    source.write_bytes(b"version 2")                       # remplacé ; le proxy, lui, est encore servi
+    window._schedule_composition_caches(window.playhead_seconds)
+    renders = len(rendered)
+    served["proxy"] = False                                # deux secondes plus tard : l'original est lu
+    window._schedule_composition_caches(window.playhead_seconds)
+    assert ready() is None or ready()[0] != stale
+    qtbot.waitUntil(lambda: ready() is not None, timeout=5000)
+    assert ready()[0] != stale and len(rendered) > renders

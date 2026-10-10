@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ LOGGER = logging.getLogger(__name__)
 _PRIORITY_AT_PLAYHEAD = 5
 _PRIORITY_SAME_COMPOSITION = 30
 _PRIORITY_OTHER = 100
+
+# Un morceau lu en lecture repasse par le cache disque (durée de vie, dernier usage pour le LRU) au plus une fois par
+# seconde : à chaque image, ce serait une écriture sur disque 25 fois par seconde.
+_LOOKUP_SECONDS = 1.0
 
 
 @dataclass
@@ -30,6 +35,7 @@ class _CompositionCache:
     signature: tuple
     jobs: list
     paths: dict[int, str] = field(default_factory=dict)
+    looked_up: dict[int, float] = field(default_factory=dict)
 
 
 class CompositionCacheMixin:
@@ -45,14 +51,24 @@ class CompositionCacheMixin:
         views = self._composition_preview_overrides() or {}
         return str(getattr(views.get(clip_id), "node_id", "") or "")
 
-    def _composition_cache_signature(self, site) -> tuple:
-        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, médias lus."""
+    def _composition_cache_signature(self, site, resolver=None) -> tuple:
+        """Ce qui, hors du contenu de la composition, change ses morceaux : nœud montré, qualité, cadre, et les fichiers
+        **réellement lus** avec leur identité sur disque (date, taille) : chaque média et ce que ``resolver`` (les
+        proxys) sert à sa place, pour l'image et pour le son. Un fichier remplacé au même chemin, ou un proxy qui cesse
+        d'être servi (le gestionnaire garde son état deux secondes), change la signature : les morceaux sont refaits,
+        comme les segments fidèles. C'est ce que lisent les jobs, pas seulement la source."""
         paths = {asset.id: asset.path for asset in self.project.media_assets}
+        files: set[tuple] = set()
+        for asset_id in site.clip.media_ids():
+            path = paths.get(asset_id, "")
+            files.add(_file_identity(path))
+            if resolver is not None and path:
+                files.add(_file_identity(resolver(path)))
+                files.add(_file_identity(resolver(path, need_audio=True)))
         sequence = site.sequence
         return (
             self._composition_view_of(site.clip.id), str(self._render_quality), sequence.width, sequence.height,
-            float(sequence.fps), str(self._flow_preference()),
-            tuple(sorted(paths.get(asset_id, "") for asset_id in site.clip.media_ids())),
+            float(sequence.fps), str(self._flow_preference()), tuple(sorted(files, key=repr)),
         )
 
     def _schedule_composition_caches(self, center: float) -> None:
@@ -80,7 +96,7 @@ class CompositionCacheMixin:
         for site in composition_sites(self.project):
             clip = site.clip
             seen.add(clip.id)
-            signature = self._composition_cache_signature(site)
+            signature = self._composition_cache_signature(site, resolver)
             cache = caches.get(clip.id)
             if cache is None or cache.composition is not clip.composition or cache.signature != signature:
                 try:
@@ -150,7 +166,25 @@ class CompositionCacheMixin:
         path = cache.paths.get(index)
         if path is None:
             return None
-        if not os.path.isfile(path):                        # évincé du cache disque : il sera redemandé
+        now = time.monotonic()
+        if now - cache.looked_up.get(index, float("-inf")) >= _LOOKUP_SECONDS:
+            # Par le cache disque : un morceau périmé n'est plus servi, celui qu'on lit reste le plus récent du LRU.
+            engine = getattr(self, "preview_engine", None)
+            found = engine.cache.lookup(cache.jobs[index].key) if engine is not None else None
+            cache.looked_up[index] = now
+            if found is None:
+                cache.paths.pop(index, None)                # il sera redemandé à l'arrêt
+                return None
+            path = cache.paths[index] = str(found)
+        elif not os.path.isfile(path):                      # évincé entre deux passages par le cache
             cache.paths.pop(index, None)
             return None
         return path, index * CHUNK_SECONDS, (index + 1) * CHUNK_SECONDS
+
+
+def _file_identity(path: str) -> tuple:
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return (path, None, None)
+    return (path, stat.st_mtime_ns, stat.st_size)
