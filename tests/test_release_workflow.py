@@ -76,6 +76,19 @@ def test_a_release_is_built_from_a_green_state():
     assert "KUT_STUDIO_UPDATE_CHECK: \"off\"" in build
 
 
+def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
+    """v0.3.0 : un blocage natif sous Windows a gelé 50 min sans trace, jusqu'à l'annulation du job."""
+    build = _jobs()["build"]
+    suites = [step for step in _steps(build) if "python -m pytest" in step]
+    assert len(suites) == 1
+    timeout = re.search(r"--timeout=(\d+)\b", suites[0])
+    dump = re.search(r"-o faulthandler_timeout=(\d+)\b", suites[0])
+    assert timeout and dump and 0 < int(dump.group(1)) < int(timeout.group(1))
+    step_minutes = re.search(r"^\s+timeout-minutes: (\d+)\s*$", suites[0], re.MULTILINE)
+    job_minutes = re.search(r"^    timeout-minutes: (\d+)\s*$", build, re.MULTILINE)
+    assert step_minutes and job_minutes and int(step_minutes.group(1)) < int(job_minutes.group(1))
+
+
 def test_only_the_publish_job_can_write_and_only_for_a_tag():
     text = _text()
     assert re.search(r"^permissions:\n  contents: read$", text, re.MULTILINE)

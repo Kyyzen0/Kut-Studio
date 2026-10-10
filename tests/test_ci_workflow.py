@@ -142,3 +142,18 @@ def test_the_coverage_ratchet_blocks_the_linux_job_and_reports_even_on_failure()
 def test_the_libass_job_does_not_measure_coverage() -> None:
     job = _without_comments(_jobs()["macos-libass"])
     assert "--cov" not in job and "coverage_ratchet" not in job
+
+
+def test_every_suite_dumps_the_python_stacks_before_its_per_test_timeout() -> None:
+    """Un blocage natif qui tient le GIL fige le minuteur de pytest-timeout : seul faulthandler laisse une trace.
+
+    ``faulthandler_timeout`` écrit depuis un thread C qui n'a pas besoin du GIL, sur le stderr hérité du worker
+    xdist ; il doit partir avant ``--timeout``, sinon un blocage ordinaire tue le worker sans pile dans le journal.
+    """
+    commands = re.findall(r"python -m pytest .*", _without_comments(WORKFLOW.read_text(encoding="utf-8")))
+    assert len(commands) == 4, commands
+    for command in commands:
+        timeout = re.search(r"--timeout=(\d+)\b", command)
+        dump = re.search(r"-o faulthandler_timeout=(\d+)\b", command)
+        assert timeout and dump, command
+        assert 0 < int(dump.group(1)) < int(timeout.group(1)), command
