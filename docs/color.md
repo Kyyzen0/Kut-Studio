@@ -119,7 +119,7 @@ une roue a bougé, et le fichier n'a la clé `wheels` que dans ce cas.
 - **Fenêtres, flou et netteté.** Un nœud vaut `I + K·(D(G(I)) − I)` : `G` son réglage, `D` le flou (`gblur`) puis la
   netteté, `K` sa clé (qualifieur × fenêtres, `blend` multiply). La netteté est une `convolution` 5 × 5 sur R, V et B,
   `I + a·(I − B∗I)` avec `B` le noyau binomial d'`unsharp` : `unsharp` ne lit pas le `gbrp`, FFmpeg aurait inséré une
-  conversion YUV. Mesuré égal à la formule au niveau près ; au bord, `convolution` réfléchit l'image depuis FFmpeg 7 (le moniteur aussi), FFmpeg 6.1 répète le pixel du bord.
+  conversion YUV. Mesuré égal à la formule au niveau près ; au bord, `convolution` réfléchit l'image (le moniteur aussi) sous FFmpeg 7.1, 8 et 9, alors que le FFmpeg 6.1 d'Ubuntu 24.04 y donne un autre bord de 2 pixels.
   Les fenêtres sont des formes de masque (`core.compositing.Mask`), en espace calque comme les masques du clip : leur
   matte est rastérisée par le même code (`core.mograph_ffmpeg.video_window_label`), avec la même animation
   (`mask.<id>.*` du clip, dont les images-clés que dérive une liaison de tracking). L'étalonnage s'applique après

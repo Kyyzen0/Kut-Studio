@@ -110,22 +110,23 @@ def test_a_node_blur_is_gblur_on_the_corrected_picture():
 def test_a_node_sharpen_follows_the_unsharp_formula_on_every_channel():
     """``I + a·(I − B∗I)`` (``B`` : binomial 5×5), sur R, V et B, arrondi une fois : exact à l'intérieur de l'image.
 
-    Au bord (2 pixels), ``convolution`` réfléchit l'image depuis FFmpeg 7 (le pixel du bord n'est pas répété, comme la
-    passe du moniteur) ; FFmpeg 6.1 (Ubuntu 24.04) répète le pixel du bord. Les deux sont acceptés."""
+    Au bord (2 pixels), ``convolution`` réfléchit l'image (le pixel du bord n'est pas répété, comme la passe du
+    moniteur) : mesuré sous FFmpeg 7.1 (x86 et arm64), 8 et 9. Le FFmpeg 6.1.1 d'Ubuntu 24.04 donne un autre bord
+    (jusqu'à 44 niveaux d'écart sur ces 2 pixels) alors que le code de ``convolution`` y est le même ; seul l'intérieur y
+    est vérifié."""
+    from core.export_engine import _ffmpeg_major_version
+
     amount = 1.25
     sharpened = _render(_build_color_grade_filters(_windowed(ColorGrade(), sharpen=amount)))
     image = _IMAGE.astype(float)
     weights = np.array([1, 4, 6, 4, 1], dtype=float) / 16.0
-
-    def expected(mode: str) -> np.ndarray:
-        padded = np.pad(image, ((2, 2), (2, 2), (0, 0)), mode=mode)
-        rows = sum(weights[i] * padded[i:i + image.shape[0], :, :] for i in range(5))
-        blurred = sum(weights[j] * rows[:, j:j + image.shape[1], :] for j in range(5))
-        return np.clip(np.floor(image + amount * (image - blurred) + 0.5), 0, 255)
-
-    reflected, repeated = expected("reflect"), expected("edge")
-    assert np.array_equal(sharpened[2:-2, 2:-2], reflected[2:-2, 2:-2]), "intérieur : la formule, au niveau près"
-    assert np.array_equal(sharpened, reflected) or np.array_equal(sharpened, repeated), "bord : réfléchi ou répété"
+    padded = np.pad(image, ((2, 2), (2, 2), (0, 0)), mode="reflect")
+    rows = sum(weights[i] * padded[i:i + image.shape[0], :, :] for i in range(5))
+    blurred = sum(weights[j] * rows[:, j:j + image.shape[1], :] for j in range(5))
+    expected = np.clip(np.floor(image + amount * (image - blurred) + 0.5), 0, 255)
+    assert np.array_equal(sharpened[2:-2, 2:-2], expected[2:-2, 2:-2]), "intérieur : la formule, au niveau près"
+    if (_ffmpeg_major_version() or 0) >= 7:
+        assert np.array_equal(sharpened, expected), "bord : l'image réfléchie"
 
 
 @needs_ffmpeg
