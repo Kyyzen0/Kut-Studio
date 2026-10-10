@@ -98,6 +98,11 @@ class VideoSource:
         plane = spec.planes[1]
         return (float(plane.width_divisor), float(plane.height_divisor))
 
+    def chroma_grid(self, canvas_width: int, canvas_height: int) -> tuple[float, float]:
+        """Blocs de chroma d'un calque de ``canvas_width`` × ``canvas_height`` pixels, par axe (0 : pas de blocs)."""
+        cx, cy = self.chroma_scale
+        return (canvas_width / cx if cx > 1.0 else 0.0, canvas_height / cy if cy > 1.0 else 0.0)
+
 
 @dataclass(frozen=True)
 class CompositeLayer:
@@ -278,6 +283,24 @@ def affine_inverse(m: Affine) -> Affine | None:
     return (ia, ib, ic, id_, -(ia * e + ic * f), -(ib * e + id_ * f))
 
 
+def layer_chroma_grid(source: VideoSource, layer: CompositeLayer, canvas_width: int,
+                      canvas_height: int) -> tuple[float, float]:
+    """Blocs de chroma où la passe prep lit la chroma sous-échantillonnée (``misc.xy``), ``(0, 0)`` : interpolée.
+
+    La règle de l'export (``docs/gpu-preview.md``, « Chroma 4:2:0 ») : la conversion ``format=rgba`` du calque
+    (swscale, à taille égale) **recopie** chaque échantillon de chroma 4:2:0 sur son bloc 2×2, sur la grille du calque
+    à la taille du cadre (média adapté, bandes du ``pad`` sur des pixels pairs), avant ``rotate`` et ``overlay``. Le
+    moniteur lit donc la chroma une fois par bloc, au centre du bloc. Quand l'échelle du clip redimensionne le calque,
+    la conversion se fait dans ce ``scale`` (chemin redimensionné de swscale) : la chroma y est rééchantillonnée, et
+    l'interpolation bilinéaire en est le modèle le plus proche. Interpoler dans tous les cas, côté export, coûterait ×4
+    sur la conversion et dépend de la version de swscale (faux dans le code C de FFmpeg 7.1).
+    """
+    a, b, c, d, _e, _f = layer.matrix
+    if abs(math.hypot(a, b) - 1.0) > 1e-4 or abs(math.hypot(c, d) - 1.0) > 1e-4:
+        return (0.0, 0.0)
+    return source.chroma_grid(canvas_width, canvas_height)
+
+
 def _supersample(source: VideoSource, render: tuple[int, int], fit: tuple[float, ...], scale: float) -> float:
     """Taps par axe pour qu'une forte réduction ne scintille pas (bilinéaire seul : alias)."""
     shown_w = max(1.0, (fit[2] - fit[0]) * scale)
@@ -316,6 +339,7 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             passes, textures, f"layer{index}", (f"src:{layer.source}",), layout, source.width, source.height,
             matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
             (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
+            chroma_grid=layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height),
         )
         if layer.grade_passes:
             domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
@@ -363,11 +387,12 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
 
 
 def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, source_height, matrix, fit_uv,
-                   program, pixel, chroma, size, taps, index, layer_pixel=None):
+                   program, pixel, chroma, size, taps, index, layer_pixel=None, chroma_grid=(0.0, 0.0)):
     """Passes « prep » puis voisinage d'un calque ; retourne ``(texture, espace)`` du résultat.
 
     ``pixel`` : texels par pixel de l'export **à l'échelle du clip** (flou, bloom, aberration) ; ``layer_pixel`` :
-    texels par pixel du calque avant son échelle (heat haze, qui déforme l'image du clip elle-même)."""
+    texels par pixel du calque avant son échelle (heat haze, qui déforme l'image du clip elle-même) ;
+    ``chroma_grid`` : :func:`layer_chroma_grid`."""
     layer_pixel = layer_pixel or pixel
     width, height = size
     work_a, work_b = f"{name}a", f"{name}b"
@@ -382,6 +407,7 @@ def _effect_passes(passes, textures, name, prep_inputs, layout, source_width, so
         source=(float(source_width), float(source_height), layout.value_scale, float(layout.mode)),
         fit=fit_uv, pad=pad,
         state=(float(start_space), float(out_space), float(len(segment)), 1.0 if layout.swizzle_bgra else 0.0),
+        misc=(float(chroma_grid[0]), float(chroma_grid[1]), 0.0, 0.0),
         ops=segment,
     ).pack(), index))
     current, other = work_a, work_b
@@ -703,8 +729,9 @@ def _reference_color_graph(np, pixels, space: int, domain: int, layer: Composite
 def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = None, luts: dict | None = None):
     """Image RVB (H, W, 3) que les passes de :func:`plan_frame` doivent produire.
 
-    ``sources[id]`` : tableau (h, w, 3) des codes YUV normalisés (chroma pleine
-    résolution) — ou RVB pour une source ``rgba``/``bgra``. ``mattes[clé]`` :
+    ``sources[id]`` : tableau (h, w, 3) des codes YUV normalisés à pleine résolution, la chroma 4:2:0 **recopiée**
+    sur ses blocs 2×2 (``tests.gpu_harness.reference_codes``) : la référence en relit un échantillon par bloc, comme
+    la texture de chroma du GPU — ou RVB pour une source ``rgba``/``bgra``. ``mattes[clé]`` :
     tableau (H, W) d'alpha 0..1 à la résolution de rendu. ``luts[clé]`` : atlas
     d'étalonnage (:func:`core.gpu_grade.atlas_array`) des calques qui ont un ``grade_lut``.
     """
@@ -755,6 +782,18 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         fv = (v - layer.fit[1] / frame.canvas_height) / ((layer.fit[3] - layer.fit[1]) / frame.canvas_height)
         inside = (fu >= 0) & (fu <= 1) & (fv >= 0) & (fv <= 1)
         sampled = _bilinear(np, data, fu * source.width, fv * source.height)
+        if layout.is_yuv and source.chroma_scale != (1.0, 1.0):
+            # chroma : lue dans le plan sous-échantillonné (la texture de chroma du GPU), une valeur par bloc du calque
+            # (centre du bloc) sur chaque axe où ``grid`` > 0 (:func:`layer_chroma_grid`), bilinéaire ailleurs
+            grid = layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height)
+            step_x, step_y = (int(value) for value in source.chroma_scale)
+            planes = data[::step_y, ::step_x, 1:]
+            su = (np.floor(u * grid[0]) + 0.5) / grid[0] if grid[0] > 0.0 else u
+            sv = (np.floor(v * grid[1]) + 0.5) / grid[1] if grid[1] > 0.0 else v
+            cu = (su - layer.fit[0] / frame.canvas_width) / ((layer.fit[2] - layer.fit[0]) / frame.canvas_width)
+            cv = (sv - layer.fit[1] / frame.canvas_height) / ((layer.fit[3] - layer.fit[1]) / frame.canvas_height)
+            sampled[..., 1:] = _bilinear(np, planes, np.clip(cu, 0.0, 1.0) * planes.shape[1],
+                                         np.clip(cv, 0.0, 1.0) * planes.shape[0])
         pad = np.array((16 / 255, 128 / 255, 128 / 255) if layout.is_yuv else (0.0, 0.0, 0.0))
         layer_px = np.where(inside[..., None], sampled, pad)
         programmed = bool(layer.grade_passes)
@@ -828,6 +867,7 @@ __all__ = [
     "VideoSource",
     "affine_inverse",
     "affine_mul",
+    "layer_chroma_grid",
     "plan_frame",
     "present_uniforms",
     "reference_frame",

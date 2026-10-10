@@ -421,8 +421,9 @@ même image du même clip de deux façons, puis les compare :
 - par le pipeline GPU (sa référence numpy, elle-même vérifiée contre le GPU
   réel).
 
-Quatre cas sont couverts : identité ; transform avec rotation et opacité ;
-correction + vignette à l'échelle 0,8 ; flou + sépia.
+Cas couverts : identité ; transform avec rotation et opacité ; correction +
+vignette à l'échelle 0,8 ; flou + sépia ; effets lumineux sur un clip réduit ;
+et, sur une mire à grain chromatique, les cas de la chroma 4:2:0 (plus bas).
 
 Résultat :
 - **géométrie** identique à 1,5 px près ;
@@ -433,6 +434,58 @@ l'image en carré `hypot(w, h)` même à 0°, donc la recentre sur un demi-pixel
 la rééchantillonne en bilinéaire. S'y ajoutent les arrondis entiers
 d'`overlay`. C'est une imprécision de l'export existant ; la corriger
 changerait le rendu final, ce qui sort de ce chantier (voir les limites).
+
+### Chroma 4:2:0
+
+Une vidéo 4:2:0 n'a qu'un échantillon de chroma pour 2×2 pixels. Il faut le
+remonter à pleine résolution, et les deux chemins le faisaient différemment
+jusqu'au 2026-10-11 : le GPU l'**interpolait** (texture bilinéaire), l'export le
+**recopie** sur son bloc (conversion `format=rgba` de swscale). Sur un plan à
+grain chromatique (`print_hook.mp4` d'Onlyfab), l'écart montait à 58 niveaux
+(2,2 en moyenne). Les mires des tests avaient une chroma lente ou constante par
+bloc : aucune ne le voyait.
+
+**Règle commune : celle de l'export.** La passe `prep` lit la chroma une fois
+par bloc 2×2 **du calque** (à la taille du cadre, donc indépendamment de la
+taille de la source et de la résolution de rendu), au centre du bloc
+(`layer_chroma_grid`, `misc.xy` du shader). Quand l'échelle du clip
+redimensionne le calque, l'export convertit dans son `scale` animé (chemin
+redimensionné de swscale) et rééchantillonne la chroma : le moniteur garde
+alors l'interpolation bilinéaire, le modèle le plus proche. Rotation, miroirs et
+déplacement ne changent rien (`rotate` et `overlay` travaillent après la
+conversion). Le heat haze de l'export passe en `yuva444p` avec
+`scale=flags=neighbor` : avec le `bicubic` par défaut, il était seul à
+interpoler la chroma, et un grain changeait de 20 niveaux en activant l'effet.
+Tout filtre d'export qui passe de 4:2:0 à 4:4:4 doit faire de même.
+
+Mesuré sur la mire `grain_pattern` (chroma aléatoire à chaque échantillon, le
+pire cas), écart moyen à l'image de l'export réel :
+
+| Calque | Règle commune | Chroma interpolée (avant) |
+|---|---|---|
+| sans échelle (identité, déplacé, bandes, tourné de 15°) | **0,3 à 0,8** | 19 à 28 |
+| source réduite ou agrandie par l'adaptation | **12 à 13** | 17 à 23 |
+| échelle de clip 0,7, avec ou sans rotation | 12 à 22 (interpolée) | identique ; recopiée : 21 à 30 |
+
+Sur la mire lisse, l'identité passe de 1,9 à 0,4 niveau. Le vrai GPU suit la
+référence (`selfcheck`, cas `letterbox` : source plus grande, centrée, à
+2 taps) : 0,18 niveau en moyenne sous Metal, 0,32 sous OpenGL.
+
+**Pourquoi ne pas interpoler dans l'export ?** Mesuré le 2026-10-11 (M4) :
+- swscale n'interpole qu'avec `bilinear+full_chroma_int+accurate_rnd` réunis
+  (sans `accurate_rnd`, il garde son chemin rapide et recopie ; en `bicubic`,
+  il interpole avec un autre noyau) ;
+- le code C de FFmpeg 7.1 (`-cpuflags 0`, le chemin des machines sans SIMD pour
+  cette conversion) donne avec ces options un résultat qui ne suit aucun modèle
+  (15,8 niveaux du bilinéaire) ; FFmpeg 9 et 7.1 SIMD sont exacts ;
+- la conversion seule coûte ×4 (1,2 → 5 ms par image 1080×1920), soit environ
+  +2 % de temps CPU sur l'export d'Onlyfab (`tools/perf/engine_bench.py`) ;
+- `sws_flags` ne touche que les conversions insérées par FFmpeg : il faudrait
+  aussi des options sur chaque `scale` explicite ;
+- la sortie repasse en `yuv420p` : le gain d'une chroma interpolée disparaît à
+  l'encodage, sauf sous des calques incrustés.
+
+L'export reste donc la référence, et le moniteur la suit.
 
 **Le décodage matériel ne change pas les pixels.** VideoToolbox donne, au bit
 près, les mêmes images que le décodeur logiciel en H.264 et HEVC
