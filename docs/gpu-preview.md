@@ -381,7 +381,9 @@ fenêtre suivie bouge à chaque image).
 Mesuré (`tests/test_gpu_color_graph.py`) : la référence contre l'export réel,
 sur une image à chroma uniforme, 1,1 niveau d'écart moyen pour un nœud fenêtré
 suivi d'une branche parallèle floutée et d'un contraste affûté (chaque opération
-seule : 0,3 à 0,8), 1,8 sur un clip réduit. Sur une image colorée, l'écart de
+seule : 0,3 à 0,8), 1,8 sur un clip réduit (FFmpeg 9, arm64) ; sur x86, les
+chemins SIMD de FFmpeg arrondissent autrement : 1,8 plein cadre (CI, FFmpeg 6.1
+et 7.1). Sur une image colorée, l'écart de
 base (chroma 4:2:0 reconstruite différemment, ≈ 1 à 2 niveaux) est amplifié par
 la netteté, sans autre écart. Le vrai GPU contre la référence
 (`tools/gpu/selfcheck.py`, cas `grade_graph`, calque tourné) : 0,3 niveau en
