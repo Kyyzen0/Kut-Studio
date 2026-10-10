@@ -366,6 +366,10 @@ class MotionGraphicsMixin:
                 boxes.append((clip_id, evaluated.world, evaluated.box))
         boxes.sort(key=lambda item: _stack_rank(scene, item[0]))
         overlay.set_layer_boxes(boxes)
+        window_overlay = getattr(self, "_refresh_window_overlay", None)
+        if window_overlay is not None and window_overlay(t, scene):
+            overlay.set_selection(None)  # la fenêtre du nœud d'étalonnage remplace les poignées du clip
+            return
         selected = getattr(self.properties_panel, "selected_clip", None)
         clip_id = getattr(selected, "id", None)
         tracking_mode = getattr(self, "_tracking_mode_active", None)

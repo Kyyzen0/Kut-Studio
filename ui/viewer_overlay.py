@@ -9,7 +9,10 @@ FFmpeg). Il affiche :
   échelle uniforme ; côtés : échelle X ou Y), poignée de rotation, point
   d'ancrage, déplacement direct ;
 - les lignes de magnétisme pendant un glisser (bords et centre du cadre,
-  guides, autres calques).
+  guides, autres calques) ;
+- la fenêtre du nœud d'étalonnage éditée (page Couleur) : son contour, sa
+  douceur en pointillé, poignées de taille et de rotation, sommets d'une
+  forme libre ; elle remplace alors les poignées du clip.
 
 Les valeurs calculées sont émises **en direct** (``transform_dragged``),
 puis une seule fois à la fin du geste (``transform_released``) : la
@@ -55,6 +58,30 @@ class SelectionGeometry:
     anchor_editable: bool = True
 
 
+@dataclass
+class WindowGeometry:
+    """La fenêtre d'un nœud d'étalonnage éditée dans le viewer.
+
+    ``values`` : la fenêtre à la tête de lecture (animation et tracking compris), ce que le viewer montre ; ``base`` :
+    ses valeurs saisies, ce qu'un glisser modifie (comme les poignées d'un clip suivi : partir des valeurs rendues
+    ajouterait le mouvement suivi une seconde fois). Repère : celui du calque du clip (``box``, pixels de la
+    séquence), placé dans le cadre par ``world``.
+    """
+
+    node_id: str
+    window_id: str
+    world: Matrix
+    box: tuple[float, float]
+    shape: str
+    values: dict
+    base: dict
+    points: tuple = ()
+    editable: bool = True
+
+
+ELLIPSE_STEPS = 48
+
+
 class ViewerOverlay(QGraphicsObject):
     transform_dragged = Signal(str, dict)
     transform_released = Signal(str, str)
@@ -63,6 +90,8 @@ class ViewerOverlay(QGraphicsObject):
     guide_released = Signal(str)
     compare_moved = Signal(float)           # trait avant / après déplacé (part de la largeur)
     color_picked = Signal(float, float, bool)  # pipette : point du cadre (pixels), Maj (élargir)
+    window_dragged = Signal(str, str, dict)    # fenêtre d'un nœud : (nœud, fenêtre, valeurs saisies)
+    window_released = Signal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -81,6 +110,7 @@ class ViewerOverlay(QGraphicsObject):
         self.compare_split: float | None = None   # trait avant / après (part de la largeur), None : aucun
         self.pick_mode = False                    # pipette : un clic dans le cadre prend la couleur
         self.selection: SelectionGeometry | None = None
+        self.window: WindowGeometry | None = None
         self.layer_boxes: list[tuple[str, Matrix, tuple[float, float]]] = []
         self._snap_lines = []
         self._drag: dict | None = None
@@ -101,6 +131,12 @@ class ViewerOverlay(QGraphicsObject):
             self.update()
             return
         self.selection = selection
+        self.update()
+
+    def set_window(self, window: WindowGeometry | None) -> None:
+        """La fenêtre éditée (``None`` : aucune) ; pendant un glisser, la géométrie à jour est gardée pour l'affichage."""
+        self.prepareGeometryChange()
+        self.window = window
         self.update()
 
     def set_layer_boxes(self, boxes) -> None:
@@ -187,6 +223,10 @@ class ViewerOverlay(QGraphicsObject):
             path.addRect(QRectF(x - 5, self.canvas_rect.top(), 10, self.canvas_rect.height()))
         if self.pick_mode:
             path.addRect(self.canvas_rect)
+        if self.window is not None and self.window.editable:
+            path.addPolygon(self._window_outline(self.window))
+            for point in self._window_handles(self.window).values():
+                path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
         return path
 
     def _guide_rect(self, guide) -> QRectF:
@@ -196,6 +236,151 @@ class ViewerOverlay(QGraphicsObject):
             return QRectF(x, rect.top(), 0.5, rect.height())
         y = rect.y() + guide.position * rect.height()
         return QRectF(rect.left(), y, rect.width(), 0.5)
+
+    # -- fenêtre d'un nœud ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _window_frame(window: WindowGeometry, values: dict | None = None):
+        """``(centre, demi-largeur, demi-hauteur, angle)`` de la fenêtre dans le repère du calque (comme
+        :func:`core.mograph_raster.mask_path`)."""
+        v = values or window.values
+        w, h = window.box
+        expansion = v.get("expansion", 0.0)
+        half_w = max(0.0, (v.get("width", 0.5) + expansion) * w) / 2.0
+        half_h = max(0.0, (v.get("height", 0.5) + expansion) * h) / 2.0
+        return (v.get("position_x", 0.5) * w, v.get("position_y", 0.5) * h), half_w, half_h, \
+            math.radians(v.get("rotation", 0.0))
+
+    def _window_point(self, window: WindowGeometry, u: float, v: float) -> QPointF:
+        """Point ``(u, v)`` de la boîte de la fenêtre (-0,5..0,5) dans la scène."""
+        (cx, cy), half_w, half_h, angle = self._window_frame(window)
+        x, y = u * 2.0 * half_w, v * 2.0 * half_h
+        cos, sin = math.cos(angle), math.sin(angle)
+        return self.to_scene(*mat_apply(window.world, cx + x * cos - y * sin, cy + x * sin + y * cos))
+
+    def _window_outline(self, window: WindowGeometry, grow: float = 0.0) -> QPolygonF:
+        """Contour de la fenêtre ; ``grow`` : agrandi de cette part (la douceur, en pointillé)."""
+        k = 1.0 + grow
+        if window.shape == "ellipse":
+            points = [(0.5 * k * math.cos(2 * math.pi * i / ELLIPSE_STEPS), 0.5 * k * math.sin(2 * math.pi * i / ELLIPSE_STEPS))
+                      for i in range(ELLIPSE_STEPS)]
+        elif window.shape == "polygon" and len(window.points) >= 3:
+            points = [(x * k, y * k) for x, y in window.points]
+        else:
+            points = [(-0.5 * k, -0.5 * k), (0.5 * k, -0.5 * k), (0.5 * k, 0.5 * k), (-0.5 * k, 0.5 * k)]
+        return QPolygonF([self._window_point(window, u, v) for u, v in points])
+
+    def _window_handles(self, window: WindowGeometry) -> dict[str, QPointF]:
+        handles = {name: self._window_point(window, u, v) for name, (u, v) in {
+            "w_tl": (-0.5, -0.5), "w_tr": (0.5, -0.5), "w_br": (0.5, 0.5), "w_bl": (-0.5, 0.5),
+            "w_t": (0.0, -0.5), "w_r": (0.5, 0.0), "w_b": (0.0, 0.5), "w_l": (-0.5, 0.0),
+        }.items()}
+        top, centre = self._window_point(window, 0.0, -0.5), self._window_point(window, 0.0, 0.0)
+        dx, dy = top.x() - centre.x(), top.y() - centre.y()
+        length = math.hypot(dx, dy) or 1.0
+        handles["w_rotate"] = QPointF(top.x() + dx / length * ROTATE_DISTANCE, top.y() + dy / length * ROTATE_DISTANCE)
+        if window.shape == "polygon":                # les sommets ; les côtés tomberaient souvent sur eux
+            for name in ("w_t", "w_r", "w_b", "w_l"):
+                del handles[name]
+            for index, (u, v) in enumerate(window.points):
+                handles[f"w_p{index}"] = self._window_point(window, u, v)
+        return handles
+
+    def _paint_window(self, painter: QPainter, window: WindowGeometry) -> None:
+        accent = overlay_qcolor(OVERLAY.selection if window.editable else OVERLAY.selection_locked)
+        outline = self._window_outline(window)
+        halo_stroke(painter, accent, 1.4, lambda: painter.drawPolygon(outline))
+        feather = window.values.get("feather", 0.0)
+        if feather > 0.0:
+            _centre, half_w, half_h, _angle = self._window_frame(window)
+            reach = feather * min(window.box) / max(1e-6, min(half_w, half_h) * 2.0)
+            soft = self._window_outline(window, grow=reach)
+            halo_stroke(painter, overlay_qcolor(OVERLAY.selection, 150), 1.0, lambda: painter.drawPolygon(soft),
+                        style=Qt.DashLine)
+        if not window.editable:
+            return
+        handles = self._window_handles(window)
+        painter.setBrush(QBrush(overlay_qcolor(OVERLAY.handle_fill)))
+        for name, point in handles.items():
+            if name == "w_rotate":
+                top = self._window_point(window, 0.0, -0.5)
+                halo_stroke(painter, accent, 1.0, lambda point=point, top=top: painter.drawLine(top, point))
+            radius = HANDLE_RADIUS - 1 if name.startswith("w_p") else HANDLE_RADIUS
+            painter.setPen(QPen(accent, 1.0))
+            if name.startswith("w_p") or name == "w_rotate":
+                painter.drawEllipse(point, radius, radius)
+            else:
+                painter.drawRect(QRectF(point.x() - radius, point.y() - radius, 2 * radius, 2 * radius))
+        painter.setBrush(Qt.NoBrush)
+
+    def _window_hit(self, point: QPointF) -> str | None:
+        window = self.window
+        if window is None or not window.editable:
+            return None
+        handles = self._window_handles(window)
+        names = [name for name in handles if name.startswith("w_p")] + \
+            ["w_rotate", "w_tl", "w_tr", "w_br", "w_bl", "w_t", "w_r", "w_b", "w_l"]
+        for name in names:
+            handle = handles.get(name)
+            if handle is not None and math.hypot(point.x() - handle.x(), point.y() - handle.y()) <= HANDLE_RADIUS + 3:
+                return name
+        if self._window_outline(window).containsPoint(point, Qt.OddEvenFill):
+            return "w_move"
+        return None
+
+    def _window_values(self, drag: dict, current: tuple[float, float], modifiers) -> dict:
+        """Valeurs **saisies** de la fenêtre après le geste : le changement mesuré sur la fenêtre montrée (déplacement,
+        rapport de taille, angle) reporté sur la saisie ; un sommet de forme libre, lui, est pris tel quel."""
+        window: WindowGeometry = drag["window"]
+        mode = drag["mode"]
+        try:
+            inverse = mat_invert(window.world)
+        except ValueError:
+            return {}
+        lx, ly = mat_apply(inverse, *current)
+        sx, sy = mat_apply(inverse, *drag["start"])
+        (cx, cy), half_w, half_h, angle = self._window_frame(window)
+        width, height = window.box
+        shown, base = window.values, window.base
+        if mode == "w_move":
+            dx, dy = lx - sx, ly - sy
+            if modifiers & Qt.ShiftModifier:
+                if abs(dx) > abs(dy):
+                    dy = 0.0
+                else:
+                    dx = 0.0
+            return {"position_x": base["position_x"] + dx / width, "position_y": base["position_y"] + dy / height}
+        if mode == "w_rotate":
+            turned = math.degrees(math.atan2(ly - cy, lx - cx) - math.atan2(sy - cy, sx - cx))
+            rotation = shown.get("rotation", 0.0) + turned
+            if modifiers & Qt.ShiftModifier:
+                rotation = round(rotation / 15.0) * 15.0
+            return {"rotation": base["rotation"] + rotation - shown.get("rotation", 0.0)}
+        cos, sin = math.cos(-angle), math.sin(-angle)
+        qx = (lx - cx) * cos - (ly - cy) * sin
+        qy = (lx - cx) * sin + (ly - cy) * cos
+        if mode.startswith("w_p"):
+            index = int(mode[3:])
+            points = list(window.points)
+            if index >= len(points) or half_w <= 0.0 or half_h <= 0.0:
+                return {}
+            points[index] = (qx / (2.0 * half_w), qy / (2.0 * half_h))
+            return {"points": tuple(points)}
+        expansion = shown.get("expansion", 0.0)
+        new_w, new_h = shown.get("width", 0.5), shown.get("height", 0.5)
+        if mode in ("w_tl", "w_tr", "w_br", "w_bl", "w_l", "w_r"):
+            new_w = 2.0 * abs(qx) / width - expansion
+        if mode in ("w_tl", "w_tr", "w_br", "w_bl", "w_t", "w_b"):
+            new_h = 2.0 * abs(qy) / height - expansion
+        if mode in ("w_tl", "w_tr", "w_br", "w_bl") and modifiers & Qt.ShiftModifier and shown.get("width", 0) > 0:
+            ratio = max(new_w / shown["width"], new_h / max(1e-6, shown.get("height", 0.5)))
+            new_w, new_h = shown["width"] * ratio, shown.get("height", 0.5) * ratio
+        result = {}
+        for name, value in (("width", new_w), ("height", new_h)):
+            if abs(value - shown.get(name, 0.5)) > 1e-9:
+                scale = base[name] / shown[name] if shown.get(name, 0.0) > 1e-6 else 1.0
+                result[name] = max(0.0, value * scale)
+        return result
 
     def _box_polygon(self, selection: SelectionGeometry) -> QPolygonF:
         return QPolygonF([self.to_scene(*p) for p in box_corners(selection.world, *selection.box)])
@@ -284,6 +469,8 @@ class ViewerOverlay(QGraphicsObject):
                     painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
 
             halo_stroke(painter, overlay_qcolor(OVERLAY.snap), 1.0, snap_line, style=Qt.DashLine)
+        if self.window is not None:
+            self._paint_window(painter, self.window)
         selection = self.selection
         if selection is None:
             return
@@ -327,6 +514,8 @@ class ViewerOverlay(QGraphicsObject):
         x = self._compare_x()
         if x is not None and abs(point.x() - x) <= 5 and self.canvas_rect.top() <= point.y() <= self.canvas_rect.bottom():
             return "compare", ""
+        if (window := self._window_hit(point)) is not None:
+            return window, self.window.window_id if self.window is not None else ""
         selection = self.selection
         if selection is not None and selection.editable:
             handles = self._handle_points(selection)
@@ -356,7 +545,8 @@ class ViewerOverlay(QGraphicsObject):
                 "tl": Qt.SizeFDiagCursor, "br": Qt.SizeFDiagCursor, "tr": Qt.SizeBDiagCursor,
                 "bl": Qt.SizeBDiagCursor, "t": Qt.SizeVerCursor, "b": Qt.SizeVerCursor,
                 "l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor, "select": Qt.PointingHandCursor, "pick": Qt.CrossCursor,
-            }.get(hit[0], Qt.SplitHCursor)
+                "w_move": Qt.SizeAllCursor, "w_rotate": Qt.CrossCursor,
+            }.get(hit[0], Qt.SizeAllCursor if hit[0].startswith("w_") else Qt.SplitHCursor)
             if hit[0] == "guide":
                 guide = next((g for g in self.guides if g.id == hit[1]), None)
                 if guide is not None and guide.orientation is GuideOrientation.HORIZONTAL:
@@ -377,6 +567,11 @@ class ViewerOverlay(QGraphicsObject):
             return
         if mode == "compare":
             self._drag = {"mode": "compare", "clip_id": "", "moved": False}
+            event.accept()
+            return
+        if mode.startswith("w_") and self.window is not None:
+            self._drag = {"mode": mode, "clip_id": "", "window": self.window, "start": self.to_canvas(event.pos()),
+                          "moved": False}
             event.accept()
             return
         if mode == "select":
@@ -411,6 +606,13 @@ class ViewerOverlay(QGraphicsObject):
             drag["moved"] = True
             self.compare_moved.emit(min(0.98, max(0.02, current[0] / max(1.0, self.canvas_size[0]))))
             return
+        if drag["mode"].startswith("w_"):
+            values = self._window_values(drag, current, event.modifiers())
+            if values:
+                drag["moved"] = True
+                window = drag["window"]
+                self.window_dragged.emit(window.node_id, window.window_id, values)
+            return
         if drag["mode"] == "guide":
             guide = next((g for g in self.guides if g.id == drag["guide_id"]), None)
             if guide is None:
@@ -436,6 +638,10 @@ class ViewerOverlay(QGraphicsObject):
         if drag is None:
             return
         if drag["mode"] == "compare":
+            return
+        if drag["mode"].startswith("w_"):
+            if drag["moved"]:
+                self.window_released.emit(drag["window"].node_id, drag["window"].window_id)
             return
         if drag["mode"] == "guide":
             if drag["moved"]:
@@ -537,4 +743,4 @@ class ViewerOverlay(QGraphicsObject):
         return {"scale_y": values.get("scale_y", 1.0) * (ly - anchor_local[1]) / base}
 
 
-__all__ = ["SelectionGeometry", "ViewerOverlay"]
+__all__ = ["SelectionGeometry", "ViewerOverlay", "WindowGeometry"]

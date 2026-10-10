@@ -144,3 +144,145 @@ def test_leaving_the_colour_page_stops_the_eyedropper(window):
     window.color_panel.qualifier.pick_button.click()
     window.switch_page(PAGE_EDIT)
     assert not window.preview_panel.overlay.pick_mode
+
+
+# --- fenêtres, flou --------------------------------------------------------------------------------------------------
+
+
+def _windows_tab(window):
+    panel = window.color_panel
+    panel.tabs.setCurrentWidget(panel.windows)
+    return panel.windows
+
+
+def _node(window, clip_id):
+    from core.timeline_operations import find_clip
+
+    return find_clip(window.project, clip_id).color_grade.correctors[0]
+
+
+def test_a_window_is_added_from_its_tab_and_edited_in_the_viewer(qtbot, window):
+    from core.compositing import MaskShape
+
+    clip_id = _clip(window)
+    editor = _windows_tab(window)
+    steps = len(window.history.entries())
+    editor.add_buttons[MaskShape.ELLIPSE].click()
+    node = _node(window, clip_id)
+    assert [w.shape for w in node.windows] == [MaskShape.ELLIPSE]
+    assert len(window.history.entries()) == steps + 1
+    from ui import i18n
+
+    assert window.history.undo_label == i18n.translate("history.color.window_add")
+    overlay = window.preview_panel.overlay
+    assert overlay.window is not None and overlay.window.window_id == node.windows[0].id, "le viewer l'édite"
+    assert overlay.selection is None, "la fenêtre remplace les poignées du clip"
+    for _ in range(3):                                             # un glisser : plusieurs mouvements, une étape
+        overlay.window_dragged.emit(node.id, node.windows[0].id, {"position_x": 0.3, "width": 0.25})
+    overlay.window_released.emit(node.id, node.windows[0].id)
+    moved = _node(window, clip_id).windows[0]
+    assert (moved.position_x, moved.width, moved.id) == (0.3, 0.25, node.windows[0].id)
+    assert len(window.history.entries()) == steps + 2
+    assert editor.spins["width"].value() == pytest.approx(25.0), "les champs suivent le viewer"
+    window.color_panel.tabs.setCurrentWidget(window.color_panel.wheels)
+    assert overlay.window is None, "hors de l'onglet Fenêtres, le viewer rend les poignées du clip"
+
+
+def test_window_fields_and_blur_are_one_history_step_per_burst(qtbot, window):
+    from core.compositing import MaskShape
+
+    clip_id = _clip(window)
+    editor = _windows_tab(window)
+    editor.add_buttons[MaskShape.RECTANGLE].click()
+    steps = len(window.history.entries())
+    for value in (10.0, 12.0, 15.0):
+        editor.spins["feather"].setValue(value)
+    editor.invert_check.setChecked(True)
+    window._finalize_color_history()
+    edited = _node(window, clip_id).windows[0]
+    assert edited.feather == pytest.approx(0.15) and edited.inverted
+    assert len(window.history.entries()) == steps + 1
+    detail = window.color_panel.detail
+    for value in (1.0, 2.5, 4.0):
+        detail.spins["blur"].setValue(value)
+    detail.spins["sharpen"].setValue(0.5)
+    window._finalize_color_history()
+    node = _node(window, clip_id)
+    assert (node.blur, node.sharpen) == (4.0, 0.5) and len(window.history.entries()) == steps + 2
+    window.undo_last()
+    assert _node(window, clip_id).blur == 0.0
+
+
+def test_deleting_a_window_drops_its_keyframes_and_tracking_links(qtbot, window):
+    from dataclasses import replace
+
+    from core.animation import Keyframe
+    from core.compositing import MaskShape, mask_property_id
+    from core.timeline_operations import find_clip
+    from core.tracking_model import ClipTracking, TrackLink, TrackTarget
+
+    clip_id = _clip(window)
+    editor = _windows_tab(window)
+    editor.add_buttons[MaskShape.ELLIPSE].click()
+    window_id = _node(window, clip_id).windows[0].id
+    clip = find_clip(window.project, clip_id)
+    clip.animation = [Keyframe(mask_property_id(window_id, "position_x"), 0.0, 0.4), Keyframe("opacity", 0.0, 1.0)]
+    clip.tracking = replace(clip.tracking or ClipTracking(),
+                            links=(TrackLink(tracker_ids=("t1",), target=TrackTarget.MASK, mask_id=window_id),))
+    window._record_history("préparation")                        # comme une liaison posée par le panneau Tracking
+    editor.remove_button.click()
+    clip = find_clip(window.project, clip_id)
+    assert not getattr(clip.color_grade, "correctors", (None,))[0] or not clip.color_grade.correctors[0].windows
+    assert [kf.property_name for kf in clip.animation] == ["opacity"]
+    assert not clip.tracking.links
+    window.undo_last()
+    clip = find_clip(window.project, clip_id)
+    assert clip.color_grade.correctors[0].windows[0].id == window_id
+    assert len(clip.animation) == 2 and clip.tracking.links, "Annuler rend fenêtre, images-clés et liaison"
+    window.redo_last()
+    clip = find_clip(window.project, clip_id)
+    assert [kf.property_name for kf in clip.animation] == ["opacity"] and not clip.tracking.links, \
+        "Rétablir : l'étape enregistrée est déjà nettoyée"
+
+
+def test_show_selection_works_for_a_window_without_qualifier(window):
+    from core.compositing import MaskShape
+
+    clip_id = _clip(window)
+    _windows_tab(window).add_buttons[MaskShape.RECTANGLE].click()
+    window.color_panel.windows.highlight_button.click()
+    assert window.color_panel.qualifier.highlight_button.isChecked(), "un seul état, deux boutons"
+    clip = window.project.tracks[0].clips[0]
+    shown = window._monitor_color_grade(clip)
+    assert isinstance(shown, Highlight) and shown.node_id == _node(window, clip_id).id
+    jobs = window._preview_segment_jobs(0.0)
+    layer = next(layer for job in jobs for layer in job.plan.video_layers if layer.clip_id == clip_id)
+    assert isinstance(layer.color_grade, Highlight), "les segments fidèles montrent la sélection de la fenêtre"
+
+
+def test_the_viewer_handles_turn_a_gesture_into_the_typed_values():
+    """Le geste se mesure sur la fenêtre montrée (animation, tracking) et se reporte sur la saisie."""
+    from PySide6.QtCore import QRectF, Qt
+
+    from ui.viewer_overlay import ViewerOverlay, WindowGeometry
+
+    overlay = ViewerOverlay()
+    overlay.set_canvas(QRectF(0, 0, 200, 100), (200.0, 100.0))
+    shown = {"position_x": 0.5, "position_y": 0.5, "width": 0.4, "height": 0.4, "rotation": 0.0, "feather": 0.0,
+             "expansion": 0.0, "opacity": 1.0}
+    base = dict(shown, position_x=0.3, width=0.2)            # le tracking a déplacé et agrandi la fenêtre montrée
+    geometry = WindowGeometry("n1", "w", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (200.0, 100.0), "rectangle", shown, base)
+    none = Qt.KeyboardModifier.NoModifier
+
+    def drag(mode, start, end, window=geometry):
+        return overlay._window_values({"mode": mode, "window": window, "start": start}, end, none)
+
+    assert drag("w_move", (100, 50), (120, 60)) == pytest.approx({"position_x": 0.4, "position_y": 0.6})
+    assert drag("w_r", (140, 50), (160, 50)) == pytest.approx({"width": 0.3}), "0,4 → 0,6 montré, ×1,5 saisi"
+    assert drag("w_rotate", (100, 0), (150, 50))["rotation"] == pytest.approx(90.0)
+    polygon = WindowGeometry("n1", "w", geometry.world, geometry.box, "polygon", shown, base,
+                             points=((0.0, -0.5), (0.5, 0.5), (-0.5, 0.5)))
+    assert drag("w_p0", (100, 30), (110, 30), polygon)["points"][0] == pytest.approx((0.125, -0.5))
+    overlay.set_window(geometry)
+    assert overlay._window_hit(overlay.to_scene(100, 50)) == "w_move"
+    assert overlay._window_hit(overlay.to_scene(140, 30)) == "w_tr"
