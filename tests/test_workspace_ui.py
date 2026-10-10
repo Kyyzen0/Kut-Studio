@@ -10,7 +10,10 @@ divergeraient — ce qui est explicitement interdit.
 """
 
 
+import logging
+
 import pytest
+import shiboken6
 from PySide6.QtWidgets import QMenu
 
 from core.workspace_state import DockArea, PanelId
@@ -290,6 +293,26 @@ def test_shutdown_releases_windows(window):
     manager.shutdown()
     assert manager._windows == {}
     assert manager._hosts == {}
+
+
+@pytest.mark.parametrize(
+    ("panel", "gesture"),
+    [(PanelId.INSPECTOR, "hide"), (PanelId.INSPECTOR, "float"), (PanelId.VIEWER, "hide")],
+)
+def test_closing_keeps_hidden_and_floating_panels_alive_for_the_shutdown_steps(window, caplog, panel, gesture):
+    """Masqué ou détaché, l'hôte d'un panneau n'a plus de parent Qt : ``shutdown`` le rend à la fenêtre au lieu de le
+    détruire, car les étapes d'arrêt suivantes s'en servent encore (flux optique : l'inspecteur ; moniteur Multicam :
+    le viewer)."""
+    manager = window.workspace
+    if gesture == "hide":
+        manager.set_panel_visible(panel, False)
+    else:
+        manager.float_panel(panel)
+    content = manager._panels[panel]
+    with caplog.at_level(logging.ERROR, logger="ui.main_window"):
+        assert window.close()
+    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR] == []
+    assert shiboken6.isValid(content) and window.isAncestorOf(content)
 
 
 # ---------------------------------------------------------------------------
