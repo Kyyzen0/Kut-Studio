@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSizeF, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
@@ -62,6 +62,26 @@ class _ViewportWatcher(QObject):
         if event.type() == QEvent.Resize:
             self._callback()
         return False
+
+
+SUBTITLE_MIN_WIDTH = 60
+"""Largeur minimale (pixels) de l'étiquette du sous-titre : un cadre minuscule ne réduit pas le texte à une colonne."""
+
+
+class _SubtitleLayer(QWidget):
+    """Couche transparente qui couvre le moniteur et porte l'étiquette du sous-titre, placée à la main.
+
+    Le sous-titre n'est plus posé par la grille (toujours en bas, au centre) : son alignement, ses marges et son décalage
+    sont ceux du style, comme à l'export. La couche rappelle ``on_resize`` à chaque changement de taille."""
+
+    def __init__(self, on_resize, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._on_resize = on_resize
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)   # le moniteur reste manipulable à travers
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        super().resizeEvent(event)
+        self._on_resize()
 
 
 PLAYBACK_DRIFT_SECONDS = 0.20
@@ -186,7 +206,10 @@ class PreviewPanel(QWidget):
         self._graphics_present = False
         self.empty_state.setMaximumWidth(390)
 
-        self.preview_subtitle_overlay = QLabel()
+        self._subtitle_style = None
+        self._subtitle_layer = _SubtitleLayer(self._place_subtitle)
+        self.preview_subtitle_overlay = QLabel(self._subtitle_layer)
+        self.preview_subtitle_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.preview_subtitle_overlay.setAlignment(Qt.AlignCenter)
         self.preview_subtitle_overlay.setWordWrap(True)
         self.preview_subtitle_overlay.setStyleSheet(
@@ -312,11 +335,7 @@ class PreviewPanel(QWidget):
         preview_layout.setSpacing(0)
         preview_layout.addWidget(self.graphics_view, 0, 0)
         preview_layout.addWidget(self.empty_state, 0, 0, Qt.AlignCenter)
-        preview_layout.addWidget(
-            self.preview_subtitle_overlay,
-            0, 0,
-            Qt.AlignHCenter | Qt.AlignBottom,
-        )
+        preview_layout.addWidget(self._subtitle_layer, 0, 0)
         preview_layout.addWidget(
             self.preview_effects_overlay,
             0, 0,
@@ -535,11 +554,48 @@ class PreviewPanel(QWidget):
         self.preview_subtitle_overlay.setMaximumWidth(
             _subtitle_max_width(self.preview_subtitle_overlay.parentWidget())
         )
+        self._subtitle_style = style
         self.preview_subtitle_overlay.show()
+        self._place_subtitle()
 
     def clear_subtitle(self) -> None:
         """Cache le sous-titre courant."""
         self.preview_subtitle_overlay.hide()
+
+    def _place_subtitle(self) -> None:
+        """Pose l'étiquette du sous-titre : alignement, marges et décalage du style, dans le cadre de la séquence.
+
+        Les marges s'expriment en unités du script ASS (1920 × 1080, ramenées au cadre comme à l'export par libass) ; le
+        décalage ``position_x`` / ``position_y`` est un pourcentage du cadre (positif : vers la droite, vers le bas)."""
+        label, style = self.preview_subtitle_overlay, self._subtitle_style
+        if style is None or label.isHidden():
+            return
+        from core.subtitle_io import PLAY_RES_X, PLAY_RES_Y
+        from core.text_style import alignment_to_ass
+
+        layer = self._subtitle_layer
+        canvas = self.canvas_rect()
+        origin = layer.mapFromGlobal(self.graphics_view.viewport().mapToGlobal(QPoint(0, 0)))
+        frame = QRectF(origin.x() + canvas.x(), origin.y() + canvas.y(), canvas.width(), canvas.height())
+        if frame.width() <= 1.0 or frame.height() <= 1.0:
+            return
+        margin_x = style.margin_x * frame.width() / PLAY_RES_X
+        margin_y = style.margin_y * frame.height() / PLAY_RES_Y
+        # Le texte revient à la ligne dans le cadre de la vidéo, entre ses marges latérales, comme libass à l'export
+        # (la couche, elle, couvre aussi les bandes noires du moniteur) ; au moins quelques lettres.
+        label.setMaximumWidth(max(SUBTITLE_MIN_WIDTH, int(frame.width() - 2.0 * margin_x)))
+        label.ensurePolished()                               # la feuille de style change la taille : la mesurer après
+        label.adjustSize()
+        width, height = float(label.width()), float(label.height())
+        code = alignment_to_ass(style.alignment) - 1
+        column, row = code % 3, code // 3                    # 0 gauche / centre / droite ; 0 bas / milieu / haut
+        anchor_x = (margin_x, frame.width() / 2.0, frame.width() - margin_x)[column]
+        anchor_y = (frame.height() - margin_y, frame.height() / 2.0, margin_y)[row]
+        anchor_x += style.position_x / 100.0 * frame.width()
+        anchor_y += style.position_y / 100.0 * frame.height()
+        x = frame.x() + anchor_x - (0.0, width / 2.0, width)[column]
+        y = frame.y() + anchor_y - (height, height / 2.0, 0.0)[row]
+        label.move(int(round(x)), int(round(y)))
 
     def release_media(self) -> None:
         """Lâche la source décodée.
@@ -648,6 +704,8 @@ class PreviewPanel(QWidget):
                 (rect.x(), rect.y(), rect.width(), rect.height()), _rgb(COLORS["background"])
             )
         self._reapply_transform()
+        if getattr(self, "_subtitle_layer", None) is not None:
+            self._place_subtitle()
         if changed:
             self.canvas_changed.emit()
 

@@ -150,8 +150,10 @@ def test_format_ass_reports_background_colour_when_set() -> None:
         background_opacity=0.9,
     )
     output = format_ass(cues, style)
-    # BackColour encode le fond + son opacité (ASS BGR + alpha).
-    assert "&H196E760F&" in output
+    # Le fond est un calque de boîte opaque : sa couleur et son opacité sont l'OutlineColour du style ``DefaultBox``
+    # (ASS BGR + alpha). ``BackColour`` est celle de l'ombre.
+    box_style = next(line for line in output.splitlines() if line.startswith("Style: DefaultBox,"))
+    assert box_style.split(",")[5] == "&H196E760F&"
 
 
 def test_format_ass_escapes_newlines_as_backslash_n() -> None:
@@ -248,9 +250,12 @@ def test_generated_ass_declares_consistent_column_counts() -> None:
         if line.startswith("Style: "):
             assert len(line.replace("Style: ", "").split(",")) == style_columns
         elif line.startswith("Dialogue: "):
+            # ``Text`` est la dernière colonne : il peut contenir des virgules (``{\pos(960,80)}``), libass ne coupe
+            # que les colonnes qui précèdent.
             assert (
-                len(line.replace("Dialogue: ", "").split(",")) == event_columns
+                len(line.replace("Dialogue: ", "").split(",", event_columns - 1)) == event_columns
             )
+            assert not line.replace("Dialogue: ", "").split(",", event_columns - 1)[-1].startswith(",")
 
 
 def test_format_srt_keeps_only_text_and_timing() -> None:

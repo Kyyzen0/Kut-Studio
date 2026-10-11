@@ -226,8 +226,47 @@ def _escape_ass_text(text: str) -> str:
     return normalized.replace("\n", r"\N")
 
 
-def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME) -> str:
+PLAY_RES_X = 1920
+PLAY_RES_Y = 1080
+"""Résolution du script ASS : les marges, la position et les épaisseurs s'y expriment, libass les ramène au cadre."""
+
+
+def style_has_box(style) -> bool:
+    """Le style demande-t-il un fond derrière le texte ? Une couleur de fond **et** une opacité non nulle."""
+    return style is not None and style.background_color is not None and style.background_opacity > 0.0
+
+
+def ass_position(style, *, force: bool = False) -> tuple[float, float] | None:
+    """Point d'ancrage du texte (``\\pos``) en unités du script ASS, ou ``None`` sans décalage.
+
+    Le point de base est celui que donnent l'alignement et les marges : le bord (à la marge) pour la gauche, la droite,
+    le haut et le bas, le centre pour le milieu ; ``position_x`` / ``position_y`` le décalent en **pour cent du cadre**
+    (positif : vers la droite, vers le bas). Sans décalage, rien n'est écrit : libass place le texte avec le style et
+    les marges, exactement comme avant.
+
+    ``force`` : renvoie le point même sans décalage. Une ligne **sans** ``\\pos`` est déplacée par la gestion des
+    collisions de libass quand deux sous-titres se recouvrent ; son fond (calque 0) et son texte (calque 1) ne sont
+    pas dans le même groupe de collision et pouvaient se séparer. Une ligne avec ``\\pos`` ne bouge pas."""
+    from .text_style import alignment_to_ass
+
+    if not force and not style.position_x and not style.position_y:
+        return None
+    code = alignment_to_ass(style.alignment) - 1
+    column, row = code % 3, code // 3                       # 0 gauche / centre / droite ; 0 bas / milieu / haut
+    base_x = (style.margin_x, PLAY_RES_X / 2.0, PLAY_RES_X - style.margin_x)[column]
+    base_y = (PLAY_RES_Y - style.margin_y, PLAY_RES_Y / 2.0, style.margin_y)[row]
+    return (base_x + style.position_x / 100.0 * PLAY_RES_X, base_y + style.position_y / 100.0 * PLAY_RES_Y)
+
+
+def _ass_number(value: float) -> str:
+    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    return text if text and text != "-0" else "0"
+
+
+def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME, box: bool = False) -> str:
     """Formate une ligne ``Style:`` ASS pour un :class:`TextStyle`.
+
+    ``box`` : le style du **calque de fond** (voir :func:`_ass_dialogue_lines`), pas celui du texte.
 
     L'ordre des colonnes est celui imposé par le bloc ``[V4+ Styles]`` :
 
@@ -239,7 +278,10 @@ def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME) -> str:
     Points de correspondance avec :class:`~core.text_style.TextStyle` :
 
     - ``PrimaryColour`` porte la couleur **et** l'opacité du texte ;
-    - ``BackColour`` porte le fond et son opacité (0 si aucun fond) ;
+    - ``BackColour`` est la couleur de l'**ombre** en ASS (``shadow_color``) : avant, on y écrivait le fond, qui ne
+      s'est donc jamais affiché, et la couleur d'ombre du style n'était jamais utilisée ;
+    - le **fond** (``background_color`` / ``background_opacity``) est un calque à part : ``BorderStyle`` 3 (boîte
+      opaque) dont ``OutlineColour`` est la couleur de la boîte et ``Outline`` sa marge interne ;
     - ``Outline`` / ``Shadow`` reprennent l'épaisseur du contour et le
       décalage de l'ombre ;
     - ``Alignment`` reprend notre grille 3×3 via
@@ -255,11 +297,15 @@ def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME) -> str:
     primary = ass_color(style.color, style.opacity)
     secondary = ass_color(style.outline_color, 1.0)
     outline_colour = ass_color(style.outline_color, 1.0)
-    if style.background_color is not None:
-        back = ass_color(style.background_color, style.background_opacity)
-    else:
-        back = ass_color("#000000", 0.0)
+    back = ass_color(style.shadow_color, 1.0)
     border_style = 1 if (style.outline_width > 0 or style.shadow_offset > 0) else 0
+    outline_width, shadow_offset = style.outline_width, style.shadow_offset
+    if box:
+        # Calque de fond : le texte y est invisible (seule la boîte se dessine), sans ombre.
+        primary = secondary = ass_color(style.color, 0.0)
+        outline_colour = ass_color(style.background_color or "#000000", style.background_opacity)
+        back = ass_color("#000000", 0.0)
+        border_style, outline_width, shadow_offset = 3, max(style.padding_x, style.padding_y), 0.0
     return (
         f"Style: {name},{style.font_family},{int(round(style.font_size))},"
         f"{primary},{secondary},{outline_colour},{back},"
@@ -268,8 +314,8 @@ def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME) -> str:
         # ScaleX, ScaleY, Spacing, Angle.
         "100,100,0,0,"
         f"{border_style},"
-        f"{style.outline_width:.1f},"
-        f"{style.shadow_offset:.1f},"
+        f"{outline_width:.1f},"
+        f"{shadow_offset:.1f},"
         f"{alignment_value},"
         f"{int(round(style.margin_x))},"
         f"{int(round(style.margin_x))},"
@@ -282,12 +328,16 @@ def _ass_dialogue_line(
     cue,
     style_name: str = _DEFAULT_ASS_STYLE_NAME,
     style=None,
+    *,
+    layer: int = 0,
+    overrides: str = "",
 ) -> str:
     """Formate une ligne ``Dialogue:`` ASS pour un :class:`SubtitleCue`.
 
     Les marges de la ligne reprennent celles du style (libass lit les
     marges de la ligne *et* celles du style ; les reporter ici évite
-    toute ambiguïté selon la version de libass).
+    toute ambiguïté selon la version de libass). ``overrides`` : balises
+    ASS écrites avant le texte (``{\\pos(…)}``).
     """
     start = _format_ass_timecode(cue.start)
     end = _format_ass_timecode(cue.end)
@@ -298,9 +348,30 @@ def _ass_dialogue_line(
         margin_l = margin_r = int(round(style.margin_x))
         margin_v = int(round(style.margin_y))
     return (
-        f"Dialogue: 0,{start},{end},{style_name},,"
-        f"{margin_l},{margin_r},{margin_v},,{text}"
+        f"Dialogue: {layer},{start},{end},{style_name},,"
+        f"{margin_l},{margin_r},{margin_v},,{overrides}{text}"
     )
+
+
+def _ass_dialogue_lines(cue, style_name: str, style) -> list[str]:
+    """Les lignes ``Dialogue:`` d'un cue : son texte, précédé de son **fond** quand le style en demande un.
+
+    Le fond est le même texte, invisible, sur un calque en dessous, dans le style ``<nom>Box`` (boîte opaque) : il suit
+    donc la taille du texte, avec les marges internes ``padding_x`` / ``padding_y`` (``\\xbord`` / ``\\ybord``).
+    Le texte, sur le calque du dessus, garde son contour et son ombre. Un décalage (``position_x`` / ``position_y``)
+    s'écrit ``\\pos`` sur les deux, et un fond en écrit toujours un : libass décale les cues qui se recouvrent et
+    séparait la boîte (calque 0) du texte (calque 1), qui sont dans des groupes de collision différents. Sans fond ni
+    décalage : une seule ligne, comme avant."""
+    # Un fond impose un ``\\pos`` (même sans décalage) : la boîte et le texte restent ensemble quand deux cues se recouvrent.
+    position = ass_position(style, force=style_has_box(style)) if style is not None else None
+    placement = f"\\pos({_ass_number(position[0])},{_ass_number(position[1])})" if position else ""
+    if not style_has_box(style):
+        return [_ass_dialogue_line(cue, style_name, style, overrides=f"{{{placement}}}" if placement else "")]
+    padding = f"\\xbord{_ass_number(style.padding_x)}\\ybord{_ass_number(style.padding_y)}"
+    return [
+        _ass_dialogue_line(cue, f"{style_name}Box", style, layer=0, overrides=f"{{{padding}{placement}}}"),
+        _ass_dialogue_line(cue, style_name, style, layer=1, overrides=f"{{{placement}}}" if placement else ""),
+    ]
 
 
 def _format_ass_timecode(seconds: float) -> str:
@@ -326,8 +397,10 @@ def format_ass(cues: list[SubtitleCue], style) -> str:
     :mod:`core.export_engine`).
     """
     style_lines = [_ass_style_line(style)]
+    if style_has_box(style):
+        style_lines.append(_ass_style_line(style, name=f"{_DEFAULT_ASS_STYLE_NAME}Box", box=True))
     dialogue_lines = [
-        _ass_dialogue_line(cue, style=style) for cue in cues
+        line for cue in cues for line in _ass_dialogue_lines(cue, _DEFAULT_ASS_STYLE_NAME, style)
     ]
     return _ass_template(style_lines, dialogue_lines)
 
@@ -347,6 +420,8 @@ def format_ass_with_styles(
     dialogues: list[str] = []
     # Le style par défaut est inséré tel quel, sous le nom ``Default``.
     style_lines.append(_ass_style_line(default_style, name=_DEFAULT_ASS_STYLE_NAME))
+    if style_has_box(default_style):
+        style_lines.append(_ass_style_line(default_style, name=f"{_DEFAULT_ASS_STYLE_NAME}Box", box=True))
     counter = 0
     for cue, style in entries:
         if style is None or style == default_style:
@@ -357,9 +432,9 @@ def format_ass_with_styles(
             counter += 1
             style_name = f"S{counter}"
             style_lines.append(_ass_style_line(style, name=style_name))
-        dialogues.append(
-            _ass_dialogue_line(cue, style_name=style_name, style=style or default_style)
-        )
+            if style_has_box(style):
+                style_lines.append(_ass_style_line(style, name=f"{style_name}Box", box=True))
+        dialogues.extend(_ass_dialogue_lines(cue, style_name, style or default_style))
     return _ass_template(style_lines, dialogues)
 
 
@@ -369,8 +444,8 @@ def _ass_template(style_lines: list[str], dialogue_lines: list[str]) -> str:
         "[Script Info]",
         "ScriptType: v4.00+",
         "Collisions: Normal",
-        "PlayResX: 1920",
-        "PlayResY: 1080",
+        f"PlayResX: {PLAY_RES_X}",
+        f"PlayResY: {PLAY_RES_Y}",
         "ScaledBorderAndShadow: yes",
         "",
         "[V4+ Styles]",
