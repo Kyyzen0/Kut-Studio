@@ -405,13 +405,15 @@ class ExportFormat(Enum):
 
 
 def even_dimension(value: int) -> int:
-    """Le plus petit entier pair, au moins 2, qui contient ``value`` pixels.
+    """Le plus petit entier pair qui contient ``value`` pixels (1 → 2, 1081 → 1082).
 
     x264, x265 et ProRes (chroma sous-échantillonnée) refusent une largeur ou une hauteur impaire (« width not divisible by
-    2 ») : on arrondit **au pair supérieur**, de sorte qu'aucun pixel demandé ne soit perdu.
+    2 ») : on arrondit **au pair supérieur**, de sorte qu'aucun pixel demandé ne soit perdu. Une valeur nulle ou négative
+    est rendue telle quelle : ce n'est pas une taille à arrondir mais une erreur, que la validation de la requête
+    (:class:`ExportRequest`) doit pouvoir signaler.
     """
     value = int(value)
-    return max(2, value + value % 2)
+    return value + value % 2 if value > 0 else value
 
 
 @dataclass(frozen=True)

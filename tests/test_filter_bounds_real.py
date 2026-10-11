@@ -185,6 +185,9 @@ def test_the_preset_reports_the_even_resolution_it_will_export():
     assert custom_preset(width=1, height=1).resolution == (2, 2)
     assert custom_preset(width=1920, height=1080).resolution == (1920, 1080), "une résolution paire ne bouge pas"
     assert ExportPreset("x", (1081, 607), 20, "128k").resolution == (1082, 608), "le moteur s'en protège aussi"
+    assert ExportPreset("x", (0, -3), 20, "128k").resolution == (0, -3), "une taille invalide reste signalée par la requête"
+    with pytest.raises(ValueError):
+        custom_preset(width=0)
 
 
 # --- durées de la vitesse ------------------------------------------------------------------------------------------------
