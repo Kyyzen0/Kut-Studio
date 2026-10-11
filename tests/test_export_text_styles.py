@@ -250,9 +250,12 @@ def test_generated_ass_declares_consistent_column_counts() -> None:
         if line.startswith("Style: "):
             assert len(line.replace("Style: ", "").split(",")) == style_columns
         elif line.startswith("Dialogue: "):
+            # ``Text`` est la dernière colonne : il peut contenir des virgules (``{\pos(960,80)}``), libass ne coupe
+            # que les colonnes qui précèdent.
             assert (
-                len(line.replace("Dialogue: ", "").split(",")) == event_columns
+                len(line.replace("Dialogue: ", "").split(",", event_columns - 1)) == event_columns
             )
+            assert not line.replace("Dialogue: ", "").split(",", event_columns - 1)[-1].startswith(",")
 
 
 def test_format_srt_keeps_only_text_and_timing() -> None:

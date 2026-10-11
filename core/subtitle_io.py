@@ -236,16 +236,20 @@ def style_has_box(style) -> bool:
     return style is not None and style.background_color is not None and style.background_opacity > 0.0
 
 
-def ass_position(style) -> tuple[float, float] | None:
+def ass_position(style, *, force: bool = False) -> tuple[float, float] | None:
     """Point d'ancrage du texte (``\\pos``) en unités du script ASS, ou ``None`` sans décalage.
 
     Le point de base est celui que donnent l'alignement et les marges : le bord (à la marge) pour la gauche, la droite,
     le haut et le bas, le centre pour le milieu ; ``position_x`` / ``position_y`` le décalent en **pour cent du cadre**
     (positif : vers la droite, vers le bas). Sans décalage, rien n'est écrit : libass place le texte avec le style et
-    les marges, exactement comme avant."""
+    les marges, exactement comme avant.
+
+    ``force`` : renvoie le point même sans décalage. Une ligne **sans** ``\\pos`` est déplacée par la gestion des
+    collisions de libass quand deux sous-titres se recouvrent ; son fond (calque 0) et son texte (calque 1) ne sont
+    pas dans le même groupe de collision et pouvaient se séparer. Une ligne avec ``\\pos`` ne bouge pas."""
     from .text_style import alignment_to_ass
 
-    if not style.position_x and not style.position_y:
+    if not force and not style.position_x and not style.position_y:
         return None
     code = alignment_to_ass(style.alignment) - 1
     column, row = code % 3, code // 3                       # 0 gauche / centre / droite ; 0 bas / milieu / haut
@@ -355,8 +359,11 @@ def _ass_dialogue_lines(cue, style_name: str, style) -> list[str]:
     Le fond est le même texte, invisible, sur un calque en dessous, dans le style ``<nom>Box`` (boîte opaque) : il suit
     donc la taille du texte, avec les marges internes ``padding_x`` / ``padding_y`` (``\\xbord`` / ``\\ybord``).
     Le texte, sur le calque du dessus, garde son contour et son ombre. Un décalage (``position_x`` / ``position_y``)
-    s'écrit ``\\pos`` sur les deux. Sans fond ni décalage : une seule ligne, comme avant."""
-    position = ass_position(style) if style is not None else None
+    s'écrit ``\\pos`` sur les deux, et un fond en écrit toujours un : libass décale les cues qui se recouvrent et
+    séparait la boîte (calque 0) du texte (calque 1), qui sont dans des groupes de collision différents. Sans fond ni
+    décalage : une seule ligne, comme avant."""
+    # Un fond impose un ``\\pos`` (même sans décalage) : la boîte et le texte restent ensemble quand deux cues se recouvrent.
+    position = ass_position(style, force=style_has_box(style)) if style is not None else None
     placement = f"\\pos({_ass_number(position[0])},{_ass_number(position[1])})" if position else ""
     if not style_has_box(style):
         return [_ass_dialogue_line(cue, style_name, style, overrides=f"{{{placement}}}" if placement else "")]

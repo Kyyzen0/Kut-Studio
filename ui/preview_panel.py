@@ -64,6 +64,10 @@ class _ViewportWatcher(QObject):
         return False
 
 
+SUBTITLE_MIN_WIDTH = 60
+"""Largeur minimale (pixels) de l'étiquette du sous-titre : un cadre minuscule ne réduit pas le texte à une colonne."""
+
+
 class _SubtitleLayer(QWidget):
     """Couche transparente qui couvre le moniteur et porte l'étiquette du sous-titre, placée à la main.
 
@@ -575,12 +579,14 @@ class PreviewPanel(QWidget):
         frame = QRectF(origin.x() + canvas.x(), origin.y() + canvas.y(), canvas.width(), canvas.height())
         if frame.width() <= 1.0 or frame.height() <= 1.0:
             return
-        label.setMaximumWidth(_subtitle_max_width(layer))
+        margin_x = style.margin_x * frame.width() / PLAY_RES_X
+        margin_y = style.margin_y * frame.height() / PLAY_RES_Y
+        # Le texte revient à la ligne dans le cadre de la vidéo, entre ses marges latérales, comme libass à l'export
+        # (la couche, elle, couvre aussi les bandes noires du moniteur) ; au moins quelques lettres.
+        label.setMaximumWidth(max(SUBTITLE_MIN_WIDTH, int(frame.width() - 2.0 * margin_x)))
         label.ensurePolished()                               # la feuille de style change la taille : la mesurer après
         label.adjustSize()
         width, height = float(label.width()), float(label.height())
-        margin_x = style.margin_x * frame.width() / PLAY_RES_X
-        margin_y = style.margin_y * frame.height() / PLAY_RES_Y
         code = alignment_to_ass(style.alignment) - 1
         column, row = code % 3, code // 3                    # 0 gauche / centre / droite ; 0 bas / milieu / haut
         anchor_x = (margin_x, frame.width() / 2.0, frame.width() - margin_x)[column]

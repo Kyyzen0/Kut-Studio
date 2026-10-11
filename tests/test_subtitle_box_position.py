@@ -38,8 +38,8 @@ def test_the_background_is_a_box_layer_under_the_text_not_the_shadow_colour():
     assert box[3] == "&HFFFFFFFF&", "le texte du calque de fond est invisible"
     assert text[15] == "0", "le texte garde son propre style (ni contour ni ombre ici)"
     dialogues = [line for line in output.splitlines() if line.startswith("Dialogue: ")]
-    assert dialogues[0].startswith("Dialogue: 0,") and ",DefaultBox," in dialogues[0] and "{\\xbord20\\ybord8}" in dialogues[0]
-    assert dialogues[1].startswith("Dialogue: 1,") and ",Default," in dialogues[1] and dialogues[1].endswith(",,A")
+    assert dialogues[0].startswith("Dialogue: 0,") and ",DefaultBox," in dialogues[0] and "{\\xbord20\\ybord8\\pos(" in dialogues[0]
+    assert dialogues[1].startswith("Dialogue: 1,") and ",Default," in dialogues[1] and dialogues[1].endswith("}A")
 
 
 @pytest.mark.parametrize("style", [
@@ -237,3 +237,67 @@ def test_the_preview_subtitle_follows_the_frame_when_the_window_is_resized(windo
     assert bottom == pytest.approx(fy + fh - 48.0 * fh / PLAY_RES_Y, abs=2.0)
     panel.clear_subtitle()
     assert panel.preview_subtitle_overlay.isHidden()
+
+
+def test_the_preview_wraps_a_long_subtitle_inside_the_video_frame_and_its_margins(window):
+    """Avant : la largeur maximale venait de la couche entière (≥ 280 px), pas du cadre : un texte long dépassait la
+    vidéo, surtout aligné à gauche ou à droite, et ne revenait pas à la ligne comme à l'export."""
+    panel = window.preview_panel
+    long_text = "Un sous-titre bien trop long pour tenir sur une seule ligne dans le cadre de la vidéo, " * 2
+    for alignment in (TextAlignment.BOTTOM_LEFT, TextAlignment.BOTTOM_CENTER, TextAlignment.BOTTOM_RIGHT):
+        panel.set_subtitle(long_text, TextStyle(alignment=alignment, margin_x=80.0))
+        fx, _fy, fw, _fh = _frame(panel)
+        left, _top, right, _bottom = _label_box(panel)
+        margin = 80.0 * fw / PLAY_RES_X
+        assert right - left <= fw - 2 * margin + 1, f"{alignment.value} : {right - left} px dans un cadre de {fw:.0f}"
+        assert left >= fx - 1 and right <= fx + fw + 1, "le texte reste dans le cadre"
+    window.resize(900, 700)
+    window.repaint()
+    panel.set_subtitle(long_text, TextStyle(alignment=TextAlignment.BOTTOM_LEFT, margin_x=80.0))
+    fx, _fy, fw, _fh = _frame(panel)
+    left, _top, right, _bottom = _label_box(panel)
+    assert left >= fx - 1 and right <= fx + fw + 1, "un moniteur étroit : toujours dans le cadre"
+
+
+# --- cues qui se recouvrent ----------------------------------------------------------------------------------------------------
+
+
+def test_a_boxed_cue_always_carries_a_pos_so_libass_cannot_separate_its_box_from_its_text():
+    from core.subtitle_io import format_ass_with_styles
+
+    boxed = TextStyle(background_color="#00FF00", background_opacity=1.0, **QUIET)
+    assert ass_position(boxed) is None and ass_position(boxed, force=True) == pytest.approx((960.0, 1032.0))
+    entries = [(SubtitleCue(0.0, 1.0, "A"), TextStyle(**QUIET)), (SubtitleCue(0.0, 1.0, "B"), boxed)]
+    lines = [line for line in format_ass_with_styles(entries, TextStyle(**QUIET)).splitlines()
+             if line.startswith("Dialogue: ")]
+    assert "\\pos" not in lines[0], "un cue sans fond ni décalage : comme avant"
+    assert all("\\pos(960,1032)" in line for line in lines[1:]), "la boîte et le texte du cue à fond"
+
+
+@pytest.mark.libass
+@pytest.mark.parametrize("boxed_first", [True, False], ids=["fond d'abord", "fond ensuite"])
+def test_a_boxed_cue_keeps_its_box_around_its_text_when_another_cue_overlaps(tmp_path, boxed_first):
+    """Avant : un cue simple déclaré avant un cue à fond décalait sa boîte de ~39 pixels sans son texte."""
+    import subprocess
+
+    from core.subtitle_io import format_ass_with_styles
+
+    plain = TextStyle(color="#FF3030", **QUIET)
+    boxed = TextStyle(color="#FFFFFF", background_color="#00FF00", background_opacity=1.0, padding_x=30.0,
+                      padding_y=20.0, **QUIET)
+    entries = [(SubtitleCue(0.0, 2.5, "AAAA"), plain), (SubtitleCue(0.0, 2.5, "BBBB"), boxed)]
+    if boxed_first:
+        entries.reverse()
+    script = tmp_path / "t.ass"
+    script.write_text(format_ass_with_styles(entries, TextStyle(**QUIET)), encoding="utf-8")
+    source = libass._generate_source(tmp_path / "fond.mp4")
+    picture = tmp_path / "o.png"
+    subprocess.run([*libass._ffmpeg_command_prefix(), "-y", "-v", "error", "-i", str(source), "-vf",
+                    f"subtitles=filename={script}", "-frames:v", "1", str(picture)], check=True, timeout=240)
+    image = QImage(str(picture))
+    assert not image.isNull()
+    pixels = _pixels(image)
+    box, text = _bounds(_green(pixels)), _bounds(_white(pixels))
+    assert box[0] <= text[0] and box[1] <= text[1] and box[2] >= text[2] and box[3] >= text[3], \
+        f"le texte {text} sort de sa boîte {box}"
+    assert abs(((box[1] + box[3]) - (text[1] + text[3])) / 2) <= 6, "la boîte est centrée sur son texte"

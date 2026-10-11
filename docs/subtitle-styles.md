@@ -36,6 +36,11 @@ Dialogue: 1,…,Default,,…,{\pos(1152,978)}Bonjour                      ← le
 Le style `<nom>Box` reprend la police, la taille, l'alignement et les marges du style : la boîte épouse le texte. Un fond
 n'existe que si le style a **une couleur de fond et une opacité non nulle**.
 
+**Un cue à fond porte toujours un `\pos`**, même sans décalage. Sans lui, libass déplace un sous-titre qui en recouvre
+un autre (gestion des collisions) ; la boîte (calque 0) et le texte (calque 1) sont dans des groupes de collision
+différents et se séparaient : mesuré, une boîte décalée de 39 pixels vers le haut sans son texte, quand un cue simple
+la précédait. Avec un `\pos`, ils ne bougent pas.
+
 Avant ce calque, la couleur de fond était écrite dans `BackColour` : elle ne s'affichait jamais, et la couleur d'ombre du
 style n'était jamais utilisée (l'ombre était toujours transparente).
 
@@ -49,8 +54,12 @@ Le moniteur applique le même calcul, dans le cadre de la séquence, et suit le 
 
 ## Limites
 
+- Deux cues **à fond** qui se recouvrent dans le temps et au même endroit **se superposent** au lieu de s'empiler (leur
+  `\pos` les fixe) : donnez-leur des alignements ou des décalages différents. Les cues sans fond s'empilent comme avant.
+  Le moniteur n'affiche de toute façon que le sous-titre du dessus.
 - Le fond d'un texte sur plusieurs lignes est une boîte **par ligne** dans libass ; le moniteur en dessine une seule
   autour du bloc.
+- Le moniteur revient à la ligne dans le cadre de la vidéo, entre les marges latérales, comme libass.
 - Le moniteur ne dessine ni l'ombre, ni un vrai contour de lettres (sa bordure entoure l'étiquette) : l'aperçu fidèle,
   rendu par libass, montre l'image exacte quand il est prêt.
 - Les marges sont bornées à 80 par le modèle, alors que l'éditeur propose jusqu'à 200.
