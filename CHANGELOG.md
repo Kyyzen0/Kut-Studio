@@ -17,7 +17,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Changed
 
 - **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
-  (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Autoutilise
+  (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Auto utilise
   ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.
 - **Aperçu fidèle : un clip vidéo déjà commencé** n'est plus traité depuis le début du média dans un segment tardif
   (coupe avant effets / conformation, comme l'audio du mixage en direct).
