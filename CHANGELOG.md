@@ -30,9 +30,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
 par un graphe de nœuds (sources, transformation, masque, incrustation, effets, étalonnage, fusion), avec sa page
 Composition et la conversion des calques en nœuds ; en lecture, le moniteur lit la composition rendue d'avance. Aussi :
-une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), l'export d'une piste au
-panoramique non centré (il échouait), un gel possible quand les scopes étaient affichés, et les couleurs du moniteur GPU
-sur les vidéos au grain coloré.
+une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), l'export qui échouait avec un
+panoramique non centré ou l'un de quatre effets audio, l'écho et la réverbération enfin audibles, un gel possible quand
+les scopes étaient affichés, et les couleurs du moniteur GPU sur les vidéos au grain coloré.
 
 **À savoir** : les projets passent au format 17 ; une version plus ancienne de Kut-Studio ne les ouvre plus.
 
@@ -57,6 +57,15 @@ sur les vidéos au grain coloré.
 
 ### Fixed
 
+- **Quatre effets audio faisaient échouer l'export** : *Amélioration de la voix*, *Réduction de bruit*, *Compresseur* et
+  *Limiteur* envoyaient à FFmpeg des valeurs qu'il refuse (des décibels là où il attend une amplitude linéaire, un
+  nombre de pôles hors de sa plage, une option qui n'existe pas). Tout projet qui les utilisait ne s'exportait pas.
+  Ils sont corrigés, et chaque réglage est borné à ce que FFmpeg accepte
+  (le plancher de bruit de la réduction de bruit ne dépasse plus −20 dB, la décroissance de l'écho reste au-dessus de
+  zéro). *Amélioration de la voix* : l'intensité choisit entre deux pentes de coupure (douce ou raide).
+- **L'écho et la réverbération n'avaient pas d'écho audible** : le retard était donné à FFmpeg en secondes là où il
+  attend des millisecondes, donc 1 000 fois trop court (un écho de 300 ms était demandé à 0,3 ms). Ils font maintenant
+  l'écho réglé. ⚠️ Rendu différent pour les projets qui utilisaient ces deux effets.
 - **Un panoramique non centré faisait échouer l'export**, l'aperçu fidèle et la mesure de sonie : FFmpeg refusait le
   filtre envoyé pour une piste ou un clip non centré (présent depuis l'ajout du mixeur). Le panoramique est maintenant
   une balance à puissance constante : au centre rien ne change, le côté opposé s'éteint progressivement (−3 dB à

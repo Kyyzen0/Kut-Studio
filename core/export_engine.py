@@ -2984,6 +2984,12 @@ def _build_track_volume_envelope(
 # Bornes des options de ``sidechaincompress`` (``ffmpeg -h filter=sidechaincompress``) : une valeur hors bornes fait
 # échouer tout le graphe, donc tout l'export.
 SIDECHAIN_THRESHOLD_RANGE = (0.000976563, 1.0)   # amplitude linéaire, pas des dB
+COMPRESSOR_MAKEUP_RANGE = (1.0, 64.0)             # gain de compensation de ``acompressor``, linéaire
+LIMITER_LIMIT_RANGE = (0.0625, 1.0)               # plafond de ``alimiter``, linéaire
+AFFTDN_REDUCTION_RANGE = (0.01, 97.0)             # dB
+AFFTDN_FLOOR_RANGE = (-80.0, -20.0)               # dBFS
+AFFTDN_MAX_REDUCTION_DB = 30.0                    # réduction pour une force de 1
+AECHO_DECAY_RANGE = (0.001, 1.0)                  # ``aecho`` refuse 0
 SIDECHAIN_RATIO_RANGE = (1.0, 20.0)
 SIDECHAIN_ATTACK_MS_RANGE = (0.01, 2000.0)       # millisecondes
 SIDECHAIN_RELEASE_MS_RANGE = (0.01, 9000.0)
@@ -3094,34 +3100,50 @@ def _build_clip_audio_effect_filters(effects: tuple) -> list[str]:
                 f"TP={_format_db(params['true_peak'])}"
             )
         elif ftype.value == "voice_enhance":
-            # Renforce la voix en supprimant les basses fréquences
-            # parasites sous la fréquence déclarée, avec une intensité
-            # proportionnelle (0 = neutre, 1 = coupe haute).
+            # Renforce la voix en supprimant les basses fréquences parasites sous la fréquence déclarée. ``highpass``
+            # n'a que 1 ou 2 pôles (6 ou 12 dB par octave) : l'intensité choisit la pente (au-dessus de la moitié,
+            # la plus raide). Avant, jusqu'à 6 pôles : FFmpeg refusait le graphe (« Result too large »).
             cutoff = _format_seconds(params["frequency"])
-            intensity = float(params["intensity"])
-            pole = max(1, int(round(1 + intensity * 5)))
+            poles = 2 if float(params["intensity"]) > 0.5 else 1
             filters.append(
-                f"highpass=frequency={cutoff}:poles={pole}"
+                f"highpass=frequency={cutoff}:poles={poles}"
             )
         elif ftype.value == "noise_reduce":
+            # ``afftdn`` : réduction ``nr`` en dB (0,01 à 97) et plancher de bruit ``nf`` (−80 à −20 dBFS). La force
+            # (0 à 1) devient 0 à 30 dB de réduction ; le plancher, que le modèle laisse aller jusqu'à −10, est borné à
+            # −20. Avant, une option ``w`` qui n'existe pas : FFmpeg refusait le graphe.
+            reduction = _clamp(float(params["strength"]) * AFFTDN_MAX_REDUCTION_DB, AFFTDN_REDUCTION_RANGE)
+            floor = _clamp(float(params["noise_floor_db"]), AFFTDN_FLOOR_RANGE)
             filters.append(
-                "afftdn="
-                f"nf={_format_db(params['noise_floor_db'])}:"
-                f"w={_format_seconds(params['strength'])}"
+                f"afftdn=nr={_format_db(reduction)}:nf={_format_db(floor)}"
             )
         elif ftype.value == "compressor":
+            # ``acompressor`` prend le seuil et le gain de compensation en **amplitude linéaire** (pas en dB) :
+            # 10^(dB/20), dans les bornes du filtre. Avant, des dB tels quels : « Result too large ».
+            threshold = _clamp(10.0 ** (float(params["threshold_db"]) / 20.0), SIDECHAIN_THRESHOLD_RANGE)
+            makeup = _clamp(10.0 ** (float(params["makeup_db"]) / 20.0), COMPRESSOR_MAKEUP_RANGE)
+            ratio = _clamp(params["ratio"], SIDECHAIN_RATIO_RANGE)
+            attack = _clamp(params["attack_ms"], SIDECHAIN_ATTACK_MS_RANGE)
+            release = _clamp(params["release_ms"], SIDECHAIN_RELEASE_MS_RANGE)
             filters.append(
                 "acompressor="
-                f"threshold={_format_db(params['threshold_db'])}:"
-                f"ratio={_format_seconds(params['ratio'])}:"
-                f"attack={_format_seconds(params['attack_ms'])}:"
-                f"release={_format_seconds(params['release_ms'])}:"
-                f"makeup={_format_db(params['makeup_db'])}"
+                f"threshold={threshold:.6f}:"
+                f"ratio={_format_seconds(ratio)}:"
+                f"attack={_format_seconds(attack)}:"
+                f"release={_format_seconds(release)}:"
+                f"makeup={makeup:.6f}"
             )
         elif ftype.value == "limiter":
-            filters.append(
-                f"alimiter=limit={_format_db(params['limit_db'])}"
-            )
+            # ``alimiter`` : plafond en amplitude linéaire (0,0625 à 1). Sans ``level=0`` il remonterait un signal
+            # faible jusqu'au plafond. Sans ``latency=1`` il retarderait le clip de 5 ms (239 échantillons) et
+            # ``adelay`` ne peut pas le rattraper (``amix`` ignore les horodatages) : sur un FFmpeg qui n'a pas cette
+            # option, l'effet n'est pas émis, comme le limiteur du mixage final (mieux vaut pas de plafond qu'un
+            # clip décalé derrière l'image).
+            if _ffmpeg_filter_has_option("alimiter", "latency"):
+                limit = _clamp(10.0 ** (float(params["limit_db"]) / 20.0), LIMITER_LIMIT_RANGE)
+                filters.append(
+                    f"alimiter=limit={limit:.6f}:level=0:latency=1"
+                )
         elif ftype.value == "bass_boost":
             filters.append(
                 "bass="
@@ -3170,6 +3192,10 @@ def _build_aecho_filter(
     par filtre : on empile donc N filtres successifs en réutilisant
     ``in_gain`` et ``out_gain`` (l'entrée du premier est le signal
     brut, la sortie du dernier est le signal traité final).
+
+    ``delays`` de ``aecho`` est en **millisecondes**. Avant, le retard était converti en secondes : un écho de 300 ms
+    était demandé à 0,3 ms (aucun écho audible), et aux valeurs minimales le retard tombait à zéro échantillon
+    (« Nothing to echo »).
     """
     in_gain = _format_seconds(params["in_gain"])
     out_gain = _format_seconds(params["out_gain"])
@@ -3182,12 +3208,14 @@ def _build_aecho_filter(
         # sensation homogène entre un seul écho et trois.
         scale = delay / max(delays)
         d_ms = user_delay_ms * scale
-        d_decay = user_decay * (decay / max(decays))
+        # ``aecho`` exige une décroissance dans ]0 ; 1] : le réglage 0 (« pas d'écho ») donnait « out of allowed range ».
+        # Un plancher de 0,001 (−60 dB) le garde inaudible sans refuser le graphe.
+        d_decay = _clamp(user_decay * (decay / max(decays)), AECHO_DECAY_RANGE)
         parts.append(
             f"aecho="
             f"in_gain={in_gain}:"
             f"out_gain={out_gain}:"
-            f"delays={_format_seconds(d_ms / 1000.0)}:"
+            f"delays={_format_seconds(d_ms)}:"
             f"decays={_format_seconds(d_decay)}"
         )
         # À partir du 2e écho, ``in_gain`` / ``out_gain`` valent 1 pour
