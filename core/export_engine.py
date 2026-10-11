@@ -2819,10 +2819,16 @@ def _build_audio_filter(
     puisse s'injecter dans la commande.
 
     ``origin`` (mixage commencé à cet instant de la timeline, voir
-    ``audio_origin``) : seul le dernier pas change. Une couche qui commence
-    après est retardée de ``début - origin`` ; une couche déjà en cours
-    perd sa tête (``atrim``) **après** sa chaîne, dont les effets, fondus
-    et automation restent donc calculés exactement dans son temps propre.
+    ``audio_origin``) : une couche qui commence après est retardée de
+    ``début - origin`` ; une couche déjà en cours est coupée **avant** sa
+    chaîne (``atrim`` du début à l'origine) : ni ses effets, ni son volume ne
+    traitent ce qui précède, un clip entamé depuis une heure ne coûte pas une
+    heure de traitement. Les horodatages sont **conservés** (``asetpts`` ajoute
+    le temps coupé) : ``afade`` et ``volume`` (``t``) lisent l'horodatage de
+    l'image, donc fondus et automation restent calculés exactement dans le
+    temps propre du clip (vérifié sur FFmpeg 7.1 et 9.0). Seul le décodage de
+    la source reste proportionnel à la position. Un clip remappé (vitesse,
+    inversion) garde l'ancien chemin : sa chaîne est coupée après.
     """
     from .audio_mixer import pan_needs_filter
 
@@ -2834,6 +2840,9 @@ def _build_audio_filter(
     source_label = source if source is not None else f"{input_index}:a"
     output_label = label if label is not None else f"a{audio_index}"
     time_map = _retime_audio_map_of(layer)
+    origin = max(0.0, float(origin))
+    # Temps du clip déjà écoulé à l'origine du mixage : coupé avant la chaîne (hors clip remappé, voir plus haut).
+    skip = max(0.0, origin - layer.timeline_start) if origin > 0.0 and time_map is None else 0.0
     pre_chains: tuple[str, ...] = ()
     if time_map is not None:
         # Clip remappé : le son vient du ``TimeMap`` du clip, morceau par morceau (voir :mod:`core.retime_graph`). Le
@@ -2849,8 +2858,8 @@ def _build_audio_filter(
     else:
         head = f"[{source_label}]"
         steps = [
-            f"atrim=start={source_in}:end={source_out}",
-            "asetpts=PTS-STARTPTS",
+            f"atrim=start={_format_seconds(layer.source_in + skip)}:end={source_out}",
+            f"asetpts=PTS-STARTPTS+{_format_seconds(skip)}/TB" if skip > 0.0 else "asetpts=PTS-STARTPTS",
             "aformat=channel_layouts=stereo:sample_rates=48000",
         ]
 
@@ -2894,13 +2903,12 @@ def _build_audio_filter(
     if pan_needs_filter(layer.total_pan):
         steps.append(_build_pan_filter(layer.total_pan))
 
-    origin = max(0.0, float(origin))
     if origin > 0.0:
         offset = layer.timeline_start - origin
         if offset > 0.0:
             delay_ms = f"{offset * 1000.0:.3f}"
             steps.append(f"adelay={delay_ms}|{delay_ms}")
-        elif offset < 0.0:                                   # déjà en cours à l'origine : sa tête est passée
+        elif offset < 0.0 and time_map is not None:          # remappé : sa tête est passée, coupée après sa chaîne
             steps.extend([f"atrim=start={_format_seconds(-offset)}", "asetpts=PTS-STARTPTS"])
     elif layer.timeline_start > 0.0:
         # ``amix`` ne lit pas les horodatages : seul un retard des échantillons place le clip sur la timeline.

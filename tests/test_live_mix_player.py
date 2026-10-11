@@ -224,3 +224,26 @@ def test_a_mix_that_cannot_keep_up_gives_the_monitor_its_sound_back(window, monk
         assert not window.live_mix_active and not window.preview_panel.audio_output.isMuted()
     finally:
         window.toggle_play()
+
+
+def test_a_synchronous_startup_failure_is_remembered_and_not_retried_every_tick(window, monkeypatch):
+    """Un plan ou une commande impossibles à construire ne sont pas réessayés 25 fois par seconde (et sans trace à
+    chaque tic) : l'échec est retenu pour cet état du projet, le moniteur garde son son."""
+    attempts = []
+
+    def broken(*args, **kwargs):
+        attempts.append(1)
+        raise RuntimeError("FFmpeg introuvable")
+
+    monkeypatch.setattr("core.live_mix.build_live_mix_command", broken)
+    window.toggle_play()
+    try:
+        for _ in range(10):                                # dix tics de lecture
+            window._sync_live_mix()
+        assert len(attempts) == 1, "un seul essai pour cet état du projet"
+        assert not window.live_mix_active and not window.preview_panel.audio_output.isMuted()
+        window.history.record(window.project, "autre état")  # le projet change : un nouvel essai est permis
+        window._sync_live_mix()
+        assert len(attempts) == 2
+    finally:
+        window.toggle_play()

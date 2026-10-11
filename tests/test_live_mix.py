@@ -78,15 +78,19 @@ def _live(project, start, **options):
 
 
 @needs_ffmpeg
-@pytest.mark.parametrize("start", [0.0, 2.0, 9.5, 13.0])
+@pytest.mark.parametrize("start", [0.0, 2.0, 3.5, 9.3, 9.5, 13.0, 19.5])
 def test_the_live_mix_is_the_export_mix_from_the_playhead(tmp_path, start):
+    """Dont les origines 0,5 s (dans le fondu d'entrée de la musique), 6,3 s (dans celui de la voix, entamée à 1 s de sa
+    source) et 16,5 s (avant le fondu de sortie) : fondus et automation restent dans le temps propre du clip."""
     project = _project(tmp_path)
     reference = _export_mix(build_render_plan(project))[int(start * SAMPLE_RATE):]
     live, frames = _live(project, start)
     heard = frames[:, 0:2]
     count = min(len(heard), len(reference))
     assert count >= int((20.0 - start) * SAMPLE_RATE) - 2
-    assert np.abs(heard[:count] - reference[:count]).max() < 1e-4, "fondus, automation, gain, pan : à l'échantillon"
+    # 3e-4 (−70 dBFS) : l'enveloppe d'automation est évaluée par paliers de 256 échantillons dont la phase suit le point
+    # de coupe, d'où un écart de l'ordre de 1e-4 dans une rampe, inaudible.
+    assert np.abs(heard[:count] - reference[:count]).max() < 3e-4, "fondus, automation, gain, pan"
     if start > PREROLL_SECONDS:
         assert live.preroll_frames == int(PREROLL_SECONDS * SAMPLE_RATE)
 
@@ -112,6 +116,43 @@ def test_the_master_is_heard(tmp_path):
     assert ratio == pytest.approx(10 ** (-6 / 20), rel=1e-3)
     _live_cmd, muted = _live(project, 7.0, master_muted=True)
     assert np.abs(muted[:, 0:2]).max() == 0.0
+
+
+def test_a_running_clip_is_cut_before_its_effects_and_keeps_its_own_clock(tmp_path):
+    """Un clip entamé avant l'origine est coupé avant sa chaîne (aucun traitement de ce qui précède) et garde ses
+    horodatages : c'est ce qui laisse ses fondus et son automation dans son temps propre."""
+    project = _project(tmp_path)
+    live = build_live_mix_command(project, 9.3)                # origine 6,3 s : la voix (6 s) est entamée de 0,3 s
+    chains = build_chains(live)
+    voice = next(chain for chain in chains if "afade=t=in:st=0.0:d=0.5" in chain)
+    assert "atrim=start=1.3:end=9.0" in voice, "source_in 1 s + 0,3 s de clip déjà écoulé"
+    assert voice.index("atrim=start=1.3") < voice.index("afade") and voice.count("atrim=") == 1
+    assert "asetpts=PTS-STARTPTS+0.3/TB" in voice, "horodatages conservés : fondu et automation lisent le temps du clip"
+    bed = next(chain for chain in chains if "pow(10" in chain)
+    assert bed.startswith("[0:a]atrim=start=6.3") and bed.count("atrim=") == 1, "la musique aussi, une seule coupe"
+
+
+def build_chains(live) -> list[str]:
+    """Les chaînes de couches (une par clip) du graphe de la commande."""
+    graph = live.command[live.command.index("-filter_complex") + 1]
+    return [part for part in graph.split(";") if "atrim=start=" in part and part.startswith("[")]
+
+
+@needs_ffmpeg
+def test_a_retimed_clip_still_matches_the_export_from_a_running_origin(tmp_path):
+    """Un clip remappé (vitesse 2×) garde l'ancien chemin : sa chaîne est coupée après."""
+    from core.time_remapping import TimeRemapping
+
+    music = _asset(tmp_path, "music", _tone(20.0, 220.0, 0.25))
+    clip = Clip("fast", "music", "A1", 0.0, 0.0, 20.0, time_remapping=TimeRemapping(speed=2.0))
+    project = Project("p", width=64, height=36, fps=25.0, media_assets=[music],
+                      tracks=[Track("A1", "A1", "audio", clips=[clip])])
+    start = 4.0
+    reference = _export_mix(build_render_plan(project))[int(start * SAMPLE_RATE):]
+    _live_cmd, frames = _live(project, start)
+    count = min(len(frames), len(reference))
+    assert count > 5 * SAMPLE_RATE
+    assert np.abs(frames[:count, 0:2] - reference[:count]).max() < 5e-3
 
 
 def test_only_what_remains_is_opened(tmp_path):

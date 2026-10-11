@@ -38,10 +38,18 @@ lecture ─▶ plan audio (fenêtre : tête − 3 s → fin, sans image, Master 
 - **Origine audio** (`audio_origin`). Le mixage commençait toujours au début de la timeline, et le son avant la tête
   était calculé puis jeté : rendre 10 s à 15 min de la timeline coûtait 1,95 s (deux pistes simples, M4), contre
   0,06 s au début. Le graphe part maintenant d'une origine : une couche qui commence après est retardée d'autant, une
-  couche déjà en cours perd sa tête **après** sa chaîne (effets, fondus, automation restent calculés dans son temps
-  propre), les bases silencieuses et le ducking durent ce qui reste. Le plan est fenêtré : un clip fini avant n'est
-  même pas ouvert. Vérifié : le mixage pris à une origine est celui de l'export à partir de cet instant, à 10⁻⁴ près
-  (fondus, automation, gain, pan, Master). `0` : le graphe historique, inchangé.
+  couche déjà en cours est **coupée avant sa chaîne** (`atrim` du début à l'origine : ni les effets ni le volume ne
+  traitent ce qui précède), les bases silencieuses et le ducking durent ce qui reste. Le plan est fenêtré : un clip
+  fini avant n'est même pas ouvert.
+  - Les **horodatages sont conservés** (`asetpts` ajoute le temps coupé) : `afade` et `volume` (`t`) les lisent, donc
+    fondus et automation restent calculés dans le temps propre du clip (vérifié sur FFmpeg 7.1 et 9.0). Un clip
+    remappé (vitesse, inversion) garde l'ancien chemin : sa chaîne est coupée après.
+  - Ce que ça change, mesuré : un clip avec l'effet *Normalisation* (`loudnorm`) lu à 15 min, **19 s** avant le
+    premier son si la coupe suit la chaîne, **0,6 s** en la coupant avant. Reste le décodage de la source jusqu'à
+    l'origine (0,47 s à 15 min), proportionnel à la position mais rapide.
+  - Vérifié : le mixage pris à une origine est celui de l'export à partir de cet instant, à 3·10⁻⁴ près (−70 dBFS ;
+    l'enveloppe d'automation est évaluée par paliers de 256 échantillons dont la phase suit le point de coupe),
+    y compris quand l'origine tombe dans un fondu. `0` : le graphe historique, inchangé.
 - **Pré-lecture** de 3 s : le flux part 3 s avant la tête, et ce début est calculé puis jeté. Le relâchement d'un
   ducking et la fenêtre de la sonie à court terme partent avec leur historique.
 - **Canaux du flux**, par image : 0-1 le mixage entendu ; 2-3 le même, pondéré K (BS.1770 à 48 kHz, deux `biquad`) ;
@@ -60,7 +68,8 @@ lecture ─▶ plan audio (fenêtre : tête − 3 s → fin, sans image, Master 
   telle quelle 0,2 s (un fader qu'on glisse ne relance pas FFmpeg à chaque pas) ; un écart de plus de 0,25 s entre le
   son et la tête (saut, gel) aussi. Le lecteur du moniteur se tait pendant ce temps : le mixage contient déjà son son,
   celui des sources Multicam (qui ne jouent plus à part) et des compositions.
-- **Repli** : FFmpeg qui échoue, qui ne tient pas le temps réel (trois recalages en 5 s, des effets trop lourds), ou
+- **Repli** : FFmpeg qui échoue (y compris un plan ou une commande impossibles à construire : l'échec est retenu pour
+  cet état du projet, pas réessayé à chaque tic), qui ne tient pas le temps réel (trois recalages en 5 s, des effets trop lourds), ou
   aucune sortie audio (une machine sans carte son) : le moniteur garde son propre son, et le flux n'est pas relancé tant
   que le projet ne change pas. `KUT_STUDIO_LIVE_MIX=off` le coupe (tests, audit
   d'interface).

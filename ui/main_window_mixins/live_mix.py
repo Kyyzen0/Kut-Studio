@@ -58,11 +58,16 @@ class LiveMixMixin:
         return player is not None and player.active
 
     def _sync_live_mix(self) -> None:
-        """Lance, arrête ou relance le flux selon l'état de la lecture et du projet. Jamais d'exception."""
+        """Lance, arrête ou relance le flux selon l'état de la lecture et du projet. Jamais d'exception.
+
+        Un échec **synchrone** (plan ou commande impossibles à construire, lecteur qui ne démarre pas) est retenu pour
+        l'état du projet qui l'a causé, comme un échec du flux (:meth:`_on_live_mix_failed`) : sans cela, chaque tic de
+        lecture (25 par seconde) reconstruirait le plan et écrirait une trace, jusqu'à rendre la lecture inutilisable."""
         try:
             self._drive_live_mix()
         except Exception:
             LOGGER.warning("Mixage en direct : le moniteur garde son propre son", exc_info=True)
+            self._live_mix_failed_key = self._live_mix_wanted_key()
             self._stop_live_mix()
 
     def _drive_live_mix(self) -> None:
