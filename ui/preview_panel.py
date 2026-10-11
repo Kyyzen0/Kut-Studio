@@ -388,7 +388,14 @@ class PreviewPanel(QWidget):
 
     def set_silenced(self, silenced: bool) -> None:
         """Coupe (ou rétablit) le son du lecteur du moniteur : le son vient alors d'ailleurs (enregistreur Multicam)."""
-        self.audio_output.setMuted(bool(silenced))
+        self._silenced = bool(silenced)
+        self.audio_output.setMuted(self._silenced or getattr(self, "_audio_replaced", False))
+
+    def set_audio_replaced(self, replaced: bool) -> None:
+        """Le mixage en direct joue le son de la timeline : le lecteur du moniteur se tait (sans toucher à la règle
+        Multicam de :meth:`set_silenced`, qu'il retrouve ensuite)."""
+        self._audio_replaced = bool(replaced)
+        self.audio_output.setMuted(self._audio_replaced or getattr(self, "_silenced", False))
 
     def set_frame_format(self, width: int, height: int, fps: float) -> None:
         """En-tête de la visionneuse : cadre et cadence de la séquence active (« 1080 × 1920 · 30 i/s · 9:16 »)."""

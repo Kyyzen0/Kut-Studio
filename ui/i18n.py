@@ -623,6 +623,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "mixer.reset": {"fr": "Réinitialiser le volume et le panoramique", "en": "Reset volume and pan", "es": "Restablecer volumen y paneo"},
     "mixer.master_mute": {"fr": "Couper la sortie principale", "en": "Mute master output", "es": "Silenciar la salida principal"},
     "mixer.master_reset": {"fr": "Réinitialiser la sortie principale", "en": "Reset master output", "es": "Restablecer la salida principal"},
+    "mixer.loudness": {"fr": "M {momentary} · CT {short_term} LUFS", "en": "M {momentary} · S {short_term} LUFS", "es": "M {momentary} · CP {short_term} LUFS"},
+    "mixer.loudness_tip": {"fr": "Sonie (BS.1770) de ce qui sort : momentanée (400 ms) et à court terme (3 s)", "en": "Loudness (BS.1770) of the output: momentary (400 ms) and short-term (3 s)", "es": "Sonoridad (BS.1770) de la salida: momentánea (400 ms) y a corto plazo (3 s)"},
     "mixer.locked": {"fr": "Piste verrouillée", "en": "Locked track", "es": "Pista bloqueada"},
     "mixer.no_tracks": {
         "fr": "Aucune piste audio dans ce projet.",
@@ -1906,6 +1908,7 @@ def reset_for_tests() -> None:
 
 # Modules de domaine : traductions tenues à part, fusionnées ici (tracking, matériel, motion graphics…).
 # Une clé définie deux fois est refusée à l'import : le doublon écraserait l'autre en silence.
+from ui.i18n_audio import AUDIO_TRANSLATIONS as _AUDIO  # noqa: E402
 from ui.i18n_color import COLOR_TRANSLATIONS as _COLOR  # noqa: E402
 from ui.i18n_composition import COMPOSITION_TRANSLATIONS as _COMPOSITION  # noqa: E402
 from ui.i18n_dialogs import DIALOGS_TRANSLATIONS as _DIALOGS  # noqa: E402
@@ -1932,6 +1935,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_social": _SOCIAL,
     "ui.i18n_color": _COLOR,
     "ui.i18n_composition": _COMPOSITION,
+    "ui.i18n_audio": _AUDIO,
 }
 
 

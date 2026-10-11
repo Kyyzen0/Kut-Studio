@@ -111,6 +111,12 @@ class MulticamMixin:
         par :class:`~ui.multicam_audio.AuxAudio`. Un clip ordinaire, ou un segment dont le son suit l'image, ne change rien.
         """
         aux = self._multicam_aux
+        if getattr(self, "live_mix_active", False):
+            # Le mixage en direct applique déjà la politique audio Multicam (plan de l'export) : rien d'autre ne joue.
+            self.preview_panel.set_silenced(False)
+            if aux is not None:
+                aux.stop()
+            return
         wanted: list[tuple[str, float]] = []
         silenced = False
         if top_clip is not None and top_clip.is_nested:

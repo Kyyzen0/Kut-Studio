@@ -40,7 +40,7 @@ from core.audio_recorder import AudioRecorder
 from core.timeline_editing import apply_solo
 from core.timeline_index import build_timeline_index
 from core.timeline_navigation import step_frames
-from core.workspace_state import PAGE_COLOR, PAGE_EDIT, PAGES, PanelId
+from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_EDIT, PAGES, PanelId
 from core.timeline_operations import find_clip
 from core.timeline_evaluator import (
     timeline_duration,
@@ -76,6 +76,7 @@ from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMix
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
+from ui.main_window_mixins.live_mix import LiveMixMixin
 from ui.main_window_mixins.animation import AnimationMixin
 from ui.main_window_mixins.encoding import EncodingMixin
 from ui.main_window_mixins.performance import PerformanceMixin
@@ -159,6 +160,7 @@ class MainWindow(
     EncodingMixin,
     AnimationMixin,
     FaithfulPreviewMixin,
+    LiveMixMixin,
     LibraryOrganizationMixin,
     SubtitlesGraphicsMixin,
     TransformEffectsMixin,
@@ -386,6 +388,7 @@ class MainWindow(
         self._record_tracks: list[str] = []
         self._apply_runtime_hints()
         self._init_faithful_preview()
+        self._init_live_mix()
         self._start_hardware_preview()
         self._init_cache_manager(loaded_settings)
         self.export_panel = ExportPanel()
@@ -639,6 +642,7 @@ class MainWindow(
         # la disposition. Il enregistre les quatre panneaux existants
         # (mêmes objets, mêmes signaux) puis compose les zones dock.
         self.mixer_panel = MixerPanel()
+        self.mixer_panel.level_provider = self._live_mix_levels   # vumètres : le mixage en direct
         from ui.history_panel import HistoryPanel
 
         self.history_panel = HistoryPanel()
@@ -774,7 +778,7 @@ class MainWindow(
             for index, button in enumerate(self.top_nav_buttons):
                 button.setChecked(index == top_nav_index)
 
-        self.switch_page(PAGE_COLOR if section_id == "color" else PAGE_EDIT)
+        self.switch_page(PAGE_COLOR if section_id == "color" else PAGE_AUDIO if section_id == "audio" else PAGE_EDIT)
         if section_id in ("color", "edit"):
             return
 
@@ -942,6 +946,7 @@ class MainWindow(
             ("synchronisation Multicam", self._cancel_multicam_syncs),
             ("réglages Multicam", self._close_multicam_settings),
             ("audio Multicam", self._release_multicam_audio),
+            ("mixage en direct", self._release_live_mix),
             ("moniteur Multicam", lambda: call("multicam_viewer", "shutdown")),
             ("média du viewer", lambda: call("preview_panel", "release_media")),
             ("scopes", lambda: call("scopes_analyzer", "close")),
@@ -1751,6 +1756,8 @@ class MainWindow(
             len(active_clips),
         )
         active_clips = apply_solo(self.project, active_clips)
+        # En lecture, le mixage de l'export (pistes audio, gains, effets, Master) remplace le son du moniteur.
+        self._sync_live_mix()
         if not self.is_playing:
             # Quoi que montre le moniteur à l'arrêt (segment fidèle, média manquant…), la lecture lira les morceaux
             # rendus des compositions : ils se préparent maintenant.
@@ -1954,6 +1961,7 @@ class MainWindow(
         if self.timeline_timer.isActive():
             self.timeline_timer.stop()
         self.preview_panel.player.pause()
+        self._sync_live_mix()                               # la pause ne resynchronise pas le moniteur : le son s'arrête ici
         self.timeline_panel.setPlayState(False)
         self._set_preview_play_icon(False)
         self._reset_adaptive_quality()
@@ -2002,6 +2010,7 @@ class MainWindow(
     def update_volume(self, value):
         self.properties_panel.volume_value.setText(f"{value} %")
         self.preview_panel.audio_output.setVolume(value / 100.0)
+        self._set_live_mix_volume(value / 100.0)
 
     # ------------------------------------------------------------------
     # Tâche 23 : gestion des presets de transitions

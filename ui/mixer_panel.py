@@ -5,10 +5,10 @@ mêmes règles que les autres (masquable, détachable, restorable). Il
 n'affiche que des **contrôles réels** adossés au modèle : volume de
 piste, panoramique, mute, solo, arm, plus une tranche Master.
 
-Aucun vumètre n'est affiché : le niveau réel n'est mesuré nulle part à
-ce jour. Un vumètre dessiné à partir d'une estimation donnerait une
-indication fausse — elle n'apparaîtra qu.le jour où un relevé de niveau
-existera (voir :class:`MixerPanel.level_provider`).
+Les vumètres montrent des niveaux **réels** : ceux du mixage en direct
+(:mod:`core.live_mix`), mesurés sur le son qui part vers la sortie, via
+:attr:`MixerPanel.level_provider`. Sans mesure (lecture arrêtée), ils
+retombent : jamais de niveau estimé.
 
 Le panneau ne modifie jamais le projet par lui-même : il émet des
 signaux, et c'est :class:`~ui.main_window.MainWindow` qui applique le
@@ -19,7 +19,7 @@ fenêtre : la règle est appliquée au plus près de la donnée.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -35,6 +35,7 @@ from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Track
 from ui.design_system import Iconography, Radius, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName
+from ui.level_meter import LevelMeter
 from ui.panel_header import PanelHeader
 from ui.theme import COLORS, label_style
 
@@ -125,7 +126,15 @@ class MixerStrip(QFrame):
                 self.track_id or "", float(value)
             )
         )
-        layout.addWidget(self.volume_slider, 1, Qt.AlignHCenter)
+        # Le vumètre de la piste (après fader et ducking) à côté de son fader.
+        self.meter = LevelMeter(Qt.Vertical)
+        fader_row = QHBoxLayout()
+        fader_row.setSpacing(Spacing.xs)
+        fader_row.addStretch(1)
+        fader_row.addWidget(self.volume_slider)
+        fader_row.addWidget(self.meter)
+        fader_row.addStretch(1)
+        layout.addLayout(fader_row, 1)
 
         self.volume_value = QLabel("0.0 dB")
         self.volume_value.setStyleSheet(label_style(10, "muted", 600))
@@ -370,6 +379,15 @@ class _MasterBar(QFrame):
         self.volume_value.setFixedWidth(64)
         layout.addWidget(self.volume_value)
 
+        # Ce qui sort : crête et RMS, puis la sonie (BS.1770) momentanée et à court terme.
+        self.meter = LevelMeter(Qt.Horizontal)
+        layout.addWidget(self.meter, 1)
+        self.loudness_label = QLabel("")
+        self.loudness_label.setStyleSheet(label_style(10, "muted", 600))
+        self.loudness_label.setMinimumWidth(150)
+        self.loudness_label.setToolTip(translate("mixer.loudness_tip"))
+        layout.addWidget(self.loudness_label)
+
         self.mute_button = IconButton(
             icon=IconName.AUDIO_MUTE,
             tooltip=translate("mixer.master_mute"),
@@ -401,7 +419,19 @@ class _MasterBar(QFrame):
         self.mute_button.setChecked(bool(muted))
         self.mute_button.blockSignals(False)
 
+    def set_levels(self, reading) -> None:
+        """Mesures du Master (:class:`core.live_mix.MeterFrame`) ; ``None`` : aucune, tout retombe."""
+        if reading is None:
+            self.meter.set_levels(None)
+            self.loudness_label.setText("")
+            return
+        self.meter.set_levels(reading.peak_db, reading.rms_db)
+        self.loudness_label.setText(translate(
+            "mixer.loudness", momentary=_lufs_text(reading.momentary_lufs),
+            short_term=_lufs_text(reading.short_term_lufs)))
+
     def retranslate(self) -> None:
+        self.loudness_label.setToolTip(translate("mixer.loudness_tip"))
         self.name_label.setText(translate("mixer.master"))
         self.mute_button.setToolTip(translate("mixer.master_mute"))
         self.reset_button.setToolTip(translate("mixer.master_reset"))
@@ -430,10 +460,13 @@ class MixerPanel(QWidget):
         self.setStyleSheet(_panel_stylesheet())
         self._strips: dict[str, MixerStrip] = {}
         self._master_bar: MixerPanel._MasterBar | None = None
-        #: Fournisseur optionnel de niveaux réels. Tant qu'il n'est pas
-        #: branché, aucun vumètre n'est dessiné : on ne fabrique pas de
-        #: mesure approximative.
+        #: Fournisseur des niveaux réels : ``() -> (relevé, pistes) | None``
+        #: (:class:`core.live_mix.MeterFrame` et l'ordre de ses pistes).
+        #: ``None`` ou aucun relevé : les vumètres retombent.
         self.level_provider = None
+        self._meter_timer = QTimer(self)
+        self._meter_timer.setInterval(33)
+        self._meter_timer.timeout.connect(self.refresh_levels)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -549,6 +582,24 @@ class MixerPanel(QWidget):
             muted=track.muted, solo=track.solo, armed=track.armed
         )
 
+    def refresh_levels(self) -> None:
+        """Relève les niveaux auprès de :attr:`level_provider` et les montre (minuteur, panneau visible)."""
+        result = self.level_provider() if self.level_provider is not None else None
+        reading, tracks = result if result else (None, ())
+        if self._master_bar is not None:
+            self._master_bar.set_levels(reading)
+        peaks = dict(zip(tracks, reading.track_peaks_db)) if reading is not None else {}
+        for track_id, strip in self._strips.items():
+            strip.meter.set_levels(peaks.get(track_id))      # piste muette ou sans clip ici : elle retombe
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._meter_timer.start()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._meter_timer.stop()
+
     def strip_count(self) -> int:
         return len(self._strips)
 
@@ -582,6 +633,12 @@ class MixerPanel(QWidget):
     def _refresh_solo_hint(self, project: Project) -> None:
         solo = [t for t in project.tracks if t.type == "audio" and t.solo]
         self.solo_hint.setText(translate("mixer.solo_active") if solo else "")
+
+
+def _lufs_text(value: float) -> str:
+    from core.live_mix import SILENCE_DB
+
+    return "−∞" if value <= SILENCE_DB + 1e-6 else f"{value:.1f}".replace("-", "−")
 
 
 __all__ = ["MixerPanel", "MixerStrip"]

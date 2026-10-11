@@ -463,6 +463,7 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("page_edit", Category.VIEW, scope=_A, application_wide=True),
     _cmd("page_color", Category.VIEW, scope=_A, application_wide=True),
     _cmd("page_composition", Category.VIEW, scope=_A, application_wide=True),
+    _cmd("page_audio", Category.VIEW, scope=_A, application_wide=True),
     # --- Audio (sans raccourci par défaut) ---------------------------------
     _cmd("audio_record_toggle", Category.AUDIO),
     _cmd("audio_master_mute", Category.AUDIO),

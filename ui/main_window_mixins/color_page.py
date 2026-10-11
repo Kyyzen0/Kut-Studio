@@ -17,12 +17,13 @@ from core.color_grading import ColorGradingError, ColorGradingService
 from core.color_nodes import MixerKind, as_graph
 from core.color_render import Compare, Highlight
 from core.node_graph import NodeGraphError
-from core.workspace_state import PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
+from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
 from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
 
 _COLOR_TAB = 1                                       # onglet Couleur de l'inspecteur
+_AUDIO_TAB = 3                                       # onglet Audio de l'inspecteur (comme le rail « Audio »)
 
 
 class _PickResults(QObject):
@@ -148,7 +149,12 @@ class ColorPageMixin:
             self._show_page_scopes(True)
             self._refresh_color_panel()
         else:
-            if rail.active() == "color":
+            if self.workspace.page == PAGE_AUDIO:
+                rail.set_active("audio")
+                self.properties_panel._select_inspector_tab(_AUDIO_TAB)
+                self.mixer_panel.set_project(self.project)
+                self.mixer_panel.set_master(self._master_gain_db, self._master_muted)
+            elif rail.active() in ("color", "audio"):
                 rail.set_active("edit")
             self._show_page_scopes(False)
             self._set_color_compare(None)                   # la comparaison est un outil de la page Couleur
@@ -171,7 +177,8 @@ class ColorPageMixin:
 
     def _page_shortcut_handlers(self) -> dict:
         return {"page_edit": lambda: self.switch_page(PAGE_EDIT), "page_color": lambda: self.switch_page(PAGE_COLOR),
-                "page_composition": lambda: self.switch_page(PAGE_COMPOSITION)}
+                "page_composition": lambda: self.switch_page(PAGE_COMPOSITION),
+                "page_audio": lambda: self.switch_page(PAGE_AUDIO)}
 
     # -- panneau ------------------------------------------------------------------------------------------------
 
