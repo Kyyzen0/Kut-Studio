@@ -42,6 +42,8 @@ from ui.i18n import translate
 from ui.theme import COLORS, label_style
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
+    MAX_MARGIN,
+    MAX_PADDING,
     TextAlignment,
     TextStyle,
     alignment_rows,
@@ -269,12 +271,12 @@ class TextStyleEditor(QWidget):
         self.position_y_spin.valueChanged.connect(self._emit_style_changed)
         pos_form.addRow(_row_label(translate("mograph.textstyle.offset_y")), self.position_y_spin)
         self.margin_x_spin = _build_spin(
-            0, 200, 4, default=32.0, suffix=" px", decimals=0
+            0, MAX_MARGIN, 4, default=32.0, suffix=" px", decimals=0
         )
         self.margin_x_spin.valueChanged.connect(self._emit_style_changed)
         pos_form.addRow(_row_label(translate("mograph.textstyle.margin_side")), self.margin_x_spin)
         self.margin_y_spin = _build_spin(
-            0, 200, 4, default=48.0, suffix=" px", decimals=0
+            0, MAX_MARGIN, 4, default=48.0, suffix=" px", decimals=0
         )
         self.margin_y_spin.valueChanged.connect(self._emit_style_changed)
         pos_form.addRow(_row_label(translate("mograph.textstyle.margin_vertical")), self.margin_y_spin)
@@ -286,12 +288,12 @@ class TextStyleEditor(QWidget):
         padding_form.setSpacing(6)
         padding_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.padding_x_spin = _build_spin(
-            0, 80, 2, default=12.0, suffix=" px", decimals=0
+            0, MAX_PADDING, 2, default=12.0, suffix=" px", decimals=0
         )
         self.padding_x_spin.valueChanged.connect(self._emit_style_changed)
         padding_form.addRow(_row_label(translate("mograph.textstyle.padding_horizontal")), self.padding_x_spin)
         self.padding_y_spin = _build_spin(
-            0, 80, 2, default=6.0, suffix=" px", decimals=0
+            0, MAX_PADDING, 2, default=6.0, suffix=" px", decimals=0
         )
         self.padding_y_spin.valueChanged.connect(self._emit_style_changed)
         padding_form.addRow(_row_label(translate("mograph.textstyle.padding_vertical")), self.padding_y_spin)

@@ -130,6 +130,20 @@ def frame_for_tick(
 # ---------------------------------------------------------------------------
 
 
+STATIONARY_SPEED = 1e-9
+"""Sous cette vitesse (source-s par s), un morceau montre un seul instant source : il ne fait apparaître aucune image."""
+
+
+def _moving(pieces: tuple[Piece, ...]) -> tuple[Piece, ...]:
+    """Les morceaux qui font avancer la source.
+
+    Une ancre hors de la fenêtre du clip (avant ``source_in``) laisse le mapping collé à la borne tant que la lecture n'est
+    pas entrée dans la fenêtre : les premiers morceaux ont une vitesse nulle. Ils n'apportent aucune image à
+    l'expression des horodatages (l'image tenue est celle du premier tick, déjà couverte) et leur vitesse est un diviseur.
+    """
+    return tuple(piece for piece in pieces if abs(piece.speed) > STATIONARY_SPEED)
+
+
 def _forward_timestamps(pieces: tuple[Piece, ...], m_lo: int, fs: float, fps: float, first_tick: int) -> str:
     """Expression ``setpts`` (secondes) d'un run avant : premier tick d'apparition de chaque image, relatif au run.
 
@@ -139,7 +153,7 @@ def _forward_timestamps(pieces: tuple[Piece, ...], m_lo: int, fs: float, fps: fl
     à 0 (les images dont la frontière précède le run sont toutes à 0 : la dernière gagne, c'est la bonne).
     """
     terms: list[tuple[int, float, float]] = []
-    for index, piece in enumerate(pieces):
+    for index, piece in enumerate(_moving(pieces)):
         speed = piece.speed
         alpha = piece.t0 + (((m_lo - 0.5) / fs) - piece.s0) / speed
         beta = 1.0 / (fs * speed)
@@ -157,7 +171,7 @@ def _backward_timestamps(pieces: tuple[Piece, ...], m_hi: int, fs: float, fps: f
     ``m + 1``) : le premier tick d'apparition est donc strictement après cet instant.
     """
     terms: list[tuple[int, float, float]] = []
-    for index, piece in enumerate(pieces):
+    for index, piece in enumerate(_moving(pieces)):
         speed = abs(piece.speed)
         alpha = piece.t0 + (piece.s0 - (m_hi + 0.5) / fs) / speed
         beta = 1.0 / (fs * speed)
@@ -193,7 +207,7 @@ def _run_chain(
 ) -> str:
     """Filtres d'un run (sans étiquettes) : flux de ``ticks`` images exactement, horodatées à partir de 0."""
     hold = f"tpad=stop_mode=clone:stop_duration={_fmt_time(min(ticks / fps + 1.0, 3600.0))},trim=end_frame={ticks},setpts=PTS-STARTPTS"
-    if run.kind is RunKind.HOLD:
+    if run.kind is RunKind.HOLD or not _moving(pieces):
         frame = nearest_frame(run.s0, fs, last_frame)
         return (
             # ``fps`` avant ``tpad`` : sans cadence connue (``setpts`` l'efface sous FFmpeg 7.x), ``tpad`` n'ajoute rien.

@@ -103,6 +103,12 @@ L'export applique les roues par `lutrgb`, qui calcule une table par canal sur to
 `+ 0,5` parce que `lutrgb` tronque. L'étape vient après `colorbalance` et avant les courbes. Elle n'est écrite que si
 une roue a bougé, et le fichier n'a la clé `wheels` que dans ce cas.
 
+Les courbes sont écrites en `curves=` de FFmpeg, qui refuse la commande entière si deux points tombent dans la même
+case de 1/255 (`(int)(x·255)` doit croître strictement : 0,5 et 0,5005 sont déjà dans la même case, pas seulement
+deux abscisses égales). Le modèle n'exige qu'un ordre strictement croissant ; à l'export, un point qui tombe dans la case
+du précédent est **décalé dans la case suivante** (`export_engine._curve_points_for_ffmpeg`), si bien que la marche qu'il
+dessine est conservée. Les seize points de l'éditeur sont espacés de 17 cases : rien ne bouge.
+
 ## Exposition
 
 L'exposition se règle en diaphragmes (EV, de −2 à +2) : +1 EV **double la lumière**, −1 EV la divise par deux. Pour une

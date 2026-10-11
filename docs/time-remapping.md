@@ -19,6 +19,12 @@ M(t) = ancre + ∫₀ᵗ v(s) ds  borné à la fenêtre source [source_in, sourc
 durée = premier instant où M franchit une borne de la fenêtre, vers l'extérieur
 ```
 
+* **Ancre hors de la fenêtre.** Avant que `M` entre dans `[source_in, source_out]` (ancre avant `source_in`, ou après
+  `source_out` en lecture inverse), la source reste collée à la borne : la première image est **tenue** jusqu'à
+  l'entrée dans la fenêtre, puis la lecture reprend. Une ancre déjà au-delà de la fin laisse un clip d'une seule image.
+  Les morceaux collés à la borne ont une vitesse nulle : ils ne produisent aucune image dans les expressions
+  d'horodatage (`retime_graph._moving`) et l'audio en fait un silence.
+
 * L'intégrale est **exacte** : chaque segment est constant, ou un polynôme (linéaire, ease, Bézier : cubique en vitesse,
   quartique en position) intégré analytiquement. Les retournements (`v` change de signe) et les arrêts sont des racines de
   polynômes trouvées en Python pur, sans bibliothèque.

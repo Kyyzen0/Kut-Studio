@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 
 import pytest
 
@@ -51,3 +52,27 @@ def test_best_cpu_seconds_keeps_the_fastest_run() -> None:
     elapsed = timing_budget.best_cpu_seconds(lambda: calls.append(sum(range(10_000))), repeats=4)
     assert len(calls) == 4
     assert 0 <= elapsed < 1
+
+
+def test_best_cpu_seconds_ignores_the_cpu_of_other_threads() -> None:
+    """Un fil qui tourne encore dans le worker (d'un test précédent) ne gonfle pas la mesure : avec ``process_time``,
+    trois fils actifs la multipliaient par trois à quatre (l'analyse 1080p des scopes passait de 0,08 à 0,31 s). La charge
+    dure ~25 ms : assez pour que le GIL bascule entre les fils (toutes les 5 ms) et que la différence se voie."""
+    work = lambda: sum(i * i for i in range(1_000_000))  # noqa: E731
+    alone = timing_budget.best_cpu_seconds(work, repeats=3)
+    stop = threading.Event()
+
+    def spin() -> None:
+        while not stop.is_set():
+            pass
+
+    spinners = [threading.Thread(target=spin, daemon=True) for _ in range(3)]
+    for spinner in spinners:
+        spinner.start()
+    try:
+        crowded = timing_budget.best_cpu_seconds(work, repeats=3)
+    finally:
+        stop.set()
+        for spinner in spinners:
+            spinner.join(timeout=5)
+    assert crowded < alone * 1.6 + 0.005, (alone, crowded)
