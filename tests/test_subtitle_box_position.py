@@ -149,6 +149,43 @@ def test_the_offset_moves_the_text_by_that_share_of_the_frame(tmp_path, alignmen
     assert moved[2] - moved[0] == pytest.approx(still[2] - still[0], abs=2), "la taille du texte ne change pas"
 
 
+# --- marges ---------------------------------------------------------------------------------------------------------------
+
+
+def test_margins_go_as_far_as_the_editor_offers_but_paddings_stay_at_eighty():
+    """L'éditeur propose 0 à 200 px de marge au bord ; le modèle les rabotait à 80, comme la marge interne du fond
+    (une seule fonction pour les deux)."""
+    from core.text_style import MAX_MARGIN, MAX_PADDING
+
+    style = TextStyle(margin_x=200.0, margin_y=150.0, padding_x=200.0, padding_y=90.0)
+    assert (style.margin_x, style.margin_y) == (200.0, 150.0)
+    assert (style.padding_x, style.padding_y) == (MAX_PADDING, MAX_PADDING) == (80.0, 80.0)
+    beyond = TextStyle(margin_x=500.0, margin_y=-3.0)
+    assert (beyond.margin_x, beyond.margin_y) == (MAX_MARGIN, 0.0)
+    assert TextStyle.from_dict(style.to_dict()).margin_x == 200.0, "la marge survit à l'enregistrement du projet"
+
+
+def test_the_style_editor_offers_exactly_the_range_the_model_keeps(qtbot):
+    from core.text_style import MAX_MARGIN, MAX_PADDING
+    from ui.text_style_editor import TextStyleEditor
+
+    editor = TextStyleEditor()
+    qtbot.addWidget(editor)
+    assert (editor.margin_x_spin.maximum(), editor.margin_y_spin.maximum()) == (MAX_MARGIN, MAX_MARGIN)
+    assert (editor.padding_x_spin.maximum(), editor.padding_y_spin.maximum()) == (MAX_PADDING, MAX_PADDING)
+    editor.set_state("A", TextStyle(margin_x=200.0, margin_y=200.0))
+    assert (editor._collect_style().margin_x, editor._collect_style().margin_y) == (200.0, 200.0)
+
+
+@pytest.mark.libass
+def test_a_margin_of_200_keeps_the_subtitle_further_from_the_edge_than_a_margin_of_80(tmp_path):
+    """Avant : 80 et 200 donnaient le même rendu (la marge était bornée à 80). 120 unités ASS de plus = 40 pixels ici."""
+    near = _bounds(_white(_render(tmp_path, TextStyle(alignment=TextAlignment.TOP_LEFT, margin_x=80.0, margin_y=60.0, **QUIET))))
+    far = _bounds(_white(_render(tmp_path, TextStyle(alignment=TextAlignment.TOP_LEFT, margin_x=200.0, margin_y=180.0, **QUIET))))
+    assert far[0] - near[0] == pytest.approx(120 * SCALE, abs=3), "marge latérale"
+    assert far[1] - near[1] == pytest.approx(120 * SCALE, abs=3), "marge verticale"
+
+
 @pytest.mark.libass
 def test_the_box_follows_the_text_when_the_offset_moves_it(tmp_path):
     style = TextStyle(background_color="#00FF00", background_opacity=1.0, padding_x=40.0, padding_y=20.0,

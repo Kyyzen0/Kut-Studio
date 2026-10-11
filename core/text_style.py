@@ -163,8 +163,14 @@ def _normalize_offset(value: Any) -> float:
     return offset
 
 
-def _normalize_padding(value: Any) -> float:
-    """Borne une marge interne dans ``[0, 80]`` (px)."""
+MAX_PADDING = 80.0
+"""Marge interne maximale du fond (px) : le fond ne déborde pas plus loin que le texte."""
+MAX_MARGIN = 200.0
+"""Marge maximale vis-à-vis du bord du cadre (px) : la plage de l'éditeur de style."""
+
+
+def _normalize_padding(value: Any, *, maximum: float = MAX_PADDING) -> float:
+    """Borne une marge (interne au fond, ou vis-à-vis du bord du cadre) dans ``[0, maximum]`` (px)."""
     try:
         padding = float(value)
     except (TypeError, ValueError) as exc:
@@ -173,9 +179,14 @@ def _normalize_padding(value: Any) -> float:
         raise ValueError(f"Marge non finie : {value!r}")
     if padding < 0.0:
         padding = 0.0
-    if padding > 80.0:
-        padding = 80.0
+    if padding > maximum:
+        padding = maximum
     return padding
+
+
+def _normalize_margin(value: Any) -> float:
+    """Borne une marge au bord du cadre dans ``[0, MAX_MARGIN]`` (l'éditeur en propose jusqu'à 200 : le modèle ne la rabote plus à 80)."""
+    return _normalize_padding(value, maximum=MAX_MARGIN)
 
 
 # ---------------------------------------------------------------------------
@@ -209,8 +220,8 @@ class TextStyle:
         alignment: Alignement 3×3 dans le cadre vidéo.
         position_x: Décalage horizontal fin (%, ``-100`` à ``100``).
         position_y: Décalage vertical fin (%, ``-100`` à ``100``).
-        margin_x: Marge latérale vis-à-vis du bord (px).
-        margin_y: Marge haute/basse vis-à-vis du bord (px).
+        margin_x: Marge latérale vis-à-vis du bord (px, jusqu'à :data:`MAX_MARGIN`).
+        margin_y: Marge haute/basse vis-à-vis du bord (px, jusqu'à :data:`MAX_MARGIN`).
     """
 
     font_family: str = "Arial"
@@ -250,8 +261,8 @@ class TextStyle:
         object.__setattr__(self, "alignment", TextAlignment(self.alignment))
         object.__setattr__(self, "position_x", _normalize_offset(self.position_x))
         object.__setattr__(self, "position_y", _normalize_offset(self.position_y))
-        object.__setattr__(self, "margin_x", _normalize_padding(self.margin_x))
-        object.__setattr__(self, "margin_y", _normalize_padding(self.margin_y))
+        object.__setattr__(self, "margin_x", _normalize_margin(self.margin_x))
+        object.__setattr__(self, "margin_y", _normalize_margin(self.margin_y))
 
     # ----- Accesseurs immuables -----------------------------------------
 

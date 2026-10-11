@@ -14,9 +14,9 @@ Un clip au style standard passe par un fichier SRT et `force_style` ; dès qu'un
 | contour (couleur, épaisseur) | `OutlineColour`, `Outline` | bordure de l'étiquette (approximation) |
 | ombre (`shadow_color`, `shadow_offset`) | `BackColour` (**la couleur de l'ombre en ASS**), `Shadow` | non dessinée |
 | **fond** (`background_color`, `background_opacity`) | un **calque de boîte** sous le texte (ci-dessous) | fond de l'étiquette |
-| marges internes du fond (`padding_x`, `padding_y`) | `\xbord` / `\ybord` du calque de boîte | marges de l'étiquette |
+| marges internes du fond (`padding_x`, `padding_y`, 0 à 80) | `\xbord` / `\ybord` du calque de boîte | marges de l'étiquette |
 | alignement 3 × 3 | `Alignment` | alignement dans le cadre |
-| marges (`margin_x`, `margin_y`, 0 à 80) | `MarginL/R/V`, en unités du script | marges, ramenées au cadre |
+| marges au bord (`margin_x`, `margin_y`, 0 à 200) | `MarginL/R/V`, en unités du script | marges, ramenées au cadre |
 | **décalage** (`position_x`, `position_y`) | `\pos` | décalage du cadre |
 
 Les unités du script ASS sont 1920 × 1080 (`PlayResX/Y`) : libass les ramène au cadre de la vidéo, donc une marge de
@@ -62,7 +62,7 @@ Le moniteur applique le même calcul, dans le cadre de la séquence, et suit le 
 - Le moniteur revient à la ligne dans le cadre de la vidéo, entre les marges latérales, comme libass.
 - Le moniteur ne dessine ni l'ombre, ni un vrai contour de lettres (sa bordure entoure l'étiquette) : l'aperçu fidèle,
   rendu par libass, montre l'image exacte quand il est prêt.
-- Les marges sont bornées à 80 par le modèle, alors que l'éditeur propose jusqu'à 200.
+- La marge **interne** du fond (`padding_x`, `padding_y`) reste bornée à 80 ; celle du bord va jusqu'à 200, comme l'éditeur.
 
 Tests : `tests/test_subtitle_box_position.py` (fichier ASS, rendu libass lu pixel par pixel, placement du moniteur),
 `tests/test_libass_subtitles.py`, `tests/test_export_text_styles.py`.
