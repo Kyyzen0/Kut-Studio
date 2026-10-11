@@ -14,6 +14,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Inserts de piste.** Chaque piste audio porte une chaîne d'effets qui traite la **somme** de ses clips (bouton **FX**
+  de la tranche du mixeur) : un compresseur ou un limiteur de piste voit tout ce que la piste fait entendre. Les
+  effets sont ceux des clips ; on peut les réordonner, les contourner, les régler, et tout s'annule. Le vumètre de la
+  piste mesure la sortie de la chaîne, la lecture l'entend comme l'export, et un projet sans insert s'exporte comme
+  avant. Voir [docs/audio.md](docs/audio.md).
+
 ### Fixed
 
 - **Vitesse : une ancre hors de la source faisait échouer l'export** (division par zéro). Avant l'entrée dans la

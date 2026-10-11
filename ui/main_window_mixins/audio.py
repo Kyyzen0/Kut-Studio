@@ -35,6 +35,8 @@ class AudioMixin:
         mixer.solo_toggled.connect(self.on_track_solo_toggled)
         mixer.arm_toggled.connect(self.on_track_arm_toggled)
         mixer.reset_requested.connect(self.on_track_audio_reset)
+        mixer.inserts_requested.connect(self.on_track_inserts_requested)
+        mixer.project_refreshed.connect(self._refresh_inserts_dialog)
         mixer.master_volume_changed.connect(self.on_master_volume_changed)
         mixer.master_mute_toggled.connect(self.on_master_mute_toggled)
         mixer.master_reset_requested.connect(self.on_master_reset)
@@ -405,6 +407,89 @@ class AudioMixin:
         self.timeline_panel.refresh_clip_widgets()
         self._sync_audio_inspector()
         self._record_audio_change(i18n.translate("audio.reset_fades"))
+
+    # ------------------------------------------------------------------
+    # Inserts de piste
+    # ------------------------------------------------------------------
+
+    def on_track_inserts_requested(self, track_id: str) -> None:
+        """Ouvre (ou ramène) la boîte des inserts de la piste."""
+        track = self._find_audio_track(track_id)
+        if track is None:
+            return
+        dialog = getattr(self, "_inserts_dialog", None)
+        if dialog is None:
+            from ui.track_inserts_dialog import TrackInsertsDialog
+
+            dialog = TrackInsertsDialog(self)
+            dialog.add_requested.connect(self.on_track_insert_added)
+            dialog.remove_requested.connect(self.on_track_insert_removed)
+            dialog.move_requested.connect(self.on_track_insert_moved)
+            dialog.enabled_changed.connect(self.on_track_insert_enabled_changed)
+            dialog.parameter_changed.connect(self.on_track_insert_parameter_changed)
+            self._inserts_dialog = dialog
+        dialog.set_track(track.id, track.name, track.inserts, locked=track.locked)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _refresh_inserts_dialog(self) -> None:
+        """Remet la boîte d'inserts d'accord avec le modèle (annulation, ouverture d'un autre projet…)."""
+        dialog = getattr(self, "_inserts_dialog", None)
+        if dialog is None or not dialog.isVisible():
+            return
+        track = self._find_audio_track(dialog.track_id) if self.project is not None else None
+        if track is None:
+            dialog.hide()
+            return
+        dialog.set_track(track.id, track.name, track.inserts, locked=track.locked)
+
+    def _edit_track_insert(self, operation, label_key: str, track_id: str, *args, merge_key: str | None = None):
+        """Applique une opération pure sur les inserts, enregistre l'historique ; ``None`` si le modèle la refuse."""
+        try:
+            result = operation(self.project, track_id, *args)
+        except (KeyError, ValueError) as exc:
+            self._report_edit_refused(exc)
+            self._refresh_inserts_dialog()
+            return None
+        self._record_audio_change(i18n.translate(label_key), merge_key=merge_key)
+        return result
+
+    def on_track_insert_added(self, track_id: str, effect_type: str) -> None:
+        from core.audio_effects_model import AudioEffectType, add_track_insert
+
+        added = self._edit_track_insert(
+            lambda project, tid: add_track_insert(project, tid, AudioEffectType(effect_type)),
+            "history.audio.effect_add", track_id,
+        )
+        if added is not None and getattr(self, "_inserts_dialog", None) is not None:
+            self._inserts_dialog.select_insert(added.id)
+            self._refresh_inserts_dialog()
+
+    def on_track_insert_removed(self, track_id: str, effect_id: str) -> None:
+        from core.audio_effects_model import remove_track_insert
+
+        self._edit_track_insert(remove_track_insert, "history.audio.effect_remove", track_id, effect_id)
+
+    def on_track_insert_moved(self, track_id: str, effect_id: str, delta: int) -> None:
+        from core.audio_effects_model import move_track_insert
+
+        self._edit_track_insert(move_track_insert, "history.audio.effect_move", track_id, effect_id, int(delta))
+
+    def on_track_insert_enabled_changed(self, track_id: str, effect_id: str, enabled: bool) -> None:
+        from core.audio_effects_model import set_track_insert_enabled
+
+        self._edit_track_insert(
+            set_track_insert_enabled, "history.audio.effect_edit", track_id, effect_id, bool(enabled)
+        )
+
+    def on_track_insert_parameter_changed(self, track_id: str, effect_id: str, name: str, value: float) -> None:
+        from core.audio_effects_model import update_track_insert_parameters
+
+        self._edit_track_insert(
+            update_track_insert_parameters, "history.audio.effect_edit", track_id, effect_id, {name: value},
+            merge_key=f"track-insert:{track_id}:{effect_id}:{name}",
+        )
 
     def _record_audio_change(self, label: str, *, merge_key: str | None = None) -> None:
         """Enregistre une modification audio dans l'historique (``merge_key`` : geste continu, une seule entrée)."""

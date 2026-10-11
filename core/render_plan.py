@@ -190,6 +190,9 @@ class AudioLayer:
     # Liste des :class:`DuckingSidechain` qui ciblent cette piste.
     # Vide par défaut : pas de ducking automatique.
     ducking_sidechains: tuple = field(default_factory=tuple)
+    # Inserts de la piste (:class:`AudioEffect` activés ou non, dans l'ordre). Ils traitent la somme des clips de la
+    # piste : toutes les couches d'une même piste portent la même chaîne.
+    track_inserts: tuple = field(default_factory=tuple)
     # Séquence imbriquée : clé du sous-plan dont le mixage audio remplace
     # le fichier source (``source_path`` est alors vide).
     nested_key: str = ""
@@ -1220,4 +1223,5 @@ def _build_audio_layer(
         audio_effects=tuple(getattr(clip, "audio_effects", []) or []),
         track_automation=track_automation_points,
         ducking_sidechains=tuple(ducking_sidechains or []),
+        track_inserts=tuple(getattr(track, "inserts", ()) or ()),
     )

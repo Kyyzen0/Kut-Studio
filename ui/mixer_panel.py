@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -81,6 +82,7 @@ class MixerStrip(QFrame):
     solo_toggled = Signal(str, bool)
     arm_toggled = Signal(str, bool)
     reset_requested = Signal(str)
+    inserts_requested = Signal(str)
 
     def __init__(
         self,
@@ -116,6 +118,15 @@ class MixerStrip(QFrame):
         self.lock_badge.hide()
         self.lock_badge.setToolTip(translate("mixer.locked"))
         layout.addWidget(self.lock_badge, 0, Qt.AlignHCenter)
+
+        # Inserts de la piste : un bouton qui ouvre la chaîne d'effets (le nombre dit combien en porte la piste).
+        self.inserts_button = QPushButton(translate("inserts.button"))
+        self.inserts_button.setObjectName("mixerInsertsButton")
+        self.inserts_button.setFixedHeight(22)
+        self.inserts_button.setToolTip(translate("inserts.tip", name=name))
+        self.inserts_button.clicked.connect(lambda: self.inserts_requested.emit(self.track_id or ""))
+        self.inserts_button.setVisible(track_id is not None)
+        layout.addWidget(self.inserts_button)
 
         # Fader vertical de volume, en dB.
         self.volume_slider = _VerticalFader()
@@ -217,6 +228,18 @@ class MixerStrip(QFrame):
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
+
+    def set_inserts(self, count: int, active: int) -> None:
+        """Dit combien d'inserts porte la piste (``active`` : ceux qui ne sont pas contournés)."""
+        self.inserts_button.setText(
+            translate("inserts.button.count", count=count) if count else translate("inserts.button")
+        )
+        self.inserts_button.setProperty("active", active > 0)
+        self.inserts_button.setStyleSheet(
+            f"QPushButton#mixerInsertsButton {{ background: {COLORS['accent_dark'] if active else COLORS['surface']};"
+            f" color: {COLORS['accent'] if active else COLORS['muted']}; border: 1px solid {COLORS['border']};"
+            f" border-radius: 6px; font-size: 10px; font-weight: 700; padding: 0 4px; }}"
+        )
 
     def set_track(self, *, name: str, volume_db: float, pan: float, locked: bool) -> None:
         """Met à jour la tranche depuis le modèle, sans émettre de signal."""
@@ -446,6 +469,9 @@ class MixerPanel(QWidget):
     solo_toggled = Signal(str, bool)
     arm_toggled = Signal(str, bool)
     reset_requested = Signal(str)
+    inserts_requested = Signal(str)
+    #: Émis quand les tranches viennent d'être reconstruites depuis le projet (annulation, ouverture, modification).
+    project_refreshed = Signal()
     master_volume_changed = Signal(float)
     master_mute_toggled = Signal(bool)
     master_reset_requested = Signal()
@@ -548,6 +574,8 @@ class MixerPanel(QWidget):
             strip.set_states(
                 muted=track.muted, solo=track.solo, armed=track.armed
             )
+            strip.set_inserts(len(track.inserts), sum(1 for e in track.inserts if e.enabled))
+            strip.inserts_requested.connect(self.inserts_requested)
             strip.volume_changed.connect(self.volume_changed)
             strip.pan_changed.connect(self.pan_changed)
             strip.mute_toggled.connect(self.mute_toggled)
@@ -561,6 +589,7 @@ class MixerPanel(QWidget):
             self._strips[track.id] = strip
 
         self._refresh_solo_hint(project)
+        self.project_refreshed.emit()
 
     def set_master(self, gain_db: float, muted: bool) -> None:
         """Met à jour la sortie Master (gain, coupure globale)."""
@@ -581,6 +610,7 @@ class MixerPanel(QWidget):
         strip.set_states(
             muted=track.muted, solo=track.solo, armed=track.armed
         )
+        strip.set_inserts(len(track.inserts), sum(1 for e in track.inserts if e.enabled))
 
     def refresh_levels(self) -> None:
         """Relève les niveaux auprès de :attr:`level_provider` et les montre (minuteur, panneau visible)."""
@@ -625,6 +655,7 @@ class MixerPanel(QWidget):
             strip.arm_button.setToolTip(translate("mixer.track_arm", name=name))
             strip.reset_button.setToolTip(translate("mixer.reset"))
             strip.lock_badge.setToolTip(translate("mixer.locked"))
+            strip.inserts_button.setToolTip(translate("inserts.tip", name=name))
 
     def update_translations(self) -> None:
         """Point d'entrée utilisé par ``MainWindow._retranslate_ui``."""
