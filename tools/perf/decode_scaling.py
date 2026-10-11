@@ -8,6 +8,7 @@ Usage ::
 
 Pour N flux simultanés (1, 2, 4, 6 par défaut), chaque flux décode le même média jusqu'au bout vers ``null``.
 Le banc rapporte le débit agrégé (N × images / temps mural), le débit par flux et le temps CPU consommé par image.
+Sous Windows, le module ``resource`` manque : le temps CPU n'est alors pas rapporté (``cpu_ms_per_frame`` vaut ``None``).
 Le temps inclut le lancement de FFmpeg, non isolé : les chiffres sont donc prudents, surtout pour les clips courts.
 
 Sans ``--media``, un clip 4K HEVC 10 bits est généré dans le dossier de travail, avec les réglages de
@@ -26,7 +27,6 @@ import argparse
 import json
 import os
 import platform
-import resource
 import statistics
 import subprocess
 import tempfile
@@ -34,6 +34,11 @@ import time
 from pathlib import Path
 
 from core.tool_paths import find_media_tool
+
+try:
+    import resource
+except ImportError:  # Windows n'a pas ce module : le temps CPU n'est alors pas rapporté
+    resource = None
 
 FULL_SECONDS = 6.0
 QUICK_SECONDS = 2.0
@@ -92,9 +97,17 @@ def generate_clip(directory: Path, seconds: float) -> Path:
     return path
 
 
-def run_parallel(command: list[str], streams: int) -> tuple[float, float]:
+def children_cpu_seconds() -> float | None:
+    """Temps CPU des enfants déjà terminés ; ``None`` sans le module ``resource`` (Windows)."""
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
+def run_parallel(command: list[str], streams: int) -> tuple[float, float | None]:
     """Lance ``streams`` décodages en même temps ; renvoie (temps mural, temps CPU des enfants) en secondes."""
-    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    before = children_cpu_seconds()
     started = time.perf_counter()
     processes = [subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                  for _ in range(streams)]
@@ -104,10 +117,10 @@ def run_parallel(command: list[str], streams: int) -> tuple[float, float]:
         if process.returncode != 0:
             failures.append(stderr.decode(errors="replace").strip()[-300:])
     wall = time.perf_counter() - started
-    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    after = children_cpu_seconds()
     if failures:
         raise RuntimeError(f"décodage en échec : {failures[0]}")
-    cpu = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+    cpu = None if before is None or after is None else after - before
     return wall, cpu
 
 
@@ -116,13 +129,13 @@ def measure(command: list[str], frames: int, streams: int, repeat: int) -> dict:
     run_parallel(command, streams)
     samples = [run_parallel(command, streams) for _ in range(repeat)]
     wall = statistics.median(wall for wall, _ in samples)
-    cpu = statistics.median(cpu for _, cpu in samples)
+    cpus = [cpu for _, cpu in samples if cpu is not None]
     total = streams * frames
     return {
         "streams": streams,
         "wall_s": round(wall, 3),
         **throughput(frames, streams, wall),
-        "cpu_ms_per_frame": round(cpu / total * 1000, 2),
+        "cpu_ms_per_frame": round(statistics.median(cpus) / total * 1000, 2) if cpus else None,
     }
 
 
@@ -152,8 +165,9 @@ def run(media: Path, streams: tuple[int, ...], repeat: int, hwaccel: str | None,
         for count in streams:
             row = measure(command, frames, count, repeat)
             rows.append(row)
+            cpu = "temps CPU non mesuré" if row["cpu_ms_per_frame"] is None else f"{row['cpu_ms_per_frame']:.1f} ms CPU/image"
             print(f"{name:<28} N={count}  {row['aggregate_fps']:>7.1f} fps au total "
-                  f"({row['per_stream_fps']:.1f} par flux, {row['cpu_ms_per_frame']:.1f} ms CPU/image)", flush=True)
+                  f"({row['per_stream_fps']:.1f} par flux, {cpu})", flush=True)
         report["configs"][name] = rows
     return report
 
