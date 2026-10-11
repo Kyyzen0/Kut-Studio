@@ -766,6 +766,9 @@ toutes les variantes.
   niveaux.
 - **Une copie CPU par plan et par image** (limite de PySide6 6.11). Elle coûte
   environ 3 ms en 4K P010 ; pas de copie zéro depuis le décodeur de Qt.
+  Levée éventuelle hors Python : moteur natif C++ (option C de
+  [ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md)), détail dans
+  [ADR-0003](adr/0003-native-engine-language-cpp-vs-rust.md).
 - **Décodage du moniteur** : un nouveau mode ne s'applique qu'au prochain
   démarrage, parce que Qt lit sa variable une fois par processus.
 - **Export** : sa position est imprécise d'environ un pixel, à cause de `rotate`
@@ -786,4 +789,7 @@ toutes les variantes.
   sous le temps réel, le moniteur reste en matériel. Choisir « CPU » règle ce cas.
 - **Rendu GPU dans le thread de l'interface** (`QRhiWidget`) : avec des effets
   en 4K, la boucle d'événements prend jusqu'à environ 23 ms de retard au
-  95ᵉ centile.
+  95ᵉ centile. Un thread de rendu dédié relève de l'option C
+  ([ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md),
+  [ADR-0003](adr/0003-native-engine-language-cpp-vs-rust.md)), après les
+  gains de l'option B.
