@@ -1,0 +1,372 @@
+{
+  "host": {
+    "system": "Linux",
+    "release": "6.12.94+",
+    "machine": "x86_64",
+    "processor": "x86_64",
+    "python": "3.12.3"
+  },
+  "methodology": {
+    "warmup": "1s native cli on 1080p30",
+    "trials": 3,
+    "seconds": 4,
+    "median_reporting": true,
+    "zero_copy_default": false
+  },
+  "workloads": {
+    "test_1080p30": {
+      "A_baseline_python_ffmpeg": {
+        "status": "OK",
+        "data": {
+          "cli_null": {
+            "pipeline": "A_ffmpeg_cli_null",
+            "hw_requested": false,
+            "wall_s": 0.38188702600018587,
+            "cpu_s": 1.0513659999999998,
+            "child_rss_mb": 109.53125,
+            "returncode": 0,
+            "stderr_tail": "16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)\n    Metadata:\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 wrapped_avframe\n[out#0/null @ 0x55f1fa8c5000] video:56kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown\nframe=  120 fps=0.0 q=-0.0 Lsize=N/A time=00:00:03.96 bitrate=N/A speed=12.4x    \n",
+            "note": "Decode-only; no UI present path. Estimated display FPS = n/a."
+          },
+          "pipe_rgb_copy": {
+            "pipeline": "A_ffmpeg_pipe_python_rgb_copy",
+            "wall_s": 0.5030956390000938,
+            "frames": 120,
+            "displayed_fps": 238.5232363343496,
+            "copy_ops": 120,
+            "bytes_copied": 746496000,
+            "frame_read_copy_us": {
+              "p50": 2010.7720001760754,
+              "p95": 9165.746000689978,
+              "p99": 17879.518999507127
+            },
+            "rss_mb": 26.41015625,
+            "width": 1920,
+            "height": 1080,
+            "source_fps": 30.0,
+            "note": "Measured: pipe read + bytes() copy. Not Kut-Studio QRhi path."
+          }
+        },
+        "metric_class": "directly_measured"
+      },
+      "B_native_software": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.055016350000187,
+        "displayed_fps_median": 29.928,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 11691.0,
+        "e2e_p95_us_median": 293486.0,
+        "copy_ops_median": 369,
+        "bytes_copied_median": 2295475200,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 1920x1080 @30 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=129 frames_presented=120 queue_drops=0 displayed_fps=29.928\nbytes_copied=2295475200 copy_ops=369 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=8040 p95=11376 p99=26297\n  present_queue_latency_us: p50=266490 p95=266688 p99=266753\n  e2e_decode_to_present_us: p50=291774 p95=293482 p99=293583\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "C_native_hw_prefer": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.053429633999258,
+        "displayed_fps_median": 29.9222,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 11142.0,
+        "e2e_p95_us_median": 293382.0,
+        "copy_ops_median": 369,
+        "bytes_copied_median": 2295475200,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 1920x1080 @30 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=129 frames_presented=120 queue_drops=0 displayed_fps=29.8922\nbytes_copied=2295475200 copy_ops=369 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=8092 p95=10819 p99=26911\n  present_queue_latency_us: p50=266509 p95=266656 p99=266675\n  e2e_decode_to_present_us: p50=291715 p95=293488 p99=293572\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "D_native_pyside_offscreen": {
+        "status": "OK",
+        "wall_s": 4.05057910800042,
+        "frames_presented_native": 179,
+        "python_present_pumps_ok": 179,
+        "displayed_fps_native": 0.0,
+        "queue_drops": 0,
+        "decode_p95_us": 10916.0,
+        "e2e_p95_us": 20483.0,
+        "ui_stall_p95_ms_estimated": 0,
+        "copy_ops": 537,
+        "bytes_copied": 3340569600,
+        "zero_copy": false,
+        "metric_class": "mixed_direct_and_estimated_ui_stall",
+        "note": "Offscreen Qt; UI stall from QTimer jitter (estimated)."
+      },
+      "multi_stream_independent_x2": {
+        "status": "OK",
+        "streams": 2,
+        "wall_s": 4.069103033999454,
+        "returncodes": [
+          0,
+          0
+        ],
+        "note": "Independent processes; not timeline compositing.",
+        "metric_class": "directly_measured"
+      },
+      "multi_stream_compositing": {
+        "status": "NOT TESTED",
+        "reason": "Timeline compositing not implemented in POC v0.1"
+      },
+      "seek_stress": {
+        "status": "OK",
+        "stdout": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 1920x1080 @30 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=140 frames_presented=120 queue_drops=0 displayed_fps=29.9975\nbytes_copied=2363904000 copy_ops=380 seeks=2\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=8481 p95=12195 p99=26860\n  present_queue_latency_us: p50=266458 p95=266685 p99=266764\n  e2e_decode_to_present_us: p50=290486 p95=292775 p99=293493\n",
+        "metric_class": "directly_measured"
+      }
+    },
+    "test_1080p60": {
+      "A_baseline_python_ffmpeg": {
+        "status": "OK",
+        "data": {
+          "cli_null": {
+            "pipeline": "A_ffmpeg_cli_null",
+            "hw_requested": false,
+            "wall_s": 0.4016597179997916,
+            "cpu_s": 1.051131,
+            "child_rss_mb": 112.2734375,
+            "returncode": 0,
+            "stderr_tail": "6:9], q=2-31, 200 kb/s, 60 fps, 60 tbn (default)\n    Metadata:\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 wrapped_avframe\n[out#0/null @ 0x55fc7250c4c0] video:112kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown\nframe=  240 fps=0.0 q=-0.0 Lsize=N/A time=00:00:03.98 bitrate=N/A speed=11.4x    \n",
+            "note": "Decode-only; no UI present path. Estimated display FPS = n/a."
+          },
+          "pipe_rgb_copy": {
+            "pipeline": "A_ffmpeg_pipe_python_rgb_copy",
+            "wall_s": 0.6099099980001483,
+            "frames": 240,
+            "displayed_fps": 393.50068171852075,
+            "copy_ops": 240,
+            "bytes_copied": 1492992000,
+            "frame_read_copy_us": {
+              "p50": 1596.588999746018,
+              "p95": 4751.659999783442,
+              "p99": 9785.383000235015
+            },
+            "rss_mb": 143.125,
+            "width": 1920,
+            "height": 1080,
+            "source_fps": 60.0,
+            "note": "Measured: pipe read + bytes() copy. Not Kut-Studio QRhi path."
+          }
+        },
+        "metric_class": "directly_measured"
+      },
+      "B_native_software": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.048599261000163,
+        "displayed_fps_median": 59.8452,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 6032.0,
+        "e2e_p95_us_median": 145916.0,
+        "copy_ops_median": 729,
+        "bytes_copied_median": 4534963200,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 1920x1080 @60 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=249 frames_presented=240 queue_drops=0 displayed_fps=59.8529\nbytes_copied=4534963200 copy_ops=729 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=4170 p95=5836 p99=17373\n  present_queue_latency_us: p50=133174 p95=133368 p99=133412\n  e2e_decode_to_present_us: p50=145646 p95=146040 p99=146083\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "C_native_hw_prefer": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.050546474999464,
+        "displayed_fps_median": 59.8286,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 6317.0,
+        "e2e_p95_us_median": 146056.0,
+        "copy_ops_median": 729,
+        "bytes_copied_median": 4534963200,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 1920x1080 @60 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=249 frames_presented=240 queue_drops=0 displayed_fps=59.818\nbytes_copied=4534963200 copy_ops=729 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=4101 p95=6317 p99=17577\n  present_queue_latency_us: p50=133180 p95=133390 p99=133466\n  e2e_decode_to_present_us: p50=145729 p95=146028 p99=146237\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "D_native_pyside_offscreen": {
+        "status": "OK",
+        "wall_s": 3.8963070210002115,
+        "frames_presented_native": 205,
+        "python_present_pumps_ok": 205,
+        "displayed_fps_native": 0.0,
+        "queue_drops": 154,
+        "decode_p95_us": 5975.0,
+        "e2e_p95_us": 45411.0,
+        "ui_stall_p95_ms_estimated": 0,
+        "copy_ops": 769,
+        "bytes_copied": 4783795200,
+        "zero_copy": false,
+        "metric_class": "mixed_direct_and_estimated_ui_stall",
+        "note": "Offscreen Qt; UI stall from QTimer jitter (estimated)."
+      }
+    },
+    "test_4k30": {
+      "A_baseline_python_ffmpeg": {
+        "status": "OK",
+        "data": {
+          "cli_null": {
+            "pipeline": "A_ffmpeg_cli_null",
+            "hw_requested": false,
+            "wall_s": 1.2443281410005511,
+            "cpu_s": 4.002285,
+            "child_rss_mb": 262.39453125,
+            "returncode": 0,
+            "stderr_tail": "16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)\n    Metadata:\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 wrapped_avframe\n[out#0/null @ 0x55deb9dee240] video:56kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown\nframe=  120 fps=106 q=-0.0 Lsize=N/A time=00:00:03.96 bitrate=N/A speed=3.51x    \n",
+            "note": "Decode-only; no UI present path. Estimated display FPS = n/a."
+          },
+          "pipe_rgb_copy": {
+            "pipeline": "A_ffmpeg_pipe_python_rgb_copy",
+            "wall_s": 1.9504187409993392,
+            "frames": 120,
+            "displayed_fps": 61.52524966947119,
+            "copy_ops": 120,
+            "bytes_copied": 2985984000,
+            "frame_read_copy_us": {
+              "p50": 9482.161000050837,
+              "p95": 34047.90999957186,
+              "p99": 70890.5589999631
+            },
+            "rss_mb": 174.140625,
+            "width": 3840,
+            "height": 2160,
+            "source_fps": 30.0,
+            "note": "Measured: pipe read + bytes() copy. Not Kut-Studio QRhi path."
+          }
+        },
+        "metric_class": "directly_measured"
+      },
+      "B_native_software": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.113388861000203,
+        "displayed_fps_median": 23.9983,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 58381.0,
+        "e2e_p95_us_median": 961.0,
+        "copy_ops_median": 290,
+        "bytes_copied_median": 7216128000,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 3840x2160 @30 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=98 frames_presented=96 queue_drops=0 displayed_fps=23.9916\nbytes_copied=7216128000 copy_ops=290 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=36079 p95=58381 p99=108609\n  present_queue_latency_us: p50=152 p95=882 p99=933\n  e2e_decode_to_present_us: p50=156 p95=886 p99=936\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "C_native_hw_prefer": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.134510109000075,
+        "displayed_fps_median": 24.2273,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 58166.0,
+        "e2e_p95_us_median": 906.0,
+        "copy_ops_median": 292,
+        "bytes_copied_median": 7265894400,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 3840x2160 @30 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=98 frames_presented=97 queue_drops=0 displayed_fps=24.2491\nbytes_copied=7265894400 copy_ops=292 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=36725 p95=57805 p99=109554\n  present_queue_latency_us: p50=155 p95=887 p99=1092\n  e2e_decode_to_present_us: p50=159 p95=892 p99=1096\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "D_native_pyside_offscreen": {
+        "status": "OK",
+        "wall_s": 3.8181487239999115,
+        "frames_presented_native": 113,
+        "python_present_pumps_ok": 113,
+        "displayed_fps_native": 0.0,
+        "queue_drops": 0,
+        "decode_p95_us": 50551.0,
+        "e2e_p95_us": 6635.0,
+        "ui_stall_p95_ms_estimated": 26.169701000071655,
+        "copy_ops": 340,
+        "bytes_copied": 8460288000,
+        "zero_copy": false,
+        "metric_class": "mixed_direct_and_estimated_ui_stall",
+        "note": "Offscreen Qt; UI stall from QTimer jitter (estimated)."
+      }
+    },
+    "test_4k60": {
+      "A_baseline_python_ffmpeg": {
+        "status": "OK",
+        "data": {
+          "cli_null": {
+            "pipeline": "A_ffmpeg_cli_null",
+            "hw_requested": false,
+            "wall_s": 1.1419818899994425,
+            "cpu_s": 3.51994,
+            "child_rss_mb": 263.046875,
+            "returncode": 0,
+            "stderr_tail": "6:9], q=2-31, 200 kb/s, 60 fps, 60 tbn (default)\n    Metadata:\n      handler_name    : VideoHandler\n      vendor_id       : [0][0][0][0]\n      encoder         : Lavc60.31.102 wrapped_avframe\n[out#0/null @ 0x55bcc2927d00] video:112kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown\nframe=  240 fps=228 q=-0.0 Lsize=N/A time=00:00:03.98 bitrate=N/A speed=3.79x    \n",
+            "note": "Decode-only; no UI present path. Estimated display FPS = n/a."
+          },
+          "pipe_rgb_copy": {
+            "pipeline": "A_ffmpeg_pipe_python_rgb_copy",
+            "wall_s": 2.237025592000464,
+            "frames": 240,
+            "displayed_fps": 107.28531710063254,
+            "copy_ops": 240,
+            "bytes_copied": 5971968000,
+            "frame_read_copy_us": {
+              "p50": 7196.812000074715,
+              "p95": 15382.242000669066,
+              "p99": 33470.069999566476
+            },
+            "rss_mb": 283.87890625,
+            "width": 3840,
+            "height": 2160,
+            "source_fps": 60.0,
+            "note": "Measured: pipe read + bytes() copy. Not Kut-Studio QRhi path."
+          }
+        },
+        "metric_class": "directly_measured"
+      },
+      "B_native_software": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.084925547000239,
+        "displayed_fps_median": 42.9913,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 26853.0,
+        "e2e_p95_us_median": 1005.0,
+        "copy_ops_median": 517,
+        "bytes_copied_median": 12864614400,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 3840x2160 @60 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=173 frames_presented=172 queue_drops=0 displayed_fps=42.9913\nbytes_copied=12864614400 copy_ops=517 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=21774 p95=26853 p99=73038\n  present_queue_latency_us: p50=179 p95=1001 p99=1071\n  e2e_decode_to_present_us: p50=182 p95=1005 p99=1074\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "C_native_hw_prefer": {
+        "status": "OK",
+        "trials": 3,
+        "wall_s_median": 4.08426903399959,
+        "displayed_fps_median": 40.2415,
+        "queue_drops_median": 0,
+        "decode_latency_p95_us_median": 28594.0,
+        "e2e_p95_us_median": 1012.0,
+        "copy_ops_median": 484,
+        "bytes_copied_median": 12043468800,
+        "hw_reported": "off",
+        "stdout_sample": "hw_probe: videotoolbox=0 vaapi=0 cuda=0 d3d11va=0\nmedia: 3840x2160 @60 codec=h264 hw=off\npresent_mode=realtime_paced\nframes_decoded=160 frames_presented=159 queue_drops=0 displayed_fps=39.7398\nbytes_copied=11894169600 copy_ops=478 seeks=0\nzero_copy_claimed=false (cpu_presenter / swscale path)\n  decode_latency_us: p50=22918 p95=30215 p99=75023\n  present_queue_latency_us: p50=149 p95=959 p99=1067\n  e2e_decode_to_present_us: p50=153 p95=963 p99=1071\n",
+        "zero_copy": false,
+        "metric_class": "directly_measured"
+      },
+      "D_native_pyside_offscreen": {
+        "status": "OK",
+        "wall_s": 3.9616902870002377,
+        "frames_presented_native": 158,
+        "python_present_pumps_ok": 158,
+        "displayed_fps_native": 0.0,
+        "queue_drops": 0,
+        "decode_p95_us": 30244.0,
+        "e2e_p95_us": 7400.0,
+        "ui_stall_p95_ms_estimated": 26.056757000333164,
+        "copy_ops": 476,
+        "bytes_copied": 11844403200,
+        "zero_copy": false,
+        "metric_class": "mixed_direct_and_estimated_ui_stall",
+        "note": "Offscreen Qt; UI stall from QTimer jitter (estimated)."
+      }
+    }
+  },
+  "production_reference_apple_m4": {
+    "status": "NOT RE-MEASURED_ON_THIS_HOST",
+    "source": "docs/perf/gpu.json / docs/gpu-preview.md",
+    "event_loop_lag_ms_p95_4k_hevc10_hw_gpu_effects": 22.64,
+    "note": "This is Qt event-loop lag, not end-to-end frame latency."
+  }
+}
