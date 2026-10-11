@@ -11,7 +11,7 @@ Master) ne s'entendaient avant l'export. Le mixeur n'avait pas de vumètre : auc
 
 ## Utilisation
 
-- **Page Audio** (quatrième page, après Montage, Couleur et Composition) : le bouton *Audio* au centre de la barre
+- **Page Audio** (quatrième page : Montage, Composition, Couleur, Audio) : le bouton *Audio* au centre de la barre
   supérieure, *Fenêtre › Page Audio*, ou l'entrée *Audio* du rail. Le mixeur et ses vumètres sous un moniteur plus
   petit, avec la timeline ; l'inspecteur sur son onglet Audio, les médias à gauche. La page garde la disposition qu'on
   lui laisse, comme les autres.

@@ -14,6 +14,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- Dans la barre supérieure et le menu *Fenêtre*, les pages sont dans l'ordre **Montage, Composition, Couleur, Audio** :
+  la page Composition passe avant la page Couleur.
+
 ### Added
 
 - **On entend le vrai mixage pendant la lecture** : les pistes audio (musique, voix off), le volume, le panoramique,

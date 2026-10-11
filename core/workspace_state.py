@@ -550,7 +550,8 @@ PAGE_EDIT: str = "edit"
 PAGE_COLOR: str = "color"
 PAGE_COMPOSITION: str = "composition"
 PAGE_AUDIO: str = "audio"
-PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR, PAGE_COMPOSITION, PAGE_AUDIO)
+# Ordre d'affichage : celui des puces de la barre supérieure (de gauche à droite) et du menu *Fenêtre*.
+PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COMPOSITION, PAGE_COLOR, PAGE_AUDIO)
 
 
 def page_default_state(page: str) -> WorkspaceState:
