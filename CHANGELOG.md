@@ -19,8 +19,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
 par un graphe de nœuds (sources, transformation, masque, incrustation, effets, étalonnage, fusion), avec sa page
 Composition et la conversion des calques en nœuds ; en lecture, le moniteur lit la composition rendue d'avance. Aussi :
-une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), un gel possible quand les scopes
-étaient affichés, et les couleurs du moniteur GPU sur les vidéos au grain coloré.
+une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), l'export d'une piste au
+panoramique non centré (il échouait), un gel possible quand les scopes étaient affichés, et les couleurs du moniteur GPU
+sur les vidéos au grain coloré.
 
 **À savoir** : les projets passent au format 17 ; une version plus ancienne de Kut-Studio ne les ouvre plus.
 
@@ -45,6 +46,10 @@ une faille de sécurité corrigée (un projet piégé pouvait injecter des filtr
 
 ### Fixed
 
+- **Un panoramique non centré faisait échouer l'export**, l'aperçu fidèle et la mesure de sonie : FFmpeg refusait le
+  filtre envoyé pour une piste ou un clip non centré (présent depuis l'ajout du mixeur). Le panoramique est maintenant
+  une balance à puissance constante : au centre rien ne change, le côté opposé s'éteint progressivement (−3 dB à
+  mi-course, silence au bout), l'autre côté n'est jamais amplifié.
 - Moniteur GPU : sur une vidéo au grain coloré, les couleurs différaient de l'export (jusqu'à 58 niveaux sur un
   pixel). Le moniteur reconstruit maintenant la couleur 4:2:0 comme l'export. À l'export, l'effet *Heat haze* ne
   lisse plus la couleur de la vidéo : elle reste la même que sans l'effet.

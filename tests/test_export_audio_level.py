@@ -577,3 +577,31 @@ def test_ducking_presets_lower_the_music_under_the_voice(media, tmp_path, preset
     source = _tone_db(media["quiet_a"], 0.3, 0.6)
     assert _tone_db(out, 1.9, 0.5) == pytest.approx(source - reduction, abs=1.0)
     assert _tone_db(out, 4.5, 0.8) == pytest.approx(source, abs=TOLERANCE_DB)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent : le graphe n'est pas exécuté")
+@pytest.mark.parametrize("pan, expected", [(0.5, (0.7071, 1.0)), (-1.0, (1.0, 0.0)), (0.0, (1.0, 1.0))])
+def test_a_panned_clip_is_rendered_by_ffmpeg(tmp_path, pan, expected):
+    """Un panoramique non centré : FFmpeg accepte le graphe et chaque canal sort à son gain.
+
+    Avant le correctif, ``stereotools`` recevait une option inexistante : tout export d'une piste non centrée
+    échouait, ce que les tests de forme de la chaîne ne voyaient pas."""
+    from audio_scenes import write_wav
+
+    tone = 0.5 * np.sin(2 * np.pi * 440.0 * np.arange(48000) / 48000.0)
+    path = write_wav(tmp_path / "tone.wav", np.stack([tone, tone], axis=1))
+    asset = MediaAsset("t", str(path), "t", 1.0, 0, 0, 0.0, "audio", has_audio=True)
+    clip = Clip("c", "t", "A1", 0.0, 0.0, 1.0, pan=pan)
+    project = Project("p", width=64, height=36, fps=25.0, media_assets=[asset],
+                      tracks=[Track("A1", "A1", "audio", clips=[clip])])
+    graph, _video, audio, inputs = ExportEngine._build_filter_complex(
+        build_render_plan(project), 64, 36, 25.0, None, audio_only=True)
+    command = [*_ffmpeg_command_prefix(), "-v", "error", "-nostdin"]
+    for input_path in inputs:
+        command += input_arguments(input_path)
+    command += ["-filter_complex", graph, "-map", f"[{audio}]", "-c:a", "pcm_f32le", "-f", "f32le", "-"]
+    completed = subprocess.run(command, capture_output=True, timeout=60)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
+    samples = np.frombuffer(completed.stdout, dtype="<f4").reshape(-1, 2)[4800:-4800]
+    peaks = np.abs(samples).max(axis=0) / 0.5
+    assert tuple(peaks) == pytest.approx(expected, abs=2e-3)

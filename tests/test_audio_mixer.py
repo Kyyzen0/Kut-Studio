@@ -164,10 +164,12 @@ def test_video_and_subtitle_clips_keep_audio_defaults():
 # ---------------------------------------------------------------------------
 
 
-def test_pan_is_constant_power():
-    left, right = pan_to_gains(0.0)
-    assert left == pytest.approx(right, abs=1e-9)
-    assert left == pytest.approx(0.7071, abs=1e-3)
+def test_pan_is_a_constant_power_balance_continuous_at_the_centre():
+    """Le centre vaut l'absence de filtre (0 dB des deux côtés) ; le côté opposé s'éteint en cosinus."""
+    assert pan_to_gains(0.0) == pytest.approx((1.0, 1.0), abs=1e-9)
+    assert pan_to_gains(0.01)[0] == pytest.approx(1.0, abs=1e-3), "plus de saut de −3 dB juste à côté du centre"
+    assert pan_to_gains(0.5) == pytest.approx((0.7071, 1.0), abs=1e-4)
+    assert pan_to_gains(-0.5) == pytest.approx((1.0, 0.7071), abs=1e-4)
     assert pan_to_gains(-1.0) == pytest.approx((1.0, 0.0), abs=1e-6)
     assert pan_to_gains(1.0) == pytest.approx((0.0, 1.0), abs=1e-6)
 
@@ -376,9 +378,9 @@ def test_export_filter_applies_gain_fades_and_pan():
     assert "volume=-9.000dB" in chain
     assert "afade=t=in" in chain
     assert "afade=t=out" in chain
-    assert "stereotools" in chain
-    # Le séparateur de graphe casserait la commande.
-    assert "|" not in chain
+    assert "pan=stereo|c0=" in chain
+    # Les séparateurs du graphe (``;``) n'apparaissent pas dans la chaîne d'une couche.
+    assert ";" not in chain
 
 
 def test_export_filter_omits_useless_stages():
@@ -390,7 +392,7 @@ def test_export_filter_omits_useless_stages():
     plan = build_render_plan(project)
     chain = _build_audio_filter(0, plan.audio_layers[0], 1, plan.duration)
     assert "afade" not in chain
-    assert "stereotools" not in chain
+    assert "pan=" not in chain
     assert "volume=" not in chain
 
 
