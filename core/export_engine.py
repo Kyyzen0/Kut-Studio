@@ -3074,13 +3074,15 @@ def _build_clip_audio_effect_filters(effects: tuple) -> list[str]:
             )
         elif ftype.value == "limiter":
             # ``alimiter`` : plafond en amplitude linéaire (0,0625 à 1). Sans ``level=0`` il remonterait un signal
-            # faible jusqu'au plafond, et sans ``latency=1`` il retarderait le clip de 5 ms (comme le limiteur du mixage
-            # final) ; cette dernière option n'existe pas sur un FFmpeg ancien.
-            limit = _clamp(10.0 ** (float(params["limit_db"]) / 20.0), LIMITER_LIMIT_RANGE)
-            latency = ":latency=1" if _ffmpeg_filter_has_option("alimiter", "latency") else ""
-            filters.append(
-                f"alimiter=limit={limit:.6f}:level=0{latency}"
-            )
+            # faible jusqu'au plafond. Sans ``latency=1`` il retarderait le clip de 5 ms (239 échantillons) et
+            # ``adelay`` ne peut pas le rattraper (``amix`` ignore les horodatages) : sur un FFmpeg qui n'a pas cette
+            # option, l'effet n'est pas émis, comme le limiteur du mixage final (mieux vaut pas de plafond qu'un
+            # clip décalé derrière l'image).
+            if _ffmpeg_filter_has_option("alimiter", "latency"):
+                limit = _clamp(10.0 ** (float(params["limit_db"]) / 20.0), LIMITER_LIMIT_RANGE)
+                filters.append(
+                    f"alimiter=limit={limit:.6f}:level=0:latency=1"
+                )
         elif ftype.value == "bass_boost":
             filters.append(
                 "bass="

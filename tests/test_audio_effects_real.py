@@ -140,3 +140,18 @@ def test_the_reverb_leaves_a_tail_of_the_stacked_delays(tmp_path):
     tail = slice(int(0.01 * RATE), int(0.2 * RATE))
     assert short[tail].max() > 0.05, "il y a une queue (avant : tout tombait dans la première milliseconde)"
     assert int(np.flatnonzero(long > 0.05)[-1]) > int(np.flatnonzero(short > 0.05)[-1]), "un retard plus long, une queue plus longue"
+
+
+def test_the_limiter_effect_is_left_out_when_ffmpeg_cannot_compensate_its_delay(monkeypatch):
+    """Sans ``alimiter latency`` (FFmpeg ancien), le limiteur retarderait le clip de 5 ms derrière l'image : il n'est
+    pas émis, comme le limiteur du mixage final. Avec l'option, il l'est, compensé."""
+    from core import export_engine
+    from core.export_engine import _build_clip_audio_effect_filters
+
+    effect = create_audio_effect(AudioEffectType.LIMITER)
+    monkeypatch.setattr(export_engine, "_ffmpeg_filter_has_option", lambda name, option: False)
+    assert _build_clip_audio_effect_filters((effect,)) == []
+    monkeypatch.setattr(export_engine, "_ffmpeg_filter_has_option",
+                        lambda name, option: (name, option) == ("alimiter", "latency"))
+    [line] = _build_clip_audio_effect_filters((effect,))
+    assert line.startswith("alimiter=") and line.endswith(":level=0:latency=1")
