@@ -40,6 +40,8 @@ def cases():
          (0.5, 0.0, 0.0, 0.5, 40.0, 30.0), 1.0, BlendMode.DIFFERENCE),
         ("black_white_overlay", [effect(EffectType.BLACK_AND_WHITE)], (1.0, 0.0, 0.0, 1.0, 12.0, -6.0), 0.6,
          BlendMode.OVERLAY),
+        # Hauteur seule réduite (Scale Y) : chroma 4:2:0 en blocs sur la largeur, interpolée en hauteur.
+        ("squash_y", [], (1.0, 0.0, 0.0, 0.6, 0.0, 36.0), 1.0, BlendMode.NORMAL),
         # Vidéo sociale : bloom (4 passes), aberration chromatique, heat haze, puis une vignette après chacun.
         ("glow_aberration", [effect(EffectType.GLOW, threshold=0.5, radius=4.0, intensity=1.2),
                              effect(EffectType.CHROMATIC_ABERRATION, intensity=4.0),
@@ -117,6 +119,8 @@ def run(api: str, width: int = 320, height: int = 180) -> dict:
             diff = np.abs(got - reference) * 255
             results["cases"][key] = {"mean": float(diff.mean()), "max": float(diff.max())}
     results["cases"]["rgba/light_add"] = _light_case(api, width, height, codes)
+    for layout in ("nv12", "yuv420p"):
+        results["cases"][f"{layout}/letterbox"] = _letterbox_case(api, width, height, layout)
     for layout in ("nv12", "p010"):
         results["cases"][f"{layout}/grade_graph"] = _graph_case(api, width, height, codes, layout)
     return results
@@ -152,6 +156,27 @@ def _graph_case(api: str, width: int, height: int, codes, layout: str) -> dict:
         return {"error": str(failures)}
     reference = reference_frame(frame, {"v": reference_codes(codes)}, {"win": window}, {"lut:test": table})
     diff = np.abs(got - reference) * 255
+    return {"mean": float(diff.mean()), "max": float(diff.max())}
+
+
+def _letterbox_case(api: str, width: int, height: int, layout: str) -> dict:
+    """Source plus grande que sa place, centrée avec des bandes (adaptation, suréchantillonnage à 2 taps) : la chroma
+    4:2:0 lue une fois par bloc 2×2 **du calque**, au centre du bloc (règle de l'export), pas par texel de la source.
+    Grain chromatique : interpoler la chroma au lieu de la recopier s'écarterait d'environ 25 niveaux."""
+    import numpy as np
+
+    from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame
+    from core.gpu_effects import program_for
+    from tests.gpu_harness import grain_pattern, make_frame, reference_codes, render_gpu
+
+    source_width, source_height = 400, 226
+    codes = grain_pattern(source_width, source_height)
+    layer = CompositeLayer("v", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (40, 12, 280, 168), 1.0, program=program_for(()))
+    frame = CompositeFrame(width, height, 1.0, (layer,), (VideoSource("v", layout, source_width, source_height),))
+    got, failures = render_gpu(frame, {"v": make_frame(codes, layout)}, api=api)
+    if got is None:
+        return {"error": str(failures)}
+    diff = np.abs(got - reference_frame(frame, {"v": reference_codes(codes)})) * 255
     return {"mean": float(diff.mean()), "max": float(diff.max())}
 
 

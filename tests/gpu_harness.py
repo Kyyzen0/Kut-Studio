@@ -95,28 +95,35 @@ def _write(frame: QVideoFrame, plane: int, data: np.ndarray) -> None:
 
 
 def reference_codes(codes: np.ndarray) -> np.ndarray:
-    """Codes normalisés attendus par :func:`reference_frame`.
+    """Codes normalisés attendus par :func:`reference_frame`, pour la vidéo 4:2:0 que :func:`make_frame` fabrique.
 
-    La chroma 4:2:0 est remontée à pleine résolution **comme le GPU l'échantillonne** :
-    bilinéaire, texel chroma ``k`` centré sur la luma ``2k + 0,5``, bords recopiés.
+    La chroma garde l'échantillon du coin haut gauche de chaque bloc 2×2 (celui que ``make_frame`` et le plan
+    ``yuv420p`` des tests retiennent), **recopié** sur le bloc : la règle de l'export (``format=rgba`` de swscale),
+    que la référence et le GPU reproduisent (:func:`core.gpu_composite.layer_chroma_grid`). La référence relit le
+    plan sous-échantillonné (un échantillon par bloc) pour l'interpoler quand le calque est redimensionné.
     """
     height, width = codes.shape[:2]
     out = codes.astype(np.float64) / 255.0
     for channel in (1, 2):
         plane = codes[::2, ::2, channel].astype(np.float64) / 255.0
-        ch, cw = plane.shape
-        xs = np.clip((np.arange(width) + 0.5) / 2.0 - 0.5, 0, cw - 1)
-        ys = np.clip((np.arange(height) + 0.5) / 2.0 - 0.5, 0, ch - 1)
-        x0 = np.floor(xs).astype(int)
-        y0 = np.floor(ys).astype(int)
-        x1 = np.minimum(x0 + 1, cw - 1)
-        y1 = np.minimum(y0 + 1, ch - 1)
-        tx = (xs - x0)[None, :]
-        ty = (ys - y0)[:, None]
-        top = plane[y0][:, x0] * (1 - tx) + plane[y0][:, x1] * tx
-        bottom = plane[y1][:, x0] * (1 - tx) + plane[y1][:, x1] * tx
-        out[..., channel] = top * (1 - ty) + bottom * ty
+        out[..., channel] = np.repeat(np.repeat(plane, 2, axis=0), 2, axis=1)[:height, :width]
     return out
+
+
+def grain_pattern(width: int, height: int, seed: int = 5) -> np.ndarray:
+    """Codes YUV 8 bits : luma **lisse**, chroma aléatoire à chaque échantillon 4:2:0 (grain chromatique).
+
+    La chroma change d'un bloc 2×2 au suivant : recopier un échantillon par bloc ou l'interpoler (bilinéaire)
+    donnent ici des images très différentes (≈ 25 niveaux en moyenne), alors que les mires à chroma constante par
+    bloc ou lente (:func:`test_pattern`, :func:`smooth_pattern`) ne le voient pas. La luma reste lisse pour que la
+    comparaison avec l'export ne mesure pas le rééchantillonnage géométrique de ses filtres.
+    """
+    rng = np.random.default_rng(seed)
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float64)
+    y = 120 + 60 * np.sin(2 * np.pi * xs / 89.0) * np.cos(2 * np.pi * ys / 67.0)
+    chroma = rng.integers(40, 216, size=((height + 1) // 2, (width + 1) // 2, 2))
+    uv = np.repeat(np.repeat(chroma, 2, axis=0), 2, axis=1)[:height, :width]
+    return np.dstack((np.clip(y, 16, 235).round(), uv)).astype(np.uint8)
 
 
 def render_gpu(frame_desc, video_frames: dict, mattes: dict | None = None, api: str = "metal"):

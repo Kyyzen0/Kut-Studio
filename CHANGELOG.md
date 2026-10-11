@@ -35,6 +35,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Moniteur GPU : sur une vidéo au grain coloré, les couleurs différaient de l'export (jusqu'à 58 niveaux sur un
+  pixel). Le moniteur reconstruit maintenant la couleur 4:2:0 comme l'export. À l'export, l'effet *Heat haze* ne
+  lisse plus la couleur de la vidéo : elle reste la même que sans l'effet.
 - **Un projet modifié ou venu d'ailleurs ne peut plus injecter de filtres FFmpeg.** Les identifiants des nœuds
   d'étalonnage et de composition, lus tels quels dans le fichier `.kut`, servaient d'étiquettes au graphe de l'export,
   de l'aperçu fidèle et des scopes : un identifiant forgé pouvait y ajouter un filtre (lecture d'un fichier local…).

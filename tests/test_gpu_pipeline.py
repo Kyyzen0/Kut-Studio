@@ -43,6 +43,8 @@ from core.gpu_composite import (
 from core.gpu_effects import (
     OP_COLOR_MATRIX,
     OP_EQ,
+    SPACE_RGB,
+    SPACE_YUV,
     BlurOp,
     SharpenOp,
     eq_plane,
@@ -261,6 +263,61 @@ def test_the_gpu_heat_haze_matches_the_geq_of_the_export(speed, time):
     assert mean <= 0.6 and p99 <= 3.0, (mean, p99)
 
 
+@needs_ffmpeg
+def test_the_heat_haze_of_the_export_repeats_420_chroma_like_the_rest():
+    """En 4:2:0, le passage en ``yuva444p`` du heat haze recopie la chroma (règle de ``format=rgba``) : avec le
+    ``bicubic`` par défaut, la mire (chroma aléatoire par bloc) s'écartait de 12 niveaux en moyenne."""
+    effects = [E(EffectType.HEAT_HAZE, amplitude=6.0, frequency=0.08, speed=0.0, top=0.2, span=0.5)]
+    mean, p99 = _ffmpeg_vs_reference(effects)
+    base_mean, base_p99 = _swscale_conversion_error()
+    assert mean <= 0.6 + base_mean and p99 <= 3.0 + base_p99, (mean, p99, base_mean, base_p99)
+
+
+def _export_layer_rgba(codes):
+    """La conversion du calque de l'export (``format=rgba``) d'une image ``yuv420p`` (chroma : coin haut gauche des
+    blocs 2×2, comme ``make_frame``), en RVB 0..1."""
+    np = pytest.importorskip("numpy")
+    height, width = codes.shape[:2]
+    raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
+    completed = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
+         "-vf", "format=rgba", "-f", "rawvideo", "-"], input=raw, capture_output=True, check=True,
+    )
+    return np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
+
+
+@needs_ffmpeg
+def test_420_chroma_is_repeated_per_block_like_the_export():
+    """Chroma 4:2:0 : la référence du moniteur suit la conversion de l'export, un échantillon **recopié** sur son bloc
+    2×2 du calque. Interpoler dans l'export coûterait ×4 sur la conversion et dépend de la version de swscale
+    (``docs/gpu-preview.md``) ; le moniteur suit donc l'export.
+
+    La mire a un grain chromatique (la chroma change à chaque échantillon). Les mires des autres tests ont une
+    chroma lente ou constante par bloc : elles ne distinguaient pas les deux règles, et l'écart réel (jusqu'à
+    58 niveaux sur un plan à grain, ``print_hook.mp4``) était passé inaperçu.
+    """
+    np = pytest.importorskip("numpy")
+    from core.gpu_composite import _bilinear, reference_frame
+    from tests.gpu_harness import grain_pattern, reference_codes
+
+    width, height = 320, 180
+    codes = grain_pattern(width, height)
+    exported = _export_layer_rgba(codes)
+    frame = CompositeFrame(width, height, 1.0, (_layer(),), (VideoSource("v", "yuv420p", width, height),))
+    diff = np.abs(reference_frame(frame, {"v": reference_codes(codes)}) - exported) * 255
+    base_mean, base_p99 = _swscale_conversion_error()
+    assert diff.mean() <= base_mean + 0.5 and np.percentile(diff, 99) <= base_p99 + 1.5, \
+        (float(diff.mean()), float(np.percentile(diff, 99)), base_mean, base_p99)
+
+    # La mire distingue bien les règles : la chroma interpolée (bilinéaire, l'ancien moniteur) en est loin.
+    ys, xs = np.mgrid[0:height, 0:width] + 0.5
+    smooth = codes / 255.0
+    smooth[..., 1:] = _bilinear(np, codes[::2, ::2, 1:] / 255.0, xs / 2.0, ys / 2.0)
+    m = np.array(yuv_to_rgb_matrix())
+    interpolated = np.clip(smooth @ m[:3, :3].T + m[:3, 3], 0.0, 1.0)
+    assert np.abs(interpolated - exported).mean() * 255 > 10.0
+
+
 # --- Plan de passes ------------------------------------------------------------------------------------------
 
 
@@ -304,6 +361,44 @@ def test_uniform_block_layout_is_stable():
     assert _FLIP_OFFSET == 50 * 4  # target.z : retournement Y patché par le backend
 
 
+def test_prep_reads_420_chroma_once_per_block_of_the_layer():
+    """``misc.xy`` de la passe prep : blocs de chroma du calque (taille du cadre), quelles que soient la résolution de
+    rendu et la taille de la source, même tourné ou déplacé ; rien (chroma interpolée) pour une source RVB. Un calque
+    que l'échelle du clip redimensionne garde ses blocs en largeur tant que sa largeur ne change pas (le ``scale`` de
+    l'export y recopie la chroma par paires), jamais en hauteur (il l'y interpole). Tourné avec des effets : chroma
+    interpolée (l'export peut tourner les plans 4:2:0 avant la conversion)."""
+    def prep_misc(source, matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), effects=()):
+        frame = CompositeFrame(320, 180, 0.5, (_layer(matrix=matrix, program=program_for(list(effects))),), (source,))
+        prep = next(step for step in plan_frame(frame).passes if step.shader == "prep")
+        return struct.unpack_from("<4f", prep.uniforms, 76 * 4)  # trois mat4, puis target … blur : misc
+
+    turned = (math.cos(0.3), math.sin(0.3), -math.sin(0.3), math.cos(0.3), 40.0, -7.0)
+    assert prep_misc(VideoSource("v", "nv12", 1280, 720)) == (160.0, 90.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "p010", 320, 180)) == (160.0, 90.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), turned) == (160.0, 90.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.7, 0.0, 0.0, 0.7, 48.0, 27.0)) == (0.0,) * 4
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (1.0, 0.0, 0.0, 0.6, 0.0, 36.0)) == (160.0, 0.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.6, 0.0, 0.0, 1.0, 64.0, 0.0)) == (0.0,) * 4
+    sepia = [E(EffectType.SEPIA)]
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), effects=sepia) == (160.0, 90.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), turned, sepia) == (0.0,) * 4
+    assert prep_misc(VideoSource("v", "rgba", 320, 180)) == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_unresized_layers_reach_the_composite_in_rgb_like_the_export():
+    """L'export convertit en RVB (écrêté) avant que ``rotate`` / ``overlay`` n'interpolent un calque sans échelle ; un
+    calque redimensionné est interpolé en YUV par son ``scale``, puis converti. La passe qui précède la composite suit.
+    Sur la mire à grain tournée de 15° : 0,76 niveau d'écart à l'export en RVB, 2,7 en interpolant le YUV."""
+    def composite_space(matrix):
+        frame = CompositeFrame(320, 180, 1.0, (_layer(matrix=matrix),), (VideoSource("v", "yuv420p", 320, 180),))
+        composite = next(step for step in plan_frame(frame).passes if step.shader == "composite")
+        return struct.unpack_from("<f", composite.uniforms, 64 * 4)[0]  # state.x : espace lu
+
+    turned = (math.cos(0.3), math.sin(0.3), -math.sin(0.3), math.cos(0.3), 40.0, -7.0)
+    assert composite_space(turned) == SPACE_RGB
+    assert composite_space((0.7, 0.0, 0.0, 0.7, 48.0, 27.0)) == SPACE_YUV
+
+
 def test_inverse_map_targets_layer_pixels():
     matrix = (0.5, 0.0, 0.0, 0.5, 40.0, 20.0)
     inverse = affine_inverse(matrix)
@@ -342,19 +437,35 @@ def test_reference_composites_geometry_opacity_and_mattes():
 
 
 @needs_ffmpeg
-@pytest.mark.parametrize("transform, effects, color_limit", [
-    ({}, [], 4.0),
-    ({"position_x": 0.1, "position_y": -0.05, "scale": 0.7, "rotation": 15.0, "opacity": 0.8}, [], 5.0),
+@pytest.mark.parametrize("transform, effects, color_limit, pattern", [
+    ({}, [], 4.0, "smooth"),
+    ({"position_x": 0.1, "position_y": -0.05, "scale": 0.7, "rotation": 15.0, "opacity": 0.8}, [], 5.0, "smooth"),
     ({"scale": 0.8}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4),
-                      E(EffectType.VIGNETTE, intensity=0.5)], 6.0),
-    ({}, [E(EffectType.BLUR, intensity=2.0), E(EffectType.SEPIA)], 4.0),
+                      E(EffectType.VIGNETTE, intensity=0.5)], 6.0, "smooth"),
+    ({}, [E(EffectType.BLUR, intensity=2.0), E(EffectType.SEPIA)], 4.0, "smooth"),
     # Effets lumineux sur un clip réduit : le heat haze déforme l'image du clip (avant son échelle), le bloom et
     # l'aberration agissent après (pixels de l'export).
     ({"scale": 0.7}, [E(EffectType.HEAT_HAZE, amplitude=4.0, frequency=0.07, speed=0.0, top=0.1, span=0.5),
                       E(EffectType.GLOW, threshold=0.5, radius=3.0, intensity=1.0),
-                      E(EffectType.CHROMATIC_ABERRATION, intensity=2.0)], 6.0),
+                      E(EffectType.CHROMATIC_ABERRATION, intensity=2.0)], 6.0, "smooth"),
+    # Grain chromatique (chroma 4:2:0 différente à chaque échantillon, la pire mire pour cette règle). Sans échelle
+    # de clip, chroma recopiée par bloc 2×2 du calque, comme l'export : 0,2 à 0,8 mesuré, contre 19 à 32 en
+    # l'interpolant (l'ancien moniteur). Avec une échelle, l'export rééchantillonne la chroma dans son ``scale`` :
+    # interpolée, 12,2 mesuré (21,3 en la recopiant) ; une approximation, bornée pour qu'elle ne se dégrade pas.
+    # Une seule dimension redimensionnée : ce ``scale`` recopie la chroma par paires en largeur, l'interpole en
+    # hauteur. Scale Y seul : blocs gardés en largeur, 15,7 (25,1 tout interpolé) ; Scale X seul : tout interpolé,
+    # 19,5 (23,3 en gardant les blocs en hauteur). Tourné avec un effet YUV : chroma interpolée, 14,6 (30,5 recopiée).
+    ({}, [], 1.5, "grain"),
+    ({"rotation": 15.0, "position_x": 0.1}, [], 1.5, "grain"),
+    ({}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4)], 1.5, "grain"),
+    ({}, [E(EffectType.HEAT_HAZE, amplitude=4.0, frequency=0.07, speed=0.0, top=0.1, span=0.5)], 1.5, "grain"),
+    ({"position_x": 0.1, "position_y": -0.05, "scale": 0.7, "rotation": 15.0, "opacity": 0.8}, [], 14.0, "grain"),
+    ({"scale_y": 0.7}, [], 18.0, "grain"),
+    ({"scale_x": 0.7}, [], 21.0, "grain"),
+    ({"rotation": 15.0}, [E(EffectType.COLOR_CORRECTION, brightness=0.05, contrast=1.2, saturation=1.4)], 16.0,
+     "grain"),
 ])
-def test_gpu_preview_matches_the_export_frame(tmp_path, transform, effects, color_limit):
+def test_gpu_preview_matches_the_export_frame(tmp_path, transform, effects, color_limit, pattern):
     """Même clip, même instant : image de l'export contre image du pipeline GPU.
 
     L'export positionne les calques à un pixel près (arrondis entiers de ``rotate`` /
@@ -371,10 +482,10 @@ def test_gpu_preview_matches_the_export_frame(tmp_path, transform, effects, colo
     from core.render_plan import build_render_plan
     from core.tracking_motion import fit_box, video_layer_matrix
     from core.visual_effects import ClipTransform
-    from tests.gpu_harness import reference_codes, smooth_pattern
+    from tests.gpu_harness import grain_pattern, reference_codes, smooth_pattern
 
     width, height = 320, 180
-    codes = smooth_pattern(width, height)
+    codes = (grain_pattern if pattern == "grain" else smooth_pattern)(width, height)
     source = tmp_path / "src.mkv"
     raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s",
