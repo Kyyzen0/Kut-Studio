@@ -159,6 +159,34 @@ def test_100_then_0_then_minus_100_percent_exports_a_clip_that_stops_and_comes_b
 
 
 # ---------------------------------------------------------------------------
+# Ancre hors de la fenêtre du clip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("anchor", [-5.0, -0.5, 1.5, 2.0, 5.0])
+def test_an_anchor_outside_the_source_window_exports_what_the_model_shows(media, anchor):
+    """Source de 2 s lue à 2× : une ancre avant le début tient la première image jusqu'à l'entrée dans la fenêtre ; une ancre
+    à la fin ou au-delà ne laisse qu'une image (la source est épuisée). Avant : ``ZeroDivisionError`` à l'export, les
+    morceaux collés à la borne ayant une vitesse nulle."""
+    project, clip = _project(media, remapping=TimeRemapping(speed=2.0, anchor=anchor))
+    assert_matches_model(project, clip)
+
+
+def test_an_anchor_before_the_window_holds_the_first_frame_then_plays(media):
+    project, _clip = _project(media, remapping=TimeRemapping(speed=2.0, anchor=-0.5))
+    indices = exported_indices(project)
+    assert indices[:8] == [0] * 8 and indices[8:12] == [1, 3, 5, 7], "0,25 s tenues, puis la source à 2×"
+    assert indices[-1] == SOURCE_FRAMES - 1
+
+
+@pytest.mark.parametrize("anchor", [1.0, 2.0, 2.5, 6.0])
+def test_a_reversed_clip_with_an_anchor_past_the_end_exports_what_the_model_shows(media, anchor):
+    """En marche arrière la fenêtre se lit depuis ``source_out`` : une ancre au-delà tient la dernière image avant de reculer."""
+    project, clip = _project(media, remapping=TimeRemapping(speed=1.0, reverse=True, anchor=anchor))
+    assert_matches_model(project, clip)
+
+
+# ---------------------------------------------------------------------------
 # Couper et rogner ne changent aucune image exportée
 # ---------------------------------------------------------------------------
 

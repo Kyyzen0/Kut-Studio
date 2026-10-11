@@ -404,14 +404,31 @@ class ExportFormat(Enum):
         return self.value[3]
 
 
+def even_dimension(value: int) -> int:
+    """Le plus petit entier pair, au moins 2, qui contient ``value`` pixels.
+
+    x264, x265 et ProRes (chroma sous-échantillonnée) refusent une largeur ou une hauteur impaire (« width not divisible by
+    2 ») : on arrondit **au pair supérieur**, de sorte qu'aucun pixel demandé ne soit perdu.
+    """
+    value = int(value)
+    return max(2, value + value % 2)
+
+
 @dataclass(frozen=True)
 class ExportPreset:
-    """Décrit la résolution, la qualité et le débit audio d'un export."""
+    """Décrit la résolution, la qualité et le débit audio d'un export.
+
+    La résolution est ramenée à des dimensions paires (:func:`even_dimension`) : c'est ce que le moteur donne à l'encodeur.
+    """
 
     name: str
     resolution: tuple[int, int]
     crf: int
     audio_bitrate: str
+
+    def __post_init__(self) -> None:
+        width, height = self.resolution
+        object.__setattr__(self, "resolution", (even_dimension(width), even_dimension(height)))
 
 
 @dataclass(frozen=True)
@@ -2406,16 +2423,47 @@ def _curve_is_identity(curve, *, tolerance: float = 1e-3) -> bool:
     return True
 
 
+CURVES_LUT_SCALE = 255
+"""``curves`` range ses points dans une table de 256 entrées (images 8 bits) : ``(int)(x · 255)`` doit croître strictement."""
+
+
+def _curve_points_for_ffmpeg(points) -> list[tuple[float, float]]:
+    """Les points d'une courbe tels que ``curves`` les accepte : deux abscisses ne partagent jamais la même case de 1/255.
+
+    FFmpeg refuse la commande entière (« too close from each other ») quand ``(int)(x·255)`` ne croît pas strictement
+    d'un point au suivant, et pas seulement pour deux abscisses égales : 0,5 et 0,5005 sont déjà dans la même case. Le modèle
+    n'exige qu'un ordre strictement croissant. Un point qui tombe dans la case du précédent est donc **décalé dans la case
+    suivante** (au plus quelques cases de 1/255 pour un amas, la marche qu'il dessine est conservée) ; si l'amas touche le
+    blanc, on décale vers le bas plutôt que de sortir de [0, 1]. Les points déjà espacés d'une case ne bougent pas.
+    Les valeurs sont arrondies comme elles seront écrites, car FFmpeg relit le texte.
+    """
+    rounded = [(float(_format_seconds(x)), float(_format_seconds(y))) for x, y in points]
+    bins = [int(x * CURVES_LUT_SCALE) for x, _y in rounded]
+    for index in range(1, len(bins)):                                  # vers la droite : une case de plus que le précédent
+        bins[index] = max(bins[index], bins[index - 1] + 1)
+    if bins and bins[-1] > CURVES_LUT_SCALE:                           # débordement au-delà du blanc : on recule
+        bins[-1] = CURVES_LUT_SCALE
+        for index in range(len(bins) - 2, -1, -1):
+            bins[index] = min(bins[index], bins[index + 1] - 1)
+    kept: list[tuple[float, float]] = []
+    for (x, y), case in zip(rounded, bins):
+        if int(x * CURVES_LUT_SCALE) != case:                          # déplacé : au milieu de sa nouvelle case
+            x = 1.0 if case >= CURVES_LUT_SCALE else float(_format_seconds((case + 0.5) / CURVES_LUT_SCALE))
+        kept.append((x, y))
+    return kept
+
+
 def _build_curves_filter(channel: str, curve) -> str:
     """Émet un filtre ``curves`` pour un canal donné.
 
     La syntaxe FFmpeg ``curves=`` accepte des presets (``preset=darker``)
     ou une suite de points ``x0/y0 x1/y1 ...``. On choisit la seconde
-    forme pour traduire fidèlement les 16 points de notre modèle.
+    forme pour traduire fidèlement les 16 points de notre modèle
+    (:func:`_curve_points_for_ffmpeg` écarte ceux que FFmpeg refuserait).
     """
     parts = [
         f"{_format_seconds(x)}/{_format_seconds(y)}"
-        for x, y in curve.points
+        for x, y in _curve_points_for_ffmpeg(curve.points)
     ]
     expr = " ".join(parts)
     return f"curves={channel}='{expr}'"

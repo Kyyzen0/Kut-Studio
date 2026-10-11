@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from .export_engine import ExportFormat, ExportPreset
+from .export_engine import ExportFormat, ExportPreset, even_dimension
 from .timecode import format_fps
 from .video_encoders import HardwareEncoder, coerce_hardware
 
@@ -61,7 +61,7 @@ class RenderPresetSpec:
         container: ``"mp4"`` ou ``"mov"``.
         video_codec: ``"h264"``, ``"hevc"`` ou ``"prores_ks"``.
         audio_codec: voir :data:`SUPPORTED_AUDIO_CODECS`.
-        width / height: résolution de sortie.
+        width / height: résolution de sortie, arrondie au pair supérieur (les encodeurs refusent un côté impair).
         fps: images par seconde, ``None`` : la cadence de la séquence exportée (voir :meth:`output_fps`).
         quality: CRF (H.264 et HEVC ; HEVC l'applique avec +4) ou profil (ProRes).
         audio_bitrate: débit audio FFmpeg (``"192k"``).
@@ -94,6 +94,8 @@ class RenderPresetSpec:
             raise ValueError(f"Codec audio non pris en charge : {self.audio_codec}")
         if self.width <= 0 or self.height <= 0:
             raise ValueError("La résolution d'export doit être positive.")
+        object.__setattr__(self, "width", even_dimension(self.width))     # les encodeurs refusent un côté impair
+        object.__setattr__(self, "height", even_dimension(self.height))
         if self.fps is not None and not float(self.fps) > 0.0:   # rejette aussi NaN
             raise ValueError("La fréquence d'images doit être supérieure à zéro.")
         object.__setattr__(self, "hardware", coerce_hardware(self.hardware).value)
