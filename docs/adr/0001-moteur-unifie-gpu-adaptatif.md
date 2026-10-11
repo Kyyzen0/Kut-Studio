@@ -184,7 +184,7 @@ l'option B n'a pas atteint ses limites. Gardée comme suite possible si les mesu
 
 Choix de langage (quand l'option C s'ouvre) : **C++** pour le moteur natif hébergé par Qt / PySide6 ;
 Rust n'est reconsidéré que pour un compositeur isolé hors processus. Étude et critères de bascule :
-[ADR-0003](0003-native-engine-language-cpp-vs-rust.md).
+[ADR-0004](0004-native-engine-language-cpp-vs-rust.md).
 
 ## Analyse des compromis
 
@@ -209,7 +209,7 @@ Rust n'est reconsidéré que pour un compositeur isolé hors processus. Étude e
 
 **À revoir :**
 - les limites de PySide6 après l'étape 4 (option C si nécessaire ; langage et seuils :
-  [ADR-0003](0003-native-engine-language-cpp-vs-rust.md)) ;
+  [ADR-0004](0004-native-engine-language-cpp-vs-rust.md)) ;
 - la place des segments fidèles : à terme, réservés au contrôle et aux effets hors moteur.
 
 ## Plan d'action
@@ -238,4 +238,4 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    référence sur le corpus de rendu existant.
 7. [ ] **Suivi** : banc `tools/perf` étendu (images par seconde en lecture, latence au scrubbing, mémoire vidéo,
    énergie) ; décision sur l'option C au vu des mesures de l'étape 4 et des critères de
-   [ADR-0003](0003-native-engine-language-cpp-vs-rust.md) (C++ si le seuil est franchi).
+   [ADR-0004](0004-native-engine-language-cpp-vs-rust.md) (C++ si le seuil est franchi).

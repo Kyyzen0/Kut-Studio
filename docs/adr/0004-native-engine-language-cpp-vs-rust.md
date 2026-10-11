@@ -1,4 +1,4 @@
-# ADR-0003: Native engine language — C++ vs Rust
+# ADR-0004: Native engine language — C++ vs Rust
 
 **Status:** Accepted (language preference when Option C opens; Option B remains the active path)  
 **Date:** 2026-10-11  
