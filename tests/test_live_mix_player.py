@@ -247,3 +247,15 @@ def test_a_synchronous_startup_failure_is_remembered_and_not_retried_every_tick(
         assert len(attempts) == 2
     finally:
         window.toggle_play()
+
+
+def test_the_pages_are_ordered_edit_composition_color_audio(window):
+    """L'ordre des puces de la barre supérieure, de gauche à droite, et du menu Fenêtre."""
+    from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT, PAGES
+
+    assert PAGES == (PAGE_EDIT, PAGE_COMPOSITION, PAGE_COLOR, PAGE_AUDIO)
+    assert list(window.page_buttons) == list(PAGES)
+    window.resize(1440, 900)
+    window.show()
+    xs = [window.page_buttons[page].mapTo(window, window.page_buttons[page].rect().topLeft()).x() for page in PAGES]
+    assert xs == sorted(xs), "affichées de gauche à droite dans cet ordre"

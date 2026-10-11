@@ -190,7 +190,8 @@ Détail et usage : [composition.md](../composition.md).
 
 ### 5. Pages
 
-Une page est une étape du travail avec **sa** disposition : Montage, Couleur, Composition et Audio. La page
+Une page est une étape du travail avec **sa** disposition : Montage, Composition, Couleur et Audio (l'ordre de la barre
+supérieure). La page
 Montage garde `workspace.json`, et chaque autre page a son fichier `workspace_<page>.json`. Changer de page garde la
 disposition qu'on quitte et rend celle de la page ouverte telle qu'on l'avait laissée. « Disposition par défaut » rend
 celle d'origine de la page affichée.

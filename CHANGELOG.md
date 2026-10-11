@@ -14,23 +14,13 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
-### Added
-
-- **On entend le vrai mixage pendant la lecture** : les pistes audio (musique, voix off), le volume, le panoramique,
-  mute et solo, l'automation, les effets, le ducking et le Master, exactement comme l'export les produira. Avant, la
-  lecture ne faisait entendre que le son du clip affiché. Le son est calé sur la tête de lecture ; une modification
-  pendant la lecture s'entend après un court repos.
-- **Vumètres réels** dans le mixeur : la crête de chaque piste, la crête et le RMS du Master, et la sonie (LUFS)
-  momentanée et à court terme. À l'arrêt, ils retombent.
-- **Page Audio** (bouton *Audio* en haut, *Fenêtre*, ou le rail) : le mixeur et ses vumètres sous le moniteur, avec la
-  timeline, l'inspecteur sur l'onglet Audio.
-
 ## [0.4.0] - 2026-10-11
 
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
 par un graphe de nœuds (sources, transformation, masque, incrustation, effets, étalonnage, fusion), avec sa page
-Composition et la conversion des calques en nœuds ; en lecture, le moniteur lit la composition rendue d'avance. Aussi :
-une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), l'export qui échouait avec un
+Composition et la conversion des calques en nœuds ; en lecture, le moniteur lit la composition rendue d'avance. La
+**page Audio** fait entendre en lecture le vrai mixage de l'export, avec de vrais vumètres. Aussi : une faille de
+sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), l'export qui échouait avec un
 panoramique non centré ou l'un de quatre effets audio, l'écho et la réverbération enfin audibles, un gel possible quand
 les scopes étaient affichés, et les couleurs du moniteur GPU sur les vidéos au grain coloré.
 
@@ -51,9 +41,22 @@ les scopes étaient affichés, et les couleurs du moniteur GPU sur les vidéos a
     arrière-plan (comme le cache Fusion de Resolve), avec les réglages du clip appliqués en direct ; le temps de ce
     rendu, après une modification, il montre la source principale.
   - Les projets passent au format 17 : une version plus ancienne de Kut-Studio ne les ouvre plus.
+- **On entend le vrai mixage pendant la lecture** : les pistes audio (musique, voix off), le volume, le panoramique,
+  mute et solo, l'automation, les effets, le ducking et le Master, exactement comme l'export les produira. Avant, la
+  lecture ne faisait entendre que le son du clip affiché. Le son est calé sur la tête de lecture ; une modification
+  pendant la lecture s'entend après un court repos.
+- **Vumètres réels** dans le mixeur : la crête de chaque piste, la crête et le RMS du Master, et la sonie (LUFS)
+  momentanée et à court terme. À l'arrêt, ils retombent.
+- **Page Audio** (bouton *Audio* en haut, *Fenêtre*, ou le rail) : le mixeur et ses vumètres sous le moniteur, avec la
+  timeline, l'inspecteur sur l'onglet Audio.
 - Développement : un test bloqué en CI écrit la pile Python de tous ses threads dans le journal avant son délai, même
   quand un blocage natif tient le GIL ; dans le workflow de release, l'étape des tests échoue à 45 min au lieu de
   laisser le job s'épuiser à 75 min ([docs/updates.md](docs/updates.md)).
+
+### Changed
+
+- Dans la barre supérieure et le menu *Fenêtre*, les pages sont dans l'ordre **Montage, Composition, Couleur, Audio** :
+  la page Composition passe avant la page Couleur.
 
 ### Fixed
 
