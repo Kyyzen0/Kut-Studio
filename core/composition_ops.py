@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 
 from .blend_modes import coerce_blend_mode
 from .composition import (
+    MAX_DURATION,
     OUTPUT_ID,
     Composition,
     CompositionGraph,
@@ -45,6 +46,10 @@ _EPSILON = 1e-9
 
 class CompositionError(ValueError):
     """La conversion ou la création est refusée (message pour l'utilisateur)."""
+
+
+def _too_long() -> CompositionError:
+    return CompositionError(f"Une composition dure au plus {MAX_DURATION / 60:.0f} minutes.")
 
 
 @dataclass
@@ -180,6 +185,8 @@ def convert_to_composition(project: Project, clip_ids, name: str | None = None) 
     end = max(clip.timeline_start + clip.duration for _i, _t, clip in located)
     if end - start <= _EPSILON:
         raise CompositionError("La sélection n'a pas de durée.")
+    if end - start > MAX_DURATION:
+        raise _too_long()
     blocking = [clip for clip in host.clips if clip.id not in selected
                 and clip.timeline_start < end - _EPSILON and clip.timeline_start + clip.duration > start + _EPSILON]
     if blocking:
@@ -229,6 +236,8 @@ def create_composition(project: Project, track_id: str, at: float, duration: flo
     if track.locked:
         raise CompositionError(f"Piste verrouillée : {track.name}.")
     duration = max(0.04, float(duration))
+    if duration > MAX_DURATION:
+        raise _too_long()
     start = max(0.0, float(at))
     if any(clip.timeline_start < start + duration - _EPSILON and clip.timeline_start + clip.duration > start + _EPSILON
            for clip in track.clips):

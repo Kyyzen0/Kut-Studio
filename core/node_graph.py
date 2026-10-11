@@ -2,8 +2,8 @@
 
 Socle commun des deux modèles nodaux de Kut-Studio (ADR-0002) : l'étalonnage par nœuds d'un clip
 (:mod:`core.color_nodes`) et, ensuite, la composition nodale. Le graphe est **immuable** (chaque modification rend un
-nouveau graphe, l'historique d'annulation garde les anciens tels quels) et **toujours valide** : identifiants uniques,
-liens entre nœuds existants, une seule source par entrée, aucun cycle (:mod:`core.graph_cycles`, la logique de cycles
+nouveau graphe, l'historique d'annulation garde les anciens tels quels) et **toujours valide** : identifiants uniques et sûrs
+(:func:`is_safe_id`), liens entre nœuds existants, une seule source par entrée, aucun cycle (:mod:`core.graph_cycles`, la logique de cycles
 des séquences imbriquées et du parentage des calques).
 
 Un lien relie la sortie d'un nœud à une **entrée** (``port``) d'un autre : un nœud d'étalonnage n'en a qu'une, une
@@ -21,6 +21,20 @@ from .graph_cycles import find_cycles
 
 class NodeGraphError(ValueError):
     """Graphe invalide : identifiant en double, lien vers un nœud absent, entrée doublée, cycle."""
+
+
+MAX_ID_LENGTH = 64
+_SAFE_ID = re.compile(r"[A-Za-z0-9_]+")
+
+
+def is_safe_id(value: object) -> bool:
+    """Un identifiant de nœud que l'export peut écrire tel quel dans un graphe de filtres FFmpeg.
+
+    Les identifiants d'un projet viennent d'un fichier ``.kut`` (du JSON, donc n'importe quelle chaîne) et deviennent
+    des étiquettes de ``-filter_complex`` : un ``]``, une virgule, un ``;`` ou une apostrophe y ouvriraient un autre
+    filtre (``movie``, ``subtitles``…). L'éditeur n'en fabrique que de la forme ``n1``, ``f2`` : ASCII, chiffres et
+    ``_`` suffisent, ``fullmatch`` (et non ``$``, qui laisse passer un saut de ligne final) et la longueur bornée."""
+    return isinstance(value, str) and len(value) <= MAX_ID_LENGTH and _SAFE_ID.fullmatch(value) is not None
 
 
 class _Identified(Protocol):
@@ -51,6 +65,8 @@ class NodeGraph(Generic[N]):
         object.__setattr__(self, "nodes", tuple(self.nodes))
         object.__setattr__(self, "links", tuple(self.links))
         ids = [node.id for node in self.nodes]
+        if unsafe := [node_id for node_id in ids if not is_safe_id(node_id)]:
+            raise NodeGraphError(f"Identifiants de nœuds non admis : {[str(item)[:40] for item in unsafe]}.")
         if len(set(ids)) != len(ids):
             raise NodeGraphError(f"Identifiants de nœuds en double : {ids}.")
         known = set(ids)
