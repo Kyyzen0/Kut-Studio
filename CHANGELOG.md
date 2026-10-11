@@ -14,6 +14,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- ⚠️ **L'exposition de l'étalonnage est maintenant une vraie exposition en diaphragmes (EV).** Elle multiplie la
+  lumière par 2^EV, comme l'annonce le réglage (−2 à +2). Avant, c'était un gamma : un gris moyen sortait à 0 à −2 EV
+  (il en faut 66), et une couleur dérivait vers le rouge dans les ombres. **Rendu différent** pour les projets dont un
+  nœud ou un clip utilise l'exposition (surtout les valeurs négatives, qui étaient bien trop sombres) : revoyez-les.
+  À 0 EV, rien ne change.
+
 ### Fixed
 
 - **Incrustation (chroma key) : une tolérance à 0 faisait échouer l'export.** FFmpeg refuse une similarité de 0, et le

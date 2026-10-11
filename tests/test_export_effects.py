@@ -57,6 +57,8 @@ def test_color_grade_runs_after_existing_visual_effects_deterministically():
     filter_graph = _build_layer_filter(0, layer, 0, 1280, 720, 30)
 
     visual_effect = filter_graph.index("gblur=sigma=4.0")
-    color_grade = filter_graph.index("eq=contrast=1.0:saturation=1.2:gamma=")
+    color_grade = filter_graph.index("lutrgb=")                 # l'exposition ouvre l'étalonnage
+    saturation = filter_graph.index("eq=contrast=1.0:saturation=1.2")
     alpha_format = filter_graph.index("format=rgba")
-    assert visual_effect < color_grade < alpha_format
+    assert visual_effect < color_grade < saturation < alpha_format
+    assert "gamma=" not in filter_graph, "l'exposition n'est plus un gamma"

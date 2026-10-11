@@ -80,11 +80,14 @@ def test_the_wheels_come_after_colorbalance_and_before_the_curves():
     from core.color_grading import ColorCurve, ColorCurves
 
     bent = ColorCurve(points=((0.0, 0.0), (0.5, 0.6), (1.0, 1.0)))
-    grade = ColorGrade(exposure=0.2, hue=5.0, shadows=0.1, temperature=20.0, curves=ColorCurves(master=bent),
-                       gain=Wheel(y=0.2))
+    grade = ColorGrade(exposure=0.2, contrast=0.1, hue=5.0, shadows=0.1, temperature=20.0,
+                       curves=ColorCurves(master=bent), gain=Wheel(y=0.2))
     chain = _build_color_grade_filters(grade)
-    order = ["eq=", "hue=", "colorbalance=", "colorchannelmixer=", "lutrgb=", "curves="]
-    assert [chain.index(stage) for stage in order] == sorted(chain.index(stage) for stage in order)
+    # L'exposition (un premier ``lutrgb``) ouvre la chaîne, les molettes (le dernier) viennent avant les courbes.
+    stages = [chain.index("lutrgb="), chain.index("eq="), chain.index("hue="), chain.index("colorbalance="),
+              chain.index("colorchannelmixer="), chain.rindex("lutrgb="), chain.index("curves=")]
+    assert stages[0] != stages[5], "deux tables : l'exposition, puis les molettes"
+    assert stages == sorted(stages)
 
 
 # --- formule, au niveau près ----------------------------------------------------------------------------------------

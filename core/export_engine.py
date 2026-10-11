@@ -2302,7 +2302,7 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     from .color_grading import ColorGrade
     from .color_nodes import ColorNodeGraph
     from .color_render import Compare, FilterChain, Highlight, compare_filters, render_filters
-    from .color_wheels import wheels_filter
+    from .color_wheels import exposure_filter, wheels_filter
 
     if isinstance(grade, FilterChain):
         return grade.text                       # une étape d'un graphe spatial, cuite par le moniteur
@@ -2322,16 +2322,17 @@ def _build_color_grade_filters(grade, tag: str = "cg", *, windows=None, pixel_sc
     if not grade.enabled:
         return ""
     filters: list[str] = []
-    # 1. eq : l'exposition en stops est traduite en gamma (2**EV),
-    # ce qui reste dans les bornes réelles du filtre même à ±2 EV.
-    # Contraste et saturation sont des multiplicateurs centrés sur 1.
-    if grade.exposure or grade.contrast or grade.saturation != 1.0:
+    # 0. exposition en stops (EV) : la lumière est multipliée par 2^EV, puis ré-encodée (table ``lutrgb`` exacte), avant
+    # le contraste. Avant, ``eq=gamma=2**EV`` : un gamma n'est pas une exposition (gris moyen à −2 EV : 0 au lieu de 66).
+    exposure = exposure_filter(grade.exposure)
+    if exposure:
+        filters.append(exposure)
+    # 1. eq : contraste et saturation sont des multiplicateurs centrés sur 1.
+    if grade.contrast or grade.saturation != 1.0:
         eq_contrast = _format_seconds(1.0 + float(grade.contrast))
         eq_saturation = _format_seconds(float(grade.saturation))
-        eq_gamma = _format_seconds(2.0 ** float(grade.exposure))
         filters.append(
-            f"eq=contrast={eq_contrast}:saturation={eq_saturation}:"
-            f"gamma={eq_gamma}"
+            f"eq=contrast={eq_contrast}:saturation={eq_saturation}"
         )
     # 1 bis. teinte : rotation de la chroma (degrés).
     if abs(float(grade.hue)) > 1e-3:
