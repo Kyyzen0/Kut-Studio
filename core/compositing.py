@@ -170,6 +170,11 @@ def is_hex_color(text: str) -> bool:
     return re.fullmatch(r"#[0-9A-Fa-f]{6}", str(text)) is not None
 
 
+MIN_CHROMA_TOLERANCE = 0.01
+"""``chromakey`` accepte une similarité de 0,01 à 1 : 0 est refusé (« Result too large ») et faisait échouer tout
+export d'une incrustation réglée à 0, valeur où démarre le curseur de l'interface."""
+
+
 @dataclass(frozen=True)
 class ChromaKey:
     enabled: bool = False
@@ -183,8 +188,9 @@ class ChromaKey:
         if not is_hex_color(color):                         # « #ZZZZZZ » irait tel quel dans ``chromakey=0x…``
             color = "#00FF00"
         object.__setattr__(self, "color", color)
-        for name in ("tolerance", "softness", "spill_suppression"):
+        for name in ("softness", "spill_suppression"):
             object.__setattr__(self, name, max(0.0, min(1.0, float(getattr(self, name)))))
+        object.__setattr__(self, "tolerance", max(MIN_CHROMA_TOLERANCE, min(1.0, float(self.tolerance))))
 
 
 @dataclass(frozen=True)

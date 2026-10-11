@@ -79,6 +79,16 @@ def _fmt(value: float) -> str:
     return f"{float(value):.12g}"
 
 
+def _fmt_time(value: float) -> str:
+    """Durée pour une **option** de filtre (``atrim=duration=``, ``apad=whole_dur=``) : décimale, jamais scientifique.
+
+    Ces options sont lues comme un temps (``av_parse_time``) qui refuse « 1e-06 » (« Invalid argument ») : une durée
+    imposée à 1 µs ou un clip à vitesse variable rogné à 50 µs faisait échouer l'export. ``_fmt`` reste pour les
+    expressions (``setpts``…), qui acceptent l'exposant."""
+    text = f"{float(value):.9f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
 def ticks_in(duration: float, fps: float) -> int:
     """Nombre d'images de sortie d'une durée : les ticks ``k / fps`` situés dans ``[0, duration)``."""
     return max(1, math.ceil(duration * fps - TICK_EPSILON))
@@ -182,18 +192,18 @@ def _run_chain(
     last_frame: int | None = None,
 ) -> str:
     """Filtres d'un run (sans étiquettes) : flux de ``ticks`` images exactement, horodatées à partir de 0."""
-    hold = f"tpad=stop_mode=clone:stop_duration={_fmt(min(ticks / fps + 1.0, 3600.0))},trim=end_frame={ticks},setpts=PTS-STARTPTS"
+    hold = f"tpad=stop_mode=clone:stop_duration={_fmt_time(min(ticks / fps + 1.0, 3600.0))},trim=end_frame={ticks},setpts=PTS-STARTPTS"
     if run.kind is RunKind.HOLD:
         frame = nearest_frame(run.s0, fs, last_frame)
         return (
             # ``fps`` avant ``tpad`` : sans cadence connue (``setpts`` l'efface sous FFmpeg 7.x), ``tpad`` n'ajoute rien.
-            f"trim=start={_fmt((frame - TRIM_START_MARGIN) / fs)}:end={_fmt((frame + TRIM_END_MARGIN) / fs)},setpts=PTS-STARTPTS,"
-            f"fps={_fmt(fps)},tpad=stop_mode=clone:stop_duration={_fmt(min(ticks / fps + 1.0, 3600.0))},"
+            f"trim=start={_fmt_time((frame - TRIM_START_MARGIN) / fs)}:end={_fmt_time((frame + TRIM_END_MARGIN) / fs)},setpts=PTS-STARTPTS,"
+            f"fps={_fmt(fps)},tpad=stop_mode=clone:stop_duration={_fmt_time(min(ticks / fps + 1.0, 3600.0))},"
             f"trim=end_frame={ticks},setpts=PTS-STARTPTS"
         )
     low, high = sorted((run.s0, run.s1))
     m_lo, m_hi = nearest_frame(low, fs, last_frame), nearest_frame(high, fs, last_frame)
-    window = f"trim=start={_fmt((m_lo - TRIM_START_MARGIN) / fs)}:end={_fmt((m_hi + TRIM_END_MARGIN) / fs)}"
+    window = f"trim=start={_fmt_time((m_lo - TRIM_START_MARGIN) / fs)}:end={_fmt_time((m_hi + TRIM_END_MARGIN) / fs)}"
     if run.kind is RunKind.FORWARD:
         timestamps = _forward_timestamps(pieces, m_lo, fs, fps, first_tick)
         return f"{window},settb={FINE_TIMEBASE},setpts='({timestamps}+{PTS_BIAS:g})/TB',fps={_fmt(fps)}:start_time=0,{hold}"
@@ -405,7 +415,7 @@ _AUDIO_FORMAT = f"aformat=channel_layouts=stereo:sample_rates={AUDIO_RATE}"
 
 def _silence(duration: float) -> str:
     return (
-        f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=duration={_fmt(duration)},asetpts=PTS-STARTPTS"
+        f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=duration={_fmt_time(duration)},asetpts=PTS-STARTPTS"
     )
 
 
@@ -416,7 +426,7 @@ def _silence_reading(source_duration: float) -> str:
     puits est alimenté par une source interne (le son généré d'une séquence imbriquée). ``atrim=end=0`` ferme l'entrée
     aussitôt, ``apad`` donne la durée exacte : aucun puits, même résultat sur toutes les versions.
     """
-    return f"atrim=end=0,asetpts=PTS-STARTPTS,{_AUDIO_FORMAT},apad=whole_dur={_fmt(source_duration)}"
+    return f"atrim=end=0,asetpts=PTS-STARTPTS,{_AUDIO_FORMAT},apad=whole_dur={_fmt_time(source_duration)}"
 
 
 def _audio_piece_chain(piece: Piece, kind: RunKind, *, extend: float, preserve_pitch: bool) -> str:
@@ -431,7 +441,7 @@ def _audio_piece_chain(piece: Piece, kind: RunKind, *, extend: float, preserve_p
     else:
         low = max(0.0, low - extend * speed)
     steps = [
-        f"atrim=start={_fmt(max(0.0, low))}:end={_fmt(high)}", "asetpts=PTS-STARTPTS", _AUDIO_FORMAT,
+        f"atrim=start={_fmt_time(max(0.0, low))}:end={_fmt_time(high)}", "asetpts=PTS-STARTPTS", _AUDIO_FORMAT,
     ]
     if kind is RunKind.BACKWARD:
         steps.append("areverse")
@@ -458,11 +468,11 @@ def audio_stage(
     ``remap_audio=False`` : l'audio garde son temps (1×, vers l'avant, depuis ``source_in``) pendant la durée du clip.
     """
     duration = time_map.duration
-    tail = f"apad=whole_dur={_fmt(duration)},atrim=end={_fmt(duration)},asetpts=PTS-STARTPTS"
+    tail = f"apad=whole_dur={_fmt_time(duration)},atrim=end={_fmt_time(duration)},asetpts=PTS-STARTPTS"
     out = f"{prefix}out"
     if not remap_audio:
         body = (
-            f"atrim=start={_fmt(source_in)}:duration={_fmt(duration)},asetpts=PTS-STARTPTS,{_AUDIO_FORMAT},{tail}"
+            f"atrim=start={_fmt_time(source_in)}:duration={_fmt_time(duration)},asetpts=PTS-STARTPTS,{_AUDIO_FORMAT},{tail}"
         )
         return AudioStage((f"[{source_label}]{body}[{out}]",), out)
     segments: list[tuple[Piece, RunKind]] = []

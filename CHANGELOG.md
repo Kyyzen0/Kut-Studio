@@ -14,6 +14,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Incrustation (chroma key) : une tolérance à 0 faisait échouer l'export.** FFmpeg refuse une similarité de 0, et le
+  curseur démarre à 0. La tolérance est maintenant d'au moins 0,01 (le curseur ne descend plus plus bas).
+- **Transitions** : une transition de moins d'une demi-image donnait un export **noir** de la transition à la fin. La
+  durée minimale est de 0,05 s (la bibliothèque de l'interface commence à 0,1 s ; une transition plus courte, venue
+  d'un fichier modifié à la main, est ignorée à l'ouverture). Une transition refusée (durée trop courte, ou déjà une
+  sur cette jonction) ne déplace plus le clip suivant avant de lever l'erreur.
+- **Vitesse** : une durée imposée ou un rognage de moins de 0,1 ms faisait échouer l'export (FFmpeg lit certaines
+  durées comme un temps et refuse la notation scientifique « 1e-06 »).
+
 ## [0.4.0] - 2026-10-11
 
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
