@@ -14,6 +14,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-11
+
+Un lot de corrections trouvées en poussant chaque réglage à ses bornes avec le vrai FFmpeg : l'**exposition** de
+l'étalonnage est enfin une exposition en diaphragmes, les **sous-titres** dessinent à l'export le fond et la position
+réglés dans l'éditeur de style (et la couleur de leur ombre), et trois réglages qui faisaient échouer ou noircir
+l'export sont réparés (incrustation à tolérance 0, transitions plus courtes qu'une demi-image, durées de vitesse
+minuscules).
+
+**À savoir** : le rendu change pour les projets qui utilisent l'exposition (surtout aux valeurs négatives, qui étaient
+trop sombres) et pour les sous-titres dotés d'un décalage d'ombre : revoyez-les. Les projets gardent le format 17.
+
 ### Changed
 
 - ⚠️ **L'exposition de l'étalonnage est maintenant une vraie exposition en diaphragmes (EV).** Elle multiplie la
@@ -415,7 +426,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...v0.3.0
 [0.2.7]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...v0.2.7
