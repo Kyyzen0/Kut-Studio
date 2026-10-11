@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpus": 10,
+    "ffmpeg": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "media": "/private/tmp/claude-501/-Users-audrykchesse-Kut-Studio--claude-worktrees-kut-studio-native-engine-arch-df3eaa/12aba860-f5f6-4ac6-baf8-f06958a5c9eb/scratchpad/work/4k_hevc10_6s.mp4",
+    "frames": 180,
+    "repeat": 3
+  },
+  "configs": {
+    "cpu": [
+      {
+        "streams": 1,
+        "wall_s": 5.886,
+        "aggregate_fps": 30.6,
+        "per_stream_fps": 30.6,
+        "cpu_ms_per_frame": 264.86
+      },
+      {
+        "streams": 2,
+        "wall_s": 10.878,
+        "aggregate_fps": 33.1,
+        "per_stream_fps": 16.5,
+        "cpu_ms_per_frame": 270.85
+      },
+      {
+        "streams": 4,
+        "wall_s": 21.345,
+        "aggregate_fps": 33.7,
+        "per_stream_fps": 8.4,
+        "cpu_ms_per_frame": 272.67
+      },
+      {
+        "streams": 6,
+        "wall_s": 31.74,
+        "aggregate_fps": 34.0,
+        "per_stream_fps": 5.7,
+        "cpu_ms_per_frame": 274.1
+      }
+    ],
+    "videotoolbox_download": [
+      {
+        "streams": 1,
+        "wall_s": 3.393,
+        "aggregate_fps": 53.0,
+        "per_stream_fps": 53.0,
+        "cpu_ms_per_frame": 5.55
+      },
+      {
+        "streams": 2,
+        "wall_s": 3.182,
+        "aggregate_fps": 113.1,
+        "per_stream_fps": 56.6,
+        "cpu_ms_per_frame": 3.91
+      },
+      {
+        "streams": 4,
+        "wall_s": 3.158,
+        "aggregate_fps": 228.0,
+        "per_stream_fps": 57.0,
+        "cpu_ms_per_frame": 3.52
+      },
+      {
+        "streams": 6,
+        "wall_s": 3.691,
+        "aggregate_fps": 292.6,
+        "per_stream_fps": 48.8,
+        "cpu_ms_per_frame": 3.28
+      }
+    ],
+    "videotoolbox_videotoolbox_vld": [
+      {
+        "streams": 1,
+        "wall_s": 2.909,
+        "aggregate_fps": 61.9,
+        "per_stream_fps": 61.9,
+        "cpu_ms_per_frame": 2.49
+      },
+      {
+        "streams": 2,
+        "wall_s": 3.027,
+        "aggregate_fps": 118.9,
+        "per_stream_fps": 59.5,
+        "cpu_ms_per_frame": 2.77
+      },
+      {
+        "streams": 4,
+        "wall_s": 2.811,
+        "aggregate_fps": 256.1,
+        "per_stream_fps": 64.0,
+        "cpu_ms_per_frame": 1.78
+      },
+      {
+        "streams": 6,
+        "wall_s": 3.624,
+        "aggregate_fps": 298.0,
+        "per_stream_fps": 49.7,
+        "cpu_ms_per_frame": 2.12
+      }
+    ]
+  }
+}

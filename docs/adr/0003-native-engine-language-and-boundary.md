@@ -80,7 +80,7 @@ design (the same in C++); **HW/Media** = silicon, codecs, FFmpeg; **Infra** = te
 | L1 | Preview segment cost grew with timeline position (x7.8 at 28 s) | ADR-0001 | output-side `-ss` made FFmpeg compose from 0 | Impl | Fixed (PR #46) | No |
 | L2 | Floor of 0.9 s per 2 s segment ("Computing preview") | ADR-0001 | faithful FFmpeg segments used as the playback path | Impl (architecture) | Yes: GPU monitor, ADR-0001 option B | No |
 | L3 | 1,499 full-frame rasters for 223 distinct contents (Onlyfab) | spike report | full-frame PNG per animated state | Impl | Yes: per-content textures animated by matrix | No |
-| L4 | Raster and CPU work do not scale with threads | spike (19.0 s at 4 threads, 19.9 s at 8, vs 19.3 s serial); bench A | Python scene evaluation holds the GIL; PySide6 also holds it during Qt calls | CPython + Binding | Partly: dedupe (x6.7 fewer rasters), process pool (x4.3 on 8 workers) | Only to keep threads in one process |
+| L4 | Raster and CPU work do not scale with threads | spike (19.0 s at 4 threads, 19.9 s at 8, vs 19.3 s serial); bench A.1 | Python scene evaluation holds the GIL; PySide6 also holds it during Qt calls | CPython + Binding | Partly: dedupe (x6.7 fewer rasters), process pool (x4.5 on 8 workers for text, x1.1 for single long calls) | Only to keep threads in one process |
 | L5 | Playback froze with scopes visible (0.2.5) | PR #56 | scopes command built on the UI thread; GIL-holding Python | Impl | Fixed | No |
 | L6 | Windows CI hang (deadlock) | PR #75 | QObject dropped on a worker thread; PySide wants the GIL in the destructor | Impl x Binding semantics | Fixed; rule recorded | No (native threads that hold no Python objects remove the class) |
 | L7 | One CPU copy per plane per frame (~3 ms for 4K P010) plus ~3.8 ms to map a VideoToolbox surface | `gpu.json`: 3.39 ms (CPU decode) vs 7.19 ms (HW decode) average submit for the same render | Qt Multimedia keeps hardware-texture access private; PySide6 refuses `memoryview`/pointers for uploads and does not bind native-texture import | Qt + Binding | No | **Yes** |
@@ -100,31 +100,39 @@ thread (L8)**, and **in-process parallel CPU work (L4)**, the last with a proces
 
 ### 2.3 The measurements behind the table
 
-**A.1 Does PySide6 release the GIL? Mostly no.** Single long C++ calls on a 4K image (smooth downscale 6.7 ms,
-`convertToFormat` 3.5 ms) get x0.85-0.99 with 4 and 8 threads, which rules out "many tiny calls" as the explanation.
-Text outlines like the motion-graphics rasterizer (8.1 ms each) get x0.93-1.01. `QImage.save` (PNG) does release it
-(x4.1 on 8 threads). The same jobs in 8 worker *processes* reach x4.3 (text outline) and x4.8 (2,000 small
-`QPainter` calls) on an M4 that has 4 performance and 6 efficiency cores. A pure-Python control confirms the
-method (threads x0.9, processes x3.6). So the GIL limitation is real and binding-level, **and** removable in Python
-with processes.
+**A.1 Does PySide6 release the GIL? Mostly no.** In the reference run (`docs/perf/gil-scaling.json`), single long
+Qt calls on a 4K image get x0.78-1.00 with 4 and 8 threads, and so do the text outline (x1.00) and 2,000 small
+`QPainter` calls (x0.88-0.89). This rules out "many tiny calls" as the explanation. `QImage.save` (PNG encoding) is
+the exception: x3.9 to x5.1, because it releases the GIL. Eight worker *processes* reach x4.5 on the text outline and
+x2.9 on the small paint calls, but only x1.1 on the single long calls, where dispatching a job costs about as much as
+the job itself. A pure-Python control confirms the method (threads x0.99-1.00, processes x4.7). So the GIL limitation
+is real and binding-level, **and** removable in Python with processes, for jobs of a few milliseconds or more.
+
+Two caveats. First, the process figures exclude returning the result: the workers here return an integer. The export
+already writes its PNGs inside the worker, which matches this; a design that sends full frames back to the parent
+would lose most of the gain. Second, earlier scratch runs of the same jobs differed by up to 2.5x in serial time and
+1.7x in gains, so single figures carry roughly ±30 % uncertainty. B1 needs repeated runs on an idle machine before G1.
 
 **A.2 The Python that plans a frame is not the bottleneck.** `plan_frame` costs about 0.25 ms for four layers with
 effects (test threshold 5 ms). The 3.39 ms average submit with CPU decode at 4K is the size of one memory copy of a
 24.9 MB P010 frame (about 7 GB/s). Python call overhead is a small share; data movement dominates.
 
-**A.3 Decode capacity is not the 4K ceiling on this machine.** Concurrent 4K HEVC 10-bit streams (180 frames each,
-80 Mb/s, process start-up included, so conservative):
+**A.3 Hardware decoding is what makes several 4K streams possible on this machine.** Concurrent 4K HEVC 10-bit
+streams, reference run `docs/perf/decode-scaling.json` (180 frames, about 345 Mb/s, median of 3):
 
 | Streams | CPU software | VideoToolbox, frames downloaded to RAM | VideoToolbox, frames kept on GPU |
 | ---: | ---: | ---: | ---: |
-| 1 | 43 fps | 127 fps | 162 fps |
-| 2 | 33 fps each (66 total) | 113 each (226) | 154 each (309) |
-| 4 | 20 each (81) | 69 each (275) | 95 each (380) |
-| 6 | 14 each (82) | 65 each (390) | 73 each (439) |
+| 1 | 31 fps (265 ms CPU per frame) | 53 fps (5.5 ms) | 62 fps (2.5 ms) |
+| 2 | 17 each (33 total) | 57 each (113) | 60 each (119) |
+| 4 | 8 each (34) | 57 each (228) | 64 each (256) |
+| 6 | 6 each (34) | 49 each (293) | 50 each (298) |
 
-Four streams decode at 2.3x real time with a download and 3.2x with frames kept on the GPU (+13 % to +38 % throughput
-and no CPU memory traffic). CPU decoding saturates near 2.7 streams at 30 fps. These numbers are for an M4;
-the M1 8 GB target is unmeasured (benchmark B2).
+CPU decoding saturates at about 34 fps in total, roughly one real-time stream of this clip. Hardware decoding gives
+1.6 to 2.1 times real time per stream up to six streams. Keeping frames on the GPU adds only 2 % to 17 % throughput,
+but it halves the CPU time per frame (5.5 to 2.5 ms with one stream, 3.5 to 1.8 ms with four). That CPU saving is
+the part that matters for the zero-copy argument. An earlier scratch run on an 83 Mb/s clip gave higher CPU figures
+(up to 82 fps in total) and a larger gain for frames kept on the GPU (+13 % to +38 %). Absolute values depend on
+bitrate, so cite the reference JSON. These numbers are for an M4; the M1 8 GB target is unmeasured (benchmark B2).
 
 **A.4 `QRhiWidget` renders on the GUI thread.** A subclass that records `threading.get_ident()` shows `initialize()`
 and `render()` on the main thread (Metal, 41,665 renders in 1.2 s). Qt's own documentation says a `QRhi` and its
@@ -392,8 +400,8 @@ spike report.
 | ID | Question | Method | Metrics and proposed pass criteria | Machines | Feeds |
 | --- | --- | --- | --- | --- | --- |
 | B0 | What causes the 22.6 ms p95 loop lag with effects? | Instruments (Time Profiler, Metal System Trace), signposts around `render()` and the drawable wait | CPU submit vs drawable wait vs GPU time; diagnostic | M4, M1 8 GB | G0 |
-| B1 | How much do dedupe and a process pool buy for cold rasterisation? | Productionise the Appendix A.1 benchmark on the real rasteriser and the Onlyfab, Singapore GP projects | rasters 1,499 -> about 223; speed-up at 4 and 8 workers (prototype: x4.3 on 8) | M4, M1 | G0 |
-| B2 | What is the decode ceiling per platform? | Appendix A.3 on 1/2/4/6 streams; add H.264 4K, ProRes proxy, 8K-class if relevant; Windows D3D11VA/NVDEC/QSV; Linux VAAPI | aggregate and per-stream fps, CPU %, RSS, power; per-stream fps at least 1.5x real time at N=4 | M4, M1 8 GB, Win x2 vendors, Linux | G1, G2 |
+| B1 | How much do dedupe and a process pool buy for cold rasterisation? | Synthetic jobs done (`tools/perf/gil_scaling.py`); next, repeat with the real rasteriser on the Onlyfab and Singapore GP projects | rasters 1,499 -> about 223; speed-up at 4 and 8 workers (reference run, 8 processes: x4.5 text outline, x2.9 paint calls; about ±30 %) | M4, M1 | G0 |
+| B2 | What is the decode ceiling per platform? | `tools/perf/decode_scaling.py` on 1/2/4/6 streams (4K HEVC 10-bit on VideoToolbox done, see A.3); add H.264 4K, ProRes proxy, 8K-class if relevant; Windows D3D11VA/NVDEC/QSV; Linux VAAPI | aggregate and per-stream fps, CPU %, RSS, power; per-stream fps at least 1.5x real time at N=4 | M4, M1 8 GB, Win x2 vendors, Linux | G1, G2 |
 | B3 | Is true zero-copy achievable on macOS? | spike: VT -> `CVMetalTextureCache` -> `QRhiTexture::createFrom` -> compose -> present (C++); a Rust variant B3-rust for the decision rule | GUI-thread CPU <= 0.5 ms per 4K stream (today 7.2); zero CPU copies (profiler); pixel-identical to the current path on chroma test patterns | M4, M1 | **G1** |
 | B4 | Can rendering leave the GUI thread without breaking the viewer? | engine render thread + shared texture drawn by a `QRhiWidget`; overlays and transparent `QGraphicsView` kept | loop lag p95 <= 5 ms at 4K + effects (today 22.6); frame-pacing jitter <= 2 ms; overlay unaffected | M4, M1 | **G1** |
 | B5 | Do four 4K tracks play for real? | 4 x 4K HEVC 10-bit, 2 graphic layers, grade, blend; 10 min | 30 fps with <= 1 dropped frame per 1,000; temperature and power logged; on M1 define the degraded tier (half-res) with the same criteria | M4, M1 8 GB | G2 |
@@ -455,31 +463,39 @@ moved:** the items under "Stays Python" in the Context section.
 
 1. [ ] Maintainer review of this ADR; answer the open decisions above.
 2. [ ] Phase 0: open tracking issues for per-content textures, process-pool rasterisation, asynchronous readback and
-   ADR-0001 step 1; add B0-B2 as `tools/perf/` benchmarks (the Appendix A scripts are the starting point).
+   ADR-0001 step 1. Benchmarks: B1 (thread and process scaling) and B2 (decode scaling) are in
+   `tools/perf/gil_scaling.py` and `tools/perf/decode_scaling.py`, with reference results in
+   `docs/perf/gil-scaling.json` and `docs/perf/decode-scaling.json`. B0 and the real-rasteriser variant of B1
+   (needs a project) remain open.
 3. [ ] Install the spike toolchain on the dev Mac (CMake, Ninja, Qt 6.11.2 SDK) only when Phase 1 is approved.
 4. [ ] Add a pointer from ADR-0001 "To revisit" to this ADR once accepted.
 
 ## Appendix A: measurements (2026-10-11, Apple M4)
 
-Scripts were kept in the session scratch directory and are not part of the repository.
+The reference results are the JSON files in `docs/perf/`, produced by `tools/perf/gil_scaling.py` and
+`tools/perf/decode_scaling.py`. The first figures in A.1 and A.3 came from earlier scratch runs of the same
+experiments; where they differ, the JSON files govern.
 
-**A.1 GIL scaling** (steady state, pools warmed, ms per job serial; speed-up versus serial):
+**A.1 GIL scaling**, reference run `docs/perf/gil-scaling.json` (pools warmed, median of 3 runs, serial time in ms per
+job, speed-up versus serial):
 
 | Job | Serial | 4 threads | 8 threads | 4 processes | 8 processes |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Smooth downscale of a 4K image (one long Qt call) | 6.7 ms | x0.91 | x0.85 | x1.88 | x1.22 |
-| `convertToFormat` of a 4K image (one long Qt call) | 3.5 ms | x0.97 | x0.99 | x1.68 | x1.29 |
-| 2,000 small `QPainter` calls, 1080x1920 | 122.5 ms | x0.90 | x0.99 | x3.07 | x4.81 |
-| Text outline (`strokePath` + `fillPath`) like the motion-graphics rasteriser | 8.1 ms | x1.01 | x0.93 | x2.73 | x4.27 |
-| `QImage.save` PNG, 1080x1920 | 59.5 ms | x2.97 | x4.13 | x2.91 | x4.46 |
-| Pure Python loop (control) | 29.7 ms | x0.89 | x0.92 | x3.04 | x3.61 |
+| Smooth downscale of a 4K image (one long Qt call) | 2.8 ms | x0.87 | x0.78 | x1.08 | x1.14 |
+| `convertToFormat` of a 4K image (one long Qt call) | 1.4 ms | x0.99 | x1.00 | x0.98 | x0.95 |
+| 2,000 small `QPainter` calls, 1080x1920 | 47.7 ms | x0.88 | x0.89 | x2.16 | x2.86 |
+| Text outline (`strokePath` + `fillPath`) like the motion-graphics rasteriser | 3.6 ms | x1.00 | x1.00 | x3.13 | x4.48 |
+| `QImage.save` PNG, 1080x1920 | 40.5 ms | x3.88 | x5.12 | x3.87 | x5.16 |
+| Pure Python loop (control) | 17.2 ms | x1.00 | x0.99 | x3.52 | x4.71 |
 
 The short jobs (under 10 ms) lose part of their process speed-up to dispatch overhead, so the process numbers for
-them are a lower bound.
+them are a lower bound. Process figures exclude returning results (see A.1 above).
 
-**A.3 Decode scaling:** see the table in 2.3. Clip: 3840x2160, 30 fps, 180 frames, HEVC Main 10 at about 83 Mb/s
-(`hevc_videotoolbox`, noise over `testsrc2`), decoded to a null sink with `ffmpeg -hwaccel videotoolbox` with and
-without `-hwaccel_output_format videotoolbox_vld`. Each figure includes about 0.3 s of process start-up.
+**A.3 Decode scaling:** see the table in 2.3. Reference clip, generated by `tools/perf/decode_scaling.py`: 3840x2160,
+30 fps, 180 frames, HEVC Main 10 (`yuv420p10le`), GOP 120, about 345 Mb/s (`libx265`, CRF 20, noise over `testsrc2`).
+Decoded to a null sink with `ffmpeg -hwaccel videotoolbox`, with and without `-hwaccel_output_format videotoolbox_vld`.
+Each figure is the median of 3 runs after one untimed run; the wall time includes FFmpeg start-up, which is not
+isolated. The scratch clip mentioned in 2.3 (83 Mb/s, `hevc_videotoolbox`) is not in the repository.
 
 **A.4 Thread check:** `QRhiWidget` subclass, `WA_DontShowOnScreen`, API reported as Metal; `initialize` and `render`
 both on the main thread.
