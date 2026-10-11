@@ -28,6 +28,7 @@ nouveaux :
 | Préchargement | `core/prefetch.py`, `core/preview_segments.py`, `core/preview_engine.py` |
 | Timeline | `core/timeline_spatial.py`, `core/timeline_index.py` (`clips_overlapping`), `ui/timeline_panel_mixins/` |
 | Qualité adaptative | `core/preview_adaptive.py`, `core/preview_quality.py` |
+| Profil machine | heuristique cœurs/RAM (`core/runtime_profile.py`) ; banc mesuré en cache (`core/machine_bench.py`, `machine-profile.json`) pour Auto |
 | Interface | `ui/performance_settings.py` (préférences), menu contextuel des médias, menu *Fenêtre* |
 | Mesure | `tools/perf/` (`synthetic.py`, `bench.py`, `engine_bench.py`), `docs/perf/*.json` |
 

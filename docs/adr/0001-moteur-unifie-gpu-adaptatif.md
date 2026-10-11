@@ -225,8 +225,9 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
 2. [ ] **Entrées / sorties média.** Build FFmpeg LGPL + PyAV dans le paquet (macOS, Windows, Linux), `core/media_io.py`
    et sa garde AST, moniteur alimenté par les proxies quand l'original a un long GOP. Critère : un saut ≤ 50 ms sur
    proxy, sur la machine minimale.
-3. [ ] **Étape 1 : profil mesuré et régulateur.** Banc du premier lancement, trois niveaux, échelle de dégradation,
-   batterie / économie d'énergie / chauffe, rendu à la demande, budget de mémoire vidéo.
+3. [ ] **Étape 1 : profil mesuré et régulateur.** *Partiel :* banc CPU (composition, décodage FFmpeg, rastérisation
+   tampon) → cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Reste :
+   batterie / économie d'énergie / chauffe, rendu à la demande, échelle de dégradation complète liée au banc.
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
    matrice, lumière et grain en shaders, compositeur CPU allégé. Critère : le montage Onlyfab joue sans « Calcul de
    l'aperçu » sur la machine minimale.

@@ -226,6 +226,19 @@ class StudioRuntime:
         self.analysis.submit(key, fn, priority=priority, session_id=self.session_id)
         self.analysis_worker.ensure_started()
 
+    def schedule_machine_bench(self, *, force: bool = False) -> None:
+        """Mesure le profil machine en fond (ADR-0001 étape 1) puis rafraîchit Auto."""
+        from .machine_bench import ensure_machine_bench, load_cached_bench
+
+        if not force and load_cached_bench(self.resources) is not None:
+            return
+
+        def _run() -> None:
+            ensure_machine_bench(self.resources, force=force)
+            self._refresh_budgets()
+
+        self.schedule("machine-bench", _run, priority=PRIORITY_BACKGROUND)
+
     def shutdown(self) -> None:
         """Arrête la file et vide le cache à la fermeture de l'application."""
         self.tasks.cancel_all()
