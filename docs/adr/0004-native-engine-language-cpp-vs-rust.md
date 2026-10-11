@@ -1,10 +1,10 @@
 # ADR-0004: Native engine language — C++ vs Rust
 
-**Status:** Accepted (language preference when Option C opens; Option B remains the active path)  
+**Status:** Proposed. C++ is the language preference for when Option C opens; the final language decision is gated by [ADR-0003](0003-native-engine-language-and-boundary.md) (gate G1). Option B remains the active path.  
 **Date:** 2026-10-11  
 **Deciders:** Kut-Studio maintainer  
 
-**Related:** [ADR-0001](0001-moteur-unifie-gpu-adaptatif.md) (unified adaptive GPU engine; Option C parked), [gpu-preview.md](../gpu-preview.md), [architecture.md](../architecture.md), [gpu-export-spike.md](../perf/gpu-export-spike.md)
+**Related:** [ADR-0003](0003-native-engine-language-and-boundary.md) (boundary, attribution of the limits, gates G0 to G3), [ADR-0001](0001-moteur-unifie-gpu-adaptatif.md) (unified adaptive GPU engine; Option C parked), [gpu-preview.md](../gpu-preview.md), [architecture.md](../architecture.md), [gpu-export-spike.md](../perf/gpu-export-spike.md)
 
 This document compares **C++** and **Rust** for a future native media/GPU engine. It does not change application code. Chat and French product docs may summarize it; the normative technical text is English.
 
