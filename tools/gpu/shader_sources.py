@@ -27,7 +27,7 @@ layout(std140, binding = 0) uniform Params {
     vec4 state;    // espace d'entrée, espace de sortie, nb d'opérations, BGRA
     vec4 comp;     // opacité, mode de fusion, matte, bord adouci
     vec4 blur;     // direction x, y, rayon luma, rayon chroma
-    vec4 misc;     // netteté
+    vec4 misc;     // netteté, paramètres de l'effet ; prep : blocs de chroma par uv
     vec4 reserved;
     vec4 weights_luma[25];
     vec4 weights_chroma[25];
@@ -115,7 +115,16 @@ void main() {
 """
 
 PREP = FRAGMENT_HEADER + OPS + """
-vec3 sample_source(vec2 suv) {
+// Chroma sous-échantillonnée (misc.x / misc.y > 0 : blocs de chroma du calque par unité d'uv sur cet axe) : comme
+// la conversion ``format=rgba`` de l'export (swscale), une valeur de chroma par bloc du calque, lue au centre du bloc.
+vec2 chroma_uv(vec2 luv, vec2 extent) {
+    vec2 cells = max(misc.xy, vec2(1.0));
+    vec2 snapped = (floor(luv * cells) + 0.5) / cells;
+    vec2 cell = vec2(misc.x > 0.0 ? snapped.x : luv.x, misc.y > 0.0 ? snapped.y : luv.y);
+    return clamp((cell - fit.xy) / extent, 0.0, 1.0);
+}
+
+vec3 sample_source(vec2 suv, vec2 cuv) {
     int mode = int(source.w + 0.5);
     if (mode == 0) {
         vec4 t = texture(tex0, suv);
@@ -123,10 +132,10 @@ vec3 sample_source(vec2 suv) {
     }
     float y = texture(tex0, suv).r * source.z;
     if (mode == 1) {
-        vec2 uv = texture(tex1, suv).rg * source.z;
+        vec2 uv = texture(tex1, cuv).rg * source.z;
         return vec3(y, uv);
     }
-    return vec3(y, texture(tex1, suv).r * source.z, texture(tex2, suv).r * source.z);
+    return vec3(y, texture(tex1, cuv).r * source.z, texture(tex2, cuv).r * source.z);
 }
 
 void main() {
@@ -139,9 +148,8 @@ void main() {
     } else {
         int taps = int(target.w + 0.5);
         if (taps <= 1) {
-            c = sample_source(fuv);
+            c = sample_source(fuv, chroma_uv(v_uv, extent));
         } else {
-            vec2 step = 1.0 / (target.xy * extent);
             vec3 total = vec3(0.0);
             for (int j = 0; j < 4; ++j) {
                 if (j >= taps) {
@@ -151,8 +159,8 @@ void main() {
                     if (i >= taps) {
                         break;
                     }
-                    vec2 offset = (vec2(float(i), float(j)) + 0.5) / float(taps) - 0.5;
-                    total += sample_source(clamp(fuv + offset * step, 0.0, 1.0));
+                    vec2 luv = v_uv + ((vec2(float(i), float(j)) + 0.5) / float(taps) - 0.5) / target.xy;
+                    total += sample_source(clamp((luv - fit.xy) / extent, 0.0, 1.0), chroma_uv(luv, extent));
                 }
             }
             c = total / float(taps * taps);

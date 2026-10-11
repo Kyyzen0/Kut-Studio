@@ -35,6 +35,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Moniteur GPU : sur une vidéo au grain coloré, les couleurs différaient de l'export (jusqu'à 58 niveaux sur un
+  pixel). Le moniteur reconstruit maintenant la couleur 4:2:0 comme l'export. À l'export, l'effet *Heat haze* ne
+  lisse plus la couleur de la vidéo : elle reste la même que sans l'effet.
 - L'application pouvait se figer pour de bon quand les scopes étaient affichés : l'objet qui prépare l'image analysée
   était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage de 50 min
   des tests Windows de la release 0.3.0.

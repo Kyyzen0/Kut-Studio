@@ -2428,14 +2428,16 @@ def _heat_haze_filter(params, pixel_scale: float) -> str:
     Le décalage d'une ligne ``y`` (pixels de rendu) vaut ``⌊A·sin(y·f + t·v)·rampe(y)⌋`` avec A et f ramenés à la
     résolution de rendu. L'image passe d'abord en ``yuva444p`` : la chroma glisse du même nombre entier de pixels que
     la luminance, comme sur le moniteur GPU (en 4:2:0, un décalage impair devenait un demi-pixel interpolé).
-    ``T`` est le temps du clip."""
+    Ce passage **recopie** la chroma 4:2:0 sur ses blocs 2×2 (``flags=neighbor``), la règle du reste de l'export
+    (``format=rgba``) et du moniteur : le ``bicubic`` par défaut de swscale l'interpolait, et un grain chromatique
+    changeait de 20 niveaux en moyenne dès qu'on activait l'effet. ``T`` est le temps du clip."""
     amplitude = float(params["amplitude"]) * pixel_scale
     frequency = float(params["frequency"]) / max(1e-6, pixel_scale)
     ramp = f"clip((Y/H-{_format_seconds(params['top'])})/{_format_seconds(params['span'])},0,1)"
     shift = (f"floor({_format_seconds(amplitude)}*sin(Y*{_format_seconds(frequency)}"
              f"+T*{_format_seconds(params['speed'])})*{ramp})")
     expr = f"'p(X-{shift},Y)'"
-    return f"format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
+    return f"scale=flags=neighbor,format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
 
 
 def _build_clip_effect_filters(
