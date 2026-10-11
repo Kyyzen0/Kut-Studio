@@ -109,6 +109,21 @@ def manager(tmp_path):
     instance.shutdown()
 
 
+def _remove_tree(path: Path, seconds: float = 5.0) -> None:
+    """``shutil.rmtree`` qui réessaie sur un refus d'accès transitoire (WinError 32). Sous Windows, le .json qu'un proxy
+    vient d'écrire peut être tenu un instant par un antivirus ou l'indexeur : ``ProxyManager`` le gère de même
+    (``DELETE_RETRY_SECONDS``). Passé le délai, l'erreur reste : un fichier réellement tenu fait échouer le test."""
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            shutil.rmtree(path)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
 def _generate(manager, path, **kwargs):
     profile_id = kwargs.get("profile_id")
     manager.request(path, duration=2.0, **kwargs)
@@ -332,7 +347,7 @@ def test_manually_deleting_the_proxy_falls_back_to_the_original_without_error(ma
 
 def test_deleting_the_whole_proxy_folder_is_harmless(manager, source, tmp_path):
     _generate(manager, source)
-    shutil.rmtree(tmp_path / "proxies")
+    _remove_tree(tmp_path / "proxies")
     assert manager.resolve(source) == source
     assert manager.info(source).state is ProxyState.NONE
     assert manager.usage_bytes() == 0 and manager.entries() == []
@@ -714,7 +729,7 @@ def test_the_project_file_contains_no_proxy_reference(manager, source, tmp_path)
     assert not any("proxy" in f.name for f in fields(MediaAsset))
     path = tmp_path / "film.kut"
     save_project(project, str(path))
-    shutil.rmtree(tmp_path / "proxies")                              # cache supprimé : le projet s'ouvre
+    _remove_tree(tmp_path / "proxies")                               # cache supprimé : le projet s'ouvre
     assert load_project(str(path)).media_assets[0].path == source
 
 
