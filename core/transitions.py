@@ -107,6 +107,12 @@ def transition_family(transition_type: TransitionType | str) -> str:
     return "wipe"
 
 
+MIN_TRANSITION_SECONDS = 0.05
+"""Durée minimale d'une transition. ``xfade`` arrondit sa durée à la cadence : sous une demi-image, le fondu ne produit
+aucune image et la sortie reste **noire** de la transition à la fin du plan (mesuré : 0,001 s à 25 i/s). 0,05 s couvre
+toute cadence de 10 i/s et plus ; la bibliothèque de transitions de l'interface commence à 0,1 s."""
+
+
 @dataclass(frozen=True)
 class Transition:
     id: str
@@ -120,8 +126,8 @@ class Transition:
             raise ValueError("Une transition doit identifier ses deux clips.")
         if self.from_clip_id == self.to_clip_id:
             raise ValueError("Une transition requiert deux clips distincts.")
-        if self.duration <= 0.0:
-            raise ValueError("La durée d'une transition doit être positive.")
+        if not self.duration >= MIN_TRANSITION_SECONDS:      # rejette aussi NaN
+            raise ValueError(f"La durée d'une transition doit être d'au moins {MIN_TRANSITION_SECONDS} s.")
 
 
 def transition_pairs(project: "Project", clip_id: str) -> list[Transition]:
@@ -147,17 +153,14 @@ def add_transition(
     maximum = min(from_clip.duration, to_clip.duration) / 2.0
     if duration > maximum + 1e-6:
         raise ValueError("La transition dépasse la moitié du clip le plus court.")
-    if abs(overlap) <= 1e-6:
-        # Une jonction simple devient un vrai recouvrement : c'est la
-        # condition nécessaire au fondu vidéo et audio pendant l'export.
-        to_clip.timeline_start -= float(duration)
-    elif abs(overlap - duration) > 1e-6:
+    if abs(overlap) > 1e-6 and abs(overlap - duration) > 1e-6:
         raise ValueError("Le chevauchement des clips doit correspondre à la durée de transition.")
     for current in project.transitions:
         if current.from_clip_id == from_clip_id and current.to_clip_id == to_clip_id:
             raise ValueError("Une transition existe déjà sur cette jonction.")
         if current.to_clip_id == from_clip_id or current.from_clip_id == to_clip_id:
             raise ValueError("Un clip ne peut pas avoir deux transitions sur la même jonction.")
+    # La transition se construit (et valide sa durée) AVANT de toucher aux clips : un refus ne déplace plus rien.
     transition = Transition(
         id=f"transition-{uuid.uuid4().hex[:12]}",
         from_clip_id=from_clip_id,
@@ -165,6 +168,10 @@ def add_transition(
         type=TransitionType(transition_type),
         duration=float(duration),
     )
+    if abs(overlap) <= 1e-6:
+        # Une jonction simple devient un vrai recouvrement : c'est la
+        # condition nécessaire au fondu vidéo et audio pendant l'export.
+        to_clip.timeline_start -= float(duration)
     project.transitions.append(transition)
     from_clip.set_fade_out(float(duration))
     to_clip.set_fade_in(float(duration))
