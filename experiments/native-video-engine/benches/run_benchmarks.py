@@ -61,7 +61,6 @@ def native_cli(media: Path, seconds: int, hw: bool, trials: int) -> dict:
             }
         walls.append(wall)
         # Parse key lines
-        meta = {}
         for line in proc.stdout.splitlines():
             if line.startswith("frames_decoded="):
                 parts = dict(p.split("=", 1) for p in line.split() if "=" in p)
