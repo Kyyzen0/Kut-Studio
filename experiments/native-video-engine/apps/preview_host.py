@@ -70,6 +70,8 @@ class PreviewWindow(QMainWindow):
         self.engine: native.PreviewEngine | None = None
         self._last_pump = time.perf_counter()
         self._stalls: list[float] = []
+        self._period = 1.0 / 30.0  # remplacée à l'ouverture par la cadence de la source
+        self._next_due = 0.0
 
         self.video = QLabel("Open a video…")
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -121,7 +123,8 @@ class PreviewWindow(QMainWindow):
         cfg.decode_mode = self.decode_mode.currentData()
         cfg.queue_capacity = 8
         cfg.convert_to_rgb24 = True
-        cfg.drop_when_full = True
+        # Temps réel : le décodage suit la présentation (sinon le clip est lu d'un bloc, images perdues).
+        cfg.drop_when_full = False
         return cfg
 
     def open_file(self) -> None:
@@ -141,6 +144,9 @@ class PreviewWindow(QMainWindow):
             self.engine = None
             return
         info = self.engine.info()
+        fps = info.fps if info.fps > 1.0 else 30.0
+        self._period = 1.0 / fps
+        self._next_due = time.perf_counter()
         self.seek.setRange(0, max(1, int(info.duration_us // 1000)))
         self.status.setText(
             f"{Path(path).name} {info.width}x{info.height} @{info.fps:.2f} "
@@ -168,16 +174,8 @@ class PreviewWindow(QMainWindow):
             return
         self.engine.seek_us(int(self.seek.value()) * 1000)
 
-    def on_tick(self) -> None:
-        now = time.perf_counter()
-        stall_ms = (now - self._last_pump) * 1000.0
-        self._last_pump = now
-        # Expected ~8 ms; excess is treated as UI stall sample (estimated from timer jitter).
-        if self.engine is not None and stall_ms > 20:
-            self.engine.metrics().note_ui_stall(stall_ms * 1000.0)
-
-        if self.engine is None:
-            return
+    def _present_next(self) -> None:
+        assert self.engine is not None
         err = self.engine.pump_present()
         if err == native.EngineError.Ok:
             packed = self.engine.last_rgb_bytes()
@@ -191,6 +189,21 @@ class PreviewWindow(QMainWindow):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 )
+
+    def on_tick(self) -> None:
+        now = time.perf_counter()
+        stall_ms = (now - self._last_pump) * 1000.0
+        self._last_pump = now
+        # Expected ~8 ms; excess is treated as UI stall sample (estimated from timer jitter).
+        if self.engine is not None and stall_ms > 20:
+            self.engine.metrics().note_ui_stall(stall_ms * 1000.0)
+
+        if self.engine is None:
+            return
+        if now >= self._next_due:
+            # Présentation à la cadence de la source ; un retard n'est pas rattrapé en rafale.
+            self._next_due = max(self._next_due + self._period, now)
+            self._present_next()
         m = self.engine.metrics()
         info = self.engine.info()
         dec = m.decode_pct()

@@ -67,10 +67,17 @@ ctest --test-dir build --output-on-failure
 | A pipe+Python copy | 238 (unpaced) | n/a | read+copy p95 ~9.2 ms | Not QRhi |
 | **B native SW** | **29.93** | **0** | **11.7 ms** | Realtime paced |
 | C native HW-prefer | 29.92 | 0 | 11.1 ms | HW inactive (`hw=off`) |
-| D native+PySide offscreen | pumps=179 / 4 s | 0 | 10.9 ms | `displayed_fps_native` unset in D harness; UI stall est. ~0 ms |
+| D native+PySide offscreen | **invalid**: 179 pumps / 4 s (unpaced, drop-oldest) | 0 | 10.9 ms | Measured before the pacing fix; re-measure, see note |
 
 Seek stress (B): seeks=2, FPS≈30.0, drops=0.  
 Multi-stream ×2 independent processes: OK (~4.07 s wall). Timeline compositing: **NOT TESTED**.
+
+> **Note (PR #92 review):** the D row above and the `copy_ops` / `bytes_copied` of `docs/bench_results/results.json`
+> for pipeline D were produced before three corrections: presentation was not paced to the source (one frame per
+> 8 ms tick, 179 frames in 4 s at 30 fps), the decoder dropped the oldest frames instead of following presentation,
+> and the Python-side copies of `last_rgb_bytes()` were not counted. They must not be compared with real time until
+> `benches/run_benchmarks.py` is run again on the corrected code. Pipelines B and C use the native CLI, which
+> presents paced to the source, and are not affected.
 
 ### 1080p60
 

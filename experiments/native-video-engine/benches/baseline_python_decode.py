@@ -89,8 +89,8 @@ def run_python_rgb_copy(path: Path, seconds: float) -> dict:
         buf = proc.stdout.read(frame_bytes)
         if not buf or len(buf) < frame_bytes:
             break
-        # Force a Python-side copy akin to bytes() upload
-        copied = bytes(buf)
+        # Vraie copie côté Python, comme un envoi au GPU. bytes(buf) ne copierait rien : buf est déjà un bytes immuable.
+        copied = bytearray(buf)
         bytes_copied += len(copied)
         copies += 1
         frames += 1

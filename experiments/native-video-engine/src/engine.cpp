@@ -132,8 +132,13 @@ EngineError PreviewEngine::play() {
         state_ = PlayState::Playing;
         return EngineError::Ok;
     }
-    stop_decode_ = false;
+    // Après une fin de fichier, le thread précédent est terminé mais toujours joignable : std::thread ne peut pas être
+    // remplacé dans cet état (std::terminate). On le joint, puis on repart du début si le fichier était à sa fin.
+    join_decode();
     decoder_->clear_cancel();
+    if (decoder_->eof()) {
+        decoder_->seek_us(0);
+    }
     if (queue_) {
         queue_->reset();
     }

@@ -75,6 +75,10 @@ void VideoDecoder::close() {
         sws_freeContext(sws_);
         sws_ = nullptr;
     }
+    if (sws_yuv_) {
+        sws_freeContext(sws_yuv_);
+        sws_yuv_ = nullptr;
+    }
     if (packet_) {
         av_packet_free(&packet_);
     }
@@ -96,6 +100,9 @@ void VideoDecoder::close() {
     video_stream_ = -1;
     info_ = {};
     eof_ = false;
+    draining_ = false;
+    hw_frame_seen_ = false;
+    restart_us_ = 0;
     cancel_ = false;
 }
 
@@ -243,6 +250,7 @@ EngineError VideoDecoder::make_output_frame(AVFrame* src, VideoFramePtr& out) {
             return EngineError::DecodeFailed;
         }
         use = sw_frame_;
+        hw_frame_seen_ = true;
         ++copies;
     }
 
@@ -263,21 +271,36 @@ EngineError VideoDecoder::make_output_frame(AVFrame* src, VideoFramePtr& out) {
             bytes += static_cast<std::size_t>(use->width) * static_cast<std::size_t>(use->height) * 3 / 2;
         }
     } else {
-        // Copy YUV420P tightly.
         const int w = use->width;
         const int h = use->height;
         out = make_frame(w, h, PixelFormat::YUV420P);
-        // Y
-        for (int y = 0; y < h; ++y) {
-            std::memcpy(out->data.data() + y * w, use->data[0] + y * use->linesize[0], w);
-        }
-        const int cw = w / 2;
-        const int ch = h / 2;
-        auto* u = out->data.data() + w * h;
-        auto* v = u + cw * ch;
-        for (int y = 0; y < ch; ++y) {
-            std::memcpy(u + y * cw, use->data[1] + y * use->linesize[1], cw);
-            std::memcpy(v + y * cw, use->data[2] + y * use->linesize[2], cw);
+        if (use->format == AV_PIX_FMT_YUV420P) {
+            // Copie plan par plan, sans ligne de remplissage.
+            for (int y = 0; y < h; ++y) {
+                std::memcpy(out->data.data() + y * w, use->data[0] + y * use->linesize[0], w);
+            }
+            const int cw = w / 2;
+            const int ch = h / 2;
+            auto* u = out->data.data() + w * h;
+            auto* v = u + cw * ch;
+            for (int y = 0; y < ch; ++y) {
+                std::memcpy(u + y * cw, use->data[1] + y * use->linesize[1], cw);
+                std::memcpy(v + y * cw, use->data[2] + y * use->linesize[2], cw);
+            }
+        } else {
+            // Autre format (NV12 d'un téléchargement matériel, 4:2:2, 4:4:4, 10 bits…) : swscale convertit directement
+            // dans le cadre de sortie. Lire les plans à la main supposerait un 4:2:0 à trois plans (plan absent = crash).
+            sws_yuv_ = sws_getCachedContext(sws_yuv_, w, h, static_cast<AVPixelFormat>(use->format), w, h,
+                                            AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+            if (!sws_yuv_) {
+                return EngineError::DecodeFailed;
+            }
+            const int cw = w / 2;
+            const int ch = h / 2;
+            uint8_t* dst[4] = {out->data.data(), out->data.data() + w * h,
+                               out->data.data() + w * h + cw * ch, nullptr};
+            int dst_ls[4] = {w, cw, cw, 0};
+            sws_scale(sws_yuv_, use->data, use->linesize, 0, h, dst, dst_ls);
         }
         ++copies;
         bytes += out->data.size();
@@ -299,24 +322,60 @@ EngineError VideoDecoder::make_output_frame(AVFrame* src, VideoFramePtr& out) {
 EngineError VideoDecoder::decode_packet(AVPacket* pkt, VideoFramePtr& out, bool& got) {
     got = false;
     if (avcodec_send_packet(codec_, pkt) < 0) {
-        return EngineError::DecodeFailed;
+        return hardware_failed() ? EngineError::HwUnavailable : EngineError::DecodeFailed;
     }
-    while (true) {
-        const int ret = avcodec_receive_frame(codec_, frame_);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            return EngineError::Ok;
-        }
-        if (ret < 0) {
-            return EngineError::DecodeFailed;
-        }
-        const auto err = make_output_frame(frame_, out);
-        av_frame_unref(frame_);
-        if (err != EngineError::Ok) {
-            return err;
-        }
-        got = true;
+    return receive_frame(out, got);
+}
+
+EngineError VideoDecoder::receive_frame(VideoFramePtr& out, bool& got) {
+    got = false;
+    const int ret = avcodec_receive_frame(codec_, frame_);
+    if (ret == AVERROR(EAGAIN)) {
+        return EngineError::Ok;  // il faut davantage de paquets
+    }
+    if (ret == AVERROR_EOF) {
+        eof_ = true;  // vidage terminé : plus aucune image
         return EngineError::Ok;
     }
+    if (ret < 0) {
+        // Un codec matériel qui ne négocie pas le format échoue ici, et non à l'ouverture : repli logiciel.
+        return hardware_failed() ? EngineError::HwUnavailable : EngineError::DecodeFailed;
+    }
+    const auto err = make_output_frame(frame_, out);
+    av_frame_unref(frame_);
+    if (err != EngineError::Ok) {
+        return err;
+    }
+    got = true;
+    return EngineError::Ok;
+}
+
+EngineError VideoDecoder::fall_back_to_software() {
+    // Le codec matériel a accepté le flux à l'ouverture sans produire d'image : on rouvre en logiciel et on repart de
+    // la dernière position demandée, comme si le matériel n'avait jamais été utilisé.
+    const AVStream* st = fmt_->streams[video_stream_];
+    const AVCodec* codec = avcodec_find_decoder(st->codecpar->codec_id);
+    if (!codec) {
+        return EngineError::CodecUnsupported;
+    }
+    avcodec_free_context(&codec_);
+    if (hw_device_ctx_) {
+        av_buffer_unref(&hw_device_ctx_);
+    }
+    codec_ = avcodec_alloc_context3(codec);
+    if (!codec_ || avcodec_parameters_to_context(codec_, st->codecpar) < 0 ||
+        avcodec_open2(codec_, codec, nullptr) < 0) {
+        return EngineError::OpenFailed;
+    }
+    info_.hardware_decode_active = false;
+    info_.hw_backend.clear();
+    draining_ = false;
+    eof_ = false;
+    const int64_t ts = av_rescale_q(restart_us_, AVRational{1, 1000000}, st->time_base);
+    if (av_seek_frame(fmt_, video_stream_, ts, AVSEEK_FLAG_BACKWARD) < 0) {
+        return EngineError::SeekFailed;
+    }
+    return EngineError::Ok;
 }
 
 EngineError VideoDecoder::read(VideoFramePtr& out) {
@@ -331,36 +390,46 @@ EngineError VideoDecoder::read(VideoFramePtr& out) {
         return EngineError::OpenFailed;  // treated as EOF by engine
     }
 
-    const auto t0 = steady_us();
     while (true) {
         if (cancel_) {
             return EngineError::Cancelled;
         }
-        if (av_read_frame(fmt_, packet_) < 0) {
-            bool got = false;
-            const auto ferr = decode_packet(nullptr, out, got);
-            eof_ = true;
-            if (ferr != EngineError::Ok) {
-                return ferr;
+        bool got = false;
+        EngineError err = EngineError::Ok;
+        if (draining_) {
+            // Fin du fichier : le codec retient encore des images (B-frames), on les rend une à une.
+            err = receive_frame(out, got);
+        } else if (av_read_frame(fmt_, packet_) < 0) {
+            // Plus de paquets : on signale la fin au codec, puis on le vide aux tours suivants.
+            if (avcodec_send_packet(codec_, nullptr) < 0) {
+                return EngineError::DecodeFailed;
             }
-            if (got) {
-                (void)t0;
-                return EngineError::Ok;
+            draining_ = true;
+            continue;
+        } else {
+            if (packet_->stream_index != video_stream_) {
+                av_packet_unref(packet_);
+                continue;
             }
-            return EngineError::OpenFailed;  // EOF
-        }
-        if (packet_->stream_index != video_stream_) {
+            err = decode_packet(packet_, out, got);
             av_packet_unref(packet_);
+        }
+        if (err == EngineError::HwUnavailable) {
+            const auto fallback = fall_back_to_software();
+            if (fallback != EngineError::Ok) {
+                return fallback;
+            }
             continue;
         }
-        bool got = false;
-        const auto err = decode_packet(packet_, out, got);
-        av_packet_unref(packet_);
         if (err != EngineError::Ok) {
             return err;
         }
         if (got) {
             return EngineError::Ok;
+        }
+        if (draining_) {
+            eof_ = true;
+            return EngineError::OpenFailed;  // EOF : vidage terminé
         }
     }
 }
@@ -369,6 +438,7 @@ EngineError VideoDecoder::seek_us(std::int64_t target_us) {
     if (!fmt_ || video_stream_ < 0) {
         return EngineError::InvalidState;
     }
+    restart_us_ = target_us;  // position à rétablir si le décodage matériel doit être remplacé (fall_back_to_software)
     const AVRational tb = fmt_->streams[video_stream_]->time_base;
     const int64_t ts = av_rescale_q(target_us, AVRational{1, 1000000}, tb);
     if (av_seek_frame(fmt_, video_stream_, ts, AVSEEK_FLAG_BACKWARD) < 0) {
@@ -376,6 +446,7 @@ EngineError VideoDecoder::seek_us(std::int64_t target_us) {
     }
     avcodec_flush_buffers(codec_);
     eof_ = false;
+    draining_ = false;
     // Decode forward until PTS >= target (best-effort frame accuracy).
     for (int i = 0; i < 300; ++i) {
         if (cancel_) {

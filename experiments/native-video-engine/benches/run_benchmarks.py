@@ -124,6 +124,9 @@ def pipeline_d_pyside(media: Path, seconds: int) -> dict:
     app = QApplication.instance() or QApplication([])
     cfg = native.EngineConfig()
     cfg.decode_mode = native.DecodeMode.Software
+    # Lecture temps réel : le décodage suit la présentation. Avec l'éviction des plus anciennes images, le décodeur
+    # (plus rapide que le temps réel) finirait le clip en quelques secondes et la mesure ne serait plus réelle.
+    cfg.drop_when_full = False
     eng = native.PreviewEngine(cfg)
     err = eng.open(str(media))
     if err != native.EngineError.Ok:
@@ -133,17 +136,25 @@ def pipeline_d_pyside(media: Path, seconds: int) -> dict:
     last = time.perf_counter()
     presented = 0
 
+    # Présentation à la cadence de la source : sans cela, la pompe présente une image à chaque tick (~125 Hz).
+    fps = eng.info().fps if eng.info().fps > 1.0 else 30.0
+    period = 1.0 / fps
+    due = time.perf_counter()
+
     def tick():
-        nonlocal last, presented
+        nonlocal last, presented, due
         now = time.perf_counter()
         dt = (now - last) * 1000.0
         last = now
         if dt > 20:
             eng.metrics().note_ui_stall(dt * 1000.0)
             stalls.append(dt)
+        if now < due:
+            return
+        due = max(due + period, now)  # un retard n'est pas rattrapé en rafale
         if eng.pump_present() == native.EngineError.Ok:
             presented += 1
-            _ = eng.last_rgb_bytes()  # force Python bytes copy like the UI host
+            _ = eng.last_rgb_bytes()  # copie Python, comme l'hôte d'interface
 
     eng.play()
     timer = QTimer()
@@ -169,6 +180,7 @@ def pipeline_d_pyside(media: Path, seconds: int) -> dict:
         "copy_ops": m.copy_ops,
         "bytes_copied": m.bytes_copied,
         "zero_copy": False,
+        "paced_fps": fps,
         "metric_class": "mixed_direct_and_estimated_ui_stall",
         "note": "Offscreen Qt; UI stall from QTimer jitter (estimated).",
     }

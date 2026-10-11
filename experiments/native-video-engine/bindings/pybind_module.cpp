@@ -93,7 +93,9 @@ PYBIND11_MODULE(kut_engine_native, m) {
             if (!self.copy_last_rgb(rgb, w, h)) {
                 return py::none();
             }
-            // Return (bytes, w, h). This is an extra copy into Python bytes — measured/honest.
+            // Deux copies pleine image : celle de copy_last_rgb (vecteur), puis celle des octets Python. Les deux sont
+            // comptées dans les métriques, comme la copie de présentation (pump_present).
+            self.metrics().note_copy(2 * rgb.size(), 2);
             return py::make_tuple(py::bytes(reinterpret_cast<const char*>(rgb.data()), rgb.size()), w, h);
         });
 

@@ -41,6 +41,9 @@ int test_engine() {
     EngineConfig cfg;
     cfg.decode_mode = DecodeMode::Software;
     cfg.queue_capacity = 4;
+    // Lecture en temps réel : le décodage suit la présentation (contre-pression). Avec l'éviction des plus anciennes
+    // images, le décodeur finirait le clip avant la fin du test et la lecture ne serait plus « en cours ».
+    cfg.drop_when_full = false;
     PreviewEngine engine(cfg);
 
     fails += expect(engine.open(path) == EngineError::Ok, "open");
