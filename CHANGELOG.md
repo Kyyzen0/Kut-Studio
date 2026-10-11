@@ -14,6 +14,18 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Vitesse : une ancre hors de la source faisait échouer l'export** (division par zéro). Avant l'entrée dans la
+  fenêtre du clip, la première image est maintenant tenue ; une ancre à la fin ou au-delà ne laisse qu'une image.
+- **Export : une résolution libre à côté impair** (1081 × 607…) faisait refuser l'export par x264, x265 et ProRes. Elle est
+  arrondie au pair supérieur, sans perdre de pixel ; le résumé du préréglage annonce la taille réellement exportée.
+- **Courbes de couleur : deux points trop proches faisaient échouer l'export.** FFmpeg exige que les abscisses tombent
+  dans des cases de 1/255 différentes (pas seulement distinctes) ; le point gênant est décalé dans la case suivante,
+  la marche qu'il dessine est conservée. Les courbes de l'éditeur (16 points) ne changent pas.
+- **Sous-titres : la marge au bord va jusqu'à 200 px**, comme le propose l'éditeur de style (le modèle la limitait
+  à 80 px, si bien que 80 et 200 donnaient le même rendu). La marge interne du fond reste limitée à 80 px.
+
 ## [0.4.1] - 2026-10-11
 
 Un lot de corrections trouvées en poussant chaque réglage à ses bornes avec le vrai FFmpeg : l'**exposition** de
