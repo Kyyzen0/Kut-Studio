@@ -4,8 +4,8 @@ Ces tests gardent des propriétés réelles (une analyse de scopes tient le temp
 seuil absolu ne vaut que sur la machine où il a été mesuré. Deux causes de lenteur n'ont rien à voir avec le code :
 
 * **un runner de CI partagé** : plus lent, et ses cœurs sont partagés avec les autres workers xdist. Le temps CPU
-  (:func:`best_cpu_seconds`) ignore la préemption, pas la contention (cœurs, fréquence, caches) : 8 processus en
-  parallèle doublent encore le temps CPU d'une analyse sur un Mac M ;
+  (:func:`best_cpu_seconds`) ignore la préemption et les fils des autres tests du même processus, pas la contention
+  (cœurs, fréquence, caches) : 8 processus en parallèle doublent encore le temps CPU d'une analyse sur un Mac M ;
 * **l'instrumentation de coverage.py** (job Linux, docs/coverage.md) : en Python 3.11, son traceur C s'exécute à
   chaque ligne. Analyse de scopes (Python pur), meilleur de 3, mesuré le 2026-10-07 : 0,044 → 0,206 s (320×180,
   ×4,7) et 0,059 → 0,233 s (1080p, ×3,9). En Python 3.12+ (``sys.monitoring``), la majoration réelle est quasi nulle.
@@ -52,10 +52,17 @@ def budget(nominal: float, *, ci_factor: float = CPU_CI_FACTOR, coverage_factor:
 
 
 def best_cpu_seconds(action: Callable[[], object], repeats: int = 3) -> float:
-    """Temps CPU du meilleur de ``repeats`` essais : insensible à la préemption par les autres workers."""
+    """Temps CPU **du fil appelant** du meilleur de ``repeats`` essais : insensible à la préemption et aux autres fils.
+
+    ``time.thread_time`` et non ``time.process_time`` : celui-ci additionne le CPU de tous les fils du processus. Un worker
+    pytest qui a déjà passé des milliers de tests garde parfois un fil qui tourne encore (un worker d'analyse de scopes, un
+    lecteur audio…), et chacun s'ajoute à la mesure : 3 fils actifs font passer une analyse 1080p de 0,08 à 0,31 s
+    (``process_time``), alors que ``thread_time`` reste à 0,08 s. Valable pour une action qui s'exécute dans le fil appelant,
+    ce que sont tous les calculs mesurés ici ; une action qui déléguerait à un pool de fils devrait se mesurer au temps mural.
+    """
     timings = []
     for _ in range(repeats):
-        start = time.process_time()
+        start = time.thread_time()
         action()
-        timings.append(time.process_time() - start)
+        timings.append(time.thread_time() - start)
     return min(timings)
