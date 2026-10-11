@@ -5,13 +5,14 @@
 **Deciders:** Kut-Studio maintainer
 **Refines:** [ADR-0001](0001-moteur-unifie-gpu-adaptatif.md), Option C ("rewritten native engine, C++ / Rust,
 dedicated render thread"), which ADR-0001 kept "for later, if the step 4 measurements demand it".
+**Related:** [ADR-0004](0004-native-engine-language-cpp-vs-rust.md) (C++ language preference, PR #89), which reads this study's gates as its decision rule.
 
 ## Summary
 
 1. **Most documented limits are ours, not PySide6's.** Of the 14 limits catalogued in section 2, only three cannot be
    removed without native code: importing a hardware-decoded frame into the GPU without a copy, running the render
    loop without the GIL and off the GUI thread, and CPU work that scales across threads inside one process (the last
-   has a Python workaround that reaches about x4 on 8 workers). PySide6 as a UI toolkit is not a limit and stays.
+   has a Python workaround that reaches about x4.5 on 8 workers for text outlines, and about x1.1 for single long Qt calls). PySide6 as a UI toolkit is not a limit and stays.
 2. **Do not start a rewrite.** The declared target (a 1080x1920 social edit playing without "Computing preview" on a
    MacBook Air M1 8 GB) is mostly reachable with language-independent work (Phase 0). A native layer is justified by a
    different ambition: several concurrent 4K tracks, 4K effects without UI lag, and zero-copy hardware export.
