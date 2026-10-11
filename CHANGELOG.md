@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-11
+
+Un lot de robustesse : quatre réglages, poussés à leurs bornes avec le vrai FFmpeg, faisaient échouer l'export ou
+donnaient un rendu faux. Aucun format de projet ne change (toujours le format 17), aucun rendu existant non plus
+hors de ces cas limites.
+
 ### Fixed
 
 - **Vitesse : une ancre hors de la source faisait échouer l'export** (division par zéro). Avant l'entrée dans la
@@ -438,7 +444,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...v0.3.0
