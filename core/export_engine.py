@@ -1709,14 +1709,65 @@ def _compose_plan_graph(
                 parts.append(_deepest_duck(ducked_branches, output))
             layer_labels[audio_index] = f"[{output}]"
 
+        # --- Inserts de piste ----------------------------------------
+        # Une entrée par source du mixage final : une couche seule, ou le sous-mixage d'une piste qui porte des inserts.
+        # Seules les pistes dont la chaîne a au moins un effet actif sont sous-mixées ; les autres gardent leur chemin
+        # d'avant, couche par couche, au même graphe près.
+        mix_entries: list[tuple[str, str]] = [
+            (lay.track_id, layer_labels[i]) for i, lay in enumerate(plan.audio_layers)
+        ]
+        insert_filters: dict[str, list[str]] = {}
+        for lay in plan.audio_layers:
+            if lay.track_id not in insert_filters:
+                insert_filters[lay.track_id] = (
+                    _build_clip_audio_effect_filters(lay.track_inserts) if lay.track_inserts else []
+                )
+        if any(insert_filters.values()):
+            members_by_track: dict[str, list[str]] = {}
+            for track_id, label in mix_entries:
+                if insert_filters[track_id]:
+                    members_by_track.setdefault(track_id, []).append(label)
+            submixes: dict[str, str] = {}
+            for k, (track_id, members) in enumerate(members_by_track.items()):
+                # Comme le sous-mixage du ducking : une base silencieuse de la durée de la timeline ouvre la somme
+                # (``duration=first``), pour que la queue d'une réverbération ou d'un écho ne soit pas coupée avec le
+                # dernier clip de la piste.
+                base = f"[{p}ti{k}_base]"
+                parts.append(
+                    f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(mix_duration)}{base}"
+                )
+                sum_stage = f"amix=inputs={len(members) + 1}:duration=first:dropout_transition=0"
+                if amix_sums:
+                    sum_stage += ":normalize=0"
+                else:
+                    padded_members = []
+                    for n, label in enumerate(members):
+                        parts.append(f"{label}apad[{p}ti{k}_{n}_pad]")
+                        padded_members.append(f"[{p}ti{k}_{n}_pad]")
+                    members = padded_members
+                    sum_stage += f",volume={len(members) + 1}"
+                parts.append(
+                    f"{base}{''.join(members)}{sum_stage},aformat=channel_layouts=stereo:sample_rates=48000,"
+                    f"{','.join(insert_filters[track_id])}[{p}ti{k}]"
+                )
+                submixes[track_id] = f"[{p}ti{k}]"
+            collapsed: list[tuple[str, str]] = []
+            for track_id, label in mix_entries:
+                if not insert_filters[track_id]:
+                    collapsed.append((track_id, label))
+                elif track_id in submixes:
+                    collapsed.append((track_id, submixes.pop(track_id)))
+            mix_entries = collapsed
+
         if track_taps is not None and not nested and amix_sums:
-            # Vumètres par piste : chaque couche est dédoublée, et les copies d'une même piste additionnées sur une base
-            # silencieuse (comme le mixage final), sans rien changer à ce qu'on entend.
+            # Vumètres par piste : chaque entrée est dédoublée, et les copies d'une même piste additionnées sur une
+            # base silencieuse (comme le mixage final), sans rien changer à ce qu'on entend. Une piste à inserts est
+            # mesurée *après* sa chaîne : le vumètre montre ce qui part vers le mixage.
             taps_by_track: dict[str, list[str]] = {}
-            for i, lay in enumerate(plan.audio_layers):
-                parts.append(f"{layer_labels[i]}asplit=2[{p}a{i}_mix][{p}a{i}_tap]")
-                layer_labels[i] = f"[{p}a{i}_mix]"
-                taps_by_track.setdefault(lay.track_id, []).append(f"[{p}a{i}_tap]")
+            for i, (track_id, label) in enumerate(mix_entries):
+                parts.append(f"{label}asplit=2[{p}e{i}_mix][{p}e{i}_tap]")
+                mix_entries[i] = (track_id, f"[{p}e{i}_mix]")
+                taps_by_track.setdefault(track_id, []).append(f"[{p}e{i}_tap]")
             for k, (track_id, taps) in enumerate(taps_by_track.items()):
                 base = f"[{p}tap{k}_base]"
                 parts.append(
@@ -1728,7 +1779,8 @@ def _compose_plan_graph(
                 )
                 track_taps[track_id] = f"{p}tap{k}"
 
-        n_inputs = len(plan.audio_layers) + 1
+        layer_labels = [label for _, label in mix_entries]
+        n_inputs = len(layer_labels) + 1
         # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
         mix_stage = f"amix=inputs={n_inputs}:duration=first:dropout_transition=0"
         if amix_sums:

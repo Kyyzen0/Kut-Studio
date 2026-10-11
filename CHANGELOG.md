@@ -14,6 +14,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Inserts de piste.** Chaque piste audio porte une chaîne d'effets qui traite la **somme** de ses clips (bouton **FX**
+  de la tranche du mixeur) : un compresseur ou un limiteur de piste voit tout ce que la piste fait entendre. Les
+  effets sont ceux des clips ; on peut les réordonner, les contourner, les régler, et tout s'annule. Le vumètre de la
+  piste mesure la sortie de la chaîne, la lecture l'entend comme l'export, et un projet sans insert s'exporte comme
+  avant. Voir [docs/audio.md](docs/audio.md).
+
 ### Changed
 
 - **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
@@ -21,6 +29,12 @@ ensuite déclenche `.github/workflows/release.yml`.
   ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.
 - **Aperçu fidèle : un clip vidéo déjà commencé** n'est plus traité depuis le début du média dans un segment tardif
   (coupe avant effets / conformation, comme l'audio du mixage en direct).
+
+## [0.4.2] - 2026-10-11
+
+Un lot de robustesse : quatre réglages, poussés à leurs bornes avec le vrai FFmpeg, faisaient échouer l'export ou
+donnaient un rendu faux. Aucun format de projet ne change (toujours le format 17), aucun rendu existant non plus
+hors de ces cas limites.
 
 ### Fixed
 
@@ -446,7 +460,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...v0.3.0

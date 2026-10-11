@@ -74,6 +74,28 @@ lecture ─▶ plan audio (fenêtre : tête − 3 s → fin, sans image, Master 
   que le projet ne change pas. `KUT_STUDIO_LIVE_MIX=off` le coupe (tests, audit
   d'interface).
 
+## Inserts de piste
+
+Chaque piste audio porte une **chaîne d'inserts** (`Track.inserts`) : les mêmes effets que ceux d'un clip
+(compresseur, limiteur, basses, aigus…), mais appliqués à la **somme** des clips de la piste. Un compresseur de piste
+entend donc tout ce que la piste fait jouer, et un limiteur de piste borne la somme, ce que deux limiteurs de clip ne
+feraient pas. Le bouton **FX** de la tranche (avec le nombre d'inserts) ouvre la boîte de la chaîne : ajouter,
+réordonner, contourner, supprimer, régler.
+
+```
+clips de la piste ─▶ volume, pan, automation, ducking (par clip, comme avant)
+                 ─▶ somme de la piste (base silencieuse, ``amix normalize=0``)
+                 ─▶ inserts, dans l'ordre de la liste
+                 ─▶ mixage final ─▶ Master ─▶ limiteur de sécurité
+```
+
+- **Une piste sans insert actif garde exactement le graphe d'avant** (un insert contourné n'en crée pas).
+- **Le vumètre de la piste lit la sortie de la chaîne** : il montre ce qui part vers le mixage.
+- Le fichier `.kut` écrit la clé `inserts` de la piste seulement quand elle en a ; le format 17 ne change pas, un
+  ancien fichier s'ouvre sans insert, et un insert invalide est ignoré seul (comme les effets de clip).
+- Une séquence imbriquée garde les inserts de ses pistes (labels préfixés par la séquence) ; les inserts de la piste
+  qui accueille le clip imbriqué restent sur cette piste, dans le parent.
+
 ## Mesures (Apple M4)
 
 | | |
@@ -94,7 +116,9 @@ lecture ─▶ plan audio (fenêtre : tête − 3 s → fin, sans image, Master 
 | Module | Rôle |
 | --- | --- |
 | `core/live_mix.py` | plan et commande du flux, pondération K, `MixMeter` |
-| `core/export_engine.py` | `audio_origin` et `track_taps` du graphe audio |
+| `core/export_engine.py` | `audio_origin`, `track_taps` et sous-mixage des inserts de piste dans le graphe audio |
+| `core/audio_effects_model.py` | opérations pures sur les inserts (`add_track_insert`…) |
+| `ui/track_inserts_dialog.py` | boîte de la chaîne d'inserts d'une piste |
 | `core/edit_history.py` | `revision` : le projet a changé |
 | `ui/live_mix_player.py` | lecteur : fil de lecture, calage, `QAudioSink` |
 | `ui/level_meter.py` | vumètre (crête, RMS, crête maintenue) |
@@ -103,4 +127,6 @@ lecture ─▶ plan audio (fenêtre : tête − 3 s → fin, sans image, Master 
 
 Tests : `tests/test_live_mix.py` (origine égale à l'export, points de mesure, Master, fenêtre, sonie EBU, vrai FFmpeg) ;
 `tests/test_live_mix_player.py` (calage à l'échantillon, vumètres, échec, fenêtre, page Audio) ;
-`tests/test_audio_mixer.py` (vumètres du mixeur).
+`tests/test_audio_mixer.py` (vumètres du mixeur) ; `tests/test_track_inserts.py` (modèle, fichier, graphe avec vrai
+FFmpeg : la somme est limitée, l'ordre compte, le vumètre lit la sortie) et `tests/test_track_inserts_ui.py` (bouton FX,
+boîte, annulation).

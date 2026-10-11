@@ -247,4 +247,6 @@ AZERTY.
    l'utilisateur (2026-10-11) : **un flux continu par lecture plutôt que des morceaux**. Un processus FFmpeg rend le
    graphe audio de l'export à partir de la tête (« origine audio », plus de calcul depuis le début de la timeline) vers
    un `QAudioSink` ; des morceaux auraient coupé à chaque jonction les effets qui ont une mémoire (compresseurs,
-   ducking, écho). Restent : inserts de piste, égaliseur paramétrique, bus.
+   ducking, écho). **Inserts de piste livrés** (chaîne d'effets sur la somme des clips, `Track.inserts`). Restent :
+   égaliseur paramétrique (4 bandes fixes) puis bus (par séquence, dans le projet) — choix faits avec l'utilisateur le
+   2026-10-11.

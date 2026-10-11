@@ -194,6 +194,8 @@ _TRACK_FIELDS = frozenset(
         "audio_role",
         "automation",
         "ducking_config",
+        # Chaîne d'inserts de piste : clé optionnelle, la version du format ne change pas.
+        "inserts",
     }
 )
 _CLIP_AUDIO_FIELDS = frozenset({"gain_db", "pan", "fade_in", "fade_out"})
@@ -611,6 +613,12 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
                 "ducking_config": _ducking_config_to_dict(
                     getattr(track, "ducking_config", None)
                 ),
+                # Inserts de piste : omis quand il n'y en a pas, un fichier sans insert reste identique à avant.
+                **(
+                    {"inserts": [_audio_effect_to_dict(effect) for effect in track.inserts]}
+                    if getattr(track, "inserts", None)
+                    else {}
+                ),
                 "clips": [_clip_to_dict(clip) for clip in track.clips],
             }
             for track in sequence.tracks
@@ -1024,6 +1032,8 @@ def _deserialize_track(
     track_kwargs["ducking_config"] = _deserialize_ducking_config(
         track_kwargs.get("ducking_config")
     )
+    # Même tolérance que les effets de clip : une entrée invalide est ignorée seule, les autres gardent leur ordre.
+    track_kwargs["inserts"] = _deserialize_audio_effects(track_kwargs.get("inserts"))
     return Track(clips=clips, **track_kwargs)
 
 

@@ -626,6 +626,10 @@ class Track:
     # :class:`core.audio_automation.DuckingConfig` ; le type reste ``object``
     # (le modèle ne dépend de ``audio_automation`` que pour la courbe ci-dessus).
     ducking_config: object = None
+    # ``inserts`` : chaîne d'effets audio de la piste (liste de :class:`core.audio_effects_model.AudioEffect`, dans
+    # l'ordre d'application). Elle traite la *somme* des clips de la piste, après leur fader, leur pan et le ducking :
+    # un compresseur ou un égaliseur de piste voit donc tout ce que la piste fait entendre. Vide = piste inchangée.
+    inserts: list = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.height_mode not in {"compact", "normal", "large"}:

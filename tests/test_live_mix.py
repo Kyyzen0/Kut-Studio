@@ -194,3 +194,22 @@ def test_the_meter_waits_for_whole_blocks_and_starts_from_the_preroll():
     (first,) = meter.feed(loud)
     assert first.time == pytest.approx(10.0 + BLOCK_FRAMES / SAMPLE_RATE)
     assert first.peak_db == pytest.approx(-6.02, abs=0.01) and first.track_peaks_db == ()
+
+
+@needs_ffmpeg
+def test_track_inserts_are_heard_live_exactly_as_exported_and_metered_after_the_chain(tmp_path):
+    """Les inserts de piste sont dans le graphe d'export : la lecture les entend, et le vumètre de la piste mesure leur
+    sortie (ici un limiteur à −6 dB sur la piste voix, dont la somme dépasse 0,5)."""
+    from core.audio_effects_model import AudioEffectType, add_track_insert  # noqa: PLC0415
+
+    project = _project(tmp_path)
+    add_track_insert(project, "A2", AudioEffectType.LIMITER, params={"limit_db": -6.0})
+    add_track_insert(project, "A1", AudioEffectType.BASS_BOOST)
+    start = 7.0
+    reference = _export_mix(build_render_plan(project))[int(start * SAMPLE_RATE):]
+    live, frames = _live(project, start)
+    heard = frames[:, 0:2]
+    count = min(len(heard), len(reference))
+    assert np.abs(heard[:count] - reference[:count]).max() < 3e-4
+    voice = frames[:, 6:8] if live.track_ids == ("A1", "A2") else frames[:, 4:6]
+    assert np.abs(voice).max() < 0.56, "le vumètre de la piste lit la sortie de ses inserts"
