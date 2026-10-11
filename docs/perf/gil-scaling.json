@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpus": 10,
+    "python": "3.14.7",
+    "gil_enabled": true,
+    "pyside6": "6.11.2",
+    "quick": false,
+    "repeat": 3
+  },
+  "jobs": {
+    "scale_4k": {
+      "label": "Réduction lissée d'une image 4K (un appel Qt long)",
+      "count": 24,
+      "serial_ms_per_job": 2.77,
+      "speedup": {
+        "thread4": 0.87,
+        "thread8": 0.78,
+        "process4": 1.08,
+        "process8": 1.14
+      }
+    },
+    "convert_4k": {
+      "label": "Conversion de format d'une image 4K (un appel Qt long)",
+      "count": 40,
+      "serial_ms_per_job": 1.36,
+      "speedup": {
+        "thread4": 0.99,
+        "thread8": 1.0,
+        "process4": 0.98,
+        "process8": 0.95
+      }
+    },
+    "paint_2000_calls": {
+      "label": "2 000 petits appels QPainter, 1080x1920",
+      "count": 40,
+      "serial_ms_per_job": 47.65,
+      "speedup": {
+        "thread4": 0.88,
+        "thread8": 0.89,
+        "process4": 2.16,
+        "process8": 2.86
+      }
+    },
+    "text_outline": {
+      "label": "Texte à contour (rastériseur des motion graphics)",
+      "count": 120,
+      "serial_ms_per_job": 3.58,
+      "speedup": {
+        "thread4": 1.0,
+        "thread8": 1.0,
+        "process4": 3.13,
+        "process8": 4.48
+      }
+    },
+    "png_save": {
+      "label": "Encodage PNG 1080x1920 (QImage.save)",
+      "count": 60,
+      "serial_ms_per_job": 40.46,
+      "speedup": {
+        "thread4": 3.88,
+        "thread8": 5.12,
+        "process4": 3.87,
+        "process8": 5.16
+      }
+    },
+    "python_control": {
+      "label": "Témoin : boucle Python pure",
+      "count": 60,
+      "serial_ms_per_job": 17.24,
+      "speedup": {
+        "thread4": 1.0,
+        "thread8": 0.99,
+        "process4": 3.52,
+        "process8": 4.71
+      }
+    }
+  }
+}
