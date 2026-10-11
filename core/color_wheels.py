@@ -54,6 +54,43 @@ def wheels_filter(grade: ColorGrade) -> str:
     return "lutrgb=" + ":".join(terms)
 
 
+SRGB_TOE_ENCODED = 0.04045
+SRGB_TOE_LINEAR = 0.0031308
+
+
+def srgb_decode(value: float) -> float:
+    """Valeur d'affichage ``0..1`` (sRGB) vers lumière linéaire."""
+    return value / 12.92 if value <= SRGB_TOE_ENCODED else ((value + 0.055) / 1.055) ** 2.4
+
+
+def srgb_encode(value: float) -> float:
+    """Lumière linéaire vers valeur d'affichage ``0..1`` (sRGB)."""
+    return value * 12.92 if value <= SRGB_TOE_LINEAR else 1.055 * value ** (1.0 / 2.4) - 0.055
+
+
+def exposure_transfer(value: float, stops: float) -> float:
+    """Valeur d'affichage ``0..1`` après ``stops`` diaphragmes (EV) : on multiplie la **lumière** par ``2^EV``, puis on
+    ré-encode. +1 EV double la lumière, quelle que soit la valeur d'entrée ; le blanc sature, le noir reste noir."""
+    return min(1.0, max(0.0, srgb_encode(srgb_decode(value) * 2.0 ** stops)))
+
+
+def exposure_filter(stops: float) -> str:
+    """Filtre ``lutrgb`` de l'exposition (vide : 0 EV, rien à émettre), identique sur les trois canaux.
+
+    Avant, ``eq=gamma=2^EV`` : un gamma n'est pas une exposition (un gris moyen à −2 EV sortait à 0 au lieu de 66, et
+    une couleur dérivait vers le rouge dans les ombres). Ici la table est évaluée par FFmpeg pour chaque niveau :
+    :func:`exposure_transfer` en est l'oracle. Comme pour les molettes, ``+0.5`` arrondit au plus proche."""
+    if abs(float(stops)) < 1e-6:
+        return ""
+    gain = f"{2.0 ** float(stops):.6f}"
+    v = "(val/maxval)"
+    linear = f"if(lte({v},{SRGB_TOE_ENCODED}),{v}/12.92,pow(({v}+0.055)/1.055,2.4))"
+    scaled = f"({gain}*{linear})"
+    encoded = f"if(lte({scaled},{SRGB_TOE_LINEAR}),12.92*{scaled},1.055*pow({scaled},{1.0 / 2.4:.6f})-0.055)"
+    expression = f"'clip({encoded}*maxval+0.5,0,maxval)'"
+    return f"lutrgb=r={expression}:g={expression}:b={expression}"
+
+
 def wheel_from_puck(hue_degrees: float, radius: float, master: float = 0.0) -> Wheel:
     """Roue pour un palet poussé vers la teinte ``hue_degrees`` (0 rouge, 120 vert, 240 bleu), à ``radius`` (0 centre,
     1 bord) : les trois décalages sont de moyenne nulle, le palet change la couleur sans changer le niveau."""

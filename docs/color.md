@@ -103,6 +103,18 @@ L'export applique les roues par `lutrgb`, qui calcule une table par canal sur to
 `+ 0,5` parce que `lutrgb` tronque. L'étape vient après `colorbalance` et avant les courbes. Elle n'est écrite que si
 une roue a bougé, et le fichier n'a la clé `wheels` que dans ce cas.
 
+## Exposition
+
+L'exposition se règle en diaphragmes (EV, de −2 à +2) : +1 EV **double la lumière**, −1 EV la divise par deux. Pour une
+valeur d'affichage `v` (sRGB, `0..1`), la sortie est `encode(decode(v) · 2^EV)`, bornée à `0..1` ; chaque canal est
+traité de même, donc une couleur garde sa teinte. Un gris moyen (128) donne 66 à −2 EV, 92 à −1 EV, 176 à +1 EV et
+239 à +2 EV.
+
+L'export l'applique par `lutrgb` (`core.color_wheels.exposure_filter`) : une table par canal, évaluée pour chaque niveau
+d'entrée, **avant** le contraste (`eq`). `exposure_transfer` en est la formule de référence, et le moniteur GPU, qui cuit
+la même chaîne en LUT 3D, la suit sans autre code. Avant ce changement, l'exposition était un `gamma` d'`eq` (`2^EV`), qui
+n'est pas une exposition : le même gris sortait à 0 à −2 EV, et une couleur dérivait vers le rouge dans les ombres.
+
 ## Comment les nœuds sont rendus
 
 - **Export, en série.** La chaîne de filtres de chaque nœud actif (activé et non neutre) s'applique dans l'ordre du
