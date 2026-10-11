@@ -87,6 +87,9 @@ class ProjectHistory:
         self._clock = clock
         self._merge_key: Optional[str] = None
         self._merge_time = 0.0
+        self.revision = 0
+        """Augmente à chaque changement de l'état courant (enregistrement, fusion d'un geste, annulation, rétablissement,
+        saut, remise à zéro) : un lecteur en cours (mixage en direct) sait ainsi que le projet a changé."""
 
     # ------------------------------------------------------------------
     # API publique
@@ -137,6 +140,7 @@ class ProjectHistory:
         de fichier.
         """
         self._project = project
+        self.revision += 1
         snapshot = _Snapshot(label="État initial", project=_snapshot_project(project, None))
         self._undo_stack = [snapshot]
         self._redo_stack = []
@@ -179,6 +183,7 @@ class ProjectHistory:
             self._undo_stack[top] = _Snapshot(label=label or "", project=_snapshot_project(project, before))
             self._merge_time = now
             self._project = project
+            self.revision += 1
             return
         self._merge_key = merge_key
         self._merge_time = now
@@ -204,6 +209,7 @@ class ProjectHistory:
         # Toute nouvelle action après ``undo`` vide le ``redo``.
         self._redo_stack = []
         self._project = project
+        self.revision += 1
 
     def undo(self) -> Optional[Project]:
         """Annule la dernière opération enregistrée.
@@ -222,6 +228,7 @@ class ProjectHistory:
         # non celle qui était ouverte lors de l'opération précédente).
         _keep_active_sequence(restored, current.project.active_sequence_id)
         self._project = restored
+        self.revision += 1
         return restored
 
     def redo(self) -> Optional[Project]:
@@ -237,6 +244,7 @@ class ProjectHistory:
         self._undo_stack.append(next_snapshot)
         restored = _deepcopy_project(next_snapshot.project)
         self._project = restored
+        self.revision += 1
         return restored
 
     def entries(self) -> list[HistoryEntry]:
@@ -283,6 +291,7 @@ class ProjectHistory:
                 self._undo_stack.append(self._redo_stack.pop())
             restored = _deepcopy_project(self._undo_stack[-1].project)
         self._project = restored
+        self.revision += 1
         return restored
 
     def mark_saved(self) -> None:

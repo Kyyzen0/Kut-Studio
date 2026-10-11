@@ -190,7 +190,7 @@ Détail et usage : [composition.md](../composition.md).
 
 ### 5. Pages
 
-Une page est une étape du travail avec **sa** disposition : Montage et Couleur aujourd'hui, Audio ensuite. La page
+Une page est une étape du travail avec **sa** disposition : Montage, Couleur, Composition et Audio. La page
 Montage garde `workspace.json`, et chaque autre page a son fichier `workspace_<page>.json`. Changer de page garde la
 disposition qu'on quitte et rend celle de la page ouverte telle qu'on l'avait laissée. « Disposition par défaut » rend
 celle d'origine de la page affichée.
@@ -241,5 +241,9 @@ AZERTY.
    d'effets et d'étalonnage, conversion calques → nœuds, page Composition ; en lecture, le cache de rendu des
    compositions. Restent pour plus tard : le placement libre des nœuds, l'édition des courbes d'animation dans la
    composition (la composition en direct de plusieurs sources relève de l'ADR-0001).
-5. Page Audio. D'abord un aperçu audio fidèle : le mixage rendu par le graphe audio de l'export, par morceaux. Puis
-   inserts de piste, égaliseur paramétrique, sonie en direct et bus.
+5. Page Audio. **Première partie livrée** : le mixage de l'export entendu en lecture, vumètres réels (crête, RMS, sonie
+   BS.1770 momentanée et à court terme, crête par piste), page Audio ([docs/audio.md](../audio.md)). Choix fait avec
+   l'utilisateur (2026-10-11) : **un flux continu par lecture plutôt que des morceaux**. Un processus FFmpeg rend le
+   graphe audio de l'export à partir de la tête (« origine audio », plus de calcul depuis le début de la timeline) vers
+   un `QAudioSink` ; des morceaux auraient coupé à chaque jonction les effets qui ont une mémoire (compresseurs,
+   ducking, écho). Restent : inserts de piste, égaliseur paramétrique, bus.

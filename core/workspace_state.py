@@ -549,7 +549,8 @@ def save_workspace_state(
 PAGE_EDIT: str = "edit"
 PAGE_COLOR: str = "color"
 PAGE_COMPOSITION: str = "composition"
-PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR, PAGE_COMPOSITION)
+PAGE_AUDIO: str = "audio"
+PAGES: tuple[str, ...] = (PAGE_EDIT, PAGE_COLOR, PAGE_COMPOSITION, PAGE_AUDIO)
 
 
 def page_default_state(page: str) -> WorkspaceState:
@@ -560,8 +561,12 @@ def page_default_state(page: str) -> WorkspaceState:
     les nœuds et les roues à droite, la timeline et la bande des plans en bas
     pour passer d'un plan à l'autre ; les médias se replient. Composition :
     le moniteur, les nœuds et l'inspecteur du nœud à droite, la timeline.
+    Audio : le mixeur et ses vumètres en bas, avec la timeline, sous un
+    moniteur plus petit ; l'inspecteur (onglet Audio) et les médias restent.
     """
     state = WorkspaceState.default()
+    if page == PAGE_AUDIO:
+        return state.with_panel(PanelId.MIXER, area=DockArea.BOTTOM, visible=True).with_center_ratio(0.42)
     if page == PAGE_COMPOSITION:
         # Composition : le moniteur au centre, les nœuds et l'inspecteur du nœud choisi à droite, la timeline en bas.
         return (
@@ -750,7 +755,9 @@ __all__ = [
     "FloatingGeometry",
     "MIN_SIZE",
     "PAGES",
+    "PAGE_AUDIO",
     "PAGE_COLOR",
+    "PAGE_COMPOSITION",
     "PAGE_EDIT",
     "PANEL_TOOLBAR_SIZE",
     "PanelId",

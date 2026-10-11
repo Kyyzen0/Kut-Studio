@@ -18,6 +18,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # processus, dès l'import (les fixtures de module créent leurs fenêtres avant les fixtures de fonction). Les tests
 # des mises à jour utilisent un serveur HTTP local ou des réponses simulées.
 os.environ["KUT_STUDIO_UPDATE_CHECK"] = "off"
+# Aucune fenêtre de test n'ouvre la sortie audio ni ne lance le mixage en direct en appuyant sur Lecture : les machines de
+# CI n'ont pas de carte son, et chaque lecture lancerait un FFmpeg. Les tests du mixage en direct le rallument, avec une
+# sortie simulée (``tests/test_live_mix_player.py``).
+os.environ["KUT_STUDIO_LIVE_MIX"] = "off"
 
 from tools.ui_audit import ensure_offscreen_fonts  # noqa: E402  (après le réglage du chemin et de la plateforme)
 

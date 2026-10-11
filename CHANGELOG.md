@@ -14,6 +14,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **On entend le vrai mixage pendant la lecture** : les pistes audio (musique, voix off), le volume, le panoramique,
+  mute et solo, l'automation, les effets, le ducking et le Master, exactement comme l'export les produira. Avant, la
+  lecture ne faisait entendre que le son du clip affiché. Le son est calé sur la tête de lecture ; une modification
+  pendant la lecture s'entend après un court repos.
+- **Vumètres réels** dans le mixeur : la crête de chaque piste, la crête et le RMS du Master, et la sonie (LUFS)
+  momentanée et à court terme. À l'arrêt, ils retombent.
+- **Page Audio** (bouton *Audio* en haut, *Fenêtre*, ou le rail) : le mixeur et ses vumètres sous le moniteur, avec la
+  timeline, l'inspecteur sur l'onglet Audio.
+
 ## [0.4.0] - 2026-10-11
 
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image

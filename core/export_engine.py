@@ -1015,6 +1015,8 @@ class ExportEngine(QObject):
         audio_only: bool = False,
         origin: float = 0.0,
         horizon: float | None = None,
+        audio_origin: float = 0.0,
+        track_taps: dict[str, str] | None = None,
     ) -> tuple[str, str, str, list[str]]:
         """Génère le ``-filter_complex`` complet + labels + liste d'inputs.
 
@@ -1039,6 +1041,13 @@ class ExportEngine(QObject):
 
         ``horizon`` : dernier instant dont la sortie a besoin (une seule image : scopes). Les images de calques au-delà
         ne sont ni rastérisées ni écrites ; ``None`` (export, aperçu) : toute la durée des calques.
+
+        ``audio_origin`` : le mixage commence à cet instant de la timeline, son premier échantillon est celui de
+        ``audio_origin`` (mixage en direct, :mod:`core.live_mix`). Chaque clip garde sa chaîne (effets, fondus,
+        automation calculés dans son temps propre) ; seul son placement change. ``0`` : le graphe historique.
+
+        ``track_taps`` (dictionnaire rempli ici) : un point de mesure par piste, son sous-mixage après fader et ducking
+        (vumètres du mixage en direct) ; ``None`` : aucun, le graphe historique.
 
         Returns:
             filter_complex: chaîne complète à passer à ``-filter_complex``.
@@ -1073,7 +1082,7 @@ class ExportEngine(QObject):
         video_label, audio_label = _compose_plan_graph(
             parts, plan, width, height, fps, path_to_index, sources,
             add_input=add_input, quality=quality, prepared=prepared, want_video=not audio_only, origin=origin,
-            horizon=horizon,
+            horizon=horizon, audio_origin=audio_origin, track_taps=track_taps,
         )
         if audio_only:
             return ";".join(parts), "", audio_label, input_paths
@@ -1439,6 +1448,8 @@ def _compose_plan_graph(
     prepared: Mapping[str, PreparedStream] | None = None,
     origin: float = 0.0,
     horizon: float | None = None,
+    audio_origin: float = 0.0,
+    track_taps: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     """Ajoute à ``parts`` la composition vidéo + audio d'un plan.
 
@@ -1455,6 +1466,12 @@ def _compose_plan_graph(
     ``origin`` (racine seulement) : le fond ne commence qu'à cet instant (``trim``, horodatages gardés), si bien que
     toute la composition en aval, calques et fusions compris, ne travaille que sur les images utiles. Les calques
     arrivent avant lui ; les filtres de synchronisation (``overlay``, ``blend``…) écartent leurs images antérieures.
+
+    ``audio_origin`` (racine seulement) : le mixage commence à cet instant ; les bases silencieuses durent
+    ``durée - audio_origin``, chaque couche est placée par rapport à lui (:func:`_build_audio_filter`).
+
+    ``track_taps`` (racine seulement) : rempli de ``{piste: label}``, le sous-mixage de chaque piste qui a des couches,
+    pris juste avant le mixage final (gain, pan, automation et ducking compris : ce qu'on entend de la piste).
 
     Returns:
         ``(label vidéo, label audio)`` finaux du plan (chaîne vide pour un
@@ -1559,9 +1576,12 @@ def _compose_plan_graph(
         return video_label, ""
 
     # ---------------- Audio ----------------
+    audio_origin = min(float(audio_origin), duration) if not nested and audio_origin and audio_origin > 0 else 0.0
+    # Avec une origine, tout le mixage (bases, ducking) dure ce qui reste de la timeline après elle.
+    mix_duration = duration - audio_origin
     silent_base_filter = (
         f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:"
-        f"duration={_format_seconds(duration)}[{p}silent_base]"
+        f"duration={_format_seconds(mix_duration)}[{p}silent_base]"
     )
     parts.append(silent_base_filter)
 
@@ -1575,7 +1595,7 @@ def _compose_plan_graph(
                     _build_audio_filter(
                         audio_index, audio_layer, None, duration,
                         source=sources.take_audio(audio_layer.nested_key),
-                        label=f"{p}a{audio_index}",
+                        label=f"{p}a{audio_index}", origin=audio_origin,
                     )
                 )
             else:
@@ -1583,7 +1603,7 @@ def _compose_plan_graph(
                 parts.append(
                     _build_audio_filter(
                         audio_index, audio_layer, input_index, duration,
-                        label=f"{p}a{audio_index}" if p else None,
+                        label=f"{p}a{audio_index}" if p else None, origin=audio_origin,
                     )
                 )
 
@@ -1623,7 +1643,7 @@ def _compose_plan_graph(
             # que sa clé s'arrête, et une clé qui finirait avec le premier clip voix couperait la musique au même instant.
             base = f"[{p}av{k}_base]"
             parts.append(
-                f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(duration)}{base}"
+                f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(mix_duration)}{base}"
             )
             # Le détecteur entend la voix à son niveau réel (somme, pas moyenne) : le seuil se règle sur ce qu'on entend.
             voice_stage = f"amix=inputs={len(mix_inputs) + 1}:duration=first:dropout_transition=0"
@@ -1661,12 +1681,31 @@ def _compose_plan_graph(
                 branch_output = output if len(active) == 1 else f"{p}a{audio_index}_duck{j}"
                 parts.append(_build_ducking_chain(
                     sc, voice_label=voice_keys[sc.voice_track_id].pop(), main_label=branch,
-                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}", duration=duration,
+                    output_label=branch_output, key_label=f"{p}a{audio_index}_sc{j}", duration=mix_duration,
                 ))
                 ducked_branches.append(branch_output)
             if len(active) > 1:
                 parts.append(_deepest_duck(ducked_branches, output))
             layer_labels[audio_index] = f"[{output}]"
+
+        if track_taps is not None and not nested and amix_sums:
+            # Vumètres par piste : chaque couche est dédoublée, et les copies d'une même piste additionnées sur une base
+            # silencieuse (comme le mixage final), sans rien changer à ce qu'on entend.
+            taps_by_track: dict[str, list[str]] = {}
+            for i, lay in enumerate(plan.audio_layers):
+                parts.append(f"{layer_labels[i]}asplit=2[{p}a{i}_mix][{p}a{i}_tap]")
+                layer_labels[i] = f"[{p}a{i}_mix]"
+                taps_by_track.setdefault(lay.track_id, []).append(f"[{p}a{i}_tap]")
+            for k, (track_id, taps) in enumerate(taps_by_track.items()):
+                base = f"[{p}tap{k}_base]"
+                parts.append(
+                    f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(mix_duration)}{base}"
+                )
+                parts.append(
+                    f"{base}{''.join(taps)}amix=inputs={len(taps) + 1}:duration=first:dropout_transition=0:normalize=0,"
+                    f"aformat=channel_layouts=stereo:sample_rates=48000[{p}tap{k}]"
+                )
+                track_taps[track_id] = f"{p}tap{k}"
 
         n_inputs = len(plan.audio_layers) + 1
         # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
@@ -2752,6 +2791,7 @@ def _build_audio_filter(
     *,
     source: str | None = None,
     label: str | None = None,
+    origin: float = 0.0,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche audio.
 
@@ -2777,10 +2817,21 @@ def _build_audio_filter(
     neutre n'est pas émise. Toutes les valeurs sont bornées avant
     formatage pour qu'aucun caractère de séparation de filtre ne
     puisse s'injecter dans la commande.
+
+    ``origin`` (mixage commencé à cet instant de la timeline, voir
+    ``audio_origin``) : une couche qui commence après est retardée de
+    ``début - origin`` ; une couche déjà en cours est coupée **avant** sa
+    chaîne (``atrim`` du début à l'origine) : ni ses effets, ni son volume ne
+    traitent ce qui précède, un clip entamé depuis une heure ne coûte pas une
+    heure de traitement. Les horodatages sont **conservés** (``asetpts`` ajoute
+    le temps coupé) : ``afade`` et ``volume`` (``t``) lisent l'horodatage de
+    l'image, donc fondus et automation restent calculés exactement dans le
+    temps propre du clip (vérifié sur FFmpeg 7.1 et 9.0). Seul le décodage de
+    la source reste proportionnel à la position. Un clip remappé (vitesse,
+    inversion) garde l'ancien chemin : sa chaîne est coupée après.
     """
     from .audio_mixer import pan_needs_filter
 
-    source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
     _ = timeline_duration  # conservé pour traçabilité / évolutions futures
@@ -2788,6 +2839,9 @@ def _build_audio_filter(
     source_label = source if source is not None else f"{input_index}:a"
     output_label = label if label is not None else f"a{audio_index}"
     time_map = _retime_audio_map_of(layer)
+    origin = max(0.0, float(origin))
+    # Temps du clip déjà écoulé à l'origine du mixage : coupé avant la chaîne (hors clip remappé, voir plus haut).
+    skip = max(0.0, origin - layer.timeline_start) if origin > 0.0 and time_map is None else 0.0
     pre_chains: tuple[str, ...] = ()
     if time_map is not None:
         # Clip remappé : le son vient du ``TimeMap`` du clip, morceau par morceau (voir :mod:`core.retime_graph`). Le
@@ -2803,8 +2857,8 @@ def _build_audio_filter(
     else:
         head = f"[{source_label}]"
         steps = [
-            f"atrim=start={source_in}:end={source_out}",
-            "asetpts=PTS-STARTPTS",
+            f"atrim=start={_format_seconds(layer.source_in + skip)}:end={source_out}",
+            f"asetpts=PTS-STARTPTS+{_format_seconds(skip)}/TB" if skip > 0.0 else "asetpts=PTS-STARTPTS",
             "aformat=channel_layouts=stereo:sample_rates=48000",
         ]
 
@@ -2848,7 +2902,14 @@ def _build_audio_filter(
     if pan_needs_filter(layer.total_pan):
         steps.append(_build_pan_filter(layer.total_pan))
 
-    if layer.timeline_start > 0.0:
+    if origin > 0.0:
+        offset = layer.timeline_start - origin
+        if offset > 0.0:
+            delay_ms = f"{offset * 1000.0:.3f}"
+            steps.append(f"adelay={delay_ms}|{delay_ms}")
+        elif offset < 0.0 and time_map is not None:          # remappé : sa tête est passée, coupée après sa chaîne
+            steps.extend([f"atrim=start={_format_seconds(-offset)}", "asetpts=PTS-STARTPTS"])
+    elif layer.timeline_start > 0.0:
         # ``amix`` ne lit pas les horodatages : seul un retard des échantillons place le clip sur la timeline.
         delay_ms = f"{layer.timeline_start * 1000.0:.3f}"
         steps.append(f"adelay={delay_ms}|{delay_ms}")

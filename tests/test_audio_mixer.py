@@ -536,13 +536,23 @@ def test_mixer_shows_solo_hint(mixer):
     assert mixer.solo_hint.text() != ""
 
 
-def test_mixer_has_no_fake_vumeter(mixer):
-    """Aucun vumètre tant qu'aucun niveau réel n'est mesuré."""
-    from PySide6.QtWidgets import QProgressBar
+def test_mixer_meters_show_only_real_readings(mixer):
+    """Sans relevé, les vumètres restent au plancher ; un relevé du mixage en direct les remplit, piste par piste."""
+    from core.live_mix import MeterFrame
+    from ui.level_meter import FLOOR_DB
 
     mixer.set_project(make_audio_project())
     assert mixer.level_provider is None
-    assert mixer.findChildren(QProgressBar) == []
+    mixer.refresh_levels()
+    strip = mixer.strip_for("A1")
+    assert strip.meter.peak_db == FLOOR_DB and mixer.master_bar().loudness_label.text() == ""
+    reading = MeterFrame(time=1.0, peak_db=-6.0, rms_db=-9.0, momentary_lufs=-14.2, short_term_lufs=-15.0,
+                         track_peaks_db=(-12.0,))
+    mixer.level_provider = lambda: (reading, ("A1",))
+    mixer.refresh_levels()
+    assert strip.meter.peak_db == pytest.approx(-12.0)
+    assert mixer.master_bar().meter.peak_db == pytest.approx(-6.0)
+    assert "−14.2" in mixer.master_bar().loudness_label.text()
 
 
 def test_mixer_is_translated_in_three_languages(qtbot):
