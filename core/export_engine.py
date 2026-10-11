@@ -2832,7 +2832,6 @@ def _build_audio_filter(
     """
     from .audio_mixer import pan_needs_filter
 
-    source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_seconds(layer.timeline_start)
     _ = timeline_duration  # conservé pour traçabilité / évolutions futures
