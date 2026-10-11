@@ -14,6 +14,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
+par un graphe de nœuds (sources, transformation, masque, incrustation, effets, étalonnage, fusion), avec sa page
+Composition et la conversion des calques en nœuds ; en lecture, le moniteur lit la composition rendue d'avance. Aussi :
+une faille de sécurité corrigée (un projet piégé pouvait injecter des filtres FFmpeg), un gel possible quand les scopes
+étaient affichés, et les couleurs du moniteur GPU sur les vidéos au grain coloré.
+
+**À savoir** : les projets passent au format 17 ; une version plus ancienne de Kut-Studio ne les ouvre plus.
+
 ### Added
 
 - **Composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image par
@@ -49,8 +59,8 @@ ensuite déclenche `.github/workflows/release.yml`.
   heure, et la plage du clip qui la porte avec elle (coupée à la fin ; un clip tout entier après l'heure garde 40 ms,
   le projet s'ouvre) ; *Convertir en composition* et *Nouvelle composition* refusent plus long, au lieu de couper.
 - L'application pouvait se figer pour de bon quand les scopes étaient affichés : l'objet qui prépare l'image analysée
-  était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage de 50 min
-  des tests Windows de la release 0.3.0.
+  était détruit sur le fil d'analyse, où Qt et Python s'attendaient l'un l'autre. Très probablement aussi le blocage
+  de 50 min des tests Windows de la release 0.3.0.
 - Fermer l'application depuis la page Composition, ou avec l'inspecteur ou le viewer masqué ou détaché, n'écrit plus
   d'erreur dans le journal : ces panneaux étaient détruits avant les dernières étapes de la fermeture, qui s'en
   servent encore.
@@ -350,7 +360,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.7...v0.3.0
 [0.2.7]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.2.5...v0.2.6
