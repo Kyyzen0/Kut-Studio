@@ -13,6 +13,7 @@ import pytest
 import test_libass_subtitles as libass
 from PySide6.QtGui import QImage
 
+from core.export_engine import _escape_filter_path
 from core.subtitle_io import PLAY_RES_X, PLAY_RES_Y, SubtitleCue, ass_position, format_ass, style_has_box
 from core.text_style import TextAlignment, TextStyle
 
@@ -292,8 +293,10 @@ def test_a_boxed_cue_keeps_its_box_around_its_text_when_another_cue_overlaps(tmp
     script.write_text(format_ass_with_styles(entries, TextStyle(**QUIET)), encoding="utf-8")
     source = libass._generate_source(tmp_path / "fond.mp4")
     picture = tmp_path / "o.png"
+    # Le chemin s'échappe comme le fait l'application (« C:\Users\… » casse un filtre FFmpeg : le « : » et les « \\ »).
+    path = _escape_filter_path(str(script))
     subprocess.run([*libass._ffmpeg_command_prefix(), "-y", "-v", "error", "-i", str(source), "-vf",
-                    f"subtitles=filename={script}", "-frames:v", "1", str(picture)], check=True, timeout=240)
+                    f"subtitles=filename='{path}'", "-frames:v", "1", str(picture)], check=True, timeout=240)
     image = QImage(str(picture))
     assert not image.isNull()
     pixels = _pixels(image)
