@@ -552,6 +552,82 @@ def move_clip_audio_effect(
     return moved
 
 
+# ---------------------------------------------------------------------------
+# Inserts de piste : la même chaîne d'effets, sur la somme des clips d'une piste
+# ---------------------------------------------------------------------------
+
+
+def _require_insert_track(project: "Project", track_id: str):
+    """Retourne la piste après avoir vérifié qu'elle peut porter des inserts.
+
+    Une piste vidéo peut porter de l'audio (``has_audio``) comme une piste son ; une piste de sous-titres non.
+    """
+    for track in project.tracks:
+        if track.id == track_id:
+            if track.type == "subtitle":
+                raise ValueError(
+                    f"La piste '{track_id}' est une piste 'subtitle' ; les inserts audio ne s'y appliquent pas."
+                )
+            if track.locked:
+                raise ValueError(f"La piste '{track_id}' est verrouillée.")
+            return track
+    raise KeyError(f"Piste introuvable : {track_id!r}.")
+
+
+def _insert_by_id(track, effect_id: str) -> AudioEffect:
+    effect = effect_by_id(track.inserts, effect_id)
+    if effect is None:
+        raise KeyError(f"Insert audio introuvable : {effect_id!r}.")
+    return effect
+
+
+def add_track_insert(
+    project: "Project",
+    track_id: str,
+    effect_type: AudioEffectType | str,
+    *,
+    effect_id: str | None = None,
+    params: Mapping[str, Any] | None = None,
+    enabled: bool = True,
+) -> AudioEffect:
+    """Ajoute un insert à la fin de la chaîne d'une piste et retourne l'effet créé."""
+    track = _require_insert_track(project, track_id)
+    effect = create_audio_effect(effect_type, effect_id=effect_id, enabled=enabled, params=params)
+    track.inserts = add_effect(track.inserts, effect)
+    return effect
+
+
+def remove_track_insert(project: "Project", track_id: str, effect_id: str) -> AudioEffect:
+    """Retire un insert de la chaîne d'une piste et retourne l'effet retiré."""
+    track = _require_insert_track(project, track_id)
+    removed = _insert_by_id(track, effect_id)
+    track.inserts = remove_effect(track.inserts, effect_id)
+    return removed
+
+
+def set_track_insert_enabled(project: "Project", track_id: str, effect_id: str, enabled: bool) -> AudioEffect:
+    """Active ou désactive un insert (contournement) et retourne sa nouvelle version."""
+    track = _require_insert_track(project, track_id)
+    track.inserts = set_effect_enabled(track.inserts, effect_id, enabled)
+    return _insert_by_id(track, effect_id)
+
+
+def update_track_insert_parameters(
+    project: "Project", track_id: str, effect_id: str, params: Mapping[str, Any]
+) -> AudioEffect:
+    """Met à jour les paramètres d'un insert et retourne sa nouvelle version."""
+    track = _require_insert_track(project, track_id)
+    track.inserts = update_effect_parameters(track.inserts, effect_id, params)
+    return _insert_by_id(track, effect_id)
+
+
+def move_track_insert(project: "Project", track_id: str, effect_id: str, delta: int) -> AudioEffect:
+    """Réordonne un insert dans la chaîne de la piste et retourne sa nouvelle version."""
+    track = _require_insert_track(project, track_id)
+    track.inserts = move_effect(track.inserts, effect_id, delta)
+    return _insert_by_id(track, effect_id)
+
+
 __all__ = [
     "AUDIO_EFFECT_FFMPEG_FILTER",
     "AUDIO_EFFECT_PARAMETER_SPECS",
@@ -561,6 +637,7 @@ __all__ = [
     "SINGLE_INSTANCE_AUDIO_EFFECTS",
     "add_audio_effect_to_clip",
     "add_effect",
+    "add_track_insert",
     "clip_audio_effects",
     "create_audio_effect",
     "default_parameters",
@@ -570,14 +647,18 @@ __all__ = [
     "is_single_instance",
     "move_clip_audio_effect",
     "move_effect",
+    "move_track_insert",
     "parameter_specs",
     "remove_audio_effect_from_clip",
     "remove_effect",
+    "remove_track_insert",
     "reorder_effect",
     "replace_effect",
     "set_clip_audio_effect_enabled",
     "set_effect_enabled",
+    "set_track_insert_enabled",
     "update_clip_audio_effect_parameters",
     "update_effect_parameters",
+    "update_track_insert_parameters",
     "validate_parameters",
 ]

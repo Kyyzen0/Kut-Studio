@@ -804,6 +804,7 @@ def create_sequence_from_selection(
             copy.volume_db = track.volume_db
             copy.pan = track.pan
             copy.ducking_config = deepcopy(track.ducking_config)
+            copy.inserts = list(track.inserts)
             points = list(track.automation.points)
             shifted = []
             for point in points:
