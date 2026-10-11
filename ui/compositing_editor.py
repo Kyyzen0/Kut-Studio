@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.blend_modes import BLEND_MODES, blend_label_key
-from core.compositing import ChromaKey, Compositing, Mask, MaskMode, MaskShape
+from core.compositing import MIN_CHROMA_TOLERANCE, ChromaKey, Compositing, Mask, MaskMode, MaskShape
 from ui import i18n
 from ui.adaptive_layout import FlowLayout
 from ui.design_system import Spacing
@@ -131,7 +131,7 @@ class CompositingEditor(QGroupBox):
         key_form.addRow(i18n.translate("group.color"), self.key_color)
         self.spins = {}
         for key, label, lo, hi, value in (
-            ("tolerance", i18n.translate("mograph.compositing.tolerance"), 0, 1, .1), ("softness", i18n.translate("mograph.compositing.softness"), 0, 1, .05),
+            ("tolerance", i18n.translate("mograph.compositing.tolerance"), MIN_CHROMA_TOLERANCE, 1, .1), ("softness", i18n.translate("mograph.compositing.softness"), 0, 1, .05),
             ("spill_suppression", i18n.translate("mograph.compositing.spill"), 0, 1, 0),
         ):
             spin = QDoubleSpinBox(objectName=f"chroma_{key}")
