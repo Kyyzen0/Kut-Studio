@@ -3157,28 +3157,23 @@ def _format_db(value: float) -> str:
 
 
 def _build_pan_filter(pan: float) -> str:
-    """Filtre ``stereotools`` appliquant un panoramique constant-power.
+    """Filtre ``pan`` du panoramique : chaque canal multiplié par son gain (:func:`core.audio_mixer.pan_to_gains`).
 
-    On passe par la balance de puissance de :mod:`core.audio_mixer` : le
-    gain total reste cohérent quand le son glisse d'un côté à l'autre,
-    et un panoramique centré n'émet aucun filtre.
-
-    Aucun caractère ``|`` ici : c'est le séparateur du graphe de
-    filtres, il ferait échouer le parsing de la commande.
+    Avant, ``stereotools=in_channels=2:out_channels=2:balance_out=g:d`` : une option inexistante et deux valeurs là où
+    ``balance_out`` n'en prend qu'une. FFmpeg refusait le graphe : tout export, aperçu fidèle ou mesure de sonie d'un
+    projet dont une piste ou un clip n'était pas centré échouait. Le ``|`` sépare les canaux à l'intérieur du filtre
+    (comme dans ``adelay``) ; les séparateurs du graphe sont ``,`` et ``;``. Les gains sont des nombres formatés.
     """
     from .audio_mixer import pan_to_gains
 
     left, right = pan_to_gains(pan)
-    return (
-        "stereotools=in_channels=2:out_channels=2"
-        f":balance_out={_format_ratio(left)}:{_format_ratio(right)}"
-    )
+    return f"pan=stereo|c0={_format_ratio(left)}*c0|c1={_format_ratio(right)}*c1"
 
 
 def _format_ratio(value: float) -> str:
-    """Formate un gain de balance stereo (0 → 1) pour ``stereotools``."""
+    """Formate un gain de panoramique (0 → 1)."""
     ratio = max(0.0, min(1.0, float(value)))
-    return f"{ratio:.4f}"
+    return f"{ratio:.6f}"
 
 
 SAFETY_LIMITER = "alimiter=limit=1:level=0:latency=1"

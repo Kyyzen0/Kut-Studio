@@ -30,10 +30,11 @@ from .project_model import MAX_GAIN_DB, MIN_GAIN_DB
 
 
 def pan_to_gains(pan: float) -> tuple[float, float]:
-    """Traduit un panoramique ``[-1, 1]`` en gains stéréo.
+    """Traduit un panoramique ``[-1, 1]`` en gains stéréo : une balance à puissance constante.
 
-    Constante-power : le gain total reste cohérent quand le son glisse
-    d'un côté à l'autre.
+    Le côté opposé s'éteint en cosinus (−3 dB à mi-course, silence au bout), l'autre reste à 0 dB : rien n'est jamais
+    amplifié, et le centre vaut ``(1, 1)``, exactement comme l'absence de filtre (:func:`pan_needs_filter`). L'ancienne
+    loi plaçait le centre à ``(0,707 ; 0,707)`` : un panoramique de 0,01 sonnait 3 dB plus bas que 0.
 
     Returns:
         ``(gain_left, gain_right)``, tous deux dans ``[0, 1]``.
@@ -45,8 +46,9 @@ def pan_to_gains(pan: float) -> tuple[float, float]:
     if value != value:  # NaN
         value = 0.0
     value = max(-1.0, min(1.0, value))
-    angle = (value + 1.0) * (math.pi / 4.0)
-    return math.cos(angle), math.sin(angle)
+    if value >= 0.0:
+        return math.cos(value * math.pi / 2.0), 1.0
+    return 1.0, math.cos(-value * math.pi / 2.0)
 
 
 def pan_needs_filter(pan: float) -> bool:
