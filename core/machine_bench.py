@@ -27,6 +27,7 @@ import numpy as np
 
 from .atomic_io import atomic_write_text
 from .platform_paths import user_cache_dir
+from .process_supervisor import supervised_run
 from .runtime_profile import (
     PROFILE_BALANCED,
     PROFILE_HIGH,
@@ -158,7 +159,7 @@ def _bench_decode_fps(
         "null",
         "-",
     ]
-    run = runner or (lambda cmd: subprocess.run(cmd, capture_output=True, text=True, timeout=60))
+    run = runner or (lambda cmd: supervised_run(cmd, capture_output=True, text=True, timeout=60))
     started = time.perf_counter()
     try:
         completed = run(command)

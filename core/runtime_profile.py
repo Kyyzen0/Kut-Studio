@@ -15,9 +15,11 @@ aucun compteur inventé ne doit décider de la qualité d'aperçu frame à frame
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
+LOGGER = logging.getLogger("kut_studio.runtime_profile")
 
 PROFILE_LOW = "low"
 PROFILE_BALANCED = "balanced"
@@ -189,6 +191,10 @@ def resolve_profile(
 
             measured = measured_profile_name(resources)
         except Exception:  # noqa: BLE001 — le banc ne doit jamais empêcher le démarrage
+            LOGGER.debug(
+                "Banc machine illisible : Auto garde l'heuristique cœurs/RAM",
+                exc_info=True,
+            )
             measured = None
     name = (
         recommend_profile(resources, measured=measured)
