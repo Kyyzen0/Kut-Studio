@@ -181,9 +181,12 @@ graphe composait la timeline depuis 0 puis jetait le début (`-ss` de sortie) : 
 coût d'un segment croissait avec sa position. Mesuré sur un montage social de 31 s
 (54 calques, 540×960) : segment à 16 s 3,7 → 0,9 s, à 24 s 5,7 → 1,4 s, sorties
 identiques au bit près (`tests/test_preview_segment_origin.py`). L'export
-(`origin = 0`) garde son graphe à l'octet près. Reste proportionnel à la position :
-le décodage d'un clip commencé avant le segment, depuis son propre début (voir
-[ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md), temps local par calque).
+(`origin = 0`) garde son graphe à l'octet près. Un clip vidéo **entamé** avant le
+segment est coupé avant sa chaîne (`trim` à ``source_in + skip``, horodatages
+locaux conservés) : effets et conformation ne traitent plus ce qui précède
+(comme l'audio depuis le mixage en direct). Le décodage FFmpeg peut encore
+remonter à une image clé antérieure ; un ``-ss`` d'entrée par média reste une
+piste d'optimisation.
 
 ## 5. Timeline sur gros projets
 
@@ -262,10 +265,10 @@ retire un partiel qu'au bout de dix minutes sans écriture), **segment d'aperçu
 
 ## 9. Limites connues et pistes
 
-- Les segments d'aperçu sont rendus avec `-ss` en **sortie** : FFmpeg génère donc
-  les images précédant le segment avant de les jeter. Le plan fenêtré supprime le
-  coût des milliers de médias, pas celui du temps écoulé ; un seek d'entrée par
-  couche serait la prochaine étape.
+- Les segments d'aperçu gardent un `-ss` en **sortie** pour caler les timestamps
+  du fichier segment ; la composition (`origin`) et la coupe des clips entamés
+  évitent de traiter ce qui précède. Un `-ss` d'**entrée** par média (décodage
+  seul) reste une piste d'optimisation.
 - Les index sont reconstruits à chaque `set_project` (O(n) par modification) ; un
   index incrémental supprimerait ce coût.
 - Les snapshots d'historique restent des copies complètes (≈ 2× plus rapides

@@ -1535,6 +1535,7 @@ def _compose_plan_graph(
                         label=f"{p}v{layer_index}",
                         pad_color="black@0",
                         add_input=add_input, pixel_scale=pixel_scale,
+                        origin=origin,
                     )
                 )
             else:
@@ -1544,6 +1545,7 @@ def _compose_plan_graph(
                         layer_index, layer, input_index, width, height, fps,
                         label=f"{p}v{layer_index}" if p else None,
                         add_input=add_input, prepared=prepared, pixel_scale=pixel_scale,
+                        origin=origin,
                     )
                 )
 
@@ -2094,6 +2096,7 @@ def _build_layer_filter(
     add_input=None,
     prepared: Mapping[str, PreparedStream] | None = None,
     pixel_scale: float = 1.0,
+    origin: float = 0.0,
 ) -> str:
     """Construit la chaîne de filtres FFmpeg pour une couche vidéo.
 
@@ -2114,7 +2117,10 @@ def _build_layer_filter(
 
     Le temps utilisé dans les expressions est local au clip : après le
     ``setpts=PTS-STARTPTS``, les filtres ``scale`` et ``rotate``
-    exposent la variable ``t`` (en secondes), qui repart donc de zéro.
+    exposent la variable ``t`` (en secondes). Avec ``origin`` (segment
+    d'aperçu), un clip déjà commencé est coupé **avant** sa chaîne : les
+    horodatages locaux sont conservés (``PTS-STARTPTS+skip/TB``) pour que
+    les animations restent exactes, comme pour l'audio (:func:`_build_audio_filter`).
 
     ``source`` remplace le flux ``[N:v]`` d'un fichier par un label du
     graphe (rendu d'une séquence imbriquée) ; ``pad_color`` permet alors
@@ -2128,9 +2134,17 @@ def _build_layer_filter(
     """
     source_label = source if source is not None else f"{input_index}:v"
     output_label = label if label is not None else f"v{layer_index}"
-    source_in = _format_seconds(layer.source_in)
     source_out = _format_seconds(layer.source_out)
     timeline_start = _format_offset(layer.timeline_start)
+    origin = max(0.0, float(origin))
+    # Temps local déjà écoulé à l'origine du segment (clip non remappé / hors freeze).
+    time_map = _retime_map_of(layer)
+    skip = (
+        max(0.0, origin - layer.timeline_start)
+        if origin > 0.0 and time_map is None and layer.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
+        else 0.0
+    )
+    source_in = _format_seconds(layer.source_in + skip)
 
     # ``scale`` et ``rotate`` attendent la variable temporelle
     # minuscule ``t``. ``T`` n'est définie que par certains filtres,
@@ -2200,13 +2214,20 @@ def _build_layer_filter(
     framing = layer_framing(layer, width, height)
     framing_crop = _framing_crop(layer, width, height)
     retime_chains: tuple[str, ...] = ()
-    time_map = _retime_map_of(layer)
+    # Horodatages locaux : avec un skip, ``t`` commence à ``skip`` (animations / keyframes exacts).
+    local_pts = (
+        f"setpts=PTS-STARTPTS+{_format_seconds(skip)}/TB"
+        if skip > 0.0
+        else "setpts=PTS-STARTPTS"
+    )
     if layer.time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
         # Une seule image est retenue (avant tout traitement : un seul calcul),
         # mise au format du cadre, puis tenue pendant la durée du freeze.
+        # ``source_in`` n'est pas avancé pour le freeze (skip = 0) : l'instant figé reste celui du réglage.
+        freeze_in = _format_seconds(layer.source_in)
         parts = [
             f"[{source_label}]",
-            f"trim=start={source_in}:end={source_out},",
+            f"trim=start={freeze_in}:end={source_out},",
             "setpts=PTS-STARTPTS,",
         ]
         hold = float(layer.time_remapping.freeze_duration)
@@ -2225,6 +2246,7 @@ def _build_layer_filter(
         # Clip remappé (vitesse, courbe, sens, interpolation) : le temps vient du ``TimeMap`` du clip, une seule fois,
         # sur les horodatages d'origine du média (plus de ``fps`` avant le remappage : une double conformation décalait
         # les images). Le flux obtenu est à la cadence du projet, de durée exacte, horodaté à partir de 0.
+        # Comme l'audio remappé : la coupe à ``origin`` se fait **après** la chaîne de temps.
         last_frame = layer.source_frames - 1 if layer.source_frames > 0 else None
         prepared_label, prepared_runs = _prepared_source(layer, time_map, float(fps), last_frame, source, prepared, add_input)
         stage = video_stage(
@@ -2234,18 +2256,27 @@ def _build_layer_filter(
             last_frame=last_frame, prepared_label=prepared_label, prepared_runs=prepared_runs,
         )
         retime_chains = stage.chains
-        parts = [f"[{stage.label}]"]
+        retimed_skip = max(0.0, origin - layer.timeline_start) if origin > 0.0 else 0.0
+        if retimed_skip > 0.0:
+            parts = [
+                f"[{stage.label}]trim=start={_format_seconds(retimed_skip)},"
+                f"setpts=PTS-STARTPTS+{_format_seconds(retimed_skip)}/TB,"
+            ]
+        else:
+            parts = [f"[{stage.label}]"]
     else:
         # Cas normal : un clip non remappé est conformé à la cadence du projet. Une photo (image fixe) n'a qu'une
         # image : ``loop`` la répète, horodatée, pour que ``trim`` puis ``fps`` en tirent toute la durée du clip.
+        # Avec ``origin``, ``trim`` commence à ``source_in + skip`` : effets et conformation ne traitent plus
+        # ce qui précède le segment (le décodage source peut encore remonter à une image clé antérieure).
         parts = [
             f"[{source_label}]",
             *(["loop=loop=-1:size=1:start=0,"] if getattr(layer, "still", False) else []),
             f"trim=start={source_in}:end={source_out},",
-            "setpts=PTS-STARTPTS,",
+            f"{local_pts},",
             f"{frame_fit},",
             f"fps={ffmpeg_rate(fps)},",
-            "setpts=PTS-STARTPTS,",
+            f"{local_pts},",
         ]
 
     # Fin de chaîne commune : un arrêt sur image garde l'échelle, la rotation, les effets
