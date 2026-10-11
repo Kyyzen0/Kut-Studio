@@ -14,6 +14,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sous-titres : le fond et la position réglés dans l'éditeur de style sont maintenant dessinés à l'export.** Le fond
+  (couleur et opacité) et le décalage horizontal / vertical étaient ignorés par l'export : une boîte de fond opaque
+  n'apparaissait pas, un décalage ne déplaçait rien. Le fond est une boîte sous le texte, avec les marges internes du
+  style ; le décalage est un pourcentage du cadre (vers la droite, vers le bas). Le moniteur les respecte aussi : il
+  posait toujours le sous-titre en bas au centre, sans tenir compte de l'alignement, des marges ni du décalage.
+- ⚠️ La couleur d'**ombre** des sous-titres, réglée dans le style mais jamais utilisée (l'ombre était toujours
+  transparente), s'applique maintenant : un style avec un décalage d'ombre affiche une ombre. Voir
+  [docs/subtitle-styles.md](docs/subtitle-styles.md).
+
 ## [0.4.0] - 2026-10-11
 
 La **composition par nœuds**, à la manière de Fusion dans DaVinci Resolve : un clip de composition calcule son image
