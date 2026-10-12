@@ -325,6 +325,33 @@ class MotionGraphicsMixin:
             else:
                 continue
             for clip_id in clip_ids:
+                evaluated = content.scene.evaluate(clip_id, t)
+                graphic = getattr(evaluated, "graphic", None)
+                # Grain procédural GPU (ADR-0001) : passe ``grain`` plutôt qu'un PNG rastérisé.
+                if (
+                    graphic is not None
+                    and getattr(graphic, "light_kind", "") == "grain"
+                    and content.content_texture_eligible(clip_id, t)
+                ):
+                    from core.gpu_grain import grain_cell_counts, grain_index
+                    from core.mograph_raster import content_margin
+
+                    margin = content_margin(graphic)
+                    box_w, box_h = float(evaluated.box[0]), float(evaluated.box[1])
+                    ink_w = max(1.0, box_w + 2.0 * margin)
+                    ink_h = max(1.0, box_h + 2.0 * margin)
+                    cols, rows = grain_cell_counts(ink_w, ink_h, graphic.light_density)
+                    gindex = grain_index(float(graphic.light_time))
+                    matrix = mat_mul(evaluated.world, mat_translate(-margin, -margin))
+                    fit = (0.0, 0.0, ink_w, ink_h)
+                    mode = blend if element.kind == "layer" else BlendMode.NORMAL
+                    key = f"grain:{int(graphic.light_seed)}:{gindex}:{cols}x{rows}:{ink_w:.0f}x{ink_h:.0f}"
+                    layers.append((
+                        key, None, mode, matrix, float(evaluated.opacity), fit,
+                        int(graphic.light_seed), gindex, cols, rows,
+                    ))
+                    ids.add(clip_id)
+                    continue
                 packed = content.content_texture(clip_id, t)
                 if packed is not None:
                     image, margin, evaluated = packed

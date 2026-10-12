@@ -46,3 +46,44 @@ def test_plan_frame_emits_grain_pass():
     )
     plan = plan_frame(frame)
     assert any(spec.shader == "grain" for spec in plan.passes)
+
+
+def test_preview_panel_registers_procedural_grain(qtbot):
+    """Le moniteur accepte une entrée grain sans QImage (source procédurale)."""
+    from core.blend_modes import BlendMode
+    from ui.preview_panel import PreviewPanel
+
+    class _FakeView:
+        def __init__(self):
+            self.sources = {}
+            self.frames = {}
+
+        def set_procedural_source(self, source):
+            self.sources[source.id] = source
+
+        def set_video_frame(self, source_id, frame):
+            self.frames[source_id] = frame
+
+        def forget_source(self, source_id):
+            self.sources.pop(source_id, None)
+            self.frames.pop(source_id, None)
+
+        def set_composite(self, frame, mattes=None):
+            self.composite = frame
+
+    panel = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    qtbot.addWidget(panel)
+    fake = _FakeView()
+    panel.gpu_view = fake
+    panel._canvas_size = (160, 90)
+    panel.set_blend_layers([(
+        "grain:1:0:32x18", None, BlendMode.OVERLAY,
+        (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, (0.0, 0.0, 160.0, 90.0),
+        1, 0, 32, 18,
+    )])
+    assert "graphics0" in fake.sources
+    assert fake.sources["graphics0"].layout == "grain"
+    assert fake.sources["graphics0"].width == 32
+    assert not fake.frames
+    layers = panel._gpu_graphics_layers(160, 90, {})
+    assert len(layers) == 1 and layers[0].source == "graphics0"
