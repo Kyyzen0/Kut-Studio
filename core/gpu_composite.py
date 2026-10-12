@@ -130,6 +130,8 @@ class CompositeLayer:
         grade_result: l'emplacement du résultat de ``grade_passes``.
         grade_windows: ``((nœud, clé de matte), …)`` : la matte des fenêtres de chaque nœud fenêtré de ``grade``
             (espace calque, à la résolution de rendu), téléversée comme une matte.
+        matte_in_fit: si vrai, la matte est échantillonnée dans le rectangle ``fit`` (texture graphique à
+            taille réelle) plutôt qu'en plein cadre ; ``comp.w`` du shader ``composite``.
     """
 
     source: str
@@ -146,6 +148,7 @@ class CompositeLayer:
     grade_passes: tuple = ()
     grade_result: int = 0
     grade_windows: tuple = ()
+    matte_in_fit: bool = False
 
 
 @dataclass(frozen=True)
@@ -387,9 +390,10 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             inverse_map=inverse,
             target=(float(width), float(height), 1.0, 0.0),
             source=(float(width), float(height), 1.0, 0.0),
+            fit=fit_uv,
             state=(float(space), float(SPACE_RGB), 0.0, 0.0),
             comp=(max(0.0, min(1.0, float(layer.opacity))), float(BLEND_CODES[coerce_blend_mode(layer.blend)]),
-                  1.0 if layer.matte else 0.0, 1.0),
+                  1.0 if layer.matte else 0.0, 0.0 if layer.matte_in_fit else 1.0),
         ).pack(), index))
         canvas = target
     for number, adjustment in enumerate(frame.adjustments):
@@ -879,8 +883,20 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         coverage = np.clip(np.minimum(np.minimum(lx, width - lx), np.minimum(ly, height - ly)) + 0.5, 0.0, 1.0)
         alpha = coverage * float(layer.opacity)
         if layer.matte and mattes is not None and layer.matte in mattes:
-            matte = np.asarray(mattes[layer.matte], dtype=np.float64)[..., None]
-            alpha = alpha * _bilinear(np, matte, lx, ly)[..., 0]
+            matte = np.asarray(mattes[layer.matte], dtype=np.float64)
+            if layer.matte_in_fit:
+                fw = max(1e-9, (layer.fit[2] - layer.fit[0]) / frame.canvas_width)
+                fh = max(1e-9, (layer.fit[3] - layer.fit[1]) / frame.canvas_height)
+                fu = (lx / width - layer.fit[0] / frame.canvas_width) / fw
+                fv = (ly / height - layer.fit[1] / frame.canvas_height) / fh
+                inside = (fu >= 0.0) & (fu <= 1.0) & (fv >= 0.0) & (fv <= 1.0)
+                channel = matte[..., 3] if matte.ndim == 3 and matte.shape[-1] >= 4 else matte
+                if channel.ndim == 2:
+                    channel = channel[..., None]
+                sampled = _bilinear(np, channel, fu * channel.shape[1], fv * channel.shape[0])[..., 0]
+                alpha = alpha * np.where(inside, sampled, 0.0)
+            else:
+                alpha = alpha * _bilinear(np, matte[..., None], lx, ly)[..., 0]
         blended = _blend(np, BLEND_CODES[coerce_blend_mode(layer.blend)], canvas, np.clip(color, 0, 1))
         canvas = canvas * (1.0 - alpha[..., None]) + blended * alpha[..., None]
     for adjustment in frame.adjustments:

@@ -999,10 +999,12 @@ class PreviewPanel(QWidget):
         self._gpu_effect_time = float(seconds)
 
     def set_blend_layers(self, layers) -> None:
-        """Calques graphiques à mode de fusion, du bas vers le haut : ``[(clé, QImage, mode)]`` (GPU seulement).
+        """Calques graphiques du moniteur GPU, du bas vers le haut.
 
-        Chaque image (taille de rendu, RGBA droit) devient une source du moniteur, envoyée seulement quand son contenu
-        change ; son alpha sert de matte. Le shader de composition applique le mode comme pour un clip vidéo."""
+        Chaque entrée est ``(clé, QImage, mode)`` — image plein cadre, matrice identité — ou
+        ``(clé, QImage, mode, matrice, opacité, fit)`` — texture à taille réelle animée par matrice
+        (ADR-0001). L'image n'est renvoyée au GPU que lorsque la clé change ; son alpha sert de matte.
+        """
         from PySide6.QtMultimedia import QVideoFrame
 
         self._gpu_blend_layers = tuple(layers or ())
@@ -1010,7 +1012,8 @@ class PreviewPanel(QWidget):
         if view is None:
             return
         used = set()
-        for index, (key, image, _blend) in enumerate(self._gpu_blend_layers):
+        for index, entry in enumerate(self._gpu_blend_layers):
+            key, image = entry[0], entry[1]
             source = f"graphics{index}"
             used.add(source)
             if self._gpu_blend_pushed.get(source) != key:
@@ -1022,19 +1025,29 @@ class PreviewPanel(QWidget):
         self._update_gpu_composite()
 
     def _gpu_graphics_layers(self, cw: int, ch: int, mattes: dict) -> tuple:
-        """Calques à mode de fusion, au-dessus de la vidéo (cadre entier, alpha de l'image en matte)."""
+        """Calques graphiques au-dessus de la vidéo (plein cadre ou texture par contenu)."""
         from core.blend_modes import coerce_blend_mode
         from core.gpu_composite import CompositeLayer
         from core.gpu_effects import program_for
 
         layers = []
-        for index, (key, image, blend) in enumerate(self._gpu_blend_layers):
+        for index, entry in enumerate(self._gpu_blend_layers):
+            key, image, blend = entry[0], entry[1], entry[2]
             matte = f"blend:{key}"
             mattes[matte] = image
-            layers.append(CompositeLayer(
-                source=f"graphics{index}", matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), fit=(0.0, 0.0, float(cw), float(ch)),
-                blend=coerce_blend_mode(blend), program=program_for(()), matte=matte,
-            ))
+            if len(entry) >= 6:
+                matrix, opacity, fit = entry[3], float(entry[4]), entry[5]
+                layers.append(CompositeLayer(
+                    source=f"graphics{index}", matrix=tuple(matrix), fit=tuple(fit),
+                    opacity=opacity, blend=coerce_blend_mode(blend), program=program_for(()),
+                    matte=matte, matte_in_fit=True,
+                ))
+            else:
+                layers.append(CompositeLayer(
+                    source=f"graphics{index}", matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+                    fit=(0.0, 0.0, float(cw), float(ch)),
+                    blend=coerce_blend_mode(blend), program=program_for(()), matte=matte,
+                ))
         return tuple(layers)
 
     def gpu_render_size(self) -> tuple[int, int]:
