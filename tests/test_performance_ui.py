@@ -761,14 +761,6 @@ def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbo
     """Régulateur (ADR-0001) : la batterie suspend le préchargement des voisins, pas le rendu du segment courant.
     Avant, ``_schedule_preview_around`` retournait avant toute demande et annulait les rendus en cours : à l'arrêt sur
     batterie, l'aperçu fidèle ne se calculait jamais."""
-<<<<<<< HEAD
-    from core.power_state import PowerState
-
-    # ``conftest`` force ``KUT_STUDIO_POWER=ac`` : sans le retirer, ``_ensure_power_fresh``
-    # réécrase l'état injecté dès ``prefetch_allowed()``.
-    monkeypatch.delenv("KUT_STUDIO_POWER", raising=False)
-=======
->>>>>>> origin/main
     window = _window(qtbot, monkeypatch, tmp_path)
     window.project = _project(tmp_path, videos=2)
     window.project.tracks[0].clips[0].source_out = 300.0

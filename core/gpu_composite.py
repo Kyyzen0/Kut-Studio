@@ -34,7 +34,6 @@ import struct
 from dataclasses import dataclass, field
 
 from .blend_modes import BlendMode, coerce_blend_mode
-from .gpu_grain import grain_uniforms
 from .gpu_effects import (
     MAX_BLUR_RADIUS,
     MAX_POINT_OPS,
@@ -371,6 +370,8 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
         is_grain = source.layout == "grain"
         pixel = (scale / max(1e-6, abs(layer.effect_scale[0])), scale / max(1e-6, abs(layer.effect_scale[1])))
         if is_grain:
+            from .gpu_grain import grain_uniforms
+
             work = f"layer{index}_grain"
             textures[work] = TextureSpec(CANVAS_FORMAT, width, height)
             try:
