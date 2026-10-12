@@ -286,3 +286,19 @@ def test_a_failed_export_to_a_tilde_path_reports_the_expanded_path_and_leaves_no
     result = run_export(_request(_project(str(broken)), Path("~/film.mp4")))
     assert result.status is ExportStatus.FAILED and result.output_path == str(home / "film.mp4")
     assert list(home.iterdir()) == []
+
+
+def test_an_output_path_whose_user_directory_cannot_be_expanded_is_a_failed_result_not_an_exception(media, tmp_path, monkeypatch):
+    """Revue Codex de la PR 123 : ``expanduser`` lève ``RuntimeError`` pour ``~utilisateur_inconnu`` (POSIX) ou sans dossier
+    personnel ; ``run_export`` rend ses échecs dans le résultat, jamais en exception."""
+    from pathlib import Path as _Path
+
+    def cannot_expand(self):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(_Path, "expanduser", cannot_expand)
+    for atomic in (True, False):
+        result = run_export(_request(_project(media), tmp_path / "film.mp4"), atomic=atomic)
+        assert result.status is ExportStatus.FAILED and "home directory" in result.message
+        assert result.output_path == str(tmp_path / "film.mp4"), "le chemin demandé, tel quel"
+    assert list(tmp_path.glob("*.mp4")) == [] and _hidden_partials(tmp_path) == []

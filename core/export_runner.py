@@ -142,7 +142,11 @@ def run_export(
     # Le chemin réel, une seule fois : le fichier intermédiaire, le renommage final et le résultat doivent désigner la même
     # destination. Un « ~/film.mp4 » développé pour FFmpeg mais pas pour ``os.replace`` écrivait le rendu dans le dossier
     # personnel, puis tentait de le renommer vers un « ~ » littéral et supprimait le rendu terminé (revue Codex, PR 121).
-    final_path = str(Path(request.output_path).expanduser())
+    final_path = request.output_path
+    try:
+        final_path = str(Path(final_path).expanduser())
+    except RuntimeError as error:      # « ~utilisateur_inconnu/… », ou dossier personnel introuvable : un échec rendu, pas une exception
+        return ExportResult(ExportStatus.FAILED, final_path, message=str(error) or "Le dossier personnel est introuvable.")
     temporary: list[str] = []
     partial: str | None = None
     preparation: PrepareReport | None = None
