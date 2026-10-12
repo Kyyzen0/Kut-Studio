@@ -30,6 +30,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from . import graph_cycles
+from . import object_ids as _object_ids
 from .project_model import Clip, Marker, Project, Sequence, Track
 
 MAX_NESTING_DEPTH = 32
@@ -402,20 +403,25 @@ def create_sequence(
     fps: float | None = None,
     tracks: list[Track] | None = None,
     activate: bool = False,
+    sequence_id: str | None = None,
 ) -> Sequence:
     """Ajoute une séquence vide au projet et la retourne.
 
     Par défaut, elle reprend la résolution, le fps et la **structure de
     pistes** (sans clips) de la séquence active : une nouvelle séquence
-    est immédiatement éditable avec les mêmes pistes.
+    est immédiatement éditable avec les mêmes pistes. ``sequence_id`` : identifiant imposé (scripts), voir
+    :mod:`core.object_ids` ; ``None`` en génère un.
     """
+    new_id = _object_ids.resolve_object_id(
+        sequence_id, prefix="seq", kind="séquence", taken=_object_ids.sequence_ids(project)
+    )
     active = project.active_sequence
     if tracks is None:
         tracks = [_blank_track_like(track) for track in active.tracks]
         if not tracks:
             tracks = [Track(id="V1", name="V1", type="video"), Track(id="A1", name="A1", type="audio")]
     sequence = Sequence(
-        id=new_sequence_id(),
+        id=new_id,
         name=unique_sequence_name(project, name or "Séquence"),
         width=int(width or active.width),
         height=int(height or active.height),
@@ -720,7 +726,8 @@ def _prune_crossing_sources(sequence: Sequence, selected: set[str]) -> None:
 
 
 def create_sequence_from_selection(
-    project: Project, clip_ids, name: str | None = None
+    project: Project, clip_ids, name: str | None = None, *,
+    sequence_id: str | None = None, nested_clip_id: str | None = None,
 ) -> NestResult:
     """Déplace les clips sélectionnés dans une nouvelle séquence imbriquée.
 
@@ -772,6 +779,15 @@ def create_sequence_from_selection(
     if end - start <= _EPSILON:
         raise SequenceError("La sélection n'a pas de durée.")
     _refuse_split_dependencies(parent, {clip.id for _i, _t, clip in located})
+
+    # Identifiants vérifiés avant de toucher au projet : un refus ne laisse rien de modifié derrière lui. Le clip imbriqué ne
+    # peut pas reprendre l'identifiant d'un clip déplacé (il vit, lui aussi, dans le projet).
+    new_sequence = _object_ids.resolve_object_id(
+        sequence_id, prefix="seq", kind="séquence", taken=_object_ids.sequence_ids(project)
+    )
+    new_nested = _object_ids.resolve_object_id(
+        nested_clip_id, prefix="clip", kind="clip", taken=_object_ids.clip_ids(project)
+    )
 
     # Piste hôte du clip imbriqué : la piste vidéo sélectionnée la plus
     # basse (rendue en dessous des autres), sinon audio, sinon la première
@@ -880,7 +896,7 @@ def create_sequence_from_selection(
             track.bus_id = ""
 
     sequence = Sequence(
-        id=new_sequence_id(),
+        id=new_sequence,
         name=unique_sequence_name(project, name or "Séquence imbriquée"),
         width=parent.width,
         height=parent.height,
@@ -893,7 +909,7 @@ def create_sequence_from_selection(
     )
     project.sequences.append(sequence)
     nested = Clip(
-        id=_new_clip_id(),
+        id=new_nested,
         asset_id="",
         track_id=host.id,
         timeline_start=start,

@@ -12,7 +12,6 @@ après lui. La suppression ripple de tout le montage reste
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 
 from .project_model import Marker, Project
@@ -465,10 +464,14 @@ def add_marker(
     time_seconds: float,
     name: str = "",
     category: str = "standard",
+    *,
+    marker_id: str | None = None,
 ) -> Marker:
-    """Ajoute un marqueur et garde la liste triée par temps."""
+    """Ajoute un marqueur et garde la liste triée par temps (``marker_id`` : identifiant imposé, voir :mod:`core.object_ids`)."""
+    from .object_ids import resolve_object_id
+
     marker = Marker(
-        id=f"marker-{uuid.uuid4().hex[:8]}",
+        id=resolve_object_id(marker_id, prefix="marker", kind="repère", taken={m.id for m in project.markers}, length=8),
         time_seconds=max(0.0, float(time_seconds)),
         name=name.strip(),
         category=category or "standard",
