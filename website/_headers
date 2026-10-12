@@ -1,0 +1,10 @@
+# En-têtes de sécurité du site (Cloudflare Pages). Le script et la feuille de style de index.html sont en ligne : la CSP les
+# autorise par leur empreinte SHA-256, pas par « unsafe-inline ». Modifier ce script ou cette feuille de style change leur
+# empreinte : mettre ce fichier à jour (tests/test_website_headers.py le vérifie et dit quoi mettre).
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'sha256-NTq6noGxsmjqed5jmj6QzO62A8LKdbgELT6yEJHbSr0='; style-src 'sha256-Bkko8Ma26g/3ADPjKHMdqwfHBb3pECwRkvC7YxKYoCQ='; connect-src https://api.github.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
