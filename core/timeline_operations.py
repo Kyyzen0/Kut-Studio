@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .object_ids import clip_ids, resolve_object_id
+from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
 from .project_model import Clip, MediaAsset, Project, Track
 from .time_editing import Restriction, free_map, needs_general_path, restrict
 from .time_map import SPEED_PROPERTY, speed_keyframes, speed_keyframes_of
@@ -809,7 +809,9 @@ def add_subtitle_clip(
     label = _build_subtitle_label(text)
     new_id = resolve_object_id(clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
     # Le média technique dérive de l'identifiant du clip : fourni, un script rejoué rend les mêmes identifiants.
-    asset_id = f"asset-subtitle-{new_id.removeprefix('clip-') if clip_id is None else new_id}"
+    asset_id = ensure_free_asset_id(
+        project, f"asset-subtitle-{new_id.removeprefix('clip-') if clip_id is None else new_id}"
+    )
     asset = MediaAsset(
         id=asset_id,
         path="",
