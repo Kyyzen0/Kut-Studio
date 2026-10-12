@@ -309,5 +309,11 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
 
 - **Étape 0 : faite** (#109) : `tests/test_no_dynamic_execution_guard.py` protège R1 (aucun `eval`, `exec`, `pickle`,
   `importlib`… dans le produit, à une exception justifiée près).
-- Étapes 1 à 7 : à faire, dans l'ordre. La suivante est l'**export sans interface** (`prepare_export` et
-  `build_export_command`), utile même sans le mode script.
+- **Étape 1 : faite** (#117 et cette PR). `core/export_engine.py` expose `check_export_request`, `export_needs_preparation`,
+  `prepare_export` et `build_export_command` (que `ExportEngine` utilise : la commande est la même pour l'interface et pour
+  un script) ; `core/export_runner.py` fournit `run_export`, l'exécuteur **sans Qt** : FFmpeg sous le superviseur,
+  progression et annulation rendues sur le fil de l'appelant, repli CPU d'un encodeur matériel en échec (même logique que le
+  moteur, factorisée dans `export_engine`), et un **fichier final atomique** (`.<nom>.<id>.partial<ext>` puis renommage). Tests :
+  `tests/test_export_pipeline.py`, `tests/test_export_runner.py`.
+- Étapes 2 à 7 : à faire, dans l'ordre. La suivante est la **session** (`core/scripting/session.py`, atomicité, une étape
+  d'historique) et la descente de la règle de recalage des clips imbriqués de l'interface vers `core/`.
