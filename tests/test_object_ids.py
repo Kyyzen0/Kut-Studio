@@ -237,7 +237,7 @@ def test_a_derived_technical_media_id_that_is_already_taken_is_refused_before_an
     deux médias de même identifiant ne sont pas lus pareil partout, un clip existant pourrait se mettre à rendre le nouveau."""
     project = _project()
     project.media_assets.append(MediaAsset("asset-subtitle-titre", "", "pris", 1.0, 0, 0, 0.0, "subtitle", has_audio=False))
-    project.media_assets.append(MediaAsset("graphic-asset-logo", "", "pris", 1.0, 0, 0, 0.0, "graphic", has_audio=False))
+    project.media_assets.append(MediaAsset("graphic-asset-logo", "", "pris", 1.0, 100, 100, 30.0, "graphic", has_audio=False))
     before = _snapshot(project)
     with pytest.raises(InvalidObjectId, match="média"):
         add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="titre")
