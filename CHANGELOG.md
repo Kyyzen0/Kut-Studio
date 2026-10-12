@@ -26,12 +26,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Changed
 
 - **Export / aperçu fidèle : calques en PNG par contenu.** Un titre ou une forme éligible n'est plus redessiné
-  plein cadre à chaque pose : l'encre est rastérisée une fois (PNG `c-*` à taille réelle), puis posée dans le
+  plein cadre à chaque pose : l'encre est rastérisée une fois (cache LRU `content_texture`), puis posée dans le
   cadre (ADR-0001, étape 2). Voir [docs/gpu-preview.md](docs/gpu-preview.md).
 - **Moniteur GPU : plusieurs pistes vidéo.** Les pistes sous le clip du dessus sont composées en temps réel
-  (décodage `media_io`) ; le clip supérieur reste le lecteur Qt.
+  (décodage `media_io` hors thread UI) ; le clip supérieur reste le lecteur Qt.
 
 ### Fixed
+
+- **Revue Codex (PR #108).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS ; file de relecture
+  vidée ; géométrie CPU logique à scale réduit ; état compositing complet des sous-pistes ; grain procédural
+  branché sur le moniteur ; plus d'écriture `c-*.png` inutilisée.
 
 - **Imbriquer une sélection garde les bus des pistes déplacées.** Une piste envoyée sur un autre bus que la piste
   hôte emporte ce bus (fader, coupure, inserts) dans la nouvelle séquence. Avant, le bus restait sur la piste parente

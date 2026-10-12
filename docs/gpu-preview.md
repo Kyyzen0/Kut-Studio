@@ -756,9 +756,9 @@ toutes les variantes.
   ni flou de mouvement multi-échantillons) sont des textures à taille réelle,
   rastérisées une fois par contenu et animées par matrice / opacité
   ([ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md), étape 2). L'export et
-  l'aperçu fidèle réutilisent la même encre (`place_content_frame`, PNG `c-*`
-  à taille réelle). Les autres restent dessinés par Qt au-dessus, ou en repli
-  plein cadre pour un mode de fusion non normal.
+  l'aperçu fidèle réutilisent la même encre (`place_content_frame`, cache LRU).
+  Les autres restent dessinés par Qt au-dessus, ou en repli plein cadre pour un
+  mode de fusion non normal.
 - **Calques d'effets** : sur GPU, ils s'appliquent à la vidéo, pas aux calques
   motion graphics situés dessous (y compris ceux encore dessinés par Qt).
 - **Hors temps réel** : les transitions, les sous-titres libass et la
