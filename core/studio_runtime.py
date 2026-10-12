@@ -175,6 +175,7 @@ class StudioRuntime:
         # sous ce verrou ; seul le thread d'interface l'applique à la politique.
         self._power_lock = threading.Lock()
         self._power_probe_running = False
+        self._power_probe_generation = 0
         self._power_probe_result: PowerState | None = None
         self.ondemand = OnDemandGate()
         self._bench_refresh_lock = threading.Lock()
@@ -198,6 +199,11 @@ class StudioRuntime:
 
     def refresh_power_state(self, state: PowerState | None = None) -> PowerState:
         """Injecte un état (tests, outils) ou, sans argument, le relit **sur place** (bloquant : pas pour l'interface)."""
+        # A synchronous refresh supersedes a possibly in-flight background probe.
+        # Prevent an older probe from later overwriting the explicitly refreshed state.
+        with self._power_lock:
+            self._power_probe_generation += 1
+            self._power_probe_result = None
         self._apply_power(state if state is not None else detect_power_state())
         return self._power
 
@@ -372,9 +378,10 @@ class StudioRuntime:
             if self._power_probe_running:
                 return
             self._power_probe_running = True
-        threading.Thread(target=self._probe_power, name="kut-power-probe", daemon=True).start()
+            generation = self._power_probe_generation
+        threading.Thread(target=self._probe_power, args=(generation,), name="kut-power-probe", daemon=True).start()
 
-    def _probe_power(self) -> None:
+    def _probe_power(self, generation: int) -> None:
         """Thread de travail : lit l'énergie et dépose le résultat (jamais de Qt, jamais la politique)."""
         try:
             state = detect_power_state()
@@ -387,7 +394,8 @@ class StudioRuntime:
             )
             state = PowerState(source="unavailable")
         with self._power_lock:
-            self._power_probe_result = state
+            if generation == self._power_probe_generation:
+                self._power_probe_result = state
             self._power_probe_running = False
 
     def _refresh_policy(self) -> None:
