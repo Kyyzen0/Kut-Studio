@@ -190,6 +190,93 @@ def test_transactions_do_not_nest():
     assert session.apply([], label="libre").ok
 
 
+# --- Revue de Codex (PR 124) ------------------------------------------------------------------------------------------
+
+
+def test_undo_and_redo_are_refused_while_a_transaction_is_open_and_nothing_is_corrupted():
+    """Annuler dans une transaction ferait avancer l'historique alors que la restauration de la transaction remet le projet en
+    place sans le suivre : projet et historique ne se correspondraient plus."""
+    project = _project()
+    session = Session(project)
+    session.apply([partial(add_clip_to_track, asset_id="m", track_id="V1", timeline_start=0.0, clip_id="a")], label="A")
+    after_a = _snapshot(project)
+    entries, can_undo = _entries(session), session.can_undo
+
+    with pytest.raises(SessionBusyError, match="annuler"), session.transaction("Bloc"):
+        session.undo()
+    with pytest.raises(SessionBusyError, match="rétablir"), session.transaction("Bloc"):
+        session.redo()
+    assert _snapshot(project) == after_a and _entries(session) == entries and session.can_undo == can_undo
+    assert not session.can_redo, "A n'a pas été annulée par la tentative"
+
+    def undoes(_p: Project):
+        session.undo()
+
+    with pytest.raises(SessionBusyError):
+        session.apply([undoes], label="x")
+    assert _snapshot(project) == after_a and _entries(session) == entries
+    assert session.undo() and session.redo(), "libre de nouveau une fois la transaction fermée"
+
+
+@pytest.mark.parametrize("error", [IndexError("hors liste"), ZeroDivisionError("division"), OverflowError("trop grand"),
+                                   LookupError("recherche"), ArithmeticError("calcul")])
+def test_accidental_errors_are_programming_errors_not_refusals(error):
+    """``LookupError`` et ``ArithmeticError`` regroupent des bogues (``IndexError``, ``ZeroDivisionError``…) : ils ne doivent pas
+    passer pour le refus d'une opération. Seuls ``ValueError``, ``KeyError`` et ``OSError`` (ce que ``core/`` lève pour refuser)
+    sont rendus dans le rapport."""
+    project = _project()
+    session = Session(project)
+    before = _snapshot(project)
+
+    def buggy(p: Project):
+        add_clip_to_track(p, "m", "V1", 0.0, clip_id="x")
+        raise error
+
+    with pytest.raises(type(error)):
+        session.apply([buggy], label="x")
+    assert _snapshot(project) == before, "restauré malgré la propagation"
+
+
+@pytest.mark.parametrize("error", [ValueError("v"), KeyError("k"), FileNotFoundError("f"), InvalidObjectId("i")])
+def test_the_errors_core_raises_to_refuse_are_reported(error):
+    def refuses(_p: Project):
+        raise error
+
+    report = Session(_project()).apply([refuses], label="x")
+    assert not report.ok and report.error_type == type(error).__name__
+
+
+def test_a_failing_iterable_is_not_mistaken_for_a_failed_operation_and_nothing_is_applied():
+    """Un générateur qui lève en route : avant, l'erreur était rendue comme le refus de l'opération précédente (qui avait réussi)."""
+    project = _project()
+    session = Session(project)
+    before, entries = _snapshot(project), _entries(session)
+
+    def late_failure():
+        yield partial(add_clip_to_track, asset_id="m", track_id="V1", timeline_start=0.0, clip_id="a")
+        raise ValueError("l'itérable échoue à son deuxième élément")
+
+    def early_failure():
+        raise ValueError("l'itérable échoue avant son premier élément")
+        yield  # pragma: no cover - fait de cette fonction un générateur
+
+    for source in (late_failure(), early_failure()):
+        with pytest.raises(ValueError, match="itérable"):
+            session.apply(source, label="x")
+        assert _snapshot(project) == before and _entries(session) == entries, "aucune opération n'a été appliquée"
+    assert session.apply([], label="libre").ok, "la session reste utilisable"
+
+
+def test_an_item_that_is_not_an_operation_is_refused_before_any_effect():
+    project = _project()
+    session = Session(project)
+    before = _snapshot(project)
+    with pytest.raises(TypeError, match="appelable"):
+        session.apply([partial(add_clip_to_track, asset_id="m", track_id="V1", timeline_start=0.0, clip_id="a"), "pas une opération"],
+                      label="x")
+    assert _snapshot(project) == before
+
+
 # --- Annuler / rétablir -----------------------------------------------------------------------------------------------
 
 

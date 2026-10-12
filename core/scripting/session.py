@@ -35,8 +35,11 @@ LOGGER = logging.getLogger("kut_studio.scripting")
 Operation = Callable[[Project], Any]
 """Une opération : reçoit le projet, le modifie, rend ce qu'elle a créé ou trouvé (le clip ajouté, le bus…)."""
 
-# Ce que les fonctions de ``core/`` lèvent pour refuser une opération (cible introuvable, valeur hors bornes, verrou, média absent…).
-_REFUSALS = (ValueError, KeyError, LookupError, OSError, ArithmeticError)
+# Ce que les fonctions de ``core/`` lèvent **volontairement** pour refuser une opération : valeur hors bornes, verrou, identifiant refusé
+# (``ValueError`` et ses filles), cible introuvable (``KeyError``), média absent (``OSError``). Pas leurs classes mères (``LookupError``,
+# ``ArithmeticError``) : un ``IndexError`` ou un ``ZeroDivisionError`` est un bogue, il doit se propager (aucune fonction de ``core/``
+# n'en lève pour refuser quoi que ce soit).
+_REFUSALS = (ValueError, KeyError, OSError)
 
 
 class SessionBusyError(RuntimeError):
@@ -84,6 +87,17 @@ class ApplyReport:
 def _name_of(operation: Operation) -> str:
     name = getattr(operation, "__name__", "") or getattr(getattr(operation, "func", None), "__name__", "")
     return name if name and name != "<lambda>" else "operation"
+
+
+def _plan(operations: Iterable[Operation | tuple[str, Operation]]) -> list[tuple[str, Operation]]:
+    """Les opérations nommées, dans l'ordre ; ``TypeError`` pour un élément qui n'est pas appelable (avant tout effet)."""
+    planned: list[tuple[str, Operation]] = []
+    for item in operations:
+        name, operation = item if isinstance(item, tuple) else (_name_of(item), item)
+        if not callable(operation):
+            raise TypeError(f"Opération {len(planned)} : un objet appelable est attendu, pas {type(operation).__name__}.")
+        planned.append((name, operation))
+    return planned
 
 
 def _restore(project: Project, snapshot: Project) -> None:
@@ -165,16 +179,18 @@ class Session:
     ) -> ApplyReport:
         """Applique ``operations`` en tout ou rien et rend le bilan ; un refus du modèle est **dans le rapport**, pas une exception.
 
-        Chaque élément est une opération, ou un couple ``(nom, opération)`` pour un nom lisible dans le rapport.
+        Chaque élément est une opération, ou un couple ``(nom, opération)`` pour un nom lisible dans le rapport. La suite d'opérations
+        est **lue en entier avant le premier effet** : un itérable qui échoue en route (ou un élément qui n'est pas une opération)
+        lève avant que le projet soit touché, et n'est jamais pris pour le refus d'une opération qui, elle, a réussi.
         """
+        planned = _plan(operations)
         self._open_transaction()
         snapshot = deepcopy(self._project)
         results: list[OperationResult] = []
         index = 0
         name = ""
         try:
-            for index, item in enumerate(operations):
-                name, operation = item if isinstance(item, tuple) else (_name_of(item), item)
+            for index, (name, operation) in enumerate(planned):
                 results.append(OperationResult(index, name, operation(self._project)))
         except _REFUSALS as error:
             _restore(self._project, snapshot)
@@ -203,7 +219,8 @@ class Session:
         return self.history.can_redo
 
     def undo(self) -> bool:
-        """Annule la dernière transaction ; ``False`` s'il n'y a rien à annuler."""
+        """Annule la dernière transaction ; ``False`` s'il n'y a rien à annuler. Refusé pendant une transaction."""
+        self._require_idle("annuler")
         restored = self.history.undo()
         if restored is None:
             return False
@@ -211,7 +228,8 @@ class Session:
         return True
 
     def redo(self) -> bool:
-        """Rétablit la dernière transaction annulée ; ``False`` s'il n'y a rien à rétablir."""
+        """Rétablit la dernière transaction annulée ; ``False`` s'il n'y a rien à rétablir. Refusé pendant une transaction."""
+        self._require_idle("rétablir")
         restored = self.history.redo()
         if restored is None:
             return False
@@ -219,6 +237,11 @@ class Session:
         return True
 
     # -- interne --------------------------------------------------------------------------------------------------------
+
+    def _require_idle(self, action: str) -> None:
+        """Annuler ou rétablir pendant une transaction ferait avancer l'historique que la restauration ne remet pas en place."""
+        if self._open:
+            raise SessionBusyError(f"Impossible de {action} pendant une transaction : terminez-la d'abord.")
 
     def _open_transaction(self) -> None:
         if self._open:
