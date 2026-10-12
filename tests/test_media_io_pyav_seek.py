@@ -10,6 +10,8 @@ from core import media_io
 
 
 class _FakeFrame:
+    conversions = 0
+
     def __init__(self, time: float, width: int = 4, height: int = 2) -> None:
         self.time = time
         self._w = width
@@ -19,6 +21,7 @@ class _FakeFrame:
         import numpy as np
 
         assert format == "rgba"
+        type(self).conversions += 1
         return np.zeros((self._h, self._w, 4), dtype=np.uint8)
 
 
@@ -39,6 +42,7 @@ class _FakeContainer:
 def test_decode_pyav_advances_to_requested_pts(monkeypatch):
     if media_io._av is None:
         pytest.skip("PyAV absent")
+    _FakeFrame.conversions = 0
     handle = media_io.MediaHandle.__new__(media_io.MediaHandle)
     handle.path = "fake.mp4"
     handle.info = media_io.MediaInfo("fake.mp4", 10.0, 4, 2, 30.0)
@@ -46,11 +50,13 @@ def test_decode_pyav_advances_to_requested_pts(monkeypatch):
     handle._container = _FakeContainer([0.0, 0.1, 0.2, 0.3])
     frame = handle._decode_pyav(0.20)
     assert abs(frame.time_seconds - 0.2) < 1e-6
+    assert _FakeFrame.conversions == 1  # une seule conversion RVBA
 
 
 def test_decode_pyav_keeps_closest_when_overshooting(monkeypatch):
     if media_io._av is None:
         pytest.skip("PyAV absent")
+    _FakeFrame.conversions = 0
     handle = media_io.MediaHandle.__new__(media_io.MediaHandle)
     handle.path = "fake.mp4"
     handle.info = media_io.MediaInfo("fake.mp4", 10.0, 4, 2, 30.0)
@@ -58,3 +64,4 @@ def test_decode_pyav_keeps_closest_when_overshooting(monkeypatch):
     handle._container = _FakeContainer([0.0, 0.19, 0.25])
     frame = handle._decode_pyav(0.20)
     assert abs(frame.time_seconds - 0.19) < 1e-6
+    assert _FakeFrame.conversions == 1

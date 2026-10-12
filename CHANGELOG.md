@@ -33,9 +33,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
-- **Revue Codex (PR #108).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS ; file de relecture
-  vidée ; géométrie CPU logique à scale réduit ; état compositing complet des sous-pistes ; grain procédural
-  branché sur le moniteur ; plus d'écriture `c-*.png` inutilisée.
+- **Revue Codex (PR #108 / #113).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS (RVBA différé) ;
+  file de relecture vidée ; géométrie CPU logique à scale réduit ; état compositing complet des sous-pistes ;
+  grain procédural branché et cadré par matte ; jobs underlay obsolètes coalescés ; plus d'écriture
+  `c-*.png` inutilisée.
 
 - **Imbriquer une sélection garde les bus des pistes déplacées.** Une piste envoyée sur un autre bus que la piste
   hôte emporte ce bus (fader, coupure, inserts) dans la nouvelle séquence. Avant, le bus restait sur la piste parente

@@ -1110,10 +1110,21 @@ class PreviewPanel(QWidget):
         for index, entry in enumerate(self._gpu_blend_layers):
             key, image, blend = entry[0], entry[1], entry[2]
             if image is None and len(entry) >= 10:
+                from PySide6.QtGui import QColor, QImage
+
                 matrix, opacity, fit = entry[3], float(entry[4]), entry[5]
+                # Couverture opaque à la taille du contenu : sans matte, la passe grain
+                # (texture plein cadre) déborde hors de la boîte du calque.
+                cover_w = max(1, int(round(float(fit[2]) - float(fit[0]))))
+                cover_h = max(1, int(round(float(fit[3]) - float(fit[1]))))
+                matte = f"grain:{key}"
+                coverage = QImage(cover_w, cover_h, QImage.Format_RGBA8888)
+                coverage.fill(QColor(255, 255, 255, 255))
+                mattes[matte] = coverage
                 layers.append(CompositeLayer(
                     source=f"graphics{index}", matrix=tuple(matrix), fit=tuple(fit),
                     opacity=opacity, blend=coerce_blend_mode(blend), program=program_for(()),
+                    matte=matte, matte_in_fit=True,
                 ))
                 continue
             matte = f"blend:{key}"
@@ -1193,14 +1204,20 @@ class PreviewPanel(QWidget):
                 continue
             if self._gpu_underlay_wanted.get(source_id) == key:
                 continue
+            # Dernière demande gagne : les jobs déjà en file voient la clé périmée
+            # avant le décodage coûteux et s'arrêtent (coalesce scrub / lecture).
             self._gpu_underlay_wanted[source_id] = key
 
             def _job(source_id=source_id, path=path, time_s=time_s, key=key) -> None:
+                if self._gpu_underlay_wanted.get(source_id) != key:
+                    return
                 try:
                     frame = _decode_underlay_frame(str(path), float(time_s))
                 except Exception:  # noqa: BLE001 - notifie l'UI, ne crashe pas le fil
                     LOGGER.debug("Sous-piste %s : décodage impossible", source_id, exc_info=True)
                     frame = None
+                if self._gpu_underlay_wanted.get(source_id) != key:
+                    return
                 self._underlay_bridge.ready.emit(source_id, key, frame)
 
             _underlay_pool().submit(_job)

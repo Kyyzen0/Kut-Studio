@@ -78,12 +78,17 @@ def test_preview_panel_registers_procedural_grain(qtbot):
     panel._canvas_size = (160, 90)
     panel.set_blend_layers([(
         "grain:1:0:32x18", None, BlendMode.OVERLAY,
-        (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 1.0, (0.0, 0.0, 160.0, 90.0),
+        (1.0, 0.0, 0.0, 1.0, 40.0, 20.0), 1.0, (0.0, 0.0, 48.0, 36.0),
         1, 0, 32, 18,
     )])
     assert "graphics0" in fake.sources
     assert fake.sources["graphics0"].layout == "grain"
     assert fake.sources["graphics0"].width == 32
     assert not fake.frames
-    layers = panel._gpu_graphics_layers(160, 90, {})
+    mattes: dict = {}
+    layers = panel._gpu_graphics_layers(160, 90, mattes)
     assert len(layers) == 1 and layers[0].source == "graphics0"
+    assert layers[0].matte_in_fit is True
+    assert layers[0].matte in mattes
+    cover = mattes[layers[0].matte]
+    assert cover.width() == 48 and cover.height() == 36
