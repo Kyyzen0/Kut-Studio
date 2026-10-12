@@ -95,6 +95,9 @@ def _isolate_kut_studio_config(monkeypatch, tmp_path):
     # Les tests d'encodage matériel construisent leur propre ``CapabilityService``.
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path.parent / f"{tmp_path.name}-cache"))
     monkeypatch.setenv("KUT_STUDIO_HARDWARE_ENCODING", "off")
+    # Reproductibilité : jamais la batterie ni la chauffe réelles de la machine qui lance les tests (un portable sur
+    # batterie dégraderait l'aperçu de chaque test). Les tests du régulateur forcent leurs propres valeurs.
+    monkeypatch.setenv("KUT_STUDIO_POWER", "ac")
     from core.hardware_cache import set_default_service
 
     set_default_service(None)

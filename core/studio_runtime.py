@@ -13,13 +13,14 @@ du montage.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
 
 from .cache_store import MemoryCache
-from .power_state import PowerState, detect_power_state
+from .power_state import PowerState, detect_power_state, parse_power_override
 from .preview_quality import PreviewQualityController, quality_label
 from .runtime_profile import (
     MachineResources,
@@ -32,7 +33,8 @@ from .runtime_regulator import OnDemandGate, RegulatorPolicy, compute_policy
 from .task_queue import PRIORITY_BACKGROUND, QueueWorker, TaskQueue
 
 # L'état énergie / chauffe ne change pas à chaque tick : on le relit au plus
-# toutes les 15 s (pmset / sysfs), ou plus tôt via :meth:`refresh_power_state`.
+# toutes les 15 s (pmset / sysfs), sur un thread de travail (voir :meth:`StudioRuntime._ensure_power_fresh`), ou plus
+# tôt via :meth:`refresh_power_state`.
 _POWER_TTL_SECONDS = 15.0
 
 
@@ -169,6 +171,11 @@ class StudioRuntime:
         self.diagnostics = RuntimeDiagnostics()
         self._power = PowerState(source="unavailable")
         self._power_checked_at = 0.0
+        # Relevé d'énergie en arrière-plan : le thread de travail ne dépose qu'une valeur (``PowerState`` immuable)
+        # sous ce verrou ; seul le thread d'interface l'applique à la politique.
+        self._power_lock = threading.Lock()
+        self._power_probe_running = False
+        self._power_probe_result: PowerState | None = None
         self.ondemand = OnDemandGate()
         self._bench_refresh_lock = threading.Lock()
         self._bench_refresh_pending = False
@@ -190,11 +197,14 @@ class StudioRuntime:
         return self._power
 
     def refresh_power_state(self, state: PowerState | None = None) -> PowerState:
-        """Force une relecture (ou injecte un état de test) et rafraîchit la politique."""
-        self._power = state if state is not None else detect_power_state()
+        """Injecte un état (tests, outils) ou, sans argument, le relit **sur place** (bloquant : pas pour l'interface)."""
+        self._apply_power(state if state is not None else detect_power_state())
+        return self._power
+
+    def _apply_power(self, state: PowerState) -> None:
+        self._power = state
         self._power_checked_at = time.monotonic()
         self._refresh_policy()
-        return self._power
 
     def preview_divisor(self) -> int:
         # Même rafraîchissement énergie que :meth:`neighborhood_scale` : sinon
@@ -339,11 +349,35 @@ class StudioRuntime:
         self._refresh_policy()
 
     def _ensure_power_fresh(self) -> None:
-        now = time.monotonic()
-        if now - self._power_checked_at < _POWER_TTL_SECONDS and self._power_checked_at > 0:
+        """Tient l'état énergie à jour **sans jamais bloquer** l'appelant (thread d'interface, à chaque déplacement).
+
+        La lecture réelle (``pmset`` : trois processus de 2 s au plus ; sysfs ; Windows) tourne sur un thread de
+        travail, au plus une à la fois et au plus toutes les 15 s. Ce thread dépose son résultat ; il est appliqué ici,
+        au prochain appel, par le seul thread qui touche à la politique. Tant qu'aucune lecture n'a abouti, l'état reste
+        le dernier connu (au démarrage : « indisponible », donc sans cran énergie). Un forçage par
+        ``KUT_STUDIO_POWER`` ne coûte rien à lire : il s'applique tout de suite, sans thread.
+        """
+        with self._power_lock:
+            finished, self._power_probe_result = self._power_probe_result, None
+        if finished is not None:
+            self._apply_power(finished)
+        forced = parse_power_override(os.environ.get("KUT_STUDIO_POWER", ""))
+        if forced is not None:
+            if forced != self._power or self._power_checked_at <= 0:
+                self._apply_power(forced)
             return
+        if self._power_checked_at > 0 and time.monotonic() - self._power_checked_at < _POWER_TTL_SECONDS:
+            return
+        with self._power_lock:
+            if self._power_probe_running:
+                return
+            self._power_probe_running = True
+        threading.Thread(target=self._probe_power, name="kut-power-probe", daemon=True).start()
+
+    def _probe_power(self) -> None:
+        """Thread de travail : lit l'énergie et dépose le résultat (jamais de Qt, jamais la politique)."""
         try:
-            self._power = detect_power_state()
+            state = detect_power_state()
         except Exception:  # noqa: BLE001 — l'énergie ne doit jamais empêcher l'aperçu
             import logging
 
@@ -351,9 +385,10 @@ class StudioRuntime:
                 "État énergie illisible : régulateur sans cran batterie/chauffe",
                 exc_info=True,
             )
-            self._power = PowerState(source="unavailable")
-        self._power_checked_at = now
-        self._refresh_policy()
+            state = PowerState(source="unavailable")
+        with self._power_lock:
+            self._power_probe_result = state
+            self._power_probe_running = False
 
     def _refresh_policy(self) -> None:
         # Auto + profil Auto : le cran énergie monte le diviseur de base. Un
