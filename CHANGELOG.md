@@ -14,7 +14,6 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 ### Added
 
 - **Décodage multi-sources (`media_io`).** Ouverture, saut et décodage d'une image (PyAV si disponible, sinon
@@ -31,7 +30,7 @@ ensuite déclenche `.github/workflows/release.yml`.
   cadre (ADR-0001, étape 2). Voir [docs/gpu-preview.md](docs/gpu-preview.md).
 - **Moniteur GPU : plusieurs pistes vidéo.** Les pistes sous le clip du dessus sont composées en temps réel
   (décodage `media_io`) ; le clip supérieur reste le lecteur Qt.
-=======
+
 ### Fixed
 
 - **Imbriquer une sélection garde les bus des pistes déplacées.** Une piste envoyée sur un autre bus que la piste
@@ -39,7 +38,6 @@ ensuite déclenche `.github/workflows/release.yml`.
   vidée : une piste coupée par son bus redevenait audible à l'export et en lecture.
 - **Aperçu : régler un bus ne ressert plus l'ancien son.** Le fader, la coupure et les inserts d'un bus font partie
   de l'empreinte des segments. Avant, le moniteur rejouait le mixage d'avant le réglage.
->>>>>>> origin/main
 
 ## [0.5.0] - 2026-10-12
 
