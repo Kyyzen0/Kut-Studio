@@ -839,7 +839,8 @@ class MographRenderer:
             return None
         evaluated = self.scene.evaluate(clip_id, t)
         graphic = evaluated.graphic
-        assert isinstance(graphic, GraphicOverlay)
+        if not isinstance(graphic, GraphicOverlay):
+            return None
         margin = content_margin(graphic)
         box_w, box_h = float(evaluated.box[0]), float(evaluated.box[1])
         width = max(1, int(math.ceil(box_w + 2.0 * margin)))
@@ -863,13 +864,15 @@ class MographRenderer:
             return None
         evaluated = self.scene.evaluate(clip_id, t)
         graphic = evaluated.graphic
-        assert isinstance(graphic, GraphicOverlay)
+        if not isinstance(graphic, GraphicOverlay):
+            return None
         margin = content_margin(graphic)
         key = self.content_key(clip_id, t)
 
         def factory() -> QImage:
             painted = self.render_content(clip_id, t)
-            assert painted is not None
+            if painted is None:
+                raise RuntimeError(f"texture de contenu indisponible pour {clip_id!r}")
             return painted[0]
 
         return cached_content_texture(key, factory), margin, evaluated
