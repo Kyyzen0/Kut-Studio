@@ -8,7 +8,7 @@ relancé si l'empreinte change (cœurs, RAM, plateforme, version du schéma).
 
 Le banc ne lit pas le GPU : sans mesure GPU fiable et portable, inventer un
 score graphique serait un faux signal (voir :mod:`core.runtime_profile`).
-Batterie / chauffe : hors de cette première livraison.
+Batterie / économie / chauffe : :mod:`core.power_state` + :mod:`core.runtime_regulator`.
 """
 
 from __future__ import annotations

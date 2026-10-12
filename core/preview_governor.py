@@ -9,14 +9,19 @@ jamais seuls : ils marquent la fenêtre de mesure comme surchargée, et la
 politique anti-« yo-yo » existante (fenêtres consécutives, délai de repos)
 s'applique telle quelle.
 
+Échelle de dégradation complète (ADR-0001) : :mod:`core.runtime_regulator`
+fixe les crans de base d'après le banc machine et l'état énergie ; ce module
+ne fournit que le signal de charge GPU pour monter temporairement le diviseur.
+
 Leviers, du plus doux au plus fort (aucun ne touche à l'export) :
 
-1. résolution de l'aperçu réduite (le diviseur réduit aussi la résolution de
-   rendu GPU, donc le coût des flous) ;
-2. proxy plus léger demandé en tâche de fond ;
-3. flou de mouvement des calques coupé pendant la lecture (déjà : qualité
-   « brouillon » en lecture, voir :mod:`core.motion_blur`) ;
-4. repli GPU → CPU sur erreur (:mod:`core.gpu_backend`).
+1. proxies préférés pour l'aperçu (:mod:`core.runtime_regulator`) ;
+2. effets de voisinage en 1/2 (:func:`core.gpu_effects.program_for`) ;
+3. flou de mouvement coupé en lecture (:mod:`core.motion_blur`) ;
+4. résolution d'aperçu (diviseur profil + cran batterie/chauffe + adaptatif) ;
+5. cadence de lecture (jamais à l'arrêt ni en scrubbing) ;
+6. préchargement des segments fidèles réduit ou suspendu (batterie) ;
+7. repli GPU → CPU sur erreur (:mod:`core.gpu_backend`).
 """
 
 from __future__ import annotations

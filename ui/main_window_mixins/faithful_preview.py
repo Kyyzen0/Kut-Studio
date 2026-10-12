@@ -201,6 +201,13 @@ class FaithfulPreviewMixin:
         except Exception:
             LOGGER.debug("Plan de préchargement non calculé à %.3f s : rien n'est préchargé", center, exc_info=True)
             return []
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            from core.runtime_regulator import limit_prefetch_requests
+
+            requests = limit_prefetch_requests(
+                requests, max_extra=int(runtime.prefetch_max_extra())
+            )
         resolver = self._preview_resolver()
         overrides = self._preview_grade_overrides()
         jobs = []
@@ -243,8 +250,32 @@ class FaithfulPreviewMixin:
         if bool(self.is_playing):
             planner.reset()
             return  # lecture : on limite le travail CPU/GPU
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None and not runtime.prefetch_allowed():
+            # Batterie : préchargement suspendu (ADR-0001) ; le segment déjà
+            # en cache reste utilisable via ``_present_cached_preview_at``.
+            try:
+                engine.cancel_all()
+            except Exception:
+                LOGGER.debug(
+                    "Annulation du préchargement (batterie) en échec : la file garde ses demandes",
+                    exc_info=True,
+                )
+            return
         velocity = planner.note_position(float(center))
         jobs = self._preview_segment_jobs(center, velocity)
+        # Rendu à la demande : à l'arrêt, ne rien relancer si la grille et la
+        # qualité n'ont pas changé (évite de recalculer pour rien).
+        if runtime is not None:
+            fingerprint = (
+                planner.index_of(float(center)),
+                tuple((job.key.params_hash if getattr(job, "key", None) else None) for job in jobs),
+                str(getattr(self, "_render_quality", "")),
+                int(runtime.preview_divisor()),
+                int(runtime.prefetch_max_extra()),
+            )
+            if not runtime.ondemand.should_run(fingerprint):
+                return
         self._last_preview_jobs = list(jobs)
         try:
             duration = float(self._ensure_timeline_index().duration)

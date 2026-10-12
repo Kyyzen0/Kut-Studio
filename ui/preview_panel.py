@@ -428,6 +428,13 @@ class PreviewPanel(QWidget):
         """Mémorise le niveau d'aperçu effectif (profil, choix ou adaptation)."""
         self.preview_divisor = max(1, int(divisor))
 
+    def set_neighborhood_scale(self, scale: float) -> None:
+        """Facteur des effets de voisinage GPU (1,0 export ; 0,5 sous régulateur)."""
+        self._neighborhood_scale = max(0.0, min(1.0, float(scale)))
+
+    def neighborhood_scale(self) -> float:
+        return float(getattr(self, "_neighborhood_scale", 1.0))
+
     def set_quality_notice(self, text: str | None) -> None:
         """Affiche (ou masque) l'avis « aperçu réduit » du mode Auto."""
         if text:
@@ -1107,7 +1114,12 @@ class PreviewPanel(QWidget):
             from core.gpu_effects import VIGNETTE_EXPORT
 
             try:
-                program = program_for(self._gpu_effects, vignette_extent=VIGNETTE_EXPORT, time=self._gpu_effect_time)
+                program = program_for(
+                    self._gpu_effects,
+                    vignette_extent=VIGNETTE_EXPORT,
+                    time=self._gpu_effect_time,
+                    neighborhood_scale=self.neighborhood_scale(),
+                )
             except ValueError:
                 program = program_for(())
             layers = (CompositeLayer(
@@ -1139,7 +1151,7 @@ class PreviewPanel(QWidget):
         layers = []
         for key, effects, coverage, opacity, *rest in self._gpu_adjustments:
             try:
-                program = program_for(effects)
+                program = program_for(effects, neighborhood_scale=self.neighborhood_scale())
             except ValueError:
                 continue
             if coverage is not None:

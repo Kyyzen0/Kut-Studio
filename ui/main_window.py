@@ -1909,7 +1909,7 @@ class MainWindow(
         self._apply_runtime_hints()
 
     def _apply_runtime_hints(self) -> None:
-        """Pousse les budgets du profil vers les panneaux."""
+        """Pousse les budgets du profil / régulateur vers les panneaux."""
         profile = self.runtime.resolved_profile()
         timeline = getattr(self, "timeline_panel", None)
         if timeline is not None:
@@ -1917,6 +1917,9 @@ class MainWindow(
         preview = getattr(self, "preview_panel", None)
         if preview is not None:
             preview.set_preview_divisor(self.runtime.preview_divisor())
+            set_scale = getattr(preview, "set_neighborhood_scale", None)
+            if set_scale is not None:
+                set_scale(self.runtime.neighborhood_scale())
 
     def set_diagnostics_visible(self, visible: bool) -> None:
         """Affiche ou cache l'overlay de performance."""
