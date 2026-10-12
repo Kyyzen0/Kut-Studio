@@ -46,24 +46,20 @@ def compose_frame(
     *,
     render_scale: float | None = None,
 ) -> CpuFrame:
-    """Compose ``frame`` sur CPU. ``render_scale`` défaut : celui du plan (souvent 0,25)."""
+    """Compose ``frame`` sur CPU. ``render_scale`` défaut : celui du plan (souvent 0,25).
+
+    La géométrie (matrices, ``fit``) reste en pixels logiques de la séquence ;
+    la réduction passe uniquement par ``render_scale`` (comme le moniteur GPU).
+    """
     scale = float(frame.render_scale if render_scale is None else render_scale)
     scale = max(0.05, min(1.0, scale))
-    width = max(1, int(round(frame.canvas_width * scale)))
-    height = max(1, int(round(frame.canvas_height * scale)))
-    scaled = CompositeFrame(
-        width, height, 1.0, frame.layers, frame.sources, frame.background, frame.adjustments,
+    working = CompositeFrame(
+        frame.canvas_width, frame.canvas_height, scale,
+        frame.layers, frame.sources, frame.background, frame.adjustments,
     )
-    # Les sources sont déjà en float RVB ; on les redimensionne grossièrement si besoin.
-    resized: dict[str, np.ndarray] = {}
-    for key, rgb in sources_rgb.items():
-        if rgb.shape[0] == height and rgb.shape[1] == width:
-            resized[key] = rgb
-            continue
-        # Plus proche voisin (rapide, déterministe).
-        ys = (np.arange(height) * rgb.shape[0] / height).astype(np.int32)
-        xs = (np.arange(width) * rgb.shape[1] / width).astype(np.int32)
-        resized[key] = rgb[ys][:, xs]
+    width, height = working.render_size
+    # Mattes à la résolution de rendu ; les sources restent à leur taille native
+    # (:func:`reference_frame` les échantillonne via ``fit``).
     scaled_mattes: dict[str, np.ndarray] = {}
     for key, matte in (mattes or {}).items():
         if matte.shape[0] == height and matte.shape[1] == width:
@@ -72,7 +68,7 @@ def compose_frame(
         ys = (np.arange(height) * matte.shape[0] / height).astype(np.int32)
         xs = (np.arange(width) * matte.shape[1] / width).astype(np.int32)
         scaled_mattes[key] = matte[ys][:, xs]
-    rgb = reference_frame(scaled, resized, scaled_mattes, luts)
+    rgb = reference_frame(working, sources_rgb, scaled_mattes, luts)
     alpha = np.ones((height, width, 1), dtype=np.float64)
     rgba = (np.clip(np.concatenate([rgb, alpha], axis=-1), 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
     return CpuFrame(width, height, rgba.tobytes(), scale)
