@@ -711,7 +711,7 @@ class GpuPreviewWidget(QRhiWidget):
         texture = self.colorTexture()
         if texture is None:
             for entry in waiting:
-                entry["error"] = "pas de colorTexture"
+                entry["error"] = "pas de colorTexture"  # i18n-ignore: diagnostic interne de relecture, jamais affiché
                 entry["done"] = True
             return
         for entry in waiting:
@@ -725,7 +725,7 @@ class GpuPreviewWidget(QRhiWidget):
                     size = result.pixelSize()
                     data = result.data()
                     if size is None or data is None or size.width() <= 0 or size.height() <= 0:
-                        entry["error"] = "relecture vide"
+                        entry["error"] = "relecture vide"  # i18n-ignore: diagnostic interne de relecture, jamais affiché
                     else:
                         image = QImage(
                             data, size.width(), size.height(), size.width() * 4, QImage.Format_RGBA8888,

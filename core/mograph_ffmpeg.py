@@ -334,12 +334,18 @@ def compose_graphics(
 
 
 def _content_layer_span_eligible(renderer, clip_id: str, low: int, high: int, fps: float) -> bool:
-    """``True`` si chaque image active de ``[low, high)`` peut être une texture par contenu."""
+    """``True`` si chaque image active de ``[low, high)`` peut être une texture par contenu.
+
+    N'appelle pas :meth:`any_active` sur le chemin heureux (calque éligible) : le
+    ``frame_key`` du flux le fera déjà ; un double parcours faisait dépasser le
+    budget d'appels des tests de segment.
+    """
     for index in range(low, high):
         t = index / fps
-        if not renderer.any_active((clip_id,), t):
+        if renderer.content_texture_eligible(clip_id, t):
             continue
-        if not renderer.content_texture_eligible(clip_id, t):
+        # Inéligible : refuser seulement si le calque est actif à cet instant.
+        if renderer.any_active((clip_id,), t):
             return False
     return True
 

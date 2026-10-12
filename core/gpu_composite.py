@@ -34,6 +34,7 @@ import struct
 from dataclasses import dataclass, field
 
 from .blend_modes import BlendMode, coerce_blend_mode
+from .gpu_grain import grain_uniforms
 from .gpu_effects import (
     MAX_BLUR_RADIUS,
     MAX_POINT_OPS,
@@ -373,13 +374,13 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
             work = f"layer{index}_grain"
             textures[work] = TextureSpec(CANVAS_FORMAT, width, height)
             try:
-                seed = float(source.colorspace or "0")
-                gindex = float(source.color_range or "0")
+                seed = int(float(source.colorspace or "0"))
+                gindex = int(float(source.color_range or "0"))
             except ValueError:
-                seed, gindex = 0.0, 0.0
+                seed, gindex = 0, 0
             passes.append(PassSpec("grain", work, (), Uniforms(
                 target=(float(width), float(height), 1.0, 0.0),
-                misc=(seed, gindex, float(max(2, source.width)), float(max(2, source.height))),
+                misc=grain_uniforms(seed, gindex, max(2, source.width), max(2, source.height)),
             ).pack(), layer=index))
             current, space = work, SPACE_RGB
             matrix = yuv_to_rgb_matrix()

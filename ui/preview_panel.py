@@ -905,6 +905,12 @@ class PreviewPanel(QWidget):
         view.deleteLater()
         self.set_effects(self._gpu_effects)
 
+    def compose_cpu_frame(self, frame, sources_rgb, mattes=None, luts=None, *, render_scale: float = 0.25):
+        """Composition CPU allégée (ADR-0001) quand le moniteur GPU est indisponible."""
+        from core.cpu_composite import compose_frame
+
+        return compose_frame(frame, sources_rgb, mattes, luts, render_scale=render_scale)
+
     def set_layer_compositing(self, blend_mode=None, matte: tuple[str, object] | None = None) -> None:
         """Mode de fusion et matte (clé, ``QImage``) du clip affiché (GPU seulement)."""
         self._gpu_blend = blend_mode

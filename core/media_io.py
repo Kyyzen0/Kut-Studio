@@ -116,11 +116,13 @@ class MediaHandle:
         return self._decode_cli(t)
 
     def _decode_pyav(self, seconds: float) -> VideoFrame:
-        assert self._container is not None and _av is not None
-        stream = self._container.streams.video[0]
+        container = self._container
+        if container is None or _av is None:
+            return self._decode_cli(seconds)
+        stream = container.streams.video[0]
         target = int(seconds / stream.time_base) if stream.time_base else 0
-        self._container.seek(target, stream=stream)
-        for frame in self._container.decode(stream):
+        container.seek(target, stream=stream)
+        for frame in container.decode(stream):
             image = frame.to_ndarray(format="rgba")
             h, w, _ = image.shape
             return VideoFrame(w, h, image.tobytes(), float(frame.time or seconds))
