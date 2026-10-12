@@ -27,6 +27,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- **Moniteur GPU : calques graphiques en textures par contenu.** Un titre ou une forme éligible n'est plus
+  redessiné plein cadre à chaque image qui ne change que sa pose : la rastérisation produit une texture à la taille
+  réelle du contenu, animée par matrice et opacité dans le shader (ADR-0001, étape 2). Groupes, masques et flou de
+  mouvement multi-échantillons restent en repli plein cadre. Voir [docs/gpu-preview.md](docs/gpu-preview.md).
 - **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
   (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Auto utilise
   ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.

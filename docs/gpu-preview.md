@@ -753,9 +753,14 @@ toutes les variantes.
   avec leurs modes de fusion, reste au rendu fidèle. Le mode de fusion du clip
   affiché s'applique contre le fond noir du cadre. Un clip de composition, lui,
   est lu par son cache de rendu (voir [composition.md](composition.md)).
+- **Calques graphiques** : sur GPU, les calques éligibles (pas de groupe, masque
+  ni flou de mouvement multi-échantillons) sont des textures à taille réelle,
+  rastérisées une fois par contenu et animées par matrice / opacité
+  ([ADR-0001](adr/0001-moteur-unifie-gpu-adaptatif.md), étape 2). Les autres
+  restent dessinés par Qt au-dessus, ou en repli plein cadre pour un mode de
+  fusion non normal.
 - **Calques d'effets** : sur GPU, ils s'appliquent à la vidéo, pas aux calques
-  motion graphics situés dessous. Ces calques sont dessinés par Qt au-dessus du
-  GPU.
+  motion graphics situés dessous (y compris ceux encore dessinés par Qt).
 - **Hors temps réel** : les transitions, les sous-titres libass et la
   composition de séquences imbriquées restent au rendu fidèle.
 - **Étalonnage** : le moniteur CPU ne le montre toujours qu'avec les segments
