@@ -304,7 +304,8 @@ def _windows() -> PowerState:
 
     status = SYSTEM_POWER_STATUS()
     try:
-        ok = ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))
+        # ``windll`` n'existe que sous Windows ; mypy sur Linux/macOS le refuse.
+        ok = ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))  # type: ignore[attr-defined]
     except Exception:
         LOGGER.debug("GetSystemPowerStatus illisible : état énergie inconnu", exc_info=True)
         return PowerState(source="unavailable")
