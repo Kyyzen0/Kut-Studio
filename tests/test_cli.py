@@ -31,7 +31,9 @@ needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg
 
 
 @pytest.fixture(autouse=True)
-def _french():
+def _french(monkeypatch):
+    # Le CLI suit KUT_STUDIO_LANG puis LANG : sans cela, les attentes en français dépendent de la langue du poste (CI macOS en anglais).
+    monkeypatch.setenv("KUT_STUDIO_LANG", "fr")
     i18n.reset_for_tests()
     yield
     i18n.reset_for_tests()
@@ -340,6 +342,7 @@ def test_ctrl_c_during_the_loudness_measurement_cancels_with_exit_130(kut, tmp_p
 def _main(*argv: str, config: Path) -> subprocess.CompletedProcess:
     config.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", KUT_STUDIO_CONFIG_DIR=str(config), KUT_STUDIO_UPDATE_CHECK="off",
+               KUT_STUDIO_LANG="fr",
                HOME=str(config), USERPROFILE=str(config))
     return subprocess.run([sys.executable, str(ROOT / "main.py"), *argv], capture_output=True, text=True, timeout=90,
                           env=env, cwd=config)
