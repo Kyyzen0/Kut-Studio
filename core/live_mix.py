@@ -99,8 +99,9 @@ def build_live_mix_command(
     if plan.duration - max(origin, float(start)) <= 1e-3:
         return None
     # Trop de pistes pour un flux : seul le Master est mesuré (aucun point de mesure n'est créé).
-    taps: dict[str, str] | None = {} if len({layer.track_id for layer in plan.audio_layers}) <= MAX_METERED_TRACKS \
-        else None
+    buses_in_use = {layer.bus_id for layer in plan.audio_layers if layer.bus_id} & {b.id for b in plan.audio_buses}
+    metered_count = len({layer.track_id for layer in plan.audio_layers}) + len(buses_in_use)
+    taps: dict[str, str] | None = {} if metered_count <= MAX_METERED_TRACKS else None
     graph, _video, audio, inputs = ExportEngine._build_filter_complex(
         plan, plan.width or 16, plan.height or 16, plan.fps or 30.0, None, audio_only=True, audio_origin=origin,
         track_taps=taps,

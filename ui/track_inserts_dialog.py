@@ -37,8 +37,11 @@ class TrackInsertsDialog(QDialog):
     enabled_changed = Signal(str, str, bool)  # piste, insert, actif
     parameter_changed = Signal(str, str, str, float)  # piste, insert, paramètre, valeur
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, title_key: str = "inserts.title", hint_key: str = "inserts.hint"
+    ) -> None:
         super().__init__(parent)
+        self._title_key = title_key
         self.setObjectName("trackInsertsDialog")
         self.setModal(False)
         self.setMinimumWidth(320)
@@ -51,7 +54,7 @@ class TrackInsertsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.sm)
 
-        self.hint_label = QLabel(translate("inserts.hint"))
+        self.hint_label = QLabel(translate(hint_key))
         self.hint_label.setWordWrap(True)
         self.hint_label.setStyleSheet(label_style(11, "muted", 500))
         layout.addWidget(self.hint_label)
@@ -123,7 +126,7 @@ class TrackInsertsDialog(QDialog):
         ids = [effect.id for effect in self._inserts]
         if self._selected_id not in ids:
             self._selected_id = ids[0] if ids else None
-        self.setWindowTitle(translate("inserts.title", name=name))
+        self.setWindowTitle(translate(self._title_key, name=name))
         self._locked = locked
         self._refresh()
 

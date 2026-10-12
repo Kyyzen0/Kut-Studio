@@ -96,6 +96,29 @@ clips de la piste ─▶ volume, pan, automation, ducking (par clip, comme avant
 - Une séquence imbriquée garde les inserts de ses pistes (labels préfixés par la séquence) ; les inserts de la piste
   qui accueille le clip imbriqué restent sur cette piste, dans le parent.
 
+## Bus
+
+Un **bus** est un sous-mixage de la séquence entre des pistes et le Master (`Sequence.buses`, dans le `.kut`). Bouton
+**Nouveau bus** de l'en-tête du mixeur ; la liste déroulante au bas de chaque tranche de piste choisit sa sortie (le
+Master, ou un bus). Chaque bus a son fader, sa coupure et ses **inserts** (les mêmes effets, dont l'égaliseur) ; double-clic
+sur son nom pour le renommer, × pour le supprimer (ses pistes retournent au Master, et tout s'annule).
+
+```
+piste ─▶ inserts de piste ─▶ ┬─ vumètre de la piste (avant le bus)
+                             ├─ Master (sans bus)
+                             └─ bus : somme des pistes ─▶ inserts du bus ─▶ fader du bus ─▶ vumètre du bus ─▶ Master
+```
+
+- **Une piste sans bus garde exactement le graphe d'avant**, et un bus qui ne reçoit aucune piste n'est pas construit.
+- Un bus **coupé** reste dans le graphe avec `volume=0` : une sortie de FFmpeg ne se lit qu'une fois, la laisser sans
+  lecteur ferait échouer le graphe.
+- Un bus n'a ni panoramique ni solo ni armement. Huit bus au plus par séquence (`MAX_BUSES`) ; chaque bus mesuré est un
+  point de mesure du flux en lecture (clé `bus:<id>`), dans la même limite de 24 que les pistes.
+- Le fichier `.kut` écrit `buses` (séquence) et `bus_id` (piste) seulement quand il y en a ; le format 17 ne change pas.
+  Un bus invalide est ignoré seul, une piste qui vise un bus absent retourne au Master.
+- Les bus appartiennent à la séquence : un clip imbriqué garde les bus de sa propre séquence, ceux du parent n'y
+  descendent pas.
+
 ## Égaliseur paramétrique
 
 Un onzième effet, **Égaliseur 4 bandes** (`parametric_eq`), s'ajoute comme n'importe quel effet : sur un clip (inspecteur)
@@ -134,6 +157,7 @@ Une bande à 0 dB n'émet aucun filtre (un égaliseur à plat ne change rien et 
 | `core/live_mix.py` | plan et commande du flux, pondération K, `MixMeter` |
 | `core/export_engine.py` | `audio_origin`, `track_taps` et sous-mixage des inserts de piste dans le graphe audio |
 | `core/audio_effects_model.py` | opérations pures sur les inserts (`add_track_insert`…) |
+| `core/audio_buses.py` | bus : modèle, routage des pistes, inserts de bus |
 | `ui/track_inserts_dialog.py` | boîte de la chaîne d'inserts d'une piste |
 | `core/edit_history.py` | `revision` : le projet a changé |
 | `ui/live_mix_player.py` | lecteur : fil de lecture, calage, `QAudioSink` |
@@ -145,4 +169,4 @@ Tests : `tests/test_live_mix.py` (origine égale à l'export, points de mesure, 
 `tests/test_live_mix_player.py` (calage à l'échantillon, vumètres, échec, fenêtre, page Audio) ;
 `tests/test_audio_mixer.py` (vumètres du mixeur) ; `tests/test_track_inserts.py` (modèle, fichier, graphe avec vrai
 FFmpeg : la somme est limitée, l'ordre compte, le vumètre lit la sortie) et `tests/test_track_inserts_ui.py` (bouton FX,
-boîte, annulation) ; `tests/test_parametric_eq.py` (chaque bande mesurée au vrai FFmpeg : gain à sa fréquence, Q, plateaux, bornes).
+boîte, annulation) ; `tests/test_audio_buses.py` et `tests/test_audio_buses_ui.py` (bus : modèle, fichier, graphe au vrai FFmpeg, mesures avant/après le bus, lecture égale à l'export, interface) ; `tests/test_parametric_eq.py` (chaque bande mesurée au vrai FFmpeg : gain à sa fréquence, Q, plateaux, bornes).

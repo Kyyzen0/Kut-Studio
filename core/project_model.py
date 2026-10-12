@@ -630,6 +630,9 @@ class Track:
     # l'ordre d'application). Elle traite la *somme* des clips de la piste, après leur fader, leur pan et le ducking :
     # un compresseur ou un égaliseur de piste voit donc tout ce que la piste fait entendre. Vide = piste inchangée.
     inserts: list = field(default_factory=list)
+    # ``bus_id`` : bus de la séquence (:class:`core.audio_buses.AudioBus`) qui reçoit le son de la piste ; vide : la
+    # piste va directement au Master, comme avant les bus.
+    bus_id: str = ""
 
     def __post_init__(self) -> None:
         if self.height_mode not in {"compact", "normal", "large"}:
@@ -752,6 +755,8 @@ class Sequence:
     markers: list[Marker] = field(default_factory=list)
     transitions: list["Transition"] = field(default_factory=list)
     ducking_sidechains: list = field(default_factory=list)
+    # Bus audio de la séquence (:class:`core.audio_buses.AudioBus`) : sous-mixages entre les pistes et le Master.
+    buses: list = field(default_factory=list)
     # --- Motion graphics ---
     # Guides du viewer (:class:`core.canvas_guides.Guide`) : jamais exportés.
     guides: list = field(default_factory=list)
@@ -780,6 +785,8 @@ class Sequence:
             self.transitions = []
         if self.ducking_sidechains is None:
             self.ducking_sidechains = []
+        if self.buses is None:
+            self.buses = []
         if self.guides is None:
             self.guides = []
         if self.motion_blur is None:
@@ -984,6 +991,14 @@ class Project:
     @ducking_sidechains.setter
     def ducking_sidechains(self, value: list) -> None:
         self.active_sequence.ducking_sidechains = value if value is not None else []
+
+    @property
+    def buses(self) -> list:
+        return self.active_sequence.buses
+
+    @buses.setter
+    def buses(self, value: list) -> None:
+        self.active_sequence.buses = value if value is not None else []
 
     @property
     def width(self) -> int:

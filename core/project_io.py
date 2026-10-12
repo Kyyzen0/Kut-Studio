@@ -196,6 +196,8 @@ _TRACK_FIELDS = frozenset(
         "ducking_config",
         # Chaîne d'inserts de piste : clé optionnelle, la version du format ne change pas.
         "inserts",
+        # Bus de destination de la piste (identifiant d'un bus de la séquence) : clé optionnelle.
+        "bus_id",
     }
 )
 _CLIP_AUDIO_FIELDS = frozenset({"gain_db", "pan", "fade_in", "fade_out"})
@@ -577,6 +579,12 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
             _ducking_sidechain_to_dict(sidechain)
             for sidechain in getattr(sequence, "ducking_sidechains", []) or []
         ],
+        # Bus audio : clé omise quand la séquence n'en a pas (un fichier sans bus reste identique à avant).
+        **(
+            {"buses": [_bus_to_dict(bus) for bus in sequence.buses]}
+            if getattr(sequence, "buses", None)
+            else {}
+        ),
         "tracks": [
             {
                 "id": track.id,
@@ -619,6 +627,7 @@ def _sequence_to_dict(sequence: Sequence) -> dict[str, Any]:
                     if getattr(track, "inserts", None)
                     else {}
                 ),
+                **({"bus_id": track.bus_id} if getattr(track, "bus_id", "") else {}),
                 "clips": [_clip_to_dict(clip) for clip in track.clips],
             }
             for track in sequence.tracks
@@ -809,6 +818,12 @@ def _deserialize_sequence(
         valid_music_ids={t.id for t in tracks if t.type in ("audio", "video")},
         valid_voice_ids={t.id for t in tracks if t.type in ("audio", "video")},
     )
+    # Bus audio : une entrée invalide est ignorée seule ; une piste qui vise un bus absent retourne au Master.
+    sequence.buses = _deserialize_buses(data.get("buses"))
+    known_buses = {bus.id for bus in sequence.buses}
+    for track in sequence.tracks:
+        if track.bus_id and track.bus_id not in known_buses:
+            track.bus_id = ""
     return sequence
 
 
@@ -1310,6 +1325,45 @@ def _audio_effect_to_dict(effect) -> dict[str, Any]:
         "enabled": bool(effect.enabled),
         "params": {name: float(value) for name, value in effect.params.items()},
     }
+
+
+def _bus_to_dict(bus) -> dict[str, Any]:
+    """Sérialise un :class:`core.audio_buses.AudioBus`."""
+    return {
+        "id": bus.id,
+        "name": bus.name,
+        "volume_db": float(bus.volume_db),
+        "muted": bool(bus.muted),
+        "inserts": [_audio_effect_to_dict(effect) for effect in bus.inserts],
+    }
+
+
+def _deserialize_buses(raw: Any) -> list:
+    """Désérialise les bus d'une séquence (clé absente ou invalide : aucun bus)."""
+    from .audio_buses import MAX_BUSES, AudioBus  # import tardif : ce module dépend de ``audio_effects_model``
+
+    if not isinstance(raw, list):
+        return []
+    buses: list = []
+    seen: set[str] = set()
+    for item in raw[:MAX_BUSES]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            bus = AudioBus(
+                id=str(item["id"]),
+                name=item.get("name") or "Bus",
+                volume_db=item.get("volume_db", 0.0),
+                muted=bool(item.get("muted", False)),
+                inserts=_deserialize_audio_effects(item.get("inserts")),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if bus.id in seen:
+            continue
+        seen.add(bus.id)
+        buses.append(bus)
+    return buses
 
 
 def _deserialize_audio_effects(raw: Any) -> list:

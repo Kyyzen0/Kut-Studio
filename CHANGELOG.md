@@ -16,6 +16,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Bus audio.** Un bus est un sous-mixage entre des pistes et le Master : bouton **Nouveau bus** du mixeur, sortie de
+  chaque piste choisie au bas de sa tranche (le Master, ou un bus). Chaque bus a son fader, sa coupure, ses inserts
+  (les mêmes effets que les pistes, égaliseur compris) et son vumètre ; la lecture l'entend comme l'export. Une piste
+  sans bus sonne comme avant, supprimer un bus renvoie ses pistes au Master, et tout s'annule. Voir
+  [docs/audio.md](docs/audio.md).
 - **Égaliseur 4 bandes.** Un nouvel effet audio, sur un clip ou en insert de piste : un plateau grave, deux cloches
   (fréquence, gain, Q) et un plateau aigu, de −18 à +18 dB. Une bande à 0 dB ne coûte rien ; par défaut, +3 dB de
   présence à 3 kHz. Voir [docs/audio.md](docs/audio.md).
