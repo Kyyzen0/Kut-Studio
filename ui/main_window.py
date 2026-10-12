@@ -202,8 +202,13 @@ class MainWindow(
             profile=loaded_settings.performance_profile,
             preview_quality=loaded_settings.preview_quality,
         )
-        # Banc machine (ADR-0001 étape 1) : en fond si le cache est froid ; Auto s'y cale ensuite.
+        # Banc machine (ADR-0001 étape 1) : en fond si le cache est froid ; Auto s'y cale
+        # ensuite sur le thread UI (pas depuis le worker — cache / qualité non synchronisés).
         self.runtime.schedule_machine_bench()
+        self._machine_bench_timer = QTimer(self)
+        self._machine_bench_timer.setInterval(400)
+        self._machine_bench_timer.timeout.connect(self._poll_machine_bench_refresh)
+        self._machine_bench_timer.start()
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)
@@ -941,6 +946,7 @@ class MainWindow(
             ("autosave final", self._write_autosave),
             ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
             ("minuteur debug", lambda: stop_timer("_debug_timer")),
+            ("minuteur banc machine", lambda: stop_timer("_machine_bench_timer")),
             ("minuteur aperçu", lambda: stop_timer("_preview_pump_timer")),
             ("pistage", self._cancel_tracking_jobs),
             ("analyse du flux optique", self._cancel_flow_analysis),
@@ -1908,8 +1914,19 @@ class MainWindow(
         self._ensure_timeline_index()
         self._apply_runtime_hints()
 
+    def _poll_machine_bench_refresh(self) -> None:
+        """Applique le résultat du banc machine dès qu'il est prêt (thread UI)."""
+        if self.runtime.apply_pending_machine_bench():
+            self._apply_runtime_hints()
+        timer = getattr(self, "_machine_bench_timer", None)
+        if timer is None:
+            return
+        if self.runtime.tasks.pending == 0 and not self.runtime.machine_bench_refresh_pending():
+            timer.stop()
+
     def _apply_runtime_hints(self) -> None:
-        """Pousse les budgets du profil vers les panneaux."""
+        """Pousse les budgets du profil / régulateur vers les panneaux."""
+        self.runtime.apply_pending_machine_bench()
         profile = self.runtime.resolved_profile()
         timeline = getattr(self, "timeline_panel", None)
         if timeline is not None:
@@ -1917,6 +1934,9 @@ class MainWindow(
         preview = getattr(self, "preview_panel", None)
         if preview is not None:
             preview.set_preview_divisor(self.runtime.preview_divisor())
+            set_scale = getattr(preview, "set_neighborhood_scale", None)
+            if set_scale is not None:
+                set_scale(self.runtime.neighborhood_scale())
 
     def set_diagnostics_visible(self, visible: bool) -> None:
         """Affiche ou cache l'overlay de performance."""

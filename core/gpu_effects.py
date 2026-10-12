@@ -157,15 +157,25 @@ class EffectProgram:
         return passes + 1
 
 
-def program_for(effects, *, vignette_extent: float = VIGNETTE_NATURAL, time: float = 0.0) -> EffectProgram:
+def program_for(
+    effects,
+    *,
+    vignette_extent: float = VIGNETTE_NATURAL,
+    time: float = 0.0,
+    neighborhood_scale: float = 1.0,
+) -> EffectProgram:
     """Programme GPU des effets **actifs** d'un clip, dans leur ordre.
 
     ``vignette_extent`` : rayon de référence de la vignette en fraction de la
     diagonale du calque (:data:`VIGNETTE_EXPORT` pour un clip vidéo).
     ``time`` : temps du clip (secondes), pour les effets qui bougent (heat haze).
+    ``neighborhood_scale`` : facteur sur flou / glow / heat haze (régulateur :
+    0,5 quand le profil ou l'énergie demande des effets de voisinage en 1/2).
+    L'export passe toujours ``1.0``.
     """
     from .effects_model import EffectType
 
+    scale = max(0.0, min(1.0, float(neighborhood_scale)))
     segments: list[list[PointOp]] = [[]]
     neighborhood: list[NeighborhoodOp] = []
     hazes: list[NeighborhoodOp] = []
@@ -189,28 +199,36 @@ def program_for(effects, *, vignette_extent: float = VIGNETTE_NATURAL, time: flo
             rows = [value for row in SEPIA_MATRIX for value in (*row, 0.0)]
             segments[-1].append(PointOp(OP_COLOR_MATRIX, SPACE_RGB, (0.0, 0.0, 0.0, *rows)))
         elif kind is EffectType.BLUR:
-            sigma = float(params.get("intensity", 0.0))
+            sigma = float(params.get("intensity", 0.0)) * scale
             if sigma > 0.0:
                 neighborhood.append(BlurOp(sigma))
                 segments.append([])
         elif kind is EffectType.SHARPEN:
-            amount = float(params.get("intensity", 0.0))
+            amount = float(params.get("intensity", 0.0)) * scale
             if amount != 0.0:
                 neighborhood.append(SharpenOp(amount))
                 segments.append([])
         elif kind is EffectType.GLOW:
-            if float(params.get("intensity", 0.0)) > 0.0:
-                neighborhood.append(GlowOp(float(params.get("radius", 0.0)), float(params.get("threshold", 0.6)),
-                                           float(params.get("intensity", 1.0))))
+            intensity = float(params.get("intensity", 0.0)) * scale
+            if intensity > 0.0:
+                neighborhood.append(GlowOp(
+                    float(params.get("radius", 0.0)) * scale,
+                    float(params.get("threshold", 0.6)),
+                    intensity,
+                ))
                 segments.append([])
         elif kind is EffectType.CHROMATIC_ABERRATION:
             if round(float(params.get("intensity", 0.0))):
-                neighborhood.append(ShiftOp(float(round(float(params.get("intensity", 0.0))))))
+                # Décalage entier : à 1/2 on garde au moins 1 px si l'effet est actif.
+                shift = float(params.get("intensity", 0.0)) * scale
+                rounded = max(1.0, round(shift)) if scale < 1.0 else float(round(float(params.get("intensity", 0.0))))
+                neighborhood.append(ShiftOp(rounded))
                 segments.append([])
         elif kind is EffectType.HEAT_HAZE:
-            if float(params.get("amplitude", 0.0)) > 0.0:
+            amplitude = float(params.get("amplitude", 0.0)) * scale
+            if amplitude > 0.0:
                 hazes.append(HazeOp(
-                    float(params.get("amplitude", 0.0)), float(params.get("frequency", 0.045)),
+                    amplitude, float(params.get("frequency", 0.045)),
                     float(time) * float(params.get("speed", 0.0)), float(params.get("top", 0.35)),
                     max(0.01, float(params.get("span", 0.4))),
                 ))

@@ -46,11 +46,10 @@ Causes, par ordre d'importance :
 
 ### Adaptation aux appareils
 
-- `core/runtime_profile.py` déduit le profil (`low` / `balanced` / `high`) du **nombre de cœurs et de la RAM** : le GPU
-  n'est pas regardé, rien n'est mesuré. Une machine 8 cœurs / 16 Go à GPU intégré faible est classée `high`.
-- `core/memory_monitor.py` suit la pression mémoire ; **rien** ne tient compte de la batterie, du mode économie
-  d'énergie ni de la chauffe.
-- Sans GPU utilisable, le seul chemin complet est le plus lent (segments FFmpeg).
+- `core/runtime_profile.py` + `core/machine_bench.py` : Auto préfère le banc mesuré ; heuristique cœurs/RAM en secours.
+- `core/power_state.py` + `core/runtime_regulator.py` : batterie, économie d'énergie et chauffe descendent d'un cran
+  l'aperçu ; le préchargement est suspendu sur batterie. `core/memory_monitor.py` suit la pression mémoire.
+- Sans GPU utilisable, le seul chemin complet reste le plus lent (segments FFmpeg) jusqu'à l'étape 2.
 
 ### Contraintes retenues
 
@@ -225,9 +224,13 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
 2. [ ] **Entrées / sorties média.** Build FFmpeg LGPL + PyAV dans le paquet (macOS, Windows, Linux), `core/media_io.py`
    et sa garde AST, moniteur alimenté par les proxies quand l'original a un long GOP. Critère : un saut ≤ 50 ms sur
    proxy, sur la machine minimale.
-3. [ ] **Étape 1 : profil mesuré et régulateur.** *Partiel :* banc CPU (composition, décodage FFmpeg, rastérisation
-   tampon) → cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Reste :
-   batterie / économie d'énergie / chauffe, rendu à la demande, échelle de dégradation complète liée au banc.
+3. [x] **Étape 1 : profil mesuré et régulateur.** Banc CPU (composition, décodage FFmpeg, rastérisation tampon) →
+   cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Régulateur
+   (`core/runtime_regulator.py`) : échelle proxies → voisinage 1/2 → flou de mouvement coupé en lecture → résolution
+   → cadence (adaptatif) → préchargement ; cran de base = profil mesuré. Énergie (`core/power_state.py`) : un cran de
+   moins sur batterie / économie / chauffe ; préchargement suspendu sur batterie. Rendu à la demande
+   (`OnDemandGate`) : à l'arrêt, pas de nouveau plan si l'empreinte est inchangée. Forçage tests :
+   `KUT_STUDIO_POWER=battery,thermal=serious`.
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
    matrice, lumière et grain en shaders, compositeur CPU allégé. Critère : le montage Onlyfab joue sans « Calcul de
    l'aperçu » sur la machine minimale.

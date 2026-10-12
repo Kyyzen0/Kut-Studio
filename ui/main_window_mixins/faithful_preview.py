@@ -11,6 +11,21 @@ from ui import i18n
 LOGGER = logging.getLogger(__name__)
 
 
+def _preview_job_cached(engine, job) -> bool:
+    """``True`` si le segment du job est déjà présent dans le cache disque."""
+    key = getattr(job, "key", None)
+    if key is None:
+        return False
+    cache = getattr(engine, "cache", None)
+    if cache is None:
+        return False
+    try:
+        return cache.lookup(key) is not None
+    except Exception:
+        LOGGER.debug("Lecture du cache d'aperçu en échec : segment traité comme absent", exc_info=True)
+        return False
+
+
 class _PreviewEvents(QObject):
     """Pont thread de rendu → thread Qt pour l'état du moteur d'aperçu."""
 
@@ -201,6 +216,13 @@ class FaithfulPreviewMixin:
         except Exception:
             LOGGER.debug("Plan de préchargement non calculé à %.3f s : rien n'est préchargé", center, exc_info=True)
             return []
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            from core.runtime_regulator import limit_prefetch_requests
+
+            requests = limit_prefetch_requests(
+                requests, max_extra=int(runtime.prefetch_max_extra())
+            )
         resolver = self._preview_resolver()
         overrides = self._preview_grade_overrides()
         jobs = []
@@ -243,9 +265,27 @@ class FaithfulPreviewMixin:
         if bool(self.is_playing):
             planner.reset()
             return  # lecture : on limite le travail CPU/GPU
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None and not runtime.prefetch_allowed():
+            # Batterie : préchargement suspendu (ADR-0001) ; le segment déjà
+            # en cache reste utilisable via ``_present_cached_preview_at``.
+            try:
+                engine.cancel_all()
+            except Exception:
+                LOGGER.debug(
+                    "Annulation du préchargement (batterie) en échec : la file garde ses demandes",
+                    exc_info=True,
+                )
+            return
         velocity = planner.note_position(float(center))
         jobs = self._preview_segment_jobs(center, velocity)
         self._last_preview_jobs = list(jobs)
+        # Rendu à la demande : à l'arrêt, si chaque segment utile est déjà en
+        # cache, ne rien relancer (purge / échec → lookup manque → on replanifie).
+        if jobs and all(_preview_job_cached(engine, job) for job in jobs):
+            return
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         try:
             duration = float(self._ensure_timeline_index().duration)
             low, high = planner.keep_range(center, duration=duration, velocity=velocity)
@@ -383,6 +423,9 @@ class FaithfulPreviewMixin:
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         try:
             engine.invalidate_clip(str(clip_id))
         except Exception:

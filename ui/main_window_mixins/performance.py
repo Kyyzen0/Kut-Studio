@@ -294,6 +294,9 @@ class PerformanceMixin:
             if answer != QMessageBox.Yes:
                 return 0
         freed = self.cache_manager.purge(kind)
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         self._proxy_badge_timer.start()
         return freed
 
@@ -305,6 +308,9 @@ class PerformanceMixin:
             if answer != QMessageBox.Yes:
                 return 0
         freed = self.cache_manager.purge_project(self.project)
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         self._proxy_badge_timer.start()
         return freed
 

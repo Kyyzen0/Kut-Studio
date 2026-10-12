@@ -8,7 +8,7 @@ relancé si l'empreinte change (cœurs, RAM, plateforme, version du schéma).
 
 Le banc ne lit pas le GPU : sans mesure GPU fiable et portable, inventer un
 score graphique serait un faux signal (voir :mod:`core.runtime_profile`).
-Batterie / chauffe : hors de cette première livraison.
+Batterie / économie / chauffe : :mod:`core.power_state` + :mod:`core.runtime_regulator`.
 """
 
 from __future__ import annotations
@@ -89,7 +89,11 @@ def machine_fingerprint(resources: MachineResources | None = None) -> str:
 
 
 def _score_to_profile(compose_ms: float, decode_fps: float | None, raster_ms: float) -> str:
-    """Vote majoritaire low / balanced / high ; decode absent = voix neutre."""
+    """Vote majoritaire low / balanced / high ; decode absent = voix neutre.
+
+    À égalité (ex. compose high + raster low sans decode), renvoie
+    ``balanced`` — jamais un choix dépendant du hachage de ``set``.
+    """
     votes = []
     votes.append(
         PROFILE_HIGH if compose_ms <= _COMPOSE_HIGH_MS else PROFILE_LOW if compose_ms >= _COMPOSE_LOW_MS else PROFILE_BALANCED
@@ -105,7 +109,12 @@ def _score_to_profile(compose_ms: float, decode_fps: float | None, raster_ms: fl
             if decode_fps <= _DECODE_LOW_FPS
             else PROFILE_BALANCED
         )
-    return max(set(votes), key=votes.count)
+    best = max(votes.count(name) for name in votes)
+    tied = {name for name in votes if votes.count(name) == best}
+    if len(tied) == 1:
+        return next(iter(tied))
+    # Égalité entre profils distincts (souvent high vs low sans decode) → balanced.
+    return PROFILE_BALANCED
 
 
 def _bench_compose_layers(*, width: int = 960, height: int = 540, layers: int = 10) -> float:
@@ -267,6 +276,17 @@ def ensure_machine_bench(
     return result
 
 
+def bench_enabled(environment: Mapping[str, str] | None = None) -> bool:
+    """``False`` si ``KUT_STUDIO_MACHINE_BENCH`` coupe le banc (CI / forçage)."""
+    env = environment if environment is not None else os.environ
+    return str(env.get("KUT_STUDIO_MACHINE_BENCH", "")).strip().lower() not in {
+        "off",
+        "0",
+        "false",
+        "no",
+    }
+
+
 def measured_profile_name(
     resources: MachineResources | None = None,
     *,
@@ -277,8 +297,7 @@ def measured_profile_name(
 
     ``KUT_STUDIO_MACHINE_BENCH=off`` force l'heuristique (CI).
     """
-    env = environment if environment is not None else os.environ
-    if str(env.get("KUT_STUDIO_MACHINE_BENCH", "")).strip().lower() in {"off", "0", "false", "no"}:
+    if not bench_enabled(environment):
         return None
     cached = load_cached_bench(resources, directory=directory)
     return None if cached is None else cached.profile
@@ -288,6 +307,7 @@ __all__ = [
     "BenchResult",
     "CACHE_FILE_NAME",
     "SCHEMA_VERSION",
+    "bench_enabled",
     "ensure_machine_bench",
     "load_cached_bench",
     "machine_fingerprint",

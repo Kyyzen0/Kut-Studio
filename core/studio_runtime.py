@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 
 from .cache_store import MemoryCache
+from .power_state import PowerState, detect_power_state
 from .preview_quality import PreviewQualityController, quality_label
 from .runtime_profile import (
     MachineResources,
@@ -26,7 +28,12 @@ from .runtime_profile import (
     project_weight,
     resolve_profile,
 )
+from .runtime_regulator import OnDemandGate, RegulatorPolicy, compute_policy
 from .task_queue import PRIORITY_BACKGROUND, QueueWorker, TaskQueue
+
+# L'état énergie / chauffe ne change pas à chaque tick : on le relit au plus
+# toutes les 15 s (pmset / sysfs), ou plus tôt via :meth:`refresh_power_state`.
+_POWER_TTL_SECONDS = 15.0
 
 
 def peak_rss_bytes() -> int | None:
@@ -160,18 +167,54 @@ class StudioRuntime:
         self.analysis_worker = QueueWorker(self.analysis)
         self.mailbox = PreviewMailbox()
         self.diagnostics = RuntimeDiagnostics()
+        self._power = PowerState(source="unavailable")
+        self._power_checked_at = 0.0
+        self.ondemand = OnDemandGate()
+        self._bench_refresh_lock = threading.Lock()
+        self._bench_refresh_pending = False
         self._profile = resolve_profile(self.requested_profile, self.resources, self.weight)
         self.cache = MemoryCache(max_bytes=self._profile.cache_budget_bytes)
         self.preview.apply(self.requested_quality, self._profile)
+        self._policy = compute_policy(self._profile, power=self._power)
 
     def resolved_profile(self) -> PerformanceProfile:
         return self._profile
 
+    def regulator_policy(self) -> RegulatorPolicy:
+        """Leviers d'aperçu (banc + énergie) ; jamais appliqués à l'export."""
+        self._ensure_power_fresh()
+        return self._policy
+
+    def power_state(self) -> PowerState:
+        self._ensure_power_fresh()
+        return self._power
+
+    def refresh_power_state(self, state: PowerState | None = None) -> PowerState:
+        """Force une relecture (ou injecte un état de test) et rafraîchit la politique."""
+        self._power = state if state is not None else detect_power_state()
+        self._power_checked_at = time.monotonic()
+        self._refresh_policy()
+        return self._power
+
     def preview_divisor(self) -> int:
+        # Même rafraîchissement énergie que :meth:`neighborhood_scale` : sinon
+        # le premier ``_apply_runtime_hints`` publie le diviseur profil seul,
+        # puis le scale déclenche le cran batterie trop tard.
+        self._ensure_power_fresh()
         return self.preview.divisor
 
     def preview_label(self) -> str:
+        self._ensure_power_fresh()
         return quality_label(self.preview.divisor)
+
+    def neighborhood_scale(self) -> float:
+        return self.regulator_policy().neighborhood_scale
+
+    def prefetch_allowed(self) -> bool:
+        return self.regulator_policy().prefetch_enabled
+
+    def prefetch_max_extra(self) -> int:
+        return self.regulator_policy().prefetch_max_extra
 
     def set_requested_profile(self, profile: str) -> None:
         self.requested_profile = profile
@@ -180,6 +223,7 @@ class StudioRuntime:
     def set_preview_quality(self, quality: str) -> None:
         self.requested_quality = quality
         self.preview.apply(quality, self._profile)
+        self._refresh_policy()
 
     def note_gpu(self, gpu_name: str | None) -> None:
         """Enregistre un indice GPU fourni par l'interface, si elle en a un."""
@@ -227,17 +271,47 @@ class StudioRuntime:
         self.analysis_worker.ensure_started()
 
     def schedule_machine_bench(self, *, force: bool = False) -> None:
-        """Mesure le profil machine en fond (ADR-0001 étape 1) puis rafraîchit Auto."""
-        from .machine_bench import ensure_machine_bench, load_cached_bench
+        """Mesure le profil machine en fond (ADR-0001 étape 1) puis signale un rafraîchissement.
 
+        Le banc tourne dans le worker ; les budgets (cache, qualité) sont
+        appliqués ensuite sur le thread propriétaire via
+        :meth:`apply_pending_machine_bench` — jamais depuis le worker.
+        """
+        from .machine_bench import bench_enabled, ensure_machine_bench, load_cached_bench
+
+        if not force and not bench_enabled():
+            return
         if not force and load_cached_bench(self.resources) is not None:
             return
 
-        def _run() -> None:
+        session = self.session_id
+
+        def _run(token) -> None:
+            if token.cancelled:
+                return
             ensure_machine_bench(self.resources, force=force)
-            self._refresh_budgets()
+            if token.cancelled or session != self.session_id:
+                return
+            with self._bench_refresh_lock:
+                self._bench_refresh_pending = True
 
         self.schedule("machine-bench", _run, priority=PRIORITY_BACKGROUND)
+
+    def machine_bench_refresh_pending(self) -> bool:
+        with self._bench_refresh_lock:
+            return self._bench_refresh_pending
+
+    def apply_pending_machine_bench(self) -> bool:
+        """Applique le rafraîchissement Auto après le banc (thread propriétaire).
+
+        Retourne ``True`` si les budgets ont été recalculés.
+        """
+        with self._bench_refresh_lock:
+            if not self._bench_refresh_pending:
+                return False
+            self._bench_refresh_pending = False
+        self._refresh_budgets()
+        return True
 
     def shutdown(self) -> None:
         """Arrête la file et vide le cache à la fermeture de l'application."""
@@ -262,3 +336,61 @@ class StudioRuntime:
         # La qualité explicite reste prioritaire ; Auto suit le profil. Un
         # changement de budget remet aussi l'adaptation temporaire à zéro.
         self.preview.apply(self.requested_quality, self._profile)
+        self._refresh_policy()
+
+    def _ensure_power_fresh(self) -> None:
+        now = time.monotonic()
+        if now - self._power_checked_at < _POWER_TTL_SECONDS and self._power_checked_at > 0:
+            return
+        try:
+            self._power = detect_power_state()
+        except Exception:  # noqa: BLE001 — l'énergie ne doit jamais empêcher l'aperçu
+            import logging
+
+            logging.getLogger("kut_studio.studio_runtime").debug(
+                "État énergie illisible : régulateur sans cran batterie/chauffe",
+                exc_info=True,
+            )
+            self._power = PowerState(source="unavailable")
+        self._power_checked_at = now
+        self._refresh_policy()
+
+    def _refresh_policy(self) -> None:
+        # Auto + profil Auto : le cran énergie monte le diviseur de base. Un
+        # choix explicite (full / half / profil forcé) n'est pas rabaissé —
+        # préchargement et voisinage suivent quand même la politique.
+        energy_divisor = None
+        if self.requested_quality == "auto" and self.requested_profile == "auto":
+            energy_divisor = self._profile.preview_divisor
+        previous = self._policy
+        self._policy = compute_policy(
+            self._profile,
+            power=self._power,
+            preview_divisor=energy_divisor,
+        )
+        if (
+            self.requested_quality == "auto"
+            and self.requested_profile == "auto"
+            and self._policy.preview_divisor != self.preview.baseline
+        ):
+            previous_baseline = self.preview.baseline
+            current = self.preview.divisor
+            new_baseline = self._policy.preview_divisor
+            self.preview.baseline = new_baseline
+            self.preview.adaptive.set_baseline(new_baseline)
+            # Conserve une surcharge adaptative (diviseur déjà sous l'ancienne
+            # base). Un cran purement énergétique suit le nouveau baseline
+            # (batterie → 2, retour secteur → 1), sans rester collé à l'arrêt.
+            if current > previous_baseline:
+                keep = max(current, new_baseline)
+                self.preview.divisor = keep
+                self.preview.adaptive.divisor = keep
+            else:
+                self.preview.divisor = new_baseline
+        if (
+            previous.prefetch_enabled != self._policy.prefetch_enabled
+            or previous.prefetch_max_extra != self._policy.prefetch_max_extra
+            or previous.preview_divisor != self._policy.preview_divisor
+            or previous.neighborhood_half != self._policy.neighborhood_half
+        ):
+            self.ondemand.invalidate()

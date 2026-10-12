@@ -27,6 +27,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
   (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Auto utilise
   ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.
+- **Régulateur d'aperçu (énergie + dégradation).** Auto descend d'un cran sur batterie, mode économie ou chauffe ;
+  le préchargement des segments fidèles est suspendu sur batterie ; à l'arrêt, rien n'est recalculé si rien n'a
+  changé. L'échelle (proxies, effets de voisinage en 1/2, résolution, préchargement) part du profil mesuré.
+  L'export n'est jamais touché. Forçage : `KUT_STUDIO_POWER=battery,thermal=serious`.
 - **Aperçu fidèle : un clip vidéo déjà commencé** n'est plus traité depuis le début du média dans un segment tardif
   (coupe avant effets / conformation, comme l'audio du mixage en direct).
 
