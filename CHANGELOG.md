@@ -22,6 +22,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Aperçu : régler un bus ne ressert plus l'ancien son.** Le fader, la coupure et les inserts d'un bus font partie
   de l'empreinte des segments. Avant, le moniteur rejouait le mixage d'avant le réglage.
 
+## [0.5.0] - 2026-10-12
+
+Le **mixage audio** gagne ses trois outils de console : des **inserts** par piste (une chaîne d'effets sur la somme
+des clips), un **égaliseur 4 bandes** et des **bus** (sous-mixages entre les pistes et le Master), tous entendus en
+lecture comme à l'export. Côté aperçu, Auto **mesure la machine** et se règle sur la **batterie**, le mode économie et
+la chauffe, et les titres et formes du moniteur GPU deviennent des textures à la taille de leur contenu.
+
+**À savoir** : sur batterie, Auto descend d'un cran de qualité d'aperçu et ne précharge plus que le segment sous la
+tête (l'export n'est jamais dégradé). Les projets gardent le format 17 ; un projet sans insert ni bus s'exporte comme
+avant.
+
 ### Added
 
 - **Bus audio.** Un bus est un sous-mixage entre des pistes et le Master : bouton **Nouveau bus** du mixeur, sortie de
@@ -40,11 +51,15 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- **Moniteur GPU : calques graphiques en textures par contenu.** Un titre ou une forme éligible n'est plus
+  redessiné plein cadre à chaque image qui ne change que sa pose : la rastérisation produit une texture à la taille
+  réelle du contenu, animée par matrice et opacité dans le shader (ADR-0001, étape 2). Groupes, masques et flou de
+  mouvement multi-échantillons restent en repli plein cadre. Voir [docs/gpu-preview.md](docs/gpu-preview.md).
 - **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
   (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Auto utilise
   ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.
 - **Régulateur d'aperçu (énergie + dégradation).** Auto descend d'un cran sur batterie, mode économie ou chauffe ;
-  le préchargement des segments fidèles est suspendu sur batterie ; à l'arrêt, rien n'est recalculé si rien n'a
+  le préchargement des segments voisins est suspendu sur batterie (le segment sous la tête reste rendu) ; à l'arrêt, rien n'est recalculé si rien n'a
   changé. L'échelle (proxies, effets de voisinage en 1/2, résolution, préchargement) part du profil mesuré.
   L'export n'est jamais touché. Forçage : `KUT_STUDIO_POWER=battery,thermal=serious`.
 - **Aperçu fidèle : un clip vidéo déjà commencé** n'est plus traité depuis le début du média dans un segment tardif
@@ -480,7 +495,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0

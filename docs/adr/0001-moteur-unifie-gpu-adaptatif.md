@@ -228,7 +228,7 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Régulateur
    (`core/runtime_regulator.py`) : échelle proxies → voisinage 1/2 → flou de mouvement coupé en lecture → résolution
    → cadence (adaptatif) → préchargement ; cran de base = profil mesuré. Énergie (`core/power_state.py`) : un cran de
-   moins sur batterie / économie / chauffe ; préchargement suspendu sur batterie. Rendu à la demande
+   moins sur batterie / économie / chauffe ; préchargement des voisins suspendu sur batterie (le segment sous la tête reste rendu). Rendu à la demande
    (`OnDemandGate`) : à l'arrêt, pas de nouveau plan si l'empreinte est inchangée. Forçage tests :
    `KUT_STUDIO_POWER=battery,thermal=serious`.
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
@@ -239,6 +239,11 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    que par la chroma 4:2:0, interpolée par le GPU et répétée par swscale. Il reste deux goulots : la rastérisation, bloquée par le GIL (57 %, 223 contenus
    distincts pour 1 499 rastérisations), puis la relecture synchrone (34 %). Les textures par contenu passent donc en
    premier.
+   *Tranche livrée* : calques graphiques éligibles (pas de groupe, masque ni flou de mouvement multi-échantillons) en
+   textures locales (`MographRenderer.content_texture`), animées par matrice et opacité dans le shader
+   (`CompositeLayer.matte_in_fit`) ; cache LRU par `content_key` ; repli plein cadre pour les modes de fusion
+   inéligibles. Restent : multi-pistes vidéo, lumière/grain en shaders, compositeur CPU, PNG d'export, relecture
+   asynchrone.
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
 6. [ ] **Étape 4 : export par le moteur.** Encodeur matériel, mode « Export de référence » ; tests de parité GPU /
    référence sur le corpus de rendu existant.

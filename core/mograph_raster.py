@@ -78,6 +78,30 @@ valeur entre déjà dans l'état.
 
 1 : première version numérotée (contour fusionné des polices à contours superposés)."""
 
+# Cache processus des textures par contenu (moniteur GPU). Cap volontairement
+# bas : les images sont plus petites que le cadre, et une LRU évite de garder
+# des milliers de titres d'un long montage.
+_CONTENT_CACHE_MAX = 256
+_content_texture_cache: OrderedDict[tuple, QImage] = OrderedDict()
+
+
+def clear_content_texture_cache() -> None:
+    """Vide le cache des textures par contenu (tests, purge utilisateur)."""
+    _content_texture_cache.clear()
+
+
+def cached_content_texture(key: tuple, factory) -> QImage:
+    """Retourne l'image pour ``key``, en appelant ``factory`` au premier besoin."""
+    cached = _content_texture_cache.get(key)
+    if cached is not None:
+        _content_texture_cache.move_to_end(key)
+        return cached
+    image = factory()
+    _content_texture_cache[key] = image
+    while len(_content_texture_cache) > _CONTENT_CACHE_MAX:
+        _content_texture_cache.popitem(last=False)
+    return image
+
 POINT_TO_PIXEL = 96.0 / 72.0
 """Le corps d'un titre est en points à 96 ppp (échelle des titres historiques)."""
 
@@ -776,6 +800,83 @@ class MographRenderer:
             key.append(tuple(tuple(round(v, 5) for v in m) for m in worlds))
         return tuple(key)
 
+    def content_key(self, clip_id: str, t: float) -> tuple:
+        """Clé de l'encre seule (ADR-0001 : une texture par contenu distinct)."""
+        evaluated = self.scene.evaluate(clip_id, t)
+        if not evaluated.active:
+            return (clip_id, "inactive")
+        key: list = [RASTER_VERSION, evaluated.content_key()]
+        graphic = evaluated.graphic
+        if isinstance(graphic, GraphicOverlay) and graphic.type == GraphicType.IMAGE:
+            key.append(image_signature(graphic.source_path))
+        return tuple(key)
+
+    def content_texture_eligible(self, clip_id: str, t: float) -> bool:
+        """``True`` si le calque peut être une texture locale animée par matrice.
+
+        Hors scope (repli plein cadre) : groupes, conteneurs, masques, flou de
+        mouvement multi-échantillons, calques inactifs.
+        """
+        evaluated = self.scene.evaluate(clip_id, t)
+        graphic = evaluated.graphic
+        if not evaluated.active or not isinstance(graphic, GraphicOverlay) or evaluated.opacity <= 0.0:
+            return False
+        if graphic.type == GraphicType.GROUP or graphic.is_container:
+            return False
+        if evaluated.masks:
+            return False
+        return len(self._sample_worlds(clip_id, t)) == 1
+
+    def render_content(self, clip_id: str, t: float) -> tuple[QImage, float, EvaluatedLayer] | None:
+        """Rastérise le contenu en espace local (boîte + marge), sans pose.
+
+        Retourne ``(image, marge, état)`` : l'image a l'origine locale
+        ``(-marge, -marge)`` ; la matrice monde × ``T(-marge, -marge)`` la
+        place dans le cadre. ``None`` si le calque n'est pas éligible.
+        Sans cache : préférer :meth:`content_texture` pour le moniteur.
+        """
+        if not self.content_texture_eligible(clip_id, t):
+            return None
+        evaluated = self.scene.evaluate(clip_id, t)
+        graphic = evaluated.graphic
+        if not isinstance(graphic, GraphicOverlay):
+            return None
+        margin = content_margin(graphic)
+        box_w, box_h = float(evaluated.box[0]), float(evaluated.box[1])
+        width = max(1, int(math.ceil(box_w + 2.0 * margin)))
+        height = max(1, int(math.ceil(box_h + 2.0 * margin)))
+        if width * height > 64_000_000:
+            return None
+        buffer = QImage(width, height, _FORMAT)
+        buffer.fill(Qt.transparent)
+        painter = QPainter(buffer)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.translate(margin, margin)
+            draw_content(painter, graphic, evaluated.box, device_scale=1.0)
+        finally:
+            painter.end()
+        return buffer, margin, evaluated
+
+    def content_texture(self, clip_id: str, t: float) -> tuple[QImage, float, EvaluatedLayer] | None:
+        """Comme :meth:`render_content`, avec cache LRU par :meth:`content_key`."""
+        if not self.content_texture_eligible(clip_id, t):
+            return None
+        evaluated = self.scene.evaluate(clip_id, t)
+        graphic = evaluated.graphic
+        if not isinstance(graphic, GraphicOverlay):
+            return None
+        margin = content_margin(graphic)
+        key = self.content_key(clip_id, t)
+
+        def factory() -> QImage:
+            painted = self.render_content(clip_id, t)
+            if painted is None:
+                raise RuntimeError(f"texture de contenu indisponible pour {clip_id!r}")
+            return painted[0]
+
+        return cached_content_texture(key, factory), margin, evaluated
+
     def frame_key(self, layer_ids: Iterable[str], t: float) -> tuple:
         return (self.width, self.height, self.quality) + tuple(
             self.layer_key(clip_id, t) for clip_id in layer_ids
@@ -968,7 +1069,8 @@ def scene_for_plan(plan, *, measure: bool = True) -> GraphicsScene:
 
 
 __all__ = [
-    "IMAGES", "MographRenderer", "POINT_TO_PIXEL", "blur_image", "content_margin", "draw_content",
+    "IMAGES", "MographRenderer", "POINT_TO_PIXEL", "RASTER_VERSION", "blur_image",
+    "cached_content_texture", "clear_content_texture_cache", "content_margin", "draw_content",
     "image_signature", "make_font", "mask_path", "measure_text", "qcolor", "render_layer_matte",
     "render_matte", "resolve_family", "scene_for_plan", "shape_path", "text_path",
 ]

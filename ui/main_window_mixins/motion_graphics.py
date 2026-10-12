@@ -291,28 +291,57 @@ class MotionGraphicsMixin:
         self._refresh_viewer_overlay(t)
 
     def _sync_gpu_blend_layers(self, scene, t: float) -> set[str]:
-        """Éléments « calque » à mode de fusion et sans effet FFmpeg → moniteur GPU ; retourne leurs identifiants.
+        """Calques graphiques → moniteur GPU ; retourne leurs identifiants.
 
-        Rendus à la taille de rendu du GPU, en RGBA droit (le shader multiplie lui-même par l'alpha)."""
+        Priorité ADR-0001 : texture à taille réelle animée par matrice quand le calque
+        est éligible ; sinon repli plein cadre pour les modes de fusion non normaux
+        (comportement historique). Les calques normaux inéligibles restent sur Qt.
+        """
         from PySide6.QtGui import QImage
 
         from core.blend_modes import BlendMode
         from core.mograph_program import graphics_program
         from core.mograph_raster import MographRenderer
+        from core.mograph_scene import mat_mul, mat_translate
 
         panel = self.preview_panel
         width, height = panel.gpu_render_size()
-        renderer = MographRenderer(scene, width, height, fps=float(self.project.fps), quality="draft")
+        fps = float(self.project.fps)
+        # Textures par contenu : espace séquence (la résolution de rendu est celle du cadre GPU).
+        content = MographRenderer(scene, scene.width, scene.height, fps=fps, quality="draft")
+        fallback = MographRenderer(scene, width, height, fps=fps, quality="draft")
         layers, ids = [], set()
         for element in graphics_program(scene):
-            if element.kind != "layer" or element.blend is BlendMode.NORMAL or element.effects or element.color_grade:
+            if element.kind == "adjustment" or element.effects or element.color_grade:
                 continue
-            if not renderer.any_active(element.layer_ids, t):
+            if not content.any_active(element.layer_ids, t):
                 continue
-            image = renderer.render(element.layer_ids, t, blend_modes=False).convertToFormat(QImage.Format_RGBA8888)
-            key = f"{width}x{height}:{renderer.frame_key(element.layer_ids, t)!r}"
-            layers.append((key, image, element.blend))
-            ids.update(element.layer_ids)
+            if element.kind == "band":
+                clip_ids = element.layer_ids
+                blend = BlendMode.NORMAL
+            elif element.kind == "layer":
+                clip_ids = element.layer_ids
+                blend = element.blend
+            else:
+                continue
+            for clip_id in clip_ids:
+                packed = content.content_texture(clip_id, t)
+                if packed is not None:
+                    image, margin, evaluated = packed
+                    image = image.convertToFormat(QImage.Format_RGBA8888)
+                    matrix = mat_mul(evaluated.world, mat_translate(-margin, -margin))
+                    fit = (0.0, 0.0, float(image.width()), float(image.height()))
+                    key = f"content:{content.content_key(clip_id, t)!r}"
+                    layers.append((key, image, blend if element.kind == "layer" else BlendMode.NORMAL,
+                                   matrix, float(evaluated.opacity), fit))
+                    ids.add(clip_id)
+                    continue
+                if element.kind == "layer" and blend is not BlendMode.NORMAL:
+                    image = fallback.render([clip_id], t, blend_modes=False).convertToFormat(
+                        QImage.Format_RGBA8888)
+                    key = f"{width}x{height}:{fallback.frame_key([clip_id], t)!r}"
+                    layers.append((key, image, blend))
+                    ids.add(clip_id)
         panel.set_blend_layers(layers)
         return ids
 

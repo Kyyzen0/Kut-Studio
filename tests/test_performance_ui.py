@@ -753,3 +753,37 @@ def test_degraded_quality_asks_for_a_lighter_proxy_of_the_active_media(
     assert window.runtime.preview.degraded
     assert requested and requested[0][0] == window.project.media_assets[0].path
     assert requested[0][1] == window.runtime.preview_divisor() or requested[0][1] > 1
+
+
+def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbours_are_not(
+    qtbot, monkeypatch, tmp_path, fake_proxies
+):
+    """Régulateur (ADR-0001) : la batterie suspend le préchargement des voisins, pas le rendu du segment courant.
+    Avant, ``_schedule_preview_around`` retournait avant toute demande et annulait les rendus en cours : à l'arrêt sur
+    batterie, l'aperçu fidèle ne se calculait jamais."""
+    from core.power_state import PowerState
+
+    window = _window(qtbot, monkeypatch, tmp_path)
+    window.project = _project(tmp_path, videos=2)
+    window.project.tracks[0].clips[0].source_out = 300.0
+    window.timeline_panel.set_project(window.project)
+    window._preview_pump_timer.stop()
+    planner = window._prefetch_planner()
+    fake_now = {"t": 1000.0}
+    planner._clock = lambda: fake_now["t"]
+    engine = window.preview_engine
+    cancelled = []
+    real_cancel_all = engine.cancel_all
+    monkeypatch.setattr(engine, "cancel_all", lambda: (cancelled.append(True), real_cancel_all())[1])
+
+    window._schedule_preview_around(10.0)
+    assert len(engine.pending_starts()) > 1, "sur secteur, les voisins sont préchargés"
+    engine.cancel_all()
+    cancelled.clear()
+
+    window.runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
+    assert window.runtime.prefetch_allowed() is False
+    fake_now["t"] += 5.0                                                     # à l'arrêt
+    window._schedule_preview_around(10.0)
+    assert engine.pending_starts() == [10.0 // 2 * 2], "le segment sous la tête est demandé, et lui seul"
+    assert cancelled == [], "un déplacement de la tête sur batterie n'annule pas les rendus en cours"

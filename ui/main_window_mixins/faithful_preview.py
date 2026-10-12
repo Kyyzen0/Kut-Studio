@@ -266,17 +266,10 @@ class FaithfulPreviewMixin:
             planner.reset()
             return  # lecture : on limite le travail CPU/GPU
         runtime = getattr(self, "runtime", None)
-        if runtime is not None and not runtime.prefetch_allowed():
-            # Batterie : préchargement suspendu (ADR-0001) ; le segment déjà
-            # en cache reste utilisable via ``_present_cached_preview_at``.
-            try:
-                engine.cancel_all()
-            except Exception:
-                LOGGER.debug(
-                    "Annulation du préchargement (batterie) en échec : la file garde ses demandes",
-                    exc_info=True,
-                )
-            return
+        # Batterie : le préchargement des voisins est suspendu (ADR-0001), pas le rendu du segment sous la tête.
+        # ``_preview_segment_jobs`` ne garde alors que le segment courant (``prefetch_max_extra == 0``) ; un retour
+        # anticipé ici laissait l'aperçu fidèle sans rendu à l'arrêt (retombée sur le média source) et annulait les
+        # rendus en cours à chaque déplacement de la tête.
         velocity = planner.note_position(float(center))
         jobs = self._preview_segment_jobs(center, velocity)
         self._last_preview_jobs = list(jobs)

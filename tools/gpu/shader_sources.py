@@ -301,7 +301,19 @@ void main() {
     float coverage = clamp(min(min(l.x, source.x - l.x), min(l.y, source.y - l.y)) + 0.5, 0.0, 1.0);
     float alpha = coverage * comp.x;
     if (comp.z > 0.5) {
-        alpha *= texture(tex1, luv).a;
+        // comp.w < 0.5 : matte dans le rectangle ``fit`` (textures graphiques à taille
+        // réelle, ADR-0001) ; sinon matte plein cadre en espace calque (masques vidéo).
+        if (comp.w < 0.5) {
+            vec2 extent = fit.zw - fit.xy;
+            vec2 fuv = (luv - fit.xy) / extent;
+            if (fuv.x < 0.0 || fuv.y < 0.0 || fuv.x > 1.0 || fuv.y > 1.0) {
+                alpha = 0.0;
+            } else {
+                alpha *= texture(tex1, fuv).a;
+            }
+        } else {
+            alpha *= texture(tex1, luv).a;
+        }
     }
     vec3 blended = blend_colors(int(comp.y + 0.5), dst, clamp(c, 0.0, 1.0));
     fragColor = vec4(mix(dst, blended, alpha), 1.0);
