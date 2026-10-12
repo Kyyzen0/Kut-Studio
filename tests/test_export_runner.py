@@ -255,3 +255,34 @@ def test_the_request_object_is_never_modified(media, tmp_path):
     before = replace(request)
     run_export(request)
     assert request == before and request.output_path == str(tmp_path / "out.mp4")
+
+
+# --- Chemin avec « ~ » (revue Codex de la PR 121) ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("atomic", [True, False])
+def test_a_tilde_output_path_is_expanded_once_and_the_finished_file_lands_there(media, tmp_path, monkeypatch, atomic):
+    """FFmpeg écrivait le fichier intermédiaire dans le dossier personnel, mais le renommage visait un « ~ » littéral et le rendu
+    terminé était supprimé : la destination doit être la même pour l'écriture, le renommage et le résultat."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))            # Windows lit celui-ci
+    result = run_export(_request(_project(media), Path("~/film.mp4")), atomic=atomic)
+    assert result.ok, result.message
+    assert (home / "film.mp4").is_file() and _frames(home / "film.mp4") == FPS
+    assert result.output_path == str(home / "film.mp4"), "le résultat nomme le fichier réel, pas le « ~ »"
+    assert _hidden_partials(home) == []
+    assert not Path("~").exists() and not (Path.cwd() / "~").exists(), "aucun dossier « ~ » littéral créé"
+
+
+def test_a_failed_export_to_a_tilde_path_reports_the_expanded_path_and_leaves_nothing(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    broken = tmp_path / "broken.mp4"
+    broken.write_text("rien", encoding="utf-8")
+    result = run_export(_request(_project(str(broken)), Path("~/film.mp4")))
+    assert result.status is ExportStatus.FAILED and result.output_path == str(home / "film.mp4")
+    assert list(home.iterdir()) == []
