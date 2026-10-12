@@ -39,6 +39,8 @@ def _french():
 
 @pytest.fixture(scope="module")
 def media(tmp_path_factory) -> str:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("FFmpeg absent : les projets de ces tests référencent un vrai média")
     path = tmp_path_factory.mktemp("cli") / "source.mp4"
     subprocess.run(
         ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=1,format=yuv420p",
@@ -184,6 +186,29 @@ def test_a_bad_command_line_is_a_usage_error_with_exit_64_and_no_traceback(capsy
     assert cli.run(["--help"]) == 0
 
 
+def test_a_bad_command_line_under_json_still_prints_exactly_one_json_object(capsys):
+    code, out, err = _run("export", "--json", capsys=capsys)
+    data = json.loads(out)
+    assert code == cli.EXIT_USAGE and data["ok"] is False and data["error"]["kind"] == "usage"
+    assert "Erreur d'utilisation" in err and data["error"]["message"] in err
+
+
+def test_every_dropped_section_label_is_translated_in_each_language(kut, capsys):
+    from core.project_io import LOAD_SECTIONS
+
+    raw = json.loads(kut.read_text(encoding="utf-8"))
+    raw["project"]["sequences"][0]["buses"] = [{"id": ""}]
+    kut.write_text(json.dumps(raw), encoding="utf-8")
+    for lang, label in (("fr", "bus audio : 1"), ("en", "audio buses: 1"), ("es", "buses de audio: 1")):
+        _code, out, _err = _run("validate", str(kut), "--lang", lang, capsys=capsys)
+        assert label in out, lang
+    for lang in ("fr", "en", "es"):
+        i18n.set_language(lang)
+        assert {i18n.translate(f"cli.section.{key}") for key in LOAD_SECTIONS} and all(
+            not i18n.translate(f"cli.section.{key}").startswith("cli.section.") for key in LOAD_SECTIONS
+        ), lang
+
+
 # --- export -------------------------------------------------------------------------------------------------------------
 
 
@@ -289,6 +314,24 @@ def test_ctrl_c_cancels_the_export_and_exits_130(kut, tmp_path, capsys, monkeypa
     code, out, err = _run("export", str(kut), "-o", str(tmp_path / "o.mp4"), "--json", capsys=capsys)
     assert code == cli.EXIT_INTERRUPTED == 130 and json.loads(out)["status"] == "cancelled" and "annulé" in err
     assert signal.getsignal(signal.SIGINT) is signal.default_int_handler, "le gestionnaire d'origine est rétabli"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="SIGINT : sémantique différente sous Windows")
+def test_ctrl_c_during_the_loudness_measurement_cancels_with_exit_130(kut, tmp_path, capsys, monkeypatch, qapp):
+    """La mesure de loudness (préréglage social) précède l'export : Ctrl-C doit déjà rendre l'annulation documentée."""
+    def slow_measure(plan, fps, target):
+        os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(15)                      # interrompu par le gestionnaire ; sinon le test échoue au délai
+        raise AssertionError("la mesure n'a pas été interrompue")
+
+    def never_exports(*_args, **_options):
+        raise AssertionError("aucun export ne doit démarrer après l'annulation")
+
+    monkeypatch.setattr("core.loudness.normalized_plan", slow_measure)
+    monkeypatch.setattr("core.export_runner.run_export", never_exports)
+    code, out, err = _run("export", str(kut), "-o", str(tmp_path / "o.mp4"), "--preset", "tiktok", "--json", capsys=capsys)
+    assert code == cli.EXIT_INTERRUPTED == 130 and json.loads(out)["status"] == "cancelled" and "annulé" in err
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
 
 
 # --- main.py : le même binaire, avant Qt ------------------------------------------------------------------------------

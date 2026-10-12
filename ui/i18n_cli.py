@@ -48,6 +48,17 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Project loaded, but {total} entr(ies) ignored:",
         "Proyecto cargado, pero {total} entrada(s) ignorada(s):",
     ),
+    "cli.section.clip_effects": _t("effets de clip", "clip effects", "efectos de clip"),
+    "cli.section.audio_effects": _t("effets audio et inserts", "audio effects and inserts", "efectos de audio e inserciones"),
+    "cli.section.buses": _t("bus audio", "audio buses", "buses de audio"),
+    "cli.section.transitions": _t("transitions", "clip transitions", "transiciones de clip"),
+    "cli.section.ducking": _t("associations de ducking", "ducking links", "asociaciones de ducking"),
+    "cli.section.color_presets": _t("préréglages de couleur", "colour presets", "ajustes preestablecidos de color"),
+    "cli.section.library_folders": _t("dossiers de la bibliothèque", "library folders", "carpetas de la biblioteca"),
+    "cli.section.library_tags": _t("étiquettes de la bibliothèque", "library tags", "etiquetas de la biblioteca"),
+    "cli.section.library_assignments": _t(
+        "affectations de la bibliothèque", "library assignments", "asignaciones de la biblioteca"
+    ),
     "cli.validate.dropped_line": _t("  - {section} : {count}", "  - {section}: {count}", "  - {section}: {count}"),
     "cli.validate.missing_media": _t(
         "{count} média(s) introuvable(s) sur le disque :", "{count} media file(s) missing on disk:",

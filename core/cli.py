@@ -184,9 +184,10 @@ def _dropped(report) -> dict[str, int]:
 
 
 def _section_label(section: str) -> str:
+    """Le libellé d'une section abandonnée dans la langue choisie (la clé JSON, elle, reste stable)."""
     from .project_io import LOAD_SECTIONS
 
-    return LOAD_SECTIONS.get(section, section)
+    return _t(f"cli.section.{section}") if section in LOAD_SECTIONS else section
 
 
 # --- Commandes --------------------------------------------------------------------------------------------------------
@@ -338,19 +339,35 @@ def _cmd_export(args: argparse.Namespace, output: _Output) -> int:
             spec = with_hardware(spec, args.hardware)
         except ValueError as error:
             return output.failure("invalid", str(error), EXIT_USAGE)
-    try:
-        request = _build_request(project, sequence, spec, output_path, args, output)
-    except (ValueError, OSError, RuntimeError) as error:
-        return output.failure("invalid", str(error))
-
-    output.line(_t("cli.export.start", project=str(project_path), output=str(output_path), preset=spec.id))
     cancelled = threading.Event()
-    # Ctrl-C annule l'export proprement (FFmpeg tué, rien de tronqué) ; un gestionnaire de signal ne se pose que dans le fil principal.
+    building = threading.Event()
+
+    def on_interrupt(_signal: int, _frame: Any) -> None:
+        cancelled.set()
+        if building.is_set():
+            raise KeyboardInterrupt          # la mesure de loudness est un appel bloquant : on l'interrompt, FFmpeg est tué avec lui
+
+    # Ctrl-C annule l'export proprement (FFmpeg tué, rien de tronqué), y compris pendant la préparation de la requête
+    # (mesure de loudness) ; un gestionnaire de signal ne se pose que dans le fil principal.
     previous = (
-        signal.signal(signal.SIGINT, lambda _signal, _frame: cancelled.set())
-        if threading.current_thread() is threading.main_thread() else None
+        signal.signal(signal.SIGINT, on_interrupt) if threading.current_thread() is threading.main_thread() else None
     )
     try:
+        building.set()
+        try:
+            request = _build_request(project, sequence, spec, output_path, args, output)
+        except (ValueError, OSError, RuntimeError) as error:
+            return output.failure("invalid", str(error))
+        except KeyboardInterrupt:
+            output.warning(_t("cli.export.cancelled"))
+            output.payload({
+                "ok": False, "status": "cancelled", "output": None, "preset": spec.id, "sequence": sequence.id,
+                "encoder": None, "fallback_reason": None, "message": None, "error_kind": None,
+            })
+            return EXIT_INTERRUPTED
+        finally:
+            building.clear()
+        output.line(_t("cli.export.start", project=str(project_path), output=str(output_path), preset=spec.id))
         from .export_runner import run_export
 
         result = run_export(
@@ -421,8 +438,10 @@ def run(argv: Sequence[str], *, out: Any = None, err: Any = None) -> int:
         args = parser.parse_args(list(argv))
     except _UsageError as error:
         _choose_language(None)
-        print(_t("cli.usage.error", message=str(error)), file=err)
-        return EXIT_USAGE
+        # Sous --json, même un appel mal formé rend l'unique objet JSON promis (le texte humain reste sur stderr).
+        return _Output("--json" in argv, out, err).failure(
+            "usage", _t("cli.usage.error", message=str(error)), EXIT_USAGE,
+        )
     except SystemExit as stop:                    # « -h » : argparse a déjà imprimé l'aide
         return int(stop.code or 0)
     _choose_language(getattr(args, "lang", None))
