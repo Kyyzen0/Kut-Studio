@@ -96,6 +96,22 @@ clips de la piste ─▶ volume, pan, automation, ducking (par clip, comme avant
 - Une séquence imbriquée garde les inserts de ses pistes (labels préfixés par la séquence) ; les inserts de la piste
   qui accueille le clip imbriqué restent sur cette piste, dans le parent.
 
+## Égaliseur paramétrique
+
+Un onzième effet, **Égaliseur 4 bandes** (`parametric_eq`), s'ajoute comme n'importe quel effet : sur un clip (inspecteur)
+ou en insert de piste (bouton **FX**). Quatre bandes fixes, de la plus grave à la plus aiguë :
+
+| Bande | Forme | Fréquence | Gain | Filtre FFmpeg |
+| --- | --- | --- | --- | --- |
+| Basses | plateau | 20 à 500 Hz (100) | −18 à +18 dB | `bass` |
+| Médium grave | cloche | 100 à 2000 Hz (400) | −18 à +18 dB, Q 0,1 à 10 | `equalizer` (`width_type=q`) |
+| Médium aigu | cloche | 500 à 8000 Hz (3000) | −18 à +18 dB, Q 0,1 à 10 | `equalizer` (`width_type=q`) |
+| Aigus | plateau | 2000 à 16000 Hz (8000) | −18 à +18 dB | `treble` |
+
+Une bande à 0 dB n'émet aucun filtre (un égaliseur à plat ne change rien et ne coûte rien). Par défaut, un léger gain de
+**présence** (+3 dB à 3 kHz) pour que l'effet s'entende dès qu'on l'ajoute. Pour plus de bandes, on empile plusieurs
+égaliseurs (aucun effet audio n'est limité à une instance).
+
 ## Mesures (Apple M4)
 
 | | |
@@ -129,4 +145,4 @@ Tests : `tests/test_live_mix.py` (origine égale à l'export, points de mesure, 
 `tests/test_live_mix_player.py` (calage à l'échantillon, vumètres, échec, fenêtre, page Audio) ;
 `tests/test_audio_mixer.py` (vumètres du mixeur) ; `tests/test_track_inserts.py` (modèle, fichier, graphe avec vrai
 FFmpeg : la somme est limitée, l'ordre compte, le vumètre lit la sortie) et `tests/test_track_inserts_ui.py` (bouton FX,
-boîte, annulation).
+boîte, annulation) ; `tests/test_parametric_eq.py` (chaque bande mesurée au vrai FFmpeg : gain à sa fréquence, Q, plateaux, bornes).

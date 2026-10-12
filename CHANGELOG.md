@@ -16,6 +16,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Égaliseur 4 bandes.** Un nouvel effet audio, sur un clip ou en insert de piste : un plateau grave, deux cloches
+  (fréquence, gain, Q) et un plateau aigu, de −18 à +18 dB. Une bande à 0 dB ne coûte rien ; par défaut, +3 dB de
+  présence à 3 kHz. Voir [docs/audio.md](docs/audio.md).
 - **Inserts de piste.** Chaque piste audio porte une chaîne d'effets qui traite la **somme** de ses clips (bouton **FX**
   de la tranche du mixeur) : un compresseur ou un limiteur de piste voit tout ce que la piste fait entendre. Les
   effets sont ceux des clips ; on peut les réordonner, les contourner, les régler, et tout s'annule. Le vumètre de la

@@ -92,6 +92,7 @@ EFFECT_TYPE_CATEGORY: dict[AudioEffectType, AudioEffectPresetCategory] = {
     AudioEffectType.TREBLE_BOOST: AudioEffectPresetCategory.EQ,
     AudioEffectType.REVERB_LIGHT: AudioEffectPresetCategory.SPATIAL,
     AudioEffectType.ECHO_LIGHT: AudioEffectPresetCategory.SPATIAL,
+    AudioEffectType.PARAMETRIC_EQ: AudioEffectPresetCategory.EQ,
 }
 
 
@@ -286,6 +287,20 @@ def _treble_boost_preset() -> AudioEffectPreset:
     )
 
 
+def _parametric_eq_preset() -> AudioEffectPreset:
+    return make_audio_effect_preset(
+        preset_id="parametric_eq",
+        name="Égaliseur 4 bandes",
+        description=(
+            "Plateau grave, deux cloches réglables (fréquence, gain, Q) et plateau aigu ; par défaut, +3 dB de "
+            "présence à 3 kHz."
+        ),
+        category=AudioEffectPresetCategory.EQ,
+        effect_type=AudioEffectType.PARAMETRIC_EQ,
+        builtin=True,
+    )
+
+
 def _phone_effect_preset() -> AudioEffectPreset:
     return make_audio_effect_preset(
         preset_id="phone_effect",
@@ -329,13 +344,13 @@ def _echo_light_preset() -> AudioEffectPreset:
     )
 
 
-# Identifiants des 10 préréglages natifs : utile pour les tests qui
+# Identifiants des 11 préréglages natifs : utile pour les tests qui
 # vérifient la complétude du catalogue livré.
-BUILTIN_AUDIO_EFFECT_PRESETS_COUNT: int = 10
+BUILTIN_AUDIO_EFFECT_PRESETS_COUNT: int = 11
 
 
 def builtin_audio_effect_presets() -> tuple[AudioEffectPreset, ...]:
-    """Retourne la bibliothèque native (10 préréglages, tâche 27)."""
+    """Retourne la bibliothèque native (11 préréglages : 10 de la tâche 27 et l'égaliseur)."""
     return (
         _normalize_preset(),
         _voice_enhance_preset(),
@@ -347,6 +362,7 @@ def builtin_audio_effect_presets() -> tuple[AudioEffectPreset, ...]:
         _phone_effect_preset(),
         _reverb_light_preset(),
         _echo_light_preset(),
+        _parametric_eq_preset(),
     )
 
 

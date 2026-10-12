@@ -53,6 +53,7 @@ class AudioEffectType(str, Enum):
     PHONE_EFFECT = "phone_effect"
     REVERB_LIGHT = "reverb_light"
     ECHO_LIGHT = "echo_light"
+    PARAMETRIC_EQ = "parametric_eq"
 
 
 # Identifiants des filtres FFmpeg (``-af``) associés à chaque type
@@ -76,6 +77,7 @@ AUDIO_EFFECT_FFMPEG_FILTER: dict[AudioEffectType, str] = {
     AudioEffectType.PHONE_EFFECT: "bandpass",
     AudioEffectType.REVERB_LIGHT: "aecho",
     AudioEffectType.ECHO_LIGHT: "aecho",
+    AudioEffectType.PARAMETRIC_EQ: "equalizer",
 }
 
 
@@ -112,6 +114,7 @@ class AudioEffectParameterSpec:
 # - PHONE_EFFECT → bandpass (Hz, Hz, mix)
 # - REVERB_LIGHT → aecho (in_gain, out_gain, delays, decays)
 # - ECHO_LIGHT → aecho (in_gain, out_gain, delays, decays)
+# - PARAMETRIC_EQ → bass (plateau grave) + 2 × equalizer (cloches) + treble (plateau aigu)
 AUDIO_EFFECT_PARAMETER_SPECS: dict[AudioEffectType, tuple[AudioEffectParameterSpec, ...]] = {
     AudioEffectType.NORMALIZE: (
         AudioEffectParameterSpec("integrated_loudness", -30.0, -10.0, -16.0),
@@ -160,6 +163,21 @@ AUDIO_EFFECT_PARAMETER_SPECS: dict[AudioEffectType, tuple[AudioEffectParameterSp
         AudioEffectParameterSpec("out_gain", 0.0, 1.0, 0.6),
         AudioEffectParameterSpec("delays_ms", 100.0, 1000.0, 300.0),
         AudioEffectParameterSpec("decays", 0.0, 0.9, 0.4),
+    ),
+    # Égaliseur paramétrique à 4 bandes fixes : plateau grave, deux cloches (médium grave, médium aigu) et plateau
+    # aigu. Une bande à 0 dB n'émet aucun filtre ; par défaut, un léger gain de présence (+3 dB à 3 kHz) pour que
+    # l'effet fasse entendre quelque chose dès qu'on l'ajoute.
+    AudioEffectType.PARAMETRIC_EQ: (
+        AudioEffectParameterSpec("low_gain_db", -18.0, 18.0, 0.0),
+        AudioEffectParameterSpec("low_hz", 20.0, 500.0, 100.0),
+        AudioEffectParameterSpec("mid1_gain_db", -18.0, 18.0, 0.0),
+        AudioEffectParameterSpec("mid1_hz", 100.0, 2000.0, 400.0),
+        AudioEffectParameterSpec("mid1_q", 0.1, 10.0, 1.0),
+        AudioEffectParameterSpec("mid2_gain_db", -18.0, 18.0, 3.0),
+        AudioEffectParameterSpec("mid2_hz", 500.0, 8000.0, 3000.0),
+        AudioEffectParameterSpec("mid2_q", 0.1, 10.0, 1.0),
+        AudioEffectParameterSpec("high_gain_db", -18.0, 18.0, 0.0),
+        AudioEffectParameterSpec("high_hz", 2000.0, 16000.0, 8000.0),
     ),
 }
 
