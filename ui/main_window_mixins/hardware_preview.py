@@ -231,7 +231,12 @@ class HardwarePreviewMixin:
         if not under_clips or not self.preview_panel.gpu_active:
             self.preview_panel.set_video_underlays(())
             return
-        cw, ch = self.preview_panel.gpu_render_size()
+        # Coordonnées logiques de la séquence (comme CompositeFrame), pas la taille
+        # de rendu réduite — sinon double échelle quand le viewer est < 1.
+        from core.gpu_grade import grade_is_active
+
+        cw, ch = int(self.project.width), int(self.project.height)
+        assets = {asset.id: asset for asset in self.project.media_assets}
         entries = []
         for layer in under_clips:
             if not layer.source_path:
@@ -247,10 +252,20 @@ class HardwarePreviewMixin:
                 clip_obj.transform, effective_transform_keyframes(self.project, clip_obj),
                 clip_local_time=local, clip_duration=clip_obj.duration,
             )
-            # Taille source inconnue ici : fit plein cadre (comme un média déjà conformé).
-            box = fit_box(cw, ch, cw, ch, fill=bool(evaluated.fill),
+            asset = assets.get(getattr(clip_obj, "asset_id", ""), None)
+            sw = int(getattr(asset, "width", 0) or 0) or cw
+            sh = int(getattr(asset, "height", 0) or 0) or ch
+            box = fit_box(sw, sh, cw, ch, fill=bool(evaluated.fill),
                           pan_x=evaluated.pan_x, pan_y=evaluated.pan_y)
             blend = coerce_blend_mode(getattr(getattr(clip_obj, "compositing", None), "blend_mode", "normal"))
+            compositing = getattr(clip_obj, "compositing", None)
+            has_masks = compositing is not None and bool(getattr(compositing, "masks", ()))
+            matte = None
+            if has_masks or getattr(clip_obj, "tracking", None) is not None:
+                matte = self._clip_matte(clip_obj, float(self.playhead_seconds))
+            grade = self._monitor_color_grade(clip_obj)
+            grade = grade if grade_is_active(grade) else None
+            windows = self._clip_windows(clip_obj, float(self.playhead_seconds)) if grade is not None else {}
             entries.append((
                 f"clip:{layer.owner_clip_id}",
                 path,
@@ -260,6 +275,11 @@ class HardwarePreviewMixin:
                 float(evaluated.opacity),
                 blend,
                 tuple(getattr(clip_obj, "effects", ()) or ()),
+                (float(evaluated.scale * evaluated.scale_x), float(evaluated.scale * evaluated.scale_y)),
+                matte,
+                grade,
+                windows,
+                float(local),
             ))
         self.preview_panel.set_video_underlays(entries)
 
