@@ -51,6 +51,19 @@ def resolve_object_id(
     return requested
 
 
+def ensure_free_asset_id(project, asset_id: str) -> str:
+    """Refuse un identifiant de média technique déjà pris, avant de modifier quoi que ce soit.
+
+    Un sous-titre ou un graphique crée son média technique, dont l'identifiant dérive de celui du clip
+    (``asset-subtitle-<id>``, ``graphic-asset-<id>``) : l'identifiant du clip peut être libre alors que celui du média ne l'est pas
+    (un média déjà nommé ainsi). Deux médias de même identifiant ne sont pas lus pareil partout (``_find_asset`` prend le premier, le
+    plan de rendu le dernier) : un clip existant pourrait alors se mettre à rendre le nouveau média.
+    """
+    if any(asset.id == asset_id for asset in project.media_assets):
+        raise InvalidObjectId(f"L'identifiant de média {asset_id!r} existe déjà : choisissez un autre identifiant de clip.")
+    return asset_id
+
+
 def clip_ids(project) -> set[str]:
     """Les identifiants de tous les clips du projet, séquences imbriquées comprises (un identifiant de clip est unique au projet)."""
     return {
@@ -62,4 +75,4 @@ def sequence_ids(project) -> set[str]:
     return {sequence.id for sequence in project.sequences}
 
 
-__all__ = ["InvalidObjectId", "clip_ids", "new_object_id", "resolve_object_id", "sequence_ids"]
+__all__ = ["InvalidObjectId", "clip_ids", "ensure_free_asset_id", "new_object_id", "resolve_object_id", "sequence_ids"]

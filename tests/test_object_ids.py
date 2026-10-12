@@ -227,3 +227,22 @@ def test_the_same_script_replayed_gives_the_same_project_down_to_every_identifie
     """Sans identifiants fournis, deux exécutions donnent deux projets aux identifiants aléatoires : un script ne pourrait ni
     désigner ce qu'il crée ni être rejoué. Avec, le projet est identique."""
     assert _snapshot(_build()) == _snapshot(_build())
+
+
+# --- Médias techniques dérivés (revue Codex de la PR 122) -------------------------------------------------------------------
+
+
+def test_a_derived_technical_media_id_that_is_already_taken_is_refused_before_anything_changes():
+    """L'identifiant du clip est libre, celui de son média technique (``asset-subtitle-<id>``, ``graphic-asset-<id>``) ne l'est pas :
+    deux médias de même identifiant ne sont pas lus pareil partout, un clip existant pourrait se mettre à rendre le nouveau."""
+    project = _project()
+    project.media_assets.append(MediaAsset("asset-subtitle-titre", "", "pris", 1.0, 0, 0, 0.0, "subtitle", has_audio=False))
+    project.media_assets.append(MediaAsset("graphic-asset-logo", "", "pris", 1.0, 0, 0, 0.0, "graphic", has_audio=False))
+    before = _snapshot(project)
+    with pytest.raises(InvalidObjectId, match="média"):
+        add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="titre")
+    with pytest.raises(InvalidObjectId, match="média"):
+        add_graphic_clip(project, "shape", timeline_start=0.0, duration=1.0, clip_id="logo")
+    assert _snapshot(project) == before, "ni clip, ni média, ni piste de graphiques créés"
+    assert add_subtitle_clip(project, "Bonjour", 0.0, 1.0, "S1", clip_id="autre").asset_id == "asset-subtitle-autre"
+    assert add_graphic_clip(project, "shape", timeline_start=0.0, duration=1.0, clip_id="autre_logo").asset_id == "graphic-asset-autre_logo"

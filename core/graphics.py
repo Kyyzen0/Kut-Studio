@@ -410,9 +410,11 @@ def add_graphic_clip(
     if duration <= 0.0:
         raise ValueError("La durée d'un graphique doit être positive.")
     # Vérifié avant de créer la piste G ou le média : un identifiant refusé ne laisse rien derrière lui.
-    from .object_ids import clip_ids, resolve_object_id
+    from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
 
     clip_identifier = resolve_object_id(clip_id, prefix="graphic", kind="clip", taken=clip_ids(project))
+    token = clip_identifier.removeprefix("graphic-") if clip_id is None else clip_identifier
+    asset_id = ensure_free_asset_id(project, f"graphic-asset-{token}")
     kind = GraphicType(graphic.type if graphic is not None else graphic_type)
     if kind == GraphicType.IMAGE:
         path = Path(graphic.source_path if graphic is not None else source_path).expanduser()
@@ -431,8 +433,6 @@ def add_graphic_clip(
         graphic = replace(graphic, source_path=source_path)
     target_track = track if track is not None else ensure_graphics_track(project)
     graphic = replace(graphic, z_order=next_z_order(target_track))
-    token = clip_identifier.removeprefix("graphic-") if clip_id is None else clip_identifier
-    asset_id = f"graphic-asset-{token}"
     if kind == GraphicType.IMAGE:
         label = Path(source_path).stem or "Image"
     elif kind == GraphicType.SHAPE:
