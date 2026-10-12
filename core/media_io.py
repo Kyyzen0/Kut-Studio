@@ -53,6 +53,8 @@ def pyav_available() -> bool:
 def probe(path: str | Path) -> MediaInfo:
     """Métadonnées minimales (durée, taille, cadence) via ffprobe."""
     ffprobe = find_media_tool("ffprobe")
+    if not ffprobe:
+        raise OSError("ffprobe introuvable")
     completed = supervised_run(
         [
             ffprobe, "-v", "error", "-select_streams", "v:0",
@@ -126,6 +128,8 @@ class MediaHandle:
 
     def _decode_cli(self, seconds: float) -> VideoFrame:
         ffmpeg = find_media_tool("ffmpeg")
+        if not ffmpeg:
+            raise OSError("ffmpeg introuvable")
         width, height = self.info.width, self.info.height
         with tempfile.NamedTemporaryFile(suffix=".rgba", delete=False) as handle:
             target = Path(handle.name)
