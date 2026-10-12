@@ -27,7 +27,7 @@ iniconfig==2.3.1
 pluggy==1.6.0
 pygments==2.21.0
 colorama==0.4.6
-ruff==0.16.10
+ruff==0.17.0
 mypy==2.4.0
 mypy_extensions==1.1.0
 librt==0.16.0
