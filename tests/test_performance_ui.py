@@ -761,8 +761,6 @@ def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbo
     """Régulateur (ADR-0001) : la batterie suspend le préchargement des voisins, pas le rendu du segment courant.
     Avant, ``_schedule_preview_around`` retournait avant toute demande et annulait les rendus en cours : à l'arrêt sur
     batterie, l'aperçu fidèle ne se calculait jamais."""
-    from core.power_state import PowerState
-
     window = _window(qtbot, monkeypatch, tmp_path)
     window.project = _project(tmp_path, videos=2)
     window.project.tracks[0].clips[0].source_out = 300.0
@@ -781,7 +779,8 @@ def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbo
     engine.cancel_all()
     cancelled.clear()
 
-    window.runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
+    # Le forçage d'environnement l'emporte sur un état injecté (le conftest force « secteur » pour tous les tests).
+    monkeypatch.setenv("KUT_STUDIO_POWER", "battery")
     assert window.runtime.prefetch_allowed() is False
     fake_now["t"] += 5.0                                                     # à l'arrêt
     window._schedule_preview_around(10.0)
