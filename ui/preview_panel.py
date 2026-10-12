@@ -48,6 +48,7 @@ from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
 
+# Marge (pixels) entre le cadre de la séquence et les bords du viewer.
 CANVAS_MARGIN = 12
 
 _UNDERLAY_POOL: ThreadPoolExecutor | None = None
@@ -82,10 +83,11 @@ def _decode_underlay_frame(path: str, seconds: float):
         return handle.decode_at(seconds)
     except Exception:
         # Poignée morte : rouvre une fois.
+        LOGGER.debug("Décodage underlay en échec sur poignée cached pour %s : réouverture", path, exc_info=True)
         try:
             handle.close()
         except Exception:  # noqa: BLE001
-            pass
+            LOGGER.debug("Fermeture de la poignée underlay morte en échec pour %s", path, exc_info=True)
         _UNDERLAY_HANDLES.pop(path, None)
         with open_media(path) as fresh:
             return fresh.decode_at(seconds)
@@ -95,7 +97,6 @@ class _UnderlayDecodeBridge(QObject):
     """Pont fil de décodage → thread Qt."""
 
     ready = Signal(str, str, object)  # source_id, key, VideoFrame | None
-"""Marge (pixels) entre le cadre de la séquence et les bords du viewer."""
 
 
 class _ViewportWatcher(QObject):
