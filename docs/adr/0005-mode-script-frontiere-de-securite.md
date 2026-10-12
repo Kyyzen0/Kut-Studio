@@ -318,5 +318,17 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   progression et annulation rendues sur le fil de l'appelant, repli CPU d'un encodeur matériel en échec (même logique que le
   moteur, factorisée dans `export_engine`), et un **fichier final atomique** (`.<nom>.<id>.partial<ext>` puis renommage). Tests :
   `tests/test_export_pipeline.py`, `tests/test_export_runner.py`.
-- Étapes 2 à 7 : à faire, dans l'ordre. La suivante est la **session** (`core/scripting/session.py`, atomicité, une étape
-  d'historique) et la descente de la règle de recalage des clips imbriqués de l'interface vers `core/`.
+- **Étape 2 : faite** (#122 et cette PR).
+  - Identifiants explicites (`core/object_ids.py`) sur neuf fonctions de création : un script désigne ce qu'il crée, et rejoué
+    il rend le même projet, identifiant par identifiant.
+  - `core/scripting/session.py` : `Session.apply` et `Session.transaction` appliquent des opérations **en tout ou rien**. Un
+    instantané copié en profondeur est remis **en place** si l'une est refusée (l'objet `Project` reste le même) ; le recadrage
+    des séquences imbriquées (`clamp_nested_clips`, ce que `_record_history` de l'interface fait aussi) est dans la même
+    transaction et rendu dans le rapport ; une transaction réussie est **une** étape d'historique, annulable et rétablissable
+    (`undo`, `redo`). Les refus du modèle sont dans le rapport (index, nom, message) ; une erreur de programmation restaure le
+    projet puis se propage. Tests : `tests/test_object_ids.py`, `tests/test_scripting_session.py`, dont la **parité avec
+    l'interface** (même suppression dans la fenêtre et dans une session : même projet, annuler compris).
+  - Constat de la parité : le panneau de bibliothèque crée à la demande l'emplacement d'un média (`library_assignments`) ;
+    c'est un effet d'affichage, pas une édition, et une session n'en a pas.
+- Étapes 3 à 7 : à faire, dans l'ordre. La suivante est le **CLI minimal** (`info`, `validate`, `export` dans `main.py` avant
+  Qt), qui est aussi le premier consommateur de `run_export` et de la session.

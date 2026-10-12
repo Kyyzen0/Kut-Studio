@@ -30,6 +30,8 @@ ENTRY_POINTS = {
 # attend sans raison écrite reste du code mort.
 PENDING_CONSUMERS = {
     "core.export_runner": "exécuteur d'export sans interface : le CLI (``Kut-Studio export``) l'importera, ADR-0005 étape 3",
+    "core.scripting": "mode script : le CLI (``Kut-Studio apply``) importera la session, ADR-0005 étapes 3 et 4",
+    "core.scripting.session": "session d'édition d'un script : le CLI (``Kut-Studio apply``) l'importera, ADR-0005 étapes 3 et 4",
 }
 
 
