@@ -4,4 +4,4 @@
 # constraints.txt (6.11.2).
 PySide6>=6.6,<6.12
 # Tracking 2D (analyse uniquement, importé à la demande) : corrélation par FFT.
-numpy>=1.26
+numpy>=2.5.3
