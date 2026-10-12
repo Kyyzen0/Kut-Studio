@@ -110,6 +110,56 @@ def test_content_texture_placed_by_matrix_matches_full_frame_raster(qapp):
     assert error <= 2.5, error
 
 
+def test_place_content_frame_matches_full_frame_raster(qapp):
+    project = _solid_project(x=0.1, y=-0.05, rotation=12.0)
+    scene = scene_for_plan(build_render_plan(project))
+    renderer = MographRenderer(scene, W, H, fps=25.0, quality="draft")
+    clip_id = next(iter(scene.top_level()))
+    placed = renderer.place_content_frame(clip_id, 0.25)
+    assert placed is not None
+    from PySide6.QtGui import QImage
+
+    full = renderer.render([clip_id], 0.25).convertToFormat(QImage.Format_RGBA8888)
+    placed = placed.convertToFormat(QImage.Format_RGBA8888)
+    a = np.frombuffer(placed.constBits(), np.uint8).reshape(placed.height(), placed.bytesPerLine())
+    a = a[:, : placed.width() * 4].reshape(placed.height(), placed.width(), 4).astype(np.float64)
+    b = np.frombuffer(full.constBits(), np.uint8).reshape(full.height(), full.bytesPerLine())
+    b = b[:, : full.width() * 4].reshape(full.height(), full.width(), 4).astype(np.float64)
+    assert np.abs(a - b).mean() <= 2.5
+
+
+def test_export_writes_content_sized_pngs(tmp_path, monkeypatch, qapp):
+    from core import mograph_stream
+    from core.export_engine import ExportEngine
+    from core.mograph_stream import cache_directory
+
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
+    mograph_stream.cache_directory.cache_clear() if hasattr(cache_directory, "cache_clear") else None
+    # Force a fresh cache root for this process.
+    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path / "cache" / "mograph")
+    (tmp_path / "cache" / "mograph").mkdir(parents=True)
+
+    project = _solid_project(x=0.05)
+    from core.visual_effects import ClipTransform
+
+    clip = next(
+        c for track in project.active_sequence.tracks for c in track.clips
+        if getattr(c, "graphic", None) is not None
+    )
+    # Deux poses, même encre : deux f-*.png possibles, un seul c-*.png.
+    plan = build_render_plan(project)
+    ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
+    clip.transform = ClipTransform(position_x=0.2)
+    plan = build_render_plan(project)
+    ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
+    content_pngs = list((tmp_path / "cache" / "mograph").glob("c-*.png"))
+    assert content_pngs, "expected content-sized PNG(s) in the mograph cache"
+    from PySide6.QtGui import QImage
+
+    image = QImage(str(content_pngs[0]))
+    assert image.width() < W and image.height() < H
+
+
 def test_preview_panel_sends_content_layers_with_matrix(qtbot):
     from PySide6.QtGui import QColor, QImage
 

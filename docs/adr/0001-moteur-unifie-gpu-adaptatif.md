@@ -242,8 +242,11 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    *Tranche livrée* : calques graphiques éligibles (pas de groupe, masque ni flou de mouvement multi-échantillons) en
    textures locales (`MographRenderer.content_texture`), animées par matrice et opacité dans le shader
    (`CompositeLayer.matte_in_fit`) ; cache LRU par `content_key` ; repli plein cadre pour les modes de fusion
-   inéligibles. Restent : multi-pistes vidéo, lumière/grain en shaders, compositeur CPU, PNG d'export, relecture
-   asynchrone.
+   inéligibles.
+   *Tranche PNG d'export* : pour un calque éligible, l'export et l'aperçu fidèle réutilisent `content_texture`
+   (`place_content_frame`), persistent l'encre en `c-*.png` à taille réelle (`write_content_png`), et ne
+   redessinent plus le texte/la forme à chaque pose. Restent : multi-pistes vidéo, lumière/grain en shaders,
+   compositeur CPU, relecture asynchrone.
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
 6. [ ] **Étape 4 : export par le moteur.** Encodeur matériel, mode « Export de référence » ; tests de parité GPU /
    référence sur le corpus de rendu existant.

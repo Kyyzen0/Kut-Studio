@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Export / aperçu fidèle : calques en PNG par contenu.** Un titre ou une forme éligible n'est plus redessiné
+  plein cadre à chaque pose : l'encre est rastérisée une fois (PNG `c-*` à taille réelle), puis posée dans le
+  cadre (ADR-0001, étape 2). Voir [docs/gpu-preview.md](docs/gpu-preview.md).
+
 ## [0.5.0] - 2026-10-12
 
 Le **mixage audio** gagne ses trois outils de console : des **inserts** par piste (une chaîne d'effets sur la somme

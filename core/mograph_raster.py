@@ -877,6 +877,43 @@ class MographRenderer:
 
         return cached_content_texture(key, factory), margin, evaluated
 
+    def place_content_frame(self, clip_id: str, t: float) -> QImage | None:
+        """Pose la texture par contenu dans un cadre plein (export / aperçu fidèle).
+
+        Réutilise :meth:`content_texture` : l'encre n'est dessinée qu'une fois par
+        ``content_key`` ; seule la pose (matrice × opacité) change. ``None`` si
+        le calque n'est pas éligible — l'appelant replie alors sur :meth:`render`.
+        """
+        packed = self.content_texture(clip_id, t)
+        if packed is None:
+            return None
+        image, margin, evaluated = packed
+        frame = QImage(self.width, self.height, _FORMAT)
+        frame.fill(Qt.transparent)
+        matrix = mat_mul(self.root, mat_mul(evaluated.world, mat_translate(-margin, -margin)))
+        painter = QPainter(frame)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setTransform(_qtransform(matrix))
+            painter.setOpacity(float(evaluated.opacity))
+            painter.drawImage(0, 0, image)
+        finally:
+            painter.end()
+        return frame
+
+    def content_place_matrix(self, clip_id: str, t: float) -> tuple[Matrix, float, int, int] | None:
+        """Matrice cadre ← contenu, opacité et taille de la texture (export FFmpeg).
+
+        La matrice place l'origine de la texture (``(-marge, -marge)`` en espace
+        calque) dans le cadre de rendu. ``None`` si le calque n'est pas éligible.
+        """
+        packed = self.content_texture(clip_id, t)
+        if packed is None:
+            return None
+        image, margin, evaluated = packed
+        matrix = mat_mul(self.root, mat_mul(evaluated.world, mat_translate(-margin, -margin)))
+        return matrix, float(evaluated.opacity), image.width(), image.height()
+
     def frame_key(self, layer_ids: Iterable[str], t: float) -> tuple:
         return (self.width, self.height, self.quality) + tuple(
             self.layer_key(clip_id, t) for clip_id in layer_ids
