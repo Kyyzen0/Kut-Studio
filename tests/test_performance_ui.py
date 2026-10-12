@@ -787,6 +787,9 @@ def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbo
 
     with window.runtime._power_lock:
         window.runtime._power_probe_result = PowerState(on_battery=False, source="old-probe")
+    # The global CI fixture sets KUT_STUDIO_POWER=ac; clear it so this test's
+    # injected battery state is not immediately overridden by the environment.
+    monkeypatch.delenv("KUT_STUDIO_POWER", raising=False)
     window.runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
     assert window.runtime.prefetch_allowed() is False
     fake_now["t"] += 5.0                                                     # à l'arrêt
