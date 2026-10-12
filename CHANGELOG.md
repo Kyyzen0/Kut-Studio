@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Imbriquer une sélection garde les bus des pistes déplacées.** Une piste envoyée sur un autre bus que la piste
+  hôte emporte ce bus (fader, coupure, inserts) dans la nouvelle séquence. Avant, le bus restait sur la piste parente
+  vidée : une piste coupée par son bus redevenait audible à l'export et en lecture.
+
 ### Added
 
 - **Bus audio.** Un bus est un sous-mixage entre des pistes et le Master : bouton **Nouveau bus** du mixeur, sortie de
