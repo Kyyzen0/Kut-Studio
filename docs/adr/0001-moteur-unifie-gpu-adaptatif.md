@@ -228,7 +228,7 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Régulateur
    (`core/runtime_regulator.py`) : échelle proxies → voisinage 1/2 → flou de mouvement coupé en lecture → résolution
    → cadence (adaptatif) → préchargement ; cran de base = profil mesuré. Énergie (`core/power_state.py`) : un cran de
-   moins sur batterie / économie / chauffe ; préchargement suspendu sur batterie. Rendu à la demande
+   moins sur batterie / économie / chauffe ; préchargement des voisins suspendu sur batterie (le segment sous la tête reste rendu). Rendu à la demande
    (`OnDemandGate`) : à l'arrêt, pas de nouveau plan si l'empreinte est inchangée. Forçage tests :
    `KUT_STUDIO_POWER=battery,thermal=serious`.
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
