@@ -20,9 +20,9 @@ pas de transitions.
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import replace
 
+from .object_ids import clip_ids, resolve_object_id
 from .project_model import Clip, MediaAsset, Project, Track
 from .time_editing import Restriction, free_map, needs_general_path, restrict
 from .time_map import SPEED_PROPERTY, speed_keyframes, speed_keyframes_of
@@ -632,6 +632,8 @@ def add_clip_to_track(
     asset_id: str,
     track_id: str,
     timeline_start: float,
+    *,
+    clip_id: str | None = None,
 ) -> Clip:
     """Crée un nouveau ``Clip`` à partir d'un ``MediaAsset`` et l'ajoute à la piste.
 
@@ -659,6 +661,8 @@ def add_clip_to_track(
         asset_id: identifiant du ``MediaAsset`` à utiliser comme source.
         track_id: identifiant de la ``Track`` qui accueillera le clip.
         timeline_start: position de début sur la timeline (en secondes).
+        clip_id: identifiant à donner au clip (scripts : pour le désigner ensuite) ; ``None`` en génère un. Voir
+            :mod:`core.object_ids` : forme restreinte, et refus d'un doublon dans le projet.
 
     Returns:
         Le nouveau ``Clip`` créé et ajouté à la piste.
@@ -680,9 +684,10 @@ def add_clip_to_track(
     track = find_track(project, track_id)
     _validate_track_asset_compatibility(asset, track)
     _ensure_track_editable(project, track)
+    new_id = resolve_object_id(clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
 
     new_clip = Clip(
-        id=f"clip-{uuid.uuid4().hex[:12]}",
+        id=new_id,
         asset_id=asset.id,
         track_id=track.id,
         timeline_start=timeline_start,
@@ -754,6 +759,8 @@ def add_subtitle_clip(
     timeline_start: float,
     duration: float,
     track_id: str = "S1",
+    *,
+    clip_id: str | None = None,
 ) -> Clip:
     """Crée un nouveau ``Clip`` de sous-titre dans ``project``.
 
@@ -767,6 +774,8 @@ def add_subtitle_clip(
         timeline_start: début sur la timeline (secondes, ``>= 0``).
         duration: durée du clip (secondes, ``> 0``).
         track_id: identifiant de la piste (doit être de type ``subtitle``).
+        clip_id: identifiant du clip (voir :func:`add_clip_to_track`) ; le média technique en dérive
+            (``asset-subtitle-<clip_id>``), si bien qu'un script rejoué produit les mêmes identifiants.
 
     Returns:
         Le nouveau :class:`Clip` créé et ajouté à la piste.
@@ -798,7 +807,9 @@ def add_subtitle_clip(
         )
 
     label = _build_subtitle_label(text)
-    asset_id = f"asset-subtitle-{uuid.uuid4().hex[:12]}"
+    new_id = resolve_object_id(clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
+    # Le média technique dérive de l'identifiant du clip : fourni, un script rejoué rend les mêmes identifiants.
+    asset_id = f"asset-subtitle-{new_id.removeprefix('clip-') if clip_id is None else new_id}"
     asset = MediaAsset(
         id=asset_id,
         path="",
@@ -813,7 +824,7 @@ def add_subtitle_clip(
     project.media_assets.append(asset)
 
     clip = Clip(
-        id=f"clip-{uuid.uuid4().hex[:12]}",
+        id=new_id,
         asset_id=asset.id,
         track_id=track.id,
         timeline_start=timeline_start,
@@ -867,6 +878,8 @@ def duplicate_clip(
     project: Project,
     clip_id: str,
     timeline_start: float | None = None,
+    *,
+    new_clip_id: str | None = None,
 ) -> Clip:
     """Duplique ``clip_id`` sur sa piste.
 
@@ -877,11 +890,13 @@ def duplicate_clip(
     Si ``timeline_start`` est fourni, la copie est placée à cet
     endroit (doit être positif). Sinon, la copie est insérée
     immédiatement après la fin du clip source, sur la même piste.
+    ``new_clip_id`` : identifiant de la copie (voir :func:`add_clip_to_track`), ``None`` en génère un.
     """
     source_track, source_index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, source_track)
     source_clip = source_track.clips[source_index]
     duration = source_clip.duration
+    duplicate_id = resolve_object_id(new_clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
 
     if timeline_start is None:
         new_start = float(source_clip.timeline_start + duration)
@@ -894,7 +909,7 @@ def duplicate_clip(
         new_start = float(timeline_start)
 
     duplicate = Clip(
-        id=f"clip-{uuid.uuid4().hex[:12]}",
+        id=duplicate_id,
         asset_id=source_clip.asset_id,
         track_id=source_track.id,
         timeline_start=new_start,
@@ -1195,6 +1210,8 @@ def apply_clip_transform_on_trim(
 def duplicate_clip_preserving_transform(
     project: Project,
     clip_id: str,
+    *,
+    new_clip_id: str | None = None,
 ) -> Clip:
     """Duplique un clip en propageant ``transform`` et ``transform_keyframes``.
 
@@ -1205,13 +1222,14 @@ def duplicate_clip_preserving_transform(
     source_track, source_index = _find_track_for_clip(project, clip_id)
     source_clip = source_track.clips[source_index]
     duration = source_clip.duration
+    duplicate_id = resolve_object_id(new_clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
 
     # Clonage profond des keyframes (les TransformKeyframe sont frozen,
     # donc une shallow copy suffit).
     new_keyframes = [copy_keyframe(kf) for kf in source_clip.transform_keyframes]
 
     duplicate = Clip(
-        id=f"clip-{uuid.uuid4().hex[:12]}",
+        id=duplicate_id,
         asset_id=source_clip.asset_id,
         track_id=source_track.id,
         timeline_start=source_clip.timeline_start + duration,

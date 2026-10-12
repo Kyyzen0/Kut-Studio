@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -140,6 +139,8 @@ def add_transition(
     to_clip_id: str,
     transition_type: TransitionType = TransitionType.CROSSFADE,
     duration: float = 0.5,
+    *,
+    transition_id: str | None = None,
 ) -> Transition:
     from_track, from_clip = _find_video_clip(project, from_clip_id)
     to_track, to_clip = _find_video_clip(project, to_clip_id)
@@ -161,8 +162,13 @@ def add_transition(
         if current.to_clip_id == from_clip_id or current.from_clip_id == to_clip_id:
             raise ValueError("Un clip ne peut pas avoir deux transitions sur la même jonction.")
     # La transition se construit (et valide sa durée) AVANT de toucher aux clips : un refus ne déplace plus rien.
+    from .object_ids import resolve_object_id
+
+    new_id = resolve_object_id(
+        transition_id, prefix="transition", kind="transition", taken={t.id for t in project.transitions}
+    )
     transition = Transition(
-        id=f"transition-{uuid.uuid4().hex[:12]}",
+        id=new_id,
         from_clip_id=from_clip_id,
         to_clip_id=to_clip_id,
         type=TransitionType(transition_type),

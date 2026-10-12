@@ -34,7 +34,7 @@ Ce que le code permet déjà, vérifié le 2026-10-12 :
 | `ExportEngine` est un `QObject` qui pilote un `QProcess` et attend une boucle d'événements ; `_build_command` est une méthode d'instance **privée** | `core/export_engine.py:478`, `:884` | Il n'existe **aucun moyen sans interface** de lancer un export. C'est le premier obstacle. |
 | Le texte et les formes sont dessinés par Qt (`QPainter`), mais sans fenêtre ni boucle | `core/mograph_stream.py` (`ensure_qt_gui`) | Un export sans interface a besoin d'une `QGuiApplication` hors écran, pas d'une fenêtre. |
 | `main.py` n'a pas d'`argparse` ; il lit `--smoke-test` et un chemin de projet, tous deux pour l'interface | `main.py:29-46` | Pas de CLI. Mais le mode *assistant* (`helper_mode_exit_code`) montre le précédent : une sortie avant Qt. |
-| L'historique est une pile de **copies profondes** ; l'interface l'alimente par un `record(project, label)` après chaque mutation | `core/edit_history.py:150`, `ui/main_window_mixins/history.py` | Un script peut enregistrer dans le même historique, sans classe « commande » à inventer. Mais une règle de l'interface (recalage des clips imbriqués, `_with_nested_clamp`) vit côté UI et devra descendre dans `core/`. |
+| L'historique est une pile de **copies profondes** ; l'interface l'alimente par un `record(project, label)` après chaque mutation | `core/edit_history.py:150`, `ui/main_window_mixins/history.py` | Un script peut enregistrer dans le même historique, sans classe « commande » à inventer. La politique de recalage des clips imbriqués est **déjà dans `core/`** (`core.sequences.clamp_nested_clips`) ; l'interface n'y ajoute que le libellé de l'étape et un message de barre d'état (`_with_nested_clamp`). La session appelle la même fonction. |
 | Les fonctions qui modifient le modèle sont dans `core/` (`timeline_operations`, `track_operations`, `audio_effects_model`, `audio_buses`, `effects_model`, `color_nodes`, `keyframe_editing`, `sequences`…), sans Qt, et lèvent `ValueError` / `KeyError` | `core/*.py` | Les verbes d'un script sont ces fonctions. Rien à réécrire. |
 | Aucune API ne **décrit** le modèle entier ; seuls les sérialiseurs le parcourent | `core/project_io.py` (`_sequence_to_dict`, `_clip_to_dict`) | Lire « tout » demande une vue de lecture stable, distincte du format de fichier. |
 
@@ -167,9 +167,10 @@ Session(project, history)
 
 - **Atomicité** : les opérations s'appliquent à une copie profonde ; si l'une lève, le projet n'est pas touché et le
   rapport dit laquelle (index, verbe, message). En cas de succès, la copie est validée en **une** étape d'annulation.
-- **Une seule voie** : l'interface et les scripts appellent les mêmes fonctions de `core/`. Une règle qui vit
-  aujourd'hui dans l'interface (le recalage des clips imbriqués après une édition, `_with_nested_clamp`) **descend
-  dans `core/`** pour que les deux chemins donnent le même résultat. C'est un prérequis, pas une option.
+- **Une seule voie** : l'interface et les scripts appellent les mêmes fonctions de `core/`, recadrage des clips imbriqués
+  compris : `_record_history` (interface) comme la session appellent `clamp_nested_clips` avant d'enregistrer, et la
+  session rend les ajustements dans son rapport. Ce que l'interface fait d'autre autour d'une édition ne change pas le
+  projet (clore les saisies en cours, invalider les aperçus) : la session n'a pas à le reproduire.
 - **L'aperçu reste l'export** : un script ne touche que le modèle ; le plan de rendu, l'aperçu et l'export lisent
   ce modèle comme toujours. Un test de parité (le projet produit par un script est identique à celui produit
   par les mêmes gestes dans l'interface) tient lieu de preuve.
@@ -252,7 +253,7 @@ Un panneau pour écrire et lancer un script (déclaratif ou Python), qui **n'est
 
 **Positives.**
 - Le risque est décidé une fois et écrit : ce qui est une donnée n'exécute rien, et ce qui exécute a été demandé.
-- Le sol commun (export pur, session, règle de recalage dans `core/`) est utile **sans** le mode script : tests,
+- Le sol commun (export pur, identifiants explicites, session) est utile **sans** le mode script : tests,
   outils de performance, file de rendu sans interface.
 - Les outils et les LLM disposent d'un format sûr à produire et à valider (`validate`, `--dry-run`).
 - La vidéo de présentation redevient écrivable en quelques dizaines de lignes.
@@ -262,8 +263,9 @@ Un panneau pour écrire et lancer un script (déclaratif ou Python), qui **n'est
 - **Les verbes sont du code à maintenir** : chaque nouvelle fonctionnalité du modèle doit décider si elle a un verbe.
   Atténué par la table unique `VERBS` et un test qui signale une fonction publique de modèle sans verbe ni exclusion
   motivée.
-- **Descendre `_with_nested_clamp` dans `core/`** touche un chemin d'interface très utilisé : à faire seul, avec les tests
-  de parité, avant le reste.
+- **Identifiants explicites** : une quinzaine de fonctions de création gagnent un paramètre optionnel (`clip_id=`,
+  `sequence_id=`…, `core/object_ids.py`) ; sans effet pour les appelants existants (`None` garde la génération actuelle),
+  mais à tenir à jour quand une nouvelle fonction de création est ajoutée.
 - **Python reste du code non confiné** (R3) : la protection est la visibilité (confirmation, source affichée, processus
   fils), pas l'isolement.
 - **Écritures concurrentes** : un CLI qui modifie un `.kut` ouvert dans l'application. Voir les décisions ouvertes.
@@ -274,8 +276,9 @@ Un panneau pour écrire et lancer un script (déclaratif ou Python), qui **n'est
 1. **Export pur** : `prepare_export` et `build_export_command` publics ; `ExportEngine` les utilise ; tests inchangés. Puis
    l'exécuteur sans Qt. Test de parité : le même projet, avec un clip en flux optique, exporté par l'interface et par
    l'exécuteur, donne la même commande.
-2. **Session** : `core/scripting/session.py`, descente de la règle de recalage dans `core/`, tests de parité avec
-   l'interface, atomicité.
+2. **Identifiants explicites** sur les fonctions de création (`core/object_ids.py`, fait), puis la **session** :
+   `core/scripting/session.py` (atomicité par instantané restauré en place, `clamp_nested_clips`, une étape
+   d'historique, rapport), avec des tests de parité contre l'interface.
 3. **CLI minimal** : `info`, `validate`, `export` dans `main.py` avant Qt ; sortie `--json`, codes de sortie. Le
    chargeur gagne un **relevé optionnel des entrées ignorées** (`load_project(path, report=…)`) : l'interface continue
    de tolérer, mais `validate` et `apply` savent dire ce qui a été perdu.

@@ -160,6 +160,8 @@ def add_track(
     track_type: str,
     name: str | None = None,
     index: int | None = None,
+    *,
+    track_id: str | None = None,
 ) -> "Track":
     """Ajoute une nouvelle piste au projet et la retourne.
 
@@ -171,6 +173,8 @@ def add_track(
         index: Position d'insertion dans ``project.tracks``. Si
             ``None``, la piste est ajoutée en fin. Si ``index`` est
             hors limites, il est clampé dans l'intervalle valide.
+        track_id: identifiant imposé (scripts), voir :mod:`core.object_ids` ; ``None`` : le premier libre
+            (``V1``, ``A2``…), comme avant.
 
     Returns:
         L'instance de la nouvelle :class:`Track` (déjà présente dans
@@ -182,7 +186,12 @@ def add_track(
     from .project_model import Track  # import local pour éviter la circularité
 
     normalized_type = _coerce_track_type(track_type)
-    track_id = _ensure_track_id(project, normalized_type, index=index)
+    if track_id is None:
+        track_id = _ensure_track_id(project, normalized_type, index=index)
+    else:
+        from .object_ids import resolve_object_id
+
+        track_id = resolve_object_id(track_id, prefix="track", kind="piste", taken={t.id for t in project.tracks})
     # On ré-efface la piste "fantôme" créée par ``_ensure_track_id``
     # pour les tests : en réalité ``_ensure_track_id`` n'insère rien,
     # il calcule simplement un identifiant libre.
