@@ -29,7 +29,6 @@ ENTRY_POINTS = {
 # import arrive ; une fois le consommateur écrit, l'entrée n'a plus lieu d'être et le second test ci-dessous le dit. Un module qui
 # attend sans raison écrite reste du code mort.
 PENDING_CONSUMERS = {
-    "core.export_runner": "exécuteur d'export sans interface : le CLI (``Kut-Studio export``) l'importera, ADR-0005 étape 3",
 }
 
 

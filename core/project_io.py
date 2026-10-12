@@ -57,11 +57,14 @@ remplacé par un contenu partiel.
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
 import shutil
 import tempfile
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -286,8 +289,73 @@ def _materialize_project_luts(project: Project, project_root: Path) -> None:
     project.color_presets = portable_presets
 
 
-def load_project(file_path: str) -> Project:
+@dataclass
+class LoadReport:
+    """Ce que le chargement d'un ``.kut`` a **ignoré en silence** (``load_project(path, report=...)``).
+
+    Le chargement est strict pour la structure (enveloppe, pistes, clips, médias : un fichier abîmé est refusé) mais tolérant pour
+    les sous-objets décoratifs : un effet, un bus, une transition, une association de ducking ou une entrée de bibliothèque
+    invalide est ignoré **seul**, sans faire échouer l'ouverture, pour qu'un projet un peu abîmé reste ouvrable dans l'interface.
+    Un fichier forgé peut donc être accepté **en perdant du contenu sans le dire** : ce rapport le dit, section par section.
+
+    Attributes:
+        dropped: nombre d'entrées ignorées, par section (libellé lisible, stable : voir :data:`LOAD_SECTIONS`).
+    """
+
+    dropped: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def total(self) -> int:
+        return sum(self.dropped.values())
+
+    @property
+    def intact(self) -> bool:
+        return self.total == 0
+
+    def note(self, section: str, count: int) -> None:
+        if count > 0:
+            self.dropped[section] = self.dropped.get(section, 0) + count
+
+
+LOAD_SECTIONS = {
+    "clip_effects": "effets de clip",
+    "audio_effects": "effets audio et inserts",
+    "buses": "bus audio",
+    "transitions": "transitions",
+    "ducking": "associations de ducking",
+    "color_presets": "préréglages de couleur",
+    "library_folders": "dossiers de la bibliothèque",
+    "library_tags": "étiquettes de la bibliothèque",
+    "library_assignments": "affectations de la bibliothèque",
+}
+"""Les sections dont une entrée invalide est ignorée seule, et que :class:`LoadReport` compte (clés stables pour les outils)."""
+
+_LOAD_REPORT: ContextVar[LoadReport | None] = ContextVar("kut_load_report", default=None)
+
+
+def _counts_dropped(section: str):
+    """Décorateur des désérialiseurs tolérants : compte les entrées de la liste (ou du dictionnaire) reçue que le résultat n'a pas
+    gardées, dans le rapport du chargement en cours (aucun coût hors rapport)."""
+
+    def decorate(function):
+        @functools.wraps(function)
+        def wrapper(raw, *args, **kwargs):
+            result = function(raw, *args, **kwargs)
+            report = _LOAD_REPORT.get()
+            if report is not None and isinstance(raw, (list, dict)) and hasattr(result, "__len__"):
+                report.note(section, len(raw) - len(result))
+            return result
+
+        return wrapper
+
+    return decorate
+
+
+def load_project(file_path: str, *, report: LoadReport | None = None) -> Project:
     """Charge un fichier ``.kut`` et reconstruit le ``Project`` correspondant.
+
+    ``report`` : un :class:`LoadReport` que le chargement remplit avec les entrées décoratives qu'il a ignorées (voir sa
+    docstring) ; sans lui, le comportement est celui de toujours.
 
     Lève :
         FileNotFoundError : si le fichier n'existe pas.
@@ -327,6 +395,7 @@ def load_project(file_path: str) -> Project:
             f"Section '{_PROJECT_KEY}' manquante ou invalide dans {source}."
         )
 
+    token = _LOAD_REPORT.set(report)
     try:
         return _deserialize_project(project_data, project_root=source.parent)
     except (KeyError, IndexError, AttributeError, ArithmeticError, RecursionError, TypeError) as error:
@@ -335,6 +404,8 @@ def load_project(file_path: str) -> Project:
         raise ValueError(
             f"Le fichier {source} est endommagé ({type(error).__name__} : {error})."
         ) from error
+    finally:
+        _LOAD_REPORT.reset(token)
 
 
 def _reject_non_finite(name: str) -> float:
@@ -827,6 +898,7 @@ def _deserialize_sequence(
     return sequence
 
 
+@_counts_dropped("transitions")
 def _deserialize_transitions(raw: Any, project: Project | Sequence) -> list[Transition]:
     """Ignore les entrées de transition invalides sans empêcher l'ouverture."""
     if not isinstance(raw, list):
@@ -1279,6 +1351,7 @@ def _effect_to_dict(effect: ClipEffect) -> dict[str, Any]:
     }
 
 
+@_counts_dropped("clip_effects")
 def _deserialize_clip_effects(raw: Any) -> list[ClipEffect]:
     """Désérialise la liste d'effets d'un clip.
 
@@ -1338,6 +1411,7 @@ def _bus_to_dict(bus) -> dict[str, Any]:
     }
 
 
+@_counts_dropped("buses")
 def _deserialize_buses(raw: Any) -> list:
     """Désérialise les bus d'une séquence (clé absente ou invalide : aucun bus)."""
     from .audio_buses import MAX_BUSES, AudioBus  # import tardif : ce module dépend de ``audio_effects_model``
@@ -1366,6 +1440,7 @@ def _deserialize_buses(raw: Any) -> list:
     return buses
 
 
+@_counts_dropped("audio_effects")
 def _deserialize_audio_effects(raw: Any) -> list:
     """Désérialise la liste d'effets audio d'un clip.
 
@@ -1466,6 +1541,7 @@ def _color_preset_to_dict(preset) -> dict[str, Any]:
     }
 
 
+@_counts_dropped("color_presets")
 def _deserialize_color_presets(
     raw: Any, *, project_root: Path | None = None,
 ) -> list:
@@ -1649,6 +1725,7 @@ def _assignment_to_dict(assignment) -> dict[str, Any]:
     }
 
 
+@_counts_dropped("library_folders")
 def _deserialize_library_folders(raw: Any) -> list:
     """Reconstruit les dossiers de bibliothèque, en ignorant les invalides.
 
@@ -1744,6 +1821,7 @@ def _deserialize_library_folders(raw: Any) -> list:
     return folders
 
 
+@_counts_dropped("library_tags")
 def _deserialize_library_tags(raw: Any) -> list:
     """Reconstruit les tags en ignorant les entrées invalides / doublons."""
     from .library_organization import LibraryError, LibraryTag
@@ -1773,6 +1851,7 @@ def _deserialize_library_tags(raw: Any) -> list:
     return tags
 
 
+@_counts_dropped("library_assignments")
 def _deserialize_library_assignments(
     raw: Any,
     *,
@@ -1887,6 +1966,7 @@ def _ducking_sidechain_to_dict(sidechain) -> dict[str, Any]:
     }
 
 
+@_counts_dropped("ducking")
 def _deserialize_ducking_sidechains(
     raw: Any,
     *,

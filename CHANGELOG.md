@@ -16,6 +16,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Ligne de commande, sans fenêtre.** `Kut-Studio info | validate | presets | export` (depuis les sources : `python main.py …`) : le
+  même binaire que l'application. `export` écrit une vidéo avec exactement la commande FFmpeg de l'interface, dans un fichier caché
+  renommé à la fin (jamais de MP4 tronqué), annulable par Ctrl-C, et ne remplace jamais son projet ni un fichier existant sans
+  `--overwrite`. `validate` dit **ce qu'un projet a perdu en silence** (effets, bus, transitions invalides ignorés à l'ouverture).
+  `--json` rend un objet unique, les codes de sortie sont stables, les messages sont traduits. Voir [docs/cli.md](docs/cli.md).
+
+### Added
+
 - **Décodage multi-sources (`media_io`).** Ouverture, saut et décodage d'une image (PyAV si disponible, sinon
   FFmpeg) pour alimenter plusieurs pistes sur le moniteur GPU (ADR-0001).
 - **Compositeur CPU allégé.** Aperçu à résolution réduite via le même plan que le GPU, dans un fil de travail

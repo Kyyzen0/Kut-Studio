@@ -159,17 +159,39 @@ def test_an_unreadable_hardware_cache_is_logged_but_a_missing_one_is_not(journal
     assert "Cache des capacités mal formé" in journal()
 
 
-def test_no_print_remains_in_core_or_ui():
-    """Un ``print`` est invisible dans l'application empaquetée : tout passe par le journal."""
+PRINT_ALLOWED = {
+    "core/cli.py": "la ligne de commande écrit sur la sortie standard et la sortie d'erreur : c'est son rôle, et son contrat "
+                   "(``--json``, codes de sortie) ; le journal de l'application ne remplace pas ce qu'un script lit sur le terminal",
+}
+"""Les seuls fichiers qui peuvent appeler ``print``, chacun avec sa raison."""
+
+
+def _print_calls(root: Path) -> dict[str, list[int]]:
     import ast
 
-    root = Path(__file__).resolve().parent.parent
-    offenders = []
+    calls: dict[str, list[int]] = {}
     for folder in ("core", "ui"):
         for path in (root / folder).rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
-            offenders += [
-                f"{path.relative_to(root)}:{node.lineno}" for node in ast.walk(tree)
+            lines = [
+                node.lineno for node in ast.walk(tree)
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"
             ]
+            if lines:
+                calls[path.relative_to(root).as_posix()] = lines
+    return calls
+
+
+def test_no_print_remains_in_core_or_ui():
+    """Un ``print`` est invisible dans l'application empaquetée : tout passe par le journal (hors la ligne de commande)."""
+    root = Path(__file__).resolve().parent.parent
+    offenders = [f"{name}:{line}" for name, lines in _print_calls(root).items() if name not in PRINT_ALLOWED for line in lines]
     assert not offenders, f"print() dans le code de l'application : {offenders}"
+
+
+def test_a_file_allowed_to_print_still_prints():
+    """Une exception dont le fichier n'imprime plus (ou a disparu) n'a plus lieu d'être : la liste ne fait que rétrécir."""
+    root = Path(__file__).resolve().parent.parent
+    printing = _print_calls(root)
+    for name, reason in PRINT_ALLOWED.items():
+        assert reason.strip() and name in printing, f"{name} n'appelle plus print : retirer l'entrée de PRINT_ALLOWED"
