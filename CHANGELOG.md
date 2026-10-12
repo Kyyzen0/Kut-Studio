@@ -31,6 +31,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Moniteur GPU : plusieurs pistes vidéo.** Les pistes sous le clip du dessus sont composées en temps réel
   (décodage `media_io` hors thread UI) ; le clip supérieur reste le lecteur Qt.
 
+<<<<<<< HEAD
 ### Fixed
 
 - **Revue Codex (PR #108 / #113).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS (RVBA différé) ;
@@ -44,6 +45,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Aperçu : régler un bus ne ressert plus l'ancien son.** Le fader, la coupure et les inserts d'un bus font partie
   de l'empreinte des segments. Avant, le moniteur rejouait le mixage d'avant le réglage.
 
+=======
+>>>>>>> origin/main
 ## [0.5.0] - 2026-10-12
 
 Le **mixage audio** gagne ses trois outils de console : des **inserts** par piste (une chaîne d'effets sur la somme
