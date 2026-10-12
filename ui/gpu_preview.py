@@ -38,6 +38,8 @@ from PySide6.QtGui import (
     QRhiColorAttachment,
     QRhiDepthStencilClearValue,
     QRhiGraphicsPipeline,
+    QRhiReadbackDescription,
+    QRhiReadbackResult,
     QRhiSampler,
     QRhiShaderResourceBinding,
     QRhiShaderStage,
@@ -566,6 +568,9 @@ class GpuPreviewWidget(QRhiWidget):
         self._confirmed = False
         self.fallback_frames = 0
         self._logged_formats: set[str] = set()
+        # Reléctures GPU→CPU asynchrones (essai d'export ADR-0001) : une entrée
+        # ``{"token", "done", "image"|"error"}`` par demande, remplie dans ``render``.
+        self._readback_queue: list[dict] = []
         self.renderFailed.connect(self._on_render_failed)
 
     # -- état à afficher --------------------------------------------------------------------------
@@ -614,6 +619,22 @@ class GpuPreviewWidget(QRhiWidget):
         if executor is None:
             return ""
         return f"{executor.backend} · {executor.device}".strip(" ·")
+
+    def queue_readback(self, token: object) -> dict:
+        """Demande une relecture du ``colorTexture`` après le prochain ``render``.
+
+        Retourne un dictionnaire partagé : ``done`` passe à ``True`` quand les
+        octets sont prêts (``image`` : :class:`QImage` RVBA, ou ``error``).
+        Plusieurs demandes en vol (profondeur 2–3) permettent de chevaucher
+        rendu GPU et conversion CPU (ADR-0001, essai d'export).
+        """
+        entry: dict = {"token": token, "done": False, "image": None, "error": None}
+        self._readback_queue.append(entry)
+        self.update()
+        return entry
+
+    def pending_readbacks(self) -> int:
+        return sum(1 for entry in self._readback_queue if not entry["done"])
 
     # -- QRhiWidget ---------------------------------------------------------------------------------
 
@@ -670,6 +691,7 @@ class GpuPreviewWidget(QRhiWidget):
             x, y, w, h = self._canvas_rect
             present = present_uniforms(viewport, (x * dpr, y * dpr, w * dpr, h * dpr), self._background)
             executor.run(cb, plan, batch, mattes, self.renderTarget(), present, viewport)
+            self._submit_readbacks(cb, executor)
         except Exception as error:
             self._fail("out_of_memory" if getattr(error, "out_of_memory", False) else "render", str(error))
             return
@@ -677,6 +699,43 @@ class GpuPreviewWidget(QRhiWidget):
         if not self._confirmed:
             self._confirmed = True
             QTimer.singleShot(0, lambda: self.ready.emit(self.device_label()))
+
+    def _submit_readbacks(self, cb, executor: RhiExecutor) -> None:
+        """Enfile ``readBackTexture`` pour chaque demande encore sans résultat."""
+        waiting = [entry for entry in self._readback_queue if not entry["done"] and "result" not in entry]
+        if not waiting:
+            return
+        texture = self.colorTexture()
+        if texture is None:
+            for entry in waiting:
+                entry["error"] = "pas de colorTexture"
+                entry["done"] = True
+            return
+        for entry in waiting:
+            desc = QRhiReadbackDescription()
+            desc.setTexture(texture)
+            result = QRhiReadbackResult()
+            entry["result"] = result
+
+            def _complete(entry=entry, result=result) -> None:
+                try:
+                    size = result.pixelSize()
+                    data = result.data()
+                    if size is None or data is None or size.width() <= 0 or size.height() <= 0:
+                        entry["error"] = "relecture vide"
+                    else:
+                        image = QImage(
+                            data, size.width(), size.height(), size.width() * 4, QImage.Format_RGBA8888,
+                        ).copy()
+                        entry["image"] = image
+                except Exception as error:  # noqa: BLE001 - ne jamais remonter vers Qt
+                    entry["error"] = str(error)
+                entry["done"] = True
+
+            result.completed = _complete
+            update = executor.rhi.nextResourceUpdateBatch()
+            update.readBackTexture(desc, result)
+            cb.resourceUpdate(update)
 
     def _resolve_grade(self, layer, images: dict):
         """Étalonnage demandé → passe ``grade`` si sa LUT est cuite (sinon le calque passe sans, le temps de la

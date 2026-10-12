@@ -124,8 +124,10 @@ L'idée tient : le GPU compose ce montage fidèlement et plus vite, avec le code
 l'étape 2 (composition complète) :
 
 1. **Calques graphiques en textures par contenu**, animées par matrice et opacité dans le shader. C'est le plus gros
-   gain mesuré, et il profite aussi au moniteur.
-2. **Relecture asynchrone** pour l'export (ou rendu dans un fil dédié).
+   gain mesuré, et il profite aussi au moniteur. *(livré : moniteur + PNG d'export)*
+2. **Relecture asynchrone** pour l'export (ou rendu dans un fil dédié). *(livré dans l'essai :
+   `GpuPreviewWidget.queue_readback` + `--readback-depth`, via `QRhiResourceUpdateBatch.readBackTexture` ;
+   remesurer Onlyfab avec `--readback-depth 2`)*
 3. **Décider de la chroma 4:2:0** : aligner le GPU sur swscale (échantillon répété) ou l'export sur une interpolation
    (`full_chroma_int`), puis ajouter une mire à chroma non constante aux tests de parité.
 

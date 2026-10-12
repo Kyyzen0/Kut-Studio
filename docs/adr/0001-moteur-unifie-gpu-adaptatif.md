@@ -245,8 +245,11 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    inéligibles.
    *Tranche PNG d'export* : pour un calque éligible, l'export et l'aperçu fidèle réutilisent `content_texture`
    (`place_content_frame`), persistent l'encre en `c-*.png` à taille réelle (`write_content_png`), et ne
-   redessinent plus le texte/la forme à chaque pose. Restent : multi-pistes vidéo, lumière/grain en shaders,
-   compositeur CPU, relecture asynchrone.
+   redessinent plus le texte/la forme à chaque pose.
+   *Tranche relecture asynchrone* : l'essai d'export (`tools/perf/gpu_export_spike.py`) enfile
+   `readBackTexture` (`GpuPreviewWidget.queue_readback`, profondeur `--readback-depth`) au lieu d'un
+   `grabFramebuffer` synchrone par image. Restent : multi-pistes vidéo, lumière/grain en shaders, compositeur
+   CPU, décision chroma 4:2:0.
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
 6. [ ] **Étape 4 : export par le moteur.** Encodeur matériel, mode « Export de référence » ; tests de parité GPU /
    référence sur le corpus de rendu existant.
