@@ -5,6 +5,10 @@ thermique. Une valeur inconnue reste ``None`` / ``unknown`` — on n'invente
 pas un signal. Le résultat peut être injecté (tests) ou forcé par
 ``KUT_STUDIO_POWER`` (ex. ``battery,low_power,thermal=serious``).
 
+La lecture réelle peut être lente (``pmset`` : trois processus de 2 s au plus) : elle ne s'exécute **jamais sur le
+thread d'interface** (voir :meth:`core.studio_runtime.StudioRuntime._ensure_power_fresh`), seul un forçage
+``KUT_STUDIO_POWER`` est appliqué sur place.
+
 L'export n'est jamais concerné : ces signaux ne servent qu'à l'aperçu
 (un cran de moins, préchargement suspendu sur batterie).
 """

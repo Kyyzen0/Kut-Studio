@@ -100,6 +100,7 @@ def test_ondemand_gate_skips_identical_fingerprint():
 
 def test_studio_runtime_applies_injected_power_to_auto_baseline(monkeypatch):
     monkeypatch.setenv("KUT_STUDIO_MACHINE_BENCH", "off")
+    monkeypatch.delenv("KUT_STUDIO_POWER", raising=False)  # l'état injecté ne doit pas être écrasé par le forçage
     runtime = StudioRuntime(
         profile="auto",
         preview_quality="auto",
@@ -158,7 +159,8 @@ def test_adaptive_overload_survives_unplug(monkeypatch):
     assert runtime.preview.divisor == 4
 
 
-def test_explicit_quality_is_not_lowered_by_battery():
+def test_explicit_quality_is_not_lowered_by_battery(monkeypatch):
+    monkeypatch.delenv("KUT_STUDIO_POWER", raising=False)
     runtime = StudioRuntime(
         profile="high",
         preview_quality="full",
@@ -177,3 +179,103 @@ def test_prefetch_planner_still_plans_neighbors_for_limit_helper():
     assert len(planned) == 3
     assert len(limit_prefetch_requests(planned, max_extra=0)) == 1
     assert len(limit_prefetch_requests(planned, max_extra=1)) == 2
+
+
+# --- Relevé d'énergie hors du thread d'interface ----------------------------------------------------------------------
+
+
+def _wait_until(predicate, timeout=3.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def _unforced_runtime(monkeypatch):
+    monkeypatch.setenv("KUT_STUDIO_MACHINE_BENCH", "off")
+    monkeypatch.delenv("KUT_STUDIO_POWER", raising=False)
+    return StudioRuntime(
+        profile="auto", preview_quality="auto",
+        resources=MachineResources(logical_cpus=8, memory_bytes=32 * 1024**3),
+    )
+
+
+def test_the_power_reading_never_blocks_the_caller_and_runs_on_a_worker_thread(monkeypatch):
+    """``preview_divisor()`` est appelé par le thread d'interface à chaque déplacement de la tête : un ``pmset`` lent
+    (3 × 2 s au plus) ne doit jamais le bloquer. Le relevé tourne sur un thread de travail, un seul à la fois."""
+    import threading
+
+    runtime = _unforced_runtime(monkeypatch)
+    release = threading.Event()
+    calls: list[str] = []
+
+    def slow_detect():
+        calls.append(threading.current_thread().name)
+        release.wait(5.0)
+        return PowerState(on_battery=True, source="test")
+
+    monkeypatch.setattr("core.studio_runtime.detect_power_state", slow_detect)
+    before = runtime.preview_divisor()
+    for _ in range(5):
+        assert runtime.preview_divisor() == before, "tant que le relevé n'a pas abouti, l'état connu ne change pas"
+    assert _wait_until(lambda: calls), "le relevé a démarré"
+    assert calls == ["kut-power-probe"], "un seul relevé à la fois, jamais sur le thread appelant"
+    assert threading.current_thread().name != calls[0]
+
+    release.set()
+    assert _wait_until(lambda: not runtime._power_probe_running)
+    runtime.preview_divisor()                              # le résultat est appliqué par l'appelant
+    assert runtime.power_state().on_battery is True
+    assert runtime.prefetch_allowed() is False and runtime.preview_divisor() > before
+
+
+def test_a_fresh_reading_is_kept_for_the_ttl_then_read_again(monkeypatch):
+    runtime = _unforced_runtime(monkeypatch)
+    readings: list[int] = []
+
+    def detect():
+        readings.append(1)
+        return PowerState(on_battery=False, thermal="nominal", source="test")
+
+    monkeypatch.setattr("core.studio_runtime.detect_power_state", detect)
+    runtime.preview_divisor()
+    assert _wait_until(lambda: len(readings) == 1 and not runtime._power_probe_running)
+    for _ in range(10):
+        runtime.preview_divisor()
+    assert len(readings) == 1, "dans les 15 s, pas de nouvelle lecture"
+    runtime._power_checked_at -= 60.0                      # le temps passe
+    runtime.preview_divisor()
+    assert _wait_until(lambda: len(readings) == 2)
+
+
+def test_an_unreadable_power_state_degrades_to_unavailable_without_raising(monkeypatch):
+    runtime = _unforced_runtime(monkeypatch)
+
+    def broken():
+        raise OSError("pmset a disparu")
+
+    monkeypatch.setattr("core.studio_runtime.detect_power_state", broken)
+    runtime.preview_divisor()
+    assert _wait_until(lambda: not runtime._power_probe_running and runtime._power_probe_result is not None)
+    runtime.preview_divisor()
+    assert runtime.power_state().source == "unavailable"
+    assert runtime.prefetch_allowed() is True, "sans information, pas de cran batterie"
+
+
+def test_a_forced_power_state_is_applied_at_once_without_any_thread(monkeypatch):
+    runtime = _unforced_runtime(monkeypatch)
+    monkeypatch.setenv("KUT_STUDIO_POWER", "battery")
+
+    def never(*_args, **_kwargs):
+        raise AssertionError("un forçage ne lance aucune lecture réelle")
+
+    monkeypatch.setattr("core.studio_runtime.detect_power_state", never)
+    runtime.preview_divisor()
+    assert runtime.power_state().on_battery is True and runtime._power_probe_running is False
+    monkeypatch.setenv("KUT_STUDIO_POWER", "ac")
+    runtime.preview_divisor()
+    assert runtime.power_state().on_battery is False, "le forçage suit l'environnement"

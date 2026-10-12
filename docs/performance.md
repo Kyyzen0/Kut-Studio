@@ -29,7 +29,7 @@ nouveaux :
 | Timeline | `core/timeline_spatial.py`, `core/timeline_index.py` (`clips_overlapping`), `ui/timeline_panel_mixins/` |
 | Qualité adaptative | `core/preview_adaptive.py`, `core/preview_quality.py` |
 | Profil machine | heuristique cœurs/RAM (`core/runtime_profile.py`) ; banc mesuré en cache (`core/machine_bench.py`, `machine-profile.json`) pour Auto |
-| Régulateur | `core/runtime_regulator.py` (échelle de dégradation), `core/power_state.py` (batterie / économie / chauffe), `core/preview_governor.py` (charge GPU) |
+| Régulateur | `core/runtime_regulator.py` (échelle de dégradation), `core/power_state.py` (batterie / économie / chauffe ; relevé sur un thread de travail, jamais sur celui de l'interface), `core/preview_governor.py` (charge GPU) |
 | Interface | `ui/performance_settings.py` (préférences), menu contextuel des médias, menu *Fenêtre* |
 | Mesure | `tools/perf/` (`synthetic.py`, `bench.py`, `engine_bench.py`), `docs/perf/*.json` |
 
