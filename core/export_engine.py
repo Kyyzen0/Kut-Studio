@@ -45,7 +45,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -466,6 +466,195 @@ class ExportRequest:
 
 
 # ---------------------------------------------------------------------------
+# Export sans interface : vérification, préparation, commande
+# ---------------------------------------------------------------------------
+#
+# Ces fonctions sont les étapes **partagées** de tout export : le moteur de l'interface (:class:`ExportEngine`, qui y ajoute un
+# QProcess, des signaux et un fil de préparation) et un appelant sans boucle d'événements (ligne de commande, scripts, tests)
+# les enchaînent dans le même ordre : :func:`check_export_request`, :func:`export_needs_preparation` puis
+# :func:`prepare_export`, enfin :func:`build_export_command`. La commande FFmpeg est ainsi **identique** quel que soit l'appelant :
+# c'est la partie qui doit l'être pour que l'export d'un script soit l'export de l'interface.
+
+
+@dataclass(frozen=True)
+class ExportCommand:
+    """La commande FFmpeg d'un export, avec l'encodeur retenu et ce que l'appelant doit supprimer ensuite.
+
+    Attributes:
+        arguments: la commande complète (``arguments[0]`` est le binaire).
+        encoder: l'encodeur choisi (CPU, ou matériel avec son repli éventuel).
+        temporary_files: fichiers écrits par la construction de la commande (le graphe de filtres quand il est trop long pour la
+            ligne de commande) : à supprimer une fois FFmpeg terminé. Le fichier de sous-titres n'en fait pas partie : il
+            appartient à l'appelant, qui le fournit (``subtitle_path``).
+    """
+
+    arguments: tuple[str, ...]
+    encoder: EncoderChoice
+    temporary_files: tuple[str, ...] = ()
+
+
+def check_export_request(request: ExportRequest) -> None:
+    """Refuse une requête qui ne peut pas aboutir, avant tout calcul : ``ValueError`` ou ``RuntimeError`` au message lisible.
+
+    - le plan ne contient aucun clip visuel (ni calque graphique) ;
+    - le plan porte des sous-titres et la build FFmpeg n'a pas le filtre ``subtitles`` (libass).
+    """
+    plan = request.render_plan
+    if not (plan.video_layers or getattr(plan, "graphics_layers", ())):
+        raise ValueError("Aucun média vidéo à exporter.")
+    if plan.subtitle_cues and not _ffmpeg_supports_subtitles():
+        raise RuntimeError(
+            "La build FFmpeg ne supporte pas le filtre 'subtitles' "
+            "(libass requis). Installez un FFmpeg avec libass pour "
+            "incruster les sous-titres."
+        )
+
+
+def export_needs_preparation(request: ExportRequest, preference: BackendPreference = BackendPreference.AUTO) -> bool:
+    """``True`` si l'export a besoin d'images intermédiaires (mélange d'images, flux optique) fabriquées avant FFmpeg.
+
+    Sans elles, un clip interpolé lève ``RetimeError`` à la construction du graphe. Un plan avec un média introuvable répond
+    ``False`` : :func:`build_export_command` le refuse avec le message clair (média à reconnecter).
+    """
+    from .retime_layers import plan_needs_preparation
+
+    if request.render_plan.missing_media:
+        return False
+    width, height = request.preset.resolution
+    return plan_needs_preparation(request.render_plan, width, height, request.fps, preference)
+
+
+def prepare_export(
+    request: ExportRequest,
+    *,
+    cache: FlowCache | None = None,
+    preference: BackendPreference = BackendPreference.AUTO,
+    progress: Callable[[int, int], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
+):
+    """Fabrique les images intermédiaires de l'export (bloquant : l'appelant choisit son fil) et retourne un
+    :class:`~core.retime_layers.PlanPreparation`.
+
+    ``progress(faites, à_faire)`` est appelé au fil du calcul ; ``cancelled()`` est consulté entre deux images et fait lever
+    :class:`~core.retime_prepare.PrepareCancelled`. ``cache`` : celui de l'application s'il est absent. Les flux rendus se passent
+    à :func:`build_export_command` (``prepared=``), et ``report`` dit ce que le moteur a fait (images fabriquées, replis,
+    confiance) : il ne doit jamais rester invisible.
+    """
+    from .retime_layers import prepare_plan
+
+    if cache is None:
+        from .flow_cache import FlowCache
+
+        cache = FlowCache()
+    width, height = request.preset.resolution
+    return prepare_plan(
+        request.render_plan, width, height, request.fps, cache,
+        preference=preference, progress=progress, cancelled=cancelled,
+    )
+
+
+def build_export_command(
+    request: ExportRequest,
+    *,
+    prepared: Mapping[str, PreparedStream] | None = None,
+    subtitle_path: str | None = None,
+    temporary_files: list[str] | None = None,
+) -> ExportCommand:
+    """Construit la commande FFmpeg d'un export basé sur un :class:`RenderPlan` (fonction pure : n'écrit que le graphe trop long).
+
+    Args:
+        request: la requête (plan, sortie, format, préréglage, fps, matériel).
+        prepared: flux d'images intermédiaires de :func:`prepare_export` (``None`` : aucun clip interpolé à servir).
+        subtitle_path: fichier de sous-titres déjà écrit (:func:`core.subtitle_io.write_subtitle_file`), ``None`` sans sous-titres.
+        temporary_files: liste de l'appelant à laquelle ajouter les fichiers que la construction écrit (le graphe long) ;
+            ``None`` : ils ne sont que dans :attr:`ExportCommand.temporary_files`.
+
+    Lève ``ValueError`` (média introuvable, dossier de sortie absent), ``RuntimeError`` ou
+    :class:`~core.video_encoders.EncoderUnavailableError` (encodeur matériel demandé et indisponible).
+    """
+    plan = request.render_plan
+    width, height = request.preset.resolution
+    if plan.missing_media:
+        # À l'écran un clip sans média est simplement vide ; dans un fichier exporté ce serait un
+        # trou muet que personne ne verrait avant la livraison : on refuse, clairement.
+        raise ValueError(
+            "Média introuvable : " + ", ".join(plan.missing_media)
+            + ". Reconnectez ou supprimez les clips concernés avant d'exporter."
+        )
+    output_path = Path(request.output_path).expanduser()
+    if not output_path.parent.exists():
+        raise ValueError(
+            f"Le dossier de sortie est introuvable : {output_path.parent}"
+        )
+
+    filter_complex, video_label, audio_label, input_paths = (
+        ExportEngine._build_filter_complex(plan, width, height, request.fps, subtitle_path, prepared=prepared)
+    )
+
+    command: list[str] = [
+        *_ffmpeg_command_prefix(),
+        "-y",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+    ]
+
+    # L'encodeur est choisi avant les entrées : certains (VAAPI) demandent une
+    # initialisation matérielle placée avant ``-i`` et un filtre final.
+    # H.264 et HEVC prennent le CRF du preset ; ``video_encoders`` convertit celui de HEVC (+4).
+    preset_crf = request.format.codec in ("h264", "hevc")
+    encoder = resolve_video_encoder(
+        request.format.codec,
+        speed_preset=request.format.preset,
+        quality=request.preset.crf if preset_crf else request.format.quality_value,
+        hardware=request.hardware,
+        width=width,
+        height=height,
+        fps=request.fps,
+    )
+    command.extend(encoder.pre_input_args)
+
+    threads = decoder_threads(input_paths)
+    for path in input_paths:
+        command.extend(input_arguments(path, threads=threads))
+
+    # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
+    # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
+    # un fichier HD comme du 709 affichait des couleurs décalées (rouge +11 niveaux mesurés).
+    filter_complex, video_label = with_output_color_stage(
+        filter_complex, video_label, output_pixel_format(encoder.codec)
+    )
+    if encoder.video_filter:
+        filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
+        video_label = "vencoded"
+    created: list[str] = []
+    command.extend(filter_graph_arguments(filter_complex, created))
+    if temporary_files is not None:
+        temporary_files.extend(created)
+    command.extend(["-map", f"[{video_label}]"])
+    command.extend(["-map", f"[{audio_label}]"])
+    command.extend(encoder.args)
+    command.extend(OUTPUT_COLOR_TAGS)
+
+    # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
+    # ``ExportPreset`` porte toujours ce champ, mais le moteur reste
+    # compatible avec les petits préréglages utilisés par des appels
+    # programmatiques historiques.
+    audio_bitrate = getattr(request.preset, "audio_bitrate", "192k")
+    command.extend(["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", audio_bitrate])
+
+    if request.format.container == "mp4":
+        command.extend(["-movflags", "+faststart"])
+
+    command.append(str(output_path))
+    return ExportCommand(arguments=tuple(command), encoder=encoder, temporary_files=tuple(created))
+
+
+# ---------------------------------------------------------------------------
 # Moteur d'export asynchrone
 # ---------------------------------------------------------------------------
 
@@ -590,17 +779,7 @@ class ExportEngine(QObject):
         self.last_error_kind = ""                # un échec de préparation ne doit pas hériter de l'« encodeur » du job précédent
         try:
             self._duration_seconds = request.render_plan.duration
-            if not (
-                request.render_plan.video_layers
-                or getattr(request.render_plan, "graphics_layers", ())
-            ):
-                raise ValueError("Aucun média vidéo à exporter.")
-            if request.render_plan.subtitle_cues and not _ffmpeg_supports_subtitles():
-                raise RuntimeError(
-                    "La build FFmpeg ne supporte pas le filtre 'subtitles' "
-                    "(libass requis). Installez un FFmpeg avec libass pour "
-                    "incruster les sous-titres."
-                )
+            check_export_request(request)
             self._prepare_temporary_files(request.render_plan)
             self._prepared = {}
             self.last_preparation = None
@@ -671,21 +850,13 @@ class ExportEngine(QObject):
         return self.flow_cache
 
     def _needs_preparation(self, request: ExportRequest) -> bool:
-        from .retime_layers import plan_needs_preparation
-
-        if request.render_plan.missing_media:
-            return False                      # ``_build_command`` refuse avec le message clair (média introuvable)
-        width, height = request.preset.resolution
-        return plan_needs_preparation(request.render_plan, width, height, request.fps, self.flow_preference)
+        return export_needs_preparation(request, self.flow_preference)
 
     def _begin_preparation(self, request: ExportRequest) -> None:
         """Calcule les images intermédiaires dans un fil ; FFmpeg démarre ensuite, sur le fil principal, si tout a réussi."""
-        from .retime_layers import prepare_plan
         from .retime_prepare import PrepareCancelled
 
-        width, height = request.preset.resolution
         cache = self._cache()
-        plan = request.render_plan
         preference = self.flow_preference
         self._pending_request = request
         self._preparing = True
@@ -696,8 +867,8 @@ class ExportEngine(QObject):
 
         def work() -> None:
             try:
-                result = prepare_plan(
-                    plan, width, height, request.fps, cache, preference=preference,
+                result = prepare_export(
+                    request, cache=cache, preference=preference,
                     progress=lambda done, total: self.preparation_progress.emit(done, total),
                     cancelled=self._prepare_cancel.is_set,
                 )
@@ -882,97 +1053,17 @@ class ExportEngine(QObject):
         return prepare_plan(plan, width, height, fps, self._cache(), preference=self.flow_preference, window=window).streams
 
     def _build_command(self, request: ExportRequest) -> list[str]:
-        """Construit la commande FFmpeg pour un export basé ``RenderPlan``."""
-        plan = request.render_plan
-        width, height = request.preset.resolution
-        if plan.missing_media:
-            # À l'écran un clip sans média est simplement vide ; dans un fichier exporté ce serait un
-            # trou muet que personne ne verrait avant la livraison : on refuse, clairement.
-            raise ValueError(
-                "Média introuvable : " + ", ".join(plan.missing_media)
-                + ". Reconnectez ou supprimez les clips concernés avant d'exporter."
-            )
-        output_path = Path(request.output_path).expanduser()
-        if not output_path.parent.exists():
-            raise ValueError(
-                f"Le dossier de sortie est introuvable : {output_path.parent}"
-            )
+        """Construit la commande FFmpeg pour un export basé ``RenderPlan`` (voir :func:`build_export_command`).
 
-        srt_path = self._current_srt_path
-        filter_complex, video_label, audio_label, input_paths = (
-            self._build_filter_complex(plan, width, height, request.fps, srt_path, prepared=self._prepared)
+        L'état de l'instance (flux préparés, fichier de sous-titres, liste des temporaires) est passé à la fonction partagée ; le
+        moteur retient l'encodeur choisi pour l'annoncer au lancement.
+        """
+        result = build_export_command(
+            request, prepared=self._prepared, subtitle_path=self._current_srt_path,
+            temporary_files=self._temporary_files,
         )
-
-        command: list[str] = [
-            *_ffmpeg_command_prefix(),
-            "-y",
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-        ]
-
-        # L'encodeur est choisi avant les entrées : certains (VAAPI) demandent une
-        # initialisation matérielle placée avant ``-i`` et un filtre final.
-        # H.264 et HEVC prennent le CRF du preset ; ``video_encoders`` convertit celui de HEVC (+4).
-        preset_crf = request.format.codec in ("h264", "hevc")
-        encoder = resolve_video_encoder(
-            request.format.codec,
-            speed_preset=request.format.preset,
-            quality=request.preset.crf if preset_crf else request.format.quality_value,
-            hardware=request.hardware,
-            width=width,
-            height=height,
-            fps=request.fps,
-        )
-        self.last_encoder_choice = encoder
-        command.extend(encoder.pre_input_args)
-
-        threads = decoder_threads(input_paths)
-        for path in input_paths:
-            command.extend(input_arguments(path, threads=threads))
-
-        # Conversion RVB → YUV explicite en BT.709, avant le filtre propre à l'encodeur (VAAPI y ajoute
-        # hwupload) : laissée à FFmpeg elle se faisait en BT.601 sans balise, et un lecteur qui décode
-        # un fichier HD comme du 709 affichait des couleurs décalées (rouge +11 niveaux mesurés).
-        filter_complex, video_label = with_output_color_stage(
-            filter_complex, video_label, output_pixel_format(encoder.codec)
-        )
-        if encoder.video_filter:
-            filter_complex = f"{filter_complex};[{video_label}]{encoder.video_filter}[vencoded]"
-            video_label = "vencoded"
-        command.extend(filter_graph_arguments(filter_complex, self._temporary_files))
-        command.extend(["-map", f"[{video_label}]"])
-        command.extend(["-map", f"[{audio_label}]"])
-        command.extend(encoder.args)
-        command.extend(OUTPUT_COLOR_TAGS)
-
-        # Sortie audio : AAC stéréo 48 kHz pour MP4 et MOV.
-        # ``ExportPreset`` porte toujours ce champ, mais le moteur reste
-        # compatible avec les petits préréglages utilisés par des appels
-        # programmatiques historiques.
-        audio_bitrate = getattr(request.preset, "audio_bitrate", "192k")
-        command.extend(
-            [
-                "-c:a",
-                "aac",
-                "-ac",
-                "2",
-                "-ar",
-                "48000",
-                "-b:a",
-                audio_bitrate,
-            ]
-        )
-
-        if request.format.container == "mp4":
-            command.extend(["-movflags", "+faststart"])
-
-        command.append(str(output_path))
-        return command
+        self.last_encoder_choice = result.encoder
+        return list(result.arguments)
 
     # ------------------------------------------------------------------
     # Fichiers temporaires (SRT) et nettoyage
