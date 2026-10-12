@@ -781,6 +781,12 @@ def test_on_battery_the_segment_under_the_playhead_is_still_rendered_and_neighbo
     engine.cancel_all()
     cancelled.clear()
 
+    # A previous asynchronous probe may finish after a forced refresh. Its stale
+    # result must not overwrite the battery state on the next policy read.
+    from core.power_state import PowerState
+
+    with window.runtime._power_lock:
+        window.runtime._power_probe_result = PowerState(on_battery=False, source="old-probe")
     window.runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
     assert window.runtime.prefetch_allowed() is False
     fake_now["t"] += 5.0                                                     # à l'arrêt
