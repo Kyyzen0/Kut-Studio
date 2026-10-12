@@ -308,6 +308,9 @@ def fingerprint_plan(plan, **kwargs):
         ],
         "master": [float(getattr(plan, "master_gain_db", 0.0)), bool(getattr(plan, "master_muted", False)),
                    getattr(plan, "loudness_gain_db", None)],
+        # Fader, coupure et inserts des bus : ils ne sont pas sur la couche (seul ``bus_id`` y est). Sans cette clé,
+        # le cache d'aperçu resservait le son d'avant un réglage de bus.
+        "buses": repr(getattr(plan, "audio_buses", ())),
         "subtitles": [
             {"start": float(c.start), "end": float(c.end), "text": c.text}
             for c in getattr(plan, "subtitle_cues", ())
