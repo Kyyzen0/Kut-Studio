@@ -1785,6 +1785,8 @@ class MainWindow(
         if not video_clips:
             self._sync_multicam_audio(None, active_clips)
             self.preview_panel.show_no_active_clip()
+            if self.preview_panel.gpu_active:
+                self.preview_panel.set_video_underlays(())
             if any(c.track_type == "graphics" for c in active_clips):
                 try:
                     self._schedule_preview_around(float(self.playhead_seconds))
@@ -1864,6 +1866,9 @@ class MainWindow(
             self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
+                self._sync_gpu_video_underlays(video_clips[:-1])
+            else:
+                self.preview_panel.set_video_underlays(())
         if self.is_playing:
             # Si une source vient d'être chargée ou remplacée, on relance
             # la lecture native pour qu'elle démarre à ``source_time``.

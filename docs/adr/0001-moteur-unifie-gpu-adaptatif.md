@@ -221,9 +221,9 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    tests `tests/test_preview_segment_origin.py`. Le `-ss` de sortie reste pour caler les timestamps du fichier
    segment (la composition lourde ne part plus de 0). Piste restante : `-ss` d'entrée par média pour le seul
    décodage source.
-2. [ ] **Entrées / sorties média.** Build FFmpeg LGPL + PyAV dans le paquet (macOS, Windows, Linux), `core/media_io.py`
-   et sa garde AST, moniteur alimenté par les proxies quand l'original a un long GOP. Critère : un saut ≤ 50 ms sur
-   proxy, sur la machine minimale.
+2. [x] **Entrées / sorties média.** `core/media_io.py` (PyAV si présent, sinon FFmpeg CLI supervisé), garde AST
+   (`tests/test_media_io.py`), `prefer_proxy` pour le scrubbing. Le build FFmpeg LGPL embarqué dans le paquet reste
+   à finaliser pour livrer PyAV sans roue GPL. Critère saut ≤ 50 ms sur proxy : à mesurer une fois le LGPL embarqué.
 3. [x] **Étape 1 : profil mesuré et régulateur.** Banc CPU (composition, décodage FFmpeg, rastérisation tampon) →
    cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Régulateur
    (`core/runtime_regulator.py`) : échelle proxies → voisinage 1/2 → flou de mouvement coupé en lecture → résolution
@@ -242,8 +242,22 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    *Tranche livrée* : calques graphiques éligibles (pas de groupe, masque ni flou de mouvement multi-échantillons) en
    textures locales (`MographRenderer.content_texture`), animées par matrice et opacité dans le shader
    (`CompositeLayer.matte_in_fit`) ; cache LRU par `content_key` ; repli plein cadre pour les modes de fusion
-   inéligibles. Restent : multi-pistes vidéo, lumière/grain en shaders, compositeur CPU, PNG d'export, relecture
-   asynchrone.
+   inéligibles.
+   *Tranche PNG d'export* : pour un calque éligible, l'export et l'aperçu fidèle réutilisent `content_texture`
+   (`place_content_frame`), persistent l'encre en `c-*.png` à taille réelle (`write_content_png`), et ne
+   redessinent plus le texte/la forme à chaque pose.
+   *Tranche relecture asynchrone* : l'essai d'export (`tools/perf/gpu_export_spike.py`) enfile
+   `readBackTexture` (`GpuPreviewWidget.queue_readback`, profondeur `--readback-depth`) au lieu d'un
+   `grabFramebuffer` synchrone par image.
+   *Chroma 4:2:0* : la passe `prep` répète l'échantillon par bloc 2×2 (`layer_chroma_grid`, comme swscale /
+   l'export) ; mire `grain_pattern` dans `tests/gpu_harness.py` et tests de parité dans
+   `tests/test_gpu_pipeline.py`. Voir [gpu-preview.md](../gpu-preview.md) § Chroma 4:2:0.
+   *Multi-pistes vidéo* : le moniteur GPU compose les pistes sous le clip supérieur (`set_video_underlays`,
+   sources `clip:<id>` via `media_io`) ; le clip du dessus reste le `QMediaPlayer` (`main`).
+   *Grain en shader* : passe `grain` (`assets/shaders/grain.frag.qsb`, `core/gpu_grain.py`) ; les autres
+   lumières restent rastérisées (Qt).
+   *Compositeur CPU* : `core/cpu_composite.py` exécute `reference_frame` à résolution réduite dans un fil
+   de travail (niveau Auto « CPU »).
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
 6. [ ] **Étape 4 : export par le moteur.** Encodeur matériel, mode « Export de référence » ; tests de parité GPU /
    référence sur le corpus de rendu existant.

@@ -131,10 +131,11 @@ _GRAIN_CACHE: dict[tuple, QImage] = {}
 def _grain(painter: QPainter, graphic, width: float, height: float) -> None:
     """Grain de film : bruit gris centré sur 128 (neutre en Incrustation), en grains de ``light_density`` pixels
     (de rendu), tiré d'une graine stable par image de grain."""
+    from .gpu_grain import grain_cell_counts
+
     transform = painter.transform()
     device = math.hypot(transform.m11(), transform.m12())
-    grain = max(1.0, float(graphic.light_density) * 1.5) / max(1e-3, device)          # taille en unités du calque
-    cols, rows = max(2, int(math.ceil(width / grain))), max(2, int(math.ceil(height / grain)))
+    cols, rows = grain_cell_counts(width, height, graphic.light_density, device)
     index = int(round(float(graphic.light_time) * GRAIN_RATE)) % GRAIN_FRAMES
     key = (cols, rows, int(graphic.light_seed), index)
     image = _GRAIN_CACHE.get(key)
