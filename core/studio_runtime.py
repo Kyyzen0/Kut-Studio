@@ -175,10 +175,10 @@ class StudioRuntime:
         # sous ce verrou ; seul le thread d'interface l'applique à la politique.
         self._power_lock = threading.Lock()
         self._power_probe_running = False
-        self._power_probe_result: PowerState | None = None
         # Incrémenté à chaque :meth:`refresh_power_state` : une sonde démarrée avant
         # l'injection ne doit plus déposer (sinon elle écrase l'état de test / forcé).
         self._power_probe_generation = 0
+        self._power_probe_result: PowerState | None = None
         self.ondemand = OnDemandGate()
         self._bench_refresh_lock = threading.Lock()
         self._bench_refresh_pending = False
@@ -201,11 +201,11 @@ class StudioRuntime:
 
     def refresh_power_state(self, state: PowerState | None = None) -> PowerState:
         """Injecte un état (tests, outils) ou, sans argument, le relit **sur place** (bloquant : pas pour l'interface)."""
-        # Annule le dépôt d'une sonde en vol / en attente : sinon ``_ensure_power_fresh``
-        # réapplique un ``PowerState`` obsolète par-dessus l'injection (course CI).
+        # Une lecture synchrone annule une sonde en vol : sinon ``_ensure_power_fresh``
+        # réapplique un ``PowerState`` obsolète par-dessus l'état explicitement rafraîchi.
         with self._power_lock:
-            self._power_probe_result = None
             self._power_probe_generation += 1
+            self._power_probe_result = None
         self._apply_power(state if state is not None else detect_power_state())
         return self._power
 
@@ -381,9 +381,7 @@ class StudioRuntime:
                 return
             self._power_probe_running = True
             generation = self._power_probe_generation
-        threading.Thread(
-            target=self._probe_power, args=(generation,), name="kut-power-probe", daemon=True,
-        ).start()
+        threading.Thread(target=self._probe_power, args=(generation,), name="kut-power-probe", daemon=True).start()
 
     def _probe_power(self, generation: int) -> None:
         """Thread de travail : lit l'énergie et dépose le résultat (jamais de Qt, jamais la politique)."""
@@ -398,10 +396,9 @@ class StudioRuntime:
             )
             state = PowerState(source="unavailable")
         with self._power_lock:
+            if generation == self._power_probe_generation:
+                self._power_probe_result = state
             self._power_probe_running = False
-            if generation != self._power_probe_generation:
-                return
-            self._power_probe_result = state
 
     def _refresh_policy(self) -> None:
         # Auto + profil Auto : le cran énergie monte le diviseur de base. Un
