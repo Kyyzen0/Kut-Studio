@@ -47,12 +47,34 @@ def _significant_colours(pixels: np.ndarray, minimum: float = 0.01) -> set[tuple
     return {tuple(int(v) for v in colour) for colour, count in zip(colours, counts) if count >= minimum * counts.sum()}
 
 
+def _stable_pixels(window, attempts: int = 40, interval_ms: int = 50) -> tuple[np.ndarray, int]:
+    """Capture la fenêtre une fois l'interface **au repos** : deux captures consécutives identiques.
+
+    Trois tours de boucle d'événements ne suffisent pas à tout stabiliser : une minuterie, un rafraîchissement différé ou
+    une peinture retardée peuvent encore changer l'image, et sur un exécuteur de CI lent la comparaison entre deux
+    fenêtres tombait parfois à cheval sur un tel changement (zone des clips vidéo entièrement différente, dans un sens ou
+    dans l'autre, jamais en local). Retourne les pixels et le nombre de captures nécessaires (``attempts + 1`` : jamais
+    stable)."""
+    from PySide6.QtTest import QTest
+
+    previous = _pixels(window.grab().toImage())
+    for count in range(1, attempts + 1):
+        QTest.qWait(interval_ms)
+        current = _pixels(window.grab().toImage())
+        if np.array_equal(previous, current):
+            return current, count
+        previous = current
+    return previous, attempts + 1
+
+
 def _pixels(image: QImage) -> np.ndarray:
     image = image.convertToFormat(QImage.Format_RGBA8888)
     data = np.frombuffer(image.constBits(), np.uint8)
     return data.reshape(image.height(), image.bytesPerLine() // 4, 4)[:, : image.width()].astype(int)
 
 
+CAPTURE_INFO: dict[str, int] = {}
+"""Captures nécessaires pour chaque fenêtre (clé : ``départ→arrivée``, ``live`` ou ``fresh``) : relevé dans le message d'un échec."""
 _PATCH = pytest.MonkeyPatch()
 """Pose les variables d'environnement de la configuration jetable ; ``captures`` le défait à la fin du module."""
 
@@ -70,7 +92,9 @@ def _capture(start: str, end: str) -> np.ndarray:
         audit.select_first_clip(window)
         window._apply_settings(replace(window._settings_snapshot(), theme_mode=end))
         audit.settle(window)
-        return _pixels(window.grab().toImage())
+        pixels, grabs = _stable_pixels(window)
+        CAPTURE_INFO[f"{start}→{end}" + ("" if start != end else " (frais)")] = grabs
+        return pixels
     finally:
         window.close()
 
@@ -126,6 +150,27 @@ def test_remapping_there_and_back_gives_the_original_stylesheet():
 # ---------------------------------------------------------------------------
 
 
+def _describe(live: np.ndarray, fresh: np.ndarray, different: np.ndarray, failures: dict[str, int]) -> str:
+    """De quoi comprendre un échec depuis le seul journal de la CI : où ça diffère, de quelles couleurs à quelles couleurs,
+    et combien de captures chaque fenêtre a demandées pour se stabiliser."""
+    if not failures:
+        return ""
+    lines = [f"captures nécessaires (1 = stable d'emblée, 41 = jamais stable) : {CAPTURE_INFO}"]
+    for name in failures:
+        y0, y1, x0, x1 = REGIONS[name]
+        mask = different[y0:y1, x0:x1]
+        rows, columns = np.where(mask)
+        box = (int(columns.min()) + x0, int(rows.min()) + y0, int(columns.max()) + x0, int(rows.max()) + y0)
+        pairs, counts = np.unique(
+            np.concatenate([live[y0:y1, x0:x1][mask][:, :3], fresh[y0:y1, x0:x1][mask][:, :3]], axis=1),
+            axis=0, return_counts=True)
+        top = ", ".join(
+            f"{tuple(int(v) for v in pair[:3])}→{tuple(int(v) for v in pair[3:])} ×{int(count)}"
+            for pair, count in sorted(zip(pairs, counts), key=lambda item: -item[1])[:3])
+        lines.append(f"  {name} : boîte (x0, y0, x1, y1) = {box} ; couleurs live→frais : {top}")
+    return "\n" + "\n".join(lines)
+
+
 @pytest.mark.parametrize("direction", ["dark→light", "light→dark"])
 def test_a_live_theme_switch_looks_like_a_fresh_start_in_that_theme(captures, direction):
     live, fresh = captures[direction]
@@ -133,11 +178,12 @@ def test_a_live_theme_switch_looks_like_a_fresh_start_in_that_theme(captures, di
     different[AUDIO_BAND[0]:AUDIO_BAND[1], 272:] = False                       # la forme d'onde : voir ``AUDIO_BAND``
     failures = {name: int(different[y0:y1, x0:x1].sum()) for name, (y0, y1, x0, x1) in REGIONS.items()
                 if different[y0:y1, x0:x1].sum() > 0}
+    details = _describe(live, fresh, different, failures)
     # Le rail, l'inspecteur, la bibliothèque, les en-têtes et les clips sont strictement identiques ; il ne reste, au plus, que
     # quelques pixels d'antialiasing ailleurs (la visionneuse).
     for strict in ("rail latéral", "inspecteur", "barre d'outils de la timeline", "en-têtes de pistes", "clips vidéo"):
-        assert failures.get(strict, 0) == 0, f"{direction} : {strict} diffère ({failures})"
-    assert different.mean() < 0.003, f"{direction} : {different.mean() * 100:.2f} % de pixels diffèrent ({failures})"
+        assert failures.get(strict, 0) == 0, f"{direction} : {strict} diffère ({failures}){details}"
+    assert different.mean() < 0.003, f"{direction} : {different.mean() * 100:.2f} % de pixels diffèrent ({failures}){details}"
 
 
 @pytest.mark.parametrize("direction", ["dark→light", "light→dark"])
@@ -153,3 +199,16 @@ def test_the_waveform_keeps_the_colours_of_the_target_theme_after_a_live_switch(
     assert significant_live <= _colours(fresh[band]), f"{direction} : couleurs absentes d'un démarrage à neuf"
     assert significant_fresh <= _colours(live[band]), f"{direction} : couleurs du thème visé manquantes"
     assert len(significant_fresh) >= 3, "fond du clip, barres et leur teinte claire : la bande n'est pas vide"
+
+
+def test_the_failure_report_names_the_region_its_box_and_the_colours():
+    """Le message d'un échec doit se construire sans erreur (sinon il masquerait l'échec) et dire où et quoi."""
+    live = np.zeros((900, 1440, 4), dtype=int)
+    fresh = np.zeros((900, 1440, 4), dtype=int)
+    live[750:760, 300:320, :3] = (10, 20, 30)
+    fresh[750:760, 300:320, :3] = (200, 210, 220)
+    different = np.abs(live - fresh).max(axis=2) > 24
+    report = _describe(live, fresh, different, {"clips vidéo": int(different[740:845, 272:1440].sum())})
+    assert "clips vidéo" in report and "(300, 750, 319, 759)" in report
+    assert "(10, 20, 30)→(200, 210, 220) ×200" in report
+    assert _describe(live, fresh, different, {}) == ""
