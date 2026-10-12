@@ -118,6 +118,22 @@ def _write_png(image, target: Path) -> None:
                 pass
 
 
+def content_png_name(state: object, *, width: int, height: int, salt: str = "content") -> str:
+    """Nom d'un PNG à taille réelle (ADR-0001) : l'empreinte ignore la pose."""
+    from .mograph_raster import RASTER_VERSION
+
+    return f"c-{_digest((RASTER_VERSION, salt, width, height, state))}.png"
+
+
+def write_content_png(image, state: object, *, salt: str = "content", directory: Path | None = None) -> Path:
+    """Écrit (ou réutilise) un PNG à la taille du contenu ; retourne son chemin."""
+    root = directory if directory is not None else cache_directory()
+    name = content_png_name(state, width=image.width(), height=image.height(), salt=salt)
+    target = root / name
+    _write_png(image, target)
+    return target
+
+
 def _blank_png(width: int, height: int, directory: Path) -> str:
     name = f"{_BLANK}-{width}x{height}.png"
     target = directory / name
@@ -441,6 +457,7 @@ class MographFrameCache:
 
 
 __all__ = [
-    "CACHE_KIND", "MographFrameCache", "SpanStream", "cache_directory", "ensure_qt_gui", "frame_grid", "span_input_filter",
-    "still_playlist", "stream_input_filter", "write_span_stream", "write_stream",
+    "CACHE_KIND", "MographFrameCache", "SpanStream", "cache_directory", "content_png_name", "ensure_qt_gui",
+    "frame_grid", "span_input_filter", "still_playlist", "stream_input_filter", "write_content_png",
+    "write_span_stream", "write_stream",
 ]

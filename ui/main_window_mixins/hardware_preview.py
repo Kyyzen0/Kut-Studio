@@ -220,6 +220,49 @@ class HardwarePreviewMixin:
         self.preview_panel.set_layer_compositing(blend, matte)
         self.preview_panel.set_grade_windows(self._clip_windows(clip, timeline_time))
 
+    def _sync_gpu_video_underlays(self, under_clips) -> None:
+        """Alimente les pistes vidéo sous le clip supérieur (moniteur GPU, ADR-0001)."""
+        from core.blend_modes import coerce_blend_mode
+        from core.decode_policy import DecodePurpose
+        from core.tracking_bindings import effective_transform_keyframes
+        from core.tracking_motion import fit_box, video_layer_matrix
+        from core.visual_effects import evaluate_transform
+
+        if not under_clips or not self.preview_panel.gpu_active:
+            self.preview_panel.set_video_underlays(())
+            return
+        cw, ch = self.preview_panel.gpu_render_size()
+        entries = []
+        for layer in under_clips:
+            if not layer.source_path:
+                continue
+            path = layer.source_path if layer.rendered else self.preview_source_for(
+                layer.source_path, divisor=self.runtime.preview_divisor(), purpose=DecodePurpose.REALTIME,
+            )
+            clip_obj = self._ensure_timeline_index().clip(layer.owner_clip_id)
+            if clip_obj is None:
+                continue
+            local = float(self.playhead_seconds) - float(clip_obj.timeline_start)
+            evaluated = evaluate_transform(
+                clip_obj.transform, effective_transform_keyframes(self.project, clip_obj),
+                clip_local_time=local, clip_duration=clip_obj.duration,
+            )
+            # Taille source inconnue ici : fit plein cadre (comme un média déjà conformé).
+            box = fit_box(cw, ch, cw, ch, fill=bool(evaluated.fill),
+                          pan_x=evaluated.pan_x, pan_y=evaluated.pan_y)
+            blend = coerce_blend_mode(getattr(getattr(clip_obj, "compositing", None), "blend_mode", "normal"))
+            entries.append((
+                f"clip:{layer.owner_clip_id}",
+                path,
+                float(layer.source_time),
+                tuple(video_layer_matrix(evaluated, cw, ch)),
+                tuple(box.rect),
+                float(evaluated.opacity),
+                blend,
+                tuple(getattr(clip_obj, "effects", ()) or ()),
+            ))
+        self.preview_panel.set_video_underlays(entries)
+
     def _clip_windows(self, clip, timeline_time: float) -> dict:
         """``{nœud: (clé, QImage)}`` : la matte des fenêtres de chaque nœud fenêtré de l'étalonnage montré, rastérisée
         comme à l'export (même code, même animation) ; une fenêtre immobile n'est rastérisée qu'une fois."""

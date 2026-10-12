@@ -193,6 +193,10 @@ class PreviewPanel(QWidget):
         self._gpu_blend_layers: tuple = ()
         self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
         self._gpu_blend_pushed: dict[str, str] = {}
+        # Pistes vidéo sous le clip supérieur (ADR-0001 multi-pistes) : tuples
+        # ``(source_id, path, time, matrix, fit, opacity, blend, effects)``.
+        self._gpu_underlays: tuple = ()
+        self._gpu_underlay_pushed: dict[str, str] = {}
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -901,6 +905,12 @@ class PreviewPanel(QWidget):
         view.deleteLater()
         self.set_effects(self._gpu_effects)
 
+    def compose_cpu_frame(self, frame, sources_rgb, mattes=None, luts=None, *, render_scale: float = 0.25):
+        """Composition CPU allégée (ADR-0001) quand le moniteur GPU est indisponible."""
+        from core.cpu_composite import compose_frame
+
+        return compose_frame(frame, sources_rgb, mattes, luts, render_scale=render_scale)
+
     def set_layer_compositing(self, blend_mode=None, matte: tuple[str, object] | None = None) -> None:
         """Mode de fusion et matte (clé, ``QImage``) du clip affiché (GPU seulement)."""
         self._gpu_blend = blend_mode
@@ -1092,6 +1102,43 @@ class PreviewPanel(QWidget):
             self._update_gpu_composite()
         view.set_video_frame("main", frame)
 
+    def set_video_underlays(self, underlays) -> None:
+        """Pistes vidéo sous le clip supérieur (bas → haut, sans le dessus).
+
+        Chaque entrée : ``(source_id, path, time_s, matrix, fit, opacity, blend, effects)``.
+        Les images sont décodées via :mod:`core.media_io` et envoyées au GPU sous
+        ``source_id`` (``clip:<id>``). Liste vide : oublie les sources précédentes.
+        """
+        from PySide6.QtGui import QImage
+        from PySide6.QtMultimedia import QVideoFrame
+
+        from core.media_io import decode_preview_frame
+
+        view = self.gpu_view
+        self._gpu_underlays = tuple(underlays or ())
+        if view is None:
+            return
+        used: set[str] = set()
+        for source_id, path, time_s, *_rest in self._gpu_underlays:
+            used.add(source_id)
+            key = f"{path}|{round(float(time_s), 4)}"
+            if self._gpu_underlay_pushed.get(source_id) == key:
+                continue
+            try:
+                decoded = decode_preview_frame(path, float(time_s))
+            except OSError:
+                LOGGER.debug("Sous-piste %s : décodage impossible", source_id, exc_info=True)
+                continue
+            image = QImage(
+                decoded.rgba, decoded.width, decoded.height, decoded.width * 4, QImage.Format_RGBA8888,
+            ).copy()
+            view.set_video_frame(source_id, QVideoFrame(image))
+            self._gpu_underlay_pushed[source_id] = key
+        for source_id in [s for s in self._gpu_underlay_pushed if s not in used]:
+            view.forget_source(source_id)
+            del self._gpu_underlay_pushed[source_id]
+        self._update_gpu_composite()
+
     def _on_gpu_failed(self, kind: str, detail: str) -> None:
         self.disable_gpu()
         self.gpu_failed.emit(kind, detail)
@@ -1135,7 +1182,21 @@ class PreviewPanel(QWidget):
                 )
             except ValueError:
                 program = program_for(())
-            layers = (CompositeLayer(
+            underlay_layers = []
+            for source_id, _path, _time, matrix, fit, opacity, blend, effects in self._gpu_underlays:
+                try:
+                    under_program = program_for(effects or (), neighborhood_scale=self.neighborhood_scale())
+                except ValueError:
+                    under_program = program_for(())
+                underlay_layers.append(CompositeLayer(
+                    source=source_id,
+                    matrix=tuple(matrix),
+                    fit=tuple(fit),
+                    opacity=float(opacity),
+                    blend=coerce_blend_mode(blend),
+                    program=under_program,
+                ))
+            layers = tuple(underlay_layers) + (CompositeLayer(
                 source="main",
                 matrix=tuple(video_layer_matrix(values, cw, ch)),
                 fit=box.rect,

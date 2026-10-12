@@ -27,13 +27,15 @@ passage en RVB planaire (``gbrp``) pour ``blend`` n'est qu'une recopie, sans con
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from .blend_modes import BlendMode, coerce_blend_mode, ffmpeg_blend_mode
 from .mograph_program import GraphicsElement, graphics_program
 from .mograph_stream import (
-    ensure_qt_gui, frame_grid, span_input_filter, stream_input_filter, write_span_stream, write_stream,
+    ensure_qt_gui, frame_grid, span_input_filter, stream_input_filter, write_content_png,
+    write_span_stream, write_stream,
 )
 from .timecode import ffmpeg_rate
 
@@ -295,32 +297,132 @@ def compose_graphics(
             continue
         ids = element.layer_ids
         apply_blend = element.kind == "band"
-        stream = dict(
-            width=width, height=height, fps=float(fps), duration=duration,
-            start=start, end=end,
-            frame_key=lambda t, ids=ids: renderer.frame_key(ids, t) if renderer.any_active(ids, t) else None,
-            render=lambda t, ids=ids, blend=apply_blend: renderer.render(ids, t, blend_modes=blend),
-            salt=element.kind,
+        content_label = _try_compose_content_layer(
+            parts, renderer, ids, add_input, fps, duration, width, height, tag,
+            start=start, end=end, origin=origin, first=first, count=count,
+            nested=nested, blend=element.blend,
         )
-        # Limité à ses images visibles, un élément ne coûte rien ailleurs (les effets du calque ne dépendent que de
-        # l'image et de son instant ``T``, gardé tel quel). Seule la fusion sur fond transparent garde le flux complet.
-        window = None
-        if LIMIT_TO_VISIBLE_SPAN and (not nested or coerce_blend_mode(element.blend) is BlendMode.NORMAL):
-            span = write_span_stream(**stream, first_frame=first)
-            if span is None:
-                continue  # jamais visible : le dessous passe tel quel
-            window = SpanWindow(first, span.first_frame, span.first_frame + span.frames, count, width, height,
-                                float(fps))
-            label = f"{tag}s"
-            parts.append(f"[{add_input(span.playlist)}:v]{span_input_filter(fps, span)}[{label}]")
+        if content_label is not None:
+            label, window = content_label
         else:
-            label = _stream_label(parts, add_input, write_stream(**stream), fps, duration, f"{tag}s", origin)
+            stream = dict(
+                width=width, height=height, fps=float(fps), duration=duration,
+                start=start, end=end,
+                frame_key=lambda t, ids=ids: renderer.frame_key(ids, t) if renderer.any_active(ids, t) else None,
+                render=lambda t, ids=ids, blend=apply_blend: renderer.render(ids, t, blend_modes=blend),
+                salt=element.kind,
+            )
+            # Limité à ses images visibles, un élément ne coûte rien ailleurs (les effets du calque ne dépendent que de
+            # l'image et de son instant ``T``, gardé tel quel). Seule la fusion sur fond transparent garde le flux complet.
+            window = None
+            if LIMIT_TO_VISIBLE_SPAN and (not nested or coerce_blend_mode(element.blend) is BlendMode.NORMAL):
+                span = write_span_stream(**stream, first_frame=first)
+                if span is None:
+                    continue  # jamais visible : le dessous passe tel quel
+                window = SpanWindow(first, span.first_frame, span.first_frame + span.frames, count, width, height,
+                                    float(fps))
+                label = f"{tag}s"
+                parts.append(f"[{add_input(span.playlist)}:v]{span_input_filter(fps, span)}[{label}]")
+            else:
+                label = _stream_label(parts, add_input, write_stream(**stream), fps, duration, f"{tag}s", origin)
         chain = _effect_chain(element.effects, element.color_grade, preserve_alpha=True,
                               pixel_scale=_pixel_scale(renderer, plan), label=tag)
         label = _apply_chain(parts, label, chain, tag)
         blend_onto(parts, current, label, element.blend, out, tag, transparent_bottom=nested, window=window)
         current = out
     return current
+
+
+def _content_layer_span_eligible(renderer, clip_id: str, low: int, high: int, fps: float) -> bool:
+    """``True`` si chaque image active de ``[low, high)`` peut être une texture par contenu.
+
+    N'appelle pas :meth:`any_active` sur le chemin heureux (calque éligible) : le
+    ``frame_key`` du flux le fera déjà ; un double parcours faisait dépasser le
+    budget d'appels des tests de segment.
+    """
+    for index in range(low, high):
+        t = index / fps
+        if renderer.content_texture_eligible(clip_id, t):
+            continue
+        # Inéligible : refuser seulement si le calque est actif à cet instant.
+        if renderer.any_active((clip_id,), t):
+            return False
+    return True
+
+
+def _try_compose_content_layer(
+    parts: list[str],
+    renderer,
+    layer_ids: tuple[str, ...] | list[str],
+    add_input: AddInput,
+    fps,
+    duration: float,
+    width: int,
+    height: int,
+    tag: str,
+    *,
+    start: float,
+    end: float,
+    origin: float,
+    first: int,
+    count: int,
+    nested: bool,
+    blend: BlendMode,
+) -> tuple[str, SpanWindow | None] | None:
+    """PNG contenu (taille réelle) + pose Qt vers le cadre pour l'export / l'aperçu fidèle.
+
+    L'encre est rastérisée une fois par ``content_key`` (:meth:`content_texture`), persistée
+    en ``c-*.png``, puis posée dans le cadre. Le flux ``.ffconcat`` reste plein cadre (contrat
+    de :func:`blend_onto`). ``None`` : chemin historique (:meth:`render`).
+    """
+    ids = tuple(layer_ids)
+    if len(ids) != 1:
+        return None
+    clip_id = ids[0]
+    fps_f = float(fps) if fps and float(fps) > 0 else 30.0
+    low = max(first, int(math.floor(start * fps_f - 1e-6)))
+    high = min(count, int(math.ceil(end * fps_f + 1e-6)))
+    if high <= low:
+        return None
+    if not _content_layer_span_eligible(renderer, clip_id, low, high, fps_f):
+        return None
+
+    def _frame_key(t, cid=clip_id):
+        if not renderer.any_active((cid,), t):
+            return None
+        placed = renderer.content_place_matrix(cid, t)
+        if placed is None:
+            return None
+        matrix, opacity, cw, ch = placed
+        return (renderer.content_key(cid, t), tuple(round(v, 5) for v in matrix), round(opacity, 5), cw, ch)
+
+    def _render(t, cid=clip_id):
+        ink = renderer.content_texture(cid, t)
+        if ink is not None:
+            write_content_png(ink[0], renderer.content_key(cid, t), salt="content")
+        placed = renderer.place_content_frame(cid, t)
+        if placed is None:
+            return renderer.render((cid,), t)
+        return placed
+
+    stream = dict(
+        width=width, height=height, fps=fps_f, duration=duration,
+        start=start, end=end,
+        frame_key=_frame_key,
+        render=_render,
+        salt="content-placed",
+    )
+    window = None
+    if LIMIT_TO_VISIBLE_SPAN and (not nested or coerce_blend_mode(blend) is BlendMode.NORMAL):
+        span = write_span_stream(**stream, first_frame=first)
+        if span is None:
+            return None
+        window = SpanWindow(first, span.first_frame, span.first_frame + span.frames, count, width, height, fps_f)
+        label = f"{tag}s"
+        parts.append(f"[{add_input(span.playlist)}:v]{span_input_filter(fps, span)}[{label}]")
+    else:
+        label = _stream_label(parts, add_input, write_stream(**stream), fps, duration, f"{tag}s", origin)
+    return label, window
 
 
 def _pixel_scale(renderer, plan) -> float:

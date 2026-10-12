@@ -84,13 +84,28 @@ def _capture(start: str, end: str) -> np.ndarray:
 
     Chaque fenêtre part d'une **configuration neuve** : sans cela, la disposition des panneaux laissée par la fenêtre précédente
     (réécrite sur disque à chaque redimensionnement) donnait des colonnes plus larges de quelques pixels à la suivante, et la
-    comparaison échouait sur toute machine sans réglages enregistrés, donc en CI, et jamais sur un poste de développement."""
+    comparaison échouait sur toute machine sans réglages enregistrés, donc en CI, et jamais sur un poste de développement.
+
+    Les filmstrips sont coupés : le décodage asynchrone des vignettes (file + minuterie 300 ms) fait diverger deux
+    fenêtres capturées à quelques secondes d'écart — surtout sur la CI macOS — alors que le test ne porte que sur le
+    thème. Même esprit que ``AUDIO_BAND`` pour la hauteur des barres de forme d'onde."""
     audit.isolate_user_config(_PATCH)
     choose_theme(start)
     window = audit.make_main_window(*SIZE, scopes=False)
     try:
+        profile = window.runtime.resolved_profile()
+        window.runtime._profile = replace(profile, filmstrips=False)
+        pixmaps = getattr(window.timeline_panel, "_pixmaps", None)
+        if isinstance(pixmaps, dict):
+            pixmaps.clear()
+        timer = getattr(window.timeline_panel, "_preview_timer", None)
+        if timer is not None:
+            timer.stop()
         audit.select_first_clip(window)
         window._apply_settings(replace(window._settings_snapshot(), theme_mode=end))
+        scroll = getattr(window.timeline_panel, "scroll", None)
+        if scroll is not None:
+            scroll.horizontalScrollBar().setValue(0)
         audit.settle(window)
         pixels, grabs = _stable_pixels(window)
         CAPTURE_INFO[f"{start}→{end}" + ("" if start != end else " (frais)")] = grabs
