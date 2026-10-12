@@ -351,7 +351,12 @@ def test_a_refused_transaction_does_not_trim_anything():
 @pytest.fixture
 def window(qtbot, monkeypatch, tmp_path):
     install_dialogs(monkeypatch)
-    return build_window(qtbot, monkeypatch, tmp_path / "config")
+    window = build_window(qtbot, monkeypatch, tmp_path / "config")
+    # Annuler / rétablir resynchronise le moniteur, qui planifierait de vrais rendus des morceaux de composition (FFmpeg et
+    # rasterisation Qt sur un média inexistant) pendant que la fenêtre se ferme : un worker de CI macOS en est mort deux fois
+    # (segfault natif, sans cadre Python). Ces tests comparent des projets, pas l'aperçu.
+    monkeypatch.setattr(type(window), "_schedule_composition_caches", lambda self, center: None)
+    return window
 
 
 def _load(window, project: Project) -> None:
