@@ -88,15 +88,19 @@ def _capture(start: str, end: str) -> np.ndarray:
     (réécrite sur disque à chaque redimensionnement) donnait des colonnes plus larges de quelques pixels à la suivante, et la
     comparaison échouait sur toute machine sans réglages enregistrés, donc en CI, et jamais sur un poste de développement.
 
-    Les filmstrips sont coupés : le décodage asynchrone des vignettes (file + minuterie 300 ms) fait diverger deux
-    fenêtres capturées à quelques secondes d'écart — surtout sur la CI macOS — alors que le test ne porte que sur le
-    thème. Même esprit que ``AUDIO_BAND`` pour la hauteur des barres de forme d'onde."""
+    Les filmstrips sont coupés via le profil ``low`` (API officielle) : le décodage asynchrone des vignettes
+    (file + minuterie 300 ms) fait diverger deux fenêtres capturées à quelques secondes d'écart — surtout sur la CI
+    macOS/Windows — alors que le test ne porte que sur le thème. Un simple ``replace(..., filmstrips=False)`` sur
+    ``runtime._profile`` est **écrasé** par ``_apply_settings`` → ``set_requested_profile`` → ``_refresh_budgets``,
+    qui rétablit ``filmstrips=True`` sur un profil auto/équilibré/élevé. Après un basculement de thème, les clips se
+    repeignent alors avec des tuiles synthétiques ; un démarrage à neuf dans le même thème peut garder le fond uni
+    (pas de ``update()`` forcé) — d'où ~49 kpx de bleu plus sombre côté live. Même esprit que ``AUDIO_BAND``."""
     audit.isolate_user_config(_PATCH)
     choose_theme(start)
     window = audit.make_main_window(*SIZE, scopes=False)
     try:
-        profile = window.runtime.resolved_profile()
-        window.runtime._profile = replace(profile, filmstrips=False)
+        # Profil low : filmstrips=False de façon durable (survît à _apply_settings).
+        window.runtime.set_requested_profile("low")
         pixmaps = getattr(window.timeline_panel, "_pixmaps", None)
         if isinstance(pixmaps, dict):
             pixmaps.clear()
@@ -104,7 +108,18 @@ def _capture(start: str, end: str) -> np.ndarray:
         if timer is not None:
             timer.stop()
         audit.select_first_clip(window)
-        window._apply_settings(replace(window._settings_snapshot(), theme_mode=end))
+        window._apply_settings(replace(
+            window._settings_snapshot(),
+            theme_mode=end,
+            performance_profile="low",
+        ))
+        # Sans vignettes : forcer un repeint identique sur les deux chemins (live a déjà update() via le thème ;
+        # frais, sans changement de palette, pouvait garder une peinture antérieure avec filmstrips).
+        timer = getattr(window.timeline_panel, "_preview_timer", None)
+        if timer is not None:
+            timer.stop()
+        for widget in getattr(window.timeline_panel, "clip_widgets", {}).values():
+            widget.update()
         scroll = getattr(window.timeline_panel, "scroll", None)
         if scroll is not None:
             scroll.horizontalScrollBar().setValue(0)

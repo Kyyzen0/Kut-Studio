@@ -94,12 +94,13 @@ def test_a_suite_job_outlives_a_slow_runner_plus_one_stuck_test(name: str) -> No
     assert int(minutes.group(1)) * 60 >= needed, f"{name} : il faut au moins {needed / 60:.0f} min"
 
 
-def test_the_workflow_keeps_read_only_permissions_and_major_pinned_actions() -> None:
+def test_the_workflow_keeps_read_only_permissions_and_sha_pinned_actions() -> None:
+    """Une étiquette ``@vN`` peut être déplacée ; un SHA de commit de 40 hex ne le peut pas."""
     text = _without_comments(WORKFLOW.read_text(encoding="utf-8"))
     assert re.search(r"^permissions:\n  contents: read\s*$", text, re.MULTILINE)
     actions = re.findall(r"^\s+(?:- )?uses: (\S+)", text, re.MULTILINE)
     assert actions, "aucune action trouvée : l'analyse du fichier est en défaut"
-    assert all(re.fullmatch(r"[\w./-]+@v\d+", action) for action in actions), actions
+    assert all(re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action) for action in actions), actions
 
 
 # ---------------------------------------------------------------------------
