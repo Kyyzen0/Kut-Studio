@@ -122,10 +122,23 @@ class MediaHandle:
         stream = container.streams.video[0]
         target = int(seconds / stream.time_base) if stream.time_base else 0
         container.seek(target, stream=stream)
+        # ``seek`` s'arrête sur une clé : ne pas renvoyer la première image décodée
+        # (souvent trop tôt) — avancer jusqu'au PTS demandé ou le plus proche.
+        best: VideoFrame | None = None
         for frame in container.decode(stream):
             image = frame.to_ndarray(format="rgba")
             h, w, _ = image.shape
-            return VideoFrame(w, h, image.tobytes(), float(frame.time or seconds))
+            stamp = float(frame.time) if frame.time is not None else None
+            candidate = VideoFrame(w, h, image.tobytes(), float(seconds if stamp is None else stamp))
+            if stamp is None:
+                return candidate
+            if stamp + 1e-6 >= seconds:
+                if best is not None and abs(best.time_seconds - seconds) <= abs(candidate.time_seconds - seconds):
+                    return best
+                return candidate
+            best = candidate
+        if best is not None:
+            return best
         return self._decode_cli(seconds)
 
     def _decode_cli(self, seconds: float) -> VideoFrame:
