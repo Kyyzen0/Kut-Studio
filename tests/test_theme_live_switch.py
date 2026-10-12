@@ -73,8 +73,10 @@ def _pixels(image: QImage) -> np.ndarray:
     return data.reshape(image.height(), image.bytesPerLine() // 4, 4)[:, : image.width()].astype(int)
 
 
-CAPTURE_INFO: dict[str, int] = {}
-"""Captures nécessaires pour chaque fenêtre (clé : ``départ→arrivée``, ``live`` ou ``fresh``) : relevé dans le message d'un échec."""
+CAPTURE_INFO: dict[str, str] = {}
+"""Pour chaque fenêtre (clé : ``départ→arrivée``) : captures nécessaires, profil de performance et état des filmstrips *au moment de la
+capture*, relevés dans le message d'un échec. Les filmstrips (vignettes synthétiques des clips : 49 184 pixels d'écart sur la zone des
+clips) dépendent du profil, qui en Auto peut changer quand le banc machine se termine ; ``tests/conftest.py`` coupe le banc."""
 _PATCH = pytest.MonkeyPatch()
 """Pose les variables d'environnement de la configuration jetable ; ``captures`` le défait à la fin du module."""
 
@@ -108,7 +110,9 @@ def _capture(start: str, end: str) -> np.ndarray:
             scroll.horizontalScrollBar().setValue(0)
         audit.settle(window)
         pixels, grabs = _stable_pixels(window)
-        CAPTURE_INFO[f"{start}→{end}" + ("" if start != end else " (frais)")] = grabs
+        profile = window.runtime.resolved_profile()
+        CAPTURE_INFO[f"{start}→{end}" + ("" if start != end else " (frais)")] = (
+            f"{grabs} capture(s), profil {profile.name}, filmstrips {profile.filmstrips}")
         return pixels
     finally:
         window.close()
@@ -170,7 +174,7 @@ def _describe(live: np.ndarray, fresh: np.ndarray, different: np.ndarray, failur
     et combien de captures chaque fenêtre a demandées pour se stabiliser."""
     if not failures:
         return ""
-    lines = [f"captures nécessaires (1 = stable d'emblée, 41 = jamais stable) : {CAPTURE_INFO}"]
+    lines = [f"fenêtres (captures : 1 = stable d'emblée, 41 = jamais stable) : {CAPTURE_INFO}"]
     for name in failures:
         y0, y1, x0, x1 = REGIONS[name]
         mask = different[y0:y1, x0:x1]
@@ -227,3 +231,13 @@ def test_the_failure_report_names_the_region_its_box_and_the_colours():
     assert "clips vidéo" in report and "(300, 750, 319, 759)" in report
     assert "(10, 20, 30)→(200, 210, 220) ×200" in report
     assert _describe(live, fresh, different, {}) == ""
+
+
+def test_all_four_captures_ran_with_the_same_performance_profile(captures):
+    """Garde la cause d'un ancien échec de la CI macOS : les clips de la timeline peignent des vignettes selon le profil de
+    performance (``filmstrips``), qui en Auto peut changer quand le banc machine se termine ou que l'énergie change. Deux
+    fenêtres capturées l'une après l'autre dans deux profils différents donnaient 49 184 pixels d'écart sur la zone des clips,
+    sans rapport avec le thème. ``tests/conftest.py`` coupe le banc et force « secteur » : le profil est donc le même partout."""
+    assert len(CAPTURE_INFO) == 4
+    states = {info.split(", ", 1)[1] for info in CAPTURE_INFO.values()}      # profil + filmstrips, sans le nombre de captures
+    assert len(states) == 1, f"profils différents entre les fenêtres : {CAPTURE_INFO}"
