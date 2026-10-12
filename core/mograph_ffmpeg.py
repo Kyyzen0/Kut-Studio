@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from .blend_modes import BlendMode, coerce_blend_mode, ffmpeg_blend_mode
 from .mograph_program import GraphicsElement, graphics_program
 from .mograph_stream import (
-    ensure_qt_gui, frame_grid, span_input_filter, stream_input_filter, write_content_png,
+    ensure_qt_gui, frame_grid, span_input_filter, stream_input_filter,
     write_span_stream, write_stream,
 )
 from .timecode import ffmpeg_rate
@@ -371,9 +371,10 @@ def _try_compose_content_layer(
 ) -> tuple[str, SpanWindow | None] | None:
     """PNG contenu (taille réelle) + pose Qt vers le cadre pour l'export / l'aperçu fidèle.
 
-    L'encre est rastérisée une fois par ``content_key`` (:meth:`content_texture`), persistée
-    en ``c-*.png``, puis posée dans le cadre. Le flux ``.ffconcat`` reste plein cadre (contrat
-    de :func:`blend_onto`). ``None`` : chemin historique (:meth:`render`).
+    L'encre est rastérisée une fois par ``content_key`` (:meth:`content_texture`, cache LRU),
+    puis posée dans le cadre. Le flux ``.ffconcat`` reste plein cadre (contrat de
+    :func:`blend_onto`) : pas d'écriture disque ``c-*.png`` morte. ``None`` : chemin
+    historique (:meth:`render`).
     """
     ids = tuple(layer_ids)
     if len(ids) != 1:
@@ -397,9 +398,6 @@ def _try_compose_content_layer(
         return (renderer.content_key(cid, t), tuple(round(v, 5) for v in matrix), round(opacity, 5), cw, ch)
 
     def _render(t, cid=clip_id):
-        ink = renderer.content_texture(cid, t)
-        if ink is not None:
-            write_content_png(ink[0], renderer.content_key(cid, t), salt="content")
         placed = renderer.place_content_frame(cid, t)
         if placed is None:
             return renderer.render((cid,), t)

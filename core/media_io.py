@@ -122,11 +122,31 @@ class MediaHandle:
         stream = container.streams.video[0]
         target = int(seconds / stream.time_base) if stream.time_base else 0
         container.seek(target, stream=stream)
+        # ``seek`` s'arrête sur une clé : avancer jusqu'au PTS demandé. Ne convertir
+        # en RVBA que la frame retenue (GOP long / haute résol. : sinon coût prohibitif).
+        best_frame = None
+        best_stamp: float | None = None
         for frame in container.decode(stream):
-            image = frame.to_ndarray(format="rgba")
-            h, w, _ = image.shape
-            return VideoFrame(w, h, image.tobytes(), float(frame.time or seconds))
+            stamp = float(frame.time) if frame.time is not None else None
+            if stamp is None:
+                return self._pyav_frame_to_video(frame, seconds)
+            if stamp + 1e-6 >= seconds:
+                if best_frame is not None and best_stamp is not None \
+                        and abs(best_stamp - seconds) <= abs(stamp - seconds):
+                    return self._pyav_frame_to_video(best_frame, best_stamp)
+                return self._pyav_frame_to_video(frame, stamp)
+            best_frame = frame
+            best_stamp = stamp
+        if best_frame is not None and best_stamp is not None:
+            return self._pyav_frame_to_video(best_frame, best_stamp)
         return self._decode_cli(seconds)
+
+    @staticmethod
+    def _pyav_frame_to_video(frame, seconds: float) -> VideoFrame:
+        image = frame.to_ndarray(format="rgba")
+        h, w, _ = image.shape
+        stamp = float(frame.time) if getattr(frame, "time", None) is not None else float(seconds)
+        return VideoFrame(w, h, image.tobytes(), stamp)
 
     def _decode_cli(self, seconds: float) -> VideoFrame:
         ffmpeg = find_media_tool("ffmpeg")

@@ -128,16 +128,19 @@ def test_place_content_frame_matches_full_frame_raster(qapp):
     assert np.abs(a - b).mean() <= 2.5
 
 
-def test_export_writes_content_sized_pngs(tmp_path, monkeypatch, qapp):
+def test_export_reuses_content_texture_across_poses(tmp_path, monkeypatch, qapp):
+    """Deux poses, même encre : ``place_content_frame`` sans écriture ``c-*.png`` morte."""
     from core import mograph_stream
     from core.export_engine import ExportEngine
+    from core.mograph_raster import MographRenderer, clear_content_texture_cache
+    from core.mograph_layers import scene_for_project
     from core.mograph_stream import cache_directory
 
     monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
     mograph_stream.cache_directory.cache_clear() if hasattr(cache_directory, "cache_clear") else None
-    # Force a fresh cache root for this process.
     monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path / "cache" / "mograph")
     (tmp_path / "cache" / "mograph").mkdir(parents=True)
+    clear_content_texture_cache()
 
     project = _solid_project(x=0.05)
     from core.visual_effects import ClipTransform
@@ -146,18 +149,21 @@ def test_export_writes_content_sized_pngs(tmp_path, monkeypatch, qapp):
         c for track in project.active_sequence.tracks for c in track.clips
         if getattr(c, "graphic", None) is not None
     )
-    # Deux poses, même encre : deux f-*.png possibles, un seul c-*.png.
     plan = build_render_plan(project)
     ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
     clip.transform = ClipTransform(position_x=0.2)
     plan = build_render_plan(project)
     ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
-    content_pngs = list((tmp_path / "cache" / "mograph").glob("c-*.png"))
-    assert content_pngs, "expected content-sized PNG(s) in the mograph cache"
-    from PySide6.QtGui import QImage
+    assert list((tmp_path / "cache" / "mograph").glob("c-*.png")) == []
 
-    image = QImage(str(content_pngs[0]))
-    assert image.width() < W and image.height() < H
+    scene = scene_for_project(project)
+    renderer = MographRenderer(scene, W, H, fps=25.0)
+    clip_id = clip.id
+    first = renderer.content_texture(clip_id, 0.0)
+    second = renderer.content_texture(clip_id, 0.0)
+    assert first is not None and second is not None
+    assert first[0] is second[0]  # même instance LRU
+    assert first[0].width() < W and first[0].height() < H
 
 
 def test_preview_panel_sends_content_layers_with_matrix(qtbot):

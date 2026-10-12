@@ -244,8 +244,8 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    (`CompositeLayer.matte_in_fit`) ; cache LRU par `content_key` ; repli plein cadre pour les modes de fusion
    inéligibles.
    *Tranche PNG d'export* : pour un calque éligible, l'export et l'aperçu fidèle réutilisent `content_texture`
-   (`place_content_frame`), persistent l'encre en `c-*.png` à taille réelle (`write_content_png`), et ne
-   redessinent plus le texte/la forme à chaque pose.
+   (`place_content_frame`, cache LRU par `content_key`) et ne redessinent plus le texte/la forme à chaque pose ;
+   le flux `.ffconcat` reste plein cadre (contrat de `blend_onto`).
    *Tranche relecture asynchrone* : l'essai d'export (`tools/perf/gpu_export_spike.py`) enfile
    `readBackTexture` (`GpuPreviewWidget.queue_readback`, profondeur `--readback-depth`) au lieu d'un
    `grabFramebuffer` synchrone par image.
@@ -254,8 +254,8 @@ Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et 
    `tests/test_gpu_pipeline.py`. Voir [gpu-preview.md](../gpu-preview.md) § Chroma 4:2:0.
    *Multi-pistes vidéo* : le moniteur GPU compose les pistes sous le clip supérieur (`set_video_underlays`,
    sources `clip:<id>` via `media_io`) ; le clip du dessus reste le `QMediaPlayer` (`main`).
-   *Grain en shader* : passe `grain` (`assets/shaders/grain.frag.qsb`, `core/gpu_grain.py`) ; les autres
-   lumières restent rastérisées (Qt).
+   *Grain en shader* : passe `grain` (`assets/shaders/grain.frag.qsb`, `core/gpu_grain.py`) branchée sur le
+   moniteur pour les calques `light_kind=grain` ; les autres lumières restent rastérisées (Qt).
    *Compositeur CPU* : `core/cpu_composite.py` exécute `reference_frame` à résolution réduite dans un fil
    de travail (niveau Auto « CPU »).
 5. [ ] **Étape 3 : couverture.** Étalonnage et LUT (texture 3D), transitions, séquences imbriquées rendues en texture.
