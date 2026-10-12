@@ -101,6 +101,7 @@ def test_resolve_auto_reads_warm_cache(tmp_path, monkeypatch):
 
 
 def test_measured_profile_name_respects_off_switch(tmp_path, monkeypatch):
+    monkeypatch.delenv("KUT_STUDIO_MACHINE_BENCH", raising=False)   # tests/conftest.py le coupe pour toute la suite
     resources = MachineResources(logical_cpus=8, memory_bytes=16 * 1024**3)
     save_cached_bench(
         BenchResult(
