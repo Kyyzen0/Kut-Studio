@@ -19,6 +19,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Imbriquer une sélection garde les bus des pistes déplacées.** Une piste envoyée sur un autre bus que la piste
   hôte emporte ce bus (fader, coupure, inserts) dans la nouvelle séquence. Avant, le bus restait sur la piste parente
   vidée : une piste coupée par son bus redevenait audible à l'export et en lecture.
+- **Aperçu : régler un bus ne ressert plus l'ancien son.** Le fader, la coupure et les inserts d'un bus font partie
+  de l'empreinte des segments. Avant, le moniteur rejouait le mixage d'avant le réglage.
 
 ### Added
 
