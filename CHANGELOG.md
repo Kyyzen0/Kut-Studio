@@ -14,6 +14,17 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-12
+
+Le **mixage audio** gagne ses trois outils de console : des **inserts** par piste (une chaîne d'effets sur la somme
+des clips), un **égaliseur 4 bandes** et des **bus** (sous-mixages entre les pistes et le Master), tous entendus en
+lecture comme à l'export. Côté aperçu, Auto **mesure la machine** et se règle sur la **batterie**, le mode économie et
+la chauffe, et les titres et formes du moniteur GPU deviennent des textures à la taille de leur contenu.
+
+**À savoir** : sur batterie, Auto descend d'un cran de qualité d'aperçu et ne précharge plus que le segment sous la
+tête (l'export n'est jamais dégradé). Les projets gardent le format 17 ; un projet sans insert ni bus s'exporte comme
+avant.
+
 ### Added
 
 - **Bus audio.** Un bus est un sous-mixage entre des pistes et le Master : bouton **Nouveau bus** du mixeur, sortie de
@@ -476,7 +487,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.3.0...v0.4.0
