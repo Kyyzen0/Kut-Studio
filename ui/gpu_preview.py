@@ -587,6 +587,15 @@ class GpuPreviewWidget(QRhiWidget):
         self.stats.note_arrival()
         self.update()
 
+    def set_procedural_source(self, source: VideoSource) -> None:
+        """Source sans texture (ex. grain procédural) : connue du plan sans upload."""
+        if self._broken:
+            return
+        self._sources[source.id] = source
+        self._pending.pop(source.id, None)
+        self._latest.pop(source.id, None)
+        self.update()
+
     def set_composite(self, frame: CompositeFrame, mattes: dict[str, QImage] | None = None) -> None:
         self._frame = frame
         self._mattes = dict(mattes or {})
@@ -639,6 +648,15 @@ class GpuPreviewWidget(QRhiWidget):
     def pending_readbacks(self) -> int:
         return sum(1 for entry in self._readback_queue if not entry["done"])
 
+    def _finish_readback(self, entry: dict) -> None:
+        """Marque l'entrée terminée et la retire de la file (l'appelant garde sa ref)."""
+        entry["done"] = True
+        entry.pop("result", None)
+        try:
+            self._readback_queue.remove(entry)
+        except ValueError:
+            pass
+
     # -- QRhiWidget ---------------------------------------------------------------------------------
 
     def initialize(self, cb) -> None:  # noqa: N802 - API Qt
@@ -676,8 +694,13 @@ class GpuPreviewWidget(QRhiWidget):
                         LOGGER.info("Format %s non lu par le shader : conversion par Qt (copie CPU)", pixel)
             self._pending.clear()
             frame = self._frame
-            ready = [layer for layer in frame.layers
-                     if executor.has_source(layer.source) and layer.source in self._sources]
+            # Grain procédural : pas de texture uploadée, seulement une VideoSource déclarée.
+            ready = [
+                layer for layer in frame.layers
+                if layer.source in self._sources and (
+                    self._sources[layer.source].layout == "grain" or executor.has_source(layer.source)
+                )
+            ]
             images = dict(self._mattes)
             ready = [self._resolve_grade(layer, images) for layer in ready]
             adjustments = tuple(self._resolve_grade(layer, images) for layer in frame.adjustments)
@@ -712,7 +735,7 @@ class GpuPreviewWidget(QRhiWidget):
         if texture is None:
             for entry in waiting:
                 entry["error"] = "pas de colorTexture"  # i18n-ignore: diagnostic interne de relecture, jamais affiché
-                entry["done"] = True
+                self._finish_readback(entry)
             return
         for entry in waiting:
             desc = QRhiReadbackDescription()
@@ -733,7 +756,7 @@ class GpuPreviewWidget(QRhiWidget):
                         entry["image"] = image
                 except Exception as error:  # noqa: BLE001 - ne jamais remonter vers Qt
                     entry["error"] = str(error)
-                entry["done"] = True
+                self._finish_readback(entry)
 
             result.completed = _complete
             update = executor.rhi.nextResourceUpdateBatch()
@@ -862,6 +885,9 @@ class GpuPreviewWidget(QRhiWidget):
         if not keep_frames:
             self._latest.clear()
         self._sources.clear()
+        for entry in list(self._readback_queue):
+            entry["error"] = entry.get("error") or "release_gpu"  # i18n-ignore: diagnostic interne
+            self._finish_readback(entry)
 
     def release_gpu_cache(self) -> int:
         """Vide le cache de textures (changement de projet, pression mémoire)."""

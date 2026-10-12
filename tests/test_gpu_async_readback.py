@@ -17,6 +17,22 @@ def test_queue_readback_tracks_pending_entries(qapp):
     widget.deleteLater()
 
 
+def test_finish_readback_drops_completed_entries(qapp):
+    """Les entrées terminées quittent la file (l'appelant garde sa référence)."""
+    widget = GpuPreviewWidget(api="opengl")
+    first = widget.queue_readback(0)
+    second = widget.queue_readback(1)
+    first["image"] = object()
+    widget._finish_readback(first)
+    assert first["done"] is True
+    assert first not in widget._readback_queue
+    assert second in widget._readback_queue
+    assert widget.pending_readbacks() == 1
+    # La référence appelant conserve l'image même hors file.
+    assert first["image"] is not None
+    widget.deleteLater()
+
+
 def test_gpu_exporter_accepts_readback_depth_argument():
     import inspect
 
