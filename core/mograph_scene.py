@@ -262,11 +262,16 @@ class EvaluatedLayer:
     active: bool
 
     def state_key(self) -> tuple:
-        """Clé hachable du rendu de ce calque (caches de frames)."""
-        return (
-            self.clip_id, repr(self.graphic), tuple(round(v, 6) for v in self.world),
-            round(self.opacity, 6), self.box, repr(self.masks),
-        )
+        """Clé hachable du rendu de ce calque (caches de frames plein cadre)."""
+        return self.content_key() + self.pose_key()
+
+    def content_key(self) -> tuple:
+        """Ce qui change l'encre du calque (pas la pose) : textures par contenu (ADR-0001)."""
+        return (self.clip_id, repr(self.graphic), self.box, repr(self.masks))
+
+    def pose_key(self) -> tuple:
+        """Matrice monde + opacité : animables par le shader sans redessiner."""
+        return (tuple(round(v, 6) for v in self.world), round(self.opacity, 6))
 
 
 def stack_key(layer) -> tuple:
