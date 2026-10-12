@@ -117,12 +117,50 @@ def detect_power_state(
 
 
 def _linux() -> PowerState:
-    on_battery: bool | None = None
     root = "/sys/class/power_supply"
     try:
         names = os.listdir(root)
     except OSError:
         names = []
+    # Le chargeur externe (``online``) prime : avec un seuil de charge, la
+    # batterie reste souvent en ``Not charging`` alors qu'on est sur secteur.
+    on_battery = _linux_on_battery(root, names)
+    thermal = _linux_thermal()
+    low_power = _linux_low_power()
+    source = "sysfs" if on_battery is not None or thermal != THERMAL_UNKNOWN else "unavailable"
+    if source == "unavailable" and low_power is None:
+        return PowerState(source="unavailable")
+    return PowerState(
+        on_battery=on_battery,
+        low_power_mode=low_power,
+        thermal=thermal,
+        source="sysfs",
+    )
+
+
+def _linux_on_battery(root: str, names: list[str]) -> bool | None:
+    """``True`` sur batterie, ``False`` sur secteur, ``None`` si illisible."""
+    charger_online: bool | None = None
+    for name in names:
+        base = os.path.join(root, name)
+        try:
+            kind = _read_text(os.path.join(base, "type")).strip().lower()
+        except OSError:
+            continue
+        if kind not in {"mains", "usb", "wireless", "ups"}:
+            continue
+        try:
+            online = _read_text(os.path.join(base, "online")).strip()
+        except OSError:
+            continue
+        if online == "1":
+            return False
+        if online == "0":
+            charger_online = False
+    if charger_online is False:
+        return True
+    # Pas de chargeur exposé : repli sur le statut batterie. ``not charging``
+    # n'implique pas la batterie (seuil de charge sur secteur).
     for name in names:
         base = os.path.join(root, name)
         try:
@@ -135,22 +173,11 @@ def _linux() -> PowerState:
             status = _read_text(os.path.join(base, "status")).strip().lower()
         except OSError:
             continue
-        if status in {"discharging", "not charging"}:
-            on_battery = True
-            break
-        if status in {"charging", "full", "charged"}:
-            on_battery = False
-    thermal = _linux_thermal()
-    low_power = _linux_low_power()
-    source = "sysfs" if on_battery is not None or thermal != THERMAL_UNKNOWN else "unavailable"
-    if source == "unavailable" and low_power is None:
-        return PowerState(source="unavailable")
-    return PowerState(
-        on_battery=on_battery,
-        low_power_mode=low_power,
-        thermal=thermal,
-        source="sysfs",
-    )
+        if status == "discharging":
+            return True
+        if status in {"charging", "full", "charged", "not charging"}:
+            return False
+    return None
 
 
 def _linux_thermal() -> str:

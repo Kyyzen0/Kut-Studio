@@ -11,6 +11,21 @@ from ui import i18n
 LOGGER = logging.getLogger(__name__)
 
 
+def _preview_job_cached(engine, job) -> bool:
+    """``True`` si le segment du job est déjà présent dans le cache disque."""
+    key = getattr(job, "key", None)
+    if key is None:
+        return False
+    cache = getattr(engine, "cache", None)
+    if cache is None:
+        return False
+    try:
+        return cache.lookup(key) is not None
+    except Exception:
+        LOGGER.debug("Lecture du cache d'aperçu en échec : segment traité comme absent", exc_info=True)
+        return False
+
+
 class _PreviewEvents(QObject):
     """Pont thread de rendu → thread Qt pour l'état du moteur d'aperçu."""
 
@@ -264,19 +279,13 @@ class FaithfulPreviewMixin:
             return
         velocity = planner.note_position(float(center))
         jobs = self._preview_segment_jobs(center, velocity)
-        # Rendu à la demande : à l'arrêt, ne rien relancer si la grille et la
-        # qualité n'ont pas changé (évite de recalculer pour rien).
-        if runtime is not None:
-            fingerprint = (
-                planner.index_of(float(center)),
-                tuple((job.key.params_hash if getattr(job, "key", None) else None) for job in jobs),
-                str(getattr(self, "_render_quality", "")),
-                int(runtime.preview_divisor()),
-                int(runtime.prefetch_max_extra()),
-            )
-            if not runtime.ondemand.should_run(fingerprint):
-                return
         self._last_preview_jobs = list(jobs)
+        # Rendu à la demande : à l'arrêt, si chaque segment utile est déjà en
+        # cache, ne rien relancer (purge / échec → lookup manque → on replanifie).
+        if jobs and all(_preview_job_cached(engine, job) for job in jobs):
+            return
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         try:
             duration = float(self._ensure_timeline_index().duration)
             low, high = planner.keep_range(center, duration=duration, velocity=velocity)
@@ -414,6 +423,9 @@ class FaithfulPreviewMixin:
         engine = getattr(self, "preview_engine", None)
         if engine is None:
             return
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            runtime.ondemand.invalidate()
         try:
             engine.invalidate_clip(str(clip_id))
         except Exception:

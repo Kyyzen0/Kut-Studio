@@ -113,6 +113,51 @@ def test_studio_runtime_applies_injected_power_to_auto_baseline(monkeypatch):
     assert runtime.neighborhood_scale() == 0.5
 
 
+def test_preview_divisor_refreshes_power_before_returning(monkeypatch):
+    """Le diviseur publié suit le cran énergie dès le premier accès."""
+    monkeypatch.setenv("KUT_STUDIO_MACHINE_BENCH", "off")
+    monkeypatch.setenv("KUT_STUDIO_POWER", "battery")
+    runtime = StudioRuntime(
+        profile="auto",
+        preview_quality="auto",
+        resources=MachineResources(logical_cpus=8, memory_bytes=32 * 1024**3),
+    )
+    # Avant tout neighborhood_scale : le diviseur doit déjà être abaissé.
+    assert runtime.preview_divisor() == 2
+    assert runtime.neighborhood_scale() == 0.5
+
+
+def test_unplugging_restores_energy_baseline_not_stuck_half(monkeypatch):
+    monkeypatch.setenv("KUT_STUDIO_MACHINE_BENCH", "off")
+    runtime = StudioRuntime(
+        profile="auto",
+        preview_quality="auto",
+        resources=MachineResources(logical_cpus=8, memory_bytes=32 * 1024**3),
+    )
+    runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
+    assert runtime.preview.baseline == 2
+    assert runtime.preview.divisor == 2
+    runtime.refresh_power_state(PowerState(on_battery=False, thermal="nominal", source="test"))
+    assert runtime.preview.baseline == 1
+    assert runtime.preview.divisor == 1
+
+
+def test_adaptive_overload_survives_unplug(monkeypatch):
+    monkeypatch.setenv("KUT_STUDIO_MACHINE_BENCH", "off")
+    runtime = StudioRuntime(
+        profile="auto",
+        preview_quality="auto",
+        resources=MachineResources(logical_cpus=8, memory_bytes=32 * 1024**3),
+    )
+    runtime.refresh_power_state(PowerState(on_battery=True, source="test"))
+    # Surcharge adaptative sous la base batterie (2 → 4).
+    runtime.preview.divisor = 4
+    runtime.preview.adaptive.divisor = 4
+    runtime.refresh_power_state(PowerState(on_battery=False, thermal="nominal", source="test"))
+    assert runtime.preview.baseline == 1
+    assert runtime.preview.divisor == 4
+
+
 def test_explicit_quality_is_not_lowered_by_battery():
     runtime = StudioRuntime(
         profile="high",

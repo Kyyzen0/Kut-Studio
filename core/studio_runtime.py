@@ -195,9 +195,14 @@ class StudioRuntime:
         return self._power
 
     def preview_divisor(self) -> int:
+        # Même rafraîchissement énergie que :meth:`neighborhood_scale` : sinon
+        # le premier ``_apply_runtime_hints`` publie le diviseur profil seul,
+        # puis le scale déclenche le cran batterie trop tard.
+        self._ensure_power_fresh()
         return self.preview.divisor
 
     def preview_label(self) -> str:
+        self._ensure_power_fresh()
         return quality_label(self.preview.divisor)
 
     def neighborhood_scale(self) -> float:
@@ -336,14 +341,20 @@ class StudioRuntime:
             and self.requested_profile == "auto"
             and self._policy.preview_divisor != self.preview.baseline
         ):
-            degraded = self.preview.divisor
-            self.preview.baseline = self._policy.preview_divisor
-            self.preview.adaptive.set_baseline(self._policy.preview_divisor)
-            # set_baseline remet au baseline ; on conserve une dégradation
-            # temporaire déjà plus basse (diviseur plus grand).
-            if degraded > self._policy.preview_divisor:
-                self.preview.divisor = degraded
-                self.preview.adaptive.divisor = degraded
+            previous_baseline = self.preview.baseline
+            current = self.preview.divisor
+            new_baseline = self._policy.preview_divisor
+            self.preview.baseline = new_baseline
+            self.preview.adaptive.set_baseline(new_baseline)
+            # Conserve une surcharge adaptative (diviseur déjà sous l'ancienne
+            # base). Un cran purement énergétique suit le nouveau baseline
+            # (batterie → 2, retour secteur → 1), sans rester collé à l'arrêt.
+            if current > previous_baseline:
+                keep = max(current, new_baseline)
+                self.preview.divisor = keep
+                self.preview.adaptive.divisor = keep
+            else:
+                self.preview.divisor = new_baseline
         if (
             previous.prefetch_enabled != self._policy.prefetch_enabled
             or previous.prefetch_max_extra != self._policy.prefetch_max_extra
