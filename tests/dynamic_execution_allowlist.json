@@ -1,0 +1,11 @@
+{
+  "_comment": "Exceptions tolérées par tests/test_no_dynamic_execution_guard.py (ADR-0005, règle R1). Chaque entrée : {\"path\": \"core/x.py\", \"rule\": \"dynamic-code\", \"dynamic-import\", \"unsafe-deserialization\" ou \"shell\", \"scope\": \"Classe.methode\" (ou \"<module>\"), \"reason\": \"pourquoi ce site ne lit aucune donnée externe et ne peut pas s'écrire autrement\"}. La liste ne devrait pas grossir ; une entrée dont le site a disparu fait échouer le test.",
+  "entries": [
+    {
+      "path": "ui/main_window_mixins/tracking.py",
+      "rule": "dynamic-import",
+      "scope": "<module>",
+      "reason": "find_spec(\"numpy\") ne fait que savoir si le module existe : il ne charge ni n'exécute rien, et son argument est une constante. Un « import numpy » le remplacerait au prix de son temps de chargement (numpy reste chargé à la demande, pour l'analyse)."
+    }
+  ]
+}
