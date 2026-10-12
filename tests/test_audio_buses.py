@@ -270,12 +270,64 @@ def test_a_bus_works_with_track_inserts_in_front_of_it(tmp_path):
     assert 0.4 < _peak(_render(project)) < 0.56
 
 
-@needs_ffmpeg
-def test_a_bus_inside_a_nested_sequence_is_exported(tmp_path):
-    project = _project(tmp_path, tracks=2, amplitude=0.4)
-    bus = add_bus(project)
+def _inner(project):
+    return next(sequence for sequence in project.sequences if sequence.name == "Scène")
+
+
+def test_nesting_under_a_video_host_keeps_the_audio_buses_inside_the_new_sequence(tmp_path):
+    """L'hôte est la piste vidéo : aucun bus du parent ne traite le clip imbriqué. Les bus audio doivent donc
+    être dans la nouvelle séquence, sinon une piste coupée redevient audible."""
+    project = _project(tmp_path, tracks=2)
+    project.tracks.insert(0, Track("V1", "V1", "video", clips=[Clip("v", "a", "V1", 0.0, 0.0, 2.0)]))
+    bus = add_bus(project, "Voix")
+    set_bus_muted(project, bus.id, True)
     route_track(project, "A1", bus.id)
     route_track(project, "A2", bus.id)
+    create_sequence_from_selection(project, ["v", "c1", "c2"], "Scène")
+    inner = _inner(project)
+    assert [track.id for track in inner.tracks][0] == "V1"
+    assert [(bus_item.id, bus_item.muted) for bus_item in inner.buses] == [(bus.id, True)]
+    assert {track.id: track.bus_id for track in inner.tracks} == {"V1": "", "A1": bus.id, "A2": bus.id}
+    assert project.tracks[0].bus_id == ""
+
+
+def test_nesting_copies_a_bus_that_is_not_the_hosts_and_leaves_the_host_bus_on_the_parent(tmp_path):
+    """Le bus de la piste hôte reste sur le parent (une seule application). Un autre bus suit ses pistes : sinon
+    sa coupure reste sur une piste vidée et le son muet redevient audible."""
+    project = _project(tmp_path, tracks=2, amplitude=0.4)
+    voices = add_bus(project, "Voix")
+    music = add_bus(project, "Musique")
+    set_bus_muted(project, voices.id, True)
+    set_bus_volume(project, music.id, -6.0)
+    route_track(project, "A1", music.id)
+    route_track(project, "A2", voices.id)
     create_sequence_from_selection(project, ["c1", "c2"], "Scène")
-    rendered = _render(project)
-    assert len(rendered) > RATE and np.isfinite(rendered).all()
+    inner = _inner(project)
+    assert [(bus.id, bus.muted) for bus in inner.buses] == [(voices.id, True)]
+    assert [(track.id, track.bus_id) for track in inner.tracks] == [("A1", ""), ("A2", voices.id)]
+    assert project.tracks[0].bus_id == music.id and project.tracks[0].clips, "le bus de l'hôte reste sur le parent"
+    assert project.tracks[1].clips == [] and project.tracks[1].bus_id == voices.id
+
+
+@needs_ffmpeg
+def test_a_muted_bus_stays_silent_after_the_selection_is_nested(tmp_path):
+    project = _project(tmp_path, tracks=2, amplitude=0.4)
+    bus = add_bus(project, "Voix")
+    set_bus_muted(project, bus.id, True)
+    route_track(project, "A2", bus.id)
+    assert abs(_peak(_render(project)) - 0.4) < 0.02
+    create_sequence_from_selection(project, ["c1", "c2"], "Scène")
+    assert abs(_peak(_render(project)) - 0.4) < 0.02, "A2 coupé par son bus ne doit pas revenir dans le mixage"
+
+
+@needs_ffmpeg
+def test_nesting_onto_the_host_bus_does_not_apply_that_bus_twice(tmp_path):
+    project = _project(tmp_path, tracks=2, amplitude=0.4)
+    bus = add_bus(project)
+    set_bus_volume(project, bus.id, -6.0)
+    route_track(project, "A1", bus.id)
+    route_track(project, "A2", bus.id)
+    before = _peak(_render(project))
+    create_sequence_from_selection(project, ["c1", "c2"], "Scène")
+    assert _inner(project).buses == [] and all(track.bus_id == "" for track in _inner(project).tracks)
+    assert abs(_peak(_render(project)) - before) < 0.02

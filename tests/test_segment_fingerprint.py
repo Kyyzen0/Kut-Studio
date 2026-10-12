@@ -77,6 +77,28 @@ def test_the_master_fader_and_mute_change_the_segment_hash(tmp_path, master):
     assert _hash(project, **master) != _hash(project)
 
 
+def test_a_bus_fader_mute_or_insert_changes_the_segment_hash(tmp_path):
+    """Le fader, la coupure et les inserts d'un bus ne sont pas sur la couche : sans eux dans l'empreinte, le cache
+    ressert le son d'avant le réglage."""
+    from core.audio_buses import add_bus, add_bus_insert, route_track, set_bus_muted, set_bus_volume
+
+    project = _project(tmp_path)
+    bus = add_bus(project, "Voix")
+    route_track(project, "V1", bus.id)
+    routed = _hash(project)
+    set_bus_volume(project, bus.id, -8.0)
+    assert _hash(project) != routed
+    set_bus_volume(project, bus.id, 0.0)
+    assert _hash(project) == routed
+    set_bus_muted(project, bus.id, True)
+    muted = _hash(project)
+    assert muted != routed
+    set_bus_muted(project, bus.id, False)
+    assert _hash(project) == routed
+    add_bus_insert(project, bus.id, AudioEffectType.LIMITER)
+    assert _hash(project) != routed
+
+
 def test_identical_projects_share_one_segment_hash(tmp_path):
     """Témoin : l'empreinte ne dépend ni de l'instance ni de l'ordre de construction."""
     assert _hash(_project(tmp_path)) == _hash(_project(tmp_path))

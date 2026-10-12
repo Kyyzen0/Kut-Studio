@@ -734,7 +734,10 @@ def create_sequence_from_selection(
        identifiant, nom, type, visibilité et mute ; les réglages audio de
        piste (volume, pan, automation recalée) sont recopiés, sauf sur la
        piste qui accueille le clip imbriqué : son volume continue de
-       s'appliquer au clip imbriqué dans le parent ;
+       s'appliquer au clip imbriqué dans le parent. Un bus autre que celui
+       de cette piste hôte est recopié dans la nouvelle séquence (fader,
+       coupure, inserts) ; le bus de la piste hôte reste sur le parent,
+       comme son volume ;
     3. les transitions dont les deux clips sont sélectionnés suivent les
        clips ; celles qui relieraient un clip resté dehors sont retirées
        (``dropped_transition_ids``) ;
@@ -805,6 +808,11 @@ def create_sequence_from_selection(
             copy.pan = track.pan
             copy.ducking_config = deepcopy(track.ducking_config)
             copy.inserts = list(track.inserts)
+            # Même règle que le volume : le bus de la piste hôte reste sur le parent (il traite le clip imbriqué
+            # une seule fois). Un autre bus doit suivre la piste, sinon sa coupure, son fader et ses inserts
+            # restent sur une piste parente vidée et le son muet redevient audible.
+            if track.bus_id and track.bus_id != host.bus_id:
+                copy.bus_id = track.bus_id
             points = list(track.automation.points)
             shifted = []
             for point in points:
@@ -864,6 +872,12 @@ def create_sequence_from_selection(
         if getattr(sidechain, "music_track_id", None) in inner_ids
         and getattr(sidechain, "voice_track_id", None) in inner_ids
     ]
+    used_bus_ids = {track.bus_id for track in inner_tracks if track.bus_id}
+    inner_buses = [deepcopy(bus) for bus in parent.buses if bus.id in used_bus_ids]
+    known_bus_ids = {bus.id for bus in inner_buses}
+    for track in inner_tracks:
+        if track.bus_id and track.bus_id not in known_bus_ids:
+            track.bus_id = ""
 
     sequence = Sequence(
         id=new_sequence_id(),
@@ -875,6 +889,7 @@ def create_sequence_from_selection(
         markers=inner_markers,
         transitions=inner_transitions,
         ducking_sidechains=inner_ducking,
+        buses=inner_buses,
     )
     project.sequences.append(sequence)
     nested = Clip(
