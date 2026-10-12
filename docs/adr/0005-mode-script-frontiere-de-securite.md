@@ -203,7 +203,10 @@ même binaire, aucune fenêtre.
 | `run script.py [--project projet.kut]` | exécute du Python (R3) ; refuse sans `--allow-python` explicite en mode non interactif |
 
 Sortie lisible par une machine (`--json`), codes de sortie stables, erreurs sur la sortie d'erreur. Écriture atomique
-(déjà le cas de `save_project`) ; on n'écrase jamais l'entrée sans `-o` explicite ou `--in-place`.
+(déjà le cas de `save_project`). **L'entrée n'est jamais écrasée sans `--in-place`** : `-o` vers un autre fichier est le
+cas normal, et un `-o` qui désigne **le même fichier que l'entrée** (même chemin une fois résolu, lien symbolique compris)
+est refusé avec un message qui nomme `--in-place`. Un seul critère donc, pour l'implémentation comme pour les tests :
+« la sortie est-elle l'entrée ? » ; si oui, `--in-place` est exigé (et le verrou consultatif vérifié).
 
 ### 7. L'export sans interface (le sol commun)
 
