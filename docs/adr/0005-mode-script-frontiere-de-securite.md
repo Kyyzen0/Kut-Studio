@@ -48,8 +48,14 @@ Ce qui touche à la sécurité :
   été **l'identifiant d'un nœud** : un `.kut` forgé pouvait s'en servir pour ajouter un filtre FFmpeg (lecture d'un
   fichier local). Corrigé en 0.4.0 par `core/node_graph.py` (`[A-Za-z0-9_]{1,64}`, `fullmatch`), avec abandon du nœud
   fautif au chargement.
-- Le chargement d'un `.kut` est **strict** : enveloppe et version vérifiées, flottants finis, champs inconnus ou
-  manquants refusés, version plus récente refusée.
+- Le chargement d'un `.kut` est **strict pour la structure** : enveloppe et version vérifiées, flottants finis, pistes,
+  clips et médias invalides refusés, version plus récente refusée. Il est **tolérant pour les sous-objets
+  décoratifs** : un effet de clip ou de piste, une association de ducking, une transition, un bus ou un identifiant de
+  nœud invalide est ignoré **seul**, sans faire échouer le fichier (`_deserialize_clip_effects`,
+  `_deserialize_audio_effects`, `_deserialize_ducking_sidechains`, `_deserialize_buses`…). Ce choix protège
+  l'ouverture d'un projet abîmé dans l'interface, mais il veut dire qu'un `.kut` forgé peut être accepté **en perdant
+  du contenu sans le dire** : `validate` ne peut pas s'appuyer sur « le chargement a réussi » pour affirmer
+  « le fichier est intact » (voir §6 et le plan, étape 3).
 
 Ce que le script de la vidéo de présentation a coûté (97 clips, par `add_graphic_clip`, `add_keyframe`,
 `build_render_plan`) : un export à monter à la main (`QObject`, `ExportRequest`), `build_render_plan(window=...)` qui
@@ -69,7 +75,7 @@ de garde (comme celui des échecs silencieux) interdit `eval`, `exec`, `pickle`,
 
 **R2. Un script déclaratif est une donnée, pas un programme.** Il est décodé par un jeu **fermé** de verbes (§3), validé
 par un schéma, puis exécuté par les fonctions du modèle. Il ne contient ni expression, ni référence de module, ni
-variable, ni boucle. Ce qu'il **ne peut pas** faire, par construction :
+calcul, ni boucle (seuls des alias nomment les objets créés, §3). Ce qu'il **ne peut pas** faire, par construction :
 - écrire un fichier : les chemins de sortie viennent de l'appelant (arguments du CLI, boîte de dialogue), jamais du script ;
 - lancer un processus, ouvrir un réseau, lire une variable d'environnement ;
 - viser autre chose que des médias existants (lecture) ou le projet (écriture) ;
@@ -125,6 +131,19 @@ est précisément la porte qu'on se refuse. Un champ `note` libre sert de commen
 - **Verbes = fonctions du modèle**, un pour un (`add_clip` → `timeline_operations.add_clip_to_track`, `route_track` →
   `audio_buses.route_track`…). Le catalogue est généré depuis une table unique `VERBS` qui sert aussi à valider, à
   documenter et à produire le schéma JSON : un verbe sans entrée de table n'existe pas.
+- **Objets créés : identifiants stables et alias.** Les fonctions de création du modèle génèrent aujourd'hui leur
+  identifiant (`add_clip_to_track` : `clip-` + un UUID tronqué, `core/timeline_operations.py:685`) : un script qui
+  ajoute un clip puis lui pose une image clé ne pourrait pas le désigner, et rejoué il viserait un autre identifiant.
+  Deux règles :
+  1. tout verbe de création accepte un `"id"` explicite (validé par le filtre de `node_graph` et refusé s'il existe
+     déjà) ; **prérequis** : les fonctions de création du modèle acceptent un identifiant fourni (`clip_id=None`
+     garde le comportement actuel) ;
+  2. un verbe de création peut porter un **alias** (`"as": "intro"`), un nom du script lié à l'objet créé ; une
+     opération suivante le désigne par `{"ref": "intro"}`. Un alias est un simple nom résolu **au décodage**, dans
+     une table locale au script, jamais évalué ni calculé : ce n'est pas une variable au sens de R2. Un alias inconnu
+     ou défini deux fois est une erreur.
+  La façade Python rend les identifiants créés, et la sérialisation d'un script construit en Python **écrit les
+  identifiants explicites** : le rejouer produit un projet identique, pas un projet équivalent à des UUID près.
 - **Sélecteurs** : par identifiant, ou par nom exact quand il est unique (`"track": "A1"`) ; une ambiguïté est une
   erreur, jamais un choix silencieux. Les identifiants créés par le script (`"id": "voix"`) sont validés par le filtre
   de `node_graph`.
@@ -178,7 +197,7 @@ même binaire, aucune fenêtre.
 | Commande | Rôle |
 | --- | --- |
 | `info projet.kut [--json]` | résumé, version, médias manquants |
-| `validate projet.kut` / `script.json` | charge ou valide, code de sortie 0 / 1 |
+| `validate projet.kut` / `script.json` | charge ou valide ; code de sortie 0 (intact), 1 (invalide), 2 (chargé **avec des entrées ignorées**, listées) |
 | `apply script.json projet.kut -o sortie.kut [--dry-run]` | exécute un script déclaratif ; `--dry-run` rend le rapport sans écrire |
 | `export projet.kut -o video.mp4 --preset …` | export sans interface (§7) |
 | `run script.py [--project projet.kut]` | exécute du Python (R3) ; refuse sans `--allow-python` explicite en mode non interactif |
@@ -190,10 +209,17 @@ Sortie lisible par une machine (`--json`), codes de sortie stables, erreurs sur 
 
 Prérequis du CLI et de toute automatisation :
 
-1. Extraire de `ExportEngine._build_command` une fonction **publique et pure** `build_export_command(request)` qui rend la liste
-   d'arguments (et la liste des fichiers temporaires à nettoyer). `ExportEngine` l'appelle ; ses tests actuels
-   continuent de passer, ce qui prouve que l'export de l'interface n'a pas changé.
-2. Un exécuteur sans Qt (`supervised_popen`, lecture de la progression de FFmpeg, annulation) utilisé par le CLI. Les
+1. Extraire de l'export deux étapes **publiques et sans Qt**, dans l'ordre où `ExportEngine.start` les enchaîne :
+   - **la préparation** (`prepare_export(request, progress, cancelled)`) : les flux interpolés des clips en mélange
+     d'images ou en flux optique (`retime_layers.plan_needs_preparation` / `prepare_plan`, qui rendent des
+     `PreparedStream`), avec progression et annulation. Sans elle, un projet qui en utilise lève `RetimeError` dans
+     `_prepared_source` : le CLI échouerait là où l'interface réussit ;
+   - **la construction de la commande** (`build_export_command(request, prepared)`) : la liste d'arguments et la
+     liste des fichiers temporaires à nettoyer.
+   `ExportEngine` appelle ces deux fonctions ; ses tests actuels continuent de passer, ce qui prouve que l'export de
+   l'interface n'a pas changé.
+2. Un exécuteur sans Qt (`supervised_popen`, lecture de la progression de FFmpeg, annulation, nettoyage des fichiers
+   de préparation et temporaires) utilisé par le CLI. Les
    fichiers de l'interface (`ExportEngine`, file de rendu) gardent leur `QProcess` : on ne les réécrit pas, on partage
    la construction de la commande, qui est la partie qui doit être identique.
 3. Pour les titres et les formes : une `QGuiApplication` **hors écran** (`QT_QPA_PLATFORM=offscreen`, déjà
@@ -242,10 +268,14 @@ Un panneau pour écrire et lancer un script (déclaratif ou Python), qui **n'est
 ## Plan d'action (chaque étape est une PR à part, fusionnable seule)
 
 0. **Garde R1** : le test d'interdiction d'exécution dynamique, avec sa liste blanche. Aucun risque, utile tout de suite.
-1. **Export pur** : `build_export_command` public ; `ExportEngine` l'utilise ; tests inchangés. Puis l'exécuteur sans Qt.
+1. **Export pur** : `prepare_export` et `build_export_command` publics ; `ExportEngine` les utilise ; tests inchangés. Puis
+   l'exécuteur sans Qt. Test de parité : le même projet, avec un clip en flux optique, exporté par l'interface et par
+   l'exécuteur, donne la même commande.
 2. **Session** : `core/scripting/session.py`, descente de la règle de recalage dans `core/`, tests de parité avec
    l'interface, atomicité.
-3. **CLI minimal** : `info`, `validate`, `export` dans `main.py` avant Qt ; sortie `--json`, codes de sortie.
+3. **CLI minimal** : `info`, `validate`, `export` dans `main.py` avant Qt ; sortie `--json`, codes de sortie. Le
+   chargeur gagne un **relevé optionnel des entrées ignorées** (`load_project(path, report=…)`) : l'interface continue
+   de tolérer, mais `validate` et `apply` savent dire ce qui a été perdu.
 4. **Déclaratif** : table `VERBS`, schéma JSON généré, `apply` et `--dry-run`, premiers verbes (montage, graphiques, audio :
    pistes, inserts, bus, égaliseur), fuzz du décodeur (aucune entrée ne doit sortir des bornes ni lever autre chose
    qu'une erreur de validation).
