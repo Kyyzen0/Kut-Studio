@@ -22,6 +22,14 @@ ensuite déclenche `.github/workflows/release.yml`.
   piste mesure la sortie de la chaîne, la lecture l'entend comme l'export, et un projet sans insert s'exporte comme
   avant. Voir [docs/audio.md](docs/audio.md).
 
+### Changed
+
+- **Performance Auto : profil machine mesuré.** Au premier démarrage (ou si le cache est froid), un banc court
+  (composition CPU, décodage FFmpeg, rastérisation tampon) classe la machine en low / balanced / high et Auto utilise
+  ce résultat à la place de la seule heuristique cœurs/RAM. Couper avec `KUT_STUDIO_MACHINE_BENCH=off`.
+- **Aperçu fidèle : un clip vidéo déjà commencé** n'est plus traité depuis le début du média dans un segment tardif
+  (coupe avant effets / conformation, comme l'audio du mixage en direct).
+
 ## [0.4.2] - 2026-10-11
 
 Un lot de robustesse : quatre réglages, poussés à leurs bornes avec le vrai FFmpeg, faisaient échouer l'export ou

@@ -1,20 +1,25 @@
 """Profils de performance adaptés à la machine et au poids du projet.
 
-La détection reste grossière et honnête : nombre de cœurs, mémoire
-physique quand le système l'expose, et rien sur le GPU. Annoncer une
-puce graphique sans pouvoir la lire serait un faux signal. Un appelant
-peut fournir plus tard un indice GPU via :meth:`MachineResources.with_gpu`.
+Heuristique de secours : nombre de cœurs, mémoire physique quand le
+système l'expose, et rien sur le GPU. Annoncer une puce graphique sans
+pouvoir la lire serait un faux signal. Un appelant peut fournir plus
+tard un indice GPU via :meth:`MachineResources.with_gpu`.
+
+Quand un banc machine a été mesuré et mis en cache
+(:mod:`core.machine_bench`), Auto préfère ce résultat (ADR-0001 étape 1).
 
 Les profils règlent des budgets réels (cache, tâches simultanées,
-marge de la timeline). Ils ne mesurent pas le débit d'images : aucun
-compteur de frames inventé ne doit décider de la qualité.
+marge de la timeline). Ils ne mesurent pas le débit d'images en lecture :
+aucun compteur inventé ne doit décider de la qualité d'aperçu frame à frame.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
+LOGGER = logging.getLogger("kut_studio.runtime_profile")
 
 PROFILE_LOW = "low"
 PROFILE_BALANCED = "balanced"
@@ -137,8 +142,18 @@ def project_weight(
     return "light"
 
 
-def recommend_profile(resources: MachineResources) -> str:
-    """Choisit un profil à partir des ressources, sans regarder le projet."""
+def recommend_profile(
+    resources: MachineResources,
+    *,
+    measured: str | None = None,
+) -> str:
+    """Choisit un profil à partir du banc mesuré (si fourni) ou des ressources.
+
+    ``measured`` est le nom renvoyé par :func:`core.machine_bench.measured_profile_name`
+    quand le cache est chaud. Sinon : heuristique cœurs / RAM.
+    """
+    if measured in (PROFILE_LOW, PROFILE_BALANCED, PROFILE_HIGH):
+        return measured
     memory = resources.memory_bytes
     if memory is not None and memory < 6 * _GIB:
         return PROFILE_LOW
@@ -157,17 +172,35 @@ def resolve_profile(
     requested: str,
     resources: MachineResources,
     weight: str = "light",
+    *,
+    measured: str | None = None,
 ) -> PerformanceProfile:
     """Résout le profil effectif.
 
     Un choix explicite (low, balanced, high) est respecté. ``auto``
-    part de la machine. Un projet ``heavy`` sur une machine qui n'a
-    pas au moins 16 Go descend d'un cran : le cache et le nombre de
-    tâches suivent, pas un calcul de frames imaginaire.
+    part du banc machine s'il est en cache, sinon de l'heuristique. Un
+    projet ``heavy`` sur une machine qui n'a pas au moins 16 Go descend
+    d'un cran : le cache et le nombre de tâches suivent, pas un calcul
+    de frames imaginaire.
     """
     if requested not in VALID_PROFILES:
         requested = PROFILE_AUTO
-    name = recommend_profile(resources) if requested == PROFILE_AUTO else requested
+    if requested == PROFILE_AUTO and measured is None:
+        try:
+            from .machine_bench import measured_profile_name
+
+            measured = measured_profile_name(resources)
+        except Exception:  # noqa: BLE001 — le banc ne doit jamais empêcher le démarrage
+            LOGGER.debug(
+                "Banc machine illisible : Auto garde l'heuristique cœurs/RAM",
+                exc_info=True,
+            )
+            measured = None
+    name = (
+        recommend_profile(resources, measured=measured)
+        if requested == PROFILE_AUTO
+        else requested
+    )
     memory = resources.memory_bytes or 0
     # Un choix explicite n'est pas rabaissé. Seul Auto protège une
     # petite machine qui ouvre un très gros projet.

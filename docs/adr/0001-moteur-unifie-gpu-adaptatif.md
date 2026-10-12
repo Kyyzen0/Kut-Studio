@@ -217,14 +217,17 @@ Rust n'est reconsidéré que pour un compositeur isolé hors processus. Étude e
 Chaque étape est livrable seule, mesurée sur une machine de chaque niveau, et vérifiée par des tests de **complexité**
 (comme `tests/test_performance.py`) plutôt que de durées.
 
-1. [ ] **Étape 0 : corrections du chemin actuel.** Segment composé en temps local (supprimer le `-ss` de sortie,
-   `time_offset` de `write_stream`) ; test : le coût d'un segment ne dépend plus de sa position, images identiques à
-   l'export. Signaler à l'utilisateur la suspension de l'aperçu GPU et proposer de réessayer.
+1. [x] **Étape 0 : corrections du chemin actuel.** Segment composé en temps local (`origin`, fond et calques) ;
+   clip vidéo entamé coupé avant sa chaîne (`source_in + skip`, horodatages locaux) ; notice de suspension GPU ;
+   tests `tests/test_preview_segment_origin.py`. Le `-ss` de sortie reste pour caler les timestamps du fichier
+   segment (la composition lourde ne part plus de 0). Piste restante : `-ss` d'entrée par média pour le seul
+   décodage source.
 2. [ ] **Entrées / sorties média.** Build FFmpeg LGPL + PyAV dans le paquet (macOS, Windows, Linux), `core/media_io.py`
    et sa garde AST, moniteur alimenté par les proxies quand l'original a un long GOP. Critère : un saut ≤ 50 ms sur
    proxy, sur la machine minimale.
-3. [ ] **Étape 1 : profil mesuré et régulateur.** Banc du premier lancement, trois niveaux, échelle de dégradation,
-   batterie / économie d'énergie / chauffe, rendu à la demande, budget de mémoire vidéo.
+3. [ ] **Étape 1 : profil mesuré et régulateur.** *Partiel :* banc CPU (composition, décodage FFmpeg, rastérisation
+   tampon) → cache `machine-profile.json`, Auto le préfère (`core/machine_bench.py`, planifié au démarrage). Reste :
+   batterie / économie d'énergie / chauffe, rendu à la demande, échelle de dégradation complète liée au banc.
 4. [ ] **Étape 2 : composition complète.** Plusieurs pistes vidéo, calques graphiques en textures animées par
    matrice, lumière et grain en shaders, compositeur CPU allégé. Critère : le montage Onlyfab joue sans « Calcul de
    l'aperçu » sur la machine minimale.

@@ -202,6 +202,8 @@ class MainWindow(
             profile=loaded_settings.performance_profile,
             preview_quality=loaded_settings.preview_quality,
         )
+        # Banc machine (ADR-0001 étape 1) : en fond si le cache est froid ; Auto s'y cale ensuite.
+        self.runtime.schedule_machine_bench()
         # Proxies média : aperçu seulement, jamais l'export (voir core.proxy_manager).
         self._init_proxies(loaded_settings)
         self._init_encoding(loaded_settings)

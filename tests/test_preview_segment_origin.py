@@ -135,3 +135,37 @@ def test_late_segment_frames_are_identical_to_full_composition(tmp_path, monkeyp
         outputs[legacy] = _decoded_md5(output)
     assert len(outputs[False]) >= SEGMENT * FPS                # images + paquets audio du segment
     assert outputs[False] == outputs[True]                     # au bit près, image par image et son compris
+
+
+def test_running_video_layer_is_cut_before_its_chain(tmp_path):
+    """Un clip vidéo entamé avant l'origine saute le média déjà écoulé avant effets / conformation."""
+    from core.filter_graph import build_preview_command
+
+    plan = build_render_plan(_project(tmp_path, with_video=True))
+    command = build_preview_command(
+        plan, width=W, height=H, fps=FPS, quality="high", start=START, duration=SEGMENT,
+        output_path=str(tmp_path / "s.mp4"),
+    )
+    graph = command[command.index("-filter_complex") + 1]
+    video_chain = next(
+        part for part in graph.split(";")
+        if part.startswith("[0:v]") and "trim=start=" in part and "overlay=" not in part
+    )
+    # Clip à 0, segment à 4 s → source_in 0 + skip 4.
+    assert "trim=start=4.0:end=6.0" in video_chain or "trim=start=4.000000:end=6.000000" in video_chain
+    assert "setpts=PTS-STARTPTS+4.0/TB" in video_chain or "setpts=PTS-STARTPTS+4.000000/TB" in video_chain
+    assert video_chain.index("trim=start=") < video_chain.index("fps=")
+
+
+def test_export_video_layer_chain_unchanged_without_origin(tmp_path):
+    """L'export (origin = 0) garde le trim source historique."""
+    from core.export_engine import ExportEngine
+
+    plan = build_render_plan(_project(tmp_path, with_video=True))
+    graph, *_ = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
+    video_chain = next(
+        part for part in graph.split(";")
+        if part.startswith("[0:v]") and "trim=start=" in part and "overlay=" not in part
+    )
+    assert "trim=start=0.0:end=6.0" in video_chain or "trim=start=0.000000:end=6.000000" in video_chain
+    assert "setpts=PTS-STARTPTS+4" not in video_chain
