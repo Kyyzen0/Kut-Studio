@@ -128,9 +128,9 @@ def move_audio_effect_by_id(effects, effect_id, delta):
 # ---------------------------------------------------------------------------
 
 
-def test_audio_effect_type_has_ten_values() -> None:
-    """Le catalogue natif expose 10 types."""
-    assert len(AudioEffectType) == 10
+def test_audio_effect_type_has_eleven_values() -> None:
+    """Le catalogue natif expose 11 types (les dix de la tâche 27 et l'égaliseur paramétrique)."""
+    assert len(AudioEffectType) == 11
 
 
 def test_all_expected_audio_effect_types_exist() -> None:
@@ -145,6 +145,7 @@ def test_all_expected_audio_effect_types_exist() -> None:
         "phone_effect",
         "reverb_light",
         "echo_light",
+        "parametric_eq",
     }
     actual = {member.value for member in AudioEffectType}
     assert expected == actual
@@ -663,9 +664,9 @@ def test_audio_layer_carries_effects_through_render_plan() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_builtin_audio_effect_presets_count_is_ten() -> None:
-    assert len(builtin_audio_effect_presets()) == 10
-    assert BUILTIN_AUDIO_EFFECT_PRESETS_COUNT == 10
+def test_builtin_audio_effect_presets_count_is_eleven() -> None:
+    assert len(builtin_audio_effect_presets()) == 11
+    assert BUILTIN_AUDIO_EFFECT_PRESETS_COUNT == 11
 
 
 def test_builtin_audio_effect_presets_have_unique_ids() -> None:
@@ -704,7 +705,7 @@ def test_filter_by_category_eq() -> None:
         category=AudioEffectPresetCategory.EQ,
     )
     ids = {p.id for p in matches}
-    assert ids == {"bass_boost", "treble_boost"}
+    assert ids == {"bass_boost", "treble_boost", "parametric_eq"}
 
 
 def test_filter_by_category_spatial() -> None:

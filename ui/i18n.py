@@ -760,6 +760,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Treble boost",
         "es": "Claridad de agudos",
     },
+    "audio_effects.preset.parametric_eq.name": {
+        "fr": "Égaliseur 4 bandes",
+        "en": "4-band equalizer",
+        "es": "Ecualizador de 4 bandas",
+    },
     "audio_effects.preset.phone_effect.name": {
         "fr": "Effet téléphone",
         "en": "Phone effect",
@@ -840,6 +845,56 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "fr": "Plafond (dB)",
         "en": "Limit (dB)",
         "es": "Límite (dB)",
+    },
+    "audio_effects.param.low_gain_db": {
+        "fr": "Basses : gain (dB)",
+        "en": "Low shelf: gain (dB)",
+        "es": "Graves: ganancia (dB)",
+    },
+    "audio_effects.param.low_hz": {
+        "fr": "Basses : fréquence (Hz)",
+        "en": "Low shelf: frequency (Hz)",
+        "es": "Graves: frecuencia (Hz)",
+    },
+    "audio_effects.param.mid1_gain_db": {
+        "fr": "Médium grave : gain (dB)",
+        "en": "Low mid: gain (dB)",
+        "es": "Medio grave: ganancia (dB)",
+    },
+    "audio_effects.param.mid1_hz": {
+        "fr": "Médium grave : fréquence (Hz)",
+        "en": "Low mid: frequency (Hz)",
+        "es": "Medio grave: frecuencia (Hz)",
+    },
+    "audio_effects.param.mid1_q": {
+        "fr": "Médium grave : Q",
+        "en": "Low mid: Q",
+        "es": "Medio grave: Q",
+    },
+    "audio_effects.param.mid2_gain_db": {
+        "fr": "Médium aigu : gain (dB)",
+        "en": "High mid: gain (dB)",
+        "es": "Medio agudo: ganancia (dB)",
+    },
+    "audio_effects.param.mid2_hz": {
+        "fr": "Médium aigu : fréquence (Hz)",
+        "en": "High mid: frequency (Hz)",
+        "es": "Medio agudo: frecuencia (Hz)",
+    },
+    "audio_effects.param.mid2_q": {
+        "fr": "Médium aigu : Q",
+        "en": "High mid: Q",
+        "es": "Medio agudo: Q",
+    },
+    "audio_effects.param.high_gain_db": {
+        "fr": "Aigus : gain (dB)",
+        "en": "High shelf: gain (dB)",
+        "es": "Agudos: ganancia (dB)",
+    },
+    "audio_effects.param.high_hz": {
+        "fr": "Aigus : fréquence (Hz)",
+        "en": "High shelf: frequency (Hz)",
+        "es": "Agudos: frecuencia (Hz)",
     },
     "audio_effects.param.gain_db": {
         "fr": "Gain (dB)",

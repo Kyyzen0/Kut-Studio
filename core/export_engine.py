@@ -3290,6 +3290,24 @@ def _build_clip_audio_effect_filters(effects: tuple) -> list[str]:
                 f"gain={_format_db(params['gain_db'])}:"
                 f"frequency={_format_seconds(params['frequency_hz'])}"
             )
+        elif ftype.value == "parametric_eq":
+            # Quatre bandes fixes, dans l'ordre grave → aigu ; une bande à 0 dB n'émet rien. Plateaux : ``bass`` et
+            # ``treble`` (gain négatif permis, ±900 dB de bornes FFmpeg). Cloches : ``equalizer`` avec une largeur
+            # exprimée en facteur Q (``width_type=q``).
+            if abs(float(params["low_gain_db"])) > 1e-6:
+                filters.append(
+                    f"bass=gain={_format_db(params['low_gain_db'])}:frequency={_format_seconds(params['low_hz'])}"
+                )
+            for band in ("mid1", "mid2"):
+                if abs(float(params[f"{band}_gain_db"])) > 1e-6:
+                    filters.append(
+                        f"equalizer=frequency={_format_seconds(params[f'{band}_hz'])}:width_type=q:"
+                        f"width={_format_seconds(params[f'{band}_q'])}:gain={_format_db(params[f'{band}_gain_db'])}"
+                    )
+            if abs(float(params["high_gain_db"])) > 1e-6:
+                filters.append(
+                    f"treble=gain={_format_db(params['high_gain_db'])}:frequency={_format_seconds(params['high_hz'])}"
+                )
         elif ftype.value == "phone_effect":
             center = _format_seconds(params["center_hz"])
             width = _format_seconds(params["bandwidth_hz"])
