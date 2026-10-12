@@ -170,6 +170,8 @@ class StudioRuntime:
         self._power = PowerState(source="unavailable")
         self._power_checked_at = 0.0
         self.ondemand = OnDemandGate()
+        self._bench_refresh_lock = threading.Lock()
+        self._bench_refresh_pending = False
         self._profile = resolve_profile(self.requested_profile, self.resources, self.weight)
         self.cache = MemoryCache(max_bytes=self._profile.cache_budget_bytes)
         self.preview.apply(self.requested_quality, self._profile)
@@ -269,17 +271,47 @@ class StudioRuntime:
         self.analysis_worker.ensure_started()
 
     def schedule_machine_bench(self, *, force: bool = False) -> None:
-        """Mesure le profil machine en fond (ADR-0001 étape 1) puis rafraîchit Auto."""
-        from .machine_bench import ensure_machine_bench, load_cached_bench
+        """Mesure le profil machine en fond (ADR-0001 étape 1) puis signale un rafraîchissement.
 
+        Le banc tourne dans le worker ; les budgets (cache, qualité) sont
+        appliqués ensuite sur le thread propriétaire via
+        :meth:`apply_pending_machine_bench` — jamais depuis le worker.
+        """
+        from .machine_bench import bench_enabled, ensure_machine_bench, load_cached_bench
+
+        if not force and not bench_enabled():
+            return
         if not force and load_cached_bench(self.resources) is not None:
             return
 
-        def _run() -> None:
+        session = self.session_id
+
+        def _run(token) -> None:
+            if token.cancelled:
+                return
             ensure_machine_bench(self.resources, force=force)
-            self._refresh_budgets()
+            if token.cancelled or session != self.session_id:
+                return
+            with self._bench_refresh_lock:
+                self._bench_refresh_pending = True
 
         self.schedule("machine-bench", _run, priority=PRIORITY_BACKGROUND)
+
+    def machine_bench_refresh_pending(self) -> bool:
+        with self._bench_refresh_lock:
+            return self._bench_refresh_pending
+
+    def apply_pending_machine_bench(self) -> bool:
+        """Applique le rafraîchissement Auto après le banc (thread propriétaire).
+
+        Retourne ``True`` si les budgets ont été recalculés.
+        """
+        with self._bench_refresh_lock:
+            if not self._bench_refresh_pending:
+                return False
+            self._bench_refresh_pending = False
+        self._refresh_budgets()
+        return True
 
     def shutdown(self) -> None:
         """Arrête la file et vide le cache à la fermeture de l'application."""
