@@ -128,8 +128,8 @@ l'étape 2 (composition complète) :
 2. **Relecture asynchrone** pour l'export (ou rendu dans un fil dédié). *(livré dans l'essai :
    `GpuPreviewWidget.queue_readback` + `--readback-depth`, via `QRhiResourceUpdateBatch.readBackTexture` ;
    remesurer Onlyfab avec `--readback-depth 2`)*
-3. **Décider de la chroma 4:2:0** : aligner le GPU sur swscale (échantillon répété) ou l'export sur une interpolation
-   (`full_chroma_int`), puis ajouter une mire à chroma non constante aux tests de parité.
+3. **Chroma 4:2:0** : *décidé* — GPU aligné sur la répétition swscale de l'export ; mire `grain_pattern` et
+   tests `test_420_chroma_is_repeated_per_block_like_the_export` (voir [gpu-preview.md](../gpu-preview.md)).
 
 Sujets que l'essai n'a pas abordés : audio (repris de la référence pour le fichier final), PyAV et la version LGPL de
 FFmpeg (le décodage et l'encodage passent ici par la ligne de commande, et leur attente est déjà négligeable),

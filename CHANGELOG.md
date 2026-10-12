@@ -14,11 +14,22 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Décodage multi-sources (`media_io`).** Ouverture, saut et décodage d'une image (PyAV si disponible, sinon
+  FFmpeg) pour alimenter plusieurs pistes sur le moniteur GPU (ADR-0001).
+- **Compositeur CPU allégé.** Aperçu à résolution réduite via le même plan que le GPU, dans un fil de travail
+  (`core/cpu_composite.py`), pour les machines sans GPU utilisable.
+- **Grain procédural en shader.** Le grain de film du moniteur GPU peut être une passe `grain` plutôt qu'un
+  PNG plein cadre (ADR-0001).
+
 ### Changed
 
 - **Export / aperçu fidèle : calques en PNG par contenu.** Un titre ou une forme éligible n'est plus redessiné
   plein cadre à chaque pose : l'encre est rastérisée une fois (PNG `c-*` à taille réelle), puis posée dans le
   cadre (ADR-0001, étape 2). Voir [docs/gpu-preview.md](docs/gpu-preview.md).
+- **Moniteur GPU : plusieurs pistes vidéo.** Les pistes sous le clip du dessus sont composées en temps réel
+  (décodage `media_io`) ; le clip supérieur reste le lecteur Qt.
 
 ## [0.5.0] - 2026-10-12
 

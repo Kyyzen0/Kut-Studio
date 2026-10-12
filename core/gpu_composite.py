@@ -92,8 +92,8 @@ class VideoSource:
 
     @property
     def chroma_scale(self) -> tuple[float, float]:
-        spec = LAYOUTS[self.layout]
-        if not spec.is_yuv or len(spec.planes) < 2:
+        spec = LAYOUTS.get(self.layout)
+        if spec is None or not spec.is_yuv or len(spec.planes) < 2:
             return (1.0, 1.0)
         plane = spec.planes[1]
         return (float(plane.width_divisor), float(plane.height_divisor))
@@ -357,30 +357,52 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
     from_render = (1.0 / scale, 0.0, 0.0, 1.0 / scale, 0.0, 0.0)
     for index, layer in enumerate(frame.layers):
         source = frame.source(layer.source)
-        if source is None or source.layout not in LAYOUTS:
+        if source is None:
             continue
         forward = affine_mul(to_render, affine_mul(layer.matrix, from_render))
         inverse = affine_inverse(forward)
         if inverse is None or layer.opacity <= 0.0:
             continue
-        layout = LAYOUTS[source.layout]
-        matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range)
         fit_uv = (layer.fit[0] / frame.canvas_width, layer.fit[1] / frame.canvas_height,
                   layer.fit[2] / frame.canvas_width, layer.fit[3] / frame.canvas_height)
+        # Grain procédural (ADR-0001) : layout ``grain``, misc dans colorspace/color_range
+        # (seed|index) et taille = cellules — voir :mod:`core.gpu_grain`.
+        is_grain = source.layout == "grain"
         pixel = (scale / max(1e-6, abs(layer.effect_scale[0])), scale / max(1e-6, abs(layer.effect_scale[1])))
-        current, space = _effect_passes(
-            passes, textures, f"layer{index}", (f"src:{layer.source}",), layout, source.width, source.height,
-            matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
-            (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
-            chroma_grid=layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height),
-            final_space=layer_composite_space(layer),
-        )
-        if layer.grade_passes:
-            domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
+        if is_grain:
+            work = f"layer{index}_grain"
+            textures[work] = TextureSpec(CANVAS_FORMAT, width, height)
+            try:
+                seed = float(source.colorspace or "0")
+                gindex = float(source.color_range or "0")
+            except ValueError:
+                seed, gindex = 0.0, 0.0
+            passes.append(PassSpec("grain", work, (), Uniforms(
+                target=(float(width), float(height), 1.0, 0.0),
+                misc=(seed, gindex, float(max(2, source.width)), float(max(2, source.height))),
+            ).pack(), layer=index))
+            current, space = work, SPACE_RGB
+            matrix = yuv_to_rgb_matrix()
+            layout_is_yuv = False
+        elif source.layout not in LAYOUTS:
+            continue
+        else:
+            layout = LAYOUTS[source.layout]
+            layout_is_yuv = layout.is_yuv
+            matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range)
+            current, space = _effect_passes(
+                passes, textures, f"layer{index}", (f"src:{layer.source}",), layout, source.width, source.height,
+                matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
+                (width, height), _supersample(source, (width, height), layer.fit, scale), index, (scale, scale),
+                chroma_grid=layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height),
+                final_space=layer_composite_space(layer),
+            )
+        if layer.grade_passes and not is_grain:
+            domain = SPACE_YUV if layout_is_yuv else SPACE_RGB
             current, space = _color_graph_passes(passes, textures, f"layer{index}", current, space, domain, layer,
                                                  matrix, (width, height), index, pixel, forward)
-        elif layer.grade_lut:
-            domain = SPACE_YUV if layout.is_yuv else SPACE_RGB
+        elif layer.grade_lut and not is_grain:
+            domain = SPACE_YUV if layout_is_yuv else SPACE_RGB
             current, space = _grade_pass(passes, textures, f"layer{index}", current, space, domain, layer.grade_lut,
                                          matrix, (width, height), index, split=layer.grade_split, to_canvas=forward)
         target = "canvas1" if canvas == "canvas0" else "canvas0"
