@@ -193,6 +193,8 @@ class AudioLayer:
     # Inserts de la piste (:class:`AudioEffect` activés ou non, dans l'ordre). Ils traitent la somme des clips de la
     # piste : toutes les couches d'une même piste portent la même chaîne.
     track_inserts: tuple = field(default_factory=tuple)
+    # Bus qui reçoit le son de la piste (``""`` : directement au Master).
+    bus_id: str = ""
     # Séquence imbriquée : clé du sous-plan dont le mixage audio remplace
     # le fichier source (``source_path`` est alors vide).
     nested_key: str = ""
@@ -263,6 +265,16 @@ class GraphicLayer:
 
 
 @dataclass(frozen=True)
+class RenderBus:
+    """Un bus audio du plan : fader, coupure et inserts (voir :mod:`core.audio_buses`)."""
+
+    id: str
+    volume_db: float = 0.0
+    muted: bool = False
+    inserts: tuple = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class RenderPlan:
     """Plan immuable décrivant un export.
 
@@ -318,6 +330,8 @@ class RenderPlan:
     # Normalisation de loudness d'un export (réglage du preset, jamais du projet) : gain statique mesuré par
     # :mod:`core.loudness`, ajouté après le Master ; le limiteur final descend alors à −1 dBFS.
     loudness_gain_db: float | None = None
+    # Bus audio de la séquence rendue par ce plan (vide : toutes les pistes vont au Master).
+    audio_buses: tuple[RenderBus, ...] = field(default_factory=tuple)
 
     def nested(self, key: str) -> "NestedSequencePlan | None":
         """Sous-plan de clé ``key`` (``None`` si inconnu)."""
@@ -817,6 +831,13 @@ class _PlanBuilder:
             graphics_layers=tuple(graphics_layers),
             sequence_id=sequence.id,
             motion_blur=getattr(sequence, "motion_blur", None),
+            audio_buses=tuple(
+                RenderBus(
+                    id=bus.id, volume_db=float(bus.volume_db), muted=bool(bus.muted),
+                    inserts=tuple(bus.inserts or ()),
+                )
+                for bus in (getattr(sequence, "buses", ()) or ())
+            ),
         )
 
     def _composition_entries(
@@ -1224,4 +1245,5 @@ def _build_audio_layer(
         track_automation=track_automation_points,
         ducking_sidechains=tuple(ducking_sidechains or []),
         track_inserts=tuple(getattr(track, "inserts", ()) or ()),
+        bus_id=str(getattr(track, "bus_id", "") or ""),
     )

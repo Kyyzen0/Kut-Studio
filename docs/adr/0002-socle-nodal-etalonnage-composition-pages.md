@@ -248,5 +248,5 @@ AZERTY.
    graphe audio de l'export à partir de la tête (« origine audio », plus de calcul depuis le début de la timeline) vers
    un `QAudioSink` ; des morceaux auraient coupé à chaque jonction les effets qui ont une mémoire (compresseurs,
    ducking, écho). **Inserts de piste livrés** (chaîne d'effets sur la somme des clips, `Track.inserts`). **Égaliseur
-   paramétrique 4 bandes livré** (effet de clip et insert de piste). Restent : bus (par séquence, dans le projet) — choix faits avec l'utilisateur le
-   2026-10-11.
+   paramétrique 4 bandes livré** (effet de clip et insert de piste). **Bus livrés** (par séquence, dans le projet : fader, coupure, inserts, vumètre, sortie choisie sur chaque
+   piste) — choix faits avec l'utilisateur le 2026-10-11. L'étape 5 de l'ADR est terminée.

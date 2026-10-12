@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -83,15 +84,21 @@ class MixerStrip(QFrame):
     arm_toggled = Signal(str, bool)
     reset_requested = Signal(str)
     inserts_requested = Signal(str)
+    route_changed = Signal(str, str)  # piste, bus ("" : Master)
+    remove_requested = Signal(str)  # bus
+    rename_requested = Signal(str)  # bus
 
     def __init__(
         self,
         name: str,
         track_id: str | None = None,
         parent: QWidget | None = None,
+        *,
+        is_bus: bool = False,
     ) -> None:
         super().__init__(parent)
         self.track_id = track_id
+        self.is_bus = is_bus
         self._name = name
         self._locked = False
         self.setObjectName("mixerStrip")
@@ -225,6 +232,47 @@ class MixerStrip(QFrame):
         )
         layout.addWidget(self.reset_button, 0, Qt.AlignHCenter)
 
+        # Sortie d'une piste : le Master ou un bus. Un bus n'a ni panoramique, ni solo, ni armement : il porte un
+        # bouton pour se supprimer (ses pistes retournent au Master).
+        self.route_combo = QComboBox()
+        self.route_combo.setObjectName("mixerRouteCombo")
+        self.route_combo.setMaximumWidth(68)
+        self.route_combo.setToolTip(translate("bus.route.tip", name=name))
+        self.route_combo.activated.connect(
+            lambda _index: self.route_changed.emit(self.track_id or "", str(self.route_combo.currentData() or ""))
+        )
+        self.route_combo.setVisible(track_id is not None and not is_bus)
+        layout.addWidget(self.route_combo, 0, Qt.AlignHCenter)
+        self.remove_button = QPushButton("×")
+        self.remove_button.setObjectName("mixerBusRemove")
+        self.remove_button.setFixedHeight(22)
+        self.remove_button.setToolTip(translate("bus.remove.tip", name=name))
+        self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self.track_id or ""))
+        self.remove_button.setVisible(is_bus)
+        layout.addWidget(self.remove_button)
+        if is_bus:
+            for widget in (self.pan_slider, self.solo_button, self.arm_button, self.reset_button):
+                widget.setVisible(False)
+            self.name_label.setToolTip(translate("bus.rename.tip"))
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt
+        if self.is_bus:
+            self.rename_requested.emit(self.track_id or "")
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def set_routes(self, buses, current: str) -> None:
+        """Remplit le choix de sortie : le Master puis les bus de la séquence (``buses`` : ``(id, nom)``)."""
+        self.route_combo.blockSignals(True)
+        self.route_combo.clear()
+        self.route_combo.addItem(translate("bus.route.master"), "")
+        for bus_id, bus_name in buses:
+            self.route_combo.addItem(bus_name, bus_id)
+        index = self.route_combo.findData(current)
+        self.route_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.route_combo.blockSignals(False)
+
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
@@ -260,6 +308,7 @@ class MixerStrip(QFrame):
             self.solo_button,
             self.arm_button,
             self.reset_button,
+            self.route_combo,
         ):
             widget.setEnabled(not locked)
 
@@ -472,6 +521,13 @@ class MixerPanel(QWidget):
     inserts_requested = Signal(str)
     #: Émis quand les tranches viennent d'être reconstruites depuis le projet (annulation, ouverture, modification).
     project_refreshed = Signal()
+    track_route_changed = Signal(str, str)
+    bus_add_requested = Signal()
+    bus_volume_changed = Signal(str, float)
+    bus_mute_toggled = Signal(str, bool)
+    bus_inserts_requested = Signal(str)
+    bus_remove_requested = Signal(str)
+    bus_rename_requested = Signal(str)
     master_volume_changed = Signal(float)
     master_mute_toggled = Signal(bool)
     master_reset_requested = Signal()
@@ -485,6 +541,7 @@ class MixerPanel(QWidget):
         # son sous-arbre, les tranches resteraient sinon sans fond.
         self.setStyleSheet(_panel_stylesheet())
         self._strips: dict[str, MixerStrip] = {}
+        self._bus_strips: dict[str, MixerStrip] = {}
         self._master_bar: MixerPanel._MasterBar | None = None
         #: Fournisseur des niveaux réels : ``() -> (relevé, pistes) | None``
         #: (:class:`core.live_mix.MeterFrame` et l'ordre de ses pistes).
@@ -504,6 +561,16 @@ class MixerPanel(QWidget):
         self.solo_hint = QLabel("")
         self.solo_hint.setStyleSheet(label_style(10, "warning", 600))
         header.add_trailing(self.solo_hint)
+        self.add_bus_button = QPushButton(translate("bus.add"))
+        self.add_bus_button.setObjectName("mixerAddBus")
+        self.add_bus_button.setToolTip(translate("bus.add.tip"))
+        self.add_bus_button.setStyleSheet(
+            f"QPushButton#mixerAddBus {{ background: {COLORS['surface']}; color: {COLORS['text']};"
+            f" border: 1px solid {COLORS['border']}; border-radius: 6px; padding: 2px 10px; font-size: 11px; }}"
+            f"QPushButton#mixerAddBus:hover {{ background: {COLORS['surface_hover']}; }}"
+        )
+        self.add_bus_button.clicked.connect(self.bus_add_requested)
+        header.add_trailing(self.add_bus_button)
         layout.addWidget(header)
 
         # Tranches, horizontalement défilantes.
@@ -556,10 +623,12 @@ class MixerPanel(QWidget):
         L'état du panneau est un reflet du modèle : le panneau ne
         conserve aucun état de mixage propre.
         """
-        for strip in self._strips.values():
+        for strip in [*self._strips.values(), *self._bus_strips.values()]:
             strip.setParent(None)
             strip.deleteLater()
         self._strips.clear()
+        self._bus_strips.clear()
+        buses = [(bus.id, bus.name) for bus in project.buses]
 
         audio_tracks = [t for t in project.tracks if t.type == "audio"]
         self.empty_label.setVisible(not audio_tracks)
@@ -575,6 +644,8 @@ class MixerPanel(QWidget):
                 muted=track.muted, solo=track.solo, armed=track.armed
             )
             strip.set_inserts(len(track.inserts), sum(1 for e in track.inserts if e.enabled))
+            strip.set_routes(buses, track.bus_id)
+            strip.route_changed.connect(self.track_route_changed)
             strip.inserts_requested.connect(self.inserts_requested)
             strip.volume_changed.connect(self.volume_changed)
             strip.pan_changed.connect(self.pan_changed)
@@ -587,6 +658,19 @@ class MixerPanel(QWidget):
                 self._body_layout.count() - 1, strip
             )
             self._strips[track.id] = strip
+
+        for bus in project.buses:
+            strip = MixerStrip(bus.name, track_id=bus.id, is_bus=True)
+            strip.set_track(name=bus.name, volume_db=bus.volume_db, pan=0.0, locked=False)
+            strip.set_states(muted=bus.muted, solo=False, armed=False)
+            strip.set_inserts(len(bus.inserts), sum(1 for e in bus.inserts if e.enabled))
+            strip.volume_changed.connect(self.bus_volume_changed)
+            strip.mute_toggled.connect(self.bus_mute_toggled)
+            strip.inserts_requested.connect(self.bus_inserts_requested)
+            strip.remove_requested.connect(self.bus_remove_requested)
+            strip.rename_requested.connect(self.bus_rename_requested)
+            self._body_layout.insertWidget(self._body_layout.count() - 1, strip)
+            self._bus_strips[bus.id] = strip
 
         self._refresh_solo_hint(project)
         self.project_refreshed.emit()
@@ -621,6 +705,8 @@ class MixerPanel(QWidget):
         peaks = dict(zip(tracks, reading.track_peaks_db)) if reading is not None else {}
         for track_id, strip in self._strips.items():
             strip.meter.set_levels(peaks.get(track_id))      # piste muette ou sans clip ici : elle retombe
+        for bus_id, strip in self._bus_strips.items():
+            strip.meter.set_levels(peaks.get(f"bus:{bus_id}"))  # bus sans piste : il retombe
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -636,6 +722,9 @@ class MixerPanel(QWidget):
     def strip_for(self, track_id: str) -> MixerStrip | None:
         return self._strips.get(track_id)
 
+    def bus_strip_for(self, bus_id: str) -> MixerStrip | None:
+        return self._bus_strips.get(bus_id)
+
     def master_bar(self) -> "_MasterBar | None":
         return self._master_bar
 
@@ -646,6 +735,8 @@ class MixerPanel(QWidget):
     def _retranslate(self) -> None:
         self.title_label.setText(translate("mixer.title"))
         self.empty_label.setText(translate("mixer.no_tracks"))
+        self.add_bus_button.setText(translate("bus.add"))
+        self.add_bus_button.setToolTip(translate("bus.add.tip"))
         if self._master_bar is not None:
             self._master_bar.retranslate()
         for strip in self._strips.values():

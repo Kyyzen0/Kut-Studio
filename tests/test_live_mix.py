@@ -213,3 +213,27 @@ def test_track_inserts_are_heard_live_exactly_as_exported_and_metered_after_the_
     assert np.abs(heard[:count] - reference[:count]).max() < 3e-4
     voice = frames[:, 6:8] if live.track_ids == ("A1", "A2") else frames[:, 4:6]
     assert np.abs(voice).max() < 0.56, "le vumètre de la piste lit la sortie de ses inserts"
+
+
+@needs_ffmpeg
+def test_a_bus_is_heard_live_as_exported_and_has_its_own_meter(tmp_path):
+    """Les pistes envoyées sur un bus passent par ses inserts et son fader dans la lecture comme à l'export ; le bus a
+    son vumètre (clé « bus:<id> »), après son fader."""
+    from core.audio_buses import add_bus, add_bus_insert, route_track, set_bus_volume  # noqa: PLC0415
+    from core.audio_effects_model import AudioEffectType  # noqa: PLC0415
+
+    project = _project(tmp_path)
+    bus = add_bus(project, "Voix")
+    add_bus_insert(project, bus.id, AudioEffectType.LIMITER, params={"limit_db": -6.0})
+    set_bus_volume(project, bus.id, -3.0)
+    route_track(project, "A1", bus.id)
+    route_track(project, "A2", bus.id)
+    start = 7.0
+    reference = _export_mix(build_render_plan(project))[int(start * SAMPLE_RATE):]
+    live, frames = _live(project, start)
+    heard = frames[:, 0:2]
+    count = min(len(heard), len(reference))
+    assert np.abs(heard[:count] - reference[:count]).max() < 3e-4
+    assert live.track_ids == ("A1", "A2", f"bus:{bus.id}") and live.channels == 4 + 2 * 3
+    bus_channels = frames[:, 8:10]
+    assert np.abs(bus_channels - frames[:, 0:2]).max() < 1e-4, "le bus est tout le mixage : il ne reste que lui"

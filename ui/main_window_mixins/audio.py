@@ -36,7 +36,15 @@ class AudioMixin:
         mixer.arm_toggled.connect(self.on_track_arm_toggled)
         mixer.reset_requested.connect(self.on_track_audio_reset)
         mixer.inserts_requested.connect(self.on_track_inserts_requested)
+        mixer.track_route_changed.connect(self.on_track_route_changed)
+        mixer.bus_add_requested.connect(self.on_bus_add_requested)
+        mixer.bus_volume_changed.connect(self.on_bus_volume_changed)
+        mixer.bus_mute_toggled.connect(self.on_bus_mute_toggled)
+        mixer.bus_inserts_requested.connect(self.on_bus_inserts_requested)
+        mixer.bus_remove_requested.connect(self.on_bus_remove_requested)
+        mixer.bus_rename_requested.connect(self.on_bus_rename_requested)
         mixer.project_refreshed.connect(self._refresh_inserts_dialog)
+        mixer.project_refreshed.connect(self._refresh_bus_inserts_dialog)
         mixer.master_volume_changed.connect(self.on_master_volume_changed)
         mixer.master_mute_toggled.connect(self.on_master_mute_toggled)
         mixer.master_reset_requested.connect(self.on_master_reset)
@@ -489,6 +497,137 @@ class AudioMixin:
         self._edit_track_insert(
             update_track_insert_parameters, "history.audio.effect_edit", track_id, effect_id, {name: value},
             merge_key=f"track-insert:{track_id}:{effect_id}:{name}",
+        )
+
+    # ------------------------------------------------------------------
+    # Bus audio
+    # ------------------------------------------------------------------
+
+    def _edit_bus(self, operation, label_key: str, *args, merge_key: str | None = None):
+        """Applique une opération pure sur les bus et enregistre l'historique ; ``None`` si le modèle la refuse."""
+        if self.project is None:
+            return None
+        try:
+            result = operation(self.project, *args)
+        except (KeyError, ValueError) as exc:
+            self._report_edit_refused(exc)
+            self.mixer_panel.set_project(self.project)
+            return None
+        self._record_audio_change(i18n.translate(label_key), merge_key=merge_key)
+        return result
+
+    def on_bus_add_requested(self) -> None:
+        from core.audio_buses import add_bus
+
+        self._edit_bus(add_bus, "history.audio.bus_add")
+
+    def on_bus_remove_requested(self, bus_id: str) -> None:
+        from core.audio_buses import remove_bus
+
+        self._edit_bus(remove_bus, "history.audio.bus_remove", bus_id)
+
+    def on_bus_rename_requested(self, bus_id: str) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        from core.audio_buses import find_bus, rename_bus
+
+        try:
+            bus = find_bus(self.project, bus_id)
+        except KeyError:
+            return
+        name, accepted = QInputDialog.getText(
+            self, i18n.translate("bus.rename.title"), i18n.translate("bus.rename.label"), text=bus.name
+        )
+        if accepted and name.strip() and name.strip() != bus.name:
+            self._edit_bus(rename_bus, "history.audio.bus_rename", bus_id, name)
+
+    def on_bus_volume_changed(self, bus_id: str, value: float) -> None:
+        from core.audio_buses import set_bus_volume
+
+        self._edit_bus(
+            set_bus_volume, "history.audio.bus_volume", bus_id, float(value), merge_key=f"bus-volume:{bus_id}"
+        )
+
+    def on_bus_mute_toggled(self, bus_id: str, muted: bool) -> None:
+        from core.audio_buses import set_bus_muted
+
+        self._edit_bus(set_bus_muted, "history.audio.bus_mute", bus_id, bool(muted))
+
+    def on_track_route_changed(self, track_id: str, bus_id: str) -> None:
+        from core.audio_buses import route_track
+
+        self._edit_bus(route_track, "history.audio.bus_route", track_id, bus_id)
+
+    def on_bus_inserts_requested(self, bus_id: str) -> None:
+        """Ouvre (ou ramène) la boîte des inserts du bus."""
+        from core.audio_buses import find_bus
+
+        try:
+            bus = find_bus(self.project, bus_id)
+        except KeyError:
+            return
+        dialog = getattr(self, "_bus_inserts_dialog", None)
+        if dialog is None:
+            from ui.track_inserts_dialog import TrackInsertsDialog
+
+            dialog = TrackInsertsDialog(self, title_key="inserts.bus_title", hint_key="inserts.bus_hint")
+            dialog.add_requested.connect(self.on_bus_insert_added)
+            dialog.remove_requested.connect(self.on_bus_insert_removed)
+            dialog.move_requested.connect(self.on_bus_insert_moved)
+            dialog.enabled_changed.connect(self.on_bus_insert_enabled_changed)
+            dialog.parameter_changed.connect(self.on_bus_insert_parameter_changed)
+            self._bus_inserts_dialog = dialog
+        dialog.set_track(bus.id, bus.name, bus.inserts)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _refresh_bus_inserts_dialog(self) -> None:
+        dialog = getattr(self, "_bus_inserts_dialog", None)
+        if dialog is None or not dialog.isVisible():
+            return
+        from core.audio_buses import find_bus
+
+        try:
+            bus = find_bus(self.project, dialog.track_id)
+        except KeyError:
+            dialog.hide()
+            return
+        dialog.set_track(bus.id, bus.name, bus.inserts)
+
+    def on_bus_insert_added(self, bus_id: str, effect_type: str) -> None:
+        from core.audio_buses import add_bus_insert
+        from core.audio_effects_model import AudioEffectType
+
+        added = self._edit_bus(
+            lambda project, bid: add_bus_insert(project, bid, AudioEffectType(effect_type)),
+            "history.audio.effect_add", bus_id,
+        )
+        if added is not None and getattr(self, "_bus_inserts_dialog", None) is not None:
+            self._bus_inserts_dialog.select_insert(added.id)
+            self._refresh_bus_inserts_dialog()
+
+    def on_bus_insert_removed(self, bus_id: str, effect_id: str) -> None:
+        from core.audio_buses import remove_bus_insert
+
+        self._edit_bus(remove_bus_insert, "history.audio.effect_remove", bus_id, effect_id)
+
+    def on_bus_insert_moved(self, bus_id: str, effect_id: str, delta: int) -> None:
+        from core.audio_buses import move_bus_insert
+
+        self._edit_bus(move_bus_insert, "history.audio.effect_move", bus_id, effect_id, int(delta))
+
+    def on_bus_insert_enabled_changed(self, bus_id: str, effect_id: str, enabled: bool) -> None:
+        from core.audio_buses import set_bus_insert_enabled
+
+        self._edit_bus(set_bus_insert_enabled, "history.audio.effect_edit", bus_id, effect_id, bool(enabled))
+
+    def on_bus_insert_parameter_changed(self, bus_id: str, effect_id: str, name: str, value: float) -> None:
+        from core.audio_buses import update_bus_insert_parameters
+
+        self._edit_bus(
+            update_bus_insert_parameters, "history.audio.effect_edit", bus_id, effect_id, {name: value},
+            merge_key=f"bus-insert:{bus_id}:{effect_id}:{name}",
         )
 
     def _record_audio_change(self, label: str, *, merge_key: str | None = None) -> None:

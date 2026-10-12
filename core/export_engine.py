@@ -1779,6 +1779,56 @@ def _compose_plan_graph(
                 )
                 track_taps[track_id] = f"{p}tap{k}"
 
+        # --- Bus ---------------------------------------------------------
+        # Les pistes envoyées sur un bus sont additionnées, traitées par les inserts du bus, puis passent son fader
+        # avant le mixage final. Les vumètres de piste (ci-dessus) mesurent donc la piste *avant* le bus ; un vumètre de
+        # bus mesure sa sortie. Un bus coupé garde son chemin (``volume=0``) : un label de FFmpeg se lit une fois, le
+        # laisser sans lecteur ferait échouer le graphe. Un bus sans piste n'est pas construit ; une piste dont le bus
+        # n'existe plus (fichier modifié à la main) va au Master.
+        buses_by_id = {bus.id: bus for bus in (getattr(plan, "audio_buses", ()) or ())}
+        track_bus = {
+            lay.track_id: lay.bus_id for lay in plan.audio_layers if getattr(lay, "bus_id", "") in buses_by_id
+        }
+        if track_bus:
+            routed: dict[str, list[str]] = {}
+            direct: list[tuple[str, str]] = []
+            for track_id, label in mix_entries:
+                if track_id in track_bus:
+                    routed.setdefault(track_bus[track_id], []).append(label)
+                else:
+                    direct.append((track_id, label))
+            bus_entries: list[tuple[str, str]] = []
+            for k, (bus_id, members) in enumerate(routed.items()):
+                bus = buses_by_id[bus_id]
+                base = f"[{p}bus{k}_base]"
+                parts.append(
+                    f"aevalsrc=0|0:channel_layout=stereo:sample_rate=48000:duration={_format_seconds(mix_duration)}{base}"
+                )
+                sum_stage = f"amix=inputs={len(members) + 1}:duration=first:dropout_transition=0"
+                if amix_sums:
+                    sum_stage += ":normalize=0"
+                else:
+                    padded_members = []
+                    for n, label in enumerate(members):
+                        parts.append(f"{label}apad[{p}bus{k}_{n}_pad]")
+                        padded_members.append(f"[{p}bus{k}_{n}_pad]")
+                    members = padded_members
+                    sum_stage += f",volume={len(members) + 1}"
+                chain = [sum_stage, "aformat=channel_layouts=stereo:sample_rates=48000"]
+                chain += _build_clip_audio_effect_filters(tuple(bus.inserts))
+                if bus.muted:
+                    chain.append("volume=0")
+                elif abs(float(bus.volume_db)) > 1e-9:
+                    chain.append(f"volume={_format_db(float(bus.volume_db))}dB")
+                output = f"[{p}bus{k}]"
+                parts.append(f"{base}{''.join(members)}{','.join(chain)}{output}")
+                if track_taps is not None and not nested and amix_sums:
+                    parts.append(f"{output}asplit=2[{p}bus{k}_mix][{p}bus{k}_tap]")
+                    output = f"[{p}bus{k}_mix]"
+                    track_taps[f"bus:{bus_id}"] = f"{p}bus{k}_tap"
+                bus_entries.append((bus_id, output))
+            mix_entries = [*direct, *bus_entries]
+
         layer_labels = [label for _, label in mix_entries]
         n_inputs = len(layer_labels) + 1
         # Le mixage *additionne* : un clip seul doit ressortir au niveau de sa source, et chacun des N clips au sien.
