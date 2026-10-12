@@ -1,6 +1,6 @@
 # ADR-0005 : le mode script — un fichier ne s'exécute jamais, un script se lance exprès
 
-**Statut :** Proposé (aucun code écrit ; les décisions ouvertes sont en fin de document).
+**Statut :** Accepté le 2026-10-12 (les cinq décisions ouvertes sont tranchées, voir « Décisions prises » en fin de document). Étape 0 livrée ; le reste du plan reste à faire.
 **Date :** 2026-10-12
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -203,7 +203,10 @@ même binaire, aucune fenêtre.
 | `run script.py [--project projet.kut]` | exécute du Python (R3) ; refuse sans `--allow-python` explicite en mode non interactif |
 
 Sortie lisible par une machine (`--json`), codes de sortie stables, erreurs sur la sortie d'erreur. Écriture atomique
-(déjà le cas de `save_project`) ; on n'écrase jamais l'entrée sans `-o` explicite ou `--in-place`.
+(déjà le cas de `save_project`). **L'entrée n'est jamais écrasée sans `--in-place`** : `-o` vers un autre fichier est le
+cas normal, et un `-o` qui désigne **le même fichier que l'entrée** (même chemin une fois résolu, lien symbolique compris)
+est refusé avec un message qui nomme `--in-place`. Un seul critère donc, pour l'implémentation comme pour les tests :
+« la sortie est-elle l'entrée ? » ; si oui, `--in-place` est exigé (et le verrou consultatif vérifié).
 
 ### 7. L'export sans interface (le sol commun)
 
@@ -284,16 +287,27 @@ Un panneau pour écrire et lancer un script (déclaratif ou Python), qui **n'est
 6. **Python** : `run`, `--allow-python`, aides, `api_version`.
 7. **Console** dans l'application, processus fils.
 
-## Décisions ouvertes (à trancher avec l'utilisateur)
+## Décisions prises (2026-10-12, avec l'utilisateur)
 
-1. **Python dès la première version, ou le déclaratif d'abord ?** Recommandation : déclaratif d'abord (étapes 0 à 5),
-   Python ensuite (6), parce que la session et la lecture sont le vrai travail et que le déclaratif est sûr seul.
-2. **Le CLI est-il l'application (`Kut-Studio info …`) ou un package séparé ?** Recommandation : l'application,
-   sans deuxième installation. Contrepartie : le binaire est lourd pour un simple `validate`.
-3. **Écritures concurrentes** : refuser d'écrire dans un `.kut` ouvert dans l'application (fichier verrou), ou
-   n'écrire que vers un autre fichier (`-o`) ? Recommandation : jamais d'écriture en place sans `--in-place`, et un verrou
-   consultatif que l'application respecte.
-4. **Noms des verbes en anglais** (comme le code) ou en français (comme l'interface) ? Recommandation : anglais pour
-   les verbes et les clés, messages d'erreur traduits.
-5. **Le script peut-il charger de nouveaux médias** (`add_asset`) ? Il lit alors un fichier du disque : autorisé en
-   lecture seule, avec chemins résolus relativement au script, jamais au-dessus de lui sans `--allow-outside` ?
+Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l'ADR.
+
+1. **Le déclaratif d'abord, Python ensuite.** Les étapes 0 à 5 du plan (session, CLI, scripts JSON, lecture complète)
+   précèdent l'étape 6 (Python). Le JSON est sûr seul et sert les outils et les LLM ; le risque R3 n'arrive qu'après
+   le chemin sûr.
+2. **Le CLI est l'application elle-même** (`Kut-Studio info | validate | apply | export | run`), traité avant Qt. Une seule
+   installation, un seul binaire ; le coût est un binaire lourd pour un simple `validate`.
+3. **Jamais d'écriture en place par défaut.** La sortie va vers un autre fichier (`-o`) ; écrire dans l'entrée demande
+   `--in-place`, et un **verrou consultatif** que l'application respecte évite qu'un script écrase un projet en cours
+   d'édition.
+4. **Verbes et clés en anglais** (`add_clip`, `route_track`, comme le code) ; messages d'erreur et rapports traduits
+   (français, anglais, espagnol), comme le reste du produit.
+5. **Médias : lecture seule, dans le dossier du script.** Les chemins se résolvent relativement au script ; sortir de son
+   dossier demande `--allow-outside` explicite. Un script ne fait jamais lire un fichier arbitraire sans que l'appelant
+   l'ait voulu.
+
+## État du plan d'action
+
+- **Étape 0 : faite** (#109) : `tests/test_no_dynamic_execution_guard.py` protège R1 (aucun `eval`, `exec`, `pickle`,
+  `importlib`… dans le produit, à une exception justifiée près).
+- Étapes 1 à 7 : à faire, dans l'ordre. La suivante est l'**export sans interface** (`prepare_export` et
+  `build_export_command`), utile même sans le mode script.
