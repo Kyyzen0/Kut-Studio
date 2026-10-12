@@ -62,8 +62,19 @@ def _worker(payload: str) -> None:
     """Sous-processus : une analyse à froid, une avec le cache ; mesures en JSON sur la sortie standard."""
     import resource
 
+    import core.audio_sync as audio_sync
     from core.audio_sync import SyncSource, analyze_sync
     from core.audio_sync_cache import AudioSyncCache
+
+    decodes = {"count": 0}
+    real_raw_envelope = audio_sync.raw_envelope
+
+    def counting_raw_envelope(*args, **kwargs):
+        decodes["count"] += 1
+        return real_raw_envelope(*args, **kwargs)
+
+    # Le cache évite le décodage de l'enveloppe complète de chaque source ; l'affinage final relit de courtes fenêtres.
+    audio_sync.raw_envelope = counting_raw_envelope
 
     args = json.loads(payload)
     seconds, count, path = float(args["seconds"]), int(args["sources"]), args["path"]
@@ -74,9 +85,11 @@ def _worker(payload: str) -> None:
     began = time.perf_counter()
     cold = analyze_sync(sources, reference="s0", cache=cache)
     cold_seconds = time.perf_counter() - began
+    cold_decodes = decodes["count"]
     began = time.perf_counter()
     warm = analyze_sync(sources, reference="s0", cache=cache)
     warm_seconds = time.perf_counter() - began
+    cached_decodes = decodes["count"] - cold_decodes
     # source i commence à starts[i] dans le média : sur la timeline commune, décalage(i) = starts[i] − starts[0] + (valeur d'ancrage)
     expected = {f"s{i}": starts[i] for i in range(count)}
     placed = {item.key: item.offset for item in cold.sources}
@@ -91,6 +104,8 @@ def _worker(payload: str) -> None:
         "seconds_each": round(window, 1),
         "cold_s": round(cold_seconds, 2),
         "cached_s": round(warm_seconds, 2),
+        "cold_decodes": cold_decodes,
+        "cached_decodes": cached_decodes,
         "cache_speedup": round(cold_seconds / warm_seconds, 1) if warm_seconds > 0 else None,
         "worst_offset_error_ms": round(max(errors) * 1000, 2) if errors else None,
         "measured_ok": sum(1 for item in cold.sources if item.status.value in {"excellent", "good", "none"}),
