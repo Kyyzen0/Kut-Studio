@@ -16,6 +16,7 @@ from __future__ import annotations
 import difflib
 import json
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,7 +24,7 @@ from typing import Any
 
 from ..node_graph import MAX_ID_LENGTH, is_safe_id
 from .session import ApplyReport, Operation, Session
-from .verbs import MAX_PARAMS, MAX_TEXT, VERBS, Kind, Param, Verb
+from .verbs import MAX_PARAMS, MAX_TEXT, VERBS, Kind, Param, ScriptContext, Verb
 
 SCRIPT_VERSION = 1
 """``kut_script`` : la version du format. Une version plus récente que celle-ci est refusée, comme pour le ``.kut``."""
@@ -31,6 +32,8 @@ MAX_SCRIPT_BYTES = 1_048_576
 MAX_OPS = 5_000
 MAX_ISSUES = 50
 TOP_LEVEL_KEYS = ("kut_script", "description", "ops")
+MAX_PATH_TEXT = 1024
+_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 
 
 @dataclass(frozen=True)
@@ -67,8 +70,9 @@ class ScriptOp:
     def name(self) -> str:
         return f"{self.index}:{self.verb.name}"
 
-    def operation(self) -> Operation:
-        return self.verb.build(self.args)
+    def operation(self, context: ScriptContext | None = None) -> Operation:
+        """L'opération prête à appliquer ; un verbe qui lit un fichier reçoit le contexte (dossier du script, ``--allow-outside``)."""
+        return self.verb.build(self.args, context) if self.verb.needs_context else self.verb.build(self.args)
 
 
 @dataclass(frozen=True)
@@ -155,8 +159,25 @@ class _Decoder:
                 self.issue("out_of_range", index, verb.name, path, minimum=param.minimum, maximum=param.maximum)
                 return None
             return float(raw)
+        if kind is Kind.INTEGER:
+            if isinstance(raw, bool) or not isinstance(raw, int):
+                self.bad(index, verb, path, "integer")
+                return None
+            low = -math.inf if param.minimum is None else param.minimum
+            high = math.inf if param.maximum is None else param.maximum
+            if not low <= raw <= high:
+                self.issue("out_of_range", index, verb.name, path, minimum=param.minimum, maximum=param.maximum)
+                return None
+            return raw
         if kind is Kind.STRING:
-            return self.text(raw, index, verb, path)
+            return self.text(raw, index, verb, path, limit=param.max_length or MAX_TEXT, multiline=param.multiline)
+        if kind is Kind.PATH:
+            return self.text(raw, index, verb, path, limit=MAX_PATH_TEXT)
+        if kind is Kind.COLOR:
+            if not isinstance(raw, str) or not _COLOR.match(raw):
+                self.issue("bad_color", index, verb.name, path)
+                return None
+            return raw
         if kind is Kind.ENUM:
             if raw not in param.choices:
                 close = difflib.get_close_matches(str(raw), param.choices, n=1)
@@ -178,12 +199,13 @@ class _Decoder:
         """Signale un type incorrect ; l'appelant rend ``None`` (valeur absente)."""
         self.issue("wrong_type", index, verb.name, path, expected=expected)
 
-    def text(self, raw: Any, index: int, verb: Verb, path: str) -> str | None:
+    def text(self, raw: Any, index: int, verb: Verb, path: str, *, limit: int = MAX_TEXT, multiline: bool = False) -> str | None:
         if not isinstance(raw, str):
             self.bad(index, verb, path, "string")
             return None
-        if not raw or len(raw) > MAX_TEXT or any(ord(char) < 32 or ord(char) == 127 for char in raw):
-            self.issue("bad_text", index, verb.name, path, limit=MAX_TEXT)
+        controls = any((ord(char) < 32 and not (multiline and char == "\n")) or ord(char) == 127 for char in raw)
+        if not raw or len(raw) > limit or controls:
+            self.issue("bad_text", index, verb.name, path, limit=limit)
             return None
         return raw
 
@@ -325,9 +347,13 @@ def parse_script(data: Any) -> Script:
 # --- Application ------------------------------------------------------------------------------------------------------
 
 
-def apply_script(session: Session, script: Script, *, label: str = "Script") -> ApplyReport:
-    """Applique le script à la session **en tout ou rien** (une étape d'historique) et rend son bilan."""
-    return session.apply([(op.name, op.operation()) for op in script.ops], label=label)
+def apply_script(
+    session: Session, script: Script, *, label: str = "Script", context: ScriptContext | None = None,
+) -> ApplyReport:
+    """Applique le script à la session **en tout ou rien** (une étape d'historique) et rend son bilan.
+
+    ``context`` : ce que le script peut lire hors du projet (voir :class:`ScriptContext`) ; sans lui, ``import_media`` est refusé."""
+    return session.apply([(op.name, op.operation(context)) for op in script.ops], label=label)
 
 
 def created_ids(script: Script, report: ApplyReport) -> list[dict[str, str]]:
@@ -342,5 +368,5 @@ def created_ids(script: Script, report: ApplyReport) -> list[dict[str, str]]:
 
 __all__ = [
     "MAX_ISSUES", "MAX_OPS", "MAX_SCRIPT_BYTES", "SCRIPT_VERSION", "Script", "ScriptInvalid", "ScriptIssue", "ScriptOp",
-    "apply_script", "created_ids", "loads_script", "parse_script", "read_script",
+    "ScriptContext", "apply_script", "created_ids", "loads_script", "parse_script", "read_script",
 ]

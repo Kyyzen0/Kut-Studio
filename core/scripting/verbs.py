@@ -11,21 +11,56 @@ Sans Qt, sans accès disque : un script ne lit ni n'écrit rien d'autre que le p
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from ..audio_buses import (
     add_bus, add_bus_insert, remove_bus, remove_bus_insert, rename_bus, route_track, set_bus_insert_enabled,
     set_bus_muted, set_bus_volume, update_bus_insert_parameters,
 )
-from ..audio_effects_model import AudioEffectType
+from ..audio_effects_model import (
+    AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
+)
+from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
+from ..media_probe import MediaProbeError, probe_media
+from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
 from ..timeline_editing import add_marker
-from ..timeline_operations import add_clip_to_track, delete_clip, move_clip, set_clip_enabled
+from ..timeline_operations import add_clip_to_track, delete_clip, find_clip, move_clip, set_clip_enabled
+from ..track_operations import set_track_locked, set_track_muted, set_track_visible
 
 Operation = Callable[[Project], Any]
+
+
+@dataclass(frozen=True)
+class ScriptContext:
+    """Ce que le script a le droit de toucher hors du projet (ADR-0005, décision 5) : **lecture seule**, dans son dossier.
+
+    Les chemins de médias se résolvent relativement à ``base_dir`` (le dossier du script). Sortir de ce dossier (chemin absolu ailleurs,
+    ``..``, lien symbolique qui s'en échappe) demande ``allow_outside`` : c'est à l'appelant de le vouloir (``--allow-outside``), jamais
+    au script. Sans contexte, un verbe qui lit un fichier est refusé."""
+
+    base_dir: Path
+    allow_outside: bool = False
+
+    def resolve_media(self, text: str) -> Path:
+        """Le fichier désigné par ``text``, ou ``ValueError`` / ``OSError`` : introuvable, pas un fichier, hors du dossier permis."""
+        base = self.base_dir.resolve()
+        candidate = (base / text).resolve(strict=False)           # un chemin absolu l'emporte sur la base, comme pour ``Path``
+        if not self.allow_outside:
+            try:
+                candidate.relative_to(base)
+            except ValueError:
+                raise ValueError(
+                    f"Le média {text!r} est hors du dossier du script ({base}) : ajoutez --allow-outside pour l'autoriser."
+                ) from None
+        if not candidate.is_file():
+            raise FileNotFoundError(f"Fichier média introuvable : {candidate}")
+        return candidate
 
 MAX_TEXT = 200
 """Longueur maximale d'un texte (nom, sélecteur) : un script ne sert pas à transporter de la donnée."""
@@ -37,6 +72,9 @@ MAX_TIME = 1_000_000.0
 class Kind(str, Enum):
     STRING = "string"
     NUMBER = "number"
+    INTEGER = "integer"
+    COLOR = "color"          # « #RRGGBB » ou « #RRGGBBAA »
+    PATH = "path"            # un chemin de fichier, résolu par le contexte (dossier du script)
     BOOLEAN = "boolean"
     ID = "id"                # un identifiant NEUF (lettres, chiffres, « _ »)
     SELECTOR = "selector"    # un objet existant : son identifiant ou son nom exact (unique), ou {"ref": alias}
@@ -57,6 +95,8 @@ class Param:
     maximum: float | None = None
     choices: tuple[str, ...] = ()
     of: str = ""
+    max_length: int = 0            # 0 : MAX_TEXT
+    multiline: bool = False        # texte à plusieurs lignes (un titre) : « \n » permis
 
 
 @dataclass(frozen=True)
@@ -68,9 +108,10 @@ class Verb:
     name: str
     doc: str
     params: tuple[Param, ...]
-    build: Callable[[Mapping[str, Any]], Operation]
+    build: Callable[..., Operation]
     creates: str | None = None
     group: str = ""
+    needs_context: bool = False     # le verbe lit un fichier : ``build(args, context)``
     accepts: tuple[str, ...] = field(init=False, default=())
 
     def __post_init__(self) -> None:
@@ -182,6 +223,108 @@ def _set_clip_enabled(a: Mapping[str, Any]) -> Operation:
     return lambda p: set_clip_enabled(p, _clip_id(p, a["clip"]), bool(a["enabled"]))
 
 
+def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
+    def operation(project: Project) -> Any:
+        if context is None:
+            raise ValueError("import_media lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        path = context.resolve_media(a["path"])
+        normalized = os.path.normpath(os.path.abspath(path))
+        for existing in project.media_assets:
+            if os.path.normpath(os.path.abspath(existing.path)) == normalized:
+                raise InvalidObjectId(f"Ce média est déjà dans le projet : {existing.id!r}.")
+        try:
+            asset = probe_media(str(path))
+        except MediaProbeError as error:               # fichier corrompu, format inconnu, ffprobe absent ou trop lent : un refus, pas un plantage
+            raise ValueError(str(error)) from error
+        asset.id = resolve_object_id(a.get("id"), prefix="asset", kind="média", taken={item.id for item in project.media_assets})
+        asset.name = path.name
+        project.media_assets.append(asset)
+        return asset
+
+    return operation
+
+
+def _add_track_insert(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        track_id = _track_id(project, a["track"])
+        kind = next(item.type for item in project.tracks if item.id == track_id)
+        if kind not in ("audio", "video"):             # le rendu traite une piste de graphiques avant tout traitement audio : l'insert ne jouerait jamais
+            raise ValueError(f"La piste '{track_id}' est une piste '{kind}' : seules les pistes audio et vidéo portent des inserts.")
+        return add_track_insert(
+            project, track_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
+        )
+
+    return operation
+
+
+def _track_insert(p: Project, track: str, selector: str) -> tuple[str, str]:
+    track_id = _track_id(p, track)
+    owner = next(item for item in p.tracks if item.id == track_id)
+    return track_id, str(_pick(owner.inserts, selector, "Insert", names=False).id)
+
+
+def _remove_track_insert(a: Mapping[str, Any]) -> Operation:
+    return lambda p: remove_track_insert(p, *_track_insert(p, a["track"], a["insert"]))
+
+
+def _set_track_insert_enabled(a: Mapping[str, Any]) -> Operation:
+    return lambda p: set_track_insert_enabled(p, *_track_insert(p, a["track"], a["insert"]), bool(a["enabled"]))
+
+
+def _update_track_insert(a: Mapping[str, Any]) -> Operation:
+    return lambda p: update_track_insert_parameters(p, *_track_insert(p, a["track"], a["insert"]), a["params"])
+
+
+def _set_track_muted(a: Mapping[str, Any]) -> Operation:
+    return lambda p: set_track_muted(p, _track_id(p, a["track"]), bool(a["muted"]))
+
+
+def _set_track_locked(a: Mapping[str, Any]) -> Operation:
+    return lambda p: set_track_locked(p, _track_id(p, a["track"]), bool(a["locked"]))
+
+
+def _set_track_visible(a: Mapping[str, Any]) -> Operation:
+    return lambda p: set_track_visible(p, _track_id(p, a["track"]), bool(a["visible"]))
+
+
+def _add_graphic(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        track = next(item for item in project.tracks if item.id == _track_id(project, a["track"])) if a.get("track") is not None else None
+        if track is not None and track.type != "graphics":
+            raise ValueError(f"La piste '{track.id}' est une piste '{track.type}' : un calque graphique va sur une piste de graphiques.")
+        if track is not None and track.locked:
+            raise ValueError(f"La piste '{track.id}' est verrouillée.")
+        clip = add_graphic_clip(
+            project, a["graphic"], timeline_start=float(a["at"]), duration=float(a["duration"]),
+            shape=a.get("shape", ShapeKind.RECTANGLE.value), track=track, clip_id=a.get("id"),
+        )
+        if a.get("text") is not None:
+            update_graphic(clip, "text", a["text"])
+        return clip
+
+    return operation
+
+
+_GRAPHIC_FIELDS = ("text", "fill_color", "stroke_color", "stroke_width", "font_size", "width", "height")
+
+
+def _set_graphic(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in _GRAPHIC_FIELDS if name in a]
+        if not given:
+            raise ValueError("set_graphic : donnez au moins un champ à modifier.")
+        clip_id = _clip_id(project, a["clip"])
+        owner = next(track for track in project.tracks if any(item.id == clip_id for item in track.clips))
+        if owner.locked:                               # le verrou de l'interface vaut aussi pour un script
+            raise ValueError(f"La piste '{owner.id}' est verrouillée.")
+        clip = find_clip(project, clip_id)
+        for name in given:
+            update_graphic(clip, name, a[name])
+        return clip
+
+    return operation
+
+
 def _add_marker(a: Mapping[str, Any]) -> Operation:
     return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
 
@@ -194,6 +337,10 @@ _AT = Param("at", Kind.NUMBER, "Position sur la timeline, en secondes.", minimum
 _ENABLED = Param("enabled", Kind.BOOLEAN, "Actif ou non.")
 _PARAMS = Param("params", Kind.OBJECT, "Paramètres de l'effet (nombres, booléens, textes courts) ; ceux du modèle les valident.")
 _EFFECTS = tuple(member.value for member in AudioEffectType)
+_DISPLAYABLE = tuple(item.value for item in (
+    GraphicType.TEXT, GraphicType.RECTANGLE, GraphicType.SOLID, GraphicType.SHAPE, GraphicType.ADJUSTMENT, GraphicType.NULL,
+))
+_COLOR_DOC = "Couleur « #RRGGBB » ou « #RRGGBBAA »."
 
 VERBS: dict[str, Verb] = {
     verb.name: verb
@@ -225,6 +372,41 @@ VERBS: dict[str, Verb] = {
         Verb("delete_clip", "Supprime un clip.", (_CLIP,), _delete_clip, group="edit"),
         Verb("move_clip", "Déplace un clip.", (_CLIP, _AT), _move_clip, group="edit"),
         Verb("set_clip_enabled", "Active ou désactive un clip.", (_CLIP, _ENABLED), _set_clip_enabled, group="edit"),
+        Verb("import_media", "Importe un fichier média dans le projet (lecture seule, dans le dossier du script).",
+             (Param("path", Kind.PATH, "Chemin du fichier, relatif au dossier du script."),), _import_media, creates="asset",
+             group="edit", needs_context=True),
+        Verb("add_track_insert", "Ajoute un effet en insert sur une piste audio (un égaliseur est l'effet « parametric_eq »).",
+             (_TRACK, Param("effect", Kind.ENUM, "Le type d'effet.", choices=_EFFECTS),
+              Param("params", Kind.OBJECT, _PARAMS.doc, required=False),
+              Param("enabled", Kind.BOOLEAN, "Actif dès l'ajout (défaut : oui).", required=False)),
+             _add_track_insert, creates="insert", group="audio"),
+        Verb("remove_track_insert", "Retire un insert d'une piste.", (_TRACK, _INSERT), _remove_track_insert, group="audio"),
+        Verb("set_track_insert_enabled", "Active ou désactive un insert de piste.", (_TRACK, _INSERT, _ENABLED),
+             _set_track_insert_enabled, group="audio"),
+        Verb("update_track_insert", "Modifie les paramètres d'un insert de piste.", (_TRACK, _INSERT, _PARAMS), _update_track_insert,
+             group="audio"),
+        Verb("set_track_muted", "Coupe ou rétablit le son d'une piste.", (_TRACK, Param("muted", Kind.BOOLEAN, "Coupée ou non.")),
+             _set_track_muted, group="edit"),
+        Verb("set_track_locked", "Verrouille ou déverrouille une piste.", (_TRACK, Param("locked", Kind.BOOLEAN, "Verrouillée ou non.")),
+             _set_track_locked, group="edit"),
+        Verb("set_track_visible", "Affiche ou masque une piste.", (_TRACK, Param("visible", Kind.BOOLEAN, "Visible ou non.")),
+             _set_track_visible, group="edit"),
+        Verb("add_graphic", "Pose un calque graphique (titre, forme, aplat…) sur une piste de graphiques.",
+             (Param("graphic", Kind.ENUM, "Le genre de calque.", choices=_DISPLAYABLE), _AT,
+              Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
+              Param("text", Kind.STRING, "Texte du calque (titre).", required=False, max_length=1000, multiline=True),
+              Param("shape", Kind.ENUM, "Forme (pour « shape »).", required=False, choices=tuple(item.value for item in ShapeKind)),
+              Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
+             _add_graphic, creates="clip", group="graphics"),
+        Verb("set_graphic", "Modifie l'apparence d'un calque graphique (au moins un champ).",
+             (_CLIP, Param("text", Kind.STRING, "Texte.", required=False, max_length=1000, multiline=True),
+              Param("fill_color", Kind.COLOR, _COLOR_DOC, required=False),
+              Param("stroke_color", Kind.COLOR, _COLOR_DOC, required=False),
+              Param("stroke_width", Kind.INTEGER, "Épaisseur du contour, en pixels.", required=False, minimum=0, maximum=256),
+              Param("font_size", Kind.INTEGER, "Taille de police, en pixels.", required=False, minimum=6, maximum=512),
+              Param("width", Kind.INTEGER, "Largeur, en pixels.", required=False, minimum=2, maximum=8192),
+              Param("height", Kind.INTEGER, "Hauteur, en pixels.", required=False, minimum=2, maximum=8192)),
+             _set_graphic, group="graphics"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),
@@ -233,4 +415,4 @@ VERBS: dict[str, Verb] = {
 }
 """Le catalogue. L'ordre est celui de la documentation."""
 
-__all__ = ["MAX_PARAMS", "MAX_TEXT", "MAX_TIME", "VERBS", "Kind", "Operation", "Param", "Verb"]
+__all__ = ["MAX_PARAMS", "MAX_TEXT", "MAX_TIME", "VERBS", "Kind", "Operation", "Param", "ScriptContext", "Verb"]

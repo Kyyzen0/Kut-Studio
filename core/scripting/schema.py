@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..node_graph import MAX_ID_LENGTH
-from .script import MAX_OPS, SCRIPT_VERSION
+from .script import MAX_OPS, MAX_PATH_TEXT, SCRIPT_VERSION
 from .verbs import MAX_PARAMS, MAX_TEXT, VERBS, Kind, Param, Verb
 
 _ID_PATTERN = f"^[A-Za-z0-9_]{{1,{MAX_ID_LENGTH}}}$"
@@ -26,8 +26,18 @@ def _param_schema(param: Param) -> dict[str, Any]:
             schema["minimum"] = param.minimum
         if param.maximum is not None:
             schema["maximum"] = param.maximum
+    elif param.kind is Kind.INTEGER:
+        schema = {"type": "integer"}
+        if param.minimum is not None:
+            schema["minimum"] = int(param.minimum)
+        if param.maximum is not None:
+            schema["maximum"] = int(param.maximum)
+    elif param.kind is Kind.COLOR:
+        schema = {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"}
+    elif param.kind is Kind.PATH:
+        schema = {"type": "string", "minLength": 1, "maxLength": MAX_PATH_TEXT}
     elif param.kind is Kind.STRING:
-        schema = {"type": "string", "minLength": 1, "maxLength": MAX_TEXT}
+        schema = {"type": "string", "minLength": 1, "maxLength": param.max_length or MAX_TEXT}
     elif param.kind is Kind.ENUM:
         schema = {"enum": list(param.choices)}
     elif param.kind is Kind.ID:
