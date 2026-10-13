@@ -304,9 +304,75 @@ def snap_box(
     return dx, dy, lines
 
 
+def snap_scale_factor(
+    box: tuple[float, float, float, float],
+    anchor: tuple[float, float],
+    factor: float,
+    width: float,
+    height: float,
+    *,
+    threshold: float,
+    axes: str = "xy",
+    guides=(),
+    layer_boxes=(),
+) -> tuple[float, list[SnapLine]]:
+    """Facteur d'échelle aimanté ``(facteur, lignes)`` autour de ``anchor``.
+
+    Une échelle de facteur ``k`` autour de l'ancrage ``A`` envoie une arête ``x`` de la boîte
+    ``box`` (bords et centre) en ``Ax + k * (x - Ax)`` (idem en y). Le facteur qui amène une
+    arête exactement sur une cible (mêmes cibles que :func:`snap_box`) est
+    ``k' = (cible - Ax) / (x - Ax)``. On retient celui qui demande le plus petit déplacement
+    d'arête, s'il est sous ``threshold`` (unités du cadre) ; x et y sont en concurrence et une
+    seule ligne est rendue. ``axes`` (``"x"``, ``"y"`` ou ``"xy"``) limite les arêtes
+    considérées. Les arêtes sur l'ancrage (inamovibles), ``k' <= 0`` et ``k' = 1`` (arête déjà sur sa cible au départ : aucun
+    collage à la taille d'origine) sont ignorés.
+    """
+    xs, ys = snap_candidates(width, height, guides=guides, layer_boxes=layer_boxes)
+    x0, y0, x1, y1 = box
+    ax, ay = anchor
+    best = None  # (écart d'arête, k', orientation, position, source)
+    groups = []
+    if "x" in axes:
+        groups.append(([x0, (x0 + x1) / 2.0, x1], ax, xs, GuideOrientation.VERTICAL))
+    if "y" in axes:
+        groups.append(([y0, (y0 + y1) / 2.0, y1], ay, ys, GuideOrientation.HORIZONTAL))
+    for edges, origin, targets, orientation in groups:
+        for edge in edges:
+            lever = edge - origin
+            if abs(lever) < 1e-6:
+                continue
+            moved = origin + factor * lever
+            for position, source in targets:
+                gap = abs(position - moved)
+                if gap > threshold or (best is not None and gap >= best[0]):
+                    continue
+                snapped = (position - origin) / lever
+                # Une arête déjà sur sa cible au départ (k' = 1) collerait l'échelle à la taille d'origine sur tout le seuil : un fond
+                # ou une vidéo plein cadre ne pourrait plus être agrandi de quelques pixels. Seules les autres cibles aimantent.
+                if snapped <= 0.0 or abs(snapped - 1.0) < 1e-6:
+                    continue
+                best = (gap, snapped, orientation, position, source)
+    if best is None:
+        return factor, []
+    return best[1], [SnapLine(best[2], best[3], best[4])]
+
+
+SNAP_ROTATION_STEP = 45.0
+SNAP_ROTATION_DEGREES = 3.0
+
+
+def snap_rotation(angle: float, threshold: float = SNAP_ROTATION_DEGREES) -> tuple[float, bool]:
+    """Aimante un angle absolu (degrés) au multiple de 45° le plus proche, sous ``threshold``."""
+    nearest = round(angle / SNAP_ROTATION_STEP) * SNAP_ROTATION_STEP
+    if abs(angle - nearest) <= threshold:
+        return nearest, True
+    return angle, False
+
+
 __all__ = [
     "Guide", "GuideOrientation", "PLATFORMS", "PLATFORM_ZONES", "PlatformZone", "SAFE_AREA_PRESETS", "SnapLine",
     "add_guide", "clear_guides", "platform_content_rect", "platform_zone_rects",
     "guide_from_dict", "guide_to_dict", "move_guide", "remove_guide", "safe_area_preset_for",
-    "safe_area_rects", "set_guide_locked", "snap_box", "snap_candidates", "snap_value",
+    "safe_area_rects", "set_guide_locked", "snap_box", "snap_candidates", "snap_rotation", "snap_scale_factor", "snap_value",
+    "SNAP_ROTATION_DEGREES", "SNAP_ROTATION_STEP",
 ]
