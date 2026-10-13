@@ -763,7 +763,8 @@ def _set_color_window(a: Mapping[str, Any]) -> Operation:
         clip_id, window_id, owner_id = _color_window(project, a["clip"], a["window"])
         service = ColorGradingService()
         base = service.get_graph(project, clip_id).corrector(owner_id).window(window_id)
-        assert base is not None
+        if base is None:  # pragma: no cover - _color_window l'a déjà trouvée
+            raise KeyError(f"Fenêtre d'étalonnage introuvable : {window_id!r}.")
         changes: dict[str, Any] = {}
         for name in given:
             if name in _MASK_BOUNDS:
