@@ -208,6 +208,49 @@ def scene_for_project(project: Project) -> GraphicsScene:
     return GraphicsScene(layers, project.width, project.height)
 
 
+def stack_rank(scene: GraphicsScene, clip_id: str) -> tuple:
+    """Rang d'affichage : un membre de groupe se range au niveau de son groupe."""
+    chain = [clip_id]
+    group = scene.group_of(clip_id)
+    while group and group not in chain:
+        chain.append(group)
+        group = scene.group_of(group)
+    return tuple(stack_key(scene.layers[cid]) for cid in reversed(chain))
+
+
+def viewer_pick_boxes(scene: GraphicsScene, project: Project, t: float) -> list[tuple[str, tuple, tuple]]:
+    """Boîtes cliquables du moniteur à l'instant ``t`` : ``(clip_id, world, box)``, le dernier est dessus.
+
+    Suit l'ordre du rendu : les calques graphiques sont composés au-dessus de toute la vidéo ; entre clips
+    vidéo (et images fixes, clips de composition), la piste la plus haute est dessus. Un clip vidéo n'est
+    retenu que si sa piste est visible, déverrouillée et rendue (un solo vidéo masque les autres pistes vidéo, comme au rendu), s'il est activé, actif à ``t`` et n'est pas un clip
+    imbriqué / multicam (``sequence_id``). Un calque graphique l'est s'il est dessiné (hors conteneur),
+    actif et non verrouillé.
+    """
+    videos: list[tuple[tuple, tuple[str, tuple, tuple]]] = []
+    video_solo = {track.id for track in project.tracks if track.type == "video" and track.solo}      # comme le plan de rendu
+    for index, track in enumerate(project.tracks):
+        if track.type != "video" or not track.visible or track.locked or (video_solo and track.id not in video_solo):
+            continue
+        for clip in track.clips:
+            if clip.sequence_id or not clip.enabled or clip.id not in scene.layers:
+                continue
+            evaluated = scene.evaluate(clip.id, t)
+            if evaluated.active:
+                videos.append(((index, clip.timeline_start, clip.id), (clip.id, evaluated.world, evaluated.box)))
+    videos.sort(key=lambda item: item[0])
+    graphics = []
+    for clip_id in scene.top_level() + [m for g in scene.layers for m in scene.members(g)]:
+        graphic = getattr(scene.layers.get(clip_id), "graphic", None)
+        if not isinstance(graphic, GraphicOverlay) or graphic.type in CONTAINER_TYPES:
+            continue
+        evaluated = scene.evaluate(clip_id, t)
+        if evaluated.active and not graphic.locked:
+            graphics.append((clip_id, evaluated.world, evaluated.box))
+    graphics.sort(key=lambda item: stack_rank(scene, item[0]))
+    return [item for _key, item in videos] + graphics
+
+
 def transform_graph(project: Project) -> dict[str, set[str]]:
     """Graphe ``calque → parents de transform`` (parent explicite et groupe)."""
     graph: dict[str, set[str]] = {}
@@ -816,5 +859,6 @@ __all__ = [
     "delete_layers", "duplicate_layers", "find_layer", "group_layers", "layer_clips", "layer_tree",
     "move_into_group", "move_layer", "parent_candidates", "paste_attributes", "paste_layers",
     "rename_layer", "reorder_layer", "scene_for_project", "set_layer_locked", "set_layer_visible",
-    "set_motion_blur", "set_parent", "siblings", "stack_key", "transform_graph", "ungroup",
+    "set_motion_blur", "set_parent", "siblings", "stack_key", "stack_rank", "transform_graph", "ungroup",
+    "viewer_pick_boxes",
 ]
