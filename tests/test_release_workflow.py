@@ -139,10 +139,20 @@ def test_secret_names_are_the_documented_ones():
     assert all(name in docs for name in used), "chaque secret est documenté dans docs/updates.md"
 
 
-def test_actions_are_pinned_to_a_major_version():
-    actions = re.findall(r"^\s+(?:- )?uses: (\S+)", _text(), re.MULTILINE)
-    assert actions
-    assert all(re.fullmatch(r"[\w./-]+@v\d+", action) for action in actions), actions
+def test_every_action_in_every_workflow_is_pinned_to_a_full_commit_sha():
+    """Une étiquette (``@v5``) peut être réécrite par l'auteur de l'action, ou par qui l'a compromis : le déploiement
+    du site passe le jeton Cloudflare à une action tierce, la release lui confie la signature. Un SHA complet ne peut
+    pas être déplacé. Le commentaire ``# vN`` garde la version lisible (Dependabot met à jour le SHA et le commentaire)."""
+    found = 0
+    for workflow in sorted(WORKFLOW.parent.glob("*.yml")):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"^\s+(?:- )?uses: (\S+)(.*)$", line)
+            if match is None:
+                continue
+            found += 1
+            assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", match.group(1)), f"{workflow.name} : {match.group(1)}"
+            assert re.search(r"#\s*v\d+", match.group(2)), f"{workflow.name} : version en commentaire manquante ({line.strip()})"
+    assert found, "aucune action trouvée : le test ne vérifie plus rien"
 
 
 def test_no_certificate_key_or_token_is_tracked_in_the_repository():

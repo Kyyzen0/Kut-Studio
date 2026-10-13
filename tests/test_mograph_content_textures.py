@@ -110,6 +110,62 @@ def test_content_texture_placed_by_matrix_matches_full_frame_raster(qapp):
     assert error <= 2.5, error
 
 
+def test_place_content_frame_matches_full_frame_raster(qapp):
+    project = _solid_project(x=0.1, y=-0.05, rotation=12.0)
+    scene = scene_for_plan(build_render_plan(project))
+    renderer = MographRenderer(scene, W, H, fps=25.0, quality="draft")
+    clip_id = next(iter(scene.top_level()))
+    placed = renderer.place_content_frame(clip_id, 0.25)
+    assert placed is not None
+    from PySide6.QtGui import QImage
+
+    full = renderer.render([clip_id], 0.25).convertToFormat(QImage.Format_RGBA8888)
+    placed = placed.convertToFormat(QImage.Format_RGBA8888)
+    a = np.frombuffer(placed.constBits(), np.uint8).reshape(placed.height(), placed.bytesPerLine())
+    a = a[:, : placed.width() * 4].reshape(placed.height(), placed.width(), 4).astype(np.float64)
+    b = np.frombuffer(full.constBits(), np.uint8).reshape(full.height(), full.bytesPerLine())
+    b = b[:, : full.width() * 4].reshape(full.height(), full.width(), 4).astype(np.float64)
+    assert np.abs(a - b).mean() <= 2.5
+
+
+def test_export_reuses_content_texture_across_poses(tmp_path, monkeypatch, qapp):
+    """Deux poses, même encre : ``place_content_frame`` sans écriture ``c-*.png`` morte."""
+    from core import mograph_stream
+    from core.export_engine import ExportEngine
+    from core.mograph_raster import MographRenderer, clear_content_texture_cache
+    from core.mograph_layers import scene_for_project
+    from core.mograph_stream import cache_directory
+
+    monkeypatch.setenv("KUT_STUDIO_CACHE_DIR", str(tmp_path / "cache"))
+    mograph_stream.cache_directory.cache_clear() if hasattr(cache_directory, "cache_clear") else None
+    monkeypatch.setattr(mograph_stream, "cache_directory", lambda: tmp_path / "cache" / "mograph")
+    (tmp_path / "cache" / "mograph").mkdir(parents=True)
+    clear_content_texture_cache()
+
+    project = _solid_project(x=0.05)
+    from core.visual_effects import ClipTransform
+
+    clip = next(
+        c for track in project.active_sequence.tracks for c in track.clips
+        if getattr(c, "graphic", None) is not None
+    )
+    plan = build_render_plan(project)
+    ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
+    clip.transform = ClipTransform(position_x=0.2)
+    plan = build_render_plan(project)
+    ExportEngine._build_filter_complex(plan, W, H, 25.0, None)
+    assert list((tmp_path / "cache" / "mograph").glob("c-*.png")) == []
+
+    scene = scene_for_project(project)
+    renderer = MographRenderer(scene, W, H, fps=25.0)
+    clip_id = clip.id
+    first = renderer.content_texture(clip_id, 0.0)
+    second = renderer.content_texture(clip_id, 0.0)
+    assert first is not None and second is not None
+    assert first[0] is second[0]  # même instance LRU
+    assert first[0].width() < W and first[0].height() < H
+
+
 def test_preview_panel_sends_content_layers_with_matrix(qtbot):
     from PySide6.QtGui import QColor, QImage
 

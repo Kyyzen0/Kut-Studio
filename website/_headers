@@ -1,0 +1,11 @@
+# En-têtes de sécurité du site (Cloudflare Pages). Le script en ligne n'écrit que du texte et la CSP
+# l'autorise par son empreinte SHA-256. style.css et script.js viennent du même site ('self').
+# Les polices sont celles du site public (Google Fonts). Modifier le script en ligne change l'empreinte :
+# mettre ce fichier à jour (tests/test_website_headers.py le vérifie et dit quoi mettre).
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'sha256-T2d9RMBAlyqMTT1T0JhQcy9uD/WoyweW6NY1EHqxF3c='; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.github.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin

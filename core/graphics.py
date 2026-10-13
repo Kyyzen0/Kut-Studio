@@ -34,7 +34,6 @@ Ajouter un type de calque : voir ``docs/motion-graphics.md``.
 from __future__ import annotations
 
 import re
-import uuid
 from dataclasses import dataclass, fields, replace
 from enum import Enum
 from pathlib import Path
@@ -396,8 +395,12 @@ def add_graphic_clip(
     shape: ShapeKind | str = ShapeKind.RECTANGLE,
     graphic: GraphicOverlay | None = None,
     track: Track | None = None,
+    clip_id: str | None = None,
 ) -> Clip:
     """Crée un média technique, une piste G si nécessaire et le clip.
+
+    ``clip_id`` : identifiant imposé du clip (scripts), voir :mod:`core.object_ids` ; le média technique en dérive
+    (``graphic-asset-<clip_id>``). ``None`` : identifiants générés, comme avant.
 
     ``graphic`` remplace le contenu par défaut (presets, collage) ; ``track``
     force la piste (sinon la première piste G éditable).
@@ -406,6 +409,12 @@ def add_graphic_clip(
     duration = float(duration)
     if duration <= 0.0:
         raise ValueError("La durée d'un graphique doit être positive.")
+    # Vérifié avant de créer la piste G ou le média : un identifiant refusé ne laisse rien derrière lui.
+    from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
+
+    clip_identifier = resolve_object_id(clip_id, prefix="graphic", kind="clip", taken=clip_ids(project))
+    token = clip_identifier.removeprefix("graphic-") if clip_id is None else clip_identifier
+    asset_id = ensure_free_asset_id(project, f"graphic-asset-{token}")
     kind = GraphicType(graphic.type if graphic is not None else graphic_type)
     if kind == GraphicType.IMAGE:
         path = Path(graphic.source_path if graphic is not None else source_path).expanduser()
@@ -424,8 +433,6 @@ def add_graphic_clip(
         graphic = replace(graphic, source_path=source_path)
     target_track = track if track is not None else ensure_graphics_track(project)
     graphic = replace(graphic, z_order=next_z_order(target_track))
-    token = uuid.uuid4().hex[:12]
-    asset_id = f"graphic-asset-{token}"
     if kind == GraphicType.IMAGE:
         label = Path(source_path).stem or "Image"
     elif kind == GraphicType.SHAPE:
@@ -445,7 +452,7 @@ def add_graphic_clip(
         )
     )
     clip = Clip(
-        id=f"graphic-{token}",
+        id=clip_identifier,
         asset_id=asset_id,
         track_id=target_track.id,
         timeline_start=start,

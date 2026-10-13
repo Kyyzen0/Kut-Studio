@@ -220,6 +220,69 @@ class HardwarePreviewMixin:
         self.preview_panel.set_layer_compositing(blend, matte)
         self.preview_panel.set_grade_windows(self._clip_windows(clip, timeline_time))
 
+    def _sync_gpu_video_underlays(self, under_clips) -> None:
+        """Alimente les pistes vidéo sous le clip supérieur (moniteur GPU, ADR-0001)."""
+        from core.blend_modes import coerce_blend_mode
+        from core.decode_policy import DecodePurpose
+        from core.tracking_bindings import effective_transform_keyframes
+        from core.tracking_motion import fit_box, video_layer_matrix
+        from core.visual_effects import evaluate_transform
+
+        if not under_clips or not self.preview_panel.gpu_active:
+            self.preview_panel.set_video_underlays(())
+            return
+        # Coordonnées logiques de la séquence (comme CompositeFrame), pas la taille
+        # de rendu réduite — sinon double échelle quand le viewer est < 1.
+        from core.gpu_grade import grade_is_active
+
+        cw, ch = int(self.project.width), int(self.project.height)
+        assets = {asset.id: asset for asset in self.project.media_assets}
+        entries = []
+        for layer in under_clips:
+            if not layer.source_path:
+                continue
+            path = layer.source_path if layer.rendered else self.preview_source_for(
+                layer.source_path, divisor=self.runtime.preview_divisor(), purpose=DecodePurpose.REALTIME,
+            )
+            clip_obj = self._ensure_timeline_index().clip(layer.owner_clip_id)
+            if clip_obj is None:
+                continue
+            local = float(self.playhead_seconds) - float(clip_obj.timeline_start)
+            evaluated = evaluate_transform(
+                clip_obj.transform, effective_transform_keyframes(self.project, clip_obj),
+                clip_local_time=local, clip_duration=clip_obj.duration,
+            )
+            asset = assets.get(getattr(clip_obj, "asset_id", ""), None)
+            sw = int(getattr(asset, "width", 0) or 0) or cw
+            sh = int(getattr(asset, "height", 0) or 0) or ch
+            box = fit_box(sw, sh, cw, ch, fill=bool(evaluated.fill),
+                          pan_x=evaluated.pan_x, pan_y=evaluated.pan_y)
+            blend = coerce_blend_mode(getattr(getattr(clip_obj, "compositing", None), "blend_mode", "normal"))
+            compositing = getattr(clip_obj, "compositing", None)
+            has_masks = compositing is not None and bool(getattr(compositing, "masks", ()))
+            matte = None
+            if has_masks or getattr(clip_obj, "tracking", None) is not None:
+                matte = self._clip_matte(clip_obj, float(self.playhead_seconds))
+            grade = self._monitor_color_grade(clip_obj)
+            grade = grade if grade_is_active(grade) else None
+            windows = self._clip_windows(clip_obj, float(self.playhead_seconds)) if grade is not None else {}
+            entries.append((
+                f"clip:{layer.owner_clip_id}",
+                path,
+                float(layer.source_time),
+                tuple(video_layer_matrix(evaluated, cw, ch)),
+                tuple(box.rect),
+                float(evaluated.opacity),
+                blend,
+                tuple(getattr(clip_obj, "effects", ()) or ()),
+                (float(evaluated.scale * evaluated.scale_x), float(evaluated.scale * evaluated.scale_y)),
+                matte,
+                grade,
+                windows,
+                float(local),
+            ))
+        self.preview_panel.set_video_underlays(entries)
+
     def _clip_windows(self, clip, timeline_time: float) -> dict:
         """``{nœud: (clé, QImage)}`` : la matte des fenêtres de chaque nœud fenêtré de l'étalonnage montré, rastérisée
         comme à l'export (même code, même animation) ; une fenêtre immobile n'est rastérisée qu'une fois."""

@@ -19,6 +19,7 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QPixmap, QTransform
@@ -47,8 +48,55 @@ from ui.i18n import translate
 
 LOGGER = logging.getLogger(__name__)
 
+# Marge (pixels) entre le cadre de la séquence et les bords du viewer.
 CANVAS_MARGIN = 12
-"""Marge (pixels) entre le cadre de la séquence et les bords du viewer."""
+
+_UNDERLAY_POOL: ThreadPoolExecutor | None = None
+_UNDERLAY_HANDLES: dict[str, object] = {}
+
+
+def _underlay_pool() -> ThreadPoolExecutor:
+    global _UNDERLAY_POOL
+    if _UNDERLAY_POOL is None:
+        _UNDERLAY_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kut-underlay")
+    return _UNDERLAY_POOL
+
+
+def _decode_underlay_frame(path: str, seconds: float):
+    """Décodage hors UI : un seul fil + poignées persistantes (ADR-0001 / revue Codex)."""
+    from core.media_io import open_media
+
+    handle = _UNDERLAY_HANDLES.get(path)
+    if handle is None:
+        handle = open_media(path)
+        _UNDERLAY_HANDLES[path] = handle
+        while len(_UNDERLAY_HANDLES) > 8:
+            old_path, old = next(iter(_UNDERLAY_HANDLES.items()))
+            if old_path == path:
+                break
+            _UNDERLAY_HANDLES.pop(old_path, None)
+            try:
+                old.close()
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("Fermeture décodeur underlay en échec", exc_info=True)
+    try:
+        return handle.decode_at(seconds)
+    except Exception:
+        # Poignée morte : rouvre une fois.
+        LOGGER.debug("Décodage underlay en échec sur poignée cached pour %s : réouverture", path, exc_info=True)
+        try:
+            handle.close()
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Fermeture de la poignée underlay morte en échec pour %s", path, exc_info=True)
+        _UNDERLAY_HANDLES.pop(path, None)
+        with open_media(path) as fresh:
+            return fresh.decode_at(seconds)
+
+
+class _UnderlayDecodeBridge(QObject):
+    """Pont fil de décodage → thread Qt."""
+
+    ready = Signal(str, str, object)  # source_id, key, VideoFrame | None
 
 
 class _ViewportWatcher(QObject):
@@ -193,6 +241,14 @@ class PreviewPanel(QWidget):
         self._gpu_blend_layers: tuple = ()
         self._gpu_effect_time = 0.0          # temps du clip affiché (effets qui bougent : heat haze)
         self._gpu_blend_pushed: dict[str, str] = {}
+        # Pistes vidéo sous le clip supérieur (ADR-0001 multi-pistes) : tuples
+        # ``(source_id, path, time, matrix, fit, opacity, blend, effects[,
+        # effect_scale, matte, grade, grade_windows, effect_time])``.
+        self._gpu_underlays: tuple = ()
+        self._gpu_underlay_pushed: dict[str, str] = {}
+        self._gpu_underlay_wanted: dict[str, str] = {}  # source_id → clé path|time en vol
+        self._underlay_bridge = _UnderlayDecodeBridge(self)
+        self._underlay_bridge.ready.connect(self._on_underlay_decoded, Qt.QueuedConnection)
         self.playback_seeks = 0
 
         # Overlays ------------------------------------------------------------
@@ -901,6 +957,12 @@ class PreviewPanel(QWidget):
         view.deleteLater()
         self.set_effects(self._gpu_effects)
 
+    def compose_cpu_frame(self, frame, sources_rgb, mattes=None, luts=None, *, render_scale: float = 0.25):
+        """Composition CPU allégée (ADR-0001) quand le moniteur GPU est indisponible."""
+        from core.cpu_composite import compose_frame
+
+        return compose_frame(frame, sources_rgb, mattes, luts, render_scale=render_scale)
+
     def set_layer_compositing(self, blend_mode=None, matte: tuple[str, object] | None = None) -> None:
         """Mode de fusion et matte (clé, ``QImage``) du clip affiché (GPU seulement)."""
         self._gpu_blend = blend_mode
@@ -1003,9 +1065,12 @@ class PreviewPanel(QWidget):
 
         Chaque entrée est ``(clé, QImage, mode)`` — image plein cadre, matrice identité — ou
         ``(clé, QImage, mode, matrice, opacité, fit)`` — texture à taille réelle animée par matrice
-        (ADR-0001). L'image n'est renvoyée au GPU que lorsque la clé change ; son alpha sert de matte.
+        (ADR-0001) — ou grain procédural ``(clé, None, mode, matrice, opacité, fit, seed, index, cols, rows)``.
+        L'image n'est renvoyée au GPU que lorsque la clé change ; son alpha sert de matte.
         """
         from PySide6.QtMultimedia import QVideoFrame
+
+        from core.gpu_composite import VideoSource
 
         self._gpu_blend_layers = tuple(layers or ())
         view = self.gpu_view
@@ -1016,16 +1081,27 @@ class PreviewPanel(QWidget):
             key, image = entry[0], entry[1]
             source = f"graphics{index}"
             used.add(source)
-            if self._gpu_blend_pushed.get(source) != key:
+            if self._gpu_blend_pushed.get(source) == key:
+                continue
+            if image is None and len(entry) >= 10:
+                # Grain procédural : pas d'upload, seulement la description de source.
+                seed, gindex, cols, rows = entry[6], entry[7], entry[8], entry[9]
+                view.set_procedural_source(VideoSource(
+                    source, "grain", int(cols), int(rows),
+                    colorspace=str(int(seed)), color_range=str(int(gindex)),
+                ))
+            elif image is not None:
                 view.set_video_frame(source, QVideoFrame(image))
-                self._gpu_blend_pushed[source] = key
+            else:
+                continue
+            self._gpu_blend_pushed[source] = key
         for source in [s for s in self._gpu_blend_pushed if s not in used]:
             view.forget_source(source)
             del self._gpu_blend_pushed[source]
         self._update_gpu_composite()
 
     def _gpu_graphics_layers(self, cw: int, ch: int, mattes: dict) -> tuple:
-        """Calques graphiques au-dessus de la vidéo (plein cadre ou texture par contenu)."""
+        """Calques graphiques au-dessus de la vidéo (plein cadre, texture par contenu, ou grain)."""
         from core.blend_modes import coerce_blend_mode
         from core.gpu_composite import CompositeLayer
         from core.gpu_effects import program_for
@@ -1033,6 +1109,24 @@ class PreviewPanel(QWidget):
         layers = []
         for index, entry in enumerate(self._gpu_blend_layers):
             key, image, blend = entry[0], entry[1], entry[2]
+            if image is None and len(entry) >= 10:
+                from PySide6.QtGui import QColor, QImage
+
+                matrix, opacity, fit = entry[3], float(entry[4]), entry[5]
+                # Couverture opaque à la taille du contenu : sans matte, la passe grain
+                # (texture plein cadre) déborde hors de la boîte du calque.
+                cover_w = max(1, int(round(float(fit[2]) - float(fit[0]))))
+                cover_h = max(1, int(round(float(fit[3]) - float(fit[1]))))
+                matte = f"grain:{key}"
+                coverage = QImage(cover_w, cover_h, QImage.Format_RGBA8888)
+                coverage.fill(QColor(255, 255, 255, 255))
+                mattes[matte] = coverage
+                layers.append(CompositeLayer(
+                    source=f"graphics{index}", matrix=tuple(matrix), fit=tuple(fit),
+                    opacity=opacity, blend=coerce_blend_mode(blend), program=program_for(()),
+                    matte=matte, matte_in_fit=True,
+                ))
+                continue
             matte = f"blend:{key}"
             mattes[matte] = image
             if len(entry) >= 6:
@@ -1092,6 +1186,68 @@ class PreviewPanel(QWidget):
             self._update_gpu_composite()
         view.set_video_frame("main", frame)
 
+    def set_video_underlays(self, underlays) -> None:
+        """Pistes vidéo sous le clip supérieur (bas → haut, sans le dessus).
+
+        Chaque entrée : ``(source_id, path, time_s, matrix, fit, opacity, blend, effects, …)``.
+        Les images sont décodées **hors du thread UI** via :mod:`core.media_io` et
+        poussées au GPU sous ``source_id`` (``clip:<id>``). Liste vide : oublie les
+        sources précédentes. Les matrices / métadonnées sont appliquées tout de suite.
+        """
+        view = self.gpu_view
+        self._gpu_underlays = tuple(underlays or ())
+        used: set[str] = set()
+        for source_id, path, time_s, *_rest in self._gpu_underlays:
+            used.add(source_id)
+            key = f"{path}|{round(float(time_s), 4)}"
+            if self._gpu_underlay_pushed.get(source_id) == key:
+                continue
+            if self._gpu_underlay_wanted.get(source_id) == key:
+                continue
+            # Dernière demande gagne : les jobs déjà en file voient la clé périmée
+            # avant le décodage coûteux et s'arrêtent (coalesce scrub / lecture).
+            self._gpu_underlay_wanted[source_id] = key
+
+            def _job(source_id=source_id, path=path, time_s=time_s, key=key) -> None:
+                if self._gpu_underlay_wanted.get(source_id) != key:
+                    return
+                try:
+                    frame = _decode_underlay_frame(str(path), float(time_s))
+                except Exception:  # noqa: BLE001 - notifie l'UI, ne crashe pas le fil
+                    LOGGER.debug("Sous-piste %s : décodage impossible", source_id, exc_info=True)
+                    frame = None
+                if self._gpu_underlay_wanted.get(source_id) != key:
+                    return
+                self._underlay_bridge.ready.emit(source_id, key, frame)
+
+            _underlay_pool().submit(_job)
+        for source_id in [s for s in list(self._gpu_underlay_pushed) if s not in used]:
+            if view is not None:
+                view.forget_source(source_id)
+            del self._gpu_underlay_pushed[source_id]
+            self._gpu_underlay_wanted.pop(source_id, None)
+        for source_id in [s for s in list(self._gpu_underlay_wanted) if s not in used]:
+            self._gpu_underlay_wanted.pop(source_id, None)
+        self._update_gpu_composite()
+
+    def _on_underlay_decoded(self, source_id: str, key: str, decoded) -> None:
+        """Rappel Qt : une image underlay est prête (ou ``None`` si échec)."""
+        if self._gpu_underlay_wanted.get(source_id) != key:
+            return  # demande périmée (playhead a bougé)
+        self._gpu_underlay_wanted.pop(source_id, None)
+        view = self.gpu_view
+        if view is None or decoded is None:
+            return
+        from PySide6.QtGui import QImage
+        from PySide6.QtMultimedia import QVideoFrame
+
+        image = QImage(
+            decoded.rgba, decoded.width, decoded.height, decoded.width * 4, QImage.Format_RGBA8888,
+        ).copy()
+        view.set_video_frame(source_id, QVideoFrame(image))
+        self._gpu_underlay_pushed[source_id] = key
+        self._update_gpu_composite()
+
     def _on_gpu_failed(self, kind: str, detail: str) -> None:
         self.disable_gpu()
         self.gpu_failed.emit(kind, detail)
@@ -1135,7 +1291,44 @@ class PreviewPanel(QWidget):
                 )
             except ValueError:
                 program = program_for(())
-            layers = (CompositeLayer(
+            underlay_layers = []
+            for entry in self._gpu_underlays:
+                source_id, _path, _time, matrix, fit, opacity, blend, effects = entry[:8]
+                effect_scale = entry[8] if len(entry) > 8 else (1.0, 1.0)
+                matte_pack = entry[9] if len(entry) > 9 else None
+                grade = entry[10] if len(entry) > 10 else None
+                windows_map = entry[11] if len(entry) > 11 else {}
+                effect_time = float(entry[12]) if len(entry) > 12 else 0.0
+                try:
+                    under_program = program_for(
+                        effects or (),
+                        vignette_extent=VIGNETTE_EXPORT,
+                        time=effect_time,
+                        neighborhood_scale=self.neighborhood_scale(),
+                    )
+                except ValueError:
+                    under_program = program_for(())
+                matte_key = ""
+                if matte_pack is not None:
+                    matte_key, image = matte_pack
+                    mattes[matte_key] = image
+                under_windows = []
+                for node_id, (window_key, image) in dict(windows_map or {}).items():
+                    mattes[window_key] = image
+                    under_windows.append((node_id, window_key))
+                underlay_layers.append(CompositeLayer(
+                    source=source_id,
+                    matrix=tuple(matrix),
+                    fit=tuple(fit),
+                    opacity=float(opacity),
+                    blend=coerce_blend_mode(blend),
+                    program=under_program,
+                    effect_scale=tuple(effect_scale) if effect_scale else (1.0, 1.0),
+                    matte=matte_key,
+                    grade=grade,
+                    grade_windows=tuple(under_windows),
+                ))
+            layers = tuple(underlay_layers) + (CompositeLayer(
                 source="main",
                 matrix=tuple(video_layer_matrix(values, cw, ch)),
                 fit=box.rect,

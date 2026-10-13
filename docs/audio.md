@@ -117,7 +117,9 @@ piste ─▶ inserts de piste ─▶ ┬─ vumètre de la piste (avant le bus)
 - Le fichier `.kut` écrit `buses` (séquence) et `bus_id` (piste) seulement quand il y en a ; le format 17 ne change pas.
   Un bus invalide est ignoré seul, une piste qui vise un bus absent retourne au Master.
 - Les bus appartiennent à la séquence : un clip imbriqué garde les bus de sa propre séquence, ceux du parent n'y
-  descendent pas.
+  descendent pas. Convertir une sélection en séquence recopie, dans la nouvelle séquence, les bus des pistes
+  déplacées **autres que la piste hôte** (même règle que le volume et les inserts : le bus de la piste hôte reste
+  sur le parent et traite le clip imbriqué une seule fois).
 
 ## Égaliseur paramétrique
 

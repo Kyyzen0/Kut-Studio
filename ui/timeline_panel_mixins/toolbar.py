@@ -299,11 +299,17 @@ class ToolbarMixin:
             palette = manager.effective_palette
         except Exception:
             palette = _current_palette()
+        # Les vignettes de secours sont teintées avec la palette du moment : sans
+        # les oublier, un basculement sombre→clair laisse les tuiles de l'ancien thème.
+        pixmaps = getattr(self, "_pixmaps", None)
+        if isinstance(pixmaps, dict):
+            pixmaps.clear()
         # Rafraîchit les en-têtes de pistes (pastilles type) et les clips.
         for header in self.track_header_widgets.values():
             header.refresh_state(palette)
         for widget in self.clip_widgets.values():
             widget.refresh_style()
+            widget.update()
         self._sync_transition_widgets()
         self._restyle_toolbar(palette)
         self.update()

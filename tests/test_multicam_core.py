@@ -456,7 +456,8 @@ def test_cutting_and_duplicating_a_segment_with_ordinary_tools_keeps_its_angle()
 def _accepts_copy_args() -> bool:
     import inspect
 
-    return len(inspect.signature(duplicate_clip).parameters) >= 4
+    positional = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    return sum(p.kind in positional for p in inspect.signature(duplicate_clip).parameters.values()) >= 4
 
 
 def test_trimming_a_segment_keeps_its_angle_and_never_moves_the_source_offsets():

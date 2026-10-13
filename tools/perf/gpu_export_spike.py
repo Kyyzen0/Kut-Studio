@@ -13,8 +13,8 @@ Le projet n'est que lu. Chaque image ``t = n / fps`` est composée ainsi :
   **même** rastériseur Qt (:class:`core.mograph_raster.MographRenderer`, qualité « export », flou de mouvement de la
   séquence) ; chaque élément devient une texture RGBA, renvoyée au GPU seulement quand son contenu change ;
 - **composition** : :func:`core.gpu_composite.plan_frame` exécuté par le vrai ``GpuPreviewWidget`` (Metal…), relu
-  par ``grabFramebuffer`` (le binding PySide6 6.11 de ``QRhi.beginOffscreenFrame`` est inutilisable : il attend un
-  ``QRhiCommandBuffer`` au lieu du pointeur de sortie) ;
+  par ``readBackTexture`` asynchrone (profondeur 2–3 ; ``grabFramebuffer`` reste le repli si la relecture
+  asynchrone échoue). ``QRhi.beginOffscreenFrame`` reste inutilisable sous PySide6 6.11 ;
 - **encodage** : les images RVBA partent dans un FFmpeg qui fait la conversion BT.709 de l'export
   (:data:`core.export_engine.OUTPUT_COLOR_STAGE`) et encode avec l'encodeur que choisirait l'export
   (:func:`core.video_encoders.resolve_video_encoder`, VideoToolbox par défaut).
@@ -237,6 +237,7 @@ class Timings:
     upload_s: float = 0.0
     gpu_s: float = 0.0
     readback_s: float = 0.0
+    readback_wait_s: float = 0.0
     raster_frames: int = 0
     keys_s: float = 0.0
     raster_wait_s: float = 0.0
@@ -250,7 +251,9 @@ class GpuExporter:
     LOOKAHEAD = 12
     """Images d'avance de la rastérisation en parallèle (assez pour couvrir une bande qui change à chaque image)."""
 
-    def __init__(self, plan, ffmpeg: str, ffprobe: str, api: str, raster_threads: int = 0) -> None:
+    def __init__(
+        self, plan, ffmpeg: str, ffprobe: str, api: str, raster_threads: int = 0, *, readback_depth: int = 2,
+    ) -> None:
         from concurrent.futures import ThreadPoolExecutor
 
         from PySide6.QtCore import QSize, Qt
@@ -289,6 +292,8 @@ class GpuExporter:
         self.ahead: dict[tuple[int, str], tuple[str, object]] = {}
         self.scheduled = -1
         self.last_key: dict[str, str] = {}
+        self.readback_depth = max(1, int(readback_depth))
+        self._inflight: list[tuple[int, dict]] = []
 
     # -- une image ---------------------------------------------------------------------------------------------
 
@@ -429,9 +434,9 @@ class GpuExporter:
             ))
         return layers
 
-    def frame(self, index: int) -> bytes:
-        """Image ``index`` de la séquence, en RVBA serré."""
-        from PySide6.QtGui import QImage
+    def _compose(self, index: int) -> None:
+        """Prépare le composite de l'image ``index`` et enfile une relecture asynchrone."""
+        from PySide6.QtWidgets import QApplication
 
         from core.gpu_composite import CompositeFrame
 
@@ -440,19 +445,78 @@ class GpuExporter:
         graphics = self._graphics_layers_parallel(index, mattes) if self.pool is not None \
             else self._graphics_layers(t, mattes)
         layers = self._video_layers(t, index) + graphics
-        self.widget.set_composite(CompositeFrame(self.width, self.height, 1.0, tuple(layers)), mattes)
         started = time.perf_counter()
-        image = self.widget.grabFramebuffer()
+        self.widget.set_composite(CompositeFrame(self.width, self.height, 1.0, tuple(layers)), mattes)
+        entry = self.widget.queue_readback(index)
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
         self.timings.gpu_s += time.perf_counter() - started
-        if image.isNull() or self.failures:
-            raise RuntimeError(f"rendu GPU en échec : {self.failures or 'image vide'}")
+        self._inflight.append((index, entry))
+        self.timings.gpu_frames += 1
+
+    def _consume_entry(self, entry: dict) -> bytes:
+        """Attend une entrée de relecture et renvoie les octets RVBA."""
+        from PySide6.QtGui import QImage
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        started = time.perf_counter()
+        deadline = time.perf_counter() + 5.0
+        while not entry["done"] and time.perf_counter() < deadline:
+            if app is not None:
+                app.processEvents()
+            else:
+                time.sleep(0.001)
+        self.timings.readback_wait_s += time.perf_counter() - started
+        if not entry["done"] or entry.get("error") or entry.get("image") is None:
+            # Repli synchrone : même pixels que l'ancien essai.
+            started = time.perf_counter()
+            image = self.widget.grabFramebuffer()
+            self.timings.gpu_s += time.perf_counter() - started
+            if image.isNull() or self.failures:
+                raise RuntimeError(
+                    f"rendu GPU en échec : {entry.get('error') or self.failures or 'image vide'}"
+                )
+        else:
+            image = entry["image"]
+            if self.failures:
+                raise RuntimeError(f"rendu GPU en échec : {self.failures}")
         started = time.perf_counter()
         image = image.convertToFormat(QImage.Format.Format_RGBA8888)
         data = bytes(image.constBits())[: self.width * self.height * 4] if image.bytesPerLine() == self.width * 4 \
             else _tight(image, self.width, self.height)
         self.timings.readback_s += time.perf_counter() - started
-        self.timings.gpu_frames += 1
         return data
+
+    def submit(self, index: int) -> tuple[int, bytes] | None:
+        """Compose ``index`` ; renvoie ``(rang, octets)`` de la plus ancienne image dès que la profondeur est atteinte."""
+        self._compose(index)
+        if len(self._inflight) < self.readback_depth:
+            return None
+        old_index, entry = self._inflight.pop(0)
+        return old_index, self._consume_entry(entry)
+
+    def drain(self) -> list[tuple[int, bytes]]:
+        """Vide le pipeline de relecture (fin de séquence)."""
+        frames: list[tuple[int, bytes]] = []
+        while self._inflight:
+            index, entry = self._inflight.pop(0)
+            frames.append((index, self._consume_entry(entry)))
+        return frames
+
+    def frame(self, index: int) -> bytes:
+        """Image ``index`` de la séquence, en RVBA serré (profondeur 1 : comportement synchrone)."""
+        depth = self.readback_depth
+        self.readback_depth = 1
+        try:
+            ready = self.submit(index)
+            if ready is None:
+                drained = self.drain()
+                return drained[0][1]
+            return ready[1]
+        finally:
+            self.readback_depth = depth
 
     def close(self) -> None:
         if self.pool is not None:
@@ -474,14 +538,14 @@ def _tight(image, width: int, height: int) -> bytes:
 
 
 def run_gpu(project, workdir: Path, ffmpeg: str, ffprobe: str, *, seconds: float | None, hardware: str,
-            api: str, raster_threads: int = 0) -> dict:
+            api: str, raster_threads: int = 0, readback_depth: int = 2) -> dict:
     from PySide6.QtWidgets import QApplication
 
     from core.render_plan import build_render_plan
 
     app = QApplication.instance() or QApplication([])
     plan = build_render_plan(project)
-    exporter = GpuExporter(plan, ffmpeg, ffprobe, api, raster_threads)
+    exporter = GpuExporter(plan, ffmpeg, ffprobe, api, raster_threads, readback_depth=readback_depth)
     missing = unsupported(plan, exporter.scene)
     if missing:
         exporter.close()
@@ -493,12 +557,24 @@ def run_gpu(project, workdir: Path, ffmpeg: str, ffprobe: str, *, seconds: float
     started = time.perf_counter()
     device = ""
     try:
+        pending: dict[int, bytes] = {}
+        next_encode = 0
         for index in range(count):
-            encoder.push(exporter.frame(index))
+            ready = exporter.submit(index)
+            if ready is not None:
+                frame_index, data = ready
+                pending[frame_index] = data
             if not device:
                 device = exporter.widget.device_label()  # avant ``close`` : ``release_gpu`` oublie l'exécuteur
+            while next_encode in pending:
+                encoder.push(pending.pop(next_encode))
+                next_encode += 1
             if index % 30 == 0:
                 app.processEvents()
+        for frame_index, data in exporter.drain():
+            pending[frame_index] = data
+        for frame_index in sorted(pending):
+            encoder.push(pending[frame_index])
         compose_s = time.perf_counter() - started
         encoder.finish()
     finally:
@@ -513,12 +589,14 @@ def run_gpu(project, workdir: Path, ffmpeg: str, ffprobe: str, *, seconds: float
         "wall_s": round(wall, 2),
         "fps": round(count / wall, 1),
         "compose_s": round(compose_s, 2),
+        "readback_depth": readback_depth,
         "stages_s": {
             "raster_qt": round(timings.raster_s, 2),
             "raster_keys": round(timings.keys_s, 2),
             "raster_wait": round(timings.raster_wait_s, 2),
             "upload_prep": round(timings.upload_s, 2),
-            "gpu_render_and_grab": round(timings.gpu_s, 2),
+            "gpu_submit": round(timings.gpu_s, 2),
+            "readback_wait": round(timings.readback_wait_s, 2),
             "readback_convert": round(timings.readback_s, 2),
             "decode_wait": round(timings.extra.get("decode_wait_s", 0.0), 2),
             "encode_wait": round(encoder.wait_s, 2),
@@ -623,6 +701,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--api", default="metal" if sys.platform == "darwin" else "d3d11")
     parser.add_argument("--raster-threads", type=int, nargs="+", default=[0],
                         help="fils de rastérisation des calques (0 : fil principal) ; plusieurs valeurs : plusieurs essais")
+    parser.add_argument("--readback-depth", type=int, default=2,
+                        help="reléctures GPU en vol (1 ≈ synchrone, 2–3 recommandé)")
     parser.add_argument("--no-reference", action="store_true")
     args = parser.parse_args(argv)
     if not os.environ.get("KUT_STUDIO_CONFIG_DIR"):
@@ -637,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
     project = load_project(str(args.project.expanduser()))
     report: dict = {"project": str(args.project), "size": [project.width, project.height, project.fps]}
     runs = [run_gpu(project, workdir, ffmpeg, ffprobe, seconds=args.seconds, hardware=args.hardware, api=args.api,
-                    raster_threads=threads) for threads in args.raster_threads]
+                    raster_threads=threads, readback_depth=args.readback_depth) for threads in args.raster_threads]
     for run in runs:
         print(json.dumps(run, ensure_ascii=False), flush=True)
     report["gpu_runs"] = runs

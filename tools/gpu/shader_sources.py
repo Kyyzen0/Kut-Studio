@@ -457,6 +457,26 @@ void main() {
 }
 """
 
+GRAIN = FRAGMENT_HEADER + """
+// Grain de film procédural (ADR-0001) : gris centré sur 0,5 (neutre en Incrustation).
+// misc : graine, index d'image (0..7), densité (cellules en x), densité (cellules en y).
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+void main() {
+    float seed = misc.x;
+    float index = misc.y;
+    vec2 cells = max(misc.zw, vec2(2.0));
+    vec2 cell = floor(v_uv * cells);
+    float n = hash21(cell + vec2(seed * 17.0, index * 31.0));
+    // Distribution resserrée autour de 0,5 (± 0,25), comme core/light_layers._grain.
+    float g = 0.25 + 0.5 * n;
+    fragColor = vec4(g, g, g, 1.0);
+}
+"""
+
 SHADERS: dict[str, tuple[str, str]] = {
     "quad.vert": ("vert", VERTEX),
     "clear.frag": ("frag", CLEAR),
@@ -470,6 +490,7 @@ SHADERS: dict[str, tuple[str, str]] = {
     "colorkey.frag": ("frag", COLORKEY),
     "colormix.frag": ("frag", COLORMIX),
     "composite.frag": ("frag", COMPOSITE),
+    "grain.frag": ("frag", GRAIN),
     "present.frag": ("frag", PRESENT),
 }
 """Nom du fichier ``.qsb`` (sans l'extension) → (étape, source)."""

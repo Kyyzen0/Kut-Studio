@@ -175,6 +175,8 @@ class StudioRuntime:
         # sous ce verrou ; seul le thread d'interface l'applique à la politique.
         self._power_lock = threading.Lock()
         self._power_probe_running = False
+        # Incrémenté à chaque :meth:`refresh_power_state` : une sonde démarrée avant
+        # l'injection ne doit plus déposer (sinon elle écrase l'état de test / forcé).
         self._power_probe_generation = 0
         self._power_probe_result: PowerState | None = None
         self.ondemand = OnDemandGate()
@@ -199,8 +201,8 @@ class StudioRuntime:
 
     def refresh_power_state(self, state: PowerState | None = None) -> PowerState:
         """Injecte un état (tests, outils) ou, sans argument, le relit **sur place** (bloquant : pas pour l'interface)."""
-        # A synchronous refresh supersedes a possibly in-flight background probe.
-        # Prevent an older probe from later overwriting the explicitly refreshed state.
+        # Une lecture synchrone annule une sonde en vol : sinon ``_ensure_power_fresh``
+        # réapplique un ``PowerState`` obsolète par-dessus l'état explicitement rafraîchi.
         with self._power_lock:
             self._power_probe_generation += 1
             self._power_probe_result = None

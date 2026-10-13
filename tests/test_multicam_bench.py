@@ -137,7 +137,9 @@ def test_audio_sync_bench_quick_run_is_accurate_and_cache_is_faithful():
         assert scenario["measured_ok"] == scenario["sources"], name       # aucune source « incertaine » sur de la parole nette
         assert scenario["worst_offset_error_ms"] is not None and scenario["worst_offset_error_ms"] < 5.0, name
         assert scenario["cached_matches"] is True, name                  # le cache ne change aucun décalage
-        assert scenario["cached_s"] < scenario["cold_s"], name          # et il évite bien le décodage
+        # et il évite bien le décodage de l'enveloppe : on compte ces décodages plutôt que de comparer deux durées de
+        # moins d'une seconde, qu'un runner chargé inverse (0,68 s contre 0,65 s sur macOS en CI)
+        assert scenario["cold_decodes"] == scenario["sources"] and scenario["cached_decodes"] == 0, name
         assert scenario["peak_rss_mb"] < 1000.0, name
 
 

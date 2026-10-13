@@ -12,6 +12,15 @@ def main():
     helper = helper_mode_exit_code(sys.argv)
     if helper is not None:
         return helper
+    # Ligne de commande (« Kut-Studio info | validate | presets | export ») : le même binaire, sans fenêtre, traitée avant Qt et
+    # avant la fenêtre. FFmpeg (Homebrew…) se cherche avec le PATH complet, comme pour l'interface.
+    from core.cli import is_cli_invocation
+
+    if is_cli_invocation(sys.argv):
+        extend_search_path()
+        from core.cli import main as cli_main
+
+        return cli_main(sys.argv[1:])
     # Lancée depuis le Dock ou le Finder, l'application n'a pas le PATH du shell : FFmpeg (Homebrew…) resterait
     # introuvable. À faire avant les imports de l'interface, dont certains résolvent FFmpeg dès le chargement.
     extend_search_path()

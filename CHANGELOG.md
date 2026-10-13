@@ -14,6 +14,58 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Scripts déclaratifs.** `Kut-Studio apply script.json projet.kut -o resultat.kut` applique un fichier JSON d'opérations (bus, inserts,
+  routage, clips, repères) **en tout ou rien**, en une étape d'historique, sans jamais exécuter de code. `--dry-run` rend le rapport sans
+  rien écrire ; `validate script.json` liste toutes les erreurs d'un coup ; `Kut-Studio schema` écrit le schéma JSON. Le projet d'origine
+  n'est jamais écrasé sans `--in-place`. Voir [docs/scripting.md](docs/scripting.md).
+- **Scripts : médias, audio de piste, graphiques.** Dix verbes de plus (25 en tout) : `import_media` (lecture seule, **dans le dossier du
+  script** : en sortir demande `--allow-outside`, liens symboliques résolus), les inserts de piste (dont l'égaliseur paramétrique),
+  couper / verrouiller / masquer une piste, et les calques graphiques (`add_graphic`, `set_graphic`).
+
+## [0.5.5] - 2026-10-13
+
+Une version de transition : la **ligne de commande** (`Kut-Studio export | validate | info | presets`, sans fenêtre) pose le socle du
+futur mode script, et le **moteur d'aperçu GPU** passe son étape 2 (calques par contenu, plusieurs pistes vidéo, grain en shader).
+Un export annulé sous Windows ne laisse plus de fichier caché.
+
+**À savoir** : aucun changement de format de projet (toujours le format 17) ; l'application se lance et se comporte comme avant,
+la ligne de commande est un ajout.
+
+### Added
+
+- **Ligne de commande, sans fenêtre.** `Kut-Studio info | validate | presets | export` (depuis les sources : `python main.py …`) : le
+  même binaire que l'application. `export` écrit une vidéo avec exactement la commande FFmpeg de l'interface, dans un fichier caché
+  renommé à la fin (jamais de MP4 tronqué), annulable par Ctrl-C, et ne remplace jamais son projet ni un fichier existant sans
+  `--overwrite`. `validate` dit **ce qu'un projet a perdu en silence** (effets, bus, transitions invalides ignorés à l'ouverture).
+  `--json` rend un objet unique, les codes de sortie sont stables, les messages sont traduits. Voir [docs/cli.md](docs/cli.md).
+
+- **Décodage multi-sources (`media_io`).** Ouverture, saut et décodage d'une image (PyAV si disponible, sinon
+  FFmpeg) pour alimenter plusieurs pistes sur le moniteur GPU (ADR-0001).
+- **Compositeur CPU allégé.** Aperçu à résolution réduite via le même plan que le GPU, dans un fil de travail
+  (`core/cpu_composite.py`), pour les machines sans GPU utilisable.
+- **Grain procédural en shader.** Le grain de film du moniteur GPU peut être une passe `grain` plutôt qu'un
+  PNG plein cadre (ADR-0001).
+
+### Changed
+
+- **Export / aperçu fidèle : calques en PNG par contenu.** Un titre ou une forme éligible n'est plus redessiné
+  plein cadre à chaque pose : l'encre est rastérisée une fois (cache LRU `content_texture`), puis posée dans le
+  cadre (ADR-0001, étape 2). Voir [docs/gpu-preview.md](docs/gpu-preview.md).
+- **Moniteur GPU : plusieurs pistes vidéo.** Les pistes sous le clip du dessus sont composées en temps réel
+  (décodage `media_io` hors thread UI) ; le clip supérieur reste le lecteur Qt.
+
+### Fixed
+
+- **Export annulé sous Windows : plus de fichier caché oublié.** FFmpeg arrêté garde un instant sa poignée sur le fichier en cours
+  d'écriture ; sa suppression échouait sans rien dire et laissait un `.<nom>.….partial.mp4` à côté de la destination. La suppression
+  réessaie maintenant jusqu'à ce que le fichier soit libéré, et le journal le dit si elle abandonne.
+- **Revue Codex (PR #108 / #113).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS (RVBA différé) ;
+  file de relecture vidée ; géométrie CPU logique à scale réduit ; état compositing complet des sous-pistes ;
+  grain procédural branché et cadré par matte ; jobs underlay obsolètes coalescés ; plus d'écriture
+  `c-*.png` inutilisée.
+
 ## [0.5.0] - 2026-10-12
 
 Le **mixage audio** gagne ses trois outils de console : des **inserts** par piste (une chaîne d'effets sur la somme
@@ -487,7 +539,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
 [0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1

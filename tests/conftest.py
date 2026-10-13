@@ -18,6 +18,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # processus, dès l'import (les fixtures de module créent leurs fenêtres avant les fixtures de fonction). Les tests
 # des mises à jour utilisent un serveur HTTP local ou des réponses simulées.
 os.environ["KUT_STUDIO_UPDATE_CHECK"] = "off"
+# Le profil de performance « Auto » ne doit dépendre ni du banc machine ni de l'énergie de la machine qui lance les tests.
+# Le banc (core/machine_bench.py) tourne dans un fil de travail et change le profil quand il se termine : un test qui
+# peint deux fenêtres l'une après l'autre les voyait parfois dans deux profils différents (les clips de la timeline
+# peignent des vignettes en profil « balanced » ou « high », restent unis en « low » : 49 184 pixels d'écart, ce qui faisait
+# échouer test_theme_live_switch sur macOS en CI). Posé dès l'import, comme la mise à jour : les fixtures de module créent
+# leurs fenêtres avant les fixtures de fonction. Un test du banc ou de l'énergie les rétablit lui-même (monkeypatch).
+os.environ["KUT_STUDIO_MACHINE_BENCH"] = "off"
+os.environ["KUT_STUDIO_POWER"] = "ac"
 # Aucune fenêtre de test n'ouvre la sortie audio ni ne lance le mixage en direct en appuyant sur Lecture : les machines de
 # CI n'ont pas de carte son, et chaque lecture lancerait un FFmpeg. Les tests du mixage en direct le rallument, avec une
 # sortie simulée (``tests/test_live_mix_player.py``).
