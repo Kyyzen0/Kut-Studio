@@ -7,6 +7,7 @@ images intermédiaires, et le fichier final atomique.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import threading
@@ -302,3 +303,37 @@ def test_an_output_path_whose_user_directory_cannot_be_expanded_is_a_failed_resu
         assert result.status is ExportStatus.FAILED and "home directory" in result.message
         assert result.output_path == str(tmp_path / "film.mp4"), "le chemin demandé, tel quel"
     assert list(tmp_path.glob("*.mp4")) == [] and _hidden_partials(tmp_path) == []
+
+
+def test_a_temporary_file_still_held_for_a_moment_is_removed_once_released(tmp_path, monkeypatch):
+    """Windows : FFmpeg tué garde sa poignée un instant ; la suppression doit réessayer au lieu de laisser le ``.partial``."""
+    from core import export_runner
+
+    target = tmp_path / ".out.partial.mp4"
+    target.write_bytes(b"x")
+    real_remove = os.remove
+    refusals = {"left": 3}
+
+    def locked_then_free(path):
+        if refusals["left"] > 0:
+            refusals["left"] -= 1
+            raise PermissionError("utilisé par un autre processus")
+        real_remove(path)
+
+    monkeypatch.setattr(export_runner.os, "remove", locked_then_free)
+    monkeypatch.setattr(export_runner, "_REMOVE_PAUSE", 0.0)
+    export_runner._remove(str(target))
+    assert not target.exists() and refusals["left"] == 0
+
+
+def test_a_temporary_file_that_stays_locked_is_given_up_with_a_log_not_an_exception(tmp_path, monkeypatch, caplog):
+    from core import export_runner
+
+    def always_locked(_path):
+        raise PermissionError("verrouillé")
+
+    monkeypatch.setattr(export_runner.os, "remove", always_locked)
+    monkeypatch.setattr(export_runner, "_REMOVE_PAUSE", 0.0)
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove(str(tmp_path / "x"))
+    assert "non supprimé" in caplog.text

@@ -75,4 +75,6 @@ def test_best_cpu_seconds_ignores_the_cpu_of_other_threads() -> None:
         stop.set()
         for spinner in spinners:
             spinner.join(timeout=5)
-    assert crowded < alone * 1.6 + 0.005, (alone, crowded)
+    # process_time multipliait la mesure par 3 à 4 ; thread_time la garde proche, mais la contention de cache et de cœurs partagés
+    # d'un runner chargé la gonfle encore (0,20 s → 0,34 s en CI Ubuntu, soit ×1,7) : la borne sépare ces deux régimes.
+    assert crowded < alone * 2.4 + 0.005, (alone, crowded)

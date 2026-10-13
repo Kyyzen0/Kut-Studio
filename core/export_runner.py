@@ -28,6 +28,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -324,11 +325,24 @@ def _run_ffmpeg(
     )
 
 
+_REMOVE_ATTEMPTS = 40
+_REMOVE_PAUSE = 0.05
+
+
 def _remove(path: str) -> None:
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+    """Supprime un fichier temporaire. Sous Windows, FFmpeg tué garde un instant sa poignée sur la sortie (ou un antivirus
+    l'analyse) : la suppression échoue en ``PermissionError`` puis réussit, d'où quelques essais (2 s au plus) avant d'abandonner."""
+    for attempt in range(_REMOVE_ATTEMPTS):
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            if attempt == _REMOVE_ATTEMPTS - 1:
+                LOGGER.warning("Fichier temporaire d'export non supprimé (%s) : %s", path, error)
+                return
+            time.sleep(_REMOVE_PAUSE)
 
 
 __all__ = ["ExportResult", "ExportStatus", "partial_output_path", "run_export"]
