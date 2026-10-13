@@ -409,3 +409,21 @@ def test_an_audio_handler_and_the_same_operation_in_a_session_agree(window):
     session.apply([partial(route_track, track_id="A1", bus_id="voix")], label="Sortie d'une piste")
     assert _snapshot(window.project) == _snapshot(session.project)
     assert window.project.tracks[1].bus_id == "voix"
+
+
+def test_a_failing_snapshot_does_not_leave_the_session_busy(monkeypatch):
+    """Revue Codex : si la copie de l'instantané échoue (mémoire, contenu non copiable), la session se referme avant que l'erreur
+    se propage, au lieu de refuser toute transaction suivante."""
+    import core.scripting.session as session_module
+
+    session = Session(_project())
+    real_deepcopy = session_module.deepcopy
+    monkeypatch.setattr(session_module, "deepcopy", lambda _value: (_ for _ in ()).throw(MemoryError("copie impossible")))
+    with pytest.raises(MemoryError):
+        session.apply([partial(add_clip_to_track, asset_id="m", track_id="V1", timeline_start=0.0, clip_id="x")], label="Ajouter")
+    with pytest.raises(MemoryError), session.transaction("Bloc"):
+        pass
+    monkeypatch.setattr(session_module, "deepcopy", real_deepcopy)
+
+    report = session.apply([partial(add_clip_to_track, asset_id="m", track_id="V1", timeline_start=0.0, clip_id="x")], label="Ajouter")
+    assert report.ok and find_clip(session.project, "x") is not None

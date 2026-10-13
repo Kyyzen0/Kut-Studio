@@ -122,8 +122,7 @@ class Transaction:
         self.report: ApplyReport | None = None
 
     def __enter__(self) -> Transaction:
-        self._session._open_transaction()
-        self._snapshot = deepcopy(self._session.project)
+        self._snapshot = self._session._open_with_snapshot()
         return self
 
     def run(self, operation: Operation, name: str | None = None) -> Any:
@@ -184,8 +183,7 @@ class Session:
         lève avant que le projet soit touché, et n'est jamais pris pour le refus d'une opération qui, elle, a réussi.
         """
         planned = _plan(operations)
-        self._open_transaction()
-        snapshot = deepcopy(self._project)
+        snapshot = self._open_with_snapshot()
         results: list[OperationResult] = []
         index = 0
         name = ""
@@ -242,6 +240,16 @@ class Session:
         """Annuler ou rétablir pendant une transaction ferait avancer l'historique que la restauration ne remet pas en place."""
         if self._open:
             raise SessionBusyError(f"Impossible de {action} pendant une transaction : terminez-la d'abord.")
+
+    def _open_with_snapshot(self) -> Project:
+        """Ouvre la transaction et rend l'instantané à restaurer en cas de refus. Si la copie échoue (mémoire, contenu non copiable),
+        la session est refermée avant que l'erreur se propage : elle ne reste pas « occupée » pour toujours."""
+        self._open_transaction()
+        try:
+            return deepcopy(self._project)
+        except BaseException:
+            self._close_transaction()
+            raise
 
     def _open_transaction(self) -> None:
         if self._open:
