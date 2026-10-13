@@ -23,6 +23,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : médias, audio de piste, graphiques.** Dix verbes de plus (25 en tout) : `import_media` (lecture seule, **dans le dossier du
   script** : en sortir demande `--allow-outside`, liens symboliques résolus), les inserts de piste (dont l'égaliseur paramétrique),
   couper / verrouiller / masquer une piste, et les calques graphiques (`add_graphic`, `set_graphic`).
+- **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
+  une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
 
 ## [0.5.5] - 2026-10-13
 
