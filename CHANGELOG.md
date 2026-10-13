@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Moniteur : aimantation à l'échelle et à la rotation.** Redimensionner un calque l'accroche aux bords du cadre, aux guides et aux autres calques ; la rotation s'accroche aux multiples de 45° (Alt désactive, Maj garde le pas de 15°).
 - **Scripts déclaratifs.** `Kut-Studio apply script.json projet.kut -o resultat.kut` applique un fichier JSON d'opérations (bus, inserts,
   routage, clips, repères) **en tout ou rien**, en une étape d'historique, sans jamais exécuter de code. `--dry-run` rend le rapport sans
   rien écrire ; `validate script.json` liste toutes les erreurs d'un coup ; `Kut-Studio schema` écrit le schéma JSON. Le projet d'origine
