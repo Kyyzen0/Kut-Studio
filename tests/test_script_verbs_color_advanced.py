@@ -5,6 +5,8 @@ Mêmes règles que le lot 3 : bornes du modèle (rien n'est ramené en silence),
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from core.color_grading import ColorGradingService, WHEEL_MAX, WHEEL_MIN
@@ -199,3 +201,52 @@ def test_the_new_verbs_are_in_the_table():
         "set_color_curve", "reset_color_curve", "set_color_wheel", "import_lut", "remove_lut",
         "add_color_node", "branch_color_node", "remove_color_node", "rename_color_node", "set_color_detail",
     } <= set(VERBS)
+
+
+def test_color_node_ids_are_scoped_per_clip():
+    """Revue Codex : un même ``n2`` sur deux clips n'est pas un doublon (les nœuds sont locaux au clip)."""
+    session, report = _apply(
+        _project(),
+        {"op": "add_clip", "track": "V1", "asset": "m", "at": 0, "id": "a"},
+        {"op": "add_clip", "track": "V1", "asset": "m", "at": 5, "id": "b"},
+        {"op": "add_color_node", "clip": "a", "id": "n2"},
+        {"op": "add_color_node", "clip": "b", "id": "n2"},
+        {"op": "set_color_grade", "clip": "a", "node": "n2", "exposure": 0.5},
+        {"op": "set_color_grade", "clip": "b", "node": "n2", "exposure": -0.5},
+    )
+    assert report.ok, report.error
+    assert ColorGradingService().get_grade(session.project, "a", "n2").exposure == 0.5
+    assert ColorGradingService().get_grade(session.project, "b", "n2").exposure == -0.5
+    with pytest.raises(ScriptInvalid):
+        parse_script(_script(
+            {"op": "add_clip", "track": "V1", "asset": "m", "at": 0, "id": "a"},
+            {"op": "add_color_node", "clip": "a", "id": "n2"},
+            {"op": "add_color_node", "clip": "a", "id": "n2"},
+        ))
+
+
+def test_import_lut_normalizes_bom_for_ffmpeg(tmp_path):
+    """Revue Codex : une LUT avec BOM est acceptée, et la ressource pointe vers la copie UTF-8 lisible par FFmpeg."""
+    cube = tmp_path / "bom.cube"
+    body = (
+        'TITLE "Look"\nLUT_3D_SIZE 2\n'
+        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n"
+    )
+    cube.write_bytes(b"\xef\xbb\xbf" + body.encode("utf-8"))
+    context = ScriptContext(base_dir=tmp_path)
+    session, report = _apply(_project(), _clip(), {"op": "import_lut", "clip": "a", "path": "bom.cube"}, context=context)
+    assert report.ok, report.error
+    lut = ColorGradingService().get_grade(session.project, "a").lut
+    assert lut is not None and lut.source_path is not None
+    stored = Path(lut.source_path).read_bytes()
+    assert not stored.startswith(b"\xef\xbb\xbf")
+    assert b"LUT_3D_SIZE" in stored
+
+
+def test_branch_with_mixer_shaped_id_does_not_collide():
+    """Revue Codex : ``new_id="m1"`` ne doit pas faire allouer le mélangeur sous le même identifiant."""
+    graph, branch = as_graph(None).with_branch("n1", MixerKind.PARALLEL, new_id="m1")
+    assert branch == "m1"
+    assert graph.corrector("m1").id == "m1"
+    assert all(mixer.id != "m1" for mixer in graph.mixers)
+    assert len({node.id for node in graph.nodes}) == len(graph.nodes)

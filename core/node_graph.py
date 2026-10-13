@@ -13,6 +13,7 @@ fusion de composition en aura deux (fond, premier plan).
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Generic, Protocol, Self, TypeVar
 
@@ -120,10 +121,15 @@ class NodeGraph(Generic[N]):
                     ready.sort(key=position.__getitem__)
         return tuple(ordered)
 
-    def next_id(self, prefix: str = "n") -> str:
-        """Identifiant libre ``{prefix}{k}`` : le plus grand numéro présent, plus un."""
+    def next_id(self, prefix: str = "n", *, reserved: Iterable[str] = ()) -> str:
+        """Identifiant libre ``{prefix}{k}`` : le plus grand numéro présent, plus un.
+
+        ``reserved`` : identifiants pas encore dans ``self.nodes`` mais déjà promis (ex. le correcteur
+        qu'on vient d'allouer avant de créer son mélangeur) : ils comptent comme pris.
+        """
         pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
         numbers = [int(match.group(1)) for node in self.nodes if (match := pattern.match(node.id))]
+        numbers += [int(match.group(1)) for item in reserved if (match := pattern.match(item))]
         return f"{prefix}{max(numbers, default=0) + 1}"
 
     def with_node(self, node: N) -> Self:

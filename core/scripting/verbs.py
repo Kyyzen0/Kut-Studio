@@ -30,11 +30,12 @@ from ..audio_effects_model import (
 from ..color_grading import (
     CHANNELS, CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN,
     MAX_CURVE_POINTS, MAX_CURVE_VALUE, MIN_CURVE_VALUE, SATURATION_MAX, SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN,
-    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingService, LUTResource, Wheel,
+    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingError, ColorGradingService,
+    LUTResource, Wheel,
 )
 from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind
 from ..color_windows import forget_windows, window_ids
-from ..lut_importer import LUTImportError, parse_cube_lut
+from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
@@ -116,15 +117,20 @@ class Param:
 
 @dataclass(frozen=True)
 class Verb:
-    """``creates`` : le genre d'objet créé (``bus``, ``clip``, ``insert``, ``marker``), ``None`` pour un verbe qui modifie seulement ;
-    un verbe créateur accepte alors ``id`` (identifiant imposé) et ``as`` (alias : un nom du script, qui sert d'identifiant s'il n'y
-    a pas d'``id``)."""
+    """``creates`` : le genre d'objet créé (``bus``, ``clip``, ``insert``, ``marker``, ``color_node``), ``None`` pour un verbe
+    qui modifie seulement ; un verbe créateur accepte alors ``id`` (identifiant imposé) et ``as`` (alias : un nom du script, qui
+    sert d'identifiant s'il n'y a pas d'``id``).
+
+    ``creates_scope`` : nom d'un paramètre (déjà décodé) qui borne l'unicité de ``id`` — les nœuds d'étalonnage sont locaux à
+    un clip, donc ``creates_scope="clip"`` : deux clips peuvent chacun avoir un ``n2``.
+    """
 
     name: str
     doc: str
     params: tuple[Param, ...]
     build: Callable[..., Operation]
     creates: str | None = None
+    creates_scope: str | None = None
     group: str = ""
     needs_context: bool = False     # le verbe lit un fichier : ``build(args, context)``
     accepts: tuple[str, ...] = field(init=False, default=())
@@ -535,7 +541,11 @@ def _import_lut(a: Mapping[str, Any], context: ScriptContext | None) -> Operatio
         clip_id, node = _grade_clip(project, a)
         service = ColorGradingService()
         grade = service.get_grade(project, clip_id, node)
-        lut = LUTResource.from_path(path, title=parsed.title or path.stem)
+        # FFmpeg lit les octets tels quels : BOM / UTF-16 → copie UTF-8 (comme l'UI).
+        try:
+            lut = LUTResource.from_path(ffmpeg_readable_lut(path), title=parsed.title or path.stem)
+        except (OSError, ColorGradingError) as error:
+            raise ValueError(str(error)) from error
         return service.set_grade(project, clip_id, grade.with_lut(lut), node)
 
     return operation
@@ -811,12 +821,12 @@ VERBS: dict[str, Verb] = {
         Verb("add_color_node", "Ajoute un nœud d'étalonnage en série (après « after », ou en bout de chaîne).",
              (_CLIP, Param("after", Kind.SELECTOR, "Nœud après lequel insérer ; absent, en bout.", required=False, of="color_node"),
               _LABEL),
-             _add_color_node, creates="color_node", group="color"),
+             _add_color_node, creates="color_node", creates_scope="clip", group="color"),
         Verb("branch_color_node", "Ajoute un nœud en parallèle ou en calque à côté d'un nœud existant.",
              (_CLIP, Param("node", Kind.SELECTOR, "Le nœud à côté duquel brancher.", of="color_node"),
               Param("kind", Kind.ENUM, "parallel ou layer.", choices=tuple(item.value for item in MixerKind)),
               _LABEL),
-             _branch_color_node, creates="color_node", group="color"),
+             _branch_color_node, creates="color_node", creates_scope="clip", group="color"),
         Verb("remove_color_node", "Supprime un nœud (pas le dernier : réinitialisez-le).",
              (_CLIP, Param("node", Kind.SELECTOR, "Le nœud à retirer.", of="color_node")),
              _remove_color_node, group="color"),

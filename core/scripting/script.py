@@ -134,7 +134,7 @@ class _Decoder:
     def __init__(self) -> None:
         self.issues: list[ScriptIssue] = []
         self.aliases: dict[str, tuple[str, str]] = {}      # alias -> (genre, identifiant)
-        self.created: dict[str, set[str]] = {}              # genre -> identifiants imposés ou aliasés par le script
+        self.created: dict[str, set[str]] = {}              # clé « genre » ou « genre:portée » (nœuds : locaux au clip)
 
     def issue(self, code: str, index: int | None = None, verb: str | None = None, path: str = "", **params: Any) -> None:
         if len(self.issues) < MAX_ISSUES:
@@ -298,7 +298,12 @@ class _Decoder:
             alias = None
         kind = verb.creates or ""
         if identifier is not None:
-            taken = self.created.setdefault(kind, set())
+            # Unicité globale par genre, ou bornée à un paramètre (nœuds d'étalonnage : locaux au clip).
+            if verb.creates_scope:
+                key = f"{kind}:{args.get(verb.creates_scope, '')}"
+            else:
+                key = kind
+            taken = self.created.setdefault(key, set())
             if identifier in taken:
                 self.issue("duplicate_id", index, verb.name, f"{base}.id" if "id" in raw else f"{base}.as", id=identifier)
             taken.add(identifier)

@@ -276,7 +276,9 @@ class ColorNodeGraph(NodeGraph[AnyNode]):
                 port = len(self.inputs(mixer.id))
                 joined = (*self.links, *feeds, NodeLink(new.id, mixer.id, port))
                 return ColorNodeGraph(nodes=(*self.nodes, new), links=joined), new.id
-        mixer = ColorMixer(self.next_id("m"), MixerKind(kind))
+        # ``created_id`` n'est pas encore dans ``self.nodes`` : le réserver, sinon ``next_id("m")``
+        # peut renvoyer le même identifiant (ex. script qui impose ``new_id="m1"``).
+        mixer = ColorMixer(self.next_id("m", reserved=(created_id,)), MixerKind(kind))
         links = [NodeLink(mixer.id, link.target, link.port) if link.source == node.id else link for link in self.links]
         links += [*feeds, NodeLink(node.id, mixer.id, 0), NodeLink(new.id, mixer.id, 1)]
         return ColorNodeGraph(nodes=(*self.nodes, new, mixer), links=tuple(links)), new.id
