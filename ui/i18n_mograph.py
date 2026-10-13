@@ -253,6 +253,16 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Seleccione una capa visible en el cabezal.",
     ),
     "mograph.align.locked": _t("Ce calque est verrouillé.", "This layer is locked.", "Esta capa está bloqueada."),
+    "mograph.align.nested": _t(
+        "Un clip de séquence imbriquée ne s'aligne pas ici (il n'a pas de poignées dans le moniteur).",
+        "A nested-sequence clip cannot be aligned here (it has no handles in the monitor).",
+        "Un clip de secuencia anidada no se alinea aquí (no tiene controles en el monitor).",
+    ),
+    "mograph.align.out_of_range": _t(
+        "Ce déplacement dépasse les limites de position du calque : rien n'a été modifié.",
+        "This move exceeds the layer's position limits: nothing was changed.",
+        "Este movimiento supera los límites de posición de la capa: no se ha modificado nada.",
+    ),
     "mograph.align.degenerate": _t(
         "Ce calque ne peut pas être déplacé (son parent est écrasé).",
         "This layer cannot be moved (its parent is collapsed).",

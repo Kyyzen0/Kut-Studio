@@ -281,3 +281,34 @@ def test_align_works_on_a_video_clip_and_leaves_scale_alone(window):
     assert clip.transform.scale == pytest.approx(0.5)
     assert window.align_selected_layer_to_frame("bottom") is True
     assert _bounds(window, "c1")[3] == pytest.approx(float(window.project.height), abs=1e-6)
+
+
+def test_a_position_beyond_the_model_limits_is_refused_not_clamped_silently(window):
+    """Revue de #145 : une valeur hors bornes était ramenée en silence alors que l'historique annonçait un succès."""
+    layer = _shape(window)
+    window._select_layer(layer.id)
+    selection = window._editable_selection_geometry()
+    assert selection is not None
+    entries, x_before = len(window.history), layer.transform.position_x
+    assert window._move_selected_layer_on_screen(selection, 1.0e7, 0.0, "x") is False
+    assert layer.transform.position_x == x_before and len(window.history) == entries
+    # Une flèche, elle, consomme la touche : elle ne doit pas changer d'image à la place.
+    assert window._move_selected_layer_on_screen(selection, 1.0e7, 0.0, "x", swallow_refusal=True) is True
+    assert layer.transform.position_x == x_before and len(window.history) == entries
+
+
+def test_a_nested_sequence_clip_gets_a_precise_refusal(window):
+    from core.project_model import Clip, Track
+    from core.sequences import create_sequence, insert_sequence_clip
+
+    track = Track(id="v1", name="V1", type="video")
+    window.project.tracks.append(track)
+    child = create_sequence(window.project, "Enfant", sequence_id="enfant")
+    child.tracks[0].clips.append(Clip("leaf", "a", child.tracks[0].id, 0.0, 0.0, 2.0))
+    nested = insert_sequence_clip(window.project, "enfant", "v1", 0.0)
+    window._reload_timeline_preserving_selection(nested.id)
+    window._select_layer(nested.id)
+    entries = len(window.history)
+    assert window.align_selected_layer_to_frame("left") is False
+    assert "imbriquée" in window.statusBar().currentMessage() or "nested" in window.statusBar().currentMessage()
+    assert len(window.history) == entries

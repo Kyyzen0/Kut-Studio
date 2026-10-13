@@ -69,10 +69,14 @@ class FrameAlignmentMixin:
         self._refresh_viewer_overlay(t)
         selection = self.preview_panel.overlay.selection
         clip_id = self._primary_selected_id()
+        clip, track = self._find_clip_and_track(clip_id) if clip_id else (None, None)
+        if clip is not None and getattr(clip, "sequence_id", ""):
+            # Un clip de séquence imbriquée n'entre pas dans la scène du moniteur (pas de poignées) : message précis, pas « aucun calque ».
+            self.statusBar().showMessage(translate("mograph.align.nested"), 4000)
+            return None
         if selection is None or not clip_id or selection.clip_id != clip_id:
             self.statusBar().showMessage(translate("mograph.align.no_layer"), 4000)
             return None
-        clip, track = self._find_clip_and_track(clip_id)
         graphic = getattr(clip, "graphic", None)
         if (
             not selection.editable or clip is None or track is None or track.locked
@@ -82,7 +86,26 @@ class FrameAlignmentMixin:
             return None
         return selection
 
-    def _move_selected_layer_on_screen(self, selection, dx: float, dy: float, label: str, *, merge_key=None) -> bool:
+    @staticmethod
+    def _out_of_range(values: dict) -> list[str]:
+        """Propriétés dont la valeur visée sort des bornes du registre (``_apply_property_values`` la ramènerait en silence)."""
+        from core.animation_targets import get_target
+
+        refused = []
+        for name, value in values.items():
+            spec = get_target(name).spec
+            if (spec.minimum is not None and value < spec.minimum) or (spec.maximum is not None and value > spec.maximum):
+                refused.append(name)
+        return refused
+
+    def _move_selected_layer_on_screen(
+        self, selection, dx: float, dy: float, label: str, *, merge_key=None, swallow_refusal: bool = False,
+    ) -> bool:
+        """Déplace le calque de ``(dx, dy)`` pixels écran ; ``False`` si refusé.
+
+        Une position hors bornes est refusée avec un message, sans historique (``swallow_refusal`` : la touche est tout de même
+        consommée, pour qu'une flèche ne change pas d'image à la place).
+        """
         canvas = (float(self.project.width), float(self.project.height))
         delta = screen_delta_to_position_delta(selection.parent_world, dx, dy, canvas)
         if delta is None:
@@ -95,6 +118,9 @@ class FrameAlignmentMixin:
             values["position_x"] = selection.values.get("position_x", 0.0) + delta[0]
         if abs(delta[1]) >= 1e-12:
             values["position_y"] = selection.values.get("position_y", 0.0) + delta[1]
+        if self._out_of_range(values):
+            self.statusBar().showMessage(translate("mograph.align.out_of_range"), 4000)
+            return swallow_refusal
         self._finalize_pending_edit_sessions()
         if not self._apply_property_values(selection.clip_id, values):
             return False
@@ -134,7 +160,8 @@ class FrameAlignmentMixin:
         if selection is None or selection.clip_id != clip_id:
             return False
         return self._move_selected_layer_on_screen(
-            selection, dx, dy, translate("history.layer.nudge"), merge_key=f"{NUDGE_MERGE_PREFIX}{clip_id}"
+            selection, dx, dy, translate("history.layer.nudge"), merge_key=f"{NUDGE_MERGE_PREFIX}{clip_id}",
+            swallow_refusal=True,
         )
 
 
