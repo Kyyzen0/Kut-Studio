@@ -38,6 +38,9 @@ ensuite déclenche `.github/workflows/release.yml`.
   l'insérer comme clip imbriqué, et `set_active_sequence` pour agir sur une autre séquence. Cycles, profondeur, pistes verrouillées ou
   d'un mauvais genre et durées hors de la source sont refusés comme dans l'interface.
 - **Moniteur : un clic sélectionne n'importe quel clip.** Clips vidéo, images fixes et clips de composition se sélectionnent d'un clic dans le moniteur (jusqu'ici seuls les calques graphiques l'étaient), dans l'ordre du rendu ; sur un clip déjà sélectionné, un calque posé au-dessus reste cliquable. La tête de lecture ne bouge pas.
+- **Scripts : Multicam.** Huit verbes de plus (63 en tout) : créer une source depuis des médias, l'insérer, basculer ou remplacer l'angle d'un
+  segment, régler la politique audio, renommer, ajouter et recaler un angle. Un angle se désigne par `angle-N` ou son nom exact ; un décalage
+  qui n'est pas relatif (le plus petit différent de 0), un nom d'angle déjà pris ou une piste verrouillée sont refusés.
 
 ### Fixed
 

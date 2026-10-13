@@ -32,12 +32,12 @@ from .multicam_model import (
     SyncMethod,
     SyncStatus,
 )
+from .object_ids import resolve_object_id, sequence_ids
 from .project_model import MIN_GAIN_DB, Clip, Project, Sequence, Track
 from .sequences import (
     SequenceError,
     find_sequence,
     insert_sequence_clip,
-    new_sequence_id,
     unique_sequence_name,
 )
 from .time_editing import needs_general_path
@@ -170,19 +170,23 @@ def create_multicam_source(
     name: str = "Multicam",
     sync_method: SyncMethod | None = None,
     audio: MulticamAudio | None = None,
+    sequence_id: str | None = None,
 ) -> Sequence:
     """Crée une source Multicam (une séquence) à partir de ``specs`` et l'ajoute au projet.
 
     Une piste par angle (vidéo pour une caméra, audio pour un enregistreur), chaque clip placé à son décalage ;
     les décalages sont normalisés (le plus petit est 0). La source reprend la résolution et la cadence de la séquence
     active : tous les angles sont convertis temporellement par le moteur ordinaire, jamais tronqués.
-    ``audio=None`` : politique proposée par :func:`suggest_audio_policy`.
+    ``audio=None`` : politique proposée par :func:`suggest_audio_policy`. ``sequence_id`` : identifiant imposé de la séquence
+    (scripts, voir :mod:`core.object_ids`) ; ``None`` en génère un, comme avant.
 
     Raises:
-        MulticamError: aucune source, ou un média inutilisable. ``KeyError`` : média inconnu.
+        MulticamError: aucune source, ou un média inutilisable. ``KeyError`` : média inconnu. ``ValueError`` (``InvalidObjectId``) :
+            identifiant imposé invalide ou déjà pris.
     """
     if not specs:
         raise MulticamError("Une source Multicam a besoin d'au moins un angle.")
+    new_id = resolve_object_id(sequence_id, prefix="seq", kind="séquence", taken=sequence_ids(project))
     offsets = normalize_offsets({str(index): spec.offset for index, spec in enumerate(specs)})
     active = project.active_sequence
     tracks: list[Track] = []
@@ -210,7 +214,7 @@ def create_multicam_source(
         suggestion = suggest_audio_policy(angles, audio_only)
         audio = MulticamAudio(suggestion.mode, suggestion.angle_ids)
     sequence = Sequence(
-        id=new_sequence_id(),
+        id=new_id,
         name=unique_sequence_name(project, name),
         width=active.width,
         height=active.height,
@@ -230,10 +234,14 @@ def insert_multicam_clip(
     *,
     angle_id: str = "",
     parent_sequence_id: str | None = None,
+    source_in: float = 0.0,
+    source_out: float | None = None,
+    clip_id: str | None = None,
 ) -> Clip:
     """Insère une source Multicam comme clip du montage, sur l'angle ``angle_id`` (le premier par défaut).
 
-    L'angle est écrit explicitement : réordonner les angles ne change pas un segment existant.
+    L'angle est écrit explicitement : réordonner les angles ne change pas un segment existant. ``source_in`` / ``source_out`` /
+    ``clip_id`` sont transmis à :func:`~core.sequences.insert_sequence_clip` (bornes de la source ; identifiant imposé pour les scripts).
     """
     child = find_sequence(project, sequence_id)
     source = _source_of(child)
@@ -242,7 +250,8 @@ def insert_multicam_clip(
         raise MulticamError(f"Angle inconnu : « {angle_id} ».")
     try:
         clip = insert_sequence_clip(
-            project, sequence_id, track_id, timeline_start, parent_sequence_id=parent_sequence_id
+            project, sequence_id, track_id, timeline_start, parent_sequence_id=parent_sequence_id,
+            source_in=source_in, source_out=source_out, clip_id=clip_id,
         )
     except SequenceError as exc:
         raise MulticamError(str(exc)) from exc
@@ -310,15 +319,20 @@ def effective_angle_id(project: Project, clip: Clip) -> str:
 
 
 def switch_angle(
-    project: Project, time_seconds: float, angle_id: str, *, clip_id: str = "", track_id: str = ""
+    project: Project, time_seconds: float, angle_id: str, *, clip_id: str = "", track_id: str = "",
+    segment_id: str | None = None,
 ) -> SwitchResult | None:
     """Montre ``angle_id`` à partir de ``time_seconds`` : coupe le segment sous la tête de lecture, change la moitié droite.
 
     Retourne ``None`` si le segment montre déjà cet angle (aucune coupe inutile). Au tout début d'un segment, l'angle
     est simplement remplacé. Rien n'est modifié si l'opération est refusée.
 
+    ``segment_id`` : identifiant imposé du segment de droite créé par la coupe (scripts, voir :mod:`core.object_ids`) ; sans coupe
+    (angle déjà montré, ou début du segment) il ne désignerait rien, l'appel est donc refusé plutôt que de l'ignorer.
+
     Raises:
-        MulticamError: aucun segment Multicam à cet instant, angle inconnu, ou instant à la toute fin du segment.
+        MulticamError: aucun segment Multicam à cet instant, angle inconnu, instant à la toute fin du segment, ou ``segment_id``
+            donné alors qu'aucune coupe n'a lieu. ``ValueError`` (``InvalidObjectId``) : ``segment_id`` invalide ou déjà pris.
     """
     clip = multicam_segment_at(project, time_seconds, clip_id=clip_id, track_id=track_id)
     if clip is None:
@@ -327,14 +341,18 @@ def switch_angle(
     _angle_of(child, angle_id)
     previous = effective_angle_id(project, clip)
     if previous == angle_id:
+        if segment_id is not None:
+            raise MulticamError("Ce segment montre déjà cet angle : aucune coupe, l'identifiant demandé ne désignerait rien.")
         return None
     half_frame = 0.5 / max(1.0, float(project.active_sequence.fps))
     if time_seconds - clip.timeline_start <= half_frame:
+        if segment_id is not None:
+            raise MulticamError("L'instant est au début du segment : aucune coupe, l'identifiant demandé ne désignerait rien.")
         clip.angle_id = angle_id
         return SwitchResult(clip, previous, cut=False)
     if clip.timeline_start + clip.duration - time_seconds <= half_frame:
         raise MulticamError("Trop près de la fin du segment pour y changer d'angle.")
-    _left, right = cut_clip(project, clip.id, time_seconds)
+    _left, right = cut_clip(project, clip.id, time_seconds, right_clip_id=segment_id)
     right.angle_id = angle_id
     return SwitchResult(right, previous, cut=True)
 
