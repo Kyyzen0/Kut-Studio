@@ -312,5 +312,23 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
 
 - **Étape 0 : faite** (#109) : `tests/test_no_dynamic_execution_guard.py` protège R1 (aucun `eval`, `exec`, `pickle`,
   `importlib`… dans le produit, à une exception justifiée près).
-- Étapes 1 à 7 : à faire, dans l'ordre. La suivante est l'**export sans interface** (`prepare_export` et
-  `build_export_command`), utile même sans le mode script.
+- **Étape 1 : faite** (#117 et cette PR). `core/export_engine.py` expose `check_export_request`, `export_needs_preparation`,
+  `prepare_export` et `build_export_command` (que `ExportEngine` utilise : la commande est la même pour l'interface et pour
+  un script) ; `core/export_runner.py` fournit `run_export`, l'exécuteur **sans Qt** : FFmpeg sous le superviseur,
+  progression et annulation rendues sur le fil de l'appelant, repli CPU d'un encodeur matériel en échec (même logique que le
+  moteur, factorisée dans `export_engine`), et un **fichier final atomique** (`.<nom>.<id>.partial<ext>` puis renommage). Tests :
+  `tests/test_export_pipeline.py`, `tests/test_export_runner.py`.
+- **Étape 2 : faite** (#122 et cette PR).
+  - Identifiants explicites (`core/object_ids.py`) sur neuf fonctions de création : un script désigne ce qu'il crée, et rejoué
+    il rend le même projet, identifiant par identifiant.
+  - `core/scripting/session.py` : `Session.apply` et `Session.transaction` appliquent des opérations **en tout ou rien**. Un
+    instantané copié en profondeur est remis **en place** si l'une est refusée (l'objet `Project` reste le même) ; le recadrage
+    des séquences imbriquées (`clamp_nested_clips`, ce que `_record_history` de l'interface fait aussi) est dans la même
+    transaction et rendu dans le rapport ; une transaction réussie est **une** étape d'historique, annulable et rétablissable
+    (`undo`, `redo`). Les refus du modèle sont dans le rapport (index, nom, message) ; une erreur de programmation restaure le
+    projet puis se propage. Tests : `tests/test_object_ids.py`, `tests/test_scripting_session.py`, dont la **parité avec
+    l'interface** (même suppression dans la fenêtre et dans une session : même projet, annuler compris).
+  - Constat de la parité : le panneau de bibliothèque crée à la demande l'emplacement d'un média (`library_assignments`) ;
+    c'est un effet d'affichage, pas une édition, et une session n'en a pas.
+- Étapes 3 à 7 : à faire, dans l'ordre. La suivante est le **CLI minimal** (`info`, `validate`, `export` dans `main.py` avant
+  Qt), qui est aussi le premier consommateur de `run_export` et de la session.

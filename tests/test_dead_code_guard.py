@@ -25,6 +25,16 @@ ENTRY_POINTS = {
 }
 
 
+# Modules écrits **avant** leur seul consommateur, parce qu'ils sont livrés (et testés) par étapes. Chaque entrée dit quand son
+# import arrive ; une fois le consommateur écrit, l'entrée n'a plus lieu d'être et le second test ci-dessous le dit. Un module qui
+# attend sans raison écrite reste du code mort.
+PENDING_CONSUMERS = {
+    "core.export_runner": "exécuteur d'export sans interface : le CLI (``Kut-Studio export``) l'importera, ADR-0005 étape 3",
+    "core.scripting": "mode script : le CLI (``Kut-Studio apply``) importera la session, ADR-0005 étapes 3 et 4",
+    "core.scripting.session": "session d'édition d'un script : le CLI (``Kut-Studio apply``) l'importera, ADR-0005 étapes 3 et 4",
+}
+
+
 def _module_name(path: Path) -> str:
     parts = list(path.relative_to(ROOT).with_suffix("").parts)
     if parts[-1] == "__init__":
@@ -103,9 +113,19 @@ def test_every_core_and_ui_module_is_reachable_from_the_entry_point():
     """
     seen, known = _reachable_from_main()
     orphans = sorted(
-        module for module in known - seen if module.split(".")[0] in PRODUCTION_PACKAGES
+        module for module in known - seen
+        if module.split(".")[0] in PRODUCTION_PACKAGES and module not in PENDING_CONSUMERS
     )
     assert not orphans, f"Modules que personne n'importe : {orphans}"
+
+
+def test_a_module_waiting_for_its_consumer_is_still_waiting():
+    """Une entrée de ``PENDING_CONSUMERS`` dont le module est maintenant importé n'a plus lieu d'être : on la retire."""
+    seen, known = _reachable_from_main()
+    for module, reason in PENDING_CONSUMERS.items():
+        assert module in known, f"{module} n'existe plus : retirer l'entrée"
+        assert module not in seen, f"{module} est maintenant importé : retirer l'entrée ({reason})"
+        assert reason.strip()
 
 
 def test_the_legacy_timeline_model_is_gone_and_the_editor_cuts_through_timeline_operations(qtbot, monkeypatch):

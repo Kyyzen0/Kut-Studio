@@ -654,6 +654,64 @@ def build_export_command(
     return ExportCommand(arguments=tuple(command), encoder=encoder, temporary_files=tuple(created))
 
 
+def parse_progress_line(line: str, duration_seconds: float) -> int | None:
+    """Convertit une ligne ``out_time_ms=`` de ``-progress pipe:1`` en pourcentage (0 à 100), ``None`` pour les autres lignes."""
+    if not line.startswith("out_time_ms=") or duration_seconds <= 0:
+        return None
+    try:
+        elapsed_seconds = int(line.split("=", 1)[1]) / 1_000_000
+    except ValueError:
+        return None
+    return max(0, min(100, int(elapsed_seconds / duration_seconds * 100)))
+
+
+def hardware_fallback_applies(choice: EncoderChoice | None, *, progress_seen: bool, fallback_used: bool) -> bool:
+    """``True`` si l'échec est celui d'un encodeur matériel choisi par ``auto`` : alors un rendu CPU prend le relais.
+
+    Un seul repli par export (pas de boucle entre encodeurs) et seulement tant qu'aucune image n'a été encodée : une
+    initialisation matérielle qui échoue se voit au lancement, pas à 90 % du rendu. Un encodeur explicite qui échoue est
+    signalé, jamais masqué.
+    """
+    return (
+        choice is not None
+        and choice.is_hardware
+        and choice.requested is HardwareEncoder.AUTO
+        and not fallback_used
+        and not progress_seen
+    )
+
+
+def cpu_fallback(
+    request: ExportRequest, choice: EncoderChoice, error_output: str,
+) -> tuple[ExportRequest, EncoderChoice, str]:
+    """La requête CPU qui remplace un encodeur matériel en échec, l'encodeur CPU retenu et la raison lisible du repli."""
+    detail = _last_line(error_output)
+    reason = (
+        f"{choice.label} n'a pas pu démarrer"
+        + (f" ({detail})" if detail else "")
+        + " : rendu CPU utilisé."
+    )
+    preset_crf = request.format.codec in ("h264", "hevc")
+    cpu = cpu_choice(
+        request.format.codec,
+        speed_preset=request.format.preset,
+        quality=request.preset.crf if preset_crf else request.format.quality_value,
+        requested=choice.requested,
+        fallback_reason=reason,
+    )
+    return replace(request, hardware=HardwareEncoder.CPU.value), cpu, reason
+
+
+def is_explicit_encoder_failure(choice: EncoderChoice | None, error_output: str) -> bool:
+    """Un encodeur matériel demandé **explicitement** (ni ``auto`` ni CPU) a échoué : à signaler comme tel."""
+    return (
+        choice is not None
+        and choice.is_hardware
+        and choice.requested not in (HardwareEncoder.AUTO, HardwareEncoder.CPU)
+        and looks_like_encoder_failure(error_output, choice.encoder, choice.args)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Moteur d'export asynchrone
 # ---------------------------------------------------------------------------
@@ -1239,13 +1297,7 @@ class ExportEngine(QObject):
 
     def _parse_progress(self, line: str) -> int | None:
         """Convertit une ligne ``out_time_*`` de FFmpeg en pourcentage."""
-        if not line.startswith("out_time_ms=") or self._duration_seconds <= 0:
-            return None
-        try:
-            elapsed_seconds = int(line.split("=", 1)[1]) / 1_000_000
-        except ValueError:
-            return None
-        return max(0, min(100, int(elapsed_seconds / self._duration_seconds * 100)))
+        return parse_progress_line(line, self._duration_seconds)
 
     def _read_progress(self) -> None:
         """Parse la sortie standard et émet ``progress_changed`` bornée."""
@@ -1334,38 +1386,18 @@ class ExportEngine(QObject):
         tant qu'aucune image n'a été encodée : une initialisation matérielle
         qui échoue se voit au lancement, pas à 90 % du rendu.
         """
-        choice = self.last_encoder_choice
-        return (
-            choice is not None
-            and choice.is_hardware
-            and choice.requested is HardwareEncoder.AUTO
-            and not self._fallback_used
-            and not self._progress_seen
-            and not self._cancel_requested
+        return not self._cancel_requested and hardware_fallback_applies(
+            self.last_encoder_choice, progress_seen=self._progress_seen, fallback_used=self._fallback_used
         )
 
     def _fall_back_to_cpu(self, request: ExportRequest) -> None:
         choice = self.last_encoder_choice
         if choice is None:  # ``_should_fall_back`` ne laisse passer que si un encodeur a été choisi
             return
-        detail = _last_line(self._error_output)
-        reason = (
-            f"{choice.label} n'a pas pu démarrer"
-            + (f" ({detail})" if detail else "")
-            + " : rendu CPU utilisé."
-        )
+        cpu_request, cpu, reason = cpu_fallback(request, choice, self._error_output)
         LOGGER.warning("Repli CPU : %s", reason)
         self.last_diagnostics = self._error_output[-800:]
         self._fallback_used = True
-        preset_crf = request.format.codec in ("h264", "hevc")
-        cpu = cpu_choice(
-            request.format.codec,
-            speed_preset=request.format.preset,
-            quality=request.preset.crf if preset_crf else request.format.quality_value,
-            requested=choice.requested,
-            fallback_reason=reason,
-        )
-        cpu_request = replace(request, hardware=HardwareEncoder.CPU.value)
         self._request = request  # le rendu CPU se termine comme l'export demandé
         self._error_output = ""
         self._progress_buffer = ""
@@ -1382,13 +1414,7 @@ class ExportEngine(QObject):
 
     def _mark_encoder_failure(self) -> None:
         """Un encodeur matériel demandé explicitement a échoué : le signaler comme tel."""
-        choice = self.last_encoder_choice
-        if (
-            choice is not None
-            and choice.is_hardware
-            and choice.requested not in (HardwareEncoder.AUTO, HardwareEncoder.CPU)
-            and looks_like_encoder_failure(self._error_output, choice.encoder, choice.args)
-        ):
+        if is_explicit_encoder_failure(self.last_encoder_choice, self._error_output):
             self.last_error_kind = "encoder"
             self.last_diagnostics = self._error_output[-800:]
 
