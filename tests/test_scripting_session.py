@@ -352,9 +352,12 @@ def test_a_refused_transaction_does_not_trim_anything():
 def window(qtbot, monkeypatch, tmp_path):
     install_dialogs(monkeypatch)
     window = build_window(qtbot, monkeypatch, tmp_path / "config")
-    # Annuler / rétablir resynchronise le moniteur, qui planifierait de vrais rendus des morceaux de composition (FFmpeg et
-    # rasterisation Qt sur un média inexistant) pendant que la fenêtre se ferme : un worker de CI macOS en est mort deux fois
-    # (segfault natif, sans cadre Python). Ces tests comparent des projets, pas l'aperçu.
+    # Annuler / rétablir resynchronise le moniteur : il chargerait le média du clip (ici « /x/m.mp4 », qui n'existe pas) dans un vrai
+    # QMediaPlayer et planifierait des rendus fidèles et des morceaux de composition. Sur le runner macOS de la CI, le worker en est
+    # mort à chaque fois (segfault natif, aucun cadre Python) ; les autres tests de fenêtre du dépôt coupent déjà ``preview_at``.
+    # Ces tests comparent des projets, pas l'aperçu.
+    monkeypatch.setattr(window.preview_panel, "preview_at", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(type(window), "_schedule_preview_around", lambda self, *_args, **_kwargs: None)
     monkeypatch.setattr(type(window), "_schedule_composition_caches", lambda self, center: None)
     return window
 
