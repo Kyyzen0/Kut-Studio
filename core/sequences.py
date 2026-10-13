@@ -253,6 +253,30 @@ def nesting_depth(project: Project, sequence_id: str) -> int:
     return min(best, MAX_NESTING_DEPTH + 1)
 
 
+def height_above(project: Project, sequence_id: str) -> int:
+    """Nombre maximal de niveaux AU-DESSUS de ``sequence_id`` (0 = utilisée par aucune séquence).
+
+    Miroir de :func:`nesting_depth` : la chaîne d'ancêtres la plus longue, cycles ignorés, valeur plafonnée à
+    ``MAX_NESTING_DEPTH + 1``.
+    """
+    parents: dict[str, set[str]] = {}
+    for parent_id, children in dependency_graph(project).items():
+        for child_id in children:
+            parents.setdefault(child_id, set()).add(parent_id)
+    best = 0
+    stack: list[tuple[str, tuple[str, ...]]] = [(sequence_id, (sequence_id,))]
+    while stack:
+        node, chain = stack.pop()
+        height = len(chain) - 1
+        best = max(best, height)
+        if height > MAX_NESTING_DEPTH:
+            continue
+        for ancestor in parents.get(node, ()):
+            if ancestor not in chain:
+                stack.append((ancestor, chain + (ancestor,)))
+    return min(best, MAX_NESTING_DEPTH + 1)
+
+
 def sequence_usages(project: Project, sequence_id: str) -> list[SequenceUsage]:
     """Tous les clips (toutes séquences) qui référencent ``sequence_id``."""
     usages: list[SequenceUsage] = []
@@ -593,7 +617,8 @@ def check_can_nest(project: Project, parent_id: str, child_id: str) -> None:
             f"Imbrication circulaire refusée : « {names[child_id]} » contient déjà "
             f"« {names[parent_id]} »."
         )
-    if nesting_depth(project, child_id) + 1 > MAX_NESTING_DEPTH:
+    # La séquence la plus haute de la chaîne gagne les niveaux au-dessus du parent, le parent, et toute la profondeur de l'enfant.
+    if height_above(project, parent_id) + 1 + nesting_depth(project, child_id) > MAX_NESTING_DEPTH:
         raise SequenceError(
             f"Imbrication trop profonde (plus de {MAX_NESTING_DEPTH} niveaux)."
         )
@@ -1093,6 +1118,7 @@ __all__ = [
     "duplicate_sequence",
     "find_cycles",
     "find_sequence",
+    "height_above",
     "insert_sequence_clip",
     "nested_clip_status",
     "nested_overflow",

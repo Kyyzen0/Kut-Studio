@@ -290,6 +290,30 @@ def test_the_maximum_nesting_depth_is_enforced():
     assert not project.active_sequence.tracks[0].clips
 
 
+def test_the_depth_limit_counts_the_ancestors_of_the_parent_too():
+    """Relevé par la revue de #141 : insérer un sous-arbre de profondeur 30 sous un parent déjà à deux niveaux de la racine
+    ferait passer la racine à 33 ; l'ancien contrôle ne regardait que le côté de l'enfant."""
+    project = _project()
+    for sequence_id in ("root", "mid", "parent"):
+        create_sequence(project, sequence_id.title(), sequence_id=sequence_id)
+    project.get_sequence("parent").tracks[0].clips.append(Clip("pleaf", "m", "V1", 0.0, 0.0, 2.0))   # une imbrication exige une durée
+    _nest(project, "mid", "parent", "n-mid")
+    _nest(project, "root", "mid", "n-root")                                  # root ⊃ mid ⊃ parent
+    depth = MAX_NESTING_DEPTH - 2                                            # 30 : le contrôle côté enfant seul (30 + 1) laisserait passer
+    for index in range(depth + 1):
+        create_sequence(project, f"C{index}", sequence_id=f"c{index}")
+    project.get_sequence(f"c{depth}").tracks[0].clips.append(Clip("leaf", "m", "V1", 0.0, 0.0, 2.0))
+    for index in reversed(range(depth)):
+        _nest(project, f"c{index}", f"c{index + 1}", f"cn{index}")
+    _session, report = _apply(
+        project, {"op": "set_active_sequence", "sequence": "parent"},
+        {"op": "insert_sequence_clip", "sequence": "c0", "track": "V1", "at": 0},
+    )
+    assert not report.ok and "trop profonde" in report.error
+    assert not any(clip.sequence_id for clip in project.get_sequence("parent").tracks[0].clips)
+    assert project.active_sequence_id == MAIN_SEQUENCE_ID                    # tout est annulé, activation comprise
+
+
 def test_locked_and_wrong_kind_tracks_are_refused():
     project = _intro_project()
     project.tracks.extend([Track("L", "L", "video", locked=True), Track("G", "G", "graphics"), Track("T", "T", "subtitle")])
