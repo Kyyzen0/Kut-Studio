@@ -971,10 +971,15 @@ def _angle_asset(project: Project, selector: str) -> Any:
     return asset
 
 
+def _effective_angle_name(name: str | None, asset: Any) -> str:
+    """Le nom que le modèle donnera à l'angle : celui du script, sinon celui du média (``_angle_clip``)."""
+    return ((name if name is not None else asset.name) or "").strip() or "Angle"
+
+
 def _create_multicam_source(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        if a.get("name") is not None:
-            _require_free_sequence_name(project, a["name"])
+        source_name = a.get("name", "Multicam")                  # le défaut aussi : le modèle suffixerait « Multicam » s'il est pris
+        _require_free_sequence_name(project, source_name)
         listed = a["angles"]
         offsets = [float(item.get("offset", 0.0)) for item in listed]
         if min(offsets) != 0.0:
@@ -984,16 +989,21 @@ def _create_multicam_source(a: Mapping[str, Any]) -> Operation:
                 "retranchez-le de chaque angle."
             )
         specs = []
+        names: list[str] = []
         for position, item in enumerate(listed):
             asset = _angle_asset(project, item["asset"])
-            if item.get("name") is not None:
-                _require_angle_name(item["name"], [other["name"] for other in listed[:position] if "name" in other], f"angle-{position + 1}")
+            # Le nom effectif (celui du média quand le script n'en donne pas) est soumis aux mêmes règles : unique, et pas un « angle-N »
+            # qui ferait désigner un autre angle.
+            _require_angle_name(
+                _effective_angle_name(item.get("name"), asset), names, f"angle-{position + 1}",
+            )
+            names.append(_effective_angle_name(item.get("name"), asset))
             specs.append(AngleSpec(
                 asset_id=asset.id, offset=offsets[position], name=item.get("name", ""),
                 sync_method=SyncMethod.MANUAL,                       # les décalages sont ceux que le script a écrits : aucune mesure
             ))
         sequence = create_multicam_source(
-            project, specs, name=a.get("name", "Multicam"), sync_method=SyncMethod.MANUAL, sequence_id=a.get("id"),
+            project, specs, name=source_name, sync_method=SyncMethod.MANUAL, sequence_id=a.get("id"),
         )
         for item, angle in zip(listed, _angles(sequence)):
             if item.get("name") is not None and angle.name != item["name"]:
@@ -1078,8 +1088,7 @@ def _add_multicam_angle(a: Mapping[str, Any]) -> Operation:
         if len(existing) >= MAX_ANGLES:
             raise ValueError(f"Une source Multicam compte {MAX_ANGLES} angles au plus (un fichier qui en déclare davantage est refusé).")
         asset = _angle_asset(project, a["asset"])
-        if a.get("name") is not None:
-            _require_angle_name(a["name"], [angle.name for angle in existing])
+        _require_angle_name(_effective_angle_name(a.get("name"), asset), [angle.name for angle in existing])
         angle = add_angle(project, source.id, AngleSpec(
             asset_id=asset.id, offset=float(a.get("offset", 0.0)), name=a.get("name", ""), sync_method=SyncMethod.MANUAL,
         ))

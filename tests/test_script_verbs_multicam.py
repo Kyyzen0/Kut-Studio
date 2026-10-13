@@ -240,7 +240,7 @@ def test_angle_names_stay_unique_and_cannot_pose_as_ids():
     for angles, text in (
         ([{"asset": "cam1", "name": "X"}, {"asset": "cam2", "name": "X"}], "doit rester unique"),
         ([{"asset": "cam1", "name": "angle-2"}, {"asset": "cam2"}], "ressemble à un identifiant"),
-        ([{"asset": "cam1"}, {"asset": "cam2", "name": "Cam A"}], "déjà pris"),       # le nom par défaut du premier angle serait suffixé
+        ([{"asset": "cam1"}, {"asset": "cam2", "name": "Cam A"}], "doit rester unique"),       # le nom par défaut du premier angle (celui du média) est pris
     ):
         project = _project()
         _session, report = _apply(project, {"op": "create_multicam_source", "angles": angles})
@@ -248,6 +248,34 @@ def test_angle_names_stay_unique_and_cannot_pose_as_ids():
         assert len(project.sequences) == 1
     session, report = _apply(_project(), {"op": "create_multicam_source", "id": "s", "angles": [{"asset": "cam1", "name": "angle-1"}]})
     assert report.ok, "le nom de l'angle ressemble à SON identifiant : sans ambiguïté"
+
+
+def test_the_default_source_name_is_checked_too():
+    """Revue de #142 : sans `name`, le défaut « Multicam » était suffixé en silence quand il était pris."""
+    project = _project()
+    create_multicam_source(project, [AngleSpec(asset_id="cam1", sync_method=SyncMethod.MANUAL)], sync_method=SyncMethod.MANUAL)
+    assert [sequence.name for sequence in project.sequences][-1] == "Multicam"
+    _session, report = _apply(project, {"op": "create_multicam_source", "angles": [{"asset": "cam2"}]})
+    assert not report.ok and "s'appelle déjà" in report.error
+    assert len(project.sequences) == 2
+
+
+def test_media_derived_angle_names_follow_the_same_rules():
+    """Revue de #142 : le nom par défaut (celui du média) échappait au contrôle des noms d'angle."""
+    project = _project()
+    project.media_assets.append(MediaAsset("trap", "/x/t.mp4", "angle-2", 8.0, 1280, 720, 30.0, "video", has_audio=True))
+    _session, report = _apply(project, {"op": "create_multicam_source", "angles": [{"asset": "trap"}, {"asset": "cam1"}]})
+    assert not report.ok and "ressemble à un identifiant" in report.error
+    _session, report = _apply(_project(), {"op": "create_multicam_source", "angles": [{"asset": "cam1"}, {"asset": "cam1"}]})
+    assert not report.ok and "doit rester unique" in report.error                 # deux angles du même média, sans noms écrits
+    project = _with_source()
+    project.media_assets.append(MediaAsset("trap2", "/x/t2.mp4", "angle-2", 8.0, 1280, 720, 30.0, "video", has_audio=True))
+    _session, report = _apply(project, {"op": "add_multicam_angle", "sequence": "show", "asset": "trap2"})
+    assert not report.ok and ("ressemble à un identifiant" in report.error or "déjà" in report.error)
+    _session, report = _apply(project, {"op": "add_multicam_angle", "sequence": "show", "asset": "cam1"})
+    assert report.ok, report.error                                                # « Cam A » n'est pas pris (l'angle 1 s'appelle « Large »)
+    _session, report = _apply(project, {"op": "add_multicam_angle", "sequence": "show", "asset": "cam1"})
+    assert not report.ok and "déjà" in report.error                               # le second « Cam A » serait suffixé : refusé
 
 
 # --- Désigner les angles et les sources --------------------------------------------------------------------------------
