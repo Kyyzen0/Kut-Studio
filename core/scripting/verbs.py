@@ -12,6 +12,7 @@ Sans Qt, sans accès disque : un script ne lit ni n'écrit rien d'autre que le p
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -42,8 +43,14 @@ from ..node_graph import NodeGraphError
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
+from ..multicam import is_multicam_clip
+from ..multicam_model import MAX_ANGLES, AudioMode, SyncMethod
+from ..multicam_ops import (
+    AngleSpec, MulticamError, add_angle, create_multicam_source, insert_multicam_clip, multicam_segment_at, rename_angle,
+    replace_angle, set_angle_offset, set_audio_policy, switch_angle,
+)
 from ..object_ids import InvalidObjectId, resolve_object_id
-from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
+from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project, Sequence
 from ..sequences import (
     MAX_SEQUENCE_SIDE, check_sequence_format, create_sequence, delete_sequence, duplicate_sequence, find_sequence,
     insert_sequence_clip, rename_sequence, set_sequence_format,
@@ -102,6 +109,7 @@ class Kind(str, Enum):
     SELECTOR = "selector"    # un objet existant : son identifiant ou son nom exact (unique), ou {"ref": alias}
     ENUM = "enum"
     OBJECT = "object"        # un dictionnaire plat de nombres, booléens et textes courts (paramètres d'un effet)
+    LIST = "list"            # une liste bornée (``minimum``/``maximum`` = nombre d'éléments) : d'objets à champs fixes (``fields``) ou de valeurs (``item``)
 
 
 @dataclass(frozen=True)
@@ -119,6 +127,8 @@ class Param:
     of: str = ""
     max_length: int = 0            # 0 : MAX_TEXT
     multiline: bool = False        # texte à plusieurs lignes (un titre) : « \n » permis
+    fields: tuple[Param, ...] = ()  # pour une liste d'objets : les champs de chaque élément (mêmes règles qu'un paramètre de verbe)
+    item: Param | None = None       # pour une liste de valeurs : le paramètre qui décrit chaque élément
 
 
 @dataclass(frozen=True)
@@ -918,9 +928,196 @@ def _delete_sequence(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+# --- Multicam (docs/multicam.md) ---------------------------------------------------------------------------------------
+
+_ANGLE_ID = re.compile(r"^angle-[0-9]+$")
+
+
+def _multicam_source(project: Project, selector: str) -> Sequence:
+    """La source Multicam désignée (identifiant ou nom exact unique de séquence) ; une séquence ordinaire est refusée."""
+    sequence = find_sequence(project, _sequence_id(project, selector))
+    if sequence.multicam is None:
+        raise MulticamError(f"« {sequence.name} » n'est pas une source Multicam.")
+    return sequence
+
+
+def _angles(source: Sequence) -> list[Any]:
+    """Les angles d'une source Multicam (``_multicam_source`` a déjà refusé une séquence ordinaire)."""
+    if source.multicam is None:
+        raise MulticamError(f"« {source.name} » n'est pas une source Multicam.")
+    return list(source.multicam.angles)
+
+
+def _angle_id(source: Sequence, selector: str) -> str:
+    """L'angle de la source désigné par son identifiant (``angle-N``) ou son nom exact (unique dans la source)."""
+    return str(_pick(_angles(source), selector, "Angle").id)
+
+
+def _require_angle_name(name: str, taken: Iterable[str], own_id: str = "") -> None:
+    """Un script désigne un angle par son nom : il doit être unique et ne pas se faire passer pour l'identifiant d'un autre angle.
+    Le modèle, lui, ajouterait « 2 » à un nom pris (``rename_angle`` l'accepte même en double) : un script ne reçoit jamais autre chose
+    que ce qu'il a écrit."""
+    if name in set(taken):
+        raise ValueError(f"Un angle s'appelle déjà {name!r} : un script désigne un angle par son nom, il doit rester unique.")
+    if _ANGLE_ID.match(name) and name != own_id:
+        raise ValueError(f"Le nom d'angle {name!r} ressemble à un identifiant d'angle (angle-N) : choisissez un autre nom.")
+
+
+def _angle_asset(project: Project, selector: str) -> Any:
+    """Le média désigné, après avoir vérifié qu'il a une durée (un clip d'angle de durée nulle ne montrerait rien)."""
+    asset = next(item for item in project.media_assets if item.id == _asset_id(project, selector))
+    if not asset.duration > 0:
+        raise ValueError(f"Le média {asset.id!r} n'a pas de durée connue : il ne peut pas devenir un angle.")
+    return asset
+
+
+def _effective_angle_name(name: str | None, asset: Any) -> str:
+    """Le nom que le modèle donnera à l'angle : celui du script, sinon celui du média (``_angle_clip``)."""
+    return ((name if name is not None else asset.name) or "").strip() or "Angle"
+
+
+def _create_multicam_source(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source_name = a.get("name", "Multicam")                  # le défaut aussi : le modèle suffixerait « Multicam » s'il est pris
+        _require_free_sequence_name(project, source_name)
+        listed = a["angles"]
+        offsets = [float(item.get("offset", 0.0)) for item in listed]
+        if min(offsets) != 0.0:
+            # ``create_multicam_source`` ramène le plus petit décalage à 0 (les écarts comptent, pas l'origine) : un script le dit, il ne le subit pas.
+            raise ValueError(
+                f"Le plus petit décalage d'angle doit valoir 0 (les décalages sont relatifs ; reçu {min(offsets):g} s) : "
+                "retranchez-le de chaque angle."
+            )
+        specs = []
+        names: list[str] = []
+        for position, item in enumerate(listed):
+            asset = _angle_asset(project, item["asset"])
+            # Le nom effectif (celui du média quand le script n'en donne pas) est soumis aux mêmes règles : unique, et pas un « angle-N »
+            # qui ferait désigner un autre angle.
+            _require_angle_name(
+                _effective_angle_name(item.get("name"), asset), names, f"angle-{position + 1}",
+            )
+            names.append(_effective_angle_name(item.get("name"), asset))
+            specs.append(AngleSpec(
+                asset_id=asset.id, offset=offsets[position], name=item.get("name", ""),
+                sync_method=SyncMethod.MANUAL,                       # les décalages sont ceux que le script a écrits : aucune mesure
+            ))
+        sequence = create_multicam_source(
+            project, specs, name=source_name, sync_method=SyncMethod.MANUAL, sequence_id=a.get("id"),
+        )
+        for item, angle in zip(listed, _angles(sequence)):
+            if item.get("name") is not None and angle.name != item["name"]:
+                # Un nom écrit qui entre en collision avec le nom par défaut (nom du média) d'un autre angle : le modèle l'aurait suffixé.
+                raise ValueError(f"Le nom d'angle {item['name']!r} est déjà pris par un autre angle : nommez-les tous explicitement.")
+        return sequence
+
+    return operation
+
+
+def _insert_multicam_clip(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source = _multicam_source(project, a["sequence"])
+        angle = _angle_id(source, a["angle"]) if "angle" in a else ""
+        # Piste de la séquence ACTIVE ; cycle, profondeur, « pas de Multicam dans un Multicam », genre et verrou de piste, bornes de la source :
+        # ``insert_multicam_clip`` -> ``insert_sequence_clip`` les vérifient (erreurs ``SequenceError`` rendues en ``MulticamError``).
+        return insert_multicam_clip(
+            project, source.id, _track_id(project, a["track"]), float(a["at"]), angle_id=angle,
+            source_in=float(a.get("source_in", 0.0)), source_out=float(a["source_out"]) if "source_out" in a else None,
+            clip_id=a.get("id"),
+        )
+
+    return operation
+
+
+def _switch_multicam_angle(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _clip_id(project, a["clip"]) if "clip" in a else ""
+        track_id = _track_id(project, a["track"]) if "track" in a else ""
+        at = float(a["at"])
+        segment = multicam_segment_at(project, at, clip_id=clip_id, track_id=track_id)
+        if segment is None:
+            raise MulticamError("Aucun segment Multicam sous cet instant (piste vidéo de la séquence active).")
+        # ``switch_angle`` ne vérifie le verrou que par ``cut_clip`` : au début d'un segment il change l'angle sans coupe, donc sans contrôle.
+        _require_unlocked(_owner_track(project, segment.id))
+        source = find_sequence(project, segment.sequence_id)
+        result = switch_angle(project, at, _angle_id(source, a["angle"]), clip_id=segment.id, segment_id=a.get("id"))
+        return result.clip if result is not None else segment             # déjà cet angle : aucune coupe, on rend le segment tel quel
+
+    return operation
+
+
+def _replace_multicam_angle(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])                     # ``replace_angle`` ne regarde pas le verrou de la piste
+        clip = find_clip(project, clip_id)
+        if not is_multicam_clip(project, clip):
+            raise MulticamError("Ce clip n'est pas un segment Multicam.")
+        return replace_angle(project, clip_id, _angle_id(find_sequence(project, clip.sequence_id), a["angle"]))
+
+    return operation
+
+
+def _set_multicam_audio(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source = _multicam_source(project, a["sequence"])
+        mode = AudioMode(a["mode"])
+        ids = tuple(_angle_id(source, selector) for selector in a.get("angles", ()))
+        if len(set(ids)) != len(ids):
+            raise ValueError("set_multicam_audio : un angle est cité deux fois.")        # le modèle écarterait le doublon en silence
+        if mode is AudioMode.FOLLOW_VIDEO and ids:
+            raise ValueError("set_multicam_audio : le mode « follow » ne prend aucun angle (le son suit l'image).")   # le modèle l'ignorerait
+        return set_audio_policy(project, source.id, mode, ids)
+
+    return operation
+
+
+def _rename_multicam_angle(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source = _multicam_source(project, a["sequence"])
+        angle_id = _angle_id(source, a["angle"])
+        _require_angle_name(a["name"], [angle.name for angle in _angles(source) if angle.id != angle_id], angle_id)
+        return rename_angle(project, source.id, angle_id, a["name"])
+
+    return operation
+
+
+def _add_multicam_angle(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source = _multicam_source(project, a["sequence"])
+        existing = _angles(source)
+        if len(existing) >= MAX_ANGLES:
+            raise ValueError(f"Une source Multicam compte {MAX_ANGLES} angles au plus (un fichier qui en déclare davantage est refusé).")
+        asset = _angle_asset(project, a["asset"])
+        _require_angle_name(_effective_angle_name(a.get("name"), asset), [angle.name for angle in existing])
+        angle = add_angle(project, source.id, AngleSpec(
+            asset_id=asset.id, offset=float(a.get("offset", 0.0)), name=a.get("name", ""), sync_method=SyncMethod.MANUAL,
+        ))
+        if a.get("name") is not None and angle.name != a["name"]:
+            raise ValueError(f"Le nom d'angle {a['name']!r} est déjà pris par un autre angle.")
+        return angle
+
+    return operation
+
+
+def _set_multicam_angle_offset(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        source = _multicam_source(project, a["sequence"])
+        angle_id = _angle_id(source, a["angle"])
+        angle = next(item for item in _angles(source) if item.id == angle_id)
+        track = next((item for item in source.tracks if item.id == angle.track_id), None)
+        if track is not None:
+            _require_unlocked(track)                                      # ``set_angle_offset`` déplace les clips sans regarder le verrou
+        return set_angle_offset(project, source.id, angle_id, float(a["offset"]))
+
+    return operation
+
+
 _TRACK = Param("track", Kind.SELECTOR, "La piste : son identifiant ou son nom exact (unique).", of="track")
 _BUS = Param("bus", Kind.SELECTOR, "Le bus : son identifiant ou son nom exact (unique).", of="bus")
 _SEQUENCE = Param("sequence", Kind.SELECTOR, "La séquence : son identifiant ou son nom exact (unique).", of="sequence")
+_SOURCE = Param("sequence", Kind.SELECTOR, "La source Multicam : l'identifiant ou le nom exact (unique) de sa séquence.", of="sequence")
+_ANGLE = Param("angle", Kind.SELECTOR, "L'angle de la source : son identifiant (angle-N) ou son nom exact (unique dans la source).", of="angle")
+_ANGLE_OPTIONAL = Param("angle", Kind.SELECTOR, "L'angle montré (identifiant angle-N ou nom exact) ; absent, le premier.", required=False, of="angle")
 _CLIP = Param("clip", Kind.SELECTOR, "Le clip, par son identifiant.", of="clip")
 _INSERT = Param("insert", Kind.SELECTOR, "L'insert du bus, par son identifiant.", of="insert")
 _NODE = Param("node", Kind.SELECTOR, "Le nœud d'étalonnage, par identifiant (défaut : le premier).", required=False, of="color_node")
@@ -1182,6 +1379,48 @@ VERBS: dict[str, Verb] = {
              (_SEQUENCE,), _set_active_sequence, group="sequences"),
         Verb("delete_sequence", "Supprime une séquence inutilisée (ni active, ni la dernière, ni imbriquée ailleurs).",
              (_SEQUENCE,), _delete_sequence, group="sequences"),
+        Verb("create_multicam_source",
+             "Crée une source Multicam (une séquence, une piste par angle) depuis des médias du projet ; elle n'est pas activée ni insérée. "
+             "Les angles s'appellent angle-1, angle-2… dans l'ordre de la liste ; politique audio proposée par le modèle (set_multicam_audio la change).",
+             (Param("angles", Kind.LIST, "Les angles, dans l'ordre (de 1 à 64) : le média, son décalage et son nom.", minimum=1, maximum=MAX_ANGLES,
+                    fields=(
+                        Param("asset", Kind.SELECTOR, "Le média du projet (vidéo ou son) : identifiant ou nom exact (unique).", of="asset"),
+                        Param("offset", Kind.NUMBER, "Début de l'angle dans la source, en secondes (défaut 0) ; le plus petit doit valoir 0.",
+                              required=False, minimum=0.0, maximum=MAX_TIME),
+                        Param("name", Kind.STRING, "Nom de l'angle (unique dans la source) ; absent, le nom du média.", required=False))),
+              Param("name", Kind.STRING, "Nom de la source (libre : un nom déjà pris est refusé) ; absent, « Multicam ».", required=False)),
+             _create_multicam_source, creates="sequence", group="multicam"),
+        Verb("insert_multicam_clip", "Insère une source Multicam comme segment sur une piste vidéo ou audio de la séquence active (pas dans une autre source Multicam).",
+             (_SOURCE, _TRACK, _AT, _ANGLE_OPTIONAL,
+              Param("source_in", Kind.NUMBER, "Début lu dans la source, en secondes (défaut 0).", required=False, minimum=0.0, maximum=MAX_TIME),
+              Param("source_out", Kind.NUMBER, "Fin lue dans la source (défaut : sa durée ; au plus sa durée).", required=False, minimum=0.0, maximum=MAX_TIME)),
+             _insert_multicam_clip, creates="clip", group="multicam"),
+        Verb("switch_multicam_angle",
+             "Montre un angle à partir d'un instant : coupe le segment Multicam de la séquence active à cet instant et change l'angle de la moitié droite "
+             "(les transitions du segment coupé sont retirées, comme pour toute coupe) ; rend le segment qui montre l'angle. "
+             "« id » désigne la moitié droite : refusé sans coupe (début de segment, angle déjà montré).",
+             (_AT, _ANGLE,
+              Param("clip", Kind.SELECTOR, "Le segment visé, par son identifiant (défaut : celui de la piste vidéo la plus haute à cet instant).", required=False, of="clip"),
+              Param("track", Kind.SELECTOR, "Restreint la recherche à cette piste vidéo.", required=False, of="track")),
+             _switch_multicam_angle, creates="clip", group="multicam"),
+        Verb("replace_multicam_angle", "Change l'angle d'un segment existant, sans coupe.",
+             (_CLIP, _ANGLE), _replace_multicam_angle, group="multicam"),
+        Verb("set_multicam_audio",
+             "Règle la politique audio d'une source : « follow » (le son suit l'image, sans angle), « fixed » (exactement un angle audio) ou « mix » (un ou plusieurs).",
+             (_SOURCE, Param("mode", Kind.ENUM, "La politique.", choices=tuple(mode.value for mode in AudioMode)),
+              Param("angles", Kind.LIST, "Les angles audio (identifiant ou nom exact), selon le mode.", required=False, minimum=1, maximum=MAX_ANGLES,
+                    item=Param("angle", Kind.SELECTOR, "Un angle de la source.", of="angle"))),
+             _set_multicam_audio, group="multicam"),
+        Verb("rename_multicam_angle", "Renomme un angle et sa piste (le nom doit être libre dans la source).",
+             (_SOURCE, _ANGLE, Param("name", Kind.STRING, "Nouveau nom.")), _rename_multicam_angle, group="multicam"),
+        Verb("add_multicam_angle", "Ajoute un angle (média du projet) à une source Multicam ; son identifiant est angle-N, N suivant le plus grand existant.",
+             (_SOURCE, Param("asset", Kind.SELECTOR, "Le média du projet (vidéo ou son) : identifiant ou nom exact (unique).", of="asset"),
+              Param("offset", Kind.NUMBER, "Début de l'angle dans la source, en secondes (défaut 0).", required=False, minimum=0.0, maximum=MAX_TIME),
+              Param("name", Kind.STRING, "Nom de l'angle (unique dans la source) ; absent, le nom du média.", required=False)),
+             _add_multicam_angle, group="multicam"),
+        Verb("set_multicam_angle_offset", "Recale un angle : ses clips sont déplacés pour que le premier commence à cet instant de la source (réglage manuel).",
+             (_SOURCE, _ANGLE, Param("offset", Kind.NUMBER, "Nouveau début de l'angle dans la source, en secondes.", minimum=0.0, maximum=MAX_TIME)),
+             _set_multicam_angle_offset, group="multicam"),
     )
 }
 """Le catalogue. L'ordre est celui de la documentation."""
