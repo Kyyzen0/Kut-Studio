@@ -393,3 +393,53 @@ def test_widget_shows_a_hand_edited_or_animated_crop_as_read_only(window):
     window._reload_timeline_preserving_selection(layer.id)
     assert not crop_editor.spins["left"].isEnabled() and not crop_editor.hint.isHidden()
     assert crop_editor.reset_button.isEnabled()
+
+
+# --- Revue : bords au-delà de 95 %, verrou de calque, inspecteur non éditable -------------------------------------------
+
+
+def test_a_mask_with_an_edge_beyond_95_percent_is_not_a_crop_and_is_never_clamped():
+    from dataclasses import replace
+
+    base = crop_to_mask(Crop(left=0.1))
+    too_far = replace(base, position_x=0.98, width=0.04, id=base.id)            # bord gauche à 0,96
+    assert mask_to_crop(too_far) is None
+    assert mask_to_crop(replace(base, position_x=0.975, width=0.05, id=base.id)) == Crop(left=0.95)   # 0,95 : toujours un recadrage
+
+
+def test_a_locked_graphic_layer_refuses_set_and_clear_crop():
+    from core.mograph_layers import set_layer_locked
+
+    project = _project()
+    layer = _full_frame_layer(project)
+    set_layer_locked(project, layer.id, True)
+    with pytest.raises(CropError, match="verrouillé"):
+        set_crop(project, layer.id, Crop(left=0.1))
+    with pytest.raises(CropError, match="verrouillé"):
+        clear_crop(project, layer.id)
+    assert crop_of(layer) is None
+
+
+def test_inspector_crop_fields_are_disabled_on_locked_track_and_audio_clip(window):
+    from core.mograph_layers import set_layer_locked
+
+    layer = _selected_layer(window)
+    crop_editor = window.properties_panel.compositing_group.crop_editor
+    assert crop_editor.spins["left"].isEnabled()
+    track = next(t for t in window.project.tracks if any(c.id == layer.id for c in t.clips))
+    track.locked = True
+    window._reload_timeline_preserving_selection(layer.id)
+    assert not any(spin.isEnabled() for spin in crop_editor.spins.values()) and not crop_editor.reset_button.isEnabled()
+    track.locked = False
+    set_layer_locked(window.project, layer.id, True)                                                   # verrou de calque
+    window._reload_timeline_preserving_selection(layer.id)
+    assert not crop_editor.spins["left"].isEnabled()
+    set_layer_locked(window.project, layer.id, False)
+    window._reload_timeline_preserving_selection(layer.id)
+    assert crop_editor.spins["left"].isEnabled()
+    window.project.media_assets.append(MediaAsset("au", "/x/a.wav", "a", 2.0, 0, 0, 0.0, "audio", has_audio=True))
+    audio = Track("A9", "A9", "audio", clips=[Clip("aud", "au", "A9", 0.0, 0.0, 1.0)])
+    window.project.tracks.append(audio)
+    window._reload_timeline_preserving_selection("aud")
+    window._restore_clip_selection("aud")
+    assert not any(spin.isEnabled() for spin in crop_editor.spins.values())

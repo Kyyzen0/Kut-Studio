@@ -72,6 +72,7 @@ class CompositingEditor(QGroupBox):
         self._value = Compositing()
         self._updating = False
         self._crop_animated = False
+        self._crop_editable = True
         root = QVBoxLayout(self)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
@@ -169,8 +170,9 @@ class CompositingEditor(QGroupBox):
     def set_chroma_visible(self, visible: bool) -> None:
         self.key_host.setVisible(bool(visible))
 
-    def set_value(self, value, crop_animated: bool = False):
+    def set_value(self, value, crop_animated: bool = False, crop_editable: bool = True):
         self._crop_animated = bool(crop_animated)
+        self._crop_editable = bool(crop_editable)
         self._updating = True
         try:
             self._value = value if isinstance(value, Compositing) else Compositing()
@@ -189,7 +191,8 @@ class CompositingEditor(QGroupBox):
 
     def _sync_crop_editor(self) -> None:
         crop = crop_of_compositing(self._value)
-        self.crop_editor.set_crop(crop, animated=self._crop_animated and crop is not None, custom=is_custom_crop(self._value))
+        self.crop_editor.set_crop(crop, animated=self._crop_animated and crop is not None, custom=is_custom_crop(self._value),
+                                  locked=not self._crop_editable)
 
     def _mask_label(self, mask: Mask, index: int) -> str:
         name = i18n.translate("crop.mask_name") if mask.id == CROP_MASK_ID else mask.name

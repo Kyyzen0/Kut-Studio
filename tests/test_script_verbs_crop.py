@@ -113,3 +113,16 @@ def test_an_animated_or_hand_edited_crop_is_not_overwritten_silently():
     _s, report = _apply(session.project, {"op": "set_crop", "clip": "a", "left": 0.1, "top": 0.1, "right": 0.1, "bottom": 0.1})
     assert report.ok, report.error
     assert crop_of(find_clip(session.project, "a")) == Crop(0.1, 0.1, 0.1, 0.1)
+
+
+def test_a_locked_graphic_layer_is_refused_by_the_verbs_and_the_menu_command():
+    from core.graphics import add_graphic_clip
+    from core.mograph_layers import set_layer_locked
+
+    project = _project()
+    layer = add_graphic_clip(project, "solid", timeline_start=0, duration=2)
+    set_layer_locked(project, layer.id, True)
+    for op in ({"op": "set_crop", "clip": layer.id, "left": 0.1}, {"op": "clear_crop", "clip": layer.id}):
+        _s, report = _apply(project, op)
+        assert not report.ok and "verrouillé" in report.error
+    assert crop_of(layer) is None

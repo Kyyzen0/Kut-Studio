@@ -64,8 +64,9 @@ class CropEditor(QWidget):
 
     # -- chargement -----------------------------------------------------------------------------
 
-    def set_crop(self, crop: Crop | None, *, animated: bool = False, custom: bool = False) -> None:
-        """Affiche la valeur courante. ``animated`` / ``custom`` : le masque existe mais ces champs ne le pilotent pas."""
+    def set_crop(self, crop: Crop | None, *, animated: bool = False, custom: bool = False, locked: bool = False) -> None:
+        """Affiche la valeur courante. ``animated`` / ``custom`` : le masque existe mais ces champs ne le pilotent pas ;
+        ``locked`` : le clip n'est pas éditable ici (piste ou calque verrouillé, clip sans image) : tout est désactivé."""
         self._updating = True
         try:
             for side, spin in self.spins.items():
@@ -73,12 +74,13 @@ class CropEditor(QWidget):
             self._refresh_limits()
         finally:
             self._updating = False
-        editable = not (animated or custom)
+        editable = not (animated or custom or locked)
         for spin in self.spins.values():
             spin.setEnabled(editable)
-        self.hint.setText(i18n.translate("crop.animated" if animated else "crop.custom") if not editable else "")
-        self.hint.setVisible(not editable)
-        self.reset_button.setEnabled(crop is not None or animated or custom)
+        show_hint = (animated or custom) and not locked
+        self.hint.setText(i18n.translate("crop.animated" if animated else "crop.custom") if show_hint else "")
+        self.hint.setVisible(show_hint)
+        self.reset_button.setEnabled(not locked and (crop is not None or animated or custom))
 
     def current_crop(self) -> Crop | None:
         values = {side: round(spin.value() / _PERCENT, 6) for side, spin in self.spins.items()}

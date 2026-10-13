@@ -104,7 +104,9 @@ def mask_to_crop(mask: Mask) -> Crop | None:
     for value in (left, top, right, bottom):
         if value < -_EPS:
             return None
-        values.append(round(min(max(value, 0.0), MAX_CROP_SIDE), 9))        # efface le bruit de l'aller-retour flottant
+        if value > MAX_CROP_SIDE + _EPS:                  # au-delà de 95 % : un masque modifié à la main, jamais écrêté
+            return None
+        values.append(round(min(max(value, 0.0), MAX_CROP_SIDE), 9))        # n'efface que le bruit de l'aller-retour flottant
     try:
         return Crop(*values)
     except CropError:
@@ -166,6 +168,13 @@ def _editable_clip(project: Any, clip_id: str) -> Any:
         raise CropError(f"La piste '{track.id}' est verrouillée : recadrage refusé.")
     if track.type not in CROP_TRACK_TYPES:
         raise CropError(f"Le clip '{clip_id}' est sur une piste '{track.type}' : seuls les clips vidéo ou graphiques se recadrent.")
+    if track.type == "graphics":                          # verrou par calque, comme les autres éditions de calques
+        from .mograph_layers import LayerError, _require_editable
+
+        try:
+            _require_editable(project, clip_id)
+        except LayerError as error:
+            raise CropError(str(error)) from error
     return clip
 
 
