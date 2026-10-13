@@ -55,7 +55,9 @@ class CropEditor(QWidget):
         self.hint.setWordWrap(True)
         self.hint.setVisible(False)
         root.addWidget(self.hint)
-        self.reset_button = QPushButton(i18n.translate("crop.reset"), objectName="crop_reset")
+        # Texte court : un bouton impose sa largeur minimale à tout l'inspecteur (polices larges de Linux / Windows, +20 % de police) ;
+        # la phrase complète reste dans le nom accessible et l'infobulle.
+        self.reset_button = QPushButton(i18n.translate("crop.reset_short"), objectName="crop_reset")
         self.reset_button.setToolTip(i18n.translate("crop.reset_tooltip"))
         self.reset_button.setAccessibleName(i18n.translate("crop.reset"))
         self.reset_button.clicked.connect(self._reset)

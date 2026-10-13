@@ -280,6 +280,7 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     "crop.tooltip.right": _t("Part du cadre coupée à droite (0 à 95 %).", "Share of the frame cut on the right (0 to 95%).", "Parte del encuadre recortada a la derecha (0 a 95 %)."),
     "crop.tooltip.bottom": _t("Part du cadre coupée en bas (0 à 95 %).", "Share of the frame cut at the bottom (0 to 95%).", "Parte del encuadre recortada abajo (0 a 95 %)."),
     "crop.reset": _t("Réinitialiser le recadrage", "Reset crop", "Restablecer el recorte"),
+    "crop.reset_short": _t("Réinitialiser", "Reset", "Restablecer"),
     "crop.reset_tooltip": _t(
         "Retire le masque « Recadrage » ; les autres masques restent.",
         "Removes the \"Crop\" mask; other masks are kept.",

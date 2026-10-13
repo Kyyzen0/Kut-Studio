@@ -443,3 +443,16 @@ def test_inspector_crop_fields_are_disabled_on_locked_track_and_audio_clip(windo
     window._reload_timeline_preserving_selection("aud")
     window._restore_clip_selection("aud")
     assert not any(spin.isEnabled() for spin in crop_editor.spins.values())
+
+
+def test_the_reset_button_stays_short_so_it_does_not_widen_the_inspector(qtbot):
+    """CI Debian (DejaVu Sans, +20 % de police) : « Réinitialiser le recadrage » imposait 226 px et dépassait l'inspecteur de 10 px.
+    Le bouton porte le texte court ; la phrase complète reste dans le nom accessible et l'infobulle."""
+    from ui import i18n
+    from ui.properties_widgets.crop_editor import CropEditor
+
+    editor = CropEditor()
+    qtbot.addWidget(editor)
+    assert editor.reset_button.text() == i18n.translate("crop.reset_short")
+    assert len(editor.reset_button.text()) < len(i18n.translate("crop.reset"))
+    assert editor.reset_button.accessibleName() == i18n.translate("crop.reset")
