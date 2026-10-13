@@ -239,8 +239,11 @@ def project_payload(project: Project) -> dict[str, Any]:
 
 
 def write_project_payload(payload: dict[str, Any], file_path: str) -> None:
-    """Écrit un payload déjà construit, de façon atomique."""
-    target = Path(file_path)
+    """Écrit un payload déjà construit, de façon atomique.
+
+    Un lien symbolique est suivi : le renommage final remplacerait sinon le lien par un fichier ordinaire, et le projet visé (celui que
+    le verrou, les autres copies et les sauvegardes automatiques désignent) ne changerait pas."""
+    target = Path(os.path.realpath(file_path))
     target.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(payload, target)
 
@@ -252,9 +255,9 @@ def save_project(project: Project, file_path: str) -> None:
     un échec (disque plein, permissions, JSON non sérialisable...) ne
     laisse ni fichier cible tronqué, ni fichier temporaire résiduel.
     """
-    target = Path(file_path)
+    target = Path(os.path.realpath(file_path))
     _materialize_project_luts(project, target.parent)
-    write_project_payload(project_payload(project), file_path)
+    write_project_payload(project_payload(project), str(target))
 
 
 def _materialize_project_luts(project: Project, project_root: Path) -> None:

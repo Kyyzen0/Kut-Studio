@@ -41,6 +41,22 @@ DIALOGS_TRANSLATIONS: dict[str, dict[str, str]] = {
         "The file {path} could not be opened:\n\n{error}",
         "No se pudo abrir el archivo {path}:\n\n{error}",
     ),
+    "dialog.locked.title": _t("Projet déjà utilisé", "Project already in use", "Proyecto ya en uso"),
+    "dialog.locked.text": _t(
+        "Ce projet est déjà utilisé par {who} (processus {pid} sur {host}, depuis {since}).\n\nLe projet s'ouvre, mais "
+        "enregistrer depuis deux endroits fait perdre des modifications : fermez l'autre avant d'enregistrer.\n\n"
+        "Si cette utilisation n'existe plus, supprimez le fichier {lock_file}.",
+        "This project is already in use by {who} (process {pid} on {host}, since {since}).\n\nIt opens, but saving from two "
+        "places loses changes: close the other one before saving.\n\nIf that use no longer exists, delete the file {lock_file}.",
+        "Este proyecto ya lo usa {who} (proceso {pid} en {host}, desde {since}).\n\nSe abre, pero guardar desde dos sitios pierde "
+        "cambios: cierre el otro antes de guardar.\n\nSi ese uso ya no existe, elimine el archivo {lock_file}.",
+    ),
+    "dialog.locked.unreadable": _t(
+        "Un fichier de verrou illisible accompagne ce projet.\n\nLe projet s'ouvre ; si aucun autre programme ne l'utilise, "
+        "supprimez le fichier {lock_file}.",
+        "An unreadable lock file sits next to this project.\n\nIt opens; if no other program uses it, delete the file {lock_file}.",
+        "Hay un archivo de bloqueo ilegible junto a este proyecto.\n\nSe abre; si ningún otro programa lo usa, elimine el archivo {lock_file}.",
+    ),
     "dialog.recover.title": _t("Récupération", "Recovery", "Recuperación"),
     "dialog.recover.text": _t(
         "Une sauvegarde automatique plus récente que ce projet a été trouvée.\n\nVoulez-vous la restaurer ?",

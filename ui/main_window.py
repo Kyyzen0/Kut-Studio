@@ -944,6 +944,7 @@ class MainWindow(
             ("enregistrement audio", stop_recording),
             ("sessions d'édition", self._finalize_pending_edit_sessions),
             ("autosave final", self._write_autosave),
+            ("verrou du projet", self._unlock_project),
             ("minuteur autosave", lambda: stop_timer("_autosave_timer")),
             ("minuteur debug", lambda: stop_timer("_debug_timer")),
             ("minuteur banc machine", lambda: stop_timer("_machine_bench_timer")),
