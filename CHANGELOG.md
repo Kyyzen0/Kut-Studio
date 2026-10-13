@@ -20,6 +20,9 @@ ensuite déclenche `.github/workflows/release.yml`.
   routage, clips, repères) **en tout ou rien**, en une étape d'historique, sans jamais exécuter de code. `--dry-run` rend le rapport sans
   rien écrire ; `validate script.json` liste toutes les erreurs d'un coup ; `Kut-Studio schema` écrit le schéma JSON. Le projet d'origine
   n'est jamais écrasé sans `--in-place`. Voir [docs/scripting.md](docs/scripting.md).
+- **Scripts : médias, audio de piste, graphiques.** Dix verbes de plus (25 en tout) : `import_media` (lecture seule, **dans le dossier du
+  script** : en sortir demande `--allow-outside`, liens symboliques résolus), les inserts de piste (dont l'égaliseur paramétrique),
+  couper / verrouiller / masquer une piste, et les calques graphiques (`add_graphic`, `set_graphic`).
 
 ## [0.5.5] - 2026-10-13
 

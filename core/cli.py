@@ -98,6 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--in-place", action="store_true", help="écrit dans le projet lui-même")
     apply.add_argument("--dry-run", action="store_true", help="applique à une copie et rend le rapport, sans rien écrire")
     apply.add_argument("--overwrite", action="store_true", help="remplace le fichier de sortie s'il existe")
+    apply.add_argument("--allow-outside", action="store_true",
+                       help="autorise import_media à lire hors du dossier du script (par défaut : dans ce dossier seulement)")
     common(apply)
 
     schema = commands.add_parser("schema", help="écrit le schéma JSON des scripts sur la sortie standard")
@@ -321,7 +323,7 @@ def _read_script(path_text: str, output: _Output):
 def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
     from copy import deepcopy
 
-    from .scripting import Session, apply_script, created_ids
+    from .scripting import ScriptContext, Session, apply_script, created_ids
 
     script = _read_script(args.script, output)
     if script is None:
@@ -352,7 +354,8 @@ def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
             return output.failure("output_exists", _t("cli.error.output_exists", path=str(target)), EXIT_USAGE)
     # Un essai à blanc travaille sur une copie : même le projet chargé en mémoire reste intact.
     session = Session(deepcopy(project) if args.dry_run else project)
-    report = apply_script(session, script, label=Path(args.script).name)
+    context = ScriptContext(Path(args.script).expanduser().resolve().parent, allow_outside=bool(args.allow_outside))
+    report = apply_script(session, script, label=Path(args.script).name, context=context)
     if not report.ok:
         message = _t("cli.apply.refused", op=report.failed_name, index=report.failed_index, message=report.error)
         return output.failure(

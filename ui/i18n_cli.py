@@ -128,6 +128,10 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid text (not empty, at most {limit} characters, no control characters)",
         "texto no válido (no vacío, como máximo {limit} caracteres, sin caracteres de control)",
     ),
+    "cli.script.issue.bad_color": _t(
+        "couleur invalide (« #RRGGBB » ou « #RRGGBBAA »)", "invalid colour (\"#RRGGBB\" or \"#RRGGBBAA\")",
+        "color no válido («#RRGGBB» o «#RRGGBBAA»)",
+    ),
     "cli.script.issue.bad_ref": _t(
         "une référence s'écrit {{\"ref\": \"alias\"}}", "a reference is written {{\"ref\": \"alias\"}}",
         "una referencia se escribe {{\"ref\": \"alias\"}}",

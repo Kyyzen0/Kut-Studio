@@ -9,9 +9,9 @@ from .script import (
     SCRIPT_VERSION, Script, ScriptInvalid, ScriptIssue, apply_script, created_ids, loads_script, parse_script, read_script,
 )
 from .session import ApplyReport, Operation, OperationResult, Session, SessionBusyError, Transaction
-from .verbs import VERBS
+from .verbs import VERBS, ScriptContext
 
 __all__ = [
-    "SCRIPT_VERSION", "VERBS", "ApplyReport", "Operation", "OperationResult", "Script", "ScriptInvalid", "ScriptIssue", "Session",
+    "SCRIPT_VERSION", "VERBS", "ApplyReport", "Operation", "OperationResult", "Script", "ScriptContext", "ScriptInvalid", "ScriptIssue", "Session",
     "SessionBusyError", "Transaction", "apply_script", "created_ids", "json_schema", "loads_script", "parse_script", "read_script",
 ]
