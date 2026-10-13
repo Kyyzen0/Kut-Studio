@@ -121,6 +121,18 @@ def test_values_are_typed_and_bounded():
             parse_script(_script(op))
 
 
+def test_a_numeric_bound_is_the_models_bound_so_nothing_is_clamped_in_silence():
+    """Revue Codex : accepter −120…24 dB puis laisser le modèle ramener à −60…12 écrivait un autre volume que celui du script."""
+    from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
+
+    for accepted in (MIN_GAIN_DB, MAX_GAIN_DB, 0):
+        session = Session(_project())
+        report = apply_script(session, parse_script(_script({"op": "add_bus", "id": "b"}, {"op": "set_bus_volume", "bus": "b", "volume_db": accepted})))
+        assert report.ok and find_bus(session.project, "b").volume_db == accepted
+    for refused in (MAX_GAIN_DB + 0.5, MIN_GAIN_DB - 0.5, 24, -120):
+        assert ("out_of_range", "ops[0].volume_db") in _issues(_script({"op": "set_bus_volume", "bus": "b", "volume_db": refused}))
+
+
 def test_an_alias_must_exist_before_use_have_the_right_kind_and_be_defined_once():
     assert ("unknown_alias", "ops[0].bus") in _issues(_script({"op": "remove_bus", "bus": {"ref": "voix"}}))
     kind = _issues(_script({"op": "add_bus", "as": "voix"}, {"op": "move_clip", "clip": {"ref": "voix"}, "at": 1}))
@@ -140,6 +152,17 @@ def test_a_misspelled_field_or_verb_comes_with_a_suggestion():
 
 def test_limits_on_size_and_number_of_operations():
     assert "too_many_ops" in {code for code, _ in _issues(_script(*[{"op": "add_marker", "at": 1}] * (MAX_OPS + 1)))}
+
+
+def test_duplicate_keys_are_detected_in_linear_time():
+    import time
+
+    many = "{" + ",".join(f'"k{i}":1' for i in range(60_000)) + "}"
+    began = time.perf_counter()
+    assert len(loads_script(many)) == 60_000
+    assert time.perf_counter() - began < 5.0, "un passage par clé, pas un comptage par clé"
+    with pytest.raises(ScriptInvalid):
+        loads_script(many[:-1] + ',"k7":2}')
 
 
 def test_json_with_duplicate_keys_or_nan_is_refused():
@@ -250,6 +273,10 @@ def test_the_schema_is_generated_from_the_verb_table():
         assert set(variant["required"]) == {"op", *[param.name for param in verb.params if param.required]}
         assert variant["additionalProperties"] is False
     assert schema["additionalProperties"] is False and schema["required"] == ["kut_script", "ops"]
+    from core.scripting.verbs import MAX_TEXT
+
+    params = variants["add_bus_insert"]["properties"]["params"]["additionalProperties"]["anyOf"]
+    assert {"type": "string", "maxLength": MAX_TEXT} in params, "le schéma annonce la limite que le décodeur applique"
     json.dumps(schema)                                              # sérialisable tel quel
 
 
@@ -375,6 +402,15 @@ def test_apply_in_place_modifies_the_project(files, capsys):
     assert code == 0 and [bus.id for bus in load_project(str(project)).buses] == ["voix"]
     code, _out, err = _run("apply", str(script), str(project), "--in-place", "-o", "x.kut", capsys=capsys)
     assert code == cli.EXIT_USAGE and "--in-place" in err
+
+
+def test_apply_in_place_through_a_symlink_modifies_the_real_project_not_the_link(files, tmp_path, capsys):
+    script, project = files
+    link = tmp_path / "lien.kut"
+    link.symlink_to(project)
+    code, _out, _err = _run("apply", str(script), str(link), "--in-place", capsys=capsys)
+    assert code == 0 and link.is_symlink(), "le lien reste un lien"
+    assert [bus.id for bus in load_project(str(project)).buses] == ["voix"], "c'est le projet visé qui a changé"
 
 
 def test_apply_symlink_to_the_input_counts_as_the_input(files, tmp_path, capsys):

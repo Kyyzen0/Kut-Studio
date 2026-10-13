@@ -341,7 +341,8 @@ def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
         if args.output is None and not args.in_place:
             return output.failure("usage", _t("cli.error.apply_output_required"), EXIT_USAGE)
         try:
-            target = project_path if args.in_place else Path(args.output).expanduser()
+            # Sur place : le fichier visé, pas le lien qui y mène (l'écriture atomique remplacerait le lien lui-même).
+            target = project_path.resolve() if args.in_place else Path(args.output).expanduser()
             same_file = target.resolve() == project_path.resolve()
         except (OSError, RuntimeError) as error:
             return output.failure("invalid", str(error), EXIT_USAGE)

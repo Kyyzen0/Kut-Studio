@@ -27,7 +27,7 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 
 - **Strict.** `kut_script` (la version) est obligatoire ; une version plus récente que celle de l'application est refusée. Un champ
   inconnu est une **erreur** (avec une suggestion : « vouliez-vous dire `volume_db` ? »), jamais ignoré. Types, bornes (secondes de 0 à
-  1 000 000, dB de −120 à 24…), tailles (1 Mio, 5 000 opérations) sont vérifiés. Toutes les erreurs sont rendues d'un coup (50 au plus).
+  1 000 000, dB de −60 à 12 pour un volume, comme le modèle), tailles (1 Mio, 5 000 opérations) sont vérifiés. Toutes les erreurs sont rendues d'un coup (50 au plus).
 - **Tout ou rien.** Si une opération est refusée, le projet n'est pas touché, et le rapport dit laquelle (numéro, verbe, message).
   Un script réussi est **une** étape d'historique. Les clips imbriqués sont recadrés comme dans l'interface.
 - **Rien n'est évalué.** Pas d'expression, pas de variable, pas de calcul : une valeur est une donnée.

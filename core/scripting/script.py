@@ -87,11 +87,12 @@ def _reject_constant(name: str) -> Any:
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    keys = [key for key, _value in pairs]
-    duplicated = sorted({key for key in keys if keys.count(key) > 1})
-    if duplicated:
-        raise ValueError(f"clé en double : {duplicated[0]}")
-    return dict(pairs)
+    result: dict[str, Any] = {}
+    for key, value in pairs:                       # une seule passe : un fichier de 1 Mio peut porter des dizaines de milliers de clés
+        if key in result:
+            raise ValueError(f"clé en double : {key}")
+        result[key] = value
+    return result
 
 
 def loads_script(text: str) -> Any:

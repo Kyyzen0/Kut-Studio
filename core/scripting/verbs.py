@@ -21,7 +21,7 @@ from ..audio_buses import (
     set_bus_muted, set_bus_volume, update_bus_insert_parameters,
 )
 from ..audio_effects_model import AudioEffectType
-from ..project_model import Project
+from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
 from ..timeline_editing import add_marker
 from ..timeline_operations import add_clip_to_track, delete_clip, move_clip, set_clip_enabled
 
@@ -203,7 +203,7 @@ VERBS: dict[str, Verb] = {
         Verb("remove_bus", "Supprime un bus ; ses pistes retournent au Master.", (_BUS,), _remove_bus, group="audio"),
         Verb("rename_bus", "Renomme un bus.", (_BUS, Param("name", Kind.STRING, "Nouveau nom.")), _rename_bus, group="audio"),
         Verb("set_bus_volume", "Règle le volume d'un bus.",
-             (_BUS, Param("volume_db", Kind.NUMBER, "Volume en dB.", minimum=-120.0, maximum=24.0)), _set_bus_volume, group="audio"),
+             (_BUS, Param("volume_db", Kind.NUMBER, "Volume en dB.", minimum=MIN_GAIN_DB, maximum=MAX_GAIN_DB)), _set_bus_volume, group="audio"),
         Verb("set_bus_muted", "Coupe ou rétablit un bus.", (_BUS, Param("muted", Kind.BOOLEAN, "Coupé ou non.")), _set_bus_muted,
              group="audio"),
         Verb("route_track", "Envoie une piste sur un bus (sans ``bus`` : directement au Master).",

@@ -40,7 +40,9 @@ def _param_schema(param: Param) -> dict[str, Any]:
         ]}
     else:
         schema = {"type": "object", "maxProperties": MAX_PARAMS, "propertyNames": {"pattern": _ID_PATTERN},
-                  "additionalProperties": {"type": ["number", "boolean", "string"]}}
+                  "additionalProperties": {"anyOf": [
+                      {"type": "number"}, {"type": "boolean"}, {"type": "string", "maxLength": MAX_TEXT},
+                  ]}}
     schema["description"] = param.doc
     return schema
 
