@@ -34,6 +34,9 @@ ensuite déclenche `.github/workflows/release.yml`.
   comme ``import_media``. Voir [docs/scripting.md](docs/scripting.md).
 - **Scripts : fenêtres et qualifieur.** Cinq verbes de plus (50 en tout) : ``add/set/remove_color_window``, ``set/clear_color_qualifier``.
   Les bornes d'une fenêtre sont celles du modèle (rien n'est ramené en silence) ; un qualifieur avec bas > haut est refusé.
+- **Scripts : séquences imbriquées.** Sept verbes de plus (55 en tout) : créer, renommer, reformater, dupliquer et supprimer une séquence,
+  l'insérer comme clip imbriqué, et `set_active_sequence` pour agir sur une autre séquence. Cycles, profondeur, pistes verrouillées ou
+  d'un mauvais genre et durées hors de la source sont refusés comme dans l'interface.
 
 ### Fixed
 

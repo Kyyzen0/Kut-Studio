@@ -101,6 +101,38 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_color_qualifier` | Règle le qualifieur TSL d'un nœud (au moins un champ) |
 | `clear_color_qualifier` | Retire le qualifieur d'un nœud |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
+| `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
+| `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |
+| `set_sequence_format` | Change le cadre et/ou la cadence d'une séquence (`sequence`, au moins un de `width`, `height`, `fps`) |
+| `duplicate_sequence` | Copie indépendante d'une séquence, non activée (`sequence`, `name` libre optionnel) ; les clips de la copie ont des identifiants générés |
+| `insert_sequence_clip` | Insère une séquence comme clip imbriqué sur une piste vidéo ou audio **de la séquence active** (`sequence`, `track`, `at`, `source_in`, `source_out` dans la durée de la source) |
+| `set_active_sequence` | Rend une séquence active : les verbes de piste, clip, bus et repère agissent ensuite sur elle (`sequence`) |
+| `delete_sequence` | Supprime une séquence ni active, ni dernière, ni imbriquée ailleurs (`sequence`) |
+
+### Séquences et séquences imbriquées
+
+Un projet a plusieurs séquences ; les verbes de timeline (pistes, clips, bus, repères, calques…) agissent sur la séquence **active**. Les
+verbes de séquence ci-dessus désignent leur séquence par un sélecteur (identifiant, nom exact unique ou `{"ref": alias}`), sans la rendre
+active. Pour remplir une autre séquence, un script la rend active avec `set_active_sequence`, puis revient :
+
+```json
+{"op": "create_sequence", "as": "intro", "name": "Intro"},
+{"op": "set_active_sequence", "sequence": {"ref": "intro"}},
+{"op": "add_clip", "track": "V1", "asset": "m", "at": 0},
+{"op": "set_active_sequence", "sequence": "Séquence principale"},
+{"op": "insert_sequence_clip", "sequence": {"ref": "intro"}, "track": "V1", "at": 0}
+```
+
+- **La séquence active est une donnée du projet** (enregistrée dans le `.kut`, restaurée par un refus, conservée par un « annuler » tant
+  qu'elle existe : règle de l'historique de l'interface). Un script **finit là où il a laissé la séquence active** : rien ne la remet en
+  place à sa place. `--dry-run` travaille sur une copie, le projet d'origine garde la sienne.
+- Cycle (direct ou indirect), profondeur maximale (32 niveaux), piste verrouillée, piste d'un autre genre (une séquence ne va que sur
+  une piste vidéo ou audio) et source vide sont refusés avec le message de l'interface. Un `source_out` au-delà de la durée de la source
+  est refusé (il serait sinon ramené en silence) ; si un verbe raccourcit ensuite une séquence imbriquée, le recadrage des clips
+  qui la contiennent est le même que dans l'interface et figure dans le rapport.
+- Un nom de séquence **déjà pris est refusé** (le modèle numéroterait « Nom 2 » en silence) ; sans `name`, le modèle choisit.
+- `delete_sequence` n'a pas de `force` : une séquence encore utilisée, la séquence active et la dernière sont refusées.
+- Pas encore de verbe pour « créer une séquence à partir de la sélection » (la sélection est un état d'interface).
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
@@ -148,7 +180,7 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 ## Pas encore là
 
-- **Animation des couleurs et des effets**, **calques d'image**, **séquences imbriquées** et **multicam** : prochains lots.
+- **Animation des couleurs et des effets**, **calques d'image** et **multicam** : prochains lots.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code

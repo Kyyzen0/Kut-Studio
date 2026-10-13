@@ -44,6 +44,10 @@ from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
+from ..sequences import (
+    MAX_SEQUENCE_SIDE, check_sequence_format, create_sequence, delete_sequence, duplicate_sequence, find_sequence,
+    insert_sequence_clip, rename_sequence, set_sequence_format,
+)
 from ..timeline_editing import add_marker
 from ..timeline_operations import (
     add_clip_to_track, add_subtitle_clip, delete_clip, find_clip, move_clip, set_clip_enabled,
@@ -173,6 +177,10 @@ def _bus_id(project: Project, selector: str) -> str:
 
 def _asset_id(project: Project, selector: str) -> str:
     return str(_pick(project.media_assets, selector, "Média").id)
+
+
+def _sequence_id(project: Project, selector: str) -> str:
+    return str(_pick(project.sequences, selector, "Séquence").id)
 
 
 def _clip_id(project: Project, selector: str) -> str:
@@ -824,8 +832,95 @@ def _add_marker(a: Mapping[str, Any]) -> Operation:
     return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
 
 
+def _require_free_sequence_name(project: Project, name: str, *, besides: str = "") -> None:
+    """Le modèle rendrait « Nom 2 » à un nom pris (``unique_sequence_name``) : un script ne reçoit jamais autre chose que ce qu'il a écrit."""
+    if any(sequence.name == name and sequence.id != besides for sequence in project.sequences):
+        raise ValueError(f"Une séquence s'appelle déjà {name!r} : le modèle la renommerait, un script ne le permet pas en silence.")
+
+
+def _create_sequence(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        if a.get("name") is not None:
+            _require_free_sequence_name(project, a["name"])
+        check_sequence_format(a.get("width"), a.get("height"), a.get("fps"))      # ``create_sequence`` ne vérifie rien : l'interface ne passe jamais de taille
+        return create_sequence(
+            project, a.get("name"), width=a.get("width"), height=a.get("height"), fps=a.get("fps"), sequence_id=a.get("id"),
+        )
+
+    return operation
+
+
+def _rename_sequence(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        sequence_id = _sequence_id(project, a["sequence"])
+        _require_free_sequence_name(project, a["name"], besides=sequence_id)
+        return rename_sequence(project, sequence_id, a["name"])
+
+    return operation
+
+
+def _set_sequence_format(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        if not any(name in a for name in ("width", "height", "fps")):
+            raise ValueError("set_sequence_format : donnez width, height et/ou fps.")
+        sequence = find_sequence(project, _sequence_id(project, a["sequence"]))
+        return set_sequence_format(
+            project, sequence.id, int(a.get("width", sequence.width)), int(a.get("height", sequence.height)),
+            float(a.get("fps", sequence.fps)),
+        )
+
+    return operation
+
+
+def _duplicate_sequence(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        sequence_id = _sequence_id(project, a["sequence"])
+        if a.get("name") is not None:
+            _require_free_sequence_name(project, a["name"])
+        return duplicate_sequence(project, sequence_id, a.get("name"), clone_id=a.get("id"))
+
+    return operation
+
+
+def _insert_sequence_clip(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        # La piste est celle de la séquence ACTIVE (comme pour ``add_clip``) ; ``insert_sequence_clip`` vérifie cycle, profondeur,
+        # genre et verrou de piste, bornes de la source.
+        return insert_sequence_clip(
+            project, _sequence_id(project, a["sequence"]), _track_id(project, a["track"]), float(a["at"]),
+            source_in=float(a.get("source_in", 0.0)),
+            source_out=float(a["source_out"]) if "source_out" in a else None,
+            clip_id=a.get("id"),
+        )
+
+    return operation
+
+
+def _set_active_sequence(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        sequence = find_sequence(project, _sequence_id(project, a["sequence"]))
+        project.active_sequence_id = sequence.id
+        return sequence
+
+    return operation
+
+
+def _delete_sequence(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        sequence = find_sequence(project, _sequence_id(project, a["sequence"]))
+        if sequence.id == project.active_sequence_id:
+            raise ValueError(
+                f"La séquence '{sequence.id}' est la séquence active : rendez-en une autre active (set_active_sequence) avant de la supprimer."
+            )
+        delete_sequence(project, sequence.id)         # sans ``force`` : une séquence utilisée ailleurs (clips imbriqués) est refusée
+        return None
+
+    return operation
+
+
 _TRACK = Param("track", Kind.SELECTOR, "La piste : son identifiant ou son nom exact (unique).", of="track")
 _BUS = Param("bus", Kind.SELECTOR, "Le bus : son identifiant ou son nom exact (unique).", of="bus")
+_SEQUENCE = Param("sequence", Kind.SELECTOR, "La séquence : son identifiant ou son nom exact (unique).", of="sequence")
 _CLIP = Param("clip", Kind.SELECTOR, "Le clip, par son identifiant.", of="clip")
 _INSERT = Param("insert", Kind.SELECTOR, "L'insert du bus, par son identifiant.", of="insert")
 _NODE = Param("node", Kind.SELECTOR, "Le nœud d'étalonnage, par identifiant (défaut : le premier).", required=False, of="color_node")
@@ -1059,6 +1154,34 @@ VERBS: dict[str, Verb] = {
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),
              _add_marker, creates="marker", group="edit"),
+        Verb("create_sequence", "Crée une séquence vide (pistes, cadre et cadence de la séquence active par défaut) ; elle n'est pas activée.",
+             (Param("name", Kind.STRING, "Nom de la séquence (libre : un nom déjà pris est refusé).", required=False),
+              Param("width", Kind.INTEGER, "Largeur en pixels (paire).", required=False, minimum=16, maximum=MAX_SEQUENCE_SIDE),
+              Param("height", Kind.INTEGER, "Hauteur en pixels (paire).", required=False, minimum=16, maximum=MAX_SEQUENCE_SIDE),
+              Param("fps", Kind.NUMBER, "Cadence, en images par seconde.", required=False, minimum=1.0, maximum=240.0)),
+             _create_sequence, creates="sequence", group="sequences"),
+        Verb("rename_sequence", "Renomme une séquence (le nom doit être libre).",
+             (_SEQUENCE, Param("name", Kind.STRING, "Nouveau nom.")), _rename_sequence, group="sequences"),
+        Verb("set_sequence_format", "Change le cadre et/ou la cadence d'une séquence ; au moins un champ (tailles paires).",
+             (_SEQUENCE,
+              Param("width", Kind.INTEGER, "Largeur en pixels (paire).", required=False, minimum=16, maximum=MAX_SEQUENCE_SIDE),
+              Param("height", Kind.INTEGER, "Hauteur en pixels (paire).", required=False, minimum=16, maximum=MAX_SEQUENCE_SIDE),
+              Param("fps", Kind.NUMBER, "Cadence, en images par seconde.", required=False, minimum=1.0, maximum=240.0)),
+             _set_sequence_format, group="sequences"),
+        Verb("duplicate_sequence", "Copie indépendante d'une séquence (les clips de la copie reçoivent des identifiants générés) ; non activée.",
+             (_SEQUENCE, Param("name", Kind.STRING, "Nom de la copie (libre) ; absent, « <nom> copie ».", required=False)),
+             _duplicate_sequence, creates="sequence", group="sequences"),
+        Verb("insert_sequence_clip", "Insère une séquence comme clip imbriqué sur une piste vidéo ou audio de la séquence active.",
+             (_SEQUENCE, _TRACK, _AT,
+              Param("source_in", Kind.NUMBER, "Début lu dans la séquence source, en secondes (défaut 0).", required=False,
+                    minimum=0.0, maximum=MAX_TIME),
+              Param("source_out", Kind.NUMBER, "Fin lue dans la séquence source (défaut : sa durée ; au plus sa durée).", required=False,
+                    minimum=0.0, maximum=MAX_TIME)),
+             _insert_sequence_clip, creates="clip", group="sequences"),
+        Verb("set_active_sequence", "Rend une séquence active : les verbes suivants (pistes, clips, bus, repères) agissent sur elle.",
+             (_SEQUENCE,), _set_active_sequence, group="sequences"),
+        Verb("delete_sequence", "Supprime une séquence inutilisée (ni active, ni la dernière, ni imbriquée ailleurs).",
+             (_SEQUENCE,), _delete_sequence, group="sequences"),
     )
 }
 """Le catalogue. L'ordre est celui de la documentation."""
