@@ -15,7 +15,15 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
+    # Les plages de requirements*.txt sont larges exprès (la CI teste les dernières versions compatibles) ; seul constraints.txt fige
+    # la release. Par défaut Dependabot RELÈVE aussi la borne basse (« numpy>=1.26 » devenait « numpy>=2.5.3 », ruff>=0.6 → >=0.17.0) :
+    # on ne la relève que si la nouvelle version l'exige.
+    versioning-strategy: increase-if-necessary
     ignore:
+      # numpy : seulement les correctifs. Chaque version mineure abandonne des Python anciens (2.5 demande Python >= 3.12, la CI et la
+      # release tournent en 3.11) ; à lever quand la base de Python passera à 3.12.
+      - dependency-name: "numpy"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "PySide6*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "shiboken6"
