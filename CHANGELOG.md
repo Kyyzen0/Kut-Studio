@@ -37,6 +37,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : séquences imbriquées.** Sept verbes de plus (55 en tout) : créer, renommer, reformater, dupliquer et supprimer une séquence,
   l'insérer comme clip imbriqué, et `set_active_sequence` pour agir sur une autre séquence. Cycles, profondeur, pistes verrouillées ou
   d'un mauvais genre et durées hors de la source sont refusés comme dans l'interface.
+- **Scripts : Multicam.** Huit verbes de plus (63 en tout) : créer une source depuis des médias, l'insérer, basculer ou remplacer l'angle d'un
+  segment, régler la politique audio, renommer, ajouter et recaler un angle. Un angle se désigne par `angle-N` ou son nom exact ; un décalage
+  qui n'est pas relatif (le plus petit différent de 0), un nom d'angle déjà pris ou une piste verrouillée sont refusés.
 
 ### Fixed
 

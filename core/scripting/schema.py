@@ -48,6 +48,19 @@ def _param_schema(param: Param) -> dict[str, Any]:
             {"type": "object", "properties": {"ref": {"type": "string", "pattern": _ID_PATTERN}}, "required": ["ref"],
              "additionalProperties": False},
         ]}
+    elif param.kind is Kind.LIST:
+        if param.item is not None:
+            items = _param_schema(param.item)
+        else:
+            items = {
+                "type": "object", "properties": {field.name: _param_schema(field) for field in param.fields},
+                "required": [field.name for field in param.fields if field.required], "additionalProperties": False,
+            }
+        schema = {"type": "array", "items": items}
+        if param.minimum is not None:
+            schema["minItems"] = int(param.minimum)
+        if param.maximum is not None:
+            schema["maxItems"] = int(param.maximum)
     else:
         schema = {"type": "object", "maxProperties": MAX_PARAMS, "propertyNames": {"pattern": _ID_PATTERN},
                   "additionalProperties": {"anyOf": [

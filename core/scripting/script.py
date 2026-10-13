@@ -193,6 +193,8 @@ class _Decoder:
             return self.selector(param, raw, index, verb, path)
         if kind is Kind.OBJECT:
             return self.mapping(raw, index, verb, path)
+        if kind is Kind.LIST:
+            return self.sequence(param, raw, index, verb, path)
         return None                                           # pragma: no cover - tous les genres sont traités ci-dessus
 
     def bad(self, index: int, verb: Verb, path: str, expected: str) -> None:
@@ -225,6 +227,45 @@ class _Decoder:
                 return None
             return known[1]
         return self.text(raw, index, verb, path)
+
+    def sequence(self, param: Param, raw: Any, index: int, verb: Verb, path: str) -> list[Any] | None:
+        """Une liste bornée dont chaque élément est validé comme un paramètre (valeur seule ou objet à champs fixes) ; ``None`` au moindre défaut."""
+        if not isinstance(raw, list):
+            self.bad(index, verb, path, "array")
+            return None
+        low = 0 if param.minimum is None else param.minimum
+        high = math.inf if param.maximum is None else param.maximum
+        if not low <= len(raw) <= high:
+            self.issue("out_of_range", index, verb.name, path, minimum=param.minimum, maximum=param.maximum)
+            return None
+        before = len(self.issues)
+        result: list[Any] = []
+        for position, element in enumerate(raw):
+            where = f"{path}[{position}]"
+            if param.item is not None:
+                checked = self.value(param.item, element, index, verb, where)
+                if checked is not None:
+                    result.append(checked)
+                continue
+            if not isinstance(element, Mapping):
+                self.bad(index, verb, where, "object")
+                continue
+            names = [field.name for field in param.fields]
+            for key in element:
+                if key not in names:
+                    close = difflib.get_close_matches(str(key), names, n=1)
+                    self.issue("unknown_field", index, verb.name, f"{where}.{key}", suggestion=close[0] if close else "")
+            fields: dict[str, Any] = {}
+            for field_param in param.fields:
+                if field_param.name not in element:
+                    if field_param.required:
+                        self.issue("missing_field", index, verb.name, f"{where}.{field_param.name}")
+                    continue
+                checked = self.value(field_param, element[field_param.name], index, verb, f"{where}.{field_param.name}")
+                if checked is not None:
+                    fields[field_param.name] = checked
+            result.append(fields)
+        return result if len(self.issues) == before else None
 
     def mapping(self, raw: Any, index: int, verb: Verb, path: str) -> dict[str, Any] | None:
         if not isinstance(raw, Mapping):
