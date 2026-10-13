@@ -32,15 +32,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
-<<<<<<< HEAD
 - **Aperçu GPU, pistes du dessous.** Un WebM ou un Matroska dont ffprobe marque la durée du flux ``N/A`` (la durée est sur le conteneur)
   s'ouvre à nouveau dans le décodeur des pistes vidéo sous le clip du dessus. Avant, la sonde levait une erreur et la piste restait vide
   au moniteur, alors que l'export, lui, la rendait.
-=======
 - **Un projet ouvert par un lien symbolique ne remplace plus le lien à l'enregistrement.** L'écriture atomique renommait le fichier
   temporaire sur le lien lui-même : le projet visé ne changeait pas et le lien devenait un fichier ordinaire. L'enregistrement écrit
   maintenant à travers le lien.
->>>>>>> origin/main
 
 ## [0.5.5] - 2026-10-13
 
