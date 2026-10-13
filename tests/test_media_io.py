@@ -66,6 +66,30 @@ def test_probe_matroska_when_stream_duration_is_na(tmp_path):
     assert len(frame.rgba) == 32 * 18 * 4
 
 
+@needs_ffmpeg
+def test_probe_webm_when_stream_duration_is_na(tmp_path):
+    """Un WebM réel (même forme ffprobe N/A) : sonde + décodage underlay."""
+    source = tmp_path / "clip.webm"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=32x18:r=10:d=0.4",
+         "-c:v", "libvpx", "-pix_fmt", "yuv420p", "-b:v", "200k", str(source)],
+        check=True,
+    )
+    info = media_io.probe(source)
+    assert info.width == 32 and info.height == 18
+    assert info.duration == pytest.approx(0.4, abs=0.1)
+    frame = media_io.decode_preview_frame(source, 0.1)
+    assert frame.width == 32 and frame.height == 18
+    assert len(frame.rgba) == 32 * 18 * 4
+
+
+def test_parse_probe_csv_rejects_empty_and_audio_only():
+    with pytest.raises(OSError, match="flux vidéo"):
+        media_io._parse_probe_csv("")
+    with pytest.raises(OSError, match="flux vidéo"):
+        media_io._parse_probe_csv("0.400000\n")
+
+
 def test_prefer_proxy_falls_back_to_original(tmp_path):
     original = tmp_path / "a.mp4"
     original.write_bytes(b"x")
