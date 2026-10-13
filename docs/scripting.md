@@ -85,6 +85,11 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage du premier nœud du clip : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) |
 | `reset_color_grade` | Remet l'étalonnage du clip à neutre (`clip`) |
+| `set_color_wheel` | Règle une roue du premier nœud : `wheel` = `lift`, `gamma`, `gain` ou `offset`, composantes `r`, `g`, `b`, `y` (le maître, la molette) de −1 à 1 (au moins une ; les absentes sont conservées) |
+| `set_color_curve_point` | Règle la sortie (0 à 1) d'un point d'une courbe du premier nœud : `channel` = `master`, `red`, `green` ou `blue`, `index` 0 à 15 (les seize points de l'éditeur) ; l'abscisse du point ne change pas |
+| `reset_color_curves` | Remet une courbe (`channel`) ou les quatre à la diagonale (`clip`) |
+| `set_color_lut` | Applique une LUT `.cube` 3D au premier nœud (`clip`, `path`) ; voir « Fichiers » ci-dessous |
+| `clear_color_lut` | Retire la LUT du premier nœud (`clip`) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
@@ -119,9 +124,10 @@ modifié. Fermez-le, ou, si cette utilisation n'existe plus, supprimez le fichie
 - **Consultatif** : c'est un accord entre les programmes de Kut-Studio. Il ne protège pas d'un éditeur de texte, ni d'une copie du
   fichier qui l'ignorerait.
 
-## Fichiers : `import_media`
+## Fichiers : `import_media` et `set_color_lut`
 
-C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il sonde le média avec `ffprobe`, il n'écrit rien).
+Ce sont les **deux seuls** verbes qui lisent un fichier, et ils le lisent en lecture seule (`import_media` sonde le média avec `ffprobe`,
+`set_color_lut` lit le `.cube`) : ils n'écrivent rien.
 
 - Le chemin se résout **relativement au dossier du script**. Un chemin qui en sort (`../autre.wav`, un chemin absolu ailleurs, un lien
   symbolique qui s'échappe, vérifié après résolution du lien) est **refusé** : c'est à l'appelant de l'autoriser avec
@@ -130,11 +136,18 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 - Le média reçoit l'identifiant `id` (ou l'alias `as`) : `{"op": "import_media", "path": "voix.wav", "as": "voix"}` puis
   `{"op": "add_clip", "track": "A1", "asset": {"ref": "voix"}, "at": 0}`.
 - Le texte d'un chemin ne contient pas de caractère de contrôle et tient en 1 024 caractères.
+- **`set_color_lut`** suit les mêmes règles de chemin (dossier du script, `--allow-outside` à la main de l'appelant). Le fichier doit
+  porter l'extension `.cube`, tenir en 32 Mio au plus et être une LUT 3D valide (les mêmes contrôles que l'import de l'interface). Une
+  LUT en UTF-16 ou avec BOM, que FFmpeg ne lirait pas telle quelle, est **refusée** : l'interface en écrit une copie normalisée dans le
+  cache, un script n'écrit rien, il faut la réenregistrer en UTF-8. La LUT garde les autres réglages du nœud ; son titre est celui du
+  fichier (`TITLE`), et l'enregistrement du projet la copie dans `luts/` comme pour une LUT importée à la main.
 
 ## Pas encore là
 
-- **Étalonnage avancé** (courbes, LUT, roues, nœuds, fenêtres), **animation des couleurs et des effets**, **calques d'image**, **séquences
-  imbriquées** et **multicam** : prochains lots. `set_color_grade` ne règle que les sept curseurs du premier nœud.
+- **Étalonnage par nœuds** : les verbes d'étalonnage ne visent que le **premier nœud** du clip. Ajouter, supprimer ou nommer des nœuds,
+  les mélangeurs parallèle et de calques, le qualifieur (teinte / saturation / luminance), les **fenêtres**, le flou et la netteté, les
+  mélangeurs, les presets, ne sont pas encore des verbes. Les courbes se règlent **point par point** (le format n'a pas de tableau).
+- **Animation des couleurs et des effets**, **calques d'image**, **séquences imbriquées** et **multicam** : prochains lots.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code

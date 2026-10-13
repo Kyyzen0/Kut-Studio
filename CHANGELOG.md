@@ -29,6 +29,8 @@ ensuite déclenche `.github/workflows/release.yml`.
   ne passe pas pour l'ancien). La fenêtre prévient si le projet est déjà tenu ailleurs, sans jamais refuser de l'ouvrir.
 - **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
   une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
+- **Scripts : étalonnage avancé.** Cinq verbes de plus (38 en tout) : les roues lift / gamma / gain / offset, les courbes point par point
+  et la LUT `.cube` (lue en lecture seule dans le dossier du script) du premier nœud d'un clip.
 
 ### Fixed
 

@@ -371,5 +371,5 @@ def test_track_inserts_are_for_audio_and_video_tracks_only():
 # --- Le catalogue ----------------------------------------------------------------------------------------------------------
 
 
-def test_only_import_media_needs_the_file_context():
-    assert [name for name, verb in VERBS.items() if verb.needs_context] == ["import_media"]
+def test_only_the_verbs_that_read_a_file_need_the_file_context():
+    assert [name for name, verb in VERBS.items() if verb.needs_context] == ["import_media", "set_color_lut"]

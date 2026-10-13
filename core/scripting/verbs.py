@@ -11,6 +11,7 @@ Sans Qt, sans accès disque : un script ne lit ni n'écrit rien d'autre que le p
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -29,13 +30,16 @@ from ..audio_effects_model import (
 )
 from ..color_grading import (
     CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN, SATURATION_MAX,
-    SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN, TEMPERATURE_MAX, TEMPERATURE_MIN, ColorGradingService,
+    SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN, TEMPERATURE_MAX, TEMPERATURE_MIN, CHANNELS, MAX_CURVE_POINTS, WHEEL_MAX, WHEEL_MIN,
+    WHEELS, ColorCurve, ColorGradingError, ColorGradingService, LUTResource, Wheel,
 )
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
+from ..lut_importer import LUTImportError, parse_cube_lut
 from ..media_probe import MediaProbeError, probe_media
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
+from ..text_decoding import decode_text_bytes
 from ..timeline_editing import add_marker
 from ..timeline_operations import (
     add_clip_to_track, add_subtitle_clip, delete_clip, find_clip, move_clip, set_clip_enabled,
@@ -465,6 +469,89 @@ def _reset_color_grade(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _grade_clip(project: Project, selector: str) -> str:
+    return _editable_clip(project, selector, track_types=("video", "graphics"))
+
+
+_WHEEL_COMPONENTS = ("r", "g", "b", "y")
+
+
+def _set_color_wheel(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in _WHEEL_COMPONENTS if name in a]
+        if not given:
+            raise ValueError("set_color_wheel : donnez au moins une composante (r, g, b, y).")
+        clip_id = _grade_clip(project, a["clip"])
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id)
+        current = getattr(grade, a["wheel"])
+        wheel = Wheel(**{name: float(a[name]) if name in a else getattr(current, name) for name in _WHEEL_COMPONENTS})
+        return service.set_grade(project, clip_id, grade.with_wheel(a["wheel"], wheel))
+
+    return operation
+
+
+def _set_color_curve_point(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _grade_clip(project, a["clip"])
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id)
+        return service.set_grade(project, clip_id, grade.with_curves(grade.curves.with_point(a["channel"], int(a["index"]), float(a["output"]))))
+
+    return operation
+
+
+def _reset_color_curves(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _grade_clip(project, a["clip"])
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id)
+        channels = [a["channel"]] if a.get("channel") is not None else list(CHANNELS)
+        curves = dataclasses.replace(grade.curves, **{channel: ColorCurve.identity() for channel in channels})
+        return service.set_grade(project, clip_id, grade.with_curves(curves))
+
+    return operation
+
+
+MAX_LUT_BYTES = 32 * 1024 * 1024
+"""Un ``.cube`` 65³ pèse environ 15 Mio : au-delà, ce n'est pas une LUT et on ne le lit pas."""
+
+
+def _set_color_lut(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
+    def operation(project: Project) -> Any:
+        if context is None:
+            raise ValueError("set_color_lut lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        clip_id = _grade_clip(project, a["clip"])
+        path = context.resolve_media(a["path"])
+        if path.stat().st_size > MAX_LUT_BYTES:
+            raise ValueError(f"La LUT {path.name!r} dépasse {MAX_LUT_BYTES // (1024 * 1024)} Mio.")
+        if path.suffix.lower() != ".cube":
+            raise ValueError(f"La LUT {path.name!r} n'est pas un fichier .cube.")
+        # Lecture seule : l'interface écrit au besoin une copie UTF-8 dans le cache (``ffmpeg_readable_lut``) ; un script ne le fait pas,
+        # il refuse une LUT que FFmpeg ne lirait pas telle quelle.
+        raw = path.read_bytes()
+        if decode_text_bytes(raw).encode("utf-8") != raw:
+            raise ValueError(f"La LUT {path.name!r} n'est pas en UTF-8 sans BOM : FFmpeg ne la lirait pas, réenregistrez-la ainsi.")
+        try:
+            parsed = parse_cube_lut(path)
+            resource = LUTResource.from_path(path, title=parsed.title)
+        except (LUTImportError, ColorGradingError) as error:
+            raise ValueError(f"LUT refusée : {error}") from error
+        service = ColorGradingService()
+        return service.set_grade(project, clip_id, service.get_grade(project, clip_id).with_lut(resource))
+
+    return operation
+
+
+def _clear_color_lut(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _grade_clip(project, a["clip"])
+        service = ColorGradingService()
+        return service.set_grade(project, clip_id, service.get_grade(project, clip_id).with_lut(None))
+
+    return operation
+
+
 def _add_marker(a: Mapping[str, Any]) -> Operation:
     return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
 
@@ -588,6 +675,23 @@ VERBS: dict[str, Verb] = {
               Param("enabled", Kind.BOOLEAN, "Étalonnage actif ou neutralisé.", required=False)),
              _set_color_grade, group="color"),
         Verb("reset_color_grade", "Remet l'étalonnage du clip (premier nœud) à neutre.", (_CLIP,), _reset_color_grade, group="color"),
+        Verb("set_color_wheel", "Règle une roue (lift, gamma, gain, offset) du premier nœud ; les composantes absentes sont conservées.",
+             (_CLIP, Param("wheel", Kind.ENUM, "La roue.", choices=WHEELS),
+              *(Param(name, Kind.NUMBER, f"Composante {label} de la roue.", required=False, minimum=WHEEL_MIN, maximum=WHEEL_MAX)
+                for name, label in (("r", "rouge"), ("g", "verte"), ("b", "bleue"), ("y", "maître (molette)")))),
+             _set_color_wheel, group="color"),
+        Verb("set_color_curve_point", "Règle la sortie d'un point d'une courbe du premier nœud (l'abscisse du point reste inchangée).",
+             (_CLIP, Param("channel", Kind.ENUM, "La courbe.", choices=CHANNELS),
+              Param("index", Kind.INTEGER, "Rang du point (les seize points de l'éditeur : 0 à 15).", minimum=0, maximum=MAX_CURVE_POINTS - 1),
+              Param("output", Kind.NUMBER, "Sortie du point, de 0 à 1.", minimum=0.0, maximum=1.0)),
+             _set_color_curve_point, group="color"),
+        Verb("reset_color_curves", "Remet à la diagonale une courbe du premier nœud, ou les quatre.",
+             (_CLIP, Param("channel", Kind.ENUM, "La courbe ; absente, les quatre.", required=False, choices=CHANNELS)),
+             _reset_color_curves, group="color"),
+        Verb("set_color_lut", "Applique au premier nœud une LUT .cube 3D (lecture seule, dans le dossier du script).",
+             (_CLIP, Param("path", Kind.PATH, "Chemin du fichier .cube, relatif au dossier du script.")),
+             _set_color_lut, group="color", needs_context=True),
+        Verb("clear_color_lut", "Retire la LUT du premier nœud.", (_CLIP,), _clear_color_lut, group="color"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),
