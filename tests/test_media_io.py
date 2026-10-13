@@ -35,6 +35,37 @@ def test_decode_preview_frame_via_cli(tmp_path):
         assert len(again.rgba) == 64 * 36 * 4
 
 
+def test_parse_probe_csv_uses_container_duration_when_stream_is_na():
+    """Matroska et WebM : ffprobe écrit ``N/A`` pour la durée du flux, puis la durée du conteneur."""
+    width, height, fps, duration = media_io._parse_probe_csv("32,18,10/1,N/A\n0.400000\n")
+    assert (width, height) == (32, 18)
+    assert fps == 10
+    assert duration == pytest.approx(0.4)
+
+
+def test_parse_probe_csv_keeps_stream_duration_for_mp4():
+    width, height, fps, duration = media_io._parse_probe_csv("64,36,10/1,1.000000\n1.000000\n")
+    assert (width, height, fps) == (64, 36, 10)
+    assert duration == pytest.approx(1.0)
+
+
+@needs_ffmpeg
+def test_probe_matroska_when_stream_duration_is_na(tmp_path):
+    """Un MKV réel : la sonde ne lève plus, et une image se décode (piste underlay du moniteur GPU)."""
+    source = tmp_path / "clip.mkv"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=32x18:r=10:d=0.4",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source)],
+        check=True,
+    )
+    info = media_io.probe(source)
+    assert info.width == 32 and info.height == 18
+    assert info.duration == pytest.approx(0.4, abs=0.05)
+    frame = media_io.decode_preview_frame(source, 0.1)
+    assert frame.width == 32 and frame.height == 18
+    assert len(frame.rgba) == 32 * 18 * 4
+
+
 def test_prefer_proxy_falls_back_to_original(tmp_path):
     original = tmp_path / "a.mp4"
     original.write_bytes(b"x")

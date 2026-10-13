@@ -26,6 +26,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
   une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
 
+### Fixed
+
+- **Aperçu GPU, pistes du dessous.** Un WebM ou un Matroska dont ffprobe marque la durée du flux ``N/A`` (la durée est sur le conteneur)
+  s'ouvre à nouveau dans le décodeur des pistes vidéo sous le clip du dessus. Avant, la sonde levait une erreur et la piste restait vide
+  au moniteur, alors que l'export, lui, la rendait.
+
 ## [0.5.5] - 2026-10-13
 
 Une version de transition : la **ligne de commande** (`Kut-Studio export | validate | info | presets`, sans fenêtre) pose le socle du
