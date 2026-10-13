@@ -28,9 +28,14 @@ from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
 from ..color_grading import (
-    CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN, SATURATION_MAX,
-    SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN, TEMPERATURE_MAX, TEMPERATURE_MIN, ColorGradingService,
+    CHANNELS, CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN,
+    MAX_CURVE_POINTS, MAX_CURVE_VALUE, MIN_CURVE_VALUE, SATURATION_MAX, SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN,
+    TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingService, LUTResource, Wheel,
 )
+from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind
+from ..color_windows import forget_windows, window_ids
+from ..lut_importer import LUTImportError, parse_cube_lut
+from ..node_graph import NodeGraphError
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
@@ -439,6 +444,20 @@ def _remove_keyframe(a: Mapping[str, Any]) -> Operation:
 
 
 _GRADE_FIELDS = ("exposure", "contrast", "saturation", "temperature", "hue", "shadows", "highlights")
+_WHEEL_COMPONENTS = ("r", "g", "b", "y")
+
+
+def _grade_clip(project: Project, a: Mapping[str, Any]) -> tuple[str, str | None]:
+    """Clip éditable (vidéo / graphiques, piste déverrouillée) et nœud optionnel (identifiant de correcteur)."""
+    clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+    node = a.get("node")
+    if node is not None:
+        graph = ColorGradingService().get_graph(project, clip_id)
+        try:
+            graph.corrector(node)
+        except (KeyError, NodeGraphError) as error:
+            raise KeyError(f"Nœud d'étalonnage introuvable : {node!r}.") from error
+    return clip_id, node
 
 
 def _set_color_grade(a: Mapping[str, Any]) -> Operation:
@@ -446,21 +465,200 @@ def _set_color_grade(a: Mapping[str, Any]) -> Operation:
         given = [name for name in _GRADE_FIELDS if name in a]
         if not given and "enabled" not in a:
             raise ValueError("set_color_grade : donnez au moins un champ à modifier.")
-        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        clip_id, node = _grade_clip(project, a)
         service = ColorGradingService()
-        grade = service.get_grade(project, clip_id)
+        grade = service.get_grade(project, clip_id, node)
         for name in given:
             grade = grade.with_field(name, float(a[name]))
         if "enabled" in a:
             grade = grade.with_enabled(bool(a["enabled"]))
-        return service.set_grade(project, clip_id, grade)
+        return service.set_grade(project, clip_id, grade, node)
 
     return operation
 
 
 def _reset_color_grade(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        return ColorGradingService().reset_grade(project, _editable_clip(project, a["clip"], track_types=("video", "graphics")))
+        clip_id, node = _grade_clip(project, a)
+        return ColorGradingService().reset_grade(project, clip_id, node)
+
+    return operation
+
+
+def _set_color_curve(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id, node)
+        return service.set_grade(project, clip_id, grade.with_curves(grade.curves.with_point(a["channel"], int(a["index"]), float(a["output"]))), node)
+
+    return operation
+
+
+def _reset_color_curve(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id, node)
+        channel = a["channel"]
+        curves = grade.curves._replace(channel, ColorCurve.identity())
+        return service.set_grade(project, clip_id, grade.with_curves(curves), node)
+
+    return operation
+
+
+def _set_color_wheel(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in _WHEEL_COMPONENTS if name in a]
+        if not given:
+            raise ValueError("set_color_wheel : donnez au moins une composante (r, g, b ou y).")
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id, node)
+        current = getattr(grade, a["wheel"])
+        values = {name: float(getattr(current, name)) for name in _WHEEL_COMPONENTS}
+        values.update({name: float(a[name]) for name in given})
+        return service.set_grade(project, clip_id, grade.with_wheel(a["wheel"], Wheel(**values)), node)
+
+    return operation
+
+
+def _import_lut(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
+    def operation(project: Project) -> Any:
+        if context is None:
+            raise ValueError("import_lut lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        path = context.resolve_media(a["path"])
+        try:
+            parsed = parse_cube_lut(path)
+        except LUTImportError as error:
+            raise ValueError(str(error)) from error
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id, node)
+        lut = LUTResource.from_path(path, title=parsed.title or path.stem)
+        return service.set_grade(project, clip_id, grade.with_lut(lut), node)
+
+    return operation
+
+
+def _remove_lut(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id, node)
+        return service.set_grade(project, clip_id, grade.with_lut(None), node)
+
+    return operation
+
+
+def _add_color_node(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        service = ColorGradingService()
+        after = a.get("after")
+        if after is not None:
+            service.get_graph(project, clip_id).corrector(after)          # KeyError / NodeGraphError → refus clair
+        created: dict[str, str] = {}
+
+        def change(graph):
+            requested = a.get("id")
+            node_id = None
+            if requested is not None:
+                node_id = resolve_object_id(requested, prefix="n", kind="nœud", taken={item.id for item in graph.nodes})
+            graph, new_id = graph.with_node_after(after, node_id=node_id)
+            if a.get("label") is not None:
+                graph = graph.with_label(new_id, a["label"])
+            created["id"] = new_id
+            return graph
+
+        try:
+            service.edit_nodes(project, clip_id, change)
+        except NodeGraphError as error:
+            raise ValueError(str(error)) from error
+        return service.get_graph(project, clip_id).corrector(created["id"])
+
+    return operation
+
+
+def _branch_color_node(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        service = ColorGradingService()
+        beside = a["node"]
+        service.get_graph(project, clip_id).corrector(beside)
+        created: dict[str, str] = {}
+
+        def change(graph):
+            requested = a.get("id")
+            new_id = None
+            if requested is not None:
+                new_id = resolve_object_id(requested, prefix="n", kind="nœud", taken={item.id for item in graph.nodes})
+            graph, nid = graph.with_branch(beside, MixerKind(a["kind"]), new_id=new_id)
+            if a.get("label") is not None:
+                graph = graph.with_label(nid, a["label"])
+            created["id"] = nid
+            return graph
+
+        try:
+            service.edit_nodes(project, clip_id, change)
+        except NodeGraphError as error:
+            raise ValueError(str(error)) from error
+        return service.get_graph(project, clip_id).corrector(created["id"])
+
+    return operation
+
+
+def _remove_color_node(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        service = ColorGradingService()
+        node = a["node"]
+        service.get_graph(project, clip_id).corrector(node)
+        clip = find_clip(project, clip_id)
+        before = window_ids(getattr(clip, "color_grade", None))
+
+        def change(graph):
+            return graph.without(node)
+
+        try:
+            service.edit_nodes(project, clip_id, change)
+        except NodeGraphError as error:
+            raise ValueError(str(error)) from error
+        forget_windows(clip, before - window_ids(getattr(clip, "color_grade", None)))
+        return None
+
+    return operation
+
+
+def _rename_color_node(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        service = ColorGradingService()
+        node = a["node"]
+        service.get_graph(project, clip_id).corrector(node)
+        service.edit_nodes(project, clip_id, lambda graph: graph.with_label(node, a["label"]))
+        return service.get_graph(project, clip_id).corrector(node)
+
+    return operation
+
+
+def _set_color_detail(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        if "blur" not in a and "sharpen" not in a:
+            raise ValueError("set_color_detail : donnez blur et/ou sharpen.")
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        target = service.get_graph(project, clip_id).node_or_first(node).id
+        # Le modèle ramène flou / netteté en silence : on a déjà borné au décodage ; on refuse aussi une valeur
+        # hors modèle si un jour les Param divergent.
+        blur = float(a["blur"]) if "blur" in a else None
+        sharpen = float(a["sharpen"]) if "sharpen" in a else None
+        if blur is not None and not 0.0 <= blur <= MAX_BLUR:
+            raise ValueError(f"blur = {blur} est hors bornes (de 0 à {MAX_BLUR}).")
+        if sharpen is not None and not 0.0 <= sharpen <= MAX_SHARPEN:
+            raise ValueError(f"sharpen = {sharpen} est hors bornes (de 0 à {MAX_SHARPEN}).")
+        service.edit_nodes(project, clip_id, lambda graph: graph.with_detail(target, blur=blur, sharpen=sharpen))
+        return service.get_graph(project, clip_id).corrector(target)
 
     return operation
 
@@ -473,6 +671,7 @@ _TRACK = Param("track", Kind.SELECTOR, "La piste : son identifiant ou son nom ex
 _BUS = Param("bus", Kind.SELECTOR, "Le bus : son identifiant ou son nom exact (unique).", of="bus")
 _CLIP = Param("clip", Kind.SELECTOR, "Le clip, par son identifiant.", of="clip")
 _INSERT = Param("insert", Kind.SELECTOR, "L'insert du bus, par son identifiant.", of="insert")
+_NODE = Param("node", Kind.SELECTOR, "Le nœud d'étalonnage, par identifiant (défaut : le premier).", required=False, of="color_node")
 _AT = Param("at", Kind.NUMBER, "Position sur la timeline, en secondes.", minimum=0.0, maximum=MAX_TIME)
 _ENABLED = Param("enabled", Kind.BOOLEAN, "Actif ou non.")
 _PARAMS = Param("params", Kind.OBJECT, "Paramètres de l'effet (nombres, booléens, textes courts) ; ceux du modèle les valident.")
@@ -481,6 +680,8 @@ _DISPLAYABLE = tuple(item.value for item in (
     GraphicType.TEXT, GraphicType.RECTANGLE, GraphicType.SOLID, GraphicType.SHAPE, GraphicType.ADJUSTMENT, GraphicType.NULL,
 ))
 _COLOR_DOC = "Couleur « #RRGGBB » ou « #RRGGBBAA »."
+_CHANNEL = Param("channel", Kind.ENUM, "Canal de courbe.", choices=CHANNELS)
+_LABEL = Param("label", Kind.STRING, "Nom du nœud.", required=False, max_length=MAX_LABEL_LENGTH)
 
 VERBS: dict[str, Verb] = {
     verb.name: verb
@@ -576,8 +777,8 @@ VERBS: dict[str, Verb] = {
              (_CLIP, Param("property", Kind.ENUM, "La propriété animée.", choices=_ANIMATABLE),
               Param("at", Kind.NUMBER, "Instant, en secondes depuis le début du clip.", minimum=0.0, maximum=MAX_TIME)),
              _remove_keyframe, group="animation"),
-        Verb("set_color_grade", "Règle l'étalonnage du clip (premier nœud) ; au moins un champ.",
-             (_CLIP,
+        Verb("set_color_grade", "Règle l'étalonnage d'un nœud du clip ; au moins un champ.",
+             (_CLIP, _NODE,
               Param("exposure", Kind.NUMBER, "Exposition, en diaphragmes.", required=False, minimum=EXPOSURE_MIN, maximum=EXPOSURE_MAX),
               Param("contrast", Kind.NUMBER, "Contraste.", required=False, minimum=CONTRAST_MIN, maximum=CONTRAST_MAX),
               Param("saturation", Kind.NUMBER, "Saturation (1 = neutre).", required=False, minimum=SATURATION_MIN, maximum=SATURATION_MAX),
@@ -587,7 +788,47 @@ VERBS: dict[str, Verb] = {
               Param("highlights", Kind.NUMBER, "Hautes lumières.", required=False, minimum=HIGHLIGHTS_MIN, maximum=HIGHLIGHTS_MAX),
               Param("enabled", Kind.BOOLEAN, "Étalonnage actif ou neutralisé.", required=False)),
              _set_color_grade, group="color"),
-        Verb("reset_color_grade", "Remet l'étalonnage du clip (premier nœud) à neutre.", (_CLIP,), _reset_color_grade, group="color"),
+        Verb("reset_color_grade", "Remet l'étalonnage d'un nœud du clip à neutre.", (_CLIP, _NODE), _reset_color_grade, group="color"),
+        Verb("set_color_curve", "Règle la sortie d'un point d'une courbe (index 0…15 sur la courbe à 16 points).",
+             (_CLIP, _NODE, _CHANNEL,
+              Param("index", Kind.INTEGER, "Index du point (0 = début).", minimum=0, maximum=MAX_CURVE_POINTS - 1),
+              Param("output", Kind.NUMBER, "Valeur de sortie, de 0 à 1.", minimum=MIN_CURVE_VALUE, maximum=MAX_CURVE_VALUE)),
+             _set_color_curve, group="color"),
+        Verb("reset_color_curve", "Remet une courbe à l'identité (16 points).",
+             (_CLIP, _NODE, _CHANNEL), _reset_color_curve, group="color"),
+        Verb("set_color_wheel", "Règle une roue primaire (lift, gamma, gain, offset) ; au moins une composante.",
+             (_CLIP, _NODE,
+              Param("wheel", Kind.ENUM, "La roue.", choices=WHEELS),
+              Param("r", Kind.NUMBER, "Rouge.", required=False, minimum=WHEEL_MIN, maximum=WHEEL_MAX),
+              Param("g", Kind.NUMBER, "Vert.", required=False, minimum=WHEEL_MIN, maximum=WHEEL_MAX),
+              Param("b", Kind.NUMBER, "Bleu.", required=False, minimum=WHEEL_MIN, maximum=WHEEL_MAX),
+              Param("y", Kind.NUMBER, "Maître (Y).", required=False, minimum=WHEEL_MIN, maximum=WHEEL_MAX)),
+             _set_color_wheel, group="color"),
+        Verb("import_lut", "Attache un LUT « .cube » (lecture seule, dans le dossier du script) à un nœud.",
+             (_CLIP, _NODE, Param("path", Kind.PATH, "Chemin du fichier .cube, relatif au dossier du script.")),
+             _import_lut, group="color", needs_context=True),
+        Verb("remove_lut", "Retire le LUT d'un nœud.", (_CLIP, _NODE), _remove_lut, group="color"),
+        Verb("add_color_node", "Ajoute un nœud d'étalonnage en série (après « after », ou en bout de chaîne).",
+             (_CLIP, Param("after", Kind.SELECTOR, "Nœud après lequel insérer ; absent, en bout.", required=False, of="color_node"),
+              _LABEL),
+             _add_color_node, creates="color_node", group="color"),
+        Verb("branch_color_node", "Ajoute un nœud en parallèle ou en calque à côté d'un nœud existant.",
+             (_CLIP, Param("node", Kind.SELECTOR, "Le nœud à côté duquel brancher.", of="color_node"),
+              Param("kind", Kind.ENUM, "parallel ou layer.", choices=tuple(item.value for item in MixerKind)),
+              _LABEL),
+             _branch_color_node, creates="color_node", group="color"),
+        Verb("remove_color_node", "Supprime un nœud (pas le dernier : réinitialisez-le).",
+             (_CLIP, Param("node", Kind.SELECTOR, "Le nœud à retirer.", of="color_node")),
+             _remove_color_node, group="color"),
+        Verb("rename_color_node", "Nomme un nœud d'étalonnage.",
+             (_CLIP, Param("node", Kind.SELECTOR, "Le nœud à renommer.", of="color_node"),
+              Param("label", Kind.STRING, "Nouveau nom.", max_length=MAX_LABEL_LENGTH)),
+             _rename_color_node, group="color"),
+        Verb("set_color_detail", "Règle le flou et/ou la netteté d'un nœud (bornes du modèle, rien n'est ramené en silence).",
+             (_CLIP, _NODE,
+              Param("blur", Kind.NUMBER, "Flou σ en pixels (0…50).", required=False, minimum=0.0, maximum=MAX_BLUR),
+              Param("sharpen", Kind.NUMBER, "Netteté (0…5).", required=False, minimum=0.0, maximum=MAX_SHARPEN)),
+             _set_color_detail, group="color"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),
