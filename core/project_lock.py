@@ -23,11 +23,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import socket
 import sys
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
@@ -44,6 +47,10 @@ _CORRUPT_GRACE_SECONDS = 0.5
 """Un verrou illisible peut être un verrou en cours d'écriture : on relit un instant avant de conclure."""
 _CORRUPT_STALE_AFTER = 60.0
 """Un verrou illisible depuis plus de cela (mtime) n'est plus une écriture en cours : c'est un fichier abîmé."""
+_MAX_TIMESTAMP = 4_102_444_800.0
+"""1er janvier 2100 : au-delà (ou négatif, ou non fini), une heure de début n'est pas celle d'un vrai verrou."""
+_GUARD_SUFFIX = ".reclaim"
+_GUARD_WAIT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -95,15 +102,21 @@ def _identity_of_this_process(ops: ProcessOps) -> tuple[str, str]:
     return "", os.path.basename(sys.executable)
 
 
+def _reject_constant(name: str) -> Any:
+    raise ValueError(f"constante JSON refusée : {name}")
+
+
 def _parse(raw: bytes) -> LockOwner | None:
     try:
-        data = json.loads(raw.decode("utf-8"))
+        data = json.loads(raw.decode("utf-8"), parse_constant=_reject_constant)
         if not isinstance(data, dict) or data.get("kut_lock") != LOCK_VERSION:
             return None
         pid, started = data["pid"], data["started"]
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
             return None
-        if isinstance(started, bool) or not isinstance(started, (int, float)):
+        if isinstance(started, bool) or not isinstance(started, (int, float)) or not math.isfinite(started):
+            return None
+        if not 0 <= started <= _MAX_TIMESTAMP:                    # ``time.localtime`` lèverait sur une valeur absurde
             return None
         texts = {key: data[key] for key in ("token", "name", "host", "kind", "nonce")}
         if not all(isinstance(value, str) for value in texts.values()) or texts["kind"] not in KINDS or not texts["nonce"]:
@@ -191,6 +204,32 @@ class ProjectLock:
             except OSError:
                 pass
 
+    @contextmanager
+    def _reclaim_guard(self) -> Iterator[None]:
+        """Exclusion mutuelle de la **reprise** d'un verrou périmé (``nom.kut.lock.reclaim``, créé en ``O_EXCL``).
+
+        Sans elle, deux processus qui reprennent le même verrou périmé peuvent s'entrecroiser : l'un compare, est suspendu, l'autre retire
+        le verrou périmé et pose le sien, puis le premier reprend et retire ce verrou **vivant** ; les deux se croient propriétaires. Sous
+        la garde, un seul reprend à la fois et chacun relit avant de décider. La garde ne dure que quelques instants ; si elle traîne
+        (plantage pendant la reprise), on refuse et le message désigne le fichier à supprimer, plutôt que de la voler."""
+        guard = self.path.with_name(self.path.name + _GUARD_SUFFIX)
+        deadline = time.monotonic() + _GUARD_WAIT_SECONDS
+        while True:
+            try:
+                os.close(os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+                break
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise ProjectLockedError(guard, None, LockVerdict.UNKNOWN) from None
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            try:
+                guard.unlink()
+            except OSError:
+                pass
+
     def acquire(self) -> LockOwner | None:
         """Prend le verrou. ``ProjectLockedError`` s'il appartient à un autre (vivant, ou qu'on ne peut pas prouver périmé) ;
         ``OSError`` si le dossier du projet n'autorise pas la création du fichier. Rend le propriétaire périmé remplacé, ou ``None``."""
@@ -214,8 +253,12 @@ class ProjectLock:
                     return None
                 if verdict is not LockVerdict.STALE:
                     raise ProjectLockedError(self.path, existing, verdict) from None
-                self._remove_if_unchanged(raw)           # prouvé périmé : repris, seulement si personne ne l'a remplacé entre-temps
-                self.replaced_stale = existing
+                with self._reclaim_guard():                # prouvé périmé : repris, un seul à la fois, après relecture sous la garde
+                    _again, raw_again = self._read_with_grace()
+                    if raw_again != raw:
+                        continue                         # quelqu'un l'a remplacé entre-temps : on réévalue depuis le début
+                    self._unlink()
+                    self.replaced_stale = existing
                 continue
             try:
                 with os.fdopen(descriptor, "wb") as handle:
@@ -236,13 +279,6 @@ class ProjectLock:
     def _unlink(self) -> None:
         try:
             self.path.unlink()
-        except OSError:
-            pass
-
-    def _remove_if_unchanged(self, raw: bytes) -> None:
-        try:
-            if self.path.read_bytes() == raw:
-                self.path.unlink()
         except OSError:
             pass
 

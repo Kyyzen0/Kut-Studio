@@ -9,7 +9,7 @@ from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
 from core.export_paths import default_export_directory, export_file_name
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
-from core.project_lock import ProjectLock, ProjectLockedError
+from core.project_lock import ProjectLock, ProjectLockedError, lock_file_for
 from core.render_plan import RenderPlan, build_render_plan
 from ui import i18n
 
@@ -27,12 +27,14 @@ LOGGER = logging.getLogger("kut_studio.project_files")
 class ProjectFilesMixin:
     """Mixin de ``MainWindow`` (project_files)."""
 
-    def _lock_project(self, path: str) -> None:
-        """Prend le verrou du projet ouvert (ADR-0005) : un script qui voudrait le réécrire sur place le verra et refusera.
+    def _acquire_project_lock(self, path: str) -> ProjectLock | None:
+        """Prend le verrou de ``path`` **sans** quitter encore le projet ouvert (ADR-0005) ; ``None`` s'il n'a pas pu être posé.
 
         Ne bloque jamais l'ouverture : si quelqu'un d'autre tient déjà le projet, l'utilisateur est **prévenu** (enregistrer depuis deux
-        endroits fait perdre des modifications) et le projet s'ouvre quand même."""
-        self._unlock_project()
+        endroits fait perdre des modifications) et le projet s'ouvre quand même. Le projet déjà ouvert garde son verrou (rien à reprendre)."""
+        current = getattr(self, "_project_lock", None)
+        if current is not None and current.path == lock_file_for(path):
+            return current
         lock = ProjectLock(path, kind="app")
         try:
             lock.acquire()
@@ -48,11 +50,26 @@ class ProjectFilesMixin:
                     since=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(owner.started)), lock_file=str(error.lock_file),
                 )
             _main_window().QMessageBox.warning(self, i18n.translate("dialog.locked.title"), text)
-            return
+            return None
         except OSError as error:                     # dossier en lecture seule, volume réseau capricieux : pas de verrou, pas d'obstacle
             LOGGER.info("Verrou du projet non posé (%s)", error)
-            return
+            return None
+        return lock
+
+    def _adopt_project_lock(self, lock: ProjectLock | None) -> None:
+        """Le projet est installé : son verrou devient celui de la fenêtre, et l'ancien est relâché."""
+        current = getattr(self, "_project_lock", None)
+        if current is not None and current is not lock:
+            current.release()
         self._project_lock = lock
+
+    def _discard_candidate_lock(self, lock: ProjectLock | None) -> None:
+        """Le projet n'a pas pu être ouvert : on relâche le verrou pris pour lui (jamais celui du projet resté ouvert)."""
+        if lock is not None and lock is not getattr(self, "_project_lock", None):
+            lock.release()
+
+    def _lock_project(self, path: str) -> None:
+        self._adopt_project_lock(self._acquire_project_lock(path))
 
     def _unlock_project(self) -> None:
         """Retire le verrou du projet qu'on quitte (le fichier n'est retiré que s'il est bien le nôtre)."""
@@ -199,9 +216,13 @@ class ProjectFilesMixin:
         if not self._confirm_discard_changes():
             return
         self._finalize_pending_edit_sessions()
+        # Le verrou se prend AVANT la première lecture : un script qui écrirait le projet pendant qu'on le charge (ou qu'une boîte de
+        # récupération attend l'utilisateur) serait sinon écrasé par l'instantané périmé que la fenêtre installe ensuite.
+        candidate_lock = self._acquire_project_lock(path)
         try:
             loaded = load_project(path)
         except Exception as exc:  # noqa: BLE001 - quoi qu'il arrive, un fichier abîmé ne doit rien casser
+            self._discard_candidate_lock(candidate_lock)
             _main_window().QMessageBox.critical(
                 self,
                 i18n.translate("dialog.open.failed_title"),
@@ -230,7 +251,7 @@ class ProjectFilesMixin:
         self._release_open_project()
         self.project = loaded
         self.current_project_path = path
-        self._lock_project(path)
+        self._adopt_project_lock(candidate_lock)
         self.history.reset(self.project)
         if restored_autosave:
             # Le fichier .kut est plus ancien que ce qui est à l'écran.

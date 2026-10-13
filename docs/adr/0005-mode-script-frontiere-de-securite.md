@@ -347,5 +347,7 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   qu'un projet est ouvert) et par `apply` (le temps d'une écriture sur un fichier existant, **avant** de lire le projet). Le propriétaire
   est identifié par PID et heure de début de processus (un PID réutilisé ne passe pas pour l'ancien) ; un verrou n'est repris que si le
   propriétaire est prouvé disparu, et le doute profite au propriétaire (autre machine, identité illisible, fichier abîmé récent). La
-  fenêtre prévient sans jamais refuser d'ouvrir. Limite assumée : consultatif, il ne protège que des programmes de Kut-Studio.
+  fenêtre prévient sans jamais refuser d'ouvrir. Le verrou est pris **avant** de lire le projet (CLI et fenêtre), la reprise d'un verrou
+  périmé est sérialisée par une garde (relecture sous la garde), et l'enregistrement écrit à travers un lien symbolique. Limite
+  assumée : consultatif, il ne protège que des programmes de Kut-Studio.
 - Étapes 5 à 7 : à faire, dans l'ordre.

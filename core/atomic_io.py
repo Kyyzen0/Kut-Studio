@@ -31,7 +31,9 @@ def atomic_open(
     """
     if mode not in {"w", "wb"}:
         raise ValueError(f"Mode d'écriture atomique non pris en charge : {mode!r}")
-    target = Path(path)
+    # Un lien symbolique est suivi : le renommage final remplacerait sinon le lien lui-même par un fichier ordinaire, et le fichier visé
+    # (celui que les autres programmes, le verrou d'un projet compris, désignent) ne changerait pas.
+    target = Path(os.path.realpath(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f"{target.name}.", suffix=".tmp", dir=str(target.parent))
     tmp_path = Path(tmp_name)

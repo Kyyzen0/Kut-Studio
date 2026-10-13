@@ -107,6 +107,13 @@ modifié. Fermez-le, ou, si cette utilisation n'existe plus, supprimez le fichie
 - **Un verrou n'est repris que si son propriétaire est prouvé disparu** : processus absent, ou numéro réutilisé par un autre processus
   (l'heure de début diffère). Le CLI le dit (« Verrou périmé remplacé »). Autre machine (dossier partagé), identité illisible, fichier
   abîmé mais récent : le verrou **tient** ; supprimez le fichier à la main si vous êtes sûr de votre fait.
+- **Pris avant toute lecture.** Le CLI prend le verrou avant de lire le projet, la fenêtre avant de le charger (y compris avant la boîte
+  de récupération de l'autosave) : sinon une écriture arrivée entre la lecture et l'installation serait écrasée par une version périmée.
+- **Reprise sans entrecroisement.** Reprendre un verrou périmé passe par une garde (`nom.kut.lock.reclaim`, quelques instants) : un seul
+  processus reprend à la fois et chacun relit sous la garde, si bien qu'un processus suspendu ne peut pas retirer le verrou vivant d'un
+  autre. Si une garde traîne (plantage pendant la reprise), le refus désigne ce fichier à supprimer.
+- **Un projet ouvert par un lien symbolique** partage le verrou de son référent, et l'enregistrement écrit **à travers** le lien (il
+  restait auparavant remplacé par un fichier ordinaire).
 - **L'application prévient, ne refuse jamais** : si le projet est déjà tenu ailleurs, il s'ouvre quand même, avec un avertissement
   (enregistrer depuis deux endroits fait perdre des modifications). Elle relâche le verrou en changeant de projet et à la fermeture.
 - **Consultatif** : c'est un accord entre les programmes de Kut-Studio. Il ne protège pas d'un éditeur de texte, ni d'une copie du

@@ -397,3 +397,160 @@ def test_a_project_held_by_another_program_still_opens_but_the_user_is_warned(wi
     warnings = window.dialogs.of_kind("warning")
     assert len(warnings) == 1 and str(foreign_holder.pid) in warnings[0][1] and "supprimez le fichier" in warnings[0][1]
     assert read_lock(held).pid == foreign_holder.pid, "le verrou de l'autre est resté intact"
+
+
+# --- Revue Codex : horodatages, reprise concurrente, verrou avant lecture, liens symboliques ---------------------------------
+
+
+@pytest.mark.parametrize("started", ["NaN", "Infinity", "-Infinity", "-5", "1e30", "true", '"hier"'])
+def test_a_lock_with_an_absurd_start_time_is_unreadable_not_trusted(project_file, started):
+    """Le décodeur JSON de Python accepte NaN et Infinity ; ``time.localtime`` lèverait ensuite au lieu de refuser proprement."""
+    lock_file_for(project_file).write_text(
+        '{"kut_lock": 1, "pid": %d, "token": "t", "name": "kut", "host": "%s", "kind": "app", "started": %s, "nonce": "n"}'
+        % (OTHER, HOST, started), encoding="utf-8",
+    )
+    assert read_lock(project_file) is None
+    with pytest.raises(ProjectLockedError) as caught:
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+    assert caught.value.owner is None, "récent et illisible : le verrou tient, sans exception de date"
+
+
+def test_a_takeover_that_loses_the_race_does_not_remove_the_winners_live_lock(project_file, monkeypatch):
+    """Revue Codex : A compare, est suspendu ; B retire le verrou périmé et pose le sien ; A reprend et retirait ce verrou VIVANT."""
+    _write_owner(project_file, pid=OTHER, token="mort")
+    ops = FakeOps({ME: "me", 4_000_002: "vivant"})
+    original_guard = ProjectLock._reclaim_guard
+    interleaved: list[str] = []
+
+    def guard_after_b_won(self):
+        # B passe avant que A prenne la garde : retire le verrou périmé et pose le sien (un vrai propriétaire vivant).
+        lock_file_for(project_file).unlink()
+        _write_owner(project_file, pid=4_000_002, token="vivant", nonce="b-gagne")
+        interleaved.append("B a gagné")
+        return original_guard(self)
+
+    monkeypatch.setattr(ProjectLock, "_reclaim_guard", guard_after_b_won)
+    with pytest.raises(ProjectLockedError) as caught:
+        ProjectLock(project_file, ops=ops).acquire()
+    assert interleaved == ["B a gagné"] and caught.value.owner.nonce == "b-gagne"
+    survivor = read_lock(project_file)
+    assert survivor is not None and survivor.nonce == "b-gagne", "le verrou vivant de B est intact"
+
+
+def test_the_reclaim_guard_is_released_and_a_stuck_one_is_never_stolen(project_file, monkeypatch):
+    _write_owner(project_file, pid=OTHER)
+    guard = lock_file_for(project_file).with_name(lock_file_for(project_file).name + ".reclaim")
+    assert ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire() is not None
+    assert not guard.exists(), "la garde ne survit pas à la reprise"
+    lock_file_for(project_file).unlink()
+    _write_owner(project_file, pid=OTHER)
+    guard.write_text("", encoding="utf-8")
+    monkeypatch.setattr("core.project_lock._GUARD_WAIT_SECONDS", 0.1)
+    with pytest.raises(ProjectLockedError) as caught:
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+    assert caught.value.lock_file == guard, "le message désigne la garde à supprimer"
+    assert guard.exists() and read_lock(project_file).pid == OTHER, "ni la garde ni le verrou périmé n'ont été touchés"
+
+
+_CONTENDER = (
+    "import os, sys, time\n"
+    "sys.path.insert(0, sys.argv[3])\n"
+    "from core.project_lock import ProjectLock, ProjectLockedError\n"
+    "while not os.path.exists(sys.argv[2]):\n"
+    "    time.sleep(0.005)\n"
+    "lock = ProjectLock(sys.argv[1], kind='cli')\n"
+    "try:\n"
+    "    lock.acquire()\n"
+    "    print('won', flush=True)\n"
+    "    time.sleep(60)\n"
+    "except ProjectLockedError:\n"
+    "    print('locked', flush=True)\n"
+)
+
+
+def test_six_real_processes_racing_for_one_stale_lock_give_exactly_one_winner(project_file, tmp_path):
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait(timeout=30)
+    _write_owner(project_file, pid=dead.pid, token="trop-ancien")                      # un propriétaire réellement disparu
+    start = tmp_path / "go"
+    children = [
+        subprocess.Popen([sys.executable, "-c", _CONTENDER, str(project_file), str(start), str(ROOT)], stdout=subprocess.PIPE, text=True, cwd=ROOT)
+        for _ in range(6)
+    ]
+    try:
+        time.sleep(1.0)                                                                  # tous importent, puis attendent le départ
+        start.write_text("go", encoding="utf-8")
+        outcomes = [child.stdout.readline().strip() for child in children]
+        assert sorted(outcomes) == ["locked"] * 5 + ["won"], outcomes
+        winner = children[outcomes.index("won")]
+        assert read_lock(project_file).pid == winner.pid, "le verrou posé est celui du gagnant"
+    finally:
+        for child in children:
+            child.kill()
+            child.wait(timeout=10)
+
+
+def test_the_window_takes_the_lock_before_it_first_reads_the_project(window, tmp_path, monkeypatch):
+    """Revue Codex : lu d'abord, verrouillé ensuite, un script pouvait écrire entre les deux ; la fenêtre installait alors un instantané périmé."""
+    path = _saved(tmp_path, "a.kut")
+    seen: dict[str, bool] = {}
+    real_load = load_project
+
+    def spy(target, *args, **kwargs):
+        seen.setdefault("locked_when_read", lock_file_for(path).exists())
+        return real_load(target, *args, **kwargs)
+
+    monkeypatch.setattr("ui.main_window_mixins.project_files.load_project", spy)
+    window._load_project_from_path(str(path))
+    assert seen["locked_when_read"] is True
+
+
+def test_a_project_that_fails_to_open_leaves_no_lock_and_keeps_the_open_projects_lock(window, tmp_path):
+    good, other = _saved(tmp_path, "a.kut"), _saved(tmp_path, "b.kut")
+    broken = tmp_path / "casse.kut"
+    broken.write_text("pas du json", encoding="utf-8")
+    window._load_project_from_path(str(good))
+    window._load_project_from_path(str(broken))
+    assert window.dialogs.of_kind("critical"), "l'erreur est présentée"
+    assert not lock_file_for(broken).exists(), "le verrou pris pour le projet illisible est relâché"
+    assert window.current_project_path == str(good) and read_lock(good).pid == ME, "le projet resté ouvert garde son verrou"
+    window._load_project_from_path(str(good))                       # le même projet, rouvert : toujours verrouillé
+    assert read_lock(good) is not None
+    window._load_project_from_path(str(other))
+    assert not lock_file_for(good).exists() and read_lock(other) is not None
+
+
+def test_a_failed_reopen_of_the_open_project_does_not_drop_its_lock(window, tmp_path):
+    path = _saved(tmp_path, "a.kut")
+    window._load_project_from_path(str(path))
+    path.write_text("abîmé", encoding="utf-8")
+    window._load_project_from_path(str(path))
+    assert read_lock(path) is not None and read_lock(path).pid == ME
+
+
+def test_atomic_writes_go_through_a_symlink_instead_of_replacing_it(tmp_path):
+    """Revue Codex : le renommage final remplaçait le lien par un fichier ordinaire ; le projet visé (et son verrou) ne bougeait plus."""
+    if sys.platform.startswith("win"):
+        pytest.skip("liens symboliques : droits particuliers sous Windows")
+    from core.atomic_io import atomic_write_text
+
+    real = tmp_path / "vrai.txt"
+    real.write_text("avant", encoding="utf-8")
+    link = tmp_path / "lien.txt"
+    link.symlink_to(real)
+    atomic_write_text(link, "après")
+    assert link.is_symlink() and real.read_text(encoding="utf-8") == "après" and os.path.realpath(link) == str(real.resolve())
+
+
+def test_saving_a_project_opened_through_a_symlink_keeps_the_link_and_the_lock_aligned(window, tmp_path):
+    if sys.platform.startswith("win"):
+        pytest.skip("liens symboliques : droits particuliers sous Windows")
+    real = _saved(tmp_path, "vrai.kut")
+    link = tmp_path / "lien.kut"
+    link.symlink_to(real)
+    window._load_project_from_path(str(link))
+    window.project.name = "Renommé"
+    window.save_project_file()
+    assert link.is_symlink(), "le lien est resté un lien"
+    assert load_project(str(real)).name == "Renommé", "c'est le projet visé qui a changé"
+    assert read_lock(real) is not None and lock_file_for(link) == lock_file_for(real)

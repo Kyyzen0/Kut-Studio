@@ -30,6 +30,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
   une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
 
+### Fixed
+
+- **Un projet ouvert par un lien symbolique ne remplace plus le lien à l'enregistrement.** L'écriture atomique renommait le fichier
+  temporaire sur le lien lui-même : le projet visé ne changeait pas et le lien devenait un fichier ordinaire. L'enregistrement écrit
+  maintenant à travers le lien.
+
 ## [0.5.5] - 2026-10-13
 
 Une version de transition : la **ligne de commande** (`Kut-Studio export | validate | info | presets`, sans fenêtre) pose le socle du
