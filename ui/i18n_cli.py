@@ -124,9 +124,9 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
         "identificador no válido (letras, cifras y «_», como máximo {limit} caracteres)",
     ),
     "cli.script.issue.bad_text": _t(
-        "texte invalide (non vide, {limit} caractères au plus, sans caractère de contrôle)",
-        "invalid text (not empty, at most {limit} characters, no control characters)",
-        "texto no válido (no vacío, como máximo {limit} caracteres, sin caracteres de control)",
+        "texte invalide (non vide, {limit} caractères au plus, sans caractère de contrôle ni espace en bordure)",
+        "invalid text (not empty, at most {limit} characters, no control characters, no leading or trailing whitespace)",
+        "texto no válido (no vacío, como máximo {limit} caracteres, sin caracteres de control ni espacios en los extremos)",
     ),
     "cli.script.issue.bad_color": _t(
         "couleur invalide (« #RRGGBB » ou « #RRGGBBAA »)", "invalid colour (\"#RRGGBB\" or \"#RRGGBBAA\")",

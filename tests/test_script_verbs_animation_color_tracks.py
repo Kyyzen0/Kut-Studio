@@ -76,6 +76,18 @@ def test_a_track_name_already_taken_is_refused_not_renamed_in_silence():
                 parse_script(_script(bad))
 
 
+def test_a_text_with_edge_whitespace_is_refused_since_the_model_would_strip_it():
+    """Revue Codex : « A1 » avec des espaces autour passait le contrôle du doublon, puis le modèle le rognait et le suffixait en « A1 (2) »."""
+    for name in (" A1 ", "A1 ", " Voix", "  ", "\n"):
+        with pytest.raises(ScriptInvalid):
+            parse_script(_script({"op": "add_track", "type": "audio", "name": name}))
+    for op in ({"op": "rename_bus", "bus": "b", "name": " Voix "}, {"op": "add_marker", "at": 1, "name": " Début"},
+               {"op": "add_subtitle", "text": "\nBonjour", "at": 0, "duration": 1}, {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "text": "x "}):
+        with pytest.raises(ScriptInvalid):
+            parse_script(_script(op))
+    parse_script(_script({"op": "add_subtitle", "text": "a\nb", "at": 0, "duration": 1}))     # un saut de ligne au milieu reste permis
+
+
 # --- Sous-titres -----------------------------------------------------------------------------------------------------------
 
 
@@ -163,17 +175,43 @@ def test_a_keyframe_value_outside_the_property_bounds_is_refused_not_clamped():
     assert not session.can_undo and next(t for t in session.project.tracks if t.id == "V1").clips == [], "tout ou rien : rien n'a été posé"
 
 
+def _host(name: str) -> list[dict]:
+    """Un clip « a » d'un genre de piste où la propriété existe : vidéo, sinon calque graphique (« skew »)."""
+    if get_target(name).applies_to("video"):
+        return _clips("a")
+    return [{"op": "add_graphic", "graphic": "text", "at": 0, "duration": 10, "id": "a"}]
+
+
 def test_every_animatable_property_has_its_models_bounds_enforced_at_both_ends():
     for name in _ANIMATABLE:
         spec = get_target(name).spec
         assert spec.kind.value == "float", f"{name} : le verbe ne couvre que les propriétés numériques"
         for value in (spec.minimum, spec.maximum):
-            session, report = _apply(_project(), *_clips("a"), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": value})
+            session, report = _apply(_project(), *_host(name), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": value})
             assert report.ok, (name, value, report.error)
             assert value_at(find_keyframe_clip(session.project, "a"), name, 0.0) == pytest.approx(value), (name, value)
         for outside in (spec.minimum - 0.5, spec.maximum + 0.5):
-            _session, report = _apply(_project(), *_clips("a"), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": outside})
-            assert not report.ok, (name, outside)
+            _session, report = _apply(_project(), *_host(name), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": outside})
+            assert not report.ok and "hors bornes" in report.error, (name, outside)
+
+
+def test_a_property_must_exist_for_the_clips_track_type():
+    """Revue Codex : une image clé d'opacité sur un clip de sous-titre, ou de « skew » sur une vidéo, était enregistrée puis ignorée au rendu."""
+    session, report = _apply(
+        _project(), *_clips("a"), {"op": "add_keyframe", "clip": "a", "property": "skew", "at": 0, "value": 10},
+    )
+    assert not report.ok and "ne s'applique pas" in report.error
+    session, report = _apply(
+        _project(), {"op": "add_track", "type": "subtitle", "id": "S1"}, {"op": "add_subtitle", "text": "x", "at": 0, "duration": 2, "id": "st"},
+        {"op": "add_keyframe", "clip": "st", "property": "opacity", "at": 0, "value": 0.5},
+    )
+    assert not report.ok and "ne s'applique pas" in report.error and report.failed_index == 2
+    session, report = _apply(
+        _project(), {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 2, "id": "titre"},
+        {"op": "add_keyframe", "clip": "titre", "property": "skew", "at": 0, "value": 10},
+        {"op": "add_keyframe", "clip": "titre", "property": "opacity", "at": 1, "value": 0.5},
+    )
+    assert report.ok, "« skew » et l'opacité valent pour un calque graphique"
 
 
 def test_keyframe_time_is_not_clamped_to_the_clip_either():

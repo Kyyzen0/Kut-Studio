@@ -406,7 +406,15 @@ _ANIMATABLE = ("position_x", "position_y", "scale", "rotation", "opacity", "anch
 def _add_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
-        spec = get_target(a["property"]).spec
+        target = get_target(a["property"])
+        owner = _owner_track(project, clip_id)
+        # Une propriété n'existe que pour certains genres de piste (``skew`` : graphiques seulement ; les transformations : vidéo et
+        # graphiques) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
+        if not target.applies_to(owner.type) or (
+            target.applies_to_clip is not None and not target.applies_to_clip(find_clip(project, clip_id))
+        ):
+            raise ValueError(f"La propriété {a['property']!r} ne s'applique pas à un clip d'une piste '{owner.type}'.")
+        spec = target.spec
         value = float(a["value"])
         low = float("-inf") if spec.minimum is None else spec.minimum
         high = float("inf") if spec.maximum is None else spec.maximum
