@@ -12,6 +12,7 @@ multi-sources ; l'export de référence garde son graphe FFmpeg.
 from __future__ import annotations
 
 import logging
+import math
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +51,66 @@ def pyav_available() -> bool:
     return _av is not None
 
 
+def _probe_number(text: str) -> float | None:
+    """Un flottant fini, ou ``None`` pour vide, ``N/A`` ou tout texte non numérique.
+
+    ffprobe écrit ``N/A`` quand une durée de flux est absente (Matroska, WebM). La chaîne est truthy : ``float(text or
+    repli)`` lève ``ValueError`` au lieu d'utiliser la durée du conteneur, qui est sur la ligne suivante.
+    """
+    token = text.strip()
+    if not token or token.upper() == "N/A":
+        return None
+    try:
+        value = float(token)
+    except ValueError:
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _parse_probe_csv(stdout: str) -> tuple[int, int, float, float]:
+    """``(largeur, hauteur, cadence, durée)`` depuis ``ffprobe -of csv=p=0``.
+
+    La durée de flux est préférée ; ``N/A`` cède la place à la durée du conteneur (ligne suivante, un seul nombre).
+    """
+    stream: tuple[int, int, str, float | None] | None = None
+    container_duration: float | None = None
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        width = _probe_number(parts[0]) if parts else None
+        height = _probe_number(parts[1]) if len(parts) > 1 else None
+        if width is not None and height is not None and width >= 1 and height >= 1 and len(parts) >= 3:
+            duration = None
+            for extra in parts[3:]:
+                duration = _probe_number(extra)
+                if duration is not None:
+                    break
+            stream = (int(width), int(height), parts[2], duration)
+            continue
+        if len(parts) == 1:
+            number = _probe_number(parts[0])
+            if number is not None:
+                container_duration = number
+    if stream is None:
+        raise OSError("ffprobe n'a pas renvoyé de flux vidéo")
+    width_px, height_px, rate, duration = stream
+    if "/" in rate:
+        num_text, den_text = rate.split("/", 1)
+        num = _probe_number(num_text)
+        den = _probe_number(den_text)
+        fps = (num / max(den, 1e-9)) if num is not None and den is not None else 30.0
+    else:
+        parsed = _probe_number(rate)
+        fps = parsed if parsed is not None and parsed > 0 else 30.0
+    if duration is None:
+        duration = container_duration if container_duration is not None else 0.0
+    return width_px, height_px, fps, duration
+
+
 def probe(path: str | Path) -> MediaInfo:
     """Métadonnées minimales (durée, taille, cadence) via ffprobe."""
     ffprobe = find_media_tool("ffprobe")
@@ -65,17 +126,7 @@ def probe(path: str | Path) -> MediaInfo:
     )
     if completed.returncode != 0:
         raise OSError(completed.stderr or f"ffprobe a échoué sur {path}")
-    line = (completed.stdout or "").strip().splitlines()[0]
-    parts = line.split(",")
-    width = int(float(parts[0]))
-    height = int(float(parts[1]))
-    rate = parts[2]
-    if "/" in rate:
-        num, den = rate.split("/", 1)
-        fps = float(num) / max(float(den), 1e-9)
-    else:
-        fps = float(rate or 30)
-    duration = float(parts[3] or parts[4] or 0.0)
+    width, height, fps, duration = _parse_probe_csv(completed.stdout or "")
     return MediaInfo(str(path), duration, width, height, fps)
 
 
