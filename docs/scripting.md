@@ -90,6 +90,28 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
 
+## Verrou du projet
+
+Un projet ouvert dans la fenêtre ne se fait pas réécrire par un script. L'application pose, tant qu'un projet est ouvert, un petit
+fichier voisin `nom.kut.lock` (comme `nom.kut.autosave`) qui dit qui le tient : numéro et heure de début du processus, machine, genre
+(`app` ou `cli`). `apply` le consulte avant de lire le projet et **refuse d'écrire** dans un projet tenu par un autre :
+
+```text
+Projet verrouillé : il est utilisé par l'application (processus 4242 sur mon-poste, depuis 2026-10-13 09:12:03). Rien n'a été
+modifié. Fermez-le, ou, si cette utilisation n'existe plus, supprimez le fichier /…/demo.kut.lock.
+```
+
+- **Ce que ça protège** : `--in-place`, ou `-o` vers un fichier existant avec `--overwrite`. `--dry-run` et l'écriture d'un **nouveau**
+  fichier ne sont pas concernés (lire un projet tenu par la fenêtre est permis). `--json` rend `error.kind = "project_locked"`, avec
+  le propriétaire et le fichier de verrou.
+- **Un verrou n'est repris que si son propriétaire est prouvé disparu** : processus absent, ou numéro réutilisé par un autre processus
+  (l'heure de début diffère). Le CLI le dit (« Verrou périmé remplacé »). Autre machine (dossier partagé), identité illisible, fichier
+  abîmé mais récent : le verrou **tient** ; supprimez le fichier à la main si vous êtes sûr de votre fait.
+- **L'application prévient, ne refuse jamais** : si le projet est déjà tenu ailleurs, il s'ouvre quand même, avec un avertissement
+  (enregistrer depuis deux endroits fait perdre des modifications). Elle relâche le verrou en changeant de projet et à la fermeture.
+- **Consultatif** : c'est un accord entre les programmes de Kut-Studio. Il ne protège pas d'un éditeur de texte, ni d'une copie du
+  fichier qui l'ignorerait.
+
 ## Fichiers : `import_media`
 
 C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il sonde le média avec `ffprobe`, il n'écrit rien).
@@ -106,8 +128,6 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 - **Étalonnage avancé** (courbes, LUT, roues, nœuds, fenêtres), **animation des couleurs et des effets**, **calques d'image**, **séquences
   imbriquées** et **multicam** : prochains lots. `set_color_grade` ne règle que les sept curseurs du premier nœud.
-- **Verrou consultatif** pour `--in-place` : l'application ne pose pas encore de verrou, donc ne modifiez pas un projet ouvert dans la
-  fenêtre.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code
@@ -118,4 +138,5 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
+| `core/project_lock.py` | le verrou consultatif d'un projet (`ProjectLock`, `judge`, `read_lock`) |
 | `core/cli.py` | `apply`, `validate script.json`, `schema` |

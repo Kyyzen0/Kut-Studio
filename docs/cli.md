@@ -22,7 +22,7 @@ Depuis les sources : `python main.py info projet.kut`. Une commande est le premi
 | `validate PROJET` | le projet s'ouvre-t-il, et **qu'a-t-il perdu en route** (voir ci-dessous) |
 | `presets` | les préréglages d'export (`h264_1080p`, `h265_4k`, `youtube`…) |
 | `validate SCRIPT.json` | le script est-il valide ? Toutes ses erreurs d'un coup, sans projet |
-| `apply SCRIPT PROJET -o SORTIE` | applique un script **en tout ou rien** ; `--dry-run` n'écrit rien, `--in-place` modifie le projet lui-même, `--allow-outside` laisse `import_media` lire hors du dossier du script (voir [scripting.md](scripting.md)) |
+| `apply SCRIPT PROJET -o SORTIE` | applique un script **en tout ou rien** ; `--dry-run` n'écrit rien, `--in-place` modifie le projet lui-même, `--allow-outside` laisse `import_media` lire hors du dossier du script, et un projet tenu ouvert par l'application est **refusé** (verrou ; voir [scripting.md](scripting.md)) |
 | `schema` | écrit le schéma JSON des scripts, généré depuis la table de verbes |
 | `export PROJET -o SORTIE` | exporte, sans fenêtre, avec exactement la commande FFmpeg de l'interface |
 

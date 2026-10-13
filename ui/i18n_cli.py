@@ -160,6 +160,28 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
         "identifiant « {id} » déjà utilisé dans ce script", "identifier \"{id}\" already used in this script",
         "identificador «{id}» ya usado en este script",
     ),
+    "cli.lock.kind.app": _t("l'application", "the application", "la aplicación"),
+    "cli.lock.kind.cli": _t("un autre Kut-Studio en ligne de commande", "another command-line Kut-Studio", "otro Kut-Studio en línea de comandos"),
+    "cli.lock.held": _t(
+        "Projet verrouillé : il est utilisé par {who} (processus {pid} sur {host}, depuis {since}). Rien n'a été modifié. "
+        "Fermez-le, ou, si cette utilisation n'existe plus, supprimez le fichier {lock_file}.",
+        "Project locked: it is in use by {who} (process {pid} on {host}, since {since}). Nothing was changed. "
+        "Close it, or, if that use no longer exists, delete the file {lock_file}.",
+        "Proyecto bloqueado: lo usa {who} (proceso {pid} en {host}, desde {since}). No se modificó nada. "
+        "Ciérrelo o, si ese uso ya no existe, elimine el archivo {lock_file}.",
+    ),
+    "cli.lock.unreadable": _t(
+        "Projet verrouillé par un fichier de verrou illisible : {lock_file}. Rien n'a été modifié. Si aucun programme n'utilise "
+        "ce projet, supprimez ce fichier.",
+        "Project locked by an unreadable lock file: {lock_file}. Nothing was changed. If no program uses this project, delete that file.",
+        "Proyecto bloqueado por un archivo de bloqueo ilegible: {lock_file}. No se modificó nada. Si ningún programa usa este proyecto, "
+        "elimine ese archivo.",
+    ),
+    "cli.lock.stale_replaced": _t(
+        "Verrou périmé remplacé (processus {pid} sur {host}, disparu).",
+        "Stale lock replaced (process {pid} on {host}, gone).",
+        "Bloqueo obsoleto reemplazado (proceso {pid} en {host}, desaparecido).",
+    ),
     "cli.apply.refused": _t(
         "Opération refusée ({op}, n° {index}) : {message}. Rien n'a été modifié.",
         "Operation refused ({op}, #{index}): {message}. Nothing was changed.",

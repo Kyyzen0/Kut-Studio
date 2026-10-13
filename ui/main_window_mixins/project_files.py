@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
 from core.export_paths import default_export_directory, export_file_name
 from core.project_factory import create_default_project
 from core.project_io import load_project, save_project
+from core.project_lock import ProjectLock, ProjectLockedError
 from core.render_plan import RenderPlan, build_render_plan
 from ui import i18n
 
@@ -18,8 +21,45 @@ def _main_window():
     return main_window
 
 
+LOGGER = logging.getLogger("kut_studio.project_files")
+
+
 class ProjectFilesMixin:
     """Mixin de ``MainWindow`` (project_files)."""
+
+    def _lock_project(self, path: str) -> None:
+        """Prend le verrou du projet ouvert (ADR-0005) : un script qui voudrait le réécrire sur place le verra et refusera.
+
+        Ne bloque jamais l'ouverture : si quelqu'un d'autre tient déjà le projet, l'utilisateur est **prévenu** (enregistrer depuis deux
+        endroits fait perdre des modifications) et le projet s'ouvre quand même."""
+        self._unlock_project()
+        lock = ProjectLock(path, kind="app")
+        try:
+            lock.acquire()
+        except ProjectLockedError as error:
+            LOGGER.warning("Projet déjà verrouillé : %s", error)
+            owner = error.owner
+            if owner is None:
+                text = i18n.translate("dialog.locked.unreadable", lock_file=str(error.lock_file))
+            else:
+                text = i18n.translate(
+                    "dialog.locked.text",
+                    who=i18n.translate(f"cli.lock.kind.{owner.kind}"), pid=owner.pid, host=owner.host,
+                    since=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(owner.started)), lock_file=str(error.lock_file),
+                )
+            _main_window().QMessageBox.warning(self, i18n.translate("dialog.locked.title"), text)
+            return
+        except OSError as error:                     # dossier en lecture seule, volume réseau capricieux : pas de verrou, pas d'obstacle
+            LOGGER.info("Verrou du projet non posé (%s)", error)
+            return
+        self._project_lock = lock
+
+    def _unlock_project(self) -> None:
+        """Retire le verrou du projet qu'on quitte (le fichier n'est retiré que s'il est bien le nôtre)."""
+        lock = getattr(self, "_project_lock", None)
+        self._project_lock = None
+        if lock is not None:
+            lock.release()
 
     def _confirm_discard_changes(self) -> bool:
         """Propose d'enregistrer un projet modifié avant de le quitter.
@@ -58,6 +98,7 @@ class ProjectFilesMixin:
         self._release_open_project()
         self.project = project
         self.current_project_path = None
+        self._unlock_project()
         self.history.reset(self.project)
         self._refresh_undo_redo_state()
         self.timeline_panel.set_project(self.project)
@@ -123,6 +164,7 @@ class ProjectFilesMixin:
             )
             return
         self.current_project_path = path
+        self._lock_project(path)
         self._mark_clean()
 
     def open_project_file(self) -> None:
@@ -188,6 +230,7 @@ class ProjectFilesMixin:
         self._release_open_project()
         self.project = loaded
         self.current_project_path = path
+        self._lock_project(path)
         self.history.reset(self.project)
         if restored_autosave:
             # Le fichier .kut est plus ancien que ce qui est à l'écran.

@@ -341,6 +341,11 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   `import_media`, les inserts de piste (égaliseur compris), l'état des pistes et les calques graphiques. Le lot 3 ajoute les pistes, les
   sous-titres, les transitions, les images clés et l'étalonnage, avec trois règles issues de la revue : bornes lues dans le modèle, verrou
   de piste respecté, genres de piste vérifiés. Documentation :
-  `docs/scripting.md`. **Reste** : étalonnage avancé, animation des couleurs et des effets, calques d'image, séquences imbriquées, multicam, et le **verrou
-  consultatif** de `--in-place` (l'application n'en pose pas encore).
+  `docs/scripting.md`. **Reste** : étalonnage avancé, animation des couleurs et des effets, calques d'image,
+  séquences imbriquées, multicam.
+- **Verrou consultatif : fait** (décision 3). `core/project_lock.py` : fichier `nom.kut.lock` créé atomiquement par l'application (tant
+  qu'un projet est ouvert) et par `apply` (le temps d'une écriture sur un fichier existant, **avant** de lire le projet). Le propriétaire
+  est identifié par PID et heure de début de processus (un PID réutilisé ne passe pas pour l'ancien) ; un verrou n'est repris que si le
+  propriétaire est prouvé disparu, et le doute profite au propriétaire (autre machine, identité illisible, fichier abîmé récent). La
+  fenêtre prévient sans jamais refuser d'ouvrir. Limite assumée : consultatif, il ne protège que des programmes de Kut-Studio.
 - Étapes 5 à 7 : à faire, dans l'ordre.
