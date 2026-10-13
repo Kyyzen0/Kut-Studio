@@ -59,6 +59,120 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
     "cli.section.library_assignments": _t(
         "affectations de la bibliothèque", "library assignments", "asignaciones de la biblioteca"
     ),
+    # --- Scripts déclaratifs (apply, validate script.json) -------------------------------------------------------------
+    "cli.error.apply_output_is_input": _t(
+        "La sortie est le projet lui-même : {path}. Ajoutez --in-place pour le modifier sur place.",
+        "The output is the project itself: {path}. Add --in-place to modify it in place.",
+        "La salida es el propio proyecto: {path}. Añada --in-place para modificarlo en su sitio.",
+    ),
+    "cli.error.apply_output_required": _t(
+        "Indiquez la sortie : -o fichier.kut (ou --in-place, ou --dry-run pour ne rien écrire).",
+        "Say where to write: -o file.kut (or --in-place, or --dry-run to write nothing).",
+        "Indique dónde escribir: -o archivo.kut (o --in-place, o --dry-run para no escribir nada).",
+    ),
+    "cli.error.apply_in_place_conflict": _t(
+        "--in-place écrit dans le projet : il ne se combine pas avec -o.",
+        "--in-place writes into the project: it cannot be combined with -o.",
+        "--in-place escribe en el proyecto: no se combina con -o.",
+    ),
+    "cli.script.invalid": _t(
+        "Script invalide : {count} erreur(s).", "Invalid script: {count} error(s).", "Script no válido: {count} error(es)."
+    ),
+    "cli.script.valid": _t(
+        "Script valide : {path} ({operations} opération(s)).",
+        "Valid script: {path} ({operations} operation(s)).",
+        "Script válido: {path} ({operations} operación(es)).",
+    ),
+    "cli.script.where": _t("le script", "the whole script", "todo el script"),
+    "cli.script.issue_line": _t("  - {where} : {message}", "  - {where}: {message}", "  - {where}: {message}"),
+    "cli.script.suggestion": _t(" (vouliez-vous dire « {suggestion} » ?)", " (did you mean \"{suggestion}\"?)", " (¿quería decir «{suggestion}»?)"),
+    "cli.script.issue.not_json": _t("JSON illisible : {error}", "Unreadable JSON: {error}", "JSON ilegible: {error}"),
+    "cli.script.issue.too_large": _t(
+        "script trop volumineux (plus de {limit} octets)", "script too large (over {limit} bytes)", "script demasiado grande (más de {limit} bytes)"
+    ),
+    "cli.script.issue.not_object": _t(
+        "le script doit être un objet JSON", "the script must be a JSON object", "el script debe ser un objeto JSON"
+    ),
+    "cli.script.issue.unknown_field": _t("champ inconnu", "unknown field", "campo desconocido"),
+    "cli.script.issue.missing_version": _t(
+        "version absente : ajoutez \"kut_script\": 1", "missing version: add \"kut_script\": 1", "falta la versión: añada \"kut_script\": 1"
+    ),
+    "cli.script.issue.newer_version": _t(
+        "version {found} trop récente (cette application comprend jusqu'à {supported})",
+        "version {found} is too new (this application understands up to {supported})",
+        "la versión {found} es demasiado nueva (esta aplicación entiende hasta la {supported})",
+    ),
+    "cli.script.issue.wrong_type": _t("type incorrect : {expected} attendu", "wrong type: {expected} expected", "tipo incorrecto: se esperaba {expected}"),
+    "cli.script.issue.out_of_range": _t(
+        "valeur hors bornes (de {minimum} à {maximum})", "value out of range ({minimum} to {maximum})", "valor fuera de rango ({minimum} a {maximum})"
+    ),
+    "cli.script.issue.missing_ops": _t("liste \"ops\" absente", "missing \"ops\" list", "falta la lista \"ops\""),
+    "cli.script.issue.too_many_ops": _t(
+        "trop d'opérations (au plus {limit})", "too many operations (at most {limit})", "demasiadas operaciones (como máximo {limit})"
+    ),
+    "cli.script.issue.op_not_object": _t(
+        "une opération est un objet JSON", "an operation is a JSON object", "una operación es un objeto JSON"
+    ),
+    "cli.script.issue.unknown_verb": _t("verbe inconnu", "unknown verb", "verbo desconocido"),
+    "cli.script.issue.missing_field": _t("champ obligatoire absent", "required field missing", "falta un campo obligatorio"),
+    "cli.script.issue.not_in_choices": _t(
+        "valeur non permise (permises : {choices})", "value not allowed (allowed: {choices})", "valor no permitido (permitidos: {choices})"
+    ),
+    "cli.script.issue.bad_id": _t(
+        "identifiant invalide (lettres, chiffres et « _ », {limit} caractères au plus)",
+        "invalid identifier (letters, digits and \"_\", at most {limit} characters)",
+        "identificador no válido (letras, cifras y «_», como máximo {limit} caracteres)",
+    ),
+    "cli.script.issue.bad_text": _t(
+        "texte invalide (non vide, {limit} caractères au plus, sans caractère de contrôle)",
+        "invalid text (not empty, at most {limit} characters, no control characters)",
+        "texto no válido (no vacío, como máximo {limit} caracteres, sin caracteres de control)",
+    ),
+    "cli.script.issue.bad_ref": _t(
+        "une référence s'écrit {{\"ref\": \"alias\"}}", "a reference is written {{\"ref\": \"alias\"}}",
+        "una referencia se escribe {{\"ref\": \"alias\"}}",
+    ),
+    "cli.script.issue.unknown_alias": _t(
+        "alias « {alias} » inconnu (défini plus haut ?)", "unknown alias \"{alias}\" (defined earlier?)", "alias «{alias}» desconocido (¿definido antes?)"
+    ),
+    "cli.script.issue.alias_kind": _t(
+        "l'alias « {alias} » désigne un objet de genre {found}, pas {expected}",
+        "alias \"{alias}\" is a {found}, not a {expected}",
+        "el alias «{alias}» designa un objeto de tipo {found}, no {expected}",
+    ),
+    "cli.script.issue.too_many_params": _t(
+        "trop de paramètres (au plus {limit})", "too many parameters (at most {limit})", "demasiados parámetros (como máximo {limit})"
+    ),
+    "cli.script.issue.bad_param_name": _t("nom de paramètre invalide", "invalid parameter name", "nombre de parámetro no válido"),
+    "cli.script.issue.bad_param_value": _t(
+        "valeur de paramètre invalide (nombre, booléen ou texte court)",
+        "invalid parameter value (number, boolean or short text)",
+        "valor de parámetro no válido (número, booleano o texto corto)",
+    ),
+    "cli.script.issue.duplicate_alias": _t(
+        "alias « {alias} » déjà défini", "alias \"{alias}\" already defined", "alias «{alias}» ya definido"
+    ),
+    "cli.script.issue.duplicate_id": _t(
+        "identifiant « {id} » déjà utilisé dans ce script", "identifier \"{id}\" already used in this script",
+        "identificador «{id}» ya usado en este script",
+    ),
+    "cli.apply.refused": _t(
+        "Opération refusée ({op}, n° {index}) : {message}. Rien n'a été modifié.",
+        "Operation refused ({op}, #{index}): {message}. Nothing was changed.",
+        "Operación rechazada ({op}, n.º {index}): {message}. No se modificó nada.",
+    ),
+    "cli.apply.dry_run": _t(
+        "Essai à blanc : {operations} opération(s) s'appliquent sans erreur ; rien n'est écrit.",
+        "Dry run: {operations} operation(s) apply cleanly; nothing is written.",
+        "Prueba en seco: {operations} operación(es) se aplican sin error; no se escribe nada.",
+    ),
+    "cli.apply.done": _t(
+        "{operations} opération(s) appliquée(s) : {path}", "{operations} operation(s) applied: {path}", "{operations} operación(es) aplicada(s): {path}"
+    ),
+    "cli.apply.created_line": _t("  + {op} -> {id}", "  + {op} -> {id}", "  + {op} -> {id}"),
+    "cli.apply.write_failed": _t(
+        "Écriture impossible : {message}", "Could not write: {message}", "No se pudo escribir: {message}"
+    ),
     "cli.validate.dropped_line": _t("  - {section} : {count}", "  - {section}: {count}", "  - {section}: {count}"),
     "cli.validate.missing_media": _t(
         "{count} média(s) introuvable(s) sur le disque :", "{count} media file(s) missing on disk:",

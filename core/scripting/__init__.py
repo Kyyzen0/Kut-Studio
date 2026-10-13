@@ -1,8 +1,17 @@
-"""Mode script (ADR-0005) : la session d'édition, ses opérations et, plus tard, le format déclaratif et la façade de lecture.
+"""Mode script (ADR-0005) : la session d'édition, le format déclaratif (verbes, décodeur, schéma) et, plus tard, la façade de lecture.
 
-Rien ici n'exécute de code venu de données (règle R1) : une opération est une fonction que l'appelant fournit.
+Rien ici n'exécute de code venu de données (règle R1) : une opération est une fonction que l'appelant fournit, ou un verbe de la table
+:data:`VERBS`, qui n'appelle que des fonctions de ``core/`` listées.
 """
 
+from .schema import json_schema
+from .script import (
+    SCRIPT_VERSION, Script, ScriptInvalid, ScriptIssue, apply_script, created_ids, loads_script, parse_script, read_script,
+)
 from .session import ApplyReport, Operation, OperationResult, Session, SessionBusyError, Transaction
+from .verbs import VERBS
 
-__all__ = ["ApplyReport", "Operation", "OperationResult", "Session", "SessionBusyError", "Transaction"]
+__all__ = [
+    "SCRIPT_VERSION", "VERBS", "ApplyReport", "Operation", "OperationResult", "Script", "ScriptInvalid", "ScriptIssue", "Session",
+    "SessionBusyError", "Transaction", "apply_script", "created_ids", "json_schema", "loads_script", "parse_script", "read_script",
+]

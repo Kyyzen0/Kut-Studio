@@ -334,5 +334,9 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   `--json` (un seul objet sur la sortie standard, texte humain sur la sortie d'erreur), codes de sortie stables (0, 1, 2, 64, 130),
   Ctrl-C = annulation propre, messages traduits (`ui/i18n_cli.py`). `validate` dit ce que les chargeurs tolérants ont abandonné
   (`LoadReport` dans `core/project_io.py`). Documentation : `docs/cli.md`.
-- Étapes 4 à 7 : à faire, dans l'ordre. La suivante est le **déclaratif** (table `VERBS`, `apply`, `--dry-run`), premier
-  consommateur de la session.
+- **Étape 4 : commencée** (cette PR) : la table `VERBS` (15 verbes : bus, inserts, routage, clips, repères), le décodeur strict
+  (`core/scripting/script.py` : version, champs inconnus refusés, bornes, alias résolus au décodage, toutes les erreurs d'un coup),
+  le schéma JSON généré, `apply` (`--dry-run`, `--in-place`, jamais d'écrasement par défaut), `validate script.json`, `schema`, un fuzz
+  du décodeur. Documentation : `docs/scripting.md`. **Reste** : import de médias (`--allow-outside`), verbes de graphiques, d'égaliseur de
+  piste, de couleur et d'images clés, et le **verrou consultatif** de `--in-place` (l'application n'en pose pas encore).
+- Étapes 5 à 7 : à faire, dans l'ordre.
