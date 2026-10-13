@@ -274,11 +274,12 @@ def test_set_graphic_needs_a_field_and_a_graphic_clip():
     {"op": "set_graphic", "clip": "t", "fill_color": "orange"},
     {"op": "set_graphic", "clip": "t", "fill_color": "#12345"},
     {"op": "set_graphic", "clip": "t", "fill_color": "#GGGGGG"},
-    {"op": "set_graphic", "clip": "t", "font_size": 0},
-    {"op": "set_graphic", "clip": "t", "font_size": 10_000},
+    {"op": "set_graphic", "clip": "t", "font_size": 5},
+    {"op": "set_graphic", "clip": "t", "font_size": 513},
     {"op": "set_graphic", "clip": "t", "font_size": 12.5},
     {"op": "set_graphic", "clip": "t", "font_size": True},
-    {"op": "set_graphic", "clip": "t", "width": 100_000},
+    {"op": "set_graphic", "clip": "t", "width": 8193},
+    {"op": "set_graphic", "clip": "t", "width": 1},
     {"op": "set_graphic", "clip": "t", "text": "x" * 1001},
     {"op": "set_graphic", "clip": "t", "text": "a\x00b"},
     {"op": "add_graphic", "graphic": "image", "at": 0, "duration": 1},
@@ -298,6 +299,73 @@ def test_a_multiline_text_is_only_allowed_where_the_verb_says_so():
     parse_script(_script({"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "text": "a\nb"}))
     with pytest.raises(ScriptInvalid):
         parse_script(_script({"op": "rename_bus", "bus": "b", "name": "a\nb"}))
+
+
+def test_every_graphic_bound_is_the_models_bound_so_nothing_is_clamped_in_silence():
+    """Revue Codex : accepter font_size 1 puis voir le modèle stocker 6 faisait « réussir » un script sans appliquer sa valeur."""
+    for name in ("stroke_width", "font_size", "width", "height"):
+        param = next(item for item in VERBS["set_graphic"].params if item.name == name)
+        for value in (param.minimum, param.maximum):
+            session, report = _apply(
+                _project(), {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "id": "t"},
+                {"op": "set_graphic", "clip": "t", name: int(value)},
+            )
+            assert report.ok and getattr(find_clip(session.project, "t").graphic, name) == value, (name, value)
+        for outside in (param.minimum - 1, param.maximum + 1):
+            with pytest.raises(ScriptInvalid):
+                parse_script(_script({"op": "set_graphic", "clip": "t", name: int(outside)}))
+
+
+def test_a_corrupt_media_is_a_refusal_not_a_crash(tmp_path):
+    """Revue Codex : MediaProbeError n'est ni ValueError, ni KeyError, ni OSError ; elle remontait en traceback."""
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe absent")
+    folder = tmp_path / "montage"
+    folder.mkdir()
+    (folder / "casse.wav").write_bytes(b"ceci n'est pas un fichier audio")
+    session, report = _apply(_project(), {"op": "import_media", "path": "casse.wav"}, context=ScriptContext(folder))
+    assert not report.ok and report.error_type == "ValueError" and len(session.project.media_assets) == 1
+
+
+def test_a_missing_ffprobe_is_a_refusal_too(tmp_path, monkeypatch):
+    from core.media_probe import MediaProbeError
+
+    def no_ffprobe(_path: str):
+        raise MediaProbeError("ffprobe est introuvable dans le PATH.")
+
+    monkeypatch.setattr("core.scripting.verbs.probe_media", no_ffprobe)
+    _wav(tmp_path / "a.wav")
+    _session, report = _apply(_project(), {"op": "import_media", "path": "a.wav"}, context=ScriptContext(tmp_path))
+    assert not report.ok and "ffprobe" in report.error
+
+
+def test_a_graphic_goes_only_on_an_unlocked_graphics_track():
+    project = _project()
+    project.tracks.append(Track("G1", "Titres", "graphics", locked=True))
+    for target, message in (("V1", "piste 'video'"), ("A1", "piste 'audio'"), ("G1", "verrouillée")):
+        session, report = _apply(project, {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "track": target})
+        assert not report.ok and message in report.error, target
+    project.tracks[-1].locked = False
+    _session, report = _apply(project, {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "track": "Titres", "id": "t"})
+    assert report.ok and next(track for track in project.tracks if track.id == "G1").clips[0].id == "t"
+
+
+def test_set_graphic_respects_a_locked_track():
+    session, report = _apply(
+        _project(), {"op": "add_graphic", "graphic": "text", "at": 0, "duration": 1, "id": "t", "text": "avant"},
+        {"op": "set_track_locked", "track": "G1", "locked": True}, {"op": "set_graphic", "clip": "t", "text": "après"},
+    )
+    assert not report.ok and report.failed_index == 2 and "verrouillée" in report.error
+    assert not session.can_undo, "tout ou rien : le calque n'a pas été ajouté non plus"
+
+
+def test_track_inserts_are_for_audio_and_video_tracks_only():
+    project = _project()
+    project.tracks.append(Track("G1", "G1", "graphics"))
+    _session, report = _apply(project, {"op": "add_track_insert", "track": "G1", "effect": "limiter"})
+    assert not report.ok and "seules les pistes audio et vidéo" in report.error
+    _session, report = _apply(project, {"op": "add_track_insert", "track": "V1", "effect": "limiter"})
+    assert report.ok
 
 
 # --- Le catalogue ----------------------------------------------------------------------------------------------------------

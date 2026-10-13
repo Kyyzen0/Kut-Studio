@@ -26,7 +26,7 @@ from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
-from ..media_probe import probe_media
+from ..media_probe import MediaProbeError, probe_media
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
 from ..timeline_editing import add_marker
@@ -232,7 +232,10 @@ def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
         for existing in project.media_assets:
             if os.path.normpath(os.path.abspath(existing.path)) == normalized:
                 raise InvalidObjectId(f"Ce média est déjà dans le projet : {existing.id!r}.")
-        asset = probe_media(str(path))
+        try:
+            asset = probe_media(str(path))
+        except MediaProbeError as error:               # fichier corrompu, format inconnu, ffprobe absent ou trop lent : un refus, pas un plantage
+            raise ValueError(str(error)) from error
         asset.id = resolve_object_id(a.get("id"), prefix="asset", kind="média", taken={item.id for item in project.media_assets})
         asset.name = path.name
         project.media_assets.append(asset)
@@ -242,9 +245,16 @@ def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
 
 
 def _add_track_insert(a: Mapping[str, Any]) -> Operation:
-    return lambda p: add_track_insert(
-        p, _track_id(p, a["track"]), a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
-    )
+    def operation(project: Project) -> Any:
+        track_id = _track_id(project, a["track"])
+        kind = next(item.type for item in project.tracks if item.id == track_id)
+        if kind not in ("audio", "video"):             # le rendu traite une piste de graphiques avant tout traitement audio : l'insert ne jouerait jamais
+            raise ValueError(f"La piste '{track_id}' est une piste '{kind}' : seules les pistes audio et vidéo portent des inserts.")
+        return add_track_insert(
+            project, track_id, a["effect"], effect_id=a.get("id"), params=a.get("params"), enabled=bool(a.get("enabled", True)),
+        )
+
+    return operation
 
 
 def _track_insert(p: Project, track: str, selector: str) -> tuple[str, str]:
@@ -280,6 +290,10 @@ def _set_track_visible(a: Mapping[str, Any]) -> Operation:
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = next(item for item in project.tracks if item.id == _track_id(project, a["track"])) if a.get("track") is not None else None
+        if track is not None and track.type != "graphics":
+            raise ValueError(f"La piste '{track.id}' est une piste '{track.type}' : un calque graphique va sur une piste de graphiques.")
+        if track is not None and track.locked:
+            raise ValueError(f"La piste '{track.id}' est verrouillée.")
         clip = add_graphic_clip(
             project, a["graphic"], timeline_start=float(a["at"]), duration=float(a["duration"]),
             shape=a.get("shape", ShapeKind.RECTANGLE.value), track=track, clip_id=a.get("id"),
@@ -299,7 +313,11 @@ def _set_graphic(a: Mapping[str, Any]) -> Operation:
         given = [name for name in _GRAPHIC_FIELDS if name in a]
         if not given:
             raise ValueError("set_graphic : donnez au moins un champ à modifier.")
-        clip = find_clip(project, _clip_id(project, a["clip"]))
+        clip_id = _clip_id(project, a["clip"])
+        owner = next(track for track in project.tracks if any(item.id == clip_id for item in track.clips))
+        if owner.locked:                               # le verrou de l'interface vaut aussi pour un script
+            raise ValueError(f"La piste '{owner.id}' est verrouillée.")
+        clip = find_clip(project, clip_id)
         for name in given:
             update_graphic(clip, name, a[name])
         return clip
@@ -384,10 +402,10 @@ VERBS: dict[str, Verb] = {
              (_CLIP, Param("text", Kind.STRING, "Texte.", required=False, max_length=1000, multiline=True),
               Param("fill_color", Kind.COLOR, _COLOR_DOC, required=False),
               Param("stroke_color", Kind.COLOR, _COLOR_DOC, required=False),
-              Param("stroke_width", Kind.INTEGER, "Épaisseur du contour, en pixels.", required=False, minimum=0, maximum=200),
-              Param("font_size", Kind.INTEGER, "Taille de police, en pixels.", required=False, minimum=1, maximum=1000),
-              Param("width", Kind.INTEGER, "Largeur, en pixels.", required=False, minimum=1, maximum=16384),
-              Param("height", Kind.INTEGER, "Hauteur, en pixels.", required=False, minimum=1, maximum=16384)),
+              Param("stroke_width", Kind.INTEGER, "Épaisseur du contour, en pixels.", required=False, minimum=0, maximum=256),
+              Param("font_size", Kind.INTEGER, "Taille de police, en pixels.", required=False, minimum=6, maximum=512),
+              Param("width", Kind.INTEGER, "Largeur, en pixels.", required=False, minimum=2, maximum=8192),
+              Param("height", Kind.INTEGER, "Hauteur, en pixels.", required=False, minimum=2, maximum=8192)),
              _set_graphic, group="graphics"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),

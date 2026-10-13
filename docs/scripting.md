@@ -64,14 +64,14 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `delete_clip` | Supprime un clip (`clip`) |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
 | `set_clip_enabled` | Active ou désactive un clip (`clip`, `enabled`) |
-| `add_track_insert` | Ajoute un effet en insert sur une piste audio (`track`, `effect`, `params`, `enabled`) ; un **égaliseur** est l'effet `parametric_eq` |
+| `add_track_insert` | Ajoute un effet en insert sur une piste **audio ou vidéo** (`track`, `effect`, `params`, `enabled`) ; un **égaliseur** est l'effet `parametric_eq` |
 | `remove_track_insert` | Retire un insert de piste (`track`, `insert`) |
 | `set_track_insert_enabled` | Active ou désactive un insert de piste (`track`, `insert`, `enabled`) |
 | `update_track_insert` | Modifie les paramètres d'un insert de piste (`track`, `insert`, `params`) |
 | `set_track_muted` | Coupe ou rétablit le son d'une piste (`track`, `muted`) |
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
-| `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track`) |
+| `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 
