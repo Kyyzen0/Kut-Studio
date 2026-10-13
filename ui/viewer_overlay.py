@@ -34,6 +34,8 @@ from core.canvas_guides import (
     platform_zone_rects,
     safe_area_rects,
     snap_box,
+    snap_rotation,
+    snap_scale_factor,
 )
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
 from ui.i18n import translate
@@ -702,6 +704,8 @@ class ViewerOverlay(QGraphicsObject):
             rotation = values.get("rotation", 0.0) + (angle - start_angle)
             if modifiers & Qt.ShiftModifier:
                 rotation = round(rotation / 15.0) * 15.0
+            elif self.snapping and not modifiers & Qt.AltModifier:
+                rotation, _snapped = snap_rotation(rotation)
             return {"rotation": rotation}
         if mode == "anchor":
             try:
@@ -720,12 +724,14 @@ class ViewerOverlay(QGraphicsObject):
                 "position_y": values.get("position_y", 0.0) + (new_parent[1] - old_parent[1]) / ch,
             }
         # Échelle : coins = uniforme, côtés = un axe.
+        self._snap_lines = []
         if mode in ("tl", "tr", "br", "bl"):
             start = math.hypot(sx0 - anchor[0], sy0 - anchor[1])
             now = math.hypot(current[0] - anchor[0], current[1] - anchor[1])
             if start < 1e-6:
                 return {}
-            return {"scale": values.get("scale", 1.0) * now / start}
+            factor = self._snap_scale(drag, now / start, "xy", modifiers)
+            return {"scale": values.get("scale", 1.0) * factor}
         try:
             inverse = mat_invert(world)
         except ValueError:
@@ -736,11 +742,38 @@ class ViewerOverlay(QGraphicsObject):
             base = lx0 - anchor_local[0]
             if abs(base) < 1e-6:
                 return {}
-            return {"scale_x": values.get("scale_x", 1.0) * (lx - anchor_local[0]) / base}
+            factor = self._snap_scale(drag, (lx - anchor_local[0]) / base, "x", modifiers)
+            return {"scale_x": values.get("scale_x", 1.0) * factor}
         base = ly0 - anchor_local[1]
         if abs(base) < 1e-6:
             return {}
-        return {"scale_y": values.get("scale_y", 1.0) * (ly - anchor_local[1]) / base}
+        factor = self._snap_scale(drag, (ly - anchor_local[1]) / base, "y", modifiers)
+        return {"scale_y": values.get("scale_y", 1.0) * factor}
+
+    def _snap_scale(self, drag: dict, factor: float, axes: str, modifiers) -> float:
+        """Aimante le facteur d'échelle (mêmes cibles, seuil et Alt que le déplacement).
+
+        Les côtés (``axes`` x ou y seul) ne s'aimantent que si la matrice monde n'a ni rotation
+        ni cisaillement : sinon l'arête de la boîte englobante ne suit pas le côté tiré.
+        """
+        self._snap_lines = []
+        if not self.snapping or modifiers & Qt.AltModifier:
+            return factor
+        world = drag["world"]
+        if axes != "xy" and (abs(world[1]) > 1e-9 or abs(world[2]) > 1e-9):
+            return factor
+        w, h = drag["box"]
+        values = drag["values"]
+        anchor = mat_apply(world, values.get("anchor_x", 0.5) * w, values.get("anchor_y", 0.5) * h)
+        others = [map_box(m, *b) for cid, m, b in self.layer_boxes if cid != drag["clip_id"]]
+        cw, ch = self.canvas_size
+        factor, lines = snap_scale_factor(
+            map_box(world, w, h), anchor, factor, cw, ch,
+            threshold=SNAP_PIXELS / max(self.scale, 1e-6), axes=axes,
+            guides=self.guides if self.show_guides else (), layer_boxes=others,
+        )
+        self._snap_lines = lines
+        return factor
 
 
 __all__ = ["SelectionGeometry", "ViewerOverlay", "WindowGeometry"]

@@ -20,7 +20,9 @@ Les cinq gestes du débutant :
 2. **Le déplacer dans le viewer** : glisser le cadre ; les coins
    redimensionnent, la poignée ronde fait tourner, le point jaune est
    l'ancrage. Le calque s'aimante au centre et aux bords du cadre, aux
-   guides et aux autres calques (Alt : sans aimantation, Maj : axe / pas de 15°).
+   guides et aux autres calques (Alt : sans aimantation, Maj : axe / pas de 15°). Le redimensionnement
+   s'aimante de même (une arête du cadre englobant tombe sur une cible, autour de l'ancrage ; les côtés
+   seulement si le calque n'est pas pivoté) et la rotation s'accroche aux multiples de 45° à 3° près.
 3. **Taille et couleur** : inspecteur, onglet *Graphiques*.
 4. **Une petite animation** : losange ◆ d'une propriété (opacité, position…),
    déplacer la tête de lecture, changer la valeur.
