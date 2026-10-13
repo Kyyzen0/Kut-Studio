@@ -1,4 +1,4 @@
-"""Rangée de six boutons « Aligner sur le cadre » du groupe Mouvement de l'inspecteur.
+"""Titre et rangée de six boutons « Aligner sur le cadre » du groupe Mouvement de l'inspecteur.
 
 Le widget n'agit pas : il émet ``align_requested(bord)`` (valeur de :class:`core.frame_alignment.FrameEdge`)
 et la fenêtre principale déplace le clip sélectionné. Les icônes sont dessinées (pas de glyphes Unicode, que
@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from core.frame_alignment import FrameEdge
 from ui.i18n import translate
+from ui.theme import label_style
 
 _ICON = 16
 
@@ -63,9 +64,16 @@ class FrameAlignRow(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("frame_align_row")
-        layout = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+        self.title = QLabel()
+        self.title.setStyleSheet(label_style(11, "muted", 600))
+        outer.addWidget(self.title)
+        layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
+        outer.addLayout(layout)
         self.buttons: dict[FrameEdge, QToolButton] = {}
         color = self.palette().buttonText().color()
         for edge in self.EDGES:
@@ -82,6 +90,7 @@ class FrameAlignRow(QWidget):
         self.retranslate()
 
     def retranslate(self) -> None:
+        self.title.setText(translate("mograph.align.group"))
         for edge, button in self.buttons.items():
             text = translate(f"shortcuts.command.layer_align_{edge.value}")
             button.setToolTip(text)

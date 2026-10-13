@@ -605,16 +605,10 @@ class ConstructionMixin:
         self.advanced_transform.value_changed.connect(self._emit_advanced_transform)
         self.advanced_transform.keyframe_toggled.connect(self._emit_advanced_keyframe)
         movement_layout.addWidget(self.advanced_transform)
-        # Alignement du clip sur le cadre (ADR-0006 lot 1c) : six boutons ; la fenêtre principale les relie.
         from ui.properties_widgets.frame_align_row import FrameAlignRow
 
-        align_label = QLabel(translate("mograph.align.group"))
-        align_label.setStyleSheet(label_style(11, "muted", 600))
-        self.frame_align_label = align_label
-        self.frame_align = FrameAlignRow()
-        movement_layout.addWidget(align_label)
+        self.frame_align = FrameAlignRow()      # ADR-0006 lot 1c : six boutons ; la fenêtre principale les relie
         movement_layout.addWidget(self.frame_align)
-        self._stacked_labels.append((align_label, "mograph.align.group"))
         movement_layout.addWidget(reset_button)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True
