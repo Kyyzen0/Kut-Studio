@@ -8,6 +8,7 @@ Kut-Studio info projet.kut
 Kut-Studio validate projet.kut
 Kut-Studio presets
 Kut-Studio export projet.kut -o video.mp4 --preset h264_1080p
+Kut-Studio apply montage.json projet.kut -o projet-monte.kut      # un script déclaratif : voir scripting.md
 ```
 
 Depuis les sources : `python main.py info projet.kut`. Une commande est le premier argument qui n'est pas une option globale
@@ -20,6 +21,9 @@ Depuis les sources : `python main.py info projet.kut`. Une commande est le premi
 | `info PROJET` | résumé : séquences (taille, cadence, durée, pistes, clips), médias et médias introuvables |
 | `validate PROJET` | le projet s'ouvre-t-il, et **qu'a-t-il perdu en route** (voir ci-dessous) |
 | `presets` | les préréglages d'export (`h264_1080p`, `h265_4k`, `youtube`…) |
+| `validate SCRIPT.json` | le script est-il valide ? Toutes ses erreurs d'un coup, sans projet |
+| `apply SCRIPT PROJET -o SORTIE` | applique un script **en tout ou rien** ; `--dry-run` n'écrit rien, `--in-place` modifie le projet lui-même (voir [scripting.md](scripting.md)) |
+| `schema` | écrit le schéma JSON des scripts, généré depuis la table de verbes |
 | `export PROJET -o SORTIE` | exporte, sans fenêtre, avec exactement la commande FFmpeg de l'interface |
 
 Options communes : `--json` (un objet JSON sur la sortie standard), `--lang fr|en|es` (aussi `KUT_STUDIO_LANG`, sinon `LANG`).

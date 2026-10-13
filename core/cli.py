@@ -28,7 +28,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-COMMANDS = ("info", "validate", "presets", "export")
+COMMANDS = ("info", "validate", "presets", "export", "apply", "schema")
 SCHEMA_VERSION = 1
 """Version du schéma des sorties ``--json`` : elle ne change que par une rupture, annoncée dans le journal des modifications."""
 
@@ -84,12 +84,24 @@ def _build_parser() -> argparse.ArgumentParser:
     info.add_argument("project", help="fichier .kut")
     common(info)
 
-    validate = commands.add_parser("validate", help="vérifie qu'un projet s'ouvre, et ce qu'il a perdu en route")
-    validate.add_argument("project", help="fichier .kut")
+    validate = commands.add_parser("validate", help="vérifie qu'un projet s'ouvre (.kut) ou qu'un script est valide (.json)")
+    validate.add_argument("project", help="fichier .kut, ou script .json")
     common(validate)
 
     presets = commands.add_parser("presets", help="les préréglages d'export")
     common(presets)
+
+    apply = commands.add_parser("apply", help="applique un script déclaratif (.json) à un projet")
+    apply.add_argument("script", help="fichier de script .json")
+    apply.add_argument("project", help="fichier .kut")
+    apply.add_argument("-o", "--output", default=None, help="projet à écrire (jamais le projet lui-même sans --in-place)")
+    apply.add_argument("--in-place", action="store_true", help="écrit dans le projet lui-même")
+    apply.add_argument("--dry-run", action="store_true", help="applique à une copie et rend le rapport, sans rien écrire")
+    apply.add_argument("--overwrite", action="store_true", help="remplace le fichier de sortie s'il existe")
+    common(apply)
+
+    schema = commands.add_parser("schema", help="écrit le schéma JSON des scripts sur la sortie standard")
+    common(schema)
 
     export = commands.add_parser("export", help="exporte un projet sans ouvrir de fenêtre")
     export.add_argument("project", help="fichier .kut")
@@ -234,6 +246,13 @@ def _format_version(path: Path) -> int | None:
 
 
 def _cmd_validate(args: argparse.Namespace, output: _Output) -> int:
+    if Path(args.project).suffix.lower() == ".json":
+        script = _read_script(args.project, output)
+        if script is None:
+            return output.exit
+        output.line(_t("cli.script.valid", path=args.project, operations=len(script.ops)))
+        output.payload({"ok": True, "file": args.project, "kind": "script", "operations": len(script.ops)})
+        return EXIT_OK
     loaded = _load(args.project, output)
     if loaded is None:
         return output.exit
@@ -255,6 +274,121 @@ def _cmd_validate(args: argparse.Namespace, output: _Output) -> int:
         "missing_media": missing,
     })
     return EXIT_OK if report.intact else EXIT_DROPPED
+
+
+def _issue_text(issue) -> str:
+    """Une erreur de script, traduite : « ops[2].at : valeur hors bornes (de 0 à 1000000) »."""
+    values = {key: ("" if value is None else value) for key, value in issue.values().items()}
+    message = _t(f"cli.script.issue.{issue.code}", **values)
+    if values.get("suggestion"):
+        message += _t("cli.script.suggestion", suggestion=values["suggestion"])
+    where = issue.path or _t("cli.script.where")
+    return _t("cli.script.issue_line", where=where, message=message)
+
+
+def _issue_payload(issue) -> dict[str, Any]:
+    return {
+        "code": issue.code, "index": issue.index, "verb": issue.verb, "path": issue.path,
+        "message": _issue_text(issue).lstrip(" -").strip(), "params": issue.values(),
+    }
+
+
+def _read_script(path_text: str, output: _Output):
+    """Le script décodé, ou ``None`` (échec signalé, code dans ``output.exit``)."""
+    from .scripting import ScriptInvalid, parse_script, read_script
+
+    path = Path(path_text).expanduser()
+    try:
+        script = parse_script(read_script(path))
+    except FileNotFoundError:
+        output.exit = output.failure("not_found", _t("cli.error.not_found", path=str(path)), path=str(path))
+        return None
+    except ScriptInvalid as error:
+        output.warning(_t("cli.script.invalid", count=len(error.issues)))
+        for issue in error.issues:
+            output.warning(_issue_text(issue))
+        output.exit = output.failure(
+            "script_invalid", _t("cli.script.invalid", count=len(error.issues)), path=str(path),
+            issues=[_issue_payload(issue) for issue in error.issues],
+        )
+        return None
+    except OSError as error:
+        output.exit = output.failure("invalid", _t("cli.error.invalid", message=str(error)), path=str(path))
+        return None
+    return script
+
+
+def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
+    from copy import deepcopy
+
+    from .scripting import Session, apply_script, created_ids
+
+    script = _read_script(args.script, output)
+    if script is None:
+        return output.exit
+    loaded = _load(args.project, output)
+    if loaded is None:
+        return output.exit
+    project, load_report, project_path = loaded
+    if not load_report.intact:
+        output.warning(_t("cli.validate.dropped", total=load_report.total))
+        for section, count in _dropped(load_report).items():
+            output.warning(_t("cli.validate.dropped_line", section=_section_label(section), count=count))
+    target: Path | None = None
+    if not args.dry_run:
+        if args.in_place and args.output is not None:
+            return output.failure("usage", _t("cli.error.apply_in_place_conflict"), EXIT_USAGE)
+        if args.output is None and not args.in_place:
+            return output.failure("usage", _t("cli.error.apply_output_required"), EXIT_USAGE)
+        try:
+            target = project_path if args.in_place else Path(args.output).expanduser()
+            same_file = target.resolve() == project_path.resolve()
+        except (OSError, RuntimeError) as error:
+            return output.failure("invalid", str(error), EXIT_USAGE)
+        if same_file and not args.in_place:
+            return output.failure("output_is_input", _t("cli.error.apply_output_is_input", path=str(target)), EXIT_USAGE)
+        if target.exists() and not same_file and not args.overwrite:
+            return output.failure("output_exists", _t("cli.error.output_exists", path=str(target)), EXIT_USAGE)
+    # Un essai à blanc travaille sur une copie : même le projet chargé en mémoire reste intact.
+    session = Session(deepcopy(project) if args.dry_run else project)
+    report = apply_script(session, script, label=Path(args.script).name)
+    if not report.ok:
+        message = _t("cli.apply.refused", op=report.failed_name, index=report.failed_index, message=report.error)
+        return output.failure(
+            "refused", message, EXIT_FAILED, index=report.failed_index, op=report.failed_name, detail=report.error,
+        )
+    created = created_ids(script, report)
+    adjustments = [
+        {"sequence": item.sequence_id, "clip": item.clip_id, "old_source_out": item.old_source_out, "new_source_out": item.new_source_out}
+        for item in report.adjustments
+    ]
+    written: str | None = None
+    if args.dry_run:
+        output.line(_t("cli.apply.dry_run", operations=len(script.ops)))
+    else:
+        from .project_io import save_project
+
+        destination = target if target is not None else project_path           # toujours posé hors essai à blanc
+        try:
+            save_project(session.project, str(destination))
+        except (OSError, ValueError) as error:
+            return output.failure("write_failed", _t("cli.apply.write_failed", message=str(error)), EXIT_FAILED)
+        written = str(destination)
+        output.line(_t("cli.apply.done", operations=len(script.ops), path=written))
+    for item in created:
+        output.line(_t("cli.apply.created_line", op=item["op"], id=item["id"]))
+    output.payload({
+        "ok": True, "dry_run": bool(args.dry_run), "written": written, "operations": len(script.ops), "created": created,
+        "adjustments": adjustments,
+    })
+    return EXIT_OK
+
+
+def _cmd_schema(args: argparse.Namespace, output: _Output) -> int:
+    from .scripting import json_schema
+
+    print(json.dumps(json_schema(), ensure_ascii=False, indent=2), file=output.out)
+    return EXIT_OK
 
 
 def _cmd_presets(args: argparse.Namespace, output: _Output) -> int:
@@ -425,7 +559,8 @@ def _build_request(project, sequence, spec, output_path: Path, args: argparse.Na
 
 
 _HANDLERS: dict[str, Callable[[argparse.Namespace, _Output], int]] = {
-    "info": _cmd_info, "validate": _cmd_validate, "presets": _cmd_presets, "export": _cmd_export,
+    "info": _cmd_info, "validate": _cmd_validate, "presets": _cmd_presets, "export": _cmd_export, "apply": _cmd_apply,
+    "schema": _cmd_schema,
 }
 
 
