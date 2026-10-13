@@ -32,6 +32,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : étalonnage avancé.** Courbes, roues, LUT ``.cube``, nœuds (série / parallèle / calques), flou et netteté : douze verbes de plus
   (45 en tout). ``set_color_grade`` / ``reset_color_grade`` acceptent un ``node`` ; ``import_lut`` lit un fichier dans le dossier du script
   comme ``import_media``. Voir [docs/scripting.md](docs/scripting.md).
+- **Scripts : fenêtres et qualifieur.** Cinq verbes de plus (50 en tout) : ``add/set/remove_color_window``, ``set/clear_color_qualifier``.
+  Les bornes d'une fenêtre sont celles du modèle (rien n'est ramené en silence) ; un qualifieur avec bas > haut est refusé.
 
 ### Fixed
 

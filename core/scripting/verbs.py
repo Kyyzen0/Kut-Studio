@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -33,8 +33,10 @@ from ..color_grading import (
     TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingError, ColorGradingService,
     LUTResource, Wheel,
 )
-from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind
+from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind, window_by_id
+from ..color_qualifier import Qualifier, QualifierError
 from ..color_windows import forget_windows, window_ids
+from ..compositing import Mask, MaskMode, MaskShape, _MASK_BOUNDS
 from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
@@ -673,6 +675,150 @@ def _set_color_detail(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+_WINDOW_FIELDS = (
+    "position_x", "position_y", "width", "height", "rotation", "feather", "expansion", "opacity", "inverted", "mode", "name",
+)
+_QUALIFIER_BOOLS = ("enabled", "use_hue", "use_sat", "use_lum", "invert")
+_QUALIFIER_NUMBERS = (
+    "hue_center", "hue_width", "hue_soft", "sat_low", "sat_high", "sat_soft", "lum_low", "lum_high", "lum_soft",
+)
+
+
+def _require_mask_number(name: str, value: float) -> float:
+    """Refuse une valeur que ``Mask`` ramènerait en silence."""
+    low, high = _MASK_BOUNDS[name]
+    if not low <= value <= high:
+        raise ValueError(f"{name} = {value} est hors bornes (de {low} à {high}).")
+    return value
+
+
+def _add_color_window(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        graph = service.get_graph(project, clip_id)
+        target = graph.node_or_first(node).id
+        clip = find_clip(project, clip_id)
+        compositing = getattr(clip, "compositing", None)
+        taken = window_ids(getattr(clip, "color_grade", None)) | {
+            mask.id for mask in (getattr(compositing, "masks", ()) or ())
+        }
+        window_id = resolve_object_id(a.get("id"), prefix="w", kind="fenêtre", taken=taken, length=8)
+        position_x = _require_mask_number("position_x", float(a.get("position_x", 0.5)))
+        position_y = _require_mask_number("position_y", float(a.get("position_y", 0.5)))
+        width = _require_mask_number("width", float(a.get("width", 0.4)))
+        height = _require_mask_number("height", float(a.get("height", 0.4)))
+        rotation = _require_mask_number("rotation", float(a.get("rotation", 0.0)))
+        feather = _require_mask_number("feather", float(a.get("feather", 0.03)))
+        expansion = _require_mask_number("expansion", float(a.get("expansion", 0.0)))
+        opacity = _require_mask_number("opacity", float(a.get("opacity", 1.0)))
+        window = Mask(
+            id=window_id, shape=MaskShape(a["shape"]),
+            position_x=position_x, position_y=position_y, width=width, height=height,
+            rotation=rotation, feather=feather, expansion=expansion, opacity=opacity,
+            inverted=bool(a.get("inverted", False)),
+            mode=MaskMode(a.get("mode", MaskMode.ADD.value)), name=a.get("name", ""),
+        )
+        service.edit_nodes(
+            project, clip_id,
+            lambda g: g.with_windows(target, (*g.corrector(target).windows, window)),
+        )
+        return service.get_graph(project, clip_id).corrector(target).window(window_id)
+
+    return operation
+
+
+def _color_window(project: Project, clip_selector: str, window_selector: str):
+    """``(clip_id, window_id, owner_node_id)`` pour une fenêtre du clip éditable."""
+    clip_id = _editable_clip(project, clip_selector, track_types=("video", "graphics"))
+    graph = ColorGradingService().get_graph(project, clip_id)
+    if window_by_id(graph, window_selector) is None:
+        raise KeyError(f"Fenêtre d'étalonnage introuvable : {window_selector!r}.")
+    owner = graph.window_owner(window_selector)
+    if owner is None:                                          # pragma: no cover - window_by_id l'a déjà trouvée
+        raise KeyError(f"Fenêtre d'étalonnage introuvable : {window_selector!r}.")
+    return clip_id, window_selector, owner.id
+
+
+def _remove_color_window(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, window_id, owner_id = _color_window(project, a["clip"], a["window"])
+        clip = find_clip(project, clip_id)
+        before = window_ids(getattr(clip, "color_grade", None))
+        ColorGradingService().edit_nodes(
+            project, clip_id,
+            lambda g: g.with_windows(owner_id, tuple(w for w in g.corrector(owner_id).windows if w.id != window_id)),
+        )
+        forget_windows(clip, before - window_ids(getattr(clip, "color_grade", None)))
+        return None
+
+    return operation
+
+
+def _set_color_window(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in _WINDOW_FIELDS if name in a]
+        if not given:
+            raise ValueError("set_color_window : donnez au moins un champ à modifier.")
+        clip_id, window_id, owner_id = _color_window(project, a["clip"], a["window"])
+        service = ColorGradingService()
+        base = service.get_graph(project, clip_id).corrector(owner_id).window(window_id)
+        assert base is not None
+        changes: dict[str, Any] = {}
+        for name in given:
+            if name in _MASK_BOUNDS:
+                changes[name] = _require_mask_number(name, float(a[name]))
+            elif name == "inverted":
+                changes[name] = bool(a[name])
+            elif name == "mode":
+                changes[name] = MaskMode(a[name])
+            else:
+                changes[name] = a[name]
+        updated = replace(base, **changes, id=base.id)
+        service.edit_nodes(
+            project, clip_id,
+            lambda g: g.with_windows(
+                owner_id, tuple(updated if w.id == window_id else w for w in g.corrector(owner_id).windows),
+            ),
+        )
+        return service.get_graph(project, clip_id).corrector(owner_id).window(window_id)
+
+    return operation
+
+
+def _set_color_qualifier(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in (*_QUALIFIER_BOOLS, *_QUALIFIER_NUMBERS) if name in a]
+        if not given:
+            raise ValueError("set_color_qualifier : donnez au moins un champ à modifier.")
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        target = service.get_graph(project, clip_id).node_or_first(node).id
+        base = service.get_graph(project, clip_id).corrector(target).qualifier or Qualifier()
+        values = base.to_dict()
+        for name in given:
+            values[name] = bool(a[name]) if name in _QUALIFIER_BOOLS else float(a[name])
+        try:
+            qualifier = Qualifier(**values)
+        except QualifierError as error:
+            raise ValueError(str(error)) from error
+        service.edit_nodes(project, clip_id, lambda g: g.with_qualifier(target, qualifier))
+        return service.get_graph(project, clip_id).corrector(target).qualifier
+
+    return operation
+
+
+def _clear_color_qualifier(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id, node = _grade_clip(project, a)
+        service = ColorGradingService()
+        target = service.get_graph(project, clip_id).node_or_first(node).id
+        service.edit_nodes(project, clip_id, lambda g: g.with_qualifier(target, None))
+        return None
+
+    return operation
+
+
 def _add_marker(a: Mapping[str, Any]) -> Operation:
     return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
 
@@ -839,6 +985,75 @@ VERBS: dict[str, Verb] = {
               Param("blur", Kind.NUMBER, "Flou σ en pixels (0…50).", required=False, minimum=0.0, maximum=MAX_BLUR),
               Param("sharpen", Kind.NUMBER, "Netteté (0…5).", required=False, minimum=0.0, maximum=MAX_SHARPEN)),
              _set_color_detail, group="color"),
+        Verb("add_color_window", "Ajoute une fenêtre (masque) sur un nœud d'étalonnage.",
+             (_CLIP, _NODE,
+              Param("shape", Kind.ENUM, "rectangle, ellipse ou polygon.", choices=tuple(item.value for item in MaskShape)),
+              Param("position_x", Kind.NUMBER, "Centre X (espace calque).", required=False,
+                    minimum=_MASK_BOUNDS["position_x"][0], maximum=_MASK_BOUNDS["position_x"][1]),
+              Param("position_y", Kind.NUMBER, "Centre Y (espace calque).", required=False,
+                    minimum=_MASK_BOUNDS["position_y"][0], maximum=_MASK_BOUNDS["position_y"][1]),
+              Param("width", Kind.NUMBER, "Largeur (défaut 0,4).", required=False,
+                    minimum=_MASK_BOUNDS["width"][0], maximum=_MASK_BOUNDS["width"][1]),
+              Param("height", Kind.NUMBER, "Hauteur (défaut 0,4).", required=False,
+                    minimum=_MASK_BOUNDS["height"][0], maximum=_MASK_BOUNDS["height"][1]),
+              Param("rotation", Kind.NUMBER, "Rotation, en degrés.", required=False,
+                    minimum=_MASK_BOUNDS["rotation"][0], maximum=_MASK_BOUNDS["rotation"][1]),
+              Param("feather", Kind.NUMBER, "Adoucissement (défaut 0,03).", required=False,
+                    minimum=_MASK_BOUNDS["feather"][0], maximum=_MASK_BOUNDS["feather"][1]),
+              Param("expansion", Kind.NUMBER, "Expansion.", required=False,
+                    minimum=_MASK_BOUNDS["expansion"][0], maximum=_MASK_BOUNDS["expansion"][1]),
+              Param("opacity", Kind.NUMBER, "Opacité de la fenêtre.", required=False,
+                    minimum=_MASK_BOUNDS["opacity"][0], maximum=_MASK_BOUNDS["opacity"][1]),
+              Param("inverted", Kind.BOOLEAN, "Fenêtre inversée.", required=False),
+              Param("mode", Kind.ENUM, "add, subtract ou intersect.", required=False,
+                    choices=tuple(item.value for item in MaskMode)),
+              Param("name", Kind.STRING, "Nom de la fenêtre.", required=False)),
+             _add_color_window, creates="color_window", creates_scope="clip", group="color"),
+        Verb("set_color_window", "Modifie une fenêtre d'étalonnage ; au moins un champ.",
+             (_CLIP, Param("window", Kind.SELECTOR, "La fenêtre, par identifiant.", of="color_window"),
+              Param("position_x", Kind.NUMBER, "Centre X.", required=False,
+                    minimum=_MASK_BOUNDS["position_x"][0], maximum=_MASK_BOUNDS["position_x"][1]),
+              Param("position_y", Kind.NUMBER, "Centre Y.", required=False,
+                    minimum=_MASK_BOUNDS["position_y"][0], maximum=_MASK_BOUNDS["position_y"][1]),
+              Param("width", Kind.NUMBER, "Largeur.", required=False,
+                    minimum=_MASK_BOUNDS["width"][0], maximum=_MASK_BOUNDS["width"][1]),
+              Param("height", Kind.NUMBER, "Hauteur.", required=False,
+                    minimum=_MASK_BOUNDS["height"][0], maximum=_MASK_BOUNDS["height"][1]),
+              Param("rotation", Kind.NUMBER, "Rotation, en degrés.", required=False,
+                    minimum=_MASK_BOUNDS["rotation"][0], maximum=_MASK_BOUNDS["rotation"][1]),
+              Param("feather", Kind.NUMBER, "Adoucissement.", required=False,
+                    minimum=_MASK_BOUNDS["feather"][0], maximum=_MASK_BOUNDS["feather"][1]),
+              Param("expansion", Kind.NUMBER, "Expansion.", required=False,
+                    minimum=_MASK_BOUNDS["expansion"][0], maximum=_MASK_BOUNDS["expansion"][1]),
+              Param("opacity", Kind.NUMBER, "Opacité.", required=False,
+                    minimum=_MASK_BOUNDS["opacity"][0], maximum=_MASK_BOUNDS["opacity"][1]),
+              Param("inverted", Kind.BOOLEAN, "Fenêtre inversée.", required=False),
+              Param("mode", Kind.ENUM, "add, subtract ou intersect.", required=False,
+                    choices=tuple(item.value for item in MaskMode)),
+              Param("name", Kind.STRING, "Nom.", required=False)),
+             _set_color_window, group="color"),
+        Verb("remove_color_window", "Retire une fenêtre d'étalonnage (et ses images-clés associées).",
+             (_CLIP, Param("window", Kind.SELECTOR, "La fenêtre, par identifiant.", of="color_window")),
+             _remove_color_window, group="color"),
+        Verb("set_color_qualifier", "Règle le qualifieur TSL d'un nœud ; au moins un champ.",
+             (_CLIP, _NODE,
+              Param("enabled", Kind.BOOLEAN, "Qualifieur actif.", required=False),
+              Param("use_hue", Kind.BOOLEAN, "Utiliser la teinte.", required=False),
+              Param("hue_center", Kind.NUMBER, "Centre de teinte, en degrés.", required=False, minimum=0.0, maximum=360.0),
+              Param("hue_width", Kind.NUMBER, "Largeur de teinte, en degrés.", required=False, minimum=0.0, maximum=360.0),
+              Param("hue_soft", Kind.NUMBER, "Douceur de teinte, en degrés.", required=False, minimum=0.0, maximum=180.0),
+              Param("use_sat", Kind.BOOLEAN, "Utiliser la saturation.", required=False),
+              Param("sat_low", Kind.NUMBER, "Bas de saturation (0…1).", required=False, minimum=0.0, maximum=1.0),
+              Param("sat_high", Kind.NUMBER, "Haut de saturation (0…1).", required=False, minimum=0.0, maximum=1.0),
+              Param("sat_soft", Kind.NUMBER, "Douceur de saturation.", required=False, minimum=0.0, maximum=1.0),
+              Param("use_lum", Kind.BOOLEAN, "Utiliser la luminance.", required=False),
+              Param("lum_low", Kind.NUMBER, "Bas de luminance (0…1).", required=False, minimum=0.0, maximum=1.0),
+              Param("lum_high", Kind.NUMBER, "Haut de luminance (0…1).", required=False, minimum=0.0, maximum=1.0),
+              Param("lum_soft", Kind.NUMBER, "Douceur de luminance.", required=False, minimum=0.0, maximum=1.0),
+              Param("invert", Kind.BOOLEAN, "Inverser la clé.", required=False)),
+             _set_color_qualifier, group="color"),
+        Verb("clear_color_qualifier", "Retire le qualifieur d'un nœud (toute l'image est corrigée).",
+             (_CLIP, _NODE), _clear_color_qualifier, group="color"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),
