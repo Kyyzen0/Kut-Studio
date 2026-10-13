@@ -120,6 +120,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
     # Calques graphiques (tâche 32)
     graphic_property_changed = Signal(str, str, object)
     compositing_changed = Signal(str, object)
+    mask_edit_changed = Signal(str)             # masque dont le moniteur montre les poignées (« » : aucun)
     advanced_transform_changed = Signal(str, str, object)
     advanced_keyframe_toggled = Signal(str, str)
     graphic_parent_changed = Signal(str, str)
@@ -204,6 +205,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self.compositing_group = CompositingEditor(self.group_style())
         self.compositing_group.value_changed.connect(
             lambda value: self.selected_clip is not None and self.compositing_changed.emit(self.selected_clip.id, value))
+        self.compositing_group.mask_edit_changed.connect(self.mask_edit_changed)
         layout.addWidget(self.compositing_group)
 
         # ----- Suivi (tracking 2D) ------------------------------------

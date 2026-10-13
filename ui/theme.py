@@ -796,6 +796,9 @@ class OverlayColors:
     lost: str = "#FF4646"               # suivi : mesure perdue (croix)
     manual: str = "#FFFFFF"             # suivi : mesure corrigée à la main
     unknown: str = "#B4B4B4"            # suivi : pas encore de mesure
+    mask_add: str = "#5CE08A"           # masque édité : opération Ajouter
+    mask_subtract: str = "#FF6B6B"      # masque édité : opération Soustraire
+    mask_intersect: str = "#FFC85A"     # masque édité : opération Intersection
 
 
 OVERLAY = OverlayColors()

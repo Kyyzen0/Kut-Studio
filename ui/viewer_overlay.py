@@ -12,7 +12,9 @@ FFmpeg). Il affiche :
   guides, autres calques) ;
 - la fenêtre du nœud d'étalonnage éditée (page Couleur) : son contour, sa
   douceur en pointillé, poignées de taille et de rotation, sommets d'une
-  forme libre ; elle remplace alors les poignées du clip.
+  forme libre ; elle remplace alors les poignées du clip ;
+- le masque choisi dans la pile de compositing (:mod:`ui.mask_overlay`) : contour, adoucissement, poignées de taille, de
+  rotation et d'adoucissement ; il remplace lui aussi les poignées du clip.
 
 Les valeurs calculées sont émises **en direct** (``transform_dragged``),
 puis une seule fois à la fin du geste (``transform_released``) : la
@@ -94,6 +96,8 @@ class ViewerOverlay(QGraphicsObject):
     color_picked = Signal(float, float, bool)  # pipette : point du cadre (pixels), Maj (élargir)
     window_dragged = Signal(str, str, dict)    # fenêtre d'un nœud : (nœud, fenêtre, valeurs saisies)
     window_released = Signal(str, str)
+    mask_dragged = Signal(str, str, dict)      # masque édité : (clip, masque, valeurs ; « points » pour un sommet)
+    mask_released = Signal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -113,6 +117,9 @@ class ViewerOverlay(QGraphicsObject):
         self.pick_mode = False                    # pipette : un clic dans le cadre prend la couleur
         self.selection: SelectionGeometry | None = None
         self.window: WindowGeometry | None = None
+        from ui.mask_overlay import MaskOverlayHelper    # import tardif : ce module lit les constantes de celui-ci
+
+        self.masks = MaskOverlayHelper(self)
         self.layer_boxes: list[tuple[str, Matrix, tuple[float, float]]] = []
         self._snap_lines = []
         self._drag: dict | None = None
@@ -139,6 +146,12 @@ class ViewerOverlay(QGraphicsObject):
         """La fenêtre éditée (``None`` : aucune) ; pendant un glisser, la géométrie à jour est gardée pour l'affichage."""
         self.prepareGeometryChange()
         self.window = window
+        self.update()
+
+    def set_mask_edit(self, geometry) -> None:
+        """Le masque édité (``None`` : aucun, les poignées du clip reprennent) ; gardé à jour pendant un glisser."""
+        self.prepareGeometryChange()
+        self.masks.geometry = geometry
         self.update()
 
     def set_layer_boxes(self, boxes) -> None:
@@ -229,6 +242,7 @@ class ViewerOverlay(QGraphicsObject):
             path.addPolygon(self._window_outline(self.window))
             for point in self._window_handles(self.window).values():
                 path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
+        path.addPath(self.masks.shape_path())
         return path
 
     def _guide_rect(self, guide) -> QRectF:
@@ -473,6 +487,7 @@ class ViewerOverlay(QGraphicsObject):
             halo_stroke(painter, overlay_qcolor(OVERLAY.snap), 1.0, snap_line, style=Qt.DashLine)
         if self.window is not None:
             self._paint_window(painter, self.window)
+        self.masks.paint(painter)
         selection = self.selection
         if selection is None:
             return
@@ -518,6 +533,8 @@ class ViewerOverlay(QGraphicsObject):
             return "compare", ""
         if (window := self._window_hit(point)) is not None:
             return window, self.window.window_id if self.window is not None else ""
+        if (mask := self.masks.hit(point)) is not None:
+            return mask, self.masks.geometry.mask_id
         selection = self.selection
         if selection is not None and selection.editable:
             handles = self._handle_points(selection)
@@ -564,6 +581,8 @@ class ViewerOverlay(QGraphicsObject):
                 "l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor, "select": Qt.PointingHandCursor, "pick": Qt.CrossCursor,
                 "w_move": Qt.SizeAllCursor, "w_rotate": Qt.CrossCursor,
             }.get(hit[0], Qt.SizeAllCursor if hit[0].startswith("w_") else Qt.SplitHCursor)
+            if hit[0].startswith("m_"):
+                cursor = self.masks.cursor(hit[0])
             if hit[0] == "guide":
                 guide = next((g for g in self.guides if g.id == hit[1]), None)
                 if guide is not None and guide.orientation is GuideOrientation.HORIZONTAL:
@@ -589,6 +608,12 @@ class ViewerOverlay(QGraphicsObject):
         if mode.startswith("w_") and self.window is not None:
             self._drag = {"mode": mode, "clip_id": "", "window": self.window, "start": self.to_canvas(event.pos()),
                           "moved": False}
+            event.accept()
+            return
+        if mode.startswith("m_") and self.masks.geometry is not None:
+            self._drag = self.masks.begin(mode, self.to_canvas(event.pos()))
+            self._drag["clip_id"] = self.masks.geometry.clip_id
+            self._drag["mask_id"] = target
             event.accept()
             return
         if mode == "select":
@@ -623,6 +648,11 @@ class ViewerOverlay(QGraphicsObject):
             drag["moved"] = True
             self.compare_moved.emit(min(0.98, max(0.02, current[0] / max(1.0, self.canvas_size[0]))))
             return
+        if drag["mode"].startswith("m_"):
+            if values := self.masks.step(drag, current, event.modifiers()):
+                drag["moved"] = True
+                self.mask_dragged.emit(drag["clip_id"], drag["mask_id"], values)
+            return
         if drag["mode"].startswith("w_"):
             values = self._window_values(drag, current, event.modifiers())
             if values:
@@ -655,6 +685,10 @@ class ViewerOverlay(QGraphicsObject):
         if drag is None:
             return
         if drag["mode"] == "compare":
+            return
+        if drag["mode"].startswith("m_"):
+            if drag["moved"]:
+                self.mask_released.emit(drag["clip_id"], drag["mask_id"])
             return
         if drag["mode"].startswith("w_"):
             if drag["moved"]:
