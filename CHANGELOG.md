@@ -14,6 +14,15 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-13
+
+Une version de transition : la **ligne de commande** (`Kut-Studio export | validate | info | presets`, sans fenêtre) pose le socle du
+futur mode script, et le **moteur d'aperçu GPU** passe son étape 2 (calques par contenu, plusieurs pistes vidéo, grain en shader).
+Un export annulé sous Windows ne laisse plus de fichier caché.
+
+**À savoir** : aucun changement de format de projet (toujours le format 17) ; l'application se lance et se comporte comme avant,
+la ligne de commande est un ajout.
+
 ### Added
 
 - **Ligne de commande, sans fenêtre.** `Kut-Studio info | validate | presets | export` (depuis les sources : `python main.py …`) : le
@@ -21,8 +30,6 @@ ensuite déclenche `.github/workflows/release.yml`.
   renommé à la fin (jamais de MP4 tronqué), annulable par Ctrl-C, et ne remplace jamais son projet ni un fichier existant sans
   `--overwrite`. `validate` dit **ce qu'un projet a perdu en silence** (effets, bus, transitions invalides ignorés à l'ouverture).
   `--json` rend un objet unique, les codes de sortie sont stables, les messages sont traduits. Voir [docs/cli.md](docs/cli.md).
-
-### Added
 
 - **Décodage multi-sources (`media_io`).** Ouverture, saut et décodage d'une image (PyAV si disponible, sinon
   FFmpeg) pour alimenter plusieurs pistes sur le moniteur GPU (ADR-0001).
@@ -41,6 +48,9 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Export annulé sous Windows : plus de fichier caché oublié.** FFmpeg arrêté garde un instant sa poignée sur le fichier en cours
+  d'écriture ; sa suppression échouait sans rien dire et laissait un `.<nom>.….partial.mp4` à côté de la destination. La suppression
+  réessaie maintenant jusqu'à ce que le fichier soit libéré, et le journal le dit si elle abandonne.
 - **Revue Codex (PR #108 / #113).** Underlays en coords canvas ; décodage PyAV jusqu'au PTS (RVBA différé) ;
   file de relecture vidée ; géométrie CPU logique à scale réduit ; état compositing complet des sous-pistes ;
   grain procédural branché et cadré par matte ; jobs underlay obsolètes coalescés ; plus d'écriture
