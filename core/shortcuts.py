@@ -521,6 +521,12 @@ COMMANDS: tuple[Command, ...] = (
     _cmd("view_guides", Category.MOTION, "Ctrl+;", scope=_A),
     _cmd("view_grid", Category.MOTION, scope=_A),
     _cmd("mograph_snapping", Category.MOTION, scope=_A),
+    _cmd("layer_align_left", Category.MOTION, scope=_A),
+    _cmd("layer_align_center_h", Category.MOTION, scope=_A),
+    _cmd("layer_align_right", Category.MOTION, scope=_A),
+    _cmd("layer_align_top", Category.MOTION, scope=_A),
+    _cmd("layer_align_middle_v", Category.MOTION, scope=_A),
+    _cmd("layer_align_bottom", Category.MOTION, scope=_A),
     # --- Vidéo sociale (format vertical, cadrage, Ken Burns) : sans touche par défaut -----------------
     _cmd("social_new_project", Category.SOCIAL, scope=_A),
     _cmd("sequence_settings", Category.SOCIAL, scope=_A),

@@ -92,6 +92,7 @@ from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
 from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
 from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
+from ui.main_window_mixins.frame_alignment import FrameAlignmentMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
@@ -145,6 +146,7 @@ class MainWindow(
     TrackingMixin,
     TimeEditingMixin,
     MotionGraphicsMixin,
+    FrameAlignmentMixin,
     SequencesMixin,
     MulticamMixin,
     MulticamCreationMixin,

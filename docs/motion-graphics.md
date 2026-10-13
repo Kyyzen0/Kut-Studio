@@ -31,6 +31,18 @@ Les cinq gestes du débutant :
    haute prime. Dans la boîte du clip sélectionné, glisser le déplace, sauf là où
    un calque situé au-dessus le recouvre : un clic y sélectionne ce calque. Un clic dans
    le vide ne change rien, et la tête de lecture ne bouge pas (`core/mograph_layers.py:viewer_pick_boxes`).
+   Pour placer un calque sans le glisser : les six boutons *Aligner sur le
+   cadre* (section *Mouvement* de l'inspecteur, ou menu *Calques → Aligner sur
+   le cadre*) collent la boîte englobante du clip sélectionné au bord gauche /
+   droit / haut / bas du cadre, ou la centrent. Seule la position change (pas
+   l'échelle ni la rotation) et l'action est une seule étape d'historique ; si
+   la position est animée, une image-clé est écrite à la tête de lecture. Un
+   clic dans le moniteur lui donne le focus : les **flèches** déplacent alors
+   le clip sélectionné d'un pixel du cadre (**Maj** : dix), sans aimantation ;
+   les appuis rapides (touche maintenue) ne forment qu'une étape annulable. Sans
+   clip éditable à déplacer, ou avec Ctrl/Alt, les flèches gardent leur rôle
+   habituel (par exemple *image précédente / suivante*). Les six commandes
+   d'alignement n'ont pas de touche par défaut (*Préférences → Raccourcis*).
 3. **Taille et couleur** : inspecteur, onglet *Graphiques*.
 4. **Une petite animation** : losange ◆ d'une propriété (opacité, position…),
    déplacer la tête de lecture, changer la valeur.
