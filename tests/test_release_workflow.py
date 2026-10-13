@@ -216,3 +216,16 @@ def test_every_direct_dependency_is_pinned_inside_its_allowed_range():
         assert requirement.specifier.contains(version, prereleases=True), (
             f"constraints.txt fige {requirement.name}=={version}, hors de la plage « {requirement.specifier} »"
         )
+
+
+# --- Dependabot -------------------------------------------------------------------------------------------------------------
+
+
+def test_dependabot_does_not_raise_the_lower_bounds_and_keeps_numpy_on_a_python_311_compatible_line():
+    """Revue des PR #119 et #120 : Dependabot relevait « numpy>=1.26 » en « >=2.5.3 » (qui exige Python 3.12, la CI et la release
+    tournent en 3.11) et « ruff>=0.6 » en « >=0.17.0 ». Un texte de configuration, donc une garde sur le texte."""
+    text = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    assert "versioning-strategy: increase-if-necessary" in text
+    numpy_block = text[text.index('dependency-name: "numpy"'):]
+    numpy_block = numpy_block[:numpy_block.index("dependency-name: \"PySide6*\"")]
+    assert "version-update:semver-minor" in numpy_block and "version-update:semver-major" in numpy_block
