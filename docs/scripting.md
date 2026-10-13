@@ -83,8 +83,18 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_transition` | Retire une transition (`transition`) |
 | `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value`, `interpolation`) : `at` est **relatif au clip** |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
-| `set_color_grade` | Règle l'étalonnage du premier nœud du clip : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) |
-| `reset_color_grade` | Remet l'étalonnage du clip à neutre (`clip`) |
+| `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
+| `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
+| `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
+| `reset_color_curve` | Remet une courbe à l'identité (`channel`) |
+| `set_color_wheel` | Règle une roue primaire (`wheel` = lift/gamma/gain/offset, `r`/`g`/`b`/`y`, au moins une) |
+| `import_lut` | Attache un LUT `.cube` en lecture seule dans le dossier du script (`path`) ; voir « Fichiers » |
+| `remove_lut` | Retire le LUT d'un nœud |
+| `add_color_node` | Ajoute un nœud en série (`after` optionnel, `label`) |
+| `branch_color_node` | Ajoute un nœud en parallèle ou en calque (`node`, `kind` = parallel/layer) |
+| `remove_color_node` | Supprime un nœud (pas le dernier) |
+| `rename_color_node` | Nomme un nœud (`label`) |
+| `set_color_detail` | Flou et/ou netteté d'un nœud (`blur` 0…50, `sharpen` 0…5) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
@@ -133,8 +143,8 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 ## Pas encore là
 
-- **Étalonnage avancé** (courbes, LUT, roues, nœuds, fenêtres), **animation des couleurs et des effets**, **calques d'image**, **séquences
-  imbriquées** et **multicam** : prochains lots. `set_color_grade` ne règle que les sept curseurs du premier nœud.
+- **Fenêtres et qualifieur** d'un nœud d'étalonnage, **animation des couleurs et des effets**, **calques d'image**, **séquences
+  imbriquées** et **multicam** : prochains lots.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code

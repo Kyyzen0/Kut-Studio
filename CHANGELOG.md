@@ -29,6 +29,9 @@ ensuite déclenche `.github/workflows/release.yml`.
   ne passe pas pour l'ancien). La fenêtre prévient si le projet est déjà tenu ailleurs, sans jamais refuser de l'ouvrir.
 - **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
   une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
+- **Scripts : étalonnage avancé.** Courbes, roues, LUT ``.cube``, nœuds (série / parallèle / calques), flou et netteté : douze verbes de plus
+  (45 en tout). ``set_color_grade`` / ``reset_color_grade`` acceptent un ``node`` ; ``import_lut`` lit un fichier dans le dossier du script
+  comme ``import_media``. Voir [docs/scripting.md](docs/scripting.md).
 
 ### Fixed
 

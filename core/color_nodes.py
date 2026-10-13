@@ -236,22 +236,38 @@ class ColorNodeGraph(NodeGraph[AnyNode]):
 
     # -- modifications ------------------------------------------------------------------------------------------
 
-    def with_node_after(self, after_id: str | None, grade: ColorGrade | None = None) -> tuple["ColorNodeGraph", str]:
+    def with_node_after(
+        self, after_id: str | None, grade: ColorGrade | None = None, *, node_id: str | None = None,
+    ) -> tuple["ColorNodeGraph", str]:
         """Un correcteur de plus, en série juste après ``after_id`` (``None`` : après la sortie) ; il reprend tout ce
-        que ``after_id`` alimentait. Rend le graphe et son identifiant."""
+        que ``after_id`` alimentait. Rend le graphe et son identifiant.
+
+        ``node_id`` : identifiant imposé (script) ; absent, un identifiant libre est généré. Un doublon est refusé.
+        """
         anchor = self.node(after_id).id if after_id is not None else self.sink.id
-        new = ColorNode(self.next_id(), grade or ColorGrade())
+        new_id = node_id if node_id is not None else self.next_id()
+        if self.has_node(new_id):
+            raise NodeGraphError(f"Le nœud {new_id!r} existe déjà.")
+        new = ColorNode(new_id, grade or ColorGrade())
         links = [NodeLink(new.id, link.target, link.port) if link.source == anchor else link for link in self.links]
         links.append(NodeLink(anchor, new.id))
         return ColorNodeGraph(nodes=(*self.nodes, new), links=tuple(links)), new.id
 
-    def with_branch(self, node_id: str, kind: MixerKind) -> tuple["ColorNodeGraph", str]:
+    def with_branch(
+        self, node_id: str, kind: MixerKind, *, new_id: str | None = None,
+    ) -> tuple["ColorNodeGraph", str]:
         """Un correcteur de plus **à côté** de ``node_id`` : même entrée que lui, réunis par un mélangeur ``kind``
         (le nouveau sur l'entrée la plus haute : en calques, il passe dessus). Si ``node_id`` est déjà une branche
-        directe d'un mélangeur de ce type, la nouvelle branche s'y ajoute. Rend le graphe et l'identifiant du nœud."""
+        directe d'un mélangeur de ce type, la nouvelle branche s'y ajoute. Rend le graphe et l'identifiant du nœud.
+
+        ``new_id`` : identifiant imposé du correcteur créé (script) ; absent, un identifiant libre est généré.
+        """
         node = self.corrector(node_id)
         source = self.input_of(node.id)
-        new = ColorNode(self.next_id(), ColorGrade())
+        created_id = new_id if new_id is not None else self.next_id()
+        if self.has_node(created_id):
+            raise NodeGraphError(f"Le nœud {created_id!r} existe déjà.")
+        new = ColorNode(created_id, ColorGrade())
         feeds = [NodeLink(source, new.id)] if source is not None else []
         outputs = self.outputs(node.id)
         if len(outputs) == 1:
@@ -260,7 +276,9 @@ class ColorNodeGraph(NodeGraph[AnyNode]):
                 port = len(self.inputs(mixer.id))
                 joined = (*self.links, *feeds, NodeLink(new.id, mixer.id, port))
                 return ColorNodeGraph(nodes=(*self.nodes, new), links=joined), new.id
-        mixer = ColorMixer(self.next_id("m"), MixerKind(kind))
+        # ``created_id`` n'est pas encore dans ``self.nodes`` : le réserver, sinon ``next_id("m")``
+        # peut renvoyer le même identifiant (ex. script qui impose ``new_id="m1"``).
+        mixer = ColorMixer(self.next_id("m", reserved=(created_id,)), MixerKind(kind))
         links = [NodeLink(mixer.id, link.target, link.port) if link.source == node.id else link for link in self.links]
         links += [*feeds, NodeLink(node.id, mixer.id, 0), NodeLink(new.id, mixer.id, 1)]
         return ColorNodeGraph(nodes=(*self.nodes, new, mixer), links=tuple(links)), new.id
