@@ -405,8 +405,7 @@ class MotionGraphicsMixin:
         panel.set_adjustments(adjustments)
 
     def _refresh_viewer_overlay(self, t: float) -> None:
-        from core.graphics import CONTAINER_TYPES, GraphicOverlay
-        from core.mograph_layers import scene_for_project
+        from core.mograph_layers import scene_for_project, viewer_pick_boxes
         from ui.viewer_overlay import SelectionGeometry
 
         overlay = self.preview_panel.overlay
@@ -417,16 +416,7 @@ class MotionGraphicsMixin:
             overlay.set_selection(None)
             overlay.set_layer_boxes(())
             return
-        boxes = []
-        for clip_id in scene.top_level() + [m for g in scene.layers for m in scene.members(g)]:
-            layer = scene.layers.get(clip_id)
-            graphic = getattr(layer, "graphic", None)
-            if not isinstance(graphic, GraphicOverlay) or graphic.type in CONTAINER_TYPES:
-                continue
-            evaluated = scene.evaluate(clip_id, t)
-            if evaluated.active and not graphic.locked:
-                boxes.append((clip_id, evaluated.world, evaluated.box))
-        boxes.sort(key=lambda item: _stack_rank(scene, item[0]))
+        boxes = viewer_pick_boxes(scene, self.project, t)
         overlay.set_layer_boxes(boxes)
         window_overlay = getattr(self, "_refresh_window_overlay", None)
         if window_overlay is not None and window_overlay(t, scene):
@@ -998,18 +988,6 @@ class MotionGraphicsMixin:
             return
         sequence.motion_blur = replace(current, shutter_angle=angle, samples=samples)
         self._commit_layer_edit(translate("history.layer.motion_blur_settings"))
-
-
-def _stack_rank(scene, clip_id: str) -> tuple:
-    """Rang d'affichage : un membre de groupe se range au niveau de son groupe."""
-    from core.mograph_scene import stack_key
-
-    chain = [clip_id]
-    group = scene.group_of(clip_id)
-    while group and group not in chain:
-        chain.append(group)
-        group = scene.group_of(group)
-    return tuple(stack_key(scene.layers[cid]) for cid in reversed(chain))
 
 
 __all__ = ["MotionGraphicsMixin"]

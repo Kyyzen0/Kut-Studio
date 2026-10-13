@@ -525,16 +525,31 @@ class ViewerOverlay(QGraphicsObject):
                 if handle is not None and math.hypot(point.x() - handle.x(), point.y() - handle.y()) <= HANDLE_RADIUS + 3:
                     return name, selection.clip_id
             if self._box_polygon(selection).containsPoint(point, Qt.OddEvenFill):
-                return "move", selection.clip_id
+                above = self._layer_above_selection_at(point, selection.clip_id)
+                return ("select", above) if above else ("move", selection.clip_id)
         if self.show_guides:
             for guide in self.guides:
                 if not guide.locked and self._guide_rect(guide).adjusted(-3, -3, 3, 3).contains(point):
                     return "guide", guide.id
-        for clip_id, world, box in reversed(self.layer_boxes):
+        top = self._layer_at(point)
+        return ("select", top[1]) if top is not None else None
+
+    def _layer_at(self, point: QPointF) -> tuple[int, str] | None:
+        """Calque le plus haut sous ``point`` : ``(rang dans layer_boxes, clip_id)``."""
+        for index in range(len(self.layer_boxes) - 1, -1, -1):
+            clip_id, world, box = self.layer_boxes[index]
             polygon = QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)])
             if polygon.containsPoint(point, Qt.OddEvenFill):
-                return "select", clip_id
+                return index, clip_id
         return None
+
+    def _layer_above_selection_at(self, point: QPointF, selected_id: str) -> str:
+        """Calque posé AU-DESSUS de la sélection sous ``point`` (``""`` : aucun, la sélection reste saisie)."""
+        selected_rank = next((i for i, (cid, _w, _b) in enumerate(self.layer_boxes) if cid == selected_id), None)
+        top = self._layer_at(point)
+        if selected_rank is None or top is None or top[1] == selected_id or top[0] < selected_rank:
+            return ""
+        return top[1]
 
     def hoverMoveEvent(self, event) -> None:  # noqa: N802
         hit = self._hit(event.pos())
