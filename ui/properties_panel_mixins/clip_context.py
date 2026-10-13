@@ -54,7 +54,7 @@ class ClipContextMixin:
                 self._set_group_condition(self.subtitle_group, False)
                 self._set_group_condition(self.graphics_group, False)
                 self.update_graphic_from_clip(None)
-                self.compositing_group.set_value(None)
+                self.compositing_group.set_value(None, crop_editable=False)
                 self.color_group.setEnabled(False)
                 self.update_color_grade_from_clip(None)
                 self.movement_group.setEnabled(False)
@@ -98,7 +98,8 @@ class ClipContextMixin:
             is_visual_clip = is_video_clip or is_graphic_clip
             self._set_group_condition(self.graphics_group, is_graphic_clip)
             self.update_graphic_from_clip(getattr(view, "graphic", None))
-            self.compositing_group.set_value(getattr(view, "compositing", None))
+            self.compositing_group.set_value(getattr(view, "compositing", None), bool(getattr(view, "crop_animated", False)),
+                                              is_visual_clip and not bool(getattr(view, "locked", False)))
             self.compositing_group.set_chroma_visible(is_video_clip)
             self.advanced_transform.set_skew_available(is_graphic_clip)
             self.graphics_group.setEnabled(

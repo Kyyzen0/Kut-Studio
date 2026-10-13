@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Recadrage non destructif.** Inspecteur → Compositing : quatre champs (gauche, haut, droite, bas, en %) et « Réinitialiser le recadrage » (aussi dans Calques). Le recadrage est un masque rectangle « Recadrage » rangé en dernier de la pile : modifiable ensuite, identique à l'aperçu et à l'export, et les verbes de script `set_crop` / `clear_crop` le pilotent.
 - **Moniteur : aimantation à l'échelle et à la rotation.** Redimensionner un calque l'accroche aux bords du cadre, aux guides et aux autres calques ; la rotation s'accroche aux multiples de 45° (Alt désactive, Maj garde le pas de 15°).
 - **Moniteur : alignement sur le cadre et flèches.** Le clip sélectionné s'aligne sur un bord ou le centre du cadre (six boutons dans l'inspecteur, section Mouvement, ou Calques → *Aligner sur le cadre*), et les flèches du clavier le déplacent d'un pixel (Maj : dix) quand le moniteur a le focus.
 - **Scripts déclaratifs.** `Kut-Studio apply script.json projet.kut -o resultat.kut` applique un fichier JSON d'opérations (bus, inserts,
