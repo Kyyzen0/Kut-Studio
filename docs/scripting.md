@@ -95,6 +95,11 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_color_node` | Supprime un nœud (pas le dernier) |
 | `rename_color_node` | Nomme un nœud (`label`) |
 | `set_color_detail` | Flou et/ou netteté d'un nœud (`blur` 0…50, `sharpen` 0…5) |
+| `add_color_window` | Ajoute une fenêtre sur un nœud (`shape`, géométrie, `mode`, `node` optionnel) |
+| `set_color_window` | Modifie une fenêtre (`window`, au moins un champ) |
+| `remove_color_window` | Retire une fenêtre (`window`) |
+| `set_color_qualifier` | Règle le qualifieur TSL d'un nœud (au moins un champ) |
+| `clear_color_qualifier` | Retire le qualifieur d'un nœud |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
@@ -143,8 +148,7 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 ## Pas encore là
 
-- **Fenêtres et qualifieur** d'un nœud d'étalonnage, **animation des couleurs et des effets**, **calques d'image**, **séquences
-  imbriquées** et **multicam** : prochains lots.
+- **Animation des couleurs et des effets**, **calques d'image**, **séquences imbriquées** et **multicam** : prochains lots.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code
