@@ -730,7 +730,7 @@ class ViewerOverlay(QGraphicsObject):
             now = math.hypot(current[0] - anchor[0], current[1] - anchor[1])
             if start < 1e-6:
                 return {}
-            factor = self._snap_scale(drag, now / start, "xy", modifiers)
+            factor = self._snap_scale(drag, now / start, "xy", modifiers, "scale")
             return {"scale": values.get("scale", 1.0) * factor}
         try:
             inverse = mat_invert(world)
@@ -742,15 +742,15 @@ class ViewerOverlay(QGraphicsObject):
             base = lx0 - anchor_local[0]
             if abs(base) < 1e-6:
                 return {}
-            factor = self._snap_scale(drag, (lx - anchor_local[0]) / base, "x", modifiers)
+            factor = self._snap_scale(drag, (lx - anchor_local[0]) / base, "x", modifiers, "scale_x")
             return {"scale_x": values.get("scale_x", 1.0) * factor}
         base = ly0 - anchor_local[1]
         if abs(base) < 1e-6:
             return {}
-        factor = self._snap_scale(drag, (ly - anchor_local[1]) / base, "y", modifiers)
+        factor = self._snap_scale(drag, (ly - anchor_local[1]) / base, "y", modifiers, "scale_y")
         return {"scale_y": values.get("scale_y", 1.0) * factor}
 
-    def _snap_scale(self, drag: dict, factor: float, axes: str, modifiers) -> float:
+    def _snap_scale(self, drag: dict, factor: float, axes: str, modifiers, prop: str) -> float:
         """Aimante le facteur d'échelle (mêmes cibles, seuil et Alt que le déplacement).
 
         Les côtés (``axes`` x ou y seul) ne s'aimantent que si la matrice monde n'a ni rotation
@@ -767,13 +767,26 @@ class ViewerOverlay(QGraphicsObject):
         anchor = mat_apply(world, values.get("anchor_x", 0.5) * w, values.get("anchor_y", 0.5) * h)
         others = [map_box(m, *b) for cid, m, b in self.layer_boxes if cid != drag["clip_id"]]
         cw, ch = self.canvas_size
-        factor, lines = snap_scale_factor(
+        snapped, lines = snap_scale_factor(
             map_box(world, w, h), anchor, factor, cw, ch,
             threshold=SNAP_PIXELS / max(self.scale, 1e-6), axes=axes,
             guides=self.guides if self.show_guides else (), layer_boxes=others,
         )
+        if lines and not self._reachable(prop, values.get(prop, 1.0) * snapped):
+            return factor                      # le modèle ramènerait la valeur à sa borne : la ligne d'aide mentirait
         self._snap_lines = lines
-        return factor
+        return snapped
+
+    @staticmethod
+    def _reachable(prop: str, value: float) -> bool:
+        """La valeur visée est-elle dans les bornes de la propriété animable (sinon ``_apply_property_values`` la ramènerait) ?"""
+        from core.animation_targets import get_target
+
+        try:
+            spec = get_target(prop).spec
+        except KeyError:
+            return True
+        return (spec.minimum is None or value >= spec.minimum) and (spec.maximum is None or value <= spec.maximum)
 
 
 __all__ = ["SelectionGeometry", "ViewerOverlay", "WindowGeometry"]

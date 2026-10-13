@@ -100,13 +100,28 @@ def _overlay():
     return overlay, drag
 
 
-def test_corner_drag_snaps_the_box_edge_onto_the_frame_edge():
+def _with_vertical_guide(overlay):
+    overlay.guides = [Guide(GuideOrientation.VERTICAL, 0.5)]  # x = 640
+    overlay.show_guides = True
+
+
+def test_corner_drag_snaps_the_box_edge_onto_a_guide():
     overlay, drag = _overlay()
-    current = (200.0 + 10.75 * 100.0, 150.0 + 10.75 * 50.0)
+    _with_vertical_guide(overlay)
+    current = (200.0 + 4.37 * 100.0, 150.0 + 4.37 * 50.0)
     values = overlay._drag_values(drag, current, Qt.NoModifier)
-    assert values["scale"] == pytest.approx(10.8)  # bord droit exactement en x = 1280
-    assert 200.0 + values["scale"] * 100.0 == pytest.approx(1280.0)
+    assert values["scale"] == pytest.approx(4.4)  # bord droit exactement sur le guide x = 640
+    assert 200.0 + values["scale"] * 100.0 == pytest.approx(640.0)
     assert len(overlay._snap_lines) == 1
+
+
+def test_a_snap_the_model_would_clamp_is_dropped_and_draws_no_line():
+    """Revue de #144 : le bord droit tomberait sur x = 1280 à l'échelle 10,8, hors de la borne (10) : pas d'accrochage, pas de ligne."""
+    overlay, drag = _overlay()
+    values = overlay._drag_values(drag, (200.0 + 10.75 * 100.0, 150.0 + 10.75 * 50.0), Qt.NoModifier)
+    assert values["scale"] == pytest.approx(10.75)
+    assert overlay._snap_lines == []
+    assert not overlay._reachable("scale", 0.01) and overlay._reachable("scale", 2.0)
 
 
 @pytest.mark.parametrize("disable", ["flag", "alt"])
@@ -126,11 +141,12 @@ def test_side_drag_snaps_only_without_rotation():
     overlay, drag = _overlay()
     drag["mode"] = "r"
     drag["start"] = (300.0, 150.0)
-    values = overlay._drag_values(drag, (200.0 + 1075.0, 150.0), Qt.NoModifier)
-    assert values["scale_x"] == pytest.approx(10.8)
+    _with_vertical_guide(overlay)
+    values = overlay._drag_values(drag, (200.0 + 437.0, 150.0), Qt.NoModifier)
+    assert values["scale_x"] == pytest.approx(4.4)
     rotated = (0.9, 0.1, -0.1, 0.9, 100.0, 100.0)  # b, c non nuls
     drag["world"] = rotated
-    values = overlay._drag_values(drag, (200.0 + 1075.0, 150.0), Qt.NoModifier)
+    values = overlay._drag_values(drag, (200.0 + 437.0, 150.0), Qt.NoModifier)
     assert "scale_x" in values and overlay._snap_lines == []
 
 
