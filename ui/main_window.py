@@ -92,6 +92,7 @@ from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
 from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
 from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
+from ui.main_window_mixins.clip_crop import ClipCropMixin
 from ui.main_window_mixins.frame_alignment import FrameAlignmentMixin
 from ui.main_window_mixins.mask_edit import MaskEditMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
@@ -148,6 +149,7 @@ class MainWindow(
     TimeEditingMixin,
     MotionGraphicsMixin,
     FrameAlignmentMixin,
+    ClipCropMixin,
     MaskEditMixin,
     SequencesMixin,
     MulticamMixin,

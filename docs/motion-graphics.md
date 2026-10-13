@@ -174,6 +174,23 @@ et à l'export (même fonction, `ExportEngine._build_filter_complex`).
 5. **Opacité** du calque (× opacité des contrôleurs parents).
 6. **Fusion** dans la bande ou dans le groupe.
 
+### Recadrage non destructif (`core/clip_crop.py`)
+
+Le recadrage d'un clip (vidéo, image, composition, calque) est **un masque rectangle généré**, pas un champ de transform : sa
+matte est rastérisée par Qt, puis consommée à l'identique par l'export FFmpeg et l'aperçu GPU ; le format du fichier ne change pas.
+Les quatre bords sont des fractions du cadre du calque (0 à 95 % ; `gauche + droite` et `haut + bas` gardent au moins 5 %).
+
+- Le masque a l'identifiant réservé `crop`, le nom « Recadrage », la forme rectangle, le mode **`intersect`** et il est rangé **en
+  dernier** de la pile : un `intersect` final ne garde que ce qui tombe dans le cadre, quels que soient les masques `add` /
+  `subtract` qui le précèdent (un `add` placé après lui s'y ajouterait). Seul sur le clip, il part d'un calque plein.
+- Convention : `width = 1 − gauche − droite`, `position_x = gauche + width / 2` (idem en y), origine en haut à gauche, fractions de la
+  boîte du calque avant son transform (le recadrage suit donc l'échelle, la rotation et le déplacement du clip).
+- Un seul masque de recadrage par clip ; les autres masques ne sont jamais modifiés. Il apparaît dans la pile (Inspecteur →
+  Compositing) et reste éditable comme n'importe quel masque ; ses propriétés sont animables (`mask.crop.*`).
+- Inspecteur : quatre champs en pourcentage et « Réinitialiser le recadrage » (aussi dans Calques → *Réinitialiser le recadrage*).
+  Si le masque a été animé ou modifié dans la pile (rotation, adoucissement…), les champs se désactivent et le disent.
+- Scripts : `set_crop` et `clear_crop` ([scripting.md](scripting.md)). Reste à faire : poignées dans le moniteur, coins arrondis.
+
 ### La pile (`core/mograph_program.py`, `core/mograph_ffmpeg.py`)
 
 ```
