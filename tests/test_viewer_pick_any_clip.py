@@ -56,6 +56,16 @@ def test_excluded_video_clips(case):
     assert _ids(_project([track]), t) == []
 
 
+def test_a_soloed_video_track_hides_the_other_video_tracks_from_the_picker():
+    """Revue de #143 : avec un solo, le rendu ne montre que la piste en solo ; un clip invisible plus haut ne doit pas voler le clic."""
+    low = Track("V1", "V1", "video", clips=[_video("under", "V1")], solo=True)
+    high = Track("V2", "V2", "video", clips=[_video("over", "V2")])
+    project = _project([low, high])
+    assert _ids(project) == ["under"]
+    low.solo = False
+    assert _ids(project) == ["under", "over"]
+
+
 def test_videos_come_before_graphics_even_when_the_graphics_track_has_a_lower_index():
     project = _project()
     graphics = Track("G1", "G1", "graphics")

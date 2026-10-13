@@ -223,13 +223,14 @@ def viewer_pick_boxes(scene: GraphicsScene, project: Project, t: float) -> list[
 
     Suit l'ordre du rendu : les calques graphiques sont composés au-dessus de toute la vidéo ; entre clips
     vidéo (et images fixes, clips de composition), la piste la plus haute est dessus. Un clip vidéo n'est
-    retenu que si sa piste est visible et déverrouillée, s'il est activé, actif à ``t`` et n'est pas un clip
+    retenu que si sa piste est visible, déverrouillée et rendue (un solo vidéo masque les autres pistes vidéo, comme au rendu), s'il est activé, actif à ``t`` et n'est pas un clip
     imbriqué / multicam (``sequence_id``). Un calque graphique l'est s'il est dessiné (hors conteneur),
     actif et non verrouillé.
     """
     videos: list[tuple[tuple, tuple[str, tuple, tuple]]] = []
+    video_solo = {track.id for track in project.tracks if track.type == "video" and track.solo}      # comme le plan de rendu
     for index, track in enumerate(project.tracks):
-        if track.type != "video" or not track.visible or track.locked:
+        if track.type != "video" or not track.visible or track.locked or (video_solo and track.id not in video_solo):
             continue
         for clip in track.clips:
             if clip.sequence_id or not clip.enabled or clip.id not in scene.layers:
