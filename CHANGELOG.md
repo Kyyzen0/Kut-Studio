@@ -529,7 +529,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
 [0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.0...v0.4.1
