@@ -119,15 +119,30 @@ class CubeLUT:
 _HEADER_LINE = re.compile(r"^(?P<key>[A-Z0-9_]+)\s+(?P<value>.+)$")
 
 
+_MAX_ROW_VALUES = 3
+"""Une ligne de la LUT (triplet ou ``DOMAIN_*``) porte trois valeurs, pas une de plus."""
+
+
+def _excerpt(line: str, limit: int = 80) -> str:
+    """Début d'une ligne pour un message d'erreur : une ligne de plusieurs Mio ne doit pas être recopiée dans l'exception."""
+    return line if len(line) <= limit else line[:limit] + "…"
+
+
 def _split_floats(line: str) -> list[float]:
-    parts = line.strip().split()
+    # ``split(None, 3)`` s'arrête au quatrième jeton : le reste de la ligne reste une seule chaîne, jamais découpée ni convertie.
+    # Un fichier plafonné en taille mais fait d'une seule ligne de « 0 0 0 … » n'alloue donc pas un objet par jeton.
+    parts = line.split(None, _MAX_ROW_VALUES)
+    if len(parts) > _MAX_ROW_VALUES:
+        raise LUTImportBadFormat(
+            f"Une ligne de la LUT ne contient pas 3 valeurs : {_excerpt(line)!r}."
+        )
     floats: list[float] = []
     for part in parts:
         try:
             floats.append(float(part))
         except ValueError as exc:
             raise LUTImportBadFormat(
-                f"Valeur non numérique dans la LUT : {part!r}."
+                f"Valeur non numérique dans la LUT : {_excerpt(part)!r}."
             ) from exc
     return floats
 
@@ -181,7 +196,7 @@ def parse_cube_lut(path: str | Path) -> CubeLUT:
                 match = _HEADER_LINE.match(line)
                 if not match:
                     raise LUTImportBadFormat(
-                        f"Ligne d'en‑tête invalide : {line!r}."
+                        f"Ligne d'en‑tête invalide : {_excerpt(line)!r}."
                     )
                 key = match.group("key")
                 value = match.group("value").strip()
@@ -217,7 +232,7 @@ def parse_cube_lut(path: str | Path) -> CubeLUT:
                 if len(floats) != 3:
                     raise LUTImportBadFormat(
                         f"Une ligne de la LUT ne contient pas 3 valeurs : "
-                        f"{line!r}."
+                        f"{_excerpt(line)!r}."
                     )
                 entries.extend(floats)
 
