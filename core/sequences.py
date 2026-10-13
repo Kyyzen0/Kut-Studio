@@ -448,6 +448,16 @@ MAX_SEQUENCE_SIDE = 8192
 """Plus grand côté accepté pour un cadre de séquence (8K)."""
 
 
+def check_sequence_format(width: int | None = None, height: int | None = None, fps: float | None = None) -> None:
+    """Refuse un cadre hors bornes (``None`` : valeur non fournie, non vérifiée). Un seul endroit pour l'interface et les scripts."""
+    for side in (width, height):
+        if side is not None and (not 16 <= int(side) <= MAX_SEQUENCE_SIDE or int(side) % 2):
+            shown = f"{width} × {height}" if width is not None and height is not None else str(side)
+            raise ValueError(f"Taille de cadre refusée : {shown} (entre 16 et {MAX_SEQUENCE_SIDE}, paire).")
+    if fps is not None and not 1.0 <= float(fps) <= 240.0:
+        raise ValueError(f"Cadence refusée : {fps}.")
+
+
 def set_sequence_format(project: Project, sequence_id: str, width: int, height: int, fps: float) -> Sequence:
     """Change le cadre (taille, cadence) d'une séquence. Tailles paires (``yuv420p``), bornées.
 
@@ -455,11 +465,7 @@ def set_sequence_format(project: Project, sequence_id: str, width: int, height: 
     (corps du texte, formes) ne changent pas : ils gardent leur taille réelle dans le nouveau cadre.
     """
     width, height, fps = int(width), int(height), float(fps)
-    for side in (width, height):
-        if not 16 <= side <= MAX_SEQUENCE_SIDE or side % 2:
-            raise ValueError(f"Taille de cadre refusée : {width} × {height} (entre 16 et {MAX_SEQUENCE_SIDE}, paire).")
-    if not 1.0 <= fps <= 240.0:
-        raise ValueError(f"Cadence refusée : {fps}.")
+    check_sequence_format(width, height, fps)
     sequence = find_sequence(project, sequence_id)
     sequence.width, sequence.height, sequence.fps = width, height, fps
     return sequence
@@ -492,17 +498,21 @@ def _remap_clip_references(sequence: Sequence, renamed: dict[str, str]) -> None:
 
 
 def duplicate_sequence(
-    project: Project, sequence_id: str, name: str | None = None
+    project: Project, sequence_id: str, name: str | None = None, *, clone_id: str | None = None
 ) -> Sequence:
     """Copie indépendante de la séquence (nouvel ID, nouveaux IDs de clips).
 
     La timeline est copiée ; les médias, effets et images-clés sont les
     mêmes. Les clips imbriqués de la copie **continuent de référencer les
-    mêmes séquences** : pas de copie profonde récursive de l'arbre.
+    mêmes séquences** : pas de copie profonde récursive de l'arbre. ``clone_id`` : identifiant imposé à la copie
+    (scripts, voir :mod:`core.object_ids`) ; les clips, transitions et repères de la copie reçoivent toujours des identifiants générés.
     """
     source = find_sequence(project, sequence_id)
+    copy_id = _object_ids.resolve_object_id(
+        clone_id, prefix="seq", kind="séquence", taken=_object_ids.sequence_ids(project)
+    )
     clone = deepcopy(source)
-    clone.id = new_sequence_id()
+    clone.id = copy_id
     clone.name = unique_sequence_name(project, name or f"{source.name} copie")
     renamed: dict[str, str] = {}
     for track in clone.tracks:
@@ -598,8 +608,12 @@ def insert_sequence_clip(
     parent_sequence_id: str | None = None,
     source_in: float = 0.0,
     source_out: float | None = None,
+    clip_id: str | None = None,
 ) -> Clip:
     """Insère ``sequence_id`` comme clip dans ``parent_sequence_id`` (active par défaut).
+
+    ``source_in`` / ``source_out`` fournis doivent tenir dans la séquence source : un dépassement est refusé (il serait sinon
+    ramené en silence par :func:`clamp_nested_clips`). ``clip_id`` : identifiant imposé (scripts, voir :mod:`core.object_ids`).
 
     Raises:
         KeyError: séquence ou piste inconnue.
@@ -622,11 +636,20 @@ def insert_sequence_clip(
         )
     if track.locked:
         raise SequenceError(f"La piste '{track.id}' est verrouillée : modifications refusées.")
+    if source_in < 0.0:
+        raise SequenceError("Le début dans la séquence source ne peut pas être négatif.")
     out = child.duration if source_out is None else float(source_out)
+    if source_out is not None and out > child.duration + _EPSILON:
+        raise SequenceError(
+            f"La sortie ({out:g} s) dépasse la durée de la séquence « {child.name} » ({child.duration:g} s)."
+        )
     if out <= source_in + _EPSILON:
         raise SequenceError(f"La séquence « {child.name} » est vide : rien à insérer.")
+    new_clip_id = _object_ids.resolve_object_id(
+        clip_id, prefix="clip", kind="clip", taken=_object_ids.clip_ids(project)
+    )
     clip = Clip(
-        id=_new_clip_id(),
+        id=new_clip_id,
         asset_id="",
         track_id=track.id,
         timeline_start=float(timeline_start),
@@ -1057,6 +1080,7 @@ __all__ = [
     "SequenceIssue",
     "SequenceUsage",
     "check_can_nest",
+    "check_sequence_format",
     "clamp_nested_clips",
     "clip_media_type",
     "clip_source_limit",

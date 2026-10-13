@@ -334,15 +334,17 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   `--json` (un seul objet sur la sortie standard, texte humain sur la sortie d'erreur), codes de sortie stables (0, 1, 2, 64, 130),
   Ctrl-C = annulation propre, messages traduits (`ui/i18n_cli.py`). `validate` dit ce que les chargeurs tolérants ont abandonné
   (`LoadReport` dans `core/project_io.py`). Documentation : `docs/cli.md`.
-- **Étape 4 : en cours** (#131 et la suivante) : la table `VERBS` (33 verbes), le décodeur strict (`core/scripting/script.py` : version,
+- **Étape 4 : en cours** (#131 et la suivante) : la table `VERBS` (55 verbes), le décodeur strict (`core/scripting/script.py` : version,
   champs inconnus refusés avec suggestion, bornes, alias résolus au décodage, toutes les erreurs d'un coup), le schéma JSON généré,
   `apply` (`--dry-run`, `--in-place`, `--allow-outside`, jamais d'écrasement par défaut), `validate script.json`, `schema`, un fuzz du
   décodeur. Le lot 2 ajoute le **contexte de fichiers** (`ScriptContext` : lecture seule dans le dossier du script, décision 5),
   `import_media`, les inserts de piste (égaliseur compris), l'état des pistes et les calques graphiques. Le lot 3 ajoute les pistes, les
   sous-titres, les transitions, les images clés et l'étalonnage, avec trois règles issues de la revue : bornes lues dans le modèle, verrou
   de piste respecté, genres de piste vérifiés. Documentation :
-  `docs/scripting.md`. Lot 4 (étalonnage avancé) et lot 5 (fenêtres / qualifieur) : faits. **Reste** : animation des
-  couleurs et des effets, calques d'image, séquences imbriquées, multicam.
+  `docs/scripting.md`. Lot 4 (étalonnage avancé) et lot 5 (fenêtres / qualifieur) : faits. Lot 6 (séquences
+  imbriquées) : fait — création, renommage, format, duplication, suppression gardée, `insert_sequence_clip`, `set_active_sequence` (la séquence
+  active est une donnée du projet : un script finit où il l'a laissée). **Reste** : animation des couleurs et des effets, calques d'image,
+  multicam.
 - **Verrou consultatif : fait** (décision 3). `core/project_lock.py` : fichier `nom.kut.lock` créé atomiquement par l'application (tant
   qu'un projet est ouvert) et par `apply` (le temps d'une écriture sur un fichier existant, **avant** de lire le projet). Le propriétaire
   est identifié par PID et heure de début de processus (un PID réutilisé ne passe pas pour l'ancien) ; un verrou n'est repris que si le
