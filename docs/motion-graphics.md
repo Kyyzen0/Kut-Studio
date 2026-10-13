@@ -21,6 +21,14 @@ Les cinq gestes du débutant :
    redimensionnent, la poignée ronde fait tourner, le point jaune est
    l'ancrage. Le calque s'aimante au centre et aux bords du cadre, aux
    guides et aux autres calques (Alt : sans aimantation, Maj : axe / pas de 15°).
+   **Un clic dans le viewer sélectionne le clip sous le pointeur**, quel qu'il
+   soit : calque graphique, clip vidéo, image fixe ou clip de composition
+   (piste visible et déverrouillée, clip activé et actif à la tête de lecture ;
+   les clips imbriqués / multicam ne le sont pas). Les calques graphiques sont
+   au-dessus de toute la vidéo, comme au rendu ; entre vidéos, la piste la plus
+   haute prime. Dans la boîte du clip sélectionné, glisser le déplace, sauf là où
+   un calque situé au-dessus le recouvre : un clic y sélectionne ce calque. Un clic dans
+   le vide ne change rien, et la tête de lecture ne bouge pas (`core/mograph_layers.py:viewer_pick_boxes`).
 3. **Taille et couleur** : inspecteur, onglet *Graphiques*.
 4. **Une petite animation** : losange ◆ d'une propriété (opacité, position…),
    déplacer la tête de lecture, changer la valeur.

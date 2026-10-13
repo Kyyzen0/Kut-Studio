@@ -37,6 +37,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : séquences imbriquées.** Sept verbes de plus (55 en tout) : créer, renommer, reformater, dupliquer et supprimer une séquence,
   l'insérer comme clip imbriqué, et `set_active_sequence` pour agir sur une autre séquence. Cycles, profondeur, pistes verrouillées ou
   d'un mauvais genre et durées hors de la source sont refusés comme dans l'interface.
+- **Moniteur : un clic sélectionne n'importe quel clip.** Clips vidéo, images fixes et clips de composition se sélectionnent d'un clic dans le moniteur (jusqu'ici seuls les calques graphiques l'étaient), dans l'ordre du rendu ; sur un clip déjà sélectionné, un calque posé au-dessus reste cliquable. La tête de lecture ne bouge pas.
 
 ### Fixed
 
