@@ -23,14 +23,24 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : médias, audio de piste, graphiques.** Dix verbes de plus (25 en tout) : `import_media` (lecture seule, **dans le dossier du
   script** : en sortir demande `--allow-outside`, liens symboliques résolus), les inserts de piste (dont l'égaliseur paramétrique),
   couper / verrouiller / masquer une piste, et les calques graphiques (`add_graphic`, `set_graphic`).
+- **Un projet ouvert n'est plus réécrit par un script.** L'application pose un verrou (`nom.kut.lock`) tant qu'un projet est ouvert ;
+  `apply --in-place` (ou `--overwrite`) refuse d'écrire dans un projet tenu par un autre, dit qui le tient et quel fichier supprimer si
+  cette utilisation n'existe plus. Un verrou n'est repris que si son propriétaire est prouvé disparu (un numéro de processus réutilisé
+  ne passe pas pour l'ancien). La fenêtre prévient si le projet est déjà tenu ailleurs, sans jamais refuser de l'ouvrir.
 - **Scripts : pistes, sous-titres, transitions, images clés, étalonnage.** Huit verbes de plus (33 en tout). Un script ne reçoit jamais
   une valeur ramenée en silence (bornes du modèle, nom de piste déjà pris, instant hors du clip) et le verrou d'une piste est respecté.
 
 ### Fixed
 
+<<<<<<< HEAD
 - **Aperçu GPU, pistes du dessous.** Un WebM ou un Matroska dont ffprobe marque la durée du flux ``N/A`` (la durée est sur le conteneur)
   s'ouvre à nouveau dans le décodeur des pistes vidéo sous le clip du dessus. Avant, la sonde levait une erreur et la piste restait vide
   au moniteur, alors que l'export, lui, la rendait.
+=======
+- **Un projet ouvert par un lien symbolique ne remplace plus le lien à l'enregistrement.** L'écriture atomique renommait le fichier
+  temporaire sur le lien lui-même : le projet visé ne changeait pas et le lien devenait un fichier ordinaire. L'enregistrement écrit
+  maintenant à travers le lien.
+>>>>>>> origin/main
 
 ## [0.5.5] - 2026-10-13
 

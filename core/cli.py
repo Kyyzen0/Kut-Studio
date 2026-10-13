@@ -24,6 +24,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -320,64 +321,110 @@ def _read_script(path_text: str, output: _Output):
     return script
 
 
-def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
-    from copy import deepcopy
+def _locked_failure(output: _Output, error) -> int:
+    """Le projet est tenu par un autre processus : refus, avec qui, et le fichier à supprimer si l'on est sûr de son fait."""
+    owner = error.owner
+    if owner is None:
+        message = _t("cli.lock.unreadable", lock_file=str(error.lock_file))
+    else:
+        started = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(owner.started))
+        message = _t(
+            "cli.lock.held", who=_t(f"cli.lock.kind.{owner.kind}"), pid=owner.pid, host=owner.host, since=started,
+            lock_file=str(error.lock_file),
+        )
+    extra: dict[str, Any] = {"lock_file": str(error.lock_file), "verdict": error.verdict.value}
+    if owner is not None:
+        extra["owner"] = {"kind": owner.kind, "pid": owner.pid, "host": owner.host, "started": owner.started}
+    return output.failure("project_locked", message, EXIT_FAILED, **extra)
 
-    from .scripting import ScriptContext, Session, apply_script, created_ids
+
+def _apply_target(args: argparse.Namespace, output: _Output) -> tuple[Path | None, int | None]:
+    """``(fichier à écrire, None)`` ; ``(None, None)`` pour un essai à blanc ; ``(None, code)`` si les options sont refusées."""
+    if args.dry_run:
+        return None, None
+    if args.in_place and args.output is not None:
+        return None, output.failure("usage", _t("cli.error.apply_in_place_conflict"), EXIT_USAGE)
+    if args.output is None and not args.in_place:
+        return None, output.failure("usage", _t("cli.error.apply_output_required"), EXIT_USAGE)
+    project_path = Path(args.project).expanduser()
+    try:
+        # Sur place : le fichier visé, pas le lien qui y mène (l'écriture atomique remplacerait le lien lui-même).
+        target = project_path.resolve() if args.in_place else Path(args.output).expanduser()
+        same_file = target.resolve() == project_path.resolve()
+    except (OSError, RuntimeError) as error:
+        return None, output.failure("invalid", str(error), EXIT_USAGE)
+    if same_file and not args.in_place:
+        return None, output.failure("output_is_input", _t("cli.error.apply_output_is_input", path=str(target)), EXIT_USAGE)
+    if target.exists() and not same_file and not args.overwrite:
+        return None, output.failure("output_exists", _t("cli.error.output_exists", path=str(target)), EXIT_USAGE)
+    return target, None
+
+
+def _cmd_apply(args: argparse.Namespace, output: _Output) -> int:
+    from .project_lock import ProjectLock, ProjectLockedError
 
     script = _read_script(args.script, output)
     if script is None:
         return output.exit
+    target, refused = _apply_target(args, output)
+    if refused is not None:
+        return refused
+    lock: ProjectLock | None = None
+    # Le verrou se prend **avant** de lire le projet : si la fenêtre l'enregistre entre la lecture et l'écriture, le script réécrirait
+    # une version périmée. Un fichier qui n'existe pas encore n'est ouvert nulle part : rien à verrouiller.
+    if target is not None and target.exists():
+        lock = ProjectLock(target, kind="cli")
+        try:
+            stale = lock.acquire()
+        except ProjectLockedError as error:
+            return _locked_failure(output, error)
+        except OSError as error:
+            return output.failure("write_failed", _t("cli.apply.write_failed", message=str(error)), EXIT_FAILED)
+        if stale is not None:
+            output.warning(_t("cli.lock.stale_replaced", pid=stale.pid, host=stale.host))
+    try:
+        return _apply_script_to_project(args, output, script, target)
+    finally:
+        if lock is not None:
+            lock.release()
+
+
+def _apply_script_to_project(args: argparse.Namespace, output: _Output, script, target: Path | None) -> int:
+    from copy import deepcopy
+
+    from .scripting import ScriptContext, Session, apply_script, created_ids
+
     loaded = _load(args.project, output)
     if loaded is None:
         return output.exit
-    project, load_report, project_path = loaded
+    project, load_report, _project_path = loaded
     if not load_report.intact:
         output.warning(_t("cli.validate.dropped", total=load_report.total))
         for section, count in _dropped(load_report).items():
             output.warning(_t("cli.validate.dropped_line", section=_section_label(section), count=count))
-    target: Path | None = None
-    if not args.dry_run:
-        if args.in_place and args.output is not None:
-            return output.failure("usage", _t("cli.error.apply_in_place_conflict"), EXIT_USAGE)
-        if args.output is None and not args.in_place:
-            return output.failure("usage", _t("cli.error.apply_output_required"), EXIT_USAGE)
-        try:
-            # Sur place : le fichier visé, pas le lien qui y mène (l'écriture atomique remplacerait le lien lui-même).
-            target = project_path.resolve() if args.in_place else Path(args.output).expanduser()
-            same_file = target.resolve() == project_path.resolve()
-        except (OSError, RuntimeError) as error:
-            return output.failure("invalid", str(error), EXIT_USAGE)
-        if same_file and not args.in_place:
-            return output.failure("output_is_input", _t("cli.error.apply_output_is_input", path=str(target)), EXIT_USAGE)
-        if target.exists() and not same_file and not args.overwrite:
-            return output.failure("output_exists", _t("cli.error.output_exists", path=str(target)), EXIT_USAGE)
     # Un essai à blanc travaille sur une copie : même le projet chargé en mémoire reste intact.
     session = Session(deepcopy(project) if args.dry_run else project)
     context = ScriptContext(Path(args.script).expanduser().resolve().parent, allow_outside=bool(args.allow_outside))
     report = apply_script(session, script, label=Path(args.script).name, context=context)
     if not report.ok:
         message = _t("cli.apply.refused", op=report.failed_name, index=report.failed_index, message=report.error)
-        return output.failure(
-            "refused", message, EXIT_FAILED, index=report.failed_index, op=report.failed_name, detail=report.error,
-        )
+        return output.failure("refused", message, EXIT_FAILED, index=report.failed_index, op=report.failed_name, detail=report.error)
     created = created_ids(script, report)
     adjustments = [
         {"sequence": item.sequence_id, "clip": item.clip_id, "old_source_out": item.old_source_out, "new_source_out": item.new_source_out}
         for item in report.adjustments
     ]
     written: str | None = None
-    if args.dry_run:
+    if target is None:
         output.line(_t("cli.apply.dry_run", operations=len(script.ops)))
     else:
         from .project_io import save_project
 
-        destination = target if target is not None else project_path           # toujours posé hors essai à blanc
         try:
-            save_project(session.project, str(destination))
+            save_project(session.project, str(target))
         except (OSError, ValueError) as error:
             return output.failure("write_failed", _t("cli.apply.write_failed", message=str(error)), EXIT_FAILED)
-        written = str(destination)
+        written = str(target)
         output.line(_t("cli.apply.done", operations=len(script.ops), path=written))
     for item in created:
         output.line(_t("cli.apply.created_line", op=item["op"], id=item["id"]))
