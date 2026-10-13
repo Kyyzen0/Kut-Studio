@@ -38,6 +38,10 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 - **Sélecteurs.** Un objet existant se désigne par son identifiant, ou par son **nom exact s'il est unique** ; un nom ambigu est une erreur.
   Les clips et les inserts se désignent par identifiant seulement.
 - **Fichiers en lecture seule, dans le dossier du script** (voir « Fichiers » plus bas).
+- **Jamais de valeur ramenée en silence.** Les bornes d'un paramètre sont celles du modèle (volume −60 à 12 dB, opacité 0 à 1,
+  exposition −2 à 2…) : au-delà, le script est refusé, il ne « réussit » pas en écrivant une autre valeur. Même règle pour le nom
+  d'une piste déjà pris et pour un instant d'image clé hors du clip.
+- **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée.
 - **Pas d'écriture par défaut.** `apply` écrit dans un autre fichier (`-o`). Écrire dans le projet lui-même demande `--in-place`, et
   un `-o` qui désigne le projet (lien symbolique compris) est refusé. `--dry-run` travaille sur une copie.
 - **Pas de verbe `export`** : exporter est une décision de l'appelant (`Kut-Studio export`).
@@ -73,6 +77,14 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) |
+| `add_track` | Ajoute une piste : `type` = `video`, `audio` ou `subtitle` (`name` : doit être libre, sinon refus) |
+| `add_subtitle` | Pose un sous-titre sur une piste de sous-titres (`text`, `at`, `duration`, `track`) |
+| `add_transition` | Transition entre deux clips vidéo adjacents d'une même piste (`from_clip`, `to_clip`, `transition`, `duration`) |
+| `remove_transition` | Retire une transition (`transition`) |
+| `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value`, `interpolation`) : `at` est **relatif au clip** |
+| `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
+| `set_color_grade` | Règle l'étalonnage du premier nœud du clip : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) |
+| `reset_color_grade` | Remet l'étalonnage du clip à neutre (`clip`) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
@@ -92,7 +104,8 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 ## Pas encore là
 
-- **Verbes de couleur, d'images clés, de transitions, de sous-titres, de calques d'image** : prochains lots de l'étape 4.
+- **Étalonnage avancé** (courbes, LUT, roues, nœuds, fenêtres), **animation des couleurs et des effets**, **calques d'image**, **séquences
+  imbriquées** et **multicam** : prochains lots. `set_color_grade` ne règle que les sept curseurs du premier nœud.
 - **Verrou consultatif** pour `--in-place` : l'application ne pose pas encore de verrou, donc ne modifiez pas un projet ouvert dans la
   fenêtre.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).

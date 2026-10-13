@@ -22,16 +22,26 @@ from ..audio_buses import (
     add_bus, add_bus_insert, remove_bus, remove_bus_insert, rename_bus, route_track, set_bus_insert_enabled,
     set_bus_muted, set_bus_volume, update_bus_insert_parameters,
 )
+from ..animation import InterpolationType
+from ..animation_targets import get_target
 from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
+from ..color_grading import (
+    CONTRAST_MAX, CONTRAST_MIN, EXPOSURE_MAX, EXPOSURE_MIN, HIGHLIGHTS_MAX, HIGHLIGHTS_MIN, HUE_MAX, HUE_MIN, SATURATION_MAX,
+    SATURATION_MIN, SHADOWS_MAX, SHADOWS_MIN, TEMPERATURE_MAX, TEMPERATURE_MIN, ColorGradingService,
+)
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
+from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MIN_GAIN_DB, Project
 from ..timeline_editing import add_marker
-from ..timeline_operations import add_clip_to_track, delete_clip, find_clip, move_clip, set_clip_enabled
-from ..track_operations import set_track_locked, set_track_muted, set_track_visible
+from ..timeline_operations import (
+    add_clip_to_track, add_subtitle_clip, delete_clip, find_clip, move_clip, set_clip_enabled,
+)
+from ..track_operations import add_track, set_track_locked, set_track_muted, set_track_visible
+from ..transitions import MIN_TRANSITION_SECONDS, TransitionType, add_transition, remove_transition
 
 Operation = Callable[[Project], Any]
 
@@ -158,6 +168,26 @@ def _clip_id(project: Project, selector: str) -> str:
 
 def _insert_id(project: Project, bus: str, selector: str) -> str:
     return str(_pick(next(item for item in project.buses if item.id == bus).inserts, selector, "Insert", names=False).id)
+
+
+def _owner_track(project: Project, clip_id: str) -> Any:
+    return next(track for track in project.tracks if any(clip.id == clip_id for clip in track.clips))
+
+
+def _require_unlocked(track: Any) -> None:
+    """Le verrou d'une piste vaut aussi pour un script : il protège ce que l'utilisateur a voulu figer."""
+    if track.locked:
+        raise ValueError(f"La piste '{track.id}' est verrouillée.")
+
+
+def _editable_clip(project: Project, selector: str, *, track_types: tuple[str, ...] = ()) -> str:
+    """L'identifiant du clip désigné, après avoir vérifié que sa piste est déverrouillée (et, si demandé, d'un des genres permis)."""
+    clip_id = _clip_id(project, selector)
+    owner = _owner_track(project, clip_id)
+    _require_unlocked(owner)
+    if track_types and owner.type not in track_types:
+        raise ValueError(f"Le clip '{clip_id}' est sur une piste '{owner.type}' : cette opération vise {' ou '.join(track_types)}.")
+    return clip_id
 
 
 # --- Les verbes --------------------------------------------------------------------------------------------------------
@@ -313,14 +343,124 @@ def _set_graphic(a: Mapping[str, Any]) -> Operation:
         given = [name for name in _GRAPHIC_FIELDS if name in a]
         if not given:
             raise ValueError("set_graphic : donnez au moins un champ à modifier.")
-        clip_id = _clip_id(project, a["clip"])
-        owner = next(track for track in project.tracks if any(item.id == clip_id for item in track.clips))
-        if owner.locked:                               # le verrou de l'interface vaut aussi pour un script
-            raise ValueError(f"La piste '{owner.id}' est verrouillée.")
-        clip = find_clip(project, clip_id)
+        clip = find_clip(project, _editable_clip(project, a["clip"]))
         for name in given:
             update_graphic(clip, name, a[name])
         return clip
+
+    return operation
+
+
+def _add_track(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        name = a.get("name")
+        if name is not None and any(track.name == name for track in project.tracks):
+            raise ValueError(f"Une piste s'appelle déjà {name!r} : le modèle la renommerait, un script ne le permet pas en silence.")
+        return add_track(project, a["type"], name, track_id=a.get("id"))
+
+    return operation
+
+
+def _add_subtitle(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        if a.get("track") is not None:
+            track_id = _track_id(project, a["track"])
+        else:
+            track_id = next((track.id for track in project.tracks if track.type == "subtitle"), "")
+            if not track_id:
+                raise ValueError("Le projet n'a pas de piste de sous-titres : ajoutez-en une avec add_track (type « subtitle »).")
+        _require_unlocked(next(track for track in project.tracks if track.id == track_id))
+        return add_subtitle_clip(project, a["text"], float(a["at"]), float(a["duration"]), track_id, clip_id=a.get("id"))
+
+    return operation
+
+
+def _transition_clips_editable(project: Project, *clip_ids: str) -> None:
+    for clip_id in clip_ids:
+        _require_unlocked(_owner_track(project, clip_id))
+
+
+def _add_transition(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        first, second = _clip_id(project, a["from_clip"]), _clip_id(project, a["to_clip"])
+        _transition_clips_editable(project, first, second)       # une transition peut décaler des clips
+        return add_transition(project, first, second, TransitionType(a["transition"]), float(a["duration"]), transition_id=a.get("id"))
+
+    return operation
+
+
+def _remove_transition(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        current = _pick(project.transitions, a["transition"], "Transition", names=False)
+        for clip_id in (current.from_clip_id, current.to_clip_id):
+            if any(clip.id == clip_id for track in project.tracks for clip in track.clips):
+                _transition_clips_editable(project, clip_id)
+        return remove_transition(project, str(current.id))
+
+    return operation
+
+
+_ANIMATABLE = ("position_x", "position_y", "scale", "rotation", "opacity", "anchor_x", "anchor_y", "scale_x", "scale_y", "skew")
+
+
+def _add_keyframe(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        target = get_target(a["property"])
+        owner = _owner_track(project, clip_id)
+        # Une propriété n'existe que pour certains genres de piste (``skew`` : graphiques seulement ; les transformations : vidéo et
+        # graphiques) : une image clé posée ailleurs serait enregistrée mais ignorée au rendu, un faux succès.
+        if not target.applies_to(owner.type) or (
+            target.applies_to_clip is not None and not target.applies_to_clip(find_clip(project, clip_id))
+        ):
+            raise ValueError(f"La propriété {a['property']!r} ne s'applique pas à un clip d'une piste '{owner.type}'.")
+        spec = target.spec
+        value = float(a["value"])
+        low = float("-inf") if spec.minimum is None else spec.minimum
+        high = float("inf") if spec.maximum is None else spec.maximum
+        if not low <= value <= high:                            # le modèle ramènerait la valeur : un script ne reçoit jamais autre chose que ce qu'il a écrit
+            raise ValueError(f"{a['property']} = {value} est hors bornes (de {low} à {high}).")
+        at = float(a["at"])
+        if at > clip_duration(find_clip(project, clip_id)) + 1e-9:
+            raise ValueError(f"L'instant {at} s dépasse la durée du clip : les images clés sont relatives au clip.")
+        return add_keyframe(project, clip_id, a["property"], at, value, interpolation=a.get("interpolation"))
+
+    return operation
+
+
+def _remove_keyframe(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        if not remove_keyframe_at(project, clip_id, a["property"], float(a["at"])):
+            raise KeyError(f"Aucune image clé de {a['property']!r} à {a['at']} s sur ce clip.")
+        return None
+
+    return operation
+
+
+_GRADE_FIELDS = ("exposure", "contrast", "saturation", "temperature", "hue", "shadows", "highlights")
+
+
+def _set_color_grade(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = [name for name in _GRADE_FIELDS if name in a]
+        if not given and "enabled" not in a:
+            raise ValueError("set_color_grade : donnez au moins un champ à modifier.")
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        service = ColorGradingService()
+        grade = service.get_grade(project, clip_id)
+        for name in given:
+            grade = grade.with_field(name, float(a[name]))
+        if "enabled" in a:
+            grade = grade.with_enabled(bool(a["enabled"]))
+        return service.set_grade(project, clip_id, grade)
+
+    return operation
+
+
+def _reset_color_grade(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        return ColorGradingService().reset_grade(project, _editable_clip(project, a["clip"], track_types=("video", "graphics")))
 
     return operation
 
@@ -407,6 +547,47 @@ VERBS: dict[str, Verb] = {
               Param("width", Kind.INTEGER, "Largeur, en pixels.", required=False, minimum=2, maximum=8192),
               Param("height", Kind.INTEGER, "Hauteur, en pixels.", required=False, minimum=2, maximum=8192)),
              _set_graphic, group="graphics"),
+        Verb("add_track", "Ajoute une piste (le nom, s'il est donné, doit être libre).",
+             (Param("type", Kind.ENUM, "Le genre de piste.", choices=("video", "audio", "subtitle")),
+              Param("name", Kind.STRING, "Nom de la piste.", required=False)),
+             _add_track, creates="track", group="edit"),
+        Verb("add_subtitle", "Pose un sous-titre sur une piste de sous-titres.",
+             (Param("text", Kind.STRING, "Le texte (plusieurs lignes permises).", max_length=1000, multiline=True), _AT,
+              Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
+              Param("track", Kind.SELECTOR, "Piste de sous-titres visée ; absente, la première.", required=False, of="track")),
+             _add_subtitle, creates="clip", group="edit"),
+        Verb("add_transition", "Ajoute une transition entre deux clips vidéo adjacents d'une même piste.",
+             (Param("from_clip", Kind.SELECTOR, "Le clip sortant, par identifiant.", of="clip"),
+              Param("to_clip", Kind.SELECTOR, "Le clip entrant, par identifiant.", of="clip"),
+              Param("transition", Kind.ENUM, "Le genre de transition.", choices=tuple(item.value for item in TransitionType)),
+              Param("duration", Kind.NUMBER, "Durée en secondes (au plus la moitié du plus court des deux clips).",
+                    minimum=MIN_TRANSITION_SECONDS, maximum=MAX_TIME)),
+             _add_transition, creates="transition", group="edit"),
+        Verb("remove_transition", "Retire une transition.",
+             (Param("transition", Kind.SELECTOR, "La transition, par identifiant.", of="transition"),), _remove_transition, group="edit"),
+        Verb("add_keyframe", "Pose (ou remplace) une image clé d'une propriété du clip ; le temps est relatif au clip.",
+             (_CLIP, Param("property", Kind.ENUM, "La propriété animée.", choices=_ANIMATABLE),
+              Param("at", Kind.NUMBER, "Instant, en secondes depuis le début du clip.", minimum=0.0, maximum=MAX_TIME),
+              Param("value", Kind.NUMBER, "La valeur (dans les bornes de la propriété).", minimum=-MAX_TIME, maximum=MAX_TIME),
+              Param("interpolation", Kind.ENUM, "Interpolation vers l'image clé suivante.", required=False,
+                    choices=tuple(item.value for item in InterpolationType))),
+             _add_keyframe, group="animation"),
+        Verb("remove_keyframe", "Retire l'image clé d'une propriété à un instant donné.",
+             (_CLIP, Param("property", Kind.ENUM, "La propriété animée.", choices=_ANIMATABLE),
+              Param("at", Kind.NUMBER, "Instant, en secondes depuis le début du clip.", minimum=0.0, maximum=MAX_TIME)),
+             _remove_keyframe, group="animation"),
+        Verb("set_color_grade", "Règle l'étalonnage du clip (premier nœud) ; au moins un champ.",
+             (_CLIP,
+              Param("exposure", Kind.NUMBER, "Exposition, en diaphragmes.", required=False, minimum=EXPOSURE_MIN, maximum=EXPOSURE_MAX),
+              Param("contrast", Kind.NUMBER, "Contraste.", required=False, minimum=CONTRAST_MIN, maximum=CONTRAST_MAX),
+              Param("saturation", Kind.NUMBER, "Saturation (1 = neutre).", required=False, minimum=SATURATION_MIN, maximum=SATURATION_MAX),
+              Param("temperature", Kind.NUMBER, "Température.", required=False, minimum=TEMPERATURE_MIN, maximum=TEMPERATURE_MAX),
+              Param("hue", Kind.NUMBER, "Teinte, en degrés.", required=False, minimum=HUE_MIN, maximum=HUE_MAX),
+              Param("shadows", Kind.NUMBER, "Ombres.", required=False, minimum=SHADOWS_MIN, maximum=SHADOWS_MAX),
+              Param("highlights", Kind.NUMBER, "Hautes lumières.", required=False, minimum=HIGHLIGHTS_MIN, maximum=HIGHLIGHTS_MAX),
+              Param("enabled", Kind.BOOLEAN, "Étalonnage actif ou neutralisé.", required=False)),
+             _set_color_grade, group="color"),
+        Verb("reset_color_grade", "Remet l'étalonnage du clip (premier nœud) à neutre.", (_CLIP,), _reset_color_grade, group="color"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),

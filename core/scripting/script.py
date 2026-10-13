@@ -204,7 +204,8 @@ class _Decoder:
             self.bad(index, verb, path, "string")
             return None
         controls = any((ord(char) < 32 and not (multiline and char == "\n")) or ord(char) == 127 for char in raw)
-        if not raw or len(raw) > limit or controls:
+        # Le modèle retire les espaces en bordure (noms, textes) : un texte qui en porte serait enregistré autrement qu'écrit.
+        if not raw or len(raw) > limit or controls or raw != raw.strip():
             self.issue("bad_text", index, verb.name, path, limit=limit)
             return None
         return raw
