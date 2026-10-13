@@ -236,6 +236,28 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     "mograph.viewer.rotate": _t("Faire pivoter le calque", "Rotate layer", "Girar la capa"),
     "mograph.viewer.anchor": _t("Déplacer le point d'ancrage", "Move anchor point", "Mover el punto de anclaje"),
     "mograph.viewer.resize": _t("Redimensionner le calque", "Resize layer", "Redimensionar la capa"),
+    # --- Alignement sur le cadre et déplacement au clavier (ADR-0006, lot 1c) ------------------------------------------
+    "shortcuts.command.layer_align_left": _t("Aligner à gauche sur le cadre", "Align to frame left", "Alinear a la izquierda del encuadre"),
+    "shortcuts.command.layer_align_center_h": _t("Centrer horizontalement sur le cadre", "Center horizontally in frame", "Centrar horizontalmente en el encuadre"),
+    "shortcuts.command.layer_align_right": _t("Aligner à droite sur le cadre", "Align to frame right", "Alinear a la derecha del encuadre"),
+    "shortcuts.command.layer_align_top": _t("Aligner en haut sur le cadre", "Align to frame top", "Alinear arriba en el encuadre"),
+    "shortcuts.command.layer_align_middle_v": _t("Centrer verticalement sur le cadre", "Center vertically in frame", "Centrar verticalmente en el encuadre"),
+    "shortcuts.command.layer_align_bottom": _t("Aligner en bas sur le cadre", "Align to frame bottom", "Alinear abajo en el encuadre"),
+    "menu.item.align_to_frame": _t("Aligner sur le cadre", "Align to frame", "Alinear al encuadre"),
+    "mograph.align.group": _t("Aligner sur le cadre", "Align to frame", "Alinear al encuadre"),
+    "history.layer.align": _t("Aligner le calque sur le cadre", "Align layer to frame", "Alinear la capa al encuadre"),
+    "history.layer.nudge": _t("Déplacer le calque au clavier", "Nudge layer", "Mover la capa con el teclado"),
+    "mograph.align.no_layer": _t(
+        "Sélectionnez un calque visible à la tête de lecture.",
+        "Select a layer that is visible at the playhead.",
+        "Seleccione una capa visible en el cabezal.",
+    ),
+    "mograph.align.locked": _t("Ce calque est verrouillé.", "This layer is locked.", "Esta capa está bloqueada."),
+    "mograph.align.degenerate": _t(
+        "Ce calque ne peut pas être déplacé (son parent est écrasé).",
+        "This layer cannot be moved (its parent is collapsed).",
+        "Esta capa no se puede mover (su padre está colapsado).",
+    ),
 }
 
 __all__ = ["MOGRAPH_TRANSLATIONS"]

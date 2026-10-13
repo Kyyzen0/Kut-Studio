@@ -13,6 +13,7 @@ import logging
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
+from core.frame_alignment import FrameEdge
 from ui.i18n import translate
 
 
@@ -58,6 +59,7 @@ class MotionGraphicsMixin:
         panel.paste_attributes_requested.connect(self._paste_layer_attributes)
         panel.save_preset_requested.connect(self._save_layers_as_preset)
         panel.preset_apply_requested.connect(self._apply_mograph_preset)
+        self._init_frame_alignment()
         panel.motion_blur_toggled.connect(self._on_layer_motion_blur)
         panel.parent_choices_provider = self._parent_choices_for
         properties = self.properties_panel
@@ -86,6 +88,7 @@ class MotionGraphicsMixin:
             "view_guides": lambda: self._toggle_viewer_flag("show_guides"),
             "view_grid": lambda: self._toggle_viewer_flag("show_grid"),
             "mograph_snapping": lambda: self._toggle_viewer_flag("snapping"),
+            **self._frame_alignment_shortcut_handlers(),
         }
 
     def _build_layers_menu(self, menu_bar) -> QMenu:
@@ -130,6 +133,9 @@ class MotionGraphicsMixin:
         center.setCheckable(True)
         center.toggled.connect(lambda checked: self._set_viewer_flag("show_center", checked))
         menu.addAction(center)
+        align_menu = menu.addMenu(i18n.translate("menu.item.align_to_frame"))
+        for edge in FrameEdge:
+            align_menu.addAction(self._command_action(f"layer_align_{edge.value}", f"shortcuts.command.layer_align_{edge.value}"))
         guides = menu.addMenu(i18n.translate("menu.item.show_guides"))
         add_h = self._labelled_action("menu.item.add_guide_h")
         add_h.triggered.connect(lambda: self.add_viewer_guide("horizontal"))
@@ -618,10 +624,10 @@ class MotionGraphicsMixin:
         self._sync_preview_to_timeline()
         self._refresh_mograph_inspector()
 
-    def _commit_layer_edit(self, label: str, *, select: str | None = None) -> None:
-        """Une entrée d'historique + rechargement des vues."""
+    def _commit_layer_edit(self, label: str, *, select: str | None = None, merge_key: str | None = None) -> None:
+        """Une entrée d'historique + rechargement des vues (``merge_key`` : voir ``ProjectHistory.record``)."""
         self._finalize_pending_edit_sessions()
-        self._record_history(label)
+        self._record_history(label, merge_key=merge_key)
         self._mark_dirty()
         target = select if select is not None else self._primary_selected_id()
         if target:

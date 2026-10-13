@@ -21,6 +21,18 @@ Les cinq gestes du débutant :
    redimensionnent, la poignée ronde fait tourner, le point jaune est
    l'ancrage. Le calque s'aimante au centre et aux bords du cadre, aux
    guides et aux autres calques (Alt : sans aimantation, Maj : axe / pas de 15°).
+   Pour placer un calque sans le glisser : les six boutons *Aligner sur le
+   cadre* (section *Mouvement* de l'inspecteur, ou menu *Calques → Aligner sur
+   le cadre*) collent la boîte englobante du clip sélectionné au bord gauche /
+   droit / haut / bas du cadre, ou la centrent. Seule la position change (pas
+   l'échelle ni la rotation) et l'action est une seule étape d'historique ; si
+   la position est animée, une image-clé est écrite à la tête de lecture. Un
+   clic dans le moniteur lui donne le focus : les **flèches** déplacent alors
+   le clip sélectionné d'un pixel du cadre (**Maj** : dix), sans aimantation ;
+   les appuis rapides (touche maintenue) ne forment qu'une étape annulable. Sans
+   clip éditable à déplacer, ou avec Ctrl/Alt, les flèches gardent leur rôle
+   habituel (par exemple *image précédente / suivante*). Les six commandes
+   d'alignement n'ont pas de touche par défaut (*Préférences → Raccourcis*).
 3. **Taille et couleur** : inspecteur, onglet *Graphiques*.
 4. **Une petite animation** : losange ◆ d'une propriété (opacité, position…),
    déplacer la tête de lecture, changer la valeur.

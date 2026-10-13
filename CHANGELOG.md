@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Moniteur : alignement sur le cadre et flèches.** Le clip sélectionné s'aligne sur un bord ou le centre du cadre (six boutons dans l'inspecteur, section Mouvement, ou Calques → *Aligner sur le cadre*), et les flèches du clavier le déplacent d'un pixel (Maj : dix) quand le moniteur a le focus.
 - **Scripts déclaratifs.** `Kut-Studio apply script.json projet.kut -o resultat.kut` applique un fichier JSON d'opérations (bus, inserts,
   routage, clips, repères) **en tout ou rien**, en une étape d'historique, sans jamais exécuter de code. `--dry-run` rend le rapport sans
   rien écrire ; `validate script.json` liste toutes les erreurs d'un coup ; `Kut-Studio schema` écrit le schéma JSON. Le projet d'origine
