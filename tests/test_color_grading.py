@@ -315,6 +315,28 @@ def test_parse_cube_lut_missing_size_key(tmp_path) -> None:
         parse_cube_lut(cube)
 
 
+def test_parse_cube_lut_rejects_a_giant_row_without_echoing_it(tmp_path) -> None:
+    """Une ligne de plusieurs Mio de « 0 0 0 … » est refusée sans être découpée ni recopiée dans le message d'erreur."""
+    cube = tmp_path / "giant_row.cube"
+    cube.write_text("LUT_3D_SIZE 2\n" + "0 " * (4 * 1024 * 1024) + "\n")
+    with pytest.raises(LUTImportBadFormat) as caught:
+        parse_cube_lut(cube)
+    assert len(str(caught.value)) < 300
+
+
+def test_parse_cube_lut_rejects_four_values_on_a_row(tmp_path) -> None:
+    cube = tmp_path / "four_values.cube"
+    cube.write_text("LUT_3D_SIZE 2\n0 0 0 0\n")
+    with pytest.raises(LUTImportBadFormat):
+        parse_cube_lut(cube)
+
+
+def test_parse_cube_lut_still_accepts_padded_rows(tmp_path) -> None:
+    cube = tmp_path / "padded.cube"
+    cube.write_text(_cube_text(size=2).replace("\n", "   \n").replace("0.0 0.0 0.0", "   0.0   0.0 0.0"))
+    assert parse_cube_lut(cube).size == 2
+
+
 # ---------------------------------------------------------------------------
 # ColorGrade
 # ---------------------------------------------------------------------------
