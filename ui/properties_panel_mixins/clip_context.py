@@ -98,7 +98,7 @@ class ClipContextMixin:
             is_visual_clip = is_video_clip or is_graphic_clip
             self._set_group_condition(self.graphics_group, is_graphic_clip)
             self.update_graphic_from_clip(getattr(view, "graphic", None))
-            self.compositing_group.set_value(getattr(view, "compositing", None))
+            self.compositing_group.set_value(getattr(view, "compositing", None), bool(getattr(view, "crop_animated", False)))
             self.compositing_group.set_chroma_visible(is_video_clip)
             self.advanced_transform.set_skew_available(is_graphic_clip)
             self.graphics_group.setEnabled(

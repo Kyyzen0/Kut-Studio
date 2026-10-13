@@ -100,6 +100,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_color_window` | Retire une fenêtre (`window`) |
 | `set_color_qualifier` | Règle le qualifieur TSL d'un nœud (au moins un champ) |
 | `clear_color_qualifier` | Retire le qualifieur d'un nœud |
+| `set_crop` | Recadre un clip vidéo ou un calque : masque « Recadrage » `intersect` (`clip`, au moins un de `left`, `top`, `right`, `bottom`, fractions 0…0,95 ; `left + right` et `top + bottom` au plus 0,95 ; les absents gardent leur valeur ; hors bornes refusé) |
+| `clear_crop` | Retire le recadrage d'un clip (`clip`) ; les autres masques restent |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
 | `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |

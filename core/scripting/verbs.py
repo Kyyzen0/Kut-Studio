@@ -36,6 +36,7 @@ from ..color_grading import (
 )
 from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind, window_by_id
 from ..color_qualifier import Qualifier, QualifierError
+from ..clip_crop import MAX_CROP_SIDE, Crop, CropError, clear_crop, crop_mask, crop_of, set_crop
 from ..color_windows import forget_windows, window_ids
 from ..compositing import Mask, MaskMode, MaskShape, _MASK_BOUNDS
 from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
@@ -838,6 +839,40 @@ def _clear_color_qualifier(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+_CROP_SIDES = ("left", "top", "right", "bottom")
+
+
+def _set_crop(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        given = {name: float(a[name]) for name in _CROP_SIDES if name in a}
+        if not given:
+            raise ValueError("set_crop : donnez au moins un bord à modifier (left, top, right, bottom).")
+        clip_id = _editable_clip(project, a["clip"], track_types=("video", "graphics"))
+        clip = find_clip(project, clip_id)
+        current = crop_of(clip)
+        if current is None and len(given) < len(_CROP_SIDES) and crop_mask(getattr(clip, "compositing", None)) is not None:
+            raise ValueError(f"Le masque « Recadrage » de '{clip_id}' a été modifié à la main : donnez les quatre bords, ou clear_crop d'abord.")
+        base = current or Crop()
+        try:
+            set_crop(project, clip_id, Crop(**{name: given.get(name, getattr(base, name)) for name in _CROP_SIDES}))
+        except CropError as error:
+            raise ValueError(str(error)) from error
+        return None
+
+    return operation
+
+
+def _clear_crop(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        try:
+            clear_crop(project, _editable_clip(project, a["clip"], track_types=("video", "graphics")))
+        except CropError as error:
+            raise ValueError(str(error)) from error
+        return None
+
+    return operation
+
+
 def _add_marker(a: Mapping[str, Any]) -> Operation:
     return lambda p: add_marker(p, float(a["at"]), a.get("name", ""), a.get("category", "standard"), marker_id=a.get("id"))
 
@@ -1347,6 +1382,14 @@ VERBS: dict[str, Verb] = {
              _set_color_qualifier, group="color"),
         Verb("clear_color_qualifier", "Retire le qualifieur d'un nœud (toute l'image est corrigée).",
              (_CLIP, _NODE), _clear_color_qualifier, group="color"),
+        Verb("set_crop", "Recadre un clip vidéo ou un calque (un masque « Recadrage » intersect, modifiable ensuite) ; au moins un bord, les absents gardent leur valeur ; fractions du cadre, rien n'est ramené en silence.",
+             (_CLIP,
+              Param("left", Kind.NUMBER, "Bord gauche coupé (0…0,95).", required=False, minimum=0.0, maximum=MAX_CROP_SIDE),
+              Param("top", Kind.NUMBER, "Bord haut coupé (0…0,95).", required=False, minimum=0.0, maximum=MAX_CROP_SIDE),
+              Param("right", Kind.NUMBER, "Bord droit coupé (0…0,95) ; gauche + droite au plus 0,95.", required=False, minimum=0.0, maximum=MAX_CROP_SIDE),
+              Param("bottom", Kind.NUMBER, "Bord bas coupé (0…0,95) ; haut + bas au plus 0,95.", required=False, minimum=0.0, maximum=MAX_CROP_SIDE)),
+             _set_crop, group="edit"),
+        Verb("clear_crop", "Retire le recadrage d'un clip (les autres masques restent).", (_CLIP,), _clear_crop, group="edit"),
         Verb("add_marker", "Ajoute un repère sur la timeline.",
              (_AT, Param("name", Kind.STRING, "Nom du repère.", required=False),
               Param("category", Kind.STRING, "Catégorie (défaut : standard).", required=False)),

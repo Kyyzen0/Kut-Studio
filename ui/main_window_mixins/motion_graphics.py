@@ -89,6 +89,7 @@ class MotionGraphicsMixin:
             "view_grid": lambda: self._toggle_viewer_flag("show_grid"),
             "mograph_snapping": lambda: self._toggle_viewer_flag("snapping"),
             **self._frame_alignment_shortcut_handlers(),
+            "layer_reset_crop": self.reset_selected_crop,
         }
 
     def _build_layers_menu(self, menu_bar) -> QMenu:
@@ -136,6 +137,7 @@ class MotionGraphicsMixin:
         align_menu = menu.addMenu(i18n.translate("menu.item.align_to_frame"))
         for edge in FrameEdge:
             align_menu.addAction(self._command_action(f"layer_align_{edge.value}", f"shortcuts.command.layer_align_{edge.value}"))
+        menu.addAction(self._command_action("layer_reset_crop", "menu.item.reset_crop"))
         guides = menu.addMenu(i18n.translate("menu.item.show_guides"))
         add_h = self._labelled_action("menu.item.add_guide_h")
         add_h.triggered.connect(lambda: self.add_viewer_guide("horizontal"))
