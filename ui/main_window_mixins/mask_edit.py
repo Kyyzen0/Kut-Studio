@@ -5,7 +5,8 @@ est gardé dans ``_mask_edit_id`` ; la surcouche du moniteur montre alors ce mas
 
 Écriture : la mécanique du glisser du clip (:meth:`MotionGraphicsMixin._apply_property_values`) : image-clé à la tête de
 lecture si la propriété est animée (``mask.<id>.<propriété>``), valeur statique sinon ; une seule étape d'historique à
-la relâche. Les sommets d'un polygone ne s'animent pas : ils sont écrits dans le masque. Toute entrée repasse par
+la relâche. Un masque suivi par un lien de tracking est dessiné à sa position rendue, mais le glisser part des valeurs saisies
+(``MaskGeometry.base``) : le suivi ne s'ajoute pas deux fois. Les sommets d'un polygone ne s'animent pas : ils sont écrits dans le masque. Toute entrée repasse par
 :func:`core.mask_handles.mask_edit_refusal` : un signal ne contourne ni le verrou de la piste, ni celui du calque.
 """
 
@@ -26,6 +27,7 @@ class MaskEditMixin:
 
     def _init_mask_edit(self) -> None:
         self._mask_edit_id = ""
+        self._mask_edit_clip = ""        # le clip auquel appartient ce mode : un autre clip sélectionné en sort
         overlay = self.preview_panel.overlay
         overlay.mask_dragged.connect(self._on_mask_dragged)
         overlay.mask_released.connect(self._on_mask_released)
@@ -33,6 +35,7 @@ class MaskEditMixin:
 
     def _on_mask_edit_selected(self, mask_id: str) -> None:
         self._mask_edit_id = str(mask_id or "")
+        self._mask_edit_clip = str(getattr(self.properties_panel.selected_clip, "id", "") or "") if self._mask_edit_id else ""
         self._refresh_viewer_overlay(float(self.playhead_seconds))
 
     def _refresh_mask_overlay(self, t: float, scene, selected) -> bool:
@@ -44,6 +47,11 @@ class MaskEditMixin:
         overlay = self.preview_panel.overlay
         mask_id = self._mask_edit_id
         clip_id = getattr(selected, "id", None)
+        if mask_id and clip_id != self._mask_edit_clip:
+            # Un autre clip est sélectionné (un doublon garde les mêmes identifiants de masque) : retour aux poignées du clip.
+            self._mask_edit_id = self._mask_edit_clip = ""
+            self.properties_panel.compositing_group.reset_edit()
+            return False
         if not mask_id or clip_id is None:
             return False
         reason = mask_handles.mask_edit_refusal(self.project, clip_id, t, mask_id, scene=scene)
@@ -53,8 +61,16 @@ class MaskEditMixin:
         mask = next((item for item in evaluated.masks if item.id == mask_id), None)
         if mask is None:
             return False
-        overlay.set_mask_edit(mask_handles.geometry_of(clip_id, mask, evaluated.world, evaluated.box, editable=reason is None))
+        # Dessin d'après le masque rendu (suivi compris) ; le glisser part du masque saisi, sans la dérivation du suivi.
+        local = t - self._clip_start(clip_id)
+        overlay.set_mask_edit(mask_handles.geometry_of(
+            clip_id, mask, evaluated.world, evaluated.box, editable=reason is None,
+            entered=mask_handles.entered_mask(self._find_clip_and_track(clip_id)[0], mask_id, local)))
         return True
+
+    def _clip_start(self, clip_id: str) -> float:
+        clip, _track = self._find_clip_and_track(clip_id)
+        return float(clip.timeline_start) if clip is not None else 0.0
 
     def _on_mask_dragged(self, clip_id: str, mask_id: str, values: dict) -> None:
         """Un pas de glisser : aperçu en direct, sans historique (la relâche l'enregistre)."""

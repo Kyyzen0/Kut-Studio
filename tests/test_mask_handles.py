@@ -351,3 +351,52 @@ def test_graphic_layer_lock_is_honoured_through_the_layer_rules():
     track.locked = False
     clip.graphic = replace(clip.graphic, visible=False)
     assert mh.mask_edit_refusal(project, "g", 1.0, "m1") == "hidden"
+
+
+# -- masque suivi : le glisser part des valeurs saisies (revue de #147) ------------------------------------
+
+
+def _tracked(shown_dx=0.1, **kwargs) -> mh.MaskGeometry:
+    """Masque rendu décalé de ``shown_dx`` par un lien de suivi ; la saisie est ``Mask(...)``."""
+    entered = Mask(width=0.4, height=0.2, **kwargs)
+    shown = Mask(width=0.4, height=0.2, **{**kwargs, "position_x": entered.position_x + shown_dx})
+    return mh.geometry_of("clip", shown, IDENT, BOX, entered=entered)
+
+
+def test_a_move_starts_from_the_entered_value_never_the_tracked_one():
+    geometry = _tracked()
+    assert geometry.values["position_x"] == pytest.approx(0.6) and geometry.entered["position_x"] == pytest.approx(0.5)
+    edit = mh.drag(geometry, "move", (600.0, 250.0), (700.0, 250.0))
+    assert edit.values["position_x"] == pytest.approx(0.5 + 0.1)             # saisie + delta, pas 0,6 + 0,1
+    assert "position_y" not in edit.values
+
+
+def test_handles_are_drawn_where_the_tracked_mask_is_rendered():
+    geometry = _tracked()
+    assert mh.canvas_point(geometry, 0.0, 0.0) == pytest.approx((600.0, 250.0))
+
+
+def test_rotation_starts_from_the_entered_value():
+    shown = Mask(width=0.4, height=0.2, rotation=30.0)
+    geometry = mh.geometry_of("clip", shown, IDENT, BOX, entered=Mask(width=0.4, height=0.2, rotation=10.0))
+    edit = mh.drag(geometry, "rotate", (700.0, 250.0), (500.0, 450.0))        # +90° sur le rendu
+    assert edit.values["rotation"] == pytest.approx(10.0 + 90.0)
+
+
+def test_feather_and_size_start_from_the_entered_values():
+    shown = Mask(width=0.8, height=0.4, feather=0.2)                          # le suivi a doublé la taille (k = 2)
+    geometry = mh.geometry_of("clip", shown, IDENT, BOX, entered=Mask(width=0.4, height=0.2, feather=0.2))
+    feather = mh.drag(geometry, "feather", (900.0, 250.0), (950.0, 250.0))
+    assert feather.values["feather"] == pytest.approx(0.2 + 50.0 / 500.0)
+    handle = mh.canvas_point(geometry, 0.5, 0.0)
+    resize = mh.drag(geometry, "r", handle, (handle[0] + 100.0, handle[1]))   # largeur rendue +200 px = saisie +100 px
+    assert resize.values["width"] == pytest.approx(0.4 + 100.0 / 1000.0)
+
+
+def test_the_entered_mask_ignores_the_tracking_derivation():
+    from core.animation import Keyframe
+    clip = Clip("v", "asset", "V1", 0.0, 0.0, 4.0, compositing=Compositing(masks=(Mask(id="m1", position_x=0.3),)))
+    pid = "mask.m1.position_x"
+    clip.animation = [Keyframe(pid, 0.0, 0.3)]
+    assert mh.entered_mask(clip, "m1", 1.0).position_x == pytest.approx(0.3)
+    assert mh.entered_mask(clip, "zz", 1.0) is None

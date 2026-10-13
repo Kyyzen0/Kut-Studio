@@ -450,3 +450,67 @@ def test_tracking_and_window_modes_keep_priority(window, monkeypatch):
     monkeypatch.setattr(window, "_tracking_mode_active", lambda: True, raising=False)
     window._refresh_viewer_overlay(1.0)
     assert window.preview_panel.overlay.masks.geometry is None
+
+
+# -- masque suivi (revue de #147) ------------------------------------------------------------------
+
+
+def _fake_tracking(window, monkeypatch, shift=0.1):
+    """Un lien de suivi simulé : le rendu décale la position du masque de ``shift`` par rapport à la saisie."""
+    import core.tracking_bindings as tb
+    from core.animation import Keyframe
+    from core.compositing import evaluate_mask_at
+    from core.animation_targets import animation_curves
+    from core.tracking_model import ClipTracking
+
+    _clip(window).tracking = ClipTracking()                       # non nul : la scène demande l'état effectif
+
+    def effective(clip, _context):
+        pid = mask_property_id("m1", "position_x")
+        curves = animation_curves(clip, prefix="mask.m1.")
+        mask = clip.compositing.mask_by_id("m1")
+        raw = [k for k in clip.animation if k.property_name != pid]
+        derived = [Keyframe(pid, t, evaluate_mask_at(mask, curves, t).position_x + shift) for t in (0.0, clip.duration)]
+        return tb.EffectiveState(tuple(clip.transform_keyframes), tuple(raw + derived), clip.compositing, frozenset({pid}))
+
+    monkeypatch.setattr(tb, "effective_clip_state", effective)
+
+
+def test_a_tracked_mask_is_drawn_where_it_is_rendered_but_dragged_from_its_entered_value(window, monkeypatch):
+    _fake_tracking(window, monkeypatch)
+    window.playhead_seconds = 1.0
+    _select_clip(window)
+    _show_mask(window, 0)
+    overlay = window.preview_panel.overlay
+    geometry = overlay.masks.geometry
+    assert geometry.values["position_x"] == pytest.approx(0.6) and geometry.entered["position_x"] == pytest.approx(0.5)
+    _press_drag_release(window, (640.0 + 128.0, 360.0), (640.0 + 128.0 + 64.0, 360.0))      # 64 px du cadre
+    assert _mask(window).position_x == pytest.approx(0.5 + 64.0 / 1280.0)             # la saisie bouge de d, sans saut de 0,1
+    window._refresh_viewer_overlay(1.0)                                              # seconde évaluation, même tête de lecture
+    shown = window.preview_panel.overlay.masks.geometry.values["position_x"]
+    assert shown == pytest.approx(0.6 + 64.0 / 1280.0)                               # déplacé de d, suivi appliqué une seule fois
+
+
+# -- doublon d'un clip (revue de #147) -------------------------------------------------------------
+
+
+def test_selecting_a_duplicate_leaves_mask_mode_and_going_back_does_not_restore_it(window):
+    import copy
+
+    window.playhead_seconds = 1.0
+    _select_clip(window)
+    _show_mask(window, 0)
+    track = window.project.tracks[0]
+    twin = copy.deepcopy(_clip(window))
+    twin.id = "v2"
+    track.clips.append(twin)
+    window._timeline_index = None
+    window._reload_timeline_preserving_selection()
+    _select_clip(window, "v2")
+    overlay = window.preview_panel.overlay
+    assert overlay.masks.geometry is None and window._mask_edit_id == ""      # mêmes identifiants de masque, autre clip
+    assert overlay.selection is not None and overlay.selection.clip_id == "v2"
+    assert not window.properties_panel.compositing_group.edit_in_monitor.isChecked()
+    _select_clip(window, "v")
+    assert overlay.masks.geometry is None                                      # le mode n'est pas rétabli tout seul
+    assert overlay.selection is not None and overlay.selection.clip_id == "v"

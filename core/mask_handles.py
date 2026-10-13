@@ -51,9 +51,15 @@ class MaskGeometry:
     shape: str                       # "rectangle" | "ellipse" | "polygon"
     mode: str                        # "add" | "subtract" | "intersect"
     inverted: bool
-    values: dict                     # MASK_PROPERTY_ORDER → valeur à la tête de lecture
+    values: dict                     # MASK_PROPERTY_ORDER → valeur RENDUE à la tête de lecture (suivi compris) : le dessin
     points: tuple = ()
     editable: bool = True
+    base: dict | None = None         # valeurs SAISIES (statique + courbes de l'utilisateur, sans le suivi) : le glisser en part
+
+    @property
+    def entered(self) -> dict:
+        """Valeurs saisies ; sans ``base`` (aucun suivi), ce sont les valeurs montrées."""
+        return self.values if self.base is None else self.base
 
 
 @dataclass(frozen=True)
@@ -65,13 +71,35 @@ class MaskEdit:
     turn: float = 0.0
 
 
-def geometry_of(clip_id: str, mask: Mask, world: Matrix, box: tuple[float, float], *, editable: bool = True) -> MaskGeometry:
-    """Géométrie d'un masque (déjà évalué à la tête de lecture)."""
+def geometry_of(clip_id: str, mask: Mask, world: Matrix, box: tuple[float, float], *, editable: bool = True,
+                entered: Mask | None = None) -> MaskGeometry:
+    """Géométrie d'un masque (déjà évalué à la tête de lecture, suivi compris).
+
+    ``entered`` : le même masque évalué **sans** la dérivation du suivi (:func:`entered_mask`) ; le glisser en part, pour que
+    le suivi ne s'ajoute pas une seconde fois à ce qu'il écrit.
+    """
     return MaskGeometry(
         clip_id=clip_id, mask_id=mask.id, world=world, box=(float(box[0]), float(box[1])), shape=mask.shape.value,
         mode=mask.mode.value, inverted=bool(mask.inverted), values={name: float(getattr(mask, name)) for name in MASK_PROPERTY_ORDER},
         points=tuple(mask.points), editable=editable,
+        base=None if entered is None else {name: float(getattr(entered, name)) for name in MASK_PROPERTY_ORDER},
     )
+
+
+def entered_mask(clip, mask_id: str, local_time: float) -> Mask | None:
+    """Le masque du clip à ``local_time`` d'après ce que l'utilisateur a saisi : ``clip.compositing`` et ``clip.animation`` bruts.
+
+    Ni liaison de suivi ni stabilisation (:func:`core.tracking_bindings.effective_clip_state`) : c'est la valeur que
+    ``_apply_property_values`` réécrit, donc celle d'où part un glisser.
+    """
+    from .animation_targets import animation_curves
+    from .compositing import evaluate_mask_at
+
+    mask = clip.compositing.mask_by_id(mask_id)
+    if mask is None:
+        return None
+    curves = animation_curves(clip, prefix=f"mask.{mask_id}.")
+    return evaluate_mask_at(mask, curves, max(0.0, min(float(clip.duration), float(local_time))))
 
 
 # -- repères -------------------------------------------------------------------------------------
@@ -161,7 +189,7 @@ def out_of_bounds(values: dict, points: tuple | None = None) -> list[str]:
 
 
 def _changed(geometry: MaskGeometry, values: dict) -> dict:
-    return {name: value for name, value in values.items() if abs(value - geometry.values.get(name, 0.0)) > _EPS}
+    return {name: value for name, value in values.items() if abs(value - geometry.entered.get(name, 0.0)) > _EPS}
 
 
 def _pin(name: str, value: float) -> float:
@@ -213,14 +241,15 @@ def drag(geometry: MaskGeometry, mode: str, start: tuple[float, float], current:
         return None
     lx, ly = mat_apply(inverse, *current)
     sx, sy = mat_apply(inverse, *start)
-    v = geometry.values
+    v = geometry.values                  # rendu (suivi compris) : le repère du pointeur
+    b = geometry.entered                 # saisi : la valeur de départ de ce qu'on écrit
     (cx, cy), half_w, half_h, angle = mask_frame(geometry)
 
     if mode == "move":
         dx, dy = lx - sx, ly - sy
         if shift:
             dx, dy = (dx, 0.0) if abs(dx) > abs(dy) else (0.0, dy)
-        return _finish(geometry, {"position_x": v["position_x"] + dx / w, "position_y": v["position_y"] + dy / h})
+        return _finish(geometry, {"position_x": b["position_x"] + dx / w, "position_y": b["position_y"] + dy / h})
     if mode == "rotate":
         raw = math.degrees(math.atan2(ly - cy, lx - cx) - math.atan2(sy - cy, sx - cx))
         raw = (raw + 180.0) % 360.0 - 180.0
@@ -228,13 +257,13 @@ def drag(geometry: MaskGeometry, mode: str, start: tuple[float, float], current:
         rotation = v["rotation"] + turn
         if shift:
             rotation = round(rotation / 15.0) * 15.0
-        return _finish(geometry, {"rotation": rotation}, turn=turn)
+        return _finish(geometry, {"rotation": b["rotation"] + rotation - v["rotation"]}, turn=turn)
 
     cos, sin = math.cos(-angle), math.sin(-angle)
     qx, qy = (lx - cx) * cos - (ly - cy) * sin, (lx - cx) * sin + (ly - cy) * cos
     if mode == "feather":
         sqx = (sx - cx) * cos - (sy - cy) * sin
-        return _finish(geometry, {"feather": v["feather"] + (qx - sqx) / min(w, h)})
+        return _finish(geometry, {"feather": b["feather"] + (qx - sqx) / min(w, h)})
     if mode.startswith("p") and mode[1:].isdigit():
         index = int(mode[1:])
         points = list(geometry.points)
@@ -267,7 +296,13 @@ def _resize(geometry: MaskGeometry, mode: str, total_w: float, total_h: float, s
             highs.append((spec.maximum + expansion) * size / start)
         ratio = max(max(lows), min(min(highs), ratio))
         total_w, total_h = start_w * ratio, start_h * ratio
-    return _finish(geometry, {"width": total_w / w - expansion, "height": total_h / h - expansion})
+    # Le suivi peut avoir mis le masque à l'échelle (k) : la taille rendue vaut (saisie + expansion) × k ; on reporte sur la saisie.
+    values = {}
+    for name, total, size in (("width", total_w, w), ("height", total_h, h)):
+        shown, entered = v[name] + expansion, geometry.entered[name] + expansion
+        k = shown / entered if entered > 1e-6 and shown > 1e-6 else 1.0
+        values[name] = (total / size) / k - expansion
+    return _finish(geometry, values)
 
 
 # -- droits d'édition ----------------------------------------------------------------------------------

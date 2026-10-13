@@ -200,6 +200,13 @@ class CompositingEditor(QGroupBox):
         self.edit_in_monitor.setChecked(bool(self._edit_id) and self._current_mask_id() == self._edit_id)
         self.edit_in_monitor.blockSignals(False)
 
+    def reset_edit(self) -> None:
+        """Sort du mode « poignées dans le moniteur » sans signal (la fenêtre principale l'a déjà quitté)."""
+        self._edit_id = ""
+        self.edit_in_monitor.blockSignals(True)
+        self.edit_in_monitor.setChecked(False)
+        self.edit_in_monitor.blockSignals(False)
+
     def _current_mask_id(self) -> str:
         mask = self._current_mask()
         return mask.id if mask is not None else ""
