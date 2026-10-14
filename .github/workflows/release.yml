@@ -89,8 +89,7 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install ffmpeg --no-progress -y
+        uses: ./.github/actions/install-ffmpeg-windows
 
       - name: Install Python dependencies
         # Versions figées (constraints.txt) : un même tag reconstruit les mêmes paquets, quelle que soit la date.
