@@ -13,6 +13,7 @@ import logging
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
+from core.frame_alignment import FrameEdge
 from ui.i18n import translate
 
 
@@ -58,6 +59,7 @@ class MotionGraphicsMixin:
         panel.paste_attributes_requested.connect(self._paste_layer_attributes)
         panel.save_preset_requested.connect(self._save_layers_as_preset)
         panel.preset_apply_requested.connect(self._apply_mograph_preset)
+        self._init_frame_alignment()
         panel.motion_blur_toggled.connect(self._on_layer_motion_blur)
         panel.parent_choices_provider = self._parent_choices_for
         properties = self.properties_panel
@@ -86,6 +88,8 @@ class MotionGraphicsMixin:
             "view_guides": lambda: self._toggle_viewer_flag("show_guides"),
             "view_grid": lambda: self._toggle_viewer_flag("show_grid"),
             "mograph_snapping": lambda: self._toggle_viewer_flag("snapping"),
+            **self._frame_alignment_shortcut_handlers(),
+            "layer_reset_crop": self.reset_selected_crop,
         }
 
     def _build_layers_menu(self, menu_bar) -> QMenu:
@@ -130,6 +134,10 @@ class MotionGraphicsMixin:
         center.setCheckable(True)
         center.toggled.connect(lambda checked: self._set_viewer_flag("show_center", checked))
         menu.addAction(center)
+        align_menu = menu.addMenu(i18n.translate("menu.item.align_to_frame"))
+        for edge in FrameEdge:
+            align_menu.addAction(self._command_action(f"layer_align_{edge.value}", f"shortcuts.command.layer_align_{edge.value}"))
+        menu.addAction(self._command_action("layer_reset_crop", "menu.item.reset_crop"))
         guides = menu.addMenu(i18n.translate("menu.item.show_guides"))
         add_h = self._labelled_action("menu.item.add_guide_h")
         add_h.triggered.connect(lambda: self.add_viewer_guide("horizontal"))
@@ -399,11 +407,11 @@ class MotionGraphicsMixin:
         panel.set_adjustments(adjustments)
 
     def _refresh_viewer_overlay(self, t: float) -> None:
-        from core.graphics import CONTAINER_TYPES, GraphicOverlay
-        from core.mograph_layers import scene_for_project
+        from core.mograph_layers import scene_for_project, viewer_pick_boxes
         from ui.viewer_overlay import SelectionGeometry
 
         overlay = self.preview_panel.overlay
+        overlay.set_mask_edit(None)                 # remis par le mode « édition de masque » plus bas, s'il est actif
         overlay.set_guides(getattr(self.project.active_sequence, "guides", ()))
         try:
             scene = scene_for_project(self.project)
@@ -411,16 +419,7 @@ class MotionGraphicsMixin:
             overlay.set_selection(None)
             overlay.set_layer_boxes(())
             return
-        boxes = []
-        for clip_id in scene.top_level() + [m for g in scene.layers for m in scene.members(g)]:
-            layer = scene.layers.get(clip_id)
-            graphic = getattr(layer, "graphic", None)
-            if not isinstance(graphic, GraphicOverlay) or graphic.type in CONTAINER_TYPES:
-                continue
-            evaluated = scene.evaluate(clip_id, t)
-            if evaluated.active and not graphic.locked:
-                boxes.append((clip_id, evaluated.world, evaluated.box))
-        boxes.sort(key=lambda item: _stack_rank(scene, item[0]))
+        boxes = viewer_pick_boxes(scene, self.project, t)
         overlay.set_layer_boxes(boxes)
         window_overlay = getattr(self, "_refresh_window_overlay", None)
         if window_overlay is not None and window_overlay(t, scene):
@@ -431,6 +430,10 @@ class MotionGraphicsMixin:
         tracking_mode = getattr(self, "_tracking_mode_active", None)
         if tracking_mode is not None and tracking_mode():
             overlay.set_selection(None)  # les trackers remplacent les poignées du clip
+            return
+        mask_overlay = getattr(self, "_refresh_mask_overlay", None)
+        if mask_overlay is not None and mask_overlay(t, scene, selected):
+            overlay.set_selection(None)  # le masque choisi dans la pile remplace les poignées du clip
             return
         if (
             clip_id is None
@@ -453,7 +456,9 @@ class MotionGraphicsMixin:
 
         values = {name: getattr(evaluated.transform, name) for name in TRANSFORM_PROPERTY_NAMES}
         values.update(self._user_transform_values(clip_id, t))
-        editable = not bool(getattr(selected, "locked", False))
+        from core.compositing_guard import clip_edit_refusal
+
+        editable = clip_edit_refusal(self.project, clip_id) is None      # piste ET calque verrouillés, comme l'inspecteur
         overlay.set_selection(SelectionGeometry(
             clip_id=clip_id, world=evaluated.world, parent_world=parent_world, box=evaluated.box,
             values=values, editable=editable,
@@ -571,6 +576,8 @@ class MotionGraphicsMixin:
         from core.timeline_operations import find_clip
         from core.visual_effects import STATIC_TRANSFORM_PROPERTIES
 
+        if self._clip_edit_refused(clip_id, restore=False):     # moniteur : la poignée ne doit pas écrire, même si elle est restée affichée
+            return False
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
@@ -618,10 +625,10 @@ class MotionGraphicsMixin:
         self._sync_preview_to_timeline()
         self._refresh_mograph_inspector()
 
-    def _commit_layer_edit(self, label: str, *, select: str | None = None) -> None:
-        """Une entrée d'historique + rechargement des vues."""
+    def _commit_layer_edit(self, label: str, *, select: str | None = None, merge_key: str | None = None) -> None:
+        """Une entrée d'historique + rechargement des vues (``merge_key`` : voir ``ProjectHistory.record``)."""
         self._finalize_pending_edit_sessions()
-        self._record_history(label)
+        self._record_history(label, merge_key=merge_key)
         self._mark_dirty()
         target = select if select is not None else self._primary_selected_id()
         if target:
@@ -711,6 +718,8 @@ class MotionGraphicsMixin:
     # ------------------------------------------------------------------
 
     def _on_advanced_transform_changed(self, clip_id: str, name: str, value) -> None:
+        if self._clip_edit_refused(clip_id):
+            return
         if not bool(getattr(self, "_transform_session_active", False)):
             self._finalize_graphic_history()
         if self._apply_property_values(clip_id, {name: value}):
@@ -721,6 +730,8 @@ class MotionGraphicsMixin:
         from core import keyframe_editing
         from core.timeline_operations import find_clip
 
+        if self._clip_edit_refused(clip_id):
+            return
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
@@ -736,11 +747,20 @@ class MotionGraphicsMixin:
         self._layer_operation(translate("history.layer.advanced_keyframe"), toggle, select=clip_id)
 
     def _on_compositing_changed(self, clip_id: str, value) -> None:
+        from core.compositing_guard import compositing_edit_refusal
         from core.timeline_operations import find_clip
 
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
+            return
+        refusal = compositing_edit_refusal(self.project, clip_id)
+        if refusal is not None:
+            # Même refus que pour les autres chemins d'édition : rien n'est écrit, l'inspecteur reprend la vraie valeur.
+            self.statusBar().showMessage(translate(f"compositing.refused.{refusal}"), 4000)
+            selected = getattr(self.properties_panel, "selected_clip", None)
+            if getattr(selected, "id", None) == clip_id:
+                self.properties_panel.compositing_group.set_value(clip.compositing)
             return
         if clip.compositing == value:
             return
@@ -992,18 +1012,6 @@ class MotionGraphicsMixin:
             return
         sequence.motion_blur = replace(current, shutter_angle=angle, samples=samples)
         self._commit_layer_edit(translate("history.layer.motion_blur_settings"))
-
-
-def _stack_rank(scene, clip_id: str) -> tuple:
-    """Rang d'affichage : un membre de groupe se range au niveau de son groupe."""
-    from core.mograph_scene import stack_key
-
-    chain = [clip_id]
-    group = scene.group_of(clip_id)
-    while group and group not in chain:
-        chain.append(group)
-        group = scene.group_of(group)
-    return tuple(stack_key(scene.layers[cid]) for cid in reversed(chain))
 
 
 __all__ = ["MotionGraphicsMixin"]

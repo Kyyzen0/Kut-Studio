@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QGraphicsObject
 
 from core.mograph_scene import IDENTITY, Matrix, mat_apply, mat_invert
 from core.tracking_model import SampleStatus
+from ui.hit_shape import add_polygon, new_hit_path
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
 
@@ -140,13 +141,13 @@ class TrackingOverlay(QGraphicsObject):
         return self.canvas_rect.adjusted(-2000, -2000, 2000, 2000)
 
     def shape(self) -> QPainterPath:
-        path = QPainterPath()
+        path = new_hit_path()
         if not self.active:
             return path
         path.addRect(self.canvas_rect)
         for tracker in self.trackers:
             if tracker.point is not None:
-                path.addPolygon(self._zone(tracker, tracker.search))
+                add_polygon(path, self._zone(tracker, tracker.search))
         return path
 
     # -- dessin ------------------------------------------------------------------------------

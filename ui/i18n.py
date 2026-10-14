@@ -553,6 +553,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "graph.tangents.linked": {"fr": "Liées", "en": "Linked", "es": "Vinculadas"},
     "graph.tangents.broken": {"fr": "Séparées", "en": "Broken", "es": "Separadas"},
     "graph.tangents.auto": {"fr": "Automatiques", "en": "Auto", "es": "Automáticas"},
+    "graph.locked": {"fr": "Piste ou calque verrouillé : la courbe est en lecture seule.", "en": "Track or layer locked: the curve is read-only.", "es": "Pista o capa bloqueada: la curva es de solo lectura."},
     "graph.hint": {"fr": "Molette : zoom horizontal · Maj+molette : zoom vertical · clic milieu ou Alt+glisser : déplacer la vue", "en": "Wheel: horizontal zoom · Shift+wheel: vertical zoom · middle click or Alt+drag: pan", "es": "Rueda: zoom horizontal · Mayús+rueda: zoom vertical · clic central o Alt+arrastrar: desplazar"},
     "menu.item.graph_editor": {"fr": "Éditeur de courbes", "en": "Graph Editor", "es": "Editor de curvas"},
     "shortcuts.tab.general": {"fr": "Général", "en": "General", "es": "General"},
@@ -1970,6 +1971,7 @@ from ui.i18n_composition import COMPOSITION_TRANSLATIONS as _COMPOSITION  # noqa
 from ui.i18n_dialogs import DIALOGS_TRANSLATIONS as _DIALOGS  # noqa: E402
 from ui.i18n_hardware import HARDWARE_TRANSLATIONS as _HARDWARE  # noqa: E402
 from ui.i18n_history import HISTORY_TRANSLATIONS as _HISTORY  # noqa: E402
+from ui.i18n_mask_edit import MASK_EDIT_TRANSLATIONS as _MASK_EDIT  # noqa: E402
 from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
@@ -1980,6 +1982,7 @@ from ui.i18n_updates import UPDATES_TRANSLATIONS as _UPDATES  # noqa: E402
 
 DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_mograph": _MOGRAPH,
+    "ui.i18n_mask_edit": _MASK_EDIT,
     "ui.i18n_tracking": _TRACKING,
     "ui.i18n_hardware": _HARDWARE,
     "ui.i18n_panels": _PANELS,

@@ -14,8 +14,25 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-14
+
+Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
+et le fait pivoter avec accrochage, on l'aligne sur le cadre, on le recadre et on dessine des masques, courbes de Bézier comprises. Le
+**mode script** couvre maintenant l'essentiel du montage (65 verbes : séquences imbriquées, multicam, étalonnage avancé, recadrage), et
+l'inspecteur respecte enfin les verrous de piste et de calque.
+
+**À savoir** : un projet qui contient un **masque en courbe de Bézier** s'enregistre en **format 18** et ne s'ouvre plus dans une version
+antérieure à la 0.6.0 (elle le refuse avec un message clair, sans perdre la courbe) ; tous les autres projets restent au format 17,
+octet pour octet comme avant. Quand le moniteur a le focus et qu'un calque éditable est sélectionné, les flèches **Gauche / Droite** le
+déplacent d'un pixel au lieu de changer d'image (sans calque éditable, ou avec Ctrl / Alt, elles gardent leur rôle).
+
 ### Added
 
+- **Recadrage non destructif.** Inspecteur → Compositing : quatre champs (gauche, haut, droite, bas, en %) et « Réinitialiser le recadrage » (aussi dans Calques). Le recadrage est un masque rectangle « Recadrage » rangé en dernier de la pile : modifiable ensuite, identique à l'aperçu et à l'export, et les verbes de script `set_crop` / `clear_crop` le pilotent.
+- **Moniteur : poignées de masque.** Un masque choisi dans la pile de compositing se règle directement dans le moniteur (déplacer, redimensionner, pivoter, adoucir, sommets d'un polygone) ; image-clé à la tête de lecture si la propriété est animée, une seule étape d'historique par geste. Voir [docs/motion-graphics.md](docs/motion-graphics.md).
+- **Masque en courbe de Bézier.** Inspecteur → Compositing → forme *Courbe* : un contour fermé de 3 à 128 nœuds à tangentes, rendu à l'identique dans l'aperçu et à l'export. Dans le moniteur : glisser nœuds et tangentes (Alt : tangente seule), double-clic sur le contour pour ajouter un nœud, sur un nœud pour le lisser ou l'angulariser, Alt + clic ou Suppr pour le retirer. Les nœuds ne s'animent pas ; position, taille, rotation, adoucissement et opacité restent animables. Les projets sans courbe s'enregistrent comme avant (format 17) ; un projet qui en contient une passe au format 18, qu'une version plus ancienne de Kut-Studio refuse d'ouvrir au lieu de perdre la courbe.
+- **Moniteur : aimantation à l'échelle et à la rotation.** Redimensionner un calque l'accroche aux bords du cadre, aux guides et aux autres calques ; la rotation s'accroche aux multiples de 45° (Alt désactive, Maj garde le pas de 15°).
+- **Moniteur : alignement sur le cadre et flèches.** Le clip sélectionné s'aligne sur un bord ou le centre du cadre (six boutons dans l'inspecteur, section Mouvement, ou Calques → *Aligner sur le cadre*), et les flèches du clavier le déplacent d'un pixel (Maj : dix) quand le moniteur a le focus.
 - **Scripts déclaratifs.** `Kut-Studio apply script.json projet.kut -o resultat.kut` applique un fichier JSON d'opérations (bus, inserts,
   routage, clips, repères) **en tout ou rien**, en une étape d'historique, sans jamais exécuter de code. `--dry-run` rend le rapport sans
   rien écrire ; `validate script.json` liste toutes les erreurs d'un coup ; `Kut-Studio schema` écrit le schéma JSON. Le projet d'origine
@@ -37,9 +54,16 @@ ensuite déclenche `.github/workflows/release.yml`.
 - **Scripts : séquences imbriquées.** Sept verbes de plus (55 en tout) : créer, renommer, reformater, dupliquer et supprimer une séquence,
   l'insérer comme clip imbriqué, et `set_active_sequence` pour agir sur une autre séquence. Cycles, profondeur, pistes verrouillées ou
   d'un mauvais genre et durées hors de la source sont refusés comme dans l'interface.
+- **Moniteur : un clic sélectionne n'importe quel clip.** Clips vidéo, images fixes et clips de composition se sélectionnent d'un clic dans le moniteur (jusqu'ici seuls les calques graphiques l'étaient), dans l'ordre du rendu ; sur un clip déjà sélectionné, un calque posé au-dessus reste cliquable. La tête de lecture ne bouge pas.
+- **Scripts : Multicam.** Huit verbes de plus (63 en tout) : créer une source depuis des médias, l'insérer, basculer ou remplacer l'angle d'un
+  segment, régler la politique audio, renommer, ajouter et recaler un angle. Un angle se désigne par `angle-N` ou son nom exact ; un décalage
+  qui n'est pas relatif (le plus petit différent de 0), un nom d'angle déjà pris ou une piste verrouillée sont refusés.
 
 ### Fixed
 
+- **Moniteur : un clic sélectionne bien un clip quand plusieurs clips ou calques se recouvrent.** Le défaut venait de la zone cliquable de la surcouche (là où un nombre pair de formes se superposaient, deux vidéos plein cadre par exemple, Qt ne livrait pas le clic), pas du choix du clip ; même correction pour les poignées de masque, de courbe et de suivi, y compris pour un masque polygonal ou une fenêtre dont les côtés se croisent.
+- **Compositing : le verrou est respecté.** Sur une piste verrouillée, un calque graphique verrouillé ou un clip audio / sous-titres, le groupe Compositing de l'inspecteur (masques, mode de fusion, incrustation) est grisé et n'écrit plus rien dans le projet ; un message l'explique.
+- **Piste ou calque verrouillé : le reste de l'inspecteur le respecte aussi.** Mouvement (curseurs, images-clés, « Réinitialiser le mouvement »), transformation avancée, copier / coller et menu des losanges, Vitesse (inspecteur, menu et raccourcis), Effets et propriétés du calque graphique refusent la modification (message dans la barre d'état, rien dans l'historique), leurs groupes sont désactivés, les poignées du moniteur ne bougent plus un calque verrouillé et les verbes de script `set_graphic`, `add_keyframe`, `set_crop`… refusent un calque verrouillé. L'éditeur de courbes devient en lecture seule (courbe lisible, champs désactivés, aucune écriture) et l'application d'un préréglage d'effets est refusée, bouton de la bibliothèque compris.
 - **Aperçu GPU, pistes du dessous.** Un WebM ou un Matroska dont ffprobe marque la durée du flux ``N/A`` (la durée est sur le conteneur)
   s'ouvre à nouveau dans le décodeur des pistes vidéo sous le clip du dessus. Avant, la sonde levait une erreur et la piste restait vide
   au moniteur, alors que l'export, lui, la rendait.
@@ -562,7 +586,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
 [0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2

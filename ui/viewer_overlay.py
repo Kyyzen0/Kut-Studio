@@ -12,7 +12,9 @@ FFmpeg). Il affiche :
   guides, autres calques) ;
 - la fenêtre du nœud d'étalonnage éditée (page Couleur) : son contour, sa
   douceur en pointillé, poignées de taille et de rotation, sommets d'une
-  forme libre ; elle remplace alors les poignées du clip.
+  forme libre ; elle remplace alors les poignées du clip ;
+- le masque choisi dans la pile de compositing (:mod:`ui.mask_overlay`) : contour, adoucissement, poignées de taille, de
+  rotation et d'adoucissement ; il remplace lui aussi les poignées du clip.
 
 Les valeurs calculées sont émises **en direct** (``transform_dragged``),
 puis une seule fois à la fin du geste (``transform_released``) : la
@@ -34,9 +36,12 @@ from core.canvas_guides import (
     platform_zone_rects,
     safe_area_rects,
     snap_box,
+    snap_rotation,
+    snap_scale_factor,
 )
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
 from ui.i18n import translate
+from ui.hit_shape import add_circle, add_polygon, new_hit_path
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
 
@@ -92,6 +97,8 @@ class ViewerOverlay(QGraphicsObject):
     color_picked = Signal(float, float, bool)  # pipette : point du cadre (pixels), Maj (élargir)
     window_dragged = Signal(str, str, dict)    # fenêtre d'un nœud : (nœud, fenêtre, valeurs saisies)
     window_released = Signal(str, str)
+    mask_dragged = Signal(str, str, dict)      # masque édité : (clip, masque, valeurs ; « points » pour un sommet)
+    mask_released = Signal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -111,6 +118,9 @@ class ViewerOverlay(QGraphicsObject):
         self.pick_mode = False                    # pipette : un clic dans le cadre prend la couleur
         self.selection: SelectionGeometry | None = None
         self.window: WindowGeometry | None = None
+        from ui.mask_overlay import MaskOverlayHelper    # import tardif : ce module lit les constantes de celui-ci
+
+        self.masks = MaskOverlayHelper(self)
         self.layer_boxes: list[tuple[str, Matrix, tuple[float, float]]] = []
         self._snap_lines = []
         self._drag: dict | None = None
@@ -137,6 +147,12 @@ class ViewerOverlay(QGraphicsObject):
         """La fenêtre éditée (``None`` : aucune) ; pendant un glisser, la géométrie à jour est gardée pour l'affichage."""
         self.prepareGeometryChange()
         self.window = window
+        self.update()
+
+    def set_mask_edit(self, geometry) -> None:
+        """Le masque édité (``None`` : aucun, les poignées du clip reprennent) ; gardé à jour pendant un glisser."""
+        self.prepareGeometryChange()
+        self.masks.geometry = geometry
         self.update()
 
     def set_layer_boxes(self, boxes) -> None:
@@ -208,14 +224,14 @@ class ViewerOverlay(QGraphicsObject):
         return self.canvas_rect.adjusted(-4000, -4000, 4000, 4000)
 
     def shape(self) -> QPainterPath:
-        """Zone cliquable : seulement les poignées, les calques et les guides."""
-        path = QPainterPath()
+        """Zone cliquable : l'UNION des poignées, des calques, des guides et des masques (``ui/hit_shape.py``)."""
+        path = new_hit_path()
         if self.selection is not None:
-            path.addPolygon(self._box_polygon(self.selection))
+            add_polygon(path, self._box_polygon(self.selection))
             for point in self._handle_points(self.selection).values():
-                path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
+                add_circle(path, point, HANDLE_RADIUS + 3)
         for _clip_id, world, box in self.layer_boxes:
-            path.addPolygon(QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)]))
+            add_polygon(path, QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)]))
         if self.show_guides:
             for guide in self.guides:
                 path.addRect(self._guide_rect(guide).adjusted(-3, -3, 3, 3))
@@ -224,9 +240,10 @@ class ViewerOverlay(QGraphicsObject):
         if self.pick_mode:
             path.addRect(self.canvas_rect)
         if self.window is not None and self.window.editable:
-            path.addPolygon(self._window_outline(self.window))
+            add_polygon(path, self._window_outline(self.window))
             for point in self._window_handles(self.window).values():
-                path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
+                add_circle(path, point, HANDLE_RADIUS + 3)
+        path.addPath(self.masks.shape_path())
         return path
 
     def _guide_rect(self, guide) -> QRectF:
@@ -471,6 +488,7 @@ class ViewerOverlay(QGraphicsObject):
             halo_stroke(painter, overlay_qcolor(OVERLAY.snap), 1.0, snap_line, style=Qt.DashLine)
         if self.window is not None:
             self._paint_window(painter, self.window)
+        self.masks.paint(painter)
         selection = self.selection
         if selection is None:
             return
@@ -516,6 +534,8 @@ class ViewerOverlay(QGraphicsObject):
             return "compare", ""
         if (window := self._window_hit(point)) is not None:
             return window, self.window.window_id if self.window is not None else ""
+        if (mask := self.masks.hit(point)) is not None:
+            return mask, self.masks.geometry.mask_id
         selection = self.selection
         if selection is not None and selection.editable:
             handles = self._handle_points(selection)
@@ -525,18 +545,46 @@ class ViewerOverlay(QGraphicsObject):
                 if handle is not None and math.hypot(point.x() - handle.x(), point.y() - handle.y()) <= HANDLE_RADIUS + 3:
                     return name, selection.clip_id
             if self._box_polygon(selection).containsPoint(point, Qt.OddEvenFill):
-                return "move", selection.clip_id
+                above = self._layer_above_selection_at(point, selection.clip_id)
+                return ("select", above) if above else ("move", selection.clip_id)
         if self.show_guides:
             for guide in self.guides:
                 if not guide.locked and self._guide_rect(guide).adjusted(-3, -3, 3, 3).contains(point):
                     return "guide", guide.id
-        for clip_id, world, box in reversed(self.layer_boxes):
+        top = self._layer_at(point)
+        return ("select", top[1]) if top is not None else None
+
+    def _layer_at(self, point: QPointF) -> tuple[int, str] | None:
+        """Calque le plus haut sous ``point`` : ``(rang dans layer_boxes, clip_id)``."""
+        for index in range(len(self.layer_boxes) - 1, -1, -1):
+            clip_id, world, box = self.layer_boxes[index]
             polygon = QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)])
             if polygon.containsPoint(point, Qt.OddEvenFill):
-                return "select", clip_id
+                return index, clip_id
         return None
 
+    def _layer_above_selection_at(self, point: QPointF, selected_id: str) -> str:
+        """Calque posé AU-DESSUS de la sélection sous ``point`` (``""`` : aucun, la sélection reste saisie)."""
+        selected_rank = next((i for i, (cid, _w, _b) in enumerate(self.layer_boxes) if cid == selected_id), None)
+        top = self._layer_at(point)
+        if selected_rank is None or top is None or top[1] == selected_id or top[0] < selected_rank:
+            return ""
+        return top[1]
+
+    def hoverLeaveEvent(self, event) -> None:  # noqa: N802
+        self.masks.note_hover(None)
+        super().hoverLeaveEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """Courbe de masque : double-clic sur un nœud (lisse / anguleux) ou sur le contour (nouveau nœud) ; sinon un appui."""
+        if self.masks.path_double_click(event.pos()):
+            self._drag = None
+            event.accept()
+            return
+        self.mousePressEvent(event)
+
     def hoverMoveEvent(self, event) -> None:  # noqa: N802
+        self.masks.note_hover(event.pos())
         hit = self._hit(event.pos())
         cursor = Qt.ArrowCursor
         if hit is not None:
@@ -547,6 +595,8 @@ class ViewerOverlay(QGraphicsObject):
                 "l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor, "select": Qt.PointingHandCursor, "pick": Qt.CrossCursor,
                 "w_move": Qt.SizeAllCursor, "w_rotate": Qt.CrossCursor,
             }.get(hit[0], Qt.SizeAllCursor if hit[0].startswith("w_") else Qt.SplitHCursor)
+            if hit[0].startswith("m_"):
+                cursor = self.masks.cursor(hit[0])
             if hit[0] == "guide":
                 guide = next((g for g in self.guides if g.id == hit[1]), None)
                 if guide is not None and guide.orientation is GuideOrientation.HORIZONTAL:
@@ -572,6 +622,15 @@ class ViewerOverlay(QGraphicsObject):
         if mode.startswith("w_") and self.window is not None:
             self._drag = {"mode": mode, "clip_id": "", "window": self.window, "start": self.to_canvas(event.pos()),
                           "moved": False}
+            event.accept()
+            return
+        if mode.startswith("m_") and self.masks.geometry is not None:
+            if self.masks.path_press(mode, event.modifiers()):      # Alt + nœud de courbe : suppression
+                event.accept()
+                return
+            self._drag = self.masks.begin(mode, self.to_canvas(event.pos()))
+            self._drag["clip_id"] = self.masks.geometry.clip_id
+            self._drag["mask_id"] = target
             event.accept()
             return
         if mode == "select":
@@ -606,6 +665,11 @@ class ViewerOverlay(QGraphicsObject):
             drag["moved"] = True
             self.compare_moved.emit(min(0.98, max(0.02, current[0] / max(1.0, self.canvas_size[0]))))
             return
+        if drag["mode"].startswith("m_"):
+            if values := self.masks.step(drag, current, event.modifiers()):
+                drag["moved"] = True
+                self.mask_dragged.emit(drag["clip_id"], drag["mask_id"], values)
+            return
         if drag["mode"].startswith("w_"):
             values = self._window_values(drag, current, event.modifiers())
             if values:
@@ -638,6 +702,10 @@ class ViewerOverlay(QGraphicsObject):
         if drag is None:
             return
         if drag["mode"] == "compare":
+            return
+        if drag["mode"].startswith("m_"):
+            if drag["moved"]:
+                self.mask_released.emit(drag["clip_id"], drag["mask_id"])
             return
         if drag["mode"].startswith("w_"):
             if drag["moved"]:
@@ -702,6 +770,8 @@ class ViewerOverlay(QGraphicsObject):
             rotation = values.get("rotation", 0.0) + (angle - start_angle)
             if modifiers & Qt.ShiftModifier:
                 rotation = round(rotation / 15.0) * 15.0
+            elif self.snapping and not modifiers & Qt.AltModifier:
+                rotation, _snapped = snap_rotation(rotation)
             return {"rotation": rotation}
         if mode == "anchor":
             try:
@@ -720,12 +790,14 @@ class ViewerOverlay(QGraphicsObject):
                 "position_y": values.get("position_y", 0.0) + (new_parent[1] - old_parent[1]) / ch,
             }
         # Échelle : coins = uniforme, côtés = un axe.
+        self._snap_lines = []
         if mode in ("tl", "tr", "br", "bl"):
             start = math.hypot(sx0 - anchor[0], sy0 - anchor[1])
             now = math.hypot(current[0] - anchor[0], current[1] - anchor[1])
             if start < 1e-6:
                 return {}
-            return {"scale": values.get("scale", 1.0) * now / start}
+            factor = self._snap_scale(drag, now / start, "xy", modifiers, "scale")
+            return {"scale": values.get("scale", 1.0) * factor}
         try:
             inverse = mat_invert(world)
         except ValueError:
@@ -736,11 +808,51 @@ class ViewerOverlay(QGraphicsObject):
             base = lx0 - anchor_local[0]
             if abs(base) < 1e-6:
                 return {}
-            return {"scale_x": values.get("scale_x", 1.0) * (lx - anchor_local[0]) / base}
+            factor = self._snap_scale(drag, (lx - anchor_local[0]) / base, "x", modifiers, "scale_x")
+            return {"scale_x": values.get("scale_x", 1.0) * factor}
         base = ly0 - anchor_local[1]
         if abs(base) < 1e-6:
             return {}
-        return {"scale_y": values.get("scale_y", 1.0) * (ly - anchor_local[1]) / base}
+        factor = self._snap_scale(drag, (ly - anchor_local[1]) / base, "y", modifiers, "scale_y")
+        return {"scale_y": values.get("scale_y", 1.0) * factor}
+
+    def _snap_scale(self, drag: dict, factor: float, axes: str, modifiers, prop: str) -> float:
+        """Aimante le facteur d'échelle (mêmes cibles, seuil et Alt que le déplacement).
+
+        Les côtés (``axes`` x ou y seul) ne s'aimantent que si la matrice monde n'a ni rotation
+        ni cisaillement : sinon l'arête de la boîte englobante ne suit pas le côté tiré.
+        """
+        self._snap_lines = []
+        if not self.snapping or modifiers & Qt.AltModifier:
+            return factor
+        world = drag["world"]
+        if axes != "xy" and (abs(world[1]) > 1e-9 or abs(world[2]) > 1e-9):
+            return factor
+        w, h = drag["box"]
+        values = drag["values"]
+        anchor = mat_apply(world, values.get("anchor_x", 0.5) * w, values.get("anchor_y", 0.5) * h)
+        others = [map_box(m, *b) for cid, m, b in self.layer_boxes if cid != drag["clip_id"]]
+        cw, ch = self.canvas_size
+        snapped, lines = snap_scale_factor(
+            map_box(world, w, h), anchor, factor, cw, ch,
+            threshold=SNAP_PIXELS / max(self.scale, 1e-6), axes=axes,
+            guides=self.guides if self.show_guides else (), layer_boxes=others,
+        )
+        if lines and not self._reachable(prop, values.get(prop, 1.0) * snapped):
+            return factor                      # le modèle ramènerait la valeur à sa borne : la ligne d'aide mentirait
+        self._snap_lines = lines
+        return snapped
+
+    @staticmethod
+    def _reachable(prop: str, value: float) -> bool:
+        """La valeur visée est-elle dans les bornes de la propriété animable (sinon ``_apply_property_values`` la ramènerait) ?"""
+        from core.animation_targets import get_target
+
+        try:
+            spec = get_target(prop).spec
+        except KeyError:
+            return True
+        return (spec.minimum is None or value >= spec.minimum) and (spec.maximum is None or value <= spec.maximum)
 
 
 __all__ = ["SelectionGeometry", "ViewerOverlay", "WindowGeometry"]

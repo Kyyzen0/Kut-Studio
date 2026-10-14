@@ -51,6 +51,7 @@ from .blend_modes import BlendMode, coerce_blend_mode, qt_composition_mode
 from .bundled_fonts import register_bundled_fonts
 from .text_runs import WORD, is_plain, reveal_state, split_emoji
 from .compositing import MaskMode, MaskShape
+from .mask_path import segment as mask_path_segment
 from .graphics import GraphicOverlay, GraphicType, ShapeKind
 from .mograph_scene import (
     EvaluatedLayer,
@@ -288,6 +289,13 @@ def mask_path(mask, width: float, height: float) -> QPainterPath:
     elif mask.shape == MaskShape.POLYGON:
         polygon = QPolygonF([QPointF(x * w, y * h) for x, y in mask.points])
         path.addPolygon(polygon)
+        path.closeSubpath()
+    elif mask.shape == MaskShape.PATH:                      # courbe de Bézier cubique fermée (core/mask_path.py)
+        count = len(mask.points)
+        path.moveTo(mask.points[0][0] * w, mask.points[0][1] * h)
+        for index in range(count):
+            _p0, c1, c2, p3 = mask_path_segment(mask.points, mask.handles, index)
+            path.cubicTo(c1[0] * w, c1[1] * h, c2[0] * w, c2[1] * h, p3[0] * w, p3[1] * h)
         path.closeSubpath()
     else:
         path.addRect(QRectF(-w / 2.0, -h / 2.0, w, h))

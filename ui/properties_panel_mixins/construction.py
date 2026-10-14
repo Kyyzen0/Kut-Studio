@@ -96,6 +96,7 @@ class ConstructionMixin:
         for group, key in self._group_titles:
             group.setTitle(translate(key))
         self.time_section.retranslate()
+        self.frame_align.retranslate()
         for form, field, key in self._row_labels:
             label = form.labelForField(field)
             if label is not None:
@@ -604,6 +605,10 @@ class ConstructionMixin:
         self.advanced_transform.value_changed.connect(self._emit_advanced_transform)
         self.advanced_transform.keyframe_toggled.connect(self._emit_advanced_keyframe)
         movement_layout.addWidget(self.advanced_transform)
+        from ui.properties_widgets.frame_align_row import FrameAlignRow
+
+        self.frame_align = FrameAlignRow()      # ADR-0006 lot 1c : six boutons ; la fenêtre principale les relie
+        movement_layout.addWidget(self.frame_align)
         movement_layout.addWidget(reset_button)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True

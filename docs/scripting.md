@@ -41,7 +41,7 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 - **Jamais de valeur ramenée en silence.** Les bornes d'un paramètre sont celles du modèle (volume −60 à 12 dB, opacité 0 à 1,
   exposition −2 à 2…) : au-delà, le script est refusé, il ne « réussit » pas en écrivant une autre valeur. Même règle pour le nom
   d'une piste déjà pris et pour un instant d'image clé hors du clip.
-- **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée.
+- **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée **et un calque graphique verrouillé** (`graphic.locked`).
 - **Pas d'écriture par défaut.** `apply` écrit dans un autre fichier (`-o`). Écrire dans le projet lui-même demande `--in-place`, et
   un `-o` qui désigne le projet (lien symbolique compris) est refusé. `--dry-run` travaille sur une copie.
 - **Pas de verbe `export`** : exporter est une décision de l'appelant (`Kut-Studio export`).
@@ -100,6 +100,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_color_window` | Retire une fenêtre (`window`) |
 | `set_color_qualifier` | Règle le qualifieur TSL d'un nœud (au moins un champ) |
 | `clear_color_qualifier` | Retire le qualifieur d'un nœud |
+| `set_crop` | Recadre un clip vidéo ou un calque : masque « Recadrage » `intersect` (`clip`, au moins un de `left`, `top`, `right`, `bottom`, fractions 0…0,95 ; `left + right` et `top + bottom` au plus 0,95 ; les absents gardent leur valeur ; hors bornes refusé) |
+| `clear_crop` | Retire le recadrage d'un clip (`clip`) ; les autres masques restent |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
 | `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |
@@ -108,6 +110,14 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `insert_sequence_clip` | Insère une séquence comme clip imbriqué sur une piste vidéo ou audio **de la séquence active** (`sequence`, `track`, `at`, `source_in`, `source_out` dans la durée de la source) |
 | `set_active_sequence` | Rend une séquence active : les verbes de piste, clip, bus et repère agissent ensuite sur elle (`sequence`) |
 | `delete_sequence` | Supprime une séquence ni active, ni dernière, ni imbriquée ailleurs (`sequence`) |
+| `create_multicam_source` | Crée une source Multicam, **non activée** : `angles` (1 à 64 objets `asset`, `offset` ≥ 0 en secondes, `name`), `name` libre optionnel ; le plus petit `offset` vaut 0 |
+| `insert_multicam_clip` | Insère une source Multicam comme segment sur une piste vidéo ou audio **de la séquence active** (`sequence`, `track`, `at`, `angle` optionnel, `source_in`, `source_out`) |
+| `switch_multicam_angle` | Montre un angle à partir d'un instant : coupe le segment de la séquence active et change l'angle de la moitié droite (`at`, `angle`, `clip` et `track` optionnels) |
+| `replace_multicam_angle` | Change l'angle d'un segment, sans coupe (`clip`, `angle`) |
+| `set_multicam_audio` | Politique audio d'une source : `mode` = `follow` / `fixed` / `mix`, `angles` selon le mode (`sequence`) |
+| `rename_multicam_angle` | Renomme un angle et sa piste, nom libre dans la source (`sequence`, `angle`, `name`) |
+| `add_multicam_angle` | Ajoute un angle à une source (`sequence`, `asset`, `offset`, `name`) |
+| `set_multicam_angle_offset` | Recale un angle : son premier clip commence à `offset` (`sequence`, `angle`, `offset`) |
 
 ### Séquences et séquences imbriquées
 
@@ -133,6 +143,39 @@ active. Pour remplir une autre séquence, un script la rend active avec `set_act
 - Un nom de séquence **déjà pris est refusé** (le modèle numéroterait « Nom 2 » en silence) ; sans `name`, le modèle choisit.
 - `delete_sequence` n'a pas de `force` : une séquence encore utilisée, la séquence active et la dernière sont refusées.
 - Pas encore de verbe pour « créer une séquence à partir de la sélection » (la sélection est un état d'interface).
+
+### Multicam
+
+Une **source Multicam** est une séquence dont chaque angle a sa piste ; un **segment** est un clip imbriqué qui montre un angle (voir
+[docs/multicam.md](multicam.md)). La source se désigne comme une séquence (identifiant, nom exact unique, `{"ref": alias}`) ; les segments
+et leurs coupes sont ceux de la séquence **active**.
+
+```json
+{"op": "create_multicam_source", "as": "concert", "name": "Concert", "angles": [
+  {"asset": "cam_a", "name": "Large"}, {"asset": "cam_b", "name": "Serré", "offset": 0.5}, {"asset": "enregistreur", "name": "Son"}]},
+{"op": "insert_multicam_clip", "sequence": {"ref": "concert"}, "track": "V1", "at": 0, "angle": "Large", "as": "plan1"},
+{"op": "switch_multicam_angle", "at": 12.5, "angle": "Serré", "as": "plan2"},
+{"op": "set_multicam_audio", "sequence": {"ref": "concert"}, "mode": "fixed", "angles": ["Son"]}
+```
+
+- **Désigner un angle** : par son identifiant `angle-N` (dans l'ordre de `angles` à la création : `angle-1`, `angle-2`…, puis le plus grand
+  existant + 1 pour `add_multicam_angle`) ou par son nom exact, unique dans la source (ambigu = erreur). Un script peut donc viser les angles
+  qu'il vient de créer sans rien lire. Un nom d'angle choisi par un script doit être libre dans la source et ne pas ressembler à un
+  identifiant `angle-N` d'un autre angle ; sans `name`, le nom du média (que le modèle suffixe d'un numéro s'il est déjà pris).
+- **Décalages** : `offset` est la position de départ de l'angle dans la source. Les décalages d'une création sont relatifs (le modèle
+  ramènerait le plus petit à 0) : un script dont le plus petit n'est pas 0 est **refusé**, pas décalé. Sans mesure, les angles sont marqués
+  synchronisés « à la main ». La source reprend le cadre et la cadence de la séquence active ; la politique audio proposée par le modèle
+  s'applique (un enregistreur seul donne un son fixe) jusqu'à `set_multicam_audio`.
+- **`switch_multicam_angle`** coupe le segment sous `at` (piste vidéo la plus haute par défaut, ou `clip` / `track`) : les transitions du
+  segment coupé sont retirées, comme pour toute coupe. `id` / `as` nomment la moitié droite et sont **refusés sans coupe** (début du
+  segment, angle déjà montré) ; sans `id`, l'identifiant est celui du modèle (`<clip>-split-N`). Un angle déjà montré n'est pas une
+  erreur sans `id` : rien ne change et le segment est rendu.
+- **Verrou de piste** : `switch_multicam_angle` et `replace_multicam_angle` le vérifient dans le verbe (le modèle ne le contrôle que lors d'une
+  coupe) ; `set_multicam_angle_offset` aussi pour la piste de l'angle.
+- `set_multicam_audio` : `follow` ne prend aucun angle, `fixed` exactement un, `mix` au moins un, sans doublon, chacun portant du son.
+- Pas de Multicam dans une Multicam, cycles et profondeur : refusés par le contrôle d'imbrication, comme `insert_sequence_clip`.
+- **Pas de verbe** pour la synchronisation automatique (audio, timecode : analyses), la création depuis des clips sélectionnés (la
+  sélection est un état d'interface), l'aplatissement, la couleur d'un angle (rang de palette du thème) ni la suppression d'un angle.
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
@@ -180,7 +223,7 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 
 ## Pas encore là
 
-- **Animation des couleurs et des effets**, **calques d'image** et **multicam** : prochains lots.
+- **Animation des couleurs et des effets** et **calques d'image** : prochains lots.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code

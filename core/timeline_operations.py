@@ -443,7 +443,7 @@ def _free_clip_id(project: Project, prefix: str, first: int = 2) -> str:
 
 
 def cut_clip(
-    project: Project, clip_id: str, cut_timeline_position: float
+    project: Project, clip_id: str, cut_timeline_position: float, *, right_clip_id: str | None = None
 ) -> tuple[Clip, Clip]:
     """Coupe un clip en deux à la position de timeline indiquée.
 
@@ -452,12 +452,13 @@ def cut_clip(
     (``-split-3``…) si ce nom est déjà pris dans une séquence du projet :
     couper deux fois la moitié gauche est donc permis. Les deux clips
     restent sur la même piste et la somme de leurs durées est égale à
-    la durée d'origine du clip.
+    la durée d'origine du clip. ``right_clip_id`` : identifiant imposé du clip de droite (scripts, voir
+    :mod:`core.object_ids`) ; ``None`` garde le suffixe ``-split-N`` généré.
 
     Raises:
         KeyError: si ``clip_id`` n'existe pas.
         ValueError: si la position n'est pas strictement à l'intérieur
-            du clip.
+            du clip, ou si ``right_clip_id`` est invalide ou déjà pris.
     """
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
@@ -474,7 +475,10 @@ def cut_clip(
             f"[{clip.timeline_start}, {timeline_end}]."
         )
 
-    right_id = _free_clip_id(project, f"{clip_id}-split-")
+    if right_clip_id is None:
+        right_id = _free_clip_id(project, f"{clip_id}-split-")
+    else:
+        right_id = resolve_object_id(right_clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
     from .tracking_ops import follow_cut, tracking_for_cut
 
     # Données de tracking en temps source : partagées sans copie par les deux moitiés.

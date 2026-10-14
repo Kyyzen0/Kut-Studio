@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
+from core.compositing_guard import clip_edit_refusal
 from core.effects_library import (
     EffectCategory,
     apply_preset_to_clip,
@@ -41,7 +42,9 @@ class PresetsMixin:
         """Synchronise la bibliothèque d'effets avec le clip sélectionné."""
         clip_id = self._selected_video_clip_id()
         clip_has_effects = False
+        clip_editable = True
         if clip_id is not None:
+            clip_editable = clip_edit_refusal(self.project, clip_id, visual_only=False) is None
             try:
                 clip = find_clip(self.project, clip_id)
             except KeyError:
@@ -50,6 +53,7 @@ class PresetsMixin:
         self.project_panel.update_effects_clip_context(
             has_video_clip=clip_id is not None,
             clip_has_effects=clip_has_effects,
+            clip_editable=clip_editable,
         )
         # La bibliothèque de transitions partage la même notion de
         # sélection : on l'aligne dans la foulée.
@@ -91,7 +95,7 @@ class PresetsMixin:
     def on_effect_preset_apply_requested(self, preset_id: str) -> None:
         """Applique un preset (intégré ou utilisateur) au clip vidéo courant."""
         clip_id = self._selected_video_clip_id()
-        if clip_id is None:
+        if clip_id is None or self._clip_edit_refused(clip_id, visual_only=False, restore=False):
             return
         # On cherche d'abord chez les intégrés, puis chez l'utilisateur.
         preset = next(

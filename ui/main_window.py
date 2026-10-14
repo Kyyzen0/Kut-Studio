@@ -78,6 +78,7 @@ from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
 from ui.main_window_mixins.live_mix import LiveMixMixin
 from ui.main_window_mixins.animation import AnimationMixin
+from ui.main_window_mixins.clip_edit_guard import ClipEditGuardMixin
 from ui.main_window_mixins.encoding import EncodingMixin
 from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
@@ -92,6 +93,9 @@ from ui.main_window_mixins.multicam_creation import MulticamCreationMixin
 from ui.main_window_mixins.multicam_settings import MulticamSettingsMixin
 from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
+from ui.main_window_mixins.clip_crop import ClipCropMixin
+from ui.main_window_mixins.frame_alignment import FrameAlignmentMixin
+from ui.main_window_mixins.mask_edit import MaskEditMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
@@ -145,6 +149,10 @@ class MainWindow(
     TrackingMixin,
     TimeEditingMixin,
     MotionGraphicsMixin,
+    ClipEditGuardMixin,
+    FrameAlignmentMixin,
+    ClipCropMixin,
+    MaskEditMixin,
     SequencesMixin,
     MulticamMixin,
     MulticamCreationMixin,
@@ -641,6 +649,7 @@ class MainWindow(
         self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
+        self._init_mask_edit()                                        # poignées de masque dans le moniteur
         self.set_platform_zones(self._platform_zones)               # zones de plateforme mémorisées (préférences)
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
         self._init_tracking()
@@ -1322,6 +1331,7 @@ class MainWindow(
         if self.playhead_seconds != playhead:
             self.playhead_seconds = playhead
             panel.set_playhead_seconds(playhead)
+        self._refresh_graph_editor()          # un verrou posé ou levé (piste, calque, annulation) change l'éditeur de courbes
 
     def _selected_video_clip_id(self) -> str | None:
         """Identifiant du clip vidéo actuellement sélectionné, ou ``None``."""
@@ -1358,8 +1368,10 @@ class MainWindow(
             self.properties_panel.update_audio_effects_from_clip([], None)
             track_type_for_audio = None
         else:
+            from core.compositing_guard import clip_edit_refusal
+
             self.properties_panel.update_effects_from_clip(
-                list(clip.effects), "video"
+                list(clip.effects), "video", editable=clip_edit_refusal(self.project, clip_id) is None,
             )
             # Le rack d'effets audio accepte les pistes ``video`` (si le
             # média porte de l'audio) et ``audio``. On détermine le type
@@ -2018,6 +2030,7 @@ class MainWindow(
         # Sélection d'un clip = seek vers son début sur la timeline.
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
+        self._refresh_graph_editor()
 
     # ------------------------------------------------------------------
     # Organisation avancée de la bibliothèque (tâche 25)
