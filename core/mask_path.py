@@ -15,6 +15,7 @@ Les sommets ne s'animent pas (ils vivent dans le masque, pas dans ``Clip.animati
 from __future__ import annotations
 
 import math
+from typing import Any
 
 MIN_NODES = 3
 MAX_NODES = 128
@@ -56,15 +57,15 @@ def _finite_pair(item: object, size: int, what: str) -> tuple[float, ...]:
     return values
 
 
-def normalize_nodes(points: object, handles: object) -> tuple[tuple[Node, ...], tuple[Tangent, ...]]:
+def normalize_nodes(points: Any, handles: Any) -> tuple[tuple[Node, ...], tuple[Tangent, ...]]:
     """Forme canonique d'un chemin : ancres et décalages bornés, deux listes de même longueur.
 
     ``handles`` vide : tous les nœuds sont anguleux. Moins de :data:`MIN_NODES` ancres : la forme par défaut
     (comme un polygone sans sommets). Lève ``ValueError`` pour ce qui ne se corrige pas sans changer la forme : valeur
     non finie, nœud mal formé, longueurs différentes, plus de :data:`MAX_NODES` nœuds.
     """
-    raw_points = tuple(points or ())
-    raw_handles = tuple(handles or ())
+    raw_points: tuple[Any, ...] = tuple(points or ())
+    raw_handles: tuple[Any, ...] = tuple(handles or ())
     if len(raw_points) > MAX_NODES or len(raw_handles) > MAX_NODES:
         raise ValueError(f"Un masque courbe porte au plus {MAX_NODES} nœuds.")
     anchors = tuple(_finite_pair(p, 2, "Nœud") for p in raw_points)
@@ -74,7 +75,8 @@ def normalize_nodes(points: object, handles: object) -> tuple[tuple[Node, ...], 
         raise ValueError("Un masque courbe porte autant de poignées que de nœuds.")
     tangents = tuple(_finite_pair(h, 4, "Poignée") for h in raw_handles) or ((0.0, 0.0, 0.0, 0.0),) * len(anchors)
     return (tuple((_clamp(x, POINT_LIMIT), _clamp(y, POINT_LIMIT)) for x, y in anchors),
-            tuple(tuple(_clamp(v, HANDLE_LIMIT) for v in h) for h in tangents))  # type: ignore[return-value]
+            tuple((_clamp(a, HANDLE_LIMIT), _clamp(b, HANDLE_LIMIT), _clamp(c, HANDLE_LIMIT), _clamp(d, HANDLE_LIMIT))
+                  for a, b, c, d in tangents))
 
 
 def problem(points: tuple, handles: tuple) -> str | None:
