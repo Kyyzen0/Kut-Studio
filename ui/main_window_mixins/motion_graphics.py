@@ -411,6 +411,7 @@ class MotionGraphicsMixin:
         from ui.viewer_overlay import SelectionGeometry
 
         overlay = self.preview_panel.overlay
+        overlay.set_mask_edit(None)                 # remis par le mode « édition de masque » plus bas, s'il est actif
         overlay.set_guides(getattr(self.project.active_sequence, "guides", ()))
         try:
             scene = scene_for_project(self.project)
@@ -429,6 +430,10 @@ class MotionGraphicsMixin:
         tracking_mode = getattr(self, "_tracking_mode_active", None)
         if tracking_mode is not None and tracking_mode():
             overlay.set_selection(None)  # les trackers remplacent les poignées du clip
+            return
+        mask_overlay = getattr(self, "_refresh_mask_overlay", None)
+        if mask_overlay is not None and mask_overlay(t, scene, selected):
+            overlay.set_selection(None)  # le masque choisi dans la pile remplace les poignées du clip
             return
         if (
             clip_id is None

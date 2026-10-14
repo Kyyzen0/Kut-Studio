@@ -64,6 +64,7 @@ _MASK_FIELDS = (
 
 class CompositingEditor(QGroupBox):
     value_changed = Signal(object)
+    mask_edit_changed = Signal(str)     # masque dont le moniteur montre les poignées (« » : aucun, poignées du clip)
 
     def __init__(self, group_style: str, parent=None):
         super().__init__(i18n.translate("inspector.tab.compositing"), parent)
@@ -73,6 +74,7 @@ class CompositingEditor(QGroupBox):
         self._updating = False
         self._crop_animated = False
         self._crop_editable = True
+        self._edit_id = ""
         root = QVBoxLayout(self)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
@@ -110,6 +112,10 @@ class CompositingEditor(QGroupBox):
         mask_form.setContentsMargins(0, 0, 0, 0)
         mask_form.setSpacing(Spacing.xs)
         mask_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.edit_in_monitor = QPushButton(i18n.translate("mask.edit.toggle"), objectName="mask_edit_in_monitor")
+        self.edit_in_monitor.setCheckable(True)
+        self.edit_in_monitor.setToolTip(i18n.translate("mask.edit.toggle_tip"))
+        mask_form.addRow(self.edit_in_monitor)
         self.mask_mode = QComboBox(objectName="mask_mode")
         for mode, label in _MODES:
             self.mask_mode.addItem(i18n.translate(label), mode.value)
@@ -154,7 +160,8 @@ class CompositingEditor(QGroupBox):
         self.blend_mode.currentIndexChanged.connect(self._emit)
         self.add_mask.clicked.connect(self._append_mask)
         self.remove_mask.clicked.connect(self._remove_mask)
-        self.mask_list.currentRowChanged.connect(self._load_mask)
+        self.mask_list.currentRowChanged.connect(self._row_changed)
+        self.edit_in_monitor.toggled.connect(self._edit_toggled)
         self.mask_mode.currentIndexChanged.connect(self._mask_edited)
         self.inverted.toggled.connect(self._mask_edited)
         for spin in self.mask_spins.values():
@@ -192,6 +199,41 @@ class CompositingEditor(QGroupBox):
             self._updating = False
         self._sync_crop_editor()
         self._refresh_mask_widgets()
+        gone = bool(self._edit_id) and self._value.mask_by_id(self._edit_id) is None
+        self._set_edit("" if gone else self._edit_id)     # un autre clip, ou le masque n'existe plus : retour aux poignées du clip
+
+    # -- poignées dans le moniteur ----------------------------------------------------------------
+
+    def edited_mask_id(self) -> str:
+        """Identifiant du masque dont le moniteur montre les poignées (``""`` : aucun)."""
+        return self._edit_id
+
+    def _set_edit(self, mask_id: str) -> None:
+        if mask_id != self._edit_id:
+            self._edit_id = mask_id
+            self.mask_edit_changed.emit(mask_id)
+        self.edit_in_monitor.blockSignals(True)
+        self.edit_in_monitor.setChecked(bool(self._edit_id) and self._current_mask_id() == self._edit_id)
+        self.edit_in_monitor.blockSignals(False)
+
+    def reset_edit(self) -> None:
+        """Sort du mode « poignées dans le moniteur » sans signal (la fenêtre principale l'a déjà quitté)."""
+        self._edit_id = ""
+        self.edit_in_monitor.blockSignals(True)
+        self.edit_in_monitor.setChecked(False)
+        self.edit_in_monitor.blockSignals(False)
+
+    def _current_mask_id(self) -> str:
+        mask = self._current_mask()
+        return mask.id if mask is not None else ""
+
+    def _row_changed(self, row: int) -> None:
+        self._load_mask(row)
+        if not self._updating:
+            self._set_edit(self._current_mask_id())     # choisir un masque dans la pile : ses poignées dans le moniteur
+
+    def _edit_toggled(self, checked: bool) -> None:
+        self._set_edit(self._current_mask_id() if checked else "")
 
     def _sync_crop_editor(self) -> None:
         crop = crop_of_compositing(self._value)
@@ -252,6 +294,7 @@ class CompositingEditor(QGroupBox):
             self._updating = False
         self._refresh_mask_widgets()
         self._emit()
+        self._set_edit(mask.id)                 # le masque qu'on vient d'ajouter se règle dans le moniteur
 
     def _remove_mask(self):
         row = self.mask_list.currentRow()
@@ -267,6 +310,8 @@ class CompositingEditor(QGroupBox):
         self._sync_crop_editor()
         self._refresh_mask_widgets()
         self._emit()
+        if self._edit_id and self._value.mask_by_id(self._edit_id) is None:
+            self._set_edit("")
 
     def _crop_edited(self, crop) -> None:
         if self._updating:
@@ -279,6 +324,8 @@ class CompositingEditor(QGroupBox):
             self._updating = False
         self._refresh_mask_widgets()
         self._emit()
+        if self._edit_id and self._value.mask_by_id(self._edit_id) is None:
+            self._set_edit("")
 
     def _mask_edited(self, *_):
         if self._updating:
