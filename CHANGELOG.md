@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Moniteur : l'image s'affiche tout de suite après une édition ou un clic sur la règle, sans devoir passer par Lecture puis Pause.
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne

@@ -460,6 +460,10 @@ class PreviewPanel(QWidget):
         if playing:
             self.playback_seeks += 1
         self.player.setPosition(target_ms)
+        if not playing and self.player.playbackState() == QMediaPlayer.StoppedState:
+            # Un QMediaPlayer arrêté ne livre aucune image au QVideoSink après setSource/setPosition : le moniteur GPU
+            # restait noir jusqu'au premier play/pause. En pause, chaque setPosition décode une image.
+            self.player.pause()
 
     def set_silenced(self, silenced: bool) -> None:
         """Coupe (ou rétablit) le son du lecteur du moniteur : le son vient alors d'ailleurs (enregistreur Multicam)."""
