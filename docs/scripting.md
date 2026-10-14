@@ -96,8 +96,9 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_color_node` | Supprime un nœud (pas le dernier) |
 | `rename_color_node` | Nomme un nœud (`label`) |
 | `set_color_detail` | Flou et/ou netteté d'un nœud (`blur` 0…50, `sharpen` 0…5) |
-| `add_color_window` | Ajoute une fenêtre sur un nœud (`shape`, géométrie, `mode`, `node` optionnel) |
+| `add_color_window` | Ajoute une fenêtre sur un nœud (`shape` = rectangle/ellipse/polygon/path, géométrie, `mode`, `node` optionnel) ; pour `path` (courbe de Bézier fermée), `nodes` : 3 à 128 objets `x`, `y` (ancre, ±2) et `in_dx`, `in_dy`, `out_dx`, `out_dy` (tangentes relatives à l'ancre, ±2, 0 si absentes), en fractions de la boîte de la fenêtre ; sans `nodes`, le cercle par défaut |
 | `set_color_window` | Modifie une fenêtre (`window`, au moins un champ) |
+| `set_color_window_points` | Remplace tous les nœuds d'une fenêtre `path` (`window`, `nodes` comme ci-dessus) ; refusé pour une autre forme, hors bornes ou piste / calque verrouillé. Un projet qui contient une courbe s'enregistre en version 18 |
 | `remove_color_window` | Retire une fenêtre (`window`) |
 | `set_color_qualifier` | Règle le qualifieur TSL d'un nœud (au moins un champ) |
 | `clear_color_qualifier` | Retire le qualifieur d'un nœud |

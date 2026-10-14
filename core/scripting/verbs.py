@@ -39,6 +39,8 @@ from ..color_qualifier import Qualifier, QualifierError
 from ..clip_crop import MAX_CROP_SIDE, Crop, CropError, clear_crop, crop_mask, crop_of, set_crop
 from ..color_windows import forget_windows, window_ids
 from ..compositing import Mask, MaskMode, MaskShape, _MASK_BOUNDS
+from ..mask_path import HANDLE_LIMIT, MAX_NODES, MIN_NODES, POINT_LIMIT
+from ..mask_path_handles import nodes_refusal
 from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
 from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
@@ -59,6 +61,7 @@ from ..sequences import (
     insert_sequence_clip, rename_sequence, set_sequence_format,
 )
 from ..timeline_editing import add_marker
+from .path_nodes import ANCHOR_FIELDS, NODE_FIELDS, nodes_to_arrays
 from ..timeline_operations import (
     add_clip_to_track, add_subtitle_clip, delete_clip, find_clip, move_clip, set_clip_enabled,
 )
@@ -725,6 +728,20 @@ def _set_color_detail(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _node_field(name: str) -> Param:
+    anchor = name in ANCHOR_FIELDS
+    limit = POINT_LIMIT if anchor else HANDLE_LIMIT
+    doc = f"Ancre {name} (fraction de la boîte du masque, ±{limit:g})." if anchor else \
+        f"Tangente {name} relative à l'ancre (±{limit:g}) ; absente : 0 (nœud anguleux si les quatre le sont)."
+    return Param(name, Kind.NUMBER, doc, required=anchor, minimum=-limit, maximum=limit)
+
+
+def _nodes_param(*, required: bool) -> Param:
+    return Param("nodes", Kind.LIST, f"Les nœuds de la courbe fermée, de {MIN_NODES} à {MAX_NODES} ; absent : le cercle par défaut."
+                 if not required else f"Les nœuds de la courbe fermée, de {MIN_NODES} à {MAX_NODES} (remplace tous les nœuds).",
+                 required=required, minimum=MIN_NODES, maximum=MAX_NODES, fields=tuple(_node_field(name) for name in NODE_FIELDS))
+
+
 _WINDOW_FIELDS = (
     "position_x", "position_y", "width", "height", "rotation", "feather", "expansion", "opacity", "inverted", "mode", "name",
 )
@@ -762,8 +779,15 @@ def _add_color_window(a: Mapping[str, Any]) -> Operation:
         feather = _require_mask_number("feather", float(a.get("feather", 0.03)))
         expansion = _require_mask_number("expansion", float(a.get("expansion", 0.0)))
         opacity = _require_mask_number("opacity", float(a.get("opacity", 1.0)))
+        shape = MaskShape(a["shape"])
+        path_nodes: dict[str, Any] = {}
+        if "nodes" in a:
+            if shape is not MaskShape.PATH:
+                raise ValueError("add_color_window : 'nodes' ne s'applique qu'à la forme 'path'.")
+            points, handles = nodes_to_arrays(a["nodes"])
+            path_nodes = {"points": points, "handles": handles}      # forme par défaut du modèle (cercle) si 'nodes' est absent
         window = Mask(
-            id=window_id, shape=MaskShape(a["shape"]),
+            id=window_id, shape=shape, **path_nodes,
             position_x=position_x, position_y=position_y, width=width, height=height,
             rotation=rotation, feather=feather, expansion=expansion, opacity=opacity,
             inverted=bool(a.get("inverted", False)),
@@ -826,6 +850,33 @@ def _set_color_window(a: Mapping[str, Any]) -> Operation:
             else:
                 changes[name] = a[name]
         updated = replace(base, **changes, id=base.id)
+        service.edit_nodes(
+            project, clip_id,
+            lambda g: g.with_windows(
+                owner_id, tuple(updated if w.id == window_id else w for w in g.corrector(owner_id).windows),
+            ),
+        )
+        return service.get_graph(project, clip_id).corrector(owner_id).window(window_id)
+
+    return operation
+
+
+def _set_color_window_points(a: Mapping[str, Any]) -> Operation:
+    """Remplace les nœuds d'une fenêtre en courbe de Bézier : mêmes bornes et même écriture que l'éditeur du moniteur."""
+    def operation(project: Project) -> Any:
+        clip_id, window_id, owner_id = _color_window(project, a["clip"], a["window"])
+        service = ColorGradingService()
+        base = service.get_graph(project, clip_id).corrector(owner_id).window(window_id)
+        if base is None:  # pragma: no cover - _color_window l'a déjà trouvée
+            raise KeyError(f"Fenêtre d'étalonnage introuvable : {window_id!r}.")
+        if base.shape is not MaskShape.PATH:
+            raise ValueError(f"La fenêtre '{window_id}' n'est pas une courbe de Bézier (forme '{base.shape.value}').")
+        points, handles = nodes_to_arrays(a["nodes"])
+        if nodes_refusal(base, points, handles) is not None:
+            raise ValueError("Courbe refusée : nombre de nœuds ou valeurs hors des bornes du modèle.")
+        updated = replace(base, points=points, handles=handles, id=base.id)
+        if updated.points != points or updated.handles != handles:  # pragma: no cover - le modèle ne doit rien ramener en silence
+            raise ValueError("Courbe refusée : le modèle aurait modifié les nœuds.")
         service.edit_nodes(
             project, clip_id,
             lambda g: g.with_windows(
@@ -1351,8 +1402,8 @@ VERBS: dict[str, Verb] = {
              _set_color_detail, group="color"),
         Verb("add_color_window", "Ajoute une fenêtre (masque) sur un nœud d'étalonnage.",
              (_CLIP, _NODE,
-              Param("shape", Kind.ENUM, "rectangle, ellipse ou polygon.",
-                    choices=tuple(item.value for item in MaskShape if item is not MaskShape.PATH)),   # pas d'éditeur de courbe ici
+              Param("shape", Kind.ENUM, "rectangle, ellipse, polygon ou path (courbe de Bézier : voir « nodes »).",
+                    choices=tuple(item.value for item in MaskShape)),
               Param("position_x", Kind.NUMBER, "Centre X (espace calque).", required=False,
                     minimum=_MASK_BOUNDS["position_x"][0], maximum=_MASK_BOUNDS["position_x"][1]),
               Param("position_y", Kind.NUMBER, "Centre Y (espace calque).", required=False,
@@ -1372,7 +1423,8 @@ VERBS: dict[str, Verb] = {
               Param("inverted", Kind.BOOLEAN, "Fenêtre inversée.", required=False),
               Param("mode", Kind.ENUM, "add, subtract ou intersect.", required=False,
                     choices=tuple(item.value for item in MaskMode)),
-              Param("name", Kind.STRING, "Nom de la fenêtre.", required=False)),
+              Param("name", Kind.STRING, "Nom de la fenêtre.", required=False),
+              _nodes_param(required=False)),
              _add_color_window, creates="color_window", creates_scope="clip", group="color"),
         Verb("set_color_window", "Modifie une fenêtre d'étalonnage ; au moins un champ.",
              (_CLIP, Param("window", Kind.SELECTOR, "La fenêtre, par identifiant.", of="color_window"),
@@ -1397,6 +1449,9 @@ VERBS: dict[str, Verb] = {
                     choices=tuple(item.value for item in MaskMode)),
               Param("name", Kind.STRING, "Nom.", required=False)),
              _set_color_window, group="color"),
+        Verb("set_color_window_points", "Remplace les nœuds (ancres et tangentes) d'une fenêtre en courbe de Bézier ; refusé pour une autre forme.",
+             (_CLIP, Param("window", Kind.SELECTOR, "La fenêtre, par identifiant.", of="color_window"), _nodes_param(required=True)),
+             _set_color_window_points, group="color"),
         Verb("remove_color_window", "Retire une fenêtre d'étalonnage (et ses images-clés associées).",
              (_CLIP, Param("window", Kind.SELECTOR, "La fenêtre, par identifiant.", of="color_window")),
              _remove_color_window, group="color"),

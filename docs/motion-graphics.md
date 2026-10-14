@@ -120,9 +120,10 @@ position, taille, rotation, adoucissement, dilatation et opacité le restent) :
 
 Chaque geste est une étape d'historique et passe par les mêmes gardes que les autres poignées (verrous, clip non rendu, bornes
 du modèle) ; un ajout qui sortirait des bornes est refusé plutôt que corrigé. Suppr n'efface le clip que si aucun nœud n'est
-survolé. Les fenêtres d'étalonnage de la page Couleur n'ont pas d'éditeur de courbe (le verbe de script `add_color_window` reste
-limité à rectangle / ellipse / polygone). Lot 3b ; l'ADR-0006 (`adr-composition-visuelle-progressive`) vit sur une branche locale non poussée,
-pas dans ce dépôt.
+survolé. Les fenêtres d'étalonnage de la page Couleur n'ont pas d'éditeur de courbe dans l'interface, mais un script en écrit : le verbe
+`add_color_window` accepte la forme `path` avec une liste de `nodes` (3 à 128 nœuds : ancre et tangentes), et
+`set_color_window_points` les remplace (voir `docs/scripting.md`). Il n'existe pas encore de verbe de script pour les masques de
+compositing d'un clip. Lot 3b ; plan et état d'avancement : `docs/adr/0006-composition-visuelle-progressive.md`.
 
 ## Modèle
 
