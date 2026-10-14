@@ -100,7 +100,8 @@ def test_the_workflow_keeps_read_only_permissions_and_sha_pinned_actions() -> No
     assert re.search(r"^permissions:\n  contents: read\s*$", text, re.MULTILINE)
     actions = re.findall(r"^\s+(?:- )?uses: (\S+)", text, re.MULTILINE)
     assert actions, "aucune action trouvée : l'analyse du fichier est en défaut"
-    assert all(re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action) for action in actions), actions
+    # Une action locale (``./.github/actions/...``) est versionnée avec le commit : rien à épingler.
+    assert all(action.startswith("./.github/actions/") or re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action) for action in actions), actions
 
 
 # ---------------------------------------------------------------------------
