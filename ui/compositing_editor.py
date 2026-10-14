@@ -182,6 +182,10 @@ class CompositingEditor(QGroupBox):
     def set_chroma_visible(self, visible: bool) -> None:
         self.key_host.setVisible(bool(visible))
 
+    def set_editable(self, editable: bool = True) -> None:
+        """Piste ou calque verrouillé, clip non visuel : la pile reste lisible mais rien ne se modifie."""
+        self.setEnabled(bool(editable))
+
     def set_value(self, value, crop_animated: bool = False, crop_editable: bool = True):
         self._crop_animated = bool(crop_animated)
         self._crop_editable = bool(crop_editable)

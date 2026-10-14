@@ -253,6 +253,21 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Seleccione una capa visible en el cabezal.",
     ),
     "mograph.align.locked": _t("Ce calque est verrouillé.", "This layer is locked.", "Esta capa está bloqueada."),
+    "compositing.refused.track_locked": _t(
+        "La piste est verrouillée : masques, fusion et incrustation ne sont pas modifiables.",
+        "The track is locked: masks, blending and keying cannot be changed.",
+        "La pista está bloqueada: las máscaras, la fusión y el croma no se pueden modificar.",
+    ),
+    "compositing.refused.layer_locked": _t(
+        "Ce calque est verrouillé : masques, fusion et incrustation ne sont pas modifiables.",
+        "This layer is locked: masks, blending and keying cannot be changed.",
+        "Esta capa está bloqueada: las máscaras, la fusión y el croma no se pueden modificar.",
+    ),
+    "compositing.refused.not_visual": _t(
+        "Ce clip n'est pas visuel : masques, fusion et incrustation ne s'y appliquent pas.",
+        "This clip is not visual: masks, blending and keying do not apply to it.",
+        "Este clip no es visual: las máscaras, la fusión y el croma no se aplican.",
+    ),
     "mograph.align.nested": _t(
         "Un clip de séquence imbriquée ne s'aligne pas ici (il n'a pas de poignées dans le moniteur).",
         "A nested-sequence clip cannot be aligned here (it has no handles in the monitor).",
