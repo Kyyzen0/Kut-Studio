@@ -99,9 +99,12 @@ et opérations sont ceux des autres formes, et l'aperçu GPU comme l'export FFmp
 `build_ffmpeg_filters` (expressions `geq`, sans passer par la matte) ne sait dessiner que rectangle et ellipse : il approche une courbe
 (comme un polygone) par sa boîte ; aucun export réel n'y passe (voir la docstring).
 
-Fichier du projet : le champ `handles` d'un masque est **optionnel** et n'est écrit que pour une courbe ; un projet sans courbe se
-sauvegarde octet pour octet comme avant, et la version du format reste 17. Un Kut-Studio plus ancien qui ouvre un projet avec une
-courbe ignore ce masque (forme inconnue) comme tout masque illisible : la courbe y est perdue si le projet est resauvegardé.
+Fichier du projet : le champ `handles` d'un masque est **optionnel** et n'est écrit que pour une courbe. Un projet **sans** courbe se
+sauvegarde octet pour octet comme avant, en version 17. Un projet qui contient **au moins une** courbe (dans n'importe quelle séquence,
+clip imbriqué, composition, fenêtre d'étalonnage ou préréglage de couleur) s'écrit en **version 18** (`PATH_MASK_VERSION`, règle
+« version minimale nécessaire ») : un Kut-Studio plus ancien (≤ 17) **refuse** alors le fichier avec le message explicite « Version de
+fichier Kut-Studio non supportée » au lieu de l'ouvrir en ignorant la courbe. Retirer la dernière courbe puis enregistrer ramène à 17. Le
+chargeur lit 17 et 18 de la même façon.
 
 Gestes dans le moniteur (nœuds et tangentes ne sont **pas animables** : ils sont écrits dans le masque, jamais en image-clé ;
 position, taille, rotation, adoucissement, dilatation et opacité le restent) :
