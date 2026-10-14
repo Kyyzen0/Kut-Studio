@@ -1,0 +1,86 @@
+name: Install FFmpeg (Windows)
+description: >
+  Installe FFmpeg et FFprobe sous Windows. Chocolatey d'abord (3 tentatives), puis, seulement si ffmpeg/ffprobe sont
+  toujours introuvables, repli sur un build figé (gyan.dev « essentials », publié sur GitHub) dont le SHA-256 est
+  vérifié. Voir docs/ci-ffmpeg-windows.md.
+
+inputs:
+  force-fallback:
+    description: Saute Chocolatey (sert à tester le repli, ne jamais le laisser à true dans un workflow).
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install FFmpeg (Chocolatey, then pinned build)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        FORCE_FALLBACK: ${{ inputs.force-fallback }}
+        # Version et empreinte figées : le même commit reconstruit le même FFmpeg. Source :
+        # https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2 (empreinte recalculée et égale au « digest » GitHub).
+        FFMPEG_VERSION: "9.0.2"
+        FFMPEG_SHA256: "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
+      run: |
+        $ErrorActionPreference = 'Continue'
+
+        function Test-Ffmpeg {
+          # Choco ajoute le shim au PATH de la session de ce processus seulement : on le rafraîchit avant de tester.
+          $env:ChocolateyInstall = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
+          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1" -ErrorAction SilentlyContinue
+          if (Get-Command Update-SessionEnvironment -ErrorAction SilentlyContinue) { Update-SessionEnvironment }
+          return [bool]((Get-Command ffmpeg -ErrorAction SilentlyContinue) -and (Get-Command ffprobe -ErrorAction SilentlyContinue))
+        }
+
+        $ready = $false
+        if ($env:FORCE_FALLBACK -ne 'true') {
+          foreach ($attempt in 1..3) {
+            Write-Host "choco install ffmpeg (tentative $attempt/3)"
+            choco install ffmpeg --no-progress -y
+            if (Test-Ffmpeg) { $ready = $true; break }
+            Write-Host "FFmpeg introuvable après la tentative $attempt (code $LASTEXITCODE)."
+            if ($attempt -lt 3) { Start-Sleep -Seconds (15 * $attempt) }
+          }
+        } else {
+          Write-Host 'force-fallback : Chocolatey est ignoré.'
+        }
+
+        if ($ready) {
+          Write-Host 'FFmpeg installé par Chocolatey.'
+          exit 0
+        }
+
+        Write-Host "Repli : build figé FFmpeg $env:FFMPEG_VERSION (essentials)."
+        $name = "ffmpeg-$($env:FFMPEG_VERSION)-essentials_build"
+        $url = "https://github.com/GyanD/codexffmpeg/releases/download/$($env:FFMPEG_VERSION)/$name.zip"
+        $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+        $downloaded = $false
+        foreach ($attempt in 1..3) {
+          try {
+            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+            $downloaded = $true
+            break
+          } catch {
+            Write-Host "Téléchargement échoué (tentative $attempt/3) : $($_.Exception.Message)"
+            if ($attempt -lt 3) { Start-Sleep -Seconds (15 * $attempt) }
+          }
+        }
+        if (-not $downloaded) { throw "Impossible de télécharger $url" }
+
+        $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $env:FFMPEG_SHA256) {
+          Remove-Item -Force $zip
+          throw "SHA-256 inattendu pour $name.zip : $actual (attendu $($env:FFMPEG_SHA256))."
+        }
+        Write-Host "SHA-256 vérifié : $actual"
+
+        $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg-pinned'
+        Expand-Archive -Path $zip -DestinationPath $dest -Force
+        $bin = Join-Path $dest "$name\bin"
+        if (-not ((Test-Path (Join-Path $bin 'ffmpeg.exe')) -and (Test-Path (Join-Path $bin 'ffprobe.exe')))) {
+          throw "ffmpeg.exe / ffprobe.exe absents de $bin."
+        }
+        Add-Content -Path $env:GITHUB_PATH -Value $bin
+        $env:PATH = "$bin;$env:PATH"
+        Write-Host "FFmpeg $env:FFMPEG_VERSION ajouté au PATH : $bin"

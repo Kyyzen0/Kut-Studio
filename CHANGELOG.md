@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - Windows : ouvrir un projet pendant qu'un autre processus supprime ou remplace son fichier de verrou ne fait plus planter la prise de verrou ; la lecture est retentée un court instant, puis le projet est refusé proprement si l'état reste indéterminé.
 
+### Changed
+
+- CI Windows : l'installation de FFmpeg réessaie Chocolatey puis se replie sur un build figé dont le SHA-256 est vérifié (`docs/ci-ffmpeg-windows.md`).
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
