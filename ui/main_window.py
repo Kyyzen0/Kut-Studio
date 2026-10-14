@@ -94,6 +94,7 @@ from ui.multicam_viewer import MulticamViewer
 from ui.main_window_mixins.sequences import SequencesMixin
 from ui.main_window_mixins.clip_crop import ClipCropMixin
 from ui.main_window_mixins.frame_alignment import FrameAlignmentMixin
+from ui.main_window_mixins.mask_edit import MaskEditMixin
 from ui.main_window_mixins.motion_graphics import MotionGraphicsMixin
 from ui.main_window_mixins.tracking import TrackingMixin
 from ui.main_window_mixins.time_editing import TimeEditingMixin
@@ -149,6 +150,7 @@ class MainWindow(
     MotionGraphicsMixin,
     FrameAlignmentMixin,
     ClipCropMixin,
+    MaskEditMixin,
     SequencesMixin,
     MulticamMixin,
     MulticamCreationMixin,
@@ -645,6 +647,7 @@ class MainWindow(
         self._init_multicam_settings()
         # Motion graphics : panneau Calques, viewer interactif, presets.
         self._init_motion_graphics()
+        self._init_mask_edit()                                        # poignées de masque dans le moniteur
         self.set_platform_zones(self._platform_zones)               # zones de plateforme mémorisées (préférences)
         # Tracking 2D : panneau Suivi, trackers dans le viewer, analyses.
         self._init_tracking()

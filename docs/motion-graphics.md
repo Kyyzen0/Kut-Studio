@@ -61,6 +61,28 @@ calques, copier / coller les attributs (transform, effets, masques,
 animation), presets, repères du viewer (zones de sécurité `Ctrl+'`, guides
 `Ctrl+;`, grille, centre, magnétisme), guides, flou de mouvement.
 
+### Poignées de masque dans le moniteur (ADR-0006, étape 3, lot 3a)
+
+Choisir un masque dans la pile de l'éditeur de compositing (ou cocher *Poignées dans le moniteur*, qui se décoche pour
+retrouver les poignées du clip) montre ce masque dans le moniteur **à la place** des poignées du clip : contour en
+pointillés (vert Ajouter, rouge Soustraire, ambre Intersection, plus le signe `+` / `−` / `∩`), zone concernée voilée
+(l'extérieur de la forme si le masque est inversé), étendue de l'adoucissement en pointillés fins.
+
+| Forme | Poignées |
+|---|---|
+| rectangle, ellipse | intérieur = déplacer ; 4 coins et 4 côtés = taille (autour du centre, rotation du masque prise en compte, Maj = proportions des coins) ; poignée ronde = rotation (Maj : 15°) ; losange = adoucissement |
+| polygone | chaque sommet (`points`) ; l'intérieur = la forme entière ; coins, rotation et adoucissement comme ci-dessus |
+
+Un glisser part des valeurs du masque à la tête de lecture et recalcule des valeurs absolues
+(`core/mask_handles.py`, sans Qt) ; chaque propriété touchée passe par le mécanisme du glisser de clip : image-clé à la
+tête de lecture si elle est animée (`mask.<id>.<propriété>`), valeur statique sinon ; les sommets, non animables, sont
+écrits dans le masque. Une valeur hors des bornes du modèle (position −2..3, taille 0..4, rotation ±3600°, adoucissement
+0..1, sommets ±2) est collée explicitement à la borne par le calcul du glisser (la valeur émise est celle que la poignée affiche ; la rotation, elle, est refusée hors ±3600°) ; une écriture qui arrive hors bornes par un autre chemin (signal direct) est refusée. Un aperçu en direct sans
+historique, puis **une** étape d'historique à la relâche. Le masque s'affiche mais sans poignées actives quand la piste
+ou le calque est verrouillé, ou que le clip n'est pas rendu (piste masquée, hors solo, clip désactivé, calque masqué) ;
+hors de la durée du clip ou sur une séquence imbriquée, les poignées du clip reprennent. Le mode Suivi, la pipette et
+les fenêtres d'étalonnage de la page Couleur gardent la priorité.
+
 ## Modèle
 
 Un calque est un clip d'une piste `graphics`. Ce qui est commun à tout
