@@ -1,6 +1,6 @@
 # ADR-0006 : la composition visuelle — compléter ce qui existe, par étapes, sans réécrire le moteur
 
-**Statut :** Accepté le 2026-10-13 (les quatre questions ouvertes sont tranchées, voir « Décisions prises »). Étapes 0 à 8 à faire, dans l'ordre ; l'étape 1 commence.
+**Statut :** Accepté le 2026-10-13 (questions ouvertes tranchées, voir « Décisions prises »). Étapes 1 à 3a livrées, 3b en revue ; voir « État d'avancement ».
 **Date :** 2026-10-13
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -130,7 +130,7 @@ d'intégration clique sur un clip vidéo et vérifie la sélection ; aucune rég
 ### Étape 2 — Recadrage non destructif
 Proposition : **un recadrage est un masque rectangle** généré par une commande « Recadrer » (haut / bas / gauche / droite, option
 arrondi), avec poignées dans le moniteur. Aucun nouveau champ de rendu : le matte existe déjà. **Critères :** recadrage = masque `add`
-de forme rectangle ; export et GPU identiques (test de parité existant sur les mattes) ; annulation en un seul pas ; le recadrage
+de forme rectangle (livré en mode `intersect`, rangé en dernier de la pile : voir « État d'avancement ») ; export et GPU identiques (test de parité existant sur les mattes) ; annulation en un seul pas ; le recadrage
 reste modifiable après coup (c'est un masque).
 *Alternative écartée :* un champ `crop` dans `ClipTransform` → deuxième chemin de rendu à maintenir deux fois (GPU et FFmpeg).
 
@@ -176,6 +176,26 @@ Faire passer la couche vidéo du moniteur GPU par le `RenderPlan` ; unifier les 
 compositeur CPU non branché ; effets par piste / séquence ; chroma key sur le GPU ; export GPU (ADR-0001, étape 4) ; *OnDemandGate*.
 **À traiter dans ses propres ADR**, après les étapes 1 à 6 qui auront montré où cela fait vraiment mal.
 
+## État d'avancement (2026-10-14)
+
+| Étape | PR | État |
+| --- | --- | --- |
+| 1a clic sur n'importe quel clip | #143 | mergée |
+| 1b accrochage échelle et rotation | #144 | mergée |
+| 1c alignement sur le cadre, flèches | #145 | mergée |
+| 2 recadrage par masque | #146 | mergée |
+| 3a poignées de masque au moniteur | #147 | mergée |
+| (hors plan) garde de verrou du groupe Compositing | #148 | mergée |
+| (hors plan) autres trous de verrou de l'inspecteur | #149 | ouverte |
+| 3b masques Bézier (+ format .kut v18 si une courbe) | #150 | ouverte |
+
+Écarts avec le plan ci-dessus, découverts à l'implémentation :
+- **Étape 2 :** le masque de recadrage est en mode `intersect` et rangé **en dernier** (pas `add`) : un masque `add` ne restreint pas les autres masques `add`, il s'y ajoute. Identifiant réservé `crop`.
+- **Étape 3a :** pas d'accrochage des poignées de masque ; une case « Poignées dans le moniteur » permet de revenir aux poignées du clip tant qu'un masque est dans la pile.
+- **Étape 3b :** version du format écrite à 18 **seulement** si le projet contient une courbe (les autres projets restent en 17, octet pour octet) ; un ancien build refuse alors le fichier au lieu de perdre la courbe en silence.
+- **Hors plan :** l'inventaire des verrous (piste, calque) a montré que l'inspecteur écrivait dans le modèle sans garde ; une règle partagée `clip_edit_refusal` les couvre. Restent : éditeur de courbes, menu « Réseaux sociaux », garde centrale dans `core/keyframe_editing`.
+- Étapes **4** (trois niveaux), **5** (animer couleurs, effets, sommets), **6** (modes de fusion), **7** (empilement libre) et **8** : à faire.
+
 ## Ce qui n'est volontairement pas proposé
 
 - Un moteur de composition 3D, un suivi de mouvement 3D, des expressions : hors sujet de « plus intuitif qu'After Effects ».
@@ -189,6 +209,7 @@ compositeur CPU non branché ; effets par piste / séquence ; chroma key sur le 
 2. **Recadrage : un masque rectangle généré** (étape 2), pas de champ `crop` dédié.
 3. **Empilement libre vidéo / graphique : après l'étape 6**, dans son ADR (étape 7). Le format du fichier n'est pas touché avant.
 4. **Ordre : on commence par l'étape 1** (le moniteur).
+5. **Flèches du clavier (2026-10-14) :** avec le moniteur au focus et un calque éditable sélectionné, Gauche / Droite / Haut / Bas le déplacent de 1 px (Maj : 10 px) au lieu de changer d'image ; sans calque éditable, ou avec Ctrl / Alt, elles gardent leur rôle (image précédente / suivante…). Choix de l'utilisateur : « le déplacement est mieux ».
 
 ## Limites de cet audit
 
