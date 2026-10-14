@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Scripts : images fixes.** Le verbe `add_image_layer` pose une image (PNG, JPEG, WebP, BMP, TIFF du dossier du script, lecture seule, dimensions et poids bornés, format vérifié sur le contenu) en **calque graphique** de durée donnée. C'est un calque : il passe au-dessus de toute la vidéo, sans transitions entre clips vidéo ni remappage de temps. Voir [docs/scripting.md](docs/scripting.md).
 
+### Fixed
+
+- Windows : ouvrir un projet pendant qu'un autre processus supprime ou remplace son fichier de verrou ne fait plus planter la prise de verrou ; la lecture est retentée un court instant, puis le projet est refusé proprement si l'état reste indéterminé.
+
 ### Changed
 
 - CI Windows : l'installation de FFmpeg réessaie Chocolatey puis se replie sur un build figé dont le SHA-256 est vérifié (`docs/ci-ffmpeg-windows.md`).
