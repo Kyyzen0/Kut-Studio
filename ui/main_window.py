@@ -78,6 +78,7 @@ from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
 from ui.main_window_mixins.live_mix import LiveMixMixin
 from ui.main_window_mixins.animation import AnimationMixin
+from ui.main_window_mixins.clip_edit_guard import ClipEditGuardMixin
 from ui.main_window_mixins.encoding import EncodingMixin
 from ui.main_window_mixins.performance import PerformanceMixin
 from ui.main_window_mixins.presets import PresetsMixin
@@ -147,6 +148,7 @@ class MainWindow(
     TrackingMixin,
     TimeEditingMixin,
     MotionGraphicsMixin,
+    ClipEditGuardMixin,
     FrameAlignmentMixin,
     ClipCropMixin,
     SequencesMixin,
@@ -1362,8 +1364,10 @@ class MainWindow(
             self.properties_panel.update_audio_effects_from_clip([], None)
             track_type_for_audio = None
         else:
+            from core.compositing_guard import clip_edit_refusal
+
             self.properties_panel.update_effects_from_clip(
-                list(clip.effects), "video"
+                list(clip.effects), "video", editable=clip_edit_refusal(self.project, clip_id) is None,
             )
             # Le rack d'effets audio accepte les pistes ``video`` (si le
             # média porte de l'audio) et ``audio``. On détermine le type

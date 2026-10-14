@@ -41,7 +41,7 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 - **Jamais de valeur ramenée en silence.** Les bornes d'un paramètre sont celles du modèle (volume −60 à 12 dB, opacité 0 à 1,
   exposition −2 à 2…) : au-delà, le script est refusé, il ne « réussit » pas en écrivant une autre valeur. Même règle pour le nom
   d'une piste déjà pris et pour un instant d'image clé hors du clip.
-- **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée.
+- **Le verrou d'une piste vaut pour un script**, comme pour l'interface : un verbe qui modifie un clip refuse une piste verrouillée **et un calque graphique verrouillé** (`graphic.locked`).
 - **Pas d'écriture par défaut.** `apply` écrit dans un autre fichier (`-o`). Écrire dans le projet lui-même demande `--in-place`, et
   un `-o` qui désigne le projet (lien symbolique compris) est refusé. `--dry-run` travaille sur une copie.
 - **Pas de verbe `export`** : exporter est une décision de l'appelant (`Kut-Studio export`).

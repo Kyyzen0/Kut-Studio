@@ -23,6 +23,8 @@ class TransformEffectsMixin:
 
     def on_speed_changed(self, clip_id: str, speed: float) -> None:
         """Modifie la vitesse d'un clip depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import set_clip_speed
         try:
             set_clip_speed(self.project, clip_id, speed)
@@ -36,6 +38,8 @@ class TransformEffectsMixin:
 
     def on_reverse_toggled(self, clip_id: str, reverse: bool) -> None:
         """Modifie le mode reverse d'un clip depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import set_clip_reverse
         try:
             set_clip_reverse(self.project, clip_id, reverse)
@@ -49,6 +53,8 @@ class TransformEffectsMixin:
 
     def on_freeze_frame_created(self, clip_id: str, freeze_source_time: float, freeze_duration: float) -> None:
         """Crée un arrêt sur image pour un clip depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import set_clip_freeze_frame
         try:
             set_clip_freeze_frame(self.project, clip_id, freeze_source_time, freeze_duration)
@@ -62,6 +68,8 @@ class TransformEffectsMixin:
 
     def on_freeze_frame_removed(self, clip_id: str) -> None:
         """Supprime un arrêt sur image pour un clip depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import remove_clip_freeze_frame
         try:
             remove_clip_freeze_frame(self.project, clip_id)
@@ -75,6 +83,8 @@ class TransformEffectsMixin:
 
     def on_freeze_duration_changed(self, clip_id: str, freeze_duration: float) -> None:
         """Modifie la durée d'un arrêt sur image depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import set_clip_freeze_duration
         try:
             set_clip_freeze_duration(self.project, clip_id, freeze_duration)
@@ -88,6 +98,8 @@ class TransformEffectsMixin:
 
     def on_time_remapping_reset(self, clip_id: str) -> None:
         """Réinitialise le remappage temporel d'un clip depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         from core.timeline_operations import reset_clip_time_remapping
         try:
             reset_clip_time_remapping(self.project, clip_id)
@@ -103,6 +115,8 @@ class TransformEffectsMixin:
         self, clip_id: str, effect_id: str, enabled: bool
     ) -> None:
         """Active ou désactive un effet depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id):
+            return
         from core.effects_model import set_clip_effect_enabled
         try:
             set_clip_effect_enabled(self.project, clip_id, effect_id, enabled)
@@ -116,6 +130,8 @@ class TransformEffectsMixin:
 
     def on_clip_effect_added(self, clip_id: str, effect_type: str) -> None:
         """Ajoute un effet choisi dans l'inspecteur au clip vidéo courant."""
+        if self._clip_edit_refused(clip_id):
+            return
         from core.effects_model import add_effect_to_clip
         try:
             add_effect_to_clip(self.project, clip_id, effect_type)
@@ -127,6 +143,8 @@ class TransformEffectsMixin:
 
     def on_clip_effect_removed(self, clip_id: str, effect_id: str) -> None:
         """Supprime un effet depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id):
+            return
         from core.effects_model import remove_effect_from_clip
         try:
             remove_effect_from_clip(self.project, clip_id, effect_id)
@@ -140,6 +158,8 @@ class TransformEffectsMixin:
         self, clip_id: str, effect_id: str, delta: int
     ) -> None:
         """Réordonne un effet depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id):
+            return
         from core.effects_model import move_clip_effect
         try:
             move_clip_effect(self.project, clip_id, effect_id, delta)
@@ -153,6 +173,8 @@ class TransformEffectsMixin:
         self, clip_id: str, effect_id: str, name: str, value: float
     ) -> None:
         """Met à jour un paramètre d'effet depuis l'inspecteur."""
+        if self._clip_edit_refused(clip_id):
+            return
         from core.effects_model import update_clip_effect_parameters
         try:
             update_clip_effect_parameters(
@@ -174,6 +196,8 @@ class TransformEffectsMixin:
         fin d'une rafale (debounce ~400 ms), pour ne pas polluer
         l'historique avec des dizaines d'entrées par seconde.
         """
+        if self._clip_edit_refused(clip_id):
+            return
         if not bool(getattr(self, "_transform_session_active", False)):
             self._finalize_graphic_history()
         try:
@@ -288,6 +312,8 @@ class TransformEffectsMixin:
         clip_local_time: float,
         value: float,
     ):
+        if self._clip_edit_refused(clip_id):
+            return
         if not bool(getattr(self, "_transform_session_active", False)):
             self._finalize_graphic_history()
         try:
@@ -316,6 +342,8 @@ class TransformEffectsMixin:
     def on_transform_keyframe_removed(
         self, clip_id: str, property_name: str, clip_local_time: float
     ):
+        if self._clip_edit_refused(clip_id):
+            return
         self._finalize_graphic_history()
         self._finalize_transform_session()
         try:
@@ -338,6 +366,8 @@ class TransformEffectsMixin:
         self._mark_dirty()
 
     def on_transform_reset(self, clip_id: str) -> None:
+        if self._clip_edit_refused(clip_id):
+            return
         self._finalize_graphic_history()
         self._finalize_transform_session()
         try:

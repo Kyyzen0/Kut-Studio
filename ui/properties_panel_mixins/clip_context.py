@@ -79,10 +79,15 @@ class ClipContextMixin:
 
             self.selected_clip = view
             self.selected_clip_track_type = getattr(view, "track_type", None)
+            # Piste ou calque verrouillé : les groupes qui écrivent dans le clip sont désactivés (contenu lisible).
+            track_locked = bool(getattr(view, "locked", False))
+            layer_locked = bool(getattr(getattr(view, "graphic", None), "locked", False))
+            clip_editable = not track_locked and not layer_locked
             # Effets : la vue porte déjà la liste d'effets du clip.
             self.update_effects_from_clip(
                 list(getattr(view, "effects", ()) or ()),
                 self.selected_clip_track_type,
+                editable=clip_editable,
             )
             duration = view.end - view.start
             self.clip_name.setText(view.label)
@@ -102,19 +107,13 @@ class ClipContextMixin:
             self.compositing_group.set_value(getattr(view, "compositing", None), bool(getattr(view, "crop_animated", False)),
                                               is_visual_clip and not bool(getattr(view, "locked", False)))
             self.compositing_group.set_chroma_visible(is_video_clip)
-            self.compositing_group.set_editable(
-                is_visual_clip
-                and not bool(getattr(view, "locked", False))
-                and not bool(getattr(getattr(view, "graphic", None), "locked", False))
-            )
+            self.compositing_group.set_editable(is_visual_clip and clip_editable)
             self.advanced_transform.set_skew_available(is_graphic_clip)
-            self.graphics_group.setEnabled(
-                is_graphic_clip and not bool(getattr(view, "locked", False))
-            )
+            self.graphics_group.setEnabled(is_graphic_clip and clip_editable)
             color_editable = is_video_clip and not bool(getattr(view, "locked", False))
             self.color_group.setEnabled(color_editable)
             self.update_color_grade_from_clip(getattr(view, "color_grade", None))
-            self.movement_group.setEnabled(is_visual_clip)
+            self.movement_group.setEnabled(is_visual_clip and clip_editable)
             for spin in self._spin_boxes.values():
                 spin.setEnabled(is_visual_clip)
             for slider in self._slider_widgets.values():
@@ -141,8 +140,7 @@ class ClipContextMixin:
             time_remapping = getattr(view, "time_remapping", None) or TimeRemapping()
             is_frozen = time_remapping.freeze_mode == FreezeFrameMode.FREEZE
             is_audio_clip = self.selected_clip_track_type == "audio"
-            locked = getattr(view, "locked", False)
-            enabled_tr = not locked
+            enabled_tr = clip_editable
             
             # Vitesse
             self.speed_spinbox.blockSignals(True)

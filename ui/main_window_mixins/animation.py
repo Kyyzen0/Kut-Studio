@@ -156,6 +156,8 @@ class AnimationMixin:
     # ------------------------------------------------------------------
 
     def on_animation_toggled(self, clip_id: str, property_id: str, enabled: bool) -> None:
+        if self._clip_edit_refused(clip_id, visual_only=False):
+            return
         clip = find_clip(self.project, clip_id)
         set_animation_enabled(self.project, clip_id, property_id, enabled, self._local_playhead(clip))
         self.set_active_animation_property(property_id)
@@ -181,6 +183,8 @@ class AnimationMixin:
         """Change l'interpolation de la sélection, sinon des keyframes sous la tête."""
         refs = self._keyframes_for_command(property_id)
         if not refs:
+            return 0
+        if any(self._clip_edit_refused(clip_id, visual_only=False) for clip_id in sorted({ref.clip_id for ref in refs})):
             return 0
         changed = set_interpolation(self.project, refs, interpolation)
         if changed:
@@ -210,6 +214,8 @@ class AnimationMixin:
         clip = self._animation_clip()
         if clip is None or not self._playhead_in_clip(clip):
             return 0
+        if self._clip_edit_refused(clip.id, visual_only=False):
+            return 0
         local = self._local_playhead(clip)
         try:
             local = min(max(0.0, self._snap_local(clip, local)), clip.duration)
@@ -233,6 +239,8 @@ class AnimationMixin:
         """Supprime la sélection, sinon les keyframes sous la tête de lecture."""
         refs = self._keyframes_for_command()
         if not refs:
+            return 0
+        if any(self._clip_edit_refused(clip_id, visual_only=False) for clip_id in sorted({ref.clip_id for ref in refs})):
             return 0
         clip = find_clip(self.project, refs[0].clip_id)
         speed = [ref for ref in refs if ref.property_id == SPEED_PROPERTY]
@@ -280,6 +288,8 @@ class AnimationMixin:
         clip = self._animation_clip()
         clipboard = self.animation_clipboard
         if clip is None or not clipboard or not self._playhead_in_clip(clip):
+            return 0
+        if self._clip_edit_refused(clip.id, visual_only=False):
             return 0
         target = property_id if property_id and clipboard.is_single_property else None
         if target is not None and not can_paste(clipboard, target):
@@ -339,6 +349,9 @@ class AnimationMixin:
         refs = list(refs)
         if not refs or abs(delta_seconds) < 1e-9:
             return
+        if any(self._clip_edit_refused(clip_id, visual_only=False) for clip_id in sorted({ref.clip_id for ref in refs})):
+            self._after_animation_edit(refs[0].clip_id, "", record=False)         # la timeline revient à l'état réel
+            return
         fps = float(self.project.fps or 30.0)
         speed = [ref for ref in refs if ref.property_id == SPEED_PROPERTY]
         others = [ref for ref in refs if ref.property_id != SPEED_PROPERTY]
@@ -391,7 +404,7 @@ class AnimationMixin:
     # Compatibilité : ancien chemin de suppression d'un keyframe par instant.
     def remove_keyframe_at_playhead(self, property_id: str) -> bool:
         clip = self._animation_clip()
-        if clip is None:
+        if clip is None or self._clip_edit_refused(clip.id, visual_only=False):
             return False
         removed = remove_keyframe_at(self.project, clip.id, property_id, self._local_playhead(clip))
         if removed:
