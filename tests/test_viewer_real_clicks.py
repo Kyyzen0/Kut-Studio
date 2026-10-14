@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QPolygonF
+from PySide6.QtGui import QPainterPath, QPolygonF
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
@@ -191,3 +191,89 @@ def test_tracking_overlay_zones_are_not_holes_in_its_clickable_area():
     assert overlay.shape().contains(overlay.to_scene(580.0, 330.0))         # cadre + zone A seulement : 2 formes
     assert overlay.shape().contains(overlay.to_scene(640.0, 360.0))         # cadre + zones A et B : 3 formes
     assert overlay.shape().contains(overlay.to_scene(20.0, 20.0))           # le cadre seul
+
+
+# -- polygones qui se croisent, concaves, dégénérés (revue de #152) -------------------------------------
+
+
+def _poly(*coords) -> QPolygonF:
+    return QPolygonF([QPointF(*c) for c in coords])
+
+
+BOARD = _poly((-50, -50), (150, -50), (150, 150), (-50, 150))
+BOWTIE = ((0, 0), (100, 100), (100, 0), (0, 100))                # lobes à gauche et à droite, centre en (50, 50)
+LOBES = ((10, 50), (90, 50))
+OUTSIDE_LOBES = ((50, 10), (50, 90))
+
+
+def _accumulate(*polygons) -> QPainterPath:
+    from ui.hit_shape import add_polygon, new_hit_path
+
+    path = new_hit_path()
+    for polygon in polygons:
+        add_polygon(path, polygon)
+    return path
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("board_first", [False, True])
+def test_a_bow_tie_over_a_layer_box_keeps_both_lobes_clickable(reverse, board_first):
+    points = BOWTIE[::-1] if reverse else BOWTIE
+    polygons = (BOARD, _poly(*points)) if board_first else (_poly(*points), BOARD)
+    path = _accumulate(*polygons)
+    assert all(path.contains(QPointF(*p)) for p in LOBES + OUTSIDE_LOBES)       # la boîte couvre tout, lobes compris
+    alone = _accumulate(_poly(*points))
+    assert [alone.contains(QPointF(*p)) for p in LOBES + OUTSIDE_LOBES] == [True, True, False, False]
+
+
+def test_a_star_keeps_its_odd_even_hole_but_the_box_under_it_still_counts():
+    import math
+
+    star = _poly(*[(100 + 80 * math.cos(math.radians(-90 + 144 * k)), 100 + 80 * math.sin(math.radians(-90 + 144 * k)))
+                   for k in range(5)])
+    frame = _poly((0, 0), (200, 0), (200, 200), (0, 200))
+    assert not _accumulate(star).contains(QPointF(100, 100))                    # le rendu pair-impair laisse le centre vide
+    assert _accumulate(star).contains(QPointF(100, 30))
+    for polygons in ((star, frame), (frame, star)):
+        assert _accumulate(*polygons).contains(QPointF(100, 100))
+
+
+@pytest.mark.parametrize("coords, inside, outside", [
+    (((0, 0), (100, 0), (100, 100), (50, 40), (0, 100)), (10, 10), (50, 90)),           # concave simple
+    (((0, 0), (100, 0), (100, 100), (0, 100)), (50, 50), (150, 50)),                     # convexe
+    (((0, 0), (100, 0), (100, 0), (100, 100), (0, 100), (0, 100)), (50, 50), (150, 50)), # sommets répétés
+])
+def test_concave_convex_and_repeated_vertex_polygons_stay_exact_under_a_box(coords, inside, outside):
+    alone = _accumulate(_poly(*coords))
+    assert alone.contains(QPointF(*inside)) and not alone.contains(QPointF(*outside))
+    for polygons in ((_poly(*coords), BOARD), (BOARD, _poly(*coords))):
+        assert _accumulate(*polygons).contains(QPointF(*inside))
+
+
+def test_degenerate_polygons_add_nothing_and_do_not_fail():
+    for coords in (((0, 0), (0, 0), (0, 0)), ((0, 0), (50, 50), (100, 100)), ((0, 0), (10, 10))):
+        _accumulate(_poly(*coords), BOARD)                                           # aucune exception
+        assert _accumulate(_poly(*coords), BOARD).contains(QPointF(5, 5))            # la boîte voisine reste intacte
+    assert _accumulate(_poly((0, 0), (0, 0), (0, 0))).isEmpty()
+
+
+def test_real_clicks_reach_both_lobes_of_a_bow_tie_polygon_mask_over_a_full_frame_video(stage):
+    from core import mask_handles as mh
+
+    view, overlay = stage
+    overlay.set_layer_boxes([V1])        # une seule boîte : c'est là qu'un lobe de sens inverse s'annulait
+    mask = Mask(id="m1", shape=MaskShape.POLYGON, points=((-0.4, -0.4), (0.4, 0.4), (0.4, -0.4), (-0.4, 0.4)))
+    geometry = geometry_of("v1", mask, IDENT, FRAME, editable=True)
+    overlay.set_mask_edit(geometry)
+    dragged: list = []
+    overlay.mask_dragged.connect(lambda *args: dragged.append(args))
+    for u in (-0.3, 0.3):                                   # lobe gauche puis lobe droit
+        scene = overlay.to_scene(*mh.canvas_point(geometry, u, 0.0))
+        assert overlay.masks.hit(scene) == "m_move"
+        assert overlay in view.items(QPoint(round(scene.x()), round(scene.y())))
+        p = QPoint(round(scene.x()), round(scene.y()))
+        count = len(dragged)
+        QTest.mousePress(view.viewport(), Qt.LeftButton, Qt.NoModifier, p)
+        QTest.mouseMove(view.viewport(), p + QPoint(12, 8))
+        QTest.mouseRelease(view.viewport(), Qt.LeftButton, Qt.NoModifier, p + QPoint(12, 8))
+        assert len(dragged) > count
