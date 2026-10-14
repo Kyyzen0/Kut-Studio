@@ -647,3 +647,14 @@ def test_saving_a_project_opened_through_a_symlink_keeps_the_link_and_the_lock_a
     assert link.is_symlink(), "le lien est resté un lien"
     assert load_project(str(real)).name == "Renommé", "c'est le projet visé qui a changé"
     assert read_lock(real) is not None and lock_file_for(link) == lock_file_for(real)
+
+
+def test_exists_raising_permission_error_counts_as_a_lock_being_deleted(tmp_path, monkeypatch) -> None:
+    """Sous Windows ``Path.exists()`` lève ``PermissionError`` sur un fichier en suppression : c'est un verrou présent, pas un plantage."""
+    lock = ProjectLock(tmp_path / "demo.kut.lock")
+
+    def raising(self: Path) -> bool:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "exists", raising)
+    assert lock._lock_present() is True

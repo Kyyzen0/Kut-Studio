@@ -183,6 +183,13 @@ class ProjectLock:
     def _payload(self, owner: LockOwner) -> bytes:
         return json.dumps({"kut_lock": LOCK_VERSION, **asdict(owner)}, ensure_ascii=False, indent=1).encode("utf-8")
 
+    def _lock_present(self) -> bool:
+        """Le fichier de verrou existe-t-il ? Sous Windows, ``exists()`` lève ``PermissionError`` sur un fichier en suppression : présent."""
+        try:
+            return self.path.exists()
+        except OSError:
+            return True
+
     def _read_settling(self) -> bytes | None:
         """Les octets du verrou ; ``None`` s'il a disparu. Un ``PermissionError`` (suppression ou remplacement en cours sous Windows)
         est retenté pendant ``_TRANSIENT_READ_SECONDS`` ; s'il persiste (vraie erreur de droits), ``ProjectLockedError`` UNKNOWN."""
@@ -254,7 +261,7 @@ class ProjectLock:
             try:
                 descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
             except (FileExistsError, PermissionError) as error:
-                if isinstance(error, PermissionError) and not self.path.exists():
+                if isinstance(error, PermissionError) and not self._lock_present():
                     raise                                # vraie erreur de droits sur le dossier, pas un verrou en suppression
                 existing, raw = self._read_with_grace()
                 if raw is None:
