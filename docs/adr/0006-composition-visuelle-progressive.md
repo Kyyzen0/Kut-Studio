@@ -1,6 +1,6 @@
 # ADR-0006 : la composition visuelle — compléter ce qui existe, par étapes, sans réécrire le moteur
 
-**Statut :** Accepté le 2026-10-13 (questions ouvertes tranchées, voir « Décisions prises »). Étapes 1 à 3a livrées, 3b en revue ; voir « État d'avancement ».
+**Statut :** Accepté le 2026-10-13 (questions ouvertes tranchées, voir « Décisions prises »). Étapes 1 à 3b livrées (0.6.0) ; voir « État d'avancement ».
 **Date :** 2026-10-13
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -186,14 +186,17 @@ compositeur CPU non branché ; effets par piste / séquence ; chroma key sur le 
 | 2 recadrage par masque | #146 | mergée |
 | 3a poignées de masque au moniteur | #147 | mergée |
 | (hors plan) garde de verrou du groupe Compositing | #148 | mergée |
-| (hors plan) autres trous de verrou de l'inspecteur | #149 | ouverte |
-| 3b masques Bézier (+ format .kut v18 si une courbe) | #150 | ouverte |
+| (hors plan) autres trous de verrou de l'inspecteur (dont l'éditeur de courbes) | #149 | mergée |
+| 3b masques Bézier (+ format .kut v18 si une courbe) | #150 | mergée |
+| (hors plan) un clic atteint la surcouche quand des clips se recouvrent | #152 | mergée |
+
+Les étapes 1 à 3b sont publiées dans la **0.6.0** (2026-10-14).
 
 Écarts avec le plan ci-dessus, découverts à l'implémentation :
 - **Étape 2 :** le masque de recadrage est en mode `intersect` et rangé **en dernier** (pas `add`) : un masque `add` ne restreint pas les autres masques `add`, il s'y ajoute. Identifiant réservé `crop`.
 - **Étape 3a :** pas d'accrochage des poignées de masque ; une case « Poignées dans le moniteur » permet de revenir aux poignées du clip tant qu'un masque est dans la pile.
 - **Étape 3b :** version du format écrite à 18 **seulement** si le projet contient une courbe (les autres projets restent en 17, octet pour octet) ; un ancien build refuse alors le fichier au lieu de perdre la courbe en silence.
-- **Hors plan :** l'inventaire des verrous (piste, calque) a montré que l'inspecteur écrivait dans le modèle sans garde ; une règle partagée `clip_edit_refusal` les couvre. Restent : éditeur de courbes, menu « Réseaux sociaux », garde centrale dans `core/keyframe_editing`.
+- **Hors plan :** l'inventaire des verrous (piste, calque) a montré que l'inspecteur écrivait dans le modèle sans garde ; une règle partagée `clip_edit_refusal` les couvre. L'éditeur de courbes est couvert (#149). Restent : menu « Réseaux sociaux », garde centrale dans `core/keyframe_editing`.
 - Étapes **4** (trois niveaux), **5** (animer couleurs, effets, sommets), **6** (modes de fusion), **7** (empilement libre) et **8** : à faire.
 
 ## Ce qui n'est volontairement pas proposé
