@@ -75,6 +75,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_muted` | Coupe ou rétablit le son d'une piste (`track`, `muted`) |
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
+| `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) |
 | `add_track` | Ajoute une piste : `type` = `video`, `audio` ou `subtitle` (`name` : doit être libre, sinon refus) |
@@ -221,9 +222,26 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
   `{"op": "add_clip", "track": "A1", "asset": {"ref": "voix"}, "at": 0}`.
 - Le texte d'un chemin ne contient pas de caractère de contrôle et tient en 1 024 caractères.
 
+## Images fixes : `add_image_layer`
+
+Lit une image en lecture seule, comme `import_media`, et la pose comme **calque graphique** (le même que « Importer une image » dans
+l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 000 000 s, obligatoire).
+
+- Mêmes règles de chemin que `import_media` (dossier du script, `--allow-outside` décidé par l'appelant, liens symboliques vérifiés
+  après résolution) ; PNG, JPEG, WebP, BMP et TIFF.
+- L'**en-tête seul** est lu avant d'accepter l'image (pas de décodage complet) : le **contenu** décide du format et doit concorder avec
+  l'extension. Sont refusés : fichier vide, corrompu ou d'un autre format, extension qui ne correspond pas au contenu, fichier de plus de
+  256 Mo, image de plus de 8 192 pixels de côté ou de 64 millions de pixels. Un fichier dont l'en-tête est sain mais dont la suite est
+  tronquée n'est détecté qu'au rendu.
+- Le calque tient dans le cadre du projet sans être agrandi (comme l'import par l'interface sans « remplir ») ; `set_graphic` (`width`,
+  `height`) le redimensionne, et position, échelle, images clés, effets et étalonnage s'appliquent comme à un autre calque.
+- `track` doit être une piste de **graphiques déverrouillée** (une piste vidéo, audio ou verrouillée est refusée).
+- **Limite** : c'est un calque graphique, donc **au-dessus de toute la vidéo** ; il ne participe pas aux transitions entre clips vidéo ni
+  au remappage de temps. Poser une image comme clip d'une piste vidéo viendra plus tard.
+
 ## Pas encore là
 
-- **Animation des couleurs et des effets** et **calques d'image** : prochains lots.
+- **Animation des couleurs et des effets** : prochain lot.
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code

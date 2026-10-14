@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Scripts : images fixes.** Le verbe `add_image_layer` pose une image (PNG, JPEG, WebP, BMP, TIFF du dossier du script, lecture seule, dimensions et poids bornés, format vérifié sur le contenu) en **calque graphique** de durée donnée. C'est un calque : il passe au-dessus de toute la vidéo, sans transitions entre clips vidéo ni remappage de temps. Voir [docs/scripting.md](docs/scripting.md).
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
