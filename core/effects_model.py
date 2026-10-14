@@ -415,6 +415,8 @@ def _require_video_clip(project: "Project", clip_id: str) -> "Clip":
         )
     if track.locked:
         raise ValueError(f"La piste '{track.id}' est verrouillée.")
+    if bool(getattr(getattr(clip, "graphic", None), "locked", False)):         # photo de template, calque verrouillé
+        raise ValueError(f"Le calque du clip '{clip_id}' est verrouillé.")
     return clip
 
 

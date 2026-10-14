@@ -232,6 +232,7 @@ class EffectsLibraryView(QWidget):
         self._cards: dict[str, EffectPresetCard] = {}
         self._selected_preset_id: str | None = None
         self._has_video_clip = False
+        self._clip_editable = True
         self._clip_has_effects = False
         self._search_text = ""
         self._active_category: EffectCategory | None = None
@@ -338,8 +339,10 @@ class EffectsLibraryView(QWidget):
         *,
         has_video_clip: bool,
         clip_has_effects: bool,
+        clip_editable: bool = True,
     ) -> None:
-        """Synchronise l'état du clip sélectionné avec l'interface."""
+        """Synchronise l'état du clip sélectionné avec l'interface (``clip_editable=False`` : piste ou calque verrouillé)."""
+        self._clip_editable = clip_editable
         self._has_video_clip = has_video_clip
         self._clip_has_effects = clip_has_effects
         self._refresh_buttons()
@@ -519,14 +522,14 @@ class EffectsLibraryView(QWidget):
     # ----- Boutons d'action -------------------------------------------
 
     def _refresh_buttons(self) -> None:
-        can_apply = self._has_video_clip and self._selected_preset_id is not None
+        can_apply = self._has_video_clip and self._clip_editable and self._selected_preset_id is not None
         self.apply_button.setEnabled(can_apply)
         self.save_button.setEnabled(
             self._has_video_clip and self._clip_has_effects
         )
 
     def _emit_apply_requested(self) -> None:
-        if not self._has_video_clip or not self._selected_preset_id:
+        if not self._has_video_clip or not self._clip_editable or not self._selected_preset_id:
             return
         # ``clip_id`` est résolu côté ``MainWindow`` (qui connaît la
         # sélection de la timeline) ; la bibliothèque ne porte que

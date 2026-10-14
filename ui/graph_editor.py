@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from core.animation import InterpolationType, TangentMode
 from core.animation_targets import get_target
+from core.compositing_guard import clip_edit_refusal
 from core.keyframe_editing import (
     KeyframeRef,
     add_keyframe,
@@ -263,6 +264,10 @@ class CurveCanvas(QWidget):
             return
         if event.button() != Qt.LeftButton or self.editor.curve() is None:
             return
+        if self.editor.is_locked():                    # courbe lisible et sélectionnable, jamais déplaçable
+            if self._pick_keyframe(point) is not None:
+                self.editor.select_ids({self._pick_keyframe(point).id})
+            return
         handle = self._pick_handle(point)
         if handle is not None:
             self._gesture = "handle"
@@ -333,6 +338,8 @@ class CurveCanvas(QWidget):
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt
         """Double clic sur la courbe : nouvelle image-clé, sans changer l'animation."""
         if event.button() == Qt.LeftButton and self._pick_keyframe(event.position()) is None:
+            if self.editor.is_locked():
+                return
             t, _v = self.to_curve(event.position())
             self.editor.add_keyframe_at(t)
 
@@ -437,6 +444,25 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
     def target(self):
         return get_target(self.property_id)
 
+    def is_locked(self) -> bool:
+        """Le clip montré n'est pas modifiable (piste ou calque verrouillé) : la courbe reste lisible. La vitesse visant aussi
+        l'audio, seuls les verrous comptent, pas le genre de piste."""
+        if self.clip_id is None:
+            return False
+        return clip_edit_refusal(self.host.project, self.clip_id, visual_only=False) is not None
+
+    def _edit_refused(self) -> bool:
+        """Garde de toute mutation : un signal peut arriver, et le verrou peut être posé fenêtre ouverte. Rien n'est écrit, la barre
+        d'état le dit, la fenêtre relit l'état."""
+        if self.clip_id is None:
+            return False
+        if not self.host._clip_edit_refused(self.clip_id, visual_only=False, restore=False):
+            return False
+        self._gesture_state = None
+        self._refresh_fields()
+        self.canvas.update()
+        return True
+
     def display_unit(self) -> str:
         """Unité des valeurs affichées (`` %``, `` dB``, ``°``…) ; vide sans propriété."""
         return self.target().spec.display_unit if self.property_id else ""
@@ -521,10 +547,11 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         curve = self.curve()
         selected = [k for k in curve.keyframes if k.id in self.selected_ids()] if curve is not None else []
         single = selected[0] if len(selected) == 1 else None
+        editable = not self.is_locked()
         for widget in (self.time_spin, self.value_spin):
-            widget.setEnabled(single is not None)
-        self.interpolation_combo.setEnabled(bool(selected))
-        self.tangent_combo.setEnabled(bool(selected))
+            widget.setEnabled(single is not None and editable)
+        self.interpolation_combo.setEnabled(bool(selected) and editable)
+        self.tangent_combo.setEnabled(bool(selected) and editable)
         self.frame_selected_button.setEnabled(bool(selected))
         scale = 1.0
         if self.property_id:
@@ -543,6 +570,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             self.tangent_combo.setCurrentIndex(self.tangent_combo.findData(mode))
         if self._clip() is None:
             self.status_label.setText(i18n.translate("graph.no_clip"))
+        elif not editable:
+            self.status_label.setText(i18n.translate("graph.locked"))
         elif curve is not None and not curve:
             self.status_label.setText(i18n.translate("graph.not_animated"))
         else:
@@ -583,6 +612,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self.host.on_graph_edit(label, self.clip_id, record=record)
 
     def drag_keyframes(self, origin: dict, press: QPointF, point: QPointF) -> None:
+        if self._edit_refused():
+            return
         t_press, v_press = self.canvas.to_curve(press)
         t_now, v_now = self.canvas.to_curve(point)
         fps = float(getattr(self.host.project, "fps", 0.0) or 30.0)
@@ -609,6 +640,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self._edited(i18n.translate("history.keyframes.edit"), record=False)
 
     def drag_handle(self, keyframe, side: str, t: float, v: float) -> None:
+        if self._edit_refused():
+            return
         dt = t - keyframe.time_seconds
         if side == "out" and dt <= 1e-6 or side == "in" and dt >= -1e-6:
             return
@@ -629,6 +662,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             self._edited(label, record=True)
 
     def add_keyframe_at(self, local_time: float) -> None:
+        if self._edit_refused():
+            return
         clip = self._clip()
         if clip is None or self.property_id is None:
             return
@@ -642,6 +677,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self._edited(i18n.translate("history.keyframes.add"), record=True)
 
     def _on_interpolation(self, _index: int) -> None:
+        if self._edit_refused():
+            return
         refs = self.selected_refs()
         if not refs:
             return
@@ -652,6 +689,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             self._edited(i18n.translate("history.keyframes.interpolation"), record=True)
 
     def _on_tangent_mode(self, _index: int) -> None:
+        if self._edit_refused():
+            return
         mode = self.tangent_combo.currentData()
         refs = self.selected_refs()
         if not refs:
@@ -668,6 +707,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self._edited(i18n.translate("history.keyframes.tangents"), record=True)
 
     def _on_time_edited(self) -> None:
+        if self._edit_refused():
+            return
         refs = self.selected_refs()
         current = next((k for k in self.curve().keyframes if k.id in self.selected_ids()), None) if refs else None
         if current is None or abs(self.time_spin.value() - current.time_seconds) < 1e-7:
@@ -682,6 +723,8 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self._edited(i18n.translate("history.keyframes.move_one"), record=True)
 
     def _on_value_edited(self) -> None:
+        if self._edit_refused():
+            return
         refs = self.selected_refs()
         if len(refs) != 1:
             return

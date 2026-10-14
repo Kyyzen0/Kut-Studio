@@ -1331,6 +1331,7 @@ class MainWindow(
         if self.playhead_seconds != playhead:
             self.playhead_seconds = playhead
             panel.set_playhead_seconds(playhead)
+        self._refresh_graph_editor()          # un verrou posé ou levé (piste, calque, annulation) change l'éditeur de courbes
 
     def _selected_video_clip_id(self) -> str | None:
         """Identifiant du clip vidéo actuellement sélectionné, ou ``None``."""
@@ -2029,6 +2030,7 @@ class MainWindow(
         # Sélection d'un clip = seek vers son début sur la timeline.
         # L'aperçu est resynchronisé par ``seek_to_position``.
         self.seek_to_position(view.start)
+        self._refresh_graph_editor()
 
     # ------------------------------------------------------------------
     # Organisation avancée de la bibliothèque (tâche 25)

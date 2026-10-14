@@ -372,12 +372,16 @@ class AnimationMixin:
         self._after_animation_edit(clip_id, label, record=record)
 
     def graph_set_keyframe(self, ref: KeyframeRef, *, time: float | None = None, value=None) -> None:
+        if self._clip_edit_refused(ref.clip_id, visual_only=False, restore=False):
+            return
         if time is not None:
             set_keyframe_time(self.project, ref, time)
         if value is not None:
             set_keyframe_values(self.project, {ref: value})
 
     def graph_set_tangents(self, ref: KeyframeRef, **kwargs) -> None:
+        if self._clip_edit_refused(ref.clip_id, visual_only=False, restore=False):
+            return
         set_tangents(self.project, ref, **kwargs)
 
     def toggle_graph_editor(self) -> None:
