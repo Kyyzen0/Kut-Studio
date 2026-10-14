@@ -20,6 +20,7 @@ from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen, QPolygonF
 from core import mask_handles as geo
 from core.mograph_scene import box_corners
 from ui import mask_path_overlay as path_ui
+from ui.hit_shape import add_circle, add_polygon, new_hit_path
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
 from ui.viewer_overlay import HANDLE_RADIUS, ROTATE_DISTANCE
@@ -95,12 +96,12 @@ class MaskOverlayHelper:
 
     def shape_path(self) -> QPainterPath:
         """Zone cliquable ajoutée à celle du moniteur : l'intérieur de la forme et les poignées."""
-        path = QPainterPath()
+        path = new_hit_path()
         if self.geometry is None or not self.geometry.editable:
             return path
-        path.addPolygon(self.outline())
+        add_polygon(path, self.outline())
         for point in self.handles().values():
-            path.addEllipse(point, _HIT, _HIT)
+            add_circle(path, point, _HIT)
         return path
 
     def hit(self, point: QPointF) -> str | None:

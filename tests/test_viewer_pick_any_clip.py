@@ -179,9 +179,57 @@ def test_clicking_a_video_in_the_monitor_selects_it_without_moving_the_playhead(
     assert [cid for cid, _w, _b in overlay.layer_boxes] == ["v"]
     center = overlay.to_scene(640.0, 360.0)
     assert overlay._hit(center) == ("select", "v")
-    overlay.layer_clicked.emit("v")
+    _click_scene(window, 640.0 - 200.0, 360.0 - 100.0)       # vrai clic Qt (hors poignée d'ancrage au centre)
     assert window._primary_selected_id() == "v"
     assert window.playhead_seconds == pytest.approx(2.0)
     assert overlay.selection is not None and overlay.selection.clip_id == "v"
     # Une fois sélectionné, un clic au même endroit le déplace (geste inchangé).
     assert overlay._hit(overlay.to_scene(100.0, 100.0)) == ("move", "v")
+
+
+# -- de vrais clics sur la fenêtre principale (le défaut de #143 : la zone cliquable, pas le choix du clip) --------
+
+
+def _click_scene(window, canvas_x: float, canvas_y: float) -> None:
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    panel = window.preview_panel
+    scene_point = panel.overlay.to_scene(canvas_x, canvas_y)
+    pixel = panel.graphics_view.mapFromScene(scene_point)
+    QTest.mouseClick(panel.graphics_view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(pixel.x(), pixel.y()))
+
+
+def test_real_clicks_select_among_overlapping_full_frame_videos_and_a_graphic(window):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    window.project.tracks.append(Track("V2", "V2", "video", clips=[_video("v2", "V2", 0.0, 6.0)]))
+    graphics = Track("G1", "G1", "graphics")
+    window.project.tracks.append(graphics)
+    _text(window.project, graphics, "t")
+    window._timeline_index = None
+    window._reload_timeline_preserving_selection()
+    window.playhead_seconds = 2.0
+    window._refresh_viewer_graphics()
+    overlay = window.preview_panel.overlay
+    assert [cid for cid, _w, _b in overlay.layer_boxes][:2] == ["v", "v2"]
+    text_centre = next((w[4] + b[0] / 2 + 100.0, w[5] + b[1] / 2 + 60.0) for cid, w, b in overlay.layer_boxes if cid == "t")
+    # Deux vidéos plein cadre se recouvrent (nombre pair) : le clic doit quand même arriver à la surcouche.
+    pixel = window.preview_panel.graphics_view.mapFromScene(overlay.to_scene(10.0, 10.0))
+    assert overlay in window.preview_panel.graphics_view.items(pixel)
+    _click_scene(window, 10.0, 10.0)
+    assert window._primary_selected_id() == "v2"                       # la vidéo la plus haute de l'ordre de rendu
+    assert window.playhead_seconds == pytest.approx(2.0)
+    _click_scene(window, *text_centre)                                  # (hors du centre, qui est la poignée d'ancrage de la vidéo) recouvre aussi les deux vidéos : 3 formes
+    assert window._primary_selected_id() == "t"
+    assert window.playhead_seconds == pytest.approx(2.0)
+    _click_scene(window, 10.0, 710.0)                                   # hors du calque : la vidéo la plus haute
+    assert window._primary_selected_id() == "v2"
+    assert window.playhead_seconds == pytest.approx(2.0)
+    # Un clic hors du cadre (dans la vue) ne livre rien à la surcouche et ne change pas la sélection.
+    panel = window.preview_panel
+    outside = panel.graphics_view.mapFromScene(overlay.to_scene(-20.0, -20.0))
+    if panel.graphics_view.viewport().rect().contains(outside):
+        QTest.mouseClick(panel.graphics_view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(outside.x(), outside.y()))
+        assert window._primary_selected_id() == "v2"

@@ -41,6 +41,7 @@ from core.canvas_guides import (
 )
 from core.mograph_scene import Matrix, box_corners, mat_apply, mat_invert, map_box
 from ui.i18n import translate
+from ui.hit_shape import add_circle, add_polygon, new_hit_path
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
 
@@ -223,14 +224,14 @@ class ViewerOverlay(QGraphicsObject):
         return self.canvas_rect.adjusted(-4000, -4000, 4000, 4000)
 
     def shape(self) -> QPainterPath:
-        """Zone cliquable : seulement les poignées, les calques et les guides."""
-        path = QPainterPath()
+        """Zone cliquable : l'UNION des poignées, des calques, des guides et des masques (``ui/hit_shape.py``)."""
+        path = new_hit_path()
         if self.selection is not None:
-            path.addPolygon(self._box_polygon(self.selection))
+            add_polygon(path, self._box_polygon(self.selection))
             for point in self._handle_points(self.selection).values():
-                path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
+                add_circle(path, point, HANDLE_RADIUS + 3)
         for _clip_id, world, box in self.layer_boxes:
-            path.addPolygon(QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)]))
+            add_polygon(path, QPolygonF([self.to_scene(*p) for p in box_corners(world, *box)]))
         if self.show_guides:
             for guide in self.guides:
                 path.addRect(self._guide_rect(guide).adjusted(-3, -3, 3, 3))
@@ -239,9 +240,9 @@ class ViewerOverlay(QGraphicsObject):
         if self.pick_mode:
             path.addRect(self.canvas_rect)
         if self.window is not None and self.window.editable:
-            path.addPolygon(self._window_outline(self.window))
+            add_polygon(path, self._window_outline(self.window))
             for point in self._window_handles(self.window).values():
-                path.addEllipse(point, HANDLE_RADIUS + 3, HANDLE_RADIUS + 3)
+                add_circle(path, point, HANDLE_RADIUS + 3)
         path.addPath(self.masks.shape_path())
         return path
 
