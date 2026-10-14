@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Scripts** : les fenêtres d'étalonnage en courbe de Bézier (`add_color_window` avec `shape: "path"` et `nodes`, nouveau verbe `set_color_window_points`) ; valeurs hors bornes refusées, jamais ramenées, une seule étape d'annulation.
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
