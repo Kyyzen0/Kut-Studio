@@ -14,6 +14,18 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-14
+
+Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
+et le fait pivoter avec accrochage, on l'aligne sur le cadre, on le recadre et on dessine des masques, courbes de Bézier comprises. Le
+**mode script** couvre maintenant l'essentiel du montage (65 verbes : séquences imbriquées, multicam, étalonnage avancé, recadrage), et
+l'inspecteur respecte enfin les verrous de piste et de calque.
+
+**À savoir** : un projet qui contient un **masque en courbe de Bézier** s'enregistre en **format 18** et ne s'ouvre plus dans une version
+antérieure à la 0.6.0 (elle le refuse avec un message clair, sans perdre la courbe) ; tous les autres projets restent au format 17,
+octet pour octet comme avant. Quand le moniteur a le focus et qu'un calque éditable est sélectionné, les flèches **Gauche / Droite** le
+déplacent d'un pixel au lieu de changer d'image (sans calque éditable, ou avec Ctrl / Alt, elles gardent leur rôle).
+
 ### Added
 
 - **Recadrage non destructif.** Inspecteur → Compositing : quatre champs (gauche, haut, droite, bas, en %) et « Réinitialiser le recadrage » (aussi dans Calques). Le recadrage est un masque rectangle « Recadrage » rangé en dernier de la pile : modifiable ensuite, identique à l'aperçu et à l'export, et les verbes de script `set_crop` / `clear_crop` le pilotent.
@@ -573,7 +585,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
 [0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.1...v0.4.2
