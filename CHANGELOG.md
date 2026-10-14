@@ -14,6 +14,19 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-14
+
+Version de **correctifs et d'ouverture au mode script** : le moniteur affiche l'image en pause après une édition, le mode script sait poser des images fixes
+et dessiner des fenêtres d'étalonnage en courbe de Bézier, et la prise de verrou d'un projet ne plante plus sous Windows quand deux processus se croisent.
+
+**À savoir** : un calque d'image posé par script (`add_image_layer`) est un calque graphique, donc au-dessus de toute la vidéo ; il n'a ni transitions
+entre clips vidéo ni remappage de temps. Les masques de compositing d'un **clip** n'ont toujours pas de verbe de script ; seules les fenêtres d'étalonnage
+en courbe en ont (`add_color_window`, `set_color_window_points`).
+
+**Réserve** : la correction de l'image en pause (moniteur noir après une édition) est vérifiée avec un vrai lecteur jusqu'à la sortie du
+lecteur vidéo, mais **pas encore dans la fenêtre réelle sous Metal (macOS)**. Si le moniteur reste noir après une édition, Lecture puis Pause
+le fait revenir, et un signalement est le bienvenu.
+
 ### Added
 
 - **Scripts : images fixes.** Le verbe `add_image_layer` pose une image (PNG, JPEG, WebP, BMP, TIFF du dossier du script, lecture seule, dimensions et poids bornés, format vérifié sur le contenu) en **calque graphique** de durée donnée. C'est un calque : il passe au-dessus de toute la vidéo, sans transitions entre clips vidéo ni remappage de temps. Voir [docs/scripting.md](docs/scripting.md).
@@ -600,7 +613,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
 [0.5.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.4.2...v0.5.0
