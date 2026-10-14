@@ -23,6 +23,10 @@ et dessiner des fenêtres d'étalonnage en courbe de Bézier, et la prise de ver
 entre clips vidéo ni remappage de temps. Les masques de compositing d'un **clip** n'ont toujours pas de verbe de script ; seules les fenêtres d'étalonnage
 en courbe en ont (`add_color_window`, `set_color_window_points`).
 
+**Réserve** : la correction de l'image en pause (moniteur noir après une édition) est vérifiée avec un vrai lecteur jusqu'à la sortie du
+lecteur vidéo, mais **pas encore dans la fenêtre réelle sous Metal (macOS)**. Si le moniteur reste noir après une édition, Lecture puis Pause
+le fait revenir, et un signalement est le bienvenu.
+
 ### Added
 
 - **Scripts : images fixes.** Le verbe `add_image_layer` pose une image (PNG, JPEG, WebP, BMP, TIFF du dossier du script, lecture seule, dimensions et poids bornés, format vérifié sur le contenu) en **calque graphique** de durée donnée. C'est un calque : il passe au-dessus de toute la vidéo, sans transitions entre clips vidéo ni remappage de temps. Voir [docs/scripting.md](docs/scripting.md).
