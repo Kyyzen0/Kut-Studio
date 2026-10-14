@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Scripts** : les fenêtres d'étalonnage en courbe de Bézier (`add_color_window` avec `shape: "path"` et `nodes`, nouveau verbe `set_color_window_points`) ; valeurs hors bornes refusées, jamais ramenées, une seule étape d'annulation.
 
+### Changed
+
+- CI Windows : l'installation de FFmpeg réessaie Chocolatey puis se replie sur un build figé dont le SHA-256 est vérifié (`docs/ci-ffmpeg-windows.md`).
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne

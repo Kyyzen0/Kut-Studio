@@ -149,6 +149,8 @@ def test_every_action_in_every_workflow_is_pinned_to_a_full_commit_sha():
             match = re.match(r"^\s+(?:- )?uses: (\S+)(.*)$", line)
             if match is None:
                 continue
+            if match.group(1).startswith("./.github/actions/"):
+                continue  # action locale : versionnée avec le commit, rien à épingler
             found += 1
             assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", match.group(1)), f"{workflow.name} : {match.group(1)}"
             assert re.search(r"#\s*v\d+", match.group(2)), f"{workflow.name} : version en commentaire manquante ({line.strip()})"
