@@ -19,6 +19,7 @@ Toutes les commandes utilisent des icônes SVG cohérentes.
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSizeF, Qt, QUrl, Signal
@@ -460,7 +461,9 @@ class PreviewPanel(QWidget):
         if playing:
             self.playback_seeks += 1
         self.player.setPosition(target_ms)
-        if not playing and self.player.playbackState() == QMediaPlayer.StoppedState:
+        # Garde synchrone : jamais de pause() sur un fichier absent ou un lecteur en erreur (média invalide).
+        if (not playing and self.player.playbackState() == QMediaPlayer.StoppedState
+                and os.path.isfile(path) and self.player.error() == QMediaPlayer.NoError):
             # Un QMediaPlayer arrêté ne livre aucune image au QVideoSink après setSource/setPosition : le moniteur GPU
             # restait noir jusqu'au premier play/pause. En pause, chaque setPosition décode une image.
             self.player.pause()

@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 from render_probe import lavfi_video, needs_ffmpeg
@@ -21,10 +22,23 @@ pytestmark = needs_ffmpeg
 DEADLINE = 15.0  # généreux : runners Windows lents
 
 
-def _panel(qtbot) -> PreviewPanel:
-    panel = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
-    qtbot.addWidget(panel)
-    return panel
+def _release(panel) -> None:
+    """Arrête le lecteur et vide sa source avant la destruction différée (pas de décodage pendant le teardown)."""
+    try:
+        panel.player.stop()
+        panel.player.setSource(QUrl())
+    except RuntimeError:  # objet C++ déjà détruit
+        return
+    for _ in range(5):
+        QApplication.processEvents()
+
+
+@pytest.fixture
+def panel(qtbot):
+    widget = PreviewPanel(lambda: None, lambda: None, lambda _d: None, lambda: None, lambda: None)
+    qtbot.addWidget(widget)
+    yield widget
+    _release(widget)
 
 
 def _counter(panel: PreviewPanel) -> list[int]:
@@ -57,8 +71,7 @@ def _media(tmp_path, name: str):
     return lavfi_video(tmp_path / name, "testsrc2=d=2", size=(64, 36), fps=25, seconds=2.0)
 
 
-def test_preview_at_without_play_delivers_a_frame_and_pauses(qtbot, tmp_path):
-    panel = _panel(qtbot)
+def test_preview_at_without_play_delivers_a_frame_and_pauses(panel, tmp_path):
     count = _counter(panel)
     panel.preview_at(str(_media(tmp_path, "a.mp4")), 1.0)
     if not _wait(lambda: count[0] >= 1):
@@ -67,8 +80,7 @@ def test_preview_at_without_play_delivers_a_frame_and_pauses(qtbot, tmp_path):
     assert panel.player.playbackState() == QMediaPlayer.PausedState
 
 
-def test_each_step_of_a_source_change_delivers_a_frame(qtbot, tmp_path):
-    panel = _panel(qtbot)
+def test_each_step_of_a_source_change_delivers_a_frame(panel, tmp_path):
     count = _counter(panel)
     a, b = str(_media(tmp_path, "a.mp4")), str(_media(tmp_path, "b.mp4"))
     seen = 0
@@ -81,8 +93,7 @@ def test_each_step_of_a_source_change_delivers_a_frame(qtbot, tmp_path):
         seen = count[0]
 
 
-def test_seek_while_paused_delivers_a_frame_each_time(qtbot, tmp_path):
-    panel = _panel(qtbot)
+def test_seek_while_paused_delivers_a_frame_each_time(panel, tmp_path):
     count = _counter(panel)
     path = str(_media(tmp_path, "a.mp4"))
     panel.preview_at(path, 0.2)
@@ -92,8 +103,7 @@ def test_seek_while_paused_delivers_a_frame_each_time(qtbot, tmp_path):
     assert _wait(lambda: count[0] > before)
 
 
-def test_playing_branch_never_calls_pause(qtbot, tmp_path, monkeypatch):
-    panel = _panel(qtbot)
+def test_playing_branch_never_calls_pause(panel, tmp_path, monkeypatch):
     path = str(_media(tmp_path, "a.mp4"))
     panel.preview_at(path, 0.0)
     calls = []
@@ -103,13 +113,15 @@ def test_playing_branch_never_calls_pause(qtbot, tmp_path, monkeypatch):
     assert calls == []
 
 
-def test_invalid_or_missing_source_neither_crashes_nor_loops(qtbot, tmp_path):
-    panel = _panel(qtbot)
+def test_missing_source_is_never_paused(panel, tmp_path, monkeypatch):
+    # Le lecteur ne reçoit pas le chemin absent : un vrai QMediaPlayer journalise « Could not open media » depuis un
+    # thread de Qt Multimedia, ce qui plantait un worker xdist Linux (voir keep_preview_player_off_the_disk).
+    calls = []
+    monkeypatch.setattr(panel.player, "setSource", lambda *_a, **_k: None)
+    monkeypatch.setattr(panel.player, "pause", lambda: calls.append("pause"))
     panel.preview_at(str(tmp_path / "absent.mp4"), 3.0)
     panel.preview_at(str(tmp_path / "absent.mp4"), 0.0)
-    for _ in range(20):
-        QApplication.processEvents()
-    assert panel.player.playbackState() in (QMediaPlayer.PausedState, QMediaPlayer.StoppedState)
+    assert calls == []
 
 
 def test_paused_preview_keeps_transport_state_in_the_window(qtbot, monkeypatch, tmp_path):
