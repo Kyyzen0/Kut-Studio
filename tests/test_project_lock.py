@@ -109,6 +109,99 @@ def test_a_lock_of_a_vanished_process_is_stale_and_taken_over(project_file):
     assert owner is not None and owner.pid == ME
 
 
+def _flaky_read(monkeypatch, outcomes):
+    """``Path.read_bytes`` rend, tour à tour, ``outcomes`` (une exception est levée) puis lit pour de bon ; rend le compteur d'appels."""
+    real = Path.read_bytes
+    calls = {"n": 0}
+
+    def fake(self):
+        if self.name.endswith(".kut.lock") and calls["n"] < len(outcomes):
+            outcome = outcomes[calls["n"]]
+            calls["n"] += 1
+            raise outcome
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", fake)
+    return calls
+
+
+def test_a_transient_permission_error_reading_the_lock_is_retried(project_file, monkeypatch):
+    """Windows : lire le verrou pendant qu'un autre le supprime ou le remplace lève PermissionError ; on réévalue, on ne plante pas."""
+    _write_owner(project_file, pid=OTHER)
+    calls = _flaky_read(monkeypatch, [PermissionError(13, "Accès refusé")] * 3)
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me"}))
+    stale = lock.acquire()
+    assert calls["n"] == 3 and stale is not None and stale.pid == OTHER
+
+
+def test_a_lock_that_vanishes_while_unreadable_is_simply_taken(project_file, monkeypatch):
+    _write_owner(project_file, pid=OTHER)
+    real = Path.read_bytes
+    state = {"done": False}
+
+    def fake(self):
+        if self.name.endswith(".kut.lock") and not state["done"]:
+            state["done"] = True
+            self.unlink()                                # l'autre processus l'a supprimé pendant notre lecture
+            raise PermissionError(13, "suppression en attente")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", fake)
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me"}))
+    assert lock.acquire() is None
+    owner = read_lock(project_file)
+    assert owner is not None and owner.pid == ME
+
+
+def test_a_persistent_permission_error_refuses_cleanly_and_does_not_loop(project_file, monkeypatch):
+    _write_owner(project_file, pid=OTHER)
+    monkeypatch.setattr("core.project_lock._TRANSIENT_READ_SECONDS", 0.05)
+    calls = _flaky_read(monkeypatch, [PermissionError(13, "Accès refusé")] * 10_000)
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me"}))
+    started = time.monotonic()
+    with pytest.raises(ProjectLockedError) as raised:
+        lock.acquire()
+    assert raised.value.verdict is LockVerdict.UNKNOWN and time.monotonic() - started < 2.0 and calls["n"] < 10_000
+    assert lock_file_for(project_file).exists()          # le verrou de l'autre n'a pas été touché
+
+
+def test_release_survives_a_persistent_permission_error(project_file, monkeypatch):
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me"}))
+    lock.acquire()
+    monkeypatch.setattr("core.project_lock._TRANSIENT_READ_SECONDS", 0.05)
+    _flaky_read(monkeypatch, [PermissionError(13, "Accès refusé")] * 10_000)
+    lock.release()                                       # ne lève pas
+
+
+def test_a_permission_error_creating_next_to_a_pending_delete_is_a_lock_not_a_crash(project_file, monkeypatch):
+    """Windows : créer en O_EXCL un fichier dont la suppression est en attente lève PermissionError au lieu de FileExistsError."""
+    _write_owner(project_file, pid=OTHER, token="live")
+    real_open = os.open
+
+    def fake_open(path, flags, mode=0o777):
+        if str(path).endswith(".kut.lock") and flags & os.O_EXCL:
+            raise PermissionError(13, "Accès refusé")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", fake_open)
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me", OTHER: "live"}))
+    with pytest.raises(ProjectLockedError):
+        lock.acquire()
+
+
+def test_a_permission_error_creating_in_a_folder_without_a_lock_stays_an_oserror(project_file, monkeypatch):
+    real_open = os.open
+
+    def fake_open(path, flags, mode=0o777):
+        if str(path).endswith(".kut.lock") and flags & os.O_EXCL:
+            raise PermissionError(13, "Accès refusé")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", fake_open)
+    with pytest.raises(PermissionError):
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+
+
 def test_a_reused_pid_does_not_pass_for_the_old_owner(project_file):
     """Le PID existe, mais c'est un autre processus (autre heure de début) : le propriétaire est mort, le verrou est périmé."""
     _write_owner(project_file, pid=OTHER, token="ancien")

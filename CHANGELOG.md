@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows : ouvrir un projet pendant qu'un autre processus supprime ou remplace son fichier de verrou ne fait plus planter la prise de verrou ; la lecture est retentée un court instant, puis le projet est refusé proprement si l'état reste indéterminé.
+
 ## [0.6.0] - 2026-10-14
 
 Cette version rend le **moniteur beaucoup plus direct** : on y sélectionne n'importe quel clip d'un clic, on le déplace, le redimensionne
