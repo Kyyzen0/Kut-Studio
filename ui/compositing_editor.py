@@ -30,10 +30,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.blend_modes import BLEND_MODES, blend_label_key
+from core.clip_crop import CROP_MASK_ID, crop_of_compositing, is_custom_crop, keep_crop_last, with_crop
 from core.compositing import MIN_CHROMA_TOLERANCE, ChromaKey, Compositing, Mask, MaskMode, MaskShape
 from ui import i18n
 from ui.adaptive_layout import FlowLayout
 from ui.design_system import Spacing
+from ui.properties_widgets.crop_editor import CropEditor
 
 # (valeur, clé i18n du libellé) : traduit à l'affichage, jamais à l'import.
 _SHAPES = (
@@ -69,6 +71,8 @@ class CompositingEditor(QGroupBox):
         self.setStyleSheet(group_style)
         self._value = Compositing()
         self._updating = False
+        self._crop_animated = False
+        self._crop_editable = True
         root = QVBoxLayout(self)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
@@ -80,6 +84,11 @@ class CompositingEditor(QGroupBox):
         for mode in BLEND_MODES:
             self.blend_mode.addItem(i18n.translate(blend_label_key(mode)), mode.value)
         form.addRow(i18n.translate("mograph.compositing.blend"), self.blend_mode)
+
+        # --- Recadrage : un masque rectangle généré (core/clip_crop.py), visible dans la pile ci-dessous -------------
+        self.crop_editor = CropEditor()
+        self.crop_editor.crop_changed.connect(self._crop_edited)
+        root.addWidget(self.crop_editor)
 
         # --- Pile de masques -------------------------------------------------------------------
         add_row = FlowLayout(spacing=Spacing.xs)  # trois contrôles : à la ligne plutôt qu'au-delà de l'inspecteur
@@ -165,7 +174,9 @@ class CompositingEditor(QGroupBox):
         """Piste ou calque verrouillé, clip non visuel : la pile reste lisible mais rien ne se modifie."""
         self.setEnabled(bool(editable))
 
-    def set_value(self, value):
+    def set_value(self, value, crop_animated: bool = False, crop_editable: bool = True):
+        self._crop_animated = bool(crop_animated)
+        self._crop_editable = bool(crop_editable)
         self._updating = True
         try:
             self._value = value if isinstance(value, Compositing) else Compositing()
@@ -179,16 +190,24 @@ class CompositingEditor(QGroupBox):
             self._fill_mask_list(row)
         finally:
             self._updating = False
+        self._sync_crop_editor()
         self._refresh_mask_widgets()
+
+    def _sync_crop_editor(self) -> None:
+        crop = crop_of_compositing(self._value)
+        self.crop_editor.set_crop(crop, animated=self._crop_animated and crop is not None, custom=is_custom_crop(self._value),
+                                  locked=not self._crop_editable)
+
+    def _mask_label(self, mask: Mask, index: int) -> str:
+        name = i18n.translate("crop.mask_name") if mask.id == CROP_MASK_ID else mask.name
+        label = f"{name or i18n.translate('mograph.compositing.mask_name', index=index)} · {i18n.translate(dict(_SHAPES)[mask.shape])} · {i18n.translate(dict(_MODES)[mask.mode])}"
+        return label + (i18n.translate("mograph.compositing.inverted_suffix") if mask.inverted else "")
 
     def _fill_mask_list(self, row: int) -> None:
         self.mask_list.blockSignals(True)
         self.mask_list.clear()
         for index, mask in enumerate(self._value.masks, start=1):
-            label = f"{mask.name or i18n.translate('mograph.compositing.mask_name', index=index)} · {i18n.translate(dict(_SHAPES)[mask.shape])} · {i18n.translate(dict(_MODES)[mask.mode])}"
-            if mask.inverted:
-                label += i18n.translate("mograph.compositing.inverted_suffix")
-            QListWidgetItem(label, self.mask_list)
+            QListWidgetItem(self._mask_label(mask, index), self.mask_list)
         count = len(self._value.masks)
         if count:
             self.mask_list.setCurrentRow(min(max(row, 0), count - 1))
@@ -224,10 +243,11 @@ class CompositingEditor(QGroupBox):
 
     def _append_mask(self):
         mask = Mask(shape=MaskShape(self.mask_shape.currentData()))
-        self._value = replace(self._value, masks=self._value.masks + (mask,))
+        # Le recadrage reste en dernier : un masque « add » placé après lui s'y ajouterait au lieu d'être restreint.
+        self._value = replace(self._value, masks=keep_crop_last(self._value.masks + (mask,)))
         self._updating = True
         try:
-            self._fill_mask_list(len(self._value.masks) - 1)
+            self._fill_mask_list(self._value.masks.index(mask))
         finally:
             self._updating = False
         self._refresh_mask_widgets()
@@ -242,6 +262,19 @@ class CompositingEditor(QGroupBox):
         self._updating = True
         try:
             self._fill_mask_list(row - 1)
+        finally:
+            self._updating = False
+        self._sync_crop_editor()
+        self._refresh_mask_widgets()
+        self._emit()
+
+    def _crop_edited(self, crop) -> None:
+        if self._updating:
+            return
+        self._value = with_crop(self._value, crop)
+        self._updating = True
+        try:
+            self._fill_mask_list(self.mask_list.currentRow())
         finally:
             self._updating = False
         self._refresh_mask_widgets()
@@ -266,8 +299,9 @@ class CompositingEditor(QGroupBox):
         self._value = replace(self._value, masks=masks)
         item = self.mask_list.item(row)
         if item is not None:
-            label = f"{updated.name or i18n.translate('mograph.compositing.mask_name', index=row + 1)} · {i18n.translate(dict(_SHAPES)[updated.shape])} · {i18n.translate(dict(_MODES)[updated.mode])}"
-            item.setText(label + (i18n.translate("mograph.compositing.inverted_suffix") if updated.inverted else ""))
+            item.setText(self._mask_label(updated, row + 1))
+        if updated.id == CROP_MASK_ID:
+            self._sync_crop_editor()
         self._emit()
 
     def _emit(self, *_):

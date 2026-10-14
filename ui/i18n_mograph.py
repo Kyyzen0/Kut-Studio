@@ -283,6 +283,37 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
         "This layer cannot be moved (its parent is collapsed).",
         "Esta capa no se puede mover (su padre está colapsado).",
     ),
+    # --- Recadrage non destructif (ADR-0006, étape 2) ------------------------------------------------------------------
+    "crop.title": _t("Recadrage", "Crop", "Recorte"),
+    "crop.mask_name": _t("Recadrage", "Crop", "Recorte"),
+    "crop.left": _t("Gauche", "Left", "Izquierda"),
+    "crop.top": _t("Haut", "Top", "Arriba"),
+    "crop.right": _t("Droite", "Right", "Derecha"),
+    "crop.bottom": _t("Bas", "Bottom", "Abajo"),
+    "crop.tooltip.left": _t("Part du cadre coupée à gauche (0 à 95 %).", "Share of the frame cut on the left (0 to 95%).", "Parte del encuadre recortada a la izquierda (0 a 95 %)."),
+    "crop.tooltip.top": _t("Part du cadre coupée en haut (0 à 95 %).", "Share of the frame cut at the top (0 to 95%).", "Parte del encuadre recortada arriba (0 a 95 %)."),
+    "crop.tooltip.right": _t("Part du cadre coupée à droite (0 à 95 %).", "Share of the frame cut on the right (0 to 95%).", "Parte del encuadre recortada a la derecha (0 a 95 %)."),
+    "crop.tooltip.bottom": _t("Part du cadre coupée en bas (0 à 95 %).", "Share of the frame cut at the bottom (0 to 95%).", "Parte del encuadre recortada abajo (0 a 95 %)."),
+    "crop.reset": _t("Réinitialiser le recadrage", "Reset crop", "Restablecer el recorte"),
+    "crop.reset_short": _t("Réinitialiser", "Reset", "Restablecer"),
+    "crop.reset_tooltip": _t(
+        "Retire le masque « Recadrage » ; les autres masques restent.",
+        "Removes the \"Crop\" mask; other masks are kept.",
+        "Quita la máscara «Recorte»; las demás máscaras se conservan.",
+    ),
+    "crop.animated": _t(
+        "Le recadrage est animé : modifiez ses images-clés, ou réinitialisez-le.",
+        "The crop is animated: edit its keyframes, or reset it.",
+        "El recorte está animado: edite sus fotogramas clave o restablézcalo.",
+    ),
+    "crop.custom": _t(
+        "Le masque « Recadrage » a été modifié dans la pile : réinitialisez-le pour utiliser ces champs.",
+        "The \"Crop\" mask was edited in the stack: reset it to use these fields.",
+        "La máscara «Recorte» se editó en la pila: restablézcala para usar estos campos.",
+    ),
+    "shortcuts.command.layer_reset_crop": _t("Réinitialiser le recadrage", "Reset crop", "Restablecer el recorte"),
+    "menu.item.reset_crop": _t("Réinitialiser le recadrage", "Reset crop", "Restablecer el recorte"),
+    "history.layer.reset_crop": _t("Réinitialiser le recadrage", "Reset crop", "Restablecer el recorte"),
 }
 
 __all__ = ["MOGRAPH_TRANSLATIONS"]

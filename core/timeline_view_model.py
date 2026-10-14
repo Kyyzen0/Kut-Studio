@@ -18,6 +18,7 @@ from __future__ import annotations
 import zlib
 from dataclasses import dataclass
 
+from .clip_crop import crop_is_animated
 from .project_model import Clip, Project
 from .time_map import speed_keyframes
 
@@ -115,6 +116,8 @@ class TimelineClipView:
     # --- Composition nodale ---
     # Nombre de nœuds de la composition du clip (``0`` : clip ordinaire). La timeline la marque.
     composition_nodes: int = 0
+    # Le masque de recadrage (``core/clip_crop.py``) porte des images-clés : l'inspecteur ne le pilote plus par ses quatre champs.
+    crop_animated: bool = False
 
     @property
     def is_nested(self) -> bool:
@@ -234,6 +237,7 @@ def build_clip_views(project: Project) -> list[TimelineClipView]:
                     angle_color_index=angle_color,
                     speed_points=speed_keyframes(clip),
                     composition_nodes=len(clip.composition.graph.nodes) if clip.composition is not None else 0,
+                    crop_animated=crop_is_animated(clip),
                 )
             )
     return views
