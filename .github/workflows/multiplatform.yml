@@ -46,8 +46,7 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install ffmpeg --no-progress -y
+        uses: ./.github/actions/install-ffmpeg-windows
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip -r requirements-dev.txt
