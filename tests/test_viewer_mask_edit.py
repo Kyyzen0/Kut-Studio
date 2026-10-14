@@ -514,3 +514,20 @@ def test_selecting_a_duplicate_leaves_mask_mode_and_going_back_does_not_restore_
     _select_clip(window, "v")
     assert overlay.masks.geometry is None                                      # le mode n'est pas rétabli tout seul
     assert overlay.selection is not None and overlay.selection.clip_id == "v"
+
+
+def test_clearing_the_crop_while_editing_it_in_the_monitor_leaves_mask_mode(qtbot):
+    """Le recadrage (#146) est un masque : vider ses champs le supprime et doit sortir du mode masque (fusion #147)."""
+    from core.clip_crop import CROP_MASK_ID, Crop, with_crop
+    from core.compositing import Compositing
+    from ui.compositing_editor import CompositingEditor
+
+    editor = CompositingEditor("")
+    qtbot.addWidget(editor)
+    editor.set_value(with_crop(Compositing(), Crop(left=0.1)))
+    seen = []
+    editor.mask_edit_changed.connect(seen.append)
+    editor._set_edit(CROP_MASK_ID)
+    assert seen == [CROP_MASK_ID]
+    editor._crop_edited(None)
+    assert editor._edit_id == "" and seen[-1] == ""

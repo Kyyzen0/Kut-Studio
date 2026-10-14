@@ -306,6 +306,8 @@ class CompositingEditor(QGroupBox):
         self._sync_crop_editor()
         self._refresh_mask_widgets()
         self._emit()
+        if self._edit_id and self._value.mask_by_id(self._edit_id) is None:
+            self._set_edit("")
 
     def _crop_edited(self, crop) -> None:
         if self._updating:
