@@ -189,6 +189,25 @@ def test_a_permission_error_creating_next_to_a_pending_delete_is_a_lock_not_a_cr
         lock.acquire()
 
 
+def test_a_transient_permission_error_creating_is_retried_until_the_name_is_free(project_file, monkeypatch):
+    """Windows : le nom en suppression en attente finit par se libérer ; ``exists()`` peut répondre ``False`` entre-temps."""
+    real_open = os.open
+    calls = {"n": 0}
+
+    def fake_open(path, flags, mode=0o777):
+        if str(path).endswith(".kut.lock") and flags & os.O_EXCL:
+            calls["n"] += 1
+            if calls["n"] <= 3:
+                raise PermissionError(13, "Accès refusé")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", fake_open)
+    lock = ProjectLock(project_file, ops=FakeOps({ME: "me"}))
+    assert lock.acquire() is None
+    assert calls["n"] == 4
+    assert read_lock(project_file).pid == ME
+
+
 def test_a_permission_error_creating_in_a_folder_without_a_lock_stays_an_oserror(project_file, monkeypatch):
     real_open = os.open
 
