@@ -45,6 +45,7 @@ from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
 from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
+from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
 from ..multicam import is_multicam_clip
@@ -355,19 +356,46 @@ def _set_track_visible(a: Mapping[str, Any]) -> Operation:
     return lambda p: set_track_visible(p, _track_id(p, a["track"]), bool(a["visible"]))
 
 
+def _graphics_track(project: Project, selector: Any) -> Any:
+    """La piste de graphiques visée (``None`` : la première éditable, voir ``add_graphic_clip``) ; refuse un autre genre ou une piste verrouillée."""
+    track = next(item for item in project.tracks if item.id == _track_id(project, selector)) if selector is not None else None
+    if track is not None and track.type != "graphics":
+        raise ValueError(f"La piste '{track.id}' est une piste '{track.type}' : un calque graphique va sur une piste de graphiques.")
+    if track is not None and track.locked:
+        raise ValueError(f"La piste '{track.id}' est verrouillée.")
+    return track
+
+
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        track = next(item for item in project.tracks if item.id == _track_id(project, a["track"])) if a.get("track") is not None else None
-        if track is not None and track.type != "graphics":
-            raise ValueError(f"La piste '{track.id}' est une piste '{track.type}' : un calque graphique va sur une piste de graphiques.")
-        if track is not None and track.locked:
-            raise ValueError(f"La piste '{track.id}' est verrouillée.")
+        track = _graphics_track(project, a.get("track"))
         clip = add_graphic_clip(
             project, a["graphic"], timeline_start=float(a["at"]), duration=float(a["duration"]),
             shape=a.get("shape", ShapeKind.RECTANGLE.value), track=track, clip_id=a.get("id"),
         )
         if a.get("text") is not None:
             update_graphic(clip, "text", a["text"])
+        return clip
+
+    return operation
+
+
+def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
+    def operation(project: Project) -> Any:
+        if context is None:
+            raise ValueError("add_image_layer lit un fichier : l'appelant doit fournir le dossier du script (contexte de fichiers).")
+        track = _graphics_track(project, a.get("track"))
+        path = context.resolve_media(a["path"])
+        width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
+        clip = add_graphic_clip(
+            project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
+            track=track, clip_id=a.get("id"),
+        )
+        fitted = fitted_size(width, height, project.width, project.height)
+        update_graphic(clip, "width", fitted[0])
+        update_graphic(clip, "height", fitted[1])
+        asset = next(item for item in project.media_assets if item.id == clip.asset_id)
+        asset.width, asset.height = fitted
         return clip
 
     return operation
@@ -1277,6 +1305,11 @@ VERBS: dict[str, Verb] = {
               Param("shape", Kind.ENUM, "Forme (pour « shape »).", required=False, choices=tuple(item.value for item in ShapeKind)),
               Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
              _add_graphic, creates="clip", group="graphics"),
+        Verb("add_image_layer", "Pose une image fixe (PNG, JPEG, WebP…, dans le dossier du script) en calque graphique, au-dessus de la vidéo.",
+             (Param("path", Kind.PATH, "Chemin de l'image, relatif au dossier du script."), _AT,
+              Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
+              Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
+             _add_image_layer, creates="clip", group="graphics", needs_context=True),
         Verb("set_graphic", "Modifie l'apparence d'un calque graphique (au moins un champ).",
              (_CLIP, Param("text", Kind.STRING, "Texte.", required=False, max_length=1000, multiline=True),
               Param("fill_color", Kind.COLOR, _COLOR_DOC, required=False),

@@ -372,4 +372,4 @@ def test_track_inserts_are_for_audio_and_video_tracks_only():
 
 
 def test_only_file_reading_verbs_need_the_file_context():
-    assert [name for name, verb in VERBS.items() if verb.needs_context] == ["import_media", "import_lut"]
+    assert [name for name, verb in VERBS.items() if verb.needs_context] == ["import_media", "add_image_layer", "import_lut"]

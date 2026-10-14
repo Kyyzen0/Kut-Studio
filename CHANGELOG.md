@@ -16,10 +16,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Scripts : images fixes.** Le verbe `add_image_layer` pose une image (PNG, JPEG, WebP, BMP, TIFF du dossier du script, lecture seule, dimensions et poids bornés, format vérifié sur le contenu) en **calque graphique** de durée donnée. C'est un calque : il passe au-dessus de toute la vidéo, sans transitions entre clips vidéo ni remappage de temps. Voir [docs/scripting.md](docs/scripting.md).
 - **Scripts** : les fenêtres d'étalonnage en courbe de Bézier (`add_color_window` avec `shape: "path"` et `nodes`, nouveau verbe `set_color_window_points`) ; valeurs hors bornes refusées, jamais ramenées, une seule étape d'annulation.
 
 ### Fixed
 
+- Moniteur : l'image s'affiche tout de suite après une édition ou un clic sur la règle, sans devoir passer par Lecture puis Pause.
 - Windows : ouvrir un projet pendant qu'un autre processus supprime ou remplace son fichier de verrou ne fait plus planter la prise de verrou ; la lecture est retentée un court instant, puis le projet est refusé proprement si l'état reste indéterminé.
 
 ### Changed
