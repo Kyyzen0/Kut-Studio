@@ -456,7 +456,9 @@ class MotionGraphicsMixin:
 
         values = {name: getattr(evaluated.transform, name) for name in TRANSFORM_PROPERTY_NAMES}
         values.update(self._user_transform_values(clip_id, t))
-        editable = not bool(getattr(selected, "locked", False))
+        from core.compositing_guard import clip_edit_refusal
+
+        editable = clip_edit_refusal(self.project, clip_id) is None      # piste ET calque verrouillés, comme l'inspecteur
         overlay.set_selection(SelectionGeometry(
             clip_id=clip_id, world=evaluated.world, parent_world=parent_world, box=evaluated.box,
             values=values, editable=editable,
@@ -574,6 +576,8 @@ class MotionGraphicsMixin:
         from core.timeline_operations import find_clip
         from core.visual_effects import STATIC_TRANSFORM_PROPERTIES
 
+        if self._clip_edit_refused(clip_id, restore=False):     # moniteur : la poignée ne doit pas écrire, même si elle est restée affichée
+            return False
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
@@ -714,6 +718,8 @@ class MotionGraphicsMixin:
     # ------------------------------------------------------------------
 
     def _on_advanced_transform_changed(self, clip_id: str, name: str, value) -> None:
+        if self._clip_edit_refused(clip_id):
+            return
         if not bool(getattr(self, "_transform_session_active", False)):
             self._finalize_graphic_history()
         if self._apply_property_values(clip_id, {name: value}):
@@ -724,6 +730,8 @@ class MotionGraphicsMixin:
         from core import keyframe_editing
         from core.timeline_operations import find_clip
 
+        if self._clip_edit_refused(clip_id):
+            return
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:

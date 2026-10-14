@@ -963,6 +963,7 @@ class ProjectPanel(QWidget):
         *,
         has_video_clip: bool,
         clip_has_effects: bool,
+        clip_editable: bool = True,
     ) -> None:
         """Synchronise l'état « clip sélectionné » avec la bibliothèque.
 
@@ -973,6 +974,7 @@ class ProjectPanel(QWidget):
         self.effects_view.set_clip_context(
             has_video_clip=has_video_clip,
             clip_has_effects=clip_has_effects,
+            clip_editable=clip_editable,
         )
 
     def selected_effect_preset_id(self) -> str | None:

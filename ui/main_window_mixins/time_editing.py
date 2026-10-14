@@ -14,6 +14,7 @@ from dataclasses import replace
 
 from PySide6.QtCore import QTimer
 
+from core.compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from core.flow_analysis import AnalysisState, FlowAnalysisJob
 from core.frame_interpolation import plan_interpolation
 from core.optical_flow import BackendPreference, BackendUnavailable, select_backend
@@ -101,6 +102,9 @@ class TimeEditingMixin:
         labels: list[str] = []
         refused: list[Exception] = []
         for target in targets:
+            if clip_edit_refusal(self.project, target, visual_only=False) == REFUSAL_LAYER_LOCKED:
+                refused.append(ValueError(translate("edit.refused.layer_locked")))     # la piste verrouillée l'est déjà par le modèle
+                continue
             try:
                 labels.append(operate(target))
             except (KeyError, ValueError) as error:

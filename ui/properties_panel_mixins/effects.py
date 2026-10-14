@@ -151,13 +151,14 @@ class EffectsMixin:
         button.clicked.connect(lambda _checked=False: handler())
         return button
 
-    def update_effects_from_clip(self, effects, track_type=None) -> None:
+    def update_effects_from_clip(self, effects, track_type=None, editable: bool = True) -> None:
         """Reconstruit la section Effets depuis l'état du ``Project``.
 
         Args:
             effects: liste des :class:`ClipEffect` du clip sélectionné.
             track_type: type de piste (``"video"``, ``"audio"``...). Toute
                 valeur autre que ``"video"`` affiche un état non éditable.
+            editable: ``False`` (piste ou calque verrouillé) désactive le groupe, liste toujours lisible.
         """
         self._current_effects = list(effects or [])
         if track_type != "video":
@@ -183,7 +184,7 @@ class EffectsMixin:
         self.effects_list.setVisible(True)
         self.effect_buttons_row.setVisible(True)
         self.effect_parameters_container.setVisible(True)
-        self.effects_group.setEnabled(True)
+        self.effects_group.setEnabled(bool(editable))
         self._populate_effects_list()
         self._refresh_effect_catalog()
 

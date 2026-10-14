@@ -258,16 +258,13 @@ class SubtitlesGraphicsMixin:
         """Applique une propriété intrinsèque du calque avec Undo/Redo."""
         from core.graphics import update_graphic
 
+        clip, track = self._find_clip_and_track(clip_id)
+        if clip is None or track is None or track.type != "graphics":
+            return
+        if self._clip_edit_refused(clip_id):                  # piste ET calque verrouillés
+            return
         if not bool(getattr(self, "_graphic_session_active", False)):
             self._finalize_transform_session()
-        clip, track = self._find_clip_and_track(clip_id)
-        if (
-            clip is None
-            or track is None
-            or track.type != "graphics"
-            or bool(track.locked)
-        ):
-            return
         try:
             before = clip.graphic
             # Propriété animée (corps, approche…) : la valeur saisie devient

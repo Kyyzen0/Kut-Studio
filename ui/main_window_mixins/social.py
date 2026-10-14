@@ -441,6 +441,8 @@ class SocialMixin:
         """Preset d'animation de texte (pop-in, glissé, mot par mot, karaoké…) sur un calque, depuis le début."""
         from core.text_animations import apply_text_animation
 
+        if self._clip_edit_refused(clip_id):
+            return
         try:
             clip = find_clip(self.project, clip_id)
             apply_text_animation(clip, preset)
@@ -457,6 +459,8 @@ class SocialMixin:
         from core.audio_sync import AudioSyncError
         from core.word_timing import word_times_from_voice
 
+        if self._clip_edit_refused(clip_id):
+            return
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:

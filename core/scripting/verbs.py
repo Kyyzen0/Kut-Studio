@@ -41,6 +41,7 @@ from ..color_windows import forget_windows, window_ids
 from ..compositing import Mask, MaskMode, MaskShape, _MASK_BOUNDS
 from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
+from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_probe import MediaProbeError, probe_media
@@ -217,6 +218,8 @@ def _editable_clip(project: Project, selector: str, *, track_types: tuple[str, .
     clip_id = _clip_id(project, selector)
     owner = _owner_track(project, clip_id)
     _require_unlocked(owner)
+    if clip_edit_refusal(project, clip_id, visual_only=False) == REFUSAL_LAYER_LOCKED:     # la même règle que l'inspecteur
+        raise ValueError(f"Le calque '{clip_id}' est verrouillé.")
     if track_types and owner.type not in track_types:
         raise ValueError(f"Le clip '{clip_id}' est sur une piste '{owner.type}' : cette opération vise {' ou '.join(track_types)}.")
     return clip_id

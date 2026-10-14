@@ -268,6 +268,22 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
         "This clip is not visual: masks, blending and keying do not apply to it.",
         "Este clip no es visual: las máscaras, la fusión y el croma no se aplican.",
     ),
+    "edit.refused.missing": _t("Ce clip n'existe plus.", "This clip no longer exists.", "Este clip ya no existe."),
+    "edit.refused.track_locked": _t(
+        "La piste est verrouillée : modification refusée.",
+        "The track is locked: change refused.",
+        "La pista está bloqueada: cambio rechazado.",
+    ),
+    "edit.refused.layer_locked": _t(
+        "Ce calque est verrouillé : modification refusée.",
+        "This layer is locked: change refused.",
+        "Esta capa está bloqueada: cambio rechazado.",
+    ),
+    "edit.refused.not_visual": _t(
+        "Ce clip n'est pas visuel : ce réglage ne s'y applique pas.",
+        "This clip is not visual: this setting does not apply to it.",
+        "Este clip no es visual: este ajuste no se aplica.",
+    ),
     "mograph.align.nested": _t(
         "Un clip de séquence imbriquée ne s'aligne pas ici (il n'a pas de poignées dans le moniteur).",
         "A nested-sequence clip cannot be aligned here (it has no handles in the monitor).",
