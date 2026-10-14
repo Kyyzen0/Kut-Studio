@@ -63,7 +63,7 @@ def _underlay_pool() -> ThreadPoolExecutor:
     return _UNDERLAY_POOL
 
 
-def _decode_underlay_frame(path: str, seconds: float):
+def _decode_underlay_frame(path: str, seconds: float, color_override: str = ""):
     """Décodage hors UI : un seul fil + poignées persistantes (ADR-0001 / revue Codex)."""
     from core.media_io import open_media
 
@@ -81,7 +81,7 @@ def _decode_underlay_frame(path: str, seconds: float):
             except Exception:  # noqa: BLE001
                 LOGGER.debug("Fermeture décodeur underlay en échec", exc_info=True)
     try:
-        return handle.decode_at(seconds)
+        return handle.decode_at(seconds, color_override)
     except Exception:
         # Poignée morte : rouvre une fois.
         LOGGER.debug("Décodage underlay en échec sur poignée cached pour %s : réouverture", path, exc_info=True)
@@ -91,7 +91,7 @@ def _decode_underlay_frame(path: str, seconds: float):
             LOGGER.debug("Fermeture de la poignée underlay morte en échec pour %s", path, exc_info=True)
         _UNDERLAY_HANDLES.pop(path, None)
         with open_media(path) as fresh:
-            return fresh.decode_at(seconds)
+            return fresh.decode_at(seconds, color_override)
 
 
 class _UnderlayDecodeBridge(QObject):
@@ -236,6 +236,7 @@ class PreviewPanel(QWidget):
         self._gpu_source_size: tuple[int, int] | None = None
         self._gpu_adjustments: tuple = ()
         self._gpu_grade = None
+        self._gpu_main_color: tuple[str, str] = ("", "auto")      # (matrice effective, choix) du média affiché
         self._gpu_windows: dict[str, tuple[str, object]] = {}
         self._gpu_grade_split = 0.0          # comparaison avant / après (page Couleur) : part gauche sans étalonnage
         # Calques graphiques à mode de fusion (Addition, Écran…) composés par le GPU : (clé de contenu, image, mode).
@@ -435,6 +436,7 @@ class PreviewPanel(QWidget):
         self._sync_empty_state()
         self._library_preview_path = path
         self._timeline_preview_path = None
+        self.set_source_color("")        # un média de la bibliothèque : la matrice de l'image décodée (étiquette, sinon taille)
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
@@ -915,6 +917,8 @@ class PreviewPanel(QWidget):
             self.gpu_failed.emit("init", str(error))
             return False
         self.gpu_view = view
+        if self._gpu_main_color[0]:
+            view.set_source_color("main", *self._gpu_main_color)    # la matrice connue avant la création du moniteur
         container = self.graphics_view.parentWidget()
         layout = container.layout() if container is not None else None
         if layout is not None:
@@ -985,6 +989,14 @@ class PreviewPanel(QWidget):
         self._gpu_grade = grade if grade_is_active(grade) else None
         if self.gpu_view is not None:
             self._update_gpu_composite()
+
+    def set_source_color(self, matrix: str, choice: str = "auto") -> None:
+        """Matrice de lecture du média affiché (GPU seulement) : la même règle que l'export (:mod:`core.color_matrix`) ;
+        ``""`` : celle de l'image décodée."""
+        self._gpu_main_color = (matrix, choice)
+        view = self.gpu_view
+        if view is not None and hasattr(view, "set_source_color"):
+            view.set_source_color("main", matrix, choice)
 
     def set_grade_windows(self, windows: dict[str, tuple[str, object]]) -> None:
         """Mattes des fenêtres des nœuds de l'étalonnage montré (``{nœud: (clé, QImage)}``, espace calque, taille de
@@ -1196,7 +1208,8 @@ class PreviewPanel(QWidget):
     def set_video_underlays(self, underlays) -> None:
         """Pistes vidéo sous le clip supérieur (bas → haut, sans le dessus).
 
-        Chaque entrée : ``(source_id, path, time_s, matrix, fit, opacity, blend, effects, …)``.
+        Chaque entrée : ``(source_id, path, time_s, matrix, fit, opacity, blend, effects, …, effect_time, color_override)``
+        (le dernier : ``setparams=colorspace=`` de la matrice du média, ``""`` si FFmpeg la lit déjà bien).
         Les images sont décodées **hors du thread UI** via :mod:`core.media_io` et
         poussées au GPU sous ``source_id`` (``clip:<id>``). Liste vide : oublie les
         sources précédentes. Les matrices / métadonnées sont appliquées tout de suite.
@@ -1206,7 +1219,9 @@ class PreviewPanel(QWidget):
         used: set[str] = set()
         for source_id, path, time_s, *_rest in self._gpu_underlays:
             used.add(source_id)
-            key = f"{path}|{round(float(time_s), 4)}"
+            # Matrice du média (entrée 13) : une autre matrice est une autre image, donc une autre clé.
+            override = str(_rest[10]) if len(_rest) > 10 else ""
+            key = f"{path}|{round(float(time_s), 4)}|{override}"
             if self._gpu_underlay_pushed.get(source_id) == key:
                 continue
             if self._gpu_underlay_wanted.get(source_id) == key:
@@ -1215,11 +1230,12 @@ class PreviewPanel(QWidget):
             # avant le décodage coûteux et s'arrêtent (coalesce scrub / lecture).
             self._gpu_underlay_wanted[source_id] = key
 
-            def _job(source_id=source_id, path=path, time_s=time_s, key=key) -> None:
+            def _job(source_id=source_id, path=path, time_s=time_s, key=key, override=override) -> None:
                 if self._gpu_underlay_wanted.get(source_id) != key:
                     return
                 try:
-                    frame = _decode_underlay_frame(str(path), float(time_s))
+                    frame = (_decode_underlay_frame(str(path), float(time_s), override) if override
+                             else _decode_underlay_frame(str(path), float(time_s)))
                 except Exception:  # noqa: BLE001 - notifie l'UI, ne crashe pas le fil
                     LOGGER.debug("Sous-piste %s : décodage impossible", source_id, exc_info=True)
                     frame = None

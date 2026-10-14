@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
@@ -772,6 +772,8 @@ class AssetContextMenuBuilder(QWidget):
     # (identifiant du média, action) : ``generate``, ``regenerate``,
     # ``delete``, ``cancel`` ou ``generate_project``.
     proxy_action_requested = Signal(str, str)
+    # (identifiant du média, ``auto`` / ``bt601`` / ``bt709``) : espace colorimétrique de la source.
+    color_matrix_requested = Signal(str, str)
 
     def __init__(
         self,
@@ -787,8 +789,12 @@ class AssetContextMenuBuilder(QWidget):
         parent: QWidget | None = None,
         proxy_state: str = "",
         proxy_progress: int = 0,
+        color_matrix: str = "",
+        color_refusal: str = "",
     ) -> None:
         super().__init__(parent)
+        self.color_matrix = color_matrix
+        self.color_refusal = color_refusal
         self.proxy_state = proxy_state
         self.proxy_progress = proxy_progress
         self.asset_id = asset_id
@@ -856,6 +862,7 @@ class AssetContextMenuBuilder(QWidget):
 
         menu.addSeparator()
         self._populate_proxy_menu(menu)
+        self._populate_color_menu(menu)
 
         # Supprimer.
         action_remove = menu.addAction(translate("library.menu.delete_asset"))
@@ -873,6 +880,27 @@ class AssetContextMenuBuilder(QWidget):
         prefix = "⚠ " if self.is_missing else ""
         usage = f"  ·  ×{self.usage_count}" if self.usage_count > 0 else "  " + translate("library.asset.unused")
         return f"{prefix}{self.asset_name}{usage}"
+
+    def _populate_color_menu(self, menu: QMenu) -> None:
+        """Sous-menu « Espace colorimétrique » (vidéo uniquement) : Auto / BT.601 / BT.709, grisé si un clip du média est verrouillé
+        (la raison en infobulle) : la même règle que le verbe de script (:mod:`core.media_color_ops`)."""
+        if not self.color_matrix:
+            return
+        color_menu = menu.addMenu(translate("library.menu.color_matrix"))
+        color_menu.setToolTipsVisible(True)
+        group = QActionGroup(color_menu)
+        for value, key in (("auto", "library.color_matrix.auto"), ("bt601", "library.color_matrix.bt601"),
+                           ("bt709", "library.color_matrix.bt709")):
+            entry = color_menu.addAction(translate(key))
+            entry.setCheckable(True)
+            entry.setChecked(value == self.color_matrix)
+            group.addAction(entry)
+            if self.color_refusal:
+                entry.setEnabled(False)
+                entry.setToolTip(self.color_refusal)
+            entry.triggered.connect(
+                lambda _checked=False, v=value: self.color_matrix_requested.emit(self.asset_id, v)
+            )
 
     def _populate_proxy_menu(self, menu: QMenu) -> None:
         """Sous-menu « Proxy » : actions selon l'état (vidéo uniquement)."""

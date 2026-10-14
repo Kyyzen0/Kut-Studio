@@ -17,6 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .color_matrix import setparams_filter
 from .process_supervisor import supervised_run
 from .tool_paths import find_media_tool
 
@@ -159,9 +160,15 @@ class MediaHandle:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def decode_at(self, seconds: float) -> VideoFrame:
-        """Image la plus proche de ``seconds`` (début du média = 0)."""
+    def decode_at(self, seconds: float, color_override: str = "") -> VideoFrame:
+        """Image la plus proche de ``seconds`` (début du média = 0).
+
+        ``color_override`` : valeur de ``setparams=colorspace=`` quand la matrice du média n'est pas celle que FFmpeg lirait
+        (:func:`core.color_matrix.ffmpeg_override`). Le décodage passe alors par la ligne de commande, qui sait la poser :
+        PyAV convertit avec son propre choix de matrice. Vide (défaut) : comportement inchangé."""
         t = max(0.0, float(seconds))
+        if setparams_filter(color_override):
+            return self._decode_cli(t, color_override)
         if self._container is not None:
             return self._decode_pyav(t)
         return self._decode_cli(t)
@@ -199,7 +206,7 @@ class MediaHandle:
         stamp = float(frame.time) if getattr(frame, "time", None) is not None else float(seconds)
         return VideoFrame(w, h, image.tobytes(), stamp)
 
-    def _decode_cli(self, seconds: float) -> VideoFrame:
+    def _decode_cli(self, seconds: float, color_override: str = "") -> VideoFrame:
         ffmpeg = find_media_tool("ffmpeg")
         if not ffmpeg:
             raise OSError("ffmpeg introuvable")
@@ -211,7 +218,8 @@ class MediaHandle:
             completed = supervised_run(
                 [
                     ffmpeg, "-y", "-v", "error", "-ss", f"{seconds:.6f}", "-i", self.path,
-                    "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", str(target),
+                    "-frames:v", "1", *(["-vf", setparams_filter(color_override)] if setparams_filter(color_override) else []),
+                    "-f", "rawvideo", "-pix_fmt", "rgba", str(target),
                 ],
                 capture_output=True, text=True, check=False,
             )

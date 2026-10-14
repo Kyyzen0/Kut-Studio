@@ -75,6 +75,7 @@ from ui.main_window_mixins.scopes import ScopesMixin, _ScopeEvents
 from ui.main_window_mixins.transform_and_clip_effects import TransformEffectsMixin
 from ui.main_window_mixins.subtitles_graphics import SubtitlesGraphicsMixin
 from ui.main_window_mixins.library_organization import LibraryOrganizationMixin
+from ui.main_window_mixins.media_color import MediaColorMixin
 from ui.main_window_mixins.faithful_preview import FaithfulPreviewMixin
 from ui.main_window_mixins.live_mix import LiveMixMixin
 from ui.main_window_mixins.animation import AnimationMixin
@@ -170,6 +171,7 @@ class MainWindow(
     FaithfulPreviewMixin,
     LiveMixMixin,
     LibraryOrganizationMixin,
+    MediaColorMixin,
     SubtitlesGraphicsMixin,
     TransformEffectsMixin,
     ScopesMixin,
@@ -357,6 +359,9 @@ class MainWindow(
         )
         self.project_panel.asset_relink_requested.connect(
             self._on_asset_relink_requested
+        )
+        self.project_panel.asset_color_matrix_requested.connect(
+            self._on_asset_color_matrix_requested
         )
         self.project_panel.asset_rename_requested.connect(
             self._on_asset_rename_requested
@@ -1877,6 +1882,7 @@ class MainWindow(
             )
             self.preview_panel.set_effects(clip_obj.effects)
             self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
+            self.preview_panel.set_source_color(*self._monitor_color_matrix(top_clip, clip_obj))
             if self.preview_panel.gpu_active:
                 self._sync_gpu_compositing(clip_obj, float(self.playhead_seconds))
                 self._sync_gpu_video_underlays(video_clips[:-1])

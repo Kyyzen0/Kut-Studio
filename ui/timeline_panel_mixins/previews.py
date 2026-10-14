@@ -81,12 +81,13 @@ class PreviewsMixin:
         times = thumbnail_source_times(clip.source_in, clip.source_out, 1)
         if not times:
             return None
-        key = thumbnail_cache_key(view.source_path, times[0], 160)
+        key = thumbnail_cache_key(view.source_path, times[0], 160, self.asset_of_clip(clip))
         data = runtime.cache.get(key)
         if isinstance(data, (bytes, bytearray)):
             return self.pixmap_for(key, data) if data else None
+        asset = self.asset_of_clip(clip)
         self._submit_preview(key, lambda token, path=view.source_path, time=times[0]: self._thumb_job(
-            token, path, time, key))
+            token, path, time, key, asset))
         return None
 
     def _schedule_previews(self) -> None:
@@ -117,13 +118,14 @@ class PreviewsMixin:
                 if clip is None:
                     continue
                 slots = thumbnail_slots(widget.width(), enabled=True)
+                asset = self.asset_of_clip(clip)
                 for instant in thumbnail_source_times(clip.source_in, clip.source_out, slots):
-                    thumb_key = thumbnail_cache_key(view.source_path, instant, 160)
+                    thumb_key = thumbnail_cache_key(view.source_path, instant, 160, asset)
                     if runtime.cache.get(thumb_key) is None:
                         self._submit_preview(
                             thumb_key,
-                            lambda token, path=view.source_path, time=instant, cache_key=thumb_key: self._thumb_job(
-                                token, path, time, cache_key
+                            lambda token, path=view.source_path, time=instant, cache_key=thumb_key, media=asset: self._thumb_job(
+                                token, path, time, cache_key, media
                             ),
                         )
 
@@ -148,10 +150,22 @@ class PreviewsMixin:
         # Une enveloppe vide (sans son, illisible) est gardée aussi : le fichier n'est pas redécodé à chaque défilement.
         self._runtime.mailbox.push(key, envelope, max(64, len(envelope.peaks)), session_id=self._runtime.session_id)
 
-    def _thumb_job(self, token, path: str, instant: float, key: str) -> None:
+    def asset_of_clip(self, clip):
+        """Le média d'un clip (``None`` : absent) ; table reconstruite quand la liste des médias change."""
+        project = self.project
+        if project is None or clip is None:
+            return None
+        assets = project.media_assets
+        stamp = (id(assets), len(assets))
+        if getattr(self, "_asset_table_stamp", None) != stamp:
+            self._asset_table = {asset.id: asset for asset in assets}
+            self._asset_table_stamp = stamp
+        return self._asset_table.get(getattr(clip, "asset_id", ""))
+
+    def _thumb_job(self, token, path: str, instant: float, key: str, asset=None) -> None:
         if token.cancelled or self._runtime is None:
             return
-        image = extract_thumbnail(path, instant, 160)
+        image = extract_thumbnail(path, instant, 160, asset)
         self._runtime.mailbox.push(
             key,
             image if image else b"",

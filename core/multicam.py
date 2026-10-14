@@ -15,7 +15,7 @@ source) ne sont jamais masquées.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .multicam_model import AudioMode, MulticamAngle, MulticamSource
@@ -162,6 +162,9 @@ class AngleSample:
     audible: bool = False
     """Son mixé pour ce segment selon la politique audio."""
     audio_only: bool = False
+    color_asset: object = field(default=None, compare=False)
+    """Le média de l'angle quand il est lisible : sa matrice couleur (:mod:`core.color_matrix`) est dite à FFmpeg par le flux de la
+    tuile, comme à l'export."""
 
 
 def angle_samples_at(
@@ -204,7 +207,7 @@ def angle_samples_at(
             samples.append(AngleSample(state=AngleState.OFFLINE, path=asset.path if asset else "", **base))  # type: ignore[arg-type]
             continue
         media_time = clip.time_map.source_time(inner - clip.timeline_start)
-        samples.append(AngleSample(state=AngleState.LIVE, path=asset.path, media_time=media_time, **base))  # type: ignore[arg-type]
+        samples.append(AngleSample(state=AngleState.LIVE, path=asset.path, media_time=media_time, color_asset=asset, **base))  # type: ignore[arg-type]
     return samples
 
 

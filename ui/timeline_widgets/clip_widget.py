@@ -640,7 +640,7 @@ class ClipWidget(QWidget):
             return
         cell = max(1, (self.width() - 8) // len(times))
         for index, instant in enumerate(times):
-            key = thumbnail_cache_key(path, instant, 160) if path else ""
+            key = thumbnail_cache_key(path, instant, 160, parent.asset_of_clip(clip)) if path else ""
             data = runtime.cache.get(key) if runtime is not None and key else None
             if isinstance(data, (bytes, bytearray)) and data:
                 pixmap = parent.pixmap_for(key, data)

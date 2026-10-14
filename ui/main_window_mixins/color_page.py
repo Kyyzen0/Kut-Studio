@@ -34,9 +34,13 @@ class _PickResults(QObject):
     def run(self, request) -> None:
         from core.color_pick import ColorPickError, sample_node_input
 
-        clip_id, node_id, extend, path, source_time, (x, y), upstream, windows = request
+        from core.color_matrix import asset_ffmpeg_override
+
+        clip_id, node_id, extend, path, source_time, (x, y), upstream, windows, asset = request
         try:
-            rgb = sample_node_input(path, source_time, x, y, upstream, windows=windows)
+            # La matrice du média (étiquette, taille, choix), comme le moniteur et l'export : la couleur lue est celle qu'on voit.
+            rgb = sample_node_input(path, source_time, x, y, upstream, windows=windows,
+                                    color_override=asset_ffmpeg_override(asset))
             outcome = (clip_id, node_id, extend, rgb, None)
         except ColorPickError as error:
             outcome = (clip_id, node_id, extend, None, str(error))
@@ -536,7 +540,7 @@ class ColorPageMixin:
         source_time = clip.time_map.source_time(local)
         upstream = upstream_graph(graph, node.id)
         windows = self._pick_window_coverage(clip_id, upstream, x, y)
-        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream, windows)
+        request = (clip_id, node.id, extend, asset.path, source_time, point, upstream, windows, asset)
         threading.Thread(target=self._pick_results.run, args=(request,), daemon=True, name="kut-color-pick").start()
 
     def _pick_window_coverage(self, clip_id: str, upstream, x: float, y: float) -> dict[str, float]:

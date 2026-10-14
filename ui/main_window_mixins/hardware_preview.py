@@ -14,6 +14,7 @@ from dataclasses import replace
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from core.color_matrix import asset_ffmpeg_override
 from core.decode_policy import (
     DecodeContext,
     DecodeHealth,
@@ -208,6 +209,19 @@ class HardwarePreviewMixin:
             options.append((current.value, i18n.translate("perf.decode.unavailable", label=DECODE_LABELS[current])))
         return options
 
+    def _monitor_color_matrix(self, top_clip, clip) -> tuple[str, str]:
+        """``(matrice effective, choix)`` du média que le moniteur GPU affiche : la règle de l'export
+        (:mod:`core.color_matrix`), calculée sur le média d'origine (un proxy n'a pas sa taille). ``("", "auto")`` : celle
+        de l'image décodée (morceau déjà rendu, média introuvable, image fixe)."""
+        from core.color_matrix import asset_effective_matrix
+
+        if getattr(top_clip, "rendered", False):
+            return "", "auto"
+        asset_id = getattr(clip, "asset_id", "")
+        asset = next((a for a in self.project.media_assets if a.id == asset_id), None)
+        matrix = asset_effective_matrix(asset)
+        return (matrix, asset.color_matrix) if matrix else ("", "auto")
+
     def _sync_gpu_compositing(self, clip, timeline_time: float) -> None:
         """Mode de fusion et matte des masques du clip affiché (moniteur GPU)."""
         compositing = getattr(clip, "compositing", None)
@@ -280,6 +294,7 @@ class HardwarePreviewMixin:
                 grade,
                 windows,
                 float(local),
+                asset_ffmpeg_override(asset) if not layer.rendered else "",
             ))
         self.preview_panel.set_video_underlays(entries)
 

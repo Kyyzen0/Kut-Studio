@@ -368,8 +368,8 @@ class MulticamViewer(QWidget):
                 continue
             profile = tile_profile(len(visible), level=self._governor.level, active=sample.active)
             path = self._resolve(sample.path)
-            feed = self._pool.feed(path, profile)
-            wanted.add((path, profile))
+            feed = self._pool.feed(path, profile, sample.color_asset)
+            wanted.add(FeedPool.key(path, profile, sample.color_asset))
             if not feed.running and not sample.active and started >= START_BUDGET:
                 continue                                        # démarrage échelonné des angles non actifs
             if not feed.running:
@@ -381,7 +381,7 @@ class MulticamViewer(QWidget):
         if sample.state is not AngleState.LIVE or sample.audio_only:
             return None, None
         profile = tile_profile(visible_count, level=self._governor.level, active=sample.active)
-        feed = self._pool.feed(self._resolve(sample.path), profile)
+        feed = self._pool.feed(self._resolve(sample.path), profile, sample.color_asset)
         return feed.frame_at(sample.media_time), feed
 
     def _apply_samples(self) -> None:

@@ -67,7 +67,7 @@ from core.gpu_composite import (
     plan_frame,
     present_uniforms,
 )
-from core.gpu_frames import LAYOUTS, QT_COLOR_RANGES, QT_COLOR_SPACES, layout_for
+from core.gpu_frames import LAYOUTS, QT_COLOR_RANGES, QT_COLOR_SPACES, layout_for, resolve_color
 from core.gpu_grade import DOMAIN_RGB, DOMAIN_YUV, LUT_SIZE, GradeLutCache
 from ui.i18n import translate
 
@@ -563,6 +563,10 @@ class GpuPreviewWidget(QRhiWidget):
         self._latest: dict[str, PendingFrame] = {}
         """Dernière image reçue par source : renvoyée au GPU quand Qt libère puis recrée ses ressources."""
         self._sources: dict[str, VideoSource] = {}
+        self._color_overrides: dict[str, tuple[str, str]] = {}
+        """``source → (matrice effective, choix)`` donnés par le panneau pour les médias dont il connaît l'étiquette, la
+        taille d'origine (un proxy n'a pas celle du média) et le choix de l'utilisateur ; sans entrée, la source décodée
+        (étiquette de Qt, sinon sa taille) décide : :mod:`core.color_matrix`."""
         self._generation = 0
         self._mattes: dict[str, QImage] = {}
         self._canvas_rect = (0.0, 0.0, 1.0, 1.0)
@@ -586,6 +590,27 @@ class GpuPreviewWidget(QRhiWidget):
         self._pending[source_id] = self._latest[source_id] = PendingFrame(frame, self._generation)
         self.stats.note_arrival()
         self.update()
+
+    def set_source_color(self, source_id: str, matrix: str, choice: str = "auto") -> None:
+        """Matrice de lecture d'une source (``bt601`` / ``bt709`` / ``bt2020``) et choix de l'utilisateur ; ``""`` : celle de
+        l'image décodée. Prise en compte au prochain rendu."""
+        entry = (matrix, choice) if matrix else None
+        if entry is None:
+            changed = self._color_overrides.pop(source_id, None) is not None
+        else:
+            changed = self._color_overrides.get(source_id) != entry
+            self._color_overrides[source_id] = entry
+        if changed:
+            latest = self._latest.get(source_id)
+            if latest is not None:          # l'image affichée est relue avec la nouvelle matrice (pause comprise)
+                self._pending[source_id] = latest
+            self.update()
+
+    def _colored(self, source_id: str, source: VideoSource) -> VideoSource:
+        entry = self._color_overrides.get(source_id)
+        if entry is None or source.layout == "grain":
+            return source
+        return replace(source, colorspace=entry[0], color_choice=entry[1])
 
     def set_procedural_source(self, source: VideoSource) -> None:
         """Source sans texture (ex. grain procédural) : connue du plan sans upload."""
@@ -685,7 +710,7 @@ class GpuPreviewWidget(QRhiWidget):
             for source_id, pending in list(self._pending.items()):
                 sent, source = executor.upload_source(batch, source_id, pending.frame)
                 uploaded += sent
-                self._sources[source_id] = source
+                self._sources[source_id] = self._colored(source_id, source)
                 if describe_qt_frame(pending.frame)[0] == "":
                     self.fallback_frames += 1
                     pixel = pending.frame.pixelFormat().name
@@ -775,7 +800,10 @@ class GpuPreviewWidget(QRhiWidget):
             return layer
         source = self._sources.get(getattr(layer, "source", ""))
         if source is not None and LAYOUTS.get(source.layout) is not None and LAYOUTS[source.layout].is_yuv:
-            options = {"domain": DOMAIN_YUV, "colorspace": source.colorspace, "color_range": source.color_range}
+            # L'espace réellement lu par le moniteur (étiquette, choix, sinon taille) : la LUT est cuite avec la même matrice.
+            colorspace = resolve_color(source.colorspace, source.color_range, source.width, source.height,
+                                       source.color_choice)[0]
+            options = {"domain": DOMAIN_YUV, "colorspace": colorspace, "color_range": source.color_range}
         else:
             options = {"domain": DOMAIN_RGB, "colorspace": "", "color_range": ""}
         program = compile_program(grade, _build_color_grade_filters)

@@ -8,6 +8,14 @@ Ce document décrit les étapes 1 à 3 de l'[ADR-0002](adr/0002-socle-nodal-etal
 - les fenêtres, le flou et la netteté d'un nœud ;
 - la comparaison avant / après.
 
+## Espace colorimétrique de la source
+
+Un flux vidéo **étiqueté** est lu avec son étiquette ; un flux **non étiqueté** est lu en **BT.709 dès 720 lignes ou 1280 colonnes**, en BT.601
+en dessous (jusqu'à la 0.6.1 : BT.601 partout). Le menu du média dans la bibliothèque (*Espace colorimétrique › Auto / BT.601 / BT.709*) force
+l'une ou l'autre pour **tous les clips de ce média** ; il est refusé (grisé, avec la raison) si l'un d'eux est sur une piste ou un calque
+verrouillé. Même règle pour le moniteur, l'aperçu fidèle, l'export, les miniatures, la pipette et les LUT cuites du moniteur
+([docs/gpu-preview.md](gpu-preview.md)). Le choix s'annule d'un pas ; un projet qui en utilise un s'écrit en **version 19** du format `.kut`.
+
 ## Utilisation
 
 - **Page Couleur.** On y accède de trois façons :

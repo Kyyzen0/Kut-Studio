@@ -34,6 +34,7 @@ from ..color_grading import (
     TEMPERATURE_MAX, TEMPERATURE_MIN, WHEEL_MAX, WHEEL_MIN, WHEELS, ColorCurve, ColorGradingError, ColorGradingService,
     LUTResource, Wheel,
 )
+from ..color_matrix import MATRIX_CHOICES
 from ..color_nodes import MAX_BLUR, MAX_LABEL_LENGTH, MAX_SHARPEN, MixerKind, window_by_id
 from ..color_qualifier import Qualifier, QualifierError
 from ..clip_crop import MAX_CROP_SIDE, Crop, CropError, clear_crop, crop_mask, crop_of, set_crop
@@ -47,6 +48,7 @@ from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
+from ..media_color_ops import set_media_color_matrix
 from ..media_probe import MediaProbeError, probe_media
 from ..multicam import is_multicam_clip
 from ..multicam_model import MAX_ANGLES, AudioMode, SyncMethod
@@ -290,6 +292,19 @@ def _move_clip(a: Mapping[str, Any]) -> Operation:
 
 def _set_clip_enabled(a: Mapping[str, Any]) -> Operation:
     return lambda p: set_clip_enabled(p, _clip_id(p, a["clip"]), bool(a["enabled"]))
+
+
+def _set_media_color_matrix(a: Mapping[str, Any]) -> Operation:
+    def operation(project: Project) -> Any:
+        if ("asset" in a) == ("clip" in a):
+            raise ValueError("set_media_color_matrix demande exactement un des deux : « asset » (le média) ou « clip » (le média de ce clip).")
+        if "clip" in a:
+            asset_id = next(clip.asset_id for track in project.tracks for clip in track.clips if clip.id == _clip_id(project, a["clip"]))
+        else:
+            asset_id = _asset_id(project, a["asset"])
+        return set_media_color_matrix(project, asset_id, a["matrix"])
+
+    return operation
 
 
 def _import_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operation:
@@ -1279,6 +1294,14 @@ VERBS: dict[str, Verb] = {
         Verb("delete_clip", "Supprime un clip.", (_CLIP,), _delete_clip, group="edit"),
         Verb("move_clip", "Déplace un clip.", (_CLIP, _AT), _move_clip, group="edit"),
         Verb("set_clip_enabled", "Active ou désactive un clip.", (_CLIP, _ENABLED), _set_clip_enabled, group="edit"),
+        Verb("set_media_color_matrix",
+             "Choisit comment lire les couleurs d'un média vidéo : « auto » (son étiquette, sinon BT.709 dès 720 lignes ou 1280 colonnes, "
+             "sinon BT.601), « bt601 » ou « bt709 » (force, étiquette comprise). Vaut pour tous les clips du média ; refusé si l'un d'eux "
+             "est sur une piste ou un calque verrouillé.",
+             (Param("asset", Kind.SELECTOR, "Le média du projet : identifiant ou nom exact (unique).", required=False, of="asset"),
+              Param("clip", Kind.SELECTOR, "Ou un clip : son média est réglé.", required=False, of="clip"),
+              Param("matrix", Kind.ENUM, "Le choix.", choices=MATRIX_CHOICES)),
+             _set_media_color_matrix, group="edit"),
         Verb("import_media", "Importe un fichier média dans le projet (lecture seule, dans le dossier du script).",
              (Param("path", Kind.PATH, "Chemin du fichier, relatif au dossier du script."),), _import_media, creates="asset",
              group="edit", needs_context=True),

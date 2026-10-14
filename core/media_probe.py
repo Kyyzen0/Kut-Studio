@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .color_matrix import label_from_ffprobe
 from .process_supervisor import supervised_run
 from .project_model import MediaAsset
 from .timecode import SECONDS_PER_DAY, FrameRate, normalize_timecode_text
@@ -138,6 +139,54 @@ def probe_media(path: str) -> MediaAsset:
     )
 
 
+_COLOR_LABELS: dict[tuple[str, int, int], str] = {}
+_COLOR_LABELS_MAX = 512
+_COLOR_PROBE_MAX_BYTES = 65536
+_COLOR_PROBE_TIMEOUT = 10
+
+
+def probe_color_label(path: str) -> str:
+    """Étiquette de matrice du premier flux vidéo de ``path`` (voir :func:`core.color_matrix.label_from_ffprobe`), ``""`` si
+    elle ne peut pas être lue (fichier absent, ``ffprobe`` absent ou trop lent, sortie vide ou illisible).
+
+    Sert aux projets ouverts depuis un fichier, qui ne portent pas l'étiquette. Mémorisée par ``(chemin, date, taille)`` :
+    un fichier modifié est sondé de nouveau. Ne lève jamais."""
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return ""
+    key = (os.path.abspath(path), info.st_mtime_ns, info.st_size)
+    cached = _COLOR_LABELS.get(key)
+    if cached is not None:
+        return cached
+    ffprobe_path = bundled_tool_path("ffprobe") or shutil.which("ffprobe")
+    if ffprobe_path is None:
+        return ""
+    try:
+        completed = supervised_run(
+            [ffprobe_path, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_space",
+             "-print_format", "json", path],
+            capture_output=True, text=True, timeout=_COLOR_PROBE_TIMEOUT,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    label = ""
+    if completed.returncode == 0 and len(completed.stdout or "") <= _COLOR_PROBE_MAX_BYTES:
+        try:
+            streams = (json.loads(completed.stdout) or {}).get("streams")
+        except (ValueError, AttributeError):
+            streams = None
+        if isinstance(streams, list) and streams and isinstance(streams[0], dict):
+            label = label_from_ffprobe(streams[0].get("color_space"))
+    if label:
+        while len(_COLOR_LABELS) >= _COLOR_LABELS_MAX:
+            _COLOR_LABELS.pop(next(iter(_COLOR_LABELS)))
+        _COLOR_LABELS[key] = label
+    return label
+
+
 def probe_video(path: str) -> MediaAsset:
     """Compatibilité historique : sonde vidéo stricte.
 
@@ -202,6 +251,7 @@ def _build_video_asset(
         fps=fps,
         media_type="video",
         has_audio=has_audio,
+        color_space=label_from_ffprobe(stream.get("color_space")),
         **metadata.asset_fields(),
     )
 

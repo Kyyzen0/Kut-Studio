@@ -310,6 +310,10 @@ PANELS_TRANSLATIONS: dict[str, dict[str, str]] = {
     ),
     "library.menu.move_to": _t("Déplacer vers", "Move to", "Mover a"),
     "library.menu.relink": _t("Relier le fichier…", "Relink file…", "Reenlazar archivo…"),
+    "library.menu.color_matrix": _t("Espace colorimétrique", "Source color space", "Espacio de color"),
+    "library.color_matrix.auto": _t("Auto", "Auto", "Auto"),
+    "library.color_matrix.bt601": _t("BT.601", "BT.601", "BT.601"),
+    "library.color_matrix.bt709": _t("BT.709", "BT.709", "BT.709"),
     "library.menu.relink_missing": _t("⚠ Relier le fichier…", "⚠ Relink file…", "⚠ Reenlazar archivo…"),
     "library.menu.delete_asset": _t(
         "Supprimer de la bibliothèque",

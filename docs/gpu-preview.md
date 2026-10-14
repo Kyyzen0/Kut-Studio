@@ -186,10 +186,26 @@ Où ont lieu les conversions :
 | Effets, fusion, masques | shader | segments FFmpeg |
 | Affichage | `QRhiWidget` | raster |
 
-Matrice couleur : celle qu'indique l'étiquette du flux. Un flux **non étiqueté**
-est lu en **BT.601 plage limitée**, exactement comme `swscale` à l'export,
-vérifié au bit près sur des couleurs pures. Une étiquette BT.709 donne bien la
-conversion BT.709.
+Matrice couleur : une seule règle (`core/color_matrix.py`), la même pour le moniteur, l'aperçu fidèle, l'export, les
+miniatures, les images préparées du remappage, la pipette, les flux multicam et la cuisson des LUT d'étalonnage.
+
+- Un flux **étiqueté** (BT.601 / BT.709 / BT.2020) est lu avec son étiquette.
+- Un flux **non étiqueté** est lu en **BT.709 dès 720 lignes ou 1280 colonnes** (`height >= 720 or width >= 1280`, la
+  taille du *média*, pas celle d'un proxy), en **BT.601** en dessous. Jusqu'à la 0.6.1 il était lu en BT.601 partout, même en HD.
+- La plage inconnue reste **limitée** (`tv`), comme avant.
+- Le choix par média (menu du média dans la bibliothèque : *Espace colorimétrique › Auto / BT.601 / BT.709*, ou le verbe de
+  script `set_media_color_matrix`) force la matrice, étiquette comprise ; `Auto` applique les règles ci-dessus.
+
+Qt ne dit rien du flux non étiqueté (`ColorSpace_Undefined`, en HD comme en SD) : le panneau d'aperçu donne donc au moniteur la
+matrice calculée sur le média d'origine (`MainWindow._monitor_color_matrix`). À l'export, FFmpeg lit lui-même l'étiquette et
+prend le BT.601 sans étiquette : le graphe ne lui dit quelque chose (`setparams=colorspace=…` en tête de la chaîne du clip,
+avant toute conversion) que dans les deux cas où sa lecture ne donnerait pas la matrice voulue, un flux HD non étiqueté
+(→ `bt709`) et un choix forcé ; ailleurs le graphe est celui d'avant. Vérifié au niveau près (1/255) entre la référence numpy du
+moniteur, l'export réel et la miniature, sur des fichiers générés non étiquetés ou étiquetés, en SD et en HD
+(`tests/test_color_matrix_parity.py`) ; le shader reçoit la même matrice (plan identique à celui d'une source étiquetée,
+`tests/test_color_matrix.py`), mais le rendu du vrai GPU sous cette règle n'est pas rejoué par la CI. Les empreintes du cache
+d'aperçu fidèle (`RENDER_ENGINE_VERSION` 11), les clés de miniatures et des LUT cuites contiennent la matrice ou le numéro de règle :
+rien de ce qui a été rendu avec l'ancienne règle n'est resservi.
 
 ### Copie zéro : ce qui a été évalué
 
