@@ -48,6 +48,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **Compositing : le verrou est respecté.** Sur une piste verrouillée, un calque graphique verrouillé ou un clip audio / sous-titres, le groupe Compositing de l'inspecteur (masques, mode de fusion, incrustation) est grisé et n'écrit plus rien dans le projet ; un message l'explique.
 - **Aperçu GPU, pistes du dessous.** Un WebM ou un Matroska dont ffprobe marque la durée du flux ``N/A`` (la durée est sur le conteneur)
   s'ouvre à nouveau dans le décodeur des pistes vidéo sous le clip du dessus. Avant, la sonde levait une erreur et la piste restait vide
   au moniteur, alors que l'export, lui, la rendait.

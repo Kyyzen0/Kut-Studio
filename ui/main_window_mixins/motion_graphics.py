@@ -739,11 +739,20 @@ class MotionGraphicsMixin:
         self._layer_operation(translate("history.layer.advanced_keyframe"), toggle, select=clip_id)
 
     def _on_compositing_changed(self, clip_id: str, value) -> None:
+        from core.compositing_guard import compositing_edit_refusal
         from core.timeline_operations import find_clip
 
         try:
             clip = find_clip(self.project, clip_id)
         except KeyError:
+            return
+        refusal = compositing_edit_refusal(self.project, clip_id)
+        if refusal is not None:
+            # Même refus que pour les autres chemins d'édition : rien n'est écrit, l'inspecteur reprend la vraie valeur.
+            self.statusBar().showMessage(translate(f"compositing.refused.{refusal}"), 4000)
+            selected = getattr(self.properties_panel, "selected_clip", None)
+            if getattr(selected, "id", None) == clip_id:
+                self.properties_panel.compositing_group.set_value(clip.compositing)
             return
         if clip.compositing == value:
             return
