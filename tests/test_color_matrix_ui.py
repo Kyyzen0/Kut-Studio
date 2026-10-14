@@ -376,3 +376,25 @@ def test_the_faithful_preview_cache_is_invalidated_by_the_new_rule():
     from core.filter_graph import RENDER_ENGINE_VERSION
 
     assert RENDER_ENGINE_VERSION >= 11            # 10 = segments rendus avec « tout non étiqueté en BT.601 »
+
+
+def test_the_monitor_sync_never_calls_the_blocking_probe(qtbot, monkeypatch):
+    from core import media_probe
+
+    window = _window_with_clip(qtbot, monkeypatch)
+    window.project.media_assets[0].color_space = ""
+    clip = next(c for t in window.project.tracks for c in t.clips)
+    blocking = []
+    monkeypatch.setattr(media_probe, "probe_color_label", lambda path: blocking.append(path) or "")
+    monkeypatch.setattr(media_probe, "warm_color_label", lambda path: True)
+    assert window._monitor_color_matrix(SimpleNamespace(rendered=False), clip) == ("bt709", "auto")
+    assert blocking == []
+
+
+def test_opening_a_project_starts_the_background_label_probe():
+    """Garde d'atteignabilité : le chargement d'un projet lance la sonde de fond (la fenêtre réelle n'est pas rejouée ici)."""
+    import inspect
+
+    from ui.main_window_mixins.project_files import ProjectFilesMixin
+
+    assert "warm_color_labels" in inspect.getsource(ProjectFilesMixin._load_project_from_path)

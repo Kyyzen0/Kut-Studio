@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 
 import pytest
 
@@ -202,6 +203,7 @@ def test_the_lazy_probe_is_memorised_per_file_and_date(tmp_path, monkeypatch):
     monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: calls.append(1) or Done())
     monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
     assert [media_probe.probe_color_label(str(path)) for _ in range(3)] == ["bt709"] * 3 and len(calls) == 1
     path.write_bytes(b"xx")                                                                # fichier modifié : nouvelle sonde
     media_probe.probe_color_label(str(path))
@@ -224,6 +226,7 @@ def test_a_hostile_probe_output_never_raises(stdout, tmp_path, monkeypatch):
     monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: done)
     monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
     assert media_probe.probe_color_label(str(path)) in ("", "none")
 
 
@@ -236,6 +239,7 @@ def test_a_probe_that_times_out_or_cannot_start_gives_no_label(tmp_path, monkeyp
     path.write_bytes(b"x")
     monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
     for error in (subprocess.TimeoutExpired("ffprobe", 10), OSError("introuvable")):
         def boom(*a, error=error, **k):
             raise error
@@ -244,22 +248,71 @@ def test_a_probe_that_times_out_or_cannot_start_gives_no_label(tmp_path, monkeyp
         assert media_probe.probe_color_label(str(path)) == ""
 
 
-def test_only_a_hd_auto_video_with_an_unknown_label_is_probed(monkeypatch):
+def test_only_an_auto_video_with_an_unknown_label_is_probed_whatever_its_size(monkeypatch):
+    """Un SD étiqueté BT.709 rouvert (étiquette non écrite dans le projet) doit être lu en 709, comme l'export le fait."""
     from core import media_probe
 
     calls = []
-    monkeypatch.setattr(media_probe, "probe_color_label", lambda path: calls.append(path) or "bt601")
-    cm.asset_effective_matrix(MediaAsset("a", "/x/a.mp4", "a", 1.0, 640, 360, 25.0, "video"))          # SD : jamais
-    cm.asset_effective_matrix(MediaAsset("a", "/x/a.mp4", "a", 1.0, 1920, 1080, 25.0, "video", color_matrix="bt709"))   # forcé
-    cm.asset_effective_matrix(MediaAsset("a", "/x/a.mp4", "a", 1.0, 1920, 1080, 25.0, "video", color_space="none"))     # connu
-    assert cm.asset_matrix_inputs(_asset(), probe=False)[0] == "" and calls == []                  # chemin de dessin : jamais
-    hd = _asset()
-    assert cm.asset_effective_matrix(hd) == "bt601" and calls == ["/x/a.mp4"] and hd.color_space == "bt601"
-    assert cm.asset_effective_matrix(hd) == "bt601" and len(calls) == 1                              # mémorisée sur le média
+    monkeypatch.setattr(media_probe, "probe_color_label", lambda path: calls.append(path) or "bt709")
+    forced = MediaAsset("a", "/x/a.mp4", "a", 1.0, 1920, 1080, 25.0, "video", color_matrix="bt601")
+    cm.asset_effective_matrix(forced)                                                                        # forcé : jamais
+    cm.asset_effective_matrix(MediaAsset("a", "/x/a.mp4", "a", 1.0, 640, 360, 25.0, "video", color_space="none"))   # connu
+    assert calls == []
+    sd = MediaAsset("a", "/x/a.mp4", "a", 1.0, 640, 360, 25.0, "video")
+    assert cm.asset_effective_matrix(sd) == "bt709" and calls == ["/x/a.mp4"] and sd.color_space == "bt709"
+    assert cm.asset_effective_matrix(sd) == "bt709" and len(calls) == 1                                       # mémorisée sur le média
     assert cm.asset_effective_matrix(MediaAsset("a", "", "a", 1.0, 0, 0, 0.0, "audio", True)) == ""
     assert cm.asset_ffmpeg_override(None) == "" and cm.asset_effective_matrix(None) == ""
     image = MediaAsset("i", "/x/i.png", "i", 1.0, 1920, 1080, 1.0, "image")
-    assert cm.asset_ffmpeg_override(image) == "" and calls == ["/x/a.mp4"]                          # une photo n'a pas de matrice YUV
+    assert cm.asset_ffmpeg_override(image) == "" and calls == ["/x/a.mp4"]                                    # une photo n'a pas de matrice YUV
+
+
+def test_the_interface_thread_never_waits_for_ffprobe_and_gets_the_label_once_warmed(tmp_path, monkeypatch):
+    import threading
+
+    from core import media_probe
+
+    path = tmp_path / "v.bin"
+    path.write_bytes(b"x")
+    release, started = threading.Event(), threading.Event()
+
+    def slow_probe(target):
+        started.set()
+        release.wait(5)
+        media_probe._COLOR_LABELS[media_probe._color_key(target)] = "bt601"
+        return "bt601"
+
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    monkeypatch.setattr(media_probe, "probe_color_label", slow_probe)
+    asset = MediaAsset("a", str(path), "a", 1.0, 1920, 1080, 25.0, "video")
+    begin = time.monotonic()
+    assert cm.asset_effective_matrix(asset, probe=False, warm=True) == "bt709"        # pas encore connu : « non étiqueté »
+    assert time.monotonic() - begin < 1.0 and started.wait(2)                          # … sans attendre, la sonde part en fond
+    assert media_probe.warm_color_label(str(path)) is False                            # une seule à la fois par fichier
+    release.set()
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not media_probe.peek_color_label(str(path)):
+        time.sleep(0.01)
+    assert cm.asset_effective_matrix(asset, probe=False) == "bt601"                    # l'appel suivant la connaît
+
+
+def test_opening_a_project_warms_the_labels_in_one_background_batch(tmp_path, monkeypatch):
+    import threading
+
+    from core import media_probe
+
+    paths = []
+    for name in ("a", "b", "a"):
+        file = tmp_path / f"{name}.bin"
+        file.write_bytes(b"x")
+        paths.append(str(file))
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    seen, done = [], threading.Event()
+    monkeypatch.setattr(media_probe, "probe_color_label", lambda p: (seen.append(p), len(seen) == 2 and done.set()) and "")
+    assert media_probe.warm_color_labels(paths) is True and done.wait(3)
+    assert seen == paths[:2] and media_probe.warm_color_labels([]) is False
 
 
 # --- Le plan de rendu --------------------------------------------------------------------------------------------------
@@ -588,3 +641,108 @@ def test_the_cli_reaches_the_verb(tmp_path, capsys):
 def test_numbers_do_not_leak_through_the_helpers():
     """Garde de forme : les helpers n'avalent pas de NaN comme des dimensions (le projet n'en contient jamais, mais un fichier le peut)."""
     assert cm.default_for_size(math.nan, math.nan) == "bt601" and cm.default_for_size(math.inf, 0) == "bt601"
+
+
+def test_a_failed_probe_is_remembered_for_a_short_time_then_retried(tmp_path, monkeypatch):
+    """Le moniteur appelle la sonde depuis le fil de l'interface : un ffprobe qui expire n'est pas relancé à chaque synchronisation."""
+    import subprocess
+
+    from core import media_probe
+
+    path = tmp_path / "v.bin"
+    path.write_bytes(b"x")
+    calls, now = [], [100.0]
+
+    def run(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        raise subprocess.TimeoutExpired("ffprobe", kwargs["timeout"])
+
+    monkeypatch.setattr(media_probe, "supervised_run", run)
+    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "_clock", lambda: now[0])
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    assert [media_probe.probe_color_label(str(path)) for _ in range(5)] == [""] * 5
+    assert len(calls) == 1 and calls[0] <= 3                                   # un seul essai, et court
+    now[0] += media_probe._COLOR_FAILURE_TTL - 1
+    media_probe.probe_color_label(str(path))
+    assert len(calls) == 1
+    now[0] += 2                                                                # expiré : on réessaie
+    media_probe.probe_color_label(str(path))
+    assert len(calls) == 2
+
+
+def test_other_failures_are_remembered_too_and_a_later_success_replaces_them(tmp_path, monkeypatch):
+    from core import media_probe
+
+    path = tmp_path / "v.bin"
+    path.write_bytes(b"x")
+    calls, now = [], [0.0]
+
+    class Done:
+        def __init__(self, code, out):
+            self.returncode, self.stdout = code, out
+
+    outputs = [Done(1, ""), Done(0, "x" * 70000), Done(0, json.dumps({"streams": [{"color_space": "bt709"}]}))]
+    monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: calls.append(1) or outputs[len(calls) - 1])
+    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "_clock", lambda: now[0])
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    for expected_calls in (1, 2, 3):
+        assert [media_probe.probe_color_label(str(path)) for _ in range(3)][0] == ("bt709" if expected_calls == 3 else "")
+        assert len(calls) == expected_calls
+        now[0] += media_probe._COLOR_FAILURE_TTL + 1
+    assert media_probe.probe_color_label(str(path)) == "bt709" and len(calls) == 3        # succès mémorisé
+
+
+def test_a_missing_ffprobe_is_not_searched_again_at_every_call(tmp_path, monkeypatch):
+    from core import media_probe
+
+    path = tmp_path / "v.bin"
+    path.write_bytes(b"x")
+    searched = []
+    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: searched.append(name) or None)
+    monkeypatch.setattr(media_probe.shutil, "which", lambda name: None)
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    for _ in range(4):
+        assert media_probe.probe_color_label(str(path)) == ""
+    assert len(searched) == 1
+
+
+def test_a_reopened_sd_media_tagged_709_is_read_in_709_by_the_monitor_and_the_export(tmp_path):
+    """Régression : l'étiquette n'est pas dans le .kut ; la sonde paresseuse ne couvrait que le HD, donc un 640×480 BT.709 rouvert
+    était lu en 601 par le moniteur alors que FFmpeg respectait l'étiquette à l'export."""
+    import shutil
+    import subprocess
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("FFmpeg absent")
+    from core.export_engine import ExportEngine
+    from core.render_plan import build_render_plan
+
+    path = tmp_path / "sd709.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "smptebars=s=640x480:r=10:d=1", "-vf",
+                    "format=yuv444p,setparams=colorspace=bt709:range=tv", "-c:v", "ffv1", str(path)], check=True, timeout=60)
+    project = _project(MediaAsset("a", str(path), "a", 1.0, 640, 480, 10.0, "video"))
+    project.width, project.height = 640, 480
+    saved = tmp_path / "p.kut"
+    save_project(project, str(saved))
+    reopened = load_project(str(saved))
+    asset = reopened.media_assets[0]
+    assert asset.color_space == ""                                                    # rien dans le fichier
+    assert cm.asset_effective_matrix(asset) == "bt709" and asset.color_space == "bt709"
+    graph = ExportEngine._build_filter_complex(build_render_plan(reopened), 640, 480, 10, None)[0]
+    assert "setparams=colorspace=bt709,scale" not in graph                           # l'export laisse l'étiquette : FFmpeg lit 709
+
+
+def test_a_paused_faithful_segment_applies_the_matrix_even_when_the_monitor_is_on_the_cpu():
+    """Le moniteur CPU (vidéo Qt) lit le flux selon ses métadonnées en lecture ; en pause, le segment fidèle (graphe de l'export)
+    porte le ``setparams`` : même mécanisme que les effets, que le moniteur CPU ne sait pas montrer non plus."""
+    from core.filter_graph import build_filter_complex
+    from core.render_plan import build_render_plan
+
+    plan = build_render_plan(_project(_asset(color_space="none", color_matrix="bt601")))
+    graph = build_filter_complex(plan, 1920, 1080, 25)[0]
+    assert "setparams=colorspace=bt470bg,scale=" in graph

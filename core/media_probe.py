@@ -32,6 +32,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -142,7 +144,14 @@ def probe_media(path: str) -> MediaAsset:
 _COLOR_LABELS: dict[tuple[str, int, int], str] = {}
 _COLOR_LABELS_MAX = 512
 _COLOR_PROBE_MAX_BYTES = 65536
-_COLOR_PROBE_TIMEOUT = 10
+_COLOR_PROBE_TIMEOUT = 3
+"""Secondes : la sonde peut être demandée depuis le fil de l'interface (moniteur), elle ne doit jamais la geler longtemps."""
+_COLOR_FAILURE_TTL = 30.0
+"""Secondes pendant lesquelles un échec de sonde (délai, ``ffprobe`` absent, sortie illisible) est mémorisé : pas de nouvel essai à
+chaque synchronisation du moniteur, mais un échec passager se rattrape."""
+_COLOR_FAILURES: dict[tuple[str, int, int], float] = {}
+_COLOR_FAILURES_MAX = 512
+_clock = time.monotonic
 
 
 def probe_color_label(path: str) -> str:
@@ -161,9 +170,19 @@ def probe_color_label(path: str) -> str:
     cached = _COLOR_LABELS.get(key)
     if cached is not None:
         return cached
+    now = _clock()
+    if _COLOR_FAILURES.get(key, 0.0) > now:
+        return ""                                    # échec récent : pas de nouvel essai avant l'expiration
+
+    def failed() -> str:
+        while len(_COLOR_FAILURES) >= _COLOR_FAILURES_MAX:
+            _COLOR_FAILURES.pop(next(iter(_COLOR_FAILURES)))
+        _COLOR_FAILURES[key] = now + _COLOR_FAILURE_TTL
+        return ""
+
     ffprobe_path = bundled_tool_path("ffprobe") or shutil.which("ffprobe")
     if ffprobe_path is None:
-        return ""
+        return failed()
     try:
         completed = supervised_run(
             [ffprobe_path, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_space",
@@ -171,7 +190,7 @@ def probe_color_label(path: str) -> str:
             capture_output=True, text=True, timeout=_COLOR_PROBE_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError):
-        return ""
+        return failed()
     label = ""
     if completed.returncode == 0 and len(completed.stdout or "") <= _COLOR_PROBE_MAX_BYTES:
         try:
@@ -184,7 +203,66 @@ def probe_color_label(path: str) -> str:
         while len(_COLOR_LABELS) >= _COLOR_LABELS_MAX:
             _COLOR_LABELS.pop(next(iter(_COLOR_LABELS)))
         _COLOR_LABELS[key] = label
-    return label
+        _COLOR_FAILURES.pop(key, None)
+        return label
+    return failed()
+
+
+def _color_key(path: str) -> tuple[str, int, int] | None:
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return (os.path.abspath(path), info.st_mtime_ns, info.st_size)
+
+
+def peek_color_label(path: str) -> str:
+    """L'étiquette déjà sondée de ``path`` (``""`` : inconnue). N'attend jamais : sûre sur le fil de l'interface."""
+    key = _color_key(path)
+    return _COLOR_LABELS.get(key, "") if key is not None else ""
+
+
+_WARMING: set[str] = set()
+_WARMING_LOCK = threading.Lock()
+
+
+def warm_color_label(path: str) -> bool:
+    """Lance la sonde de ``path`` sur un fil de fond (une seule à la fois par fichier) ; ``False`` si rien n'est lancé (déjà connue,
+    déjà en cours, échec récent ou fichier illisible). Le résultat est mémorisé : l'appel suivant de :func:`peek_color_label` le voit."""
+    key = _color_key(path)
+    if key is None or key in _COLOR_LABELS or _COLOR_FAILURES.get(key, 0.0) > _clock():
+        return False
+    with _WARMING_LOCK:
+        if path in _WARMING:
+            return False
+        _WARMING.add(path)
+
+    def work() -> None:
+        try:
+            probe_color_label(path)
+        finally:
+            with _WARMING_LOCK:
+                _WARMING.discard(path)
+
+    threading.Thread(target=work, name="kut-color-label", daemon=True).start()
+    return True
+
+
+def warm_color_labels(paths: list[str]) -> bool:
+    """Sonde en arrière-plan, l'une après l'autre, les étiquettes des ``paths`` encore inconnues (ouverture d'un projet : le fil de
+    l'interface n'attend ensuite jamais). Un seul fil pour tout le lot ; ``False`` s'il n'y a rien à faire."""
+    todo = [path for path in dict.fromkeys(paths) if path and path not in _WARMING and not peek_color_label(path)]
+    if not todo:
+        return False
+
+    def work() -> None:
+        for path in todo:
+            probe_color_label(path)
+
+    threading.Thread(target=work, name="kut-color-labels", daemon=True).start()
+    return True
 
 
 def probe_video(path: str) -> MediaAsset:

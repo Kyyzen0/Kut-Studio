@@ -219,7 +219,7 @@ class HardwarePreviewMixin:
             return "", "auto"
         asset_id = getattr(clip, "asset_id", "")
         asset = next((a for a in self.project.media_assets if a.id == asset_id), None)
-        matrix = asset_effective_matrix(asset)
+        matrix = asset_effective_matrix(asset, probe=False, warm=True)      # jamais d'attente de ffprobe sur le fil de l'interface
         return (matrix, asset.color_matrix) if matrix else ("", "auto")
 
     def _sync_gpu_compositing(self, clip, timeline_time: float) -> None:
@@ -294,7 +294,7 @@ class HardwarePreviewMixin:
                 grade,
                 windows,
                 float(local),
-                asset_ffmpeg_override(asset) if not layer.rendered else "",
+                asset_ffmpeg_override(asset, probe=False, warm=True) if not layer.rendered else "",
             ))
         self.preview_panel.set_video_underlays(entries)
 

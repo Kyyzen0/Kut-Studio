@@ -207,6 +207,16 @@ moniteur, l'export réel et la miniature, sur des fichiers générés non étiqu
 d'aperçu fidèle (`RENDER_ENGINE_VERSION` 11), les clés de miniatures et des LUT cuites contiennent la matrice ou le numéro de règle :
 rien de ce qui a été rendu avec l'ancienne règle n'est resservi.
 
+L'étiquette d'un média n'est pas dans le fichier de projet : elle est sondée à l'import, puis, pour un projet rouvert, en arrière-plan
+à l'ouverture (`warm_color_labels`) ; le fil de l'interface ne l'attend jamais (étiquette connue ou, à défaut, « non étiqueté »,
+l'appel suivant la connaît), un échec de sonde est mémorisé 30 s et le délai est de 3 s. L'export, les fils de travail et les scripts
+sondent, eux, au besoin, quelle que soit la taille du média.
+
+**Limite du moniteur CPU.** Quand le moniteur n'est pas sur le GPU (préférence CPU ou repli après une panne), la lecture passe par la
+vidéo Qt, qui décode selon les métadonnées du flux : un choix forcé (ou la règle HD) n'y a pas d'effet **en lecture**, comme les effets
+que ce moniteur ne sait pas non plus montrer. En pause, le segment d'aperçu fidèle (graphe de l'export, donc avec `setparams`) prend
+le relais dès qu'il est rendu et montre la bonne matrice ; il n'y a pas de chemin de décodage CPU propre à la couleur.
+
 ### Copie zéro : ce qui a été évalué
 
 1. **Textures de Qt Multimedia.** `QVideoSink.setRhi` permet à Qt de livrer des

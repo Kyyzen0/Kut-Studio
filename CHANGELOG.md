@@ -19,7 +19,7 @@ caméras ou exports anciens) étaient lus en BT.601 ; ils sont désormais lus en
 légèrement dans le moniteur, l'aperçu fidèle, l'export et les miniatures : environ 1 niveau en moyenne sur une image naturelle (1,1 mesuré), jusqu'à une
 vingtaine sur les couleurs très saturées. Les médias **étiquetés** et les médias **SD non étiquetés** ne changent pas. Pour retrouver l'ancien rendu d'un
 média : bibliothèque › clic droit sur le média › *Espace colorimétrique* › *BT.601* (ou le verbe de script `set_media_color_matrix`). Les segments d'aperçu
-fidèle déjà rendus sont refaits une fois.
+fidèle déjà rendus sont refaits une fois. Sans GPU (moniteur CPU), la lecture garde la lecture des couleurs de la vidéo Qt ; la matrice voulue s'y voit en pause, une fois le segment fidèle rendu.
 
 ### Added
 

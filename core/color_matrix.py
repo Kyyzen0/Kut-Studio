@@ -145,10 +145,15 @@ def cache_token(label: Any = "", width: Any = 0, height: Any = 0, choice: Any = 
     return f"m{RULE_VERSION}-{override}"
 
 
-def asset_matrix_inputs(asset: Any, probe: bool = True) -> tuple[str, int, int, str]:
+def asset_matrix_inputs(asset: Any, probe: bool = True, warm: bool = False) -> tuple[str, int, int, str]:
     """``(étiquette, largeur, hauteur, choix)`` d'un média, l'étiquette étant sondée à la demande (et mémorisée) si elle
-    n'est pas connue : un projet ouvert depuis un fichier n'en porte pas. ``probe=False`` (chemins de dessin, qui ne doivent
-    jamais attendre ``ffprobe``) : une étiquette inconnue reste ``""``, donc « non étiqueté »."""
+    n'est pas connue : un projet ouvert depuis un fichier n'en porte pas, quelle que soit la taille du média (un SD étiqueté BT.709
+    doit rester en BT.709, comme à l'export).
+
+    ``probe=True`` : la sonde peut attendre ``ffprobe`` (export, fils de travail ; délai court, échecs mémorisés).
+    ``probe=False`` (fil de l'interface, dessin) : n'attend jamais ; l'étiquette déjà connue (sondée ailleurs) est utilisée, sinon
+    elle reste ``""``, « non étiqueté » ; avec ``warm=True`` la sonde est lancée en arrière-plan pour que l'appel suivant la connaisse.
+    Un choix forcé n'a pas besoin de l'étiquette."""
     if asset is None:
         return "", 0, 0, MATRIX_AUTO
     label = clean_label(getattr(asset, "color_space", ""))
@@ -158,16 +163,18 @@ def asset_matrix_inputs(asset: Any, probe: bool = True) -> tuple[str, int, int, 
     media_type = getattr(asset, "media_type", "video")
     if media_type != "video":
         return "", width, height, choice
-    # La sonde n'est utile que si la taille ou le choix peuvent changer le résultat : SD en auto, c'est toujours ce que FFmpeg fait.
-    if probe and not label and choice == MATRIX_AUTO and is_hd(width, height):
-        label = _lazy_label(asset)
+    if not label and choice == MATRIX_AUTO:
+        label = _lazy_label(asset, probe, warm)
     return label, width, height, choice
 
 
-def _lazy_label(asset: Any) -> str:
-    from .media_probe import probe_color_label
+def _lazy_label(asset: Any, probe: bool = True, warm: bool = False) -> str:
+    from .media_probe import peek_color_label, probe_color_label, warm_color_label
 
-    label = probe_color_label(str(getattr(asset, "path", "") or ""))
+    path = str(getattr(asset, "path", "") or "")
+    label = probe_color_label(path) if probe else peek_color_label(path)
+    if not label and warm and not probe:
+        warm_color_label(path)
     if label:
         try:
             asset.color_space = label
@@ -176,16 +183,18 @@ def _lazy_label(asset: Any) -> str:
     return label
 
 
-def asset_effective_matrix(asset: Any) -> str:
-    """La matrice effective d'un média (``""`` pour un média qui n'est pas une vidéo)."""
+def asset_effective_matrix(asset: Any, probe: bool = True, warm: bool = False) -> str:
+    """La matrice effective d'un média (``""`` pour un média qui n'est pas une vidéo) ; ``probe`` / ``warm`` :
+    :func:`asset_matrix_inputs`."""
     if asset is None or getattr(asset, "media_type", "video") != "video":
         return ""
-    label, width, height, choice = asset_matrix_inputs(asset)
+    label, width, height, choice = asset_matrix_inputs(asset, probe, warm)
     return effective_matrix(label, width, height, choice)
 
 
-def asset_ffmpeg_override(asset: Any) -> str:
-    """Le ``setparams=colorspace=`` à poser sur un média (``""`` : rien ; image fixe et audio : jamais)."""
+def asset_ffmpeg_override(asset: Any, probe: bool = True, warm: bool = False) -> str:
+    """Le ``setparams=colorspace=`` à poser sur un média (``""`` : rien ; image fixe et audio : jamais) ; ``probe`` / ``warm`` :
+    :func:`asset_matrix_inputs`."""
     if asset is None or getattr(asset, "media_type", "video") != "video":
         return ""
-    return ffmpeg_override(*asset_matrix_inputs(asset))
+    return ffmpeg_override(*asset_matrix_inputs(asset, probe, warm))
