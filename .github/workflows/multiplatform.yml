@@ -47,8 +47,6 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         uses: ./.github/actions/install-ffmpeg-windows
-        with:
-          force-fallback: "true"
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip -r requirements-dev.txt
