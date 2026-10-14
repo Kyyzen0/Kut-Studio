@@ -45,6 +45,9 @@ LOCK_SUFFIX = ".lock"
 KINDS = ("app", "cli")
 _CORRUPT_GRACE_SECONDS = 0.5
 """Un verrou illisible peut être un verrou en cours d'écriture : on relit un instant avant de conclure."""
+_TRANSIENT_READ_SECONDS = 0.3
+"""Sous Windows, lire un fichier en cours de suppression ou de remplacement par un autre processus lève ``PermissionError``
+(erreurs 5, 32, 33) : transitoire, on relit un court instant. Au-delà, l'état est inconnu et on refuse (``ProjectLockedError``)."""
 _CORRUPT_STALE_AFTER = 60.0
 """Un verrou illisible depuis plus de cela (mtime) n'est plus une écriture en cours : c'est un fichier abîmé."""
 _MAX_TIMESTAMP = 4_102_444_800.0
@@ -180,13 +183,46 @@ class ProjectLock:
     def _payload(self, owner: LockOwner) -> bytes:
         return json.dumps({"kut_lock": LOCK_VERSION, **asdict(owner)}, ensure_ascii=False, indent=1).encode("utf-8")
 
+    def _create_settling(self) -> int:
+        """Crée le verrou en ``O_EXCL``. Sous Windows, un nom dont la suppression est en attente lève ``PermissionError`` (et son
+        ``exists()`` peut mentir) : on retente pendant ``_TRANSIENT_READ_SECONDS`` (la suppression finit, le nom devient libre ou
+        ``FileExistsError``) avant de conclure à une vraie erreur de droits."""
+        deadline = time.monotonic() + _TRANSIENT_READ_SECONDS
+        while True:
+            try:
+                return os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
+
+    def _lock_present(self) -> bool:
+        """Le fichier de verrou existe-t-il ? Sous Windows, ``exists()`` lève ``PermissionError`` sur un fichier en suppression : présent."""
+        try:
+            return self.path.exists()
+        except OSError:
+            return True
+
+    def _read_settling(self) -> bytes | None:
+        """Les octets du verrou ; ``None`` s'il a disparu. Un ``PermissionError`` (suppression ou remplacement en cours sous Windows)
+        est retenté pendant ``_TRANSIENT_READ_SECONDS`` ; s'il persiste (vraie erreur de droits), ``ProjectLockedError`` UNKNOWN."""
+        deadline = time.monotonic() + _TRANSIENT_READ_SECONDS
+        while True:
+            try:
+                return self.path.read_bytes()
+            except FileNotFoundError:
+                return None
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise ProjectLockedError(self.path, None, LockVerdict.UNKNOWN) from None
+                time.sleep(0.01)
+
     def _read_with_grace(self) -> tuple[LockOwner | None, bytes | None]:
         """Le verrou existant ; relu un instant s'il est illisible (une écriture peut être en cours). ``(None, None)`` : disparu."""
         deadline = time.monotonic() + _CORRUPT_GRACE_SECONDS
         while True:
-            try:
-                raw = self.path.read_bytes()
-            except FileNotFoundError:
+            raw = self._read_settling()
+            if raw is None:
                 return None, None
             owner = _parse(raw)
             if owner is not None or time.monotonic() >= deadline:
@@ -236,8 +272,10 @@ class ProjectLock:
         owner = self._new_owner()
         for _attempt in range(4):
             try:
-                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            except FileExistsError:
+                descriptor = self._create_settling()
+            except (FileExistsError, PermissionError) as error:
+                if isinstance(error, PermissionError) and not self._lock_present():
+                    raise                                # vraie erreur de droits sur le dossier, pas un verrou en suppression
                 existing, raw = self._read_with_grace()
                 if raw is None:
                     continue                             # disparu entre-temps : on retente la création
@@ -288,9 +326,10 @@ class ProjectLock:
         if owner is None:
             return
         try:
-            current = _parse(self.path.read_bytes())
-        except OSError:
+            raw = self._read_settling()
+        except (OSError, ProjectLockedError):
             return
+        current = None if raw is None else _parse(raw)
         if current is not None and current.nonce == owner.nonce:
             self._unlink()
 
