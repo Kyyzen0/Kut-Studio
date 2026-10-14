@@ -101,6 +101,7 @@ COLOR_TRANSLATIONS: dict[str, dict[str, str]] = {
     "color.window.shape.rectangle": _t("Rectangle", "Rectangle", "Rectángulo"),
     "color.window.shape.ellipse": _t("Ellipse", "Ellipse", "Elipse"),
     "color.window.shape.polygon": _t("Forme libre", "Free shape", "Forma libre"),
+    "color.window.shape.path": _t("Courbe", "Curve", "Curva"),
     "color.window.inverted": _t("inversée", "inverted", "invertida"),
     "color.window.invert": _t("Inverser (corriger l'extérieur)", "Invert (grade the outside)",
                               "Invertir (corregir el exterior)"),
