@@ -1318,7 +1318,8 @@ VERBS: dict[str, Verb] = {
              _set_color_detail, group="color"),
         Verb("add_color_window", "Ajoute une fenêtre (masque) sur un nœud d'étalonnage.",
              (_CLIP, _NODE,
-              Param("shape", Kind.ENUM, "rectangle, ellipse ou polygon.", choices=tuple(item.value for item in MaskShape)),
+              Param("shape", Kind.ENUM, "rectangle, ellipse ou polygon.",
+                    choices=tuple(item.value for item in MaskShape if item is not MaskShape.PATH)),   # pas d'éditeur de courbe ici
               Param("position_x", Kind.NUMBER, "Centre X (espace calque).", required=False,
                     minimum=_MASK_BOUNDS["position_x"][0], maximum=_MASK_BOUNDS["position_x"][1]),
               Param("position_y", Kind.NUMBER, "Centre Y (espace calque).", required=False,

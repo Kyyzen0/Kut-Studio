@@ -2,7 +2,7 @@
 
 - Mode de fusion : la liste centralisée (:mod:`core.blend_modes`).
 - Masques : une pile ; chaque masque a sa forme (rectangle, ellipse,
-  polygone), son opération (Ajouter / Soustraire / Intersection), son
+  polygone, courbe de Bézier), son opération (Ajouter / Soustraire / Intersection), son
   inversion, son contour adouci, sa dilatation, son opacité et sa
   position / taille / rotation. Les valeurs animables passent par le
   moteur central (losange dans l'éditeur de courbes, ``mask.<id>.*``).
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -42,6 +43,7 @@ _SHAPES = (
     (MaskShape.RECTANGLE, "mograph.shape.rectangle"),
     (MaskShape.ELLIPSE, "mograph.compositing.shape_ellipse"),
     (MaskShape.POLYGON, "mograph.shape.polygon"),
+    (MaskShape.PATH, "mask.shape.path"),
 )
 _MODES = (
     (MaskMode.ADD, "common.add"),
@@ -116,6 +118,9 @@ class CompositingEditor(QGroupBox):
         self.edit_in_monitor.setCheckable(True)
         self.edit_in_monitor.setToolTip(i18n.translate("mask.edit.toggle_tip"))
         mask_form.addRow(self.edit_in_monitor)
+        self.path_hint = QLabel(i18n.translate("mask.path.hint"), objectName="mask_path_hint")    # courbe : les gestes du moniteur
+        self.path_hint.setWordWrap(True)
+        mask_form.addRow(self.path_hint)
         self.mask_mode = QComboBox(objectName="mask_mode")
         for mode, label in _MODES:
             self.mask_mode.addItem(i18n.translate(label), mode.value)
@@ -277,7 +282,9 @@ class CompositingEditor(QGroupBox):
         self._refresh_mask_widgets()
 
     def _refresh_mask_widgets(self) -> None:
-        has_mask = self._current_mask() is not None
+        current = self._current_mask()
+        has_mask = current is not None
+        self.path_hint.setVisible(has_mask and current.shape is MaskShape.PATH)
         self.mask_form_host.setVisible(has_mask)
         self.remove_mask.setEnabled(has_mask)
 

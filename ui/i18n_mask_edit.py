@@ -27,6 +27,17 @@ MASK_EDIT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "This mask cannot be edited here (clip not in the picture, hidden or outside its duration).",
         "Esta máscara no se puede modificar aquí (clip ausente de la imagen, oculto o fuera de su duración).",
     ),
+    "mask.shape.path": _t("Courbe", "Curve", "Curva"),
+    "mask.path.hint": _t(
+        "Courbe : glissez les nœuds et leurs tangentes (Alt : tangente seule). Double-clic sur le contour pour ajouter un nœud, sur un nœud pour le lisser ou l'angulariser ; Alt + clic ou Suppr le retire.",
+        "Curve: drag the nodes and their tangents (Alt: tangent only). Double-click the outline to add a node, a node to smooth or sharpen it; Alt + click or Delete removes it.",
+        "Curva: arrastre los nodos y sus tangentes (Alt: solo la tangente). Doble clic en el contorno para añadir un nodo, en un nodo para suavizarlo o hacerlo angular; Alt + clic o Supr lo quita.",
+    ),
+    "mask.path.min_nodes": _t(
+        "Une courbe garde au moins 3 nœuds : le nœud n'a pas été retiré.",
+        "A curve keeps at least 3 nodes: the node was not removed.",
+        "Una curva conserva al menos 3 nodos: el nodo no se ha quitado.",
+    ),
 }
 
 __all__ = ["MASK_EDIT_TRANSLATIONS"]

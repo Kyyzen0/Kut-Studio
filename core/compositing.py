@@ -13,7 +13,7 @@ Un calque porte une **pile** de masques, combinés dans l'ordre :
 - ``intersect`` : ne garde que l'intersection (``a × m``).
 
 Le premier masque part d'un calque vide s'il est ``add``, plein sinon.
-Chaque masque a une forme (rectangle, ellipse, polygone), un contour adouci
+Chaque masque a une forme (rectangle, ellipse, polygone, courbe de Bézier fermée : :mod:`core.mask_path`), un contour adouci
 (``feather``), une dilatation / contraction (``expansion``), une opacité et
 une inversion. Position, taille, rotation, contour, dilatation et opacité
 sont animables par le moteur central (:mod:`core.animation`) : leurs
@@ -31,12 +31,15 @@ from typing import Any
 
 from .animation import AnimatableProperty, InterpolationType, Keyframe, ValueKind
 from .blend_modes import BlendMode, coerce_blend_mode
+from .mask_path import normalize_nodes
 
 
 class MaskShape(str, Enum):
     RECTANGLE = "rectangle"
     ELLIPSE = "ellipse"
     POLYGON = "polygon"
+    PATH = "path"
+    """Courbe de Bézier cubique fermée : ``Mask.points`` = ancres, ``Mask.handles`` = tangentes (voir :mod:`core.mask_path`)."""
 
 
 class MaskMode(str, Enum):
@@ -140,6 +143,9 @@ class Mask:
     points: tuple[tuple[float, float], ...] = field(default_factory=tuple)
     name: str = ""
     id: str = field(default="", compare=False)
+    handles: tuple[tuple[float, float, float, float], ...] = field(default_factory=tuple)
+    """Tangentes des nœuds d'une courbe (``PATH``) : ``(in_dx, in_dy, out_dx, out_dy)`` relatives à l'ancre, une par entrée de
+    ``points``. Vide pour les autres formes."""
 
     def __post_init__(self):
         object.__setattr__(self, "shape", MaskShape(self.shape))
@@ -152,10 +158,16 @@ class Mask:
             object.__setattr__(self, name, _clamp(name, getattr(self, name)))
         object.__setattr__(self, "inverted", bool(self.inverted))
         object.__setattr__(self, "keyframes", tuple(sorted(self.keyframes, key=lambda k: (k.property_name, k.time_seconds))))
-        points = _points(self.points)
+        points = self.points if self.shape is MaskShape.PATH else _points(self.points)
         if self.shape is MaskShape.POLYGON and len(points) < 3:
             points = DEFAULT_POLYGON
+        handles: tuple = ()
+        if self.shape is MaskShape.PATH:
+            # Un chemin sans nœud valide retombe sur la forme par défaut (comme un polygone) ; une valeur non finie, un
+            # nœud mal formé ou trop de nœuds sont refusés (ValueError), pas écrêtés en silence.
+            points, handles = normalize_nodes(self.points, self.handles)
         object.__setattr__(self, "points", points)
+        object.__setattr__(self, "handles", handles)
         object.__setattr__(self, "name", str(self.name or ""))
         if not self.id:
             object.__setattr__(self, "id", new_mask_id())
@@ -283,21 +295,28 @@ _MASK_FIELDS = frozenset(f.name for f in fields(Mask))
 
 
 def mask_to_dict(m: Mask) -> dict[str, Any]:
-    data = {k: v for k, v in vars(m).items() if k not in {"keyframes", "points"}}
+    data = {k: v for k, v in vars(m).items() if k not in {"keyframes", "points", "handles"}}
     data["shape"] = m.shape.value
     data["mode"] = m.mode.value
     data["keyframes"] = [vars(k) for k in m.keyframes]
     if m.points:
         data["points"] = [list(p) for p in m.points]
+    if m.handles:                                    # absent hors courbe : un projet sans courbe s'écrit comme avant
+        data["handles"] = [list(h) for h in m.handles]
     return data
 
 
 def mask_from_dict(raw: dict) -> Mask:
-    kwargs = {k: v for k, v in raw.items() if k in _MASK_FIELDS and k not in {"keyframes", "points"}}
+    kwargs = {k: v for k, v in raw.items() if k in _MASK_FIELDS and k not in {"keyframes", "points", "handles"}}
     kwargs["keyframes"] = tuple(
         MaskKeyframe(**k) for k in raw.get("keyframes", []) or [] if isinstance(k, dict)
     )
     kwargs["points"] = _points(raw.get("points"))
+    if "handles" in raw:
+        handles = raw["handles"]
+        if not isinstance(handles, (list, tuple)):
+            raise ValueError("Poignées de masque invalides : tableau attendu.")
+        kwargs["handles"] = tuple(handles)           # normalisé (et refusé si illisible) par Mask.__post_init__
     return Mask(**kwargs)
 
 
@@ -340,7 +359,12 @@ def build_ffmpeg_filters(value: Compositing, width: int, height: int) -> list[st
 
     Conservé pour les consommateurs historiques. L'export passe désormais par
     une matte rastérisée (:mod:`core.mograph_raster`) qui gère contour adouci,
-    rotation, polygones, opérations et animation.
+    rotation, polygones, courbes, opérations et animation.
+
+    Ce repli ne sait exprimer que le rectangle et l'ellipse : un polygone ou une courbe (``PATH``) y est approché par
+    son **rectangle** (la boîte du masque). Aucun chemin de production n'y passe (``_build_layer_filter`` reçoit toujours
+    ``add_input`` quand le clip porte des masques, voir ``core/export_engine.py``) : seuls les appels directs sans
+    ``add_input`` (tests, outils) l'atteignent.
     """
     result = ["format=rgba", *chroma_key_filters(value)]
     # Les expressions utilisent les coordonnées du canvas et peuvent donc être
@@ -351,7 +375,7 @@ def build_ffmpeg_filters(value: Compositing, width: int, height: int) -> list[st
         rx = max(1.0, (m.width+m.expansion)*width/2); ry = max(1.0, (m.height+m.expansion)*height/2)
         if m.shape == MaskShape.ELLIPSE:
             inside = f"lte(pow((X-{cx:.6g})/{rx:.6g},2)+pow((Y-{cy:.6g})/{ry:.6g},2),1)"
-        else:
+        else:                                              # rectangle ; polygone et courbe : leur boîte (voir la docstring)
             inside = f"between(X,{cx-rx:.6g},{cx+rx:.6g})*between(Y,{cy-ry:.6g},{cy+ry:.6g})"
         if m.inverted: inside = f"1-({inside})"
         result.append(f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({inside})*{m.opacity:.6g}'")

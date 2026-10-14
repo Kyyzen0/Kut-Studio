@@ -114,7 +114,10 @@ FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
 CURRENT_VERSION = 17
-"""Version courante du format public ``.kut``.
+"""Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18).
+
+La version 18 n'est écrite que par un projet contenant un masque courbe de Bézier (ADR-0006 lot 3b) : le chargeur la lit
+comme la 17, un ancien Kut-Studio la refuse.
 
 La version 17 ajoute la composition nodale (voir ``docs/composition.md``) : clé
 ``composition`` d'un clip de composition (graphe de nœuds, durée, animation
@@ -149,8 +152,16 @@ Le compositing reste un champ optionnel du schéma v12 : son absence produit
 l'état neutre, donc il ne justifie pas une rupture de format.
 """
 
+PATH_MASK_VERSION = 18
+"""Version écrite par un projet qui contient au moins un masque courbe de Bézier (``MaskShape.PATH``, ADR-0006 lot 3b).
+
+Règle « version minimale nécessaire » : un projet sans masque courbe s'écrit en :data:`CURRENT_VERSION` (17), octet pour
+octet comme avant ; seul un projet qui en contient un passe à 18. Un Kut-Studio plus ancien (qui ne lit que ≤ 17) refuse
+alors le fichier avec le message explicite de ``_validate_envelope`` au lieu de l'ouvrir en ignorant la courbe et de la
+perdre à la sauvegarde suivante. Retirer la dernière courbe ramène l'écriture à 17. Le chargeur lit 17 et 18 de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -465,8 +476,39 @@ def _asset_to_dict(asset: MediaAsset) -> dict[str, Any]:
     return data
 
 
+def payload_uses_path_masks(node: Any) -> bool:
+    """``True`` si la structure sérialisée contient un masque courbe (``"shape": "path"`` avec ``handles``).
+
+    On lit le **résultat** de la sérialisation plutôt que le modèle : tout masque écrit l'est par
+    :func:`core.compositing.mask_to_dict` (clips de toutes les séquences, clips imbriqués, nœuds de composition,
+    fenêtres des nœuds d'étalonnage, étalonnages des préréglages), donc aucun endroit ne peut être oublié.
+    """
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("shape") == "path" and "handles" in item:
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
+def project_uses_path_masks(project: Project) -> bool:
+    """``True`` si le projet contient au moins un masque courbe (donc s'écrit en :data:`PATH_MASK_VERSION`)."""
+    return payload_uses_path_masks(_build_payload(project)[_PROJECT_KEY])
+
+
 def _build_payload(project: Project) -> dict[str, Any]:
-    """Construit la structure JSON-sérialisable représentant un projet."""
+    """Construit la structure JSON-sérialisable représentant un projet (version : la minimale nécessaire)."""
+    payload = _build_payload_body(project)
+    if payload_uses_path_masks(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = PATH_MASK_VERSION
+    return payload
+
+
+def _build_payload_body(project: Project) -> dict[str, Any]:
     return {
         _FORMAT_KEY: FORMAT_NAME,
         _VERSION_KEY: CURRENT_VERSION,

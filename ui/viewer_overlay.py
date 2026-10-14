@@ -570,7 +570,20 @@ class ViewerOverlay(QGraphicsObject):
             return ""
         return top[1]
 
+    def hoverLeaveEvent(self, event) -> None:  # noqa: N802
+        self.masks.note_hover(None)
+        super().hoverLeaveEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """Courbe de masque : double-clic sur un nœud (lisse / anguleux) ou sur le contour (nouveau nœud) ; sinon un appui."""
+        if self.masks.path_double_click(event.pos()):
+            self._drag = None
+            event.accept()
+            return
+        self.mousePressEvent(event)
+
     def hoverMoveEvent(self, event) -> None:  # noqa: N802
+        self.masks.note_hover(event.pos())
         hit = self._hit(event.pos())
         cursor = Qt.ArrowCursor
         if hit is not None:
@@ -611,6 +624,9 @@ class ViewerOverlay(QGraphicsObject):
             event.accept()
             return
         if mode.startswith("m_") and self.masks.geometry is not None:
+            if self.masks.path_press(mode, event.modifiers()):      # Alt + nœud de courbe : suppression
+                event.accept()
+                return
             self._drag = self.masks.begin(mode, self.to_canvas(event.pos()))
             self._drag["clip_id"] = self.masks.geometry.clip_id
             self._drag["mask_id"] = target

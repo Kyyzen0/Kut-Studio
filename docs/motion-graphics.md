@@ -72,6 +72,7 @@ pointillés (vert Ajouter, rouge Soustraire, ambre Intersection, plus le signe `
 |---|---|
 | rectangle, ellipse | intérieur = déplacer ; 4 coins et 4 côtés = taille (autour du centre, rotation du masque prise en compte, Maj = proportions des coins) ; poignée ronde = rotation (Maj : 15°) ; losange = adoucissement |
 | polygone | chaque sommet (`points`) ; l'intérieur = la forme entière ; coins, rotation et adoucissement comme ci-dessus |
+| courbe (Bézier, lot 3b) | chaque nœud ; chaque tangente (trait + point) ; l'intérieur = la forme entière ; coins, rotation et adoucissement comme ci-dessus (voir ci-dessous) |
 
 Un glisser part des valeurs du masque à la tête de lecture et recalcule des valeurs absolues
 (`core/mask_handles.py`, sans Qt) ; chaque propriété touchée passe par le mécanisme du glisser de clip : image-clé à la
@@ -82,6 +83,46 @@ historique, puis **une** étape d'historique à la relâche. Le masque s'affiche
 ou le calque est verrouillé, ou que le clip n'est pas rendu (piste masquée, hors solo, clip désactivé, calque masqué) ;
 hors de la durée du clip ou sur une séquence imbriquée, les poignées du clip reprennent. Le mode Suivi, la pipette et
 les fenêtres d'étalonnage de la page Couleur gardent la priorité.
+
+#### Masque en courbe de Bézier (lot 3b)
+
+La forme *Courbe* (`MaskShape.PATH`, valeur `"path"`) est une courbe de Bézier cubique **fermée** faite de 3 à 128 nœuds
+(`core/mask_path.py`). Un nœud est une ancre `(x, y)` (`Mask.points`, fractions de la boîte du masque comme les sommets d'un polygone,
+bornes ±2) et une paire de tangentes `(in_dx, in_dy, out_dx, out_dy)` relatives à l'ancre (`Mask.handles`, une par nœud, bornes
+±2). Un nœud dont les deux tangentes sont nulles est *anguleux* ; une courbe sans aucune tangente est donc un polygone. Un
+masque Courbe sans nœud valide prend la forme par défaut : un cercle de quatre nœuds arrondis. Une valeur non finie, un nœud
+mal formé, des listes de longueurs différentes ou plus de 128 nœuds sont **refusés** (`ValueError`) et jamais écrêtés en silence ;
+seules les valeurs finies hors bornes sont ramenées à la borne, comme pour un polygone.
+
+La matte est rastérisée par Qt (`QPainterPath.cubicTo`, `core/mograph_raster.py`) : adoucissement, dilatation, inversion, opacité
+et opérations sont ceux des autres formes, et l'aperçu GPU comme l'export FFmpeg consomment la même matte. Le repli historique
+`build_ffmpeg_filters` (expressions `geq`, sans passer par la matte) ne sait dessiner que rectangle et ellipse : il approche une courbe
+(comme un polygone) par sa boîte ; aucun export réel n'y passe (voir la docstring).
+
+Fichier du projet : le champ `handles` d'un masque est **optionnel** et n'est écrit que pour une courbe. Un projet **sans** courbe se
+sauvegarde octet pour octet comme avant, en version 17. Un projet qui contient **au moins une** courbe (dans n'importe quelle séquence,
+clip imbriqué, composition, fenêtre d'étalonnage ou préréglage de couleur) s'écrit en **version 18** (`PATH_MASK_VERSION`, règle
+« version minimale nécessaire ») : un Kut-Studio plus ancien (≤ 17) **refuse** alors le fichier avec le message explicite « Version de
+fichier Kut-Studio non supportée » au lieu de l'ouvrir en ignorant la courbe. Retirer la dernière courbe puis enregistrer ramène à 17. Le
+chargeur lit 17 et 18 de la même façon.
+
+Gestes dans le moniteur (nœuds et tangentes ne sont **pas animables** : ils sont écrits dans le masque, jamais en image-clé ;
+position, taille, rotation, adoucissement, dilatation et opacité le restent) :
+
+| Geste | Effet |
+|---|---|
+| glisser un nœud | le déplace (collé à ±2) |
+| glisser une tangente | la déplace ; l'autre tangente du nœud lui est symétrique ; **Alt** : la symétrie est cassée |
+| double-clic sur le contour | ajoute un nœud (découpe de De Casteljau : la forme ne change pas) |
+| double-clic sur un nœud | anguleux ↔ lisse (tangentes parallèles à la corde des voisins) |
+| Alt + clic sur un nœud, ou **Suppr** / Retour arrière sur un nœud survolé | le retire ; refusé sous 3 nœuds (message dans la barre d'état) |
+| glisser l'intérieur | déplace la forme entière |
+
+Chaque geste est une étape d'historique et passe par les mêmes gardes que les autres poignées (verrous, clip non rendu, bornes
+du modèle) ; un ajout qui sortirait des bornes est refusé plutôt que corrigé. Suppr n'efface le clip que si aucun nœud n'est
+survolé. Les fenêtres d'étalonnage de la page Couleur n'ont pas d'éditeur de courbe (le verbe de script `add_color_window` reste
+limité à rectangle / ellipse / polygone). Lot 3b ; l'ADR-0006 (`adr-composition-visuelle-progressive`) vit sur une branche locale non poussée,
+pas dans ce dépôt.
 
 ## Modèle
 

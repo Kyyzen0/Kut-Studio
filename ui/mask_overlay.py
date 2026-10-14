@@ -6,7 +6,8 @@ polygone), de rotation et d'adoucissement. Même géométrie que les fenêtres d
 matrice monde. Rien de ceci n'est rendu à l'export.
 
 Noms de poignées (préfixe ``m_``, pour ne jamais être confondus avec ceux du clip ni des fenêtres) : ``m_tl``…, ``m_t``…,
-``m_p<i>`` (sommet), ``m_rotate``, ``m_feather``, ``m_move`` (l'intérieur de la forme).
+``m_p<i>`` (sommet ou nœud de courbe), ``m_hi<i>`` / ``m_ho<i>`` (tangentes d'une courbe), ``m_rotate``, ``m_feather``,
+``m_move`` (l'intérieur de la forme). Les nœuds et tangentes d'une courbe sont dessinés par :mod:`ui.mask_path_overlay`.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen, QPolygonF
 
 from core import mask_handles as geo
 from core.mograph_scene import box_corners
+from ui import mask_path_overlay as path_ui
 from ui.overlay_paint import halo_stroke
 from ui.theme import OVERLAY, overlay_qcolor
 from ui.viewer_overlay import HANDLE_RADIUS, ROTATE_DISTANCE
@@ -40,6 +42,7 @@ class MaskOverlayHelper:
     def __init__(self, overlay) -> None:
         self.overlay = overlay
         self.geometry: geo.MaskGeometry | None = None
+        self._hovered: int | None = None
 
     # -- repères écran -----------------------------------------------------------------------------
 
@@ -107,7 +110,8 @@ class MaskOverlayHelper:
             return None
         handles = self.handles()
         vertices = [name for name in handles if name[2:].startswith("p") and name[3:].isdigit()]
-        order = vertices + ["m_rotate", "m_feather", "m_tl", "m_tr", "m_br", "m_bl", "m_t", "m_r", "m_b", "m_l"]
+        tangents = [name for name in handles if path_ui.is_tangent(name)]
+        order = vertices + tangents + ["m_rotate", "m_feather", "m_tl", "m_tr", "m_br", "m_bl", "m_t", "m_r", "m_b", "m_l"]
         for name in order:
             handle = handles.get(name)
             if handle is not None and math.hypot(point.x() - handle.x(), point.y() - handle.y()) <= _HIT:
@@ -115,6 +119,28 @@ class MaskOverlayHelper:
         if self.outline().containsPoint(point, Qt.OddEvenFill):
             return "m_move"
         return None
+
+    # -- courbe : gestes de structure et survol (ui/mask_path_overlay.py) ---------------------------
+
+    def hovered_node(self) -> int | None:
+        """Nœud de courbe survolé à la dernière position de la souris (touche Suppr), ``None`` sinon."""
+        return self._hovered
+
+    def note_hover(self, point: QPointF | None) -> None:
+        self._hovered = None if point is None else path_ui.hovered(self, point)
+
+    def path_press(self, name: str, modifiers) -> bool:
+        return path_ui.press(self, name, modifiers)
+
+    def path_double_click(self, point: QPointF) -> bool:
+        return path_ui.double_click(self, point)
+
+    def remove_hovered_node(self) -> bool | None:
+        """Retire le nœud survolé : ``True`` fait, ``False`` refusé (sous 3 nœuds), ``None`` aucun nœud survolé."""
+        index = self._hovered
+        if index is None or self.geometry is None or self.geometry.shape != "path" or not self.geometry.editable:
+            return None
+        return path_ui.remove_node(self, index)
 
     @staticmethod
     def cursor(name: str):
@@ -149,10 +175,13 @@ class MaskOverlayHelper:
 
     def _paint_handles(self, painter: QPainter, accent) -> None:
         handles = self.handles()
+        geometry_is_path = self.geometry.shape == "path"
         painter.setBrush(QBrush(overlay_qcolor(OVERLAY.handle_fill)))
         top = self.point(0.0, -0.5)
         edge = self._scene(geo.offset_point(self.geometry, geo.mask_frame(self.geometry)[1], 0.0))
         for name, point in handles.items():
+            if geometry_is_path and name[2:3] in ("p", "h"):
+                continue                                   # nœuds et tangentes : ui.mask_path_overlay
             if name == "m_rotate":
                 halo_stroke(painter, accent, 1.0, lambda point=point: painter.drawLine(top, point))
             elif name == "m_feather":
@@ -168,6 +197,8 @@ class MaskOverlayHelper:
                 painter.drawEllipse(point, radius, radius)
             else:
                 painter.drawRect(QRectF(point.x() - radius, point.y() - radius, 2 * radius, 2 * radius))
+        if geometry_is_path:
+            path_ui.paint(self, painter, accent)
         painter.setBrush(Qt.NoBrush)
 
     # -- glisser ------------------------------------------------------------------------------------
@@ -182,13 +213,15 @@ class MaskOverlayHelper:
         """Valeurs à écrire pour ce pas de glisser (vide : rien à changer ou valeur hors bornes, pas refusée en silence)."""
         geometry: geo.MaskGeometry = drag["mask_geometry"]
         edit = geo.drag(geometry, drag["mode"][2:], drag["start"], current, shift=bool(modifiers & Qt.ShiftModifier),
-                        previous_turn=drag["turn"])
+                        previous_turn=drag["turn"], alt=bool(modifiers & Qt.AltModifier))
         if edit is None:
             return {}
         drag["turn"] = edit.turn
         payload = dict(edit.values)
         if edit.points is not None:
             payload["points"] = edit.points
+        if edit.handles is not None:
+            payload["handles"] = edit.handles
         return payload
 
 

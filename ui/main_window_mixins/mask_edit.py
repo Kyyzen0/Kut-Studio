@@ -6,7 +6,8 @@ est gardé dans ``_mask_edit_id`` ; la surcouche du moniteur montre alors ce mas
 Écriture : la mécanique du glisser du clip (:meth:`MotionGraphicsMixin._apply_property_values`) : image-clé à la tête de
 lecture si la propriété est animée (``mask.<id>.<propriété>``), valeur statique sinon ; une seule étape d'historique à
 la relâche. Un masque suivi par un lien de tracking est dessiné à sa position rendue, mais le glisser part des valeurs saisies
-(``MaskGeometry.base``) : le suivi ne s'ajoute pas deux fois. Les sommets d'un polygone ne s'animent pas : ils sont écrits dans le masque. Toute entrée repasse par
+(``MaskGeometry.base``) : le suivi ne s'ajoute pas deux fois. Les sommets d'un polygone et les nœuds / tangentes d'une courbe
+(lot 3b) ne s'animent pas : ils sont écrits dans le masque, validés avant (:func:`core.mask_path_handles.nodes_refusal`). Toute entrée repasse par
 :func:`core.mask_handles.mask_edit_refusal` : un signal ne contourne ni le verrou de la piste, ni celui du calque.
 """
 
@@ -16,8 +17,10 @@ import logging
 from dataclasses import replace
 
 from core import mask_handles
+from core.mask_path_handles import nodes_refusal
 from core.compositing import MASK_PROPERTIES, mask_property_id
 from ui.i18n import translate
+from ui.main_window_mixins.mask_path_keys import PathKeyFilter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +35,8 @@ class MaskEditMixin:
         overlay.mask_dragged.connect(self._on_mask_dragged)
         overlay.mask_released.connect(self._on_mask_released)
         self.properties_panel.mask_edit_changed.connect(self._on_mask_edit_selected)
+        self._mask_path_keys = PathKeyFilter(self)
+        self.preview_panel.graphics_view.installEventFilter(self._mask_path_keys)
 
     def _on_mask_edit_selected(self, mask_id: str) -> None:
         self._mask_edit_id = str(mask_id or "")
@@ -78,11 +83,13 @@ class MaskEditMixin:
         if reason is not None:
             self.statusBar().showMessage(translate("mask.edit.locked" if reason == "locked" else "mask.edit.unavailable"), 4000)
             return
-        points = values.get("points")
+        points, handles = values.get("points"), values.get("handles")
         numeric = {name: value for name, value in values.items() if name in MASK_PROPERTIES}
-        if mask_handles.out_of_bounds(numeric, points):     # la zone de dessin ne le propose pas ; garde côté modèle
+        if mask_handles.out_of_bounds(numeric, points, handles):   # la zone de dessin ne le propose pas ; garde côté modèle
             return
-        if not numeric and points is None:
+        if not numeric and points is None and handles is None:
+            return
+        if (points is not None or handles is not None) and self._mask_nodes_refused(clip_id, mask_id, points, handles):
             return
         if not self._viewer_dragging:
             self._finalize_pending_edit_sessions()
@@ -90,12 +97,27 @@ class MaskEditMixin:
         changed = False
         if numeric:
             changed = self._apply_property_values(clip_id, {mask_property_id(mask_id, name): value for name, value in numeric.items()})
-        if points is not None:
-            changed = self._write_mask_points(clip_id, mask_id, tuple(points)) or changed
+        if points is not None or handles is not None:
+            changed = self._write_mask_nodes(clip_id, mask_id, points, handles) or changed
         if changed:
             self._after_live_change(clip_id)
 
-    def _write_mask_points(self, clip_id: str, mask_id: str, points: tuple) -> bool:
+    def _mask_nodes_refused(self, clip_id: str, mask_id: str, points, handles) -> bool:
+        """``True`` : les nœuds ne peuvent pas être écrits (message dans la barre d'état si c'est le nombre de nœuds)."""
+        from core.timeline_operations import find_clip
+
+        try:
+            mask = find_clip(self.project, clip_id).compositing.mask_by_id(mask_id)
+        except KeyError:
+            return True
+        if mask is None:
+            return True
+        reason = nodes_refusal(mask, None if points is None else tuple(points), None if handles is None else tuple(handles))
+        if reason == "count":
+            self.statusBar().showMessage(translate("mask.path.min_nodes"), 4000)
+        return reason is not None
+
+    def _write_mask_nodes(self, clip_id: str, mask_id: str, points, handles) -> bool:
         from core.timeline_operations import find_clip
 
         try:
@@ -105,8 +127,11 @@ class MaskEditMixin:
         compositing = clip.compositing
         if compositing.mask_by_id(mask_id) is None:
             return False
+        changes = {} if points is None else {"points": tuple(points)}
+        if handles is not None:
+            changes["handles"] = tuple(handles)
         clip.compositing = replace(compositing, masks=tuple(
-            replace(mask, points=points, id=mask.id) if mask.id == mask_id else mask for mask in compositing.masks))
+            replace(mask, **changes, id=mask.id) if mask.id == mask_id else mask for mask in compositing.masks))
         return True
 
     def _on_mask_released(self, clip_id: str, _mask_id: str) -> None:

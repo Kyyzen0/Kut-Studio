@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from . import mask_path
 from .compositing import MASK_PROPERTY_ORDER, MASK_PROPERTY_SPECS, Mask
 from .mograph_scene import Matrix, mat_apply, mat_invert
 
@@ -48,13 +49,14 @@ class MaskGeometry:
     mask_id: str
     world: Matrix
     box: tuple[float, float]
-    shape: str                       # "rectangle" | "ellipse" | "polygon"
+    shape: str                       # "rectangle" | "ellipse" | "polygon" | "path"
     mode: str                        # "add" | "subtract" | "intersect"
     inverted: bool
     values: dict                     # MASK_PROPERTY_ORDER → valeur RENDUE à la tête de lecture (suivi compris) : le dessin
     points: tuple = ()
     editable: bool = True
     base: dict | None = None         # valeurs SAISIES (statique + courbes de l'utilisateur, sans le suivi) : le glisser en part
+    handles: tuple = ()              # tangentes des nœuds d'une courbe (``Mask.handles``) ; vide pour les autres formes
 
     @property
     def entered(self) -> dict:
@@ -64,11 +66,14 @@ class MaskGeometry:
 
 @dataclass(frozen=True)
 class MaskEdit:
-    """Résultat d'un pas de glisser : propriétés animables modifiées, sommets (polygone), tour cumulé (rotation)."""
+    """Résultat d'un pas de glisser : propriétés animables modifiées, sommets (polygone, courbe), tour cumulé (rotation).
+
+    ``handles`` : tangentes des nœuds d'une courbe (``None`` : inchangées)."""
 
     values: dict
     points: tuple | None = None
     turn: float = 0.0
+    handles: tuple | None = None
 
 
 def geometry_of(clip_id: str, mask: Mask, world: Matrix, box: tuple[float, float], *, editable: bool = True,
@@ -81,7 +86,7 @@ def geometry_of(clip_id: str, mask: Mask, world: Matrix, box: tuple[float, float
     return MaskGeometry(
         clip_id=clip_id, mask_id=mask.id, world=world, box=(float(box[0]), float(box[1])), shape=mask.shape.value,
         mode=mask.mode.value, inverted=bool(mask.inverted), values={name: float(getattr(mask, name)) for name in MASK_PROPERTY_ORDER},
-        points=tuple(mask.points), editable=editable,
+        points=tuple(mask.points), handles=tuple(mask.handles), editable=editable,
         base=None if entered is None else {name: float(getattr(entered, name)) for name in MASK_PROPERTY_ORDER},
     )
 
@@ -142,6 +147,8 @@ def outline_units(geometry: MaskGeometry, grow: tuple[float, float] = (0.0, 0.0)
         return [(0.5 * kx * math.cos(2 * math.pi * i / steps), 0.5 * ky * math.sin(2 * math.pi * i / steps)) for i in range(steps)]
     if geometry.shape == "polygon" and len(geometry.points) >= 3:
         return [(x * kx, y * ky) for x, y in geometry.points]
+    if geometry.shape == "path" and len(geometry.points) >= mask_path.MIN_NODES:
+        return [(x * kx, y * ky) for x, y in mask_path.sample_outline(geometry.points, geometry.handles)]
     return [(-0.5 * kx, -0.5 * ky), (0.5 * kx, -0.5 * ky), (0.5 * kx, 0.5 * ky), (-0.5 * kx, 0.5 * ky)]
 
 
@@ -151,7 +158,15 @@ def handle_units(geometry: MaskGeometry) -> dict[str, tuple[float, float]]:
     La poignée de rotation et celle d'adoucissement sont à distance fixe **à l'écran** : l'interface les place.
     """
     handles = dict(CORNERS)
-    if geometry.shape == "polygon":
+    if geometry.shape == "path":                          # nœuds ``p<i>`` ; tangentes ``hi<i>`` / ``ho<i>`` (absentes si nulles)
+        for index, point in enumerate(geometry.points):
+            handles[f"p{index}"] = (point[0], point[1])
+            tangent = geometry.handles[index] if index < len(geometry.handles) else (0.0, 0.0, 0.0, 0.0)
+            if abs(tangent[0]) > _EPS or abs(tangent[1]) > _EPS:
+                handles[f"hi{index}"] = (point[0] + tangent[0], point[1] + tangent[1])
+            if abs(tangent[2]) > _EPS or abs(tangent[3]) > _EPS:
+                handles[f"ho{index}"] = (point[0] + tangent[2], point[1] + tangent[3])
+    elif geometry.shape == "polygon":
         for index, point in enumerate(geometry.points):
             handles[f"p{index}"] = (point[0], point[1])
     else:
@@ -174,8 +189,8 @@ def feather_growth(geometry: MaskGeometry) -> tuple[float, float]:
 # -- bornes ----------------------------------------------------------------------------------------
 
 
-def out_of_bounds(values: dict, points: tuple | None = None) -> list[str]:
-    """Noms des valeurs hors des bornes du modèle (propriétés animables, sommets)."""
+def out_of_bounds(values: dict, points: tuple | None = None, handles: tuple | None = None) -> list[str]:
+    """Noms des valeurs hors des bornes du modèle (propriétés animables, sommets, tangentes de courbe, nombre de nœuds)."""
     refused = []
     for name, value in values.items():
         spec = MASK_PROPERTY_SPECS[name]
@@ -184,6 +199,12 @@ def out_of_bounds(values: dict, points: tuple | None = None) -> list[str]:
     for x, y in points or ():
         if not (-POINT_LIMIT <= x <= POINT_LIMIT and -POINT_LIMIT <= y <= POINT_LIMIT):
             refused.append("points")
+            break
+    if points is not None and len(points) > mask_path.MAX_NODES:
+        refused.append("points")
+    for tangent in handles or ():
+        if not all(v == v and abs(v) <= mask_path.HANDLE_LIMIT for v in tangent):
+            refused.append("handles")
             break
     return refused
 
@@ -202,18 +223,24 @@ def _pin(name: str, value: float) -> float:
     return max(low, min(high, value))
 
 
-def _finish(geometry: MaskGeometry, values: dict, points: tuple | None = None, turn: float = 0.0) -> MaskEdit | None:
+def _finish(geometry: MaskGeometry, values: dict, points: tuple | None = None, turn: float = 0.0,
+            handles: tuple | None = None) -> MaskEdit | None:
     """Un pas de glisser : valeurs collées aux bornes (valeur émise = valeur affichée), puis comparées à l'existant."""
     values = _changed(geometry, {name: _pin(name, value) for name, value in values.items()})
     if points is not None:
         points = tuple((max(-POINT_LIMIT, min(POINT_LIMIT, x)), max(-POINT_LIMIT, min(POINT_LIMIT, y))) for x, y in points)
         if points == tuple(map(tuple, geometry.points)):
             points = None
-    if not values and points is None:
+    if handles is not None:
+        limit = mask_path.HANDLE_LIMIT
+        handles = tuple(tuple(max(-limit, min(limit, v)) for v in tangent) for tangent in handles)
+        if handles == tuple(map(tuple, geometry.handles)):
+            handles = None
+    if not values and points is None and handles is None:
         return None
-    if out_of_bounds(values, points):                  # reste : rotation hors ±3600, valeur non numérique
+    if out_of_bounds(values, points, handles):         # reste : rotation hors ±3600, valeur non numérique
         return None
-    return MaskEdit(values, points, turn)
+    return MaskEdit(values, points, turn, handles)
 
 
 # -- glisser -----------------------------------------------------------------------------------------
@@ -225,11 +252,13 @@ def unwrap_turn(raw_degrees: float, previous_turn: float) -> float:
 
 
 def drag(geometry: MaskGeometry, mode: str, start: tuple[float, float], current: tuple[float, float],
-         *, shift: bool = False, previous_turn: float = 0.0) -> MaskEdit | None:
+         *, shift: bool = False, previous_turn: float = 0.0, alt: bool = False) -> MaskEdit | None:
     """Valeurs du masque après un glisser de ``start`` à ``current`` (points du cadre, pixels).
 
-    ``mode`` : ``move``, ``rotate``, ``feather``, un coin (``tl``…), un côté (``t``…) ou un sommet (``p<i>``). ``shift`` :
-    déplacement sur un seul axe, tailles de coin proportionnelles, rotation par 15°. Valeurs collées à leurs bornes ;
+    ``mode`` : ``move``, ``rotate``, ``feather``, un coin (``tl``…), un côté (``t``…), un sommet (``p<i>``) ou, pour une courbe, une
+    tangente (``hi<i>`` entrante, ``ho<i>`` sortante). ``shift`` :
+    déplacement sur un seul axe, tailles de coin proportionnelles, rotation par 15°. ``alt`` : une tangente de courbe
+    se déplace seule (sinon l'autre lui est symétrique). Valeurs collées à leurs bornes ;
     ``None`` : rien à changer, ou rotation hors ±3600.
     """
     w, h = geometry.box
@@ -264,6 +293,12 @@ def drag(geometry: MaskGeometry, mode: str, start: tuple[float, float], current:
     if mode == "feather":
         sqx = (sx - cx) * cos - (sy - cy) * sin
         return _finish(geometry, {"feather": b["feather"] + (qx - sqx) / min(w, h)})
+    if geometry.shape == "path" and half_w > _EPS and half_h > _EPS:
+        from .mask_path_handles import drag_path
+
+        edit = drag_path(geometry, mode, qx / (2.0 * half_w), qy / (2.0 * half_h), alt=alt)
+        if edit is not None or mode[:1] in ("p", "h"):
+            return edit
     if mode.startswith("p") and mode[1:].isdigit():
         index = int(mode[1:])
         points = list(geometry.points)
