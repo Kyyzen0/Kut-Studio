@@ -113,6 +113,26 @@ menus possibles de la barre (Fichier, Édition, Affichage, Séquence, Calques, F
 | en | F | E | V | T | L | W | H |
 | es | A | E | V | S | C | N | Y |
 
+## Tester sur un Mac (pièges relevés lors d'un test réel)
+
+* **Les raccourcis s'écrivent avec « Ctrl » dans le code et la documentation, mais sous macOS c'est la touche Commande (⌘)** :
+  `Ctrl+K` (couper à la tête de lecture) se tape ⌘K. Le nom `Meta` désigne la vraie touche Contrôle (⌃). Appuyer sur la touche
+  Contrôle physique ne déclenche donc pas les raccourcis « Ctrl+… ». Les menus affichent le bon symbole (⌘, ⌥, ⇧, ⌃) : en cas de
+  doute, lire le raccourci dans le menu. Une consigne de test doit écrire ⌘K, pas Ctrl+K.
+* **Annuler au clavier (⌘Z) agit dans le champ qui a le focus** : si le curseur est dans la recherche de la bibliothèque ou dans un
+  champ de l'inspecteur, ⌘Z annule la saisie de ce champ, pas le montage. Cliquer d'abord sur la timeline, ou utiliser le bouton
+  Annuler de la barre d'outils.
+* **« Fichier > Nouveau » ouvre un projet de démonstration** (`create_default_project`) : quatre clips (Intro, Plan A, B-roll,
+  sous-titre) **sans fichier source** et un titre « Projet sans titre ». Le moniteur affiche « n'a pas encore de média source » sur
+  ces clips, ce qui est normal et n'est pas un moniteur noir. Pour tester l'aperçu, supprimer ces clips ou ne tester que sur des
+  clips dont le média existe. Si le projet est modifié, un dialogue « Enregistrer ? » apparaît d'abord.
+* **Le menu contextuel d'un média de la bibliothèque est plus court quand le média n'est pas sur la timeline** : les entrées qui
+  portent sur les clips du média (par exemple l'espace colorimétrique) ne s'affichent qu'ensuite. Regarder le menu avant de cliquer à
+  une position mémorisée : « Supprimer de la bibliothèque » (avec confirmation) peut tomber au même endroit.
+* **Une application téléchargée tourne depuis un dossier temporaire** (AppTranslocation) tant qu'elle n'est pas déplacée dans
+  `/Applications` : c'est l'effet de la quarantaine macOS sur une application à signature ad hoc, pas un défaut de Kut-Studio.
+* **Les réglages de performance** (Préférences) sont des profils (Léger, Équilibré, Puissant, Auto), pas un choix GPU / CPU.
+
 ## Ce qui reste
 
 * **Plateformes** : tout a tourné sur macOS / `offscreen`. Les tests sont structurels (aucun pixel, aucune taille
