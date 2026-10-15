@@ -49,13 +49,23 @@ def test_changelog_links_match_versions() -> None:
     assert check_changelog((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")) == []
 
 
+def _fake_changelog() -> str:
+    """CHANGELOG fictif (indépendant des vraies versions : la garde ne doit pas casser à chaque release)."""
+    return (
+        "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] - 2026-02-01\n\n## [0.1.1] - 2026-01-15\n\n## [0.1.0] - 2026-01-01\n\n"
+        f"[Unreleased]: {REPO}/compare/v0.2.0...HEAD\n[0.2.0]: {REPO}/compare/v0.1.1...v0.2.0\n"
+        f"[0.1.1]: {REPO}/compare/v0.1.0...v0.1.1\n[0.1.0]: {REPO}/releases/tag/v0.1.0\n"
+    )
+
+
 def test_changelog_guard_detects_missing_reference_and_stale_unreleased() -> None:
-    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    no_ref = "\n".join(line for line in text.splitlines() if not line.startswith("[0.6.1]: "))
-    assert any("0.6.1" in e for e in check_changelog(no_ref))
-    stale = text.replace("compare/v0.6.1...HEAD", "compare/v0.6.0...HEAD")
+    text = _fake_changelog()
+    assert check_changelog(text) == []
+    no_ref = "\n".join(line for line in text.splitlines() if not line.startswith("[0.2.0]: "))
+    assert any("0.2.0" in e for e in check_changelog(no_ref))
+    stale = text.replace("compare/v0.2.0...HEAD", "compare/v0.1.1...HEAD")
     assert any("Unreleased" in e for e in check_changelog(stale))
-    new_section = text.replace("## [0.6.1] - ", "## [0.6.2] - 2026-10-15\n\n## [0.6.1] - ", 1)
+    new_section = text.replace("## [0.2.0] - ", "## [0.3.0] - 2026-03-01\n\n## [0.2.0] - ", 1)
     assert check_changelog(new_section)
 
 
@@ -78,15 +88,15 @@ def test_no_hardcoded_verb_count_in_live_docs() -> None:
 
 
 def _with_prerelease(text: str) -> str:
-    """CHANGELOG fictif : 0.6.2 stable puis 0.7.0-beta.1 et 0.7.0-rc.1, liens corrects."""
-    head = "## [0.7.0-rc.1] - 2026-10-20\n\n## [0.7.0-beta.1] - 2026-10-18\n\n## [0.6.1] - "
-    out = text.replace("## [0.6.1] - ", head, 1)
-    out = out.replace("compare/v0.6.1...HEAD", "compare/v0.7.0-rc.1...HEAD")
+    """CHANGELOG fictif : 0.3.0-beta.1 puis 0.3.0-rc.1 après la 0.2.0, liens corrects."""
+    head = "## [0.3.0-rc.1] - 2026-03-02\n\n## [0.3.0-beta.1] - 2026-03-01\n\n## [0.2.0] - "
+    out = text.replace("## [0.2.0] - ", head, 1)
+    out = out.replace("compare/v0.2.0...HEAD", "compare/v0.3.0-rc.1...HEAD")
     extra = (
-        f"[0.7.0-rc.1]: {REPO}/compare/v0.7.0-beta.1...v0.7.0-rc.1\n"
-        f"[0.7.0-beta.1]: {REPO}/compare/v0.6.1...v0.7.0-beta.1\n"
+        f"[0.3.0-rc.1]: {REPO}/compare/v0.3.0-beta.1...v0.3.0-rc.1\n"
+        f"[0.3.0-beta.1]: {REPO}/compare/v0.2.0...v0.3.0-beta.1\n"
     )
-    return out.replace("[0.6.1]: ", extra + "[0.6.1]: ", 1)
+    return out.replace("[0.2.0]: ", extra + "[0.2.0]: ", 1)
 
 
 def test_prerelease_order_is_semver() -> None:
@@ -95,15 +105,14 @@ def test_prerelease_order_is_semver() -> None:
 
 
 def test_changelog_guard_handles_prereleases() -> None:
-    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    good = _with_prerelease(text)
+    good = _with_prerelease(_fake_changelog())
     assert check_changelog(good) == []
-    no_link = "\n".join(x for x in good.splitlines() if not x.startswith("[0.7.0-beta.1]: "))
-    assert any("0.7.0-beta.1" in e for e in check_changelog(no_link))
-    stale = good.replace("compare/v0.7.0-rc.1...HEAD", "compare/v0.6.1...HEAD")
+    no_link = "\n".join(x for x in good.splitlines() if not x.startswith("[0.3.0-beta.1]: "))
+    assert any("0.3.0-beta.1" in e for e in check_changelog(no_link))
+    stale = good.replace("compare/v0.3.0-rc.1...HEAD", "compare/v0.2.0...HEAD")
     assert any("Unreleased" in e for e in check_changelog(stale))
     # Stable publiée après ses préversions : [Unreleased] compare depuis elle, et elle suit la rc.
-    stable = good.replace("## [0.7.0-rc.1] - ", "## [0.7.0] - 2026-10-22\n\n## [0.7.0-rc.1] - ", 1)
-    stable = stable.replace("compare/v0.7.0-rc.1...HEAD", "compare/v0.7.0...HEAD")
-    stable = stable.replace("[0.7.0-rc.1]: ", f"[0.7.0]: {REPO}/compare/v0.7.0-rc.1...v0.7.0\n[0.7.0-rc.1]: ", 1)
+    stable = good.replace("## [0.3.0-rc.1] - ", "## [0.3.0] - 2026-03-05\n\n## [0.3.0-rc.1] - ", 1)
+    stable = stable.replace("compare/v0.3.0-rc.1...HEAD", "compare/v0.3.0...HEAD")
+    stable = stable.replace("[0.3.0-rc.1]: ", f"[0.3.0]: {REPO}/compare/v0.3.0-rc.1...v0.3.0\n[0.3.0-rc.1]: ", 1)
     assert check_changelog(stable) == []
