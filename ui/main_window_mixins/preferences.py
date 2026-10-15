@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from core.usage_level import UsageLevel, coerce_usage_level
 from core.user_settings import UserSettings, VALID_LANGUAGES, VALID_THEME_MODES
 from dataclasses import replace
 from ui.theming import retheme_application
@@ -59,11 +60,38 @@ class PreferencesMixin:
             scopes_levels=scopes_levels,
             scopes_alerts_enabled=scopes_alerts,
             shortcuts=self.shortcuts.overrides(),
+            # Sans cette ligne, chaque sauvegarde d'un autre réglage remettrait le niveau au défaut du modèle.
+            usage_level=self.usage_level.value,
             **self._performance_settings_fields(),
             **self._update_settings_fields(),
             **self._social_settings_fields(),
             **self._auto_captions_settings_fields(),
         )
+
+    def _init_usage_level(self, settings: UserSettings) -> None:
+        """Niveau courant, lu tôt (l'instantané des préférences le réécrit)."""
+        self._usage_level = coerce_usage_level(settings.usage_level) or UsageLevel.ADVANCED
+
+    @property
+    def usage_level(self) -> UsageLevel:
+        return self._usage_level
+
+    def set_usage_level(self, level: object) -> bool:
+        """Change le niveau d'usage : valide, mémorise, enregistre, émet ``usage_level_changed``.
+
+        Valeur inconnue (ou inchangée) : rien n'est écrit ni émis. Renvoie ``True`` si le niveau a changé.
+        Le niveau n'est jamais écrit dans le projet.
+        """
+        new = coerce_usage_level(level)
+        if new is None or new == self._usage_level:
+            return False
+        self._usage_level = new
+        try:
+            _main_window().save_user_settings(self._settings_snapshot())
+        except OSError:
+            LOGGER.warning("Niveau d'usage : préférences non enregistrées", exc_info=True)
+        self.usage_level_changed.emit(new.value)  # type: ignore[attr-defined]
+        return True
 
     def _performance_settings_fields(self) -> dict:
         """Réglages de performance courants (défauts avant la création des gestionnaires)."""
@@ -163,6 +191,8 @@ class PreferencesMixin:
                 # Emplacement de whisper.cpp et de son modèle : une installation, pas un goût.
                 whisper_path=snapshot.whisper_path,
                 whisper_model=snapshot.whisper_model,
+                # Choix personnel d'interface : « Restaurer » ne le réinitialise pas.
+                usage_level=snapshot.usage_level,
             )
         )
 

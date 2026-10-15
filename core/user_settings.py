@@ -13,6 +13,14 @@ Règles :
 - le module n'écrit **jamais** dans le dépôt du projet ;
 - les valeurs invalides ou le fichier absent renvoient aux
   valeurs par défaut (``dark``/``fr``).
+
+Niveau d'usage (``usage_level``, voir :mod:`core.usage_level`) : le défaut
+dépend de l'histoire du fichier. Aucun fichier (installation neuve) :
+``simple``. Fichier existant sans le champ, avec une valeur invalide, ou
+illisible (JSON cassé, pas un objet, erreur de lecture : une installation
+neuve n'est pas prouvée) : ``advanced``, rien ne change pour l'utilisateur.
+Valeur valide : cette valeur. L'écriture re-coerce ; une valeur invalide
+s'écrit ``advanced``.
 """
 
 from __future__ import annotations
@@ -25,6 +33,12 @@ from pathlib import Path
 from .atomic_io import atomic_write_json
 from .platform_paths import user_config_dir
 from .shortcuts import ShortcutMap
+from .usage_level import (
+    DEFAULT_EXISTING as DEFAULT_EXISTING_USAGE_LEVEL,
+    DEFAULT_NEW_INSTALL as DEFAULT_USAGE_LEVEL,
+    VALID_USAGE_LEVELS,
+    coerce_usage_level,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +81,9 @@ VALID_RENDER_QUALITIES: tuple[str, ...] = ("draft", "standard", "high")
 
 DEFAULT_RENDER_QUALITY: str = "standard"
 """Qualite de rendu d'apercu par defaut."""
+
+MAX_FILE_BYTES: int = 16 * 1024 * 1024
+"""Taille maximale lue : un fichier de préférences fait quelques Ko ; au-delà, on ne l'alloue pas."""
 
 FILE_NAME: str = "user_settings.json"
 """Nom du fichier de préférences à l'intérieur du répertoire de config."""
@@ -276,6 +293,7 @@ class UserSettings:
         include_prereleases: propose aussi les préversions (bêta, rc).
         skipped_update_version: version que l'utilisateur a choisi d'ignorer (``""`` : aucune) ; seule la
             vérification automatique la tait, une recherche manuelle la montre toujours.
+        usage_level: niveau d'usage de l'interface (``simple``, ``studio``, ``advanced``), jamais dans le ``.kut``.
         last_update_check: heure (secondes depuis l'epoch) de la dernière recherche réussie, 0 si jamais.
         cache_max_gb: budget disque global des caches, en Go.
         photo_duration: durée d'une photo importée sur la timeline (secondes).
@@ -325,6 +343,8 @@ class UserSettings:
     # --- Transcription locale (whisper.cpp) : vides = découverte automatique (core.transcription) ---
     whisper_path: str = ""
     whisper_model: str = ""
+    # --- Niveau d'usage (ADR-0006 étape 4) : le défaut du modèle est celui d'une installation neuve ---
+    usage_level: str = DEFAULT_USAGE_LEVEL.value
 
 
 DEFAULT_MASTER_GAIN_DB: float = 0.0
@@ -338,6 +358,17 @@ def _coerce_photo_duration(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
         return DEFAULT_PHOTO_DURATION
     return max(PHOTO_DURATION_RANGE[0], min(PHOTO_DURATION_RANGE[1], float(value)))
+
+
+def _coerce_usage_level(value: object) -> str:
+    """Niveau d'usage à écrire : valide tel quel, sinon ``advanced`` (utilisateur existant)."""
+    level = coerce_usage_level(value)
+    return (level if level is not None else DEFAULT_EXISTING_USAGE_LEVEL).value
+
+
+def _legacy_settings() -> UserSettings:
+    """Fichier présent mais inutilisable : défauts, au niveau des utilisateurs existants."""
+    return UserSettings(usage_level=DEFAULT_EXISTING_USAGE_LEVEL.value)
 
 
 def _coerce_path(value: object) -> str:
@@ -462,8 +493,10 @@ def load_user_settings(
     Règles :
 
     - fichier absent → :class:`UserSettings` avec les valeurs par
-      défaut (``dark``/``fr``) ;
-    - JSON invalide → valeurs par défaut ;
+      défaut (``dark``/``fr``, niveau d'usage ``simple``) ;
+    - JSON invalide ou illisible → valeurs par défaut, niveau d'usage
+      ``advanced`` (le fichier existe : ce n'est pas une installation neuve) ;
+    - ``usage_level`` absent ou invalide dans un fichier valide → ``advanced`` ;
     - valeurs hors-domaine → valeur par défaut individuelle.
 
     Args:
@@ -477,15 +510,17 @@ def load_user_settings(
     if not path.exists():
         return UserSettings()
     try:
+        if path.stat().st_size > MAX_FILE_BYTES:
+            return _legacy_settings()
         raw = path.read_text(encoding="utf-8")
-    except OSError:
-        return UserSettings()
+    except (OSError, ValueError):  # ValueError : octets qui ne sont pas de l'UTF-8
+        return _legacy_settings()
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
-        return UserSettings()
+        return _legacy_settings()
     if not isinstance(data, dict):
-        return UserSettings()
+        return _legacy_settings()
     return UserSettings(
         theme_mode=_coerce_theme_mode(data.get("theme_mode")),
         language=_coerce_language(data.get("language")),
@@ -526,6 +561,7 @@ def load_user_settings(
         platform_zones=_coerce_platform_zones(data.get("platform_zones")),
         whisper_path=_coerce_path(data.get("whisper_path")),
         whisper_model=_coerce_path(data.get("whisper_model")),
+        usage_level=_coerce_usage_level(data.get("usage_level")),
     )
 
 
@@ -589,6 +625,7 @@ def save_user_settings(
             platform_zones=_coerce_platform_zones(settings.platform_zones),
             whisper_path=_coerce_path(settings.whisper_path),
             whisper_model=_coerce_path(settings.whisper_model),
+            usage_level=_coerce_usage_level(settings.usage_level),
         )
     )
     atomic_write_json(target, payload)
@@ -612,6 +649,7 @@ __all__ = [
     "DEFAULT_SCOPES_LEVELS",
     "DEFAULT_SCOPES_VIEW",
     "DEFAULT_THEME",
+    "DEFAULT_USAGE_LEVEL",
     "UserSettings",
     "VALID_LANGUAGES",
     "VALID_PERFORMANCE_PROFILES",
@@ -622,6 +660,7 @@ __all__ = [
     "VALID_SCOPES_LEVELS",
     "VALID_SCOPES_VIEWS",
     "VALID_THEME_MODES",
+    "VALID_USAGE_LEVELS",
     "default_settings_dir",
     "load_user_settings",
     "save_user_settings",
