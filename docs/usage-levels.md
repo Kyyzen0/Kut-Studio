@@ -7,7 +7,7 @@
 | Lot | Contenu | État |
 |---|---|---|
 | 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
-| 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | à faire |
+| 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | **fait** |
 | 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma), sous-blocs « Avancé », lien « Afficher plus d'options » | à faire |
 | 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | à faire |
 | 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
@@ -18,6 +18,16 @@
 - Valeurs de chaîne stables : `simple`, `studio`, `advanced` ; ordre simple < Studio < avancé (`UsageLevel.at_least`).
 - Défaut : aucun `user_settings.json` (installation neuve) donne `simple` ; fichier existant sans `usage_level`, avec une valeur invalide, ou illisible donne `advanced` ; valeur valide : cette valeur.
 - Le niveau n'est jamais écrit dans le `.kut`. `set_usage_level` enregistre et émet `usage_level_changed(str)` seulement si le niveau change.
+
+## Bascule (lot 2)
+
+Trois emplacements pour le même réglage, appliqués à chaud (aucune confirmation, aucun redémarrage), qui lisent tous `MainWindow.usage_level` et suivent `usage_level_changed` :
+
+- **Préférences** : groupe « Niveau d'usage » (trois boutons, une infobulle courte par niveau), déclaré dans `_CHOICE_GROUPS` (`ui/preferences_dialog.py`). Comme les autres groupes, le choix est appliqué tout de suite ; « Restaurer » ne le touche pas.
+- **Menu Fenêtre** : sous-menu « Niveau d'usage », trois actions cochables d'un `QActionGroup` exclusif, mnémoniques uniques, aucun raccourci par défaut.
+- **Barre du haut** : puce « Simple / Studio / Avancé » avant « Réglages » ; son menu réutilise les trois mêmes actions, son nom accessible est « Niveau d'usage : <niveau> ».
+
+Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui/i18n_usage.py`. Mettre une action à jour par programme n'émet pas `triggered` : pas de boucle ; `set_usage_level` n'émet que si le niveau change. **Ce lot ne masque rien** : changer de niveau n'a encore aucun effet sur l'inspecteur ni sur les menus.
 
 ## Décisions
 

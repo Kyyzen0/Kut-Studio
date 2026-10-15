@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
+
 ### Fixed
 
 - **FFmpeg** : repli sur les dossiers Homebrew / MacPorts si le `PATH` ne le trouve pas, et le journal de démarrage consigne la recherche.

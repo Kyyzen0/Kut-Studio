@@ -130,6 +130,8 @@ _ACRONYMS_AND_PROPER_NAMES = {
     "CPU", "GPU", "Kut-Studio", "ProRes Master", "PREVIEW", "TikTok / Vertical 1080×1920", "TikTok 60 fps", "YouTube", "Night Race", "City Lights", "PTS",
     "Auto (≤ 1080p)", "MOTION GRAPHICS", "AUDIO", "slip {delta}s", "{count} clip", "{count} clips",
     "Clip", "SCOPES",
+    # Niveau d'usage « Studio » : nom propre du niveau, identique dans les trois langues.
+    "Studio", "S&tudio",
     # Plateformes et techniques de la vidéo sociale (noms de marque, nom propre d'un effet, sigle).
     "TikTok", "Instagram Reels", "YouTube Shorts", "Ken Burns", "SFX", " BPM", "Night Look", "Neon Rush",
 }
@@ -153,9 +155,10 @@ _COGNATES_EN = {
     "Source: --", "Timeline: --", "Source: {seconds}s", "Timeline: {seconds}s", "Images", "audio",
     *(f"Angle {number}" for number in range(1, 10)), "Sources", "Angle", "Angles",
     "Vertical", "Portrait", "Impact", "Amplitude", "Pages", "Luminance", "Composition",
+    "Simple", "&Simple",    # niveau d'usage « Simple »
 }
 # Cognats français / espagnol.
-_COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante"}
+_COGNATES_ES = {"Audio", "Auto", "Bézier", "Contraste", "Ratio", "Tangentes", "audio", "audios", "Vertical", "Variante", "Simple", "&Simple"}
 
 ALLOWED_IDENTICAL = {
     "en": _ACRONYMS_AND_PROPER_NAMES | _LOANWORDS | _COGNATES_EN,

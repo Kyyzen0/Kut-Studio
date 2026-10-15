@@ -7,6 +7,7 @@ Cette boîte de dialogue permet de choisir :
 - le profil de performance (Auto / Léger / Équilibré / Puissant) ;
 - la qualité d'aperçu temps réel (Plein, 1/2, 1/4, 1/8) ;
 - la qualité de rendu des segments d'aperçu (Brouillon / Standard / Haute) ;
+- le niveau d'usage (Simple / Studio / Avancé) ;
 - les mises à jour (recherche au démarrage, préversions).
 
 Chaque modification est appliquée **immédiatement** par
@@ -60,10 +61,12 @@ from core.user_settings import (
     DEFAULT_PREVIEW_QUALITY,
     DEFAULT_RENDER_QUALITY,
     DEFAULT_THEME,
+    DEFAULT_USAGE_LEVEL,
     VALID_PERFORMANCE_PROFILES,
     VALID_PREVIEW_QUALITIES,
     VALID_RENDER_QUALITIES,
     VALID_THEME_MODES,
+    VALID_USAGE_LEVELS,
 )
 from ui.design_system import DIALOG_MARGINS, TextRoles
 from ui.i18n import (
@@ -109,6 +112,7 @@ class _ChoiceGroup:
         current_attribute: attribut mémorisant la valeur courante.
         default: valeur par défaut, ou ``None`` pour suivre la langue
             active du module :mod:`ui.i18n` (jamais figée à l'import).
+        hints: si vrai, chaque option a une courte description en infobulle (clé ``<clé de l'option>.hint``).
     """
 
     key: str
@@ -117,6 +121,7 @@ class _ChoiceGroup:
     signal_name: str
     current_attribute: str
     default: str | None
+    hints: bool = False
 
     @property
     def group_attribute(self) -> str:
@@ -185,6 +190,15 @@ _CHOICE_GROUPS: tuple[_ChoiceGroup, ...] = (
         current_attribute="current_render_quality",
         default=DEFAULT_RENDER_QUALITY,
     ),
+    _ChoiceGroup(
+        key="usage",
+        title_key="prefs.usage",
+        options=_option_keys(VALID_USAGE_LEVELS, "usage"),
+        signal_name="usage_level_changed",
+        current_attribute="current_usage_level",
+        default=DEFAULT_USAGE_LEVEL.value,
+        hints=True,
+    ),
 )
 
 _CHOICES_BY_KEY: dict[str, _ChoiceGroup] = {item.key: item for item in _CHOICE_GROUPS}
@@ -199,6 +213,7 @@ class PreferencesDialog(QDialog):
     performance_changed = Signal(str)
     preview_quality_changed = Signal(str)
     render_quality_changed = Signal(str)
+    usage_level_changed = Signal(str)
     update_check_changed = Signal(bool)
     update_prereleases_changed = Signal(bool)
     file_association_requested = Signal()
@@ -219,6 +234,7 @@ class PreferencesDialog(QDialog):
         current_include_prereleases: bool = DEFAULT_INCLUDE_PRERELEASES,
         current_whisper_path: str = "",
         current_whisper_model: str = "",
+        current_usage_level: str = DEFAULT_USAGE_LEVEL.value,
         parent=None,
         shortcut_manager: ShortcutManager | None = None,
         performance_host=None,
@@ -242,6 +258,7 @@ class PreferencesDialog(QDialog):
         self.current_performance = current_performance
         self.current_preview_quality = current_preview_quality
         self.current_render_quality = current_render_quality
+        self.current_usage_level = current_usage_level
         self.current_check_updates = bool(current_check_updates)
         self.current_include_prereleases = bool(current_include_prereleases)
         self.current_whisper_path = str(current_whisper_path or "")
@@ -471,6 +488,8 @@ class PreferencesDialog(QDialog):
                 radio = buttons.get(code)
                 if radio is not None:
                     radio.setText(translate(key))
+                    if choice.hints:
+                        radio.setToolTip(translate(f"{key}.hint"))
         if self.tabs is not None:
             titles = {
                 "general": "shortcuts.tab.general",
@@ -578,6 +597,19 @@ class PreferencesDialog(QDialog):
         self._on_choice_chosen(
             _CHOICES_BY_KEY["render"], choice_or_button, index
         )
+
+    def _on_usage_chosen(self, choice_or_button, index: int | None = None) -> None:
+        """Slot du groupe niveau d'usage."""
+        self._on_choice_chosen(_CHOICES_BY_KEY["usage"], choice_or_button, index)
+
+    def sync_usage_level(self, code: str) -> None:
+        """Coche le niveau changé ailleurs (menu, barre du haut, script), sans réémettre."""
+        choice = _CHOICES_BY_KEY["usage"]
+        radio = getattr(self, choice.buttons_attribute).get(code)
+        if radio is None:
+            return
+        setattr(self, choice.current_attribute, code)
+        radio.setChecked(True)
 
     # ------------------------------------------------------------------
     # Réinitialisation

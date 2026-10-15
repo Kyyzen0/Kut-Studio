@@ -66,6 +66,7 @@ from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
+from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
 from ui.main_window_mixins.media_import import MediaImportMixin
@@ -181,10 +182,11 @@ class MainWindow(
     TimelineEditingMixin,
     RecordingMixin,
     PreferencesMixin,
+    UsageLevelMixin,
     HistoryMixin,
     QMainWindow,
 ):
-    # Niveau d'usage changé (ADR-0006 étape 4) : valeur de chaîne du niveau. Aucun consommateur dans ce lot.
+    # Niveau d'usage changé (ADR-0006 étape 4) : valeur de chaîne du niveau. Suivi par la bascule (Préférences, menu Fenêtre, barre du haut).
     usage_level_changed = Signal(str)
 
     def __init__(self):
@@ -1164,6 +1166,8 @@ class MainWindow(
 
         layout.addWidget(self._build_update_notice())
 
+        layout.addWidget(self._build_usage_level_chip())
+
         settings_btn = IconButton(
             icon=IconName.MENU,
             tooltip=i18n.translate("topbar.settings"),
@@ -1174,6 +1178,7 @@ class MainWindow(
         settings_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.settings_button = settings_btn
         settings_btn.clicked.connect(self.show_preferences)
+        # Réglages et Export gardent leur largeur idéale : c'est la puce du niveau qui cède la première.
         layout.addWidget(settings_btn)
 
         self.export_button = IconButton(
@@ -1189,6 +1194,7 @@ class MainWindow(
         self.export_button.setMinimumHeight(32)
         self.export_button.clicked.connect(self.show_export)
         layout.addWidget(self.export_button)
+        self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
 
         self._update_top_bar()
         return bar
@@ -1624,6 +1630,7 @@ class MainWindow(
         preferences_action = self._command_action("preferences", "action.preferences")
         # On insère l'entrée dans la barre ``Fenêtre`` pour rester
         # accessible sans modifier l'ordre établi.
+        self._build_usage_level_menu(window_menu)
         window_menu.addAction(preferences_action)
         self.diagnostics_action = self._labelled_action("debug.toggle")
         self.diagnostics_action.setCheckable(True)
@@ -2357,6 +2364,7 @@ class MainWindow(
             button.setText(i18n.translate(key))
         self._retranslate_update_notice()
         self._retranslate_page_switcher()
+        self._retranslate_usage_level()
 
     @staticmethod
     def _translate_menu_title(object_name: str | None) -> str:
