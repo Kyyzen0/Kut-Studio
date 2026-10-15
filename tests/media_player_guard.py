@@ -30,9 +30,13 @@ def _is_missing_local_file(url: Any) -> bool:
 def make_guarded(original: Callable[..., Any]) -> Callable[..., Any]:
     """Enveloppe ``setSource`` : ignore (sans rien ouvrir) une URL locale inexistante."""
 
+    from PySide6.QtCore import QUrl
+
     def setSource(self, url, *args, **kwargs):  # noqa: N802 - API Qt
         if _is_missing_local_file(url):
-            return None
+            # Comme si le média n'avait pas pu s'ouvrir : l'ancienne source ne reste pas active (sinon un setPosition /
+            # play qui suit chercherait ou jouerait un fichier périmé). Une URL vide n'ouvre rien et ne journalise rien.
+            return original(self, QUrl(), *args, **kwargs)
         return original(self, url, *args, **kwargs)
 
     setattr(setSource, GUARD_FLAG, True)

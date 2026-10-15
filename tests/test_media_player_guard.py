@@ -43,6 +43,43 @@ def test_an_existing_file_still_reaches_the_real_player(tmp_path, qtbot) -> None
     player.deleteLater()
 
 
+def _wav(tmp_path, name: str):
+    path = tmp_path / name
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(8000)
+        out.writeframes(struct.pack("<800h", *([0] * 800)))
+    return path
+
+
+def test_a_missing_file_clears_a_previously_opened_real_source(tmp_path, qtbot) -> None:
+    player = QMediaPlayer()
+    player.setSource(QUrl.fromLocalFile(str(_wav(tmp_path, "a.wav"))))
+    assert not player.source().isEmpty()
+    player.setSource(QUrl.fromLocalFile("/x/inexistant.mp4"))
+    assert player.source().isEmpty()
+    qtbot.waitUntil(lambda: player.mediaStatus() in (QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia),
+                    timeout=10000)
+    assert player.playbackState() == QMediaPlayer.PlaybackState.StoppedState
+    player.deleteLater()
+
+
+def test_a_real_file_opens_after_a_missing_one_and_other_urls_pass_through(tmp_path, qtbot) -> None:
+    player = QMediaPlayer()
+    player.setSource(QUrl.fromLocalFile("/x/inexistant.mp4"))
+    assert player.source().isEmpty()
+    real = QUrl.fromLocalFile(str(_wav(tmp_path, "b.wav")))
+    player.setSource(real)
+    assert player.source() == real
+    remote = QUrl("http://127.0.0.1:9/never.mp4")
+    player.setSource(remote)
+    assert player.source() == remote
+    player.setSource(QUrl())
+    assert player.source().isEmpty()
+    player.deleteLater()
+
+
 @pytest.mark.real_media_player
 def test_the_marker_turns_the_guard_off(request) -> None:
     assert any(line.startswith("real_media_player") for line in request.config.getini("markers"))
