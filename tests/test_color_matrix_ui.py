@@ -172,10 +172,14 @@ def test_the_panel_hands_the_matrix_to_the_gpu_view_even_when_it_is_created_late
     assert view.colors["main"] == ("", "auto")
 
 
-def test_a_library_preview_forgets_the_matrix_of_the_last_timeline_clip(qtbot, fake_gpu):
+def test_a_library_preview_forgets_the_matrix_of_the_last_timeline_clip(qtbot, fake_gpu, monkeypatch):
     from test_gpu_preview_ui import _panel
 
     panel = _panel(qtbot)
+    # Le média fictif ne doit pas être ouvert : un vrai lecteur sur un chemin absent journalise « Could not open media » depuis
+    # un fil de Qt Multimedia, ce qui fait mourir un worker xdist (segfault observé sous macOS ; voir multicam_stubs).
+    monkeypatch.setattr(panel.player, "setSource", lambda *_a, **_k: None)
+    monkeypatch.setattr(panel.player, "play", lambda *_a, **_k: None)
     panel.enable_gpu("metal")
     panel.set_source_color("bt709", "auto")
     panel.load_video("/x/other.mp4")
