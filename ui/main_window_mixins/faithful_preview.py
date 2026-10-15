@@ -404,6 +404,9 @@ class FaithfulPreviewMixin:
         # et un fond noir sous un « multiply » donnait du noir.
         self.preview_panel.set_layer_compositing(None, None)
         self.preview_panel.set_adjustments(())
+        # Et la matrice du média : le segment est déjà converti en sortie (BT.709, plage limitée). Celle imposée par
+        # l'affichage direct du clip (BT.601 forcé) en refaisait une seconde conversion. Le chemin direct la repose.
+        self.preview_panel.set_source_color("")
         return True
 
     def _refresh_preview_cache_state(self) -> None:
