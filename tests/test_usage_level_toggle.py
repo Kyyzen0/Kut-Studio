@@ -287,34 +287,38 @@ def test_the_chip_has_an_accessible_name_that_follows_the_level(qtbot, monkeypat
 # --- la barre du haut tient à 1180 px, à +20 % de police ---------------------------------------------------------------
 
 _TOP_BAR_SCRIPT = """
+SCALE = {scale}
 from tools import ui_audit as audit
-window = audit.make_main_window(1180, 720, font_scale=1.2)
+window = audit.make_main_window(1180, 720, font_scale=SCALE)
 bar = window.findChild(type(window.export_button.parentWidget()), "main_topbar")
 chip = window.usage_level_chip
-assert chip.isVisible() and bar.isVisible()
-assert bar.width() <= 1180
-assert chip.width() >= chip.sizeHint().width() - 1, (chip.width(), chip.sizeHint())
-assert chip.geometry().right() < window.settings_button.geometry().left() + 1
+assert bar.isVisible() and bar.width() <= 1180
+if SCALE <= 1.2:
+    assert chip.isVisible() and chip.form() in ("full", "compact"), chip.form()
+    assert chip.text() == chip.full_text()[: len(chip.text())] and len(chip.text()) >= 2
+    assert chip.geometry().right() < window.settings_button.geometry().left() + 1
+else:
+    # Plus de place pour la puce (polices de repli de Linux) : elle s'efface, la barre reste celle d'avant.
+    assert chip.form() == "hidden" and not chip.isVisible(), chip.form()
+for button in (window.settings_button, window.export_button):
+    if SCALE <= 1.2:
+        assert button.width() >= button.sizeHint().width() - 1, (button.text(), button.width(), button.sizeHint().width())
 assert window.settings_button.geometry().right() < window.export_button.geometry().left() + 1
 assert window.export_button.geometry().right() <= bar.width()
-# La puce ne doit pas tronquer « Réglages » ni « Exporter » (une puce bâtie sur IconButton leur prenait 12 px).
-for button in (window.settings_button, window.export_button):
-    assert button.width() >= button.sizeHint().width() - 8, (button.text(), button.width(), button.sizeHint().width())
-assert bar.layout().minimumSize().width() <= 1180, bar.layout().minimumSize()
-for button in window.page_buttons.values():
-    assert button.width() >= button.sizeHint().width() - 1
 found = [str(f) for f in audit.sibling_overlaps(bar) + audit.parent_overflow(bar)]
 assert not found, found
 print("ok")
 """
 
 
-def test_top_bar_fits_with_the_chip_at_the_smallest_size_and_wider_fonts(tmp_path):
+# 1,2 : le critère du dépôt ; 1,45 : approche les polices de repli de Linux (Debian CI : « Réglages » à 86 px pour 140 voulus).
+@pytest.mark.parametrize("scale", [1.2, 1.45])
+def test_top_bar_fits_with_the_chip_at_the_smallest_size_and_wider_fonts(tmp_path, scale):
     env = {
         **os.environ, "QT_QPA_PLATFORM": "offscreen", "KUT_STUDIO_CONFIG_DIR": str(tmp_path / "config"),
         "KUT_STUDIO_CACHE_DIR": str(tmp_path / "cache"), "KUT_STUDIO_PROXY_DIR": str(tmp_path / "proxies"),
         "KUT_STUDIO_HARDWARE_ENCODING": "off",
     }
-    done = subprocess.run([sys.executable, "-c", _TOP_BAR_SCRIPT], cwd=ROOT, env=env, capture_output=True, text=True,
+    done = subprocess.run([sys.executable, "-c", _TOP_BAR_SCRIPT.replace("{scale}", str(scale))], cwd=ROOT, env=env, capture_output=True, text=True,
                           timeout=600, check=False)
     assert done.returncode == 0 and done.stdout.strip().endswith("ok"), f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"

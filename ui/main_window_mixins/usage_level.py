@@ -8,7 +8,7 @@ que soit l'origine du changement. Mettre une action à jour par programme n'éme
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QToolButton
 
@@ -16,11 +16,90 @@ from core.usage_level import UsageLevel
 from ui import i18n
 
 
+class _LevelChip(QToolButton):
+    """Puce du niveau, à trois formes selon la place de la barre du haut : complète, abrégée (deux lettres), absente.
+
+    La barre du haut est pleine à 1180 px avec des polices plus larges (Linux) : la puce ne doit jamais comprimer
+    « Réglages » ni « Exporter ». ``text()`` renvoie le texte affiché, ``full_text()`` le libellé complet.
+    """
+
+    FULL, COMPACT, HIDDEN = "full", "compact", "hidden"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._full = ""
+        self._form = self.FULL
+
+    def full_text(self) -> str:
+        return self._full
+
+    def form(self) -> str:
+        return self._form
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt
+        self._full = text
+        self._show_form()
+
+    def set_form(self, form: str) -> None:
+        if form != self._form:
+            self._form = form
+            self._show_form()
+
+    def _show_form(self) -> None:
+        super().setText(self._full[:2] if self._form == self.COMPACT else self._full)
+        self.setVisible(self._form != self.HIDDEN)
+
+    def width_for(self, form: str) -> int:
+        """Largeur idéale de la puce sous la forme demandée (indépendante de la forme courante)."""
+        chrome = max(0, super().sizeHint().width() - self.fontMetrics().horizontalAdvance(self.text()))
+        text = self._full[:2] if form == self.COMPACT else self._full
+        return chrome + self.fontMetrics().horizontalAdvance(text)
+
+
+class _FitLevelChip(QObject):
+    """Choisit la forme de la puce selon la place restante dans la barre (somme des largeurs idéales des autres éléments)."""
+
+    _EVENTS = (QEvent.Show, QEvent.Resize, QEvent.StyleChange, QEvent.FontChange, QEvent.LayoutRequest)
+
+    def __init__(self, bar, chip: _LevelChip) -> None:
+        super().__init__(bar)
+        self._bar, self._chip, self._busy = bar, chip, False
+        bar.installEventFilter(self)
+
+    def fit(self) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        try:
+            layout = self._bar.layout()
+            margins = layout.contentsMargins()
+            others = [layout.itemAt(i).widget() for i in range(layout.count())]
+            widgets = [w for w in others if w is not None and w is not self._chip and not w.isHidden()]
+            used = sum(w.sizeHint().width() for w in widgets) + margins.left() + margins.right()
+            gaps = layout.spacing() * (len(widgets) + 1)           # y compris l'espace propre à la puce
+            room = self._bar.width() - used - gaps
+            if self._chip.width_for(_LevelChip.FULL) <= room:
+                form = _LevelChip.FULL
+            elif self._chip.width_for(_LevelChip.COMPACT) <= room:
+                form = _LevelChip.COMPACT
+            else:
+                form = _LevelChip.HIDDEN
+            self._chip.set_form(form)
+        finally:
+            self._busy = False
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt
+        if event.type() in self._EVENTS:
+            self.fit()
+        return False
+
+
 class UsageLevelMixin:
     """Mixin de ``MainWindow`` (niveau d'usage : sous-menu Fenêtre et puce de la barre du haut)."""
 
     _usage_level_actions: dict[UsageLevel, QAction]
-    usage_level_chip: QToolButton | None = None
+    usage_level_chip: _LevelChip | None = None
+    _usage_level_fit: _FitLevelChip | None = None
     usage_level_menu: QMenu | None = None
 
     def _build_usage_level_menu(self, window_menu: QMenu) -> QMenu:
@@ -48,7 +127,7 @@ class UsageLevelMixin:
     def _build_usage_level_chip(self) -> QToolButton:
         """Puce compacte de la barre du haut : le niveau courant, et les trois choix en menu."""
         # ``QToolButton`` simple : ``IconButton`` impose 60 px de plus à tout bouton à libellé, ce qui tronque « Exporter ».
-        chip = QToolButton()
+        chip = _LevelChip()
         chip.setCursor(Qt.PointingHandCursor)
         chip.setFocusPolicy(Qt.NoFocus)
         chip.setObjectName("usageLevelChip")
@@ -80,5 +159,7 @@ class UsageLevelMixin:
         if chip is not None:
             label = i18n.translate(f"prefs.usage.{current.value}")
             chip.setText(label)
+            if self._usage_level_fit is not None:
+                self._usage_level_fit.fit()
             chip.setToolTip(i18n.translate("usage.chip.tooltip"))
             chip.setAccessibleName(i18n.translate("usage.chip.name", level=label))

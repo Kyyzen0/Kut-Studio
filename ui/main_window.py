@@ -66,7 +66,7 @@ from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
-from ui.main_window_mixins.usage_level import UsageLevelMixin
+from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
 from ui.main_window_mixins.media_import import MediaImportMixin
@@ -1178,6 +1178,7 @@ class MainWindow(
         settings_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.settings_button = settings_btn
         settings_btn.clicked.connect(self.show_preferences)
+        # Réglages et Export gardent leur largeur idéale : c'est la puce du niveau qui cède la première.
         layout.addWidget(settings_btn)
 
         self.export_button = IconButton(
@@ -1193,6 +1194,7 @@ class MainWindow(
         self.export_button.setMinimumHeight(32)
         self.export_button.clicked.connect(self.show_export)
         layout.addWidget(self.export_button)
+        self._usage_level_fit = _FitLevelChip(bar, self.usage_level_chip)
 
         self._update_top_bar()
         return bar
