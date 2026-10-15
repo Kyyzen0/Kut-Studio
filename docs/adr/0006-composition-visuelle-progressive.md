@@ -187,7 +187,7 @@ compositeur CPU non branché ; effets par piste / séquence ; chroma key sur le 
 | 3a poignées de masque au moniteur | #147 | mergée |
 | (hors plan) garde de verrou du groupe Compositing | #148 | mergée |
 | (hors plan) autres trous de verrou de l'inspecteur (dont l'éditeur de courbes) | #149 | mergée |
-| 3b masques Bézier (+ format .kut v18 si une courbe) | #150 | mergée, **sans verbes de script pour les courbes** (reportés) |
+| 3b masques Bézier (+ format .kut v18 si une courbe) | #150 | mergée ; verbes de script pour les masques livrés ensuite (0.6.2) |
 | (hors plan) un clic atteint la surcouche quand des clips se recouvrent | #152 | mergée |
 
 Les étapes 1 à 3b sont publiées dans la **0.6.0** (2026-10-14).
@@ -197,7 +197,7 @@ Les étapes 1 à 3b sont publiées dans la **0.6.0** (2026-10-14).
 - **Étape 2 :** l'option « arrondi » du plan n'est **pas livrée** : le recadrage crée toujours un rectangle simple (`core/clip_crop.py`) et ni le modèle ni l'éditeur n'ont de rayon de coin. Reportée ; elle demandera un rayon sur le masque rectangle (ou une forme dédiée) et son rendu GPU / export.
 - **Étape 3a :** pas d'accrochage des poignées de masque ; une case « Poignées dans le moniteur » permet de revenir aux poignées du clip tant qu'un masque est dans la pile.
 - **Étape 3b :** version du format écrite à 18 **seulement** si le projet contient une courbe (les autres projets restent en 17, octet pour octet) ; un ancien build refuse alors le fichier au lieu de perdre la courbe en silence.
-- **Étape 3b :** le critère « verbe de script `add_mask` / `set_mask_points` » n'est **pas rempli pour les courbes** : le verbe de création de masque existant exclut volontairement `MaskShape.PATH` (`core/scripting/verbs.py`), donc un script ne peut ni créer ni éditer un masque Bézier. Reporté, à faire avant de déclarer l'étape 3b complète au sens de l'ADR-0005 (exposition au mode script).
+- **Étape 3b :** le critère « verbes de script `add_mask` / `set_mask_points` » est rempli par `add_mask`, `set_mask`, `set_mask_points` et `remove_mask` (`core/scripting/mask_verbs.py`, 0.6.2), après `set_color_window_points` pour les fenêtres d'étalonnage. Même résultat que l'inspecteur (test de parité sur le widget et sur la matte rendue), pas de verbe d'ordre (l'interface n'en a pas), propriétés animées refusées.
 - **Hors plan :** l'inventaire des verrous (piste, calque) a montré que l'inspecteur écrivait dans le modèle sans garde ; une règle partagée `clip_edit_refusal` les couvre. L'éditeur de courbes est couvert (#149). Restent : menu « Réseaux sociaux », garde centrale dans `core/keyframe_editing`.
 - Étapes **4** (trois niveaux), **5** (animer couleurs, effets, sommets), **6** (modes de fusion), **7** (empilement libre) et **8** : à faire.
 

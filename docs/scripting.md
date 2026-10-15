@@ -105,6 +105,10 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `clear_color_qualifier` | Retire le qualifieur d'un nœud |
 | `set_crop` | Recadre un clip vidéo ou un calque : masque « Recadrage » `intersect` (`clip`, au moins un de `left`, `top`, `right`, `bottom`, fractions 0…0,95 ; `left + right` et `top + bottom` au plus 0,95 ; les absents gardent leur valeur ; hors bornes refusé) |
 | `clear_crop` | Retire le recadrage d'un clip (`clip`) ; les autres masques restent |
+| `add_mask` | Ajoute un masque de compositing à la pile d'un clip vidéo ou d'un calque (`clip`, `shape` = rectangle/ellipse/polygon/path, `mode`, `inverted`, `name`, `position_x`, `position_y`, `width`, `height`, `rotation`, `feather`, `expansion`, `opacity`) ; mêmes valeurs par défaut que le bouton « Ajouter » de l'inspecteur Compositing ; `points` (polygone : 3 à 128 sommets `x`, `y`, ±2) ou `nodes` (courbe, comme `add_color_window`) selon la forme ; rangé avant le recadrage. `id` / `as` ; `crop` et `trackcrop` sont réservés |
+| `set_mask` | Modifie un masque (`clip`, `mask`, au moins un de `mode`, `inverted`, `name`, `position_x`, `position_y`, `width`, `height`, `rotation`, `feather`, `expansion`, `opacity`) ; la forme ne change pas ; refusé pour une propriété animée et pour le recadrage |
+| `set_mask_points` | Remplace les sommets d'un polygone (`points`) ou les nœuds d'une courbe (`nodes`), un seul des deux selon la forme du masque (`clip`, `mask`) |
+| `remove_mask` | Retire un masque (`clip`, `mask`) avec ses images-clés `mask.<id>.*` et ses liaisons de suivi ; pas le recadrage (`clear_crop`) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
 | `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |
@@ -182,6 +186,30 @@ et leurs coupes sont ceux de la séquence **active**.
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
+
+## Masques de compositing : `add_mask`, `set_mask`, `set_mask_points`, `remove_mask`
+
+Ces verbes écrivent la pile de masques d'un clip (`Clip.compositing.masks`) exactement comme l'inspecteur **Compositing** et l'éditeur de
+masques du moniteur : le résultat est le même `Mask`, la matte rendue la même octet pour octet, et un script s'annule en une étape.
+
+```json
+{"op": "add_mask", "clip": "a", "shape": "ellipse", "as": "vignette", "feather": 0.3, "inverted": true},
+{"op": "add_mask", "clip": "a", "shape": "polygon", "points": [{"x": 0, "y": -0.5}, {"x": 0.5, "y": 0.4}, {"x": -0.5, "y": 0.4}]},
+{"op": "set_mask", "clip": "a", "mask": {"ref": "vignette"}, "opacity": 0.8},
+{"op": "remove_mask", "clip": "a", "mask": {"ref": "vignette"}}
+```
+
+- Les valeurs sont **refusées, jamais ramenées** : nombres finis (ni booléen ni NaN) dans les bornes du modèle, `points` / `nodes` de 3 à 128 éléments
+  (la taille est contrôlée avant la lecture), forme et énumérations connues, identifiant libre (masques et fenêtres d'étalonnage du clip partagent
+  les identifiants de leurs images-clés `mask.<id>.*`).
+- Un défaut est celui de l'inspecteur (largeur et hauteur 0,5, adoucissement 0), pas celui de `add_color_window`.
+- Le masque `crop` est celui du recadrage : `set_crop` / `clear_crop` ; ces verbes le refusent, comme `trackcrop` (stabilisation). Les fenêtres
+  d'étalonnage ont leurs verbes `*_color_window`.
+- Pas de verbe d'ordre : l'interface n'en a pas non plus (un masque ajouté va en bout de pile, avant le recadrage).
+- Une propriété **animée** (images-clés `mask.<id>.<nom>`) n'est pas modifiée par `set_mask` : une valeur statique serait masquée par la courbe
+  et un script n'a pas de tête de lecture où poser une image-clé. Aucun verbe d'image-clé n'accepte les propriétés de masque.
+- Clip sur une piste verrouillée, calque verrouillé, piste audio ou de sous-titres : refus, comme dans l'interface.
+- Un projet qui contient une courbe s'enregistre en version 18 du format `.kut`, les autres en 17.
 
 ## Verrou du projet
 

@@ -23,6 +23,7 @@ fidèle déjà rendus sont refaits une fois. Sans GPU (moniteur CPU), la lecture
 
 ### Added
 
+- **Scripts** : les verbes `add_mask`, `set_mask`, `set_mask_points` et `remove_mask` créent, modifient et retirent les masques de compositing d'un clip (rectangle, ellipse, polygone, courbe de Bézier ; mode, inversion, adoucissement, dilatation, opacité), avec le même résultat que l'inspecteur Compositing, les mêmes refus (piste ou calque verrouillé, piste sans image, recadrage réservé à `set_crop`, valeurs hors bornes jamais ramenées) et une seule étape d'annulation.
 - **Espace colorimétrique d'un média** : *Auto* (défaut), *BT.601* ou *BT.709*, dans le menu du média de la bibliothèque, annulable d'un pas. Il force la lecture
   des couleurs de **tous** les clips du média, étiquette comprise ; il est refusé (grisé, avec la raison) si l'un d'eux est sur une piste ou un calque verrouillé.
   Un projet qui en utilise un s'écrit en version 19 du format `.kut` (un ancien Kut-Studio le refuse au lieu de changer les couleurs sans le dire) ; les autres

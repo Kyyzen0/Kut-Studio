@@ -37,7 +37,7 @@ def _param_schema(param: Param) -> dict[str, Any]:
     elif param.kind is Kind.PATH:
         schema = {"type": "string", "minLength": 1, "maxLength": MAX_PATH_TEXT}
     elif param.kind is Kind.STRING:
-        schema = {"type": "string", "minLength": 1, "maxLength": param.max_length or MAX_TEXT}
+        schema = {"type": "string", "minLength": 0 if param.allow_empty else 1, "maxLength": param.max_length or MAX_TEXT}
     elif param.kind is Kind.ENUM:
         schema = {"enum": list(param.choices)}
     elif param.kind is Kind.ID:

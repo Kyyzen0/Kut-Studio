@@ -134,6 +134,7 @@ class Param:
     choices: tuple[str, ...] = ()
     of: str = ""
     max_length: int = 0            # 0 : MAX_TEXT
+    allow_empty: bool = False      # un texte vide est une valeur (« sans nom ») et non une erreur
     multiline: bool = False        # texte à plusieurs lignes (un titre) : « \n » permis
     fields: tuple[Param, ...] = ()  # pour une liste d'objets : les champs de chaque élément (mêmes règles qu'un paramètre de verbe)
     item: Param | None = None       # pour une liste de valeurs : le paramètre qui décrit chaque élément
@@ -1582,5 +1583,20 @@ VERBS: dict[str, Verb] = {
     )
 }
 """Le catalogue. L'ordre est celui de la documentation."""
+
+from .mask_verbs import MASK_VERBS  # noqa: E402 - après la table : mask_verbs importe les paramètres et aides de ce module
+
+
+def _with_mask_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
+    """Les verbes de masques (``mask_verbs.py``) juste après ``clear_crop``, comme dans la documentation."""
+    result: dict[str, Verb] = {}
+    for name, verb in table.items():
+        result[name] = verb
+        if name == "clear_crop":
+            result.update((item.name, item) for item in MASK_VERBS)
+    return result
+
+
+VERBS = _with_mask_verbs(VERBS)
 
 __all__ = ["MAX_PARAMS", "MAX_TEXT", "MAX_TIME", "VERBS", "Kind", "Operation", "Param", "ScriptContext", "Verb"]

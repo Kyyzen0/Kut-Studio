@@ -170,7 +170,8 @@ class _Decoder:
                 return None
             return raw
         if kind is Kind.STRING:
-            return self.text(raw, index, verb, path, limit=param.max_length or MAX_TEXT, multiline=param.multiline)
+            return self.text(raw, index, verb, path, limit=param.max_length or MAX_TEXT, multiline=param.multiline,
+                             allow_empty=param.allow_empty)
         if kind is Kind.PATH:
             return self.text(raw, index, verb, path, limit=MAX_PATH_TEXT)
         if kind is Kind.COLOR:
@@ -201,13 +202,14 @@ class _Decoder:
         """Signale un type incorrect ; l'appelant rend ``None`` (valeur absente)."""
         self.issue("wrong_type", index, verb.name, path, expected=expected)
 
-    def text(self, raw: Any, index: int, verb: Verb, path: str, *, limit: int = MAX_TEXT, multiline: bool = False) -> str | None:
+    def text(self, raw: Any, index: int, verb: Verb, path: str, *, limit: int = MAX_TEXT, multiline: bool = False,
+             allow_empty: bool = False) -> str | None:
         if not isinstance(raw, str):
             self.bad(index, verb, path, "string")
             return None
         controls = any((ord(char) < 32 and not (multiline and char == "\n")) or ord(char) == 127 for char in raw)
         # Le modèle retire les espaces en bordure (noms, textes) : un texte qui en porte serait enregistré autrement qu'écrit.
-        if not raw or len(raw) > limit or controls or raw != raw.strip():
+        if (not raw and not allow_empty) or len(raw) > limit or controls or raw != raw.strip():
             self.issue("bad_text", index, verb.name, path, limit=limit)
             return None
         return raw
