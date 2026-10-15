@@ -82,6 +82,9 @@ Robustesse aux polices : le même audit à **+10 % ou +20 %** de taille de polic
   `ShortcutManager` les épargne déjà (aucune touche de commande ne s'y déclenche). Au clavier, un bouton focalisé garde
   Espace : c'est le comportement d'un formulaire. Les boutons-icônes de la barre principale, de la timeline et des
   bibliothèques restent `NoFocus` exprès (inchangé).
+* **Molette dans l'inspecteur.** Un champ (nombre, curseur, liste déroulante) ne réagit à la molette que s'il a le focus ;
+  sinon l'événement est rendu au panneau, qui défile (`ui/wheel_guard.py`, un filtre posé par `PropertiesPanel`, valable
+  aussi pour les champs créés après coup). Les dialogues (Préférences…) ne sont pas concernés.
 * **Dialogues.** Tout est atteignable, **un seul bouton par défaut** (`set_single_default`), Échap annule, Entrée valide.
   Un bouton-icône de dialogue est focalisable et porte un nom accessible traduit (`ui/i18n_accessibility.py`).
 

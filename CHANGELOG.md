@@ -20,6 +20,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Projet : le dialogue « Enregistrer les modifications ? » nomme un projet jamais nommé « Mon montage », comme la barre du haut (il affichait « Projet sans titre »).
+- Moniteur : supprimer des clips (ou le dernier) efface aussi le sous-titre ou le titre du clip supprimé ; il restait affiché à côté de « Aucun clip » jusqu'au prochain import.
+- Bibliothèque : un média posé sur la timeline (bouton « Ajouter à la timeline », duplication, suppression, annulation) n'est plus affiché « inutilisé » : le compteur d'utilisations suit les clips.
+- Inspecteur : une valeur tapée dans un champ du groupe Mouvement (« 0,5 » dans l'opacité) n'est plus réécrite à chaque frappe (elle donnait « 0,00 ») ; elle est prise à Entrée ou en quittant le champ, et le point vaut la virgule.
+- Inspecteur : valider un champ avec Entrée ne replie plus le groupe qui le contient (Mouvement, par exemple) ; seul l'en-tête, atteint au clavier, se replie avec Entrée ou Espace.
+- Inspecteur : faire défiler le panneau à la molette ou au trackpad ne modifie plus un champ survolé (nombre, curseur, liste déroulante) ; un champ ne réagit à la molette que s'il a le focus.
 - **FFmpeg** : repli sur les dossiers Homebrew / MacPorts si le `PATH` ne le trouve pas, et le journal de démarrage consigne la recherche.
 - Couleur : l'aperçu fidèle (segment en cache) n'applique plus une seconde fois la matrice du média : il concorde de nouveau avec l'export, y compris quand BT.601 est forcé et quand le segment est réduit (toujours lu en BT.709).
 

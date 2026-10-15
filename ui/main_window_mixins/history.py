@@ -13,6 +13,25 @@ class HistoryMixin:
         self.project_dirty = True
         self._update_top_bar()
         self._schedule_autosave()
+        self._schedule_library_usage_sync()
+
+    def _schedule_library_usage_sync(self) -> None:
+        """Remet à jour les badges d'usage de la bibliothèque après une rafale de modifications (un seul passage)."""
+        timer = getattr(self, "_library_usage_timer", None)
+        if timer is None:
+            from PySide6.QtCore import QTimer
+
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(100)
+            timer.timeout.connect(self._sync_library_usage)
+            self._library_usage_timer = timer
+        timer.start()
+
+    def _sync_library_usage(self) -> None:
+        panel = getattr(self, "project_panel", None)
+        if panel is not None:
+            panel.refresh_usage_if_changed()
 
     def _mark_clean(self) -> None:
         self._finalize_pending_edit_sessions()
@@ -128,7 +147,8 @@ class HistoryMixin:
         self._update_timeline_duration()
         self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
         self.playhead_seconds = self.timeline_panel.playhead_seconds
-        self._sync_preview_to_timeline()
+        active = self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds, active)     # annuler / rétablir restaure ou retire le sous-titre affiché
         self._refresh_project_library()
         self.properties_panel.set_project_color_presets(
             getattr(self.project, "color_presets", [])

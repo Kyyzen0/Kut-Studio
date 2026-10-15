@@ -36,6 +36,7 @@ from ui.properties_widgets.common import (  # noqa: F401 - réexports de compati
 )
 from ui.properties_widgets.diamond_button import _DiamondButton
 from ui.properties_widgets.time_section import TimeSection
+from ui.properties_widgets.tolerant_spin_box import TolerantDoubleSpinBox
 
 TRACKING_TAB = 6
 """Onglet « Suivi » (menu « ••• »)."""
@@ -521,7 +522,7 @@ class ConstructionMixin:
             label.setFixedWidth(76)
             row_layout.addWidget(label)
 
-            spin = QDoubleSpinBox()
+            spin = TolerantDoubleSpinBox()     # « 0.5 » et « 0,5 » valent la même chose
             spin.setDecimals(2 if property_name != "rotation" else 1)
             spin.setRange(low, high)
             spin.setSingleStep(step)
