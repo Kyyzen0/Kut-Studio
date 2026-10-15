@@ -1,0 +1,111 @@
+# Niveaux d'usage (ADR-0006, étape 4)
+
+**Statut :** décidé le 2026-10-15 (l'implémentation avance par lots). L'utilisateur a validé le mécanisme, le niveau par défaut, le comportement de « Restaurer » et la répartition ci-dessous.
+
+## Avancement par lots
+
+| Lot | Contenu | État |
+|---|---|---|
+| 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
+| 2 | Bascule dans l'interface (Préférences, barre) et inspecteur : point unique `_apply_group_visibility`, lien « Afficher plus d'options » | à faire |
+| 3 | Scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma) et sous-blocs « Avancé » | à faire |
+| 4 | Menus, menus contextuels, pages (retrait des entrées, raccourcis conservés) | à faire |
+| 5 | Timeline, rail de la bibliothèque, réseaux sociaux | à faire |
+| 6 | Audit d'interface par niveau (`tools/ui_audit.py`), documentation, CHANGELOG | à faire |
+
+## Contrat du modèle (lot 1)
+
+- Valeurs de chaîne stables : `simple`, `studio`, `advanced` ; ordre simple < Studio < avancé (`UsageLevel.at_least`).
+- Défaut : aucun `user_settings.json` (installation neuve) donne `simple` ; fichier existant sans `usage_level`, avec une valeur invalide, ou illisible donne `advanced` ; valeur valide : cette valeur.
+- Le niveau n'est jamais écrit dans le `.kut`. `set_usage_level` enregistre et émet `usage_level_changed(str)` seulement si le niveau change.
+
+## Décisions
+
+1. **Trois niveaux** : Simple, Studio (intermédiaire), Avancé. Réglage global, **préférence utilisateur** (`user_settings.json`), **jamais dans le `.kut`**. Champ `usage_level` (pas « level » : collision avec les « niveaux » des scopes et l'imbrication des séquences). Libellé dans l'interface : « Niveau d'usage ».
+2. **Mécanisme hybride** : les *groupes* entiers de niveau supérieur sont cachés ; un lien « Afficher plus d'options » en bas de l'inspecteur permet d'y accéder en un geste ; les réglages avancés d'un groupe visible sont repliés dans un sous-bloc « Avancé » du groupe. **Aucune fonction n'est inaccessible** ; elle est seulement repliée ou cachée derrière un geste.
+3. **Niveau par défaut** : une installation neuve démarre en **Simple** ; un utilisateur qui a déjà un `user_settings.json` sans `usage_level` est mis en **Avancé** (rien ne change pour lui).
+4. **« Restaurer les valeurs par défaut » ne réinitialise pas le niveau** (choix personnel d'interface).
+5. Groupes conditionnels (Transition, Sous-titre, Calque graphique) : restent cachés hors contexte, comme aujourd'hui.
+6. Les **raccourcis clavier restent toujours actifs**, quel que soit le niveau (jamais de `setVisible(False)` sur une action : retirer l'entrée du menu et garder l'action sur la fenêtre).
+7. Un contrôle caché **garde sa valeur** (le modèle seul porte les valeurs) ; les **verrous et genres de piste** (`show_clip`, `clip_edit_refusal`) s'appliquent à tous les niveaux ; un niveau n'appelle jamais `setEnabled`.
+
+## Répartition (niveau minimal où l'élément est affiché directement)
+
+### Inspecteur
+
+| Groupe ou contrôle | Niveau | Remarque |
+|---|---|---|
+| Clip sélectionné ; Paramètres du projet (replié) | Simple | |
+| Mouvement : position X/Y, échelle, rotation, opacité, réinitialiser | Simple | |
+| Mouvement : losanges d'images-clés (‹ ◆ ›) | Studio | |
+| Mouvement : alignement dans le cadre (6 boutons) | Studio | |
+| « Remplir le cadre » (propriété `fill`) | Simple | action dédiée, hors du reste de la transformation avancée |
+| Transformation avancée (ancrage, échelle X/Y, miroirs, pan, inclinaison) | Avancé | |
+| Menu clic droit des losanges (interpolation, copier/coller, courbes) | Avancé | |
+| Recadrage | Simple | impose de scinder `CompositingEditor` en sous-blocs |
+| Gain du clip, fondus ; volume du moniteur | Simple | |
+| Panoramique du clip | Studio | |
+| Vitesse : valeur, préréglages, Reverse, Figer | Studio | le sous-menu Vitesse du clic droit suit |
+| Vitesse : courbe, interpolation, qualité, flux optique, audio de la courbe | Avancé | `TimeSection` complète |
+| Étalonnage : exposition, contraste, saturation, température, teinte, ombres, hautes lumières | Studio | |
+| Étalonnage : courbes, préréglages, LUT 3D | Avancé | |
+| Effets du clip : ajouter, liste, activer, retirer ; flou, netteté, vignette, noir et blanc, sépia | Studio | |
+| Effets du clip : lueur, aberration chromatique, brume de chaleur | Studio | |
+| Effets du clip : monter / descendre (ordre) | Avancé | |
+| Transition (type, durée) | Studio | visible seulement si une transition est sélectionnée |
+| Sous-titre : contenu, police, taille, couleurs, alignement | Simple | |
+| Sous-titre : position/marges/remplissage, contour, ombre, fond | Studio | |
+| Calque graphique : type, texte, taille, couleur, police | Simple | |
+| Calque graphique : contour, ombre et fond, animation de texte | Studio | |
+| Calque graphique : lueur néon, lumière, forme, parent, flou de mouvement | Avancé | |
+| Compositing : mode de fusion Normal, Multiplier, Écran, Incrustation, Assombrir, Éclaircir | Studio | |
+| Compositing : mode de fusion Addition, Différence | Avancé | le mode déjà choisi dans un projet reste affiché |
+| Compositing : masques rectangle et ellipse (ajouter/supprimer, inverser, adoucissement, opacité) | Studio | |
+| Compositing : masques polygone et courbe, opération soustraire/intersecter, expansion, rotation, édition dans le moniteur | Avancé | |
+| Compositing : clé chroma | Studio | |
+| Suivi (tracking) | Avancé | |
+| Effets audio : normaliser, basses, aigus | Studio | |
+| Effets audio : voix, réduction de bruit, compresseur, limiteur, téléphone, réverb, écho, EQ paramétrique | Avancé | |
+
+### Menus, pages, surfaces
+
+| Élément | Niveau |
+|---|---|
+| Fichier (tout), Aide (tout) | Simple |
+| Édition : annuler, rétablir, dupliquer, supprimer, activer/désactiver | Simple |
+| Édition : suppression en cascade | Studio |
+| Séquence : couper à la tête de lecture, marqueur, ajouter/supprimer/renommer une piste, verrouillage, visibilité, muet | Simple |
+| Séquence : détection de scènes, proxies pour la sélection | Studio |
+| Séquence : nouvelle/renommer/dupliquer/supprimer une séquence, imbriquer, ouvrir/parent/retour/avance, convertir en composition, nouvelle composition, multicam | Avancé |
+| Calques : Ajouter ▸ texte ; réinitialiser le recadrage | Simple |
+| Calques : Ajouter ▸ forme, nul, ajustement ; grouper/dégrouper ; copier/coller (calques, attributs) ; préréglages ; zones de sécurité, repères, grille, aimantation, centre ; Aligner | Studio |
+| Calques : flou de mouvement et réglages ; panneau de suivi | Avancé |
+| Réseaux sociaux : menu (nouveau projet social, réglages, zones de plateforme, remplir le cadre, sous-titres automatiques, repère de couverture) | Simple |
+| Réseaux sociaux : grille de rythme, Impact, audio social, versions de format, classement, Photos | Studio |
+| Fenêtre : pages Montage et Audio, panneaux, espaces de travail, préférences, réinitialiser la disposition | Simple |
+| Fenêtre : page Couleur ; scopes | Studio |
+| Fenêtre : page Composition ; éditeur de courbes ; diagnostics | Avancé |
+| Menu contextuel clip : couper, dupliquer, activer, supprimer | Simple |
+| Menu contextuel clip : sous-menu Vitesse (hors courbe) | Studio |
+| Menu contextuel clip : imbriquer, convertir, multicam ; courbe de vitesse | Avancé |
+| Menu contextuel piste : hauteur, replier, monter/descendre, renommer, supprimer | Simple |
+| Menu contextuel piste : courbe de volume, rôle, ducking | Avancé |
+| Menu contextuel bibliothèque : renommer, dossiers, supprimer | Simple |
+| Menu contextuel bibliothèque : étiquettes, matrice couleur, proxy, relier | Studio |
+| Timeline : sélection, lame, aimantation, ripple, marqueur | Simple |
+| Timeline : roll, slip, slide, enregistrement | Studio |
+| Rail de la bibliothèque : média, montage, texte, audio, graphiques | Simple |
+| Rail de la bibliothèque : effets, transitions, couleur, séquences, modèles | Studio |
+| **Raccourcis clavier** (`ACTION` et `KEY`) | **toujours actifs** |
+| Éditeur de raccourcis, Préférences | toujours |
+
+## Pièges à respecter (vérifiés dans le code)
+
+- P1 : un `QAction` avec `setVisible(False)` perd son raccourci ; garder l'action sur la fenêtre (`window.addAction`) et retirer l'entrée du menu.
+- P2 : `ui/properties_panel_mixins/construction.py` fait 697 lignes (plafond 700 des paquets gardés par `tests/test_ui_modularization.py`) : le code des niveaux va dans un NOUVEAU module.
+- P3 : plusieurs écrivains de visibilité dans l'inspecteur (`_apply_group_visibility` dans `tabs.py`, `set_graphic`, `set_skew_available`, `TimeSection._show_row`, `update_effects_from_clip`, `set_chroma_visible`, `_refresh_mask_widgets`) : un niveau ne s'ajoute qu'au point unique `_apply_group_visibility` (3e condition) et à des conteneurs repliables, jamais à des `setVisible` isolés.
+- P5 : `CropEditor` est enfant de `CompositingEditor` : scinder en sous-blocs (recadrage, fusion, masques, clé chroma).
+- P8/P9 : `_settings_snapshot` (`ui/main_window_mixins/preferences.py`) reconstruit `UserSettings` champ par champ : y AJOUTER `usage_level`, sinon il est remis au défaut à chaque sauvegarde d'un autre réglage ; `_restore_default_preferences` doit le PRÉSERVER.
+- P11/P12 : i18n fr/en/es, textes courts, noms accessibles (`tests/test_ui_honesty.py`), 1180×720 à +20 % de police.
+- P13 : `tools/ui_audit.py` ne joue qu'un scénario par onglet : ajouter une dimension « niveau » (×3 de temps d'audit).
+- P14 : retraduction à chaud (`_translated_actions`, `_translated_menus`) pour les entrées de menu qui disparaissent/réapparaissent.

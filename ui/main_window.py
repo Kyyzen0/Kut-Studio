@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
@@ -184,6 +184,9 @@ class MainWindow(
     HistoryMixin,
     QMainWindow,
 ):
+    # Niveau d'usage changé (ADR-0006 étape 4) : valeur de chaîne du niveau. Aucun consommateur dans ce lot.
+    usage_level_changed = Signal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kut-Studio")
@@ -206,6 +209,7 @@ class MainWindow(
         self._master_gain_db = float(loaded_settings.master_gain_db)
         self._master_muted = bool(loaded_settings.master_muted)
         self._render_quality = loaded_settings.render_quality
+        self._init_usage_level(loaded_settings)
         self.theme_manager = ThemeManager(requested_mode=loaded_settings.theme_mode)
         i18n.set_language(loaded_settings.language)
         self.runtime = StudioRuntime(

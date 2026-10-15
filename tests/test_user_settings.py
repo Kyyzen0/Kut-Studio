@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -68,7 +69,8 @@ def test_load_returns_defaults_for_invalid_json(tmp_path):
 def test_load_returns_defaults_when_payload_is_not_dict(tmp_path):
     (tmp_path / "user_settings.json").write_text("[1, 2, 3]", encoding="utf-8")
     settings = load_user_settings(tmp_path)
-    assert settings == UserSettings()
+    # Le fichier existe mais est inutilisable : pas une installation neuve prouvée, donc le niveau des utilisateurs existants.
+    assert settings == replace(UserSettings(), usage_level="advanced")
 
 
 @pytest.mark.parametrize(
