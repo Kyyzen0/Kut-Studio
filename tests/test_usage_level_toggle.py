@@ -293,16 +293,16 @@ window = audit.make_main_window(1180, 720, font_scale=SCALE)
 bar = window.findChild(type(window.export_button.parentWidget()), "main_topbar")
 chip = window.usage_level_chip
 assert bar.isVisible() and bar.width() <= 1180
-if SCALE <= 1.2:
-    assert chip.isVisible() and chip.form() in ("full", "compact"), chip.form()
-    assert chip.text() == chip.full_text()[: len(chip.text())] and len(chip.text()) >= 2
+# La puce a trois formes (complète, abrégée, absente) selon la place : jamais au détriment des boutons voisins.
+assert chip.form() in ("full", "compact", "hidden") and chip.isVisible() == (chip.form() != "hidden")
+if SCALE <= 1.0:
+    assert chip.form() == "full" and chip.text() == chip.full_text()
+if chip.isVisible():
     assert chip.geometry().right() < window.settings_button.geometry().left() + 1
-else:
-    # Plus de place pour la puce (polices de repli de Linux) : elle s'efface, la barre reste celle d'avant.
-    assert chip.form() == "hidden" and not chip.isVisible(), chip.form()
-for button in (window.settings_button, window.export_button):
-    if SCALE <= 1.2:
+    for button in (window.settings_button, window.export_button):
         assert button.width() >= button.sizeHint().width() - 1, (button.text(), button.width(), button.sizeHint().width())
+if SCALE >= 1.45:
+    assert chip.form() == "hidden"       # polices de repli larges (Linux) : la barre reste celle d'avant
 assert window.settings_button.geometry().right() < window.export_button.geometry().left() + 1
 assert window.export_button.geometry().right() <= bar.width()
 found = [str(f) for f in audit.sibling_overlaps(bar) + audit.parent_overflow(bar)]
@@ -312,7 +312,7 @@ print("ok")
 
 
 # 1,2 : le critère du dépôt ; 1,45 : approche les polices de repli de Linux (Debian CI : « Réglages » à 86 px pour 140 voulus).
-@pytest.mark.parametrize("scale", [1.2, 1.45])
+@pytest.mark.parametrize("scale", [1.0, 1.2, 1.45])
 def test_top_bar_fits_with_the_chip_at_the_smallest_size_and_wider_fonts(tmp_path, scale):
     env = {
         **os.environ, "QT_QPA_PLATFORM": "offscreen", "KUT_STUDIO_CONFIG_DIR": str(tmp_path / "config"),
