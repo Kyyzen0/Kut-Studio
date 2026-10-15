@@ -169,7 +169,9 @@ class SectionBox(QGroupBox):
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt
-        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+        # Seul l'en-tête focalisé replie la section. Un champ du contenu ignore Entrée une fois validée (c'est le cas de
+        # ``QAbstractSpinBox``) : l'événement remonte jusqu'ici et repliait le groupe à chaque saisie validée.
+        if self.hasFocus() and event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
             self.toggle()
             event.accept()
             return
