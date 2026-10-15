@@ -47,52 +47,52 @@ LOGGER = logging.getLogger(__name__)
 class ThemePalette:
     """Palette de couleurs pour un thème donné.
 
-    Direction artistique par défaut : identité vert-noir / turquoise
-    menthe, inspirée des logiciels de montage haut de gamme. Les
+    Direction artistique par défaut : identité graphite + turquoise
+    (accent), playhead corail, inspirée des logiciels de montage haut de gamme. Les
     tokens restent sémantiques (``surface``, ``accent``, ``track_*``…)
     pour qu'un thème clair puisse les remplacer sans toucher au code
     métier.
     """
 
-    # Surfaces — fond général vert-noir très sombre
-    background: str = "#061514"
-    panel: str = "#081C1A"
-    panel_alt: str = "#0C2421"
-    panel_elevated: str = "#102C28"
-    surface: str = "#0E2724"
-    surface_hover: str = "#143430"
-    surface_active: str = "#1A3D38"
+    # Surfaces — fond général graphite très sombre
+    background: str = "#080C11"
+    panel: str = "#121922"
+    panel_alt: str = "#1A2330"
+    panel_elevated: str = "#222E3E"
+    surface: str = "#222E3F"
+    surface_hover: str = "#2B3A4E"
+    surface_active: str = "#344860"
     # Champs de saisie : une surface à part dans la hiérarchie (fond → panneau → panneau relevé → champ → survol → actif).
-    input_bg: str = "#0C2421"
+    input_bg: str = "#0B1119"
 
     # Bordures / séparateurs discrets
-    border: str = "#183834"
-    border_strong: str = "#2A5F59"
-    divider: str = "#0F2A27"
+    border: str = "#46566B"
+    border_strong: str = "#8396AE"
+    divider: str = "#2D3B4D"
 
-    # Texte — quasi-blanc légèrement teinté, secondaire gris-vert
-    text: str = "#EEF8F5"
+    # Texte — quasi-blanc légèrement teinté, secondaire gris-bleu
+    text: str = "#F4F7FA"
     text_strong: str = "#FFFFFF"
-    muted: str = "#94AAA5"
-    muted_strong: str = "#B7CFC9"
-    disabled_text: str = "#62776F"
+    muted: str = "#BAC6D4"
+    muted_strong: str = "#D2DBE5"
+    disabled_text: str = "#8F9DB0"
 
     # États désactivés
-    button_disabled_bg: str = "#0B1E1C"
-    button_disabled_border: str = "#152F2C"
+    button_disabled_bg: str = "#151D27"
+    button_disabled_border: str = "#2D3B4E"
 
     # Accent turquoise menthe (couleur d'identité)
-    accent: str = "#36E6C3"
-    accent_hover: str = "#5BEFD0"
+    accent: str = "#2EF2D0"
+    accent_hover: str = "#6AF7DF"
     # Texte et icônes posés SUR une surface d'accent (bouton principal) : dessous, jamais de couleur en dur.
-    on_accent: str = "#061515"
+    on_accent: str = "#04110F"
     # Anneau de focus clavier : visible sur toutes les surfaces du thème.
-    focus_ring: str = "#36E6C3"
-    accent_dark: str = "#0E3A33"
-    accent_dark_hover: str = "#154E45"
-    accent_glow: str = "#36E6C326"  # halo subtil, alpha ~15%
-    selection: str = "#0E3A33"
-    selection_line: str = "#36E6C3"
+    focus_ring: str = "#FEFFFF"
+    accent_dark: str = "#0E3A38"
+    accent_dark_hover: str = "#154E4A"
+    accent_glow: str = "#2EF2D026"  # halo subtil, alpha ~15%
+    selection: str = "#1D3F44"
+    selection_line: str = "#FEFFFF"
 
     # Couleurs sémantiques : même signification partout (succès, alerte, erreur, information) ; ``*_dark`` est le fond
     # discret d'un message ou d'une pastille de cet état.
@@ -106,38 +106,39 @@ class ThemePalette:
     info_dark: str = "#16324A"
 
     # Tooltip
-    tooltip_bg: str = "#0E2724"
+    tooltip_bg: str = "#222E3F"
 
     # Timeline / pistes
-    timeline_bg: str = "#061918"
-    timeline_grid: str = "#0A211F"
-    track_header_bg: str = "#081C1A"
-    track_alt_bg: str = "#0A1F1D"
-    track_divider: str = "#102C29"
-    ruler_bg: str = "#081C1A"
-    ruler_line: str = "#2A5F59"
-    playhead: str = "#36E6C3"
-    playhead_dim: str = "#36E6C380"
+    timeline_bg: str = "#0D131B"
+    timeline_grid: str = "#1A2331"
+    track_header_bg: str = "#121922"
+    track_alt_bg: str = "#141C27"
+    track_divider: str = "#35445A"
+    ruler_bg: str = "#1A2332"
+    ruler_line: str = "#8396AE"
+    playhead: str = "#FF5A4D"
+    # ``playhead_dim`` et ``snap_line`` ne servent qu'à peindre (``QColor``) : alpha en premier, « #aarrggbb ».
+    playhead_dim: str = "#80FF5A4D"
     marker: str = "#F7C948"
-    snap_line: str = "#36E6C380"
+    snap_line: str = "#80FF5A4D"
     # Conservés pour la palette : plus lus depuis la suppression de la pastille « Fondu enchaîné » de l'aperçu
     # (``docs/dead-code-audit.md``).
     transition_overlay: str = "#F7C948"
-    transition_overlay_bg: str = "#061919"
+    transition_overlay_bg: str = "#0D131C"
 
     # Pistes par type — couleurs contrôlées, distinctes
     track_video: str = "#4FA3D9"        # bleu discret
     track_video_dim: str = "#1F4A66"
-    track_audio: str = "#6FD08C"        # vert : distinct de l'accent, qui reste réservé à la sélection et au focus
+    track_audio: str = "#6FD08C"        # vert : distinct de l'accent
     track_audio_dim: str = "#1C4A36"
     track_subtitle: str = "#B58EF9"     # violet pour titres et calques
     track_subtitle_dim: str = "#3F2D5A"
 
     # Clip : la couleur de fond dit la CATÉGORIE (vidéo, audio, titre, calque, imbriqué), jamais l'identité du clip ; le texte
     # ``clip_text`` reste lisible (≥ 4,5:1) sur chacun de ces fonds, la sélection se lit à la bordure et à l'éclaircissement.
-    clip_border: str = "#2A5F59"
-    clip_border_selected: str = "#36E6C3"
-    clip_border_hover: str = "#5BEFD0"
+    clip_border: str = "#8396AE"
+    clip_border_selected: str = "#FEFFFF"
+    clip_border_hover: str = "#D2DBE6"
     clip_text: str = "#FFFFFE"
     clip_text_dim: str = "#FFFFFECC"
     clip_title: str = "#B58EF9"
@@ -152,7 +153,7 @@ class ThemePalette:
 
     # Keyframe diamond : presque blanc sur n'importe quel fond de clip, anneau sombre ; l'accent est réservé à la sélection.
     diamond_filled: str = "#F4FFFC"
-    diamond_outline: str = "#2A5F59"
+    diamond_outline: str = "#8396AE"
     diamond_border: str = "#061513"
     # Palette catégorielle des angles Multicam (rang ``MulticamAngle.color_index`` modulo la taille) : jamais de
     # couleur d'angle dans la logique métier, seulement un rang que l'interface résout ici.
@@ -254,7 +255,7 @@ THEMES: dict[str, ThemePalette] = {
         surface="#FFFFFE",
         surface_hover="#E4ECE9",
         surface_active="#D5E2DD",
-        input_bg="#F2F6F4",
+        input_bg="#F2F6F5",
         border="#CBD7D3",
         border_strong="#8FA69F",
         divider="#E1E9E6",
@@ -273,9 +274,9 @@ THEMES: dict[str, ThemePalette] = {
         accent_dark_hover="#C2EBE0",
         accent_glow="#077A6526",
         on_accent="#FEFFFF",
-        focus_ring="#077A65",
-        selection="#D8F4ED",
-        selection_line="#077A65",
+        focus_ring="#077A66",
+        selection="#D8F4EE",
+        selection_line="#077A66",
         success="#157550",
         success_dark="#EAF7F0",
         danger="#C42D45",
@@ -290,12 +291,12 @@ THEMES: dict[str, ThemePalette] = {
         track_header_bg="#FAFCFB",
         track_alt_bg="#F5F8F7",
         track_divider="#DCE5E1",
-        ruler_bg="#FAFCFB",
+        ruler_bg="#FAFCFC",
         ruler_line="#8FA69F",
-        playhead="#077A65",
-        playhead_dim="#077A6580",
+        playhead="#C8372B",
+        playhead_dim="#80C8372B",
         marker="#855E00",
-        snap_line="#077A6580",
+        snap_line="#80C8372B",
         transition_overlay="#855E00",
         transition_overlay_bg="#FFFEFEE6",
         track_video="#2B6A9E",
@@ -305,8 +306,8 @@ THEMES: dict[str, ThemePalette] = {
         track_subtitle="#6246C8",
         track_subtitle_dim="#E3DAF7",
         clip_border="#8FA69F",
-        clip_border_selected="#077A65",
-        clip_border_hover="#055F4E",
+        clip_border_selected="#077A66",
+        clip_border_hover="#055F4F",
         clip_text="#FEFEFF",
         clip_text_dim="#FEFEFFD9",
         clip_title="#6246C8",
