@@ -7,7 +7,7 @@ import os
 import time
 from core.autosave import autosave_is_newer, discard_autosave, sidecar_path
 from core.export_paths import default_export_directory, export_file_name
-from core.project_factory import create_default_project
+from core.project_factory import DEFAULT_PROJECT_NAME, create_default_project
 from core.project_io import load_project, save_project
 from core.project_lock import ProjectLock, ProjectLockedError, lock_file_for
 from core.render_plan import RenderPlan, build_render_plan
@@ -78,6 +78,16 @@ class ProjectFilesMixin:
         if lock is not None:
             lock.release()
 
+    def project_display_name(self) -> str:
+        """Le nom du projet tel que l'utilisateur le voit, partout (barre du haut, dialogue « Enregistrer ? »).
+
+        Un projet jamais nommé (nom vide ou nom par défaut du cœur) s'appelle « Mon montage » dans la langue de l'interface.
+        """
+        name = (getattr(getattr(self, "project", None), "name", "") or "").strip()
+        if not name or name == DEFAULT_PROJECT_NAME:
+            return i18n.translate("topbar.default_name")
+        return name
+
     def _confirm_discard_changes(self) -> bool:
         """Propose d'enregistrer un projet modifié avant de le quitter.
 
@@ -88,7 +98,7 @@ class ProjectFilesMixin:
             return True
         self._finalize_pending_edit_sessions()
         box = _main_window().QMessageBox
-        name = (getattr(self.project, "name", "") or "").strip() or i18n.translate("project.untitled")
+        name = self.project_display_name()
         answer = box.question(
             self,
             i18n.translate("project.unsaved.title"),

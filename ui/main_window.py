@@ -1228,11 +1228,7 @@ class MainWindow(
 
     def _update_top_bar(self) -> None:
         """Met à jour le nom du projet et l'indicateur « Enregistré / Non enregistré »."""
-        name = self.project.name if self.project is not None else "Projet sans titre"  # i18n-ignore: nom par défaut du projet (donnée du cœur)
-        display_name = (
-            i18n.translate("topbar.default_name") if name == "Projet sans titre" else name  # i18n-ignore: idem
-        )
-        display_name = display_name or i18n.translate("topbar.default_name")
+        display_name = self.project_display_name()
         # La séquence éditée est toujours visible : « Projet › Séquence ».
         if self.project is not None and len(self.project.sequences) > 1:
             self.project_label.setText(f"{display_name} › {self.project.active_sequence.name}")

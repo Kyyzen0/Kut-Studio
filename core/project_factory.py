@@ -10,6 +10,9 @@ from __future__ import annotations
 from .project_model import Clip, MediaAsset, Project, Track
 
 
+DEFAULT_PROJECT_NAME = "Projet sans titre"
+"""Nom d'un projet jamais nommé (donnée du cœur) : l'interface l'affiche sous le nom traduit « Mon montage »."""
+
 _TRACK_TYPES_LABELS = {"video": "Vidéo", "subtitle": "Sous-titres"}
 
 
@@ -93,7 +96,7 @@ def create_default_project() -> Project:
     )
 
     return Project(
-        name="Projet sans titre",
+        name=DEFAULT_PROJECT_NAME,
         width=1920,
         height=1080,
         fps=30.0,

@@ -1,11 +1,9 @@
 """D2 : le badge « inutilisé » de la bibliothèque suit les clips posés, dupliqués, supprimés ou annulés."""
 
 import pytest
-from PySide6.QtWidgets import QApplication
 
 from core.project_model import MediaAsset
 from tools import ui_audit as audit
-from ui import i18n
 
 
 @pytest.fixture(scope="module")
