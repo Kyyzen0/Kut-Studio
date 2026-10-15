@@ -3,7 +3,7 @@ import sys
 
 from core.diagnostics_log import install_diagnostics
 from core.process_supervisor import helper_mode_exit_code
-from core.tool_paths import extend_search_path
+from core.tool_paths import extend_search_path, log_tool_search
 
 
 def main():
@@ -23,10 +23,12 @@ def main():
         return cli_main(sys.argv[1:])
     # Lancée depuis le Dock ou le Finder, l'application n'a pas le PATH du shell : FFmpeg (Homebrew…) resterait
     # introuvable. À faire avant les imports de l'interface, dont certains résolvent FFmpeg dès le chargement.
-    extend_search_path()
+    added_dirs = extend_search_path()
     # Avant toute autre chose : une exception, même au chargement de Qt ou de l'interface, doit laisser une trace
     # dans le journal. Qt et la fenêtre ne sont donc importés qu'ici, une fois le journal installé.
     install_diagnostics()
+    # Le journal n'existait pas encore au moment de la recherche : on la consigne maintenant (aucun sous-processus).
+    log_tool_search(added_dirs)
     # FFmpeg laissés par une instance morte que ni son gardien ni son objet Job n'ont pu arrêter.
     from core.process_supervisor import sweep_dead_instances
 

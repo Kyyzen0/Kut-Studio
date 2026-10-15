@@ -78,6 +78,10 @@ source .venv/bin/activate      # macOS / Linux
 python -m pip install -r requirements.txt
 ```
 
+Kut-Studio looks for FFmpeg and ffprobe in this order: the copy bundled with the app, your `PATH`, then the usual
+package-manager folders (Homebrew, MacPorts on macOS; `/usr/local/bin`, Snap, Linuxbrew on Linux; none on Windows). The
+startup lines of the diagnostics log (`kut-studio.log`, in the platform's log folder) record what was found.
+
 Install FFmpeg with your platform package manager, for example:
 
 ```bash
