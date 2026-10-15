@@ -17,6 +17,9 @@ class TabsMixin:
     def _sync_inspector_tab_order(self) -> None:
         """Tab visite les contrôles dans l'ordre où l'inspecteur les affiche (haut → bas, gauche → droite)."""
         follow_layout_order(self.layout())
+        guard = getattr(self, "_wheel_guard", None)
+        if guard is not None:
+            guard.adopt(self)        # champs ajoutés après coup (réglages d'effets) : molette seulement avec le focus
 
     def _select_inspector_tab(self, index: int) -> None:
         """Bascule l'onglet actif de l'inspecteur."""

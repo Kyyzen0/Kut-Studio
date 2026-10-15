@@ -35,6 +35,12 @@ class ClipContextMixin:
         self.graphics_group.set_graphic(graphic)
 
     def show_clip(self, view):
+        self._show_clip_content(view)
+        guard = getattr(self, "_wheel_guard", None)
+        if guard is not None:
+            guard.adopt(self)        # lignes recréées à la sélection (masques, sections du calque) : molette seulement avec le focus
+
+    def _show_clip_content(self, view):
         pending_transform = None
         pending_keyframes: list[TransformKeyframe] | None = None
         self._push_signal_block()

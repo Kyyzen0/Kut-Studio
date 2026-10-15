@@ -81,3 +81,55 @@ def test_every_numeric_field_of_the_inspector_obeys_the_policy(qtbot) -> None:
         before = field.value()
         _wheel(field, -120)
         assert field.value() == before, field.objectName() or type(field).__name__
+
+
+def test_the_guard_never_runs_for_events_outside_the_panel(qtbot, monkeypatch) -> None:
+    """Pas de filtre d'application : le coût par événement d'un widget étranger ne dépend pas du nombre de panneaux."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QWidget
+
+    from ui import wheel_guard
+
+    calls = []
+    original = wheel_guard.WheelFocusGuard.eventFilter
+    monkeypatch.setattr(wheel_guard.WheelFocusGuard, "eventFilter",
+                        lambda self, watched, event: (calls.append(1), original(self, watched, event))[1])
+    panels = [PropertiesPanel(lambda *_a: None) for _ in range(5)]
+    for panel in panels:
+        panel.show_clip(_view())
+    qtbot.wait(20)                 # les sections repliées par défaut se replient dans un minuteur
+    outsider = QWidget()
+    qtbot.addWidget(outsider)
+    calls.clear()
+    for _ in range(1000):
+        QApplication.sendEvent(outsider, QEvent(QEvent.User))
+    assert calls == []
+    for panel in panels:
+        panel.close()
+        panel.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    calls.clear()
+    for _ in range(1000):
+        QApplication.sendEvent(outsider, QEvent(QEvent.User))
+    assert calls == []
+
+
+def test_fields_created_after_construction_obey_the_policy_too(qtbot) -> None:
+    from core.effects_model import ClipEffect, EffectType
+
+    panel = _panel(qtbot)
+    panel.update_effects_from_clip([ClipEffect(id="fx1", type=EffectType.BLUR)], "video")
+    qtbot.wait(20)
+    fields = list(panel._effect_param_widgets.values())
+    assert fields
+    for field in fields:
+        before = field.value()
+        _wheel(field, -120)
+        assert field.value() == before
+    # Tous les champs du panneau portent le filtre, quel que soit l'état affiché.
+    from ui.wheel_guard import _ADOPTED, _WHEEL_FIELDS
+    from PySide6.QtWidgets import QScrollBar
+
+    missing = [f for kind in _WHEEL_FIELDS for f in panel.findChildren(kind)
+               if not isinstance(f, QScrollBar) and not f.property(_ADOPTED)]
+    assert missing == []
