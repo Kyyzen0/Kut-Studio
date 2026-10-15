@@ -14,13 +14,12 @@ d'onde restent. Un fichier absent ou un FFmpeg manquant retourne ``None``
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 
 from .cache_keys import audio_envelope_key, thumbnail_key
 from .color_matrix import asset_ffmpeg_override, asset_matrix_inputs, cache_token, setparams_filter
 from .process_supervisor import supervised_run
-from .tool_paths import bundled_tool_path
+from .tool_paths import find_media_tool
 
 
 def thumbnail_slots(pixel_width: int, *, enabled: bool) -> int:
@@ -60,7 +59,7 @@ def extract_thumbnail(path: str, time_seconds: float, width: int = 160, asset=No
 
     ``asset`` (optionnel) : le média ; sa matrice couleur est dite à FFmpeg quand elle n'est pas celle qu'il lirait seul
     (:func:`core.color_matrix.asset_ffmpeg_override`), comme à l'export : la vignette a les couleurs du clip."""
-    ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
+    ffmpeg = find_media_tool("ffmpeg")
     if ffmpeg is None or not os.path.isfile(path):
         return None
     safe_width = max(32, min(320, int(width)))
