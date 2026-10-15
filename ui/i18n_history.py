@@ -146,6 +146,11 @@ HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "Relink a media file",
         "Reenlazar el archivo de un medio",
     ),
+    "history.media.color_matrix": _t(
+        "Espace colorimétrique d'un média",
+        "Source color space of a media",
+        "Espacio de color de un medio",
+    ),
     "history.library.asset_rename": _t("Renommer un média", "Rename a media", "Renombrar un medio"),
     "history.library.asset_delete": _t("Supprimer un média", "Delete a media", "Eliminar un medio"),
     "history.library.tags_edit": _t(

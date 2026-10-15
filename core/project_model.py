@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING
 
 from .audio_automation import TrackAutomation, coerce_track_automation
+from .color_matrix import MATRIX_AUTO, clean_label, normalize_choice
 
 if TYPE_CHECKING:
     from .beat_grid import BeatGrid
@@ -177,6 +178,13 @@ class MediaAsset:
         reel: Nom de bobine (``reel_name``) lu dans le fichier.
         camera: Modèle de caméra (marque et modèle quand le fichier les donne).
         creation_time: Date de création lue dans le fichier (ISO 8601), ``""`` si absente.
+        color_space: Étiquette de matrice du flux vidéo lue par la sonde (``bt601``, ``bt709``, ``bt2020``, ``none`` : non
+            étiqueté, ``other``), ``""`` : pas encore sondée. **Valeur d'exécution** : jamais écrite dans un projet (un
+            projet ouvert la sonde à la demande, :func:`core.color_matrix.asset_matrix_inputs`) et sans effet sur l'égalité.
+        color_matrix: Choix de l'utilisateur pour la lecture des couleurs de ce média : ``auto`` (l'étiquette, sinon BT.709 à
+            partir de 720 lignes ou 1280 colonnes, sinon BT.601 : :mod:`core.color_matrix`), ``bt601`` ou ``bt709`` (force).
+            Écrit dans le projet seulement s'il n'est pas ``auto`` ; une valeur inconnue est refusée (``ValueError``), pas
+            ramenée en silence.
 
     Les six métadonnées optionnelles sont **informatives** : elles n'entrent dans aucune règle de validité et une
     valeur illisible (mauvais type, non finie) retombe sur son défaut au lieu de faire échouer l'ouverture d'un projet.
@@ -197,9 +205,13 @@ class MediaAsset:
     reel: str = ""
     camera: str = ""
     creation_time: str = ""
+    color_space: str = field(default="", compare=False)
+    color_matrix: str = MATRIX_AUTO
 
     def __post_init__(self) -> None:
         """Rejette les valeurs physiquement impossibles pour un média."""
+        self.color_matrix = normalize_choice(self.color_matrix)
+        self.color_space = clean_label(self.color_space)
         self.timecode = _clean_text(self.timecode)
         self.reel = _clean_text(self.reel)
         self.camera = _clean_text(self.camera)

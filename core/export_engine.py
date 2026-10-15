@@ -56,6 +56,7 @@ from PySide6.QtCore import QObject, QProcess, Signal
 from . import process_supervisor
 from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
+from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
 from .render_plan import (
@@ -2267,6 +2268,14 @@ def layer_framing(layer, width: int, height: int) -> tuple[int, int] | None:
     return cover_size(source_width, source_height, width, height)
 
 
+def layer_color_filter(layer, source: str | None = None) -> str:
+    """``setparams=colorspace=…`` de la matrice du média d'une couche (:mod:`core.color_matrix`), ``""`` quand FFmpeg lit déjà la
+    bonne. Jamais pour une couche qui n'est pas un fichier vidéo (séquence imbriquée : ``source`` ; photo : ``still``)."""
+    if source is not None or getattr(layer, "still", False) or getattr(layer, "nested_key", ""):
+        return ""
+    return setparams_filter(getattr(layer, "color_override", ""))
+
+
 def layer_conform_filter(layer, width: int, height: int, pad_color: str = "black") -> str:
     """Mise au format d'une couche avant son temps : le cadre (avec bandes) ou, en « remplir », sa taille agrandie
     (:func:`layer_framing`). La fenêtre visible est choisie ensuite, en temps du clip (:func:`_framing_crop`)."""
@@ -2430,6 +2439,12 @@ def _build_layer_filter(
         )
 
     frame_fit = layer_conform_filter(layer, width, height, pad_color)
+    color_filter = layer_color_filter(layer, source)
+    if color_filter:
+        # La matrice du média, dite à FFmpeg **avant** toute conversion vers le RVB (``scale``, ``pad`` et ``fps`` gardent
+        # l'étiquette de l'image). Dans ``frame_fit`` plutôt qu'en étage séparé : il est appliqué une seule fois quelle que
+        # soit la branche (normal, arrêt sur image, remappé) et ne laisse jamais d'étiquette de sortie inutilisée.
+        frame_fit = f"{color_filter},{frame_fit}"
     framing = layer_framing(layer, width, height)
     framing_crop = _framing_crop(layer, width, height)
     retime_chains: tuple[str, ...] = ()

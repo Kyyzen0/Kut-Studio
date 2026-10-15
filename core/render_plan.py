@@ -42,6 +42,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from .color_matrix import asset_ffmpeg_override
 from .effects_model import ClipEffect
 from .project_model import Clip, MediaAsset, Project, Sequence, Track
 from .subtitle_io import SubtitleCue
@@ -107,6 +108,9 @@ class RenderLayer:
     # Taille du média (``0`` : inconnue) : le cadrage « remplir » (``transform.fill``) en déduit la taille agrandie.
     source_width: int = 0
     source_height: int = 0
+    # ``setparams=colorspace=`` à poser en tête de la chaîne du média quand sa matrice (étiquette, taille, choix de l'utilisateur :
+    # :mod:`core.color_matrix`) n'est pas celle que FFmpeg lirait de lui-même ; ``""`` : rien à dire à FFmpeg.
+    color_override: str = ""
     effects: tuple[ClipEffect, ...] = field(default_factory=tuple)
     # Étalonnage couleur (tâche 29) : un objet ``ColorGrade`` ou
     # ``None`` si l'identité. On garde un type ``object`` pour ne
@@ -754,6 +758,7 @@ class _PlanBuilder:
                                 source_frames=_frame_count(asset.duration, asset.fps),
                                 source_width=int(asset.width or 0),
                                 source_height=int(asset.height or 0),
+                                color_override=asset_ffmpeg_override(asset),
                                 effects=tuple(clip.effects),
                                 # Étalonnage couleur (tâche 29) : si le clip ne
                                 # porte pas de ``ColorGrade``, on garde ``None``

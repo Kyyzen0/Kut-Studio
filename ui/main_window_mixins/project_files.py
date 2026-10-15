@@ -252,6 +252,10 @@ class ProjectFilesMixin:
         self.project = loaded
         self.current_project_path = path
         self._adopt_project_lock(candidate_lock)
+        # Les étiquettes de couleur des médias ne sont pas dans le fichier : sondées en arrière-plan, pour que le moniteur ne les attende jamais.
+        from core.media_probe import warm_color_labels
+
+        warm_color_labels([a.path for a in self.project.media_assets if a.media_type == "video" and a.color_matrix == "auto"])
         self.history.reset(self.project)
         if restored_autosave:
             # Le fichier .kut est plus ancien que ce qui est à l'écran.

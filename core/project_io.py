@@ -74,6 +74,7 @@ from .animation import Keyframe
 from .audio_automation import TrackAutomation
 from .beat_grid import beat_grid_from_dict, beat_grid_to_dict
 from .canvas_guides import guide_from_dict, guide_to_dict
+from .color_matrix import MATRIX_AUTO
 from .compositing import compositing_from_dict, compositing_to_dict, migrate_legacy_mask_keyframes
 from .motion_blur import settings_from_dict as motion_blur_from_dict
 from .motion_blur import settings_to_dict as motion_blur_to_dict
@@ -114,7 +115,11 @@ FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
 CURRENT_VERSION = 17
-"""Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18).
+"""Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18 et
+:data:`COLOR_MATRIX_VERSION` pour la 19).
+
+La version 19 n'est écrite que par un projet dont un média force son espace colorimétrique (clé ``color_matrix`` du média,
+:mod:`core.color_matrix`) ; le chargeur la lit comme la 17, un ancien Kut-Studio la refuse.
 
 La version 18 n'est écrite que par un projet contenant un masque courbe de Bézier (ADR-0006 lot 3b) : le chargeur la lit
 comme la 17, un ancien Kut-Studio la refuse.
@@ -160,8 +165,14 @@ octet comme avant ; seul un projet qui en contient un passe à 18. Un Kut-Studio
 alors le fichier avec le message explicite de ``_validate_envelope`` au lieu de l'ouvrir en ignorant la courbe et de la
 perdre à la sauvegarde suivante. Retirer la dernière courbe ramène l'écriture à 17. Le chargeur lit 17 et 18 de la même façon."""
 
+COLOR_MATRIX_VERSION = 19
+"""Version écrite par un projet dont au moins un média a un choix d'espace colorimétrique différent de ``auto``
+(``color_matrix``, :mod:`core.color_matrix`). Même règle que :data:`PATH_MASK_VERSION` : un projet qui n'utilise pas ce choix
+s'écrit octet pour octet comme avant (17, ou 18 s'il a un masque courbe) ; un Kut-Studio plus ancien refuse le fichier au lieu
+de l'ouvrir en ignorant le choix, donc en changeant les couleurs sans le dire. Le chargeur lit 17, 18 et 19 de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -473,6 +484,8 @@ def _asset_to_dict(asset: MediaAsset) -> dict[str, Any]:
         data["camera"] = asset.camera
     if asset.creation_time:
         data["creation_time"] = asset.creation_time
+    if asset.color_matrix != MATRIX_AUTO:
+        data["color_matrix"] = asset.color_matrix
     return data
 
 
@@ -505,6 +518,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
     payload = _build_payload_body(project)
     if payload_uses_path_masks(payload[_PROJECT_KEY]):
         payload[_VERSION_KEY] = PATH_MASK_VERSION
+    if any(asset.get("color_matrix", MATRIX_AUTO) != MATRIX_AUTO for asset in payload[_PROJECT_KEY]["media_assets"]):
+        payload[_VERSION_KEY] = COLOR_MATRIX_VERSION
     return payload
 
 

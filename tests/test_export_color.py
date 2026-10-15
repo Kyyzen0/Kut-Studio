@@ -21,6 +21,7 @@ from core.render_plan import build_render_plan
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg absent")
 
 W, H, FPS = 1280, 720, 25
+SD = (640, 360)
 ORIGINAL = (221, 92, 29)
 
 
@@ -37,18 +38,21 @@ def source(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def untagged_source(tmp_path_factory):
-    """Source sans balise de couleur (capture d'écran, vidéo SD, image générée) : FFmpeg la lit en BT.601."""
+    """Source SD sans balise de couleur (vidéo SD, capture, image générée) : lue en BT.601, comme FFmpeg le fait seul.
+
+    Elle est en SD depuis la règle « non étiqueté : BT.709 dès 720 lignes » (:mod:`core.color_matrix`) ; la HD non étiquetée
+    est couverte par ``tests/test_color_matrix_parity.py``."""
     path = tmp_path_factory.mktemp("color") / "src_untagged.mp4"
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0xDD5C1D:s={W}x{H}:d=2:r={FPS},format=rgb24",
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0xDD5C1D:s={SD[0]}x{SD[1]}:d=2:r={FPS},format=rgb24",
          "-vf", "scale=out_color_matrix=bt601:out_range=tv,format=yuv420p,setparams=colorspace=unknown:range=unknown",
          "-c:v", "libx264", "-crf", "10", str(path)], check=True, timeout=60)
     assert _tags(path) == ("unknown", "unknown", "unknown")
     return str(path)
 
 
-def _plan(source_path):
-    asset = MediaAsset(id="a", path=source_path, name="s", duration=2.0, width=W, height=H, fps=float(FPS),
+def _plan(source_path, size=(W, H)):
+    asset = MediaAsset(id="a", path=source_path, name="s", duration=2.0, width=size[0], height=size[1], fps=float(FPS),
                        media_type="video", has_audio=False)
     clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=2.0)
     project = Project(name="p", width=W, height=H, fps=float(FPS), media_assets=[asset],
@@ -84,9 +88,9 @@ def _pixel_format(path) -> str:
         capture_output=True, text=True, timeout=30, check=True).stdout.strip()
 
 
-def _export(source_path, tmp_path, fmt, name):
+def _export(source_path, tmp_path, fmt, name, size=(W, H)):
     output = tmp_path / name
-    request = ExportRequest(render_plan=_plan(source_path), output_path=str(output), format=fmt,
+    request = ExportRequest(render_plan=_plan(source_path, size), output_path=str(output), format=fmt,
                             preset=ExportPreset("T", (W, H), 18, "128k"), fps=FPS)
     completed = subprocess.run(ExportEngine()._build_command(request), capture_output=True, text=True, timeout=180)
     assert completed.returncode == 0, completed.stderr[-500:]
@@ -125,7 +129,7 @@ def test_an_untagged_source_is_not_darkened_by_the_export(untagged_source, tmp_p
     RVBA, la sortie n'a plus qu'une conversion RVB → YUV, exacte : ±1 ici, que l'ancienne sortie dépassait."""
     reference = _decoded_as_bt709(untagged_source, matrix="bt601")
     assert _close(reference, ORIGINAL, 5)
-    output = _export(untagged_source, tmp_path, fmt, name)
+    output = _export(untagged_source, tmp_path, fmt, name, SD)
     actual = _decoded_as_bt709(output)
     assert _close(actual, reference, 1), f"{fmt.name} : export {actual} ≠ source {reference}"
     assert _pixel_format(output) == pixel_format

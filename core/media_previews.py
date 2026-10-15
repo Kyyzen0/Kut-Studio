@@ -18,6 +18,7 @@ import shutil
 import subprocess
 
 from .cache_keys import audio_envelope_key, thumbnail_key
+from .color_matrix import asset_ffmpeg_override, asset_matrix_inputs, cache_token, setparams_filter
 from .process_supervisor import supervised_run
 from .tool_paths import bundled_tool_path
 
@@ -44,13 +45,21 @@ def audio_envelope_cache_key(path: str) -> str:
     return audio_envelope_key(path)
 
 
-def thumbnail_cache_key(path: str, time_seconds: float, width: int) -> str:
-    """Clé stable d'une vignette. Le temps est quantifié au dixième."""
-    return thumbnail_key(path, time_seconds, width)
+def thumbnail_cache_key(path: str, time_seconds: float, width: int, asset=None) -> str:
+    """Clé stable d'une vignette. Le temps est quantifié au dixième.
+
+    ``asset`` (optionnel) : le média, dont la matrice couleur (étiquette, taille, choix de l'utilisateur) entre dans la clé.
+    Calculée sans sonde (appelée à chaque dessin de la timeline) : un média HD pas encore sondé est supposé non étiqueté ; la
+    sonde de :func:`extract_thumbnail` mémorise l'étiquette réelle et la clé s'ajuste alors, au pire par un nouveau calcul."""
+    token = cache_token(*asset_matrix_inputs(asset, probe=False)) if asset is not None else ""
+    return thumbnail_key(path, time_seconds, width, matrix=token)
 
 
-def extract_thumbnail(path: str, time_seconds: float, width: int = 160) -> bytes | None:
-    """Extrait une image PNG à ``time_seconds``. À appeler hors de l'interface."""
+def extract_thumbnail(path: str, time_seconds: float, width: int = 160, asset=None) -> bytes | None:
+    """Extrait une image PNG à ``time_seconds``. À appeler hors de l'interface.
+
+    ``asset`` (optionnel) : le média ; sa matrice couleur est dite à FFmpeg quand elle n'est pas celle qu'il lirait seul
+    (:func:`core.color_matrix.asset_ffmpeg_override`), comme à l'export : la vignette a les couleurs du clip."""
     ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
     if ffmpeg is None or not os.path.isfile(path):
         return None
@@ -68,7 +77,7 @@ def extract_thumbnail(path: str, time_seconds: float, width: int = 160) -> bytes
                 "-frames:v",
                 "1",
                 "-vf",
-                f"scale={safe_width}:-1",
+                ",".join(filter(None, (setparams_filter(asset_ffmpeg_override(asset)), f"scale={safe_width}:-1"))),
                 "-f",
                 "image2pipe",
                 "-vcodec",

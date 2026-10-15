@@ -14,6 +14,29 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+**À savoir** : les médias vidéo **HD non étiquetés** (720 lignes ou 1280 colonnes et plus, sans espace colorimétrique dans le fichier : captures d'écran, certaines
+caméras ou exports anciens) étaient lus en BT.601 ; ils sont désormais lus en **BT.709**, comme le fait le reste de l'industrie. Leurs couleurs changent donc
+légèrement dans le moniteur, l'aperçu fidèle, l'export et les miniatures : environ 1 niveau en moyenne sur une image naturelle (1,1 mesuré), jusqu'à une
+vingtaine sur les couleurs très saturées. Les médias **étiquetés** et les médias **SD non étiquetés** ne changent pas. Pour retrouver l'ancien rendu d'un
+média : bibliothèque › clic droit sur le média › *Espace colorimétrique* › *BT.601* (ou le verbe de script `set_media_color_matrix`). Les segments d'aperçu
+fidèle déjà rendus sont refaits une fois. Sans GPU (moniteur CPU), la lecture garde la lecture des couleurs de la vidéo Qt ; la matrice voulue s'y voit en pause, une fois le segment fidèle rendu.
+
+### Added
+
+- **Espace colorimétrique d'un média** : *Auto* (défaut), *BT.601* ou *BT.709*, dans le menu du média de la bibliothèque, annulable d'un pas. Il force la lecture
+  des couleurs de **tous** les clips du média, étiquette comprise ; il est refusé (grisé, avec la raison) si l'un d'eux est sur une piste ou un calque verrouillé.
+  Un projet qui en utilise un s'écrit en version 19 du format `.kut` (un ancien Kut-Studio le refuse au lieu de changer les couleurs sans le dire) ; les autres
+  projets s'écrivent exactement comme avant.
+- **Scripts** : le verbe `set_media_color_matrix` (`asset` ou `clip`, `matrix` : `auto`, `bt601`, `bt709`), mêmes refus que l'interface, une seule étape d'annulation.
+  Voir [docs/scripting.md](docs/scripting.md).
+
+### Changed
+
+- **Couleur** : un flux vidéo non étiqueté de 720 lignes ou 1280 colonnes et plus est lu en BT.709 (BT.601 en dessous, plage limitée), au lieu de BT.601 partout. Une
+  seule règle (`core/color_matrix.py`) pour le moniteur GPU, l'aperçu fidèle, l'export, les miniatures, les images préparées du remappage, la pipette, les flux
+  du moniteur Multicam et les LUT d'étalonnage cuites ; vérifiée au niveau près entre la référence du moniteur, l'export réel et la miniature
+  (`tests/test_color_matrix_parity.py`). Les caches (aperçu fidèle, miniatures, LUT) ne resservent rien de rendu avec l'ancienne règle.
+
 ## [0.6.1] - 2026-10-14
 
 Version de **correctifs et d'ouverture au mode script** : le moniteur affiche l'image en pause après une édition, le mode script sait poser des images fixes

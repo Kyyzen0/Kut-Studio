@@ -89,6 +89,9 @@ class VideoSource:
     height: int
     colorspace: str = ""
     color_range: str = ""
+    color_choice: str = "auto"
+    """Choix de l'utilisateur pour ce média (``auto``, ``bt601``, ``bt709``) : il force la matrice, étiquette comprise
+    (:mod:`core.color_matrix`)."""
 
     @property
     def chroma_scale(self) -> tuple[float, float]:
@@ -391,7 +394,8 @@ def plan_frame(frame: CompositeFrame) -> FramePlan:
         else:
             layout = LAYOUTS[source.layout]
             layout_is_yuv = layout.is_yuv
-            matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range)
+            matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range, source.width, source.height,
+                                       source.color_choice)
             current, space = _effect_passes(
                 passes, textures, f"layer{index}", (f"src:{layer.source}",), layout, source.width, source.height,
                 matrix, fit_uv, layer.program, pixel, source.chroma_scale if layout.is_yuv else (1.0, 1.0),
@@ -839,7 +843,8 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         if source is None:
             continue
         layout = LAYOUTS[source.layout]
-        matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range)
+        matrix = yuv_to_rgb_matrix(source.colorspace, source.color_range, source.width, source.height,
+                                   source.color_choice)
         data = np.asarray(sources[layer.source], dtype=np.float64)
         # prep : calque à la résolution de rendu (adaptation + pad)
         u = cx / width

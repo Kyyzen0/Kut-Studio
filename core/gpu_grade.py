@@ -33,6 +33,8 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable
 
+from .color_matrix import RULE_VERSION
+
 LOGGER = logging.getLogger(__name__)
 
 LUT_SIZE = 52
@@ -85,7 +87,9 @@ def lut_key(grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_rang
             stamps.append(f"{info.st_size}:{info.st_mtime_ns}")
         except OSError:
             stamps.append("absent")
-    text = "|".join((chain, ",".join(stamps), domain, colorspace or "", color_range or "", str(LUT_SIZE)))
+    # ``RULE_VERSION`` : la règle de lecture des médias non étiquetés (:mod:`core.color_matrix`) ; une LUT cuite avec l'ancienne n'est
+    # jamais resservie, même si la matrice demandée porte le même nom.
+    text = "|".join((chain, ",".join(stamps), domain, colorspace or "", color_range or "", str(LUT_SIZE), f"m{RULE_VERSION}"))
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:20]
 
 

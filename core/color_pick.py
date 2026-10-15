@@ -22,6 +22,7 @@ from dataclasses import replace
 import numpy as np
 
 from .color_nodes import ColorNode, ColorNodeGraph
+from .color_matrix import setparams_filter
 from .color_qualifier import LUMA_709, Qualifier
 
 SAMPLE_SIZE = 5
@@ -55,13 +56,14 @@ def upstream_graph(graph: ColorNodeGraph, node_id: str) -> ColorNodeGraph | None
 
 
 def sample_command(ffmpeg: str, path: str, source_time: float, x: float, y: float, chain: str,
-                   size: int = SAMPLE_SIZE) -> list[str]:
+                   size: int = SAMPLE_SIZE, color_override: str = "") -> list[str]:
     """Commande FFmpeg : l'image du média à ``source_time``, le carré centré sur ``(x, y)`` (pixels du média, borné à
     l'image), passé dans ``chain``, moyenné en un pixel RVB 8 bits."""
     half = size // 2
     left = f"min(max(0,{int(round(x)) - half}),iw-{size})"
     top = f"min(max(0,{int(round(y)) - half}),ih-{size})"
-    filters = [f"crop={size}:{size}:x='{left}':y='{top}'"]
+    filters = [setparams_filter(color_override)] if setparams_filter(color_override) else []     # la matrice du média, comme l'export
+    filters.append(f"crop={size}:{size}:x='{left}':y='{top}'")
     if chain:
         filters.append(chain)
     filters += ["scale=1:1:flags=area", "format=rgb24"]
@@ -77,7 +79,8 @@ def pick_graph(upstream: ColorNodeGraph) -> ColorNodeGraph:
 
 
 def sample_node_input(path: str, source_time: float, x: float, y: float, upstream: ColorNodeGraph | None, *,
-                      windows: Mapping[str, float] | None = None, ffmpeg: str | None = None) -> tuple[float, float, float]:
+                      windows: Mapping[str, float] | None = None, ffmpeg: str | None = None,
+                      color_override: str = "") -> tuple[float, float, float]:
     """Couleur (R, V, B en 0..1) qui arrive au nœud sous ``(x, y)`` ; :class:`ColorPickError` si elle n'a pas pu
     être lue. ``windows`` : la couverture, au point du clic, des fenêtres de chaque nœud fenêtré en amont."""
     from .color_render import WindowSourceMissing
@@ -93,7 +96,7 @@ def sample_node_input(path: str, source_time: float, x: float, y: float, upstrea
             if upstream is not None else ""
     except WindowSourceMissing as error:
         raise ColorPickError(str(error)) from error
-    command = sample_command(tool, path, source_time, x, y, chain)
+    command = sample_command(tool, path, source_time, x, y, chain, color_override=color_override)
     try:
         done = supervised_run(command, capture_output=True, timeout=PICK_TIMEOUT_SECONDS)
     except (OSError, ValueError, subprocess.SubprocessError) as error:

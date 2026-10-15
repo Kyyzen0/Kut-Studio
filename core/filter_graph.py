@@ -203,7 +203,7 @@ def _raster_version() -> int:
     return RASTER_VERSION
 
 
-RENDER_ENGINE_VERSION = 10
+RENDER_ENGINE_VERSION = 11
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
@@ -225,7 +225,9 @@ d'aperçu réduit mis en cache avec un flou deux ou quatre fois trop large est i
 première image : un clip qui grandissait était rogné) ; les segments mis en cache avec l'ancien cadre sont ignorés.
 10 : les listes d'images de calques déclarent leur cadence (à 30 i/s, une image d'animation sur six était sautée) et un
 plan qui ne tourne jamais n'a plus de ``rotate`` (un demi-pixel de flou) ; les segments mis en cache avec la saccade ou
-le flou sont ignorés."""
+le flou sont ignorés.
+11 : un flux vidéo non étiqueté de 720 lignes ou 1280 colonnes et plus se lit en BT.709 (et non plus en BT.601), et un média peut
+forcer sa matrice (:mod:`core.color_matrix`) ; les segments mis en cache avec l'ancienne lecture sont ignorés."""
 
 
 def fingerprint_plan(plan, **kwargs):
@@ -282,6 +284,7 @@ def fingerprint_plan(plan, **kwargs):
                 "time_remapping": repr(getattr(layer, "time_remapping", None)),
                 "time_map": repr(getattr(layer, "time_map", None)),
                 "source_frames": getattr(layer, "source_frames", 0),
+                "color": getattr(layer, "color_override", ""),
                 "effects": _effects_key(getattr(layer, "effects", ())),
                 "grade": _grade_key(getattr(layer, "color_grade", None)),
                 "compositing": repr(getattr(layer, "compositing", None)),

@@ -201,7 +201,7 @@ Formats verticaux, grille rythmique, texte TikTok, lumière, templates, SFX, lou
 
 ## Format `.kut`
 
-* Version courante : `CURRENT_VERSION` (`core/project_io.py`) ; `SUPPORTED_VERSIONS` liste les versions lisibles. Version écrite : la minimale nécessaire (17, ou `PATH_MASK_VERSION` = 18 si le projet contient un masque courbe).
+* Version courante : `CURRENT_VERSION` (`core/project_io.py`) ; `SUPPORTED_VERSIONS` liste les versions lisibles. Version écrite : la minimale nécessaire (17 ; `PATH_MASK_VERSION` = 18 si le projet contient un masque courbe ; `COLOR_MATRIX_VERSION` = 19 si un média a un espace colorimétrique forcé).
   Les anciens fichiers se chargent toujours (migration à la lecture, jamais à l'insu de l'utilisateur).
 * Ne contient **que** des données du montage : jamais un chemin de cache, un résultat d'analyse recalculable
   ni une préférence de l'interface.

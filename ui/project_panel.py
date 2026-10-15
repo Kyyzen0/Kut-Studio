@@ -29,6 +29,7 @@ from core.library_organization import (
     collect_missing_assets,
     is_asset_missing,
 )
+from core.media_color_ops import media_color_refusal
 from core.project_model import MediaAsset
 from ui.adaptive_layout import ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
@@ -133,6 +134,8 @@ class ProjectPanel(QWidget):
     # (asset_id, tag_id, assign)
     asset_relink_requested = Signal(str)
     proxy_action_requested = Signal(str, str)
+    asset_color_matrix_requested = Signal(str, str)
+    # (asset_id, "auto" | "bt601" | "bt709")
     # (asset_id,)
     asset_rename_requested = Signal(str, str)
     # (asset_id, new_name)
@@ -693,6 +696,8 @@ class ProjectPanel(QWidget):
             assigned_folder_id=assignment.folder_id,
             assigned_tag_ids=set(assignment.tag_ids),
             parent=self,
+            color_matrix=asset.color_matrix if asset.media_type == "video" else "",
+            color_refusal=media_color_refusal(project, asset_id),
         )
         menu = builder.build(self)
         # Connecte les signaux du builder à des re-émissions vers le
@@ -702,6 +707,7 @@ class ProjectPanel(QWidget):
         builder.remove_requested.connect(self.asset_remove_requested.emit)
         builder.relink_requested.connect(self.asset_relink_requested.emit)
         builder.proxy_action_requested.connect(self.proxy_action_requested.emit)
+        builder.color_matrix_requested.connect(self.asset_color_matrix_requested.emit)
         builder.show_in_timeline_requested.connect(
             self.asset_occurrences_requested.emit
         )

@@ -73,6 +73,7 @@ def pytest_configure(config):
     système : avec des workers parallèles, ils verraient les fichiers
     légitimes d'un autre worker.
     """
+    config.addinivalue_line("markers", "real_probe_threads: laisse tourner les sondes d'étiquette de fond (core.media_probe)")
     config.addinivalue_line(
         "markers",
         "libass: test qui exige un FFmpeg avec libass (filtre « subtitles ») ; sauté sans libass, "
@@ -89,6 +90,43 @@ def pytest_configure(config):
         os.environ[name] = str(base)
     tempfile.tempdir = str(base)
     config.add_cleanup(lambda: shutil.rmtree(base, ignore_errors=True))
+
+
+@pytest.fixture(autouse=True)
+def _no_background_color_probe(request, monkeypatch):
+    """Pas de fil de sonde de fond (``ffprobe``) dans les tests : un processus enfant lancé par un fil qui survit à son test ou à la
+    session est un risque d'arrêt dur sous Windows. Les tests qui visent ces fils portent la marque ``real_probe_threads``."""
+    if request.node.get_closest_marker("real_probe_threads"):
+        yield
+        return
+    from core import media_probe
+
+    monkeypatch.setattr(media_probe, "warm_color_label", lambda path: False)
+    monkeypatch.setattr(media_probe, "warm_color_labels", lambda paths: False)
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _stop_color_probes_at_exit():
+    """Arrête et attend les sondes de fond avant la fin de la session (jamais un fil qui lance un processus pendant l'arrêt)."""
+    yield
+    from core import media_probe
+
+    media_probe.shutdown_color_probes(5.0)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Diagnostic : les fils encore vivants à la fin de la session, dans ``kut-session-threads-<pid>.txt`` (artefact de la CI)."""
+    import threading
+
+    try:
+        alive = [f"{t.name} daemon={t.daemon}" for t in threading.enumerate() if t is not threading.main_thread()]
+        if os.environ.get("CI"):
+            Path(f"kut-session-threads-{os.getpid()}.txt").write_text(
+                f"exitstatus={exitstatus} worker={os.environ.get('PYTEST_XDIST_WORKER', 'main')}\n" + "\n".join(alive) + "\n",
+                encoding="utf-8")
+    except OSError:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -216,3 +254,17 @@ def _no_unsaved_changes_prompt(monkeypatch):
     from ui.main_window_mixins.project_files import ProjectFilesMixin
 
     monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)
+
+
+MAX_TEST_ID = 2000
+"""Longueur maximale d'un identifiant de test. pytest le copie dans la variable d'environnement ``PYTEST_CURRENT_TEST`` : sous
+Windows, une variable de plus de 32 767 caractères fait échouer l'installation et le démontage de CHAQUE test concerné (le journal
+de la CI s'arrêtait net après « ERRORS »). Les paramètres démesurés (entrée hostile) reçoivent un ``ids=`` court."""
+
+
+def pytest_collection_modifyitems(config, items):
+    too_long = [item.nodeid[:120] + f"… ({len(item.nodeid)} caractères)" for item in items if len(item.nodeid) > MAX_TEST_ID]
+    if too_long:
+        raise pytest.UsageError(
+            f"Identifiants de test trop longs (> {MAX_TEST_ID}, ``PYTEST_CURRENT_TEST`` plafonne à 32 767 sous Windows) ; "
+            "ajoutez ids=… à parametrize :\n" + "\n".join(too_long[:10]))

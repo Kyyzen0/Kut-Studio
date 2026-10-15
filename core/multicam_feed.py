@@ -27,6 +27,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .color_matrix import asset_ffmpeg_override, setparams_filter
 from .process_supervisor import default_supervisor
 from .tool_paths import find_media_tool
 
@@ -97,10 +98,15 @@ class AngleFeed:
         *,
         command: Callable[[str, TileProfile, float], list[str]] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        color_asset: object = None,
     ) -> None:
         self.path = path
         self.profile = profile
-        self._command = command or _ffmpeg_command
+        self.color_asset = color_asset
+        """Le média, dont la matrice couleur est dite à FFmpeg (posé par :meth:`FeedPool.feed` après la fabrique)."""
+        self._command = command or (
+            lambda path_, profile_, start_: _ffmpeg_command(path_, profile_, start_, self.color_asset)
+        )
         self._clock = clock
         self._lock = threading.Lock()
         self._frames: deque[Frame] = deque()
@@ -285,17 +291,21 @@ class AngleFeed:
             LOGGER.warning("Multicam : flux de %s impossible (%s)", os.path.basename(self.path), reason)
 
 
-def _ffmpeg_command(path: str, profile: TileProfile, start: float) -> list[str]:
+def _ffmpeg_command(path: str, profile: TileProfile, start: float, color_asset: object = None) -> list[str]:
+    """Commande du flux d'une tuile. ``color_asset`` : le média, dont la matrice couleur est dite à FFmpeg avant la conversion
+    en RVB (:func:`core.color_matrix.asset_ffmpeg_override`) ; appelée sur le fil du flux, qui peut donc sonder le fichier."""
     ffmpeg = find_media_tool("ffmpeg")
     if ffmpeg is None:
         raise OSError("FFmpeg est introuvable")
     command = [ffmpeg, "-nostdin", "-hide_banner", "-v", "error"]
+    override = setparams_filter(asset_ffmpeg_override(color_asset))
+    color_filter = f"{override}," if override else ""
     if start > 0:
         command += ["-ss", f"{start:.6f}"]
     command += [
         "-i", path, "-an", "-sn",
         "-vf", (
-            f"fps={profile.fps:g},scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease,"
+            f"{color_filter}fps={profile.fps:g},scale={profile.width}:{profile.height}:force_original_aspect_ratio=decrease,"
             f"pad={profile.width}:{profile.height}:(ow-iw)/2:(oh-ih)/2:black"
         ),
         "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
@@ -322,14 +332,22 @@ class FeedPool:
         self._factory = factory
         self._feeds: dict[tuple[str, TileProfile], AngleFeed] = {}
 
-    def feed(self, path: str, profile: TileProfile) -> AngleFeed:
-        key = (path, profile)
+    @staticmethod
+    def key(path: str, profile: TileProfile, color_asset: object = None) -> tuple:
+        """Clé d'un flux : le média, le profil et, si l'utilisateur force la matrice, ce choix (un autre choix est un autre flux)."""
+        choice = getattr(color_asset, "color_matrix", "auto")
+        return (path, profile) if choice == "auto" else (path, profile, choice)
+
+    def feed(self, path: str, profile: TileProfile, color_asset: object = None) -> AngleFeed:
+        key = self.key(path, profile, color_asset)
         feed = self._feeds.get(key)
         if feed is None:
-            feed = self._feeds[key] = self._factory(path, profile)
+            feed = self._factory(path, profile)
+            feed.color_asset = color_asset          # la fabrique garde sa signature (path, profile) ; le flux sonde sur son fil
+            self._feeds[key] = feed
         return feed
 
-    def retain(self, wanted: set[tuple[str, TileProfile]]) -> None:
+    def retain(self, wanted: set[tuple]) -> None:
         """Arrête les flux qui ne servent plus (tuile masquée, angle changé de profil, projet fermé)."""
         for key in [key for key in self._feeds if key not in wanted]:
             self._feeds.pop(key).close()

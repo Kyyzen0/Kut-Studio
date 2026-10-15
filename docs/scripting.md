@@ -68,6 +68,7 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `delete_clip` | Supprime un clip (`clip`) |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
 | `set_clip_enabled` | Active ou désactive un clip (`clip`, `enabled`) |
+| `set_media_color_matrix` | Choisit comment lire les couleurs d'un média vidéo (`asset` ou `clip`, `matrix` : `auto`, `bt601` ou `bt709`) ; voir « Espace colorimétrique d'un média » ci-dessous |
 | `add_track_insert` | Ajoute un effet en insert sur une piste **audio ou vidéo** (`track`, `effect`, `params`, `enabled`) ; un **égaliseur** est l'effet `parametric_eq` |
 | `remove_track_insert` | Retire un insert de piste (`track`, `insert`) |
 | `set_track_insert_enabled` | Active ou désactive un insert de piste (`track`, `insert`, `enabled`) |
@@ -210,6 +211,19 @@ modifié. Fermez-le, ou, si cette utilisation n'existe plus, supprimez le fichie
   (enregistrer depuis deux endroits fait perdre des modifications). Elle relâche le verrou en changeant de projet et à la fermeture.
 - **Consultatif** : c'est un accord entre les programmes de Kut-Studio. Il ne protège pas d'un éditeur de texte, ni d'une copie du
   fichier qui l'ignorerait.
+
+## Espace colorimétrique d'un média : `set_media_color_matrix`
+
+Un flux vidéo **non étiqueté** est lu en BT.709 dès 720 lignes ou 1280 colonnes, en BT.601 en dessous ; un flux **étiqueté** garde son étiquette
+(`docs/color.md`). `set_media_color_matrix` force cette lecture pour **un média** : `{"op": "set_media_color_matrix", "asset": "plan1", "matrix": "bt601"}`.
+
+- `matrix` : `auto` (la règle), `bt601` ou `bt709` ; toute autre valeur (casse comprise) est refusée, jamais ramenée.
+- La cible est un média (`asset`) ou le média d'un clip (`clip`) : exactement un des deux. Le réglage vaut pour **tous** les clips de ce média, dans toutes
+  les séquences.
+- Il est refusé si le média n'est pas une vidéo (son, image fixe, sous-titres) ou si l'un de ses clips est sur une **piste verrouillée** ou est un
+  calque verrouillé : le même refus que l'interface (menu du média dans la bibliothèque).
+- Une transaction s'annule en une étape. Un projet dont tous les médias sont en `auto` s'écrit exactement comme avant (version 17) ; dès qu'un média
+  a un autre choix, le fichier passe en **version 19**, qu'un Kut-Studio plus ancien refuse au lieu de l'ouvrir en changeant les couleurs sans le dire.
 
 ## Fichiers : `import_media`
 

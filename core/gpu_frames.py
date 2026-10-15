@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .color_matrix import effective_matrix
+
 # --- Formats -------------------------------------------------------------------------------------------
 
 LAYOUT_PACKED = 0
@@ -149,9 +151,14 @@ QT_COLOR_SPACES = {
 QT_COLOR_RANGES = {"ColorRange_Video": "video", "ColorRange_Full": "full", "ColorRange_Unknown": ""}
 
 
-def resolve_color(colorspace: str = "", color_range: str = "") -> tuple[str, str]:
-    """Espace et plage effectifs ; l'inconnu suit ``swscale`` (BT.601, plage limitée)."""
-    space = colorspace if colorspace in _KR_KB else "bt601"
+def resolve_color(colorspace: str = "", color_range: str = "", width: int = 0, height: int = 0,
+                  choice: str = "auto") -> tuple[str, str]:
+    """Espace et plage effectifs (:mod:`core.color_matrix`).
+
+    Un espace étiqueté est respecté, sauf ``choice`` (``bt601`` / ``bt709``) qui le force ; un espace inconnu suit la taille
+    de la source : BT.709 dès ``height >= 720 or width >= 1280``, sinon BT.601. Sans dimensions (0, valeur par défaut), un
+    espace inconnu reste en BT.601, comme avant. Plage inconnue : limitée."""
+    space = effective_matrix(colorspace if colorspace in _KR_KB else "", width, height, choice)
     rng = color_range if color_range in ("video", "full") else "video"
     return space, rng
 
@@ -159,13 +166,14 @@ def resolve_color(colorspace: str = "", color_range: str = "") -> tuple[str, str
 Matrix4 = tuple[tuple[float, float, float, float], ...]
 
 
-def yuv_to_rgb_matrix(colorspace: str = "", color_range: str = "") -> Matrix4:
+def yuv_to_rgb_matrix(colorspace: str = "", color_range: str = "", width: int = 0, height: int = 0,
+                      choice: str = "auto") -> Matrix4:
     """Matrice 4×4 (lignes) : ``(Y, U, V, 1)`` en codes normalisés 0..1 → ``(R, V, B, 1)``.
 
     Les codes sont ceux du plan divisés par leur maximum (255 en 8 bits) : un Y
     de 16 vaut 16/255. Plage limitée : Y 16..235, UV 16..240 (centre 128).
     """
-    space, rng = resolve_color(colorspace, color_range)
+    space, rng = resolve_color(colorspace, color_range, width, height, choice)
     kr, kb = _KR_KB[space]
     kg = 1.0 - kr - kb
     if rng == "full":

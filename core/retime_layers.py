@@ -16,7 +16,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from .export_engine import _nested_demand, frame_fit_filter, layer_framing, nested_geometry
+from .export_engine import _nested_demand, frame_fit_filter, layer_color_filter, layer_framing, nested_geometry
 from .optical_flow import BackendPreference
 from .render_plan import RenderLayer, RenderPlan
 from .retime_prepare import (
@@ -68,6 +68,15 @@ def _eligible(layer: RenderLayer) -> bool:
     )
 
 
+def _conform(layer: RenderLayer, width: int, height: int, framing: tuple[int, int] | None) -> str:
+    """Les filtres qui mettent le média au cadre : ceux du graphe (:func:`core.export_engine.layer_conform_filter`), précédés de la
+    matrice du média (:func:`core.export_engine.layer_color_filter`) : l'image préparée a les couleurs de l'image échantillonnée.
+    Elle entre ainsi dans la clé du cache des images intermédiaires."""
+    fit = frame_fit_filter(width, height) if framing is None else f"scale={width}:{height}"
+    color = layer_color_filter(layer)
+    return f"{color},{fit}" if color else fit
+
+
 def _request(
     layer: RenderLayer, width: int, height: int, fps: float, preference: BackendPreference
 ) -> PrepareRequest | None:
@@ -88,7 +97,7 @@ def _request(
         source_frames=int(layer.source_frames),
         width=int(width),
         height=int(height),
-        conform=frame_fit_filter(width, height) if framing is None else f"scale={width}:{height}",
+        conform=_conform(layer, width, height, framing),
         preference=preference,
     )
     return request if needs_preparation(request) else None

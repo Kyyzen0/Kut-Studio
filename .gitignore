@@ -36,3 +36,5 @@ release-notes.md
 *.cer
 *.mobileprovision
 *.keychain-db
+kut-session-threads-*.txt
+junit-*.xml

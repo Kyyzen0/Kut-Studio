@@ -86,9 +86,11 @@ def _rgb(matrix, y, u, v):
     return tuple(out)
 
 
-def test_untagged_streams_use_bt601_like_ffmpeg_and_tags_are_honoured():
-    # Valeurs relevées sur FFmpeg (swscale) : même RVB au bit près.
-    untagged = yuv_to_rgb_matrix("", "")
+def test_untagged_sd_streams_use_bt601_like_ffmpeg_and_tags_are_honoured():
+    # Valeurs relevées sur FFmpeg (swscale) : même RVB au bit près. Un flux non étiqueté de définition standard reste en
+    # BT.601 (la HD non étiquetée passe en BT.709 : ``tests/test_color_matrix.py``).
+    untagged = yuv_to_rgb_matrix("", "", 640, 360)
+    assert untagged == yuv_to_rgb_matrix("", "")                 # sans dimensions : comme avant
     assert _rgb(untagged, 81, 90, 240) == (254, 0, 0)
     assert _rgb(untagged, 145, 54, 34) == (0, 255, 1)
     bt709 = yuv_to_rgb_matrix("bt709", "video")

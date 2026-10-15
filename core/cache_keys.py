@@ -144,11 +144,16 @@ def probe_key(path: str) -> str | None:
 
 
 def thumbnail_key(
-    path: str, time_seconds: float, width: int, memo: SignatureMemo | None = None
+    path: str, time_seconds: float, width: int, memo: SignatureMemo | None = None, matrix: str = ""
 ) -> str:
-    """Clé d'une miniature. Le temps est quantifié au dixième de seconde."""
+    """Clé d'une miniature. Le temps est quantifié au dixième de seconde.
+
+    ``matrix`` : suffixe de la matrice couleur du média (:func:`core.color_matrix.cache_token`), vide quand la lecture est
+    celle que FFmpeg donne seul. Une miniature décodée avec une autre matrice (média HD non étiqueté lu en BT.709, choix de
+    l'utilisateur) a donc une autre clé : celle d'avant la règle n'est pas resservie."""
     quantized = round(float(time_seconds), 1)
-    return f"thumb:{os.path.abspath(path)}:{_token(path, memo)}:{quantized}:{int(width)}"
+    suffix = f":{matrix}" if matrix else ""
+    return f"thumb:{os.path.abspath(path)}:{_token(path, memo)}:{quantized}:{int(width)}{suffix}"
 
 
 def audio_envelope_key(path: str, memo: SignatureMemo | None = None) -> str:

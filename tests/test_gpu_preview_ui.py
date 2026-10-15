@@ -36,6 +36,7 @@ class FakeGpuView(QWidget):
         self.frames = []
         self.composites = []
         self.forgotten = []
+        self.colors = {}
         self.cache_purges = 0
         self.released = False
         self.stats = FrameStats()
@@ -56,6 +57,9 @@ class FakeGpuView(QWidget):
 
     def forget_source(self, source_id):
         self.forgotten.append(source_id)
+
+    def set_source_color(self, source_id, matrix, choice="auto"):
+        self.colors[source_id] = (matrix, choice)
 
     def release_gpu_cache(self):
         self.cache_purges += 1
