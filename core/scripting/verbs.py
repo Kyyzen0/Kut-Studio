@@ -1583,4 +1583,19 @@ VERBS: dict[str, Verb] = {
 }
 """Le catalogue. L'ordre est celui de la documentation."""
 
+from .mask_verbs import MASK_VERBS  # noqa: E402 - après la table : mask_verbs importe les paramètres et aides de ce module
+
+
+def _with_mask_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
+    """Les verbes de masques (``mask_verbs.py``) juste après ``clear_crop``, comme dans la documentation."""
+    result: dict[str, Verb] = {}
+    for name, verb in table.items():
+        result[name] = verb
+        if name == "clear_crop":
+            result.update((item.name, item) for item in MASK_VERBS)
+    return result
+
+
+VERBS = _with_mask_verbs(VERBS)
+
 __all__ = ["MAX_PARAMS", "MAX_TEXT", "MAX_TIME", "VERBS", "Kind", "Operation", "Param", "ScriptContext", "Verb"]
