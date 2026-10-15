@@ -25,6 +25,10 @@ def bare(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "_MEIPASS", "", raising=False)
     system = tmp_path / "system"
     system.mkdir()
+    # Gelée, l'application cherche aussi à côté de son exécutable : sur Linux ce serait /usr/bin, où la CI a FFmpeg.
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    monkeypatch.setattr(sys, "executable", str(app_dir / "Kut-Studio"))
     monkeypatch.setenv("PATH", str(system))
     return system
 
