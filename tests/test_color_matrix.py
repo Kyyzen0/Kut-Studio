@@ -267,6 +267,7 @@ def test_only_an_auto_video_with_an_unknown_label_is_probed_whatever_its_size(mo
     assert cm.asset_ffmpeg_override(image) == "" and calls == ["/x/a.mp4"]                                    # une photo n'a pas de matrice YUV
 
 
+@pytest.mark.real_probe_threads
 def test_the_interface_thread_never_waits_for_ffprobe_and_gets_the_label_once_warmed(tmp_path, monkeypatch):
     import threading
 
@@ -297,6 +298,7 @@ def test_the_interface_thread_never_waits_for_ffprobe_and_gets_the_label_once_wa
     assert cm.asset_effective_matrix(asset, probe=False) == "bt601"                    # l'appel suivant la connaît
 
 
+@pytest.mark.real_probe_threads
 def test_opening_a_project_warms_the_labels_in_one_background_batch(tmp_path, monkeypatch):
     import threading
 
@@ -746,3 +748,38 @@ def test_a_paused_faithful_segment_applies_the_matrix_even_when_the_monitor_is_o
     plan = build_render_plan(_project(_asset(color_space="none", color_matrix="bt601")))
     graph = build_filter_complex(plan, 1920, 1080, 25)[0]
     assert "setparams=colorspace=bt470bg,scale=" in graph
+
+
+@pytest.mark.real_probe_threads
+def test_shutdown_stops_background_probes_and_nothing_starts_afterwards(tmp_path, monkeypatch):
+    import threading
+
+    from core import media_probe
+
+    path = tmp_path / "v.bin"
+    path.write_bytes(b"x")
+    media_probe._COLOR_LABELS.clear()
+    media_probe._COLOR_FAILURES.clear()
+    gate, spawned = threading.Event(), []
+    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+
+    def run(*a, **k):
+        spawned.append(1)
+        gate.wait(5)
+        raise OSError("fin")
+
+    monkeypatch.setattr(media_probe, "supervised_run", run)
+    try:
+        assert media_probe.warm_color_label(str(path)) is True
+        deadline = time.monotonic() + 3
+        while not spawned and time.monotonic() < deadline:
+            time.sleep(0.01)
+        gate.set()
+        assert media_probe.shutdown_color_probes(3.0) is True                      # le fil en vol est attendu
+        assert not any(t.is_alive() for t in media_probe._THREADS)
+        other = tmp_path / "w.bin"
+        other.write_bytes(b"y")
+        assert media_probe.warm_color_label(str(other)) is False                  # fermé : rien ne démarre
+        assert media_probe.probe_color_label(str(other)) == "" and len(spawned) == 1
+    finally:
+        media_probe.reset_color_probes()

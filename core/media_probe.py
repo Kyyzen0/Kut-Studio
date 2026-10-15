@@ -27,6 +27,7 @@ scripts).
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -170,6 +171,8 @@ def probe_color_label(path: str) -> str:
     cached = _COLOR_LABELS.get(key)
     if cached is not None:
         return cached
+    if _STOP.is_set():
+        return ""                                    # fermeture en cours : on ne lance plus de processus
     now = _clock()
     if _COLOR_FAILURES.get(key, 0.0) > now:
         return ""                                    # échec récent : pas de nouvel essai avant l'expiration
@@ -226,13 +229,47 @@ def peek_color_label(path: str) -> str:
 
 _WARMING: set[str] = set()
 _WARMING_LOCK = threading.Lock()
+_STOP = threading.Event()
+"""Levé à la fermeture (``atexit``, fin de session de test) : plus aucune sonde ne démarre, les fils de fond s'arrêtent entre deux fichiers."""
+_THREADS: list[threading.Thread] = []
+
+
+def _start_background(target, name: str) -> None:
+    """Lance un fil de sonde (daemon, jamais d'objet Qt) et le garde pour pouvoir l'attendre à la fermeture."""
+    if _STOP.is_set():
+        return
+    with _WARMING_LOCK:
+        _THREADS[:] = [thread for thread in _THREADS if thread.is_alive()]
+        if not _THREADS:
+            atexit.register(shutdown_color_probes)
+        thread = threading.Thread(target=target, name=name, daemon=True)
+        _THREADS.append(thread)
+    thread.start()
+
+
+def shutdown_color_probes(timeout: float = 3.0) -> bool:
+    """Arrête les sondes de fond : plus aucune ne démarre, les fils en cours sont attendus au plus ``timeout`` secondes en tout
+    (une sonde en vol finit dans son délai de 3 s). ``True`` si plus aucun ne tourne. Rappelable : :func:`reset_color_probes` rouvre."""
+    _STOP.set()
+    deadline = time.monotonic() + max(0.0, timeout)
+    with _WARMING_LOCK:
+        threads = list(_THREADS)
+    for thread in threads:
+        if thread is not threading.current_thread():
+            thread.join(max(0.0, deadline - time.monotonic()))
+    return not any(thread.is_alive() for thread in threads)
+
+
+def reset_color_probes() -> None:
+    """Rouvre les sondes de fond après :func:`shutdown_color_probes` (tests)."""
+    _STOP.clear()
 
 
 def warm_color_label(path: str) -> bool:
     """Lance la sonde de ``path`` sur un fil de fond (une seule à la fois par fichier) ; ``False`` si rien n'est lancé (déjà connue,
     déjà en cours, échec récent ou fichier illisible). Le résultat est mémorisé : l'appel suivant de :func:`peek_color_label` le voit."""
     key = _color_key(path)
-    if key is None or key in _COLOR_LABELS or _COLOR_FAILURES.get(key, 0.0) > _clock():
+    if _STOP.is_set() or key is None or key in _COLOR_LABELS or _COLOR_FAILURES.get(key, 0.0) > _clock():
         return False
     with _WARMING_LOCK:
         if path in _WARMING:
@@ -246,7 +283,7 @@ def warm_color_label(path: str) -> bool:
             with _WARMING_LOCK:
                 _WARMING.discard(path)
 
-    threading.Thread(target=work, name="kut-color-label", daemon=True).start()
+    _start_background(work, "kut-color-label")
     return True
 
 
@@ -254,14 +291,16 @@ def warm_color_labels(paths: list[str]) -> bool:
     """Sonde en arrière-plan, l'une après l'autre, les étiquettes des ``paths`` encore inconnues (ouverture d'un projet : le fil de
     l'interface n'attend ensuite jamais). Un seul fil pour tout le lot ; ``False`` s'il n'y a rien à faire."""
     todo = [path for path in dict.fromkeys(paths) if path and path not in _WARMING and not peek_color_label(path)]
-    if not todo:
+    if not todo or _STOP.is_set():
         return False
 
     def work() -> None:
         for path in todo:
+            if _STOP.is_set():
+                return
             probe_color_label(path)
 
-    threading.Thread(target=work, name="kut-color-labels", daemon=True).start()
+    _start_background(work, "kut-color-labels")
     return True
 
 

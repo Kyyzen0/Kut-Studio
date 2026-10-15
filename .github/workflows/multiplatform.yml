@@ -75,7 +75,20 @@ jobs:
 
       - name: Run test suite
         if: runner.os != 'Linux'
-        run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420 --durations=15
+        run: python -m pytest -q -n auto --timeout=600 -o faulthandler_timeout=420 --durations=15 --junitxml=junit-${{ runner.os }}.xml
+
+      # Diagnostic d'un arrêt dur de fin de session (journal coupé après « ERRORS ») : le rapport JUnit et les fils vivants de
+      # chaque worker (kut-session-threads-<pid>.txt) sont gardés même quand l'étape échoue. À lire : ouvrir junit-*.xml
+      # (<error> par test en erreur) et les .txt (noms et daemon des fils encore vivants à la fin).
+      - name: Upload test diagnostics
+        if: ${{ !cancelled() && runner.os != 'Linux' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-diagnostics-${{ runner.os }}
+          path: |
+            junit-*.xml
+            kut-session-threads-*.txt
+          if-no-files-found: ignore
 
       # Cliquet : le total (lignes + branches) ne descend pas sous tests/coverage_baseline.json. Le texte est gardé
       # pour le résumé de l'exécution, écrit même quand le cliquet échoue (c'est là qu'il sert).
