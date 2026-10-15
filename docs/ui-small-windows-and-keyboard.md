@@ -126,12 +126,16 @@ menus possibles de la barre (Fichier, Édition, Affichage, Séquence, Calques, F
   sous-titre) **sans fichier source** et un titre « Projet sans titre ». Le moniteur affiche « n'a pas encore de média source » sur
   ces clips, ce qui est normal et n'est pas un moniteur noir. Pour tester l'aperçu, supprimer ces clips ou ne tester que sur des
   clips dont le média existe. Si le projet est modifié, un dialogue « Enregistrer ? » apparaît d'abord.
-* **Le menu contextuel d'un média de la bibliothèque est plus court quand le média n'est pas sur la timeline** : les entrées qui
-  portent sur les clips du média (par exemple l'espace colorimétrique) ne s'affichent qu'ensuite. Regarder le menu avant de cliquer à
-  une position mémorisée : « Supprimer de la bibliothèque » (avec confirmation) peut tomber au même endroit.
+* **Le menu contextuel d'un média de la bibliothèque change selon l'état du média** : « Sélectionner dans la timeline » n'apparaît que
+  si le média est utilisé par un clip, et le sous-menu « Espace colorimétrique » n'apparaît que pour une vidéo (jamais pour une
+  image ou un son), qu'elle soit sur la timeline ou non. La longueur du menu varie donc : regarder le menu avant de cliquer à une
+  position mémorisée, car « Supprimer de la bibliothèque » (avec confirmation) peut tomber au même endroit.
 * **Une application téléchargée tourne depuis un dossier temporaire** (AppTranslocation) tant qu'elle n'est pas déplacée dans
   `/Applications` : c'est l'effet de la quarantaine macOS sur une application à signature ad hoc, pas un défaut de Kut-Studio.
-* **Les réglages de performance** (Préférences) sont des profils (Léger, Équilibré, Puissant, Auto), pas un choix GPU / CPU.
+* **Deux endroits pour la performance dans les Préférences** : l'onglet Général propose des profils (Auto, Léger, Équilibré,
+  Puissant) ; l'onglet **Performance** a les choix explicites **Auto / CPU / GPU** pour le rendu de l'aperçu et pour le calcul du
+  flux optique (`previewBackendCombo`, `flowBackendCombo`, `ui/performance_settings.py`). Pour tester l'aperçu en mode CPU, c'est
+  l'onglet Performance qu'il faut ouvrir, pas les profils.
 
 ## Ce qui reste
 
