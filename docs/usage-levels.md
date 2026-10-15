@@ -7,11 +7,11 @@
 | Lot | Contenu | État |
 |---|---|---|
 | 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
-| 2 | Bascule dans l'interface (Préférences, barre) et inspecteur : point unique `_apply_group_visibility`, lien « Afficher plus d'options » | à faire |
-| 3 | Scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma) et sous-blocs « Avancé » | à faire |
-| 4 | Menus, menus contextuels, pages (retrait des entrées, raccourcis conservés) | à faire |
-| 5 | Timeline, rail de la bibliothèque, réseaux sociaux | à faire |
-| 6 | Audit d'interface par niveau (`tools/ui_audit.py`), documentation, CHANGELOG | à faire |
+| 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | à faire |
+| 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma), sous-blocs « Avancé », lien « Afficher plus d'options » | à faire |
+| 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | à faire |
+| 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
+| 6 | Documentation, état d'avancement de l'ADR-0006, CHANGELOG | à faire |
 
 ## Contrat du modèle (lot 1)
 
