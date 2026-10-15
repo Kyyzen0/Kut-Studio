@@ -1,4 +1,4 @@
-"""D5 : valider un champ de l'inspecteur ne replie pas son groupe."""
+"""D5 / D6 : valider un champ de l'inspecteur ne replie pas son groupe ; « 0,5 » tapé donne 0,5 dans toutes les langues."""
 
 import pytest
 from PySide6.QtCore import Qt
@@ -46,6 +46,17 @@ def _type(spin, text: str, finish) -> None:
     else:
         QTest.keyClick(spin, finish)
 
+
+@pytest.mark.parametrize("language", ["fr", "en", "es"])
+@pytest.mark.parametrize("typed", ["0,5", "0.5"])
+@pytest.mark.parametrize("finish", [Qt.Key_Return, "leave"])
+def test_typing_an_opacity_gives_that_opacity_in_every_language(window, language, typed, finish) -> None:
+    i18n.set_language(language)
+    _panel, spin = _opacity_spin(window)
+    _type(spin, typed, finish)
+    assert spin.value() == pytest.approx(0.5)
+    QApplication.processEvents()
+    assert spin.value() == pytest.approx(0.5)      # après le rafraîchissement de l'inspecteur par le modèle
 
 def test_validating_a_field_keeps_its_group_open_and_the_panel_where_it_was(window) -> None:
     i18n.set_language("fr")

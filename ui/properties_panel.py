@@ -240,6 +240,10 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         tab_only_controls(self)
         let_tab_leave_in(self)
         self._sync_inspector_tab_order()
+        # Saisie au clavier : la valeur n'est prise qu'à Entrée, Tab ou en quittant le champ. Chaque frappe déclenchait
+        # le rafraîchissement de l'inspecteur, qui réécrivait le champ en cours de saisie (« 0,5 » devenait « 0,00 »).
+        for spin in self._spin_boxes.values():
+            spin.setKeyboardTracking(False)
         # Molette : un champ ne la prend que s'il a le focus, sinon le panneau défile (ui.wheel_guard).
         self._wheel_guard = install_wheel_guard(self)
 
