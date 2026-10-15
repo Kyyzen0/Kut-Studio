@@ -284,6 +284,11 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
         "This clip is not visual: this setting does not apply to it.",
         "Este clip no es visual: este ajuste no se aplica.",
     ),
+    "edit.refused.wrong_track": _t(
+        "Ce clip est sur une piste d'un autre genre : modification refusée.",
+        "This clip is on a different kind of track: change refused.",
+        "Este clip está en otro tipo de pista: cambio rechazado.",
+    ),
     "mograph.align.nested": _t(
         "Un clip de séquence imbriquée ne s'aligne pas ici (il n'a pas de poignées dans le moniteur).",
         "A nested-sequence clip cannot be aligned here (it has no handles in the monitor).",

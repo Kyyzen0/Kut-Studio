@@ -103,6 +103,10 @@ def apply_impact_on_cuts(
         raise ValueError(f"La piste « {track.name} » est verrouillée.")
     times = set(cut_times(project, track_id))
     incoming = [clip for clip in track.clips if round(clip.timeline_start, 6) in times]
+    from .compositing_guard import require_clip_editable
+
+    for clip in incoming:                               # calque verrouillé compris, avant la première écriture
+        require_clip_editable(project, clip.id)
     for clip in incoming:
         if zoom > 0:
             apply_impact_zoom(clip, strength=zoom)

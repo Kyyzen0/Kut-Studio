@@ -427,12 +427,23 @@ class TimelineEditingMixin:
     def on_transition_duration_changed(self, transition_id: str, duration: float) -> None:
         self._update_transition(transition_id, duration=duration)
 
+    def _transition_edit_refused(self, transition_id: str) -> bool:
+        """Transition dont un des clips est sur une piste (ou un calque) verrouillé : refus, rien n'est écrit."""
+        transition = next((item for item in self.project.transitions if item.id == transition_id), None)
+        if transition is None:
+            return False
+        return any(self._clip_edit_refused(clip_id, visual_only=False, restore=False)
+                   for clip_id in (transition.from_clip_id, transition.to_clip_id))
+
     def _update_transition(
         self, transition_id: str, *, transition_type: str | None = None,
         duration: float | None = None,
     ) -> None:
         from core.transitions import TransitionType, update_transition
 
+        if self._transition_edit_refused(transition_id):
+            self.on_transition_selected(transition_id)
+            return
         try:
             update_transition(
                 self.project,
@@ -453,6 +464,8 @@ class TimelineEditingMixin:
     def remove_selected_transition(self, transition_id: str) -> None:
         from core.transitions import remove_transition
 
+        if self._transition_edit_refused(transition_id):
+            return
         try:
             remove_transition(self.project, transition_id)
         except KeyError:
