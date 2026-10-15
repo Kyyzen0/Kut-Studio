@@ -10,6 +10,10 @@ from ui import i18n
 
 LOGGER = logging.getLogger(__name__)
 
+SEGMENT_COLOR = ("bt709", "bt709")
+"""Matrice des segments d'aperçu et des morceaux de cache : ``OUTPUT_COLOR_STAGE`` les encode toujours en BT.709, plage limitée.
+Le choix ``bt709`` force la matrice (l'étiquette de Qt, souvent indéfinie, et la taille réduite du segment n'y changent rien)."""
+
 
 def _preview_job_cached(engine, job) -> bool:
     """``True`` si le segment du job est déjà présent dans le cache disque."""
@@ -404,6 +408,11 @@ class FaithfulPreviewMixin:
         # et un fond noir sous un « multiply » donnait du noir.
         self.preview_panel.set_layer_compositing(None, None)
         self.preview_panel.set_adjustments(())
+        # Et la matrice du média : le segment est déjà converti en sortie (BT.709, plage limitée). Celle imposée par
+        # l'affichage direct du clip (BT.601 forcé) en refaisait une seconde conversion. Elle est posée explicitement :
+        # sans surcharge, une étiquette Qt indéfinie ferait déduire la matrice de la taille, et un segment réduit
+        # (480×270) serait lu en BT.601. Le chemin direct repose la matrice du clip à chaque passage.
+        self.preview_panel.set_source_color(*SEGMENT_COLOR)
         return True
 
     def _refresh_preview_cache_state(self) -> None:
