@@ -147,7 +147,8 @@ class HistoryMixin:
         self._update_timeline_duration()
         self.timeline_panel.set_playhead_seconds(self.playhead_seconds)
         self.playhead_seconds = self.timeline_panel.playhead_seconds
-        self._sync_preview_to_timeline()
+        active = self._sync_preview_to_timeline()
+        self.update_subtitle_overlay(self.playhead_seconds, active)     # annuler / rétablir restaure ou retire le sous-titre affiché
         self._refresh_project_library()
         self.properties_panel.set_project_color_presets(
             getattr(self.project, "color_presets", [])
