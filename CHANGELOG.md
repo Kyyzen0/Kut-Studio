@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-15
+
+Version de **couleur, de scripts et de verrous** : un média HD sans espace colorimétrique se lit enfin en BT.709 (avec un choix par média pour garder l'ancien rendu),
+le mode script sait créer et modifier les masques d'un clip, et les derniers trous des verrous de piste et de calque sont fermés.
+
+
 **À savoir** : les médias vidéo **HD non étiquetés** (720 lignes ou 1280 colonnes et plus, sans espace colorimétrique dans le fichier : captures d'écran, certaines
 caméras ou exports anciens) étaient lus en BT.601 ; ils sont désormais lus en **BT.709**, comme le fait le reste de l'industrie. Leurs couleurs changent donc
 légèrement dans le moniteur, l'aperçu fidèle, l'export et les miniatures : environ 1 niveau en moyenne sur une image naturelle (1,1 mesuré), jusqu'à une
@@ -645,7 +651,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.0...v0.5.5
