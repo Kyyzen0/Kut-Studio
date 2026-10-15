@@ -40,3 +40,10 @@ def test_borders_and_markers_are_visible() -> None:
 
 def test_playhead_is_distinct_from_accent() -> None:
     assert P.playhead.lower() != P.accent.lower()
+
+
+def test_painter_only_alpha_tokens_are_argb() -> None:
+    """``QColor`` lit « #aarrggbb » : l'alpha doit venir en premier, sur la couleur du playhead."""
+    for token in (P.playhead_dim, P.snap_line):
+        assert len(token) == 9
+        assert token[3:].lower() == P.playhead[1:].lower()

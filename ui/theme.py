@@ -117,9 +117,10 @@ class ThemePalette:
     ruler_bg: str = "#1A2332"
     ruler_line: str = "#8396AE"
     playhead: str = "#FF5A4D"
-    playhead_dim: str = "#FF5A4D80"
+    # ``playhead_dim`` et ``snap_line`` ne servent qu'à peindre (``QColor``) : alpha en premier, « #aarrggbb ».
+    playhead_dim: str = "#80FF5A4D"
     marker: str = "#F7C948"
-    snap_line: str = "#FF5A4D80"
+    snap_line: str = "#80FF5A4D"
     # Conservés pour la palette : plus lus depuis la suppression de la pastille « Fondu enchaîné » de l'aperçu
     # (``docs/dead-code-audit.md``).
     transition_overlay: str = "#F7C948"
@@ -293,9 +294,9 @@ THEMES: dict[str, ThemePalette] = {
         ruler_bg="#FAFCFC",
         ruler_line="#8FA69F",
         playhead="#C8372B",
-        playhead_dim="#C8372B80",
+        playhead_dim="#80C8372B",
         marker="#855E00",
-        snap_line="#C8372B80",
+        snap_line="#80C8372B",
         transition_overlay="#855E00",
         transition_overlay_bg="#FFFEFEE6",
         track_video="#2B6A9E",
