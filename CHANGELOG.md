@@ -16,7 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
-- Couleur : l'aperçu fidèle (segment en cache) n'applique plus une seconde fois la matrice du média : il concorde de nouveau avec l'export, y compris quand BT.601 est forcé.
+- Couleur : l'aperçu fidèle (segment en cache) n'applique plus une seconde fois la matrice du média : il concorde de nouveau avec l'export, y compris quand BT.601 est forcé et quand le segment est réduit (toujours lu en BT.709).
 
 ## [0.6.2] - 2026-10-15
 

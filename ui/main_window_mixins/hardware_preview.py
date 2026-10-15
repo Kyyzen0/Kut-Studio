@@ -212,11 +212,14 @@ class HardwarePreviewMixin:
     def _monitor_color_matrix(self, top_clip, clip) -> tuple[str, str]:
         """``(matrice effective, choix)`` du média que le moniteur GPU affiche : la règle de l'export
         (:mod:`core.color_matrix`), calculée sur le média d'origine (un proxy n'a pas sa taille). ``("", "auto")`` : celle
-        de l'image décodée (morceau déjà rendu, média introuvable, image fixe)."""
+        de l'image décodée (média introuvable, image fixe) ; un morceau déjà rendu (cache d'une composition) est en BT.709 comme un
+        segment fidèle, quelle que soit sa taille réduite (:data:`~ui.main_window_mixins.faithful_preview.SEGMENT_COLOR`)."""
         from core.color_matrix import asset_effective_matrix
 
         if getattr(top_clip, "rendered", False):
-            return "", "auto"
+            from ui.main_window_mixins.faithful_preview import SEGMENT_COLOR
+
+            return SEGMENT_COLOR
         asset_id = getattr(clip, "asset_id", "")
         asset = next((a for a in self.project.media_assets if a.id == asset_id), None)
         matrix = asset_effective_matrix(asset, probe=False, warm=True)      # jamais d'attente de ffprobe sur le fil de l'interface
