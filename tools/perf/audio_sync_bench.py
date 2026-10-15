@@ -58,6 +58,22 @@ def make_media(path: Path, seconds: float, seed: int = 1) -> Path:
     return path
 
 
+def _own_peak_rss_mb() -> float:
+    """Pic mémoire de CE processus. Sous Linux, ``ru_maxrss`` d'un enfant hérite de la taille du parent au moment du
+    fork (un worker de test qui a déjà ouvert des fenêtres dépassait ainsi 1 Go) : ``VmHWM`` repart de zéro à l'exec."""
+    import resource
+
+    try:
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith("VmHWM:"):
+                    return round(int(line.split()[1]) * 1024 / 1e6, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+    unit = 1 if sys.platform == "darwin" else 1024
+    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * unit / 1e6, 1)
+
+
 def _worker(payload: str) -> None:
     """Sous-processus : une analyse à froid, une avec le cache ; mesures en JSON sur la sortie standard."""
     import resource
@@ -110,7 +126,7 @@ def _worker(payload: str) -> None:
         "worst_offset_error_ms": round(max(errors) * 1000, 2) if errors else None,
         "measured_ok": sum(1 for item in cold.sources if item.status.value in {"excellent", "good", "none"}),
         "cached_matches": [item.offset for item in cold.sources] == [item.offset for item in warm.sources],
-        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * unit / 1e6, 1),
+        "peak_rss_mb": _own_peak_rss_mb(),
         "rss_largest_ffmpeg_mb": round(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * unit / 1e6, 1),
     }))
 
