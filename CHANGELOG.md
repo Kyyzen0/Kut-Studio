@@ -23,6 +23,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Inspecteur : valider un champ avec Entrée ne replie plus le groupe qui le contient (Mouvement, par exemple) ; seul l'en-tête, atteint au clavier, se replie avec Entrée ou Espace.
 - Inspecteur : faire défiler le panneau à la molette ou au trackpad ne modifie plus un champ survolé (nombre, curseur, liste déroulante) ; un champ ne réagit à la molette que s'il a le focus.
 
+### Changed
+
+- Thème sombre « Contraste+ » : textes secondaires, bordures et repères plus lisibles, fonds graphite, accent turquoise plus vif et tête de lecture corail (distincte de l'accent).
+
 ## [0.6.2] - 2026-10-15
 
 Version de **couleur, de scripts et de verrous** : un média HD sans espace colorimétrique se lit enfin en BT.709 (avec un choix par média pour garder l'ancien rendu),
