@@ -65,6 +65,14 @@ class TimelineEditingMixin:
         self.timeline_panel.select_clip(new_clip.id)
         self._mark_dirty()
 
+    def _refresh_monitor_after_removal(self) -> None:
+        """Réévalue le moniteur à la tête de lecture après la suppression de clips.
+
+        Sans cela, le sous-titre, le titre ou l'image du clip supprimé restait affiché (même « Aucun clip » étant écrit) jusqu'au
+        prochain déplacement de la tête de lecture ou import.
+        """
+        self.seek_to_position(self.playhead_seconds)
+
     def _report_edit_refused(self, reason: object) -> None:
         """Dit à l'utilisateur qu'une opération est refusée (barre d'état) et la journalise.
 
@@ -102,6 +110,7 @@ class TimelineEditingMixin:
         self.properties_panel.set_clip(None, "")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
+        self._refresh_monitor_after_removal()
         # Sélectionner le clip précédent sur V1 s'il existe.
         previous_clip = self._find_previous_v1_clip()
         if previous_clip is not None:
@@ -134,6 +143,7 @@ class TimelineEditingMixin:
         self.properties_panel.set_clip(None, "")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
+        self._refresh_monitor_after_removal()
         self._mark_dirty()
 
     def toggle_selected_clip_enabled(self) -> None:
@@ -401,6 +411,7 @@ class TimelineEditingMixin:
         self.properties_panel.set_clip(None, "")
         self.timeline_panel.set_project(self.project)
         self._update_timeline_duration()
+        self._refresh_monitor_after_removal()
         self._mark_dirty()
 
     def on_transition_selected(self, transition_id: str) -> None:

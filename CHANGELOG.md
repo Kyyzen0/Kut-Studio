@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Moniteur : supprimer des clips (ou le dernier) efface aussi le sous-titre ou le titre du clip supprimé ; il restait affiché à côté de « Aucun clip » jusqu'au prochain import.
 - Bibliothèque : un média posé sur la timeline (bouton « Ajouter à la timeline », duplication, suppression, annulation) n'est plus affiché « inutilisé » : le compteur d'utilisations suit les clips.
 - Inspecteur : une valeur tapée dans un champ du groupe Mouvement (« 0,5 » dans l'opacité) n'est plus réécrite à chaque frappe (elle donnait « 0,00 ») ; elle est prise à Entrée ou en quittant le champ, et le point vaut la virgule.
 - Inspecteur : valider un champ avec Entrée ne replie plus le groupe qui le contient (Mouvement, par exemple) ; seul l'en-tête, atteint au clavier, se replie avec Entrée ou Espace.
