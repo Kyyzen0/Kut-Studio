@@ -31,7 +31,6 @@ import atexit
 import json
 import os
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -45,7 +44,7 @@ from .color_matrix import label_from_ffprobe
 from .process_supervisor import supervised_run
 from .project_model import MediaAsset
 from .timecode import SECONDS_PER_DAY, FrameRate, normalize_timecode_text
-from .tool_paths import bundled_tool_path
+from .tool_paths import find_media_tool
 
 
 class MediaProbeError(Exception):
@@ -79,7 +78,7 @@ def probe_media(path: str) -> MediaAsset:
     if not os.path.isfile(path):
         raise MediaProbeError(f"Fichier média introuvable : {path}")
 
-    ffprobe_path = bundled_tool_path("ffprobe") or shutil.which("ffprobe")
+    ffprobe_path = find_media_tool("ffprobe")
     if ffprobe_path is None:
         raise MediaProbeError(
             "ffprobe est introuvable dans le PATH. "
@@ -183,7 +182,7 @@ def probe_color_label(path: str) -> str:
         _COLOR_FAILURES[key] = now + _COLOR_FAILURE_TTL
         return ""
 
-    ffprobe_path = bundled_tool_path("ffprobe") or shutil.which("ffprobe")
+    ffprobe_path = find_media_tool("ffprobe")
     if ffprobe_path is None:
         return failed()
     try:

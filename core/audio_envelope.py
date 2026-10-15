@@ -20,14 +20,13 @@ from __future__ import annotations
 
 import math
 import os
-import shutil
 import subprocess
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from .process_supervisor import supervised_popen
-from .tool_paths import bundled_tool_path
+from .tool_paths import find_media_tool
 
 DECODE_RATE = 16_000
 ENVELOPE_RATE = 500
@@ -65,7 +64,7 @@ def extract_envelope(
     ``cancelled`` est consulté entre deux blocs : vrai, le décodage s'arrête (enveloppe vide)."""
     import numpy as np
 
-    ffmpeg = bundled_tool_path("ffmpeg") or shutil.which("ffmpeg")
+    ffmpeg = find_media_tool("ffmpeg")
     if ffmpeg is None or not os.path.isfile(path):
         return EMPTY_ENVELOPE
     command = [ffmpeg, "-v", "error", "-nostdin", "-i", path, "-vn", "-sn", "-dn", "-ac", "2", "-ar", str(DECODE_RATE),

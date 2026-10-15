@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- **FFmpeg** : repli sur les dossiers Homebrew / MacPorts si le `PATH` ne le trouve pas, et le journal de démarrage consigne la recherche.
 - Couleur : l'aperçu fidèle (segment en cache) n'applique plus une seconde fois la matrice du média : il concorde de nouveau avec l'export, y compris quand BT.601 est forcé et quand le segment est réduit (toujours lu en BT.709).
 
 ### Changed

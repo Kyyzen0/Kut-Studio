@@ -214,7 +214,7 @@ def test_creation_time_falls_back_to_the_streams():
 def _probe_with(monkeypatch, tmp_path, payload, name="clip.mp4") -> MediaAsset:
     path = tmp_path / name
     path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     completed = MagicMock(stdout=json.dumps(payload), stderr="", returncode=0)
     monkeypatch.setattr("core.media_probe.supervised_run", lambda *args, **kwargs: completed)
     return probe_media(str(path))

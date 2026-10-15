@@ -230,8 +230,9 @@ def test_ffmpeg_installed_with_a_package_manager_is_found_from_a_dock_launch(tmp
         monkeypatch.delenv(variable, raising=False)
     # Un PATH « de système » sans FFmpeg : on ne peut pas se fier à /usr/bin, où la CI Linux installe le vrai.
     monkeypatch.setenv("PATH", str(system))
-    assert tool_paths.find_media_tool("ffmpeg") is None
+    assert shutil.which("ffmpeg") is None
     tool_paths.extend_search_path()
+    assert shutil.which("ffmpeg") == str(ffmpeg)
     assert tool_paths.find_media_tool("ffmpeg") == str(ffmpeg)
 
 

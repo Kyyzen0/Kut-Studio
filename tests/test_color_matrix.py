@@ -201,7 +201,7 @@ def test_the_lazy_probe_is_memorised_per_file_and_date(tmp_path, monkeypatch):
         stdout = json.dumps({"streams": [{"color_space": "bt709"}]})
 
     monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: calls.append(1) or Done())
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
     assert [media_probe.probe_color_label(str(path)) for _ in range(3)] == ["bt709"] * 3 and len(calls) == 1
@@ -225,7 +225,7 @@ def test_a_hostile_probe_output_never_raises(stdout, tmp_path, monkeypatch):
     done = Done()
     done.stdout = stdout
     monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: done)
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
     assert media_probe.probe_color_label(str(path)) in ("", "none")
@@ -238,7 +238,7 @@ def test_a_probe_that_times_out_or_cannot_start_gives_no_label(tmp_path, monkeyp
 
     path = tmp_path / "v.bin"
     path.write_bytes(b"x")
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
     for error in (subprocess.TimeoutExpired("ffprobe", 10), OSError("introuvable")):
@@ -661,7 +661,7 @@ def test_a_failed_probe_is_remembered_for_a_short_time_then_retried(tmp_path, mo
         raise subprocess.TimeoutExpired("ffprobe", kwargs["timeout"])
 
     monkeypatch.setattr(media_probe, "supervised_run", run)
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
     monkeypatch.setattr(media_probe, "_clock", lambda: now[0])
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
@@ -688,7 +688,7 @@ def test_other_failures_are_remembered_too_and_a_later_success_replaces_them(tmp
 
     outputs = [Done(1, ""), Done(0, "x" * 70000), Done(0, json.dumps({"streams": [{"color_space": "bt709"}]}))]
     monkeypatch.setattr(media_probe, "supervised_run", lambda *a, **k: calls.append(1) or outputs[len(calls) - 1])
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
     monkeypatch.setattr(media_probe, "_clock", lambda: now[0])
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
@@ -705,8 +705,7 @@ def test_a_missing_ffprobe_is_not_searched_again_at_every_call(tmp_path, monkeyp
     path = tmp_path / "v.bin"
     path.write_bytes(b"x")
     searched = []
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: searched.append(name) or None)
-    monkeypatch.setattr(media_probe.shutil, "which", lambda name: None)
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: searched.append(name) or None)
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
     for _ in range(4):
@@ -762,7 +761,7 @@ def test_shutdown_stops_background_probes_and_nothing_starts_afterwards(tmp_path
     media_probe._COLOR_LABELS.clear()
     media_probe._COLOR_FAILURES.clear()
     gate, spawned = threading.Event(), []
-    monkeypatch.setattr(media_probe, "bundled_tool_path", lambda name: "/bin/ffprobe")
+    monkeypatch.setattr(media_probe, "find_media_tool", lambda name: "/bin/ffprobe")
 
     def run(*a, **k):
         spawned.append(1)

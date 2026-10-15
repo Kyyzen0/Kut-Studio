@@ -80,7 +80,7 @@ def test_probe_video_returns_a_valid_media_asset(tmp_path: Path, monkeypatch):
         streams=[_video_stream(width=1280, height=720, fps_num=60000, fps_den=1001)],
         duration=42.0,
     )
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
@@ -110,7 +110,7 @@ def test_probe_video_detects_separate_audio_stream(tmp_path: Path, monkeypatch):
         streams=[_video_stream(), _audio_stream()],
         duration=10.0,
     )
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
@@ -124,7 +124,7 @@ def test_probe_video_detects_separate_audio_stream(tmp_path: Path, monkeypatch):
 def test_probe_video_raises_when_file_is_missing(tmp_path: Path, monkeypatch):
     """Un fichier inexistant lève une ``MediaProbeError`` claire."""
     missing = tmp_path / "ghost.mp4"
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     # ffprobe ne doit même pas être lancé.
     def fail(*args, **kwargs):
         raise AssertionError("ffprobe ne doit pas être lancé")
@@ -141,7 +141,7 @@ def test_probe_video_raises_when_ffprobe_is_missing(tmp_path: Path, monkeypatch)
     # Un développeur (ou le job libass de la CI) peut désigner un ffprobe par ces variables : elles priment sur le PATH.
     monkeypatch.delenv("KUT_STUDIO_FFPROBE", raising=False)
     monkeypatch.delenv("KUT_STUDIO_FFMPEG_DIR", raising=False)
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: None)
+    monkeypatch.setattr("core.media_probe.find_media_tool", lambda _name: None)
 
     with pytest.raises(MediaProbeError, match="ffprobe"):
         probe_video(str(video_path))
@@ -151,7 +151,7 @@ def test_probe_video_raises_on_ffprobe_failure(tmp_path: Path, monkeypatch):
     """Un code retour non nul de ffprobe produit une erreur claire."""
     video_path = tmp_path / "broken.mp4"
     video_path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
@@ -167,7 +167,7 @@ def test_probe_video_raises_on_invalid_json_output(tmp_path: Path, monkeypatch):
     """Une sortie JSON invalide est refusée avec un message explicite."""
     video_path = tmp_path / "weird.mp4"
     video_path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(stdout="{not valid json"),
@@ -181,7 +181,7 @@ def test_probe_video_raises_when_no_video_stream(tmp_path: Path, monkeypatch):
     """Un média sans flux vidéo est explicitement rejeté."""
     video_path = tmp_path / "audio_only.mp4"
     video_path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
@@ -197,7 +197,7 @@ def test_probe_video_raises_on_invalid_dimensions(tmp_path: Path, monkeypatch):
     """Des dimensions à zéro sont rejetées."""
     video_path = tmp_path / "zero.mp4"
     video_path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
@@ -216,7 +216,7 @@ def test_probe_video_raises_on_invalid_fps(tmp_path: Path, monkeypatch):
     """Un fps à zéro est rejeté (avg_frame_rate ``0/1``)."""
     video_path = tmp_path / "no_fps.mp4"
     video_path.write_bytes(b"\x00")
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(
@@ -255,7 +255,7 @@ def test_probe_media_audio_only_returns_audio_asset(tmp_path: Path, monkeypatch)
     audio_path.write_bytes(b"\x00")
 
     payload = _payload(streams=[_audio_stream()], duration=180.5)
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
@@ -279,7 +279,7 @@ def test_probe_media_raises_when_neither_audio_nor_video(tmp_path: Path, monkeyp
     media_path.write_bytes(b"\x00")
 
     payload = {"streams": [{"codec_type": "subtitle"}], "format": {"duration": "1.0"}}
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
@@ -295,7 +295,7 @@ def test_probe_media_raises_on_invalid_audio_duration(tmp_path: Path, monkeypatc
     audio_path.write_bytes(b"\x00")
 
     payload = _payload(streams=[_audio_stream()], duration=0.0)
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
@@ -310,7 +310,7 @@ def test_probe_media_handles_video_only_with_no_audio(tmp_path: Path, monkeypatc
     video_path = tmp_path / "silent.mp4"
     video_path.write_bytes(b"\x00")
     payload = _payload(streams=[_video_stream()], duration=4.0)
-    monkeypatch.setattr("core.media_probe.shutil.which", lambda _: "/usr/bin/ffprobe")
+    monkeypatch.setattr("core.tool_paths.shutil.which", lambda _: "/usr/bin/ffprobe")
     monkeypatch.setattr(
         "core.media_probe.supervised_run",
         lambda *args, **kwargs: _completed_process(json.dumps(payload)),
