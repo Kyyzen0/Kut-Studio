@@ -254,3 +254,17 @@ def _no_unsaved_changes_prompt(monkeypatch):
     from ui.main_window_mixins.project_files import ProjectFilesMixin
 
     monkeypatch.setattr(ProjectFilesMixin, "_confirm_discard_changes", lambda self: True)
+
+
+MAX_TEST_ID = 2000
+"""Longueur maximale d'un identifiant de test. pytest le copie dans la variable d'environnement ``PYTEST_CURRENT_TEST`` : sous
+Windows, une variable de plus de 32 767 caractères fait échouer l'installation et le démontage de CHAQUE test concerné (le journal
+de la CI s'arrêtait net après « ERRORS »). Les paramètres démesurés (entrée hostile) reçoivent un ``ids=`` court."""
+
+
+def pytest_collection_modifyitems(config, items):
+    too_long = [item.nodeid[:120] + f"… ({len(item.nodeid)} caractères)" for item in items if len(item.nodeid) > MAX_TEST_ID]
+    if too_long:
+        raise pytest.UsageError(
+            f"Identifiants de test trop longs (> {MAX_TEST_ID}, ``PYTEST_CURRENT_TEST`` plafonne à 32 767 sous Windows) ; "
+            "ajoutez ids=… à parametrize :\n" + "\n".join(too_long[:10]))

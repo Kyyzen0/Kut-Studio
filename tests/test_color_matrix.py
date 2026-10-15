@@ -76,7 +76,7 @@ def test_an_unconvertible_label_stays_in_601_for_the_monitor_like_before():
     ("bt709", "bt709"), ("BT709 ", "bt709"), ("bt470bg", "bt601"), ("smpte170m", "bt601"), ("bt2020nc", "bt2020"),
     ("bt2020c", "bt2020"), ("unknown", "none"), ("unspecified", "none"), ("", "none"), ("N/A", "none"), (None, "none"),
     (7, "none"), (["bt709"], "none"), ("smpte240m", "other"), ("gbr", "other"), ("ycgco", "other"), ("x" * 5000, "other"),
-])
+], ids=lambda v: repr(v)[:20])
 def test_ffprobe_labels_are_normalised_and_hostile_values_never_raise(name, label):
     assert cm.label_from_ffprobe(name) == label
 
@@ -211,7 +211,8 @@ def test_the_lazy_probe_is_memorised_per_file_and_date(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("stdout", ["", "not json", "[]", "null", '{"streams": null}', '{"streams": [1]}', '{"streams": []}',
-                                    '{"streams": [{"color_space": ["x"]}]}', "{" * 100_000, " " * 200_000])
+                                    '{"streams": [{"color_space": ["x"]}]}', "{" * 100_000, " " * 200_000],
+                         ids=lambda v: repr(v)[:20])
 def test_a_hostile_probe_output_never_raises(stdout, tmp_path, monkeypatch):
     from core import media_probe
 
@@ -447,7 +448,7 @@ def test_an_old_file_without_the_field_loads_as_auto(tmp_path):
     assert load_project(str(path)).media_assets[0].color_matrix == "auto"
 
 
-@pytest.mark.parametrize("bad", ["", "BT709", "bt2020", None, 7, ["bt709"], {"a": 1}, "x" * 100_000])
+@pytest.mark.parametrize("bad", ["", "BT709", "bt2020", None, 7, ["bt709"], {"a": 1}, "x" * 100_000], ids=lambda v: repr(v)[:20])
 def test_a_hand_edited_unknown_choice_refuses_the_file_with_a_short_message(tmp_path, bad):
     path, raw = _saved(_project(), tmp_path)
     raw["version"] = 19
