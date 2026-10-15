@@ -334,7 +334,7 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   `--json` (un seul objet sur la sortie standard, texte humain sur la sortie d'erreur), codes de sortie stables (0, 1, 2, 64, 130),
   Ctrl-C = annulation propre, messages traduits (`ui/i18n_cli.py`). `validate` dit ce que les chargeurs tolérants ont abandonné
   (`LoadReport` dans `core/project_io.py`). Documentation : `docs/cli.md`.
-- **Étape 4 : en cours** (#131 et la suivante) : la table `VERBS` (72 verbes : `set_crop` et `clear_crop` pour le recadrage d'ADR-0006, `add_mask`, `set_mask`, `set_mask_points` et `remove_mask` pour les masques de compositing (formes rectangle, ellipse, polygone et courbe), `set_color_window_points` pour les fenêtres en courbe, `add_image_layer` pour les images fixes), le décodeur strict (`core/scripting/script.py` : version,
+- **Étape 4 : en cours** (#131 et la suivante) : la table `VERBS` (les verbes : `set_crop` et `clear_crop` pour le recadrage d'ADR-0006, `add_mask`, `set_mask`, `set_mask_points` et `remove_mask` pour les masques de compositing, `set_color_window_points` pour les fenêtres en courbe, `add_image_layer` pour les images fixes), le décodeur strict (`core/scripting/script.py` : version,
   champs inconnus refusés avec suggestion, bornes, alias résolus au décodage, toutes les erreurs d'un coup), le schéma JSON généré,
   `apply` (`--dry-run`, `--in-place`, `--allow-outside`, jamais d'écrasement par défaut), `validate script.json`, `schema`, un fuzz du
   décodeur. Le lot 2 ajoute le **contexte de fichiers** (`ScriptContext` : lecture seule dans le dossier du script, décision 5),

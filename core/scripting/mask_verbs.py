@@ -276,7 +276,7 @@ def _style_params(prefix: str) -> tuple[Param, ...]:
         _field("opacity", f"{prefix}Opacité du masque (défaut 1)."),
         Param("inverted", Kind.BOOLEAN, f"{prefix}Masque inversé.", required=False),
         Param("mode", Kind.ENUM, f"{prefix}add (union), subtract (retire) ou intersect (intersection).", required=False, choices=_MODES),
-        Param("name", Kind.STRING, f"{prefix}Nom du masque.", required=False),
+        Param("name", Kind.STRING, f"{prefix}Nom du masque (vide : sans nom).", required=False, allow_empty=True),
     )
 
 

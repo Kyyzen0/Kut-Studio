@@ -134,6 +134,7 @@ class Param:
     choices: tuple[str, ...] = ()
     of: str = ""
     max_length: int = 0            # 0 : MAX_TEXT
+    allow_empty: bool = False      # un texte vide est une valeur (« sans nom ») et non une erreur
     multiline: bool = False        # texte à plusieurs lignes (un titre) : « \n » permis
     fields: tuple[Param, ...] = ()  # pour une liste d'objets : les champs de chaque élément (mêmes règles qu'un paramètre de verbe)
     item: Param | None = None       # pour une liste de valeurs : le paramètre qui décrit chaque élément

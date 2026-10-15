@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from dataclasses import replace
 
 import pytest
@@ -132,14 +131,6 @@ def test_the_schema_bounds_the_lists_and_numbers():
     assert '"maxItems": 128' in text and '"minItems": 3' in text
 
 
-def test_the_adr_cites_the_measured_number_of_verbs():
-    from pathlib import Path
-
-    adr = (Path(__file__).resolve().parent.parent / "docs/adr/0005-mode-script-frontiere-de-securite.md").read_text(encoding="utf-8")
-    cited = re.findall(r"table `VERBS` \((\d+) verbes", adr)
-    assert cited and int(cited[-1]) == len(VERBS)
-
-
 # --- Créer, modifier, retirer ---------------------------------------------------------------------------------------------------
 
 
@@ -216,6 +207,19 @@ def test_a_failed_script_leaves_the_project_untouched():
     before = masks(session.project)
     report = apply_script(session, parse_script(_script(edit(feather=0.3), add("rectangle", id="m1"))))   # identifiant pris
     assert not report.ok and masks(session.project) == before
+
+
+def test_a_mask_can_be_given_back_an_empty_name_and_omitting_the_name_keeps_it():
+    session, report = _apply(_project(), CLIP, add("ellipse", name="Vignette", feather=0.2, mode="subtract"), edit(opacity=0.5))
+    assert report.ok and mask(session.project).name == "Vignette"                  # omettre le champ conserve le nom
+    before = mask(session.project)
+    assert apply_script(session, parse_script(_script(edit(name="")))).ok
+    after = mask(session.project)
+    assert after.name == "" and replace(after, name="Vignette", id=after.id) == before and after.id == "m1"
+    session, report = _apply(_project(), CLIP, add("ellipse", name=""))
+    assert report.ok and mask(session.project).name == ""
+    assert _invalid(add(name="x" * 201)) and _invalid(edit(name="x" * 201)) and _invalid(edit(name=None)) and _invalid(edit(name=3))
+    assert _invalid(edit(name=" a")) and _invalid(edit(name=" "))                 # les bords blancs restent refusés
 
 
 def test_set_mask_keeps_what_it_does_not_name_and_the_shape():
