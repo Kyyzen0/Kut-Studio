@@ -38,6 +38,7 @@ from core.visual_effects import (
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
 from ui.keyboard_navigation import let_tab_leave_in, tab_only_controls
+from ui.wheel_guard import install_wheel_guard
 from ui.graphics_editor import GraphicsEditor
 from ui.compositing_editor import CompositingEditor
 from ui.theme import COLORS, label_style
@@ -239,8 +240,8 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         tab_only_controls(self)
         let_tab_leave_in(self)
         self._sync_inspector_tab_order()
-
-
+        # Molette : un champ ne la prend que s'il a le focus, sinon le panneau défile (ui.wheel_guard).
+        self._wheel_guard = install_wheel_guard(self)
 
     def _on_language_changed(self, _code: str) -> None:
         self.retranslate()
