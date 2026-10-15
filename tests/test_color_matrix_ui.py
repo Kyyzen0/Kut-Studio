@@ -151,7 +151,7 @@ def test_the_monitor_gets_the_matrix_of_the_original_media_not_of_its_proxy(qtbo
     assert window._monitor_color_matrix(top, clip) == ("bt709", "auto")                    # 1920×1080 non étiqueté
     window.project.media_assets[0].color_matrix = "bt601"
     assert window._monitor_color_matrix(top, clip) == ("bt601", "bt601")
-    assert window._monitor_color_matrix(SimpleNamespace(rendered=True), clip) == ("", "auto")   # morceau déjà rendu : sa propre image
+    assert window._monitor_color_matrix(SimpleNamespace(rendered=True), clip) == ("bt709", "bt709")   # morceau déjà rendu : toujours BT.709
     assert window._monitor_color_matrix(top, SimpleNamespace(asset_id="nope")) == ("", "auto")
 
 

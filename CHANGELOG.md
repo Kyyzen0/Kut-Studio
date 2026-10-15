@@ -18,6 +18,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
 
+### Fixed
+
+- Couleur : l'aperçu fidèle (segment en cache) n'applique plus une seconde fois la matrice du média : il concorde de nouveau avec l'export, y compris quand BT.601 est forcé et quand le segment est réduit (toujours lu en BT.709).
+
 ### Changed
 
 - Thème sombre « Contraste+ » : textes secondaires, bordures et repères plus lisibles, fonds graphite, accent turquoise plus vif et tête de lecture corail (distincte de l'accent).
