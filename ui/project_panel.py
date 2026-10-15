@@ -578,6 +578,24 @@ class ProjectPanel(QWidget):
         self._refresh_badges()
         self._refresh_grids()
 
+    def refresh_usage_if_changed(self) -> bool:
+        """Recalcule les badges d'usage seulement si un compteur d'occurrences a changé ; retourne ``True`` si c'est le cas.
+
+        La fenêtre l'appelle après chaque modification du projet : ajout, duplication, suppression ou annulation d'un clip
+        changent « inutilisé » / ``×N`` sans repasser par l'import. Sans changement de compteur, rien n'est reconstruit.
+        """
+        if self._organization is None:
+            return False
+        from core.library_organization import usage_map
+
+        project = self._organization.project
+        usages = usage_map(project)
+        counts = {asset.id: (usages[asset.id].clip_count if asset.id in usages else 0) for asset in project.media_assets}
+        if counts == {asset_id: badge.usage_count for asset_id, badge in self._badges.items()}:
+            return False
+        self.set_usage_for_assets()
+        return True
+
     def _refresh_badges(self) -> None:
         if self._organization is None:
             self._badges = {}

@@ -13,6 +13,25 @@ class HistoryMixin:
         self.project_dirty = True
         self._update_top_bar()
         self._schedule_autosave()
+        self._schedule_library_usage_sync()
+
+    def _schedule_library_usage_sync(self) -> None:
+        """Remet à jour les badges d'usage de la bibliothèque après une rafale de modifications (un seul passage)."""
+        timer = getattr(self, "_library_usage_timer", None)
+        if timer is None:
+            from PySide6.QtCore import QTimer
+
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(100)
+            timer.timeout.connect(self._sync_library_usage)
+            self._library_usage_timer = timer
+        timer.start()
+
+    def _sync_library_usage(self) -> None:
+        panel = getattr(self, "project_panel", None)
+        if panel is not None:
+            panel.refresh_usage_if_changed()
 
     def _mark_clean(self) -> None:
         self._finalize_pending_edit_sessions()
