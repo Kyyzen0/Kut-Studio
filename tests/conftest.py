@@ -79,6 +79,11 @@ def pytest_configure(config):
         "libass: test qui exige un FFmpeg avec libass (filtre « subtitles ») ; sauté sans libass, "
         "échoué si KUT_STUDIO_REQUIRE_LIBASS=1 ; sélection : pytest -m libass",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_media_player: laisse le vrai QMediaPlayer ouvrir un fichier inexistant (erreur de lecture) ; "
+        "sans cette marque, la garde de tests/media_player_guard.py l'ignore",
+    )
     worker = os.environ.get("PYTEST_XDIST_WORKER")
     if not worker:
         return
@@ -90,6 +95,17 @@ def pytest_configure(config):
         os.environ[name] = str(base)
     tempfile.tempdir = str(base)
     config.add_cleanup(lambda: shutil.rmtree(base, ignore_errors=True))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_player_on_missing_media(request, monkeypatch):
+    """Aucun vrai ``QMediaPlayer`` n'ouvre un média inexistant (cause d'un SIGSEGV aléatoire sous xdist ; voir
+    ``tests/media_player_guard.py``). Un fichier existant est ouvert normalement. Exception : ``real_media_player``."""
+    if not request.node.get_closest_marker("real_media_player"):
+        from media_player_guard import install
+
+        install(monkeypatch)
+    yield
 
 
 @pytest.fixture(autouse=True)
