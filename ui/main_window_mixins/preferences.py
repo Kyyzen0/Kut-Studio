@@ -124,6 +124,7 @@ class PreferencesMixin:
             current_include_prereleases=self._update_include_prereleases,
             current_whisper_path=getattr(self, "_whisper_path", ""),
             current_whisper_model=getattr(self, "_whisper_model", ""),
+            current_usage_level=self.usage_level.value,
             shortcut_manager=self.shortcuts,
             performance_host=self,
             parent=self,
@@ -133,6 +134,9 @@ class PreferencesMixin:
         dialog.performance_changed.connect(self.on_performance_setting_changed)
         dialog.preview_quality_changed.connect(self.on_preview_quality_changed)
         dialog.render_quality_changed.connect(self.on_render_quality_changed)
+        dialog.usage_level_changed.connect(self.set_usage_level)
+        # Un niveau changé ailleurs pendant que la boîte est ouverte (script) la met à jour.
+        self.usage_level_changed.connect(dialog.sync_usage_level)  # type: ignore[attr-defined]
         dialog.restore_defaults_requested.connect(self._restore_default_preferences)
         dialog.update_check_changed.connect(self.set_update_check_enabled)
         dialog.update_prereleases_changed.connect(self.set_update_include_prereleases)

@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
+
 ## [0.6.2] - 2026-10-15
 
 Version de **couleur, de scripts et de verrous** : un média HD sans espace colorimétrique se lit enfin en BT.709 (avec un choix par média pour garder l'ancien rendu),
