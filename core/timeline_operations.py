@@ -809,6 +809,7 @@ def add_subtitle_clip(
             f"La piste '{track.id}' est de type '{track.type}', "
             "impossible d'y ajouter un sous-titre."
         )
+    _ensure_track_editable(project, track)              # piste verrouillée : rien n'est créé (ni clip, ni média)
 
     label = _build_subtitle_label(text)
     new_id = resolve_object_id(clip_id, prefix="clip", kind="clip", taken=clip_ids(project))
@@ -1063,6 +1064,9 @@ def _require_video_clip(project: Project, clip_id: str) -> Clip:
             "les transformations visuelles ne s'appliquent qu'aux pistes "
             "vidéo ou graphiques."
         )
+    from .compositing_guard import require_clip_editable
+
+    require_clip_editable(project, clip_id)            # piste ou calque verrouillé : refus, rien n'est écrit
     return track.clips[index]
 
 

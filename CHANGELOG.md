@@ -37,6 +37,14 @@ fidèle déjà rendus sont refaits une fois. Sans GPU (moniteur CPU), la lecture
   du moniteur Multicam et les LUT d'étalonnage cuites ; vérifiée au niveau près entre la référence du moniteur, l'export réel et la miniature
   (`tests/test_color_matrix_parity.py`). Les caches (aperçu fidèle, miniatures, LUT) ne resservent rien de rendu avec l'ancienne règle.
 
+### Fixed
+
+- **Verrous** : une piste ou un calque verrouillé (et un clip d'un autre genre de piste) refuse désormais aussi, sans rien écrire ni toucher à l'historique, les
+  commandes « Remplir le cadre », « Recadrer en suivant le tracker », Ken Burns, zoom d'impact, secousse et « Impact sur chaque cut » du menu Réseaux sociaux,
+  les modèles de texte et la saisie, le style et la remise à zéro d'un sous-titre, la pose, la modification et le retrait d'une transition, et l'ajout d'un
+  sous-titre sur une piste verrouillée. Les images-clés et la transformation d'un clip sont gardées dans le cœur, donc aussi pour les scripts. Annuler et
+  rétablir fonctionnent comme avant. La liste des entrées gardées est dans [docs/lock-guards.md](docs/lock-guards.md).
+
 ## [0.6.1] - 2026-10-14
 
 Version de **correctifs et d'ouverture au mode script** : le moniteur affiche l'image en pause après une édition, le mode script sait poser des images fixes

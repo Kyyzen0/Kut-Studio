@@ -402,6 +402,8 @@ class SubtitlesGraphicsMixin:
             return
         if clip.text == content:
             return
+        if self._clip_edit_refused(clip_id, visual_only=False, restore=False, track_types=("subtitle",)):
+            return
         clip.text = content
         self._schedule_subtitle_history_record(clip_id)
         self._mark_dirty()
@@ -429,6 +431,8 @@ class SubtitlesGraphicsMixin:
             return
         if clip.text_style == style:
             return
+        if self._clip_edit_refused(clip_id, visual_only=False, restore=False, track_types=("subtitle",)):
+            return
         clip.text_style = style
         self._record_history(i18n.translate("history.subtitle.style"))
         self._reload_timeline_preserving_selection(clip_id)
@@ -443,6 +447,8 @@ class SubtitlesGraphicsMixin:
         except KeyError:
             return
         if clip.text_style == default_text_style():
+            return
+        if self._clip_edit_refused(clip_id, visual_only=False, restore=False, track_types=("subtitle",)):
             return
         clip.text_style = default_text_style()
         self._record_history(i18n.translate("history.subtitle.style_reset"))

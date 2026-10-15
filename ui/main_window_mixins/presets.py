@@ -325,6 +325,9 @@ class PresetsMixin:
             )
             return
         from core.transitions import add_transition
+
+        if any(self._clip_edit_refused(view.id, visual_only=False, restore=False) for view in selected):
+            return
         try:
             transition = add_transition(
                 self.project,
@@ -480,6 +483,8 @@ class PresetsMixin:
             clip = find_clip(self.project, clip_id)
         except KeyError as exc:
             self.statusBar().showMessage(str(exc), 5000)
+            return False
+        if self._clip_edit_refused(clip_id, visual_only=False, restore=False, track_types=("subtitle",)):
             return False
         clip.text_style = preset.style
         if not (clip.text or "").strip() and preset.default_text:

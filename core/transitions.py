@@ -133,6 +133,14 @@ def transition_pairs(project: "Project", clip_id: str) -> list[Transition]:
     return [t for t in project.transitions if clip_id in {t.from_clip_id, t.to_clip_id}]
 
 
+def _require_clips_editable(project: "Project", *clip_ids: str) -> None:
+    """Une transition décale des clips et pose des fondus : aucun des deux ne doit être verrouillé (piste ou calque)."""
+    from .compositing_guard import require_clip_editable
+
+    for clip_id in clip_ids:
+        require_clip_editable(project, clip_id, visual_only=False)
+
+
 def add_transition(
     project: "Project",
     from_clip_id: str,
@@ -144,6 +152,7 @@ def add_transition(
 ) -> Transition:
     from_track, from_clip = _find_video_clip(project, from_clip_id)
     to_track, to_clip = _find_video_clip(project, to_clip_id)
+    _require_clips_editable(project, from_clip_id, to_clip_id)
     if from_track.id != to_track.id:
         raise ValueError("Les deux clips d'une transition doivent être sur la même piste.")
     if to_clip.timeline_start < from_clip.timeline_start:
@@ -191,6 +200,7 @@ def update_transition(
     current = _find_transition(project, transition_id)
     _track, from_clip = _find_video_clip(project, current.from_clip_id)
     _to_track, to_clip = _find_video_clip(project, current.to_clip_id)
+    _require_clips_editable(project, current.from_clip_id, current.to_clip_id)
     new_duration = current.duration if duration is None else float(duration)
     if new_duration > min(from_clip.duration, to_clip.duration) / 2.0 + 1e-6:
         raise ValueError("La transition dépasse la moitié du clip le plus court.")
@@ -210,6 +220,7 @@ def update_transition(
 
 def remove_transition(project: "Project", transition_id: str) -> Transition:
     current = _find_transition(project, transition_id)
+    _require_clips_editable(project, current.from_clip_id, current.to_clip_id)     # un clip supprimé n'est pas refusé
     project.transitions.remove(current)
     # Les fondus audio sont appliqués avec la transition afin que le
     # chevauchement sonne comme le fondu vidéo. Ils ne doivent pas

@@ -18,9 +18,12 @@ LOGGER = logging.getLogger(__name__)
 class ClipEditGuardMixin:
     """Mixin de ``MainWindow`` (clip_edit_guard)."""
 
-    def _clip_edit_refused(self, clip_id: str, *, visual_only: bool = True, restore: bool = True) -> bool:
+    def _clip_edit_refused(
+        self, clip_id: str, *, visual_only: bool = True, restore: bool = True,
+        track_types: tuple[str, ...] | None = None,
+    ) -> bool:
         """``True`` (et message d'état) si le clip n'est pas modifiable ; ``restore`` remet l'inspecteur à jour."""
-        refusal = clip_edit_refusal(self.project, clip_id, visual_only=visual_only)
+        refusal = clip_edit_refusal(self.project, clip_id, visual_only=visual_only, track_types=track_types)
         if refusal is None:
             return False
         self.statusBar().showMessage(translate(f"edit.refused.{refusal}"), 4000)

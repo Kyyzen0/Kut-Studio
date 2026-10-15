@@ -116,6 +116,16 @@ def _bounded_time(clip, local_time: float) -> float:
     return t
 
 
+def _guard(project, clip_id: str, property_id: str | None = None) -> None:
+    """Garde commune des mutateurs : piste ou calque verrouillé, propriété d'un autre genre de piste → refus, rien écrit.
+
+    Les lectures, l'annulation/rétablissement (instantanés du projet) et le moteur de rendu n'écrivent pas par ici.
+    """
+    from .compositing_guard import require_clip_editable
+
+    require_clip_editable(project, clip_id, property_id=property_id)
+
+
 def _store(target: PropertyTarget, clip, curve: AnimationCurve) -> None:
     target.set_keyframes(clip, list(curve.keyframes))
 
@@ -141,6 +151,7 @@ def add_keyframe(
     remplacé, en gardant son interpolation, ses tangentes et son identifiant).
     """
     clip = find_clip(project, clip_id)
+    _guard(project, clip_id, property_id)
     target = get_target(property_id)
     t = _bounded_time(clip, local_time)
     curve = target.curve(clip)
@@ -192,6 +203,7 @@ def set_value_at(project, clip_id: str, property_id: str, local_time: float, val
     « automatique » d'un débutant : activer, déplacer la tête, modifier.
     """
     clip = find_clip(project, clip_id)
+    _guard(project, clip_id, property_id)
     target = get_target(property_id)
     if not target.get_keyframes(clip):
         target.set_static(clip, value)
@@ -210,6 +222,9 @@ def remove_keyframes(project, refs: Iterable[KeyframeRef], *, local_time: float 
     grouped: dict[tuple[str, str], set[str]] = {}
     for ref in refs:
         grouped.setdefault((ref.clip_id, ref.property_id), set()).add(ref.keyframe_id)
+    for clip_id, property_id in grouped:                 # tout est vérifié avant la première écriture
+        find_clip(project, clip_id)
+        _guard(project, clip_id, property_id)
     for (clip_id, property_id), ids in grouped.items():
         clip = find_clip(project, clip_id)
         target = get_target(property_id)
@@ -225,6 +240,7 @@ def remove_keyframes(project, refs: Iterable[KeyframeRef], *, local_time: float 
 
 def remove_keyframe_at(project, clip_id: str, property_id: str, local_time: float) -> bool:
     clip = find_clip(project, clip_id)
+    _guard(project, clip_id, property_id)
     existing = get_target(property_id).curve(clip).keyframe_at(local_time)
     if existing is None:
         return False
@@ -235,6 +251,7 @@ def remove_keyframe_at(project, clip_id: str, property_id: str, local_time: floa
 def set_animation_enabled(project, clip_id: str, property_id: str, enabled: bool, local_time: float) -> None:
     """Active l'animation (keyframe au temps courant) ou la retire (valeur figée)."""
     clip = find_clip(project, clip_id)
+    _guard(project, clip_id, property_id)
     target = get_target(property_id)
     if enabled:
         if not target.get_keyframes(clip):
@@ -257,6 +274,8 @@ def move_keyframes(
     """
     grouped: dict[str, list[KeyframeRef]] = {}
     for ref in refs:
+        find_clip(project, ref.clip_id)
+        _guard(project, ref.clip_id, ref.property_id)    # tout est vérifié avant la première écriture
         grouped.setdefault(ref.clip_id, []).append(ref)
     # Borne commune : le groupe se déplace d'un bloc.
     delta = float(delta_seconds)
@@ -303,6 +322,9 @@ def set_keyframe_time(project, ref: KeyframeRef, local_time: float) -> float:
 
 def set_keyframe_values(project, values: dict[KeyframeRef, Any]) -> None:
     """Change la valeur de keyframes (bornée par la propriété)."""
+    for ref in values:
+        find_clip(project, ref.clip_id)
+        _guard(project, ref.clip_id, ref.property_id)
     for ref, value in values.items():
         clip = find_clip(project, ref.clip_id)
         target = get_target(ref.property_id)
@@ -318,6 +340,10 @@ def set_interpolation(project, refs: Iterable[KeyframeRef], interpolation: Inter
     """Change l'interpolation (segment sortant) des keyframes désignés."""
     kind = coerce_interpolation(interpolation)
     count = 0
+    refs = list(refs)
+    for ref in refs:
+        find_clip(project, ref.clip_id)
+        _guard(project, ref.clip_id, ref.property_id)
     for ref in refs:
         clip = find_clip(project, ref.clip_id)
         target = get_target(ref.property_id)
@@ -346,6 +372,7 @@ def set_tangents(
     automatiques.
     """
     clip = find_clip(project, ref.clip_id)
+    _guard(project, ref.clip_id, ref.property_id)
     target = get_target(ref.property_id)
     curve = target.curve(clip)
     keyframe = next((k for k in curve.keyframes if k.id == ref.keyframe_id), None)
@@ -440,6 +467,12 @@ def paste_keyframes(
     if target_property is not None and not can_paste(clipboard, target_property):
         raise ValueError("Ces images-clés ne sont pas compatibles avec cette propriété.")
     clip = find_clip(project, clip_id)
+    for source_id, _frames in clipboard.items:             # tout est vérifié avant la première écriture
+        destination = target_property if (target_property and clipboard.is_single_property) else source_id
+        try:
+            _guard(project, clip_id, destination)
+        except KeyError:                                   # propriété inconnue : ignorée plus bas, comme avant
+            continue
     duration = normalize_time(clip_duration(clip))
     created: list[KeyframeRef] = []
     for source_id, frames in clipboard.items:

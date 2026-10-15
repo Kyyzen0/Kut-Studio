@@ -98,6 +98,7 @@ class ClipContextMixin:
             if is_subtitle:
                 style = getattr(view, "text_style", None)
                 self.subtitle_editor.set_state(getattr(view, "text", ""), style)
+            self.subtitle_group.setEnabled(clip_editable)               # piste de sous-titres verrouillée : lecture seule
 
             is_video_clip = getattr(view, "track_type", None) == "video"
             is_graphic_clip = getattr(view, "track_type", None) == "graphics"
@@ -224,6 +225,9 @@ class ClipContextMixin:
         self.transition_from_label.setText(outgoing_view.label)
         self.transition_to_label.setText(incoming_view.label)
         self.transition_track_label.setText(track_name)
+        locked = any(bool(getattr(v, "locked", False)) or bool(getattr(getattr(v, "graphic", None), "locked", False))
+                     for v in (outgoing_view, incoming_view))
+        self.transition_group.setEnabled(not locked)                    # clips verrouillés : transition en lecture seule
         self._set_group_condition(self.transition_group, True)
 
     def clear_transition(self) -> None:

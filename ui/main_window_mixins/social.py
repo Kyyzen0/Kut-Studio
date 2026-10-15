@@ -283,11 +283,27 @@ class SocialMixin:
         return [clip for clip in self._selected_clips()
                 if clip.id in video_ids and not clip.sequence_id and clip.composition is None]
 
+    def _visual_clips_of_selection(self) -> list[Clip]:
+        """Clips sélectionnés des pistes vidéo et graphiques : un clip audio ou de sous-titres n'a pas de cadrage."""
+        visual_ids = {clip.id for track in self.project.tracks if track.type in ("video", "graphics")
+                      for clip in track.clips}
+        return [clip for clip in self._selected_clips() if clip.id in visual_ids]
+
+    def _social_clips_refused(self, clips: list[Clip]) -> bool:
+        """``True`` (message d'état, rien d'écrit) si un des clips visés est sur une piste ou un calque verrouillé.
+
+        Même règle que l'inspecteur (:func:`core.compositing_guard.clip_edit_refusal`) : une sélection mixte est
+        refusée en entier plutôt que modifiée à moitié.
+        """
+        return any(self._clip_edit_refused(clip.id, visual_only=False, restore=False) for clip in clips)
+
     def toggle_fill_frame_for_selection(self) -> None:
         """« Remplir le cadre » : bascule le cadrage des clips vidéo sélectionnés (tous suivent le premier)."""
         clips = self._video_clips_of_selection()
         if not clips:
             self._show_social_status("social.message.no_video")
+            return
+        if self._social_clips_refused(clips):
             return
         fill = not clips[0].transform.fill
         for clip in clips:
@@ -304,6 +320,8 @@ class SocialMixin:
         clips = self._video_clips_of_selection()
         if not clips:
             self._show_social_status("social.message.no_video")
+            return
+        if self._social_clips_refused(clips):
             return
         sequence = self.project.active_sequence
         done: list[Clip] = []
@@ -337,7 +355,10 @@ class SocialMixin:
 
     def apply_ken_burns_to_selection(self) -> None:
         """« Ken Burns » : un mouvement lent sur les clips vidéo et photos sélectionnés."""
-        clips = self._selected_clips()
+        clips = [clip for clip in self._visual_clips_of_selection()          # ceux que apply_ken_burns anime
+                 if clip.graphic is None or str(getattr(clip.graphic.type, "value", clip.graphic.type)) == "image"]
+        if self._social_clips_refused(clips):
+            return
         if not apply_ken_burns(clips):
             self._show_social_status("social.message.no_photo")
             return
@@ -359,6 +380,8 @@ class SocialMixin:
     # -- impact ------------------------------------------------------------------------------------------------------
 
     def _each_clip(self, clips: list[Clip], apply, history_key: str) -> None:
+        if self._social_clips_refused(clips):
+            return
         done = []
         for clip in clips:
             try:
@@ -374,7 +397,8 @@ class SocialMixin:
         """Zoom d'impact (le plan entre agrandi de 8 % et se pose en 0,3 s) sur les clips sélectionnés."""
         from core.impact_fx import apply_impact_zoom
 
-        clips = [clip for clip in self._selected_clips() if clip.graphic is None or clip.graphic.type.value != "light"]
+        clips = [clip for clip in self._visual_clips_of_selection()
+                 if clip.graphic is None or clip.graphic.type.value != "light"]
         if not clips:
             self._show_social_status("social.message.no_video")
             return
@@ -384,7 +408,7 @@ class SocialMixin:
         """Secousse de caméra au début des clips sélectionnés."""
         from core.impact_fx import apply_camera_shake
 
-        clips = self._selected_clips()
+        clips = self._visual_clips_of_selection()
         if not clips:
             self._show_social_status("social.message.no_video")
             return
