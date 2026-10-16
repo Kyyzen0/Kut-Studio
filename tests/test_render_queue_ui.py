@@ -573,6 +573,11 @@ def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, mon
     ticker.setInterval(20)
     ticker.timeout.connect(lambda: stamps.append(time.perf_counter()))
     ticker.start()
+    # Mesure à vide, sur le même runner : le plus grand écart d'un QTimer de 20 ms pendant ~1 s sans rendu. Il sert de
+    # référence de charge au seuil de gel plus bas.
+    qtbot.wait(1000)
+    idle_gap = max(b - a for a, b in zip(stamps, stamps[1:]))
+    stamps.clear()
     started = time.perf_counter()
     window.launch_export()
     launch_call = time.perf_counter() - started
@@ -589,7 +594,13 @@ def test_the_event_loop_stays_responsive_during_a_render(qtbot, fake_ffmpeg, mon
     assert launch_call < limit, f"le clic a tenu la main {launch_call:.3f}s (budget {limit:.2f}s)"
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
     assert len(stamps) > 30  # ~2 s de rendu à 20 ms de période
-    assert max(gaps) < 0.35  # jamais de gel perceptible de la boucle Qt
+    # Jamais de gel perceptible de la boucle Qt. Écart maximal observé : ~0,03 s en local, 0,44 s puis 0,453 s sur macOS
+    # en CI chargée (deux échecs avec l'ancien seuil absolu de 0,35 s, sur des PR qui ne touchaient pas au rendu).
+    # Seuil : 0,35 s en local, 0,70 s en CI (×2), relevé si la boucle à vide était déjà lente (4 × l'écart à vide),
+    # mais jamais au-delà de 0,9 s : un vrai gel de ~1 s (ex. un ``time.sleep(1)`` dans le chemin du rendu) reste
+    # détecté.
+    freeze_limit = min(max(budget(0.35, ci_factor=2.0, coverage_factor=1.0), 4 * idle_gap), 0.9)
+    assert max(gaps) < freeze_limit, f"gel de la boucle Qt {max(gaps):.3f}s (seuil {freeze_limit:.2f}s, à vide {idle_gap:.3f}s)"
     assert queue.jobs[0].status is JobStatus.COMPLETED
 
 

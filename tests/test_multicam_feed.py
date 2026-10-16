@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import pytest
+from timing_budget import WALL_CI_FACTOR, budget
 
 from core.diagnostics_log import install_diagnostics, uninstall_diagnostics
 from core.multicam_feed import (
@@ -114,7 +115,7 @@ def test_a_feed_decodes_the_right_media_and_returns_frames_without_waiting(tmp_p
         started = time.perf_counter()
         feed.update(0.5, playing=True)
         assert feed.frame_at(0.5) is None or True  # l'appel ne bloque pas, même sans image
-        assert time.perf_counter() - started < 0.2
+        assert time.perf_counter() - started < budget(0.2, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0)
         frame = _wait(lambda: feed.frame_at(0.5))
         assert frame.width == 64 and frame.height == 36 and len(frame.data) == SMALL.frame_bytes
         r, g, b = _centre(frame)
