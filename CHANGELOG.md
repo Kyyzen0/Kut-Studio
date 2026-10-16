@@ -14,6 +14,13 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-16
+
+Version de **correctifs** : l'aperçu du moniteur concorde de nouveau avec l'export quand une matrice de couleur est forcée, sept défauts d'interface relevés lors d'un test réel sur un Mac sont corrigés (molette qui modifiait les champs, saisie « 0,5 », groupe qui se repliait, et d'autres), et la recherche de FFmpeg est plus robuste. Elle ajoute aussi le **réglage du niveau d'usage** (Simple / Studio / Avancé), qui ne masque encore rien.
+
+**À savoir** : la correction de couleur complète celle de la 0.6.2. Si vous aviez forcé BT.601 ou BT.709 sur un média, l'aperçu fidèle (le segment mis en cache) lui appliquait une seconde conversion et s'écartait de l'export de plusieurs dizaines de niveaux ; l'export, lui, était juste. Le niveau d'usage se règle dans Préférences, dans le menu Fenêtre ou dans la barre du haut (la puce s'abrège, puis disparaît, quand la barre manque de place) ; il n'a pas encore d'effet sur l'interface. Si FFmpeg était « introuvable » à l'export alors qu'il est installé, le journal de démarrage consigne désormais la recherche : joignez-le à votre signalement.
+
+
 ### Added
 
 - **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
@@ -670,7 +677,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.5.5...v0.6.0
