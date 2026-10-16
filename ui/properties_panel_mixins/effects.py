@@ -117,7 +117,8 @@ class EffectsMixin:
         )
         # Niveau d'usage : l'ordre des effets (monter / descendre) est avancé, ses boutons ont leur conteneur.
         self.effect_order_gates = [gated(self.effect_up_button, UsageLevel.ADVANCED), gated(self.effect_down_button, UsageLevel.ADVANCED)]
-        for button in (self.effect_toggle_button, self.effect_remove_button, *self.effect_order_gates):
+        for button in (self.effect_toggle_button, self.effect_remove_button, self._new_fold(group, UsageLevel.ADVANCED),
+                       *self.effect_order_gates):
             buttons_layout.addWidget(button)
         group_layout.addWidget(self.effect_buttons_row)
 

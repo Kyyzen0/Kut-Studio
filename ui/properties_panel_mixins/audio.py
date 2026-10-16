@@ -56,7 +56,6 @@ class AudioMixin:
             lambda value: self.audio_pan_changed.emit(value / 100.0)
         )
         self.audio_pan_gate = gated(self._audio_pan_row, UsageLevel.STUDIO)     # niveau d'usage : le panoramique est Studio
-        group_layout.addWidget(self.audio_pan_gate)
 
         # Fondus, en secondes, pas de 0,1 s.
         self._fade_spins: dict[str, QDoubleSpinBox] = {}
@@ -98,6 +97,9 @@ class AudioMixin:
             lambda: self.audio_fades_reset.emit()
         )
         group_layout.addWidget(self.reset_fades_button)
+        # Le panoramique (Studio) clôt le groupe, derrière son pliant : gain et fondus (Simple) restent au-dessus.
+        group_layout.addWidget(self._new_fold(group, UsageLevel.STUDIO))
+        group_layout.addWidget(self.audio_pan_gate)
         return group
 
     def set_audio_clip(self, model, *, locked: bool = False) -> None:

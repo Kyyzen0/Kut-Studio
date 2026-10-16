@@ -83,8 +83,6 @@ class SpeedGroupMixin:
         # Images intermédiaires, son, courbe de vitesse, analyse du flux optique (widget autonome).
         self.time_section = TimeSection()
         self.time_section.command_requested.connect(self._on_time_section_command)
-        self.time_section_gate = gated(self.time_section, UsageLevel.ADVANCED)      # niveau d'usage : la section « Temps » complète est avancée
-        speed_form.addRow(self.time_section_gate)
 
         # Bouton Reverse
         self.reverse_button = IconButton(
@@ -148,5 +146,9 @@ class SpeedGroupMixin:
         duration_layout.addWidget(self.source_duration_label)
         duration_layout.addWidget(self.timeline_duration_label)
         speed_form.addRow("", duration_info)
+        # Niveau d'usage : la section « Temps » complète est avancée ; elle clôt le groupe, derrière son pliant « Avancé ».
+        self.time_section_gate = gated(self.time_section, UsageLevel.ADVANCED)
+        speed_form.addRow(self._new_fold(self.speed_group, UsageLevel.ADVANCED))
+        speed_form.addRow(self.time_section_gate)
 
         layout.addWidget(self.speed_group)

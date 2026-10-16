@@ -157,6 +157,7 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
         self._color_node_id: str | None = None           # nœud courant (choisi sur la page Couleur)
         self._allow_color_signals = True
         self.color_preset_store = ColorPresetStore()
+        self._level_folds: dict = {}  # groupe -> sous-blocs « Avancé » créés à la place voulue par le builder du groupe
         self._level_gates: list = []  # conteneurs de niveau d'usage créés avec les contrôles (voir usage_levels)
         self._group_titles: list[tuple] = []  # (QGroupBox, clé i18n) : réécrits par ``retranslate``
         self._row_labels: list[tuple] = []  # (QFormLayout, champ, clé i18n)

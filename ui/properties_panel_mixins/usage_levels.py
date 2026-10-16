@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QFormLayout, QPushButton, QWidget
+from PySide6.QtWidgets import QComboBox, QPushButton, QWidget
 
 from core.blend_modes import BlendMode
 from core.compositing import MaskMode, MaskShape
@@ -65,7 +65,7 @@ class UsageLevelsMixin:
     _group_levels: dict[QWidget, UsageLevel] = {}
     _level_gate_specs: list[_Gate] = []
     _level_limits: list[_Limit] = []
-    _level_folds: dict[QWidget, AdvancedFold] = {}
+    _level_folds: dict[QWidget, list[AdvancedFold]] = {}
 
     # ------------------------------------------------------------------
     # Installation
@@ -86,13 +86,14 @@ class UsageLevelsMixin:
         ):
             self._level_gate_specs.extend(_Gate(gate, group) for gate in gates)
         self._level_limits = []
-        self._level_folds = {}
+        for group, owner in ((self.compositing_group, self.compositing_group), (self.graphics_group, self.graphics_group),
+                             (self.subtitle_group, self.subtitle_editor)):
+            self._level_folds.setdefault(group, []).extend(owner.level_folds)
         for limit in self._limit_plan():
             self._level_limits.append(limit)
             limit.combo.currentIndexChanged.connect(self._apply_usage_level_choices)
-        groups = [spec.group for spec in self._level_gate_specs if spec.gate.inverse_of is None] + [limit.group for limit in self._level_limits]
-        for group in dict.fromkeys(groups):
-            self._level_folds[group] = self._build_fold(group)
+        for fold in self._all_folds():
+            fold.toggled.connect(self._refresh_usage_level)
         self.more_options_button = QPushButton()
         self.more_options_button.setObjectName("more_options_button")
         self.more_options_button.setCheckable(True)
@@ -119,32 +120,14 @@ class UsageLevelsMixin:
                    {t.value: ADVANCED for t in AudioEffectType if t.value not in AUDIO_EFFECTS_STUDIO}, True),
         ]
 
-    def _level_anchors(self, group: QWidget) -> list[QWidget]:
-        """Les conteneurs de niveau (et listes limitées) d'un groupe : ce que le sous-bloc « Avancé » révèle."""
-        anchors: list[QWidget] = [spec.gate for spec in self._level_gate_specs if spec.group is group and spec.gate.inverse_of is None]
-        return anchors + [limit.combo for limit in self._level_limits if limit.group is group]
-
-    def _first_anchor_position(self, group: QWidget) -> int:
-        """Rang (ligne d'un formulaire, ou index) du premier élément de premier niveau du groupe qui est ou contient un conteneur de niveau."""
-        layout = group.layout()
-        anchors = self._level_anchors(group)
-        for index in range(layout.count()):
-            widget = layout.itemAt(index).widget()
-            if widget is not None and (widget in anchors or any(widget.isAncestorOf(anchor) for anchor in anchors)):
-                return layout.getItemPosition(index)[0] if isinstance(layout, QFormLayout) else index
-        return layout.rowCount() if isinstance(layout, QFormLayout) else layout.count()
-
-    def _build_fold(self, group: QWidget) -> AdvancedFold:
-        """Le sous-bloc « Avancé » est inséré AVANT le premier réglage qu'il révèle : l'ouvrir déplie en dessous du bouton, qui reste en place."""
-        fold = AdvancedFold()
-        layout = group.layout()
-        position = self._first_anchor_position(group)
-        if isinstance(layout, QFormLayout):
-            layout.insertRow(position, fold)
-        else:
-            layout.insertWidget(position, fold)
-        fold.toggled.connect(self._refresh_usage_level)
+    def _new_fold(self, group: QWidget, boundary: UsageLevel) -> AdvancedFold:
+        """Sous-bloc « Avancé » d'un groupe, créé par son builder à la place voulue (juste devant ce qu'il révèle)."""
+        fold = AdvancedFold(boundary)
+        self._level_folds.setdefault(group, []).append(fold)
         return fold
+
+    def _all_folds(self) -> list[AdvancedFold]:
+        return [fold for folds in self._level_folds.values() for fold in folds]
 
     # ------------------------------------------------------------------
     # Niveau courant
@@ -179,13 +162,16 @@ class UsageLevelsMixin:
         """3e condition de ``_apply_group_visibility`` : le groupe est du niveau courant, ou le lien l'a révélé."""
         return self._more_groups_shown or self._usage_level.at_least(self._group_levels.get(group, SIMPLE))
 
-    def _fold_open(self, group: QWidget) -> bool:
-        fold = self._level_folds.get(group)
-        return fold is not None and fold.is_open()
-
     def _level_allows(self, minimum: UsageLevel, group: QWidget) -> bool:
-        """Un réglage de niveau ``minimum`` est affiché directement, ou son sous-bloc « Avancé » est ouvert."""
-        return self._usage_level.at_least(minimum) or self._fold_open(group)
+        """Un réglage de niveau ``minimum`` est affiché directement, ou un sous-bloc « Avancé » ouvert du groupe le révèle.
+
+        Un pliant de palier ``boundary`` n'est montré que sous ce niveau et révèle les réglages de ce palier et au-delà.
+        """
+        level = self._usage_level
+        return level.at_least(minimum) or any(
+            fold.is_open() and not level.at_least(fold.boundary) and minimum.at_least(fold.boundary)
+            for fold in self._level_folds.get(group, ())
+        )
 
     def _advanced_animation_menu_shown(self) -> bool:
         """Interpolation, copier / coller et courbes du menu des losanges (avancés)."""
@@ -204,12 +190,8 @@ class UsageLevelsMixin:
         for spec in self._level_gate_specs:
             spec.gate.set_shown(self._gate_shown(spec))
         self._apply_usage_level_choices()
-        hidden_in: set[QWidget] = {spec.group for spec in self._level_gate_specs
-                                   if spec.gate.inverse_of is None and not self._usage_level.at_least(spec.minimum)}
-        hidden_in |= {limit.group for limit in self._level_limits
-                      if any(not self._usage_level.at_least(level) for level in limit.levels.values())}
-        for group, fold in self._level_folds.items():
-            fold.setVisible(group in hidden_in)
+        for fold in self._all_folds():
+            fold.setVisible(not self._usage_level.at_least(fold.boundary))
         self._apply_group_visibility()
         self.more_options_button.setVisible(self._usage_level is not ADVANCED)
 
@@ -228,10 +210,11 @@ class UsageLevelsMixin:
         self.more_options_button.setText(translate("usage.inspector.fewer" if shown else "usage.inspector.more"))
         self.more_options_button.setAccessibleName(self.more_options_button.text())
         self.more_options_button.setToolTip(translate("usage.inspector.more.tip"))
-        for group, fold in self._level_folds.items():
-            fold.setText(translate("usage.inspector.fold"))
-            fold.setAccessibleName(translate("usage.inspector.fold.name", group=group.title()))
-            fold.setToolTip(translate("usage.inspector.fold.tip"))
+        for group, folds in self._level_folds.items():
+            for fold in folds:
+                fold.setText(translate("usage.inspector.fold"))
+                fold.setAccessibleName(translate("usage.inspector.fold.name", group=group.title()))
+                fold.setToolTip(translate("usage.inspector.fold.tip"))
 
 
 __all__ = ["AUDIO_EFFECTS_STUDIO", "UsageLevelsMixin"]

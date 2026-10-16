@@ -32,7 +32,7 @@ from ui.compositing_sections import (
     MaskSection,
 )
 from ui.design_system import Spacing
-from ui.properties_widgets.level_gate import gated
+from ui.properties_widgets.level_gate import AdvancedFold, gated
 
 
 class CompositingEditor(QGroupBox):
@@ -58,7 +58,11 @@ class CompositingEditor(QGroupBox):
         # Niveau d'usage : seul le recadrage est affiché directement en Simple ; fusion, masques et clé chroma sont Studio.
         # Les conteneurs sont créés ici, avec les sous-blocs, et lus par l'inspecteur (``level_gates``).
         self.level_gates = []
+        self.studio_fold = AdvancedFold(UsageLevel.STUDIO)
+        self.level_folds = [self.studio_fold, *self.mask_section.level_folds]
         for section in self.sections():
+            if section is self.blend_section:
+                root.addWidget(self.studio_fold)        # le recadrage (Simple) est au-dessus ; le pliant précède tout ce qui est Studio
             if section is self.crop_section:
                 root.addWidget(section)
             else:
@@ -100,8 +104,8 @@ class CompositingEditor(QGroupBox):
         self._refresh_mask_widgets()
 
     def sections(self) -> tuple[QWidget, ...]:
-        """Les sous-blocs, dans l'ordre d'affichage (fusion, recadrage, pile de masques, clé chroma)."""
-        return (self.blend_section, self.crop_section, self.mask_section, self.chroma_section)
+        """Les sous-blocs, dans l'ordre d'affichage (recadrage, fusion, pile de masques, clé chroma)."""
+        return (self.crop_section, self.blend_section, self.mask_section, self.chroma_section)
 
     # -- chargement -----------------------------------------------------------------------------
 

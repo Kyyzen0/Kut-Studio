@@ -61,9 +61,11 @@ def gated(widget: QWidget, minimum: UsageLevel, form: QFormLayout | None = None)
 class AdvancedFold(QToolButton):
     """En-tête « Avancé » d'un groupe : replié, il laisse cachés les réglages du niveau supérieur ; ouvert, il les montre."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, boundary: UsageLevel = UsageLevel.ADVANCED, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.boundary = boundary        # visible tant que le niveau courant est en dessous ; ouvert, il montre les réglages de ce niveau et au-delà
         self.setObjectName("advanced_fold")
+        self.hide()                     # c'est l'inspecteur qui le montre, selon le niveau (un éditeur autonome n'en a pas besoin)
         self.setCheckable(True)
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.setArrowType(Qt.RightArrow)

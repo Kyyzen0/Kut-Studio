@@ -376,6 +376,11 @@ class ConstructionMixin:
         )
         movement_layout.setSpacing(Spacing.xs)
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
+        self.keyframe_block = LevelGate()       # niveau d'usage (Studio) : losanges ‹◆› de toutes les propriétés, en fin de groupe
+        self.keyframe_block.minimum = UsageLevel.STUDIO
+        self._level_gates.append(self.keyframe_block)
+        keyframe_layout = self.keyframe_block.layout()
+        keyframe_layout.setSpacing(Spacing.xs)
         self._diamonds: dict[str, _DiamondButton] = {}
         self._keyframe_nav_buttons: dict[str, tuple[QToolButton, QToolButton]] = {}
         self._slider_widgets: dict[str, QSlider] = {}
@@ -415,13 +420,12 @@ class ConstructionMixin:
 
             # Animation : ‹ ◆ › — précédent, ajouter / retirer, suivant. Le
             # reste (interpolation, copier/coller, courbes) est au clic droit.
-            animation_gate = LevelGate()            # niveau d'usage : les losanges d'images-clés sont Studio
-            animation_gate.minimum = UsageLevel.STUDIO
-            self._level_gates.append(animation_gate)
+            # Niveau d'usage : les losanges sont Studio ; ils sont créés ici mais rangés dans le bloc « Images-clés » en fin de
+            # groupe (un réglage de base n'est jamais sous le pliant « Avancé »).
             animation_row = QHBoxLayout()
-            animation_gate.layout().addLayout(animation_row)
             animation_row.setContentsMargins(0, 0, 0, 0)
             animation_row.setSpacing(2)
+            animation_row.addWidget(QLabel(label.text()))
             previous_button = QToolButton()
             previous_button.setObjectName("iconOnly")  # padding nul : sinon le thème rogne la flèche
             previous_button.setText("‹")
@@ -456,7 +460,7 @@ class ConstructionMixin:
             for widget in (previous_button, diamond, next_button):
                 animation_row.addWidget(widget)
             animation_row.addStretch(1)
-            row_layout.addWidget(animation_gate)
+            keyframe_layout.addLayout(animation_row)
             movement_layout.addWidget(row)
 
         reset_button = IconButton(
@@ -487,15 +491,20 @@ class ConstructionMixin:
         self._level_gates.append(self.fill_frame_gate)
         self.fill_frame_quick = self.advanced_transform.make_fill_relay()
         self.fill_frame_gate.hold(self.fill_frame_quick, UsageLevel.SIMPLE)
-        movement_layout.addWidget(self.fill_frame_gate)
-        movement_layout.addWidget(self.advanced_transform_gate)
         from ui.properties_widgets.frame_align_row import FrameAlignRow
 
         self.frame_align = FrameAlignRow()      # ADR-0006 lot 1c : six boutons ; la fenêtre principale les relie
         self.frame_align_gate = gated(self.frame_align, UsageLevel.STUDIO)
         self._level_gates.append(self.frame_align_gate)
-        movement_layout.addWidget(self.frame_align_gate)
+        # Ordre : réglages de base (valeurs, « Remplir le cadre », « Réinitialiser »), puis ce qui relève des niveaux supérieurs,
+        # chacun derrière son pliant « Avancé » : images-clés et alignement (Studio), transformation avancée (Avancé).
+        movement_layout.addWidget(self.fill_frame_gate)
         movement_layout.addWidget(reset_button)
+        movement_layout.addWidget(self._new_fold(self.movement_group, UsageLevel.STUDIO))
+        movement_layout.addWidget(self.keyframe_block)
+        movement_layout.addWidget(self.frame_align_gate)
+        movement_layout.addWidget(self._new_fold(self.movement_group, UsageLevel.ADVANCED))
+        movement_layout.addWidget(self.advanced_transform_gate)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True
 

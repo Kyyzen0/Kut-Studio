@@ -148,13 +148,14 @@ class ColorMixin:
         lut_layout.addWidget(self.color_lut_remove_button)
         advanced.addWidget(lut_row)
 
-        root.addWidget(self.color_advanced_gate)
-
         self.color_reset_button = self._make_action_button(
             IconName.RESET, translate("shortcuts.reset_all"), translate("inspector.color.reset_tip")
         )
         self.color_reset_button.clicked.connect(self._request_color_reset)
         root.addWidget(self.color_reset_button)
+        # Courbes, préréglages et LUT : en fin de groupe, derrière leur pliant « Avancé » (« Réinitialiser » reste au-dessus).
+        root.addWidget(self._new_fold(group, UsageLevel.ADVANCED))
+        root.addWidget(self.color_advanced_gate)
         group.setEnabled(False)
         return group
 

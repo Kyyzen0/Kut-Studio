@@ -25,14 +25,14 @@ from ui import i18n
 from ui.adaptive_layout import FlowLayout
 from ui.design_system import Spacing
 from ui.properties_widgets.crop_editor import CropEditor
-from ui.properties_widgets.level_gate import LevelGate, gated
+from ui.properties_widgets.level_gate import AdvancedFold, LevelGate, gated
 
 SECTION_BLEND = "compositing_section_blend"
 SECTION_CROP = "compositing_section_crop"
 SECTION_MASKS = "compositing_section_masks"
 SECTION_CHROMA = "compositing_section_chroma"
 #: Dans l'ordre d'affichage.
-SECTION_IDS = (SECTION_BLEND, SECTION_CROP, SECTION_MASKS, SECTION_CHROMA)
+SECTION_IDS = (SECTION_CROP, SECTION_BLEND, SECTION_MASKS, SECTION_CHROMA)
 
 # (valeur, clé i18n du libellé) : traduit à l'affichage, jamais à l'import.
 MASK_SHAPES = (
@@ -104,6 +104,10 @@ class MaskSection(_Section):
     def __init__(self) -> None:
         super().__init__()
         root = self.body
+        self.level_folds: list[AdvancedFold] = []
+        self.advanced_fold = AdvancedFold(UsageLevel.ADVANCED)      # niveau d'usage : formes, opérations, expansion, rotation, moniteur
+        self.level_folds.append(self.advanced_fold)
+        root.addWidget(self.advanced_fold)
         add_row = FlowLayout(spacing=Spacing.xs)  # trois contrôles : à la ligne plutôt qu'au-delà de l'inspecteur
         self.mask_shape = QComboBox(objectName="mask_shape")
         for shape, label in MASK_SHAPES:

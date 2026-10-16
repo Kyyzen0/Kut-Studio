@@ -8,7 +8,6 @@ avant ce lot).
 from __future__ import annotations
 
 import json
-from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -23,12 +22,12 @@ from core.time_remapping import TimeRemapping
 from core.timeline_view_model import TimelineClipView
 from core.usage_level import UsageLevel
 from core.visual_effects import ClipTransform
+import inspector_order
 from ui import i18n
 from ui.properties_panel import PropertiesPanel
 
 SIMPLE, STUDIO, ADVANCED = UsageLevel.SIMPLE, UsageLevel.STUDIO, UsageLevel.ADVANCED
-GOLDEN = Path(__file__).parent / "data" / "inspector_visible_before_usage_levels.json"
-IGNORED = ("studio_block", "level_gate", "advanced_fold", "more_options_button", "fill_frame_quick")
+GOLDEN = Path(__file__).parent / "data" / "inspector_order_before_usage_levels.json"
 
 
 def _panel(qtbot, level=ADVANCED) -> PropertiesPanel:
@@ -46,6 +45,10 @@ def _view(**overrides) -> TimelineClipView:
                   color_key="#fff", track_type="video", enabled=True, keyframes=(), transform=ClipTransform())
     fields.update(overrides)
     return TimelineClipView(**fields)
+
+
+def _fold(panel, group, boundary):
+    return next(f for f in panel._level_folds[group] if f.boundary is boundary)
 
 
 def _shown(panel, widget) -> bool:
@@ -161,9 +164,10 @@ def test_the_link_and_the_folds_have_translated_accessible_names(qtbot):
         i18n.set_language(code)
         assert panel.more_options_button.text() == i18n.translate("usage.inspector.more")
         assert panel.more_options_button.accessibleName() == panel.more_options_button.text()
-        for group, fold in panel._level_folds.items():
-            assert fold.text() == i18n.translate("usage.inspector.fold")
-            assert group.title() in fold.accessibleName()
+        for group, folds in panel._level_folds.items():
+            for fold in folds:
+                assert fold.text() == i18n.translate("usage.inspector.fold")
+                assert group.title() in fold.accessibleName()
     i18n.set_language("fr")
     assert i18n.translate("usage.inspector.more", ) == "Afficher plus d'options"
 
@@ -174,7 +178,7 @@ def test_the_link_and_the_folds_have_translated_accessible_names(qtbot):
 def test_simple_and_studio_hide_the_higher_settings_of_a_visible_group_behind_a_fold(qtbot):
     panel = _panel(qtbot, SIMPLE)
     panel.show_clip(_view(time_remapping=TimeRemapping()))
-    fold = panel._level_folds[panel.movement_group]
+    fold = _fold(panel, panel.movement_group, STUDIO)
     assert _shown(panel, fold) and not fold.isChecked()
     diamonds = [*panel._diamonds.values(), panel.frame_align, panel.advanced_transform]
     assert not any(_shown(panel, w) for w in diamonds)
@@ -234,7 +238,7 @@ def test_audio_effect_types_are_listed_by_level_and_the_clip_effects_stay(qtbot)
     assert listed == {"normalize", "bass_boost", "treble_boost"}
     assert combo.count() == len(AudioEffectType)               # rien n'est retiré
     assert combo.itemData(combo.currentIndex()) in listed
-    fold = panel._level_folds[panel.audio_effects_group]
+    fold = _fold(panel, panel.audio_effects_group, ADVANCED)
     fold.click()
     assert {combo.itemData(i) for i in range(combo.count()) if not view.isRowHidden(i)} == {t.value for t in AudioEffectType}
 
@@ -266,23 +270,95 @@ def test_the_keyframe_menu_keeps_the_advanced_entries_for_the_advanced_level(qtb
     assert len(texts) == 5                                              # + interpolation, copier, coller, courbes
 
 
-def test_each_fold_sits_before_the_first_setting_it_reveals(qtbot):
-    """Ouvrir le sous-bloc déplie en dessous du bouton : il précède, dans son groupe, le premier conteneur de niveau."""
-    from PySide6.QtWidgets import QFormLayout
+def _order(panel) -> list:
+    return inspector_order.display_order(panel)
 
+
+def _below_fold(panel, fold) -> list:
+    order = _order(panel)
+    return order[order.index(fold) + 1:]
+
+
+def test_at_simple_no_basic_setting_is_below_a_fold_in_the_visible_groups(qtbot):
+    """Réglages de base au-dessus du pliant (Mouvement, Audio, Sous-titre, Calque graphique, Compositing) ; en dessous, rien de Simple."""
     panel = _panel(qtbot, SIMPLE)
-    assert panel._level_folds
-    for group, fold in panel._level_folds.items():
-        layout = group.layout()
-        items = [layout.itemAt(i).widget() for i in range(layout.count())]
-        anchors = panel._level_anchors(group)
-        assert anchors, group.title()
-        first = next(i for i, w in enumerate(items) if w is not None and (w in anchors or any(w.isAncestorOf(a) for a in anchors)))
-        assert fold in items, group.title()
-        if isinstance(layout, QFormLayout):         # l'index d'un QFormLayout est l'ordre d'insertion, pas l'ordre des lignes
-            assert layout.getWidgetPosition(fold)[0] < layout.getItemPosition(first)[0], group.title()
-        else:
-            assert items.index(fold) < first, group.title()
+    panel.show_clip(_view())
+    simple = {
+        panel.movement_group: [*panel._spin_boxes.values(), *panel._slider_widgets.values(), panel.reset_movement_button,
+                               panel.fill_frame_quick],
+        panel.audio_group: [panel.audio_gain_slider, *panel._fade_spins.values(), panel.reset_fades_button],
+        panel.compositing_group: [panel.compositing_group.crop_editor],
+    }
+    for group, widgets in simple.items():
+        fold = panel._level_folds[group][0]
+        assert _shown(panel, fold), group.title()
+        below = set(_below_fold(panel, fold))
+        assert not [w for w in widgets if w in below], group.title()
+        assert all(_order(panel).index(w) < _order(panel).index(fold) for w in widgets if _shown(panel, w)), group.title()
+    panel.show_clip(_view(track_type="subtitle", text="Salut", text_style=default_text_style()))
+    editor = panel.subtitle_editor
+    fold = panel._level_folds[panel.subtitle_group][0]
+    below = set(_below_fold(panel, fold))
+    basics = [editor.content_editor, editor.font_family_combo, editor.font_size_spin, editor.opacity_spin, editor.text_color_btn,
+              *editor._tiles.values(), editor.reset_button]
+    assert not [w for w in basics if w in below] and all(_shown(panel, w) for w in basics)
+    panel.show_clip(_view(track_type="graphics", graphic=GraphicOverlay()))
+    graphics = panel.graphics_group
+    fold = graphics.level_folds[0]
+    assert _shown(panel, fold) and _shown(panel, graphics.text_section)
+    assert _order(panel).index(graphics.text_section) < _order(panel).index(fold)
+
+
+def test_each_fold_precedes_every_setting_it_reveals_and_the_rest_stays_above(qtbot):
+    """Au niveau Simple, ouvrir tous les pliants : chaque réglage révélé est sous un pliant, jamais au-dessus."""
+    panel = _panel(qtbot, SIMPLE)
+    panel.show_clip(_view(track_type="subtitle", text="Salut", text_style=default_text_style()))
+    sub_gates = [g for g in panel.subtitle_editor.level_gates]
+    assert sub_gates and not any(_shown(panel, g) for g in sub_gates)
+    fold = panel._level_folds[panel.subtitle_group][0]
+    fold.click()
+    order = _order(panel)
+    assert all(_shown(panel, g) and order.index(g) > order.index(fold) for g in sub_gates)
+    panel.show_clip(_view())
+    folds = panel._level_folds[panel.movement_group]
+    gates = [spec.gate for spec in panel._level_gate_specs if spec.group is panel.movement_group and spec.gate.inverse_of is None]
+    for fold in folds:
+        fold.setChecked(True)
+    order = _order(panel)
+    first_fold = min(order.index(f) for f in folds)
+    assert all(order.index(g) > first_fold for g in gates if _shown(panel, g))
+    studio_fold, advanced_fold = (_fold(panel, panel.movement_group, b) for b in (STUDIO, ADVANCED))
+    assert order.index(studio_fold) < order.index(panel.keyframe_block) < order.index(panel.frame_align_gate) < order.index(advanced_fold)
+    assert order.index(advanced_fold) < order.index(panel.advanced_transform_gate)
+
+
+def test_at_studio_the_studio_settings_are_above_the_remaining_fold(qtbot):
+    panel = _panel(qtbot, STUDIO)
+    panel.show_clip(_view())
+    fold = _fold(panel, panel.movement_group, ADVANCED)
+    order = _order(panel)
+    assert not _shown(panel, _fold(panel, panel.movement_group, STUDIO))
+    assert order.index(panel.keyframe_block) < order.index(panel.frame_align_gate) < order.index(fold)
+    assert not _shown(panel, panel.advanced_transform)
+    panel.update_effects_from_clip([], "video")
+    effects_fold = _fold(panel, panel.effects_group, ADVANCED)
+    order = _order(panel)
+    assert order.index(panel.effect_toggle_button) < order.index(panel.effect_remove_button) < order.index(effects_fold)
+    assert not _shown(panel, panel.effect_up_button)
+    effects_fold.click()
+    order = _order(panel)
+    assert order.index(effects_fold) < order.index(panel.effect_up_button) < order.index(panel.effect_down_button)
+
+
+def test_the_voice_pan_follows_the_basic_audio_settings_behind_its_fold(qtbot):
+    panel = _panel(qtbot, SIMPLE)
+    order = _order(panel)
+    fold = _fold(panel, panel.audio_group, STUDIO)
+    assert _shown(panel, fold) and not _shown(panel, panel._audio_pan_row)
+    assert order.index(panel.reset_fades_button) < order.index(fold)
+    fold.setChecked(True)               # (le groupe est désactivé tant qu'aucun clip n'est choisi : pas de clic)
+    order = _order(panel)
+    assert order.index(fold) < order.index(panel._audio_pan_row)
 
 
 # ---------------------------------------------------------------- « Remplir le cadre »
@@ -302,7 +378,7 @@ def test_fill_the_frame_is_a_simple_level_action_that_relays_the_advanced_check(
     panel.show_clip(_view(track_type="graphics", graphic=GraphicOverlay()))
     assert not _shown(panel, quick)                                     # sans objet pour un calque graphique
     panel.show_clip(_view())
-    panel._level_folds[panel.movement_group].click()
+    _fold(panel, panel.movement_group, STUDIO).click()
     assert _shown(panel, panel.advanced_transform) and not _shown(panel, quick)       # jamais deux fois la même case
     panel.set_usage_level(ADVANCED)
     assert not _shown(panel, quick)
@@ -342,34 +418,16 @@ def test_the_window_drives_the_inspector_live(window):  # noqa: F811
 # ---------------------------------------------------------------- non-régression au niveau Avancé
 
 
-def _visible_counts(panel) -> dict[str, dict[str, int]]:
-    states = {
-        "none": None, "video": _view(time_remapping=TimeRemapping()), "video_locked": _view(time_remapping=TimeRemapping(), locked=True),
-        "audio": _view(track_type="audio", time_remapping=TimeRemapping()),
-        "subtitle": _view(track_type="subtitle", text="Salut", text_style=default_text_style()),
-        "graphics": _view(track_type="graphics", graphic=GraphicOverlay()),
-    }
-    result = {}
-    for state, view in states.items():
-        panel.show_clip(view)
-        for tab in range(7):
-            panel._select_inspector_tab(tab)
-            QApplication.processEvents()
-            counts: Counter[str] = Counter()
-            for widget in panel.findChildren(QWidget):
-                name = widget.objectName()
-                if name in IGNORED or name.startswith("qt_") or type(widget).__name__ == "QScrollBar":
-                    continue
-                if widget.isVisibleTo(panel):
-                    counts[f"{type(widget).__name__}|{name}"] += 1
-            result[f"{state}/{tab}"] = dict(sorted(counts.items()))
-    return result
+def test_the_advanced_level_keeps_the_order_of_the_inspector_from_before_the_levels(qtbot):
+    """Liste ordonnée des widgets visibles, identique à celle d'``origin/main`` hors contrôles déplacés à dessein.
 
-
-def test_the_advanced_level_is_the_inspector_from_before_the_levels(qtbot):
+    Déplacés (voir ``tests/inspector_order.moved_roots``) : losanges ‹◆› (bloc « Images-clés » en fin de Mouvement), alignement,
+    transformation avancée et « Réinitialiser » (Mouvement), section « Temps » (fin de Vitesse), panoramique (fin d'Audio),
+    « Réinitialiser » (avant les réglages avancés de Couleur), Sous-titre et Calque graphique (blocs réordonnés), recadrage et fusion.
+    """
     panel = _panel(qtbot, ADVANCED)
-    assert _visible_counts(panel) == json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert not any(_shown(panel, fold) for fold in panel._level_folds.values())
+    assert inspector_order.ordered_dump(panel, inspector_order.clip_states()) == json.loads(GOLDEN.read_text(encoding="utf-8"))
+    assert not any(_shown(panel, fold) for fold in panel._all_folds())
     assert not _shown(panel, panel.more_options_button)
     assert all(not spec.gate.isHidden() or spec.gate.inverse_of for spec in panel._level_gate_specs)
 

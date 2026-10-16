@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
 
 from ui.adaptive_layout import allow_shrinking, make_shrinkable
 from ui.design_system import Radius
-from ui.properties_widgets.level_gate import LevelGate, gated
+from ui.properties_widgets.level_gate import AdvancedFold, LevelGate
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
 from core.usage_level import UsageLevel
@@ -199,19 +199,29 @@ class TextStyleEditor(QWidget):
         colors_grid = QGridLayout()
         colors_grid.setContentsMargins(0, 0, 0, 0)
         colors_grid.setSpacing(4)
-        # Niveau d'usage (Studio) : contour, ombre et fond ont leur conteneur, créé avec eux et lu par l'inspecteur (``level_gates``).
-        self.level_gates: list[LevelGate] = []
         colors_grid.addWidget(_row_label(translate("common.text")), 0, 0)
         colors_grid.addWidget(self.text_color_btn, 0, 1)
+        layout.addLayout(colors_grid)
+
+        # Niveau d'usage (Studio) : contour, ombre, fond, position, marges et remplissage sont construits dans un seul bloc, posé
+        # en fin d'éditeur derrière son pliant « Avancé » (voir plus bas) : tout le reste (Simple) reste au-dessus.
+        self.studio_gate = LevelGate()
+        self.studio_gate.minimum = UsageLevel.STUDIO
+        studio = self.studio_gate.layout()
+        studio.setSpacing(Spacing.sm)
+        self.level_gates: list[LevelGate] = [self.studio_gate]
+        self.studio_fold = AdvancedFold(UsageLevel.STUDIO)
+        self.level_folds: list[AdvancedFold] = [self.studio_fold]
+        extra_grid = QGridLayout()
+        extra_grid.setContentsMargins(0, 0, 0, 0)
+        extra_grid.setSpacing(4)
         for row, (key, button) in enumerate((
             ("mograph.graphics.stroke", self.outline_color_btn), ("mograph.graphics.shadow", self.shadow_color_btn),
             ("field.background", self.background_color_btn),
-        ), start=1):
-            for column, widget in enumerate((_row_label(translate(key)), button)):
-                gate = gated(widget, UsageLevel.STUDIO)
-                self.level_gates.append(gate)
-                colors_grid.addWidget(gate, row, column)
-        layout.addLayout(colors_grid)
+        )):
+            extra_grid.addWidget(_row_label(translate(key)), row, 0)
+            extra_grid.addWidget(button, row, 1)
+        studio.addLayout(extra_grid)
 
         # Contour / ombre / fond opacité
         effect_form = QFormLayout()
@@ -241,7 +251,7 @@ class TextStyleEditor(QWidget):
         effect_form.addRow(
             _row_label(translate("mograph.textstyle.background_opacity")), self.background_opacity_spin
         )
-        self._hosted(effect_form, layout)
+        studio.addLayout(effect_form)
 
         # ----- Alignement 3×3 ---------------------------------------
         align_label = QLabel(translate("mograph.graphics.alignment"))
@@ -286,7 +296,7 @@ class TextStyleEditor(QWidget):
         )
         self.margin_y_spin.valueChanged.connect(self._emit_style_changed)
         pos_form.addRow(_row_label(translate("mograph.textstyle.margin_vertical")), self.margin_y_spin)
-        self._hosted(pos_form, layout)
+        studio.addLayout(pos_form)
 
         # Padding fond
         padding_form = QFormLayout()
@@ -303,23 +313,17 @@ class TextStyleEditor(QWidget):
         )
         self.padding_y_spin.valueChanged.connect(self._emit_style_changed)
         padding_form.addRow(_row_label(translate("mograph.textstyle.padding_vertical")), self.padding_y_spin)
-        self._hosted(padding_form, layout)
+        studio.addLayout(padding_form)
 
         # ----- Bouton réinitialisation ---------------------------------
         self.reset_button = QPushButton(translate("mograph.textstyle.reset"))
         self.reset_button.clicked.connect(self._on_reset_clicked)
         allow_shrinking(self.reset_button, 120)  # dernier recours : libellé coupé plutôt que contenu hors de l'inspecteur
         layout.addWidget(self.reset_button)
+        layout.addWidget(self.studio_fold)
+        layout.addWidget(self.studio_gate)
 
         layout.addStretch(1)
-
-    def _hosted(self, form: QFormLayout, layout: QVBoxLayout) -> None:
-        """Pose ``form`` dans un conteneur de niveau Studio ajouté à ``layout`` (montré ou caché d'un seul geste)."""
-        gate = LevelGate()
-        gate.minimum = UsageLevel.STUDIO
-        gate.layout().addLayout(form)
-        self.level_gates.append(gate)
-        layout.addWidget(gate)
 
     # ----- API publique -------------------------------------------------
 

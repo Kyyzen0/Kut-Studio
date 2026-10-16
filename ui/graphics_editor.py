@@ -39,7 +39,7 @@ from core.usage_level import UsageLevel
 from ui import i18n
 from ui.design_system import Spacing
 from ui.layers_panel import SHAPE_CHOICES
-from ui.properties_widgets.level_gate import LevelGate, gated
+from ui.properties_widgets.level_gate import AdvancedFold, LevelGate, gated
 from ui.theme import label_style
 
 TYPE_NAMES = {  # type de calque -> clé i18n du nom affiché
@@ -136,10 +136,24 @@ class GraphicsEditor(QGroupBox):
     voice_sync_requested = Signal()
 
     def _add_level_section(self, root: QVBoxLayout, section: QWidget, minimum: UsageLevel) -> None:
-        """Pose une section dans un conteneur de niveau d'usage, créé avec elle (la logique par type de calque reste sur la section)."""
+        """Crée le conteneur de niveau d'usage d'une section (la logique par type de calque reste sur la section) ; ``_flush_sections``
+        les pose ensuite dans l'ordre : texte (Simple), puis les sections Studio, puis les sections avancées, chaque palier derrière son pliant."""
         gate = gated(section, minimum)
         self.level_gates.append(gate)
-        root.addWidget(gate)
+        self._pending_sections[section] = gate
+
+    def _flush_sections(self, root: QVBoxLayout) -> None:
+        pending = self._pending_sections
+        root.addWidget(self.text_section)
+        for boundary, sections in (
+            (UsageLevel.STUDIO, (self.stroke_section, self.animation_section, self.style_section)),
+            (UsageLevel.ADVANCED, (self.shape_section, self.glow_section, self.light_section, self.layer_section)),
+        ):
+            fold = AdvancedFold(boundary)
+            self.level_folds.append(fold)
+            root.addWidget(fold)
+            for section in sections:
+                root.addWidget(pending[section])
 
     def __init__(self, group_style: str = "", parent=None) -> None:
         super().__init__(i18n.translate("mograph.graphics.title"), parent)
@@ -152,6 +166,8 @@ class GraphicsEditor(QGroupBox):
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
         self.level_gates: list[LevelGate] = []      # niveau d'usage : sections avancées, lues par l'inspecteur
+        self.level_folds: list[AdvancedFold] = []
+        self._pending_sections: dict[QWidget, LevelGate] = {}
         form = QFormLayout()
         form.setSpacing(Spacing.xs)
         root.addLayout(form)
@@ -252,7 +268,6 @@ class GraphicsEditor(QGroupBox):
         self.autosize_check = QCheckBox(i18n.translate("mograph.graphics.autosize"))
         self.autosize_check.toggled.connect(lambda checked: self._emit("autosize", checked))
         self.text_section.form.addRow(self.autosize_check)
-        root.addWidget(self.text_section)
 
         # --- Néon (textes et formes) et calque de lumière ---------------------------------------
         from core.graphics import LIGHT_KINDS
@@ -331,6 +346,8 @@ class GraphicsEditor(QGroupBox):
         self.motion_blur_check.toggled.connect(lambda checked: self._emit("motion_blur", checked))
         self.layer_section.form.addRow(self.motion_blur_check)
         self._add_level_section(root, self.layer_section, UsageLevel.ADVANCED)
+
+        self._flush_sections(root)
 
         # Compatibilité : anciens accès par nom de champ.
         self.color_edits: dict[str, QLineEdit] = {
