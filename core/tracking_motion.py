@@ -174,10 +174,12 @@ def fit_box(
         ox, oy = -pan_offset(iw - cw, pan_x), -pan_offset(ih - ch, pan_y)
         return FitBox(iw / w, ih / h, float(ox), float(oy), float(iw), float(ih))
     factor = min(cw / w, ch / h)
-    # FFmpeg arrondit la taille réduite à l'entier, puis ``pad`` centre à l'entier.
+    # FFmpeg arrondit la taille réduite à l'entier, puis ``pad`` centre à l'entier. Les bandes sont **paires** : un
+    # décalage impair décalerait la luma d'une ligne sans le plan de chroma 4:2:0 (même formule que
+    # ``export_engine.frame_fit_filter``, ``floor((ow-iw)/4)*2``).
     iw = max(1, min(cw, int(round(w * factor))))
     ih = max(1, min(ch, int(round(h * factor))))
-    return FitBox(iw / w, ih / h, float((cw - iw) // 2), float((ch - ih) // 2), float(iw), float(ih))
+    return FitBox(iw / w, ih / h, float((cw - iw) // 4 * 2), float((ch - ih) // 4 * 2), float(iw), float(ih))
 
 
 def video_layer_matrix(values, canvas_width: float, canvas_height: float) -> Matrix:

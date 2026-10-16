@@ -45,7 +45,7 @@ def test_video_filter_applies_enabled_effects_in_model_order():
 
     assert positions == sorted(positions)
     assert "gblur=sigma=2.0" not in filter_graph
-    assert positions[-1] < filter_graph.index("format=rgba")
+    assert positions[-1] < filter_graph.rindex("format=rgba")  # la conversion finale (la 1re passe devant la sépia)
 
 
 def test_color_grade_runs_after_existing_visual_effects_deterministically():
@@ -59,6 +59,6 @@ def test_color_grade_runs_after_existing_visual_effects_deterministically():
     visual_effect = filter_graph.index("gblur=sigma=4.0")
     color_grade = filter_graph.index("lutrgb=")                 # l'exposition ouvre l'étalonnage
     saturation = filter_graph.index("eq=contrast=1.0:saturation=1.2")
-    alpha_format = filter_graph.index("format=rgba")
+    alpha_format = filter_graph.rindex("format=rgba")  # la conversion finale ; la co-sitée précède le premier filtre RVB
     assert visual_effect < color_grade < saturation < alpha_format
     assert "gamma=" not in filter_graph, "l'exposition n'est plus un gamma"

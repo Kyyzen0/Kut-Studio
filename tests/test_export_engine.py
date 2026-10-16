@@ -388,7 +388,7 @@ def test_build_layer_filter_includes_required_chain():
     assert "trim=start=1.0:end=4.0" in filter_str
     assert "setpts=PTS-STARTPTS" in filter_str
     assert "scale=640:360:force_original_aspect_ratio=decrease" in filter_str
-    assert "pad=640:360:(ow-iw)/2:(oh-ih)/2:black" in filter_str
+    assert "pad=640:360:floor((ow-iw)/4)*2:floor((oh-ih)/4)*2:black" in filter_str   # bandes paires
     assert "fps=30" in filter_str
     assert "setpts=PTS+2.5/TB" in filter_str
     assert filter_str.endswith("[v0]")

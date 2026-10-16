@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Couleurs plus proches de la version App Store.** La chrominance des vidéos 4:2:0 (la plupart des fichiers H.264 et HEVC) n'est plus recopiée par blocs de 2×2 pixels : elle est interpolée à partir du coin haut gauche de chaque bloc, comme le fait macOS. Sur une vidéo HEVC 10 bits en 4K, le nombre de pixels qui s'écartent de plus d'un niveau du rendu de la version App Store passe de 90 % à 0 % (de 21 % à 10 % en H.264 8 bits, le plancher du système). L'aperçu rapide et l'export suivent la même règle. Les bandes noires d'une vidéo mise au cadre sont maintenant d'un nombre pair de pixels (un pixel de moins ou de plus), ce qui évite un décalage de couleur au bord de l'image. Les aperçus fidèles déjà calculés sont recalculés. L'export d'une vidéo 8 bits 1080p prend environ 10 % de temps en plus (mesuré sur Mac, non mesuré sur Windows et Linux).
+
 ## [0.6.3] - 2026-10-16
 
 Version de **correctifs** : l'aperçu du moniteur concorde de nouveau avec l'export quand une matrice de couleur est forcée, sept défauts d'interface relevés lors d'un test réel sur un Mac sont corrigés (molette qui modifiait les champs, saisie « 0,5 », groupe qui se repliait, et d'autres), et la recherche de FFmpeg est plus robuste. Elle ajoute aussi le **réglage du niveau d'usage** (Simple / Studio / Avancé), qui ne masque encore rien.

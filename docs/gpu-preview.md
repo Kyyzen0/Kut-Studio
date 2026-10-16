@@ -464,64 +464,104 @@ changerait le rendu final, ce qui sort de ce chantier (voir les limites).
 ### Chroma 4:2:0
 
 Une vidéo 4:2:0 n'a qu'un échantillon de chroma pour 2×2 pixels. Il faut le
-remonter à pleine résolution, et les deux chemins le faisaient différemment
-jusqu'au 2026-10-11 : le GPU l'**interpolait** (texture bilinéaire), l'export le
-**recopie** sur son bloc (conversion `format=rgba` de swscale). Sur un plan à
-grain chromatique (`print_hook.mp4` d'Onlyfab), l'écart montait à 58 niveaux
-(2,2 en moyenne). Les mires des tests avaient une chroma lente ou constante par
-bloc : aucune ne le voyait.
+remonter à pleine résolution. Jusqu'au 2026-10-16, l'export et le moniteur le
+**recopiaient** sur son bloc (conversion `format=rgba` de swscale côté export,
+lecture au centre du bloc côté moniteur) ; avant le 2026-10-11, le moniteur
+l'interpolait au centre, ce qui s'écartait de 58 niveaux de l'export sur un plan
+à grain chromatique (`print_hook.mp4` d'Onlyfab). La version App Store
+(AVFoundation) fait autre chose, et c'est elle que la version normale doit
+rejoindre.
 
-**Règle commune : celle de l'export.** La passe `prep` lit la chroma une fois
-par bloc 2×2 **du calque** (à la taille du cadre, donc indépendamment de la
-taille de la source et de la résolution de rendu), au centre du bloc
-(`layer_chroma_grid`, `misc.xy` du shader). Quand l'échelle du clip
-redimensionne le calque, l'export convertit dans son `scale` animé (chemin
-redimensionné de swscale), qui traite les axes différemment : la chroma y reste
-recopiée par paires en largeur mais interpolée en hauteur. Le moniteur garde
-donc les blocs en largeur tant que la largeur du calque ne change pas (*Scale Y*
-seul), et interpole sinon, le modèle le plus proche. Rotation, miroirs et
-déplacement ne changent rien : `rotate` et `overlay` travaillent après la
-conversion, sur l'image RVB **écrêtée**. Le moniteur convertit donc lui aussi le
-calque en RVB avant la passe composite (`layer_composite_space`) ; il gardait le
-YUV, et interpolait des couleurs hors gamut que l'export avait déjà écrêtées.
-Seule exception : un calque **tourné avec des effets**. Un effet qui ne
-travaille qu'en YUV (`eq`…) place `rotate` avant la conversion, qui tourne alors
-les plans 4:2:0 ; le moniteur y garde l'interpolation, comme avant. Le heat haze de l'export passe en `yuva444p` avec
-`scale=flags=neighbor` : avec le `bicubic` par défaut, il était seul à
-interpoler la chroma, et un grain changeait de 20 niveaux en activant l'effet.
-Tout filtre d'export qui passe de 4:2:0 à 4:4:4 doit faire de même.
+**Règle commune : chroma co-sitée en haut à gauche, interpolée.** L'échantillon
+de chroma est posé sur le pixel haut gauche de son bloc 2×2 ; les trois autres
+pixels reçoivent une interpolation bilinéaire (la moitié de l'échantillon et de
+son voisin sur chaque axe, bords répétés).
 
-Mesuré sur la mire `grain_pattern` (chroma aléatoire à chaque échantillon, le
-pire cas), écart moyen à l'image de l'export réel :
+- **Export** (`core/chroma_siting.py`) : une seule étape,
+  `scale=flags=bilinear+full_chroma_int+accurate_rnd:in_h_chr_pos=0:in_v_chr_pos=0,format=rgba`.
+  Les trois flags sont nécessaires : sans `accurate_rnd`, swscale garde son chemin
+  rapide et **recopie** la chroma des sources 8 bits (octets identiques) ;
+  `full_chroma_int` seul ne suffit donc pas. Les positions explicites rendent le
+  résultat indépendant de l'étiquette `chroma_location` du flux. La chaîne est
+  posée devant le premier filtre qui impose du RVB (`format=rgba`, `sepia`,
+  `lutrgb`…, `siting_before_rgb`) ; elle ne touche rien d'autre : `accurate_rnd`
+  change l'arrondi de toute conversion YUV → RVB. Le heat haze, qui passe en
+  `yuva444p`, l'utilise aussi (il recopiait avant, `flags=neighbor`).
+- **Moniteur** : la passe `prep` lit la chroma un quart de bloc du calque (un
+  demi-pixel de luma) plus loin que le pixel, par la texture de chroma en filtre
+  linéaire (`misc.xy` > 0 du shader, `layer_chroma_grid`). La référence numpy
+  (`reference_frame`) calcule la même chose ; elle reste la référence de parité.
+- **Bandes de mise au cadre paires.** `pad` pose une image à un décalage impair en
+  décalant la luma d'une ligne, mais pas le plan de chroma 4:2:0 : un
+  demi-échantillon de désalignement que la recopie masquait. `frame_fit_filter`
+  (`floor((ow-iw)/4)*2`) et `fit_box` (`//4*2`) arrondissent donc les bandes au
+  pair, d'un pixel au plus. Mesuré dans un cadre 640×362 (bande de 1 pixel) avec
+  la chroma centrée (la règle d'abord envisagée) : écart moniteur ↔ export de 4,9
+  niveaux en moyenne avec des bandes impaires, contre 2,3 pour la recopie ; avec
+  des bandes paires et la règle retenue, 0,94, comme un cadre 640×400.
+- **Calques déjà rééchantillonnés par l'export : inchangés.** Quand l'échelle du
+  clip redimensionne le calque, l'export convertit dans son `scale` animé, qui
+  traite les axes différemment (chroma recopiée par paires en largeur, interpolée
+  en hauteur) : il garde ses réglages par défaut, sans la chaîne ci-dessus. Le
+  moniteur modélise cela par le **signe** de `misc.xy` : positif, co-sitée ;
+  négatif (valeur absolue : blocs par axe), recopiée par bloc (axe laissé intact
+  par une échelle sur l'autre axe, *Scale Y* seul) ; nul, interpolée au centre
+  (axe rééchantillonné). Même exception qu'avant pour un calque **tourné avec des
+  effets** : un effet qui ne travaille qu'en YUV (`eq`…) place `rotate` avant la
+  conversion, qui tourne alors les plans 4:2:0. Rotation, miroirs et déplacement
+  sans effet ne changent rien : l'export convertit juste après l'échelle, `rotate`
+  et `overlay` travaillent sur l'image RVB **écrêtée**, et le moniteur convertit
+  aussi le calque en RVB avant la passe composite (`layer_composite_space`).
 
-| Calque | Règle commune | Chroma interpolée (avant) |
-|---|---|---|
-| sans échelle (identité, déplacé, bandes, tourné de 15° sans effet) | **0,3 à 0,8** | 19 à 28 |
-| source réduite ou agrandie par l'adaptation | **12 à 13** | 17 à 23 |
-| échelle de clip 0,7, avec ou sans rotation | 12 à 22 (interpolée) | identique ; recopiée : 21 à 30 |
-| *Scale Y* 0,7 seul (blocs gardés en largeur) | 15,7 | 25,1 |
-| *Scale X* 0,7 seul (interpolée) | 19,5 | identique ; blocs gardés en hauteur : 23,3 |
-| tourné de 15° avec une correction (interpolée) | 14,6 | identique ; recopiée : 30,5 |
+Mesuré le 2026-10-16 (FFmpeg 9.0.2, macOS arm64, Metal) :
 
-Sur la mire lisse, l'identité passe de 1,9 à 0,4 niveau. Le vrai GPU suit la
-référence (`selfcheck`, cas `letterbox` : source plus grande, centrée, à
-2 taps) : 0,18 niveau en moyenne sous Metal, 0,32 sous OpenGL.
+| Écart de l'export à AVFoundation (image 150, 4K, BGRA) | max | moyenne | > 1 niveau |
+|---|---|---|---|
+| H.264 8 bits, recopie (avant) | 56 | 0,463 | 21,2 % |
+| H.264 8 bits, co-sitée | 3 | 0,351 | 10,0 % |
+| HEVC 10 bits, recopie (avant) | 41 | 1,716 | 90,1 % |
+| HEVC 10 bits, co-sitée | 2 | 0,375 | 0,0 % |
 
-**Pourquoi ne pas interpoler dans l'export ?** Mesuré le 2026-10-11 (M4) :
-- swscale n'interpole qu'avec `bilinear+full_chroma_int+accurate_rnd` réunis
-  (sans `accurate_rnd`, il garde son chemin rapide et recopie ; en `bicubic`,
-  il interpole avec un autre noyau) ;
-- le code C de FFmpeg 7.1 (`-cpuflags 0`, le chemin des machines sans SIMD pour
-  cette conversion) donne avec ces options un résultat qui ne suit aucun modèle
-  (15,8 niveaux du bilinéaire) ; FFmpeg 9 et 7.1 SIMD sont exacts ;
-- la conversion seule coûte ×4 (1,2 → 5 ms par image 1080×1920), soit environ
-  +2 % de temps CPU sur l'export d'Onlyfab (`tools/perf/engine_bench.py`) ;
-- `sws_flags` ne touche que les conversions insérées par FFmpeg : il faudrait
-  aussi des options sur chaque `scale` explicite ;
-- la sortie repasse en `yuv420p` : le gain d'une chroma interpolée disparaît à
-  l'encodage, sauf sous des calques incrustés.
+Les 10 % restants en H.264 sont le plancher d'AVFoundation (arrondi de sa propre
+conversion) : le meilleur ajustement possible, mesuré à part, reste à 9,9 %.
 
-L'export reste donc la référence, et le moniteur la suit.
+| Écart moniteur ↔ export (calque à la taille du cadre, 8 bits) | max | moyenne | > 1 niveau |
+|---|---|---|---|
+| mire à grain 320×180 | 1 | 0,045 | 0 % |
+| images réelles 720p et 960×540 (H.264, HEVC) | 1 | 0,021 à 0,027 | 0 % |
+| décalé de (3,1), (2,2), (5,7) pixels | 1 | idem | 0 % |
+| même chose avec l'ancienne règle (recopie des deux côtés) | 1 | 0,26 à 0,27 | 0 % |
+| letterbox 720p → 640×400 ou 640×362 (luma réduite) | 86 (aux arêtes) | 0,87 à 0,95 | 29 à 32 % |
+
+L'écart du letterbox vient du rééchantillonnage de la luma (le moniteur filtre à
+2 taps, swscale en bicubique), pas de la chroma : il était de 2,3 avec la recopie.
+Sur une source 10 bits (`p010`), le moniteur garde un biais propre d'environ −0,8
+niveau en rouge et −1 en bleu (les constantes de la matrice supposent 16/255 et
+128/255 quand les codes sont normalisés par 1023) : moyenne de 0,7, **hors de
+cette règle** ; la recopie l'atténuait par hasard avec le biais sombre de la
+conversion 10 bits de swscale (−2 niveaux, que la nouvelle chaîne supprime).
+
+**Coût de l'export.** La conversion passe de 0,9 à 8 ms de CPU par image 1080p en
+8 bits (environ ×9 sur la seule conversion, mesuré sur macOS arm64), et de 8,2 à
+8,8 ms en 10 bits (le chemin générique de swscale servait déjà). Dans un rendu
+complet 1080p (décodage, `scale` + `pad`, `overlay`, x264 veryfast, 300 images,
+threads par défaut) : +11 % de CPU et +10 % de temps réel avec une couche 8 bits,
++17 % de CPU avec deux, +1 % en 10 bits. Les mêmes mesures avec un format
+intermédiaire de 16 bits (`yuv444p16le`) : 17,7 ms, +26 %, jugé trop cher.
+**Le chemin x86-64 (Linux, Windows) n'est pas mesuré** : le coût y diffère
+sans doute. Le résultat, lui, est identique avec FFmpeg 9.0.2, 7.1 et le code C
+de FFmpeg 9 sans SIMD (écart à la référence flottante : max 1, moyenne 0,004) ;
+le code C de 7.1 s'écarte au plus de 7 niveaux sur 0,02 % des pixels.
+
+**Ce que la règle ne couvre pas.** Le moniteur applique les effets après avoir
+suréchantillonné la chroma, l'export applique `eq` aux plans 4:2:0 avant : sur une
+chroma qui change à chaque pixel (mire à grain) avec une forte saturation,
+l'écrêtage ne commute plus avec l'interpolation (2,7 niveaux d'écart moyen pour
+`eq` saturation 1,8, contre 0,5 avec la recopie ; 0,4 sur une chroma lente).
+Un filtre RVB de l'étalonnage placé après un filtre YUV reste converti par
+FFmpeg avec ses réglages par défaut (recopie) s'il précède le premier
+`format=rgba` que la chaîne repère ; les filtres reconnus sont dans
+`core/chroma_siting.py`.
 
 **Le décodage matériel ne change pas les pixels.** VideoToolbox donne, au bit
 près, les mêmes images que le décodeur logiciel en H.264 et HEVC
