@@ -104,8 +104,9 @@ def compare_filters(graded: str, split: float, tag: str) -> str:
     share = min(1.0, max(0.0, float(split)))
     if not graded or share <= 0.0:
         return graded
+    # ``format=rgba`` avant le ``split`` : la conversion co-sitée (chroma_siting) se pose ici, une fois, pour les deux moitiés.
     return (
-        f"split=2[{tag}o][{tag}i];[{tag}i]null,{graded}[{tag}g];"
+        f"format=rgba,split=2[{tag}o][{tag}i];[{tag}i]null,{graded}[{tag}g];"
         f"[{tag}o]format=rgba,crop=w='max(2,trunc(iw*{share:.6f}/2)*2)':h=ih:x=0:y=0[{tag}l];"
         f"[{tag}g]format=rgba[{tag}r];[{tag}r][{tag}l]overlay=x=0:y=0:format=rgb"
     )
