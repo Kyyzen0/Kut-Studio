@@ -36,7 +36,7 @@ Version de **correctifs** : l'aperçu du moniteur concorde de nouveau avec l'exp
 
 ### Added
 
-- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
+- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; il règle ce qui est affiché (l'inspecteur est sensible au niveau ; les menus et raccourcis suivront). Voir [docs/usage-levels.md](docs/usage-levels.md).
 
 ### Fixed
 
