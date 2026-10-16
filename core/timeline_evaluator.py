@@ -187,8 +187,9 @@ def evaluate_timeline(
     sont pas comptés.
 
     Le média référencé par chaque clip actif est résolu via
-    ``project.media_assets``. Tout clip actif dont l'identifiant de média
-    est absent du projet provoque une :class:`KeyError` explicite.
+    ``project.media_assets``. Un clip dont le média a été retiré est
+    ignoré (hors ligne), comme :meth:`TimelineIndex.active_at` et le plan
+    de rendu — jamais d'exception pour un média manquant.
 
     Args:
         project: projet à évaluer (non muté).
@@ -203,8 +204,7 @@ def evaluate_timeline(
 
     Raises:
         ValueError: si ``time_seconds`` est strictement négatif.
-        KeyError: si un clip actif référence un média introuvable dans
-            ``project.media_assets``.
+        KeyError: si ``sequence_id`` est fourni et introuvable.
     """
     if time_seconds < 0.0:
         raise ValueError(
@@ -257,9 +257,7 @@ def _evaluate_sequence(
                 continue
             asset = assets.get(clip.asset_id)
             if asset is None:
-                raise KeyError(
-                    f"Média '{clip.asset_id}' introuvable dans le projet '{project.name}'."
-                )
+                continue  # média supprimé : clip hors ligne (même contrat que TimelineIndex)
             active.append(
                 _build_active_clip(
                     clip=clip,

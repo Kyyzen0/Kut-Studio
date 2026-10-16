@@ -945,3 +945,81 @@ def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
 
     assert failed, "failed doit être émis quand libass manque"
     assert "libass" in failed[0].lower()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "http://evil.example/a.mp4",
+        "https://evil.example/a.mp4",
+        "rtsp://cam/stream",
+        "lavfi:color=c=red",
+        "concat:a.mp4|b.mp4",
+        "concatf:list.txt",
+        "file:///etc/passwd",
+        "pipe:0",
+    ],
+)
+def test_remote_or_protocol_media_paths_are_rejected(path):
+    """Un .kut ne doit pas pouvoir ouvrir une URL ou un protocole FFmpeg."""
+    with pytest.raises(ValueError, match="protocole non local"):
+        export_engine.require_local_ffmpeg_path(path)
+    with pytest.raises(ValueError, match="protocole non local"):
+        export_engine.input_arguments(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/tmp/local.mp4",
+        "C:/Videos/clip.mp4",
+        r"D:\media\clip.mp4",
+        "relative/clip.mp4",
+        "",
+        "/media/clip.mp4 ",
+    ],
+)
+def test_local_media_paths_are_accepted(path):
+    assert export_engine.require_local_ffmpeg_path(path) == path
+    args = export_engine.input_arguments(path)
+    assert path in args
+    assert args[0:2] == ["-protocol_whitelist", "file,pipe,crypto,data"]
+
+
+def test_export_command_whitelists_protocols_before_every_input(engine, tmp_path):
+    first = tmp_path / "v.mp4"
+    second = tmp_path / "w.mp4"
+    first.write_bytes(b"")
+    second.write_bytes(b"")
+    project = _make_project_with_video(str(first), v2_clip=(0.0, 2.0))
+    project.media_assets.append(
+        MediaAsset(
+            id="asset-w",
+            path=str(second),
+            name="W",
+            duration=10.0,
+            width=1920,
+            height=1080,
+            fps=30.0,
+            media_type="video",
+        )
+    )
+    project.tracks[1].clips[0].asset_id = "asset-w"
+    plan = build_render_plan(project)
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(tmp_path / "out.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(
+            name="X", resolution=(160, 90), crf=18, audio_bitrate="192k"
+        ),
+        fps=15,
+    )
+    command = engine._build_command(request)
+    input_indexes = [i for i, arg in enumerate(command) if arg == "-i"]
+    assert len(input_indexes) >= 2
+    for index in input_indexes:
+        preceding = command[max(0, index - 8) : index]
+        assert "-protocol_whitelist" in preceding
+        wi = preceding.index("-protocol_whitelist")
+        assert preceding[wi + 1] == "file,pipe,crypto,data"

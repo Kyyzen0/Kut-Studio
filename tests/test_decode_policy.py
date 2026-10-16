@@ -314,7 +314,11 @@ def test_preview_segments_put_hwaccel_before_media_inputs_only(tmp_path, monkeyp
     output = engine._default_render(PreviewJob(key="k", plan=plan, width=64, height=36, fps=10), None)
     assert output and os.path.exists(output)
     first = commands[0]
-    assert first[first.index("-hwaccel") + 2] == "-i" and first[first.index("-hwaccel") + 3] == str(media)
+    hw = first.index("-hwaccel")
+    # hwaccel (option d'entrée) puis whitelist / -i du média — pas sur les listes .ffconcat.
+    assert first[hw : hw + 2] == ["-hwaccel", first[hw + 1]]
+    assert "-i" in first[hw + 2 :]
+    assert first[first.index("-i", hw) + 1] == str(media)
     assert "-hwaccel" not in commands[1]  # relancé en CPU
     assert default_context().health.fallbacks == 1
     os.remove(output)

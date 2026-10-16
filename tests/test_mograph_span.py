@@ -135,8 +135,11 @@ def test_every_frame_of_a_30fps_animation_reaches_ffmpeg(tmp_path, monkeypatch):
 
 
 def test_only_layer_playlists_get_the_concat_options():
-    assert input_arguments("/cache/mograph/s-1.ffconcat")[-4:] == ["-safe", "0", "-i", "/cache/mograph/s-1.ffconcat"]
-    assert input_arguments("/media/clip.mp4") == ["-i", "/media/clip.mp4"]
+    whitelist = ["-protocol_whitelist", "file,pipe,crypto,data"]
+    assert input_arguments("/cache/mograph/s-1.ffconcat") == [
+        *whitelist, "-threads", "2", "-f", "concat", "-safe", "0", "-i", "/cache/mograph/s-1.ffconcat",
+    ]
+    assert input_arguments("/media/clip.mp4") == [*whitelist, "-i", "/media/clip.mp4"]
 
 
 def test_parallel_png_writes_produce_the_bytes_of_a_serial_write(tmp_path, monkeypatch):
@@ -180,4 +183,6 @@ def test_several_media_share_the_decoding_threads(monkeypatch):
     assert decoder_threads(["/media/a.mp4", "/media/b.wav"]) == 5
     assert decoder_threads([f"/media/{index}.mp4" for index in range(19)]) == 2
     assert decoder_threads(["/media/a.mp4", "/cache/s-1.ffconcat"]) == 0  # les listes d'images ont leurs 2 fils
-    assert input_arguments("/media/a.mp4", threads=2) == ["-threads", "2", "-i", "/media/a.mp4"]
+    assert input_arguments("/media/a.mp4", threads=2) == [
+        "-protocol_whitelist", "file,pipe,crypto,data", "-threads", "2", "-i", "/media/a.mp4",
+    ]

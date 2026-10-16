@@ -453,8 +453,8 @@ def test_negative_time_raises_value_error():
         evaluate_timeline(project, -0.1)
 
 
-def test_missing_media_for_active_clip_raises_key_error():
-    """Un clip actif référençant un média absent lève une ``KeyError`` claire."""
+def test_missing_media_for_active_clip_is_skipped():
+    """Un clip actif dont le média a disparu est hors ligne : rien à montrer."""
     track = Track(
         id="V1",
         name="V1",
@@ -471,8 +471,7 @@ def test_missing_media_for_active_clip_raises_key_error():
     # Le projet ne contient pas le média "ghost-asset".
     project = _make_project(tracks=[track])
 
-    with pytest.raises(KeyError, match="ghost-asset"):
-        evaluate_timeline(project, 0.5)
+    assert evaluate_timeline(project, 0.5) == []
 
 
 # ---------------------------------------------------------------------------

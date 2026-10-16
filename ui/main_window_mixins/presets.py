@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
 
 from core.compositing_guard import clip_edit_refusal
 from core.effects_library import (
@@ -232,7 +232,7 @@ class PresetsMixin:
             default_name=default_name,
             default_category=EffectCategory.LOOK,
         )
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != QDialog.Accepted:
             return
         name, description, category = dialog.result_data()
         if not name:
@@ -398,7 +398,7 @@ class PresetsMixin:
             default_type=existing_type,
             default_duration=existing_duration,
         )
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != QDialog.Accepted:
             return
         name, description, transition_type, duration = dialog.result_data()
         if not name:
