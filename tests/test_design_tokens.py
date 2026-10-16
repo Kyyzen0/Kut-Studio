@@ -284,13 +284,13 @@ def test_no_widget_uses_a_radius_a_text_size_or_a_weight_outside_the_scales():
 
 #: Couleurs ``#rrggbb`` en dur par fichier : un **cliquet**. Il ne peut que diminuer ; un nouveau fichier part de zéro.
 #: Ce qui reste est de la **donnée**, jamais de l'habillage (l'habillage vient de ``ui/theme.py``) :
-#:   compositing_editor : les teintes de clé chroma proposées (vert, bleu) ;
+#:   compositing_sections : les teintes de clé chroma proposées (vert, bleu) ;
 #:   graphics_editor    : les valeurs par défaut des champs de couleur d'un calque (remplissage, contour, ombre, fond) ;
 #:   construction       : le fond du projet affiché dans l'inspecteur (une valeur du projet, pas une couleur d'interface) ;
 #:   text_style_editor  : les couleurs que l'utilisateur choisit pour un style de texte et leurs valeurs par défaut ;
 #:   debug_overlay      : la surcouche de débogage, toujours sombre quel que soit le thème (texte vert sur fond translucide).
 HEX_BASELINE: dict[str, int] = {
-    "ui/compositing_editor.py": 2,
+    "ui/compositing_sections.py": 2,
     "ui/debug_overlay.py": 1,
     "ui/graphics_editor.py": 4,
     "ui/text_style_editor.py": 8,
