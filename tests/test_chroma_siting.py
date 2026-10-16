@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.chroma_siting import CHROMA_SITING_SCALE, siting_before_rgb
+from core.chroma_siting import CHROMA_SITING_444, CHROMA_SITING_SCALE, CHROMA_SITING_TO_RGBA, siting_before_rgb
 from core.effects_model import ClipEffect, EffectType
 from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest
 from core.project_model import Clip, MediaAsset, Project, Track
@@ -68,8 +68,8 @@ def test_the_heat_haze_converts_with_the_same_rule_and_nothing_converts_twice():
 def test_siting_goes_before_the_first_rgb_filter_only():
     chain = "eq=contrast=1.1,gblur=sigma=2,colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba"
     assert siting_before_rgb(chain) == (
-        f"eq=contrast=1.1,gblur=sigma=2,{CHROMA_SITING_SCALE},format=rgba,colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba")
-    assert siting_before_rgb("format=rgba,split") == f"{CHROMA_SITING_SCALE},format=rgba,split"
+        f"eq=contrast=1.1,gblur=sigma=2,{CHROMA_SITING_TO_RGBA},colorchannelmixer=.3:.7:.2,lutrgb=r=val,format=rgba")
+    assert siting_before_rgb("format=rgba,split") == f"{CHROMA_SITING_TO_RGBA},split"
     assert siting_before_rgb("eq=contrast=1.1") == "eq=contrast=1.1"          # rien d'RVB : inchangé
     assert siting_before_rgb("format=rgba64le,eq=gamma=1") == "format=rgba64le,eq=gamma=1"
 
@@ -79,3 +79,19 @@ def test_only_this_chain_uses_accurate_rounding():
     conversions des effets ne le portent pas."""
     graph = _layer_graph({}, [EQ])
     assert graph.count("accurate_rnd") == 1
+
+
+def test_the_conversion_goes_through_one_16_bit_444_step_and_never_a_bare_scale_before_rgba():
+    """Défaut de swscale 6.1 / 7.1 (écart max 196, 0,9 % des pixels) : ``scale=…,format=rgba`` direct est faux ; le
+    16 bits intermédiaire corrige. Non rejouable sur FFmpeg 9 (la chaîne directe y est juste) : on vérifie la forme."""
+    # ``yuva`` et non ``yuv`` : un calque RVBA (fond transparent, composition vide) perdrait son alpha, rendu noir opaque.
+    assert CHROMA_SITING_TO_RGBA == f"{CHROMA_SITING_SCALE},format=yuva444p16le,format=rgba"
+    chains = [siting_before_rgb("format=rgba,split"), siting_before_rgb("eq=contrast=1.1,lutrgb=r=val"),
+              siting_before_rgb("colorchannelmixer=.3:.7:.2,format=rgba"), _layer_graph({}, []),
+              _layer_graph({}, [EQ]), _layer_graph({}, [_effect(EffectType.SEPIA)])]
+    for chain in chains:
+        assert chain.count("yuva444p16le") == 1, chain
+        assert f"{CHROMA_SITING_SCALE},format=yuva444p16le,format=rgba" in chain, chain
+        assert f"{CHROMA_SITING_SCALE},format=rgba" not in chain, chain
+    assert siting_before_rgb("format=rgba,split").count("format=rgba") == 1             # pas de second format=rgba
+    assert siting_before_rgb("eq=contrast=1.1,lutrgb=r=val").startswith(f"eq=contrast=1.1,{CHROMA_SITING_444},format=rgba,")

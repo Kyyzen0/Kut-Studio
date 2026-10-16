@@ -477,8 +477,8 @@ de chroma est posé sur le pixel haut gauche de son bloc 2×2 ; les trois autres
 pixels reçoivent une interpolation bilinéaire (la moitié de l'échantillon et de
 son voisin sur chaque axe, bords répétés).
 
-- **Export** (`core/chroma_siting.py`) : une seule étape,
-  `scale=flags=bilinear+full_chroma_int+accurate_rnd:in_h_chr_pos=0:in_v_chr_pos=0,format=rgba`.
+- **Export** (`core/chroma_siting.py`) : `scale=flags=bilinear+full_chroma_int+accurate_rnd:in_h_chr_pos=0:in_v_chr_pos=0,format=yuva444p16le,format=rgba`
+  (`yuva` pour garder l'alpha d'un calque RVBA ; le 16 bits intermédiaire corrige un défaut de swscale 6.1 / 7.1, voir « Pourquoi un format intermédiaire de 16 bits »).
   Les trois flags sont nécessaires : sans `accurate_rnd`, swscale garde son chemin
   rapide et **recopie** la chroma des sources 8 bits (octets identiques) ;
   `full_chroma_int` seul ne suffit donc pas. Les positions explicites rendent le
@@ -541,17 +541,21 @@ niveau en rouge et −1 en bleu (les constantes de la matrice supposent 16/255 e
 cette règle** ; la recopie l'atténuait par hasard avec le biais sombre de la
 conversion 10 bits de swscale (−2 niveaux, que la nouvelle chaîne supprime).
 
-**Coût de l'export.** La conversion passe de 0,9 à 8 ms de CPU par image 1080p en
-8 bits (environ ×9 sur la seule conversion, mesuré sur macOS arm64), et de 8,2 à
-8,8 ms en 10 bits (le chemin générique de swscale servait déjà). Dans un rendu
-complet 1080p (décodage, `scale` + `pad`, `overlay`, x264 veryfast, 300 images,
-threads par défaut) : +11 % de CPU et +10 % de temps réel avec une couche 8 bits,
-+17 % de CPU avec deux, +1 % en 10 bits. Les mêmes mesures avec un format
-intermédiaire de 16 bits (`yuv444p16le`) : 17,7 ms, +26 %, jugé trop cher.
-**Le chemin x86-64 (Linux, Windows) n'est pas mesuré** : le coût y diffère
-sans doute. Le résultat, lui, est identique avec FFmpeg 9.0.2, 7.1 et le code C
-de FFmpeg 9 sans SIMD (écart à la référence flottante : max 1, moyenne 0,004) ;
-le code C de 7.1 s'écarte au plus de 7 niveaux sur 0,02 % des pixels.
+**Coût de l'export.** Mesuré sur macOS arm64 avec FFmpeg 9.0.2 (`ffmpeg -benchmark`, `testsrc2` 1080p, 300 images,
+`utime` somme des threads) : `format=rgba` seul 1,3 ms de CPU par image, la chaîne directe (`scale`, `format=rgba`)
+9,3 ms, la chaîne retenue (`scale`, `format=yuva444p16le`, `format=rgba`) 19,7 ms (yuv444p16le sans alpha ; avec `yuva` 20,2 ms), soit environ 18 ms de plus que la
+recopie. Dans un rendu 1080p à une couche (`format=rgba,format=yuv420p` puis x264 medium, 300 images) :
+12,9 s → 18,9 s de CPU (+47 %) et 1,93 s → 2,57 s de temps réel (+33 %) ; ce rendu est minimal (aucun `overlay`,
+aucun `pad`), le surcoût relatif est plus faible dans un export réel. **Le chemin x86-64 (Linux, Windows) n'est pas
+mesuré en coût** : il diffère sans doute.
+
+**Pourquoi un format intermédiaire de 16 bits.** Sur une entrée déterministe (320×180 yuv420p, bruit graine 7) contre
+une référence flottante co-sitée BT.601, la chaîne directe donne un écart max de 1 (moyenne 0,036) avec FFmpeg 9.0.2,
+mais un écart max de 196 sur 0,9 % des pixels avec FFmpeg 6.1.1 et 7.1.5 (Linux x86-64), identique avec
+`-cpuflags 0` : le défaut est dans swscale de ces versions, pas dans le SIMD. Avec `format=yuv444p16le` entre
+`scale` et `format=rgba`, l'écart max est de 1 (moyenne 0,036) sur les trois versions ; `format=gbrp` est identique ;
+`yuv444p` en 8 bits ne suffit pas (max 2, moyenne 0,25). `yuva444p16le` (retenu pour garder l'alpha) n'a été mesuré que sur FFmpeg 9.0.2. Ces mesures x86 sont celles du développeur, rejouées
+dans des conteneurs ; la CI ne les rejoue pas.
 
 **Ce que la règle ne couvre pas.** Le moniteur applique les effets après avoir
 suréchantillonné la chroma, l'export applique `eq` aux plans 4:2:0 avant : sur une

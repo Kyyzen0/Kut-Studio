@@ -299,17 +299,17 @@ def test_the_heat_haze_of_the_export_sites_420_chroma_like_the_rest():
 
 
 def _export_layer_rgba(codes, *, siting=True):
-    """La conversion du calque de l'export (:data:`core.chroma_siting.CHROMA_SITING_SCALE` puis ``format=rgba``) d'une
+    """La conversion du calque de l'export (:data:`core.chroma_siting.CHROMA_SITING_TO_RGBA`) d'une
     image ``yuv420p`` (chroma : coin haut gauche des blocs 2×2, comme ``make_frame``), en RVB 0..1. ``siting=False`` :
     ``format=rgba`` seul (l'ancienne règle, recopie)."""
-    from core.chroma_siting import CHROMA_SITING_SCALE
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
 
     np = pytest.importorskip("numpy")
     height, width = codes.shape[:2]
     raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
-         "-vf", (CHROMA_SITING_SCALE + "," if siting else "") + "format=rgba", "-f", "rawvideo", "-"],
+         "-vf", CHROMA_SITING_TO_RGBA if siting else "format=rgba", "-f", "rawvideo", "-"],
         input=raw, capture_output=True, check=True,
     )
     return np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
@@ -361,14 +361,14 @@ def test_a_layer_moved_by_whole_pixels_keeps_its_chroma_grid_like_the_export(shi
     chroma reste celle du calque, pas celle du cadre. L'oracle (qui lit la chroma dans l'espace du calque) et l'export
     (``overlay=x:y``) concordent donc pour tout décalage ; un décalage impair ne tombe pas sur une frontière de texel."""
     np = pytest.importorskip("numpy")
-    from core.chroma_siting import CHROMA_SITING_SCALE
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
     from core.gpu_composite import reference_frame
     from tests.gpu_harness import grain_pattern, reference_codes
 
     width, height = 320, 180
     codes = grain_pattern(width, height)
     raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
-    graph = (f"[0:v]{CHROMA_SITING_SCALE},format=rgba[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
+    graph = (f"[0:v]{CHROMA_SITING_TO_RGBA}[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
              f"[bg][l]overlay={shift[0]}:{shift[1]}:format=rgb:shortest=1,format=rgba[o]")
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",

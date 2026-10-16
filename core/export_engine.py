@@ -56,7 +56,7 @@ from PySide6.QtCore import QObject, QProcess, Signal
 from . import process_supervisor
 from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
-from .chroma_siting import CHROMA_SITING_SCALE, siting_before_rgb
+from .chroma_siting import CHROMA_SITING_444, CHROMA_SITING_SCALE, CHROMA_SITING_TO_RGBA, siting_before_rgb
 from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
@@ -2477,7 +2477,7 @@ def _build_layer_filter(
     # Chroma 4:2:0 (:mod:`core.chroma_siting`) : uniquement sur un calque que l'échelle du clip ne rééchantillonne pas.
     # Les autres axes sont déjà interpolés par le ``scale`` de l'export, que le moniteur modélise (``_resampled_axes``).
     siting = _scale_is_identity(transform, kfs)
-    siting_prefix = f"{CHROMA_SITING_SCALE}," if siting and matte_label is not None else ""
+    siting_prefix = f"{CHROMA_SITING_444}," if siting and matte_label is not None else ""
 
     def apply_matte() -> str:
         """Multiplie l'alpha du calque (taille du cadre) par la matte."""
@@ -2582,7 +2582,7 @@ def _build_layer_filter(
     has_effects = bool(effect_filters or color_grade_filters)
     converts_here = siting and matte_label is None and not layer_space_filters and not (rotation_expr and has_effects)
     if converts_here and not has_effects:
-        parts.append(f"{CHROMA_SITING_SCALE},format=rgba,")
+        parts.append(f"{CHROMA_SITING_TO_RGBA},")
     if flip_filters:
         parts.append(f"{flip_filters},")
     if rotation_expr:

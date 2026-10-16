@@ -140,7 +140,7 @@ def _export_case(api: str, width: int, height: int, shift: tuple[int, int]) -> d
 
     import numpy as np
 
-    from core.chroma_siting import CHROMA_SITING_SCALE
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
     from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource
     from core.gpu_effects import program_for
     from tests.gpu_harness import grain_pattern, make_frame, render_gpu
@@ -150,7 +150,7 @@ def _export_case(api: str, width: int, height: int, shift: tuple[int, int]) -> d
         return None
     codes = grain_pattern(width, height)
     raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
-    graph = (f"[0:v]{CHROMA_SITING_SCALE},format=rgba[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
+    graph = (f"[0:v]{CHROMA_SITING_TO_RGBA}[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
              f"[bg][l]overlay={shift[0]}:{shift[1]}:format=rgb:shortest=1,format=rgba[o]")
     completed = subprocess.run(
         [ffmpeg, "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
