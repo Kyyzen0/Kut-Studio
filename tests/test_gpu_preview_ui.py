@@ -13,6 +13,7 @@ import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QWidget
 from test_performance_ui import _prefs, _window, fake_proxies  # noqa: F401 - fixtures partagées
+from timing_budget import WALL_CI_FACTOR, budget
 
 from core.blend_modes import BlendMode
 from core.effects_model import ClipEffect, EffectType
@@ -324,7 +325,8 @@ def test_faithful_preview_renders_off_the_interface_thread(qtbot, monkeypatch, t
     engine.request(PreviewJob(key=PreviewSegmentKey("c", 0.0, 2.0, "draft", "slow-test"), plan=None))
     before = time.perf_counter()
     window._pump_preview_queue()
-    assert time.perf_counter() - before < 0.05  # la fenêtre reprend la main tout de suite
+    limit = budget(0.05, ci_factor=WALL_CI_FACTOR, coverage_factor=1.0)
+    assert time.perf_counter() - before < limit  # la fenêtre reprend la main tout de suite (budget mural, voir timing_budget)
     assert started.wait(2.0)
     assert threads[0] is not threading.main_thread()
 

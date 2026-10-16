@@ -65,6 +65,20 @@ def _deliver_deferred_deletes():
     deliver_deferred_deletes()
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _destroy_module_windows():
+    """Détruit, à la fin de chaque module, les fenêtres que ses fixtures de portée module ont laissées vivantes.
+
+    Démontée après toutes les fixtures du module (autouse, déclarée ici) : plus aucun test du module ne s'en sert. Sans
+    elle, les fenêtres fantômes s'accumulent dans un worker et ralentissent tout test qui change le thème (voir
+    ``qt_cleanup.destroy_leftover_windows``).
+    """
+    yield
+    from qt_cleanup import destroy_leftover_windows
+
+    destroy_leftover_windows()
+
+
 def pytest_configure(config):
     """Déclare la marque ``libass`` ; donne à chaque worker xdist son propre dossier temporaire.
 

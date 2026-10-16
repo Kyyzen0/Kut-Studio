@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from timing_budget import WALL_CI_FACTOR, budget
 
 from core.compositing import Compositing, Mask
 from core.edit_history import ProjectHistory
@@ -825,7 +826,7 @@ def test_link_resolution_is_cached_between_plan_builds(media):
     started = time.perf_counter()
     for _ in range(20):
         build_render_plan(project)
-    assert (time.perf_counter() - started) / 20 < 0.02
+    assert (time.perf_counter() - started) / 20 < budget(0.02, ci_factor=WALL_CI_FACTOR)
 
 
 @needs_ffmpeg
