@@ -47,7 +47,7 @@ def test_the_policy_allows_nothing_the_page_does_not_use():
     assert csp["default-src"] == ["'none'"]
     assert "'unsafe-inline'" not in " ".join(csp["script-src"] + csp["style-src"])
     assert "'unsafe-eval'" not in HEADERS
-    assert csp["connect-src"] == ["https://api.github.com"], "le seul appel réseau du site"
+    assert csp["connect-src"] == ["'none'"], "aucun fetch / XHR sur le site"
     assert csp["frame-ancestors"] == ["'none'"] and csp["base-uri"] == ["'none'"]
     # Le site ne charge rien d'extérieur, et n'a pas de gestionnaire d'événement ni d'attribut style en ligne
     # (la CSP les bloquerait) : si cela change, la politique doit changer en même temps.
@@ -63,8 +63,10 @@ def test_the_other_security_headers_are_present():
 
 
 def test_the_script_only_writes_text_never_markup():
-    """La version de la release vient d'une API tierce : elle ne doit jamais être insérée comme du HTML."""
-    script = "".join(re.findall(r"<script>(.*?)</script>", HTML, re.S))
-    assert "textContent" in script
-    assert "innerHTML" not in script and "outerHTML" not in script and "insertAdjacentHTML" not in script
-    assert "eval(" not in script and "document.write" not in script
+    """Ni le script en ligne ni script.js n'insèrent de HTML (textContent uniquement)."""
+    inline = "".join(re.findall(r"<script>(.*?)</script>", HTML, re.S))
+    external = (ROOT / "website" / "script.js").read_text(encoding="utf-8")
+    for script in (inline, external):
+        assert "textContent" in script
+        assert "innerHTML" not in script and "outerHTML" not in script and "insertAdjacentHTML" not in script
+        assert "eval(" not in script and "document.write" not in script

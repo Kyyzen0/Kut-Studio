@@ -54,7 +54,7 @@ class TimelineIndex:
     Le résultat d' :meth:`active_at` suit le même contrat que
     :func:`core.timeline_evaluator.evaluate_timeline` : ordre des
     pistes, puis ordre d'origine des clips, intervalle demi-ouvert,
-    pistes invisibles ignorées, erreur si un média actif est absent.
+    pistes invisibles ignorées, clips au média manquant ignorés.
     """
 
     def __init__(self, project: Project, sequence: Sequence | None = None) -> None:

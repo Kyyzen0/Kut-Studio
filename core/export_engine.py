@@ -216,6 +216,44 @@ def _ffmpeg_major_version() -> int | None:
     return major
 
 
+# Protocoles FFmpeg refusés pour un chemin issu d'un projet (``.kut`` / LUT).
+# Les lettres de lecteur Windows (``C:\\…``) ne matchent pas : elles ont un seul
+# caractère avant ``:``. ``concatf`` est documenté à part de ``concat``.
+_UNSAFE_FFMPEG_SCHEME = re.compile(
+    r"(?i)^(?:"
+    r"https?|ftp|ftps|rtsp|rtsps|rtp|udp|tcp|tls|srtp|"
+    r"file|pipe|crypto|subfile|concatf?|bluray|dvd|sftp|ipfs|data|gopher|mms|mmsh|"
+    r"icecast|tee|lavfi|fd|cache"
+    r"):"
+)
+
+# Options d'entrée : FFmpeg les réinitialise entre chaque ``-i``, d'où la
+# répétition devant chaque média (pas une seule fois en tête de commande).
+_INPUT_PROTOCOL_WHITELIST = ("-protocol_whitelist", "file,pipe,crypto,data")
+
+
+def require_local_ffmpeg_path(path: str) -> str:
+    """Refuse un chemin qui ouvrirait un protocole FFmpeg non local.
+
+    Un ``.kut`` partagé ne doit pas pouvoir faire lire une URL, un flux
+    réseau ou un générateur (``lavfi:``) à la place d'un fichier. Les
+    chemins Windows ``C:\\…`` / ``C:/…`` restent acceptés. Le chemin est
+    renvoyé tel quel (espaces en tête/queue préservés) ; seul un probe
+    ``strip`` décide s'il est vide (placeholder d'entrée autorisé).
+    """
+    text = str(path)
+    probe = text.strip()
+    if not probe:
+        return text
+    if re.match(r"^[A-Za-z]:[\\/]", probe):
+        return text
+    if "://" in probe or _UNSAFE_FFMPEG_SCHEME.match(probe):
+        raise ValueError(
+            f"Chemin média refusé (protocole non local) : {path}"
+        )
+    return text
+
+
 def input_arguments(path: str, *, threads: int = 0) -> list[str]:
     """Arguments FFmpeg d'une entrée du graphe : ``-i chemin``.
 
@@ -226,9 +264,15 @@ def input_arguments(path: str, *, threads: int = 0) -> list[str]:
 
     ``threads`` : fils de décodage d'un média (:func:`decoder_threads`) ; 0 laisse le choix à FFmpeg.
     """
+    path = require_local_ffmpeg_path(path)
     if path.endswith(".ffconcat"):
-        return ["-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
-    return [*(["-threads", str(threads)] if threads > 0 else []), "-i", path]
+        return [*_INPUT_PROTOCOL_WHITELIST, "-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
+    return [
+        *_INPUT_PROTOCOL_WHITELIST,
+        *(["-threads", str(threads)] if threads > 0 else []),
+        "-i",
+        path,
+    ]
 
 
 def decoder_threads(paths: Sequence[str]) -> int:
@@ -2763,6 +2807,10 @@ def _build_lut3d_filter(lut) -> str | None:
         return None
     path = getattr(lut, "source_path", None) or getattr(lut, "path", "")
     if not path:
+        return None
+    try:
+        path = require_local_ffmpeg_path(path)
+    except ValueError:
         return None
     safe = _escape_filter_path(path)
     return f"lut3d=file='{safe}'"
