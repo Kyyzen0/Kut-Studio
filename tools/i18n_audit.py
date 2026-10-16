@@ -490,7 +490,7 @@ ZONES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("motion-graphics", (
         "ui/main_window_mixins/motion_graphics.py", "ui/graphics_*.py", "ui/layers_panel.py", "ui/viewer_overlay.py",
         "ui/graph_editor.py", "ui/main_window_mixins/animation.py", "ui/properties_widgets/advanced_transform.py",
-        "ui/main_window_mixins/subtitles_graphics.py", "ui/text_style_editor.py", "ui/compositing_editor.py",
+        "ui/main_window_mixins/subtitles_graphics.py", "ui/text_style_editor.py", "ui/compositing_editor.py", "ui/compositing_sections.py",
         "ui/main_window_mixins/presets.py", "ui/project_panel_widgets/text_presets_view.py",
         "ui/project_panel_widgets/transition_library.py",
     )),

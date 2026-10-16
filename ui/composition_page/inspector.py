@@ -194,7 +194,7 @@ class NodeInspector(QWidget):
         self.mask_editor = CompositingEditor("")
         self.mask_editor.set_chroma_visible(False)
         self.mask_editor.blend_mode.setVisible(False)
-        label = self.mask_editor.layout().itemAt(0).layout().labelForField(self.mask_editor.blend_mode)
+        label = self.mask_editor.blend_section.blend_form.labelForField(self.mask_editor.blend_mode)
         if label is not None:
             label.setVisible(False)
         self.mask_editor.value_changed.connect(lambda value: self._edit("masks", masks=tuple(value.masks)))

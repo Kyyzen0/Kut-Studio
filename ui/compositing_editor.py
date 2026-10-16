@@ -16,52 +16,21 @@ from __future__ import annotations
 from dataclasses import replace
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QGroupBox,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QGroupBox, QListWidgetItem, QVBoxLayout, QWidget
 
-from core.blend_modes import BLEND_MODES, blend_label_key
 from core.clip_crop import CROP_MASK_ID, crop_of_compositing, is_custom_crop, keep_crop_last, with_crop
-from core.compositing import MIN_CHROMA_TOLERANCE, ChromaKey, Compositing, Mask, MaskMode, MaskShape
+from core.compositing import ChromaKey, Compositing, Mask, MaskMode, MaskShape
 from ui import i18n
-from ui.adaptive_layout import FlowLayout
+from ui.compositing_sections import (
+    MASK_FIELDS,
+    MASK_MODES,
+    MASK_SHAPES,
+    BlendSection,
+    ChromaSection,
+    CropSection,
+    MaskSection,
+)
 from ui.design_system import Spacing
-from ui.properties_widgets.crop_editor import CropEditor
-
-# (valeur, clé i18n du libellé) : traduit à l'affichage, jamais à l'import.
-_SHAPES = (
-    (MaskShape.RECTANGLE, "mograph.shape.rectangle"),
-    (MaskShape.ELLIPSE, "mograph.compositing.shape_ellipse"),
-    (MaskShape.POLYGON, "mograph.shape.polygon"),
-    (MaskShape.PATH, "mask.shape.path"),
-)
-_MODES = (
-    (MaskMode.ADD, "common.add"),
-    (MaskMode.SUBTRACT, "mograph.compositing.mode_subtract"),
-    (MaskMode.INTERSECT, "mograph.compositing.mode_intersect"),
-)
-
-_MASK_FIELDS = (
-    # (champ, clé i18n du libellé, min, max, pas, facteur d'affichage)
-    ("position_x", "mograph.compositing.position_x", -200.0, 300.0, 1.0, 100.0),
-    ("position_y", "mograph.compositing.position_y", -200.0, 300.0, 1.0, 100.0),
-    ("width", "graphics.property.width", 0.0, 400.0, 1.0, 100.0),
-    ("height", "graphics.property.height", 0.0, 400.0, 1.0, 100.0),
-    ("rotation", "mograph.compositing.rotation", -3600.0, 3600.0, 1.0, 1.0),
-    ("feather", "mograph.compositing.feather", 0.0, 100.0, 0.5, 100.0),
-    ("expansion", "mograph.compositing.expansion", -100.0, 100.0, 0.5, 100.0),
-    ("opacity", "field.opacity", 0.0, 100.0, 1.0, 100.0),
-)
 
 
 class CompositingEditor(QGroupBox):
@@ -80,87 +49,30 @@ class CompositingEditor(QGroupBox):
         root = QVBoxLayout(self)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        root.addLayout(form)
-
-        self.blend_mode = QComboBox(objectName="blend_mode")
-        for mode in BLEND_MODES:
-            self.blend_mode.addItem(i18n.translate(blend_label_key(mode)), mode.value)
-        form.addRow(i18n.translate("mograph.compositing.blend"), self.blend_mode)
-
-        # --- Recadrage : un masque rectangle généré (core/clip_crop.py), visible dans la pile ci-dessous -------------
-        self.crop_editor = CropEditor()
+        self.blend_section = BlendSection()
+        self.crop_section = CropSection()
+        self.mask_section = MaskSection()
+        self.chroma_section = ChromaSection()
+        for section in self.sections():
+            root.addWidget(section)
+        # Les sous-blocs construisent les contrôles ; l'éditeur les expose sous leurs noms historiques.
+        self.blend_mode = self.blend_section.blend_mode
+        self.crop_editor = self.crop_section.crop_editor
         self.crop_editor.crop_changed.connect(self._crop_edited)
-        root.addWidget(self.crop_editor)
-
-        # --- Pile de masques -------------------------------------------------------------------
-        add_row = FlowLayout(spacing=Spacing.xs)  # trois contrôles : à la ligne plutôt qu'au-delà de l'inspecteur
-        self.mask_shape = QComboBox(objectName="mask_shape")
-        for shape, label in _SHAPES:
-            self.mask_shape.addItem(i18n.translate(label), shape.value)
-        self.add_mask = QPushButton(i18n.translate("mograph.compositing.add_mask"), objectName="add_mask")
-        self.remove_mask = QPushButton(i18n.translate("action.delete"), objectName="remove_mask")
-        add_row.addWidget(self.mask_shape)
-        add_row.addWidget(self.add_mask)
-        add_row.addWidget(self.remove_mask)
-        root.addLayout(add_row)
-        self.mask_list = QListWidget(objectName="mask_list")
-        self.mask_list.setMaximumHeight(84)
-        root.addWidget(self.mask_list)
-
-        self.mask_form_host = QWidget()
-        mask_form = QFormLayout(self.mask_form_host)
-        mask_form.setContentsMargins(0, 0, 0, 0)
-        mask_form.setSpacing(Spacing.xs)
-        mask_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.edit_in_monitor = QPushButton(i18n.translate("mask.edit.toggle"), objectName="mask_edit_in_monitor")
-        self.edit_in_monitor.setCheckable(True)
-        self.edit_in_monitor.setToolTip(i18n.translate("mask.edit.toggle_tip"))
-        mask_form.addRow(self.edit_in_monitor)
-        self.path_hint = QLabel(i18n.translate("mask.path.hint"), objectName="mask_path_hint")    # courbe : les gestes du moniteur
-        self.path_hint.setWordWrap(True)
-        mask_form.addRow(self.path_hint)
-        self.mask_mode = QComboBox(objectName="mask_mode")
-        for mode, label in _MODES:
-            self.mask_mode.addItem(i18n.translate(label), mode.value)
-        mask_form.addRow(i18n.translate("mograph.compositing.operation"), self.mask_mode)
-        self.inverted = QCheckBox(i18n.translate("mograph.compositing.invert"), objectName="mask_inverted")
-        mask_form.addRow(self.inverted)
-        self.mask_spins: dict[str, QDoubleSpinBox] = {}
-        for name, label, low, high, step, _factor in _MASK_FIELDS:
-            spin = QDoubleSpinBox(objectName=f"mask_{name}")
-            spin.setRange(low, high)
-            spin.setSingleStep(step)
-            spin.setDecimals(1)
-            spin.setSuffix(" °" if name == "rotation" else " %")
-            mask_form.addRow(i18n.translate(label), spin)
-            self.mask_spins[name] = spin
-        root.addWidget(self.mask_form_host)
-
-        # --- Chroma key (vidéo) ----------------------------------------------------------------
-        self.key_host = QWidget()
-        key_form = QFormLayout(self.key_host)
-        key_form.setContentsMargins(0, 0, 0, 0)
-        key_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.key_enabled = QCheckBox(i18n.translate("mograph.compositing.chroma_key"), objectName="chroma_key_enabled")
-        key_form.addRow(self.key_enabled)
-        self.key_color = QComboBox(objectName="chroma_key_color")
-        self.key_color.setEditable(True)
-        self.key_color.addItems(["#00FF00", "#0000FF"])
-        key_form.addRow(i18n.translate("group.color"), self.key_color)
-        self.spins = {}
-        for key, label, lo, hi, value in (
-            ("tolerance", i18n.translate("mograph.compositing.tolerance"), MIN_CHROMA_TOLERANCE, 1, .1), ("softness", i18n.translate("mograph.compositing.softness"), 0, 1, .05),
-            ("spill_suppression", i18n.translate("mograph.compositing.spill"), 0, 1, 0),
-        ):
-            spin = QDoubleSpinBox(objectName=f"chroma_{key}")
-            spin.setRange(lo, hi)
-            spin.setSingleStep(.01)
-            spin.setValue(value)
-            key_form.addRow(label, spin)
-            self.spins[key] = spin
-        root.addWidget(self.key_host)
+        self.mask_shape = self.mask_section.mask_shape
+        self.add_mask = self.mask_section.add_mask
+        self.remove_mask = self.mask_section.remove_mask
+        self.mask_list = self.mask_section.mask_list
+        self.mask_form_host = self.mask_section.mask_form_host
+        self.edit_in_monitor = self.mask_section.edit_in_monitor
+        self.path_hint = self.mask_section.path_hint
+        self.mask_mode = self.mask_section.mask_mode
+        self.inverted = self.mask_section.inverted
+        self.mask_spins = self.mask_section.mask_spins
+        self.key_host = self.chroma_section.key_host
+        self.key_enabled = self.chroma_section.key_enabled
+        self.key_color = self.chroma_section.key_color
+        self.spins = self.chroma_section.spins
 
         self.blend_mode.currentIndexChanged.connect(self._emit)
         self.add_mask.clicked.connect(self._append_mask)
@@ -176,6 +88,10 @@ class CompositingEditor(QGroupBox):
         for spin in self.spins.values():
             spin.valueChanged.connect(self._emit)
         self._refresh_mask_widgets()
+
+    def sections(self) -> tuple[QWidget, ...]:
+        """Les sous-blocs, dans l'ordre d'affichage (fusion, recadrage, pile de masques, clé chroma)."""
+        return (self.blend_section, self.crop_section, self.mask_section, self.chroma_section)
 
     # -- chargement -----------------------------------------------------------------------------
 
@@ -247,7 +163,7 @@ class CompositingEditor(QGroupBox):
 
     def _mask_label(self, mask: Mask, index: int) -> str:
         name = i18n.translate("crop.mask_name") if mask.id == CROP_MASK_ID else mask.name
-        label = f"{name or i18n.translate('mograph.compositing.mask_name', index=index)} · {i18n.translate(dict(_SHAPES)[mask.shape])} · {i18n.translate(dict(_MODES)[mask.mode])}"
+        label = f"{name or i18n.translate('mograph.compositing.mask_name', index=index)} · {i18n.translate(dict(MASK_SHAPES)[mask.shape])} · {i18n.translate(dict(MASK_MODES)[mask.mode])}"
         return label + (i18n.translate("mograph.compositing.inverted_suffix") if mask.inverted else "")
 
     def _fill_mask_list(self, row: int) -> None:
@@ -275,7 +191,7 @@ class CompositingEditor(QGroupBox):
             if mask is not None:
                 self.mask_mode.setCurrentIndex(max(0, self.mask_mode.findData(mask.mode.value)))
                 self.inverted.setChecked(mask.inverted)
-                for name, _label, _low, _high, _step, factor in _MASK_FIELDS:
+                for name, _label, _low, _high, _step, factor in MASK_FIELDS:
                     self.mask_spins[name].setValue(getattr(mask, name) * factor)
         finally:
             self._updating = previous
@@ -342,7 +258,7 @@ class CompositingEditor(QGroupBox):
             return
         values = {
             name: self.mask_spins[name].value() / factor
-            for name, _label, _low, _high, _step, factor in _MASK_FIELDS
+            for name, _label, _low, _high, _step, factor in MASK_FIELDS
         }
         updated = replace(
             mask, mode=MaskMode(self.mask_mode.currentData()), inverted=self.inverted.isChecked(),
