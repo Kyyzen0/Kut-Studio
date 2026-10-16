@@ -49,6 +49,7 @@ STATIC_FIELDS = ("fill",)
 class AdvancedTransformEditor(QWidget):
     value_changed = Signal(str, object)
     keyframe_toggled = Signal(str)
+    skew_availability_changed = Signal(bool)    # vrai : calque graphique ; faux : clip vidéo (le niveau d'usage en déduit « Remplir le cadre »)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -118,6 +119,25 @@ class AdvancedTransformEditor(QWidget):
         if not self._updating:
             self.value_changed.emit(name, value)
 
+    def make_fill_relay(self) -> QCheckBox:
+        """Case « Remplir le cadre » sœur de celle d'ici (niveau d'usage Simple) : elle coche l'autre, qui émet comme avant.
+
+        Elle suit la valeur de l'autre et son absence pour un calque graphique (``set_skew_available``).
+        """
+        relay = QCheckBox(translate("animation.property.fill"), objectName="fill_frame_quick")
+        real = self.checks["fill"]
+        relay.setChecked(real.isChecked())
+        relay.toggled.connect(real.setChecked)
+
+        def follow(checked: bool) -> None:
+            blocked = relay.blockSignals(True)
+            relay.setChecked(bool(checked))
+            relay.blockSignals(blocked)
+
+        real.toggled.connect(follow)
+        self.skew_availability_changed.connect(lambda graphic: relay.setVisible(not graphic))
+        return relay
+
     def set_skew_available(self, available: bool) -> None:
         """Calque graphique (``True``) : inclinaison ; clip vidéo (``False``) : cadrage du média."""
         for widget in (self.spins["skew"], self._labels["skew"], self.diamonds["skew"]):
@@ -127,6 +147,7 @@ class AdvancedTransformEditor(QWidget):
             for widget in widgets:
                 if widget is not None:
                     widget.setVisible(not available)
+        self.skew_availability_changed.emit(bool(available))
 
     def set_values(self, values: dict, *, animated=(), keyed=()) -> None:
         """Valeurs à la tête de lecture ; ``animated`` / ``keyed`` : losanges."""

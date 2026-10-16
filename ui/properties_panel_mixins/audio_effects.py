@@ -22,6 +22,7 @@ from core.audio_effects_model import (
     AudioEffectType,
     parameter_specs as audio_parameter_specs,
 )
+from core.usage_level import UsageLevel
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
@@ -79,6 +80,7 @@ class AudioEffectsMixin:
         add_layout.addWidget(self.audio_effect_type_combo, 1)
         add_layout.addWidget(self.audio_effect_add_button)
         group_layout.addWidget(self.audio_effect_add_row)
+        group_layout.addWidget(self._new_fold(group, UsageLevel.ADVANCED))      # niveau d'usage : les autres types d'effets
 
         # Liste des effets.
         self.audio_effects_list = QListWidget()
@@ -213,6 +215,7 @@ class AudioEffectsMixin:
             if index >= 0:
                 self.audio_effect_type_combo.setCurrentIndex(index)
         self.audio_effect_type_combo.blockSignals(False)
+        self._apply_usage_level_choices()       # niveau d'usage : types réservés au niveau supérieur cachés de la liste
         self.audio_effect_add_button.setEnabled(
             self.audio_effect_type_combo.count() > 0
         )

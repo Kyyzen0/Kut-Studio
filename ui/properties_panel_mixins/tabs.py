@@ -47,13 +47,14 @@ class TabsMixin:
         """Point unique d'écriture de la visibilité des groupes.
 
         visible = (groupe présent dans l'onglet actif) ET
-                  (pas de condition, ou condition remplie)
+                  (pas de condition, ou condition remplie) ET
+                  (groupe du niveau d'usage courant, ou révélé par « Afficher plus d'options »)
         """
         in_tab = set(self._tab_groups.get(self._active_inspector_tab,
                                           self._tab_groups[0]))
         for group in self._all_inspector_groups:
             conditional = self._group_conditional.get(group, True)
-            group.setVisible(group in in_tab and conditional)
+            group.setVisible(group in in_tab and conditional and self._level_allows_group(group))
 
     def _on_inspector_tab_changed(self, row: int) -> None:
         """Filtre les groupes visibles selon l'onglet choisi."""

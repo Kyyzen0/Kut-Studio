@@ -19,12 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.time_remapping import MIN_SPEED, MAX_SPEED
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
 from ui.properties_widgets.section_box import SectionBox
-from ui.adaptive_layout import FlowLayout, allow_shrinking
+from ui.adaptive_layout import allow_shrinking
 from ui.design_system import Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconName
@@ -35,7 +34,8 @@ from ui.properties_widgets.common import (  # noqa: F401 - réexports de compati
     _PROPERTY_RANGES,
 )
 from ui.properties_widgets.diamond_button import _DiamondButton
-from ui.properties_widgets.time_section import TimeSection
+from ui.properties_widgets.level_gate import LevelGate, gated
+from core.usage_level import UsageLevel
 from ui.properties_widgets.tolerant_spin_box import TolerantDoubleSpinBox
 
 TRACKING_TAB = 6
@@ -366,137 +366,6 @@ class ConstructionMixin:
         self.volume_slider.valueChanged.connect(update_volume)
         return audio_group
 
-    def _build_speed_group(self, layout):
-        """Groupe « Vitesse et durée » (remappage temporel)."""
-        # ----- Vitesse et durée (tâche 18) -----------------------------
-        self.speed_group = self._titled_group("group.speed_and_duration")
-        speed_form = QFormLayout(self.speed_group)
-        speed_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
-        speed_form.setSpacing(Spacing.xs)
-        speed_form.setLabelAlignment(Qt.AlignLeft)
-        speed_form.setRowWrapPolicy(QFormLayout.WrapLongRows)  # libellé au-dessus du champ si la ligne est trop longue
-
-        # Vitesse numérique
-        self.speed_spinbox = QDoubleSpinBox()
-        self.speed_spinbox.setDecimals(2)
-        self.speed_spinbox.setRange(MIN_SPEED, MAX_SPEED)
-        self.speed_spinbox.setSingleStep(0.1)
-        self.speed_spinbox.setValue(1.0)
-        self.speed_spinbox.setMinimumWidth(70)
-        self.speed_spinbox.setEnabled(False)
-        self.speed_spinbox.valueChanged.connect(self._on_speed_changed)
-        self._add_row(speed_form, "field.speed", self.speed_spinbox)
-
-        # Boutons de preset de vitesse
-        speed_presets = QWidget()
-        speed_presets_layout = FlowLayout(speed_presets, spacing=Spacing.xs)  # cinq boutons : à la ligne si besoin
-
-        self.speed_0_25x_button = self._make_action_button(
-            None, translate("action.speed_0.25x"), translate("tooltip.speed_0.25x")
-        )
-        self.speed_0_5x_button = self._make_action_button(
-            None, translate("action.speed_0.5x"), translate("tooltip.speed_0.5x")
-        )
-        self.speed_1x_button = self._make_action_button(
-            None, translate("action.speed_1x"), translate("tooltip.speed_1x")
-        )
-        self.speed_2x_button = self._make_action_button(
-            None, translate("action.speed_2x"), translate("tooltip.speed_2x")
-        )
-        self.speed_4x_button = self._make_action_button(
-            None, translate("action.speed_4x"), translate("tooltip.speed_4x")
-        )
-
-        # Connecter les boutons de preset
-        self.speed_0_25x_button.clicked.connect(lambda: self.speed_spinbox.setValue(0.25))
-        self.speed_0_5x_button.clicked.connect(lambda: self.speed_spinbox.setValue(0.5))
-        self.speed_1x_button.clicked.connect(lambda: self.speed_spinbox.setValue(1.0))
-        self.speed_2x_button.clicked.connect(lambda: self.speed_spinbox.setValue(2.0))
-        self.speed_4x_button.clicked.connect(lambda: self.speed_spinbox.setValue(4.0))
-        
-        for btn in [
-            self.speed_0_25x_button,
-            self.speed_0_5x_button,
-            self.speed_1x_button,
-            self.speed_2x_button,
-            self.speed_4x_button,
-        ]:
-            btn.setMinimumWidth(40)
-            btn.setEnabled(False)
-            speed_presets_layout.addWidget(btn)
-
-        self._add_stacked_row(speed_form, "mograph.layers.presets", speed_presets)
-
-        # Images intermédiaires, son, courbe de vitesse, analyse du flux optique (widget autonome).
-        self.time_section = TimeSection()
-        self.time_section.command_requested.connect(self._on_time_section_command)
-        speed_form.addRow(self.time_section)
-
-        # Bouton Reverse
-        self.reverse_button = IconButton(
-            icon=None, tooltip=translate("tooltip.reverse"), size=Sizes.icon_button
-        )
-        self.reverse_button.setText("  " + translate("field.reverse"))
-        self.reverse_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.reverse_button.setCheckable(True)
-        self.reverse_button.setMinimumHeight(Sizes.button_md)
-        self.reverse_button.setEnabled(False)
-        self.reverse_button.toggled.connect(self._on_reverse_toggled)
-        self._add_row(speed_form, "field.reverse", self.reverse_button)
-
-        # Freeze frame
-        self.freeze_frame_button = self._make_action_button(
-            None, translate("field.freeze_frame"), translate("tooltip.freeze_frame")
-        )
-        self.freeze_frame_button.setEnabled(False)
-        self.freeze_frame_button.clicked.connect(self._on_freeze_frame_clicked)
-        self._add_row(speed_form, "field.freeze_frame", self.freeze_frame_button)
-
-        # Durée freeze frame (visible uniquement en mode freeze)
-        self.freeze_duration_spinbox = QDoubleSpinBox()
-        self.freeze_duration_spinbox.setDecimals(2)
-        self.freeze_duration_spinbox.setRange(0.01, 3600.0)  # 0.01s à 1h
-        self.freeze_duration_spinbox.setSingleStep(0.1)
-        self.freeze_duration_spinbox.setValue(1.0)
-        self.freeze_duration_spinbox.setMinimumWidth(70)
-        self.freeze_duration_spinbox.setEnabled(False)
-        self.freeze_duration_spinbox.valueChanged.connect(self._on_freeze_duration_changed)
-        self.freeze_duration_label = QLabel("1,00 s")
-        self.freeze_duration_label.setStyleSheet(label_style(11, "muted", 500))
-        self.freeze_duration_label.setVisible(False)
-
-        freeze_row = QWidget()
-        freeze_row_layout = QHBoxLayout(freeze_row)
-        freeze_row_layout.setContentsMargins(0, 0, 0, 0)
-        freeze_row_layout.setSpacing(Spacing.sm)
-        freeze_row_layout.addWidget(self.freeze_duration_spinbox)
-        freeze_row_layout.addWidget(self.freeze_duration_label)
-        freeze_row.setVisible(False)
-        self._add_row(speed_form, "field.freeze_duration", freeze_row)
-        self.freeze_duration_row = freeze_row
-
-        # Bouton de réinitialisation
-        self.reset_speed_button = self._make_action_button(
-            None, translate("action.reset_speed"), translate("tooltip.reset_speed")
-        )
-        self.reset_speed_button.setEnabled(False)
-        self.reset_speed_button.clicked.connect(self._on_time_remapping_reset)
-        speed_form.addRow("", self.reset_speed_button)
-
-        # Affichage des durées source et timeline
-        self.source_duration_label = QLabel(translate("inspector.source_empty"))
-        self.source_duration_label.setStyleSheet(label_style(11, "muted", 500))
-        self.timeline_duration_label = QLabel(translate("inspector.timeline_empty"))
-        self.timeline_duration_label.setStyleSheet(label_style(11, "muted", 500))
-        duration_info = QWidget()
-        duration_layout = FlowLayout(duration_info, spacing=Spacing.md)  # deux libellés : à la ligne si la place manque
-        duration_layout.setContentsMargins(0, 0, 0, 0)
-        duration_layout.addWidget(self.source_duration_label)
-        duration_layout.addWidget(self.timeline_duration_label)
-        speed_form.addRow("", duration_info)
-
-        layout.addWidget(self.speed_group)
-
     def _build_movement_group(self, layout):
         """Groupe « Mouvement » (position, échelle, rotation, opacité)."""
         # ----- Mouvement (tâche 13) ------------------------------------
@@ -507,6 +376,11 @@ class ConstructionMixin:
         )
         movement_layout.setSpacing(Spacing.xs)
         self._spin_boxes: dict[str, QDoubleSpinBox] = {}
+        self.keyframe_block = LevelGate()       # niveau d'usage (Studio) : losanges ‹◆› de toutes les propriétés, en fin de groupe
+        self.keyframe_block.minimum = UsageLevel.STUDIO
+        self._level_gates.append(self.keyframe_block)
+        keyframe_layout = self.keyframe_block.layout()
+        keyframe_layout.setSpacing(Spacing.xs)
         self._diamonds: dict[str, _DiamondButton] = {}
         self._keyframe_nav_buttons: dict[str, tuple[QToolButton, QToolButton]] = {}
         self._slider_widgets: dict[str, QSlider] = {}
@@ -546,9 +420,12 @@ class ConstructionMixin:
 
             # Animation : ‹ ◆ › — précédent, ajouter / retirer, suivant. Le
             # reste (interpolation, copier/coller, courbes) est au clic droit.
+            # Niveau d'usage : les losanges sont Studio ; ils sont créés ici mais rangés dans le bloc « Images-clés » en fin de
+            # groupe (un réglage de base n'est jamais sous le pliant « Avancé »).
             animation_row = QHBoxLayout()
             animation_row.setContentsMargins(0, 0, 0, 0)
             animation_row.setSpacing(2)
+            animation_row.addWidget(QLabel(label.text()))
             previous_button = QToolButton()
             previous_button.setObjectName("iconOnly")  # padding nul : sinon le thème rogne la flèche
             previous_button.setText("‹")
@@ -583,7 +460,7 @@ class ConstructionMixin:
             for widget in (previous_button, diamond, next_button):
                 animation_row.addWidget(widget)
             animation_row.addStretch(1)
-            row_layout.addLayout(animation_row)
+            keyframe_layout.addLayout(animation_row)
             movement_layout.addWidget(row)
 
         reset_button = IconButton(
@@ -605,12 +482,29 @@ class ConstructionMixin:
         self.advanced_transform = AdvancedTransformEditor()
         self.advanced_transform.value_changed.connect(self._emit_advanced_transform)
         self.advanced_transform.keyframe_toggled.connect(self._emit_advanced_keyframe)
-        movement_layout.addWidget(self.advanced_transform)
+        # Niveau d'usage : « Remplir le cadre » (Simple) est un relais de la case de la transformation avancée (Avancé).
+        self.fill_frame_gate = LevelGate()
+        self.fill_frame_gate.minimum = UsageLevel.SIMPLE
+        self.advanced_transform_gate = gated(self.advanced_transform, UsageLevel.ADVANCED)
+        self._level_gates.append(self.advanced_transform_gate)
+        self.fill_frame_gate.inverse_of = self.advanced_transform_gate
+        self._level_gates.append(self.fill_frame_gate)
+        self.fill_frame_quick = self.advanced_transform.make_fill_relay()
+        self.fill_frame_gate.hold(self.fill_frame_quick, UsageLevel.SIMPLE)
         from ui.properties_widgets.frame_align_row import FrameAlignRow
 
         self.frame_align = FrameAlignRow()      # ADR-0006 lot 1c : six boutons ; la fenêtre principale les relie
-        movement_layout.addWidget(self.frame_align)
+        self.frame_align_gate = gated(self.frame_align, UsageLevel.STUDIO)
+        self._level_gates.append(self.frame_align_gate)
+        # Ordre : réglages de base (valeurs, « Remplir le cadre », « Réinitialiser »), puis ce qui relève des niveaux supérieurs,
+        # chacun derrière son pliant « Avancé » : images-clés et alignement (Studio), transformation avancée (Avancé).
+        movement_layout.addWidget(self.fill_frame_gate)
         movement_layout.addWidget(reset_button)
+        movement_layout.addWidget(self._new_fold(self.movement_group, UsageLevel.STUDIO))
+        movement_layout.addWidget(self.keyframe_block)
+        movement_layout.addWidget(self.frame_align_gate)
+        movement_layout.addWidget(self._new_fold(self.movement_group, UsageLevel.ADVANCED))
+        movement_layout.addWidget(self.advanced_transform_gate)
         self._diamond_was_checked = {name: False for name in self._diamonds}
         self._allow_property_signals = True
 

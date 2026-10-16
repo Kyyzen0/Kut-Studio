@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
+from core.usage_level import UsageLevel
+from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
@@ -53,7 +55,7 @@ class AudioMixin:
         self.audio_pan_slider.valueChanged.connect(
             lambda value: self.audio_pan_changed.emit(value / 100.0)
         )
-        group_layout.addWidget(self._audio_pan_row)
+        self.audio_pan_gate = gated(self._audio_pan_row, UsageLevel.STUDIO)     # niveau d'usage : le panoramique est Studio
 
         # Fondus, en secondes, pas de 0,1 s.
         self._fade_spins: dict[str, QDoubleSpinBox] = {}
@@ -95,6 +97,9 @@ class AudioMixin:
             lambda: self.audio_fades_reset.emit()
         )
         group_layout.addWidget(self.reset_fades_button)
+        # Le panoramique (Studio) clôt le groupe, derrière son pliant : gain et fondus (Simple) restent au-dessus.
+        group_layout.addWidget(self._new_fold(group, UsageLevel.STUDIO))
+        group_layout.addWidget(self.audio_pan_gate)
         return group
 
     def set_audio_clip(self, model, *, locked: bool = False) -> None:

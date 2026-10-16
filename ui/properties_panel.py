@@ -43,7 +43,9 @@ from ui.graphics_editor import GraphicsEditor
 from ui.compositing_editor import CompositingEditor
 from ui.theme import COLORS, label_style
 from ui.properties_panel_mixins.construction import ConstructionMixin
+from ui.properties_panel_mixins.speed_group import SpeedGroupMixin
 from ui.properties_panel_mixins.tabs import TabsMixin
+from ui.properties_panel_mixins.usage_levels import UsageLevelsMixin
 from ui.properties_panel_mixins.color import ColorMixin
 from ui.properties_panel_mixins.audio import AudioMixin
 from ui.properties_panel_mixins.effects import EffectsMixin
@@ -60,7 +62,7 @@ from ui.properties_widgets.common import (  # noqa: F401 - réexports de compati
 from ui.properties_widgets.diamond_button import _DiamondButton  # noqa: F401 - réexport
 
 
-class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, EffectsMixin, AudioEffectsMixin, KeyframesMixin, ClipContextMixin, TransitionSubtitleMixin, TimeRemappingMixin, QWidget):
+class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevelsMixin, ColorMixin, AudioMixin, EffectsMixin, AudioEffectsMixin, KeyframesMixin, ClipContextMixin, TransitionSubtitleMixin, TimeRemappingMixin, QWidget):
     transform_changed = Signal(str, str, float)
     text_animation_requested = Signal(str, str)        # (calque, preset) : core.text_animations
     voice_sync_requested = Signal(str)                 # calque texte : temps des mots depuis la voix
@@ -155,6 +157,8 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         self._color_node_id: str | None = None           # nœud courant (choisi sur la page Couleur)
         self._allow_color_signals = True
         self.color_preset_store = ColorPresetStore()
+        self._level_folds: dict = {}  # groupe -> sous-blocs « Avancé » créés à la place voulue par le builder du groupe
+        self._level_gates: list = []  # conteneurs de niveau d'usage créés avec les contrôles (voir usage_levels)
         self._group_titles: list[tuple] = []  # (QGroupBox, clé i18n) : réécrits par ``retranslate``
         self._row_labels: list[tuple] = []  # (QFormLayout, champ, clé i18n)
         self._stacked_labels: list[tuple] = []  # (QLabel, clé i18n) : libellés posés au-dessus de leur champ, voir _add_stacked_row
@@ -232,6 +236,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
         layout.addStretch()
 
         self._register_inspector_groups(project_group, clip_group, audio_group)
+        self._install_usage_levels(layout)      # niveau d'usage : conteneurs, sous-blocs « Avancé » et lien du bas
         callback = self._on_language_changed
         i18n.subscribe(callback)
         self.destroyed.connect(lambda *_: i18n.unsubscribe(callback))
@@ -249,6 +254,7 @@ class PropertiesPanel(ConstructionMixin, TabsMixin, ColorMixin, AudioMixin, Effe
 
     def _on_language_changed(self, _code: str) -> None:
         self.retranslate()
+        self._retranslate_usage_levels()
 
     # ------------------------------------------------------------------
     # Helpers privés : construction

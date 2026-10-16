@@ -8,7 +8,7 @@
 |---|---|---|
 | 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
 | 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | **fait** |
-| 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma), sous-blocs « Avancé », lien « Afficher plus d'options » | à faire |
+| 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), conteneurs de niveau créés à la construction, sous-blocs « Avancé », lien « Afficher plus d'options » | **fait** |
 | 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | à faire |
 | 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
 | 6 | Documentation, état d'avancement de l'ADR-0006, CHANGELOG | à faire |
@@ -28,6 +28,32 @@ Trois emplacements pour le même réglage, appliqués à chaud (aucune confirmat
 - **Barre du haut** : puce « Simple / Studio / Avancé » avant « Réglages » ; son menu réutilise les trois mêmes actions, son nom accessible est « Niveau d'usage : <niveau> ».
 
 Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui/i18n_usage.py`. Mettre une action à jour par programme n'émet pas `triggered` : pas de boucle ; `set_usage_level` n'émet que si le niveau change. **Ce lot ne masque rien** : changer de niveau n'a encore aucun effet sur l'inspecteur ni sur les menus.
+
+## Inspecteur (lot 3)
+
+- `PropertiesPanel.usage_level` (Avancé sans fenêtre) ; la fenêtre principale l'impose à la création et le suit par `usage_level_changed` (`set_usage_level`, aucun widget recréé).
+- **Groupes** : Transition, Étalonnage, Vitesse, Effets, Effets audio sont Studio, Suivi est Avancé, le reste Simple ; le niveau est la 3e condition de `_apply_group_visibility`. Le lien « Afficher plus d'options » révèle les autres d'un geste (remis à zéro à chaque changement de niveau).
+- **Réglages** : chaque réglage d'un niveau supérieur est dans un `LevelGate` (`ui/properties_widgets/level_gate.py`) créé avec le contrôle dans son constructeur ; un niveau n'écrit que la visibilité du conteneur (jamais `setEnabled`, jamais une valeur).
+- **Pliants « Avancé »** (`AdvancedFold`, un par palier : Studio ou Avancé) : chaque builder le crée à la place voulue, devant ce qu'il révèle. Visible seulement sous son palier ; ouvert, il montre les réglages de ce palier et au-delà. Au niveau Avancé, aucun pliant n'est visible.
+- **Choix de listes** (modes de fusion Addition et Différence, formes polygone et courbe, opérations soustraire et intersecter, effets audio hors normaliser, basses, aigus) : cachés de la liste sans être retirés ; le choix courant reste affiché.
+- Interdit : poser un conteneur après coup à la place d'un widget déjà dans un layout (`replaceWidget`, `setParent`, `addItem`) : l'élément de layout retiré reste référencé par le widget (hauteur périmée) et le supprimer plante Qt.
+
+### Ce qui est au-dessus et au-dessous du pliant, groupe par groupe
+
+| Groupe | Au-dessus du pliant (toujours montré au niveau du groupe) | Sous le pliant |
+|---|---|---|
+| Mouvement (Simple) | valeurs et curseurs, « Remplir le cadre », « Réinitialiser » | pliant Studio : bloc « Images-clés » (losanges ‹◆›, déplacés hors des rangées) et alignement ; pliant Avancé : transformation avancée |
+| Audio du clip (Simple) | gain, fondus, « Réinitialiser les fondus » | pliant Studio : panoramique (déplacé après les fondus) |
+| Compositing (Simple) | recadrage | pliant Studio : fusion, masques, clé chroma ; pliant Avancé (en tête des masques) : formes polygone/courbe, opérations, expansion, rotation, édition dans le moniteur, modes Addition et Différence |
+| Sous-titre (Simple) | contenu, police, taille, opacité, couleur du texte, alignement, « Réinitialiser » | pliant Studio : contour, ombre, fond, position, marges, remplissage |
+| Calque graphique (Simple) | type, texte, taille, couleur, section Texte | pliant Studio : contour, animation du texte, ombre et fond ; pliant Avancé : forme, néon, lumière, calque |
+| Étalonnage (Studio) | réglages, « Réinitialiser » (déplacé avant les courbes) | pliant Avancé : courbes, préréglages, LUT 3D |
+| Vitesse (Studio) | vitesse, préréglages, Reverse, Figer, durées | pliant Avancé : section « Temps » (déplacée en fin de groupe) |
+| Effets (Studio) | ajout, liste, Désactiver, Supprimer | pliant Avancé, dans la même rangée : Monter, Descendre (les réglages de l'effet sont sous la rangée) |
+| Effets audio (Studio) | ajout, liste, boutons, réglages | pliant Avancé sous la ligne d'ajout : les types d'effets avancés dans la liste |
+
+- **Ordre au niveau Avancé** : identique à celui d'avant (liste ordonnée des widgets visibles, `tests/data/inspector_order_before_usage_levels.json`), hors ces déplacements voulus : losanges ‹◆› (bloc en fin de Mouvement), « Réinitialiser » avant l'alignement et la transformation avancée (Mouvement), panoramique après les fondus, section « Temps » en fin de Vitesse, « Réinitialiser » avant les courbes (Étalonnage), recadrage avant la fusion (Compositing), blocs du Sous-titre et du Calque graphique réordonnés (Simple, puis Studio, puis Avancé).
+- **Écarts connus** : dans Vitesse, Étalonnage et Effets, quelques réglages Studio restent sous le pliant Avancé (groupes Studio, absents du niveau Simple) ; dans Compositing, le pliant Avancé est en tête des masques, les champs Studio des masques sont dessous. « Remplir le cadre » est une case relais de celle de la transformation avancée ; sous Avancé, le menu des losanges n'offre que l'activation de l'animation.
 
 ## Décisions
 

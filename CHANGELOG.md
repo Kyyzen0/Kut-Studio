@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Changed
 
+- **L'inspecteur suit le niveau d'usage (Simple, Studio, Avancé).** En Simple, l'inspecteur n'affiche que l'essentiel (clip, valeurs de mouvement, « Remplir le cadre », recadrage, gain et fondus, sous-titre et calque graphique de base) ; Studio y ajoute étalonnage, vitesse, effets, transitions, images-clés, fusion, masques simples et clé chroma ; Avancé montre tout. Les groupes d'un niveau supérieur se rouvrent d'un clic avec « Afficher plus d'options » en bas de l'inspecteur, et chaque groupe replie ses réglages d'un niveau supérieur derrière un pliant « Avancé », placé sous les réglages de base. Rien n'est retiré ni réinitialisé : un réglage caché garde sa valeur, et les pistes et calques verrouillés le restent à tous les niveaux. Pour que les réglages de base restent au-dessus du pliant, quelques contrôles changent de place : les losanges d'images-clés sont regroupés en bas de Mouvement (« Réinitialiser » passe avant l'alignement et la transformation avancée), le panoramique passe après les fondus, la section « Temps » clôt Vitesse, « Réinitialiser » précède les courbes d'étalonnage, le recadrage précède la fusion, et les blocs du sous-titre et du calque graphique sont réordonnés. Les menus, les raccourcis et les rails ne changent pas encore.
 - **Couleurs plus proches de la version App Store.** La chrominance des vidéos 4:2:0 (la plupart des fichiers H.264 et HEVC) n'est plus recopiée par blocs de 2×2 pixels : elle est interpolée à partir du coin haut gauche de chaque bloc, comme le fait macOS. Sur une vidéo HEVC 10 bits en 4K, le nombre de pixels qui s'écartent de plus d'un niveau du rendu de la version App Store passe de 90 % à 0 % (de 21 % à 10 % en H.264 8 bits, le plancher du système). L'aperçu rapide et l'export suivent la même règle. Les bandes noires d'une vidéo mise au cadre sont maintenant d'un nombre pair de pixels (un pixel de moins ou de plus), ce qui évite un décalage de couleur au bord de l'image. Les aperçus fidèles déjà calculés sont recalculés. La conversion passe par un format intermédiaire de 16 bits, qui évite une erreur de couleur de swscale (FFmpeg 6.1 et 7.1) : elle coûte environ 18 ms de CPU de plus par image 1080p (mesuré sur Mac avec FFmpeg 9.0.2, non mesuré sur Windows et Linux).
 
 ### Fixed
@@ -35,7 +36,7 @@ Version de **correctifs** : l'aperçu du moniteur concorde de nouveau avec l'exp
 
 ### Added
 
-- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; le réglage n'a pas encore d'effet sur l'interface, il prépare les prochains lots. Voir [docs/usage-levels.md](docs/usage-levels.md).
+- **Niveau d'usage** : Simple / Studio / Avancé, choisis dans Préférences, dans le menu Fenêtre ou dans la barre du haut ; il règle ce qui est affiché (l'inspecteur est sensible au niveau ; les menus et raccourcis suivront). Voir [docs/usage-levels.md](docs/usage-levels.md).
 
 ### Fixed
 

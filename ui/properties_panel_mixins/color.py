@@ -21,11 +21,13 @@ from core.color_grading import (
     ColorPresetStore,
 )
 from core.color_nodes import as_graph
+from core.usage_level import UsageLevel
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Spacing
 from ui.icons import IconName
 from ui.theme import label_style
 from ui.properties_widgets.color_curve_editor import ColorCurveEditor
+from ui.properties_widgets.level_gate import LevelGate
 from ui.i18n import translate
 
 class ColorMixin:
@@ -77,9 +79,14 @@ class ColorMixin:
             form.addRow(label, spin)
         root.addLayout(form)
 
+        # Courbes, préréglages et LUT 3D : réglages avancés (niveau d'usage), réunis dans un conteneur créé ici.
+        self.color_advanced_gate = LevelGate()
+        self.color_advanced_gate.minimum = UsageLevel.ADVANCED
+        advanced = self.color_advanced_gate.layout()
+        advanced.setSpacing(Spacing.sm)
         curves_title = QLabel(translate("inspector.color.curves"))
         curves_title.setStyleSheet(label_style(11, "muted", 700))
-        root.addWidget(curves_title)
+        advanced.addWidget(curves_title)
         self.color_curve_channel = make_shrinkable(QComboBox())
         self.color_curve_channel.addItem(translate("inspector.color.channel_master"), "master")
         self.color_curve_channel.addItem(translate("inspector.color.channel_red"), "red")
@@ -88,19 +95,19 @@ class ColorMixin:
         self.color_curve_channel.currentIndexChanged.connect(
             self._on_color_curve_channel_changed
         )
-        root.addWidget(self.color_curve_channel)
+        advanced.addWidget(self.color_curve_channel)
         self.color_curve_editor = ColorCurveEditor()
         self.color_curve_editor.points_changed.connect(self._on_color_curve_points_changed)
-        root.addWidget(self.color_curve_editor)
+        advanced.addWidget(self.color_curve_editor)
         self.color_curve_reset_button = self._make_action_button(
             IconName.RESET, translate("inspector.color.curve_reset"), translate("inspector.color.curve_linear_tip")
         )
         self.color_curve_reset_button.clicked.connect(self._reset_active_color_curve)
-        root.addWidget(self.color_curve_reset_button)
+        advanced.addWidget(self.color_curve_reset_button)
 
         preset_title = QLabel(translate("inspector.color.presets"))
         preset_title.setStyleSheet(label_style(11, "muted", 700))
-        root.addWidget(preset_title)
+        advanced.addWidget(preset_title)
         preset_row = QWidget()
         preset_layout = QHBoxLayout(preset_row)
         preset_layout.setContentsMargins(0, 0, 0, 0)
@@ -113,20 +120,20 @@ class ColorMixin:
         self.color_preset_apply_button.clicked.connect(self._apply_selected_color_preset)
         preset_layout.addWidget(self.color_preset_combo, 1)
         preset_layout.addWidget(self.color_preset_apply_button)
-        root.addWidget(preset_row)
+        advanced.addWidget(preset_row)
         self.color_preset_save_button = self._make_action_button(
             None, translate("mograph.layers.save_preset"), translate("inspector.color.save_tip")
         )
         self.color_preset_save_button.clicked.connect(self._request_save_color_preset)
-        root.addWidget(self.color_preset_save_button)
+        advanced.addWidget(self.color_preset_save_button)
 
         lut_title = QLabel("LUT 3D (.cube)")
         lut_title.setStyleSheet(label_style(11, "muted", 700))
-        root.addWidget(lut_title)
+        advanced.addWidget(lut_title)
         self.color_lut_label = QLabel(translate("inspector.color.no_lut"))
         self.color_lut_label.setWordWrap(True)
         self.color_lut_label.setStyleSheet(label_style(11, "muted", 500))
-        root.addWidget(self.color_lut_label)
+        advanced.addWidget(self.color_lut_label)
         lut_row = QWidget()
         lut_layout = FlowLayout(lut_row, spacing=Spacing.xs)
         self.color_lut_import_button = self._make_action_button(
@@ -139,13 +146,16 @@ class ColorMixin:
         self.color_lut_remove_button.clicked.connect(self._request_color_lut_remove)
         lut_layout.addWidget(self.color_lut_import_button)
         lut_layout.addWidget(self.color_lut_remove_button)
-        root.addWidget(lut_row)
+        advanced.addWidget(lut_row)
 
         self.color_reset_button = self._make_action_button(
             IconName.RESET, translate("shortcuts.reset_all"), translate("inspector.color.reset_tip")
         )
         self.color_reset_button.clicked.connect(self._request_color_reset)
         root.addWidget(self.color_reset_button)
+        # Courbes, préréglages et LUT : en fin de groupe, derrière leur pliant « Avancé » (« Réinitialiser » reste au-dessus).
+        root.addWidget(self._new_fold(group, UsageLevel.ADVANCED))
+        root.addWidget(self.color_advanced_gate)
         group.setEnabled(False)
         return group
 

@@ -51,6 +51,7 @@ def _build_window(qtbot, monkeypatch):
     )
     window = MainWindow()
     qtbot.addWidget(window)
+    window.properties_panel.set_usage_level("advanced")     # ces tests lisent tout l'inspecteur (une installation neuve est en Simple) ; rien n'est écrit sur disque
     # Le timer interne de l'horloge de timeline continue à émettre des
     # events toutes les 40 ms tant que la fenêtre existe ; cumulé sur
     # plusieurs tests successifs, il peut bloquer la boucle d'événements
