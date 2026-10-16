@@ -115,12 +115,17 @@ void main() {
 """
 
 PREP = FRAGMENT_HEADER + OPS + """
-// Chroma sous-échantillonnée (misc.x / misc.y > 0 : blocs de chroma du calque par unité d'uv sur cet axe) : comme
-// la conversion ``format=rgba`` de l'export (swscale), une valeur de chroma par bloc du calque, lue au centre du bloc.
+// Chroma sous-échantillonnée (misc.xy : blocs de chroma du calque par unité d'uv sur cet axe, avec le signe pour règle).
+//  > 0 : co-sitée en haut à gauche, interpolée (export : scale bilinéaire, in_*_chr_pos=0) : l'échantillon de chroma
+//        est posé sur le pixel haut gauche de son bloc, donc on lit un quart de bloc (un demi-pixel de luma) plus loin ;
+//  < 0 : recopiée sur son bloc, lue au centre du bloc (axe que l'échelle du clip laisse intact quand l'autre change) ;
+//    0 : interpolation linéaire centrée de la texture de chroma (axe que l'export rééchantillonne d'abord).
 vec2 chroma_uv(vec2 luv, vec2 extent) {
-    vec2 cells = max(misc.xy, vec2(1.0));
+    vec2 cells = max(abs(misc.xy), vec2(1.0));
     vec2 snapped = (floor(luv * cells) + 0.5) / cells;
-    vec2 cell = vec2(misc.x > 0.0 ? snapped.x : luv.x, misc.y > 0.0 ? snapped.y : luv.y);
+    vec2 sited = luv + 0.25 / cells;
+    vec2 cell = vec2(misc.x > 0.0 ? sited.x : (misc.x < 0.0 ? snapped.x : luv.x),
+                     misc.y > 0.0 ? sited.y : (misc.y < 0.0 ? snapped.y : luv.y));
     return clamp((cell - fit.xy) / extent, 0.0, 1.0);
 }
 
@@ -150,6 +155,9 @@ void main() {
         if (taps <= 1) {
             c = sample_source(fuv, chroma_uv(v_uv, extent));
         } else {
+            // Luma moyennée sur les taps ; chroma lue une fois au centre du pixel (comme la référence numpy : un tap
+            // par échantillon de chroma co-sité, la chroma n'est pas filtrée pour la réduction).
+            vec2 cuv = chroma_uv(v_uv, extent);
             vec3 total = vec3(0.0);
             for (int j = 0; j < 4; ++j) {
                 if (j >= taps) {
@@ -160,7 +168,7 @@ void main() {
                         break;
                     }
                     vec2 luv = v_uv + ((vec2(float(i), float(j)) + 0.5) / float(taps) - 0.5) / target.xy;
-                    total += sample_source(clamp((luv - fit.xy) / extent, 0.0, 1.0), chroma_uv(luv, extent));
+                    total += sample_source(clamp((luv - fit.xy) / extent, 0.0, 1.0), cuv);
                 }
             }
             c = total / float(taps * taps);

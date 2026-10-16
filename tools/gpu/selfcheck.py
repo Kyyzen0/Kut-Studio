@@ -121,9 +121,50 @@ def run(api: str, width: int = 320, height: int = 180) -> dict:
     results["cases"]["rgba/light_add"] = _light_case(api, width, height, codes)
     for layout in ("nv12", "yuv420p"):
         results["cases"][f"{layout}/letterbox"] = _letterbox_case(api, width, height, layout)
+    for shift in ((0, 0), (3, 1), (2, 2)):
+        key = f"yuv420p/export_shift_{shift[0]}_{shift[1]}"
+        case = _export_case(api, width, height, shift)
+        if case is not None:
+            results["cases"][key] = case
     for layout in ("nv12", "p010"):
         results["cases"][f"{layout}/grade_graph"] = _graph_case(api, width, height, codes, layout)
     return results
+
+
+def _export_case(api: str, width: int, height: int, shift: tuple[int, int]) -> dict | None:
+    """Moniteur contre la conversion de **l'export** (FFmpeg, :mod:`core.chroma_siting`) d'un calque déplacé de ``shift``
+    pixels entiers (impairs compris), sur une mire à grain chromatique : l'écart que l'on voit entre l'aperçu et le
+    fichier. ``None`` sans FFmpeg."""
+    import shutil
+    import subprocess
+
+    import numpy as np
+
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
+    from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource
+    from core.gpu_effects import program_for
+    from tests.gpu_harness import grain_pattern, make_frame, render_gpu
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        return None
+    codes = grain_pattern(width, height)
+    raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
+    graph = (f"[0:v]{CHROMA_SITING_TO_RGBA}[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
+             f"[bg][l]overlay={shift[0]}:{shift[1]}:format=rgb:shortest=1,format=rgba[o]")
+    completed = subprocess.run(
+        [ffmpeg, "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
+         "-filter_complex", graph, "-map", "[o]", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        input=raw, capture_output=True, check=True)
+    exported = np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
+    matrix = (1.0, 0.0, 0.0, 1.0, float(shift[0]), float(shift[1]))
+    layer = CompositeLayer("v", matrix, (0, 0, width, height), program=program_for(()))
+    frame = CompositeFrame(width, height, 1.0, (layer,), (VideoSource("v", "yuv420p", width, height),), (0.0, 0.0, 0.0))
+    got, failures = render_gpu(frame, {"v": make_frame(codes, "yuv420p")}, api=api)
+    if got is None:
+        return {"error": str(failures)}
+    diff = np.abs(got - exported) * 255
+    return {"mean": float(diff.mean()), "max": float(diff.max())}
 
 
 def _graph_case(api: str, width: int, height: int, codes, layout: str) -> dict:
@@ -161,8 +202,8 @@ def _graph_case(api: str, width: int, height: int, codes, layout: str) -> dict:
 
 def _letterbox_case(api: str, width: int, height: int, layout: str) -> dict:
     """Source plus grande que sa place, centrée avec des bandes (adaptation, suréchantillonnage à 2 taps) : la chroma
-    4:2:0 lue une fois par bloc 2×2 **du calque**, au centre du bloc (règle de l'export), pas par texel de la source.
-    Grain chromatique : interpoler la chroma au lieu de la recopier s'écarterait d'environ 25 niveaux."""
+    4:2:0 co-sitée en haut à gauche des blocs 2×2 **du calque** (règle de l'export), pas par texel de la source.
+    Grain chromatique : la recopier ou l'interpoler au centre au lieu de la poser co-sitée s'écarterait de 25 niveaux et plus."""
     import numpy as np
 
     from core.gpu_composite import CompositeFrame, CompositeLayer, VideoSource, reference_frame

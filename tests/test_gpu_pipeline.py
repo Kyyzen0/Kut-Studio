@@ -145,16 +145,30 @@ def test_blur_kernel_matches_the_step_response_of_gblur():
     assert round(first) == 100 and round(second) == 69
 
 
-def _yuv_frame(width, height):
-    from tests.gpu_harness import test_pattern
+def _yuv_frame(width, height, smooth=False):
+    from tests.gpu_harness import smooth_pattern, test_pattern
 
-    return test_pattern(width, height)
+    return smooth_pattern(width, height) if smooth else test_pattern(width, height)
+
+
+@needs_ffmpeg
+def test_gpu_eq_matches_the_export_on_slowly_varying_chroma():
+    """Même ``eq`` que ci-dessus sur une chroma qui varie doucement, comme une vraie image : l'ordre « effet puis
+    suréchantillonnage » (export) contre « suréchantillonnage puis effet » (moniteur) ne se voit plus (il ne joue qu'aux
+    arêtes de chroma, où l'écrêtage de la saturation ne commute pas avec l'interpolation)."""
+    effects = [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)]
+    mean, p99 = _ffmpeg_vs_reference(effects, smooth=True)
+    base_mean, base_p99 = _swscale_conversion_error()
+    assert mean <= 0.5 + base_mean and p99 <= 3.5 + base_p99, (mean, p99, base_mean, base_p99)  # p99 : arêtes de chroma
 
 
 @needs_ffmpeg
 @pytest.mark.parametrize("name, effects, mean_limit, p99_limit", [
     ("none", [], 0.5, 2.0),
-    ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 0.5, 2.0),
+    # Chroma aléatoire par blocs de 2 pixels (pire cas) : l'export applique ``eq`` aux plans 4:2:0 avant le
+    # suréchantillonnage de la chroma, le moniteur après ; l'écrêtage de la saturation 1,8 ne commute pas avec
+    # l'interpolation (2,7 mesuré, contre 0,5 avec la recopie de l'ancienne règle). Chroma lente : test suivant.
+    ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 3.0, 26.0),
     ("vignette", [E(EffectType.VIGNETTE, intensity=0.8)], 1.0, 4.0),
     ("black_and_white", [E(EffectType.BLACK_AND_WHITE)], 1.2, 3.0),
     ("sepia", [E(EffectType.SEPIA)], 0.6, 2.0),
@@ -165,33 +179,38 @@ def _yuv_frame(width, height):
                E(EffectType.BLUR, intensity=2.0), E(EffectType.VIGNETTE, intensity=0.6), E(EffectType.SEPIA)],
      1.2, 7.0),
 ])
-def _ffmpeg_vs_reference(effects, *, full_chroma: bool = False):
+def _ffmpeg_vs_reference(effects, *, full_chroma: bool = False, smooth: bool = False):
     """``(moyenne, p99)`` de l'écart, en niveaux 8 bits, entre le filtre FFmpeg de l'export et la formule GPU.
 
-    ``full_chroma`` : source 4:4:4, pour un effet qui passe lui-même en 4:4:4 (le comparer à une source 4:2:0
-    mesurerait le suréchantillonnage de la chroma de swscale, interpolée, contre celle de la référence, recopiée).
+    ``full_chroma`` : source 4:4:4, pour un effet qui passe lui-même en 4:4:4 (sans suréchantillonnage de chroma à
+    comparer). En 4:2:0, la chaîne est celle de l'export (:func:`core.chroma_siting.siting_before_rgb`) et la référence
+    reçoit la chroma co-sitée (:func:`tests.gpu_harness.sited_codes`).
     """
     np = pytest.importorskip("numpy")
     from core.export_engine import _build_clip_effect_filters
     from core.gpu_effects import reference_layer
 
     width, height = 320, 180
-    codes = _yuv_frame(width, height)
+    codes = _yuv_frame(width, height, smooth)
     if full_chroma:
         raw, pix_fmt = codes[..., 0].tobytes() + codes[..., 1].tobytes() + codes[..., 2].tobytes(), "yuv444p"
     else:
         raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
         pix_fmt = "yuv420p"
+    from core.chroma_siting import siting_before_rgb
+    from tests.gpu_harness import sited_codes
+
     chain = _build_clip_effect_filters(tuple(effects))
+    graph = (chain + "," if chain else "") + "format=rgba"
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", pix_fmt, "-s", f"{width}x{height}",
-         "-i", "-", "-vf", (chain + "," if chain else "") + "format=rgba", "-f", "rawvideo", "-"],
+         "-i", "-", "-vf", graph if full_chroma else siting_before_rgb(graph), "-f", "rawvideo", "-"],
         input=raw, capture_output=True, check=True,
     )
     # ``rgba`` comme le calque de l'export (``_build_layer_filter``) : swscale ne convertit pas vers ``rgb24`` et ``rgba``
     # avec le même code partout (voir ``_swscale_conversion_error``).
     expected = np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
-    full = codes.astype(float) / 255.0  # chroma 2×2 dupliquée, comme la conversion de FFmpeg ici
+    full = codes.astype(float) / 255.0 if full_chroma else sited_codes(codes)
     got = reference_layer(full, program_for(effects), yuv_to_rgb=yuv_to_rgb_matrix())
     diff = np.abs(got - expected) * 255
     return float(diff.mean()), float(np.percentile(diff, 99))
@@ -228,7 +247,10 @@ def test_the_ffmpeg_conversion_alone_stays_within_one_grey_level():
 
 @needs_ffmpeg
 @pytest.mark.parametrize("name, effects, mean_limit, p99_limit", [
-    ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 0.5, 2.0),
+    # Chroma aléatoire par blocs de 2 pixels (pire cas) : l'export applique ``eq`` aux plans 4:2:0 avant le
+    # suréchantillonnage de la chroma, le moniteur après ; l'écrêtage de la saturation 1,8 ne commute pas avec
+    # l'interpolation (2,7 mesuré, contre 0,5 avec la recopie de l'ancienne règle). Chroma lente : test suivant.
+    ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 3.0, 26.0),
     ("vignette", [E(EffectType.VIGNETTE, intensity=0.8)], 1.0, 4.0),
     ("black_and_white", [E(EffectType.BLACK_AND_WHITE)], 1.2, 3.0),
     ("sepia", [E(EffectType.SEPIA)], 0.6, 2.0),
@@ -266,37 +288,41 @@ def test_the_gpu_heat_haze_matches_the_geq_of_the_export(speed, time):
 
 
 @needs_ffmpeg
-def test_the_heat_haze_of_the_export_repeats_420_chroma_like_the_rest():
-    """En 4:2:0, le passage en ``yuva444p`` du heat haze recopie la chroma (règle de ``format=rgba``) : avec le
-    ``bicubic`` par défaut, la mire (chroma aléatoire par bloc) s'écartait de 12 niveaux en moyenne."""
+def test_the_heat_haze_of_the_export_sites_420_chroma_like_the_rest():
+    """En 4:2:0, le passage en ``yuva444p`` du heat haze suit la règle de chroma du reste de l'export (co-sitée haut
+    gauche, :mod:`core.chroma_siting`) : avec le ``bicubic`` par défaut, la mire (chroma aléatoire par bloc)
+    s'écartait de 12 niveaux en moyenne ; avec la recopie de l'ancienne règle (``neighbor``), de 28."""
     effects = [E(EffectType.HEAT_HAZE, amplitude=6.0, frequency=0.08, speed=0.0, top=0.2, span=0.5)]
     mean, p99 = _ffmpeg_vs_reference(effects)
     base_mean, base_p99 = _swscale_conversion_error()
     assert mean <= 0.6 + base_mean and p99 <= 3.0 + base_p99, (mean, p99, base_mean, base_p99)
 
 
-def _export_layer_rgba(codes):
-    """La conversion du calque de l'export (``format=rgba``) d'une image ``yuv420p`` (chroma : coin haut gauche des
-    blocs 2×2, comme ``make_frame``), en RVB 0..1."""
+def _export_layer_rgba(codes, *, siting=True):
+    """La conversion du calque de l'export (:data:`core.chroma_siting.CHROMA_SITING_TO_RGBA`) d'une
+    image ``yuv420p`` (chroma : coin haut gauche des blocs 2×2, comme ``make_frame``), en RVB 0..1. ``siting=False`` :
+    ``format=rgba`` seul (l'ancienne règle, recopie)."""
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
+
     np = pytest.importorskip("numpy")
     height, width = codes.shape[:2]
     raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
     completed = subprocess.run(
         ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
-         "-vf", "format=rgba", "-f", "rawvideo", "-"], input=raw, capture_output=True, check=True,
+         "-vf", CHROMA_SITING_TO_RGBA if siting else "format=rgba", "-f", "rawvideo", "-"],
+        input=raw, capture_output=True, check=True,
     )
     return np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
 
 
 @needs_ffmpeg
-def test_420_chroma_is_repeated_per_block_like_the_export():
-    """Chroma 4:2:0 : la référence du moniteur suit la conversion de l'export, un échantillon **recopié** sur son bloc
-    2×2 du calque. Interpoler dans l'export coûterait ×4 sur la conversion et dépend de la version de swscale
-    (``docs/gpu-preview.md``) ; le moniteur suit donc l'export.
+def test_420_chroma_is_sited_top_left_like_the_export():
+    """Chroma 4:2:0 : la référence du moniteur suit la conversion de l'export, interpolée avec l'échantillon posé sur le
+    pixel haut gauche de son bloc 2×2 (:mod:`core.chroma_siting`), la rotation de la version App Store (AVFoundation).
 
     La mire a un grain chromatique (la chroma change à chaque échantillon). Les mires des autres tests ont une
-    chroma lente ou constante par bloc : elles ne distinguaient pas les deux règles, et l'écart réel (jusqu'à
-    58 niveaux sur un plan à grain, ``print_hook.mp4``) était passé inaperçu.
+    chroma lente ou constante par bloc : elles ne distinguaient pas les règles. La recopie (l'ancienne règle) et
+    l'interpolation centrée s'écartent de ce que l'export donne de 25 niveaux et plus.
     """
     np = pytest.importorskip("numpy")
     from core.gpu_composite import _bilinear, reference_frame
@@ -311,13 +337,72 @@ def test_420_chroma_is_repeated_per_block_like_the_export():
     assert diff.mean() <= base_mean + 0.5 and np.percentile(diff, 99) <= base_p99 + 1.5, \
         (float(diff.mean()), float(np.percentile(diff, 99)), base_mean, base_p99)
 
-    # La mire distingue bien les règles : la chroma interpolée (bilinéaire, l'ancien moniteur) en est loin.
-    ys, xs = np.mgrid[0:height, 0:width] + 0.5
-    smooth = codes / 255.0
-    smooth[..., 1:] = _bilinear(np, codes[::2, ::2, 1:] / 255.0, xs / 2.0, ys / 2.0)
     m = np.array(yuv_to_rgb_matrix())
-    interpolated = np.clip(smooth @ m[:3, :3].T + m[:3, 3], 0.0, 1.0)
-    assert np.abs(interpolated - exported).mean() * 255 > 10.0
+
+    def rgb_of(chroma):
+        full = codes / 255.0
+        full[..., 1:] = chroma
+        return np.clip(full @ m[:3, :3].T + m[:3, 3], 0.0, 1.0)
+
+    ys, xs = np.mgrid[0:height, 0:width] + 0.5
+    planes = codes[::2, ::2, 1:] / 255.0
+    centered = rgb_of(_bilinear(np, planes, xs / 2.0, ys / 2.0))                 # interpolation centrée
+    repeated = rgb_of(np.repeat(np.repeat(planes, 2, axis=0), 2, axis=1))         # recopie (l'ancienne règle)
+    assert np.abs(centered - exported).mean() * 255 > 10.0
+    assert np.abs(repeated - exported).mean() * 255 > 10.0
+    # Et l'export d'avant (``format=rgba`` seul) est bien la recopie : la mire voit la différence entre les deux conversions.
+    assert np.abs(_export_layer_rgba(codes, siting=False) - exported).mean() * 255 > 10.0
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("shift", [(0, 0), (2, 2), (3, 1), (1, 1), (5, 7)])
+def test_a_layer_moved_by_whole_pixels_keeps_its_chroma_grid_like_the_export(shift):
+    """Un calque déplacé d'un nombre entier de pixels, impair compris, est converti avant ``overlay`` : sa grille de
+    chroma reste celle du calque, pas celle du cadre. L'oracle (qui lit la chroma dans l'espace du calque) et l'export
+    (``overlay=x:y``) concordent donc pour tout décalage ; un décalage impair ne tombe pas sur une frontière de texel."""
+    np = pytest.importorskip("numpy")
+    from core.chroma_siting import CHROMA_SITING_TO_RGBA
+    from core.gpu_composite import reference_frame
+    from tests.gpu_harness import grain_pattern, reference_codes
+
+    width, height = 320, 180
+    codes = grain_pattern(width, height)
+    raw = codes[..., 0].tobytes() + codes[::2, ::2, 1].tobytes() + codes[::2, ::2, 2].tobytes()
+    graph = (f"[0:v]{CHROMA_SITING_TO_RGBA}[l];color=c=black:s={width}x{height}:r=1,format=rgba[bg];"
+             f"[bg][l]overlay={shift[0]}:{shift[1]}:format=rgb:shortest=1,format=rgba[o]")
+    completed = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", f"{width}x{height}", "-i", "-",
+         "-filter_complex", graph, "-map", "[o]", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        input=raw, capture_output=True, check=True,
+    )
+    exported = np.frombuffer(completed.stdout, np.uint8).reshape(height, width, 4)[..., :3] / 255.0
+    layer = _layer(matrix=(1.0, 0.0, 0.0, 1.0, float(shift[0]), float(shift[1])))
+    frame = CompositeFrame(width, height, 1.0, (layer,), (VideoSource("v", "yuv420p", width, height),), (0.0, 0.0, 0.0))
+    diff = np.abs(reference_frame(frame, {"v": reference_codes(codes)}) - exported) * 255
+    base_mean, base_p99 = _swscale_conversion_error()
+    assert diff.mean() <= base_mean + 0.5 and np.percentile(diff, 99) <= base_p99 + 1.5, \
+        (shift, float(diff.mean()), float(np.percentile(diff, 99)))
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("canvas, media", [((640, 362), (1280, 720)), ((640, 400), (1280, 720))])
+def test_the_fit_bands_are_even_in_the_export_and_in_the_monitor(canvas, media):
+    """Mise au cadre : les bandes sont paires, dans ``frame_fit_filter`` (export) comme dans ``fit_box`` (moniteur).
+    ``pad`` pose l'image à un décalage impair en décalant la luma d'une ligne et pas le plan de chroma 4:2:0, un
+    demi-échantillon de désalignement qu'aucune règle de chroma ne rattrape. Cadre 640x362 : bande de 1 pixel avant."""
+    np = pytest.importorskip("numpy")
+    from core.export_engine import frame_fit_filter
+    from core.tracking_motion import fit_box
+
+    box = fit_box(media[0], media[1], canvas[0], canvas[1])
+    assert box.offset_x % 2 == 0 and box.offset_y % 2 == 0, box
+    graph = f"color=c=white:s={media[0]}x{media[1]}:r=1,format=yuv420p,{frame_fit_filter(*canvas, 'black')}"
+    completed = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", graph, "-frames:v", "1",
+                                "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, check=True)
+    luma = np.frombuffer(completed.stdout, np.uint8).reshape(canvas[1], canvas[0])
+    rows, cols = np.nonzero(luma > 128)
+    assert (cols.min(), rows.min()) == (int(box.offset_x), int(box.offset_y))
+    assert (cols.max() + 1 - cols.min(), rows.max() + 1 - rows.min()) == (int(box.width), int(box.height))
 
 
 # --- Plan de passes ------------------------------------------------------------------------------------------
@@ -363,12 +448,13 @@ def test_uniform_block_layout_is_stable():
     assert _FLIP_OFFSET == 50 * 4  # target.z : retournement Y patché par le backend
 
 
-def test_prep_reads_420_chroma_once_per_block_of_the_layer():
+def test_prep_reads_420_chroma_sited_per_block_of_the_layer():
     """``misc.xy`` de la passe prep : blocs de chroma du calque (taille du cadre), quelles que soient la résolution de
-    rendu et la taille de la source, même tourné ou déplacé ; rien (chroma interpolée) pour une source RVB. Un calque
-    que l'échelle du clip redimensionne garde ses blocs en largeur tant que sa largeur ne change pas (le ``scale`` de
-    l'export y recopie la chroma par paires), jamais en hauteur (il l'y interpole). Tourné avec des effets : chroma
-    interpolée (l'export peut tourner les plans 4:2:0 avant la conversion)."""
+    rendu et la taille de la source, même tourné ou déplacé ; rien (chroma interpolée) pour une source RVB. Le signe dit
+    la règle : positif, chroma co-sitée haut gauche (l'export convertit le calque à la taille du cadre,
+    :mod:`core.chroma_siting`) ; négatif, recopiée sur le bloc (un axe que l'échelle du clip laisse intact quand l'autre
+    change : le ``scale`` de l'export y recopie la chroma par paires) ; nul, interpolée. Un calque tourné avec des
+    effets : chroma interpolée (l'export peut tourner les plans 4:2:0 avant la conversion)."""
     def prep_misc(source, matrix=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), effects=()):
         frame = CompositeFrame(320, 180, 0.5, (_layer(matrix=matrix, program=program_for(list(effects))),), (source,))
         prep = next(step for step in plan_frame(frame).passes if step.shader == "prep")
@@ -379,7 +465,7 @@ def test_prep_reads_420_chroma_once_per_block_of_the_layer():
     assert prep_misc(VideoSource("v", "p010", 320, 180)) == (160.0, 90.0, 0.0, 0.0)
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), turned) == (160.0, 90.0, 0.0, 0.0)
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.7, 0.0, 0.0, 0.7, 48.0, 27.0)) == (0.0,) * 4
-    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (1.0, 0.0, 0.0, 0.6, 0.0, 36.0)) == (160.0, 0.0, 0.0, 0.0)
+    assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (1.0, 0.0, 0.0, 0.6, 0.0, 36.0)) == (-160.0, 0.0, 0.0, 0.0)
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), (0.6, 0.0, 0.0, 1.0, 64.0, 0.0)) == (0.0,) * 4
     sepia = [E(EffectType.SEPIA)]
     assert prep_misc(VideoSource("v", "yuv420p", 320, 180), effects=sepia) == (160.0, 90.0, 0.0, 0.0)

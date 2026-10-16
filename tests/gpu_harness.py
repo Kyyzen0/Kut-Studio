@@ -98,9 +98,10 @@ def reference_codes(codes: np.ndarray) -> np.ndarray:
     """Codes normalisés attendus par :func:`reference_frame`, pour la vidéo 4:2:0 que :func:`make_frame` fabrique.
 
     La chroma garde l'échantillon du coin haut gauche de chaque bloc 2×2 (celui que ``make_frame`` et le plan
-    ``yuv420p`` des tests retiennent), **recopié** sur le bloc : la règle de l'export (``format=rgba`` de swscale),
-    que la référence et le GPU reproduisent (:func:`core.gpu_composite.layer_chroma_grid`). La référence relit le
-    plan sous-échantillonné (un échantillon par bloc) pour l'interpoler quand le calque est redimensionné.
+    ``yuv420p`` des tests retiennent), répété sur le bloc. La référence relit le plan sous-échantillonné (un
+    échantillon par bloc) et l'interpole selon :func:`core.gpu_composite.layer_chroma_grid` : co-sité haut gauche pour
+    un calque que l'export ne rééchantillonne pas (:mod:`core.chroma_siting`). Pour la chroma que l'export obtient
+    ainsi, voir :func:`sited_codes`.
     """
     height, width = codes.shape[:2]
     out = codes.astype(np.float64) / 255.0
@@ -110,10 +111,32 @@ def reference_codes(codes: np.ndarray) -> np.ndarray:
     return out
 
 
+def sited_codes(codes: np.ndarray) -> np.ndarray:
+    """Codes normalisés à pleine résolution tels que l'export les obtient (:mod:`core.chroma_siting`).
+
+    L'échantillon de chroma 4:2:0 (coin haut gauche du bloc, comme ``make_frame``) est posé sur le pixel pair ; le pixel
+    impair en est la moyenne avec l'échantillon suivant (bords répétés), sur chaque axe.
+    """
+    out = codes.astype(np.float64) / 255.0
+    for channel in (1, 2):
+        plane = codes[::2, ::2, channel].astype(np.float64) / 255.0
+        for axis in (0, 1):
+            following = np.concatenate([np.take(plane, range(1, plane.shape[axis]), axis=axis),
+                                        np.take(plane, [-1], axis=axis)], axis=axis)
+            shape = list(plane.shape)
+            shape[axis] *= 2
+            doubled = np.empty(shape)
+            doubled[(slice(None),) * axis + (slice(0, None, 2),)] = plane
+            doubled[(slice(None),) * axis + (slice(1, None, 2),)] = 0.5 * (plane + following)
+            plane = doubled
+        out[..., channel] = plane[: codes.shape[0], : codes.shape[1]]
+    return out
+
+
 def grain_pattern(width: int, height: int, seed: int = 5) -> np.ndarray:
     """Codes YUV 8 bits : luma **lisse**, chroma aléatoire à chaque échantillon 4:2:0 (grain chromatique).
 
-    La chroma change d'un bloc 2×2 au suivant : recopier un échantillon par bloc ou l'interpoler (bilinéaire)
+    La chroma change d'un bloc 2×2 au suivant : recopier un échantillon par bloc ou l'interpoler
     donnent ici des images très différentes (≈ 25 niveaux en moyenne), alors que les mires à chroma constante par
     bloc ou lente (:func:`test_pattern`, :func:`smooth_pattern`) ne le voient pas. La luma reste lisse pour que la
     comparaison avec l'export ne mesure pas le rééchantillonnage géométrique de ses filtres.

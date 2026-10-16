@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Couleurs plus proches de la version App Store.** La chrominance des vidéos 4:2:0 (la plupart des fichiers H.264 et HEVC) n'est plus recopiée par blocs de 2×2 pixels : elle est interpolée à partir du coin haut gauche de chaque bloc, comme le fait macOS. Sur une vidéo HEVC 10 bits en 4K, le nombre de pixels qui s'écartent de plus d'un niveau du rendu de la version App Store passe de 90 % à 0 % (de 21 % à 10 % en H.264 8 bits, le plancher du système). L'aperçu rapide et l'export suivent la même règle. Les bandes noires d'une vidéo mise au cadre sont maintenant d'un nombre pair de pixels (un pixel de moins ou de plus), ce qui évite un décalage de couleur au bord de l'image. Les aperçus fidèles déjà calculés sont recalculés. La conversion passe par un format intermédiaire de 16 bits, qui évite une erreur de couleur de swscale (FFmpeg 6.1 et 7.1) : elle coûte environ 18 ms de CPU de plus par image 1080p (mesuré sur Mac avec FFmpeg 9.0.2, non mesuré sur Windows et Linux).
+
 ### Fixed
 
 - Presets : l'enregistrement d'un preset d'effet ou de transition ne plante plus sous PySide6 6.11 (`QDialog.Accepted` sur la classe).

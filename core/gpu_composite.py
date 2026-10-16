@@ -308,20 +308,37 @@ def _resampled_axes(layer: CompositeLayer) -> tuple[bool, bool]:
 
 def layer_chroma_grid(source: VideoSource, layer: CompositeLayer, canvas_width: int,
                       canvas_height: int) -> tuple[float, float]:
-    """Blocs de chroma où la passe prep lit la chroma sous-échantillonnée (``misc.xy``), 0 : interpolée sur cet axe.
+    """Blocs de chroma du calque par axe où la passe prep lit la chroma sous-échantillonnée (``misc.xy``).
 
-    La règle de l'export (``docs/gpu-preview.md``, « Chroma 4:2:0 ») : la conversion ``format=rgba`` du calque
-    (swscale, à taille égale) **recopie** chaque échantillon de chroma 4:2:0 sur son bloc 2×2, sur la grille du calque
-    à la taille du cadre (média adapté, bandes du ``pad`` sur des pixels pairs). Le moniteur lit donc la chroma une
-    fois par bloc, au centre du bloc, sauf sur un axe que l'export rééchantillonne d'abord (:func:`_resampled_axes`) :
-    l'interpolation bilinéaire en est alors le modèle le plus proche. Mesuré sur une mire à grain, écart à l'export :
-    Scale Y 0,7 seul, 15,7 niveaux en gardant les blocs en largeur contre 25,1 en interpolant ; Scale X 0,7 seul, 19,5
-    en interpolant tout contre 23,3 en gardant les blocs en hauteur. Interpoler dans tous les cas, côté export,
-    coûterait ×4 sur la conversion et dépend de la version de swscale (faux dans le code C de FFmpeg 7.1).
+    Le signe dit la règle (``docs/gpu-preview.md``, « Chroma 4:2:0 ») :
+
+    - ``> 0`` : chroma **co-sitée en haut à gauche, interpolée** (:mod:`core.chroma_siting`). L'export convertit le
+      calque à la taille du cadre (média adapté, bandes du ``pad`` paires) avec une conversion bilinéaire dont
+      l'échantillon de chroma est posé sur le pixel haut gauche de son bloc 2×2 : le moniteur lit la chroma, par
+      interpolation linéaire, un quart de bloc (un demi-pixel) plus loin que le pixel (:func:`siting_offset`) ;
+    - ``< 0`` : chroma **recopiée** sur son bloc (valeur absolue : blocs par axe). Cas d'un axe que l'échelle du clip ne
+      redimensionne pas, quand l'autre l'est : le ``scale`` animé de l'export (réglages par défaut) y recopie la chroma
+      par paires, et n'a pas la règle ci-dessus ;
+    - ``0`` : interpolation bilinéaire centrée, sur un axe que l'export rééchantillonne d'abord (:func:`_resampled_axes`).
+      Mesuré sur une mire à grain, écart à l'export : Scale Y 0,7 seul, 15,7 niveaux en gardant les blocs en largeur
+      contre 25,1 en interpolant ; Scale X 0,7 seul, 19,5 en interpolant tout contre 23,3 en gardant les blocs en
+      hauteur.
     """
     grid = source.chroma_grid(canvas_width, canvas_height)
     resampled_x, resampled_y = _resampled_axes(layer)
-    return (0.0 if resampled_x else grid[0], 0.0 if resampled_y else grid[1])
+    sited = not (resampled_x or resampled_y)
+
+    def axis(blocks: float, resampled: bool) -> float:
+        if resampled:
+            return 0.0
+        return blocks if sited else -blocks
+
+    return (axis(grid[0], resampled_x), axis(grid[1], resampled_y))
+
+
+def siting_offset(blocks: float) -> float:
+    """Décalage de lecture de la chroma co-sitée, en unités d'uv du calque : un quart de bloc (un demi-pixel de luma)."""
+    return 0.25 / blocks
 
 
 def layer_composite_space(layer: CompositeLayer) -> int | None:
@@ -799,9 +816,9 @@ def _reference_color_graph(np, pixels, space: int, domain: int, layer: Composite
 def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = None, luts: dict | None = None):
     """Image RVB (H, W, 3) que les passes de :func:`plan_frame` doivent produire.
 
-    ``sources[id]`` : tableau (h, w, 3) des codes YUV normalisés à pleine résolution, la chroma 4:2:0 **recopiée**
-    sur ses blocs 2×2 (``tests.gpu_harness.reference_codes``) : la référence en relit un échantillon par bloc, comme
-    la texture de chroma du GPU — ou RVB pour une source ``rgba``/``bgra``. ``mattes[clé]`` :
+    ``sources[id]`` : tableau (h, w, 3) des codes YUV normalisés à pleine résolution, la chroma 4:2:0 répétée
+    sur ses blocs 2×2 (``tests.gpu_harness.reference_codes``) : la référence en relit l'échantillon du coin haut gauche
+    de chaque bloc, comme la texture de chroma du GPU, et l'interpole selon :func:`layer_chroma_grid` — ou RVB pour une source ``rgba``/``bgra``. ``mattes[clé]`` :
     tableau (H, W) d'alpha 0..1 à la résolution de rendu. ``luts[clé]`` : atlas
     d'étalonnage (:func:`core.gpu_grade.atlas_array`) des calques qui ont un ``grade_lut``.
     """
@@ -854,13 +871,22 @@ def reference_frame(frame: CompositeFrame, sources: dict, mattes: dict | None = 
         inside = (fu >= 0) & (fu <= 1) & (fv >= 0) & (fv <= 1)
         sampled = _bilinear(np, data, fu * source.width, fv * source.height)
         if layout.is_yuv and source.chroma_scale != (1.0, 1.0):
-            # chroma : lue dans le plan sous-échantillonné (la texture de chroma du GPU), une valeur par bloc du calque
-            # (centre du bloc) sur chaque axe où ``grid`` > 0 (:func:`layer_chroma_grid`), bilinéaire ailleurs
+            # chroma : lue dans le plan sous-échantillonné (la texture de chroma du GPU) selon le signe de ``grid`` sur
+            # chaque axe (:func:`layer_chroma_grid`) : co-sitée haut gauche (> 0), recopiée par bloc du calque (< 0),
+            # interpolée (0)
             grid = layer_chroma_grid(source, layer, frame.canvas_width, frame.canvas_height)
             step_x, step_y = (int(value) for value in source.chroma_scale)
             planes = data[::step_y, ::step_x, 1:]
-            su = (np.floor(u * grid[0]) + 0.5) / grid[0] if grid[0] > 0.0 else u
-            sv = (np.floor(v * grid[1]) + 0.5) / grid[1] if grid[1] > 0.0 else v
+
+            def chroma_axis(value, blocks):
+                if blocks > 0.0:
+                    return value + siting_offset(blocks)
+                if blocks < 0.0:
+                    return (np.floor(value * -blocks) + 0.5) / -blocks
+                return value
+
+            su = chroma_axis(u, grid[0])
+            sv = chroma_axis(v, grid[1])
             cu = (su - layer.fit[0] / frame.canvas_width) / ((layer.fit[2] - layer.fit[0]) / frame.canvas_width)
             cv = (sv - layer.fit[1] / frame.canvas_height) / ((layer.fit[3] - layer.fit[1]) / frame.canvas_height)
             sampled[..., 1:] = _bilinear(np, planes, np.clip(cu, 0.0, 1.0) * planes.shape[1],

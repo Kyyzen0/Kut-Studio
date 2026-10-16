@@ -56,6 +56,7 @@ from PySide6.QtCore import QObject, QProcess, Signal
 from . import process_supervisor
 from .audio_automation import automation_pieces
 from .blend_modes import BlendMode, coerce_blend_mode
+from .chroma_siting import CHROMA_SITING_444, CHROMA_SITING_SCALE, CHROMA_SITING_TO_RGBA, siting_before_rgb
 from .color_matrix import setparams_filter
 from .effects_model import ClipEffect, EffectType
 from .mograph_ffmpeg import blend_onto, compose_graphics, video_matte_label, video_window_label
@@ -2351,7 +2352,10 @@ def _framing_crop(layer, width: int, height: int) -> str:
 def frame_fit_filter(width: int, height: int, pad_color: str = "black") -> str:
     """Mise au cadre d'un média : ``scale`` qui préserve le ratio puis ``pad`` aux bandes. Partagée avec la préparation des images
     intermédiaires : l'image qu'elle décode est exactement celle que le graphe aurait obtenue."""
-    return f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:{pad_color}"
+    # Bandes **paires** : ``pad`` pose l'image à un décalage impair en décalant la luma d'une ligne et pas le plan de
+    # chroma 4:2:0 (un demi-échantillon de chroma de désalignement). Même arrondi que ``core.tracking_motion.fit_box``.
+    return (f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:floor((ow-iw)/4)*2:floor((oh-ih)/4)*2:{pad_color}")
 
 
 def _build_layer_filter(
@@ -2470,13 +2474,18 @@ def _build_layer_filter(
     else:
         compositing_filters = ["format=rgba"]
 
+    # Chroma 4:2:0 (:mod:`core.chroma_siting`) : uniquement sur un calque que l'échelle du clip ne rééchantillonne pas.
+    # Les autres axes sont déjà interpolés par le ``scale`` de l'export, que le moniteur modélise (``_resampled_axes``).
+    siting = _scale_is_identity(transform, kfs)
+    siting_prefix = f"{CHROMA_SITING_444}," if siting and matte_label is not None else ""
+
     def apply_matte() -> str:
         """Multiplie l'alpha du calque (taille du cadre) par la matte."""
         if matte_label is None:
             return ""
         o = output_label
         return (
-            f"format=rgba[{o}_pm];"
+            f"{siting_prefix}format=rgba[{o}_pm];"
             f"[{o}_pm]split[{o}_c][{o}_a];[{o}_a]alphaextract[{o}_al];"
             f"[{o}_al][{matte_label}]blend=all_mode=multiply:shortest=0:repeatlast=1[{o}_na];"
             f"[{o}_c][{o}_na]alphamerge,"
@@ -2566,15 +2575,20 @@ def _build_layer_filter(
     if layer_space_filters:
         parts.append(f"{layer_space_filters},")
     parts.append(f"{scale_expr},")
+    # Où la chroma 4:2:0 passe en RVB : sans effet ni étalonnage, tout de suite après l'échelle (avant miroirs et rotation,
+    # qui travaillent alors en RVB comme avant) ; sinon devant le premier filtre qui impose du RVB. Pas de rotation avec
+    # des effets : l'export tourne alors les plans 4:2:0 avant la conversion (interpolée, voir ``_resampled_axes``).
+    # Rien si la matte ou le heat haze (espace calque) ont déjà converti.
+    has_effects = bool(effect_filters or color_grade_filters)
+    converts_here = siting and matte_label is None and not layer_space_filters and not (rotation_expr and has_effects)
+    if converts_here and not has_effects:
+        parts.append(f"{CHROMA_SITING_TO_RGBA},")
     if flip_filters:
         parts.append(f"{flip_filters},")
     if rotation_expr:
         parts.append(f"{rotation_expr},")
-    if effect_filters:
-        parts.append(f"{effect_filters},")
-    if color_grade_filters:
-        parts.append(f"{color_grade_filters},")
-    parts.append(f"{','.join(compositing_filters)},")
+    tail = ",".join(text for text in (effect_filters, color_grade_filters, ",".join(compositing_filters)) if text)
+    parts.append(f"{siting_before_rgb(tail) if converts_here and has_effects else tail},")
     if opacity_expr:
         parts.append(f"{opacity_expr},")
     parts.append(f"setpts=PTS+{timeline_start}[{output_label}]")
@@ -2808,9 +2822,10 @@ def _glow_filter(params, pixel_scale: float, label: str) -> str:
     Un sous-graphe au milieu de la chaîne (``split`` puis ``blend``) : la syntaxe des graphes FFmpeg permet de
     reprendre une chaîne par un filtre à deux entrées. ``label`` rend les étiquettes uniques dans le graphe.
 
-    ``format=rgba`` et non ``gbrap`` : depuis du 4:2:0, swscale passe en RVB packé en recopiant la chroma, comme
-    pour le reste de la chaîne et la référence du moniteur GPU ; vers ``gbrap`` il l'interpole (sur une mire aux
-    couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap`` (pour ``gblur``), rien ne change.
+    ``format=rgba`` et non ``gbrap`` : depuis du 4:2:0, swscale passe en RVB packé avec la règle de chroma du reste de
+    la chaîne (:mod:`core.chroma_siting`, posée devant ce ``format=rgba`` par l'appelant) ; vers ``gbrap`` il
+    l'interpole autrement (sur une mire aux couleurs franches, 18 niveaux d'écart en moyenne). De ``rgba`` à ``gbrap``
+    (pour ``gblur``), rien ne change.
     L'image repart ensuite en YUV par le même chemin : les filtres suivants (vignette, ``eq``…) travaillent en YUV,
     comme à l'accoutumée (en RVB, la vignette rapprochait chaque canal de 128 et éclaircissait l'image)."""
     threshold = float(params["threshold"])
@@ -2831,8 +2846,8 @@ def _heat_haze_filter(params, pixel_scale: float) -> str:
     Le décalage d'une ligne ``y`` (pixels de rendu) vaut ``⌊A·sin(y·f + t·v)·rampe(y)⌋`` avec A et f ramenés à la
     résolution de rendu. L'image passe d'abord en ``yuva444p`` : la chroma glisse du même nombre entier de pixels que
     la luminance, comme sur le moniteur GPU (en 4:2:0, un décalage impair devenait un demi-pixel interpolé).
-    Ce passage **recopie** la chroma 4:2:0 sur ses blocs 2×2 (``flags=neighbor``), la règle du reste de l'export
-    (``format=rgba``) et du moniteur : le ``bicubic`` par défaut de swscale l'interpolait, et un grain chromatique
+    Ce passage applique la règle de chroma du reste de l'export et du moniteur (:mod:`core.chroma_siting` : interpolée,
+    co-sitée en haut à gauche) : le ``bicubic`` par défaut de swscale l'interpolait autrement, et un grain chromatique
     changeait de 20 niveaux en moyenne dès qu'on activait l'effet. ``T`` est le temps du clip."""
     amplitude = float(params["amplitude"]) * pixel_scale
     frequency = float(params["frequency"]) / max(1e-6, pixel_scale)
@@ -2840,7 +2855,7 @@ def _heat_haze_filter(params, pixel_scale: float) -> str:
     shift = (f"floor({_format_seconds(amplitude)}*sin(Y*{_format_seconds(frequency)}"
              f"+T*{_format_seconds(params['speed'])})*{ramp})")
     expr = f"'p(X-{shift},Y)'"
-    return f"scale=flags=neighbor,format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
+    return f"{CHROMA_SITING_SCALE},format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
 
 
 def _build_clip_effect_filters(
@@ -2904,6 +2919,13 @@ def _layer_space_filters(effects, pixel_scale: float) -> str:
         _heat_haze_filter(effect.params, pixel_scale)
         for effect in effects if effect.enabled and effect.type is EffectType.HEAT_HAZE
     )
+
+
+def _scale_is_identity(transform: ClipTransform, keyframes) -> bool:
+    """Le ``scale`` animé de l'export garde la taille du cadre (échelle 1 sur les deux axes, sans image clé)."""
+    if float(transform.scale) != 1.0 or any(kf.property_name == "scale" for kf in keyframes):
+        return False
+    return _axis_scale_expr(transform, keyframes, "scale_x") is None and _axis_scale_expr(transform, keyframes, "scale_y") is None
 
 
 def _build_animated_scale_expr(
