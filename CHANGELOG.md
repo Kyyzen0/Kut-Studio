@@ -17,7 +17,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Fixed
 
 - Presets : l'enregistrement d'un preset d'effet ou de transition ne plante plus sous PySide6 6.11 (`QDialog.Accepted` sur la classe).
-- Sous-titres ASS : le texte et `font_family` d'un `.kut` / SRT forgé ne peuvent plus injecter de balises d'override ni décaler les colonnes `Style:`.
+- Sous-titres ASS : le texte d'un `.kut` / SRT forgé ne peut plus injecter de balises d'override (`{…}` échappées, antislashs littéraux préservés) ; `font_family` ne décale plus les colonnes `Style:`.
 - Export FFmpeg : les chemins média / LUT issus du projet refusent les protocoles non locaux (http, rtsp, lavfi, concatf…); `-protocol_whitelist` est répété devant chaque `-i` (option d'entrée FFmpeg).
 - Timeline : un clip dont le média a disparu est ignoré (hors ligne) par `evaluate_timeline`, comme l'index et le plan de rendu, au lieu de lever une `KeyError`.
 - Site : `script.js` n'écrit plus via `innerHTML` ; la CSP coupe `connect-src` (aucun fetch).
