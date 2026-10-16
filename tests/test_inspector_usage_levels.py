@@ -266,6 +266,25 @@ def test_the_keyframe_menu_keeps_the_advanced_entries_for_the_advanced_level(qtb
     assert len(texts) == 5                                              # + interpolation, copier, coller, courbes
 
 
+def test_each_fold_sits_before_the_first_setting_it_reveals(qtbot):
+    """Ouvrir le sous-bloc déplie en dessous du bouton : il précède, dans son groupe, le premier conteneur de niveau."""
+    from PySide6.QtWidgets import QFormLayout
+
+    panel = _panel(qtbot, SIMPLE)
+    assert panel._level_folds
+    for group, fold in panel._level_folds.items():
+        layout = group.layout()
+        items = [layout.itemAt(i).widget() for i in range(layout.count())]
+        anchors = panel._level_anchors(group)
+        assert anchors, group.title()
+        first = next(i for i, w in enumerate(items) if w is not None and (w in anchors or any(w.isAncestorOf(a) for a in anchors)))
+        assert fold in items, group.title()
+        if isinstance(layout, QFormLayout):         # l'index d'un QFormLayout est l'ordre d'insertion, pas l'ordre des lignes
+            assert layout.getWidgetPosition(fold)[0] < layout.getItemPosition(first)[0], group.title()
+        else:
+            assert items.index(fold) < first, group.title()
+
+
 # ---------------------------------------------------------------- « Remplir le cadre »
 
 

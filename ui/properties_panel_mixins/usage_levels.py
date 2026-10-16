@@ -119,13 +119,30 @@ class UsageLevelsMixin:
                    {t.value: ADVANCED for t in AudioEffectType if t.value not in AUDIO_EFFECTS_STUDIO}, True),
         ]
 
+    def _level_anchors(self, group: QWidget) -> list[QWidget]:
+        """Les conteneurs de niveau (et listes limitées) d'un groupe : ce que le sous-bloc « Avancé » révèle."""
+        anchors: list[QWidget] = [spec.gate for spec in self._level_gate_specs if spec.group is group and spec.gate.inverse_of is None]
+        return anchors + [limit.combo for limit in self._level_limits if limit.group is group]
+
+    def _first_anchor_position(self, group: QWidget) -> int:
+        """Rang (ligne d'un formulaire, ou index) du premier élément de premier niveau du groupe qui est ou contient un conteneur de niveau."""
+        layout = group.layout()
+        anchors = self._level_anchors(group)
+        for index in range(layout.count()):
+            widget = layout.itemAt(index).widget()
+            if widget is not None and (widget in anchors or any(widget.isAncestorOf(anchor) for anchor in anchors)):
+                return layout.getItemPosition(index)[0] if isinstance(layout, QFormLayout) else index
+        return layout.rowCount() if isinstance(layout, QFormLayout) else layout.count()
+
     def _build_fold(self, group: QWidget) -> AdvancedFold:
+        """Le sous-bloc « Avancé » est inséré AVANT le premier réglage qu'il révèle : l'ouvrir déplie en dessous du bouton, qui reste en place."""
         fold = AdvancedFold()
         layout = group.layout()
+        position = self._first_anchor_position(group)
         if isinstance(layout, QFormLayout):
-            layout.addRow(fold)
+            layout.insertRow(position, fold)
         else:
-            layout.addWidget(fold)
+            layout.insertWidget(position, fold)
         fold.toggled.connect(self._refresh_usage_level)
         return fold
 
