@@ -945,3 +945,50 @@ def test_start_emits_failed_when_ffmpeg_lacks_subtitles_filter(
 
     assert failed, "failed doit être émis quand libass manque"
     assert "libass" in failed[0].lower()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "http://evil.example/a.mp4",
+        "https://evil.example/a.mp4",
+        "rtsp://cam/stream",
+        "lavfi:color=c=red",
+        "concat:a.mp4|b.mp4",
+        "file:///etc/passwd",
+        "pipe:0",
+    ],
+)
+def test_remote_or_protocol_media_paths_are_rejected(path):
+    """Un .kut ne doit pas pouvoir ouvrir une URL ou un protocole FFmpeg."""
+    with pytest.raises(ValueError, match="protocole non local|vide"):
+        export_engine.require_local_ffmpeg_path(path)
+    with pytest.raises(ValueError, match="protocole non local|vide"):
+        export_engine.input_arguments(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/tmp/local.mp4", "C:/Videos/clip.mp4", r"D:\media\clip.mp4", "relative/clip.mp4"],
+)
+def test_local_media_paths_are_accepted(path):
+    assert export_engine.require_local_ffmpeg_path(path) == path
+    assert path in export_engine.input_arguments(path)
+
+
+def test_export_command_whitelists_local_protocols_only(engine, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"")
+    project = _make_project_with_video(str(video))
+    plan = build_render_plan(project)
+    request = ExportRequest(
+        render_plan=plan,
+        output_path=str(tmp_path / "out.mp4"),
+        format=ExportFormat.MP4_H264,
+        preset=ExportPreset(
+            name="X", resolution=(160, 90), crf=18, audio_bitrate="192k"
+        ),
+        fps=15,
+    )
+    command = engine._build_command(request)
+    assert command[command.index("-protocol_whitelist") + 1] == "file,pipe,crypto,data"
