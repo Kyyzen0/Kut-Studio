@@ -216,21 +216,20 @@ _DEFAULT_ASS_STYLE_NAME = "Default"
 def _escape_ass_text(text: str) -> str:
     """Échapper le texte pour un fichier ASS.
 
-    Les sauts de ligne deviennent ``\\N``. Les accolades et les antislashs
-    sont échappés pour qu'un sous-titre ou un ``.kut`` forgé ne puisse pas
-    injecter de balises d'override libass (``{\\an8}``, dessins, etc.).
+    Les sauts de ligne deviennent ``\\N``. Les accolades sont échappées pour
+    qu'un sous-titre ou un ``.kut`` forgé n'injecte pas de balises d'override
+    (``{\\an8}``, dessins, etc.). Les autres antislashs restent tels quels :
+    libass ne les consomme que devant ``N``/``n``/``h``/``{``/``}``, et
+    doubler tous les ``\\`` affichait ``C:\\\\Temp`` à l'écran.
     """
     if not text:
         return ""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    # Antislashs d'abord, puis accolades, puis les vrais sauts de ligne → \\N.
-    escaped = (
-        normalized.replace("\\", "\\\\")
-        .replace("{", r"\{")
+    return (
+        normalized.replace("{", r"\{")
         .replace("}", r"\}")
         .replace("\n", r"\N")
     )
-    return escaped
 
 
 def _ass_font_name(font_family: str) -> str:

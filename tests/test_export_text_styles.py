@@ -163,17 +163,16 @@ def test_format_ass_escapes_newlines_as_backslash_n() -> None:
     assert r"Ligne 1\NLigne 2" in output
 
 
-def test_format_ass_escapes_override_braces_and_backslashes() -> None:
-    """Un texte forgé ne doit pas injecter de balises d'override ASS."""
+def test_format_ass_escapes_override_braces_without_doubling_other_backslashes() -> None:
+    """Un texte forgé ne doit pas injecter d'overrides ; les \\ littéraux restent visibles."""
     from core.subtitle_io import _escape_ass_text
 
-    # ``{\\an8}`` contient déjà un antislash : il est doublé avant les accolades.
-    assert _escape_ass_text(r"{\an8}INJECTED") == r"\{\\an8\}INJECTED"
-    assert _escape_ass_text(r"a\b") == r"a\\b"
+    assert _escape_ass_text(r"{\an8}INJECTED") == r"\{\an8\}INJECTED"
+    assert _escape_ass_text(r"a\b") == r"a\b"
+    assert _escape_ass_text(r"C:\Temp") == r"C:\Temp"
     cues = [SubtitleCue(start=0.0, end=1.0, text=r"{\pos(0,0)}x")]
     output = format_ass(cues, default_text_style())
-    assert r"\{\\pos(0,0)\}x" in output
-    # Aucune accolade d'ouverture non échappée dans le texte du Dialogue.
+    assert r"\{\pos(0,0)\}x" in output
     dialogue_text = output.split("Dialogue:", 1)[-1].rsplit(",,", 1)[-1]
     assert "{" not in dialogue_text.replace(r"\{", "")
 

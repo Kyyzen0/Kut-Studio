@@ -217,14 +217,18 @@ def _ffmpeg_major_version() -> int | None:
 
 # Protocoles FFmpeg refusés pour un chemin issu d'un projet (``.kut`` / LUT).
 # Les lettres de lecteur Windows (``C:\\…``) ne matchent pas : elles ont un seul
-# caractère avant ``:``. ``pipe:`` reste autorisé pour les sorties internes.
+# caractère avant ``:``. ``concatf`` est documenté à part de ``concat``.
 _UNSAFE_FFMPEG_SCHEME = re.compile(
     r"(?i)^(?:"
     r"https?|ftp|ftps|rtsp|rtsps|rtp|udp|tcp|tls|srtp|"
-    r"file|pipe|crypto|subfile|concat|bluray|dvd|sftp|ipfs|data|gopher|mms|mmsh|"
+    r"file|pipe|crypto|subfile|concatf?|bluray|dvd|sftp|ipfs|data|gopher|mms|mmsh|"
     r"icecast|tee|lavfi|fd|cache"
     r"):"
 )
+
+# Options d'entrée : FFmpeg les réinitialise entre chaque ``-i``, d'où la
+# répétition devant chaque média (pas une seule fois en tête de commande).
+_INPUT_PROTOCOL_WHITELIST = ("-protocol_whitelist", "file,pipe,crypto,data")
 
 
 def require_local_ffmpeg_path(path: str) -> str:
@@ -232,14 +236,17 @@ def require_local_ffmpeg_path(path: str) -> str:
 
     Un ``.kut`` partagé ne doit pas pouvoir faire lire une URL, un flux
     réseau ou un générateur (``lavfi:``) à la place d'un fichier. Les
-    chemins Windows ``C:\\…`` / ``C:/…`` restent acceptés.
+    chemins Windows ``C:\\…`` / ``C:/…`` restent acceptés. Le chemin est
+    renvoyé tel quel (espaces en tête/queue préservés) ; seul un probe
+    ``strip`` décide s'il est vide (placeholder d'entrée autorisé).
     """
-    text = str(path).strip()
-    if not text:
-        raise ValueError("Chemin média vide.")
-    if re.match(r"^[A-Za-z]:[\\/]", text):
+    text = str(path)
+    probe = text.strip()
+    if not probe:
         return text
-    if "://" in text or _UNSAFE_FFMPEG_SCHEME.match(text):
+    if re.match(r"^[A-Za-z]:[\\/]", probe):
+        return text
+    if "://" in probe or _UNSAFE_FFMPEG_SCHEME.match(probe):
         raise ValueError(
             f"Chemin média refusé (protocole non local) : {path}"
         )
@@ -258,8 +265,13 @@ def input_arguments(path: str, *, threads: int = 0) -> list[str]:
     """
     path = require_local_ffmpeg_path(path)
     if path.endswith(".ffconcat"):
-        return ["-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
-    return [*(["-threads", str(threads)] if threads > 0 else []), "-i", path]
+        return [*_INPUT_PROTOCOL_WHITELIST, "-threads", "2", "-f", "concat", "-safe", "0", "-i", path]
+    return [
+        *_INPUT_PROTOCOL_WHITELIST,
+        *(["-threads", str(threads)] if threads > 0 else []),
+        "-i",
+        path,
+    ]
 
 
 def decoder_threads(paths: Sequence[str]) -> int:
@@ -631,9 +643,6 @@ def build_export_command(
         "-hide_banner",
         "-loglevel",
         "error",
-        # Un .kut hostile ne doit pas ouvrir http/rtsp/… via un chemin média.
-        "-protocol_whitelist",
-        "file,pipe,crypto,data",
         "-progress",
         "pipe:1",
         "-nostats",
@@ -1123,8 +1132,6 @@ class ExportEngine(QObject):
             "-hide_banner",
             "-loglevel",
             "error",
-            "-protocol_whitelist",
-            "file,pipe,crypto,data",
         ]
         threads = decoder_threads(input_paths)
         for path in input_paths:
