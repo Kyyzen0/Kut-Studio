@@ -216,14 +216,39 @@ _DEFAULT_ASS_STYLE_NAME = "Default"
 def _escape_ass_text(text: str) -> str:
     """Échapper le texte pour un fichier ASS.
 
-    Les sauts de ligne sont transformés en ``\\N`` (la séquence ASS pour
-    passer à la ligne suivante). Les retours chariots Windows sont
-    normalisés avant l'échappement.
+    Les sauts de ligne deviennent ``\\N``. Les accolades et les antislashs
+    sont échappés pour qu'un sous-titre ou un ``.kut`` forgé ne puisse pas
+    injecter de balises d'override libass (``{\\an8}``, dessins, etc.).
     """
     if not text:
         return ""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return normalized.replace("\n", r"\N")
+    # Antislashs d'abord, puis accolades, puis les vrais sauts de ligne → \\N.
+    escaped = (
+        normalized.replace("\\", "\\\\")
+        .replace("{", r"\{")
+        .replace("}", r"\}")
+        .replace("\n", r"\N")
+    )
+    return escaped
+
+
+def _ass_font_name(font_family: str) -> str:
+    """Nom de police sûr pour une ligne ``Style:`` ASS (CSV).
+
+    Une virgule ou un saut de ligne décale les colonnes ; les accolades
+    ouvriraient des overrides. Un nom vide retombe sur Arial.
+    """
+    cleaned = (
+        str(font_family or "")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace(",", " ")
+        .replace("{", "")
+        .replace("}", "")
+        .strip()
+    )
+    return cleaned or "Arial"
 
 
 PLAY_RES_X = 1920
@@ -307,7 +332,7 @@ def _ass_style_line(style, *, name: str = _DEFAULT_ASS_STYLE_NAME, box: bool = F
         back = ass_color("#000000", 0.0)
         border_style, outline_width, shadow_offset = 3, max(style.padding_x, style.padding_y), 0.0
     return (
-        f"Style: {name},{style.font_family},{int(round(style.font_size))},"
+        f"Style: {name},{_ass_font_name(style.font_family)},{int(round(style.font_size))},"
         f"{primary},{secondary},{outline_colour},{back},"
         # Bold, Italic, Underline, StrikeOut : non utilisés par Kut-Studio.
         "0,0,0,0,"
