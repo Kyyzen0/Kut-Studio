@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.project_model import MAX_GAIN_DB, MIN_GAIN_DB
+from core.usage_level import UsageLevel
+from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.design_system import Sizes, Spacing
 from ui.icons import IconButton, IconName
@@ -53,7 +55,8 @@ class AudioMixin:
         self.audio_pan_slider.valueChanged.connect(
             lambda value: self.audio_pan_changed.emit(value / 100.0)
         )
-        group_layout.addWidget(self._audio_pan_row)
+        self.audio_pan_gate = gated(self._audio_pan_row, UsageLevel.STUDIO)     # niveau d'usage : le panoramique est Studio
+        group_layout.addWidget(self.audio_pan_gate)
 
         # Fondus, en secondes, pas de 0,1 s.
         self._fade_spins: dict[str, QDoubleSpinBox] = {}

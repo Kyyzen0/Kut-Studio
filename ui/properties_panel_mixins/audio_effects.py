@@ -213,6 +213,7 @@ class AudioEffectsMixin:
             if index >= 0:
                 self.audio_effect_type_combo.setCurrentIndex(index)
         self.audio_effect_type_combo.blockSignals(False)
+        self._apply_usage_level_choices()       # niveau d'usage : types réservés au niveau supérieur cachés de la liste
         self.audio_effect_add_button.setEnabled(
             self.audio_effect_type_combo.count() > 0
         )

@@ -26,4 +26,19 @@ USAGE_TRANSLATIONS: dict[str, dict[str, str]] = {
     # Barre du haut : puce (infobulle et nom accessible).
     "usage.chip.tooltip": _t("Niveau d'usage", "Usage level", "Nivel de uso"),
     "usage.chip.name": _t("Niveau d'usage : {level}", "Usage level: {level}", "Nivel de uso: {level}"),
+    # Inspecteur : lien du bas (groupes réservés aux niveaux supérieurs) et sous-bloc « Avancé » d'un groupe.
+    "usage.inspector.more": _t("Afficher plus d'options", "Show more options", "Mostrar más opciones"),
+    "usage.inspector.fewer": _t("Afficher moins d'options", "Show fewer options", "Mostrar menos opciones"),
+    "usage.inspector.more.tip": _t(
+        "Montre les groupes de réglages d'un niveau d'usage supérieur.",
+        "Shows the setting groups of a higher usage level.",
+        "Muestra los grupos de ajustes de un nivel de uso superior.",
+    ),
+    "usage.inspector.fold": _t("Avancé", "Advanced", "Avanzado"),
+    "usage.inspector.fold.name": _t("Réglages avancés : {group}", "Advanced settings: {group}", "Ajustes avanzados: {group}"),
+    "usage.inspector.fold.tip": _t(
+        "Montre ou replie les réglages de ce groupe d'un niveau d'usage supérieur.",
+        "Shows or folds this group's settings of a higher usage level.",
+        "Muestra o pliega los ajustes de este grupo de un nivel de uso superior.",
+    ),
 }

@@ -38,6 +38,7 @@ def window(qtbot, monkeypatch, video, tmp_path):
     monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     win = MainWindow()
     qtbot.addWidget(win)
+    win.set_usage_level("advanced")                            # le suivi est un groupe avancé (une installation neuve est en Simple)
     win.timeline_timer.stop()
     monkeypatch.setattr(win.preview_panel, "preview_at", lambda *_a, **_k: None)
     project = Project(name="Suivi", width=W, height=H, fps=FPS)

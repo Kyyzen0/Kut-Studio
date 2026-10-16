@@ -38,8 +38,10 @@ from PySide6.QtWidgets import (
 
 from ui.adaptive_layout import allow_shrinking, make_shrinkable
 from ui.design_system import Radius
+from ui.properties_widgets.level_gate import LevelGate, gated
 from ui.i18n import translate
 from ui.theme import COLORS, label_style
+from core.usage_level import UsageLevel
 from core.text_style import (
     DEFAULT_TEXT_STYLE,
     MAX_MARGIN,
@@ -197,14 +199,18 @@ class TextStyleEditor(QWidget):
         colors_grid = QGridLayout()
         colors_grid.setContentsMargins(0, 0, 0, 0)
         colors_grid.setSpacing(4)
+        # Niveau d'usage (Studio) : contour, ombre et fond ont leur conteneur, créé avec eux et lu par l'inspecteur (``level_gates``).
+        self.level_gates: list[LevelGate] = []
         colors_grid.addWidget(_row_label(translate("common.text")), 0, 0)
         colors_grid.addWidget(self.text_color_btn, 0, 1)
-        colors_grid.addWidget(_row_label(translate("mograph.graphics.stroke")), 1, 0)
-        colors_grid.addWidget(self.outline_color_btn, 1, 1)
-        colors_grid.addWidget(_row_label(translate("mograph.graphics.shadow")), 2, 0)
-        colors_grid.addWidget(self.shadow_color_btn, 2, 1)
-        colors_grid.addWidget(_row_label(translate("field.background")), 3, 0)
-        colors_grid.addWidget(self.background_color_btn, 3, 1)
+        for row, (key, button) in enumerate((
+            ("mograph.graphics.stroke", self.outline_color_btn), ("mograph.graphics.shadow", self.shadow_color_btn),
+            ("field.background", self.background_color_btn),
+        ), start=1):
+            for column, widget in enumerate((_row_label(translate(key)), button)):
+                gate = gated(widget, UsageLevel.STUDIO)
+                self.level_gates.append(gate)
+                colors_grid.addWidget(gate, row, column)
         layout.addLayout(colors_grid)
 
         # Contour / ombre / fond opacité
@@ -235,7 +241,7 @@ class TextStyleEditor(QWidget):
         effect_form.addRow(
             _row_label(translate("mograph.textstyle.background_opacity")), self.background_opacity_spin
         )
-        layout.addLayout(effect_form)
+        self._hosted(effect_form, layout)
 
         # ----- Alignement 3×3 ---------------------------------------
         align_label = QLabel(translate("mograph.graphics.alignment"))
@@ -280,7 +286,7 @@ class TextStyleEditor(QWidget):
         )
         self.margin_y_spin.valueChanged.connect(self._emit_style_changed)
         pos_form.addRow(_row_label(translate("mograph.textstyle.margin_vertical")), self.margin_y_spin)
-        layout.addLayout(pos_form)
+        self._hosted(pos_form, layout)
 
         # Padding fond
         padding_form = QFormLayout()
@@ -297,7 +303,7 @@ class TextStyleEditor(QWidget):
         )
         self.padding_y_spin.valueChanged.connect(self._emit_style_changed)
         padding_form.addRow(_row_label(translate("mograph.textstyle.padding_vertical")), self.padding_y_spin)
-        layout.addLayout(padding_form)
+        self._hosted(padding_form, layout)
 
         # ----- Bouton réinitialisation ---------------------------------
         self.reset_button = QPushButton(translate("mograph.textstyle.reset"))
@@ -306,6 +312,14 @@ class TextStyleEditor(QWidget):
         layout.addWidget(self.reset_button)
 
         layout.addStretch(1)
+
+    def _hosted(self, form: QFormLayout, layout: QVBoxLayout) -> None:
+        """Pose ``form`` dans un conteneur de niveau Studio ajouté à ``layout`` (montré ou caché d'un seul geste)."""
+        gate = LevelGate()
+        gate.minimum = UsageLevel.STUDIO
+        gate.layout().addLayout(form)
+        self.level_gates.append(gate)
+        layout.addWidget(gate)
 
     # ----- API publique -------------------------------------------------
 

@@ -8,7 +8,7 @@
 |---|---|---|
 | 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
 | 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | **fait** |
-| 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), scission de `CompositingEditor` (recadrage, fusion, masques, clé chroma), sous-blocs « Avancé », lien « Afficher plus d'options » | à faire |
+| 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), conteneurs de niveau créés à la construction, sous-blocs « Avancé », lien « Afficher plus d'options » | **fait** |
 | 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | à faire |
 | 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
 | 6 | Documentation, état d'avancement de l'ADR-0006, CHANGELOG | à faire |
@@ -28,6 +28,15 @@ Trois emplacements pour le même réglage, appliqués à chaud (aucune confirmat
 - **Barre du haut** : puce « Simple / Studio / Avancé » avant « Réglages » ; son menu réutilise les trois mêmes actions, son nom accessible est « Niveau d'usage : <niveau> ».
 
 Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui/i18n_usage.py`. Mettre une action à jour par programme n'émet pas `triggered` : pas de boucle ; `set_usage_level` n'émet que si le niveau change. **Ce lot ne masque rien** : changer de niveau n'a encore aucun effet sur l'inspecteur ni sur les menus.
+
+## Inspecteur (lot 3)
+
+- `PropertiesPanel.usage_level` (Avancé sans fenêtre) ; la fenêtre principale l'impose à la création et le suit par `usage_level_changed` (`set_usage_level`, aucun widget recréé).
+- **Groupes** : Transition, Étalonnage, Vitesse, Effets, Effets audio sont Studio, Suivi est Avancé, le reste Simple ; le niveau est la 3e condition de `_apply_group_visibility`. Le lien « Afficher plus d'options » révèle les autres d'un geste (remis à zéro à chaque changement de niveau).
+- **Réglages** : chaque réglage d'un niveau supérieur est dans un `LevelGate` (`ui/properties_widgets/level_gate.py`) créé avec le contrôle dans son constructeur ; un niveau n'écrit que la visibilité du conteneur (jamais `setEnabled`, jamais une valeur). Les groupes concernés ont un sous-bloc « Avancé » replié qui rouvre ce que le niveau cache. Au niveau Avancé, l'inspecteur est identique à celui d'avant (`tests/data/inspector_visible_before_usage_levels.json`).
+- **Choix de listes** (modes de fusion Addition et Différence, formes polygone et courbe, opérations soustraire et intersecter, effets audio hors normaliser, basses, aigus) : cachés de la liste sans être retirés ; le choix courant reste affiché.
+- **Écarts** : « Remplir le cadre » est une case relais de celle de la transformation avancée ; le menu des losanges n'offre en dessous d'Avancé que l'activation de l'animation.
+- Interdit : poser un conteneur après coup à la place d'un widget déjà dans un layout (`replaceWidget`, `setParent`, `addItem`) : l'élément de layout retiré reste référencé par le widget (hauteur périmée) et le supprimer plante Qt.
 
 ## Décisions
 

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QGroupBox, QListWidgetItem, QVBoxLayout, QWidget
 
 from core.clip_crop import CROP_MASK_ID, crop_of_compositing, is_custom_crop, keep_crop_last, with_crop
 from core.compositing import ChromaKey, Compositing, Mask, MaskMode, MaskShape
+from core.usage_level import UsageLevel
 from ui import i18n
 from ui.compositing_sections import (
     MASK_FIELDS,
@@ -31,6 +32,7 @@ from ui.compositing_sections import (
     MaskSection,
 )
 from ui.design_system import Spacing
+from ui.properties_widgets.level_gate import gated
 
 
 class CompositingEditor(QGroupBox):
@@ -53,8 +55,16 @@ class CompositingEditor(QGroupBox):
         self.crop_section = CropSection()
         self.mask_section = MaskSection()
         self.chroma_section = ChromaSection()
+        # Niveau d'usage : seul le recadrage est affiché directement en Simple ; fusion, masques et clé chroma sont Studio.
+        # Les conteneurs sont créés ici, avec les sous-blocs, et lus par l'inspecteur (``level_gates``).
+        self.level_gates = []
         for section in self.sections():
-            root.addWidget(section)
+            if section is self.crop_section:
+                root.addWidget(section)
+            else:
+                self.level_gates.append(gated(section, UsageLevel.STUDIO))
+                root.addWidget(self.level_gates[-1])
+        self.level_gates.extend(self.mask_section.level_gates)
         # Les sous-blocs construisent les contrôles ; l'éditeur les expose sous leurs noms historiques.
         self.blend_mode = self.blend_section.blend_mode
         self.crop_editor = self.crop_section.crop_editor

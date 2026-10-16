@@ -196,6 +196,7 @@ def window(qtbot, monkeypatch, tmp_path):
 
     install_dialogs(monkeypatch)
     win = build_window(qtbot, monkeypatch, tmp_path / "config")
+    win.set_usage_level("advanced")                            # ces tests lisent tout l'inspecteur (une installation neuve est en Simple)
     win.resize(1440, 900)
     win.show()
     qtbot.waitExposed(win)

@@ -35,9 +35,11 @@ from PySide6.QtWidgets import (
 )
 
 from core.graphics import GraphicOverlay, GraphicType
+from core.usage_level import UsageLevel
 from ui import i18n
 from ui.design_system import Spacing
 from ui.layers_panel import SHAPE_CHOICES
+from ui.properties_widgets.level_gate import LevelGate, gated
 from ui.theme import label_style
 
 TYPE_NAMES = {  # type de calque -> clé i18n du nom affiché
@@ -133,6 +135,12 @@ class GraphicsEditor(QGroupBox):
     text_animation_requested = Signal(str)
     voice_sync_requested = Signal()
 
+    def _add_level_section(self, root: QVBoxLayout, section: QWidget, minimum: UsageLevel) -> None:
+        """Pose une section dans un conteneur de niveau d'usage, créé avec elle (la logique par type de calque reste sur la section)."""
+        gate = gated(section, minimum)
+        self.level_gates.append(gate)
+        root.addWidget(gate)
+
     def __init__(self, group_style: str = "", parent=None) -> None:
         super().__init__(i18n.translate("mograph.graphics.title"), parent)
         self.setObjectName("graphicsGroup")
@@ -143,6 +151,7 @@ class GraphicsEditor(QGroupBox):
         root = QVBoxLayout(self)
         root.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.md)
         root.setSpacing(Spacing.xs)
+        self.level_gates: list[LevelGate] = []      # niveau d'usage : sections avancées, lues par l'inspecteur
         form = QFormLayout()
         form.setSpacing(Spacing.xs)
         root.addLayout(form)
@@ -190,7 +199,7 @@ class GraphicsEditor(QGroupBox):
         self.fill_check = QCheckBox(i18n.translate("mograph.graphics.fill"))
         self.fill_check.toggled.connect(lambda checked: self._emit("fill_enabled", checked))
         self.shape_section.form.addRow(self.fill_check)
-        root.addWidget(self.shape_section)
+        self._add_level_section(root, self.shape_section, UsageLevel.ADVANCED)
 
         # --- Contour (formes et textes) ----------------------------------------------------
         self.stroke_section = _Section(i18n.translate("mograph.graphics.stroke"))
@@ -205,7 +214,7 @@ class GraphicsEditor(QGroupBox):
             lambda checked: self._emit("stroke_position", "outside" if checked else "center")
         )
         self.stroke_section.form.addRow(self.stroke_outside_check)
-        root.addWidget(self.stroke_section)
+        self._add_level_section(root, self.stroke_section, UsageLevel.STUDIO)
 
         # --- Texte ---------------------------------------------------------------------------
         self.text_section = _Section(i18n.translate("common.text"), expanded=True)
@@ -256,7 +265,7 @@ class GraphicsEditor(QGroupBox):
         self.glow_section.form.addRow(i18n.translate("graphics.property.glow_radius"), self.glow_radius_spin)
         self.glow_strength_spin = self._double(0, 4, 0.05, "glow_strength")
         self.glow_section.form.addRow(i18n.translate("graphics.property.glow_strength"), self.glow_strength_spin)
-        root.addWidget(self.glow_section)
+        self._add_level_section(root, self.glow_section, UsageLevel.ADVANCED)
         self.light_section = _Section(i18n.translate("light.library.name"), expanded=True)
         self.light_combo = QComboBox(objectName="light_kind")
         for light_kind in LIGHT_KINDS:
@@ -274,7 +283,7 @@ class GraphicsEditor(QGroupBox):
         self.light_section.form.addRow(i18n.translate("graphics.property.light_density"), self.light_density_spin)
         self.light_seed_spin = self._spin(0, 1_000_000, "light_seed")
         self.light_section.form.addRow(i18n.translate("light.seed"), self.light_seed_spin)
-        root.addWidget(self.light_section)
+        self._add_level_section(root, self.light_section, UsageLevel.ADVANCED)
 
         # --- Animation du texte (vidéo sociale) -----------------------------------------------
         from ui.text_animation_editor import TextAnimationSection
@@ -287,7 +296,7 @@ class GraphicsEditor(QGroupBox):
         self.highlight_field = _ColorField(GraphicOverlay().highlight_color)
         self.highlight_field.changed.connect(lambda value: self._emit("highlight_color", value))
         self.animation_section.form.addRow(i18n.translate("text_animation.highlight_color"), self.highlight_field)
-        root.addWidget(self.animation_section)
+        self._add_level_section(root, self.animation_section, UsageLevel.STUDIO)
 
         # --- Ombre et fond (texte) ------------------------------------------------------------
         self.style_section = _Section(i18n.translate("mograph.graphics.shadow_background"))
@@ -310,7 +319,7 @@ class GraphicsEditor(QGroupBox):
         self.padding_spin = self._spin(0, 1024, "background_padding")
         self.radius_spin = self._double(0, 1024, 1, "background_radius")
         self.style_section.form.addRow(i18n.translate("mograph.graphics.padding_radius"), self._pair(self.padding_spin, "", self.radius_spin))
-        root.addWidget(self.style_section)
+        self._add_level_section(root, self.style_section, UsageLevel.STUDIO)
 
         # --- Calque -----------------------------------------------------------------------------
         self.layer_section = _Section(i18n.translate("mograph.layers.col_layer"))
@@ -321,7 +330,7 @@ class GraphicsEditor(QGroupBox):
         self.motion_blur_check.setToolTip(i18n.translate("mograph.graphics.motion_blur_tooltip"))
         self.motion_blur_check.toggled.connect(lambda checked: self._emit("motion_blur", checked))
         self.layer_section.form.addRow(self.motion_blur_check)
-        root.addWidget(self.layer_section)
+        self._add_level_section(root, self.layer_section, UsageLevel.ADVANCED)
 
         # Compatibilité : anciens accès par nom de champ.
         self.color_edits: dict[str, QLineEdit] = {

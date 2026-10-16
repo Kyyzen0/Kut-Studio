@@ -379,6 +379,8 @@ class MainWindow(
             self._on_asset_occurrences_requested
         )
         self.properties_panel = PropertiesPanel(self.update_volume)
+        self.properties_panel.set_usage_level(self.usage_level)     # niveau d'usage : l'inspecteur le suit à chaud
+        self.usage_level_changed.connect(self.properties_panel.set_usage_level)
         self.properties_panel.set_project_color_presets(
             getattr(self.project, "color_presets", [])
         )

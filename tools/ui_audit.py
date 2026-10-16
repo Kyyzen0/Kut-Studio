@@ -419,6 +419,7 @@ def make_main_window(width: int, height: int, *, scopes: bool = True, rich: bool
 
     register_bundled_fonts()                      # comme main.py : avant la première fenêtre, jamais en cours de route
     window = MainWindow()
+    window.set_usage_level("advanced")            # l'audit couvre tout l'inspecteur ; la dimension « niveau » viendra avec le lot 5
     window.timeline_timer.stop()
     if rich:
         from tests.rich_project import build_rich_project

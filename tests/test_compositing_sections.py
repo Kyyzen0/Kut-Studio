@@ -46,6 +46,7 @@ def test_group_holds_the_four_sections_in_order() -> None:
     editor = CompositingEditor("")
     layout = editor.layout()
     children = [layout.itemAt(i).widget() for i in range(layout.count())]
+    children = [getattr(child, "child", None) or child for child in children]      # fusion, masques et chroma sont dans un conteneur de niveau d'usage
     assert [child.objectName() for child in children] == [SECTION_BLEND, SECTION_CROP, SECTION_MASKS, SECTION_CHROMA]
     assert tuple(child.objectName() for child in children) == SECTION_IDS
     # chaque contrôle est bien dans le sous-bloc attendu (pas rattaché au groupe directement)

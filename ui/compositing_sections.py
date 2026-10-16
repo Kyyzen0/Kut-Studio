@@ -20,10 +20,12 @@ from PySide6.QtWidgets import (
 
 from core.blend_modes import BLEND_MODES, blend_label_key
 from core.compositing import MIN_CHROMA_TOLERANCE, MaskMode, MaskShape
+from core.usage_level import UsageLevel
 from ui import i18n
 from ui.adaptive_layout import FlowLayout
 from ui.design_system import Spacing
 from ui.properties_widgets.crop_editor import CropEditor
+from ui.properties_widgets.level_gate import LevelGate, gated
 
 SECTION_BLEND = "compositing_section_blend"
 SECTION_CROP = "compositing_section_crop"
@@ -124,10 +126,15 @@ class MaskSection(_Section):
         self.edit_in_monitor = QPushButton(i18n.translate("mask.edit.toggle"), objectName="mask_edit_in_monitor")
         self.edit_in_monitor.setCheckable(True)
         self.edit_in_monitor.setToolTip(i18n.translate("mask.edit.toggle_tip"))
-        mask_form.addRow(self.edit_in_monitor)
+        # Niveau d'usage : l'édition dans le moniteur, l'expansion et la rotation sont avancées (conteneurs créés ici, à la construction).
+        self.level_gates: list[LevelGate] = []
+        advanced = UsageLevel.ADVANCED
+        self.level_gates.append(gated(self.edit_in_monitor, advanced))
+        mask_form.addRow(self.level_gates[-1])
         self.path_hint = QLabel(i18n.translate("mask.path.hint"), objectName="mask_path_hint")    # courbe : les gestes du moniteur
         self.path_hint.setWordWrap(True)
-        mask_form.addRow(self.path_hint)
+        self.level_gates.append(gated(self.path_hint, advanced))
+        mask_form.addRow(self.level_gates[-1])
         self.mask_mode = QComboBox(objectName="mask_mode")
         for mode, label in MASK_MODES:
             self.mask_mode.addItem(i18n.translate(label), mode.value)
@@ -141,7 +148,11 @@ class MaskSection(_Section):
             spin.setSingleStep(step)
             spin.setDecimals(1)
             spin.setSuffix(" °" if name == "rotation" else " %")
-            mask_form.addRow(i18n.translate(label), spin)
+            if name in ("rotation", "expansion"):
+                self.level_gates.append(gated(spin, advanced, mask_form))
+                mask_form.addRow(i18n.translate(label), self.level_gates[-1])
+            else:
+                mask_form.addRow(i18n.translate(label), spin)
             self.mask_spins[name] = spin
         root.addWidget(self.mask_form_host)
 

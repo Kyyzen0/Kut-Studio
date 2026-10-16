@@ -345,6 +345,8 @@ class KeyframesMixin:
             lambda: self.animation_toggled.emit(clip.id, property_name, not animated)
         )
         menu.addAction(toggle)
+        if not self._advanced_animation_menu_shown():     # niveau d'usage : interpolation, copier / coller et courbes sont avancés
+            return menu
         matched = self._matching_keyframe(property_name, self._display_local_time())
         interpolation_menu = menu.addMenu(i18n.translate("animation.menu.interpolation"))
         interpolation_menu.setEnabled(matched is not None)

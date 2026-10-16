@@ -23,6 +23,8 @@ from core.effects_model import (
     is_single_instance,
     parameter_specs,
 )
+from core.usage_level import UsageLevel
+from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
 from ui.design_system import Sizes, Spacing
@@ -113,12 +115,9 @@ class EffectsMixin:
         self.effect_down_button = self._make_effect_button(
             translate("effects.move_down"), lambda: self._emit_effect_move(1)
         )
-        for button in (
-            self.effect_toggle_button,
-            self.effect_remove_button,
-            self.effect_up_button,
-            self.effect_down_button,
-        ):
+        # Niveau d'usage : l'ordre des effets (monter / descendre) est avancé, ses boutons ont leur conteneur.
+        self.effect_order_gates = [gated(self.effect_up_button, UsageLevel.ADVANCED), gated(self.effect_down_button, UsageLevel.ADVANCED)]
+        for button in (self.effect_toggle_button, self.effect_remove_button, *self.effect_order_gates):
             buttons_layout.addWidget(button)
         group_layout.addWidget(self.effect_buttons_row)
 
