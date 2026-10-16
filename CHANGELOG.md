@@ -14,6 +14,14 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Presets : l'enregistrement d'un preset d'effet ou de transition ne plante plus sous PySide6 6.11 (`QDialog.Accepted` sur la classe).
+- Sous-titres ASS : le texte et `font_family` d'un `.kut` / SRT forgé ne peuvent plus injecter de balises d'override ni décaler les colonnes `Style:`.
+- Export FFmpeg : les chemins média / LUT issus du projet refusent les protocoles non locaux (http, rtsp, lavfi…), et la commande d'export restreint les protocoles à `file,pipe,crypto,data`.
+- Timeline : un clip dont le média a disparu est ignoré (hors ligne) par `evaluate_timeline`, comme l'index et le plan de rendu, au lieu de lever une `KeyError`.
+- Site : `script.js` n'écrit plus via `innerHTML` ; la CSP coupe `connect-src` (aucun fetch).
+
 ## [0.6.3] - 2026-10-16
 
 Version de **correctifs** : l'aperçu du moniteur concorde de nouveau avec l'export quand une matrice de couleur est forcée, sept défauts d'interface relevés lors d'un test réel sur un Mac sont corrigés (molette qui modifiait les champs, saisie « 0,5 », groupe qui se repliait, et d'autres), et la recherche de FFmpeg est plus robuste. Elle ajoute aussi le **réglage du niveau d'usage** (Simple / Studio / Avancé), qui ne masque encore rien.
