@@ -154,7 +154,7 @@ n'est inaccessible en mode simple (elle est seulement repliée).
 
 Décisions prises à l'implémentation (validées par l'utilisateur le 2026-10-15) :
 
-- **Trois niveaux** : Simple, Studio, Avancé ; champ `usage_level` (`core/usage_level.py`).
+- **Trois niveaux** : Simple, Studio, Avancé ; champ `usage_level` de `UserSettings` (`core/user_settings.py`) ; le modèle des niveaux est dans `core/usage_level.py`.
 - **Préférence utilisateur** (`user_settings.json`), **jamais dans le `.kut`**. Installation neuve : Simple ; préférences existantes sans niveau : Avancé ; « Restaurer les valeurs par défaut » ne touche pas au niveau.
 - **Mécanisme hybride** : les groupes entiers de niveau supérieur sont cachés, le lien « Afficher plus d'options » les rouvre d'un geste, et les réglages avancés d'un groupe visible sont repliés dans un pliant « Avancé ». Les menus perdent leurs entrées (retirées puis remises à leur place), jamais désactivées ; les **raccourcis restent toujours actifs**. Un niveau ne montre ou ne cache que : ni `setEnabled`, ni valeur écrite, verrous de piste et de calque prioritaires.
 - Livré en six lots : modèle et préférence (#169), bascule (#170), inspecteur (#183, 0.6.4), menus, rail, barre de la timeline, menus contextuels et pages (#186), énumération des contrôles et audit aux trois niveaux (#187), documentation.
