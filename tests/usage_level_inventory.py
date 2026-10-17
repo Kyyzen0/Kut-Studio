@@ -31,6 +31,8 @@ from core.usage_level import UsageLevel
 MANIFEST = Path(__file__).parent / "data" / "usage_level_controls.json"
 LEVELS = (UsageLevel.SIMPLE, UsageLevel.STUDIO, UsageLevel.ADVANCED)
 CONTROL_TYPES = (QAbstractButton, QAbstractSlider, QAbstractSpinBox, QComboBox, QLineEdit, QTextEdit, QPlainTextEdit)
+# Raccourci affiché après le libellé (« Couper [Ctrl+K] »). Hors de l'f-string : un antislash y est une erreur avant Python 3.12.
+_SHORTCUT_SUFFIX = re.compile(r" \[[^\]]*\]$")
 
 
 class _Keys:
@@ -59,7 +61,7 @@ def _flat_tree(tree: list, prefix: str, keys: _Keys, out: list[str]) -> None:
             out.append(path)
             _flat_tree(children, path, keys, out)
         else:
-            out.append(keys.make(f"{prefix}/{re.sub(r' \[[^\]]*\]$', '', entry)}"))
+            out.append(keys.make(f"{prefix}/{_SHORTCUT_SUFFIX.sub('', entry)}"))
 
 
 def _tree_keys(name: str, tree: list) -> list[str]:
