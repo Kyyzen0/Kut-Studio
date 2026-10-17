@@ -7,6 +7,14 @@ Rejouable à la main, sans écran réel (plateforme Qt ``offscreen``) ::
     QT_QPA_PLATFORM=offscreen python -m tools.ui_audit --font-scale 1.2      # simule des polices plus larges
     QT_QPA_PLATFORM=offscreen python -m tools.ui_audit --verbose             # + constats informatifs (faux positifs fréquents)
     QT_QPA_PLATFORM=offscreen python -m tools.ui_audit --dialogs             # parcours clavier des dialogues
+    QT_QPA_PLATFORM=offscreen python -m tools.ui_audit --levels all          # les trois niveaux d'usage (temps ×3)
+    QT_QPA_PLATFORM=offscreen python -m tools.ui_audit --levels simple,studio  # une liste de niveaux
+
+**Niveaux d'usage** (ADR-0006, étape 4) : par défaut l'audit joue le niveau Avancé, celui d'avant les niveaux (tout est
+affiché). ``--levels`` (ou ``run_audit(levels=...)``) rejoue chaque scénario à Simple, Studio, Avancé ; aux niveaux Simple et
+Studio, des scénarios « tout ouvert » déploient « Afficher plus d'options » et tous les pliants « Avancé » de chaque onglet,
+la mise en page la plus chargée de ce niveau. Les captures d'un autre niveau que le niveau Avancé portent son nom
+(``1180x720-simple-defaut.png``).
 
 Les contrôles sont **structurels** (relatifs à la police de la plateforme, jamais des pixels absolus) :
 
@@ -43,6 +51,12 @@ from pathlib import Path
 
 SIZES: tuple[tuple[int, int], ...] = ((1440, 900), (1280, 720), (1180, 720))
 """Tailles de fenêtre supportées (le minimum de ``MainWindow`` est 1180 × 720)."""
+
+USAGE_LEVELS: tuple[str, ...] = ("simple", "studio", "advanced")
+"""Niveaux d'usage joués par ``--levels all`` (valeurs de ``core.usage_level.UsageLevel``)."""
+
+DEFAULT_LEVELS: tuple[str, ...] = ("advanced",)
+"""Le chemin existant joue le niveau Avancé, comme avant les niveaux : tout l'inspecteur est affiché."""
 
 TOLERANCE = 1
 """Dépassement toléré (px) : arrondis de géométrie, bordures de 1 px."""
@@ -402,11 +416,16 @@ def isolate_user_config(monkeypatch=None) -> Path:
     return folder
 
 
-def make_main_window(width: int, height: int, *, scopes: bool = True, rich: bool = True, font_scale: float = 1.0):
+def make_main_window(
+    width: int, height: int, *, scopes: bool = True, rich: bool = True, font_scale: float = 1.0,
+    usage_level: str = "advanced",
+):
     """Fenêtre principale de la taille demandée, avec le projet de démonstration riche, prête à être mesurée.
 
     Sans dossier de configuration déjà choisi (``KUT_STUDIO_CONFIG_DIR``), la fenêtre travaille dans une configuration jetable : elle
-    ne lit ni n'écrit jamais celle de l'utilisateur (voir :func:`isolate_user_config`)."""
+    ne lit ni n'écrit jamais celle de l'utilisateur (voir :func:`isolate_user_config`).
+
+    ``usage_level`` : niveau d'usage de la fenêtre (``simple``, ``studio`` ou ``advanced``, le défaut : tout est affiché)."""
     from PySide6.QtWidgets import QApplication
 
     from ui.main_window import MainWindow
@@ -419,7 +438,7 @@ def make_main_window(width: int, height: int, *, scopes: bool = True, rich: bool
 
     register_bundled_fonts()                      # comme main.py : avant la première fenêtre, jamais en cours de route
     window = MainWindow()
-    window.set_usage_level("advanced")            # l'audit couvre tout l'inspecteur ; la dimension « niveau » viendra avec le lot 5
+    window.set_usage_level(usage_level)           # par défaut Avancé : l'audit couvre tout l'inspecteur
     window.timeline_timer.stop()
     if rich:
         from tests.rich_project import build_rich_project
@@ -540,10 +559,40 @@ def window_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
         yield "retour-moniteur", lambda: (window._monitor_stack.setCurrentWidget(window.preview_panel), settle(window))
 
 
-def _scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
+def open_all_inspector_options(window) -> None:
+    """Les gestes de l'ADR-0006 : « Afficher plus d'options », puis tous les pliants « Avancé » ouverts."""
+    panel = window.properties_panel
+    if not panel.more_options_button.isHidden():
+        panel.more_options_button.setChecked(True)
+    for fold in panel._all_folds():
+        if not fold.isHidden():
+            fold.setChecked(True)
+    settle(window)
+
+
+def close_all_inspector_options(window) -> None:
+    panel = window.properties_panel
+    for fold in panel._all_folds():
+        fold.setChecked(False)
+    panel.more_options_button.setChecked(False)
+    settle(window)
+
+
+def open_options_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
+    """Inspecteur « tout ouvert » (niveaux Simple et Studio) : la mise en page la plus chargée du niveau, onglet par onglet."""
+    panel = window.properties_panel
+    yield "inspecteur-tout-ouvert", lambda: open_all_inspector_options(window)
+    for index, name in INSPECTOR_TABS:
+        yield f"inspecteur-tout-ouvert-{name}", lambda i=index: (panel._select_inspector_tab(i), settle(window))
+    yield "inspecteur-tout-referme", lambda: (close_all_inspector_options(window), panel._select_inspector_tab(0), settle(window))
+
+
+def _scenarios(window, usage_level: str = "advanced") -> Iterable[tuple[str, Callable[[], None]]]:
     yield "defaut", lambda: None
     if select_first_clip(window) is not None:
         yield from inspector_scenarios(window)
+        if usage_level != "advanced":
+            yield from open_options_scenarios(window)
     yield from special_clip_scenarios(window)
     yield from library_scenarios(window)
     yield from window_scenarios(window)
@@ -555,22 +604,29 @@ def run_audit(
     out_dir: Path | None = None,
     font_scale: float = 1.0,
     scopes: bool = True,
+    levels: Iterable[str] = DEFAULT_LEVELS,
 ) -> list[Finding]:
-    """Joue tous les scénarios à chaque taille ; enregistre une capture par scénario si ``out_dir`` est donné."""
+    """Joue tous les scénarios à chaque taille et à chaque niveau d'usage ; une capture par scénario si ``out_dir`` est donné.
+
+    ``levels`` : le niveau Avancé seul par défaut (le chemin d'avant les niveaux). Les constats et les captures d'un autre
+    niveau portent son nom (``1180x720 simple defaut`` ; ``1180x720-simple-defaut.png``).
+    """
     findings: list[Finding] = []
-    for width, height in sizes:
-        window = make_main_window(width, height, scopes=scopes, font_scale=font_scale)
-        try:
-            for name, action in _scenarios(window):
-                action()
-                settle(window)
-                label = f"{width}x{height} {name}"
-                findings += audit_main_window(window, label)
-                if out_dir is not None:
-                    out_dir.mkdir(parents=True, exist_ok=True)
-                    window.grab().save(str(out_dir / f"{width}x{height}-{name}.png"))
-        finally:
-            window.close()
+    for level in levels:
+        suffix = "" if level == "advanced" else f"{level} "
+        for width, height in sizes:
+            window = make_main_window(width, height, scopes=scopes, font_scale=font_scale, usage_level=level)
+            try:
+                for name, action in _scenarios(window, level):
+                    action()
+                    settle(window)
+                    label = f"{width}x{height} {suffix}{name}"
+                    findings += audit_main_window(window, label)
+                    if out_dir is not None:
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        window.grab().save(str(out_dir / f"{width}x{height}-{suffix.replace(' ', '-')}{name}.png"))
+            finally:
+                window.close()
     return findings
 
 
@@ -836,6 +892,17 @@ def _parse_sizes(text: str) -> list[tuple[int, int]]:
     return sizes
 
 
+def _parse_levels(text: str) -> list[str]:
+    """``all`` : les trois niveaux ; sinon une liste séparée par des virgules (``simple,studio``)."""
+    if text.strip().lower() == "all":
+        return list(USAGE_LEVELS)
+    levels = [part.strip().lower() for part in text.split(",") if part.strip()]
+    unknown = [level for level in levels if level not in USAGE_LEVELS]
+    if unknown or not levels:
+        raise SystemExit(f"niveau(x) inconnu(s) : {unknown or text!r} (attendu : {', '.join(USAGE_LEVELS)} ou all)")
+    return levels
+
+
 def scratch_directory() -> tempfile.TemporaryDirectory[str]:
     """Dossier jetable de l'audit : préférences, caches et proxys y sont isolés, jamais ceux de l'utilisateur.
 
@@ -853,6 +920,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES), help="ex. 1280x720,1180x720")
     parser.add_argument("--out", type=Path, default=None, help="dossier des captures PNG")
+    parser.add_argument("--levels", default=",".join(DEFAULT_LEVELS),
+                        help="niveaux d'usage joués : simple, studio, advanced (liste séparée par des virgules) ou all")
     parser.add_argument("--font-scale", type=float, default=1.0, help="agrandit les polices (ex. 1.2)")
     parser.add_argument("--no-scopes", action="store_true", help="masque les scopes (affichés par défaut)")
     parser.add_argument("--verbose", action="store_true", help="affiche aussi les constats informatifs")
@@ -872,7 +941,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.dialogs:
             return print_dialog_report()
         findings = run_audit(
-            _parse_sizes(args.sizes), out_dir=args.out, font_scale=args.font_scale, scopes=not args.no_scopes
+            _parse_sizes(args.sizes), out_dir=args.out, font_scale=args.font_scale, scopes=not args.no_scopes,
+            levels=_parse_levels(args.levels),
         )
     shown = [f for f in findings if f.blocking or args.verbose]
     seen: set[tuple[str, str]] = set()
