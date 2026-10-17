@@ -155,15 +155,18 @@ def test_the_level_survives_a_simulated_restart(qtbot, monkeypatch, tmp_path):
     _assert_all_show(reopened, "studio")
 
 
-def test_changing_the_level_hides_nothing_yet(qtbot, monkeypatch, tmp_path):
+def test_changing_the_level_keeps_the_level_choices_and_shortens_the_window_menu(qtbot, monkeypatch, tmp_path):
     _seed(tmp_path, monkeypatch, "advanced")
     window = _window(qtbot, monkeypatch, tmp_path)
     window.show()
     before = {id(w): w.isVisible() for w in window.findChildren(QRadioButton)}
-    visible_actions = [a.text() for a in window.window_menu.actions() if a.isVisible()]
+    entries = [a.text() for a in window.window_menu.actions()]
     window.set_usage_level("simple")
     assert {id(w): w.isVisible() for w in window.findChildren(QRadioButton)} == before
-    assert [a.text() for a in window.window_menu.actions() if a.isVisible()] == visible_actions
+    shorter = [a.text() for a in window.window_menu.actions()]
+    assert 0 < len(shorter) < len(entries) and set(shorter) <= set(entries)      # le lot 4 retire des entrées (voir test_usage_level_menus)
+    window.set_usage_level("advanced")
+    assert [a.text() for a in window.window_menu.actions()] == entries
 
 
 # --- boîte Préférences ----------------------------------------------------------------------------------------------

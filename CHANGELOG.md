@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Les menus, le rail de la bibliothèque, la barre de la timeline et les menus du clic droit suivent le niveau d'usage.** En Simple, les menus ne gardent que l'essentiel (fichier, annuler/rétablir, dupliquer, supprimer, couper, pistes, texte, réseaux sociaux de base, pages Montage et Audio) ; Studio y ajoute les calques (formes, groupes, repères, alignement), la grille rythmique, l'impact, la page Couleur (aussi dans la barre du haut ; Composition reste en Avancé), les scopes et la vitesse du clic droit, avec les outils roll, slip, slide et l'enregistrement dans la barre de la timeline ; Avancé montre tout, comme avant. Si la page ou la section du rail affichée disparaît en descendant de niveau, l'interface revient sur Montage ou Médias sans toucher au projet. Une entrée absente du menu reste utilisable par son **raccourci clavier, qui répond à tous les niveaux**, et en passant au niveau supérieur ; rien n'est grisé ni réinitialisé, et les pistes et calques verrouillés le restent à tous les niveaux. Voir [docs/usage-levels.md](docs/usage-levels.md).
+
 ## [0.6.4] - 2026-10-17
 
 Version qui **rapproche les couleurs de la version App Store** et **rend l'inspecteur sensible au niveau d'usage** : la chrominance des vidéos 4:2:0 est interpolée comme le fait macOS (sur une vidéo HEVC 10 bits en 4K, de 90 % à 0 % des pixels qui s'écartent de plus d'un niveau du rendu App Store), l'inspecteur n'affiche que l'essentiel en Simple, davantage en Studio et tout en Avancé, et quatre correctifs de robustesse et de sécurité (presets, sous-titres ASS, protocoles FFmpeg, timeline) s'y ajoutent.

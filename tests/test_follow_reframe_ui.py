@@ -19,6 +19,7 @@ def window(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     main = MainWindow()
+    main.set_usage_level("advanced")      # ces tests lisent des entrées de menu de niveau Studio et Avancé
     qtbot.addWidget(main)
     main.timeline_timer.stop()
     keep_preview_player_off_the_disk(main, monkeypatch)

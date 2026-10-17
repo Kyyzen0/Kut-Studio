@@ -9,7 +9,7 @@
 | 1 | Modèle (`core/usage_level.py`), préférence `usage_level`, signal `usage_level_changed`, aucun effet visible | **fait** (cette PR) |
 | 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | **fait** |
 | 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), conteneurs de niveau créés à la construction, sous-blocs « Avancé », lien « Afficher plus d'options » | **fait** |
-| 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | à faire |
+| 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | **fait** |
 | 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
 | 6 | Documentation, état d'avancement de l'ADR-0006, CHANGELOG | à faire |
 
@@ -134,6 +134,18 @@ Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui
 | Rail de la bibliothèque : effets, transitions, couleur, séquences, modèles | Studio |
 | **Raccourcis clavier** (`ACTION` et `KEY`) | **toujours actifs** |
 | Éditeur de raccourcis, Préférences | toujours |
+
+## Menus et surfaces (lot 4)
+
+- **Menus de la barre** : `ui/main_window_mixins/menu_levels.py` (`MENU_GATES`, table du niveau minimal de chaque entrée, repérée par la clé de traduction de son libellé ; un sous-menu par sa clé suivie de `>`). Une entrée au-dessus du niveau est **retirée du menu** (`QMenu.removeAction`) et **remise à sa place d'origine** (`insertAction`) quand le niveau monte : rien n'est recréé, désactivé ni reparenté. Les séparateurs ne sont montrés qu'entre deux entrées visibles ; au niveau Avancé la liste est exactement celle d'avant (`tests/data/menus_before_usage_levels.json`, produit par `tests/menu_order.py` sur `origin/main`).
+- **Raccourcis toujours actifs** : un `QAction` caché par `setVisible(False)`, ou retiré de tous les menus, perd son raccourci. Toutes les actions de commande (`ShortcutManager.command_actions`) sont donc attachées à la fenêtre (`addAction`) à l'installation ; `tests/test_usage_level_menus.py` presse les raccourcis des entrées absentes, à chaque niveau, avec de vraies frappes. Un niveau n'appelle jamais `setEnabled` ; les verrous de piste et de calque ne changent pas.
+- **Rail de la bibliothèque** (`SideRail.set_usage_level`) : médias, montage, texte, audio et graphiques en Simple ; effets, transitions, couleur, séquences et modèles dès Studio. Seule la visibilité du bouton change.
+- **Barre de la timeline** (`TimelinePanel.set_usage_level`) : sélection, lame, aimantation, ripple et marqueur en Simple ; roll, slip, slide et enregistrement dès Studio. Leurs raccourcis (R, Y, U, enregistrement) agissent par le bouton, caché ou non ; un outil caché ne reste pas actif (retour à la sélection) et un enregistrement en cours garde son bouton visible.
+- **Menus contextuels** (construits à chaque ouverture, ils lisent le niveau du panneau) : clip : couper, dupliquer, activer, supprimer en Simple ; « Supprimer et refermer » et « Vitesse ▸ » (vitesses, sens inverse, garder la durée, copier, coller, réinitialiser) en Studio ; imbriquer, convertir, ouvrir, Multicam, images intermédiaires, qualité et analyse du flux, courbe de vitesse et son de la courbe en Avancé. Piste (⋯) : courbe de volume, rôle et « Baisser sous… » en Avancé. Média : renommer, sélectionner dans la timeline, dossiers, supprimer en Simple ; étiquettes, relier, proxy, matrice couleur en Studio ; « Créer une séquence Multicam… » (sélection multiple) en Avancé.
+- **Entrées non listées dans la spécification, classées ainsi** : Réseaux sociaux « Recadrer en suivant le tracker » et « Ken Burns sur la sélection » (Studio) ; Fenêtre « Utiliser les proxies » (Studio) ; Édition « Couper / Copier / Coller » et Séquence « Ajouter un clip » (désactivées à dessein, restent en Simple) ; « Supprimer et refermer » du clic droit (Studio, comme l'entrée du menu Édition).
+- **Boutons de pages** (barre du haut, `page_buttons`) : Montage et Audio en Simple, Couleur dès Studio, Composition en Avancé (`PAGE_LEVELS`) ; seule la visibilité du bouton change, les commandes de pages et leurs raccourcis restent actifs.
+- **Descente de niveau** : si la page active ou la section active du rail de la bibliothèque disparaît au nouveau niveau, l'interface retombe d'abord sur Montage (`switch_page`) et sur « Médias », puis applique le niveau ; le projet, la sélection et la position de lecture sont conservés.
+- **Hors périmètre** : les boutons cachés `top_nav_buttons` (jamais affichés) ne sont pas touchés.
 
 ## Pièges à respecter (vérifiés dans le code)
 

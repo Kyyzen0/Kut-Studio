@@ -66,6 +66,7 @@ from ui.side_rail import SideRail, DEFAULT_SECTIONS
 from ui.workspace import WorkspaceManager
 from ui.main_window_mixins.history import HistoryMixin
 from ui.main_window_mixins.preferences import PreferencesMixin
+from ui.main_window_mixins.menu_levels import MenuLevelsMixin
 from ui.main_window_mixins.usage_level import UsageLevelMixin, _FitLevelChip
 from ui.main_window_mixins.recording import RecordingMixin
 from ui.main_window_mixins.timeline_editing import TimelineEditingMixin
@@ -183,6 +184,7 @@ class MainWindow(
     RecordingMixin,
     PreferencesMixin,
     UsageLevelMixin,
+    MenuLevelsMixin,
     HistoryMixin,
     QMainWindow,
 ):
@@ -757,6 +759,7 @@ class MainWindow(
         self._refresh_undo_redo_state()
         self.shortcuts.changed.connect(self._refresh_shortcut_tooltips)
         self._refresh_shortcut_tooltips()
+        self._install_menu_levels()         # niveau d'usage : entrées des menus, rail, barre et menus contextuels
         if os.environ.get("KUT_STUDIO_DEBUG") == "1":
             self.diagnostics_action.setChecked(True)
 
