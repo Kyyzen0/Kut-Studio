@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-17
+
+Version qui **rapproche les couleurs de la version App Store** et **rend l'inspecteur sensible au niveau d'usage** : la chrominance des vidéos 4:2:0 est interpolée comme le fait macOS (sur une vidéo HEVC 10 bits en 4K, de 90 % à 0 % des pixels qui s'écartent de plus d'un niveau du rendu App Store), l'inspecteur n'affiche que l'essentiel en Simple, davantage en Studio et tout en Avancé, et quatre correctifs de robustesse et de sécurité (presets, sous-titres ASS, protocoles FFmpeg, timeline) s'y ajoutent.
+
+**À savoir** : l'export de vidéos 4:2:0 demande un peu plus de CPU (environ 18 ms par image 1080p, mesuré sur Mac avec FFmpeg 9.0.2 ; non mesuré sur Windows et Linux), et les aperçus fidèles déjà calculés sont recalculés. Une installation neuve démarre au niveau **Simple** ; un utilisateur qui avait déjà des préférences reste en **Avancé** et voit tous les contrôles, mais quelques-uns changent de place dans l'inspecteur (détail ci-dessous) ; rien n'est retiré ni réinitialisé. Les menus, les raccourcis et les rails ne changent pas encore selon le niveau.
+
 ### Changed
 
 - **L'inspecteur suit le niveau d'usage (Simple, Studio, Avancé).** En Simple, l'inspecteur n'affiche que l'essentiel (clip, valeurs de mouvement, « Remplir le cadre », recadrage, gain et fondus, sous-titre et calque graphique de base) ; Studio y ajoute étalonnage, vitesse, effets, transitions, images-clés, fusion, masques simples et clé chroma ; Avancé montre tout. Les groupes d'un niveau supérieur se rouvrent d'un clic avec « Afficher plus d'options » en bas de l'inspecteur, et chaque groupe replie ses réglages d'un niveau supérieur derrière un pliant « Avancé », placé sous les réglages de base. Rien n'est retiré ni réinitialisé : un réglage caché garde sa valeur, et les pistes et calques verrouillés le restent à tous les niveaux. Pour que les réglages de base restent au-dessus du pliant, quelques contrôles changent de place : les losanges d'images-clés sont regroupés en bas de Mouvement (« Réinitialiser » passe avant l'alignement et la transformation avancée), le panoramique passe après les fondus, la section « Temps » clôt Vitesse, « Réinitialiser » précède les courbes d'étalonnage, le recadrage précède la fusion, et les blocs du sous-titre et du calque graphique sont réordonnés. Les menus, les raccourcis et les rails ne changent pas encore.
@@ -690,7 +696,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.0...v0.6.1
