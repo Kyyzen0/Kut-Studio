@@ -28,6 +28,7 @@ def dialogs(monkeypatch):
 @pytest.fixture
 def window(qtbot, monkeypatch, tmp_path, dialogs):
     window = build_window(qtbot, monkeypatch, tmp_path / "config")
+    window.set_usage_level("advanced")      # le menu ⋯ d'une piste audio (courbe, rôle, ducking) est de niveau Avancé
     media = tmp_path / "musique.wav"
     media.write_bytes(b"\x00" * 64)
     window.project.media_assets.append(MediaAsset(

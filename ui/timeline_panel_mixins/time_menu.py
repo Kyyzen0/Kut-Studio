@@ -10,7 +10,9 @@ from __future__ import annotations
 from core.time_commands import SPEED_CHOICES, TimeCommand
 from core.time_presets import TimePreset
 from core.time_remapping import FlowQuality, FreezeFrameMode, TimeInterpolation
+from core.usage_level import UsageLevel
 from ui.i18n import translate
+from ui.timeline_panel_mixins.usage_levels import UsageLevelsTimelineMixin
 
 _PRESET_ORDER = (
     TimePreset.SLOW_50, TimePreset.SLOW_25, TimePreset.FAST_2, TimePreset.FAST_4, TimePreset.RAMP_IN, TimePreset.RAMP_OUT,
@@ -19,8 +21,12 @@ _PRESET_ORDER = (
 Choice = tuple[str, object]
 
 
-class TimeMenuMixin:
-    """Mixin de ``TimelinePanel`` : entrées « Vitesse » du menu d'un clip."""
+class TimeMenuMixin(UsageLevelsTimelineMixin):
+    """Mixin de ``TimelinePanel`` : entrées « Vitesse » du menu d'un clip.
+
+    Niveau d'usage : le sous-menu est Studio (vitesses, sens inverse, garder la durée, copier, coller, réinitialiser) ;
+    les images intermédiaires, la qualité du flux, son analyse, la courbe de vitesse et le son de la courbe sont Avancé.
+    """
 
     time_ripple_timeline: bool = False
     """Réglage lu par le menu (posé par la fenêtre) : une édition de vitesse garde la durée sur la timeline."""
@@ -37,6 +43,9 @@ class TimeMenuMixin:
 
     def _add_time_menu(self, menu, clip_id: str) -> dict[object, Choice]:
         """Ajoute « Vitesse ▸ » à ``menu`` ; retourne ``{action: (commande, argument)}`` (vide si le clip n'a pas de vitesse)."""
+        if not self.level_at_least(UsageLevel.STUDIO):
+            return {}
+        advanced = self.level_at_least(UsageLevel.ADVANCED)
         found = self._clip_of_view(clip_id)
         if found is None:
             return {}
@@ -58,8 +67,24 @@ class TimeMenuMixin:
         reverse.setCheckable(True)
         reverse.setChecked(remapping.reverse)
         actions[reverse] = (TimeCommand.REVERSE.value, not remapping.reverse)
-        if track_type == "video":
+        if advanced and track_type == "video":
             self._add_interpolation_entries(submenu, clip, actions)
+        if advanced:
+            self._add_curve_entries(submenu, clip, actions)
+        submenu.addSeparator()
+        ripple = submenu.addAction(translate("time.menu.ripple"))
+        ripple.setCheckable(True)
+        ripple.setChecked(self.time_ripple_timeline)
+        actions[ripple] = ("ripple", not self.time_ripple_timeline)
+        actions[submenu.addAction(translate("time.menu.copy"))] = ("copy", None)
+        actions[submenu.addAction(translate("time.menu.paste"))] = ("paste", None)
+        actions[submenu.addAction(translate("time.menu.reset"))] = (TimeCommand.RESET.value, None)
+        return actions
+
+    @staticmethod
+    def _add_curve_entries(submenu, clip, actions: dict[object, Choice]) -> None:
+        """Courbe de vitesse et son (Avancé)."""
+        remapping = clip.time_remapping
         curve = submenu.addMenu(translate("time.menu.curve"))
         actions[curve.addAction(translate("time.menu.add_point"))] = (TimeCommand.ADD_POINT.value, None)
         actions[curve.addAction(translate("time.menu.hold"))] = (TimeCommand.HOLD.value, None)
@@ -78,15 +103,6 @@ class TimeMenuMixin:
         follow.setCheckable(True)
         follow.setChecked(remapping.remap_audio)
         actions[follow] = (TimeCommand.REMAP_AUDIO.value, not remapping.remap_audio)
-        submenu.addSeparator()
-        ripple = submenu.addAction(translate("time.menu.ripple"))
-        ripple.setCheckable(True)
-        ripple.setChecked(self.time_ripple_timeline)
-        actions[ripple] = ("ripple", not self.time_ripple_timeline)
-        actions[submenu.addAction(translate("time.menu.copy"))] = ("copy", None)
-        actions[submenu.addAction(translate("time.menu.paste"))] = ("paste", None)
-        actions[submenu.addAction(translate("time.menu.reset"))] = (TimeCommand.RESET.value, None)
-        return actions
 
     @staticmethod
     def _add_interpolation_entries(submenu, clip, actions: dict[object, Choice]) -> None:

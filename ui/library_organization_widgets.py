@@ -59,6 +59,7 @@ from core.library_organization import (
     TAG_COLOR_PALETTE,
     is_asset_missing,
 )
+from core.usage_level import UsageLevel
 from core.workspace_state import MIN_SIZE, PanelId
 from ui.design_system import DIALOG_MARGINS, Radius, Spacing
 from ui.i18n import translate
@@ -791,8 +792,12 @@ class AssetContextMenuBuilder(QWidget):
         proxy_progress: int = 0,
         color_matrix: str = "",
         color_refusal: str = "",
+        usage_level: UsageLevel | None = None,
     ) -> None:
         super().__init__(parent)
+        # Niveau d'usage (ADR-0006, lot 4) : ``None`` = Avancé, le menu d'avant. Simple : renommer, sélectionner dans la
+        # timeline, déplacer vers un dossier, supprimer ; Studio ajoute étiquettes, relier, proxy et matrice couleur.
+        self.usage_level = usage_level or UsageLevel.ADVANCED
         self.color_matrix = color_matrix
         self.color_refusal = color_refusal
         self.proxy_state = proxy_state
@@ -841,28 +846,29 @@ class AssetContextMenuBuilder(QWidget):
         move_menu = menu.addMenu(translate("library.menu.move_to"))
         self._populate_move_menu(move_menu)
 
-        # Tags.
-        tags_menu = menu.addMenu(translate("dialog.title.tags"))
-        self._populate_tags_menu(tags_menu)
+        if self.usage_level.at_least(UsageLevel.STUDIO):
+            # Tags.
+            tags_menu = menu.addMenu(translate("dialog.title.tags"))
+            self._populate_tags_menu(tags_menu)
 
-        # Relier le fichier (visible surtout si manquant, mais autorisé
-        # pour tous les médias : on peut relier un média présent pour
-        # corriger son chemin).
-        if self.is_missing:
-            action_relink = menu.addAction(translate("library.menu.relink"))
-            action_relink.setText(translate("library.menu.relink_missing"))
-            action_relink.triggered.connect(
-                lambda: self.relink_requested.emit(self.asset_id)
-            )
-        else:
-            action_relink = menu.addAction(translate("library.menu.relink"))
-            action_relink.triggered.connect(
-                lambda: self.relink_requested.emit(self.asset_id)
-            )
+            # Relier le fichier (visible surtout si manquant, mais autorisé
+            # pour tous les médias : on peut relier un média présent pour
+            # corriger son chemin).
+            if self.is_missing:
+                action_relink = menu.addAction(translate("library.menu.relink"))
+                action_relink.setText(translate("library.menu.relink_missing"))
+                action_relink.triggered.connect(
+                    lambda: self.relink_requested.emit(self.asset_id)
+                )
+            else:
+                action_relink = menu.addAction(translate("library.menu.relink"))
+                action_relink.triggered.connect(
+                    lambda: self.relink_requested.emit(self.asset_id)
+                )
 
-        menu.addSeparator()
-        self._populate_proxy_menu(menu)
-        self._populate_color_menu(menu)
+            menu.addSeparator()
+            self._populate_proxy_menu(menu)
+            self._populate_color_menu(menu)
 
         # Supprimer.
         action_remove = menu.addAction(translate("library.menu.delete_asset"))

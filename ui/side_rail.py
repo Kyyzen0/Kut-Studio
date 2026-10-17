@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from core.usage_level import UsageLevel, coerce_usage_level
 from ui.design_system import Iconography, Sizes, Spacing
 from ui.i18n import translate
 from ui.icons import IconButton, IconLabel, IconName, make_icon
@@ -55,6 +56,15 @@ DEFAULT_SECTIONS: tuple[RailSection, ...] = (
 )
 
 
+# Niveau d'usage minimal de chaque section (ADR-0006, lot 4) : médias, montage, texte, audio et graphiques sont Simple ;
+# effets, transitions, couleur, séquences et modèles sont Studio. Une section cachée reste atteignable (menu Fenêtre,
+# raccourcis, niveau supérieur) ; un niveau ne fait que montrer ou cacher son bouton.
+SECTION_LEVELS: dict[str, UsageLevel] = {
+    "effects": UsageLevel.STUDIO, "transitions": UsageLevel.STUDIO, "color": UsageLevel.STUDIO,
+    "sequences": UsageLevel.STUDIO, "templates": UsageLevel.STUDIO,
+}
+
+
 class SideRail(QWidget):
     """Colonne verticale d'icônes (rail principal)."""
 
@@ -70,6 +80,7 @@ class SideRail(QWidget):
         self._buttons: dict[str, IconButton] = {}
         self._icons = {section.id: section.icon for section in sections}
         self._active: str | None = None
+        self._usage_level = UsageLevel.ADVANCED      # sans fenêtre principale : tout est montré
 
         self.setObjectName("side_rail")
         self.setFixedWidth(Sizes.side_rail_width)
@@ -135,6 +146,19 @@ class SideRail(QWidget):
             button.setChecked(sid == section_id)
         self._active = section_id
         self._refresh_styles()
+
+    @property
+    def usage_level(self) -> UsageLevel:
+        return self._usage_level
+
+    def set_usage_level(self, level: object) -> None:
+        """Montre ou cache les sections selon le niveau d'usage (visibilité seulement : ni ``setEnabled`` ni reparentage)."""
+        new = coerce_usage_level(level)
+        if new is None:
+            return
+        self._usage_level = new
+        for sid, button in self._buttons.items():
+            button.setVisible(new.at_least(SECTION_LEVELS.get(sid, UsageLevel.SIMPLE)))
 
     def active(self) -> str | None:
         """Section active courante."""

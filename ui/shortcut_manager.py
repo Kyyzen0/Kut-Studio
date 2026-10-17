@@ -192,6 +192,10 @@ class ShortcutManager(QObject):
     def action(self, command_id: str) -> QAction | None:
         return self._actions.get(command_id)
 
+    def command_actions(self) -> list[QAction]:
+        """Les ``QAction`` de toutes les commandes de portée ACTION (la fenêtre les garde attachées, voir ``menu_levels``)."""
+        return list(self._actions.values())
+
     def _apply(self) -> None:
         for command_id in self._actions:
             self._apply_action(command_id)
