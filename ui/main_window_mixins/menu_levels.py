@@ -28,7 +28,9 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
 from core.usage_level import UsageLevel
+from core.workspace_state import PAGE_AUDIO, PAGE_COLOR, PAGE_COMPOSITION, PAGE_EDIT
 from ui import i18n
+from ui.side_rail import SECTION_LEVELS
 
 _STUDIO, _ADVANCED = UsageLevel.STUDIO, UsageLevel.ADVANCED
 Gate = Union[UsageLevel, tuple[UsageLevel, dict]]
@@ -65,6 +67,12 @@ MENU_GATES: dict[str, dict[str, Gate]] = {
         "shortcuts.command.page_composition": _ADVANCED, "menu.item.graph_editor": _ADVANCED,
         "debug.toggle": _ADVANCED,
     },
+}
+
+
+# Niveau minimal de chaque page (boutons de pages de la barre du haut et entrées du menu Fenêtre).
+PAGE_LEVELS: dict[str, UsageLevel] = {
+    PAGE_EDIT: UsageLevel.SIMPLE, PAGE_AUDIO: UsageLevel.SIMPLE, PAGE_COLOR: _STUDIO, PAGE_COMPOSITION: _ADVANCED,
 }
 
 
@@ -153,10 +161,27 @@ class MenuLevelsMixin:
 
     def _apply_menu_levels(self, _value: str = "") -> None:
         level = self.usage_level  # type: ignore[attr-defined]
+        self._leave_hidden_surfaces(level)
         for entry in self._menu_levels:
             entry.apply(level)
+        for page, button in self.page_buttons.items():  # type: ignore[attr-defined]
+            button.setVisible(level.at_least(PAGE_LEVELS.get(page, UsageLevel.SIMPLE)))
         for panel in (self.side_rail, self.timeline_panel, self.project_panel):  # type: ignore[attr-defined]
             panel.set_usage_level(level)
 
+    def _leave_hidden_surfaces(self, level: UsageLevel) -> None:
+        """Si la page ou la section du rail actives disparaissent au nouveau niveau, retombe d'abord sur Montage / Médias.
 
-__all__ = ["MENU_GATES", "MenuLevelsMixin"]
+        Seul l'affichage change : le projet, la sélection, la position de lecture et le moniteur ne sont pas touchés.
+        """
+        page = self.workspace.page  # type: ignore[attr-defined]
+        if not level.at_least(PAGE_LEVELS.get(page, UsageLevel.SIMPLE)):
+            self.switch_page(PAGE_EDIT)  # type: ignore[attr-defined]
+        rail = self.side_rail  # type: ignore[attr-defined]
+        active = rail.active()
+        if active is not None and not level.at_least(SECTION_LEVELS.get(active, UsageLevel.SIMPLE)):
+            rail.set_active("media")
+            self._on_side_rail_changed("media")  # type: ignore[attr-defined]
+
+
+__all__ = ["MENU_GATES", "PAGE_LEVELS", "MenuLevelsMixin"]

@@ -187,7 +187,7 @@ def test_switching_level_hot_keeps_the_same_menus_actions_and_order(window):
         window.set_usage_level(level)
         assert [a.menu() for a in window.menuBar().actions()] == bar
     assert list(layers.actions()) == originals
-    assert window_dump(window) == {k: GOLDEN[k] for k in ("menus", "toolbar", "rail")}
+    assert window_dump(window) == {k: GOLDEN[k] for k in ("menus", "toolbar", "rail", "pages")}
 
 
 def test_hidden_entries_are_retranslated_and_come_back_translated(window):
@@ -359,3 +359,56 @@ def test_a_locked_track_refuses_the_ripple_delete_at_every_level(window, monkeyp
         window.timeline_panel.selected_clip_id = ids["plain"]
         window.shortcuts.trigger("ripple_delete")
         assert [c.id for c in window.project.tracks[0].clips] == ["plain"], level
+
+
+def test_page_buttons_per_level(window):
+    expected = {SIMPLE: ["edit", "audio"], STUDIO: ["edit", "color", "audio"], ADVANCED: GOLDEN["pages"]}
+    for level in (SIMPLE, STUDIO, ADVANCED):
+        window.set_usage_level(level)
+        assert window_dump(window)["pages"] == expected[level], level
+        assert all(button.isEnabled() for button in window.page_buttons.values())
+    window.set_usage_level("simple")
+    assert window.page_buttons["composition"].isHidden() and window.page_buttons["color"].isHidden()
+
+
+@pytest.mark.parametrize("page,descend_to", [("composition", "simple"), ("composition", "studio"), ("color", "simple")])
+def test_going_down_from_a_hidden_page_falls_back_to_edit_and_keeps_the_work(window, monkeypatch, page, descend_to):
+    ids = load_scenario(window, monkeypatch)
+    window.timeline_panel.selected_clip_id = ids["plain"]
+    window.playhead_seconds = 2.0
+    project = window.project
+    window.switch_page(page)
+    assert window.workspace.page == page
+    window.set_usage_level(descend_to)
+    assert window.workspace.page == "edit" and window.page_buttons["edit"].isChecked()
+    assert window.project is project and window.timeline_panel.selected_clip_id == ids["plain"]
+    assert window.playhead_seconds == 2.0
+    window.set_usage_level("advanced")
+    window.switch_page(page)                                       # le niveau supérieur rouvre la page
+    assert window.workspace.page == page
+
+
+def test_a_page_stays_when_the_new_level_still_allows_it(window):
+    window.set_usage_level("studio")
+    window.switch_page("color")
+    window.set_usage_level("advanced")
+    window.set_usage_level("studio")
+    assert window.workspace.page == "color"
+
+
+@pytest.mark.parametrize("section", ["effects", "transitions", "sequences", "templates"])
+def test_going_down_from_a_hidden_rail_section_returns_to_media(window, section):
+    window.side_rail.set_active(section)
+    window._on_side_rail_changed(section)
+    window.set_usage_level("simple")
+    assert window.side_rail.active() == "media" and not window.side_rail._buttons["media"].isHidden()
+    assert window.workspace.page == "edit"
+
+
+def test_a_page_command_still_works_when_its_button_is_hidden(window):
+    window.set_usage_level("simple")
+    assert window.page_buttons["composition"].isHidden()
+    window.shortcuts.trigger("page_composition")                   # même chemin que le raccourci de la commande
+    assert window.workspace.page == "composition"
+    action = window.shortcuts.action("page_composition")
+    assert action in window.actions()

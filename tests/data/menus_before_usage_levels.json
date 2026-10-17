@@ -421,6 +421,12 @@
   "graphics",
   "templates"
  ],
+ "pages": [
+  "edit",
+  "composition",
+  "color",
+  "audio"
+ ],
  "clip_menu": [
   "Couper au playhead",
   "Dupliquer",

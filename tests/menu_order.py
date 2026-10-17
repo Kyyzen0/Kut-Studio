@@ -1,7 +1,7 @@
 """Entrées ordonnées des menus et des surfaces (outil des tests de niveau d'usage, lot 4).
 
 ``window_dump`` relève, dans l'ordre où l'écran les montre : les entrées des sept menus de la barre (récursivement,
-séparateurs compris, avec le raccourci de chaque action), les boutons visibles de la barre de la timeline et du rail.
+séparateurs compris, avec le raccourci de chaque action), les boutons visibles de la barre de la timeline, du rail et des pages.
 ``context_dump`` relève les menus contextuels (clip, piste, média) en interceptant ``QMenu.exec``. Le fichier
 ``tests/data/menus_before_usage_levels.json`` a été produit par ce même code sur la fenêtre d'``origin/main`` d'avant le lot :
 au niveau Avancé, rien ne doit en différer.
@@ -40,7 +40,8 @@ def window_dump(window) -> dict:
     toolbar = [name for name in TOOLBAR_BUTTONS if not getattr(timeline, name).isHidden()]
     rail = window.side_rail
     rail_ids = [section.id for section in rail._sections if not rail._buttons[section.id].isHidden()]
-    return {"menus": menus, "toolbar": toolbar, "rail": rail_ids}
+    pages = [page for page, button in window.page_buttons.items() if not button.isHidden()]
+    return {"menus": menus, "toolbar": toolbar, "rail": rail_ids, "pages": pages}
 
 
 def capture_menus(monkeypatch) -> list[list]:
