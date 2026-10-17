@@ -1,6 +1,7 @@
 # ADR-0006 : la composition visuelle — compléter ce qui existe, par étapes, sans réécrire le moteur
 
 **Statut :** Accepté le 2026-10-13 (questions ouvertes tranchées, voir « Décisions prises »). Étapes 1 à 3b livrées dans la 0.6.0 avec deux critères reportés (arrondi du recadrage, verbes de script pour les courbes) ; voir « État d'avancement ».
+**Mise à jour du 2026-10-17 :** l'étape 4 (trois niveaux d'usage) est **faite** (PR #169, #170, #183, #186, #187 et la documentation) ; voir « Étape 4 : faite » ci-dessous et [docs/usage-levels.md](../usage-levels.md).
 **Date :** 2026-10-13
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -149,6 +150,19 @@ le `.kut`) ; chaque contrôle appartient à un niveau, vérifié par un test qui
 n'est inaccessible en mode simple (elle est seulement repliée).
 *Décidé :* trois niveaux (voir « Décisions prises »).
 
+#### Étape 4 : faite (2026-10-17)
+
+Décisions prises à l'implémentation (validées par l'utilisateur le 2026-10-15) :
+
+- **Trois niveaux** : Simple, Studio, Avancé ; champ `usage_level` (`core/usage_level.py`).
+- **Préférence utilisateur** (`user_settings.json`), **jamais dans le `.kut`**. Installation neuve : Simple ; préférences existantes sans niveau : Avancé ; « Restaurer les valeurs par défaut » ne touche pas au niveau.
+- **Mécanisme hybride** : les groupes entiers de niveau supérieur sont cachés, le lien « Afficher plus d'options » les rouvre d'un geste, et les réglages avancés d'un groupe visible sont repliés dans un pliant « Avancé ». Les menus perdent leurs entrées (retirées puis remises à leur place), jamais désactivées ; les **raccourcis restent toujours actifs**. Un niveau ne montre ou ne cache que : ni `setEnabled`, ni valeur écrite, verrous de piste et de calque prioritaires.
+- Livré en six lots : modèle et préférence (#169), bascule (#170), inspecteur (#183, 0.6.4), menus, rail, barre de la timeline, menus contextuels et pages (#186), énumération des contrôles et audit aux trois niveaux (#187), documentation.
+
+Critère d'acceptation (recopié) : « chaque contrôle appartient à un niveau, vérifié par un test qui énumère les contrôles de l'inspecteur ; aucune fonction n'est inaccessible en mode simple (elle est seulement repliée) ». Il est rempli par `tests/test_usage_level_inventory.py` et son manifeste `tests/data/usage_level_controls.json`, qui couvrent aussi les menus, pages, rail, barre de la timeline et menus contextuels clip, piste et média.
+
+Écarts avec le plan : le niveau Avancé n'est pas strictement identique à l'ancienne interface, quelques contrôles de l'inspecteur ont changé de place (liste dans [docs/usage-levels.md](../usage-levels.md#déplacements-de-contrôles-et-classements-non-précisés-par-la-spécification)) ; certains menus contextuels (panneau Calques, arbre de dossiers, automation) ne suivent pas encore le niveau (« Limites connues » du même document).
+
 ### Étape 5 — Animer ce qui ne l'est pas encore
 Par ordre de valeur / coût : (a) tous les contrôles de l'inspecteur obtiennent leur losange à partir du **registre de cibles** (aujourd'hui
 5 propriétés codées en dur : `construction.py:511`) ; (b) la liste des propriétés du script (`verbs.py:434`) est **dérivée du registre** ;
@@ -199,7 +213,7 @@ Les étapes 1 à 3b sont publiées dans la **0.6.0** (2026-10-14).
 - **Étape 3b :** version du format écrite à 18 **seulement** si le projet contient une courbe (les autres projets restent en 17, octet pour octet) ; un ancien build refuse alors le fichier au lieu de perdre la courbe en silence.
 - **Étape 3b :** le critère « verbes de script `add_mask` / `set_mask_points` » est rempli par `add_mask`, `set_mask`, `set_mask_points` et `remove_mask` (`core/scripting/mask_verbs.py`, 0.6.2), après `set_color_window_points` pour les fenêtres d'étalonnage. Même résultat que l'inspecteur (test de parité sur le widget et sur la matte rendue), pas de verbe d'ordre (l'interface n'en a pas), propriétés animées refusées.
 - **Hors plan :** l'inventaire des verrous (piste, calque) a montré que l'inspecteur écrivait dans le modèle sans garde ; une règle partagée `clip_edit_refusal` les couvre. L'éditeur de courbes est couvert (#149). Restent : menu « Réseaux sociaux », garde centrale dans `core/keyframe_editing`.
-- Étapes **4** (trois niveaux), **5** (animer couleurs, effets, sommets), **6** (modes de fusion), **7** (empilement libre) et **8** : à faire.
+- Étape **4** (trois niveaux) : faite le 2026-10-17, voir ci-dessus. Étapes **5** (animer couleurs, effets, sommets), **6** (modes de fusion), **7** (empilement libre) et **8** : à faire.
 
 ## Ce qui n'est volontairement pas proposé
 
