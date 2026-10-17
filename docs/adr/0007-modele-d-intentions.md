@@ -25,8 +25,9 @@ Faits relevés dans le code le 2026-10-18 (lecture seule). Ce qui n'a pas été 
 3. **Détacher** (`bake_*`) est une action **explicite** qui écrit la chaîne dérivée en primitives éditables (keyframes,
    nœuds) puis retire l'intention. Une édition manuelle d'un résultat dérivé n'existe pas : on passe par les paramètres
    ou par « détacher ». Pas de divergence silencieuse.
-4. La **forme simple est canonique** : une normalisation à l'édition (jamais au chargement) ramène l'intention à une
-   primitive quand elle est équivalente, comme `simplify` le fait pour la couleur.
+4. La **forme simple est canonique pour les primitives** : une normalisation à l'édition (jamais au chargement) ramène une
+   primitive à sa représentation la plus simple quand deux sont équivalentes, comme `simplify` le fait pour la couleur.
+   Elle ne supprime **jamais une intention** : celle-ci reste jusqu'à « Retirer » ou « Détacher », deux actions explicites.
 5. Le format `.kut` suit la règle déjà en place : **version minimale nécessaire**, un ancien build **refuse** ce qu'il ne
    comprend pas au lieu de l'ignorer.
 6. **Une seule voie d'écriture** : les intentions se créent, se modifient et se détachent par les mêmes opérations de
@@ -46,6 +47,11 @@ Faits relevés dans le code le 2026-10-18 (lecture seule). Ce qui n'a pas été 
 - **Un « détacher » existe** : `bake_link` (`core/tracking_ops.py:567-582`) écrit les keyframes calculées dans
   `clip.transform_keyframes` / `clip.animation` puis retire la liaison. Une opération par liaison, sans retour hors
   historique. Le comportement du bouton dans l'interface n'a pas été vérifié.
+- **Limite de l'équivalence du détachement.** Le rendu applique les liaisons **une par une, dans l'ordre**, chacune partant
+  du résultat de la précédente (`core/tracking_bindings.py:640-665`). `baked_keyframes` (`:884-899`) calcule au contraire la
+  liaison choisie **seule** (« les autres liaisons restent dynamiques »). Pour un clip qui porte plusieurs liaisons
+  (par exemple `ANCHOR` et `TRANSFORM`), détacher l'une peut donc changer le rendu si leurs transformations ne commutent
+  pas. Le détachement actuel n'est équivalent que pour une liaison unique ou commutative.
 - La **stabilisation** (`Stabilization`, `core/tracking_model.py:795-805`) suit le même motif (stockée, dérivée par
   `_compute_state`) mais **n'a pas de « détacher »** : seulement `remove_stabilization` (`core/tracking_ops.py:620`).
 
@@ -116,27 +122,44 @@ générateur, inchangé.
    l'identifiant, pas d'IA obligatoire.
 2. **Sortie jamais stockée** : le `.kut` ne contient que les paramètres. Pas de cache périmé dans le projet.
 3. **Équivalence** : la sortie dérivée est identique à celle d'une chaîne écrite à la main avec les mêmes primitives
-   (test : `bake` puis rendu = rendu avant `bake`, à une tolérance fixée).
+   (test : `bake` puis rendu = rendu avant `bake`, à une tolérance fixée), **y compris quand plusieurs intentions
+   s'appliquent au même clip**. Ce n'est pas vrai aujourd'hui pour le suivi (voir « Limite de l'équivalence du
+   détachement ») : l'invariant exige donc une correction, pas seulement un test.
 4. **Réversibilité de l'effet** : désactiver ou retirer l'intention rend le clip à l'état qu'il aurait sans elle.
-5. **Version de la règle** : la dérivation porte un numéro (comme `RULE_VERSION` de `core/color_matrix.py`) ; changer
-   l'algorithme sans le bumper est interdit. Sans cela, ouvrir un ancien projet dans une version plus récente changerait
-   sa sortie sans que personne le voie.
+5. **Version de la dérivation, persistée avec l'intention.** Chaque intention stocke le numéro de la règle qui l'a
+   produite (clé optionnelle, absente = version 1 = le comportement à l'introduction de l'intention). Changer
+   l'algorithme veut dire **ajouter une version**, jamais modifier la précédente en place : l'ancienne reste sélectionnable
+   par ce numéro, ou une migration à l'ouverture fige l'ancien résultat (voir « Détacher »). Sans cela, ouvrir un ancien
+   projet dans une version plus récente changerait sa sortie sans que personne le voie.
+   *À ne pas confondre avec* `RULE_VERSION` de `core/color_matrix.py` : ce numéro n'entre que dans des **clés de cache**
+   (LUT cuites, vignettes) et ne protège aucun projet, car tous les projets y utilisent la règle courante. Pour la
+   matrice, la protection vient du **choix par média** écrit dans le `.kut` (`COLOR_MATRIX_VERSION`), pas de ce numéro.
 
 ### 3. Détacher
 
 - Action **explicite** et **nommée** (`bake_<intention>`), alignée sur `bake_link` : écrit les primitives éditables,
-  retire l'intention, **une** entrée d'historique, le retour passe par « Annuler ».
+  retire l'intention, **une** entrée d'historique, le retour passe par « Annuler ». Quand plusieurs intentions s'appliquent
+  au même clip, le détachement doit **respecter leur ordre d'application** : soit figer en une fois toutes les intentions
+  jusqu'à celle qui est détachée, soit refuser de détacher une intention dont les précédentes restent dynamiques. Le choix
+  est fait à l'étape 1 du plan, sur le cas réel du suivi.
 - **Pas d'édition manuelle d'une sortie dérivée.** L'interface affiche la sortie dérivée en lecture seule et propose
   « Modifier les paramètres » ou « Détacher ». Une édition manuelle qui détacherait en silence est refusée : c'est la
   divergence silencieuse que l'ADR veut éviter.
 - Lacune à combler pour appliquer la règle : la **stabilisation** n'a pas de `bake`.
 
-### 4. Forme simple canonique
+### 4. Forme simple canonique — entre deux représentations d'une même primitive
 
-Chaque intention déclare sa **forme simple** (la primitive équivalente) et une fonction de normalisation **appelée à
-l'édition seulement**, jamais au chargement (un chargement ne réécrit rien : il est sans perte). Règle de non-régression :
-un fichier sans intention est identique octet pour octet à celui d'avant. Lacune à combler : la **vitesse** (courbe
-constante), à traiter quand une intention de vitesse existera.
+La normalisation ne s'applique **jamais à une intention** : une intention n'est retirée que par l'action explicite de
+l'utilisateur, jamais par une édition. Elle sert à ramener **une primitive** à sa représentation la plus simple quand deux
+représentations sont équivalentes, comme `simplify` le fait pour la couleur (un graphe à un nœud redevient un
+`ColorGrade`) ou, à créer, une courbe de vitesse constante qui redevient une vitesse statique. La normalisation est
+**appelée à l'édition seulement**, jamais au chargement (un chargement ne réécrit rien : il est sans perte). Règle de
+non-régression : un fichier sans intention est identique octet pour octet à celui d'avant. Lacune à combler : la
+**vitesse** (courbe constante), à traiter avec la première primitive de vitesse concernée.
+
+Quand les paramètres d'une intention deviennent **neutres** (lissage 0, décalage 0), l'intention **reste** : sa sortie vaut
+la source, et l'utilisateur peut la **retirer** (l'effet disparaît, rien n'est écrit) ou la **détacher** (l'effet est écrit
+en primitives). « Retirer » et « Détacher » sont deux actions distinctes.
 
 ### 5. Persistance et versions
 
@@ -177,8 +200,11 @@ règles déjà éprouvées.
 **Négatives et risques.**
 - La dérivation se recalcule à chaque construction du plan : le coût existe déjà pour le suivi (non mesuré ici) et devra
   être mesuré pour chaque nouvelle intention (cache d'aperçu : `RENDER_ENGINE_VERSION`).
-- La règle 5 (version de la dérivation) est nouvelle pour le suivi : il faudra choisir son premier numéro sans changer les
-  projets existants.
+- La règle 5 (version persistée) est nouvelle pour le suivi. Elle a un **coût de maintenance** : garder les anciennes
+  implémentations sélectionnables par numéro, ou accepter une migration qui fige l'ancien résultat à l'ouverture. La
+  politique (combien de versions garder) est à décider à l'étape 1.
+- Le détachement d'un suivi à plusieurs liaisons n'est pas équivalent aujourd'hui (voir plus haut) : la correction touche
+  un comportement existant.
 - Interdire l'édition manuelle d'une sortie dérivée est un choix d'interface qui peut déplaire : la voie de sortie est
   « Détacher ».
 - Normaliser à l'édition seulement laisse des fichiers en forme non simple s'ils ont été écrits ainsi : accepté, car le
@@ -190,7 +216,10 @@ règles déjà éprouvées.
 
 0. **Cet ADR** (documentation seulement).
 1. **Formaliser le motif sur `TrackLink`** : tests communs des cinq invariants (équivalence `bake` / rendu, sortie jamais
-   dans le `.kut`, déterminisme), sans changer le comportement ni le format. Choisir la version initiale de la dérivation.
+   dans le `.kut`, déterminisme). Le test d'équivalence est écrit **en premier** : il doit exposer le cas à plusieurs
+   liaisons non commutatives. La correction du détachement (respecter l'ordre, ou refuser) est un **changement de
+   comportement assumé**, décidé à ce moment avec l'utilisateur. Introduire la clé optionnelle de version de la
+   dérivation (absente = version 1) sans changer la sortie d'un projet existant.
 2. **`bake_stabilization`** : le « détacher » manquant, avec son test d'équivalence.
 3. **Choisir le premier nouveau cas** parmi : « le texte suit un sujet » avec lissage et décalage (l'exemple de la demande),
    une intention de vitesse (avec sa normalisation), ou un reframe 9:16 qui garde ses paramètres. Décision à prendre avec
@@ -205,11 +234,16 @@ règles déjà éprouvées.
 1. Accepte-t-on **l'option B** (objets typés partageant des invariants) plutôt qu'un conteneur générique ?
 2. Accepte-t-on d'**interdire l'édition manuelle d'une sortie dérivée** (voie unique : paramètres ou « Détacher ») ?
 3. Quel est le **premier cas** de l'étape 3 : le texte qui suit un sujet, la vitesse, ou le reframe 9:16 ?
-4. Le principe « version de la dérivation » (invariant 5) est-il acceptable pour le suivi, qui n'en a pas aujourd'hui ?
+4. Le principe « version de la dérivation **persistée** » (invariant 5) est-il acceptable pour le suivi, qui n'en a pas
+   aujourd'hui, avec son coût de maintenance (anciennes implémentations gardées, ou migration qui fige) ?
+5. Pour un clip à plusieurs liaisons, le détachement doit-il **figer les liaisons précédentes avec la liaison choisie**, ou
+   **refuser** de détacher une liaison dont les précédentes restent dynamiques ?
 
 ## Limites de cet ADR
 
 Lecture du code seule : aucun test exécuté, le comportement du bouton « détacher » dans l'interface n'a pas été vérifié,
 le coût de la dérivation n'a pas été mesuré, et `docs/tracking.md`, `docs/composition.md`, `docs/time-remapping.md` n'ont
 pas été lus. L'absence de fonction inverse de « convertir en composition » repose sur une recherche, pas sur une
-preuve.
+preuve. La non-équivalence du détachement pour un clip à plusieurs liaisons est établie par la **lecture** de
+`core/tracking_bindings.py:640-665` et `:884-899` (relevée en revue), pas par un test exécuté : l'étape 1 commence par
+l'écrire.
