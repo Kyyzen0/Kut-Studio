@@ -10,7 +10,8 @@ Tout part de la **vraie fenêtre** (hors écran), jamais d'une copie des tables 
   plusieurs états de clip et onglets), sans geste de l'utilisateur.
 * ``tests/data/usage_level_controls.json`` : le **manifeste** des contrôles (clé, niveau). Un contrôle neuf qui n'y figure pas
   fait échouer ``tests/test_usage_level_inventory.py`` : il faut le classer, puis l'ajouter au manifeste (revue visible dans la PR).
-  Régénération, après avoir classé le contrôle dans le code : ``python tests/usage_level_inventory.py``.
+  Régénération, après avoir classé le contrôle dans le code :
+  ``KUT_REGEN_USAGE_MANIFEST=1 pytest tests/test_usage_level_inventory.py -k regenerate`` (commande complète : ``docs/usage-levels.md``).
 
 Une clé de menu est le chemin des libellés (``layers_menu/Ajouter/Texte``) ; un doublon de libellé dans le même menu reçoit ``#2``.
 """
