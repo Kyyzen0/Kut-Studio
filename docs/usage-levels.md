@@ -10,7 +10,7 @@
 | 2 | Bascule du niveau : groupe dans les Préférences, sous-menu « Niveau d'usage » du menu Fenêtre, puce dans la barre du haut ; libellés fr/en/es | **fait** |
 | 3 | Inspecteur par niveau : point unique `_apply_group_visibility` (3e condition), conteneurs de niveau créés à la construction, sous-blocs « Avancé », lien « Afficher plus d'options » | **fait** |
 | 4 | Menus, menus contextuels, rail de la bibliothèque, barre de la timeline, pages (retrait des entrées, raccourcis conservés) | **fait** |
-| 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | à faire |
+| 5 | Test d'énumération des contrôles (critère de l'ADR) et dimension « niveau » dans `tools/ui_audit.py` | **fait** |
 | 6 | Documentation, état d'avancement de l'ADR-0006, CHANGELOG | à faire |
 
 ## Contrat du modèle (lot 1)
@@ -147,6 +147,34 @@ Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui
 - **Descente de niveau** : si la page active ou la section active du rail de la bibliothèque disparaît au nouveau niveau, l'interface retombe d'abord sur Montage (`switch_page`) et sur « Médias », puis applique le niveau ; le projet, la sélection et la position de lecture sont conservés.
 - **Hors périmètre** : les boutons cachés `top_nav_buttons` (jamais affichés) ne sont pas touchés.
 
+## Garantie (lot 5)
+
+**Critère de l'ADR-0006 (étape 4)** : « chaque contrôle appartient à un niveau, vérifié par un test qui énumère les contrôles de l'inspecteur ; aucune fonction n'est inaccessible en mode simple (elle est seulement repliée) ».
+
+### L'énumération
+
+`tests/test_usage_level_inventory.py` (outil : `tests/usage_level_inventory.py`) part de la **vraie fenêtre** hors écran, jamais d'une copie des tables :
+
+- **Niveau déclaré** par le code pour chaque contrôle : `MENU_GATES` (par les listes d'origine des menus de la fenêtre), `PAGE_LEVELS`, `SECTION_LEVELS`, les outils de la barre de la timeline (`STUDIO_TOOLS` et l'enregistrement), pour l'inspecteur `_group_levels`, les `LevelGate` qui entourent les contrôles et les choix de listes (`_level_limits`).
+- **Niveau observé** : ce que l'écran montre à chaque niveau (menus et sous-menus, boutons, menus contextuels clip, segment multicam, pistes et média, inspecteur sur les états de `inspector_order.clip_states()` et tous les onglets), sans geste.
+- **Manifeste** `tests/data/usage_level_controls.json` : la clé et le niveau de **chaque** contrôle, y compris ceux du niveau Simple (le code ne les nomme pas : « ce qui n'est pas dans une table est Simple »). Un contrôle neuf, absent du manifeste, fait échouer le test.
+
+Le test vérifie : (a) le niveau déclaré par le code est celui du manifeste, et le manifeste n'a ni contrôle de trop ni contrôle manquant ; (b) aucun orphelin : tout ce qui est affiché à un niveau est classé, au plus ce niveau, et tout contrôle classé à un niveau y est affiché ; (c) monotonie : Simple est contenu dans Studio, contenu dans Avancé, strictement, aux seuls contrôles de navigation près (pliants « Avancé », lien « Afficher plus d'options », doublure d'« Remplir le cadre ») qui changent de côté à dessein ; (d) au niveau Avancé, les menus, boutons et menus contextuels sont ceux du golden d'`origin/main` (`tests/data/menus_before_usage_levels.json`) et l'inspecteur celui de `tests/data/inspector_order_before_usage_levels.json` ; (e) « aucune fonction inaccessible » : avec « Afficher plus d'options » et tous les pliants ouverts, tout ce que le niveau Avancé montre dans l'inspecteur est atteignable depuis Simple et Studio.
+
+### Classer un nouveau contrôle
+
+1. Donne-lui un niveau **dans le code**, au même endroit que ses voisins : une entrée de menu dans `MENU_GATES` (`ui/main_window_mixins/menu_levels.py`), une page dans `PAGE_LEVELS`, une section du rail dans `SECTION_LEVELS`, un outil de la timeline dans `STUDIO_TOOLS`, un réglage de l'inspecteur dans un `LevelGate` (`gated(widget, niveau)`) créé avec le contrôle, un groupe dans `_group_levels`, un choix de liste dans `_limit_plan`. Un contrôle Simple n'a pas d'entrée de table.
+2. Lance le test : il échoue en nommant le contrôle (« contrôle sans classement »).
+3. Régénère le manifeste puis relis la différence (`git diff tests/data/usage_level_controls.json`) : seule la ligne du contrôle neuf doit apparaître, avec le bon niveau.
+   `KUT_REGEN_USAGE_MANIFEST=1 QT_QPA_PLATFORM=offscreen KUT_STUDIO_CONFIG_DIR=<dossier jetable> python -m pytest tests/test_usage_level_inventory.py -k regenerate`
+4. Les fichiers `tests/data/*_before_usage_levels.json` ne se régénèrent **jamais** sur une branche : seulement sur un worktree d'`origin/main`.
+
+Limite connue : le manifeste est produit à partir du code, il ne prouve donc pas que le niveau choisi est le bon, seulement que chaque contrôle a été classé et que le classement n'a pas bougé sans relecture. Les contrôles de l'inspecteur que les états du relevé ne montrent jamais (réglages de masque ou de clé chroma hors contexte) ne sont vérifiés que par leur niveau déclaré.
+
+### L'audit de mise en page à chaque niveau
+
+`python -m tools.ui_audit --levels all` rejoue les scénarios à Simple, Studio et Avancé (`--levels simple,studio` pour une liste ; `run_audit(levels=...)` et `make_main_window(usage_level=...)` pour le code). Le défaut reste le niveau Avancé, le chemin d'avant les niveaux. Aux niveaux Simple et Studio, des scénarios `inspecteur-tout-ouvert-<onglet>` déploient « Afficher plus d'options » et tous les pliants, la mise en page la plus chargée du niveau. Les captures d'un autre niveau portent son nom (`1180x720-simple-defaut.png`). `tests/test_ui_small_windows.py` joue les trois niveaux (fixture `window_at(taille, niveau)` : une fenêtre par taille, niveau changé à chaud) : inspecteur, suivi (ouvert par « Afficher plus d'options » aux niveaux où il est caché), bibliothèque, panneaux, moniteur, barres (menus, pages, rail, outils de la timeline) et, en sous-processus, 1180 × 720 avec polices +20 %.
+
 ## Pièges à respecter (vérifiés dans le code)
 
 - P1 : un `QAction` avec `setVisible(False)` perd son raccourci ; garder l'action sur la fenêtre (`window.addAction`) et retirer l'entrée du menu.
@@ -155,5 +183,5 @@ Le code est dans `ui/main_window_mixins/usage_level.py` ; les libellés dans `ui
 - P5 : `CropEditor` est enfant de `CompositingEditor` : scinder en sous-blocs (recadrage, fusion, masques, clé chroma).
 - P8/P9 : `_settings_snapshot` (`ui/main_window_mixins/preferences.py`) reconstruit `UserSettings` champ par champ : y AJOUTER `usage_level`, sinon il est remis au défaut à chaque sauvegarde d'un autre réglage ; `_restore_default_preferences` doit le PRÉSERVER.
 - P11/P12 : i18n fr/en/es, textes courts, noms accessibles (`tests/test_ui_honesty.py`), 1180×720 à +20 % de police.
-- P13 : `tools/ui_audit.py` ne joue qu'un scénario par onglet : ajouter une dimension « niveau » (×3 de temps d'audit).
+- P13 : `tools/ui_audit.py` ne joue qu'un scénario par onglet : dimension « niveau » ajoutée au lot 5 (×3 de temps d'audit, voir « Garantie »).
 - P14 : retraduction à chaud (`_translated_actions`, `_translated_menus`) pour les entrées de menu qui disparaissent/réapparaissent.
