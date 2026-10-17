@@ -11,13 +11,15 @@ from __future__ import annotations
 from PySide6.QtGui import QActionGroup
 
 from core.audio_automation import TrackRole
+from core.usage_level import UsageLevel
 from ui.i18n import translate
+from ui.timeline_panel_mixins.usage_levels import UsageLevelsTimelineMixin
 from ui.timeline_widgets.automation_lane import LANE_HEIGHT, AutomationLane
 
 ROLE_ORDER = (TrackRole.VOICE, TrackRole.MUSIC, TrackRole.SFX, TrackRole.OTHER)
 
 
-class AutomationTimelineMixin:
+class AutomationTimelineMixin(UsageLevelsTimelineMixin):
     """Mixin de ``TimelinePanel`` : bandes d'automation et menu audio des pistes."""
 
     def _init_automation_state(self) -> None:
@@ -87,7 +89,12 @@ class AutomationTimelineMixin:
     # -- menu ⋯ d'une piste audio --------------------------------------------------------------------------------------
 
     def extend_track_menu(self, menu, track_id: str) -> None:
-        """Ajoute au menu ⋯ d'une piste audio : sa courbe de volume, son rôle, et « Baisser sous… » (ducking)."""
+        """Ajoute au menu ⋯ d'une piste audio : sa courbe de volume, son rôle, et « Baisser sous… » (ducking).
+
+        Niveau d'usage : ces entrées sont Avancé (la hauteur, le repli, l'ordre, le nom et la suppression restent Simple).
+        """
+        if not self.level_at_least(UsageLevel.ADVANCED):
+            return
         if self.project is None:
             return
         track = next((item for item in self.project.tracks if item.id == track_id), None)

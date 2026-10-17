@@ -26,6 +26,7 @@ def window(qtbot, monkeypatch):
     monkeypatch.setattr("ui.main_window.QMessageBox.information", lambda *_, **__: None)
     monkeypatch.setattr("ui.main_window.QMessageBox.critical", lambda *_, **__: None)
     main = MainWindow()
+    main.set_usage_level("advanced")      # le sous-menu Vitesse complet (courbe, interpolation) est de niveau Avancé
     qtbot.addWidget(main)
     main.timeline_timer.stop()
     keep_preview_player_off_the_disk(main, monkeypatch)

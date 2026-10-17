@@ -33,6 +33,7 @@ from core.timeline_view_model import (
 from ui.timeline_ruler import TimelineRuler
 from ui.design_system import Sizes
 from ui.timeline_panel_mixins.toolbar import ToolbarMixin
+from ui.timeline_panel_mixins.usage_levels import UsageLevelsTimelineMixin
 from ui.timeline_panel_mixins.layout import LayoutMixin
 from ui.timeline_panel_mixins.zoom_playhead import ZoomPlayheadMixin
 from ui.timeline_panel_mixins.selection import SelectionMixin
@@ -63,7 +64,7 @@ from ui.timeline_widgets.transition_marker import TransitionMarkerWidget
 # ---------------------------------------------------------------------------
 
 
-class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, TimeMenuMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, AutomationTimelineMixin, QWidget):
+class TimelinePanel(ToolbarMixin, LayoutMixin, ZoomPlayheadMixin, SelectionMixin, DragToolsMixin, TimeMenuMixin, PreviewsMixin, KeyframesTimelineMixin, SequencesTimelineMixin, AutomationTimelineMixin, UsageLevelsTimelineMixin, QWidget):
     """Timeline de Kut-Studio, pilotée par un ``Project``.
 
     Le panneau orchestre :

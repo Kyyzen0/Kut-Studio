@@ -1,0 +1,638 @@
+{
+ "menus": {
+  "file_menu": [
+   "Nouveau [Ctrl+N]",
+   "Ouvrir... [Ctrl+O]",
+   "-",
+   "Enregistrer [Ctrl+S]",
+   "Enregistrer sous... [Ctrl+Shift+S]",
+   "-",
+   "Importer des sous-titres SRT…",
+   "Exporter les sous-titres SRT…",
+   "-",
+   "Quitter [Ctrl+Q]"
+  ],
+  "edit_menu": [
+   "Annuler [Ctrl+Z]",
+   "Rétablir [Ctrl+Shift+Z]",
+   "-",
+   "Dupliquer le clip [Ctrl+D]",
+   "Supprimer le clip [Del]",
+   "Supprimer avec ripple [Ctrl+Backspace]",
+   "Activer / Désactiver le clip [Ctrl+E]",
+   "-",
+   "Couper",
+   "Copier",
+   "Coller"
+  ],
+  "timeline_menu": [
+   "Nouvelle séquence",
+   "Créer une séquence à partir de la sélection [Ctrl+Shift+N]",
+   "Convertir en composition",
+   "Nouvelle composition",
+   "Ouvrir la séquence imbriquée [Ctrl+Alt+Down]",
+   "Revenir à la séquence parente [Ctrl+Alt+Up]",
+   "Séquence précédente [Alt+Left]",
+   "Séquence suivante [Alt+Right]",
+   "Renommer la séquence",
+   "Dupliquer la séquence",
+   "Supprimer la séquence",
+   "-",
+   "Créer une séquence Multicam…",
+   "Ouvrir la source Multicam",
+   "Aplatir le segment Multicam",
+   "Moniteur Multicam [Ctrl+Shift+M]",
+   "Réglages Multicam…",
+   "-",
+   "Ajouter un clip",
+   "Découper aux changements de plan",
+   "Couper / Réduire",
+   "Marqueur",
+   "Ajouter une piste vidéo",
+   "Ajouter une piste audio",
+   "Ajouter une piste de sous-titres",
+   "-",
+   "Supprimer la piste",
+   "Monter la piste",
+   "Descendre la piste",
+   "Renommer la piste",
+   "Verrouiller la piste",
+   "Afficher / masquer la piste",
+   "Muet / actif",
+   "-",
+   "Générer les proxies des clips sélectionnés"
+  ],
+  "layers_menu": [
+   {
+    "Ajouter": [
+     "Texte",
+     "Forme",
+     "Contrôleur (null)",
+     "Calque d'effets (adjustment)"
+    ]
+   },
+   "-",
+   "Grouper [Ctrl+G]",
+   "Dégrouper [Ctrl+Shift+G]",
+   "-",
+   "Copier les calques",
+   "Coller les calques à la tête de lecture",
+   "Copier transform, masques et effets",
+   "Coller les attributs…",
+   "Enregistrer la sélection comme preset…",
+   "-",
+   "Zones de sécurité [Ctrl+']",
+   "Guides [Ctrl+;]",
+   "Grille (tiers)",
+   "Magnétisme du viewer",
+   "Repère central",
+   {
+    "Aligner sur le cadre": [
+     "Aligner à gauche sur le cadre",
+     "Centrer horizontalement sur le cadre",
+     "Aligner à droite sur le cadre",
+     "Aligner en haut sur le cadre",
+     "Centrer verticalement sur le cadre",
+     "Aligner en bas sur le cadre"
+    ]
+   },
+   "Réinitialiser le recadrage",
+   {
+    "Guides": [
+     "Ajouter un guide horizontal",
+     "Ajouter un guide vertical",
+     "Verrouiller les guides",
+     "Effacer les guides"
+    ]
+   },
+   "-",
+   "Flou de mouvement (séquence)",
+   "Réglages du flou de mouvement…",
+   "-",
+   "Suivi (tracking)…"
+  ],
+  "social_menu": [
+   "Nouveau projet réseaux sociaux…",
+   "Réglages de la séquence…",
+   "-",
+   {
+    "Zones de la plateforme": [
+     "Aucune",
+     "TikTok",
+     "Instagram Reels",
+     "YouTube Shorts",
+     "Instagram (fil)"
+    ]
+   },
+   "-",
+   {
+    "Grille rythmique": [
+     "Tempo et calage…",
+     "Aimanter aux temps",
+     "-",
+     "Couper sur les temps",
+     {
+      "Couper tous les…": [
+       "2 temps",
+       "4 temps",
+       "8 temps"
+      ]
+     },
+     "Répartir sur la grille (2 temps)",
+     {
+      "Répartir sur la grille": [
+       "1 temps par clip",
+       "2 temps par clip",
+       "4 temps par clip",
+       "8 temps par clip"
+      ]
+     }
+    ]
+   },
+   "-",
+   "Remplir le cadre (recadrer)",
+   "Recadrer en suivant le tracker",
+   "Ken Burns sur la sélection",
+   {
+    "Impact": [
+     "Zoom d'impact sur la sélection",
+     "Secousse sur la sélection",
+     "Flash blanc à la tête de lecture",
+     "Impact sur chaque cut (zoom + flash)"
+    ]
+   },
+   {
+    "Audio": [
+     "Placer un SFX sur chaque cut",
+     {
+      "Ducker la musique sous la voix": [
+       "Voix douce (−6 dB)",
+       "Voix sur musique (−12 dB)",
+       "TikTok punchy (−18 dB)"
+      ]
+     }
+    ]
+   },
+   {
+    "Sous-titres automatiques": [
+     "Sous-titres depuis la voix",
+     "Titres karaoké depuis la voix"
+    ]
+   },
+   "Couverture à la tête de lecture",
+   "Exporter en plusieurs formats…",
+   "Classement…",
+   {
+    "Photos importées": [
+     "Diaporama photo…",
+     "Remplir les emplacements avec des photos…",
+     "-",
+     "Remplir le cadre",
+     "Ken Burns automatique"
+    ]
+   }
+  ],
+  "window_menu": [
+   "Réinitialiser la disposition",
+   "-",
+   "Page Montage",
+   "Page Composition",
+   "Page Couleur",
+   "Page Audio",
+   "-",
+   "Afficher les scopes [Ctrl+Alt+S]",
+   "Utiliser les proxies (aperçu)",
+   "Éditeur de courbes [Ctrl+Alt+G]",
+   {
+    "Niveau d'usage": [
+     "&Simple",
+     "S&tudio",
+     "&Avancé"
+    ]
+   },
+   "Préférences… [Ctrl+,]",
+   "Diagnostics de performance",
+   {
+    "Panneaux": [
+     "Timeline",
+     "Viewer",
+     "Médias",
+     "Inspecteur",
+     "Mixeur",
+     "Historique",
+     "Couleur",
+     "Plans",
+     "Composition"
+    ]
+   },
+   "-",
+   {
+    "Timeline": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Viewer": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Médias": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Inspecteur": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Mixeur": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Historique": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Couleur": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Plans": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   {
+    "Composition": [
+     "Détacher le panneau",
+     {
+      "Déplacer vers…": [
+       "Zone gauche",
+       "Zone centrale",
+       "Zone droite",
+       "Zone basse"
+      ]
+     },
+     "Maximiser le panneau",
+     "Réinitialiser la taille",
+     "-",
+     "Fermer le panneau"
+    ]
+   },
+   "-",
+   "Restaurer la disposition",
+   {
+    "Espaces de travail": [
+     "Édition",
+     "Motion",
+     "Audio",
+     "Color",
+     "Compact",
+     "-",
+     "Enregistrer la disposition sous…"
+    ]
+   }
+  ],
+  "help_menu": [
+   "Rechercher des mises à jour…",
+   "-",
+   "À propos de Kut-Studio"
+  ]
+ },
+ "toolbar": [
+  "snap_button",
+  "blade_button",
+  "roll_button",
+  "slip_button",
+  "slide_button",
+  "record_button",
+  "ripple_button",
+  "marker_button"
+ ],
+ "rail": [
+  "media",
+  "sequences",
+  "edit",
+  "effects",
+  "color",
+  "text",
+  "transitions",
+  "audio",
+  "graphics",
+  "templates"
+ ],
+ "clip_menu": [
+  "Couper au playhead",
+  "Dupliquer",
+  "Activer / désactiver",
+  "Supprimer et refermer",
+  "Supprimer",
+  "-",
+  "Créer une séquence à partir de la sélection",
+  "Convertir en composition",
+  "Créer une séquence Multicam…",
+  {
+   "Vitesse": [
+    "25 %",
+    "50 %",
+    "100 %",
+    "200 %",
+    "400 %",
+    "-",
+    "Sens inverse",
+    {
+     "Images intermédiaires": [
+      "Échantillonnage",
+      "Mélange d'images",
+      "Flux optique"
+     ]
+    },
+    {
+     "Qualité du flux optique": [
+      "Auto",
+      "Brouillon",
+      "Équilibrée",
+      "Maximale"
+     ]
+    },
+    "Analyser le flux optique…",
+    {
+     "Courbe de vitesse": [
+      "Ajouter un point de vitesse",
+      "Arrêt sur image ici (1 s)",
+      {
+       "Préréglages": [
+        "Ralenti 50 %",
+        "Ralenti 25 %",
+        "Accéléré 2×",
+        "Accéléré 4×",
+        "Rampe d'entrée (départ lent)",
+        "Rampe de sortie (fin lente)",
+        "Arrêt sur image (1 s)"
+       ]
+      },
+      "Supprimer la courbe de vitesse"
+     ]
+    },
+    {
+     "Son": [
+      "Conserver la hauteur du son",
+      "Le son suit la vitesse"
+     ]
+    },
+    "-",
+    "Garder la durée sur la timeline",
+    "Copier le temps",
+    "Coller le temps",
+    "Réinitialiser le temps"
+   ]
+  }
+ ],
+ "multicam_clip_menu": [
+  "Couper au playhead",
+  "Dupliquer",
+  "Activer / désactiver",
+  "Supprimer et refermer",
+  "Supprimer",
+  "-",
+  "Créer une séquence à partir de la sélection",
+  "Convertir en composition",
+  "Ouvrir la séquence imbriquée",
+  "Créer une séquence Multicam…",
+  {
+   "Remplacer par l'angle": [
+    "1. A",
+    "2. B"
+   ]
+  },
+  "Aplatir le segment Multicam",
+  "Réglages Multicam…",
+  {
+   "Vitesse": [
+    "25 %",
+    "50 %",
+    "100 %",
+    "200 %",
+    "400 %",
+    "-",
+    "Sens inverse",
+    {
+     "Images intermédiaires": [
+      "Échantillonnage",
+      "Mélange d'images",
+      "Flux optique"
+     ]
+    },
+    {
+     "Qualité du flux optique": [
+      "Auto",
+      "Brouillon",
+      "Équilibrée",
+      "Maximale"
+     ]
+    },
+    "Analyser le flux optique…",
+    {
+     "Courbe de vitesse": [
+      "Ajouter un point de vitesse",
+      "Arrêt sur image ici (1 s)",
+      {
+       "Préréglages": [
+        "Ralenti 50 %",
+        "Ralenti 25 %",
+        "Accéléré 2×",
+        "Accéléré 4×",
+        "Rampe d'entrée (départ lent)",
+        "Rampe de sortie (fin lente)",
+        "Arrêt sur image (1 s)"
+       ]
+      },
+      "Supprimer la courbe de vitesse"
+     ]
+    },
+    {
+     "Son": [
+      "Conserver la hauteur du son",
+      "Le son suit la vitesse"
+     ]
+    },
+    "-",
+    "Garder la durée sur la timeline",
+    "Copier le temps",
+    "Coller le temps",
+    "Réinitialiser le temps"
+   ]
+  }
+ ],
+ "video_track_menu": [
+  "Hauteur de piste",
+  "Réduire ou développer",
+  "Monter",
+  "Descendre",
+  "Renommer",
+  "Supprimer"
+ ],
+ "audio_track_menu": [
+  "Hauteur de piste",
+  "Réduire ou développer",
+  "Monter",
+  "Descendre",
+  "Renommer",
+  "Supprimer",
+  "-",
+  "Courbe de volume",
+  {
+   "Rôle de la piste": [
+    "Voix",
+    "Musique",
+    "Effets sonores",
+    "Autre"
+   ]
+  },
+  {
+   "Baisser sous…": [
+    "A2"
+   ]
+  }
+ ],
+ "asset_menu": [
+  "",
+  "-",
+  "Renommer…",
+  "Sélectionner dans la timeline (2)",
+  "-",
+  {
+   "Déplacer vers": [
+    "Racine",
+    "-",
+    "Rushes"
+   ]
+  },
+  {
+   "Tags": [
+    "  Pris",
+    "-",
+    "Gérer les tags…"
+   ]
+  },
+  "⚠ Relier le fichier…",
+  "-",
+  {
+   "Proxy": [
+    "Aucun proxy",
+    "-",
+    "Générer le proxy",
+    "-",
+    "Générer les proxies du projet"
+   ]
+  },
+  {
+   "Espace colorimétrique": [
+    "Auto",
+    "BT.601",
+    "BT.709"
+   ]
+  },
+  "Supprimer de la bibliothèque"
+ ]
+}

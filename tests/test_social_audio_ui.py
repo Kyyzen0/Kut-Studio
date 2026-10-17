@@ -19,6 +19,7 @@ def window(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr("ui.main_window.QMessageBox.question", lambda *_a, **_k: QMessageBox.Yes)
     monkeypatch.setattr("ui.main_window.QMessageBox.warning", lambda *_a, **_k: QMessageBox.Discard)
     win = MainWindow()
+    win.set_usage_level("advanced")      # ces tests lisent des entrées de menu de niveau Studio
     qtbot.addWidget(win)
     win.timeline_timer.stop()
     monkeypatch.setattr(win.preview_panel, "preview_at", lambda *_a, **_k: None)

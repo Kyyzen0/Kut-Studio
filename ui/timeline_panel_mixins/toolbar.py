@@ -147,6 +147,7 @@ class ToolbarMixin:
             size=Sizes.icon_button,
         )
         self.record_button.toggled.connect(self.record_requested.emit)
+        self.record_button.toggled.connect(self._on_record_toggled_for_level)
         left_layout.addWidget(self.record_button)
         self.ripple_button = IconButton(
             icon=IconName.FORWARD,

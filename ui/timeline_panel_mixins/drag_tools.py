@@ -11,10 +11,12 @@ from core.timeline_editing import (
     ClipPlacement,
     shifted_track_index,
 )
+from core.usage_level import UsageLevel
 from ui.i18n import translate
+from ui.timeline_panel_mixins.usage_levels import UsageLevelsTimelineMixin
 from ui.timeline_widgets.clip_widget import ClipWidget
 
-class DragToolsMixin:
+class DragToolsMixin(UsageLevelsTimelineMixin):
     """Mixin de ``TimelinePanel`` : outils d'édition, aimantation et aperçus de déplacement/trim."""
 
     # ------------------------------------------------------------------
@@ -203,47 +205,57 @@ class DragToolsMixin:
         if clip_id not in self.selected_clip_ids:
             self.select_clip(clip_id)
         menu = QMenu(self)
+        studio = self.level_at_least(UsageLevel.STUDIO)
+        advanced = self.level_at_least(UsageLevel.ADVANCED)
         cut = menu.addAction(translate("timeline.menu.cut"))
         duplicate = menu.addAction(translate("action.duplicate"))
         toggle = menu.addAction(translate("timeline.menu.toggle"))
-        ripple = menu.addAction(translate("timeline.menu.ripple_delete"))
+        ripple = menu.addAction(translate("timeline.menu.ripple_delete")) if studio else None   # suppression en cascade : Studio
         remove = menu.addAction(translate("action.delete"))
-        menu.addSeparator()
-        nest = menu.addAction(translate("sequence.action.nest_selection"))
-        convert = menu.addAction(translate("comp.action.convert"))
+        # Niveau d'usage : imbriquer, convertir, ouvrir et Multicam sont Avancé ; « Vitesse ▸ » est Studio.
+        nest = convert = open_nested = open_composition = create_multicam = None
+        replace_actions: dict = {}
+        flatten = settings = None
         view = self.find_view_by_id(clip_id)
-        open_nested = None
-        if view is not None and getattr(view, "sequence_id", ""):
-            open_nested = menu.addAction(translate("sequence.action.open_nested"))
-        open_composition = None
-        if view is not None and getattr(view, "is_composition", False):
-            open_composition = menu.addAction(translate("comp.action.open"))
-        create_multicam = menu.addAction(translate("multicam.menu.create"))
-        create_multicam.setEnabled(len(self.selected_clip_ids) >= 2)
-        replace_actions, flatten, settings = self._add_multicam_menu_entries(menu, view)
+        if advanced:
+            menu.addSeparator()
+            nest = menu.addAction(translate("sequence.action.nest_selection"))
+            convert = menu.addAction(translate("comp.action.convert"))
+            if view is not None and getattr(view, "sequence_id", ""):
+                open_nested = menu.addAction(translate("sequence.action.open_nested"))
+            if view is not None and getattr(view, "is_composition", False):
+                open_composition = menu.addAction(translate("comp.action.open"))
+            create_multicam = menu.addAction(translate("multicam.menu.create"))
+            create_multicam.setEnabled(len(self.selected_clip_ids) >= 2)
+            replace_actions, flatten, settings = self._add_multicam_menu_entries(menu, view)
+        first_time_entry = len(menu.actions())
         time_actions = self._add_time_menu(menu, clip_id)
+        if time_actions and not advanced:
+            menu.insertSeparator(menu.actions()[first_time_entry])
         chosen = menu.exec(global_pos)
+        if chosen is None:
+            return
         if chosen is cut:
             self.blade_cut_requested.emit(clip_id, self.playhead_seconds)
         elif chosen is duplicate:
             self.duplicate_requested.emit()
         elif chosen is toggle:
             self.toggle_enabled_requested.emit()
-        elif chosen is ripple:
+        elif ripple is not None and chosen is ripple:
             self.ripple_delete_requested.emit()
         elif chosen is remove:
             window = self.window()
             if hasattr(window, "delete_selected_clip_with_check"):
                 window.delete_selected_clip_with_check()
-        elif chosen is nest:
+        elif nest is not None and chosen is nest:
             self.nest_selection_requested.emit()
-        elif chosen is convert:
+        elif convert is not None and chosen is convert:
             self.composition_convert_requested.emit()
         elif open_composition is not None and chosen is open_composition:
             self.composition_open_requested.emit(clip_id)
         elif open_nested is not None and chosen is open_nested:
             self.nested_open_requested.emit(clip_id)
-        elif chosen is create_multicam:
+        elif create_multicam is not None and chosen is create_multicam:
             self.multicam_create_requested.emit()
         elif chosen in replace_actions:
             self.multicam_replace_requested.emit(clip_id, replace_actions[chosen])

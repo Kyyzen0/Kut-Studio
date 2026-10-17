@@ -30,6 +30,7 @@ from core.library_organization import (
     is_asset_missing,
 )
 from core.media_color_ops import media_color_refusal
+from core.usage_level import UsageLevel, coerce_usage_level
 from core.project_model import MediaAsset
 from ui.adaptive_layout import ShrinkableScrollArea
 from ui.keyboard_navigation import let_tab_leave_in
@@ -180,6 +181,7 @@ class ProjectPanel(QWidget):
         self._badges: dict[str, AssetUsageBadge] = {}
         # ``asset -> (état, progression)`` : fourni par la fenêtre principale.
         self.proxy_state_provider = None
+        self.usage_level = UsageLevel.ADVANCED     # niveau d'usage : la fenêtre le pose (menu du clic droit sur un média)
         # Compteurs par dossier pour l'arborescence.
         self._folder_counts: dict[str, int] = {}
 
@@ -716,6 +718,7 @@ class ProjectPanel(QWidget):
             parent=self,
             color_matrix=asset.color_matrix if asset.media_type == "video" else "",
             color_refusal=media_color_refusal(project, asset_id),
+            usage_level=self.usage_level,
         )
         menu = builder.build(self)
         # Connecte les signaux du builder à des re-émissions vers le
@@ -735,7 +738,7 @@ class ProjectPanel(QWidget):
         builder.tag_toggled.connect(self.asset_tag_toggled.emit)
         builder.manage_tags_requested.connect(self.tag_manager_requested.emit)
         selected = self._current_bin().selected_asset_ids
-        if len(selected) >= 2 and asset_id in selected:
+        if len(selected) >= 2 and asset_id in selected and self.usage_level.at_least(UsageLevel.ADVANCED):  # Multicam : Avancé
             menu.addSeparator()
             create_multicam = menu.addAction(translate("multicam.menu.create"))
             create_multicam.triggered.connect(lambda: self.multicam_create_requested.emit(list(selected)))
@@ -772,6 +775,12 @@ class ProjectPanel(QWidget):
     def set_sequences(self, entries) -> None:
         """Liste des séquences du projet (page « Séquences »)."""
         self.sequence_view.set_sequences(entries)
+
+    def set_usage_level(self, level: object) -> None:
+        """Niveau d'usage (ADR-0006, lot 4) : le menu du clic droit sur un média est construit à chaque ouverture."""
+        new = coerce_usage_level(level)
+        if new is not None:
+            self.usage_level = new
 
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
