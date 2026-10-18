@@ -337,3 +337,143 @@ def test_a_temporary_file_that_stays_locked_is_given_up_with_a_log_not_an_except
     with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
         export_runner._remove(str(tmp_path / "x"))
     assert "non supprimé" in caplog.text
+
+
+def test_cancelling_kills_ffmpeg_with_its_descendants(long_media, tmp_path, monkeypatch):
+    """Windows : le FFmpeg de Chocolatey est un shim qui lance le vrai FFmpeg ; tuer le seul shim laissait celui-ci écrire (et
+    verrouiller) le ``.partial``. L'annulation doit passer par l'arrêt de l'arbre, pas par ``Popen.kill``."""
+    from core import export_runner
+
+    calls: list[int] = []
+    real = export_runner.kill_process_tree
+
+    def recording(process, **options):
+        calls.append(process.pid)
+        real(process, **options)
+
+    monkeypatch.setattr(export_runner, "kill_process_tree", recording)
+    state = {"progress": 0}
+    result = run_export(
+        _request(_project(long_media, seconds=20.0, size=(1280, 720)), tmp_path / "out.mp4", size=(1280, 720)),
+        progress=lambda value: state.__setitem__("progress", value),
+        cancelled=lambda: state["progress"] >= 1,
+    )
+    assert result.status is ExportStatus.CANCELLED and len(calls) == 1 and calls[0] > 0
+    assert _hidden_partials(tmp_path) == []
+
+
+def test_a_temporary_file_is_retried_for_about_ten_seconds_without_a_real_pause(tmp_path, monkeypatch, caplog):
+    from core import export_runner
+
+    pauses: list[float] = []
+
+    def always_locked(_path):
+        raise PermissionError(13, "utilisé par un autre processus")
+
+    monkeypatch.setattr(export_runner.os, "remove", always_locked)
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove(str(tmp_path / "x"), ffmpeg_pid=4321, sleep=pauses.append)
+    assert 9.0 <= sum(pauses) <= 11.0, "le budget d'attente est d'environ 10 s"
+    assert "pid 4321" in caplog.text and "errno 13" in caplog.text and "winerror" in caplog.text
+
+
+def test_the_give_up_warning_names_the_windows_error_when_there_is_one(tmp_path, monkeypatch, caplog):
+    from core import export_runner
+
+    error = PermissionError(13, "utilisé par un autre processus")
+    error.winerror = 32  # type: ignore[attr-defined]  # attribut propre à Windows : simulé ici
+
+    def always_locked(_path):
+        raise error
+
+    monkeypatch.setattr(export_runner.os, "remove", always_locked)
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove(str(tmp_path / "x"), sleep=lambda _s: None)
+    assert "winerror 32" in caplog.text and "pid inconnu" in caplog.text
+
+
+class _FakeTime:
+    """Horloge simulée : ``sleep`` fait avancer ``clock`` ; aucune pause réelle."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.pauses: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.pauses.append(seconds)
+        self.now += seconds
+
+
+def _locked(monkeypatch, released_after: dict[str, int] | None = None) -> dict[str, int]:
+    """``os.remove`` simulé : chemins verrouillés (ou libérés après N essais) ; renvoie le décompte des essais."""
+    from core import export_runner
+
+    attempts: dict[str, int] = {}
+    free_after = released_after or {}
+
+    def fake_remove(path):
+        attempts[path] = attempts.get(path, 0) + 1
+        if path in free_after and attempts[path] > free_after[path]:
+            return
+        raise PermissionError(13, "verrouillé")
+
+    monkeypatch.setattr(export_runner.os, "remove", fake_remove)
+    return attempts
+
+
+def test_one_shared_budget_covers_every_locked_file_with_one_warning_each(monkeypatch, caplog):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch)
+    paths = ["p.partial", "a.ass", "b.ffconcat"]
+    monkeypatch.setattr(export_runner, "_REMOVE_ATTEMPTS", 10_000)     # seule l'échéance borne l'attente
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove_all(paths, ffmpeg_pid=7, sleep=fake.sleep, clock=fake.clock)
+    budget, pause = export_runner._REMOVE_BUDGET_SECONDS, export_runner._REMOVE_PAUSE
+    assert budget - pause <= sum(fake.pauses) <= budget + 2 * pause
+    assert all(count >= 2 for count in attempts.values()), "chaque chemin est retenté à chaque passe"
+    assert len(caplog.records) == 3 and all("non supprimé" in r.getMessage() for r in caplog.records)
+    for path in paths:
+        assert path in caplog.text
+
+
+def test_a_file_released_on_the_third_pass_is_removed_and_the_others_go_on(monkeypatch, caplog):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch, {"b": 2})
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove_all(["a", "b"], sleep=fake.sleep, clock=fake.clock)
+    assert attempts["b"] == 3, "libéré à la troisième passe, plus retenté ensuite"
+    assert attempts["a"] > 3
+    assert caplog.text.count("non supprimé") == 1 and "(a)" in caplog.text
+
+
+def test_with_no_budget_every_path_is_still_tried_once(monkeypatch):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch)
+    monkeypatch.setattr(export_runner, "_REMOVE_BUDGET_SECONDS", 0.0)
+    export_runner._remove_all(["a", "b", "c"], sleep=fake.sleep, clock=fake.clock)
+    assert attempts == {"a": 1, "b": 1, "c": 1} and fake.pauses == []
+
+
+def test_the_partial_file_is_tried_on_the_first_pass_even_if_a_temporary_resists(monkeypatch):
+    from core import export_runner
+
+    fake = _FakeTime()
+    order: list[str] = []
+
+    def tracing(path):
+        order.append(path)
+        raise PermissionError(13, "verrouillé")
+
+    monkeypatch.setattr(export_runner.os, "remove", tracing)
+    monkeypatch.setattr(export_runner, "_REMOVE_BUDGET_SECONDS", 0.0)
+    export_runner._remove_all(["x.partial", "script.ass"], sleep=fake.sleep, clock=fake.clock)
+    assert order == ["x.partial", "script.ass"]

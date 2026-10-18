@@ -22,6 +22,8 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 - **Aperçu : la luminosité de la correction de couleur suit l'export.** Le moniteur s'écartait de 2 à 3 niveaux de l'export à luminosité négative (par exemple −0,1 à −0,4), à cause de l'arrondi en float32 que fait le filtre `eq` d'FFmpeg ; il le reproduit maintenant.
 
+- **Windows : annuler un export ne laisse plus de fichier temporaire caché.** Avec un FFmpeg installé par Chocolatey (un lanceur qui démarre le vrai FFmpeg), l'annulation n'arrêtait que le lanceur ; le vrai FFmpeg continuait d'écrire et gardait le fichier `.partial` verrouillé. L'annulation arrête maintenant tout l'arbre de processus et la suppression patiente jusqu'à 10 s.
+
 ## [0.6.5] - 2026-10-18
 
 Version qui **termine les niveaux d'usage** commencés en 0.6.4 : les menus, le rail de la bibliothèque, la barre de la timeline, les pages, les menus du clic droit, le panneau Calques et la courbe de volume suivent maintenant le niveau Simple, Studio ou Avancé choisi, avec en plus deux correctifs : le clic droit dans la zone vide du panneau Calques et la reprise simultanée d'un verrou de projet périmé sous Windows.
