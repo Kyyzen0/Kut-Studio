@@ -203,7 +203,7 @@ def _raster_version() -> int:
     return RASTER_VERSION
 
 
-RENDER_ENGINE_VERSION = 12
+RENDER_ENGINE_VERSION = 13
 """Version du rendu d'aperçu, incluse dans toute empreinte de segment.
 
 3 : un clip audio qui ne commence pas à 0 est retardé par ``adelay`` (``amix`` ignore les horodatages : avant, il jouait
@@ -230,7 +230,10 @@ le flou sont ignorés.
 forcer sa matrice (:mod:`core.color_matrix`) ; les segments mis en cache avec l'ancienne lecture sont ignorés.
 12 : la chroma 4:2:0 d'un calque passe en RVB co-sitée en haut à gauche et interpolée (:mod:`core.chroma_siting`) au lieu
 d'être recopiée sur son bloc 2×2, et les bandes de mise au cadre sont paires ; les segments mis en cache avec l'ancienne
-chroma ou l'ancien placement sont ignorés."""
+chroma ou l'ancien placement sont ignorés.
+13 : un paramètre d'effet animé (``fx.<effet>.<paramètre>``, ADR-0008) se rend par une expression du temps local du clip
+(``eq`` et ``vignette`` en ``eval=frame``, ``geq`` de la brume de chaleur) ; un segment mis en cache avec le paramètre
+figé à sa valeur de base est ignoré."""
 
 
 def fingerprint_plan(plan, **kwargs):
