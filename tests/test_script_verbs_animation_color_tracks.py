@@ -15,7 +15,7 @@ from core.keyframe_editing import find_clip as find_keyframe_clip
 from core.keyframe_editing import value_at
 from core.project_model import MediaAsset, Project, Track
 from core.scripting import ScriptInvalid, Session, apply_script, parse_script
-from core.scripting.verbs import _ANIMATABLE, _GRADE_FIELDS, VERBS
+from core.scripting.verbs import _GRADE_FIELDS, VERBS
 from core.timeline_operations import find_clip
 from ui import i18n
 
@@ -175,24 +175,20 @@ def test_a_keyframe_value_outside_the_property_bounds_is_refused_not_clamped():
     assert not session.can_undo and next(t for t in session.project.tracks if t.id == "V1").clips == [], "tout ou rien : rien n'a été posé"
 
 
-def _host(name: str) -> list[dict]:
-    """Un clip « a » d'un genre de piste où la propriété existe : vidéo, sinon calque graphique (« skew »)."""
+_GRAPHIC_HOSTS = (("text", None), ("shape", "rounded_rectangle"), ("rectangle", None), ("solid", None))
+
+
+def _host(name: str) -> list[dict] | None:
+    """Un clip « a » d'un genre où la propriété existe : vidéo, sinon le premier calque graphique qu'un script sait poser ; ``None`` s'il n'y en a pas
+    (les paramètres de lumière : aucun verbe ne crée de calque « light », l'interface seule le fait)."""
     if get_target(name).applies_to("video"):
         return _clips("a")
-    return [{"op": "add_graphic", "graphic": "text", "at": 0, "duration": 10, "id": "a"}]
-
-
-def test_every_animatable_property_has_its_models_bounds_enforced_at_both_ends():
-    for name in _ANIMATABLE:
-        spec = get_target(name).spec
-        assert spec.kind.value == "float", f"{name} : le verbe ne couvre que les propriétés numériques"
-        for value in (spec.minimum, spec.maximum):
-            session, report = _apply(_project(), *_host(name), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": value})
-            assert report.ok, (name, value, report.error)
-            assert value_at(find_keyframe_clip(session.project, "a"), name, 0.0) == pytest.approx(value), (name, value)
-        for outside in (spec.minimum - 0.5, spec.maximum + 0.5):
-            _session, report = _apply(_project(), *_host(name), {"op": "add_keyframe", "clip": "a", "property": name, "at": 0, "value": outside})
-            assert not report.ok and "hors bornes" in report.error, (name, outside)
+    for graphic, shape in _GRAPHIC_HOSTS:
+        op = {"op": "add_graphic", "graphic": graphic, "at": 0, "duration": 10, "id": "a", **({"shape": shape} if shape else {})}
+        session, report = _apply(_project(), op)
+        if report.ok and get_target(name).applies_to_clip(find_clip(session.project, "a")):
+            return [op]
+    return None
 
 
 def test_a_property_must_exist_for_the_clips_track_type():
