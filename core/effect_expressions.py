@@ -4,8 +4,11 @@ Trois filtres de l'export acceptent une expression du temps pour leurs options e
 
 - ``eq`` (``eval=frame``) : ``brightness``, ``contrast``, ``saturation`` de la correction colorimétrique ;
 - ``vignette`` (``eval=frame``) : ``angle``, qui vaut ``intensité × π/4`` ;
-- ``geq`` : la brume de chaleur (``amplitude``, ``frequency``, ``top``, ``span``) ; l'expression du décalage contient
-  celles des courbes (``speed`` n'y figure pas, voir :data:`core.effect_targets.EXCLUDED_EFFECT_PARAMS`).
+- ``geq`` : la brume de chaleur (``amplitude``, ``frequency``, ``top``, ``span``). Rendu écrit et vérifié, mais **pas
+  enregistré** : voir :data:`core.effect_targets.PENDING_EFFECT_PARAMS` (coût de ``geq`` par pixel). ``speed`` n'y figure pas
+  (saut de phase).
+
+Seuls les paramètres de :data:`core.effect_targets.ANIMATABLE_EFFECT_PARAMS` produisent une expression : le registre décide.
 
 **Base de temps.** Les images clés d'un effet sont en temps local du clip. L'export remet ``PTS`` à zéro au début du clip
 (``setpts=PTS-STARTPTS``, plus le temps déjà écoulé à l'origine d'un segment d'aperçu) *avant* les effets ; le décalage de

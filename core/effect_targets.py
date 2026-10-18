@@ -37,24 +37,29 @@ from .effects_model import (
 ANIMATABLE_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
     EffectType.VIGNETTE: ("intensity",),
-    EffectType.HEAT_HAZE: ("amplitude", "frequency", "top", "span"),
 }
 """Paramètres d'effet animables **et rendus** : une seule source (ADR-0008, décision 1). Règle : un paramètre n'est
-enregistré que si son rendu existe. L'étape 3 rend ceux qui s'écrivent en **expression** FFmpeg (:mod:`core.effect_expressions`) :
-``eq`` (``eval=frame``), ``vignette`` (``angle``) et ``geq`` (brume de chaleur), plus le moniteur GPU (paramètres évalués à
-l'instant courant). Aucun nom de paramètre ne contient de point (garde : ``tests/test_effect_targets.py``), ce qui rend le
-découpage par la droite non ambigu."""
+enregistré que si son rendu existe **et** tient son budget. L'étape 3 rend ceux qui s'écrivent en **expression** FFmpeg
+(:mod:`core.effect_expressions`) : ``eq`` (``eval=frame``) et ``vignette`` (``angle``), plus le moniteur GPU (paramètres
+évalués à l'instant courant). Aucun nom de paramètre ne contient de point (garde : ``tests/test_effect_targets.py``), ce qui
+rend le découpage par la droite non ambigu."""
 
 PENDING_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.BLUR: ("intensity",),
     EffectType.GLOW: ("radius",),
     EffectType.CHROMATIC_ABERRATION: ("intensity",),
-    EffectType.HEAT_HAZE: ("speed",),
+    EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),
 }
-"""Paramètres prévus, **pas encore rendus** : donc non enregistrés. Flou, rayon de la lueur et aberration chromatique
-viendront à l'étape 5 de l'ADR par ``sendcmd`` (validé sur FFmpeg 6.1, 7.1 et 9.0). La vitesse de la brume est à part : sa
-phase est ``T·v`` ; remplacer ``v`` par une courbe ``v(T)`` fait **sauter** la phase (il faudrait ``∫ v dt``). Elle reste
-statique tant qu'un rendu par phase accumulée n'existe pas."""
+"""Paramètres prévus, **pas encore enregistrés** (pas de cible, pas d'image clé rendue). Flou, rayon de la lueur et aberration
+chromatique viendront à l'étape 5 de l'ADR par ``sendcmd`` (validé sur FFmpeg 6.1, 7.1 et 9.0).
+
+Brume de chaleur : son rendu par expression ``geq`` est **écrit et vérifié** (:func:`core.effect_expressions.heat_haze_shift` ;
+parité export / moniteur et base de temps testées en enregistrant temporairement les paramètres) mais **non enregistré**,
+parce que ``geq`` réévalue l'expression pour chaque pixel et chaque plan : avec deux images clés sur les quatre paramètres, un
+rendu 720p de 5 s coûte ×8,9 le rendu statique (critère de l'ADR : ×2 à dix images clés). Pour l'enregistrer : un moyen de ne
+pas évaluer la courbe par pixel (voir « Coût de geq » dans ``docs/animation.md``), puis ajouter les quatre noms ci-dessus à
+:data:`ANIMATABLE_EFFECT_PARAMS`. ``speed`` est à part : sa phase est ``T·v`` ; remplacer ``v`` par une courbe ``v(T)`` fait
+**sauter** la phase (il faudrait ``∫ v dt``), il reste statique même alors."""
 
 EXCLUDED_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.SHARPEN: ("intensity",),

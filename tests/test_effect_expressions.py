@@ -64,6 +64,14 @@ def rich_curve(effect, name, *, overshoot=True):
 
 SAMPLES = [-1.0, 0.0, 0.25, 0.5, 0.6, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.4999, 2.5, 2.6, 3.0, 3.7, 4.0, 4.5, 6.0]
 RENDERED = [(kind, name) for kind, names in ANIMATABLE_EFFECT_PARAMS.items() for name in names]
+HAZE_PARAMS = ("amplitude", "frequency", "top", "span")
+HAZE_RENDERED = [(EffectType.HEAT_HAZE, name) for name in HAZE_PARAMS]
+
+
+def register_haze(monkeypatch):
+    """Enregistre temporairement la brume de chaleur : son rendu est écrit et vérifié, mais le registre ne la contient pas
+    (coût de ``geq``, voir ``core.effect_targets.PENDING_EFFECT_PARAMS``). Réenregistrer = ajouter ces noms au registre."""
+    monkeypatch.setitem(ANIMATABLE_EFFECT_PARAMS, EffectType.HEAT_HAZE, HAZE_PARAMS)
 
 
 # ---------------------------------------------------------------------------
@@ -71,9 +79,10 @@ RENDERED = [(kind, name) for kind, names in ANIMATABLE_EFFECT_PARAMS.items() for
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind, name", RENDERED)
+@pytest.mark.parametrize("kind, name", RENDERED + HAZE_RENDERED)
 @pytest.mark.parametrize("var", ["t", "T"])
-def test_each_rendered_expression_equals_the_python_curve(kind, name, var):
+def test_each_rendered_expression_equals_the_python_curve(monkeypatch, kind, name, var):
+    register_haze(monkeypatch)
     effect = create_effect(kind, effect_id="e")
     clip = clip_with([effect], rich_curve(effect, name))
     expression = animated_effect_expressions(effect, clip.animation, var)[name]
@@ -127,7 +136,8 @@ def test_filter_text_in_context_matches_the_python_formulas():
 
 @pytest.mark.parametrize("pixel_scale", [1.0, 0.5])
 @pytest.mark.parametrize("animated", [("amplitude",), ("frequency",), ("top", "span"), ("amplitude", "frequency", "top", "span")])
-def test_heat_haze_shift_equals_the_static_formula_at_the_evaluated_values(animated, pixel_scale):
+def test_heat_haze_shift_equals_the_static_formula_at_the_evaluated_values(monkeypatch, animated, pixel_scale):
+    register_haze(monkeypatch)
     haze = create_effect(EffectType.HEAT_HAZE, effect_id="h", params={"amplitude": 6.0, "frequency": 0.08, "speed": 9.0})
     animation = [frame for name in animated for frame in rich_curve(haze, name, overshoot=False)]
     clip = clip_with([haze], animation)
@@ -193,6 +203,8 @@ IGNORED_ANIMATION = (
     kf("mask.m.feather", 0.0, 3.0), kf("graphic.width", 1.0, 5.0), kf("fx.gone.intensity", 0.0, 0.5),
     kf("fx.blur.intensity", 0.0, 9.0), kf("fx.blur.intensity", 2.0, 30.0),           # flou : en attente (étape 5)
     kf("fx.haze.speed", 0.0, 1.0), kf("fx.haze.speed", 2.0, 30.0),                    # vitesse de la brume : saut de phase
+    kf("fx.haze.amplitude", 0.0, 1.0), kf("fx.haze.amplitude", 2.0, 30.0),            # brume : rendu écrit, non enregistré
+    kf("fx.haze.top", 0.0, 0.1), kf("fx.haze.span", 0.0, 0.9), kf("fx.haze.frequency", 0.0, 0.2),
     kf("fx.ca.intensity", 0.0, 9.0),
 )
 
@@ -218,8 +230,9 @@ def _all_effects():
     return [create_effect(kind, effect_id=f"e-{kind.value}") for kind in EffectType]
 
 
-@pytest.mark.parametrize("kind, name", RENDERED)
-def test_every_registered_parameter_changes_the_export_graph(kind, name):
+@pytest.mark.parametrize("kind, name", RENDERED + HAZE_RENDERED)
+def test_every_rendered_parameter_changes_the_export_graph(monkeypatch, kind, name):
+    register_haze(monkeypatch)
     effect = create_effect(kind, effect_id="e")
     layer = replace(golden_layer(), effects=(effect,))
     static = _build_layer_filter(0, layer, 0, 1280, 720, 30)
@@ -362,10 +375,11 @@ def _parity_cases():
 
 @needs_ffmpeg
 @pytest.mark.parametrize("case", ["eq", "vignette", "haze_amplitude", "haze_frequency_top_span"])
-def test_the_animated_export_matches_the_monitor_reference_like_a_static_effect(case):
+def test_the_animated_export_matches_the_monitor_reference_like_a_static_effect(monkeypatch, case):
     """Parité export / moniteur : à chaque image échantillonnée, l'effet rendu par FFmpeg (expression) et la référence du
     moniteur (paramètres évalués à cet instant) concordent aux seuils d'un effet statique (``test_gpu_pipeline``)."""
     np = pytest.importorskip("numpy")
+    register_haze(monkeypatch)
     from core.gpu_effects import reference_layer
     from core.gpu_frames import yuv_to_rgb_matrix
     from tests.gpu_harness import sited_codes
@@ -394,10 +408,11 @@ def test_the_animated_export_matches_the_monitor_reference_like_a_static_effect(
 
 @needs_ffmpeg
 @pytest.mark.parametrize("case", ["eq", "vignette", "haze_amplitude", "haze_frequency_top_span"])
-def test_each_animated_frame_equals_the_static_export_at_the_evaluated_value(case):
+def test_each_animated_frame_equals_the_static_export_at_the_evaluated_value(monkeypatch, case):
     """Méthode de ``tools/validate_sendcmd.py`` : l'image ``n`` de la sortie animée égale (écart max <= 1) l'image du rendu
     STATIQUE du même effet réglé sur la valeur de la courbe à l'instant de l'image."""
     np = pytest.importorskip("numpy")
+    register_haze(monkeypatch)
     effects, animation, full_chroma, _limits = _parity_cases()[case]
     width, height = 320, 180
     _codes, raw, pix_fmt = _source(width, height, full_chroma)
@@ -478,11 +493,12 @@ def _time_base_effects(kind):
 @needs_ffmpeg
 @pytest.mark.parametrize("kind", ["eq", "haze"])
 @pytest.mark.parametrize("scenario", list(TIME_BASE_SCENARIOS))
-def test_a_segment_starting_mid_clip_renders_the_same_animated_frames_as_the_whole_clip(tmp_path, scenario, kind):
+def test_a_segment_starting_mid_clip_renders_the_same_animated_frames_as_the_whole_clip(monkeypatch, tmp_path, scenario, kind):
     """Les images clés sont en temps local du clip : un segment qui démarre en milieu de clip (``origin``) garde les
     horodatages locaux (``PTS-STARTPTS+skip/TB``), le clip entier aussi. Les deux donnent les mêmes images, et chacune
     égale le rendu STATIQUE réglé sur la valeur de la courbe à son instant local (la base de temps est absolue)."""
     np = pytest.importorskip("numpy")
+    register_haze(monkeypatch)
     options, start, duration = TIME_BASE_SCENARIOS[scenario]
     effects, animation = _time_base_effects(kind)
     timeline_start = 1.0

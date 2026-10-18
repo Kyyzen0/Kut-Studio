@@ -73,7 +73,6 @@ def test_the_registered_list_is_exactly_the_rendered_one():
     assert ANIMATABLE_EFFECT_PARAMS == {
         EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
         EffectType.VIGNETTE: ("intensity",),
-        EffectType.HEAT_HAZE: ("amplitude", "frequency", "top", "span"),
     }
     declared = {kind: {spec.name for spec in specs} for kind, specs in EFFECT_PARAMETER_SPECS.items()}
     for kind, names in ANIMATABLE_EFFECT_PARAMS.items():
@@ -92,7 +91,7 @@ def test_every_declared_parameter_is_registered_pending_or_excluded_exactly_once
         EffectType.BLUR: ("intensity",),
         EffectType.GLOW: ("radius",),
         EffectType.CHROMATIC_ABERRATION: ("intensity",),
-        EffectType.HEAT_HAZE: ("speed",),
+        EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),    # geq : coût, voir docs/animation.md
     }
     assert EXCLUDED_EFFECT_PARAMS == {EffectType.SHARPEN: ("intensity",), EffectType.GLOW: ("threshold", "intensity")}
 
@@ -134,18 +133,16 @@ def test_each_registered_parameter_has_the_bounds_of_its_effect_type():
     clip = clip_of(make_project([
         create_effect(EffectType.COLOR_CORRECTION, effect_id="cc"),
         create_effect(EffectType.VIGNETTE, effect_id="v"),
-        create_effect(EffectType.HEAT_HAZE, effect_id="h"),
     ]))
     bounds = {pid: (get_target(pid, clip).spec.minimum, get_target(pid, clip).spec.maximum)
-              for pid in ("fx.cc.contrast", "fx.cc.saturation", "fx.v.intensity", "fx.h.span")}
-    assert bounds == {"fx.cc.contrast": (0.0, 2.0), "fx.cc.saturation": (0.0, 3.0), "fx.v.intensity": (0.0, 1.0),
-                      "fx.h.span": (0.01, 1.0)}
+              for pid in ("fx.cc.brightness", "fx.cc.contrast", "fx.cc.saturation", "fx.v.intensity")}
+    assert bounds == {"fx.cc.brightness": (-1.0, 1.0), "fx.cc.contrast": (0.0, 2.0), "fx.cc.saturation": (0.0, 3.0),
+                      "fx.v.intensity": (0.0, 1.0)}
 
 
 def test_bounds_and_default_are_read_from_the_specs():
-    clip = clip_of(make_project([create_effect(EffectType.HEAT_HAZE, effect_id="h")]))
-    registered = ANIMATABLE_EFFECT_PARAMS[EffectType.HEAT_HAZE]
-    for spec in (s for s in EFFECT_PARAMETER_SPECS[EffectType.HEAT_HAZE] if s.name in registered):
+    clip = clip_of(make_project([create_effect(EffectType.COLOR_CORRECTION, effect_id="h")]))
+    for spec in EFFECT_PARAMETER_SPECS[EffectType.COLOR_CORRECTION]:
         target = get_target(fx_property_id("h", spec.name), clip)
         assert (target.spec.minimum, target.spec.maximum, target.spec.default) == (spec.minimum, spec.maximum, spec.default)
 
@@ -177,12 +174,13 @@ def test_excluded_and_pending_parameters_are_not_animatable():
         create_effect(EffectType.BLUR, effect_id="b"),
         create_effect(EffectType.CHROMATIC_ABERRATION, effect_id="ca"),
         create_effect(EffectType.HEAT_HAZE, effect_id="h"),
+        create_effect(EffectType.COLOR_CORRECTION, effect_id="cc"),
     ]))
     for pid in ("fx.s.intensity", "fx.g.threshold", "fx.g.intensity", "fx.g.radius", "fx.b.intensity", "fx.ca.intensity",
-                "fx.h.speed"):
+                "fx.h.amplitude", "fx.h.frequency", "fx.h.speed", "fx.h.top", "fx.h.span"):
         with pytest.raises(KeyError):
             get_target(pid, clip)
-    assert get_target("fx.h.amplitude", clip)
+    assert get_target("fx.cc.saturation", clip)
 
 
 def test_fx_targets_only_exist_on_video_tracks():
@@ -228,13 +226,13 @@ def test_without_keyframes_the_effective_parameters_are_exactly_the_base_ones():
 
 
 def test_effective_parameters_follow_the_curve_and_are_bounded():
-    effect = create_effect(EffectType.HEAT_HAZE, effect_id="b", params={"amplitude": 2.0})
-    animation = [Keyframe("fx.b.amplitude", 0.0, 0.0), Keyframe("fx.b.amplitude", 4.0, 80.0)]   # 80 > borne 40
+    effect = create_effect(EffectType.COLOR_CORRECTION, effect_id="b", params={"contrast": 1.2})
+    animation = [Keyframe("fx.b.contrast", 0.0, 0.0), Keyframe("fx.b.contrast", 4.0, 6.0)]   # 6 > borne 2
     clip = clip_of(make_project([effect], animation))
-    assert effective_effect_parameters(clip, effect, 0.0)["amplitude"] == pytest.approx(0.0)
-    assert effective_effect_parameters(clip, effect, 1.0)["amplitude"] == pytest.approx(20.0)
-    assert effective_effect_parameters(clip, effect, 4.0)["amplitude"] == 40.0       # bornée comme l'inspecteur
-    assert effect.params["amplitude"] == 2.0                                          # la base n'a pas bougé
+    assert effective_effect_parameters(clip, effect, 0.0)["contrast"] == pytest.approx(0.0)
+    assert effective_effect_parameters(clip, effect, 1.0)["contrast"] == pytest.approx(1.5)
+    assert effective_effect_parameters(clip, effect, 4.0)["contrast"] == 2.0         # bornée comme l'inspecteur
+    assert effect.params["contrast"] == 1.2                                           # la base n'a pas bougé
 
 
 def test_effective_parameters_ignore_other_effects_and_non_animatable_keyframes():
