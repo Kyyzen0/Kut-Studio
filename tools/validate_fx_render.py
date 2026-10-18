@@ -108,7 +108,7 @@ def cmd_gen(args: argparse.Namespace) -> int:
 
 
 def _frames(ffmpeg: str, source: Path, vf: str, cpuflags0: bool) -> bytes:
-    command = [ffmpeg, "-v", "error", *(["-cpuflags", "0"] if cpuflags0 else []), "-i", str(source), "-vf", vf, "-f", "rawvideo", "-"]
+    command = [ffmpeg, "-v", "error", *(["-cpuflags", "0"] if cpuflags0 else []), "-i", str(source), "-vf", vf, "-fps_mode", "passthrough", "-f", "rawvideo", "-"]
     return subprocess.run(command, capture_output=True, check=True).stdout
 
 

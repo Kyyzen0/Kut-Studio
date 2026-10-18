@@ -259,7 +259,7 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
 
 - **Coût de `geq`** : `geq` évalue l'expression pour **chaque pixel de chaque plan** ; y mettre la courbe multiplie le coût.
   Mesuré sur 1280x720, 150 images, `-f null`, FFmpeg 9.0.2 (macOS, machine chargée : seul le rapport compte) : statique
-  8,6 s ; animée avec 2 images clés sur les 4 paramètres 76,6 s (**×8,9**), avec 10 images clés 409,7 s (**×47,5**) ; le critère de l'ADR (10 images clés à moins de
+  8,6 s ; animée avec 2 images clés sur les 4 paramètres 76,6 s (**×8,9**), avec 10 images clés 409,7 s (**×47,5**) ; un seul paramètre (amplitude) : 22,4 s à 2 images clés (×2,6), 80,1 s à 10 (×9,3) ; le critère de l'ADR (10 images clés à moins de
   ×2) est donc largement manqué. Le rendu (`heat_haze_shift`) est écrit et vérifié (parité export / moniteur, base de temps,
   statique) en enregistrant temporairement les paramètres dans les tests ; il n'est pas dans la liste.
 - **Pistes** (non implémentées) : pré-évaluer la courbe de chaque paramètre par image (une constante par image dans un fichier
