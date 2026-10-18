@@ -18,6 +18,7 @@ Faits relevés dans le code le 2026-10-18 (lecture seule, références vérifié
 4. **Moniteur « fidèle d'abord » pour l'étalonnage animé** (décision de l'utilisateur, comme la page Composition) : en lecture, l'aperçu fidèle rendu par FFmpeg ; à l'arrêt, la table de couleurs 3D (LUT) est cuite pour l'instant exact. On ne réécrit pas l'étalonnage en formules GPU.
 5. **Le format `.kut` monte de version** dès qu'un fichier contient une image clé `fx.*` ou `color.*` : un ancien build ignore en silence les images clés d'un identifiant inconnu, ce qui perdrait l'animation.
 6. **Le mode script suit** : les verbes d'images clés dérivent du registre, donc les nouvelles cibles s'y ajoutent par construction.
+7. **Une image clé d'effet ne survit pas à son effet** : suppression, préréglage et collage d'attributs tiennent `Clip.animation` à jour par un seul point d'entrée, et le nom de la cible se découpe par la droite pour que tout identifiant d'effet reste valide.
 
 ---
 
@@ -68,6 +69,13 @@ Conséquence : contraste, saturation, teinte et luminosité (`eq`, `hue`) et la 
 ### 1. Cibles et stockage
 
 - **Effets** : `fx.<effect_id>.<paramètre>`, un identifiant par effet de clip (les effets ont déjà un `effect_id`), un enregistrement dynamique par clip sur le modèle de `mask_target`. Bornes et valeur par défaut lues dans `EFFECT_PARAMETER_SPECS`, jamais recopiées.
+  **Nom réversible, sans échappement** : `ClipEffect.__post_init__` accepte tout identifiant non vide (`core/effects_model.py:204`),
+  donc un identifiant peut contenir des points (et les identifiants n'ont pas la même forme partout : `fx-` suivi de 12
+  caractères à la création, 10 caractères au collage d'attributs). On découpe donc **par la droite** : le paramètre est
+  ce qui suit le **dernier** point, l'identifiant ce qui est entre `fx.` et ce dernier point (`fx.my.blur.intensity` →
+  effet `my.blur`, paramètre `intensity`). C'est non ambigu parce qu'**aucun nom de paramètre ne contient de point**
+  (vérifié aujourd'hui) ; un test de garde le garantit pour tout `EFFECT_PARAMETER_SPECS` futur. Le modèle `mask_target`
+  (découpage en exactement trois morceaux) n'est donc **pas** repris tel quel.
 - **Étalonnage** : `color.<champ>` pour les scalaires de `ColorGrade` d'un clip (exposition, contraste, saturation, température, teinte, ombres, hautes lumières), puis les roues. **Ni les courbes ni les LUT** ne sont animées dans ce plan : elles ne sont pas scalaires.
 - **Stockage** : `Clip.animation`, comme `graphic.*` et `mask.*`. Pas de nouveau champ.
 - **Graphe de nœuds** : seul le `ColorGrade` simple du clip s'anime dans un premier temps. L'animation par nœud (`color.<noeud>.<champ>`) et celle des fenêtres d'étalonnage (aujourd'hui refusée par `mask.<id>.*`, `applies_to_clip` ne voyant que les masques de compositing) sont des suites possibles, hors de ce plan.
@@ -96,7 +104,29 @@ Comme pour le suivi (ADR-0007) : la valeur de base reste dans le modèle, les im
 
 Une valeur animée se modifie comme une transformation animée : le curseur écrit une image clé à la position de lecture (branche « image clé » dans l'inspecteur, sur le modèle de `keyframes.py:238`), un losange apparaît à côté du curseur. Panneaux concernés : Couleur et Effets du clip. Niveaux d'usage : les losanges suivent le niveau du panneau (Studio), l'éditeur de courbes est Avancé, comme pour la transformation.
 
-### 7. Mode script
+### 7. Cycle de vie : une image clé d'effet ne survit pas à son effet
+
+L'identifiant de l'effet est le lien entre l'effet et ses images clés. Or aujourd'hui rien ne tient `Clip.animation` à jour
+quand les effets changent : `remove_effect_from_clip` (`core/effects_model.py:446`) et `apply_preset_to_clip`
+(`core/effects_library.py:535`) ne font que remplacer `clip.effects`, et le collage d'attributs (`core/mograph_layers.py`,
+~817-860) crée de **nouveaux** identifiants d'effet mais recopie les images clés génériques telles quelles. Sans traitement,
+supprimer un effet ou appliquer un préréglage laisserait des courbes orphelines inatteignables, et coller « Effets + Images
+clés » ferait pointer les courbes vers les effets d'origine. La décision :
+
+- **Suppression d'un effet** : ses images clés `fx.<id>.*` partent **dans la même étape d'historique**, et reviennent
+  avec lui à l'annulation.
+- **Préréglage appliqué** : les effets remplacés perdent leurs images clés (même règle) ; les effets du préréglage
+  naissent sans animation.
+- **Collage d'attributs** : une table « ancien identifiant → nouvel identifiant » est construite quand les effets sont
+  recréés, et appliquée aux images clés `fx.*` collées. Une image clé dont l'effet n'est pas collé est abandonnée.
+- **Duplication et coupe d'un clip** : les images clés `fx.*` suivent le même traitement que le reste de `Clip.animation`
+  (coupe à l'instant, décalage temporel) ; à tester, pas à supposer.
+- **Tolérance à la lecture** : une image clé `fx.*` dont l'effet n'existe pas est **ignorée** (comportement actuel du
+  registre pour un identifiant inconnu) et retirée à la prochaine édition du clip ; elle ne fait jamais échouer le chargement.
+- **Un seul point d'entrée** : une fonction du modèle (par exemple `animation_for_effects(clip)`) donne les identifiants
+  encore valides ; toutes les opérations ci-dessus l'utilisent, au lieu que chacune recopie la règle.
+
+### 8. Mode script
 
 `add_keyframe` / `remove_keyframe` dérivent leurs propriétés du registre (PR #195, ouverte à la date de cet ADR, pas encore mergée). Les cibles `fx.*` dépendent d'un effet précis du clip : verbes à part, avec le sélecteur `effect`, comme `add_mask_keyframe`. Les cibles `color.*` s'ajouteront à la liste dérivée. Aucun verbe n'est écrit avant que la cible existe dans le modèle.
 
@@ -126,6 +156,11 @@ Une valeur animée se modifie comme une transformation animée : le curseur écr
 - Un fichier avec animation de couleur ne s'ouvre plus dans un build antérieur (il refuse). C'est le comportement voulu, mais visible.
 - Coût de rendu : une expression `curve_expression` par paramètre animé et, pour `sendcmd`, un fichier de commandes par image (taille et lecture non mesurées ici).
 - L'aperçu d'un étalonnage animé peut attendre un rendu en lecture (fidèle d'abord).
+- **Le lien effet ↔ images clés est un identifiant** : toute opération qui remplace, supprime ou recrée des effets doit
+  passer par le point d'entrée du cycle de vie, sinon des courbes restent orphelines ou animent le mauvais effet. Les
+  trois opérations connues aujourd'hui (suppression, préréglage, collage) sont listées ; une opération future qui touche
+  `clip.effects` sans passer par là est un défaut, que le test de garde de l'étape 2 doit attraper (grep des écritures
+  de `clip.effects`).
 - L'animation du graphe de nœuds et des fenêtres d'étalonnage reste hors périmètre : un utilisateur qui découpe son étalonnage en plusieurs nœuds ne peut plus animer.
 
 ---
@@ -134,7 +169,7 @@ Une valeur animée se modifie comme une transformation animée : le curseur écr
 
 0. **Cet ADR.**
 1. **Validation de `sendcmd`** (aucun code produit) : pour chaque filtre hors expression (exposition `lutrgb`, température `colorchannelmixer`, `colorbalance`, `curves`, `gblur`, `unsharp`, `rgbashift`), un banc sur FFmpeg 6.1 (Ubuntu 24.04), 7.1 (Debian trixie) et 9.0.2, en Docker `--platform linux/amd64` : la sortie avec `sendcmd` égale-t-elle la sortie du filtre statique à la même valeur ? Comportement aux limites d'image, avec un segment qui ne commence pas à zéro, avec un changement de cadence, taille du fichier de commandes. Résultat consigné dans `docs/` et dans cet ADR (tableau filtre × version), avec la liste finale des paramètres animables.
-2. **Cibles des effets + format** : `fx.*` enregistrées, constante de version 20 conditionnelle, `effective_effect_parameters`, tests (aller-retour d'un fichier, ancien build refuse). Sans rendu encore.
+2. **Cibles des effets + format + cycle de vie** : `fx.*` enregistrées (découpage par la droite, test de garde « aucun nom de paramètre ne contient de point »), constante de version 20 conditionnelle, `effective_effect_parameters`, **cycle de vie** (suppression, préréglage, collage avec table de correspondance des identifiants, coupe et duplication, orphelins tolérés puis nettoyés). Tests : aller-retour d'un fichier, ancien build refuse, identifiant à points, suppression puis annulation, préréglage, collage « Effets + Images clés » (les courbes animent les **nouveaux** effets), coupe d'un clip animé, image clé orpheline au chargement. Sans rendu encore.
 3. **Rendu des effets** : par expression (`eq`, `vignette`, `geq`) à l'export, uniformes par image dans le moniteur, parité export / GPU sur des images échantillonnées, `RENDER_ENGINE_VERSION`.
 4. **Interface des effets** : branche « image clé » dans le panneau Effets, losanges, niveau d'usage, manifeste d'énumération.
 5. **Effets hors expression** (flou, netteté, aberration, lueur) via `sendcmd`, **si** l'étape 1 les valide.
