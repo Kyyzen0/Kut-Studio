@@ -84,3 +84,9 @@ runs:
         Add-Content -Path $env:GITHUB_PATH -Value $bin
         $env:PATH = "$bin;$env:PATH"
         Write-Host "FFmpeg $env:FFMPEG_VERSION ajouté au PATH : $bin"
+
+        # Le repli a réussi. Sans cette sortie explicite, pwsh termine l'étape avec le code de la dernière commande native
+        # lancée, ici `choco install` (1) quand Chocolatey a échoué avant le repli : l'étape échouait alors que FFmpeg
+        # était installé. (`force-fallback` ne lance jamais choco, d'où un code 0 et un défaut jamais vu en test.)
+        $global:LASTEXITCODE = 0
+        exit 0
