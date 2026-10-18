@@ -214,6 +214,11 @@ paramètres de la brume (`amplitude`, `frequency`, `top`, `span`) restent donc s
 `PENDING_EFFECT_PARAMS`. Pistes non implémentées : évaluer la courbe une fois par image hors de `geq` (un `geq` par image et par
 segment constant, ou une carte de déplacement calculée par image pour `displace`), ou borner le nombre d'images clés.
 
+**Composition : refus.** La composition nodale rend les effets d'un nœud sans animation (`composition_render`, `_effect_chain(node.effects,
+None, …)`) : convertir un clip aux effets animés perdrait l'animation en silence. `convert_to_composition` refuse tout clip qui
+porte au moins une image clé `fx.*` dont l'effet existe (`has_live_effect_animation`) ; les orphelines ne bloquent pas. Transporter
+les courbes dans la composition est hors de ce lot.
+
 **`heat_haze.speed` exclu** : la phase vaut `T·v` ; `v(T)` à la place de `v` fait sauter la phase (il faudrait `∫ v dt`).
 Avec `frequency` animé, la phase `Y·f(T)` change de forme à chaque instant : voulu, et l'export (`geq`) et le moniteur
 (`HazeOp`) concordent aux seuils d'un effet statique (testé en enregistrant temporairement la brume).

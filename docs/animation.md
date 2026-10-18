@@ -245,6 +245,10 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
 - **Moniteur GPU** : `evaluated_effects` est appelé à chaque image par les deux points de synchronisation (clip du dessus,
   pistes du dessous) ; `program_for` reçoit des paramètres déjà évalués. Les calques d'effets (`adjustment`) et les effets
   des calques graphiques ne portent pas d'image clé `fx.*` (les cibles n'existent que sur une piste vidéo) : inchangés.
+- **Composition nodale** : elle ne reprend pas les courbes d'effet (`composition_render` appelle `_effect_chain` sans animation,
+  l'effet serait rendu à sa valeur de base). `convert_to_composition` **refuse** donc un clip qui porte au moins une image clé
+  `fx.*` dont l'effet existe (`has_live_effect_animation`, `core/effects_model.py`) : « a des effets animés que la composition
+  ne sait pas encore rendre ». Une image clé orpheline ou mal formée ne compte pas. Rien n'est modifié en cas de refus.
 - **Cache** : `RENDER_ENGINE_VERSION` 13 ; l'empreinte d'un segment contient `repr(animation)` : modifier une image clé `fx.*`
   invalide le segment, un clip sans image clé `fx.*` garde son empreinte (au numéro de moteur près).
 - **Vérifié sur FFmpeg** 6.1.1 (Ubuntu 24.04), 7.1.5 (Debian trixie) et 9.0.2 (macOS) avec `tools/validate_fx_render.py` :
