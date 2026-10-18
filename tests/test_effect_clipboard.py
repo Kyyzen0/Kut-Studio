@@ -6,9 +6,17 @@ from __future__ import annotations
 import pytest
 
 from core.animation import Keyframe
+from core.effect_targets import ANIMATABLE_EFFECT_PARAMS
 from core.effects_model import EffectType, create_effect
 from core.keyframe_editing import add_keyframe, can_paste, copy_keyframes, keyframe_times, paste_keyframes
 from core.project_model import Clip, MediaAsset, Project, Track
+
+
+@pytest.fixture(autouse=True)
+def _blur_is_a_registered_vehicle(monkeypatch):
+    """Ces tests portent sur le cycle de vie des courbes (modèle), pas sur le rendu : le flou, empilable et de bornes 0 à 50,
+    leur sert de véhicule. Il n'est pas dans la liste enregistrée (étape 5 de l'ADR) : on l'y met le temps du test."""
+    monkeypatch.setitem(ANIMATABLE_EFFECT_PARAMS, EffectType.BLUR, ("intensity",))
 
 
 def clip_with(clip_id: str, effects, animation=()) -> Clip:

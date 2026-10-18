@@ -60,9 +60,7 @@ def animated_effect_expressions(
         if spec is None:  # pragma: no cover - ANIMATABLE_EFFECT_PARAMS est animable par construction
             continue
         curve = AnimationCurve(frames, ValueKind.FLOAT)
-        result[name] = curve_expression(
-            curve, time_var=time_var, minimum=float(spec.minimum), maximum=float(spec.maximum),
-        )
+        result[name] = curve_expression(curve, time_var=time_var, minimum=spec.minimum, maximum=spec.maximum)
     return result
 
 
