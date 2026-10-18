@@ -390,3 +390,90 @@ def test_the_give_up_warning_names_the_windows_error_when_there_is_one(tmp_path,
     with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
         export_runner._remove(str(tmp_path / "x"), sleep=lambda _s: None)
     assert "winerror 32" in caplog.text and "pid inconnu" in caplog.text
+
+
+class _FakeTime:
+    """Horloge simulée : ``sleep`` fait avancer ``clock`` ; aucune pause réelle."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.pauses: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.pauses.append(seconds)
+        self.now += seconds
+
+
+def _locked(monkeypatch, released_after: dict[str, int] | None = None) -> dict[str, int]:
+    """``os.remove`` simulé : chemins verrouillés (ou libérés après N essais) ; renvoie le décompte des essais."""
+    from core import export_runner
+
+    attempts: dict[str, int] = {}
+    free_after = released_after or {}
+
+    def fake_remove(path):
+        attempts[path] = attempts.get(path, 0) + 1
+        if path in free_after and attempts[path] > free_after[path]:
+            return
+        raise PermissionError(13, "verrouillé")
+
+    monkeypatch.setattr(export_runner.os, "remove", fake_remove)
+    return attempts
+
+
+def test_one_shared_budget_covers_every_locked_file_with_one_warning_each(monkeypatch, caplog):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch)
+    paths = ["p.partial", "a.ass", "b.ffconcat"]
+    monkeypatch.setattr(export_runner, "_REMOVE_ATTEMPTS", 10_000)     # seule l'échéance borne l'attente
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove_all(paths, ffmpeg_pid=7, sleep=fake.sleep, clock=fake.clock)
+    budget, pause = export_runner._REMOVE_BUDGET_SECONDS, export_runner._REMOVE_PAUSE
+    assert budget - pause <= sum(fake.pauses) <= budget + 2 * pause
+    assert all(count >= 2 for count in attempts.values()), "chaque chemin est retenté à chaque passe"
+    assert len(caplog.records) == 3 and all("non supprimé" in r.getMessage() for r in caplog.records)
+    for path in paths:
+        assert path in caplog.text
+
+
+def test_a_file_released_on_the_third_pass_is_removed_and_the_others_go_on(monkeypatch, caplog):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch, {"b": 2})
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove_all(["a", "b"], sleep=fake.sleep, clock=fake.clock)
+    assert attempts["b"] == 3, "libéré à la troisième passe, plus retenté ensuite"
+    assert attempts["a"] > 3
+    assert caplog.text.count("non supprimé") == 1 and "(a)" in caplog.text
+
+
+def test_with_no_budget_every_path_is_still_tried_once(monkeypatch):
+    from core import export_runner
+
+    fake = _FakeTime()
+    attempts = _locked(monkeypatch)
+    monkeypatch.setattr(export_runner, "_REMOVE_BUDGET_SECONDS", 0.0)
+    export_runner._remove_all(["a", "b", "c"], sleep=fake.sleep, clock=fake.clock)
+    assert attempts == {"a": 1, "b": 1, "c": 1} and fake.pauses == []
+
+
+def test_the_partial_file_is_tried_on_the_first_pass_even_if_a_temporary_resists(monkeypatch):
+    from core import export_runner
+
+    fake = _FakeTime()
+    order: list[str] = []
+
+    def tracing(path):
+        order.append(path)
+        raise PermissionError(13, "verrouillé")
+
+    monkeypatch.setattr(export_runner.os, "remove", tracing)
+    monkeypatch.setattr(export_runner, "_REMOVE_BUDGET_SECONDS", 0.0)
+    export_runner._remove_all(["x.partial", "script.ass"], sleep=fake.sleep, clock=fake.clock)
+    assert order == ["x.partial", "script.ass"]

@@ -251,10 +251,8 @@ def run_export(
     except OSError as error:                      # renommage final, fichier verrouillé : un échec d'export, pas un plantage
         return fail(str(error))
     finally:
-        for path in temporary:
-            _remove(path)
-        if partial is not None:
-            _remove(partial, ffmpeg_pid=ffmpeg_pid)
+        # Un seul budget pour tout le nettoyage ; le .partial (tenu par FFmpeg) d'abord.
+        _remove_all([*([partial] if partial is not None else []), *temporary], ffmpeg_pid=ffmpeg_pid)
 
 
 @dataclass(frozen=True)
@@ -331,29 +329,53 @@ def _run_ffmpeg(
 
 
 _REMOVE_ATTEMPTS = 100
+"""Nombre maximal de passes de suppression."""
 _REMOVE_PAUSE = 0.1
-"""Budget de suppression : 100 essais espacés de 0,1 s, soit 10 s au plus (un antivirus ou un indexeur peut garder un fichier
-tout juste écrit plus longtemps que les 2 s d'origine)."""
+_REMOVE_BUDGET_SECONDS = 10.0
+"""Budget **partagé** par tout le nettoyage d'un export (un antivirus ou un indexeur peut garder un fichier tout juste écrit
+plus longtemps que les 2 s d'origine). Chaque chemin est tenté au moins une fois, même budget épuisé."""
+
+
+def _remove_all(
+    paths: list[str],
+    *,
+    ffmpeg_pid: int = 0,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Supprime des fichiers temporaires. Sous Windows, FFmpeg tué garde un instant sa poignée sur la sortie (ou un antivirus
+    l'analyse) : la suppression échoue en ``PermissionError`` puis réussit. Chaque passe tente TOUS les chemins restants (aucun
+    ne meurt de faim), puis dort une fois ; à l'échéance, un avertissement par chemin restant donne l'erreur système
+    (``winerror`` / ``errno``) et le PID de FFmpeg pour que l'échec soit diagnostiquable. Ne lève jamais."""
+    deadline = clock() + _REMOVE_BUDGET_SECONDS
+    remaining: dict[str, OSError] = {path: OSError() for path in paths}
+    passes = 0
+    while remaining:
+        passes += 1
+        for path in list(remaining):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                del remaining[path]
+            except OSError as error:
+                remaining[path] = error
+            else:
+                del remaining[path]
+        if not remaining:
+            return
+        if passes >= _REMOVE_ATTEMPTS or clock() >= deadline:
+            break
+        sleep(_REMOVE_PAUSE)
+    for path, last in remaining.items():
+        LOGGER.warning(
+            "Fichier temporaire d'export non supprimé (%s) après %d essais, FFmpeg pid %s, winerror %s, errno %s : %s",
+            path, passes, ffmpeg_pid or "inconnu", getattr(last, "winerror", None), last.errno, last,
+        )
 
 
 def _remove(path: str, *, ffmpeg_pid: int = 0, sleep: Callable[[float], None] = time.sleep) -> None:
-    """Supprime un fichier temporaire. Sous Windows, FFmpeg tué garde un instant sa poignée sur la sortie (ou un antivirus
-    l'analyse) : la suppression échoue en ``PermissionError`` puis réussit, d'où quelques essais avant d'abandonner. L'abandon
-    journalise l'erreur système (``winerror`` / ``errno``) et le PID de FFmpeg pour que l'échec soit diagnostiquable."""
-    for attempt in range(_REMOVE_ATTEMPTS):
-        try:
-            os.remove(path)
-            return
-        except FileNotFoundError:
-            return
-        except OSError as error:
-            if attempt == _REMOVE_ATTEMPTS - 1:
-                LOGGER.warning(
-                    "Fichier temporaire d'export non supprimé (%s) après %d essais, FFmpeg pid %s, winerror %s, errno %s : %s",
-                    path, _REMOVE_ATTEMPTS, ffmpeg_pid or "inconnu", getattr(error, "winerror", None), error.errno, error,
-                )
-                return
-            sleep(_REMOVE_PAUSE)
+    """Supprime un seul fichier temporaire (enveloppe de :func:`_remove_all`)."""
+    _remove_all([path], ffmpeg_pid=ffmpeg_pid, sleep=sleep)
 
 
 __all__ = ["ExportResult", "ExportStatus", "partial_output_path", "run_export"]
