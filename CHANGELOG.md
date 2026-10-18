@@ -21,7 +21,6 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Fixed
 
 - **Aperçu : la luminosité de la correction de couleur suit l'export.** Le moniteur s'écartait de 2 à 3 niveaux de l'export à luminosité négative (par exemple −0,1 à −0,4), à cause de l'arrondi en float32 que fait le filtre `eq` d'FFmpeg ; il le reproduit maintenant.
-
 - **Windows : annuler un export ne laisse plus de fichier temporaire caché.** Avec un FFmpeg installé par Chocolatey (un lanceur qui démarre le vrai FFmpeg), l'annulation n'arrêtait que le lanceur ; le vrai FFmpeg continuait d'écrire et gardait le fichier `.partial` verrouillé. L'annulation arrête maintenant tout l'arbre de processus et la suppression patiente jusqu'à 10 s.
 
 ## [0.6.5] - 2026-10-18
