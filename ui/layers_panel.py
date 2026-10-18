@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.graphics import GraphicType, ShapeKind
+from core.usage_level import UsageLevel, coerce_usage_level
 from ui.design_system import Iconography, Spacing
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, label_style
@@ -159,6 +160,8 @@ class LayersPanel(QWidget):
         self._presets: list = []
         self._motion_blur: dict[str, bool] = {}
         self._updating = False
+        # Niveau d'usage (ADR-0006) : Avancé sans fenêtre = les menus d'avant ; la fenêtre le pose et le suit.
+        self.usage_level = UsageLevel.ADVANCED
         # Parents possibles d'un calque, demandés à l'ouverture du menu
         # (le calcul évite les cycles : inutile de le faire pour chaque ligne).
         self.parent_choices_provider = None
@@ -302,21 +305,48 @@ class LayersPanel(QWidget):
 
     # -- menus ---------------------------------------------------------------------------------
 
+    def level_at_least(self, minimum: UsageLevel) -> bool:
+        """Vrai si le niveau d'usage courant atteint ``minimum`` (niveau minimal d'une entrée de menu)."""
+        return self.usage_level.at_least(minimum)
+
+    def set_usage_level(self, level: object) -> None:
+        """Niveau d'usage (ADR-0006) : montre ou cache les boutons Studio de la barre et refait le menu « Ajouter ».
+
+        Les menus contextuels sont construits à chaque ouverture et lisent ``usage_level``. Un niveau ne fait que montrer ou
+        cacher : jamais ``setEnabled``, aucun widget reparenté (``setVisible`` du bouton lui-même).
+        """
+        new = coerce_usage_level(level)
+        if new is None:
+            return
+        self.usage_level = new
+        studio = new.at_least(UsageLevel.STUDIO)
+        self.group_button.setVisible(studio)
+        self.presets_button.setVisible(studio)
+        previous_menu = self.add_button.menu()
+        self.add_button.setMenu(self._build_add_menu())
+        if previous_menu is not None:
+            previous_menu.deleteLater()
+
     def _build_add_menu(self) -> QMenu:
+        """Menu « Ajouter » : texte, aplat et image en Simple ; formes, contrôleur nul et calque d'effets en Studio."""
+        studio = self.level_at_least(UsageLevel.STUDIO)
         menu = QMenu(self)
         menu.addAction(translate("common.text")).triggered.connect(lambda: self.add_requested.emit("text", ""))
-        shapes = menu.addMenu(translate("menu.item.add_shape_layer"))
-        for kind, label in SHAPE_CHOICES:
-            shapes.addAction(translate(label)).triggered.connect(
-                lambda _checked=False, value=kind.value: self.add_requested.emit("shape", value)
-            )
+        if studio:
+            shapes = menu.addMenu(translate("menu.item.add_shape_layer"))
+            for kind, label in SHAPE_CHOICES:
+                shapes.addAction(translate(label)).triggered.connect(
+                    lambda _checked=False, value=kind.value: self.add_requested.emit("shape", value)
+                )
         menu.addAction(translate("mograph.layers.solid")).triggered.connect(lambda: self.add_requested.emit("solid", ""))
         menu.addAction(translate("mograph.layers.image")).triggered.connect(self.import_image_requested.emit)
-        menu.addSeparator()
-        menu.addAction(translate("menu.item.add_null_layer")).triggered.connect(lambda: self.add_requested.emit("null", ""))
-        menu.addAction(translate("menu.item.add_adjustment_layer")).triggered.connect(
-            lambda: self.add_requested.emit("adjustment", "")
-        )
+        if studio:
+            menu.addSeparator()
+            menu.addAction(translate("menu.item.add_null_layer")).triggered.connect(
+                lambda: self.add_requested.emit("null", ""))
+            menu.addAction(translate("menu.item.add_adjustment_layer")).triggered.connect(
+                lambda: self.add_requested.emit("adjustment", "")
+            )
         return menu
 
     def set_presets(self, presets) -> None:
@@ -336,7 +366,16 @@ class LayersPanel(QWidget):
         save.triggered.connect(lambda: self.save_preset_requested.emit(self.selected_ids()))
 
     def _show_context_menu(self, point) -> None:
-        item = self.tree.itemAt(point)
+        menu = self.build_context_menu(self.tree.itemAt(point))
+        menu.exec(self.tree.viewport().mapToGlobal(point))
+
+    def build_context_menu(self, item) -> QMenu:
+        """Menu d'un calque (``item``) ou du fond (``None``), selon le niveau d'usage (construit à chaque ouverture).
+
+        Simple : renommer, dupliquer, supprimer. Studio : + grouper, dégrouper, entrer dans le groupe, copier / coller les
+        attributs, enregistrer comme préréglage. Avancé : + parent et flou de mouvement.
+        """
+        studio, advanced = self.level_at_least(UsageLevel.STUDIO), self.level_at_least(UsageLevel.ADVANCED)
         ids = self.selected_ids()
         menu = QMenu(self)
         if item is not None:
@@ -345,47 +384,59 @@ class LayersPanel(QWidget):
                 ids = [clip_id]
             node = next((n for n in self._nodes if n.clip_id == clip_id), None)
             menu.addAction(translate("tracks.rename_tooltip")).triggered.connect(lambda: self.tree.editItem(item, COL_NAME))
-            parent_menu = menu.addMenu(translate("mograph.layers.col_parent"))
-            none = parent_menu.addAction(translate("common.none"))
-            none.triggered.connect(lambda: self.parent_requested.emit(clip_id, ""))
-            choices = (
-                self.parent_choices_provider(clip_id)
-                if callable(self.parent_choices_provider)
-                else self._parent_choices.get(clip_id, [])
-            )
-            for candidate_id, name in choices:
-                action = parent_menu.addAction(name)
-                action.setCheckable(True)
-                action.setChecked(node is not None and node.parent_id == candidate_id)
-                action.triggered.connect(
-                    lambda _checked=False, value=candidate_id: self.parent_requested.emit(clip_id, value)
-                )
-            menu.addSeparator()
-            menu.addAction(translate("menu.item.group_layers")).triggered.connect(lambda: self.group_requested.emit(ids))
-            if node is not None and node.is_group:
-                menu.addAction(translate("mograph.layers.ungroup")).triggered.connect(lambda: self.ungroup_requested.emit(clip_id))
-                menu.addAction(translate("mograph.layers.enter_group")).triggered.connect(lambda: self.enter_group(clip_id))
+            if advanced:
+                self._add_parent_menu(menu, clip_id, node)
+            if studio:
+                menu.addSeparator()
+                menu.addAction(translate("menu.item.group_layers")).triggered.connect(lambda: self.group_requested.emit(ids))
+                if node is not None and node.is_group:
+                    menu.addAction(translate("mograph.layers.ungroup")).triggered.connect(
+                        lambda: self.ungroup_requested.emit(clip_id))
+                    menu.addAction(translate("mograph.layers.enter_group")).triggered.connect(
+                        lambda: self.enter_group(clip_id))
             menu.addAction(translate("action.duplicate")).triggered.connect(lambda: self.duplicate_requested.emit(ids))
-            menu.addSeparator()
-            menu.addAction(translate("menu.item.copy_attributes")).triggered.connect(
-                lambda: self.copy_attributes_requested.emit(clip_id)
-            )
-            menu.addAction(translate("menu.item.paste_attributes")).triggered.connect(
-                lambda: self.paste_attributes_requested.emit(ids)
-            )
-            if node is not None and not node.is_group and node.type not in (GraphicType.NULL, GraphicType.ADJUSTMENT):
+            if studio:
+                menu.addSeparator()
+                menu.addAction(translate("menu.item.copy_attributes")).triggered.connect(
+                    lambda: self.copy_attributes_requested.emit(clip_id)
+                )
+                menu.addAction(translate("menu.item.paste_attributes")).triggered.connect(
+                    lambda: self.paste_attributes_requested.emit(ids)
+                )
+            if advanced and node is not None and not node.is_group and node.type not in (
+                    GraphicType.NULL, GraphicType.ADJUSTMENT):
                 blur = menu.addAction(translate("mograph.motion_blur"))
                 blur.setCheckable(True)
                 blur.setChecked(bool(self._motion_blur.get(clip_id)))
                 blur.triggered.connect(lambda checked: self.motion_blur_toggled.emit(clip_id, checked))
-            menu.addAction(translate("mograph.layers.save_preset")).triggered.connect(
-                lambda: self.save_preset_requested.emit(ids)
-            )
+            if studio:
+                menu.addAction(translate("mograph.layers.save_preset")).triggered.connect(
+                    lambda: self.save_preset_requested.emit(ids)
+                )
             menu.addSeparator()
             menu.addAction(translate("action.delete")).triggered.connect(lambda: self.delete_requested.emit(ids))
         else:
-            menu.addMenu(self._build_add_menu()).setTitle(translate("common.add"))
-        menu.exec(self.tree.viewport().mapToGlobal(point))
+            add = self._build_add_menu()
+            add.setTitle(translate("common.add"))          # ``QMenu.addMenu(QMenu)`` rend un QAction, pas le sous-menu
+            menu.addMenu(add)
+        return menu
+
+    def _add_parent_menu(self, menu: QMenu, clip_id: str, node) -> None:
+        parent_menu = menu.addMenu(translate("mograph.layers.col_parent"))
+        none = parent_menu.addAction(translate("common.none"))
+        none.triggered.connect(lambda: self.parent_requested.emit(clip_id, ""))
+        choices = (
+            self.parent_choices_provider(clip_id)
+            if callable(self.parent_choices_provider)
+            else self._parent_choices.get(clip_id, [])
+        )
+        for candidate_id, name in choices:
+            action = parent_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(node is not None and node.parent_id == candidate_id)
+            action.triggered.connect(
+                lambda _checked=False, value=candidate_id: self.parent_requested.emit(clip_id, value)
+            )
 
     # -- contenu ---------------------------------------------------------------------------------
 

@@ -112,6 +112,12 @@ Les groupes Transition, Sous-titre et Calque graphique restent cachés hors cont
 | Clip | couper, dupliquer, activer, supprimer | + Supprimer et refermer, sous-menu Vitesse hors courbe (vitesses, sens inverse, garder la durée, copier, coller, réinitialiser) | + imbriquer, convertir, ouvrir, Multicam, images intermédiaires, qualité et analyse du flux, courbe de vitesse et son de la courbe |
 | Piste (⋯) | hauteur, replier, monter/descendre, renommer, supprimer | idem | + courbe de volume, rôle, « Baisser sous… » (ducking) |
 | Média de la bibliothèque | renommer, sélectionner dans la timeline, dossiers, supprimer | + étiquettes, relier, proxy, matrice couleur | + « Créer une séquence Multicam… » (sélection multiple) |
+| Calque (panneau Calques) | renommer, dupliquer, supprimer | + grouper, dégrouper, entrer dans le groupe, copier / coller les attributs, enregistrer comme préréglage | + parent, flou de mouvement |
+| Ajouter un calque (menu du fond et bouton « Ajouter ») | texte, aplat de couleur, image | + formes, contrôleur nul, calque d'effets | idem |
+| Barre du panneau Calques | « Ajouter » | + « Grouper », « Préréglages » | idem |
+| Bande d'automation d'une piste audio | supprimer le point, effacer la courbe | idem | + ajouter un point ici, remettre à 0 dB |
+| Dossiers de la bibliothèque | tout (nouveau, sous-dossier, renommer, supprimer) | idem | idem |
+| Éditeur de nœuds Couleur / Composition | (pages absentes) | tout (page Couleur) | tout (page Composition) |
 
 ## Déplacements de contrôles et classements non précisés par la spécification
 
@@ -161,7 +167,7 @@ Les menus, boutons et menus contextuels au niveau Avancé sont, eux, ceux d'avan
 | Boutons de pages et entrées du menu Fenêtre | `PAGE_LEVELS` | `ui/main_window_mixins/menu_levels.py` (boutons : `page_buttons`, `ui/main_window_mixins/color_page.py`) |
 | Rail de la bibliothèque | `SECTION_LEVELS`, `SideRail.set_usage_level` | `ui/side_rail.py` |
 | Barre de la timeline | `STUDIO_TOOLS` (+ enregistrement), `TimelinePanel.set_usage_level` | `ui/timeline_panel_mixins/usage_levels.py` |
-| Menus contextuels clip, piste, média | construits à chaque ouverture : ils lisent le niveau du panneau (`ui/timeline_panel_mixins/`, `ui/project_panel.py`, `ui/library_organization_widgets.py`) | voir ces fichiers |
+| Menus contextuels clip, piste, média, calque, bande d'automation | construits à chaque ouverture : ils lisent le niveau du panneau (`ui/timeline_panel_mixins/`, `ui/project_panel.py`, `ui/library_organization_widgets.py`, `LayersPanel.set_usage_level` relayé par `ProjectPanel`, `AutomationLane.level_provider`) | voir ces fichiers |
 | Groupes de l'inspecteur | `_group_levels` | `ui/properties_panel_mixins/usage_levels.py` |
 | Réglages de l'inspecteur | `LevelGate` / `gated(widget, niveau)` | `ui/properties_widgets/level_gate.py` |
 | Pliants « Avancé » | `AdvancedFold` (un par palier : Studio ou Avancé) | `ui/properties_widgets/level_gate.py` |
@@ -225,7 +231,9 @@ Le test vérifie : (a) le niveau déclaré est celui du manifeste, sans contrôl
 
 - **Le manifeste ne prouve pas que le niveau choisi est le bon.** Il est produit à partir du code : il prouve que chaque contrôle a été classé et que le classement n'a pas bougé sans relecture. Le bon niveau d'un contrôle est une décision de produit.
 - **Contrôles d'inspecteur hors contexte.** L'inventaire part des états de `inspector_order.clip_states()` : les contrôles qu'aucun de ces états ne montre (réglages de masque ou de clé chroma hors contexte) ne sont vérifiés que par leur niveau déclaré.
-- **Entrée de menu d'asset au libellé vide.** Le manifeste contient une clé `ctx_asset/` (niveau Simple) : une entrée du menu contextuel d'un média dont le libellé est vide au relevé. Elle n'a pas été identifiée ; à reclasser quand elle le sera.
-- **Menus contextuels non soumis au niveau** : le panneau Calques (`ui/layers_panel.py`), l'arbre de dossiers de la bibliothèque (`FolderTreeWidget`), l'automation (`ui/timeline_widgets/automation_lane.py`), ainsi que ceux de l'éditeur nodal (`ui/color_page/node_editor.py`, `ui/composition_page/node_view.py`) montrent tout à tous les niveaux. Ils ne sont pas dans le manifeste.
+- **En-tête du menu d'un média.** Le manifeste contient `ctx_asset/[en-tête]` (Simple) : c'est l'en-tête non cliquable du menu d'un média (nom et statut, un `QWidgetAction` sans libellé), pas une entrée oubliée ni un défaut.
+- **Bouton « Forme » de la section Graphiques.** `ui/graphics_library.py` offre « Forme » (rectangle) et « Aplat » dès Simple, alors que « Ajouter ▸ forme » est Studio dans le menu Calques et dans le menu du panneau Calques. Incohérence connue, laissée en l'état dans ce lot : à traiter dans un lot suivant (cacher le bouton ou reclasser la forme).
+- **La bande d'automation s'affiche d'elle-même** dès que la courbe de volume d'une piste a des points (`automation_shown`), même à Simple : l'entrée de menu de piste qui l'active est Avancé, mais un projet reçu avec une courbe la montre. C'est pourquoi « Supprimer le point » et « Effacer la courbe » restent Simple dans son menu (nettoyer ce qu'on voit) ; ajouter un point et remettre à 0 dB sont Avancé.
+- **Éditeurs de nœuds et arbre de dossiers : aucun retrait.** Les menus de `ui/color_page/node_editor.py` et `ui/composition_page/node_view.py` sont classés par leur page (Studio, Avancé) ; aucune de leurs entrées n'existe à un niveau plus bas. Les entrées de l'arbre de dossiers sont toutes Simple (comme « Déplacer vers » dans le menu d'un média). Ils sont au manifeste.
 - **Raccourcis sous macOS réel.** Les tests pressent de vraies frappes hors écran (`Ctrl`) ; les raccourcis `Cmd` n'ont pas été joués sur un macOS réel.
 - **Windows et Linux** ne sont vérifiés que par la CI.

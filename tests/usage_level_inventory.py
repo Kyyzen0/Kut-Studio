@@ -56,6 +56,9 @@ def _flat_tree(tree: list, prefix: str, keys: _Keys, out: list[str]) -> None:
     for entry in tree:
         if entry == "-":
             continue
+        if entry == "":                                  # un QWidgetAction (l'en-tête du menu d'un média) n'a pas de libellé
+            out.append(keys.make(f"{prefix}/[en-tête]"))
+            continue
         if isinstance(entry, dict):
             (title, children), = entry.items()
             path = keys.make(f"{prefix}/{title}")
@@ -111,11 +114,15 @@ def _declared_buttons(window) -> dict[str, UsageLevel]:
         out[f"rail/{section.id}"] = SECTION_LEVELS.get(section.id, UsageLevel.SIMPLE)
     for page in window.page_buttons:
         out[f"pages/{page}"] = PAGE_LEVELS.get(page, UsageLevel.SIMPLE)
+    out["layers_panel/add_button"] = UsageLevel.SIMPLE           # barre du panneau Calques ; Grouper et Préréglages : Studio
+    out["layers_panel/group_button"] = UsageLevel.STUDIO
+    out["layers_panel/presets_button"] = UsageLevel.STUDIO
     return out
 
 
 def observed_surfaces(window, monkeypatch, shown: list, ids: dict[str, str]) -> set[str]:
     """Menus, boutons et menus contextuels **à l'écran** au niveau courant (relevé de ``tests/menu_order.py``)."""
+    from context_menu_dumps import all_dumps, layers_buttons
     from menu_order import asset_menu_dump, clip_menu_dump, track_menu_dump, window_dump
 
     dump = window_dump(window)
@@ -132,6 +139,8 @@ def observed_surfaces(window, monkeypatch, shown: list, ids: dict[str, str]) -> 
         "ctx_audio_track": track_menu_dump(window, "A1"),
         "ctx_asset": asset_menu_dump(window, monkeypatch, shown),
     }
+    context.update(all_dumps(window))           # panneau Calques, dossiers, bande d'automation, nœuds (Couleur, Composition)
+    keys.extend(f"layers_panel/{n}" for n in layers_buttons(window))
     for name, tree in context.items():
         keys.extend(_tree_keys(name, tree))
     return set(keys)

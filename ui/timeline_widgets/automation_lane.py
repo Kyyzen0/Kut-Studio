@@ -20,6 +20,8 @@ applique avec une entrée d'historique par geste (comme le mixeur).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QEvent, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QMenu, QToolTip, QWidget
@@ -30,6 +32,7 @@ from core.audio_automation import (
     AutomationPoint,
     automation_pieces,
 )
+from core.usage_level import UsageLevel
 from ui.i18n import translate
 from ui.timeline_widgets.common import _current_palette
 
@@ -74,6 +77,8 @@ class AutomationLane(QWidget):
         self.track_id = track_id
         self.points: list[AutomationPoint] = []
         self.locked = False
+        self.level_provider: Callable[[], UsageLevel] | None = None
+        """Niveau d'usage du panneau de la timeline (``None`` : Avancé, le menu d'avant les niveaux)."""
         self.selected: float | None = None
         """Instant du point sélectionné (clé du point dans le modèle)."""
         self._hover: int | None = None
@@ -336,27 +341,39 @@ class AutomationLane(QWidget):
         if self.locked:
             return
         menu = self.build_menu(QPointF(event.pos()))
-        menu.exec(event.globalPos())
+        if menu.actions():                       # un menu sans entrée ne s'ouvre pas
+            menu.exec(event.globalPos())
         menu.deleteLater()
 
+    def level_at_least(self, minimum: UsageLevel) -> bool:
+        level = self.level_provider() if self.level_provider is not None else UsageLevel.ADVANCED
+        return level.at_least(minimum)
+
     def build_menu(self, position: QPointF) -> QMenu:
-        """Menu du point sous ``position`` (supprimer, 0 dB) ou de la bande (ajouter ici, effacer la courbe)."""
+        """Menu du point sous ``position`` (supprimer, 0 dB) ou de la bande (ajouter ici, effacer la courbe).
+
+        Niveau d'usage : « Supprimer le point » et « Effacer la courbe » sont Simple (nettoyer une courbe reçue, que la bande
+        affiche d'elle-même) ; « Remettre à 0 dB » et « Ajouter un point ici » sont Avancé (la courbe de volume l'est).
+        """
+        advanced = self.level_at_least(UsageLevel.ADVANCED)
         menu = QMenu(self)
         index = self.point_at(position)
         if index is not None:
             point = self.points[index]
             menu.addAction(translate("timeline.automation.remove_point")).triggered.connect(
                 lambda _checked=False, t=point.time_seconds: self.point_removed.emit(self.track_id, t))
-            unity = menu.addAction(translate("timeline.automation.reset_point"))
-            unity.setEnabled(abs(point.gain_db) > 1e-9)
-            unity.triggered.connect(lambda _checked=False, p=point: self.point_updated.emit(
-                self.track_id, p.time_seconds, 0.0, p.fade_seconds))
-        else:
+            if advanced:
+                unity = menu.addAction(translate("timeline.automation.reset_point"))
+                unity.setEnabled(abs(point.gain_db) > 1e-9)
+                unity.triggered.connect(lambda _checked=False, p=point: self.point_updated.emit(
+                    self.track_id, p.time_seconds, 0.0, p.fade_seconds))
+        elif advanced:
             time = self._frame(self.time_of(position.x()))
             gain = self.gain_of(position.y())
             menu.addAction(translate("timeline.automation.add_point")).triggered.connect(
                 lambda _checked=False: self.point_added.emit(self.track_id, time, gain, 0.0))
-        menu.addSeparator()
+        if menu.actions():
+            menu.addSeparator()
         clear = menu.addAction(translate("timeline.automation.clear"))
         clear.setEnabled(bool(self.points))
         clear.triggered.connect(lambda _checked=False: self.cleared.emit(self.track_id))

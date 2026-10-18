@@ -781,6 +781,7 @@ class ProjectPanel(QWidget):
         new = coerce_usage_level(level)
         if new is not None:
             self.usage_level = new
+            self.graphics_view.layers_panel.set_usage_level(new)    # menus du panneau Calques et boutons Studio de sa barre
 
     def select_section(self, section_id: str) -> None:
         """Affiche la bibliothèque demandée par la navigation globale."""
