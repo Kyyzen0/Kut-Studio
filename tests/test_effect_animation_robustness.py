@@ -109,7 +109,7 @@ def test_the_keyframe_editing_functions_work_on_the_existing_effect_and_refuse_t
     assert clipboard and can_paste(clipboard, "fx.b.intensity", loaded.tracks[0].clips[0])
     assert can_paste(clipboard, "position_x", loaded.tracks[0].clips[0])               # flottant vers flottant
     assert not can_paste(clipboard, "flip_h", loaded.tracks[0].clips[0])               # flottant vers booléen
-    created = paste_keyframes(loaded, "c", clipboard, 2.5, target_property="fx.b.intensity")
+    created = paste_keyframes(loaded, "c", clipboard, 1.0, target_property="fx.b.intensity")
     assert len(created) == 2
     set_value_at(loaded, "c", "fx.b.intensity", 3.0, 99.0)                              # borné à 50
     assert value_at(loaded.tracks[0].clips[0], "fx.b.intensity", 3.0) == 50.0
