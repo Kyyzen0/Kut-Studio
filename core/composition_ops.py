@@ -14,7 +14,7 @@ sur le calque, un flou mêle le bord d'un calque réduit à la transparence auto
 
 Refusée (:class:`CompositionError`, rien n'est modifié) pour ce que la composition ne sait pas encore porter : clips
 imbriqués ou déjà composés, remappage temporel, emplacements de template, tracking, étalonnage avec fenêtres, cadrage
-« remplir » animé, calques d'effets, groupes et parentage. Le son des clips vidéo passe dans la composition avec leur
+« remplir » animé, effets animés (images clés ``fx.*``), calques d'effets, groupes et parentage. Le son des clips vidéo passe dans la composition avec leur
 gain ; leur panoramique, leurs fondus et leurs effets audio ne la suivent pas (:attr:`ConversionResult.dropped`).
 """
 
@@ -75,6 +75,7 @@ def _transform_part(transform: ClipTransform) -> ClipTransform:
 
 def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> str | None:
     """Pourquoi ``clip`` ne peut pas devenir des nœuds (``None`` : il le peut)."""
+    from .effects_model import has_live_effect_animation
     from .graphics import CONTAINER_TYPES
 
     name = clip.label or clip.id
@@ -92,6 +93,9 @@ def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> 
         return f"« {name} » a un étalonnage avec fenêtres."
     if any(kf.property_name in ("pan_x", "pan_y") for kf in clip.transform_keyframes):
         return f"« {name} » a un cadrage « remplir » animé."
+    if has_live_effect_animation(clip):
+        return (f"« {name} » a des effets animés que la composition ne sait pas encore rendre : détachez l'animation "
+                "des effets (ou retirez ses images clés) avant de convertir.")
     if track.type == "graphics":
         graphic = clip.graphic
         if graphic is None or graphic.type in CONTAINER_TYPES or graphic.parent_id or graphic.group_id:

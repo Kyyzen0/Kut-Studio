@@ -451,6 +451,17 @@ def prune_effect_animation(clip: "Clip", *, reset_ids: Iterable[str] = ()) -> in
     return removed
 
 
+def has_live_effect_animation(clip: "Clip") -> bool:
+    """``True`` si ``clip`` porte au moins une image clé ``fx.*`` dont l'effet est dans ``clip.effects`` (même règle que
+    :func:`prune_effect_animation` : une image clé orpheline ou mal formée ne compte pas)."""
+    live = {effect.id for effect in clip.effects}
+    for keyframe in getattr(clip, "animation", None) or ():
+        parts = split_fx_property(keyframe.property_name)
+        if parts is not None and parts[0] in live:
+            return True
+    return False
+
+
 def set_clip_effects(clip: "Clip", effects: Sequence[ClipEffect], *, reset_ids: Iterable[str] = ()) -> None:
     """Remplace la chaîne d'effets d'un clip **et** tient ``Clip.animation`` à jour (:func:`prune_effect_animation`).
 
@@ -612,6 +623,7 @@ __all__ = [
     "effect_by_id",
     "effect_by_type",
     "fx_property_id",
+    "has_live_effect_animation",
     "enabled_effects",
     "is_single_instance",
     "move_clip_effect",
