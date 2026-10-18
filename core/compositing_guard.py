@@ -85,7 +85,8 @@ def require_clip_editable(
         from .animation_targets import get_target
 
         track = next(t for t in project.tracks if any(c.id == clip_id for c in t.clips))
-        if not get_target(property_id).applies_to(track.type):
+        clip = next(c for c in track.clips if c.id == clip_id)
+        if not get_target(property_id, clip).applies_to(track.type):
             code = REFUSAL_WRONG_TRACK
     if code is not None:
         raise ClipEditRefused(code, clip_id)

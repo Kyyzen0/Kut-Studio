@@ -799,7 +799,7 @@ def _window_ids(grade) -> set[str]:
 
 def paste_attributes(project: Project, clip_ids: list[str], clipboard: AttributeClipboard, kinds) -> int:
     """Colle les attributs choisis (``transform``, ``effects``, ``masks``, ``keyframes``)."""
-    from .effects_model import ClipEffect
+    from .effects_model import ClipEffect, effect_by_id, remap_fx_animation, set_clip_effects
 
     kinds = set(kinds)
     count = 0
@@ -813,11 +813,15 @@ def paste_attributes(project: Project, clip_ids: list[str], clipboard: Attribute
             clip.transform = clipboard.transform
             if "keyframes" in kinds:
                 clip.transform_keyframes = [copy_keyframe(kf, id="") for kf in clipboard.transform_keyframes]
+        effect_ids: dict[str, str] = {}            # « ancien identifiant → nouvel identifiant » des effets copiés (ADR-0008)
         if "effects" in kinds:
-            clip.effects = [
+            recreated = [
                 ClipEffect(id=uuid.uuid4().hex[:10], type=e.type, enabled=e.enabled, params=dict(e.params))
                 for e in clipboard.effects
             ]
+            effect_ids = {old.id: new.id for old, new in zip(clipboard.effects, recreated)}
+            # Les effets du clip sont remplacés : leurs images clés ``fx.*`` partent avec eux (point d'entrée du cycle de vie).
+            set_clip_effects(clip, recreated)
             # L'étalonnage arrive avec ses fenêtres et leurs images-clés ; celles qu'il remplace partent avec leur état.
             from .color_windows import forget_windows
 
@@ -841,8 +845,17 @@ def paste_attributes(project: Project, clip_ids: list[str], clipboard: Attribute
                     kept.append(replace(kf, property_name=mask_property_id(renamed[mask_id], name), id=""))
             clip.animation = sorted(kept, key=lambda k: (k.property_name, k.time_seconds))
         if "keyframes" in kinds and clipboard.animation:
+            if track.type != "video":
+                effect_ids = {}        # les cibles ``fx.*`` n'existent que sur une piste vidéo (calque graphique : abandonnées)
+            elif "effects" not in kinds:
+                # Effets du clip inchangés : une image clé ``fx.*`` ne suit que l'effet de même identifiant ET de même type ;
+                # les autres, qui viennent d'un clip sans lien avec celui-ci, sont abandonnées.
+                effect_ids = {
+                    e.id: e.id for e in clipboard.effects
+                    if (own := effect_by_id(clip.effects, e.id)) is not None and own.type == e.type
+                }
             kept = [kf for kf in clip.animation if kf.property_name.startswith("mask.")]
-            kept.extend(replace(kf, id="") for kf in clipboard.animation)
+            kept.extend(replace(kf, id="") for kf in remap_fx_animation(clipboard.animation, effect_ids))
             clip.animation = sorted(kept, key=lambda k: (k.property_name, k.time_seconds))
         count += 1
     return count

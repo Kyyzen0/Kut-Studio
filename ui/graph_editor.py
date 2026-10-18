@@ -442,7 +442,7 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             return None
 
     def target(self):
-        return get_target(self.property_id)
+        return get_target(self.property_id, self._clip())
 
     def is_locked(self) -> bool:
         """Le clip montré n'est pas modifiable (piste ou calque verrouillé) : la courbe reste lisible. La vitesse visant aussi
@@ -505,13 +505,13 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
             self.property_combo.clear()
             if clip is not None:
                 for pid in self.host._animation_properties(clip):
-                    target = get_target(pid)
+                    target = get_target(pid, clip)
                     animated = bool(target.get_keyframes(clip))
                     # Un losange devant les propriétés animées ; les autres reçoivent une icône vide pour que les libellés restent alignés.
                     self.property_combo.addItem(_marker_icon(animated), _label(target), pid)
                 wanted = self.property_id or self.host.active_animation_property
                 if wanted is None or self.property_combo.findData(wanted) < 0:
-                    animated = [pid for pid in self.host._animation_properties(clip) if get_target(pid).get_keyframes(clip)]
+                    animated = [pid for pid in self.host._animation_properties(clip) if get_target(pid, clip).get_keyframes(clip)]
                     wanted = animated[0] if animated else self.property_combo.itemData(0)
                 self.property_combo.setCurrentIndex(max(0, self.property_combo.findData(wanted)))
                 self.property_id = self.property_combo.currentData()

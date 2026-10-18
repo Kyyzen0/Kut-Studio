@@ -88,7 +88,7 @@ class AnimationMixin:
         available = self._animation_properties(clip)
         if self.active_animation_property in available:
             return [self.active_animation_property]
-        animated = [pid for pid in available if get_target(pid).get_keyframes(clip)]
+        animated = [pid for pid in available if get_target(pid, clip).get_keyframes(clip)]
         return animated or available
 
     def set_active_animation_property(self, property_id: str | None) -> None:
@@ -201,7 +201,7 @@ class AnimationMixin:
         props = [property_id] if property_id else self._command_properties(clip)
         refs = []
         for pid in props:
-            keyframe = get_target(pid).curve(clip).keyframe_at(local, tolerance=1e-3)
+            keyframe = get_target(pid, clip).curve(clip).keyframe_at(local, tolerance=1e-3)
             if keyframe is not None:
                 refs.append(KeyframeRef(clip.id, pid, keyframe.id))
         return refs
@@ -265,7 +265,7 @@ class AnimationMixin:
         refs = {
             KeyframeRef(clip.id, pid, keyframe.id)
             for pid in self._command_properties(clip)
-            for keyframe in get_target(pid).get_keyframes(clip)
+            for keyframe in get_target(pid, clip).get_keyframes(clip)
         }
         self.set_keyframe_selection(refs)
         return len(refs)

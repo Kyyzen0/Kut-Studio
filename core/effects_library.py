@@ -33,7 +33,7 @@ import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Mapping, Sequence
@@ -549,10 +549,24 @@ def apply_preset_to_clip(
         ValueError: si le clip n'est pas sur une piste vidéo, ou si la
             piste est verrouillée.
     """
-    from .effects_model import _require_video_clip
+    from .effects_model import _require_video_clip, set_clip_effects
 
     clip = _require_video_clip(project, clip_id)
-    clip.effects = preset_effects_to_apply(preset, clip.effects)
+    previous = list(clip.effects)
+    # Chaque application est une insertion NEUVE : les effets du préréglage sont clonés avec un identifiant neuf avant la
+    # fusion. L'identité d'objet distingue alors sûrement « conservé » (déjà dans la chaîne) et « ajouté », deux effets
+    # d'un clip ne partagent jamais un identifiant (les courbes ``fx.<id>.*`` en animeraient deux), et l'effet à type
+    # unique remplacé perd ses images clés.
+    fresh = replace(
+        preset,
+        effects=tuple(
+            replace(effect, id=f"fx-{uuid.uuid4().hex[:12]}", params=dict(effect.params)) for effect in preset.effects
+        ),
+    )
+    result = preset_effects_to_apply(fresh, previous)
+    # Les effets remplacés perdent leurs images clés ``fx.*`` (ADR-0008, décision 7) ; les neufs naissent sans animation.
+    reset = {old.id for old in previous if not any(old is effect for effect in result)}
+    set_clip_effects(clip, result, reset_ids=reset)
     return list(clip.effects)
 
 

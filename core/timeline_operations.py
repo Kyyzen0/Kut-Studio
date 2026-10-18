@@ -489,7 +489,7 @@ def cut_clip(
     left_keyframes, right_keyframes = _split_transform_keyframes(clip, cut_local_time)
     from .animation_targets import split_animation
 
-    left_animation, right_animation = split_animation(clip.animation, cut_local_time)
+    left_animation, right_animation = split_animation(clip.animation, cut_local_time, clip)
     general = needs_general_path(clip) and clip.time_remapping.freeze_mode != FreezeFrameMode.FREEZE
     if general:
         # Courbe de vitesse : chaque moitié est une restriction du mapping d'origine ; les keyframes de vitesse viennent
@@ -1214,6 +1214,7 @@ def apply_clip_transform_on_trim(
             clip.animation,
             start_offset=float(start_offset),
             new_duration=float(new_duration),
+            clip=clip,
         )
 
 
