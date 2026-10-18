@@ -94,8 +94,8 @@ def _refusal(clip: Clip, track: Track, project: Project, selected: set[str]) -> 
     if any(kf.property_name in ("pan_x", "pan_y") for kf in clip.transform_keyframes):
         return f"« {name} » a un cadrage « remplir » animé."
     if has_live_effect_animation(clip):
-        return (f"« {name} » a des effets animés que la composition ne sait pas encore rendre : détachez l'animation "
-                "des effets (ou retirez ses images clés) avant de convertir.")
+        return (f"« {name} » a des effets animés que la composition ne sait pas encore rendre : retirez l'animation "
+                "des effets (clic droit sur le losange d'un réglage, « Supprimer l'animation de l'effet ») avant de convertir.")
     if track.type == "graphics":
         graphic = clip.graphic
         if graphic is None or graphic.type in CONTAINER_TYPES or graphic.parent_id or graphic.group_id:

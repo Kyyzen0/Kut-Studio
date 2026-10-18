@@ -94,6 +94,7 @@ class ClipContextMixin:
                 list(getattr(view, "effects", ()) or ()),
                 self.selected_clip_track_type,
                 editable=clip_editable,
+                keyframes=list(getattr(view, "effect_keyframes", ()) or ()),
             )
             duration = view.end - view.start
             self.clip_name.setText(view.label)
