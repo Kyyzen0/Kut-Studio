@@ -589,21 +589,35 @@ def test_a_permission_error_on_a_guard_pending_delete_is_waited_out_not_a_crash(
     assert read_lock(project_file).pid == ME
 
 
-def test_a_guard_that_keeps_refusing_is_a_locked_project_not_a_raw_permission_error(project_file, monkeypatch):
+def _persistent_guard_refusal(monkeypatch, project_file, *, windows, guard_on_disk):
     _write_owner(project_file, pid=OTHER)
     guard = lock_file_for(project_file).with_name(lock_file_for(project_file).name + ".reclaim")
-    guard.write_text("", encoding="utf-8")                # la garde existe (suppression en attente)
+    if guard_on_disk:
+        guard.write_text("", encoding="utf-8")
+    monkeypatch.setattr("core.project_lock._PERMISSION_MEANS_PENDING_DELETE", windows)
     monkeypatch.setattr("core.project_lock._GUARD_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr("core.project_lock.time.sleep", lambda _s: None)
     _guard_permission_errors(monkeypatch, project_file, 10_000)
+    return guard
+
+
+def test_windows_a_guard_that_keeps_refusing_while_absent_is_a_locked_project(project_file, monkeypatch):
+    """``exists()`` peut mentir sous Windows : une garde absente du disque qui refuse encore est une suppression en attente."""
+    guard = _persistent_guard_refusal(monkeypatch, project_file, windows=True, guard_on_disk=False)
     with pytest.raises(ProjectLockedError) as caught:
         ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
     assert caught.value.lock_file == guard and read_lock(project_file).pid == OTHER
 
 
-def test_a_real_permission_error_on_the_guard_stays_an_oserror(project_file, monkeypatch):
-    _write_owner(project_file, pid=OTHER)
-    monkeypatch.setattr("core.project_lock._GUARD_WAIT_SECONDS", 0.0)
-    _guard_permission_errors(monkeypatch, project_file, 10_000)    # aucune garde sur le disque : vraie erreur de droits
+def test_windows_a_guard_that_keeps_refusing_while_present_is_a_locked_project(project_file, monkeypatch):
+    guard = _persistent_guard_refusal(monkeypatch, project_file, windows=True, guard_on_disk=True)
+    with pytest.raises(ProjectLockedError) as caught:
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+    assert caught.value.lock_file == guard and read_lock(project_file).pid == OTHER
+
+
+def test_posix_a_permission_error_on_the_guard_is_a_real_permission_error(project_file, monkeypatch):
+    _persistent_guard_refusal(monkeypatch, project_file, windows=False, guard_on_disk=False)
     with pytest.raises(PermissionError):
         ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
 
