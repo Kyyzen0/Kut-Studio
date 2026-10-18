@@ -54,6 +54,9 @@ _MAX_TIMESTAMP = 4_102_444_800.0
 """1er janvier 2100 : au-delà (ou négatif, ou non fini), une heure de début n'est pas celle d'un vrai verrou."""
 _GUARD_SUFFIX = ".reclaim"
 _GUARD_WAIT_SECONDS = 2.0
+_PERMISSION_MEANS_PENDING_DELETE = sys.platform == "win32"
+"""Sous Windows, ``PermissionError`` sur un fichier de verrou ou de garde = suppression en attente (erreurs 5, 32, 33 : docstring de
+``_TRANSIENT_READ_SECONDS``) ; ailleurs c'est une vraie erreur de droits."""
 
 
 @dataclass(frozen=True)
@@ -254,8 +257,14 @@ class ProjectLock:
             try:
                 os.close(os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
                 break
-            except FileExistsError:
+            except (FileExistsError, PermissionError) as error:
+                # Sous Windows, une garde dont la suppression est en attente lève PermissionError au lieu de FileExistsError (voir
+                # l'en-tête du module) ; ``exists()`` peut y mentir, on ne s'en sert donc pas : un PermissionError persistant veut dire
+                # « suppression en attente ». C'est sûr, car ``acquire`` a déjà écarté en amont (``_create_settling`` puis
+                # ``_lock_present``) la vraie erreur de droits sur le dossier avant d'atteindre la garde. Sous POSIX, il remonte.
                 if time.monotonic() >= deadline:
+                    if isinstance(error, PermissionError) and not _PERMISSION_MEANS_PENDING_DELETE:
+                        raise
                     raise ProjectLockedError(guard, None, LockVerdict.UNKNOWN) from None
                 time.sleep(0.02)
         try:
