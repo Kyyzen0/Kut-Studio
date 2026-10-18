@@ -1,6 +1,6 @@
 # ADR-0007 : le modèle d'intentions — des objets paramétriques stockés, une sortie dérivée, un « détacher » explicite
 
-**Statut :** Proposé le 2026-10-18 (à relire : aucune décision n'est encore prise, voir « Décisions à prendre »).
+**Statut :** Accepté le 2026-10-18 (les cinq décisions ouvertes sont tranchées avec l'utilisateur, voir « Décisions prises »). Deux d'entre elles vont à l'encontre de la recommandation initiale ; elles sont consignées comme telles.
 **Date :** 2026-10-18
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -32,6 +32,10 @@ Faits relevés dans le code le 2026-10-18 (lecture seule). Ce qui n'a pas été 
    comprend pas au lieu de l'ignorer.
 6. **Une seule voie d'écriture** : les intentions se créent, se modifient et se détachent par les mêmes opérations de
    session que l'interface et le mode script (ADR-0005).
+7. **Pas de version de dérivation persistée** (choix de l'utilisateur) : un changement d'algorithme de dérivation est donc
+   un **changement de comportement visible**, annoncé et testé (voir invariant 5).
+8. **Détacher refuse** de figer une intention dont les précédentes restent dynamiques, avec un message qui explique
+   pourquoi.
 
 ---
 
@@ -124,24 +128,28 @@ générateur, inchangé.
 3. **Équivalence** : la sortie dérivée est identique à celle d'une chaîne écrite à la main avec les mêmes primitives
    (test : `bake` puis rendu = rendu avant `bake`, à une tolérance fixée), **y compris quand plusieurs intentions
    s'appliquent au même clip**. Ce n'est pas vrai aujourd'hui pour le suivi (voir « Limite de l'équivalence du
-   détachement ») : l'invariant exige donc une correction, pas seulement un test.
+   détachement ») : l'invariant exige une correction, qui est le **refus** décrit dans « Détacher ».
 4. **Réversibilité de l'effet** : désactiver ou retirer l'intention rend le clip à l'état qu'il aurait sans elle.
-5. **Version de la dérivation, persistée avec l'intention.** Chaque intention stocke le numéro de la règle qui l'a
-   produite (clé optionnelle, absente = version 1 = le comportement à l'introduction de l'intention). Changer
-   l'algorithme veut dire **ajouter une version**, jamais modifier la précédente en place : l'ancienne reste sélectionnable
-   par ce numéro, ou une migration à l'ouverture fige l'ancien résultat (voir « Détacher »). Sans cela, ouvrir un ancien
-   projet dans une version plus récente changerait sa sortie sans que personne le voie.
+5. **Un changement d'algorithme de dérivation est un changement de comportement visible.** Aucune version n'est
+   persistée avec l'intention (décision de l'utilisateur) : tous les projets utilisent la règle courante. Pour que cela
+   ne change pas un rendu en silence, tout changement d'algorithme exige : (a) une entrée « À savoir » dans le
+   `CHANGELOG`, (b) l'invalidation des caches d'aperçu (`RENDER_ENGINE_VERSION`), (c) un test de sorties de référence qui
+   échoue tant que ces sorties ne sont pas revues. L'utilisateur peut **détacher** avant une mise à jour pour figer le
+   résultat qu'il a validé.
    *À ne pas confondre avec* `RULE_VERSION` de `core/color_matrix.py` : ce numéro n'entre que dans des **clés de cache**
-   (LUT cuites, vignettes) et ne protège aucun projet, car tous les projets y utilisent la règle courante. Pour la
-   matrice, la protection vient du **choix par média** écrit dans le `.kut` (`COLOR_MATRIX_VERSION`), pas de ce numéro.
+   (LUT cuites, vignettes) et ne protège aucun projet. Pour la matrice, la protection vient du **choix par média** écrit
+   dans le `.kut` (`COLOR_MATRIX_VERSION`), pas de ce numéro.
+   *Alternative écartée par l'utilisateur* : persister la version avec l'intention et garder l'ancienne implémentation
+   sélectionnable (ou figer à l'ouverture). C'était la recommandation initiale ; elle protégeait les anciens projets au
+   prix d'une maintenance de plusieurs implémentations.
 
 ### 3. Détacher
 
 - Action **explicite** et **nommée** (`bake_<intention>`), alignée sur `bake_link` : écrit les primitives éditables,
   retire l'intention, **une** entrée d'historique, le retour passe par « Annuler ». Quand plusieurs intentions s'appliquent
-  au même clip, le détachement doit **respecter leur ordre d'application** : soit figer en une fois toutes les intentions
-  jusqu'à celle qui est détachée, soit refuser de détacher une intention dont les précédentes restent dynamiques. Le choix
-  est fait à l'étape 1 du plan, sur le cas réel du suivi.
+  au même clip, le détachement **refuse** de figer une intention dont les précédentes (dans l'ordre d'application)
+  restent dynamiques, avec un message qui dit pourquoi et propose de détacher dans l'ordre. Le rendu ne change donc
+  jamais à cause d'un détachement (décision de l'utilisateur).
 - **Pas d'édition manuelle d'une sortie dérivée.** L'interface affiche la sortie dérivée en lecture seule et propose
   « Modifier les paramètres » ou « Détacher ». Une édition manuelle qui détacherait en silence est refusée : c'est la
   divergence silencieuse que l'ADR veut éviter.
@@ -200,9 +208,10 @@ règles déjà éprouvées.
 **Négatives et risques.**
 - La dérivation se recalcule à chaque construction du plan : le coût existe déjà pour le suivi (non mesuré ici) et devra
   être mesuré pour chaque nouvelle intention (cache d'aperçu : `RENDER_ENGINE_VERSION`).
-- La règle 5 (version persistée) est nouvelle pour le suivi. Elle a un **coût de maintenance** : garder les anciennes
-  implémentations sélectionnables par numéro, ou accepter une migration qui fige l'ancien résultat à l'ouverture. La
-  politique (combien de versions garder) est à décider à l'étape 1.
+- **Risque accepté** (décision de l'utilisateur de ne pas persister la version de dérivation) : un changement d'algorithme
+  modifie le rendu des anciens projets. Atténuations : annonce dans le CHANGELOG, invalidation des caches, test de sorties
+  de référence, et « Détacher » pour figer un résultat avant une mise à jour. Ce risque est plus faible tant que la
+  dérivation change rarement ; il croîtra avec le nombre d'intentions.
 - Le détachement d'un suivi à plusieurs liaisons n'est pas équivalent aujourd'hui (voir plus haut) : la correction touche
   un comportement existant.
 - Interdire l'édition manuelle d'une sortie dérivée est un choix d'interface qui peut déplaire : la voie de sortie est
@@ -217,27 +226,28 @@ règles déjà éprouvées.
 0. **Cet ADR** (documentation seulement).
 1. **Formaliser le motif sur `TrackLink`** : tests communs des cinq invariants (équivalence `bake` / rendu, sortie jamais
    dans le `.kut`, déterminisme). Le test d'équivalence est écrit **en premier** : il doit exposer le cas à plusieurs
-   liaisons non commutatives. La correction du détachement (respecter l'ordre, ou refuser) est un **changement de
-   comportement assumé**, décidé à ce moment avec l'utilisateur. Introduire la clé optionnelle de version de la
-   dérivation (absente = version 1) sans changer la sortie d'un projet existant.
+   liaisons non commutatives. La correction du détachement (**refuser** de détacher une liaison dont les précédentes
+   restent dynamiques, avec un message) est un changement de comportement assumé. Aucune clé de version n'est ajoutée au
+   format.
 2. **`bake_stabilization`** : le « détacher » manquant, avec son test d'équivalence.
-3. **Choisir le premier nouveau cas** parmi : « le texte suit un sujet » avec lissage et décalage (l'exemple de la demande),
-   une intention de vitesse (avec sa normalisation), ou un reframe 9:16 qui garde ses paramètres. Décision à prendre avec
-   l'utilisateur à ce moment, sur mesure d'usage et non sur principe.
+3. **Premier nouveau cas : « le texte suit un sujet »** avec lissage et décalage (l'exemple de la demande, décidé avec
+   l'utilisateur). La vitesse (avec sa normalisation) et un reframe 9:16 qui garde ses paramètres restent possibles
+   ensuite, sans décision prise.
 4. **Interface** : groupe d'inspecteur classé par niveau, « Détacher » en Avancé, entrées dans le manifeste d'énumération.
 5. **Mode script** : verbes de session pour créer, modifier et détacher.
 
 ---
 
-## Décisions à prendre (par l'utilisateur, avant d'accepter cet ADR)
+## Décisions prises (2026-10-18, avec l'utilisateur)
 
-1. Accepte-t-on **l'option B** (objets typés partageant des invariants) plutôt qu'un conteneur générique ?
-2. Accepte-t-on d'**interdire l'édition manuelle d'une sortie dérivée** (voie unique : paramètres ou « Détacher ») ?
-3. Quel est le **premier cas** de l'étape 3 : le texte qui suit un sujet, la vitesse, ou le reframe 9:16 ?
-4. Le principe « version de la dérivation **persistée** » (invariant 5) est-il acceptable pour le suivi, qui n'en a pas
-   aujourd'hui, avec son coût de maintenance (anciennes implémentations gardées, ou migration qui fige) ?
-5. Pour un clip à plusieurs liaisons, le détachement doit-il **figer les liaisons précédentes avec la liaison choisie**, ou
-   **refuser** de détacher une liaison dont les précédentes restent dynamiques ?
+1. **Objets typés par fonctionnalité** partageant les invariants (option B), pas de conteneur générique. *Recommandation
+   suivie.*
+2. **Pas d'édition manuelle d'une sortie dérivée** : voie unique, les paramètres ou « Détacher ». *Recommandation suivie.*
+3. **Premier cas : le texte qui suit un sujet.** *Recommandation suivie.*
+4. **Pas de version de dérivation persistée.** *Contre la recommandation initiale* : un changement d'algorithme est un
+   changement de comportement visible, annoncé et testé (invariant 5).
+5. **Détacher refuse** quand les liaisons précédentes restent dynamiques (avec un message). *Contre la recommandation
+   initiale* (figer aussi les précédentes) : plus strict, le rendu ne change jamais à cause d'un détachement.
 
 ## Limites de cet ADR
 
