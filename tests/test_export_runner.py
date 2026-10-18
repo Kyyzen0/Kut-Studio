@@ -337,3 +337,56 @@ def test_a_temporary_file_that_stays_locked_is_given_up_with_a_log_not_an_except
     with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
         export_runner._remove(str(tmp_path / "x"))
     assert "non supprimé" in caplog.text
+
+
+def test_cancelling_kills_ffmpeg_with_its_descendants(long_media, tmp_path, monkeypatch):
+    """Windows : le FFmpeg de Chocolatey est un shim qui lance le vrai FFmpeg ; tuer le seul shim laissait celui-ci écrire (et
+    verrouiller) le ``.partial``. L'annulation doit passer par l'arrêt de l'arbre, pas par ``Popen.kill``."""
+    from core import export_runner
+
+    calls: list[int] = []
+    real = export_runner.kill_process_tree
+
+    def recording(process, **options):
+        calls.append(process.pid)
+        real(process, **options)
+
+    monkeypatch.setattr(export_runner, "kill_process_tree", recording)
+    state = {"progress": 0}
+    result = run_export(
+        _request(_project(long_media, seconds=20.0, size=(1280, 720)), tmp_path / "out.mp4", size=(1280, 720)),
+        progress=lambda value: state.__setitem__("progress", value),
+        cancelled=lambda: state["progress"] >= 1,
+    )
+    assert result.status is ExportStatus.CANCELLED and len(calls) == 1 and calls[0] > 0
+    assert _hidden_partials(tmp_path) == []
+
+
+def test_a_temporary_file_is_retried_for_about_ten_seconds_without_a_real_pause(tmp_path, monkeypatch, caplog):
+    from core import export_runner
+
+    pauses: list[float] = []
+
+    def always_locked(_path):
+        raise PermissionError(13, "utilisé par un autre processus")
+
+    monkeypatch.setattr(export_runner.os, "remove", always_locked)
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove(str(tmp_path / "x"), ffmpeg_pid=4321, sleep=pauses.append)
+    assert 9.0 <= sum(pauses) <= 11.0, "le budget d'attente est d'environ 10 s"
+    assert "pid 4321" in caplog.text and "errno 13" in caplog.text and "winerror" in caplog.text
+
+
+def test_the_give_up_warning_names_the_windows_error_when_there_is_one(tmp_path, monkeypatch, caplog):
+    from core import export_runner
+
+    error = PermissionError(13, "utilisé par un autre processus")
+    error.winerror = 32  # type: ignore[attr-defined]  # attribut propre à Windows : simulé ici
+
+    def always_locked(_path):
+        raise error
+
+    monkeypatch.setattr(export_runner.os, "remove", always_locked)
+    with caplog.at_level("WARNING", logger="kut_studio.export_runner"):
+        export_runner._remove(str(tmp_path / "x"), sleep=lambda _s: None)
+    assert "winerror 32" in caplog.text and "pid inconnu" in caplog.text

@@ -52,6 +52,7 @@ from .flow_cache import FlowCache
 from .hardware_encoding import redact_command
 from .optical_flow import BackendPreference
 from .process_supervisor import supervised_popen
+from .process_tree import kill_process_tree
 from .retime_prepare import PrepareCancelled, PrepareReport
 from .video_encoders import EncoderChoice, EncoderUnavailableError
 
@@ -154,6 +155,7 @@ def run_export(
     fallback_reason = ""
     diagnostics = ""
     encoder: EncoderChoice | None = None
+    ffmpeg_pid = 0
 
     def fail(message: str, *, error_kind: str = "") -> ExportResult:
         return ExportResult(
@@ -215,6 +217,7 @@ def run_export(
             except OSError as error:
                 LOGGER.error("Export : FFmpeg n'a pas pu démarrer (%s)", error)
                 return fail(f"Impossible de démarrer ffmpeg : {error}")
+            ffmpeg_pid = outcome_run.pid
             if outcome_run.cancelled:
                 return ExportResult(ExportStatus.CANCELLED, final_path, encoder=encoder, preparation=preparation)
             if outcome_run.exit_code == 0:
@@ -251,7 +254,7 @@ def run_export(
         for path in temporary:
             _remove(path)
         if partial is not None:
-            _remove(partial)
+            _remove(partial, ffmpeg_pid=ffmpeg_pid)
 
 
 @dataclass(frozen=True)
@@ -260,6 +263,7 @@ class _Run:
     error_output: str
     progress_seen: bool
     cancelled: bool
+    pid: int = 0
 
 
 def _run_ffmpeg(
@@ -315,23 +319,27 @@ def _run_ffmpeg(
                     advance(min(99, floor + value * (100 - floor) // 100))
             if cancelled is not None and cancelled():
                 was_cancelled = True
-                process.kill()
+                kill_process_tree(process)
                 break
         process.wait()
         for reader in readers:
             reader.join(timeout=5.0)
     return _Run(
         exit_code=int(process.returncode), error_output="".join(error_chunks).strip(), progress_seen=seen, cancelled=was_cancelled,
+        pid=int(process.pid),
     )
 
 
-_REMOVE_ATTEMPTS = 40
-_REMOVE_PAUSE = 0.05
+_REMOVE_ATTEMPTS = 100
+_REMOVE_PAUSE = 0.1
+"""Budget de suppression : 100 essais espacés de 0,1 s, soit 10 s au plus (un antivirus ou un indexeur peut garder un fichier
+tout juste écrit plus longtemps que les 2 s d'origine)."""
 
 
-def _remove(path: str) -> None:
+def _remove(path: str, *, ffmpeg_pid: int = 0, sleep: Callable[[float], None] = time.sleep) -> None:
     """Supprime un fichier temporaire. Sous Windows, FFmpeg tué garde un instant sa poignée sur la sortie (ou un antivirus
-    l'analyse) : la suppression échoue en ``PermissionError`` puis réussit, d'où quelques essais (2 s au plus) avant d'abandonner."""
+    l'analyse) : la suppression échoue en ``PermissionError`` puis réussit, d'où quelques essais avant d'abandonner. L'abandon
+    journalise l'erreur système (``winerror`` / ``errno``) et le PID de FFmpeg pour que l'échec soit diagnostiquable."""
     for attempt in range(_REMOVE_ATTEMPTS):
         try:
             os.remove(path)
@@ -340,9 +348,12 @@ def _remove(path: str) -> None:
             return
         except OSError as error:
             if attempt == _REMOVE_ATTEMPTS - 1:
-                LOGGER.warning("Fichier temporaire d'export non supprimé (%s) : %s", path, error)
+                LOGGER.warning(
+                    "Fichier temporaire d'export non supprimé (%s) après %d essais, FFmpeg pid %s, winerror %s, errno %s : %s",
+                    path, _REMOVE_ATTEMPTS, ffmpeg_pid or "inconnu", getattr(error, "winerror", None), error.errno, error,
+                )
                 return
-            time.sleep(_REMOVE_PAUSE)
+            sleep(_REMOVE_PAUSE)
 
 
 __all__ = ["ExportResult", "ExportStatus", "partial_output_path", "run_export"]
