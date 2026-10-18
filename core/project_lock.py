@@ -196,6 +196,13 @@ class ProjectLock:
                     raise
                 time.sleep(0.01)
 
+    @staticmethod
+    def _present(path: Path) -> bool:
+        try:
+            return path.exists()
+        except OSError:
+            return True                                  # fichier en suppression sous Windows : présent
+
     def _lock_present(self) -> bool:
         """Le fichier de verrou existe-t-il ? Sous Windows, ``exists()`` lève ``PermissionError`` sur un fichier en suppression : présent."""
         try:
@@ -254,8 +261,12 @@ class ProjectLock:
             try:
                 os.close(os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
                 break
-            except FileExistsError:
+            except (FileExistsError, PermissionError) as error:
+                # Sous Windows, une garde dont la suppression est en attente lève PermissionError au lieu de FileExistsError : on attend
+                # comme pour une garde tenue. Si l'erreur dure et que la garde n'existe pas, c'est une vraie erreur de droits : elle remonte.
                 if time.monotonic() >= deadline:
+                    if isinstance(error, PermissionError) and not self._present(guard):
+                        raise
                     raise ProjectLockedError(guard, None, LockVerdict.UNKNOWN) from None
                 time.sleep(0.02)
         try:

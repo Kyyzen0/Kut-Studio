@@ -31,6 +31,7 @@ Version qui **rapproche les couleurs de la version App Store** et **rend l'inspe
 
 ### Fixed
 
+- **Deux instances qui reprennent en même temps le verrou périmé d'un projet ne plantent plus sous Windows.** L'une attend son tour ; si la garde de reprise reste prise, elle refuse proprement avec le message habituel au lieu d'une erreur brute.
 - Presets : l'enregistrement d'un preset d'effet ou de transition ne plante plus sous PySide6 6.11 (`QDialog.Accepted` sur la classe).
 - Sous-titres ASS : le texte d'un `.kut` / SRT forgé ne peut plus injecter de balises d'override (`{…}` échappées, antislashs littéraux préservés) ; `font_family` ne décale plus les colonnes `Style:`.
 - Export FFmpeg : les chemins média / LUT issus du projet refusent les protocoles non locaux (http, rtsp, lavfi, concatf…); `-protocol_whitelist` est répété devant chaque `-i` (option d'entrée FFmpeg).

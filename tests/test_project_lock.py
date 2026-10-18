@@ -564,6 +564,50 @@ def test_the_reclaim_guard_is_released_and_a_stuck_one_is_never_stolen(project_f
     assert guard.exists() and read_lock(project_file).pid == OTHER, "ni la garde ni le verrou périmé n'ont été touchés"
 
 
+def _guard_permission_errors(monkeypatch, project_file, times):
+    real_open = os.open
+    calls = {"n": 0}
+
+    def fake_open(path, flags, mode=0o777):
+        if str(path).endswith(".kut.lock.reclaim") and flags & os.O_EXCL:
+            calls["n"] += 1
+            if calls["n"] <= times:
+                raise PermissionError(13, "Accès refusé")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", fake_open)
+    return calls
+
+
+def test_a_permission_error_on_a_guard_pending_delete_is_waited_out_not_a_crash(project_file, monkeypatch):
+    """Windows : créer la garde de reprise pendant que l'autre la supprime lève PermissionError ; on attend, on ne plante pas."""
+    _write_owner(project_file, pid=OTHER)
+    monkeypatch.setattr("core.project_lock.time.sleep", lambda _s: None)
+    calls = _guard_permission_errors(monkeypatch, project_file, 3)
+    stale = ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+    assert calls["n"] == 4 and stale is not None and stale.pid == OTHER
+    assert read_lock(project_file).pid == ME
+
+
+def test_a_guard_that_keeps_refusing_is_a_locked_project_not_a_raw_permission_error(project_file, monkeypatch):
+    _write_owner(project_file, pid=OTHER)
+    guard = lock_file_for(project_file).with_name(lock_file_for(project_file).name + ".reclaim")
+    guard.write_text("", encoding="utf-8")                # la garde existe (suppression en attente)
+    monkeypatch.setattr("core.project_lock._GUARD_WAIT_SECONDS", 0.0)
+    _guard_permission_errors(monkeypatch, project_file, 10_000)
+    with pytest.raises(ProjectLockedError) as caught:
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+    assert caught.value.lock_file == guard and read_lock(project_file).pid == OTHER
+
+
+def test_a_real_permission_error_on_the_guard_stays_an_oserror(project_file, monkeypatch):
+    _write_owner(project_file, pid=OTHER)
+    monkeypatch.setattr("core.project_lock._GUARD_WAIT_SECONDS", 0.0)
+    _guard_permission_errors(monkeypatch, project_file, 10_000)    # aucune garde sur le disque : vraie erreur de droits
+    with pytest.raises(PermissionError):
+        ProjectLock(project_file, ops=FakeOps({ME: "me"})).acquire()
+
+
 _CONTENDER = (
     "import os, sys, time\n"
     "sys.path.insert(0, sys.argv[3])\n"
