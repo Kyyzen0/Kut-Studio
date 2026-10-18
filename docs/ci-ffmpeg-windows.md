@@ -26,3 +26,9 @@ Choisir une version sur la page des releases de `GyanD/codexffmpeg`, télécharg
 
 L'entrée `force-fallback: "true"` saute Chocolatey. À activer temporairement (`with:` sur l'étape de la PR), jamais à
 laisser dans le dépôt.
+
+**Limite de ce test.** `force-fallback` n'exerce pas le cas réel : Chocolatey **essaie, échoue, puis** le repli prend le
+relais. Dans ce cas, la dernière commande native lancée est `choco install` (code 1), et `pwsh` termine l'étape avec ce
+code même si le repli a réussi, sauf sortie explicite. L'action se termine donc par `exit 0` après la mise en place du
+`PATH` (corrigé le 2026-10-18, après un échec d'étape alors que FFmpeg 9.0.2 était bien installé par le repli). Ne pas
+retirer cette sortie, et ne pas conclure du seul test `force-fallback` que le repli est sûr.
