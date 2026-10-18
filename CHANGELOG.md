@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Scripts : animer plus de propriétés, ajouter et régler des effets.** Un script peut poser des images clés sur les propriétés des calques graphiques (taille, contour, police, ombre, lueur…), le cadrage `pan_x` / `pan_y` et les masques de compositing, et ajouter, retirer, activer, régler et réordonner les effets visuels d'un clip vidéo (`add_effect`, `update_effect`…) avec les mêmes bornes, verrous et genres de piste que l'interface. Voir [docs/scripting.md](docs/scripting.md).
+
 ## [0.6.5] - 2026-10-18
 
 Version qui **termine les niveaux d'usage** commencés en 0.6.4 : les menus, le rail de la bibliothèque, la barre de la timeline, les pages, les menus du clic droit, le panneau Calques et la courbe de volume suivent maintenant le niveau Simple, Studio ou Avancé choisi, avec en plus deux correctifs : le clic droit dans la zone vide du panneau Calques et la reprise simultanée d'un verrou de projet périmé sous Windows.

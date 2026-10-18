@@ -23,8 +23,8 @@ from ..audio_buses import (
     add_bus, add_bus_insert, remove_bus, remove_bus_insert, rename_bus, route_track, set_bus_insert_enabled,
     set_bus_muted, set_bus_volume, update_bus_insert_parameters,
 )
-from ..animation import InterpolationType
-from ..animation_targets import get_target
+from ..animation import InterpolationType, ValueKind
+from ..animation_targets import all_targets, get_target
 from ..audio_effects_model import (
     AudioEffectType, add_track_insert, remove_track_insert, set_track_insert_enabled, update_track_insert_parameters,
 )
@@ -45,6 +45,7 @@ from ..mask_path_handles import nodes_refusal
 from ..lut_importer import LUTImportError, ffmpeg_readable_lut, parse_cube_lut
 from ..node_graph import NodeGraphError
 from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
+from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
@@ -426,6 +427,10 @@ def _set_graphic(a: Mapping[str, Any]) -> Operation:
         if not given:
             raise ValueError("set_graphic : donnez au moins un champ à modifier.")
         clip = find_clip(project, _editable_clip(project, a["clip"]))
+        animated = {str(kf.property_name) for kf in getattr(clip, "animation", ()) or ()}
+        for name in given:
+            if graphic_property_id(name) in animated:              # une valeur statique serait masquée par la courbe : même règle que set_mask
+                raise ValueError(f"{name} du calque '{clip.id}' est animé (images-clés) : un script ne le modifie pas, réglez-le dans l'interface.")
         for name in given:
             update_graphic(clip, name, a[name])
         return clip
@@ -482,7 +487,12 @@ def _remove_transition(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
-_ANIMATABLE = ("position_x", "position_y", "scale", "rotation", "opacity", "anchor_x", "anchor_y", "scale_x", "scale_y", "skew")
+# Les propriétés que ``add_keyframe`` accepte : celles du registre d'animation (transform, ``graphic.*``), jamais recopiées ici. Exclues :
+# les booléens (``flip_h`` / ``flip_v`` : le verbe pose un nombre), la vitesse (``time.speed`` : la durée du clip en dépend, donc le
+# sens de « relatif au clip »), et les familles par masque (``mask.<id>.*`` : verbes ``add_mask_keyframe`` / ``remove_mask_keyframe``).
+_ANIMATABLE = tuple(
+    target.id for target in all_targets() if target.spec.kind is not ValueKind.BOOL and not target.id.startswith("time.")
+)
 
 
 def _add_keyframe(a: Mapping[str, Any]) -> Operation:
@@ -1584,19 +1594,26 @@ VERBS: dict[str, Verb] = {
 }
 """Le catalogue. L'ordre est celui de la documentation."""
 
-from .mask_verbs import MASK_VERBS  # noqa: E402 - après la table : mask_verbs importe les paramètres et aides de ce module
+from .animation_verbs import ANIMATION_VERBS  # noqa: E402 - après la table : ces modules importent les paramètres et aides de celui-ci
+from .effect_verbs import EFFECT_VERBS  # noqa: E402
+from .mask_verbs import MASK_VERBS  # noqa: E402
+
+_EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
+    "set_clip_enabled": EFFECT_VERBS,           # les effets d'un clip juste après lui, comme dans la documentation
+    "remove_keyframe": ANIMATION_VERBS,         # les images clés de masque juste après celles du transform
+    "clear_crop": MASK_VERBS,
+}
 
 
-def _with_mask_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
-    """Les verbes de masques (``mask_verbs.py``) juste après ``clear_crop``, comme dans la documentation."""
+def _with_extra_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
+    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``) juste après leur verbe d'ancrage."""
     result: dict[str, Verb] = {}
     for name, verb in table.items():
         result[name] = verb
-        if name == "clear_crop":
-            result.update((item.name, item) for item in MASK_VERBS)
+        result.update((item.name, item) for item in _EXTRA_VERBS.get(name, ()))
     return result
 
 
-VERBS = _with_mask_verbs(VERBS)
+VERBS = _with_extra_verbs(VERBS)
 
 __all__ = ["MAX_PARAMS", "MAX_TEXT", "MAX_TIME", "VERBS", "Kind", "Operation", "Param", "ScriptContext", "Verb"]

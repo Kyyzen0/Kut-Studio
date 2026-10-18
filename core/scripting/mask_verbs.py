@@ -14,8 +14,8 @@ Les fenêtres d'étalonnage (aussi des ``Mask``) ont leurs verbes (``*_color_win
 Rien n'est ramené en silence : ``Mask`` écrête les nombres hors bornes, remplace un polygone de moins de trois sommets par un
 pentagone et ignore un sommet mal formé, un script les voit donc refusés. Une propriété animée (images-clés ``mask.<id>.<nom>``)
 est refusée aussi : une valeur statique serait masquée par la courbe, et un script n'a pas de tête de lecture où poser une
-image-clé (``add_keyframe`` n'accepte d'ailleurs pas les propriétés ``mask.<id>.*`` : ses choix sont fixes) ; les images-clés d'un
-masque se règlent dans l'interface, ou partent avec ``remove_mask``.
+image-clé (les images-clés d'un masque se posent avec ``add_mask_keyframe`` / ``remove_mask_keyframe``, :mod:`core.scripting.animation_verbs`) ; elles
+partent avec ``remove_mask``.
 """
 
 from __future__ import annotations
