@@ -1,6 +1,6 @@
 # ADR-0008 : animer l'étalonnage et les paramètres des effets de clip
 
-**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Aucune étape du plan n'est faite.
+**Statut :** Accepté le 2026-10-18 (trois décisions de cadrage prises avec l'utilisateur, voir « Décisions prises »). Étapes 1 à 4 du plan faites (la 4, l'interface, le 2026-10-19).
 **Date :** 2026-10-18
 **Décideurs :** mainteneur de Kut-Studio
 
@@ -172,7 +172,7 @@ clés » ferait pointer les courbes vers les effets d'origine. La décision :
 1. **Validation de `sendcmd` (faite, résultats dans `docs/ffmpeg-sendcmd.md`)** (aucun code produit) : pour chaque filtre hors expression (exposition `lutrgb`, température `colorchannelmixer`, `colorbalance`, `curves`, `gblur`, `unsharp`, `rgbashift`), un banc sur FFmpeg 6.1 (Ubuntu 24.04), 7.1 (Debian trixie) et 9.0.2, en Docker `--platform linux/amd64` : la sortie avec `sendcmd` égale-t-elle la sortie du filtre statique à la même valeur ? Comportement aux limites d'image, avec un segment qui ne commence pas à zéro, avec un changement de cadence, taille du fichier de commandes. Résultat consigné dans `docs/` et dans cet ADR (tableau filtre × version), avec la liste finale des paramètres animables.
 2. **Cibles des effets + format + cycle de vie** : `fx.*` enregistrées (découpage par la droite, test de garde « aucun nom de paramètre ne contient de point »), constante de version 20 conditionnelle, `effective_effect_parameters`, **cycle de vie** (suppression, préréglage, collage avec table de correspondance des identifiants, coupe et duplication, orphelins tolérés puis nettoyés). Tests : aller-retour d'un fichier, ancien build refuse, identifiant à points, suppression puis annulation, préréglage, collage « Effets + Images clés » (les courbes animent les **nouveaux** effets), coupe d'un clip animé, image clé orpheline au chargement. Sans rendu encore.
 3. **Rendu des effets (fait, résultats ci-dessous)** : par expression (`eq`, `vignette`, `geq`) à l'export, uniformes par image dans le moniteur, parité export / GPU sur des images échantillonnées, `RENDER_ENGINE_VERSION`.
-4. **Interface des effets** : branche « image clé » dans le panneau Effets, losanges, niveau d'usage, manifeste d'énumération.
+4. **Interface des effets (faite, résultats ci-dessous)** : branche « image clé » dans le panneau Effets, losanges, menu, éditeur de courbes, niveau d'usage, manifeste d'énumération.
 5. **Effets hors expression** via `sendcmd`, selon la validation de l'étape 1 : **flou** (`gblur`, `sigma` + `sigmaV`) et **aberration chromatique** (`rgbashift`, `rh` / `bh`) sont validés ; la **lueur** n'est animable que pour son rayon (`gblur`), son gain passe par `lutrgb` (coût, voir « Export ») ; la **netteté** (`unsharp`) n'est **pas animable** par cette voie et reste statique dans ce plan.
 6. **Cibles et rendu de l'étalonnage** : `color.*`, `effective_grade`, export par expression (`eq`, `hue`) puis `sendcmd` pour le reste (`colorbalance`, `colorchannelmixer`, `curves`), `RENDER_ENGINE_VERSION`. **Commence par une mesure** : une alternative à `lutrgb` pour l'exposition et les roues (coût de 0,2 s et 0,07 s par image), faute de quoi ces paramètres restent statiques.
 7. **Moniteur fidèle d'abord** pour l'étalonnage animé, LUT cuite à l'arrêt avec les valeurs évaluées.
@@ -230,6 +230,43 @@ moniteur (référence numpy) : aux seuils de l'effet statique. Deux constats : (
 vignette à six décimales ; un pixel sur une frontière d'arrondi bascule d'un niveau (écart 2 sur 1 octet sur 230 000) contre
 l'expression exacte : la référence prend l'angle exact. (2) Hors animation, la formule du moniteur pour `eq` s'écarte déjà de
 l'export à luminosité négative (écart moyen 1,9 à −0,1, 2,8 à −0,2) : défaut existant, non traité ici.
+
+## Résultats de l'étape 4 (2026-10-19) : interface des effets animés
+
+**Visible.** Dans l'onglet Effets de l'inspecteur, une rangée ‹ ◆ › sous chaque réglage de `ANIMATABLE_EFFECT_PARAMS` (luminosité,
+contraste, saturation de la correction couleur ; intensité de la vignette), et sous aucun autre. Comportement de la
+transformation : sans image clé le curseur écrit la valeur de **base** ; le losange pose ou retire une image clé à la tête de
+lecture (temps local du clip) ; animé, le curseur affiche la valeur évaluée (`evaluated_effects`) et sa saisie écrit l'image clé de
+l'instant ; ‹ › naviguent ; une étape d'historique par édition. Le menu clic droit du losange est celui de la transformation
+(`animation_menu`) plus « Supprimer l'animation de l'effet » (`clear_effect_animation`, une étape d'historique, chaque réglage
+garde la valeur montrée, les images clés orphelines de l'effet partent aussi) : c'est le geste que le refus de conversion en
+composition réclame. L'éditeur de courbes liste les réglages animables (`targets_for_clip(..., include_effects=True)`, via
+`_graph_properties`) sous « Correction couleur — Luminosité » ; deux effets du même type : « n° 2 ».
+
+**Choix de conception.**
+- Les rangées sont **reconstruites** avec les réglages de l'effet affiché (nouveaux widgets, jamais déplacés ni reparentés), chacune
+  dans un `LevelGate` créé avec elle. Elles sont dans leur propre ligne du formulaire, sous le curseur (le curseur reste un enfant
+  direct du formulaire : l'ordre du niveau Avancé est celui d'avant).
+- Les images clés d'effets viennent de la vue du clip (`TimelineClipView.effect_keyframes`, champ neuf à valeur par défaut vide).
+- Deux signaux neufs (`effect_keyframe_set`, `effect_keyframe_removed`) et un troisième (`effect_animation_cleared`) ; le premier
+  clic d'un réglage non animé passe par `animation_toggled`, comme la transformation. Les garde-fous sont ceux des commandes
+  d'animation : `clip_edit_refusal` côté fenêtre, `_guard` côté `core.keyframe_editing`.
+- Les raccourcis sans propriété active (`add_keyframe_at_playhead`) ne créent **jamais** de courbe d'effet (`_animation_properties`
+  reste sans effets) ; une courbe d'effet active ou déjà animée est visée comme les autres.
+- `can_paste` reçoit maintenant le clip de destination (coller sur un réglage `fx.*` échouait par `KeyError`).
+
+**Niveaux d'usage.** Losanges : Studio ; menu de losange : « Désactiver » et « Supprimer l'animation de l'effet » dès Studio,
+interpolation / copier / coller / éditeur Avancé ; éditeur de courbes : Avancé (déjà). Le groupe Effets étant lui-même Studio,
+« Afficher plus d'options » révèle aussi les losanges au niveau Simple (sinon inaccessibles depuis Simple). Le manifeste
+d'énumération (`tests/data/usage_level_controls.json`) gagne 12 lignes, toutes Studio ; l'inventaire joue maintenant un passage par
+effet (correction couleur, vignette, netteté).
+
+**Mutation** : retirer la branche « écrire l'image clé quand le réglage est animé » (`_on_effect_parameter_changed`) fait échouer 5
+tests dont celui du cas (c).
+
+**Non fait / limites.** Rien n'a été vu dans l'application réelle, seulement hors écran. Les raccourcis clavier d'animation ne
+visent un réglage d'effet que s'il est la propriété active (clic sur son losange ou sa courbe) ; la timeline ne dessine pas les
+images clés d'effets (seul le losange de l'inspecteur et l'éditeur de courbes les montrent).
 
 ---
 

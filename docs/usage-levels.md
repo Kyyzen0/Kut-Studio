@@ -62,6 +62,8 @@ Le niveau indiqué est le **minimal où l'élément est affiché directement**. 
 | Étalonnage : courbes, préréglages, LUT 3D | Avancé | |
 | Effets du clip : ajouter, liste, activer, retirer ; flou, netteté, vignette, noir et blanc, sépia, lueur, aberration chromatique, brume de chaleur | Studio | |
 | Effets du clip : monter / descendre (ordre) | Avancé | |
+| Effets du clip : losanges d'images clés ‹ ◆ › sous les réglages animables (correction couleur, vignette) | Studio | « Afficher plus d'options » les montre aussi en Simple (le groupe Effets est lui-même Studio) |
+| Effets du clip : menu clic droit du losange : interpolation, copier / coller, éditeur de courbes | Avancé | « Désactiver l'animation » et « Supprimer l'animation de l'effet » dès Studio |
 | Transition (type, durée) | Studio | visible seulement si une transition est sélectionnée |
 | Sous-titre : contenu, police, taille, opacité, couleur du texte, alignement | Simple | visible seulement sur un sous-titre |
 | Sous-titre : position/marges/remplissage, contour, ombre, fond | Studio | |
@@ -133,6 +135,8 @@ Pour que les réglages de base restent au-dessus du pliant « Avancé », l'ordr
 4. **Étalonnage** : « Réinitialiser » passe **avant** les courbes.
 5. **Compositing** : le recadrage passe **avant** la fusion.
 6. **Sous-titre et Calque graphique** : sections réordonnées (Simple, puis Studio, puis Avancé).
+
+7. **Effets du clip animables** (ADR-0008, étape 4) : sous les réglages animables de l'effet sélectionné apparaît une rangée ‹ ◆ ›, dans sa propre ligne du formulaire (le curseur reste un enfant direct : son ordre est celui d'avant). Les goldens `inspector_order_before_usage_levels.json` ne sélectionnent jamais d'effet (`clip_states()` n'en porte aucun) et ne sont **pas** régénérés : ces rangées sont des ajouts, pas un ordre déplacé. Elles figurent pourtant dans `moved_roots` (`tests/inspector_order.py`, racines relevées après chaque `show_clip` puisque les rangées sont reconstruites avec l'effet affiché), pour qu'un futur golden avec un effet sélectionné les écarte de la comparaison. L'énumération des contrôles joue en revanche un passage par effet (`EFFECT_SCENARIOS` dans `tests/usage_level_inventory.py` : correction couleur, vignette, netteté) : leurs contrôles sont au manifeste.
 
 Les menus, boutons et menus contextuels au niveau Avancé sont, eux, ceux d'avant (`tests/data/menus_before_usage_levels.json`).
 
