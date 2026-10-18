@@ -277,6 +277,14 @@ def test_a_disabled_effect_stays_disabled_when_evaluated():
     assert program_for((out,)) == program_for(())
 
 
+def test_the_monitor_sync_points_evaluate_the_effects():
+    """Garde de câblage : le clip du dessus (``set_effects``) et les pistes du dessous (sous-couches GPU) passent par
+    ``evaluated_effects`` ; sans cela le moniteur montrerait les paramètres de base d'un clip animé."""
+    root = Path(__file__).resolve().parent.parent
+    for relative in ("ui/main_window.py", "ui/main_window_mixins/hardware_preview.py"):
+        assert "evaluated_effects(" in (root / relative).read_text(encoding="utf-8"), relative
+
+
 # ---------------------------------------------------------------------------
 # (g) Cache : l'empreinte suit les images clés fx.*
 # ---------------------------------------------------------------------------
@@ -336,10 +344,18 @@ def _ffmpeg_frames(chain, raw, *, pix_fmt, width, height, count):
     return frames.reshape(count, height, width, 4)[..., :3]
 
 
-def _chain(effects, animation, *, full_chroma):
+def _chain(effects, animation, *, full_chroma, exact_angle=False):
+    """Chaîne de l'export. ``exact_angle`` : l'angle de la vignette statique sans l'arrondi à six décimales de
+    ``_format_seconds`` (référence de l'expression animée, exacte : un pixel sur une frontière d'arrondi bascule sinon)."""
+    import re
+
     from core.chroma_siting import siting_before_rgb
 
     text = _build_clip_effect_filters(tuple(effects), animation=tuple(animation))
+    if exact_angle:
+        for effect in effects:
+            if effect.type is EffectType.VIGNETTE:
+                text = re.sub(r"vignette=angle=[0-9.]+", f"vignette=angle={effect.params['intensity'] * math.pi / 4!r}", text)
     graph = (text + "," if text else "") + "format=rgba"
     return graph if full_chroma else siting_before_rgb(graph)
 
@@ -424,7 +440,7 @@ def test_each_animated_frame_equals_the_static_export_at_the_evaluated_value(mon
         fixed = evaluated_effects(tuple(clip.effects), tuple(clip.animation), time)
         # Le rendu statique a le même temps d'image (``T``) : la brume dépend de ``T·vitesse`` ; on le rejoue donc sur
         # ``index + 1`` images et l'on garde la dernière.
-        static = _ffmpeg_frames(_chain(fixed, (), full_chroma=full_chroma), raw, pix_fmt=pix_fmt, width=width,
+        static = _ffmpeg_frames(_chain(fixed, (), full_chroma=full_chroma, exact_angle=True), raw, pix_fmt=pix_fmt, width=width,
                                 height=height, count=index + 1)[index]
         worst = int(np.abs(animated[index].astype(int) - static.astype(int)).max())
         assert worst <= 1, (case, index, worst)
