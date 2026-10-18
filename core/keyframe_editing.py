@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .animation import (
+    AnimatableProperty,
     AnimationCurve,
     InterpolationType,
     Keyframe,
@@ -29,6 +30,7 @@ from .animation import (
     snap_local_time,
 )
 from .animation_targets import PropertyTarget, get_target
+from .effects_model import FX_PREFIX
 
 
 @dataclass(frozen=True)
@@ -405,6 +407,9 @@ class AnimationClipboard:
     """Keyframes copiés : par propriété, temps relatifs au premier keyframe copié."""
 
     items: tuple[tuple[str, tuple[Keyframe, ...]], ...]
+    # Spécification de chaque propriété SOURCE, parallèle à ``items`` (résolue contre le clip source à la copie : une
+    # propriété ``fx.*`` n'existe pas forcément sur le clip de destination). Vide = non renseignée (ancienne forme).
+    specs: tuple[AnimatableProperty, ...] = ()
 
     @property
     def property_ids(self) -> tuple[str, ...]:
@@ -422,10 +427,13 @@ def copy_keyframes(project, clip_id: str, property_ids: Iterable[str], ids: set[
     """Copie les keyframes (tous, ou ceux de ``ids``) des propriétés données."""
     clip = find_clip(project, clip_id)
     selected: list[tuple[str, list[Keyframe]]] = []
+    specs: list[AnimatableProperty] = []
     for pid in property_ids:
-        frames = [k for k in get_target(pid, clip).get_keyframes(clip) if ids is None or k.id in ids]
+        source = get_target(pid, clip)
+        frames = [k for k in source.get_keyframes(clip) if ids is None or k.id in ids]
         if frames:
             selected.append((pid, frames))
+            specs.append(source.spec)
     if not selected:
         return AnimationClipboard(())
     origin = min(k.time_seconds for _pid, frames in selected for k in frames)
@@ -433,7 +441,7 @@ def copy_keyframes(project, clip_id: str, property_ids: Iterable[str], ids: set[
         (pid, tuple(replace(k, time_seconds=k.time_seconds - origin, id=k.id) for k in frames))
         for pid, frames in selected
     )
-    return AnimationClipboard(items)
+    return AnimationClipboard(items, tuple(specs))
 
 
 def can_paste(clipboard: AnimationClipboard, property_id: str | None = None, clip=None) -> bool:
@@ -446,7 +454,8 @@ def can_paste(clipboard: AnimationClipboard, property_id: str | None = None, cli
         return False
     if property_id is None or not clipboard.is_single_property:
         return True
-    source = get_target(clipboard.items[0][0], clip).spec
+    # La source est la spécification stockée à la copie ; seule la CIBLE se résout contre le clip de destination.
+    source = clipboard.specs[0] if clipboard.specs else get_target(clipboard.items[0][0], clip).spec
     return source.compatible_with(get_target(property_id, clip).spec)
 
 
@@ -473,6 +482,8 @@ def paste_keyframes(
         raise ValueError("Ces images-clés ne sont pas compatibles avec cette propriété.")
     for source_id, _frames in clipboard.items:             # tout est vérifié avant la première écriture
         destination = target_property if (target_property and clipboard.is_single_property) else source_id
+        if destination.startswith(FX_PREFIX):              # un effet absent du clip : échec clair, jamais ignoré
+            get_target(destination, clip)
         try:
             _guard(project, clip_id, destination)
         except KeyError:                                   # propriété inconnue : ignorée plus bas, comme avant

@@ -95,7 +95,7 @@ def test_a_preset_replaces_a_unique_effect_and_its_keyframes_but_not_the_others(
     clip = animated_clip()
     project = video_project(clip)
     chain = apply_preset_to_clip(project, "c", preset_of(create_effect(EffectType.VIGNETTE, effect_id="pv")))
-    assert [e.id for e in chain] == ["b", "pv"]
+    assert [e.id for e in chain][0] == "b" and chain[1].type == EffectType.VIGNETTE and chain[1].id != "v"
     assert sorted(names(clip)) == ["fx.b.intensity", "fx.b.intensity", "graphic.width"]    # l'ancienne vignette a perdu sa courbe
 
 
@@ -103,8 +103,9 @@ def test_a_preset_effect_is_born_without_animation_even_with_the_replaced_id():
     clip = animated_clip()
     project = video_project(clip)
     apply_preset_to_clip(project, "c", preset_of(create_effect(EffectType.VIGNETTE, effect_id="v", params={"intensity": 0.9})))
-    assert [e.id for e in clip.effects] == ["b", "v"] and clip.effects[1].params["intensity"] == 0.9
-    assert "fx.v.intensity" not in names(clip)
+    assert clip.effects[1].type == EffectType.VIGNETTE and clip.effects[1].params["intensity"] == 0.9
+    assert clip.effects[1].id != "v" and "fx.v.intensity" not in names(clip)
+    assert not any(n.startswith(f"fx.{clip.effects[1].id}.") for n in names(clip))
 
 
 def test_a_stackable_preset_effect_that_collides_gets_a_new_id():
@@ -116,6 +117,41 @@ def test_a_stackable_preset_effect_that_collides_gets_a_new_id():
     assert clip.effects[0].params["intensity"] == 2.0                      # l'effet d'origine garde sa courbe
     assert names(clip).count("fx.b.intensity") == 2
     assert not any(n.startswith(f"fx.{ids[2]}.") for n in names(clip))
+
+
+def test_applying_a_stackable_preset_twice_gives_two_distinct_effects():
+    clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=10.0)
+    project = video_project(clip)
+    preset = preset_of(create_effect(EffectType.BLUR, effect_id="pb", params={"intensity": 5.0}))
+    apply_preset_to_clip(project, "c", preset)
+    apply_preset_to_clip(project, "c", preset)
+    first, second = clip.effects
+    assert first is not second and first.id != second.id and "pb" not in {first.id, second.id}
+    assert [e.type for e in clip.effects] == [EffectType.BLUR, EffectType.BLUR]
+
+
+def test_reapplying_a_unique_preset_drops_the_old_id_and_its_keyframes():
+    clip = Clip(id="c", asset_id="a", track_id="V1", timeline_start=0.0, source_in=0.0, source_out=10.0)
+    project = video_project(clip)
+    preset = preset_of(create_effect(EffectType.VIGNETTE, effect_id="pv"))
+    apply_preset_to_clip(project, "c", preset)
+    old_id = clip.effects[0].id
+    clip.animation = [Keyframe(f"fx.{old_id}.intensity", 0.0, 0.1, id="k0"), Keyframe(f"fx.{old_id}.intensity", 5.0, 0.4, id="k1")]
+    apply_preset_to_clip(project, "c", preset)
+    assert len(clip.effects) == 1 and clip.effects[0].id != old_id
+    assert not any(n.startswith("fx.") for n in names(clip))
+
+
+def test_preset_effects_never_share_the_preset_ids_and_the_preset_is_not_mutated():
+    clip = animated_clip()
+    project = video_project(clip)
+    original = create_effect(EffectType.BLUR, effect_id="pb", params={"intensity": 9.0})
+    preset = preset_of(original)
+    apply_preset_to_clip(project, "c", preset)
+    added = clip.effects[-1]
+    assert added.id != "pb" and added is not original
+    added.params["intensity"] = 1.0
+    assert preset.effects == (original,) and preset.effects[0].id == "pb" and original.params["intensity"] == 9.0
 
 
 def test_an_empty_preset_changes_nothing():
