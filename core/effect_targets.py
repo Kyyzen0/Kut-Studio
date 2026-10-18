@@ -59,6 +59,20 @@ def _step_for(span: float) -> float:
     return max(round(span / 100.0, 4), 0.001)
 
 
+def _fx_spec(effect: ClipEffect, name: str, property_id: str) -> AnimatableProperty | None:
+    """Description de ``name`` pour ``effect`` (bornes et défaut lus dans les spécifications du **type** de l'effet),
+    ``None`` si ce paramètre n'est pas animable."""
+    if name not in ANIMATABLE_EFFECT_PARAMS.get(effect.type, ()):
+        return None
+    base = next((spec for spec in parameter_specs(effect.type) if spec.name == name), None)
+    if base is None:  # pragma: no cover - ANIMATABLE_EFFECT_PARAMS est vérifiée contre EFFECT_PARAMETER_SPECS (test)
+        return None
+    return AnimatableProperty(
+        property_id, f"effects.param.{name}", ValueKind.FLOAT, float(base.default),
+        float(base.minimum), float(base.maximum), _step_for(base.maximum - base.minimum), group=EFFECT_PARAM_GROUP,
+    )
+
+
 def _fx_target(clip: Any, property_id: str) -> PropertyTarget | None:
     """Cible de ``fx.<effet>.<paramètre>`` pour **ce** clip, ``None`` si l'effet ou le paramètre n'est pas animable."""
     parts = split_fx_property(property_id)
@@ -66,19 +80,14 @@ def _fx_target(clip: Any, property_id: str) -> PropertyTarget | None:
         return None
     effect_id, name = parts
     effect = effect_by_id(getattr(clip, "effects", ()) or (), effect_id)
-    if effect is None or name not in ANIMATABLE_EFFECT_PARAMS.get(effect.type, ()):
+    spec = _fx_spec(effect, name, property_id) if effect is not None else None
+    if spec is None:
         return None
-    base = next((spec for spec in parameter_specs(effect.type) if spec.name == name), None)
-    if base is None:  # pragma: no cover - ANIMATABLE_EFFECT_PARAMS est vérifiée contre EFFECT_PARAMETER_SPECS (test)
-        return None
-    spec = AnimatableProperty(
-        property_id, f"effects.param.{name}", ValueKind.FLOAT, float(base.default),
-        float(base.minimum), float(base.maximum), _step_for(base.maximum - base.minimum), group=EFFECT_PARAM_GROUP,
-    )
+    base_default = float(spec.default)
 
     def get_static(target_clip) -> float:
         current = effect_by_id(target_clip.effects, effect_id)
-        return float(current.params[name]) if current is not None else float(base.default)
+        return float(current.params[name]) if current is not None else base_default
 
     def set_static(target_clip, value) -> None:
         if effect_by_id(target_clip.effects, effect_id) is None:
@@ -122,19 +131,11 @@ def effective_effect_parameters(clip: Any, effect: ClipEffect, local_time: float
         frames = [kf for kf in animation if kf.property_name == property_id]
         if not frames or name not in result:
             continue
-        target = _fx_target(_ClipView(effect), property_id)
-        if target is None:  # pragma: no cover - le paramètre est animable, vérifié juste au-dessus
+        spec = _fx_spec(effect, name, property_id)
+        if spec is None:  # pragma: no cover - le paramètre est animable, vérifié juste au-dessus
             continue
-        result[name] = float(target.spec.evaluate(AnimationCurve(frames, ValueKind.FLOAT), result[name], local_time))
+        result[name] = float(spec.evaluate(AnimationCurve(frames, ValueKind.FLOAT), result[name], local_time))
     return result
-
-
-class _ClipView:
-    """Vue minimale d'un clip qui ne porte que ``effect`` : permet de décrire la cible (bornes) sans dépendre de la
-    présence de l'effet dans ``clip.effects`` (l'appelant peut passer une version évaluée de l'effet)."""
-
-    def __init__(self, effect: ClipEffect) -> None:
-        self.effects = [effect]
 
 
 __all__ = [
