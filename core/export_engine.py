@@ -2434,8 +2434,8 @@ def _build_layer_filter(
     )
     opacity_expr = _build_animated_opacity_expr(transform, kfs)
     effect_filters = _build_clip_effect_filters(layer.effects, pixel_scale, label=f"{output_label}fx",
-                                                include_layer_space=False)
-    layer_space_filters = _layer_space_filters(layer.effects, pixel_scale)
+                                                include_layer_space=False, animation=layer.animation)
+    layer_space_filters = _layer_space_filters(layer.effects, pixel_scale, layer.animation)
 
     # Étalonnage couleur non destructif (tâche 29) : on génère les
     # filtres ``eq`` (exposition/contraste/saturation), ``colorbalance``
@@ -2840,7 +2840,7 @@ def _glow_filter(params, pixel_scale: float, label: str) -> str:
     )
 
 
-def _heat_haze_filter(params, pixel_scale: float) -> str:
+def _heat_haze_filter(params, pixel_scale: float, expressions=None) -> str:
     """Heat haze : chaque ligne de l'image (sous ``top``, en fondu sur ``span``) glisse d'un nombre entier de pixels.
 
     Le décalage d'une ligne ``y`` (pixels de rendu) vaut ``⌊A·sin(y·f + t·v)·rampe(y)⌋`` avec A et f ramenés à la
@@ -2848,7 +2848,15 @@ def _heat_haze_filter(params, pixel_scale: float) -> str:
     la luminance, comme sur le moniteur GPU (en 4:2:0, un décalage impair devenait un demi-pixel interpolé).
     Ce passage applique la règle de chroma du reste de l'export et du moniteur (:mod:`core.chroma_siting` : interpolée,
     co-sitée en haut à gauche) : le ``bicubic`` par défaut de swscale l'interpolait autrement, et un grain chromatique
-    changeait de 20 niveaux en moyenne dès qu'on activait l'effet. ``T`` est le temps du clip."""
+    changeait de 20 niveaux en moyenne dès qu'on activait l'effet. ``T`` est le temps du clip.
+
+    ``expressions`` : expressions des paramètres animés (:func:`core.effect_expressions.animated_effect_expressions`,
+    ``T``) ; la courbe remplace la constante. ``None`` ou vide : la chaîne statique d'origine."""
+    if expressions:
+        from .effect_expressions import heat_haze_shift
+
+        expr = f"'p(X-{heat_haze_shift(params, expressions, pixel_scale, _format_seconds)},Y)'"
+        return f"{CHROMA_SITING_SCALE},format=yuva444p,geq=lum={expr}:cb={expr}:cr={expr}:a='p(X,Y)'"
     amplitude = float(params["amplitude"]) * pixel_scale
     frequency = float(params["frequency"]) / max(1e-6, pixel_scale)
     ramp = f"clip((Y/H-{_format_seconds(params['top'])})/{_format_seconds(params['span'])},0,1)"
@@ -2860,6 +2868,7 @@ def _heat_haze_filter(params, pixel_scale: float) -> str:
 
 def _build_clip_effect_filters(
     effects: tuple[ClipEffect, ...], pixel_scale: float = 1.0, label: str = "fx", *, include_layer_space: bool = True,
+    animation=None,
 ) -> str:
     """Construit les filtres FFmpeg des effets actifs, dans leur ordre.
 
@@ -2869,13 +2878,31 @@ def _build_clip_effect_filters(
 
     ``pixel_scale`` : pixels de sortie par pixel de la séquence. Un réglage en pixels (σ du flou) est donné à la taille
     de la séquence ; un aperçu à ½ ou un export à une autre résolution le ramène à sa taille, comme le moniteur GPU.
+
+    ``animation`` : images clés génériques du clip (``Clip.animation``). Celles d'un paramètre d'effet rendu
+    (``fx.<effet>.<paramètre>``, :mod:`core.effect_expressions`) deviennent une expression du temps local du clip ; sans
+    elles, ``None`` ou non, la chaîne est celle d'avant, caractère pour caractère.
     """
+    from .effect_expressions import (
+        EQ_TIME,
+        GEQ_TIME,
+        animated_effect_expressions,
+        eq_filter,
+        vignette_filter,
+    )
+
     filters: list[str] = []
     for index, effect in enumerate(effects):
         if not effect.enabled:
             continue
         params = effect.params
-        if effect.type is EffectType.COLOR_CORRECTION:
+        if effect.type is EffectType.COLOR_CORRECTION and (
+                expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
+            filters.append(eq_filter(params, expressions, _format_seconds))
+        elif effect.type is EffectType.VIGNETTE and (
+                expressions := animated_effect_expressions(effect, animation, EQ_TIME)):
+            filters.append(vignette_filter(params, expressions))
+        elif effect.type is EffectType.COLOR_CORRECTION:
             filters.append(
                 "eq="
                 f"brightness={_format_seconds(params['brightness'])}:"
@@ -2908,15 +2935,17 @@ def _build_clip_effect_filters(
             if shift:
                 filters.append(f"format=rgba,rgbashift=rh={shift}:bh={-shift}:edge=smear,format=rgba,format=yuva444p")
         elif effect.type is EffectType.HEAT_HAZE and include_layer_space:
-            filters.append(_heat_haze_filter(params, pixel_scale))
+            filters.append(_heat_haze_filter(params, pixel_scale, animated_effect_expressions(effect, animation, GEQ_TIME)))
     return ",".join(filters)
 
 
-def _layer_space_filters(effects, pixel_scale: float) -> str:
+def _layer_space_filters(effects, pixel_scale: float, animation=None) -> str:
     """Effets qui déforment l'image du clip elle-même (heat haze) : appliqués **avant** échelle et rotation, en espace
     calque, comme le moniteur GPU. Après ``rotate``, le cadre agrandi décalait les lignes de l'onde."""
+    from .effect_expressions import GEQ_TIME, animated_effect_expressions
+
     return ",".join(
-        _heat_haze_filter(effect.params, pixel_scale)
+        _heat_haze_filter(effect.params, pixel_scale, animated_effect_expressions(effect, animation, GEQ_TIME))
         for effect in effects if effect.enabled and effect.type is EffectType.HEAT_HAZE
     )
 

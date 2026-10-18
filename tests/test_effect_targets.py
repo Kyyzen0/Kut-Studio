@@ -1,6 +1,6 @@
 """Cibles d'animation des effets ``fx.<effet>.<paramètre>`` (ADR-0008, étape 2) : registre, valeur effective, format ``.kut``.
 
-Étape sans rendu ni interface : ces tests prouvent le modèle (résolution par la droite, bornes lues dans
+Ces tests prouvent le modèle (le rendu : ``tests/test_effect_expressions.py``, sans interface) (résolution par la droite, bornes lues dans
 ``EFFECT_PARAMETER_SPECS``, fonction pure ``effective_effect_parameters``, version 20 du fichier, tolérance à la lecture).
 """
 
@@ -14,7 +14,12 @@ import pytest
 from core import project_io
 from core.animation import Keyframe
 from core.animation_targets import animation_curves, get_target, targets_for_clip
-from core.effect_targets import ANIMATABLE_EFFECT_PARAMS, effective_effect_parameters
+from core.effect_targets import (
+    ANIMATABLE_EFFECT_PARAMS,
+    EXCLUDED_EFFECT_PARAMS,
+    PENDING_EFFECT_PARAMS,
+    effective_effect_parameters,
+)
 from core.effects_model import (
     EFFECT_PARAMETER_SPECS,
     FX_PREFIX,
@@ -63,18 +68,32 @@ def test_no_parameter_name_contains_a_dot():
     assert names and all("." not in name and name for name in names)
 
 
-def test_the_provisional_animatable_list_is_exactly_the_decided_one():
+def test_the_registered_list_is_exactly_the_rendered_one():
+    """Étape 3 : seuls les paramètres qui ont un rendu (expression FFmpeg + moniteur) sont enregistrés."""
     assert ANIMATABLE_EFFECT_PARAMS == {
         EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
-        EffectType.BLUR: ("intensity",),
         EffectType.VIGNETTE: ("intensity",),
-        EffectType.GLOW: ("radius",),
-        EffectType.CHROMATIC_ABERRATION: ("intensity",),
-        EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),
     }
     declared = {kind: {spec.name for spec in specs} for kind, specs in EFFECT_PARAMETER_SPECS.items()}
     for kind, names in ANIMATABLE_EFFECT_PARAMS.items():
         assert set(names) <= declared[kind]
+
+
+def test_every_declared_parameter_is_registered_pending_or_excluded_exactly_once():
+    """Aucun paramètre d'effet n'échappe au classement, aucun n'est dans deux listes."""
+    for kind, specs in EFFECT_PARAMETER_SPECS.items():
+        groups = [set(table.get(kind, ())) for table in (ANIMATABLE_EFFECT_PARAMS, PENDING_EFFECT_PARAMS,
+                                                         EXCLUDED_EFFECT_PARAMS)]
+        for spec in specs:
+            assert sum(spec.name in group for group in groups) == 1, (kind, spec.name)
+        assert set().union(*groups) <= {spec.name for spec in specs}
+    assert PENDING_EFFECT_PARAMS == {
+        EffectType.BLUR: ("intensity",),
+        EffectType.GLOW: ("radius",),
+        EffectType.CHROMATIC_ABERRATION: ("intensity",),
+        EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),    # geq : coût, voir docs/animation.md
+    }
+    assert EXCLUDED_EFFECT_PARAMS == {EffectType.SHARPEN: ("intensity",), EffectType.GLOW: ("threshold", "intensity")}
 
 
 # ---------------------------------------------------------------------------
@@ -97,12 +116,12 @@ def test_split_fx_property_cuts_from_the_right(name, expected):
 
 
 def test_a_dotted_effect_id_resolves_to_its_own_effect():
-    effect = create_effect(EffectType.BLUR, effect_id="my.blur", params={"intensity": 7.0})
+    effect = create_effect(EffectType.VIGNETTE, effect_id="my.vig", params={"intensity": 0.7})
     clip = clip_of(make_project([effect]))
-    pid = fx_property_id("my.blur", "intensity")
-    assert pid == "fx.my.blur.intensity"
+    pid = fx_property_id("my.vig", "intensity")
+    assert pid == "fx.my.vig.intensity"
     target = get_target(pid, clip)
-    assert target.id == pid and target.get_static(clip) == 7.0
+    assert target.id == pid and target.get_static(clip) == 0.7
 
 
 # ---------------------------------------------------------------------------
@@ -110,26 +129,26 @@ def test_a_dotted_effect_id_resolves_to_its_own_effect():
 # ---------------------------------------------------------------------------
 
 
-def test_the_same_parameter_name_has_the_bounds_of_its_effect_type():
+def test_each_registered_parameter_has_the_bounds_of_its_effect_type():
     clip = clip_of(make_project([
-        create_effect(EffectType.BLUR, effect_id="b"),
+        create_effect(EffectType.COLOR_CORRECTION, effect_id="cc"),
         create_effect(EffectType.VIGNETTE, effect_id="v"),
-        create_effect(EffectType.CHROMATIC_ABERRATION, effect_id="ca"),
     ]))
     bounds = {pid: (get_target(pid, clip).spec.minimum, get_target(pid, clip).spec.maximum)
-              for pid in ("fx.b.intensity", "fx.v.intensity", "fx.ca.intensity")}
-    assert bounds == {"fx.b.intensity": (0.0, 50.0), "fx.v.intensity": (0.0, 1.0), "fx.ca.intensity": (0.0, 40.0)}
+              for pid in ("fx.cc.brightness", "fx.cc.contrast", "fx.cc.saturation", "fx.v.intensity")}
+    assert bounds == {"fx.cc.brightness": (-1.0, 1.0), "fx.cc.contrast": (0.0, 2.0), "fx.cc.saturation": (0.0, 3.0),
+                      "fx.v.intensity": (0.0, 1.0)}
 
 
 def test_bounds_and_default_are_read_from_the_specs():
-    clip = clip_of(make_project([create_effect(EffectType.HEAT_HAZE, effect_id="h")]))
-    for spec in EFFECT_PARAMETER_SPECS[EffectType.HEAT_HAZE]:
+    clip = clip_of(make_project([create_effect(EffectType.COLOR_CORRECTION, effect_id="h")]))
+    for spec in EFFECT_PARAMETER_SPECS[EffectType.COLOR_CORRECTION]:
         target = get_target(fx_property_id("h", spec.name), clip)
         assert (target.spec.minimum, target.spec.maximum, target.spec.default) == (spec.minimum, spec.maximum, spec.default)
 
 
 def test_without_a_clip_an_fx_property_is_unknown():
-    clip = clip_of(make_project([create_effect(EffectType.BLUR, effect_id="b")]))
+    clip = clip_of(make_project([create_effect(EffectType.VIGNETTE, effect_id="b")]))
     assert get_target("fx.b.intensity", clip)
     with pytest.raises(KeyError):
         get_target("fx.b.intensity")
@@ -141,24 +160,31 @@ def test_without_a_clip_an_fx_property_is_unknown():
     "fx.b",                     # mal formé
 ])
 def test_missing_effect_or_parameter_is_unknown(pid):
-    clip = clip_of(make_project([create_effect(EffectType.BLUR, effect_id="b")]))
+    clip = clip_of(make_project([create_effect(EffectType.VIGNETTE, effect_id="b")]))
     with pytest.raises(KeyError):
         get_target(pid, clip)
 
 
-def test_excluded_parameters_are_not_animatable():
+def test_excluded_and_pending_parameters_are_not_animatable():
+    """Un paramètre n'est enregistré que si son rendu existe : ni l'exclu (netteté, seuil et gain de la lueur), ni
+    l'en-attente (flou, rayon de la lueur, aberration chromatique, vitesse de la brume : étape 5) n'ont de cible."""
     clip = clip_of(make_project([
         create_effect(EffectType.SHARPEN, effect_id="s"),
         create_effect(EffectType.GLOW, effect_id="g"),
+        create_effect(EffectType.BLUR, effect_id="b"),
+        create_effect(EffectType.CHROMATIC_ABERRATION, effect_id="ca"),
+        create_effect(EffectType.HEAT_HAZE, effect_id="h"),
+        create_effect(EffectType.COLOR_CORRECTION, effect_id="cc"),
     ]))
-    for pid in ("fx.s.intensity", "fx.g.threshold", "fx.g.intensity"):
+    for pid in ("fx.s.intensity", "fx.g.threshold", "fx.g.intensity", "fx.g.radius", "fx.b.intensity", "fx.ca.intensity",
+                "fx.h.amplitude", "fx.h.frequency", "fx.h.speed", "fx.h.top", "fx.h.span"):
         with pytest.raises(KeyError):
             get_target(pid, clip)
-    assert get_target("fx.g.radius", clip)
+    assert get_target("fx.cc.saturation", clip)
 
 
 def test_fx_targets_only_exist_on_video_tracks():
-    clip = clip_of(make_project([create_effect(EffectType.BLUR, effect_id="b")]))
+    clip = clip_of(make_project([create_effect(EffectType.VIGNETTE, effect_id="b")]))
     target = get_target("fx.b.intensity", clip)
     assert target.applies_to("video") and not target.applies_to("graphics") and not target.applies_to("audio")
 
@@ -181,7 +207,10 @@ def test_targets_for_clip_can_list_the_effect_parameters():
     fx_ids = [pid for pid in ids if pid.startswith(FX_PREFIX)]
     expected = sum(len(names) for names in ANIMATABLE_EFFECT_PARAMS.values())
     assert len(fx_ids) == expected == len(set(fx_ids))
-    assert "fx.e-blur.intensity" in fx_ids and "fx.e-sharpen.intensity" not in fx_ids
+    assert "fx.e-vignette.intensity" in fx_ids and "fx.e-sharpen.intensity" not in fx_ids
+    for kind, names in PENDING_EFFECT_PARAMS.items():         # en attente : jamais exposés tant qu'il n'y a pas de rendu
+        for name in names:
+            assert fx_property_id(f"e-{kind.value}", name) not in fx_ids
 
 
 # ---------------------------------------------------------------------------
@@ -197,22 +226,25 @@ def test_without_keyframes_the_effective_parameters_are_exactly_the_base_ones():
 
 
 def test_effective_parameters_follow_the_curve_and_are_bounded():
-    effect = create_effect(EffectType.BLUR, effect_id="b", params={"intensity": 2.0})
-    animation = [Keyframe("fx.b.intensity", 0.0, 0.0), Keyframe("fx.b.intensity", 2.0, 80.0)]   # 80 > borne 50
+    effect = create_effect(EffectType.COLOR_CORRECTION, effect_id="b", params={"contrast": 1.2})
+    animation = [Keyframe("fx.b.contrast", 0.0, 0.0), Keyframe("fx.b.contrast", 4.0, 6.0)]   # 6 > borne 2
     clip = clip_of(make_project([effect], animation))
-    assert effective_effect_parameters(clip, effect, 0.0)["intensity"] == pytest.approx(0.0)
-    assert effective_effect_parameters(clip, effect, 1.0)["intensity"] == pytest.approx(40.0)
-    assert effective_effect_parameters(clip, effect, 2.0)["intensity"] == 50.0       # bornée comme l'inspecteur
-    assert effect.params["intensity"] == 2.0                                          # la base n'a pas bougé
+    assert effective_effect_parameters(clip, effect, 0.0)["contrast"] == pytest.approx(0.0)
+    assert effective_effect_parameters(clip, effect, 1.0)["contrast"] == pytest.approx(1.5)
+    assert effective_effect_parameters(clip, effect, 4.0)["contrast"] == 2.0         # bornée comme l'inspecteur
+    assert effect.params["contrast"] == 1.2                                           # la base n'a pas bougé
 
 
 def test_effective_parameters_ignore_other_effects_and_non_animatable_keyframes():
-    blur = create_effect(EffectType.BLUR, effect_id="b", params={"intensity": 3.0})
+    vignette = create_effect(EffectType.VIGNETTE, effect_id="b", params={"intensity": 0.3})
     sharpen = create_effect(EffectType.SHARPEN, effect_id="s", params={"intensity": 1.0})
-    animation = [Keyframe("fx.b.intensity", 0.0, 9.0), Keyframe("fx.s.intensity", 0.0, 4.0)]
-    clip = clip_of(make_project([blur, sharpen], animation))
-    assert effective_effect_parameters(clip, blur, 0.5) == {"intensity": 9.0}
-    assert effective_effect_parameters(clip, sharpen, 0.5) == {"intensity": 1.0}     # excluded: courbe ignorée
+    blur = create_effect(EffectType.BLUR, effect_id="u", params={"intensity": 2.0})
+    animation = [Keyframe("fx.b.intensity", 0.0, 0.9), Keyframe("fx.s.intensity", 0.0, 4.0),
+                 Keyframe("fx.u.intensity", 0.0, 9.0)]
+    clip = clip_of(make_project([vignette, sharpen, blur], animation))
+    assert effective_effect_parameters(clip, vignette, 0.5) == {"intensity": 0.9}
+    assert effective_effect_parameters(clip, sharpen, 0.5) == {"intensity": 1.0}     # exclu : courbe ignorée
+    assert effective_effect_parameters(clip, blur, 0.5) == {"intensity": 2.0}        # en attente (étape 5) : courbe ignorée
 
 
 # ---------------------------------------------------------------------------
@@ -236,14 +268,14 @@ def test_generic_editing_works_on_an_fx_target():
 
 
 def test_editing_a_parameter_keeps_the_keyframes_of_live_effects():
-    project = make_project([create_effect(EffectType.BLUR, effect_id="b")])
-    add_keyframe(project, "c", "fx.b.intensity", 0.0, 5.0)
-    update_clip_effect_parameters(project, "c", "b", {"intensity": 9.0})
+    project = make_project([create_effect(EffectType.VIGNETTE, effect_id="b")])
+    add_keyframe(project, "c", "fx.b.intensity", 0.0, 0.5)
+    update_clip_effect_parameters(project, "c", "b", {"intensity": 0.9})
     assert [k.property_name for k in clip_of(project).animation] == ["fx.b.intensity"]
 
 
 def test_animation_curves_resolve_with_the_clip_and_tolerate_orphans():
-    clip = clip_of(make_project([create_effect(EffectType.BLUR, effect_id="b")],
+    clip = clip_of(make_project([create_effect(EffectType.VIGNETTE, effect_id="b")],
                                 [Keyframe("fx.b.intensity", 0.0, 1.0), Keyframe("fx.gone.intensity", 0.0, 1.0)]))
     assert set(animation_curves(clip)) == {"fx.b.intensity", "fx.gone.intensity"}
 
@@ -325,10 +357,10 @@ def test_other_generic_keyframes_keep_the_old_version():
 
 
 def test_fx_animation_round_trips_in_version_20(tmp_path):
-    effects = [create_effect(EffectType.BLUR, effect_id="my.blur", params={"intensity": 4.0}),
+    effects = [create_effect(EffectType.VIGNETTE, effect_id="my.blur", params={"intensity": 0.4}),
                create_effect(EffectType.COLOR_CORRECTION, effect_id="cc")]
     animation = [Keyframe("fx.cc.contrast", 1.0, 1.4, id="k3"), Keyframe("fx.my.blur.intensity", 0.0, 1.0, id="k1"),
-                 Keyframe("fx.my.blur.intensity", 2.0, 30.0, id="k2")]       # l'ordre que le chargeur rend (nom, temps)
+                 Keyframe("fx.my.blur.intensity", 2.0, 0.9, id="k2")]       # l'ordre que le chargeur rend (nom, temps)
     project = make_project(effects, animation)
     path = tmp_path / "fx.kut"
     save_project(project, path)
@@ -338,13 +370,13 @@ def test_fx_animation_round_trips_in_version_20(tmp_path):
     save_project(loaded, again)
     assert again.read_bytes() == path.read_bytes()
     assert [(k.property_name, k.time_seconds, k.value, k.id) for k in clip_of(loaded).animation] == [
-        ("fx.cc.contrast", 1.0, 1.4, "k3"), ("fx.my.blur.intensity", 0.0, 1.0, "k1"), ("fx.my.blur.intensity", 2.0, 30.0, "k2"),
+        ("fx.cc.contrast", 1.0, 1.4, "k3"), ("fx.my.blur.intensity", 0.0, 1.0, "k1"), ("fx.my.blur.intensity", 2.0, 0.9, "k2"),
     ]
-    assert get_target("fx.my.blur.intensity", clip_of(loaded)).get_static(clip_of(loaded)) == 4.0
+    assert get_target("fx.my.blur.intensity", clip_of(loaded)).get_static(clip_of(loaded)) == 0.4
 
 
 def test_a_version_20_file_is_refused_by_a_build_that_does_not_know_it(tmp_path, monkeypatch):
-    project = make_project([create_effect(EffectType.BLUR, effect_id="b")], [Keyframe("fx.b.intensity", 0.0, 1.0)])
+    project = make_project([create_effect(EffectType.VIGNETTE, effect_id="b")], [Keyframe("fx.b.intensity", 0.0, 1.0)])
     path = tmp_path / "fx.kut"
     save_project(project, path)
     monkeypatch.setattr(project_io, "SUPPORTED_VERSIONS", SUPPORTED_VERSIONS - {EFFECT_ANIMATION_VERSION})
@@ -353,7 +385,7 @@ def test_a_version_20_file_is_refused_by_a_build_that_does_not_know_it(tmp_path,
 
 
 def test_an_orphan_fx_keyframe_never_fails_the_loading_and_goes_at_the_next_edit(tmp_path):
-    project = make_project([create_effect(EffectType.BLUR, effect_id="b")],
+    project = make_project([create_effect(EffectType.VIGNETTE, effect_id="b")],
                            [Keyframe("fx.b.intensity", 0.0, 1.0, id="k1"), Keyframe("fx.gone.intensity", 0.0, 1.0, id="k2")])
     path = tmp_path / "orphan.kut"
     save_project(project, path)
@@ -363,7 +395,7 @@ def test_an_orphan_fx_keyframe_never_fails_the_loading_and_goes_at_the_next_edit
     with pytest.raises(KeyError):
         get_target("fx.gone.intensity", clip)
     assert effective_effect_parameters(clip, clip.effects[0], 0.0) == {"intensity": 1.0}
-    update_clip_effect_parameters(loaded, "c", "b", {"intensity": 3.0})                         # prochaine édition du clip
+    update_clip_effect_parameters(loaded, "c", "b", {"intensity": 0.3})                         # prochaine édition du clip
     assert [k.property_name for k in clip.animation] == ["fx.b.intensity"]
 
 

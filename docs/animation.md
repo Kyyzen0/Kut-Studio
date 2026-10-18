@@ -195,11 +195,12 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 (`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
 (`RENDER_ENGINE_VERSION` 9).
 
-## Paramètres d'effets : cibles enregistrées, pas encore utilisables (ADR-0008, étape 2)
+## Paramètres d'effets : modèle et rendu, pas d'interface (ADR-0008, étapes 2 et 3)
 
-Le modèle sait déjà porter des images clés sur les paramètres des effets de clip ; **rien ne les rend ni ne les propose
-encore** (ni export, ni moniteur, ni panneau : étapes 3 et 4 de l'ADR). Un projet existant s'affiche et s'exporte exactement
-comme avant. Ce qui existe :
+Le modèle porte des images clés sur les paramètres des effets de clip et l'export comme le moniteur les rendent pour les
+paramètres de la liste ci-dessous ; **aucun panneau ne les propose encore** (étape 4 de l'ADR) : tant qu'il n'y a pas
+d'interface, une image clé `fx.*` ne peut venir que d'un fichier. Un projet existant s'affiche et s'exporte exactement comme
+avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractère pour caractère). Ce qui existe :
 
 - **Nom** : `fx.<identifiant de l'effet>.<paramètre>`, stocké dans `Clip.animation`. Le nom se découpe **par la droite** (le
   paramètre est ce qui suit le dernier point) : un identifiant d'effet peut contenir des points (`fx.my.blur.intensity` : effet
@@ -207,13 +208,18 @@ comme avant. Ce qui existe :
 - **Résolution avec le clip** : `get_target(property_id, clip)`. Le même nom de paramètre a des bornes différentes selon le
   type de l'effet (`intensity` : flou 0 à 50, vignette 0 à 1, aberration 0 à 40) ; le clip fournit le type. Sans clip, un
   `fx.*` est une propriété inconnue (`KeyError`). Bornes et défaut sont lus dans `EFFECT_PARAMETER_SPECS`.
-- **Liste provisoire** (`ANIMATABLE_EFFECT_PARAMS`, `core/effect_targets.py`) : correction de couleur (luminosité, contraste,
-  saturation), flou (intensité), vignette (intensité), lueur (rayon), aberration chromatique (intensité), brume de chaleur
-  (amplitude, fréquence, vitesse, haut, étendue). Exclus : netteté, seuil et intensité de la lueur.
+- **Liste enregistrée** (`ANIMATABLE_EFFECT_PARAMS`, `core/effect_targets.py`) : un paramètre n'y figure que si son rendu
+  existe et tient son budget. Aujourd'hui : correction de couleur (luminosité, contraste, saturation) et vignette
+  (intensité). **En attente** (`PENDING_EFFECT_PARAMS`, pas de cible, une image clé est ignorée) : flou (intensité), lueur
+  (rayon) et aberration chromatique (intensité), prévus à l'étape 5 par `sendcmd` ; brume de chaleur (amplitude, fréquence,
+  haut, étendue), dont le rendu par expression est écrit mais trop coûteux (voir « Coût de `geq` ») ; vitesse de la brume
+  (saut de phase, voir plus bas). **Exclus** (`EXCLUDED_EFFECT_PARAMS`) : netteté, seuil et intensité de la lueur. Un test
+  vérifie que chaque paramètre déclaré est dans exactement une de ces trois listes.
 - **`targets_for_clip(clip, piste)`** ne les liste pas par défaut (`include_effects=False`) : le Graph Editor et les commandes
   d'animation restent identiques jusqu'à l'étape 4.
 - **Valeur effective** : `effective_effect_parameters(clip, effet, t)` (fonction pure) rend les paramètres de base remplacés par
-  la courbe, bornés ; sans image clé, exactement les paramètres de base.
+  la courbe, bornés ; sans image clé, exactement les paramètres de base. `evaluated_effects(effets, animation, t)` en fait
+  autant pour tous les effets d'un clip (un effet sans image clé est rendu tel quel, le même objet).
 - **Cycle de vie** : une image clé d'effet ne survit pas à son effet. Toute écriture de `clip.effects` passe par
   `set_clip_effects` (suppression, préréglage, collage d'attributs, aplatissement multicam…), qui retire les images clés
   orphelines dans la même étape d'historique (l'annulation rend l'effet **et** ses images clés). Coller « Effets + Images clés »
@@ -223,6 +229,50 @@ comme avant. Ce qui existe :
   (`tests/test_effects_write_guard.py`) échoue si une nouvelle écriture de `clip.effects` n'est pas classée.
 - **Format** : un fichier qui contient au moins une image clé `fx.*` (ou `color.*`, réservé à l'étalonnage) s'écrit en version
   20 (`EFFECT_ANIMATION_VERSION`) ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
+
+### Rendu (étape 3)
+
+- **Export et aperçu fidèle** (même graphe) : `eq` (`brightness`, `contrast`, `saturation`, `eval=frame`) et `vignette`
+  (`angle = intensité × π/4`, `eval=frame`) reçoivent l'expression de la courbe (`core/effect_expressions.py`, la même
+  `curve_expression` que la transformation, bornée par `clip()` aux bornes du paramètre). Les paramètres non animés d'un
+  même filtre restent des constantes.
+- **Base de temps** : les images clés d'un effet sont en temps **local du clip**. Dans `_build_layer_filter`, `PTS` repart de
+  zéro au début du clip (`setpts=PTS-STARTPTS` après `fps`, plus `+skip/TB` à l'origine d'un segment d'aperçu, ou
+  `+retimed_skip/TB` pour un clip remappé) *avant* les effets ; `PTS+timeline_start` n'est posé qu'à la fin. `t` (`eq`,
+  `vignette`) et `T` (`geq`) valent donc le temps local du clip, comme `t` pour l'échelle et la rotation. Testé : un clip
+  entier et un segment qui démarre en milieu de clip (clip décalé sur la timeline et source rognée, changement de cadence
+  24 vers 10 i/s, clip à vitesse ×2) donnent les mêmes images, et chacune égale le rendu statique à la valeur évaluée.
+- **Moniteur GPU** : `evaluated_effects` est appelé à chaque image par les deux points de synchronisation (clip du dessus,
+  pistes du dessous) ; `program_for` reçoit des paramètres déjà évalués. Les calques d'effets (`adjustment`) et les effets
+  des calques graphiques ne portent pas d'image clé `fx.*` (les cibles n'existent que sur une piste vidéo) : inchangés.
+- **Composition nodale** : elle ne reprend pas les courbes d'effet (`composition_render` appelle `_effect_chain` sans animation,
+  l'effet serait rendu à sa valeur de base). `convert_to_composition` **refuse** donc un clip qui porte au moins une image clé
+  `fx.*` dont l'effet existe (`has_live_effect_animation`, `core/effects_model.py`) : « a des effets animés que la composition
+  ne sait pas encore rendre ». Une image clé orpheline ou mal formée ne compte pas. Rien n'est modifié en cas de refus.
+- **Cache** : `RENDER_ENGINE_VERSION` 13 ; l'empreinte d'un segment contient `repr(animation)` : modifier une image clé `fx.*`
+  invalide le segment, un clip sans image clé `fx.*` garde son empreinte (au numéro de moteur près).
+- **Vérifié sur FFmpeg** 6.1.1 (Ubuntu 24.04), 7.1.5 (Debian trixie) et 9.0.2 (macOS) avec `tools/validate_fx_render.py` :
+  l'image `n` de la sortie animée égale l'image `n` du rendu statique à la valeur évaluée (écart maximal 0 niveau). La
+  référence de la vignette prend l'angle exact : l'export statique arrondit l'angle à six décimales, et un pixel sur une
+  frontière d'arrondi bascule d'un niveau (1 octet sur 230 000, écart 2, disparu avec l'angle exact).
+- **Écart d'un `eq` statique, hors animation** : à luminosité négative, la formule du moniteur (`eq_plane`) s'écarte déjà du
+  `eq` de l'export (écart moyen 1,9 à −0,1 et 2,8 à −0,2, contre 0,4 à +0,1 ; mesuré sur des valeurs fixes). Ce n'est pas
+  l'animation ; les tests de parité animée prennent une luminosité de 0 à 0,3.
+
+### Brume de chaleur : pourquoi elle n'est pas enregistrée
+
+- **Coût de `geq`** : `geq` évalue l'expression pour **chaque pixel de chaque plan** ; y mettre la courbe multiplie le coût.
+  Mesuré sur 1280x720, 150 images, `-f null`, FFmpeg 9.0.2 (macOS, machine chargée : seul le rapport compte) : statique
+  8,6 s ; animée avec 2 images clés sur les 4 paramètres 76,6 s (**×8,9**), avec 10 images clés 409,7 s (**×47,5**) ; un seul paramètre (amplitude) : 22,4 s à 2 images clés (×2,6), 80,1 s à 10 (×9,3) ; le critère de l'ADR (10 images clés à moins de
+  ×2) est donc largement manqué. Le rendu (`heat_haze_shift`) est écrit et vérifié (parité export / moniteur, base de temps,
+  statique) en enregistrant temporairement les paramètres dans les tests ; il n'est pas dans la liste.
+- **Pistes** (non implémentées) : pré-évaluer la courbe de chaque paramètre par image (une constante par image dans un fichier
+  de commandes `sendcmd`, sur le modèle de l'étape 5 : mais `geq` ignore `sendcmd`, voir `docs/ffmpeg-sendcmd.md`, donc
+  découper en un `geq` par image ou régénérer l'expression constante par segment) ; ou limiter à N images clés ; ou sortir le
+  décalage de lignes de `geq` vers un filtre qui accepte une carte de déplacement (`displace`) calculée une fois par image.
+- **Phase de `speed`** : le décalage est `sin(Y·f + T·v)`. Remplacer `v` par `v(T)` fait *sauter* la phase (il faudrait
+  `∫ v dt`) : `speed` reste statique. `frequency` animé fait glisser la phase de façon voulue (`Y·f(T)`), et l'export et le
+  moniteur concordent (même formule, vérifiée aux seuils d'un effet statique).
 
 ## Limites connues
 
@@ -234,7 +284,7 @@ comme avant. Ce qui existe :
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
   les couleurs ne sont pas animables. Les paramètres des effets ont leurs cibles
-  **enregistrées** mais **sans rendu ni interface** (voir la section suivante).
+  enregistrées et rendues pour la correction de couleur et la vignette, **sans interface** (voir la section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.

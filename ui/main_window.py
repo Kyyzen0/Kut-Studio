@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.autosave import AutosaveCoordinator
 from core.audio_effects_library import AudioEffectPresetStore
+from core.effect_targets import evaluated_effects
 from core.effects_library import UserPresetStore
 from core.edit_history import ProjectHistory
 from core.transition_presets import (
@@ -1892,7 +1893,9 @@ class MainWindow(
                 pan_x=evaluated.pan_x,
                 pan_y=evaluated.pan_y,
             )
-            self.preview_panel.set_effects(clip_obj.effects)
+            # Effets animés (ADR-0008) : paramètres évalués à l'instant local ; sans image clé, les effets du clip tels quels.
+            self.preview_panel.set_effects(evaluated_effects(
+                clip_obj.effects, clip_obj.animation, float(self.playhead_seconds) - float(clip_obj.timeline_start)))
             self.preview_panel.set_color_grade(self._monitor_color_grade(clip_obj))
             self.preview_panel.set_source_color(*self._monitor_color_matrix(top_clip, clip_obj))
             if self.preview_panel.gpu_active:

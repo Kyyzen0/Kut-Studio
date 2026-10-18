@@ -1,7 +1,7 @@
-"""Propriétés animables des effets de clip : ``fx.<effet>.<paramètre>`` (ADR-0008, étape 2).
+"""Propriétés animables des effets de clip : ``fx.<effet>.<paramètre>`` (ADR-0008, étapes 2 et 3).
 
-Importé par :mod:`core.animation_targets`. Cette étape **enregistre les cibles seulement** : ni le rendu (export, moniteur),
-ni l'interface (Graph Editor, inspecteur, commandes d'animation) ne les utilisent encore (étapes 3 et 4 de l'ADR). Les images
+Importé par :mod:`core.animation_targets`. Le rendu existe (étape 3 : export par expression, moniteur GPU par paramètres
+évalués), pas l'interface (Graph Editor, inspecteur, commandes d'animation : étape 4 de l'ADR). Les images
 clés vivent dans ``Clip.animation``, comme ``graphic.*`` et ``mask.*``.
 
 Pourquoi la description dépend du clip. Le même nom de paramètre a des bornes différentes selon le **type** de l'effet
@@ -17,6 +17,7 @@ points.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any
 
 from .animation import AnimatableProperty, AnimationCurve, ValueKind
@@ -35,18 +36,37 @@ from .effects_model import (
 
 ANIMATABLE_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
     EffectType.COLOR_CORRECTION: ("brightness", "contrast", "saturation"),
-    EffectType.BLUR: ("intensity",),
     EffectType.VIGNETTE: ("intensity",),
+}
+"""Paramètres d'effet animables **et rendus** : une seule source (ADR-0008, décision 1). Règle : un paramètre n'est
+enregistré que si son rendu existe **et** tient son budget. L'étape 3 rend ceux qui s'écrivent en **expression** FFmpeg
+(:mod:`core.effect_expressions`) : ``eq`` (``eval=frame``) et ``vignette`` (``angle``), plus le moniteur GPU (paramètres
+évalués à l'instant courant). Aucun nom de paramètre ne contient de point (garde : ``tests/test_effect_targets.py``), ce qui
+rend le découpage par la droite non ambigu."""
+
+PENDING_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
+    EffectType.BLUR: ("intensity",),
     EffectType.GLOW: ("radius",),
     EffectType.CHROMATIC_ABERRATION: ("intensity",),
     EffectType.HEAT_HAZE: ("amplitude", "frequency", "speed", "top", "span"),
 }
-"""Paramètres d'effet animables : liste **provisoire**, une seule source (ADR-0008, décision 1 et plan d'action).
+"""Paramètres prévus, **pas encore enregistrés** (pas de cible, pas d'image clé rendue). Flou, rayon de la lueur et aberration
+chromatique viendront à l'étape 5 de l'ADR par ``sendcmd`` (validé sur FFmpeg 6.1, 7.1 et 9.0).
 
-Elle sera ajustée par l'étape 1 de l'ADR (validation de ``sendcmd`` filtre par filtre) : un paramètre dont le filtre ne peut
-pas varier par image n'y figure pas. Volontairement **exclus** : ``sharpen.intensity`` (``unsharp`` ne s'anime pas),
-``glow.threshold`` et ``glow.intensity`` (``lutrgb``, trop coûteux : voir « Export » dans l'ADR). Aucun nom de paramètre ne
-contient de point (garde : ``tests/test_effect_targets.py``), ce qui rend le découpage par la droite non ambigu."""
+Brume de chaleur : son rendu par expression ``geq`` est **écrit et vérifié** (:func:`core.effect_expressions.heat_haze_shift` ;
+parité export / moniteur et base de temps testées en enregistrant temporairement les paramètres) mais **non enregistré**,
+parce que ``geq`` réévalue l'expression pour chaque pixel et chaque plan : avec deux images clés sur les quatre paramètres, un
+rendu 720p de 5 s coûte ×8,9 le rendu statique (critère de l'ADR : ×2 à dix images clés). Pour l'enregistrer : un moyen de ne
+pas évaluer la courbe par pixel (voir « Coût de geq » dans ``docs/animation.md``), puis ajouter les quatre noms ci-dessus à
+:data:`ANIMATABLE_EFFECT_PARAMS`. ``speed`` est à part : sa phase est ``T·v`` ; remplacer ``v`` par une courbe ``v(T)`` fait
+**sauter** la phase (il faudrait ``∫ v dt``), il reste statique même alors."""
+
+EXCLUDED_EFFECT_PARAMS: dict[EffectType, tuple[str, ...]] = {
+    EffectType.SHARPEN: ("intensity",),
+    EffectType.GLOW: ("threshold", "intensity"),
+}
+"""Paramètres volontairement non animables : ``unsharp`` n'accepte ni expression ni commande ; le seuil et le gain de la
+lueur passent par ``lutrgb`` (trop coûteux : voir « Export » dans l'ADR)."""
 
 EFFECT_PARAM_GROUP = "effect"
 
@@ -118,12 +138,15 @@ def effective_effect_parameters(clip: Any, effect: ClipEffect, local_time: float
     """Paramètres de ``effect`` à l'instant local ``local_time`` du clip : valeur de base, remplacée par la courbe
     ``fx.<effet>.<paramètre>`` quand elle a au moins une image clé (évaluée et bornée comme l'inspecteur).
 
-    Fonction pure (sans Qt, sans effet de bord) : l'export, le moniteur et l'aperçu fidèle l'appelleront (ADR-0008,
-    décision 2). Sans image clé, **exactement** ``effect.params``. Seuls les paramètres de :data:`ANIMATABLE_EFFECT_PARAMS`
-    sont lus ; une image clé d'un autre paramètre est ignorée.
+    Fonction pure (sans Qt, sans effet de bord) : le moniteur et l'aperçu l'appellent (ADR-0008, décision 2). Sans image
+    clé, **exactement** ``effect.params``. Seuls les paramètres de :data:`ANIMATABLE_EFFECT_PARAMS` sont lus ; une image
+    clé d'un autre paramètre est ignorée.
     """
+    return _evaluate_parameters(getattr(clip, "animation", None), effect, local_time)
+
+
+def _evaluate_parameters(animation: Any, effect: ClipEffect, local_time: float) -> dict[str, float]:
     result = dict(effect.params)
-    animation = getattr(clip, "animation", None)
     if not animation:
         return result
     for name in ANIMATABLE_EFFECT_PARAMS.get(effect.type, ()):
@@ -138,7 +161,27 @@ def effective_effect_parameters(clip: Any, effect: ClipEffect, local_time: float
     return result
 
 
+def evaluated_effects(effects: Any, animation: Any, local_time: float) -> tuple[ClipEffect, ...]:
+    """``effects`` avec les paramètres animés évalués à ``local_time`` (temps local du clip, secondes).
+
+    C'est ce que reçoit le moniteur GPU (:func:`core.gpu_effects.program_for`) : il n'a pas à connaître l'animation.
+    Un effet sans image clé est rendu **tel quel** (même objet) : sans animation, le tuple rendu a les mêmes éléments
+    que celui reçu, donc le même programme et la même empreinte.
+    """
+    result = []
+    for effect in effects or ():
+        if animation and any(kf.property_name.startswith(f"{FX_PREFIX}{effect.id}.") for kf in animation):
+            values = _evaluate_parameters(animation, effect, local_time)
+            if values != effect.params:
+                effect = replace(effect, params=values)
+        result.append(effect)
+    return tuple(result)
+
+
 __all__ = [
     "ANIMATABLE_EFFECT_PARAMS",
+    "EXCLUDED_EFFECT_PARAMS",
+    "PENDING_EFFECT_PARAMS",
+    "evaluated_effects",
     "effective_effect_parameters",
 ]

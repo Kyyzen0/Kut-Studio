@@ -241,6 +241,7 @@ class HardwarePreviewMixin:
         """Alimente les pistes vidéo sous le clip supérieur (moniteur GPU, ADR-0001)."""
         from core.blend_modes import coerce_blend_mode
         from core.decode_policy import DecodePurpose
+        from core.effect_targets import evaluated_effects
         from core.tracking_bindings import effective_transform_keyframes
         from core.tracking_motion import fit_box, video_layer_matrix
         from core.visual_effects import evaluate_transform
@@ -291,7 +292,7 @@ class HardwarePreviewMixin:
                 tuple(box.rect),
                 float(evaluated.opacity),
                 blend,
-                tuple(getattr(clip_obj, "effects", ()) or ()),
+                evaluated_effects(getattr(clip_obj, "effects", ()), getattr(clip_obj, "animation", ()), local),
                 (float(evaluated.scale * evaluated.scale_x), float(evaluated.scale * evaluated.scale_y)),
                 matte,
                 grade,
