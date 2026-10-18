@@ -156,6 +156,7 @@ class UsageLevelsMixin:
     def _set_more_groups_shown(self, shown: bool) -> None:
         self._more_groups_shown = bool(shown)
         self._apply_group_visibility()
+        self._apply_effect_keyframe_levels()
         self._retranslate_usage_levels()
 
     def _level_allows_group(self, group: QWidget) -> bool:

@@ -79,8 +79,11 @@ class EffectKeyframesMixin:
         self._effect_keyframe_rows[name] = EffectKeyframeRow(gate, previous, diamond, next_button)
 
     def _apply_effect_keyframe_levels(self) -> None:
-        """Visibilité des rangées selon le niveau (Studio) : le niveau ne fait que montrer ou cacher."""
-        shown = self._level_allows(UsageLevel.STUDIO, self.effects_group)
+        """Visibilité des rangées selon le niveau (Studio) : le niveau ne fait que montrer ou cacher.
+
+        Le groupe Effets est lui-même Studio : « Afficher plus d'options » (qui le révèle au niveau Simple) montre aussi ses
+        losanges, sinon ils seraient inaccessibles depuis Simple (les pliants « Avancé » du groupe ne portent que le palier Avancé)."""
+        shown = self._level_allows(UsageLevel.STUDIO, self.effects_group) or self._more_groups_shown
         for row in self._effect_keyframe_rows.values():
             row.gate.set_shown(shown)
 

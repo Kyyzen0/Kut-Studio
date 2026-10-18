@@ -333,3 +333,34 @@ def test_the_shortcuts_without_an_active_property_do_not_create_effect_curves(wi
     window.seek_to_position(1.0)
     window.add_keyframe_at_playhead()
     assert not [k for k in clip.animation if k.property_name.startswith("fx.")]
+
+
+def test_show_more_options_reveals_the_diamonds_at_simple(window):
+    """Le lien « Afficher plus d'options » révèle le groupe Effets (Studio) au niveau Simple : ses losanges aussi."""
+    _prepared(window, level="simple")
+    _select(window, "cc1")
+    panel = window.properties_panel
+    assert all(row.gate.isHidden() for row in _rows(window).values())
+    panel.more_options_button.setChecked(True)
+    assert all(not row.gate.isHidden() for row in _rows(window).values())
+    assert panel.usage_level is UsageLevel.SIMPLE
+    panel.more_options_button.setChecked(False)
+    assert all(row.gate.isHidden() for row in _rows(window).values())
+
+
+def test_clearing_an_effect_animation_in_the_model_keeps_the_shown_values_and_drops_orphans():
+    from core.keyframe_editing import clear_effect_animation
+    from core.project_model import Clip, Project, Track
+
+    clip = Clip(id="c", asset_id="a", track_id="t", timeline_start=0.0, source_in=0.0, source_out=4.0,
+                effects=[create_effect(EffectType.COLOR_CORRECTION, effect_id="e1"),
+                                         create_effect(EffectType.COLOR_CORRECTION, effect_id="other")])
+    clip.animation = [Keyframe("fx.e1.brightness", 0.0, 0.0, id="a"), Keyframe("fx.e1.brightness", 2.0, 0.5, id="b"),
+                      Keyframe("fx.e1.radius", 1.0, 3.0, id="o"), Keyframe("fx.other.brightness", 1.0, 1.0, id="k")]
+    track = Track(id="t", name="T", type="video")
+    track.clips.append(clip)
+    project = Project(name="P")
+    project.tracks.append(track)
+    assert clear_effect_animation(project, "c", "e1", 1.0) == 2
+    assert [k.id for k in clip.animation] == ["k"]          # l'orpheline part, l'autre effet reste
+    assert clip.effects[0].params["brightness"] == pytest.approx(0.25)             # valeur montrée à 1 s

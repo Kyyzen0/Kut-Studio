@@ -58,17 +58,20 @@ def moved_roots(panel) -> list[QWidget]:
     block = getattr(panel, "keyframe_block", None)
     if block is not None:
         roots.append(block)
+    # ADR-0008, étape 4 : les rangées ‹ ◆ › sous les réglages d'effets animables (elles n'existent que pour l'effet affiché ;
+    # le golden d'origin/main n'en sélectionne aucun, donc ne les connaît pas : ce sont des ajouts, pas un ordre déplacé).
+    roots.extend(row.gate for row in getattr(panel, "_effect_keyframe_rows", {}).values())
     return roots
 
 
 def ordered_dump(panel, states: dict) -> dict[str, list[str]]:
-    excluded: set[QWidget] = set()
-    for root in moved_roots(panel):
-        excluded.add(root)
-        excluded.update(root.findChildren(QWidget))
     result: dict[str, list[str]] = {}
     for state, view in states.items():
         panel.show_clip(view)
+        excluded: set[QWidget] = set()          # relevé après show_clip : les rangées d'effets sont reconstruites à chaque clip
+        for root in moved_roots(panel):
+            excluded.add(root)
+            excluded.update(root.findChildren(QWidget))
         for tab in range(7):
             panel._select_inspector_tab(tab)
             QApplication.processEvents()
