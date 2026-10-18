@@ -195,6 +195,35 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 (`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
 (`RENDER_ENGINE_VERSION` 9).
 
+## Paramètres d'effets : cibles enregistrées, pas encore utilisables (ADR-0008, étape 2)
+
+Le modèle sait déjà porter des images clés sur les paramètres des effets de clip ; **rien ne les rend ni ne les propose
+encore** (ni export, ni moniteur, ni panneau : étapes 3 et 4 de l'ADR). Un projet existant s'affiche et s'exporte exactement
+comme avant. Ce qui existe :
+
+- **Nom** : `fx.<identifiant de l'effet>.<paramètre>`, stocké dans `Clip.animation`. Le nom se découpe **par la droite** (le
+  paramètre est ce qui suit le dernier point) : un identifiant d'effet peut contenir des points (`fx.my.blur.intensity` : effet
+  `my.blur`). Aucun nom de paramètre ne contient de point (test de garde).
+- **Résolution avec le clip** : `get_target(property_id, clip)`. Le même nom de paramètre a des bornes différentes selon le
+  type de l'effet (`intensity` : flou 0 à 50, vignette 0 à 1, aberration 0 à 40) ; le clip fournit le type. Sans clip, un
+  `fx.*` est une propriété inconnue (`KeyError`). Bornes et défaut sont lus dans `EFFECT_PARAMETER_SPECS`.
+- **Liste provisoire** (`ANIMATABLE_EFFECT_PARAMS`, `core/effect_targets.py`) : correction de couleur (luminosité, contraste,
+  saturation), flou (intensité), vignette (intensité), lueur (rayon), aberration chromatique (intensité), brume de chaleur
+  (amplitude, fréquence, vitesse, haut, étendue). Exclus : netteté, seuil et intensité de la lueur.
+- **`targets_for_clip(clip, piste)`** ne les liste pas par défaut (`include_effects=False`) : le Graph Editor et les commandes
+  d'animation restent identiques jusqu'à l'étape 4.
+- **Valeur effective** : `effective_effect_parameters(clip, effet, t)` (fonction pure) rend les paramètres de base remplacés par
+  la courbe, bornés ; sans image clé, exactement les paramètres de base.
+- **Cycle de vie** : une image clé d'effet ne survit pas à son effet. Toute écriture de `clip.effects` passe par
+  `set_clip_effects` (suppression, préréglage, collage d'attributs, aplatissement multicam…), qui retire les images clés
+  orphelines dans la même étape d'historique (l'annulation rend l'effet **et** ses images clés). Coller « Effets + Images clés »
+  fait pointer les courbes vers les **nouveaux** effets. Coupe et duplication gardent les identifiants d'effets : les courbes
+  suivent le traitement générique. Un fichier qui contient une image clé dont l'effet n'existe pas s'ouvre normalement : elle est
+  ignorée, puis retirée à la prochaine modification de la chaîne d'effets du clip. Un test de garde
+  (`tests/test_effects_write_guard.py`) échoue si une nouvelle écriture de `clip.effects` n'est pas classée.
+- **Format** : un fichier qui contient au moins une image clé `fx.*` (ou `color.*`, réservé à l'étalonnage) s'écrit en version
+  20 (`EFFECT_ANIMATION_VERSION`) ; un ancien Kut-Studio le refuse au lieu d'ignorer les images clés.
+
 ## Limites connues
 
 - Bézier : la tangente règle la **pente**, pas l'« influence » temporelle (la
@@ -203,8 +232,9 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 - Propriétés branchées : transform complet (y compris ancrage, échelle X/Y,
   inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
   masques (`mask.<id>.*`, une famille par masque) — voir
-  `docs/motion-graphics.md`. Effets et audio ont l'architecture mais pas encore
-  leurs cibles ; les couleurs ne sont pas animables.
+  `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
+  les couleurs ne sont pas animables. Les paramètres des effets ont leurs cibles
+  **enregistrées** mais **sans rendu ni interface** (voir la section suivante).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.
