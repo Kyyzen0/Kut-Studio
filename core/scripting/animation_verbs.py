@@ -58,7 +58,8 @@ def _add_mask_keyframe(a: Mapping[str, Any]) -> Operation:
         name = str(a["property"])
         mask_id = property_id.split(".")[1]
         tracking = getattr(clip, "tracking", None)
-        if name in _TRACKED and any(link.mask_id == mask_id for link in getattr(tracking, "links", ()) or ()):
+        # Une liaison désactivée n'écrase rien : le rendu la saute (« désactivée = valeurs saisies seules »).
+        if name in _TRACKED and any(link.enabled and link.mask_id == mask_id for link in getattr(tracking, "links", ()) or ()):
             raise ValueError(f"{name} du masque '{mask_id}' est suivi (tracking) : sa position vient du suivi, une image clé serait écrasée.")
         spec = get_target(property_id).spec
         value = a["value"]

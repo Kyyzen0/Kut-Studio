@@ -194,6 +194,16 @@ def test_the_position_of_a_tracked_mask_is_refused_since_the_tracking_would_over
     assert apply_script(session, parse_script(_script(_kf("a", "m1", "feather", 0, 0.4)))).ok, "les autres propriétés restent libres"
 
 
+def test_the_position_of_a_mask_with_a_disabled_tracking_link_is_animated_normally():
+    """Une liaison désactivée est sautée par le rendu (valeurs saisies seules) : rien n'écrase l'image clé."""
+    session = Session(_project())
+    assert apply_script(session, parse_script(_script(CLIP, MASK))).ok
+    link = TrackLink(id="l1", target=TrackTarget.MASK, mask_id="m1", enabled=False)
+    find_clip(session.project, "a").tracking = ClipTracking(links=(link,))
+    for name in ("position_x", "position_y"):
+        assert apply_script(session, parse_script(_script(_kf("a", "m1", name, 0, 0.4)))).ok, name
+
+
 def test_mask_keyframes_respect_locks_and_track_kinds():
     lock = {"op": "set_track_locked", "track": "V1", "locked": True}
     for op in (_kf("a", "m1", "feather", 0, 0.1), {"op": "remove_mask_keyframe", "clip": "a", "mask": "m1", "property": "feather", "at": 0}):
