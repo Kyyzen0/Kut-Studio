@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-10-18
+
+Version qui **termine les niveaux d'usage** commencés en 0.6.4 : les menus, le rail de la bibliothèque, la barre de la timeline, les pages, les menus du clic droit, le panneau Calques et la courbe de volume suivent maintenant le niveau Simple, Studio ou Avancé choisi, avec en plus deux correctifs : le clic droit dans la zone vide du panneau Calques et la reprise simultanée d'un verrou de projet périmé sous Windows.
+
+**À savoir** : une installation neuve démarre au niveau **Simple**, qui cache davantage de menus que la 0.6.4. Si une fonction semble manquer, elle n'est pas supprimée : choisissez Studio ou Avancé dans Préférences, dans le menu Fenêtre ou dans la barre du haut. Les raccourcis clavier restent actifs à tous les niveaux, même quand l'entrée de menu est cachée. Un utilisateur qui avait déjà des préférences reste au niveau **Avancé** et retrouve exactement ses menus.
+
 ### Changed
 
 - **Les menus, le rail de la bibliothèque, la barre de la timeline et les menus du clic droit suivent le niveau d'usage.** En Simple, les menus ne gardent que l'essentiel (fichier, annuler/rétablir, dupliquer, supprimer, couper, pistes, texte, réseaux sociaux de base, pages Montage et Audio) ; Studio y ajoute les calques (formes, groupes, repères, alignement), la grille rythmique, l'impact, la page Couleur (aussi dans la barre du haut ; Composition reste en Avancé), les scopes et la vitesse du clic droit, avec les outils roll, slip, slide et l'enregistrement dans la barre de la timeline ; Avancé montre tout, comme avant. Si la page ou la section du rail affichée disparaît en descendant de niveau, l'interface revient sur Montage ou Médias sans toucher au projet. Une entrée absente du menu reste utilisable par son **raccourci clavier, qui répond à tous les niveaux**, et en passant au niveau supérieur ; rien n'est grisé ni réinitialisé, et les pistes et calques verrouillés le restent à tous les niveaux. Voir [docs/usage-levels.md](docs/usage-levels.md).
@@ -22,9 +28,6 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Fixed
 
 - **Clic droit dans la zone vide du panneau Calques** : le menu « Ajouter » s'ouvre de nouveau (il échouait sur une erreur interne).
-
-### Fixed
-
 - **Deux instances qui reprennent en même temps le verrou périmé d'un projet ne plantent plus sous Windows.** L'une attend son tour ; si la garde de reprise reste prise, elle refuse proprement avec le message habituel au lieu d'une erreur brute.
 
 ## [0.6.4] - 2026-10-17
@@ -709,7 +712,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.1...v0.6.2
