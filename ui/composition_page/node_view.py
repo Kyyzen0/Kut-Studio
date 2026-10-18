@@ -17,7 +17,7 @@ reconstruite détruit les éléments qui le traitaient.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QAction, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QFrame, QGraphicsItem, QGraphicsPathItem, QGraphicsScene, QGraphicsView, QMenu, QWidget
 
 from core.composition import (
@@ -302,6 +302,17 @@ class CompositionNodeView(QGraphicsView):
         return (self.editable and self.graph is not None and node_id is not None and self.graph.has_node(node_id)
                 and not isinstance(self.graph.node(node_id), OutputNode))
 
+    def build_menu(self) -> tuple[QMenu, dict, QAction]:
+        """Menu du nœud courant : ``(menu, {action d'ajout: type}, action « Supprimer »)``.
+
+        Niveau d'usage : la page Composition est Avancé ; aucune entrée n'existe à un niveau plus bas, donc aucune n'est retirée.
+        """
+        menu = QMenu(self)
+        actions = add_menu(menu)
+        remove = menu.addAction(translate("comp.panel.remove"))
+        remove.setEnabled(self._removable(self.current_id))
+        return menu, actions, remove
+
     def contextMenuEvent(self, event) -> None:  # noqa: N802 - API Qt
         if self.graph is None or not self.editable:
             return
@@ -309,10 +320,7 @@ class CompositionNodeView(QGraphicsView):
         if item is not None:
             self.current_id = item.node.id
             self._later(self.node_selected, item.node.id)
-        menu = QMenu(self)
-        actions = add_menu(menu)
-        remove = menu.addAction(translate("comp.panel.remove"))
-        remove.setEnabled(self._removable(self.current_id))
+        menu, actions, remove = self.build_menu()
         chosen = menu.exec(event.globalPos())
         if chosen is remove:
             self._later(self.remove_requested, self.current_id or "")

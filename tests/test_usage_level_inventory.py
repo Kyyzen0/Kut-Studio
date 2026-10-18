@@ -117,7 +117,9 @@ def test_the_manifest_is_not_empty_on_any_surface(world):
     prefixes = {key.split("/")[0] for key in _manifest()}
     assert {"file_menu", "edit_menu", "timeline_menu", "layers_menu", "social_menu", "window_menu", "help_menu",
             "toolbar", "rail", "pages", "inspector", "ctx_clip", "ctx_multicam", "ctx_video_track", "ctx_audio_track",
-            "ctx_asset"} <= prefixes
+            "ctx_asset", "ctx_layer", "ctx_layer_group", "ctx_layer_background", "ctx_layer_add_button", "ctx_folder",
+            "ctx_folder_synthetic", "ctx_folder_empty", "ctx_lane_point", "ctx_lane_band", "ctx_color_node",
+            "ctx_comp_node", "layers_panel"} <= prefixes
 
 
 @pytest.mark.parametrize("level", inv.LEVELS, ids=lambda level: level.value)
@@ -168,7 +170,10 @@ def test_advanced_shows_what_origin_main_showed(world):
                       ("video_track_menu", "ctx_video_track"), ("audio_track_menu", "ctx_audio_track"),
                       ("asset_menu", "ctx_asset")):
         expected.extend(inv._tree_keys(key, golden[name]))
-    surfaces = {k for k in world.observed[ADVANCED] if not k.startswith("inspector/")}
+    # Les menus contextuels du lot « Calques, dossiers, automation, nœuds » et les boutons du panneau Calques n'existent pas dans
+    # le golden (jamais régénéré sur une branche) : ils sont vérifiés par le manifeste seul.
+    later = ("inspector/", "layers_panel/", "ctx_layer", "ctx_folder", "ctx_lane", "ctx_color", "ctx_comp")
+    surfaces = {k for k in world.observed[ADVANCED] if not k.startswith(later)}
     assert surfaces == set(expected), _fmt(surfaces ^ set(expected))
 
 

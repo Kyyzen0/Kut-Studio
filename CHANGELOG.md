@@ -17,6 +17,11 @@ ensuite déclenche `.github/workflows/release.yml`.
 ### Changed
 
 - **Les menus, le rail de la bibliothèque, la barre de la timeline et les menus du clic droit suivent le niveau d'usage.** En Simple, les menus ne gardent que l'essentiel (fichier, annuler/rétablir, dupliquer, supprimer, couper, pistes, texte, réseaux sociaux de base, pages Montage et Audio) ; Studio y ajoute les calques (formes, groupes, repères, alignement), la grille rythmique, l'impact, la page Couleur (aussi dans la barre du haut ; Composition reste en Avancé), les scopes et la vitesse du clic droit, avec les outils roll, slip, slide et l'enregistrement dans la barre de la timeline ; Avancé montre tout, comme avant. Si la page ou la section du rail affichée disparaît en descendant de niveau, l'interface revient sur Montage ou Médias sans toucher au projet. Une entrée absente du menu reste utilisable par son **raccourci clavier, qui répond à tous les niveaux**, et en passant au niveau supérieur ; rien n'est grisé ni réinitialisé, et les pistes et calques verrouillés le restent à tous les niveaux. Voir [docs/usage-levels.md](docs/usage-levels.md).
+- **Le panneau Calques et la courbe de volume d'une piste audio suivent aussi le niveau d'usage.** En Simple, le clic droit sur un calque ne propose que renommer, dupliquer et supprimer, et « Ajouter » que texte, aplat de couleur et image ; Studio y ajoute grouper, copier / coller les attributs, préréglage, formes, contrôleur nul et calque d'effets (et les boutons « Grouper » et « Préréglages » de la barre du panneau) ; Avancé ajoute le parent et le flou de mouvement. Sur la courbe de volume, « Supprimer le point » et « Effacer la courbe » restent partout ; « Ajouter un point ici » et « Remettre à 0 dB » sont en Avancé. Les dossiers de la bibliothèque et les éditeurs de nœuds Couleur et Composition ne changent pas. Les raccourcis restent actifs à tous les niveaux.
+
+### Fixed
+
+- **Clic droit dans la zone vide du panneau Calques** : le menu « Ajouter » s'ouvre de nouveau (il échouait sur une erreur interne).
 
 ## [0.6.4] - 2026-10-17
 

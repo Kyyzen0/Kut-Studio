@@ -486,20 +486,17 @@ class FolderTreeWidget(QWidget):
         self.folder_create_requested.emit(parent_id)
 
     def _open_context_menu(self, position) -> None:
-        item = self.tree.itemAt(position)
-        if item is None:
-            # Menu vide : seul « Nouveau dossier » est proposé.
-            menu = QMenu(self)
-            action_new = menu.addAction(translate("library.menu.new_folder"))
-            action_new.triggered.connect(
-                lambda: self.folder_create_requested.emit(None)
-            )
-            menu.exec(self.tree.viewport().mapToGlobal(position))
-            return
+        menu = self.build_context_menu(self.tree.itemAt(position))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
 
-        kind = item.data(0, _FOLDER_KIND_ROLE)
+    def build_context_menu(self, item: QTreeWidgetItem | None) -> QMenu:
+        """Menu d'un dossier, d'une entrée synthétique (Tous / Racine / Manquants) ou de la zone vide.
+
+        Niveau d'usage : toutes les entrées sont Simple (comme « Déplacer vers » dans le menu d'un média), aucune n'est retirée.
+        """
         menu = QMenu(self)
-        if kind == self._KIND_FOLDER:
+        kind = item.data(0, _FOLDER_KIND_ROLE) if item is not None else None
+        if item is not None and kind == self._KIND_FOLDER:
             folder_id = item.data(0, _FOLDER_ID_ROLE)
             action_rename = menu.addAction(translate("library.menu.rename_folder"))
             action_rename.triggered.connect(
@@ -515,13 +512,12 @@ class FolderTreeWidget(QWidget):
                 lambda: self.folder_delete_requested.emit(folder_id)
             )
         else:
-            # Entrées synthétiques : seul « Nouveau dossier » est
-            # proposé. Pas de renommage / suppression.
+            # Zone vide ou entrées synthétiques : seul « Nouveau dossier » est proposé (ni renommage ni suppression).
             action_new = menu.addAction(translate("library.menu.new_folder"))
             action_new.triggered.connect(
                 lambda: self.folder_create_requested.emit(None)
             )
-        menu.exec(self.tree.viewport().mapToGlobal(position))
+        return menu
 
 
 def _label_with_count(label: str, count: int) -> str:

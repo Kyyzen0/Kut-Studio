@@ -69,6 +69,7 @@ class AutomationTimelineMixin(UsageLevelsTimelineMixin):
                 lane.point_updated.connect(self.automation_point_updated.emit)
                 lane.point_moved.connect(self.automation_point_moved.emit)
                 lane.cleared.connect(self.automation_cleared.emit)
+                lane.level_provider = lambda: self.usage_level      # le menu de la bande suit le niveau du panneau
                 self.automation_lanes[track_id] = lane
                 lane.show()
             lane.set_state(track.automation.points, locked=bool(track.locked))
