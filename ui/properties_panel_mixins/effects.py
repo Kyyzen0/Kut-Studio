@@ -24,6 +24,7 @@ from core.effects_model import (
     parameter_specs,
 )
 from core.usage_level import UsageLevel
+from ui.properties_panel_mixins.effect_keyframes import EffectKeyframesMixin
 from ui.properties_widgets.level_gate import gated
 from ui.properties_widgets.section_box import SectionBox
 from ui.adaptive_layout import FlowLayout, make_shrinkable
@@ -32,7 +33,7 @@ from ui.i18n import translate
 from ui.theme import COLORS, label_style
 
 
-class EffectsMixin:
+class EffectsMixin(EffectKeyframesMixin):
     """Mixin de ``PropertiesPanel`` : rack d'effets vidéo du clip sélectionné."""
 
     # ------------------------------------------------------------------
@@ -151,7 +152,7 @@ class EffectsMixin:
         button.clicked.connect(lambda _checked=False: handler())
         return button
 
-    def update_effects_from_clip(self, effects, track_type=None, editable: bool = True) -> None:
+    def update_effects_from_clip(self, effects, track_type=None, editable: bool = True, keyframes=None) -> None:
         """Reconstruit la section Effets depuis l'état du ``Project``.
 
         Args:
@@ -159,8 +160,10 @@ class EffectsMixin:
             track_type: type de piste (``"video"``, ``"audio"``...). Toute
                 valeur autre que ``"video"`` affiche un état non éditable.
             editable: ``False`` (piste ou calque verrouillé) désactive le groupe, liste toujours lisible.
+            keyframes: images clés ``fx.*`` du clip (ADR-0008, étape 4) ; ``None`` : aucune.
         """
         self._current_effects = list(effects or [])
+        self._current_effect_keyframes = list(keyframes or [])
         if track_type != "video":
             self._selected_effect_id = None
             self._populate_effects_list()
@@ -272,6 +275,7 @@ class EffectsMixin:
     def _clear_effect_parameters(self) -> None:
         """Vide la zone de réglages de l'effet sélectionné."""
         self._effect_param_widgets = {}
+        self._effect_keyframe_rows = {}
         while self.effect_parameters_layout.count():
             item = self.effect_parameters_layout.takeAt(0)
             widget = item.widget()
@@ -308,15 +312,25 @@ class EffectsMixin:
             label = QLabel(translate(f"effects.param.{spec.name}"))
             label.setStyleSheet(label_style(11, "muted", 600))
             form.addRow(label, spin)
+            if self._is_animatable_effect_param(effect, spec.name):     # ADR-0008 : seuls ces paramètres ont des losanges
+                self._add_effect_keyframe_row(form, effect, spec.name, label.text())
         wrapper = QWidget()
         wrapper.setLayout(form)
         self.effect_parameters_layout.addWidget(wrapper)
+        self._apply_effect_keyframe_levels()
+        self._sync_effect_keyframes()
         self._sync_inspector_tab_order()  # réglages ajoutés après coup : Tab les visite à leur place
 
     def _on_effect_parameter_changed(
         self, effect_id: str, name: str, value: float
     ) -> None:
         if not self._allow_effect_signals or self.selected_clip is None:
+            return
+        keyframe = self._effect_edit_target(effect_id, name)
+        if keyframe is not None:        # paramètre animé : la saisie écrit l'image clé à la tête de lecture
+            property_id, time_seconds = keyframe
+            self.active_property_changed.emit(property_id)
+            self.effect_keyframe_set.emit(self.selected_clip.id, property_id, time_seconds, float(value))
             return
         self.effect_parameter_changed.emit(
             self.selected_clip.id, effect_id, name, float(value)

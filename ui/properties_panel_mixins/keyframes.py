@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.animation import InterpolationType
+from core.effects_model import FX_PREFIX
 from ui import i18n
 
 from core.visual_effects import (
@@ -223,7 +224,7 @@ class KeyframesMixin:
     ) -> TransformKeyframe | None:
         best: TransformKeyframe | None = None
         best_distance = _KEYFRAME_MATCH_TOLERANCE
-        for keyframe in self._current_keyframes:
+        for keyframe in self._keyframes_of(property_name):
             if keyframe.property_name != property_name:
                 continue
             distance = abs(keyframe.time_seconds - local_time)
@@ -232,8 +233,12 @@ class KeyframesMixin:
                 best_distance = distance
         return best
 
+    def _keyframes_of(self, property_name: str) -> list:
+        """Images clés où chercher ``property_name`` : celles des effets (``fx.*``, ADR-0008) ou celles de la transformation."""
+        return self._current_effect_keyframes if property_name.startswith(FX_PREFIX) else self._current_keyframes
+
     def _is_animated(self, property_name: str) -> bool:
-        return any(k.property_name == property_name for k in self._current_keyframes)
+        return any(k.property_name == property_name for k in self._keyframes_of(property_name))
 
     def _edit_target(self, property_name: str, local_time: float) -> tuple[str, float]:
         """Où va une valeur saisie : base (non animée) ou image-clé au temps courant.
@@ -305,6 +310,7 @@ class KeyframesMixin:
             self._sync_diamonds()
         finally:
             self._pop_signal_block()
+        self._sync_effect_keyframes()       # la tête de lecture a bougé : curseurs animés et losanges des effets suivent
 
     def _sync_diamonds(self) -> None:
         local = self._display_local_time()
@@ -345,7 +351,7 @@ class KeyframesMixin:
             lambda: self.animation_toggled.emit(clip.id, property_name, not animated)
         )
         menu.addAction(toggle)
-        if not self._advanced_animation_menu_shown():     # niveau d'usage : interpolation, copier / coller et courbes sont avancés
+        if not self._advanced_animation_menu_shown(property_name):     # niveau d'usage : interpolation, copier / coller et courbes sont avancés
             return menu
         matched = self._matching_keyframe(property_name, self._display_local_time())
         interpolation_menu = menu.addMenu(i18n.translate("animation.menu.interpolation"))

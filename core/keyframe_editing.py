@@ -265,6 +265,26 @@ def set_animation_enabled(project, clip_id: str, property_id: str, enabled: bool
         target.set_static(clip, current)
 
 
+def clear_effect_animation(project, clip_id: str, effect_id: str, local_time: float) -> int:
+    """Retire **toute** l'animation d'un effet (« détacher » : étape 4 de l'ADR-0008) ; retourne le nombre de paramètres animés.
+
+    Chaque paramètre garde la valeur qu'il montrait à ``local_time`` (comme :func:`set_animation_enabled`). Une image clé
+    ``fx.<effet>.*`` dont le paramètre n'est pas (ou plus) animable (fichier d'une autre version) est retirée aussi : sans cela
+    elle bloquerait la conversion en composition sans qu'aucun losange ne la montre. Verrous de piste et de calque respectés.
+    """
+    clip = find_clip(project, clip_id)
+    _guard(project, clip_id)
+    prefix = f"{FX_PREFIX}{effect_id}."
+    names = sorted({k.property_name for k in clip.animation if k.property_name.startswith(prefix)})
+    for property_id in names:
+        try:
+            set_animation_enabled(project, clip_id, property_id, False, local_time)
+        except KeyError:                                   # paramètre non animable : l'image clé orpheline est simplement retirée
+            pass
+    clip.animation = [k for k in clip.animation if not k.property_name.startswith(prefix)]
+    return len(names)
+
+
 def move_keyframes(
     project, refs: Sequence[KeyframeRef], delta_seconds: float, *, fps: float | None = None
 ) -> dict[KeyframeRef, float]:
@@ -517,6 +537,7 @@ __all__ = [
     "KeyframeRef",
     "add_keyframe",
     "can_paste",
+    "clear_effect_animation",
     "copy_keyframes",
     "curve_of",
     "find_clip",

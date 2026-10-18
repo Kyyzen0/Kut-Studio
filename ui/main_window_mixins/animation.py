@@ -13,6 +13,7 @@ import logging
 
 from core.animation import InterpolationType
 from core.animation_targets import get_target, targets_for_clip
+from core.effects_model import FX_PREFIX
 from core.time_map import SPEED_PROPERTY
 from core.time_ops import move_speed_points, remove_speed_points
 from core.keyframe_editing import (
@@ -20,6 +21,7 @@ from core.keyframe_editing import (
     KeyframeRef,
     add_keyframe,
     can_paste,
+    clear_effect_animation,
     copy_keyframes,
     find_clip,
     keyframe_by_id,
@@ -76,6 +78,11 @@ class AnimationMixin:
         # calque (texte, forme) et de ses masques.
         return [target.id for target in targets_for_clip(clip, self._track_type_of(clip))]
 
+    def _graph_properties(self, clip) -> list[str]:
+        """Propriétés listées par l'éditeur de courbes : celles de ``_animation_properties`` et les paramètres d'effets animables
+        (``fx.*``, ADR-0008). Les commandes sans propriété active (raccourcis) ne lisent que ``_animation_properties``."""
+        return [target.id for target in targets_for_clip(clip, self._track_type_of(clip), include_effects=True)]
+
     def _local_playhead(self, clip) -> float:
         local = float(self.playhead_seconds) - float(clip.timeline_start)
         return min(max(0.0, local), float(clip.duration))
@@ -86,9 +93,10 @@ class AnimationMixin:
     def _command_properties(self, clip) -> list[str]:
         """Propriétés visées par une commande : l'active, sinon les animées, sinon toutes."""
         available = self._animation_properties(clip)
-        if self.active_animation_property in available:
+        with_effects = self._graph_properties(clip)      # une courbe d'effet active ou animée compte, sans jamais en créer une
+        if self.active_animation_property in with_effects:
             return [self.active_animation_property]
-        animated = [pid for pid in available if get_target(pid, clip).get_keyframes(clip)]
+        animated = [pid for pid in with_effects if get_target(pid, clip).get_keyframes(clip)]
         return animated or available
 
     def set_active_animation_property(self, property_id: str | None) -> None:
@@ -115,6 +123,7 @@ class AnimationMixin:
             self.properties_panel.update_transform_from_clip(
                 clip.transform, clip.transform_keyframes, playhead_seconds=self.playhead_seconds
             )
+        self._refresh_effect_keyframes(clip_id)
         self._sync_preview_to_timeline()
         try:
             self._invalidate_preview_for_clip(clip_id)
@@ -125,6 +134,19 @@ class AnimationMixin:
             )
         self._mark_dirty()
         self._refresh_graph_editor()
+
+    def _refresh_effect_keyframes(self, clip_id: str) -> None:
+        """Curseurs animés et losanges des effets du clip affiché, relus du modèle (après toute modification d'images clés)."""
+        selected = getattr(self.properties_panel, "selected_clip", None)
+        if getattr(selected, "id", None) != clip_id:
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+        except KeyError:
+            return
+        self.properties_panel.refresh_effect_keyframes(
+            [k for k in clip.animation if k.property_name.startswith(FX_PREFIX)], self.playhead_seconds,
+        )
 
     def _prune_keyframe_selection(self) -> None:
         kept = set()
@@ -163,6 +185,43 @@ class AnimationMixin:
         self.set_active_animation_property(property_id)
         label = i18n.translate("animation.menu.enable") if enabled else i18n.translate("history.animation.disable")
         self._after_animation_edit(clip_id, label)
+
+    def on_effect_keyframe_set(self, clip_id: str, property_id: str, local_time: float, value: float) -> None:
+        """Valeur saisie sur un paramètre d'effet animé, ou clic sur son losange : écrit l'image clé (une étape d'historique)."""
+        if self._clip_edit_refused(clip_id):
+            return
+        try:
+            add_keyframe(self.project, clip_id, property_id, local_time, value)
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return
+        self.set_active_animation_property(property_id)
+        self._after_animation_edit(clip_id, i18n.translate("history.effect.edit"))
+
+    def on_effect_keyframe_removed(self, clip_id: str, property_id: str, local_time: float) -> None:
+        """Losange d'un paramètre d'effet : retire l'image clé sous la tête (le paramètre garde la valeur qu'il montrait)."""
+        if self._clip_edit_refused(clip_id):
+            return
+        try:
+            removed = remove_keyframe_at(self.project, clip_id, property_id, local_time)
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return
+        if removed:
+            self._after_animation_edit(clip_id, i18n.translate("history.keyframes.remove"))
+
+    def on_effect_animation_cleared(self, clip_id: str, effect_id: str) -> None:
+        """« Supprimer l'animation de l'effet » : toutes les courbes de l'effet, une seule étape d'historique."""
+        if self._clip_edit_refused(clip_id):
+            return
+        try:
+            clip = find_clip(self.project, clip_id)
+            cleared = clear_effect_animation(self.project, clip_id, effect_id, self._local_playhead(clip))
+        except (KeyError, ValueError) as error:
+            self._report_edit_refused(error)
+            return
+        if cleared:
+            self._after_animation_edit(clip_id, i18n.translate("history.animation.clear_effect"))
 
     def on_keyframe_navigation(self, property_id: str | None, direction: int) -> bool:
         """Place la tête sur le keyframe précédent / suivant (propriété ou commande)."""
@@ -292,7 +351,7 @@ class AnimationMixin:
         if self._clip_edit_refused(clip.id, visual_only=False):
             return 0
         target = property_id if property_id and clipboard.is_single_property else None
-        if target is not None and not can_paste(clipboard, target):
+        if target is not None and not can_paste(clipboard, target, clip):
             self._show_animation_message(i18n.translate("animation.paste_incompatible"))
             return 0
         created = paste_keyframes(self.project, clip.id, clipboard, self._local_playhead(clip),

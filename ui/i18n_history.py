@@ -275,6 +275,7 @@ HISTORY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "history.track.arm": _t("Armer la piste", "Arm track", "Armar la pista"),
     "history.track.height": _t("Hauteur de piste", "Track height", "Altura de la pista"),
     "history.track.collapse": _t("Réduire la piste", "Collapse track", "Contraer la pista"),
+    "history.animation.clear_effect": _t("Supprimer l'animation de l'effet", "Remove the effect's animation", "Quitar la animación del efecto"),
     "history.animation.disable": _t("Désactiver l'animation", "Disable animation", "Desactivar animación"),
 }
 
