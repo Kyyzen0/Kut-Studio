@@ -17,6 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
 from .compositing import Compositing
+from .effects_model import effects_with_unique_ids, set_clip_effects
 from .multicam import (
     angle_extent,
     angle_track,
@@ -794,7 +795,11 @@ def flatten_multicam_clip(project: Project, clip_id: str) -> FlattenResult:
             part_high = min(item.timeline_start + item.duration, high)
             if is_video_part:
                 new = _flatten_part(segment, item, part_low, part_high, track.id, silent=video_silent)
-                new.effects = list(new.effects) + deepcopy(segment.effects)
+                # Le segment n'a pas d'animation (refus plus haut) : ses effets n'ont pas d'images clés ``fx.*``. Un identifiant déjà
+                # pris par un effet du clip d'angle changerait de nom, sinon deux effets partageraient les courbes de l'angle.
+                set_clip_effects(new, [
+                    *new.effects, *effects_with_unique_ids((e.id for e in new.effects), deepcopy(segment.effects)),
+                ])
                 result.video.append(new)
             elif angle.id in audible:
                 if new_audio_track is None:

@@ -82,6 +82,12 @@ DynamicResolver = Callable[[str], "PropertyTarget | None"]
 
 _DYNAMIC: dict[str, tuple[DynamicResolver, Callable[[Any], Iterable[str]]]] = {}
 
+ClipResolver = Callable[[Any, str], "PropertyTarget | None"]
+"""Construit la cible d'un identifiant qui dépend du clip (``fx.<effet>.<paramètre>`` : le type de l'effet, donc les
+bornes, vient du clip)."""
+
+_CLIP_DYNAMIC: dict[str, tuple[ClipResolver, Callable[[Any], Iterable[str]]]] = {}
+
 
 def register_target(target: PropertyTarget) -> None:
     """Ajoute (ou remplace) une propriété animable."""
@@ -102,7 +108,27 @@ def register_dynamic_targets(
     _DYNAMIC[prefix] = (resolver, ids_for_clip)
 
 
-def get_target(property_id: str) -> PropertyTarget:
+def register_clip_dynamic_targets(
+    prefix: str,
+    resolver: ClipResolver,
+    ids_for_clip: Callable[[Any], Iterable[str]],
+) -> None:
+    """Famille de propriétés dont la **description** dépend du clip (ADR-0008 : ``fx.<effet>.<paramètre>``).
+
+    Le même nom de paramètre (``intensity``) a des bornes différentes selon le type de l'effet, que seul le clip
+    connaît : ``resolver(clip, property_id)`` ne résout donc qu'avec un clip. :func:`get_target` sans clip lève
+    ``KeyError`` pour ces identifiants. ``ids_for_clip`` liste ceux d'un clip.
+    """
+    _CLIP_DYNAMIC[prefix] = (resolver, ids_for_clip)
+
+
+def get_target(property_id: str, clip=None) -> PropertyTarget:
+    """Cible d'un identifiant de propriété.
+
+    Les identifiants statiques et ceux des familles dynamiques (``mask.<id>.*``) se résolvent seuls. Ceux des familles
+    qui dépendent du clip (``fx.*``, :func:`register_clip_dynamic_targets`) ne se résolvent **qu'avec** ``clip`` :
+    sans clip, ou si le clip n'a pas l'effet, ``KeyError`` (comme pour tout identifiant inconnu).
+    """
     target = _REGISTRY.get(property_id)
     if target is not None:
         return target
@@ -111,6 +137,12 @@ def get_target(property_id: str) -> PropertyTarget:
             target = resolver(property_id)
             if target is not None:
                 return target
+    if clip is not None:
+        for prefix, (clip_resolver, _clip_ids) in _CLIP_DYNAMIC.items():
+            if property_id.startswith(prefix):
+                target = clip_resolver(clip, property_id)
+                if target is not None:
+                    return target
     raise KeyError(f"Propriété animable inconnue : {property_id!r}.")
 
 
@@ -123,8 +155,11 @@ def targets_for(track_type: str) -> tuple[PropertyTarget, ...]:
     return tuple(target for target in _REGISTRY.values() if target.applies_to(track_type))
 
 
-def targets_for_clip(clip, track_type: str) -> tuple[PropertyTarget, ...]:
-    """Propriétés animables de **ce** clip : statiques applicables + dynamiques (masques…)."""
+def targets_for_clip(clip, track_type: str, *, include_effects: bool = False) -> tuple[PropertyTarget, ...]:
+    """Propriétés animables de **ce** clip : statiques applicables + dynamiques (masques…).
+
+    ``include_effects`` (faux par défaut : l'interface actuelle ne change pas) ajoute les paramètres des effets du clip
+    (``fx.*``, ADR-0008 ; l'interface les listera à l'étape 4)."""
     result = [
         target for target in targets_for(track_type)
         if target.applies_to_clip is None or target.applies_to_clip(clip)
@@ -134,6 +169,12 @@ def targets_for_clip(clip, track_type: str) -> tuple[PropertyTarget, ...]:
             target = resolver(property_id)
             if target is not None and target.applies_to(track_type):
                 result.append(target)
+    if include_effects:
+        for _prefix, (clip_resolver, clip_ids) in _CLIP_DYNAMIC.items():
+            for property_id in clip_ids(clip):
+                target = clip_resolver(clip, property_id)
+                if target is not None and target.applies_to(track_type):
+                    result.append(target)
     return tuple(result)
 
 
@@ -195,25 +236,29 @@ def animation_curves(clip, *, prefix: str = "") -> dict[str, AnimationCurve]:
     curves: dict[str, AnimationCurve] = {}
     for name, frames in grouped.items():
         try:
-            kind = get_target(name).spec.kind
+            kind = get_target(name, clip).spec.kind
         except KeyError:
             kind = ValueKind.FLOAT
         curves[name] = AnimationCurve(frames, kind)
     return curves
 
 
-def _clamp_for(property_id: str):
+def _clamp_for(property_id: str, clip=None):
     try:
-        return get_target(property_id).spec.clamp
+        return get_target(property_id, clip).spec.clamp
     except KeyError:
         return None
 
 
-def split_animation(keyframes: Iterable[Keyframe], cut_local_time: float) -> tuple[list[Keyframe], list[Keyframe]]:
+def split_animation(
+    keyframes: Iterable[Keyframe], cut_local_time: float, clip=None,
+) -> tuple[list[Keyframe], list[Keyframe]]:
     """Coupe des keyframes génériques en deux **sans changer l'animation**.
 
     Même règle que :func:`core.visual_effects.split_transform_keyframes` :
-    chaque courbe est scindée exactement, la partie droite recalée à 0.
+    chaque courbe est scindée exactement, la partie droite recalée à 0. ``clip`` (facultatif) permet de borner les
+    courbes ``fx.*``, dont les bornes viennent du type de l'effet du clip ; sans lui ces courbes ne sont pas bornées
+    à la coupe (l'évaluation, elle, reste bornée).
     """
     grouped: dict[str, list[Keyframe]] = {}
     for kf in keyframes:
@@ -222,11 +267,11 @@ def split_animation(keyframes: Iterable[Keyframe], cut_local_time: float) -> tup
     right: list[Keyframe] = []
     for name, frames in grouped.items():
         try:
-            kind = get_target(name).spec.kind
+            kind = get_target(name, clip).spec.kind
         except KeyError:
             kind = ValueKind.FLOAT
         curve = AnimationCurve(frames, kind)
-        a, b = curve.split(cut_local_time, clamp=_clamp_for(name))
+        a, b = curve.split(cut_local_time, clamp=_clamp_for(name, clip))
         left.extend(a.keyframes)
         right.extend(b.keyframes)
     left.sort(key=lambda k: (k.property_name, k.time_seconds))
@@ -235,18 +280,18 @@ def split_animation(keyframes: Iterable[Keyframe], cut_local_time: float) -> tup
 
 
 def retime_animation(
-    keyframes: Iterable[Keyframe], *, start_offset: float, new_duration: float
+    keyframes: Iterable[Keyframe], *, start_offset: float, new_duration: float, clip=None
 ) -> list[Keyframe]:
     """Keyframes génériques après un trim : l'animation visible ne bouge pas."""
     frames = list(keyframes)
     if start_offset > 0:
-        frames = split_animation(frames, start_offset)[1]
+        frames = split_animation(frames, start_offset, clip)[1]
     elif start_offset < 0:
         frames = [
             replace(k, time_seconds=normalize_time(k.time_seconds - start_offset), id=k.id) for k in frames
         ]
     if any(k.time_seconds > new_duration + 1e-6 for k in frames):
-        frames = split_animation(frames, new_duration)[0]
+        frames = split_animation(frames, new_duration, clip)[0]
     return frames
 
 
@@ -317,6 +362,7 @@ __all__ = [
     "animation_curves",
     "generic_target",
     "get_target",
+    "register_clip_dynamic_targets",
     "register_dynamic_targets",
     "register_target",
     "retime_animation",
@@ -331,3 +377,6 @@ from . import mograph_targets as _mograph_targets  # noqa: E402,F401
 
 # Vitesse du clip (remappage temporel : la courbe de vitesse est une propriété comme les autres).
 from . import time_targets as _time_targets  # noqa: E402,F401
+
+# Paramètres des effets de clip (ADR-0008) : ``fx.<effet>.<paramètre>``, résolus avec le clip.
+from . import effect_targets as _effect_targets  # noqa: E402,F401

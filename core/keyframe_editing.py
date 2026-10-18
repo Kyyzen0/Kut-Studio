@@ -58,24 +58,24 @@ def clip_duration(clip) -> float:
 
 
 def curve_of(clip, property_id: str) -> AnimationCurve:
-    return get_target(property_id).curve(clip)
+    return get_target(property_id, clip).curve(clip)
 
 
 def is_animated(clip, property_id: str) -> bool:
-    return bool(get_target(property_id).get_keyframes(clip))
+    return bool(get_target(property_id, clip).get_keyframes(clip))
 
 
 def value_at(clip, property_id: str, local_time: float) -> Any:
-    return get_target(property_id).value_at(clip, local_time)
+    return get_target(property_id, clip).value_at(clip, local_time)
 
 
 def keyframe_by_id(clip, property_id: str, keyframe_id: str) -> Keyframe | None:
-    return next((k for k in get_target(property_id).get_keyframes(clip) if k.id == keyframe_id), None)
+    return next((k for k in get_target(property_id, clip).get_keyframes(clip) if k.id == keyframe_id), None)
 
 
 def keyframe_times(clip, property_ids: Iterable[str]) -> list[float]:
     """Instants (triés, sans doublon) des keyframes des propriétés données."""
-    times = {k.time_seconds for pid in property_ids for k in get_target(pid).get_keyframes(clip)}
+    times = {k.time_seconds for pid in property_ids for k in get_target(pid, clip).get_keyframes(clip)}
     return sorted(times)
 
 
@@ -152,7 +152,7 @@ def add_keyframe(
     """
     clip = find_clip(project, clip_id)
     _guard(project, clip_id, property_id)
-    target = get_target(property_id)
+    target = get_target(property_id, clip)
     t = _bounded_time(clip, local_time)
     curve = target.curve(clip)
     existing = curve.keyframe_at(t)
@@ -204,7 +204,7 @@ def set_value_at(project, clip_id: str, property_id: str, local_time: float, val
     """
     clip = find_clip(project, clip_id)
     _guard(project, clip_id, property_id)
-    target = get_target(property_id)
+    target = get_target(property_id, clip)
     if not target.get_keyframes(clip):
         target.set_static(clip, value)
         return None
@@ -227,7 +227,7 @@ def remove_keyframes(project, refs: Iterable[KeyframeRef], *, local_time: float 
         _guard(project, clip_id, property_id)
     for (clip_id, property_id), ids in grouped.items():
         clip = find_clip(project, clip_id)
-        target = get_target(property_id)
+        target = get_target(property_id, clip)
         curve = target.curve(clip)
         remaining = curve.without_ids(ids)
         count += len(curve) - len(remaining)
@@ -241,7 +241,7 @@ def remove_keyframes(project, refs: Iterable[KeyframeRef], *, local_time: float 
 def remove_keyframe_at(project, clip_id: str, property_id: str, local_time: float) -> bool:
     clip = find_clip(project, clip_id)
     _guard(project, clip_id, property_id)
-    existing = get_target(property_id).curve(clip).keyframe_at(local_time)
+    existing = get_target(property_id, clip).curve(clip).keyframe_at(local_time)
     if existing is None:
         return False
     refs = [KeyframeRef(clip_id, property_id, existing.id)]
@@ -252,7 +252,7 @@ def set_animation_enabled(project, clip_id: str, property_id: str, enabled: bool
     """Active l'animation (keyframe au temps courant) ou la retire (valeur figée)."""
     clip = find_clip(project, clip_id)
     _guard(project, clip_id, property_id)
-    target = get_target(property_id)
+    target = get_target(property_id, clip)
     if enabled:
         if not target.get_keyframes(clip):
             add_keyframe(project, clip_id, property_id, local_time)
@@ -293,7 +293,7 @@ def move_keyframes(
         for ref in items:
             by_property.setdefault(ref.property_id, set()).add(ref.keyframe_id)
         for property_id, ids in by_property.items():
-            target = get_target(property_id)
+            target = get_target(property_id, clip)
             curve = target.curve(clip)
             moved: list[Keyframe] = []
             for keyframe in curve.keyframes:
@@ -327,7 +327,7 @@ def set_keyframe_values(project, values: dict[KeyframeRef, Any]) -> None:
         _guard(project, ref.clip_id, ref.property_id)
     for ref, value in values.items():
         clip = find_clip(project, ref.clip_id)
-        target = get_target(ref.property_id)
+        target = get_target(ref.property_id, clip)
         curve = target.curve(clip)
         keyframe = next((k for k in curve.keyframes if k.id == ref.keyframe_id), None)
         if keyframe is None:
@@ -346,7 +346,7 @@ def set_interpolation(project, refs: Iterable[KeyframeRef], interpolation: Inter
         _guard(project, ref.clip_id, ref.property_id)
     for ref in refs:
         clip = find_clip(project, ref.clip_id)
-        target = get_target(ref.property_id)
+        target = get_target(ref.property_id, clip)
         curve = target.curve(clip)
         keyframe = next((k for k in curve.keyframes if k.id == ref.keyframe_id), None)
         if keyframe is None or keyframe.interpolation is kind:
@@ -373,7 +373,7 @@ def set_tangents(
     """
     clip = find_clip(project, ref.clip_id)
     _guard(project, ref.clip_id, ref.property_id)
-    target = get_target(ref.property_id)
+    target = get_target(ref.property_id, clip)
     curve = target.curve(clip)
     keyframe = next((k for k in curve.keyframes if k.id == ref.keyframe_id), None)
     if keyframe is None:
@@ -423,7 +423,7 @@ def copy_keyframes(project, clip_id: str, property_ids: Iterable[str], ids: set[
     clip = find_clip(project, clip_id)
     selected: list[tuple[str, list[Keyframe]]] = []
     for pid in property_ids:
-        frames = [k for k in get_target(pid).get_keyframes(clip) if ids is None or k.id in ids]
+        frames = [k for k in get_target(pid, clip).get_keyframes(clip) if ids is None or k.id in ids]
         if frames:
             selected.append((pid, frames))
     if not selected:
@@ -436,14 +436,18 @@ def copy_keyframes(project, clip_id: str, property_ids: Iterable[str], ids: set[
     return AnimationClipboard(items)
 
 
-def can_paste(clipboard: AnimationClipboard, property_id: str | None = None) -> bool:
-    """Collage possible ? Sur une autre propriété, seulement si les types sont compatibles."""
+def can_paste(clipboard: AnimationClipboard, property_id: str | None = None, clip=None) -> bool:
+    """Collage possible ? Sur une autre propriété, seulement si les types sont compatibles.
+
+    ``clip`` (facultatif, le clip de destination) résout les propriétés qui dépendent du clip (``fx.*``, ADR-0008) ; sans lui
+    une telle propriété est « inconnue » (``KeyError``), comme avant pour tout identifiant inconnu.
+    """
     if not clipboard:
         return False
     if property_id is None or not clipboard.is_single_property:
         return True
-    source = get_target(clipboard.items[0][0]).spec
-    return source.compatible_with(get_target(property_id).spec)
+    source = get_target(clipboard.items[0][0], clip).spec
+    return source.compatible_with(get_target(property_id, clip).spec)
 
 
 def paste_keyframes(
@@ -464,9 +468,9 @@ def paste_keyframes(
     Raises:
         ValueError: propriété cible incompatible.
     """
-    if target_property is not None and not can_paste(clipboard, target_property):
-        raise ValueError("Ces images-clés ne sont pas compatibles avec cette propriété.")
     clip = find_clip(project, clip_id)
+    if target_property is not None and not can_paste(clipboard, target_property, clip):
+        raise ValueError("Ces images-clés ne sont pas compatibles avec cette propriété.")
     for source_id, _frames in clipboard.items:             # tout est vérifié avant la première écriture
         destination = target_property if (target_property and clipboard.is_single_property) else source_id
         try:
@@ -478,7 +482,7 @@ def paste_keyframes(
     for source_id, frames in clipboard.items:
         destination = target_property if (target_property and clipboard.is_single_property) else source_id
         try:
-            target = get_target(destination)
+            target = get_target(destination, clip)
         except KeyError:
             continue
         curve = target.curve(clip)

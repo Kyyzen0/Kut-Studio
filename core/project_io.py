@@ -115,8 +115,13 @@ FORMAT_NAME = "kut-studio-project"
 """Identifiant de format écrit à la racine de chaque fichier ``.kut``."""
 
 CURRENT_VERSION = 17
-"""Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18 et
-:data:`COLOR_MATRIX_VERSION` pour la 19).
+"""Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18,
+:data:`COLOR_MATRIX_VERSION` pour la 19 et :data:`EFFECT_ANIMATION_VERSION` pour la 20).
+
+La version 20 n'est écrite que par un projet dont un clip porte une image clé générique ``fx.<effet>.<paramètre>`` (paramètre
+d'effet animé) ou ``color.<champ>`` (étalonnage animé), voir ``docs/adr/0008-animation-etalonnage-et-effets.md`` ; le
+chargeur la lit comme la 17, un ancien Kut-Studio la refuse (il ignorerait sinon ces images clés en silence et les perdrait
+à la sauvegarde suivante).
 
 La version 19 n'est écrite que par un projet dont un média force son espace colorimétrique (clé ``color_matrix`` du média,
 :mod:`core.color_matrix`) ; le chargeur la lit comme la 17, un ancien Kut-Studio la refuse.
@@ -171,8 +176,16 @@ COLOR_MATRIX_VERSION = 19
 s'écrit octet pour octet comme avant (17, ou 18 s'il a un masque courbe) ; un Kut-Studio plus ancien refuse le fichier au lieu
 de l'ouvrir en ignorant le choix, donc en changeant les couleurs sans le dire. Le chargeur lit 17, 18 et 19 de la même façon."""
 
+EFFECT_ANIMATION_VERSION = 20
+"""Version écrite par un projet qui contient au moins une image clé générique ``fx.*`` (paramètre d'effet animé) ou ``color.*``
+(étalonnage animé), ADR-0008. Même règle « version minimale nécessaire » : un projet sans ces images clés s'écrit octet pour
+octet comme avant ; seul un projet qui en contient passe à 20 (ou reste à la plus haute des versions que son contenu exige).
+Un Kut-Studio plus ancien refuse le fichier au lieu d'ignorer les images clés d'un identifiant inconnu. Le chargeur lit
+17 à 20 de la même façon ; une image clé ``fx.*`` dont l'effet n'existe pas est ignorée (jamais une erreur de chargement)."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
-    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION}
+    {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION,
+     EFFECT_ANIMATION_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -508,6 +521,28 @@ def payload_uses_path_masks(node: Any) -> bool:
     return False
 
 
+_ANIMATED_PREFIXES = ("fx.", "color.")
+
+
+def payload_uses_effect_animation(node: Any) -> bool:
+    """``True`` si la structure sérialisée contient une image clé générique ``fx.*`` ou ``color.*`` (ADR-0008).
+
+    Même principe que :func:`payload_uses_path_masks` : on lit le résultat de la sérialisation (clés ``property_name`` de
+    toutes les images clés, clips de toutes les séquences, clips imbriqués, compositions), donc aucun endroit n'est oublié.
+    """
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            name = item.get("property_name")
+            if isinstance(name, str) and name.startswith(_ANIMATED_PREFIXES):
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
 def project_uses_path_masks(project: Project) -> bool:
     """``True`` si le projet contient au moins un masque courbe (donc s'écrit en :data:`PATH_MASK_VERSION`)."""
     return payload_uses_path_masks(_build_payload(project)[_PROJECT_KEY])
@@ -520,6 +555,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
         payload[_VERSION_KEY] = PATH_MASK_VERSION
     if any(asset.get("color_matrix", MATRIX_AUTO) != MATRIX_AUTO for asset in payload[_PROJECT_KEY]["media_assets"]):
         payload[_VERSION_KEY] = COLOR_MATRIX_VERSION
+    if payload_uses_effect_animation(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = EFFECT_ANIMATION_VERSION
     return payload
 
 

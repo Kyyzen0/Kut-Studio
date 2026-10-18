@@ -549,10 +549,22 @@ def apply_preset_to_clip(
         ValueError: si le clip n'est pas sur une piste vidéo, ou si la
             piste est verrouillée.
     """
-    from .effects_model import _require_video_clip
+    from .effects_model import _require_video_clip, effects_with_unique_ids, set_clip_effects
 
     clip = _require_video_clip(project, clip_id)
-    clip.effects = preset_effects_to_apply(preset, clip.effects)
+    previous = list(clip.effects)
+    merged = preset_effects_to_apply(preset, previous)
+    added = [effect for effect in merged if not any(effect is old for old in previous)]
+    kept_ids = [effect.id for effect in merged if any(effect is old for old in previous)]
+    # Deux effets d'un clip ne partagent jamais un identifiant (les courbes ``fx.<id>.*`` en animeraient deux) : un effet du
+    # préréglage qui reprend l'identifiant d'un effet resté dans la chaîne (préréglage appliqué deux fois) en reçoit un neuf.
+    renewed = dict(zip((id(effect) for effect in added), effects_with_unique_ids(kept_ids, added)))
+    result = [renewed.get(id(effect), effect) for effect in merged]
+    # Les effets remplacés perdent leurs images clés ``fx.*`` ; ceux du préréglage naissent sans animation, même s'ils
+    # reprennent l'identifiant de l'effet qu'ils remplacent (ADR-0008, décision 7).
+    reset = {old.id for old in previous if not any(old is effect for effect in merged)}
+    reset |= {effect.id for effect in renewed.values()}
+    set_clip_effects(clip, result, reset_ids=reset)
     return list(clip.effects)
 
 

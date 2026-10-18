@@ -23,6 +23,7 @@ d'un projet.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
@@ -392,6 +393,108 @@ def move_effect(
 
 
 # ---------------------------------------------------------------------------
+# Animation des paramètres : ``fx.<effet>.<paramètre>`` et cycle de vie (ADR-0008)
+# ---------------------------------------------------------------------------
+
+FX_PREFIX = "fx."
+"""Préfixe des images clés génériques (``Clip.animation``) qui animent le paramètre d'un effet du clip."""
+
+
+def fx_property_id(effect_id: str, parameter: str) -> str:
+    """``fx.<effet>.<paramètre>``."""
+    return f"{FX_PREFIX}{effect_id}.{parameter}"
+
+
+def split_fx_property(property_id: str) -> tuple[str, str] | None:
+    """``(identifiant de l'effet, paramètre)`` d'un nom ``fx.…``, ``None`` si ce n'en est pas un (ou s'il est mal formé).
+
+    Le découpage se fait **par la droite** : le paramètre est ce qui suit le dernier point, l'identifiant ce qui est entre
+    ``fx.`` et ce dernier point. Un identifiant d'effet peut contenir des points (``fx.my.blur.intensity`` : effet
+    ``my.blur``) ; c'est sans ambiguïté parce qu'aucun nom de paramètre (:data:`EFFECT_PARAMETER_SPECS`) n'en contient.
+    """
+    if not isinstance(property_id, str) or not property_id.startswith(FX_PREFIX):
+        return None
+    effect_id, dot, parameter = property_id[len(FX_PREFIX):].rpartition(".")
+    if not dot or not effect_id or not parameter:
+        return None
+    return effect_id, parameter
+
+
+def prune_effect_animation(clip: "Clip", *, reset_ids: Iterable[str] = ()) -> int:
+    """Retire de ``clip.animation`` les images clés ``fx.*`` dont l'effet n'est plus dans ``clip.effects``.
+
+    **Un seul point d'entrée** pour le cycle de vie des images clés d'effet : :func:`set_clip_effects` l'appelle, donc toute
+    opération qui change la chaîne d'effets (suppression, préréglage, collage, édition d'un paramètre…) laisse
+    ``Clip.animation`` à jour dans la même étape d'historique. C'est aussi ce qui nettoie, à la première édition de la
+    chaîne, les images clés orphelines d'un fichier ouvert (le rendu les ignore d'ici là : choix de tolérance de l'ADR-0008,
+    une image clé orpheline ne fait jamais échouer le chargement). Un nom ``fx.…`` mal formé est orphelin.
+
+    ``reset_ids`` : identifiants d'effets dont les images clés partent **même si** l'identifiant est encore dans la chaîne
+    (un effet remplacé par un préréglage qui reprend son identifiant naît sans animation). Rend le nombre d'images clés
+    retirées.
+    """
+    animation = getattr(clip, "animation", None)
+    if not animation:
+        return 0
+    live = {effect.id for effect in clip.effects} - set(reset_ids)
+    kept = []
+    for keyframe in animation:
+        name = keyframe.property_name
+        if isinstance(name, str) and name.startswith(FX_PREFIX):
+            parts = split_fx_property(name)
+            if parts is None or parts[0] not in live:
+                continue
+        kept.append(keyframe)
+    removed = len(animation) - len(kept)
+    if removed:
+        clip.animation = kept
+    return removed
+
+
+def set_clip_effects(clip: "Clip", effects: Sequence[ClipEffect], *, reset_ids: Iterable[str] = ()) -> None:
+    """Remplace la chaîne d'effets d'un clip **et** tient ``Clip.animation`` à jour (:func:`prune_effect_animation`).
+
+    Toute écriture de ``clip.effects`` dans ``core/`` et ``ui/`` passe ici (garde : ``tests/test_effects_write_guard.py``).
+    """
+    clip.effects = list(effects)
+    prune_effect_animation(clip, reset_ids=reset_ids)
+
+
+def remap_fx_animation(keyframes: Iterable[Any], id_map: Mapping[str, str]) -> list[Any]:
+    """Images clés copiées d'un autre clip : les ``fx.<ancien>.<paramètre>`` visent le nouvel effet (``id_map``,
+    « ancien identifiant → nouvel identifiant »), celles dont l'effet n'est pas dans la table sont **abandonnées**.
+
+    Les autres images clés passent telles quelles. Les images clés rendues sont de nouveaux objets (``replace``) ; leur
+    identifiant est conservé, l'appelant le renouvelle s'il le souhaite.
+    """
+    result: list[Any] = []
+    for keyframe in keyframes:
+        name = keyframe.property_name
+        if not (isinstance(name, str) and name.startswith(FX_PREFIX)):
+            result.append(keyframe)
+            continue
+        parts = split_fx_property(name)
+        if parts is None or parts[0] not in id_map:
+            continue
+        result.append(replace(keyframe, property_name=fx_property_id(id_map[parts[0]], parts[1]), id=keyframe.id))
+    return result
+
+
+def effects_with_unique_ids(taken: Iterable[str], incoming: Iterable[ClipEffect]) -> list[ClipEffect]:
+    """``incoming`` avec un identifiant neuf pour tout effet dont l'identifiant est déjà pris (``taken`` ou un autre effet
+    de ``incoming``) : deux effets d'un clip ne partagent jamais un identifiant, sinon les courbes ``fx.<id>.*`` en
+    animeraient deux. Les effets sans collision sont rendus tels quels."""
+    used = set(taken)
+    result: list[ClipEffect] = []
+    for effect in incoming:
+        if effect.id in used:
+            effect = replace(effect, id=f"fx-{uuid.uuid4().hex[:12]}")
+        used.add(effect.id)
+        result.append(effect)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Opérations au niveau projet (clips vidéo uniquement)
 # ---------------------------------------------------------------------------
 
@@ -439,7 +542,7 @@ def add_effect_to_clip(
     effect = create_effect(
         effect_type, effect_id=effect_id, enabled=enabled, params=params
     )
-    clip.effects = add_effect(clip.effects, effect)
+    set_clip_effects(clip, add_effect(clip.effects, effect))
     return effect
 
 
@@ -451,7 +554,7 @@ def remove_effect_from_clip(
     removed = effect_by_id(clip.effects, effect_id)
     if removed is None:
         raise KeyError(f"Effet introuvable : {effect_id!r}.")
-    clip.effects = remove_effect(clip.effects, effect_id)
+    set_clip_effects(clip, remove_effect(clip.effects, effect_id))
     return removed
 
 
@@ -460,7 +563,7 @@ def set_clip_effect_enabled(
 ) -> ClipEffect:
     """Active ou désactive un effet et retourne sa nouvelle version."""
     clip = _require_video_clip(project, clip_id)
-    clip.effects = set_effect_enabled(clip.effects, effect_id, enabled)
+    set_clip_effects(clip, set_effect_enabled(clip.effects, effect_id, enabled))
     updated = effect_by_id(clip.effects, effect_id)
     if updated is None:  # pragma: no cover - invariant juste au-dessus
         raise KeyError(f"Effet introuvable : {effect_id!r}.")
@@ -475,7 +578,7 @@ def update_clip_effect_parameters(
 ) -> ClipEffect:
     """Met à jour les paramètres d'un effet et retourne sa nouvelle version."""
     clip = _require_video_clip(project, clip_id)
-    clip.effects = update_effect_parameters(clip.effects, effect_id, params)
+    set_clip_effects(clip, update_effect_parameters(clip.effects, effect_id, params))
     updated = effect_by_id(clip.effects, effect_id)
     if updated is None:  # pragma: no cover - invariant juste au-dessus
         raise KeyError(f"Effet introuvable : {effect_id!r}.")
@@ -487,7 +590,7 @@ def move_clip_effect(
 ) -> ClipEffect:
     """Réordonne un effet dans la chaîne du clip et retourne sa version."""
     clip = _require_video_clip(project, clip_id)
-    clip.effects = move_effect(clip.effects, effect_id, delta)
+    set_clip_effects(clip, move_effect(clip.effects, effect_id, delta))
     moved = effect_by_id(clip.effects, effect_id)
     if moved is None:  # pragma: no cover - invariant juste au-dessus
         raise KeyError(f"Effet introuvable : {effect_id!r}.")
@@ -496,6 +599,7 @@ def move_clip_effect(
 
 __all__ = [
     "EFFECT_PARAMETER_SPECS",
+    "FX_PREFIX",
     "SINGLE_INSTANCE_EFFECTS",
     "ClipEffect",
     "EffectParameterSpec",
@@ -507,17 +611,23 @@ __all__ = [
     "default_parameters",
     "effect_by_id",
     "effect_by_type",
+    "fx_property_id",
     "enabled_effects",
     "is_single_instance",
     "move_clip_effect",
     "move_effect",
     "parameter_specs",
+    "effects_with_unique_ids",
+    "prune_effect_animation",
+    "remap_fx_animation",
     "remove_effect",
     "remove_effect_from_clip",
     "reorder_effect",
     "replace_effect",
     "set_clip_effect_enabled",
+    "set_clip_effects",
     "set_effect_enabled",
+    "split_fx_property",
     "update_clip_effect_parameters",
     "update_effect_parameters",
     "validate_parameters",
