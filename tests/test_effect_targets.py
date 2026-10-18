@@ -261,14 +261,48 @@ def reference_project() -> Project:
     return project
 
 
+# Empreinte du fichier ``.kut`` de ``reference_project()`` écrit par le code de ``origin/main`` (bd3478c, sans aucune
+# modification), fins de ligne ramenées à ``\n`` : sonde ``save_project`` sur un worktree de ``origin/main``, puis
+# SHA-256 des octets après ``replace(b"\r\n", b"\n")``. Sous Windows ``_atomic_write_json`` ouvre le fichier en mode texte
+# (``os.fdopen(fd, "w")``) : chaque ``\n`` devient ``\r\n``, d'où l'empreinte brute 02c65d54bb1a… observée en CI. Le chemin du
+# média, lui, est écrit tel quel sur toutes les plateformes (``asset.path``).
 REFERENCE_SHA256 = "4f8103e55b395f0b04ef056146de2026a698e240251ac834b33a677bdc6c59c0"
+WINDOWS_RAW_SHA256 = "02c65d54bb1ad41046d315c0654201f25cefc123633a16498c2d209ed92b0bd2"
+
+
+def normalized_digest(data: bytes) -> str:
+    """SHA-256 des octets du fichier, fins de ligne de plateforme (CRLF) ramenées à LF ; tout le reste est comparé tel quel."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def test_a_file_without_fx_keyframes_is_written_byte_for_byte_as_before(tmp_path):
     path = tmp_path / "ref.kut"
     save_project(reference_project(), path)
     assert json.loads(path.read_text())["version"] == CURRENT_VERSION == 17
-    assert hashlib.sha256(path.read_bytes()).hexdigest() == REFERENCE_SHA256     # empreinte calculée sur origin/main
+    assert normalized_digest(path.read_bytes()) == REFERENCE_SHA256     # empreinte calculée sur origin/main
+
+
+def test_crlf_line_endings_of_windows_do_not_change_the_normalized_digest(tmp_path):
+    path = tmp_path / "ref.kut"
+    save_project(reference_project(), path)
+    lf = path.read_bytes().replace(b"\r\n", b"\n")
+    crlf = lf.replace(b"\n", b"\r\n")                                     # ce que le mode texte écrit sous Windows
+    assert hashlib.sha256(crlf).hexdigest() == WINDOWS_RAW_SHA256           # c'est bien l'empreinte vue sur windows-latest
+    assert normalized_digest(crlf) == normalized_digest(lf) == REFERENCE_SHA256
+
+
+@pytest.mark.parametrize("media_path", ["/tmp/a.mp4", "C:\\tmp\\a.mp4", "D:/tmp/a.mp4", "\\\\serveur\\partage\\a.mp4"])
+def test_the_media_path_is_written_verbatim_whatever_the_platform_spelling(tmp_path, media_path):
+    project = reference_project()
+    project.media_assets[0].path = media_path
+    path = tmp_path / "ref.kut"
+    save_project(project, path)
+    data = path.read_bytes()
+    assert json.loads(data)["project"]["media_assets"][0]["path"] == media_path
+    spelled = json.dumps(media_path, ensure_ascii=False).encode()
+    assert data.count(spelled) == 1
+    # Hors du chemin, les octets sont ceux de la référence : une autre graphie ne déplace rien d'autre.
+    assert normalized_digest(data.replace(spelled, b'"/tmp/a.mp4"')) == REFERENCE_SHA256
 
 
 def test_version_constants():
