@@ -345,7 +345,7 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   imbriquées) : fait — création, renommage, format, duplication, suppression gardée, `insert_sequence_clip`, `set_active_sequence` (la séquence
   active est une donnée du projet : un script finit où il l'a laissée). Lot 7 (multicam) : fait — création d'une source depuis des médias
   (liste d'angles : le décodeur gagne le genre `LIST`), insertion, bascule d'angle, remplacement, politique audio, renommage, ajout et
-  recalage d'angle ; angles désignés par `angle-N` ou nom exact. **Reste** : animation des couleurs et des effets, calques d'image.
+  recalage d'angle ; angles désignés par `angle-N` ou nom exact. Lot 8 : images clés des propriétés `graphic.*`, `pan_x` / `pan_y` et des masques de compositing (`add_mask_keyframe`, `remove_mask_keyframe`), effets visuels de clip (`add_effect`, `remove_effect`, `set_effect_enabled`, `update_effect`, `move_effect`). Les calques d'image sont faits (`add_image_layer`, #158). **Reste** : l'animation de l'étalonnage et des paramètres d'effets, que le modèle ne sait pas faire (aucune propriété animable de couleur ni d'effet) : une fonctionnalité de modèle à décider à part, les verbes suivront.
 - **Verrou consultatif : fait** (décision 3). `core/project_lock.py` : fichier `nom.kut.lock` créé atomiquement par l'application (tant
   qu'un projet est ouvert) et par `apply` (le temps d'une écriture sur un fichier existant, **avant** de lire le projet). Le propriétaire
   est identifié par PID et heure de début de processus (un PID réutilisé ne passe pas pour l'ancien) ; un verrou n'est repris que si le

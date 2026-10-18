@@ -47,6 +47,67 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 - **Pas de verbe `export`** : exporter est une décision de l'appelant (`Kut-Studio export`).
 - Les messages sont traduits (français, anglais, espagnol : `--lang`) ; les noms de verbes et de champs restent en anglais.
 
+## Images clés : propriétés et unités
+
+`add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform et `graphic.*`.
+Sont exclus : `flip_h` / `flip_v` (booléens), `time.speed` (la durée du clip dépend de la courbe de vitesse) et `mask.<id>.*` (verbes `add_mask_keyframe` /
+`remove_mask_keyframe`). Les valeurs sont dans **l'unité du modèle**, pas celle que l'inspecteur affiche ; elles doivent rester dans les bornes
+(sinon refus, jamais d'écrêtage). Un test (`tests/test_script_verbs_animation_masks.py`) relit ce tableau et le compare au registre.
+
+<!-- units:keyframe -->
+| Propriété | Unité | Défaut | Minimum | Maximum |
+|---|---|---|---|---|
+| `position_x` | fraction de la largeur du cadre (1 = un cadre) | 0 | -4 | 4 |
+| `position_y` | fraction de la hauteur du cadre (1 = un cadre) | 0 | -4 | 4 |
+| `scale` | facteur (1 = taille naturelle) | 1 | 0.05 | 10 |
+| `rotation` | degrés | 0 | -3600 | 3600 |
+| `opacity` | fraction (1 = opaque) | 1 | 0 | 1 |
+| `anchor_x` | fraction de la largeur du calque (0.5 = centre) | 0.5 | -4 | 5 |
+| `anchor_y` | fraction de la hauteur du calque (0.5 = centre) | 0.5 | -4 | 5 |
+| `scale_x` | facteur, multiplie `scale` | 1 | 0 | 10 |
+| `scale_y` | facteur, multiplie `scale` | 1 | 0 | 10 |
+| `skew` | degrés (calques graphiques) | 0 | -85 | 85 |
+| `pan_x` | −1 bord gauche … 1 bord droit (cadrage « remplir ») | 0 | -1 | 1 |
+| `pan_y` | −1 bord haut … 1 bord bas (cadrage « remplir ») | 0 | -1 | 1 |
+| `graphic.width` | pixels | 900 | 2 | 8192 |
+| `graphic.height` | pixels | 180 | 2 | 8192 |
+| `graphic.corner_radius` | pixels | 0 | 0 | 4096 |
+| `graphic.stroke_width` | pixels | 0 | 0 | 256 |
+| `graphic.font_size` | pixels | 64 | 6 | 512 |
+| `graphic.tracking` | espacement des lettres, unité du modèle | 0 | -100 | 500 |
+| `graphic.line_spacing` | facteur (1 = normal) | 1 | 0.3 | 5 |
+| `graphic.shadow_offset_x` | pixels | 4 | -256 | 256 |
+| `graphic.shadow_offset_y` | pixels | 4 | -256 | 256 |
+| `graphic.shadow_blur` | pixels | 0 | 0 | 200 |
+| `graphic.reveal` | fraction du texte révélé (1 = tout) | 1 | 0 | 1 |
+| `graphic.light_speed` | facteur | 1 | 0 | 10 |
+| `graphic.light_angle` | degrés | 0 | -360 | 360 |
+| `graphic.light_density` | facteur | 1 | 0.1 | 4 |
+| `graphic.glow_radius` | pixels | 0 | 0 | 400 |
+| `graphic.glow_strength` | facteur | 1 | 0 | 4 |
+<!-- /units -->
+
+Un masque (`add_mask_keyframe`) :
+
+<!-- units:mask -->
+| Propriété | Unité | Défaut | Minimum | Maximum |
+|---|---|---|---|---|
+| `position_x` | fraction du calque (0.5 = centre) | 0.5 | -2 | 3 |
+| `position_y` | fraction du calque (0.5 = centre) | 0.5 | -2 | 3 |
+| `width` | fraction du calque | 0.5 | 0 | 4 |
+| `height` | fraction du calque | 0.5 | 0 | 4 |
+| `rotation` | degrés | 0 | -3600 | 3600 |
+| `feather` | fraction (adoucissement du contour) | 0 | 0 | 1 |
+| `expansion` | fraction (+ dilate, − contracte) | 0 | -1 | 1 |
+| `opacity` | fraction (1 = opaque) | 1 | 0 | 1 |
+<!-- /units -->
+
+- **Hors de la première et de la dernière image clé, la valeur est tenue** (pas d'extrapolation). Entre deux images clés, l'interpolation du segment est celle de l'image clé de départ ; sans `interpolation`, un nouvel instant reprend celle du segment qui le contient, sinon `linear`.
+- Une image clé au même instant remplace l'ancienne (on garde son identifiant) : rejouer un script donne le même projet.
+- `value` est toujours obligatoire. `at` est relatif au clip et ne dépasse pas sa durée.
+- La propriété doit exister pour le genre de clip (`skew` et `graphic.*` : calques graphiques ; `graphic.font_size` : textes seulement ; `pan_*` : vidéo seulement).
+- Clip sur une piste verrouillée, calque verrouillé, piste audio ou de sous-titres : refus. La position (`position_x` / `position_y`) d'un masque lié à un suivi est refusée : elle vient du suivi.
+
 ## Les verbes
 
 Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne s'en écarte pas.
@@ -68,6 +129,11 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `delete_clip` | Supprime un clip (`clip`) |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
 | `set_clip_enabled` | Active ou désactive un clip (`clip`, `enabled`) |
+| `add_effect` | Ajoute un effet visuel à la fin de la chaîne d'un clip **vidéo** (`clip`, `type` = `color_correction`, `blur`, `sharpen`, `vignette`, `black_and_white`, `sepia`, `glow`, `chromatic_aberration`, `heat_haze` ; `params` optionnel, `enabled`) ; `id` / `as` (local au clip) ; un effet à instance unique déjà présent est refusé |
+| `remove_effect` | Retire un effet (`clip`, `effect`) |
+| `set_effect_enabled` | Active ou désactive un effet (`clip`, `effect`, `enabled`) |
+| `update_effect` | Modifie des paramètres d'un effet (`clip`, `effect`, `params`, au moins un) : noms et bornes du modèle, un nom inconnu ou une valeur hors bornes est refusé |
+| `move_effect` | Déplace un effet dans la chaîne (`clip`, `effect`, `delta` non nul : −1 monte, 1 descend) ; un déplacement qui sortirait de la chaîne est refusé |
 | `set_media_color_matrix` | Choisit comment lire les couleurs d'un média vidéo (`asset` ou `clip`, `matrix` : `auto`, `bt601` ou `bt709`) ; voir « Espace colorimétrique d'un média » ci-dessous |
 | `add_track_insert` | Ajoute un effet en insert sur une piste **audio ou vidéo** (`track`, `effect`, `params`, `enabled`) ; un **égaliseur** est l'effet `parametric_eq` |
 | `remove_track_insert` | Retire un insert de piste (`track`, `insert`) |
@@ -78,13 +144,15 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
-| `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) |
+| `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
 | `add_track` | Ajoute une piste : `type` = `video`, `audio` ou `subtitle` (`name` : doit être libre, sinon refus) |
 | `add_subtitle` | Pose un sous-titre sur une piste de sous-titres (`text`, `at`, `duration`, `track`) |
 | `add_transition` | Transition entre deux clips vidéo adjacents d'une même piste (`from_clip`, `to_clip`, `transition`, `duration`) |
 | `remove_transition` | Retire une transition (`transition`) |
-| `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value`, `interpolation`) : `at` est **relatif au clip** |
+| `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value` obligatoire, `interpolation`) : `at` est **relatif au clip**. `property` : une propriété du transform (dont `pan_x`, `pan_y`) ou `graphic.*`, voir « Images clés : propriétés et unités » |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
+| `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
+| `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
 | `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
 | `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
@@ -207,7 +275,7 @@ masques du moniteur : le résultat est le même `Mask`, la matte rendue la même
   d'étalonnage ont leurs verbes `*_color_window`.
 - Pas de verbe d'ordre : l'interface n'en a pas non plus (un masque ajouté va en bout de pile, avant le recadrage).
 - Une propriété **animée** (images-clés `mask.<id>.<nom>`) n'est pas modifiée par `set_mask` : une valeur statique serait masquée par la courbe
-  et un script n'a pas de tête de lecture où poser une image-clé. Aucun verbe d'image-clé n'accepte les propriétés de masque.
+  et un script n'a pas de tête de lecture où poser une image-clé. Les images-clés d'un masque se posent avec `add_mask_keyframe` / `remove_mask_keyframe` (`add_keyframe` n'accepte pas `mask.<id>.*`).
 - Clip sur une piste verrouillée, calque verrouillé, piste audio ou de sous-titres : refus, comme dans l'interface.
 - Un projet qui contient une courbe s'enregistre en version 18 du format `.kut`, les autres en 17.
 
@@ -284,7 +352,7 @@ l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 00
 
 ## Pas encore là
 
-- **Animation des couleurs et des effets** : prochain lot.
+- **Animation de l'étalonnage et des paramètres d'effets** : le modèle ne les anime pas (aucune propriété animable de couleur ni d'effet). C'est une fonctionnalité de modèle à décider à part, pas un lot de verbes ; les calques d'image sont faits (`add_image_layer`).
 - La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
 
 ## Code
@@ -292,6 +360,7 @@ l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 00
 | Module | Rôle |
 | --- | --- |
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
+| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py` | les verbes d'images-clés de masque, d'effets de clip et de masques (assemblés dans `VERBS` après leur verbe d'ancrage) |
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
