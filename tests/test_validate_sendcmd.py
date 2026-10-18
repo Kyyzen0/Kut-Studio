@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import numpy as np
 import pytest
 
@@ -125,3 +127,46 @@ def test_the_bench_is_standalone():
     text = open(bench.__file__, encoding="utf-8").read()
     for forbidden in ("from core", "import core", "from ui", "import ui", "eval(", "exec(", "pickle", "importlib"):
         assert forbidden not in text.replace("eval=frame", ""), forbidden
+
+
+def _runner(tmp_path, cpu0):
+    return bench.Runner("ffmpeg", tmp_path, cpu0=cpu0)
+
+
+def test_the_cost_command_honors_cpuflags0_before_the_input():
+    for cpu0 in (False, True):
+        cmd = _runner(None, cpu0).cost_command("testsrc2=s=64x36", "eq=contrast=1")
+        assert ("-cpuflags" in cmd) is cpu0
+        if cpu0:
+            assert cmd[cmd.index("-cpuflags") + 1] == "0"
+            assert cmd.index("-cpuflags") < cmd.index("-i"), "option globale : avant l'entrée"
+
+
+def test_last_line_keeps_the_last_non_empty_line_and_caps_its_length():
+    assert bench.last_line(b"a\n\nb option inconnue \n\n") == "b option inconnue"
+    assert bench.last_line("") == "" and bench.last_line(None) == ""
+    assert len(bench.last_line("x" * 500)) == 200
+
+
+def test_a_failed_cost_render_records_the_error_and_no_timing(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_run(cmd, **_kwargs):
+        seen.append(cmd)
+        return types.SimpleNamespace(returncode=1, stderr=b"Unrecognized option 'sigmaV'.\n")
+
+    monkeypatch.setattr(bench.subprocess, "run", fake_run)
+    case = next(c for c in bench.build_cases() if c.key == "eq.contrast")
+    (entry,) = bench.run_cost(_runner(tmp_path, True), [case], repeat=2)
+    assert "animated_s" not in entry and "static_s" not in entry, "une durée d'échec n'est jamais un résultat"
+    assert "sigmaV" in entry["animated_s_error"] and "static_s_error" in entry
+    assert all("-cpuflags" in cmd for cmd in seen)
+    assert len(seen) == 2, "un échec arrête les répétitions de ce rendu"
+
+
+def test_a_successful_cost_render_records_the_best_timing(tmp_path, monkeypatch):
+    monkeypatch.setattr(bench.subprocess, "run", lambda cmd, **_k: types.SimpleNamespace(returncode=0, stderr=b""))
+    case = next(c for c in bench.build_cases() if c.key == "eq.contrast")
+    (entry,) = bench.run_cost(_runner(tmp_path, False), [case], repeat=2)
+    assert isinstance(entry["animated_s"], float) and isinstance(entry["static_s"], float)
+    assert "animated_s_error" not in entry

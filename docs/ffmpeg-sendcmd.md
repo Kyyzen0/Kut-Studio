@@ -69,9 +69,13 @@ sortie de FFmpeg les croirait bons.
 `colorbalance` (ombres, hautes lumières), `colorchannelmixer` (température), `curves` (`master`, voir limites),
 `gblur` (`sigma` + `sigmaV`, toutes variantes), `rgbashift` (`rh`, `bh`).
 
-**Exclus (ne pas enregistrer dans le registre d'animation)** : `unsharp` (netteté de l'effet Netteté), `vignette`
-(angle, voir l'expression ci-dessous), `geq`, `lut3d`. La netteté de nœud est une `convolution` (non testée ici : ses
-coefficients ne se commandent pas, voir « Non vérifié »).
+**Exclus de la voie `sendcmd`** (ces filtres acceptent la commande sans erreur et ne changent rien à la sortie) :
+`unsharp` (netteté de l'effet Netteté), `lut3d`, `vignette` (`angle`) et `geq`. Ils se répartissent en deux cas :
+- `unsharp` et `lut3d` n'ont **aucune autre voie** (`luma_amount` ne prend pas d'expression, `file` non plus) : leurs
+  paramètres ne sont **pas animables** et ne doivent pas être enregistrés dans le registre d'animation.
+- `vignette` et `geq` s'animent **par expression** (voir plus bas) : ils sont exclus de `sendcmd` **seulement**, et
+  restent enregistrables dans le registre d'animation, avec un rendu par expression.
+La netteté de nœud est une `convolution` (non testée ici : ses coefficients ne se commandent pas, voir « Non vérifié »).
 
 ## Comportement aux limites
 

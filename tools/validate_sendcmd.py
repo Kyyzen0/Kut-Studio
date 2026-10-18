@@ -394,6 +394,15 @@ class Runner:
         banner = subprocess.run([self.ffmpeg, "-version"], capture_output=True, text=True, check=True).stdout
         return parse_version(banner.splitlines()[0])
 
+    def cost_command(self, source: str, chain: str) -> list[str]:
+        """Commande de mesure du coût (sortie nulle). Mêmes options globales que :meth:`command`, dont ``-cpuflags 0`` quand
+        ``cpu0`` est demandé : sans cela les temps du rapport seraient ceux des chemins SIMD, étiquetés « C »."""
+        cmd = [self.ffmpeg, "-v", "error", "-nostdin", "-y"]
+        if self.cpu0:
+            cmd += ["-cpuflags", "0"]
+        cmd += ["-f", "lavfi", "-i", source, "-filter_complex", f"[0:v]{chain}[o]", "-map", "[o]", "-f", "null", "-"]
+        return cmd
+
     def command(self, source: Path, scenario: Scenario, graph: str, out_fmt: str, frames: int | None = None) -> list[str]:
         cmd = [self.ffmpeg, "-v", "error", "-nostdin", "-y"]
         if self.cpu0:
@@ -523,6 +532,13 @@ def run_probes(runner: Runner) -> list[dict]:
     return results
 
 
+def last_line(data: bytes | str | None) -> str:
+    """Dernière ligne non vide d'une sortie d'erreur (au plus 200 caractères), ``""`` s'il n'y en a pas."""
+    text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else (data or "")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1][:200] if lines else ""
+
+
 def run_cost(runner: Runner, cases: list[Case], repeat: int = 3) -> list[dict]:
     """Coût : taille du fichier de commandes pour 60 s à 30 i/s, temps de rendu animé et statique (720p, 5 s)."""
     results = []
@@ -539,14 +555,22 @@ def run_cost(runner: Runner, cases: list[Case], repeat: int = 3) -> list[dict]:
             mid = case.start + (case.end - case.start) / 2
             for label, chain in (("animated_s", f"sendcmd=f={cmd_file},{case.pre}{case.body(case.start, True)}"),
                                  ("static_s", f"{case.pre}{case.body(mid, False)}")):
-                best = 1e9
+                cmd = runner.cost_command(source, chain)
+                best: float | None = None
+                error = ""
                 for _ in range(repeat):
-                    cmd = [runner.ffmpeg, "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", source, "-filter_complex",
-                           f"[0:v]{chain}[o]", "-map", "[o]", "-f", "null", "-"]
                     began = time.perf_counter()
-                    subprocess.run(cmd, capture_output=True, check=False)
-                    best = min(best, time.perf_counter() - began)
-                entry[label] = round(best, 3)
+                    proc = subprocess.run(cmd, capture_output=True, check=False)
+                    elapsed = time.perf_counter() - began
+                    if proc.returncode != 0:                  # un rendu en échec s'arrête vite : sa durée n'est pas un coût
+                        error = last_line(proc.stderr)
+                        best = None
+                        break
+                    best = elapsed if best is None else min(best, elapsed)
+                if best is None:
+                    entry[f"{label}_error"] = error or "échec du rendu"
+                else:
+                    entry[label] = round(best, 3)
         results.append(entry)
     return results
 
