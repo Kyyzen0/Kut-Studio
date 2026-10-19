@@ -257,6 +257,12 @@ def test_flatten_refuses_tracking_a_transition_to_a_locked_track_and_the_clip_bo
     tracked = _with_segment()
     _segment(tracked).tracking = ClipTracking(stabilization=Stabilization())
     _refused(tracked, {"op": "flatten_multicam_segment", "clip": "seg"}, message="données de suivi")
+    from core.transitions import Transition
+
+    linked = _with_segment()
+    linked.tracks[1].locked = True                                             # c2, sur V2, est le voisin de la transition
+    linked.active_sequence.transitions.append(Transition(id="t1", type=TransitionType.CROSSFADE, from_clip_id="seg", to_clip_id="c2", duration=0.1))
+    _refused(linked, {"op": "flatten_multicam_segment", "clip": "seg"}, message="piste verrouillée")
     monkeypatch.setattr("core.scripting.multicam_verbs.MAX_CLIPS_IN_PROJECT", 4)           # source : 3 clips d'angle + 1 segment + 3 clips
     _refused(_with_segment(), {"op": "flatten_multicam_segment", "clip": "seg"}, message="limite")
 

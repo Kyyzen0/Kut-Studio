@@ -184,6 +184,18 @@ def test_a_name_that_is_another_objects_id_is_refused():
     _refused(project, {"op": "rename_library_tag", "tag": "x2", "name": "x2x"}, {"op": "create_library_tag", "name": "x2"}, message="identifiant")
 
 
+def test_renaming_to_another_objects_id_is_refused_for_folders_and_tags():
+    project = _project()
+    org = LibraryOrganization(project)
+    org.create_folder("A", folder_id="fa")
+    org.create_folder("B", folder_id="fb")
+    org.create_tag("T", tag_id="ta")
+    org.create_tag("U", tag_id="tb")
+    _refused(project, {"op": "rename_library_folder", "folder": "fa", "name": "fb"}, message="identifiant")
+    _refused(project, {"op": "rename_library_tag", "tag": "ta", "name": "tb"}, message="identifiant")
+    _ok(project, {"op": "rename_library_folder", "folder": "fa", "name": "fa"}, {"op": "rename_library_tag", "tag": "ta", "name": "ta"})
+
+
 def test_ambiguous_folder_names_are_an_error_never_a_silent_choice():
     project = _project()
     org = LibraryOrganization(project)
