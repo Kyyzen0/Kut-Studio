@@ -18,7 +18,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QFormLayout, QHBoxLayout, QToolButton, QWidget
 
 from core.effect_targets import ANIMATABLE_EFFECT_PARAMS, evaluated_effects
-from core.effects_model import ClipEffect, fx_property_id
+from core.effects_model import ClipEffect, fx_property_id, is_effect_property
 from core.usage_level import UsageLevel
 from ui import i18n
 from ui.properties_widgets.diamond_button import KeyframeDiamondButton
@@ -189,8 +189,7 @@ class EffectKeyframesMixin:
         property_id = fx_property_id(effect_id, name)
         menu = self.animation_menu(property_id)
         clip = self.selected_clip
-        prefix = f"fx.{effect_id}."
-        if clip is not None and any(k.property_name.startswith(prefix) for k in self._current_effect_keyframes):
+        if clip is not None and any(is_effect_property(k.property_name, effect_id) for k in self._current_effect_keyframes):
             action = QAction(i18n.translate("animation.menu.clear_effect"), menu)
             action.triggered.connect(lambda: self.effect_animation_cleared.emit(clip.id, effect_id))
             actions = menu.actions()

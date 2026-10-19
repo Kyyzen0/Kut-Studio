@@ -30,7 +30,7 @@ from .animation import (
     snap_local_time,
 )
 from .animation_targets import PropertyTarget, get_target
-from .effects_model import FX_PREFIX
+from .effects_model import FX_PREFIX, is_effect_property
 
 
 @dataclass(frozen=True)
@@ -274,14 +274,13 @@ def clear_effect_animation(project, clip_id: str, effect_id: str, local_time: fl
     """
     clip = find_clip(project, clip_id)
     _guard(project, clip_id)
-    prefix = f"{FX_PREFIX}{effect_id}."
-    names = sorted({k.property_name for k in clip.animation if k.property_name.startswith(prefix)})
+    names = sorted({k.property_name for k in clip.animation if is_effect_property(k.property_name, effect_id)})
     for property_id in names:
         try:
             set_animation_enabled(project, clip_id, property_id, False, local_time)
         except KeyError:                                   # paramètre non animable : l'image clé orpheline est simplement retirée
             pass
-    clip.animation = [k for k in clip.animation if not k.property_name.startswith(prefix)]
+    clip.animation = [k for k in clip.animation if not is_effect_property(k.property_name, effect_id)]
     return len(names)
 
 
