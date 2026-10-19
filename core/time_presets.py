@@ -71,11 +71,21 @@ def apply_preset(
     """Applique ``preset`` au clip. ``local_time`` (temps local du clip) ne sert qu'à ``FREEZE``."""
     preset = TimePreset(preset)
     clip = _editable_clip(project, clip_id)
-    if preset in CONSTANT_SPEEDS:
-        set_clip_speed(project, clip_id, CONSTANT_SPEEDS[preset])
-        return
     if preset is TimePreset.FREEZE:
         insert_hold(project, clip_id, local_time, HOLD_SECONDS, fps=fps, mode=mode)
+        return
+    if mode is RippleMode.TIMELINE:
+        # « Conserver la durée sur la timeline » vaut pour le préréglage ENTIER : une seule transaction englobe le retrait de la courbe,
+        # la vitesse constante et les points de rampe (qui, chacun, gardent la portion de source), puis la durée de départ est rétablie.
+        with _transaction(project, clip, mode):
+            _apply_speed_preset(project, clip_id, clip, preset, RippleMode.SOURCE)
+        return
+    _apply_speed_preset(project, clip_id, clip, preset, mode)
+
+
+def _apply_speed_preset(project: Project, clip_id: str, clip: Clip, preset: TimePreset, mode: RippleMode) -> None:
+    if preset in CONSTANT_SPEEDS:
+        set_clip_speed(project, clip_id, CONSTANT_SPEEDS[preset])
         return
     clear_speed_curve(project, clip_id)
     speed = clip.time_remapping.speed

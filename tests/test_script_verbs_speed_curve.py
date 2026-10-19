@@ -332,3 +332,78 @@ def test_huge_and_hostile_inputs_are_bounded_at_parse():
     _invalid(_op("remove_speed_points", clip="a", points="all"))
     _invalid(_op("edit_speed_points", clip="a", delta=1e12, points=[{"at": 1.0}]))
     _invalid(_op("apply_time_preset", clip="a", preset="slow_50", extra=1))
+
+
+# --- `ripple` est respecté par tous les verbes qui l'exposent -------------------------------------------------------------------
+
+
+def _roomy(factory):
+    """Le même projet avec un média long : la durée sur la timeline n'est alors limitée par aucune fin de média."""
+    def build() -> Project:
+        project = factory()
+        project.media_assets[0].duration = 200.0
+        return project
+
+    return build
+
+
+def _duration(project: Project, clip: str = "a") -> float:
+    return float(find_clip(project, clip).duration)
+
+
+_PRESETS_ALL = [item.value for item in TimePreset if item is not TimePreset.FREEZE]
+
+
+@pytest.mark.parametrize("factory", [_project, _curved], ids=["constant", "curved"])
+@pytest.mark.parametrize("preset", _PRESETS_ALL)
+def test_timeline_ripple_keeps_the_timeline_duration_for_every_preset(preset, factory):
+    factory = _roomy(factory)
+    """Sans le correctif, `slow_50` doublait un clip de 6 s en 12 s malgré `ripple: timeline` (le mode n'atteignait pas `set_clip_speed` ni `clear_speed_curve`)."""
+    before = _duration(factory())
+    session, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="timeline"))
+    assert report.ok, report.error
+    assert _duration(session.project) == pytest.approx(before, abs=1e-6)
+    source, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="source"))
+    assert report.ok, report.error
+    if preset in ("slow_50", "slow_25", "fast_2", "fast_4"):
+        assert _duration(source.project) != pytest.approx(before)                    # le mode « source » change bien la durée : la différence est réelle
+
+
+def test_timeline_ripple_is_limited_by_the_end_of_the_media_like_the_model():
+    session, report = _apply(_project(), _op("apply_time_preset", clip="a", preset="fast_4", ripple="timeline"))      # 24 s de média pour 6 s, il n'y en a que 20
+    assert report.ok, report.error
+    assert _duration(session.project) == pytest.approx(5.0)
+
+
+def test_timeline_ripple_freeze_preset_keeps_the_duration_too():
+    before = _duration(_roomy(_project)())
+    session, report = _apply(_roomy(_project)(), _op("apply_time_preset", clip="a", preset="freeze", at=1.0, ripple="timeline"))
+    assert report.ok, report.error
+    assert _duration(session.project) == pytest.approx(before, abs=1e-6)
+
+
+_RIPPLE_OPS = [
+    _op("add_speed_point", clip="a", at=3.0, value=3.0),
+    _op("set_speed_point_value", clip="a", at=1.0, value=4.0),
+    _op("remove_speed_point", clip="a", at=1.0),
+    _op("move_speed_points", clip="a", points=[1.0], delta=0.5),
+    _op("insert_hold", clip="a", at=1.0, duration=1.0),
+    _op("set_speed_point_interpolation", clip="a", points=[0.0, 1.0], interpolation="hold"),
+    _op("edit_speed_points", clip="a", delta=0.25, points=[{"at": 1.0, "value": 3.0}]),
+    _op("remove_speed_points", clip="a", points=[1.0, 2.0]),
+]
+
+
+@pytest.mark.parametrize("operation", _RIPPLE_OPS, ids=lambda item: item["op"])
+def test_every_verb_with_ripple_honours_the_timeline_mode(operation):
+    before = _duration(_roomy(_curved)())
+    session, report = _apply(_roomy(_curved)(), {**operation, "ripple": "timeline"})
+    assert report.ok, report.error
+    assert _duration(session.project) == pytest.approx(before, abs=1e-6)
+
+
+def test_set_speed_tangents_honours_the_timeline_mode():
+    before = _duration(_roomy(_bezier)())
+    session, report = _apply(_roomy(_bezier)(), _op("set_speed_tangents", clip="a", points=[1.0], out_slope=3.0, ripple="timeline"))
+    assert report.ok, report.error
+    assert _duration(session.project) == pytest.approx(before, abs=1e-6)
