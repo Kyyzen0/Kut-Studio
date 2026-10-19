@@ -150,10 +150,7 @@ def _color_ops(data: dict) -> list[dict]:
         if node["blur"] or node["sharpen"]:
             ops.append({"op": "set_color_detail", **base, "blur": node["blur"], "sharpen": node["sharpen"]})
         for window in node["windows"]:
-            op = _mask_op("c1", window, "add_color_window", node=node["id"])
-            if not op["name"]:
-                del op["name"]               # ``add_color_window`` refuse un nom vide (``set_mask`` l'accepte) : « sans nom » = absent
-            ops.append(op)
+            ops.append(_mask_op("c1", window, "add_color_window", node=node["id"]))   # le nom vide de la description est rejoué tel quel
     return ops
 
 
