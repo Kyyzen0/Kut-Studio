@@ -368,27 +368,63 @@ def test_error_message_does_not_echo_huge_input(tmp_path: Path) -> None:
 # --- architecture ---------------------------------------------------------------------------------------
 
 
+# Liste blanche, explicite et minimale : le SEUL fichier de `kut3d` qui peut toucher Qt (repli de décodage des
+# images non PNG), et seulement par un import PARESSEUX (dans une fonction).
+QT_WHITELIST = {"kut3d/render/images.py"}
+
+
+def _imports_with_depth(tree: ast.AST) -> list[tuple[str, bool, int]]:
+    """(module importé, dans une fonction ?, ligne) pour chaque import du fichier."""
+    found: list[tuple[str, bool, int]] = []
+
+    def visit(node: ast.AST, in_function: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            inside = in_function or isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)
+            )
+            if isinstance(child, ast.Import):
+                found.extend((a.name, inside, child.lineno) for a in child.names)
+            elif isinstance(child, ast.ImportFrom):
+                name = (
+                    (child.module or "")
+                    if child.level == 0
+                    else f"<relatif>{child.module}"
+                )
+                found.append((name, inside, child.lineno))
+            visit(child, inside)
+
+    visit(tree, False)
+    return found
+
+
 def test_kut3d_does_not_import_qt_ui_or_core() -> None:
     forbidden = ("PySide6", "PyQt5", "PyQt6", "ui", "core")
     offenders = []
     files = sorted((ROOT / "kut3d").rglob("*.py"))
     assert len(files) >= 10
     for file in files:
-        tree = ast.parse(file.read_text())
-        for node in ast.walk(tree):
-            names: list[str] = []
-            if isinstance(node, ast.Import):
-                names = [a.name for a in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                names = (
-                    [node.module or ""]
-                    if node.level == 0
-                    else [f"<relatif>{node.module}"]
+        rel = file.relative_to(ROOT).as_posix()
+        for name, lazy, line in _imports_with_depth(ast.parse(file.read_text())):
+            if name.startswith("<relatif>"):
+                offenders.append(f"{rel}:{line} : {name}")
+            elif name.split(".")[0] in forbidden:
+                qt_allowed = (
+                    name.split(".")[0] == "PySide6" and rel in QT_WHITELIST and lazy
                 )
-            for name in names:
-                if name.startswith("<relatif>") or name.split(".")[0] in forbidden:
-                    offenders.append(f"{file.relative_to(ROOT)} : {name}")
+                if not qt_allowed:
+                    offenders.append(f"{rel}:{line} : {name}")
     assert not offenders, offenders
+
+
+def test_the_qt_whitelist_is_exactly_the_image_fallback() -> None:
+    users = []
+    for file in sorted((ROOT / "kut3d").rglob("*.py")):
+        if any(
+            n.split(".")[0] == "PySide6"
+            for n, _, _ in _imports_with_depth(ast.parse(file.read_text()))
+        ):
+            users.append(file.relative_to(ROOT).as_posix())
+    assert users == sorted(QT_WHITELIST)
 
 
 def test_importing_kut3d_loads_no_qt() -> None:

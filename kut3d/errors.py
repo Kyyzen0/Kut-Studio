@@ -22,3 +22,11 @@ def short(value: object, limit: int = 60) -> str:
     """Représentation bornée d'une valeur, pour qu'un message d'erreur ne recopie pas l'entrée entière."""
     text = repr(value)
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+class RenderError(ValueError):
+    """Une scène n'a pas pu être rendue (entrée invalide ou hors bornes ; message en français)."""
+
+
+class ImageDecodeError(RenderError):
+    """Une texture n'a pas pu être décodée (fichier corrompu, tronqué, démesuré ou format non pris en charge)."""
