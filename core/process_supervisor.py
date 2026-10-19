@@ -60,6 +60,8 @@ REAPER_FLAG = "--kut-process-reaper"
 """Argument qui fait de l'application le gardien d'une instance (traité dans ``main.py`` avant Qt)."""
 SLEEPER_FLAG = "--kut-process-sleeper"
 """Argument d'un enfant inerte (auto-contrôle du smoke test, application gelée comprise)."""
+# Copie de `kut3d.gpu.probe_worker.PROBE_FLAG` (un test vérifie l'égalité) : évite d'importer kut3d à chaque lancement.
+KUT3D_PROBE_FLAG = "--kut3d-gpu-probe"
 REGISTRY_DIR_NAME = "processes"
 OWNER_FILE = "owner.json"
 CHILD_SUFFIX = ".child"
@@ -389,6 +391,11 @@ def helper_mode_exit_code(argv: Sequence[str]) -> int | None:
         _reaper_logging()
         run_reaper(arguments[index + 1])
         return 0
+    if KUT3D_PROBE_FLAG in arguments:
+        # Sonde GPU de Kut-3D de l'application gelée : sans journal ni Qt avant elle (import différé).
+        from kut3d.gpu.probe_worker import main as probe_main
+
+        return probe_main()
     if SLEEPER_FLAG in arguments:
         index = arguments.index(SLEEPER_FLAG)
         try:

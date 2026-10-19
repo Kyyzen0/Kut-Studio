@@ -11,6 +11,10 @@ from __future__ import annotations
 import json
 import sys
 
+# Application empaquetée (PyInstaller) : pas de `python -m` ; l'application se relance avec ce drapeau, reconnu en tête
+# de `main.py` par `core.process_supervisor.helper_mode_exit_code`, qui appelle `main()` ci-dessous.
+PROBE_FLAG = "--kut3d-gpu-probe"
+
 
 def _emit(payload: dict[str, object]) -> None:
     print(json.dumps(payload), flush=True)

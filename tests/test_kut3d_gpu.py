@@ -245,7 +245,7 @@ def test_a_crashing_worker_does_not_take_the_caller_down(
     assert not result.ok and "signal" in result.reason
 
 
-def test_environment_switch_and_frozen_application_disable_the_gpu_engine(
+def test_environment_switch_disables_the_gpu_engine_and_frozen_application_probes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = _patch_run(monkeypatch, _Run(stdout='{"ok": true, "backend": "Metal"}'))
@@ -253,9 +253,10 @@ def test_environment_switch_and_frozen_application_disable_the_gpu_engine(
     off = availability.probe_qrhi(platform="p")
     assert not off.ok and availability.ENV_SWITCH in off.reason and run.calls == 0
     monkeypatch.delenv(availability.ENV_SWITCH)
+    # Gelée, la sonde n'est plus refusée : elle part en sous-processus (commande testée dans test_kut3d_frozen.py).
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     frozen = availability.probe_qrhi(platform="q")
-    assert not frozen.ok and "empaquetée" in frozen.reason and run.calls == 0
+    assert frozen.ok and run.calls == 1
 
 
 def test_platform_resolution_never_imports_qt(monkeypatch: pytest.MonkeyPatch) -> None:

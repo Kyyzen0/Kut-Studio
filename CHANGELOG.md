@@ -16,6 +16,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- Interne : l'application empaquetée embarque le moteur 3D (Kut-3D) et ses shaders, et sa sonde GPU fonctionne gelée ; le test de démarrage de l'application construite le vérifie.
 - Les scripts savent régler la vitesse et le remappage d'un clip (vitesse, sens, arrêt sur image, points de la courbe de vitesse, images intermédiaires), le transform, et l'audio d'un clip (gain, panoramique, fondus, effets audio) et ducker la musique sous la voix, avec les mêmes bornes, verrous et refus que l'interface.
 - Les scripts savent monter : rogner, couper (la moitié droite se cite ensuite), dupliquer, glisser, déplacer d'une piste à l'autre, supprimer en refermant le trou, gérer les pistes (supprimer, renommer, ordonner, fader et panoramique) et les repères, avec les mêmes refus que l'interface.
 - 25 nouvelles transitions dans la bibliothèque : recouvrements et dévoilements (4 sens chacun), balayages et diagonales depuis les quatre coins, ouvertures et fermetures horizontales et verticales, lissés vers le haut et le bas, et trois fondus (rapide, lent, par les gris). **À savoir** : un projet qui en utilise une s'enregistre au format 21 et ne s'ouvre plus dans une version antérieure ; sans elles, le fichier reste identique à avant.

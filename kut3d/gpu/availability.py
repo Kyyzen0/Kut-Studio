@@ -65,6 +65,12 @@ def _worker_env(platform: str) -> dict[str, str]:
 
 
 def _worker_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        # Même forme que `core.process_supervisor.helper_command(PROBE_FLAG)` (kut3d n'importe pas core ; un test
+        # vérifie l'égalité) : `sys.executable` est l'application elle-même.
+        from kut3d.gpu.probe_worker import PROBE_FLAG
+
+        return [sys.executable, PROBE_FLAG]
     return [sys.executable, "-m", "kut3d.gpu.probe_worker"]
 
 
@@ -86,10 +92,6 @@ def _run_probe(platform: str, timeout: float) -> ProbeResult:
     if os.environ.get(ENV_SWITCH, "").strip().lower() in {"off", "0", "false"}:
         return fail(
             f"moteur GPU désactivé par la variable d'environnement {ENV_SWITCH}."
-        )
-    if getattr(sys, "frozen", False):
-        return fail(
-            "application empaquetée : le moteur GPU de Kut-3D n'est pas encore pris en charge (phase 3)."
         )
     if not _pyside_installed():
         return fail("PySide6 n'est pas installé.")

@@ -86,6 +86,13 @@ def main():
         if problem:
             print(f"Smoke test : aperçu GPU indisponible — {problem}", file=sys.stderr)
             return 1
+        # Kut-3D : le paquet kut3d, ses shaders et un rendu numpy d'un triangle (sans sonde GPU en sous-processus).
+        from core.kut3d_check import kut3d_self_check
+
+        problem = kut3d_self_check()
+        if problem:
+            print(f"Smoke test : Kut-3D indisponible — {problem}", file=sys.stderr)
+            return 1
         # Mises à jour : l'application construite doit pouvoir parler HTTPS (moteur TLS de Qt embarqué).
         from core.update_service import tls_self_check
 
