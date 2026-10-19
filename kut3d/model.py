@@ -329,6 +329,8 @@ class Model:
     source: Path = field(default_factory=Path)
     root_transform: Any = field(default_factory=lambda: np.eye(4))
     warnings: tuple[str, ...] = ()
+    # Fichiers lus en plus de `source` (MTL, .bin externes, textures en fichier) : chemins absolus résolus.
+    dependencies: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         for name in (
@@ -339,6 +341,7 @@ class Model:
             "skeletons",
             "animations",
             "warnings",
+            "dependencies",
         ):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         object.__setattr__(

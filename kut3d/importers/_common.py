@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 from kut3d.errors import MAX_FILE_BYTES, ModelImportError, short
-from kut3d.model import TextureRef
+from kut3d.model import Material, TextureRef
 
 
 def read_limited(path: Path, limit: int = MAX_FILE_BYTES) -> bytes:
@@ -60,3 +61,24 @@ def texture_from_file(
     if path is None:
         return None
     return TextureRef(name=path.name, path=path)
+
+
+def finalize_dependencies(paths: Iterable[Path]) -> tuple[Path, ...]:
+    """Chemins absolus résolus, dédoublonnés, triés de façon déterministe (ordre de `as_posix()`)."""
+    return tuple(sorted({p.resolve() for p in paths}, key=lambda p: p.as_posix()))
+
+
+def material_texture_paths(materials: Iterable[Material]) -> list[Path]:
+    """Les fichiers image référencés par les matériaux (les textures embarquées n'ont pas de chemin)."""
+    out: list[Path] = []
+    for mat in materials:
+        for ref in (
+            mat.base_color_texture,
+            mat.normal_texture,
+            mat.metallic_roughness_texture,
+            mat.emissive_texture,
+            mat.occlusion_texture,
+        ):
+            if ref is not None and ref.path is not None:
+                out.append(ref.path)
+    return out

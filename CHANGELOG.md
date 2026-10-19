@@ -20,6 +20,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 - Les scripts savent monter : rogner, couper (la moitié droite se cite ensuite), dupliquer, glisser, déplacer d'une piste à l'autre, supprimer en refermant le trou, gérer les pistes (supprimer, renommer, ordonner, fader et panoramique) et les repères, avec les mêmes refus que l'interface.
 - 25 nouvelles transitions dans la bibliothèque : recouvrements et dévoilements (4 sens chacun), balayages et diagonales depuis les quatre coins, ouvertures et fermetures horizontales et verticales, lissés vers le haut et le bas, et trois fondus (rapide, lent, par les gris). **À savoir** : un projet qui en utilise une s'enregistre au format 21 et ne s'ouvre plus dans une version antérieure ; sans elles, le fichier reste identique à avant.
 - **Kut-3D : moteur de rendu GPU « qrhi » (interne, pas encore visible dans l'application).** Le paquet `kut3d` rend une scène 3D sur le GPU (Metal sur macOS, sans jamais ouvrir de fenêtre) environ 20 fois plus vite que la référence logicielle, avec le même résultat à la tolérance près ; il retombe sur la référence quand aucun GPU n'est utilisable. Voir [docs/kut3d-render.md](docs/kut3d-render.md).
+- **Kut-3D : fichier de scène `.kut3d` (interne, pas encore visible dans l'application).** Une scène 3D (caméra, lumières, modèles, instances) s'enregistre et se relit à l'identique dans un fichier JSON strict, avec des modèles confinés au dossier du fichier. Voir [docs/kut3d-scene.md](docs/kut3d-scene.md).
 
 ### Fixed
 

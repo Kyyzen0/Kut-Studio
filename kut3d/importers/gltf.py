@@ -23,7 +23,12 @@ import numpy as np
 
 from kut3d.errors import ModelImportError, short
 from kut3d.geometry import smooth_normals
-from kut3d.importers._common import read_limited, texture_from_file
+from kut3d.importers._common import (
+    finalize_dependencies,
+    material_texture_paths,
+    read_limited,
+    texture_from_file,
+)
 from kut3d.importers.gltf_accessors import denormalize, read_accessor
 from kut3d.importers.gltf_sampler import sampler_fields
 from kut3d.mathutil import Array, matrix_to_trs, normalize_quaternion
@@ -122,6 +127,7 @@ class _Loader:
         self.gltf = gltf
         self.warnings: list[str] = []
         self._textures: dict[int, TextureRef | None] = {}
+        self.deps: list[Path] = []
         self.buffers = self._load_buffers(glb_bin)
 
     # -- buffers -------------------------------------------------------------------------------------------
@@ -163,6 +169,7 @@ class _Loader:
             )
         if not target.is_file():
             raise ModelImportError(f"{what} : fichier introuvable ({short(uri)}).")
+        self.deps.append(target)
         return read_limited(target)
 
     def acc(self, index: Any) -> Array:
@@ -206,7 +213,10 @@ class _Loader:
         assert isinstance(index, int)  # garanti par _obj
         ref = self._texture_ref(tex, index)
         if ref is not None:
-            ref = replace(ref, **sampler_fields(self.gltf, tex, index, self.warnings))
+            fields: dict[str, Any] = dict(
+                sampler_fields(self.gltf, tex, index, self.warnings)
+            )
+            ref = replace(ref, **fields)
         self._textures[index] = ref
         return ref
 
@@ -680,4 +690,7 @@ def load(path: Path) -> Model:
         animations=tuple(animations),
         source=path,
         warnings=tuple(ld.warnings),
+        dependencies=finalize_dependencies(
+            [*ld.deps, *material_texture_paths(materials)]
+        ),
     )
