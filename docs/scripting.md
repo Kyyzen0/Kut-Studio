@@ -582,6 +582,7 @@ leurs contrôles communs sont dans `keyframe_rules.py`.
   `edit_speed_points` déplace et change des valeurs dans **une seule** transaction, comme le glissement de l'éditeur ; `remove_speed_points` retire un groupe
   de même. `apply_time_preset` prend l'identifiant d'un préréglage **intégré** (jamais celui de l'utilisateur) ; `freeze` demande `at`, sur une image de la
   timeline, et pose une seconde d'arrêt (comme `insert_hold`) ; les autres préréglages refusent `at` et remplacent la courbe.
+- **`ripple`** (tous les verbes de vitesse qui l'exposent, `apply_time_preset` compris) : `source` garde la portion de média et la durée sur la timeline change ; `timeline` garde la durée sur la timeline, dans la limite de la fin du média (un clip accéléré au-delà du média est plus court, jamais refusé). Pour un préréglage, le mode vaut pour le préréglage entier (retrait de la courbe, vitesse constante, points de rampe).
 - **Transitions** : `update_transition` et `apply_transition_preset` exigent deux clips **vidéo** déverrouillés (piste et calque), comme l'interface. La durée
   de la transition est celle du chevauchement : la changer recale le clip entrant, et le modèle ne regarde pas ses voisins ; un script reçoit refusé tout
   recalage qui ferait recouvrir le clip entrant par un autre clip de la piste, ou qui défairait une autre transition. La durée va de 0,05 s à la moitié du plus
