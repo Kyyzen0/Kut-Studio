@@ -13,10 +13,11 @@ jobs:
   test-and-build:
     name: ${{ matrix.os }} / Python 3.11
     runs-on: ${{ matrix.os }}
-    # Sous Windows, une suite saine dure de 12 à 26 min selon le runner (du simple au double sur un même commit) : 28 min
-    # de job au pire mesuré. 45 min laissent à un test bloqué en fin de suite le temps d'échouer par --timeout, avec son
-    # nom, au lieu d'une annulation muette du job (garde : tests/test_ci_workflow.py).
-    timeout-minutes: 45
+    # Mesuré le 2026-10-20 sur 40 exécutions : une suite saine dure jusqu'à 45 min de job sous Windows (médiane 38, 90e
+    # centile 44), 43 sous Ubuntu, 43 sous macOS ; la suite compte près de 9 800 tests et le runner peut doubler la durée
+    # sur un même commit. 60 min laissent à un test bloqué en fin de suite (--timeout=600) le temps d'échouer avec son
+    # nom, au lieu d'une annulation muette du job (garde : tests/test_ci_workflow.py, qui lit la mesure ci-dessus).
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -160,8 +161,9 @@ jobs:
     name: Debian 13 / FFmpeg 7.1 / Python 3.13
     runs-on: ubuntu-latest
     container: debian:trixie
-    # Même règle que la matrice : la suite saine (21 min de job au pire mesuré) plus le --timeout d'un test bloqué.
-    timeout-minutes: 45
+    # Même règle que la matrice : la suite saine (36 min de job au pire mesuré le 2026-10-20) plus le --timeout d'un test
+    # bloqué.
+    timeout-minutes: 50
 
     env:
       QT_QPA_PLATFORM: offscreen

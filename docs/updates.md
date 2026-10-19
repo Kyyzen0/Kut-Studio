@@ -144,7 +144,7 @@ disque, annulé. Délais : 20 s pour l'API, 30 s sans donnée pour un téléchar
 Toutes les étapes sont rejouables à la main : `python -m tools.release --help`.
 
 **Si un job de construction reste bloqué** (v0.3.0 : le job Windows, muet 50 min à 94 % des tests, annulé à 75 min).
-Une suite saine dure 12 à 26 min sous Windows ; l'étape « Run test suite » est bornée à 45 min. Avant cela, un test
+Une suite saine a duré jusqu'à 38 min sous Windows (v0.7.0) ; l'étape « Run test suite » est bornée à 60 min. Avant cela, un test
 bloqué depuis 7 min écrit `Timeout (0:07:00)!` dans le journal, suivi de la pile Python de chaque thread de son worker
 (`faulthandler_timeout`, qui fonctionne même quand un blocage natif tient le GIL et fige le délai de pytest-timeout) :
 le haut de la pile du thread principal désigne le test et l'appel natif en cause. Le test n'est pas interrompu par ce
