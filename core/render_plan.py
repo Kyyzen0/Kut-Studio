@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 
 from .color_matrix import asset_ffmpeg_override
 from .effects_model import ClipEffect
+from .graphics import GraphicType
 from .project_model import Clip, MediaAsset, Project, Sequence, Track
 from .subtitle_io import SubtitleCue
 from .template_slots import is_photo_slot
@@ -669,6 +670,13 @@ class _PlanBuilder:
                     if not clip.enabled or graphic is None:
                         continue
                     if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
+                        continue
+                    if graphic.type == GraphicType.SCENE3D:
+                        # Provisoire (lot B2a) : le rendu d'une scène 3D est branché au lot B2b ; en attendant le calque
+                        # est ignoré et signalé, jamais une erreur (aperçu, annulation, export et réouverture restent sûrs).
+                        self.warnings.append(
+                            f"{clip.label or clip.id} : scène 3D pas encore rendue (clip ignoré dans cette version)."
+                        )
                         continue
                     graphics_layers.append(
                         _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))

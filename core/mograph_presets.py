@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .animation import InterpolationType, Keyframe
 from .graphics import GraphicType, ShapeKind, update_graphic
-from .mograph_layers import LayerClipboard, add_layer, copy_layers, group_layers, paste_layers, set_parent
+from .mograph_layers import LayerClipboard, LayerError, add_layer, copy_layers, group_layers, paste_layers, set_parent
 from .platform_paths import user_config_dir
 from .project_model import Clip, Project
 from .visual_effects import ClipTransform, TransformKeyframe
@@ -264,6 +264,10 @@ def save_preset(project: Project, clip_ids: list[str], name: str, *, category: s
                 settings_dir=None) -> MographPreset:
     """Enregistre les calques (un groupe emporte son contenu) comme preset utilisateur."""
     clipboard = copy_layers(project, clip_ids)
+    if any((raw.get("graphic") or {}).get("type") == GraphicType.SCENE3D.value for raw in clipboard.clips):
+        # Un preset est un fichier à part, relu par toutes les versions : une version qui ne connaît pas le calque 3D le
+        # perdrait en silence. Refusé explicitement (le copier-coller dans le projet, lui, reste possible).
+        raise LayerError("Un calque scène 3D ne peut pas être enregistré comme preset.")
     directory = presets_directory(settings_dir)
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{_slug(name)}.json"

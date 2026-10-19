@@ -78,3 +78,23 @@ chemins ≤ 1024. L'écriture est atomique (fichier temporaire puis remplacement
 `dependency_files(path)` retourne le `.kut3d` puis, triés et sans doublon, les fichiers de tout modèle **déclaré** (même
 sans instance : `load_scene` l'exige), leurs `.mtl`, `.bin`
 externes et textures (`Model.dependencies`).
+
+## Un clip « scène 3D » dans un projet Kut-Studio (lot B2a : modèle et format)
+
+Un clip 3D est un **calque graphique** (`GraphicType.SCENE3D`, `core/graphics.py`) dont `source_path` est le chemin d'un `.kut3d`.
+Il vit sur une piste « graphiques », se crée par `add_graphic_clip` (qui lit la scène : `core.scene3d.validate`, sans rien
+rendre) et se coupe, se duplique, se colle, se groupe, se verrouille et se met en solo comme les autres calques. Aucun champ n'est
+ajouté à `Clip` : le temps de la scène sera `source_in + (t - timeline_start)` (une coupe ou un rognage à gauche avancent
+`source_in`).
+
+* **Format `.kut`** : un projet qui contient un calque 3D (dans n'importe quelle séquence, groupe ou composition sérialisée) s'écrit
+  en **version 22** (`SCENE3D_VERSION`, `payload_uses_scene3d`) et ne s'ouvre plus dans une version antérieure ; un projet sans
+  calque 3D reste écrit octet pour octet comme avant (`tests/test_scene3d_format.py` en fige l'empreinte).
+* **Refusé, explicitement** : toute vitesse, marche arrière, arrêt sur image ou courbe de vitesse (`core.scene3d.ensure_fixed_speed`,
+  appelé par chaque fonction du modèle qui écrit `time_remapping` ; les scripts refusent déjà les pistes graphiques), l'enregistrement
+  en preset (une autre version perdrait le calque en silence), l'entrée dans une composition (le nœud graphique ne porte pas
+  `source_in`), le changement de fichier d'un clip existant. Stabilisation et transitions ne visent que les clips vidéo.
+* **Pas encore de rendu** (lot B2b) : le plan de rendu ignore le calque et le signale dans `RenderPlan.warnings`.
+* `core.scene3d` : `validate(path)`, `dependencies(path)` (fichiers de la scène, modèles confinés sous son dossier) et
+  `scene_signature(path)` (empreinte bon marché pour les clés de cache : date, taille, début et fin de chaque fichier, mémorisée
+  et revalidée par `stat` ; `"missing"` si le fichier manque, `"invalid:…"` si la scène ne se lit pas).
