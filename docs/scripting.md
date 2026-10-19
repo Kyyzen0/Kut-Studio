@@ -50,7 +50,7 @@ Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou u
 ## Images clés : propriétés et unités
 
 `add_keyframe` accepte les propriétés **du registre d'animation** (`core/animation_targets.py`) qui se posent avec un nombre : le transform et `graphic.*`.
-Sont exclus : `flip_h` / `flip_v` (booléens), `time.speed` (la durée du clip dépend de la courbe de vitesse) et `mask.<id>.*` (verbes `add_mask_keyframe` /
+Sont exclus : `flip_h` / `flip_v` (booléens ; la valeur de base se règle avec `set_transform`), `time.speed` (la durée du clip dépend de la courbe de vitesse ; voir les verbes de vitesse, « Vitesse et remappage ») et `mask.<id>.*` (verbes `add_mask_keyframe` /
 `remove_mask_keyframe`). Les valeurs sont dans **l'unité du modèle**, pas celle que l'inspecteur affiche ; elles doivent rester dans les bornes
 (sinon refus, jamais d'écrêtage). Un test (`tests/test_script_verbs_animation_masks.py`) relit ce tableau et le compare au registre.
 
@@ -149,6 +149,17 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_track_insert` | Retire un insert de piste (`track`, `insert`) |
 | `set_track_insert_enabled` | Active ou désactive un insert de piste (`track`, `insert`, `enabled`) |
 | `update_track_insert` | Modifie les paramètres d'un insert de piste (`track`, `insert`, `params`) |
+| `set_clip_gain` | Gain d'un clip d'une piste **audio** (`clip`, `gain_db` de −60 à 12) ; voir « Audio de clip » |
+| `set_clip_pan` | Panoramique d'un clip d'une piste audio (`clip`, `pan` de −1 à 1) |
+| `set_clip_fade_in` | Fondu d'entrée d'un clip audio (`clip`, `seconds`) ; plus long que la durée du clip moins le fondu de sortie : refusé |
+| `set_clip_fade_out` | Fondu de sortie d'un clip audio (`clip`, `seconds`) ; plus long que la durée du clip moins le fondu d'entrée : refusé |
+| `reset_clip_fades` | Retire les deux fondus d'un clip audio (`clip`) |
+| `add_clip_audio_effect` | Ajoute un effet audio à la fin de la chaîne d'un clip **audio ou vidéo** (`clip`, `type` : les types des inserts, `params`, `enabled`) ; `id` / `as` |
+| `remove_clip_audio_effect` | Retire un effet audio d'un clip (`clip`, `effect`) |
+| `set_clip_audio_effect_enabled` | Active ou désactive un effet audio de clip (`clip`, `effect`, `enabled`) |
+| `update_clip_audio_effect` | Modifie des paramètres d'un effet audio de clip (`clip`, `effect`, `params`, au moins un) : noms et bornes du modèle, rien n'est écrêté |
+| `move_clip_audio_effect` | Déplace un effet audio dans la chaîne (`clip`, `effect`, `delta` non nul) ; un déplacement qui sortirait de la chaîne est refusé |
+| `duck_music_under_voice` | Chaque piste audio de rôle « musique » baisse sous chaque piste de rôle « voix » (`preset` = `gentle`, `voice_over_music`, `social_punchy` ; défaut `voice_over_music`) ; refusé si une piste musique est verrouillée |
 | `set_track_muted` | Coupe ou rétablit le son d'une piste (`track`, `muted`) |
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
@@ -164,6 +175,23 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_subtitle` | Pose un sous-titre sur une piste de sous-titres (`text`, `at`, `duration`, `track`) |
 | `add_transition` | Transition entre deux clips vidéo adjacents d'une même piste (`from_clip`, `to_clip`, `transition`, `duration`) |
 | `remove_transition` | Retire une transition (`transition`) |
+| `set_clip_speed` | Vitesse constante d'un clip **vidéo ou audio** (`clip`, `speed` de 0,05 à 10) ; remplace une courbe de vitesse existante, comme l'inspecteur ; voir « Vitesse et remappage » |
+| `set_clip_reverse` | Joue un clip à l'envers ou à l'endroit (`clip`, `reverse`) |
+| `set_clip_freeze_frame` | Transforme un clip vidéo en arrêt sur image (`clip`, `source_time` dans la fenêtre de source du clip, `duration` de 0,01 à 3 600 s) |
+| `remove_clip_freeze_frame` | Lève l'arrêt sur image (`clip`) : tout le remappage revient à la normale ; refusé si le clip n'est pas figé |
+| `set_clip_freeze_duration` | Change la durée d'un arrêt sur image (`clip`, `duration` de 0,01 à 3 600 s) ; refusé si le clip n'est pas figé |
+| `reset_clip_time_remapping` | Remet vitesse, sens, courbe et arrêt sur image à la normale (`clip`) |
+| `add_speed_point` | Pose un point de la courbe de vitesse (`clip`, `at` relatif au clip, `value` de −10 à 10 ou absent = vitesse actuelle, `interpolation`, `ripple`) |
+| `set_speed_point_value` | Change la vitesse d'un point, désigné par son instant (`clip`, `at`, `value`, `ripple`) |
+| `remove_speed_point` | Retire un point, désigné par son instant (`clip`, `at`, `ripple`) |
+| `move_speed_points` | Déplace des points d'un bloc (`clip`, `points` = leurs instants, 1 à 64, `delta` non nul, `ripple`) ; un point qui sortirait du clip ou en recouvrirait un autre est refusé |
+| `clear_speed_curve` | Supprime la courbe de vitesse : vitesse constante, portion de média conservée (`clip`) |
+| `insert_hold` | Arrêt sur image dans la courbe : l'image reste `duration` s (0,01 à 3 600, défaut 1) à l'instant `at` (`clip`, `ripple`) ; `at` doit tomber sur une image de la timeline |
+| `set_clip_interpolation` | Images intermédiaires d'un clip ralenti (`clip`, `interpolation` = `sampling`, `blending`, `optical_flow`, et/ou `quality` = `auto`, `draft`, `balanced`, `best`) |
+| `set_clip_preserve_pitch` | L'audio garde sa hauteur quand la vitesse change (`clip`, `enabled`) |
+| `set_clip_remap_audio` | Le remappage touche la vidéo et l'audio, ou la vidéo seule (`clip`, `enabled`) |
+| `set_transform` | Valeur de **base** du transform d'un clip vidéo ou d'un calque (`clip`, au moins un de `position_x`, `position_y`, `scale`, `rotation`, `opacity`, `anchor_x`, `anchor_y`, `scale_x`, `scale_y`, `skew`, `flip_h`, `flip_v`, `fill`, `pan_x`, `pan_y`) ; hors bornes ou propriété animée : refusé ; voir « Transform » |
+| `reset_transform` | Remet le transform à l'identité et retire toutes ses images clés (`clip`) |
 | `add_keyframe` | Pose ou remplace une image clé (`clip`, `property`, `at`, `value` obligatoire, `interpolation`) : `at` est **relatif au clip**. `property` : une propriété du transform (dont `pan_x`, `pan_y`) ou `graphic.*`, voir « Images clés : propriétés et unités » |
 | `remove_keyframe` | Retire l'image clé d'une propriété à un instant (`clip`, `property`, `at`) |
 | `add_mask_keyframe` | Pose ou remplace une image clé d'une propriété d'un masque de compositing (`clip`, `mask`, `property` = `position_x`…`opacity`, `at` relatif au clip, `value`, `interpolation`) ; refusé pour le recadrage, une fenêtre d'étalonnage, et la position d'un masque suivi |
@@ -384,6 +412,53 @@ Ces verbes appellent les fonctions de montage que l'interface appelle (`core/tim
   (le mélangeur de l'interface) : piste audio seulement, déverrouillée ; la courbe d'automation de la piste reste à part.
 - Pas de verbe pour la sélection multiple ni les actions qui lisent la tête de lecture : ce sont des états d'interface.
 
+## Vitesse et remappage
+
+Ces verbes appellent les fonctions que l'inspecteur de vitesse, le menu « Vitesse » et l'éditeur de courbes appellent
+(`core/timeline_operations.py`, `core/time_ops.py`) : le résultat est celui du geste correspondant. Ils sont dans `core/scripting/time_verbs.py`.
+
+- **Clips visés** : vidéo et audio, déverrouillés (piste et calque) ; un clip de graphiques ou de sous-titres n'a pas de vitesse et est refusé.
+- **Rien n'est ramené en silence** : le modèle ramènerait une vitesse hors de 0,05 à 10, un point hors du clip, un groupe de points trop
+  déplacé, ou alignerait un instant sur une image ; un script reçoit tout cela refusé (une valeur hors bornes est refusée à la lecture).
+  `move_speed_points` refuse aussi un point qui arriverait sur un autre sans le déplacer (le modèle le remplacerait).
+- **Un point de vitesse se désigne par son instant** `at` (secondes depuis le début du clip), comme une image clé d'animation ; les identifiants
+  d'image clé sont générés par le modèle et un script n'a pas à les citer. Aucun verbe de vitesse ne crée d'identifiant.
+- **`ripple`** (`source` ou `timeline`, défaut `source`, celui de l'interface) : que garde une édition qui change la durée du clip, la portion de
+  média ou la durée sur la timeline.
+- **Ce que fait le modèle, comme l'interface** : `set_clip_speed` et `clear_speed_curve` remplacent ou retirent la courbe ; `set_clip_freeze_frame`
+  retire la courbe de vitesse ; un clip dont la durée diminue voit ses images clés qui tombent après sa nouvelle fin recadrées ou retirées ; la première
+  courbe posée avec une `value` ajoute un point d'amorce à 0 s qui garde la vitesse d'avant. Aucun verbe ne repousse les clips voisins : un clip
+  ralenti peut en recouvrir un autre, comme dans l'interface.
+- `insert_hold` aligne dans l'interface l'instant sur une image de la timeline ; le script doit déjà donner un instant sur une image
+  (le message donne le plus proche) plutôt que de le voir déplacer.
+- `set_clip_speed`, `set_clip_reverse`, `set_clip_preserve_pitch` et `set_clip_remap_audio` sont refusés sur un clip figé (l'interface les désactive ; la valeur serait jetée à la levée du gel) ; `set_clip_freeze_frame` reste permis sur un clip figé, comme dans l'interface.
+- `remove_clip_freeze_frame` et `set_clip_freeze_duration` ne s'appliquent qu'à un clip figé : le modèle remettrait sinon à zéro la vitesse
+  et le sens d'un clip qui n'est pas figé.
+
+## Transform
+
+`set_transform` règle la **valeur de base** du transform, comme l'inspecteur « Mouvement » : les champs absents et les images clés restent
+(`add_keyframe` pose les images clés). Dans `core/scripting/transform_verbs.py`.
+
+- Les bornes sont celles du registre d'animation (le tableau de « Images clés : propriétés et unités ») ; `flip_h`, `flip_v` et `fill` sont des booléens.
+- Une propriété qui a des images clés est refusée (la courbe masquerait la valeur de base) ; `reset_transform` retire, lui, toutes les images clés du transform.
+- `skew` n'existe que pour un calque graphique, `fill`, `pan_x` et `pan_y` que pour un clip vidéo : sur l'autre genre de piste ils seraient ignorés au rendu, donc refusés.
+- Le suivi (tracking) et la stabilisation composent la valeur de base : ce que le script écrit est la base, pas le résultat rendu.
+
+## Audio de clip
+
+Gain, panoramique, fondus, effets audio d'un clip et ducking, comme l'inspecteur audio (`core/scripting/clip_audio_verbs.py`).
+
+- **Gain, panoramique, fondus** : seulement pour les clips d'une piste audio (le groupe audio de l'inspecteur n'existe que pour elles). Le modèle n'a
+  pas de mutateur pour le gain ni le panoramique (l'interface écrit le champ) ; le verbe refuse ce qui sort de −60 à 12 dB et de −1 à 1. Un fondu qui
+  dépasserait ce qui reste de la durée du clip (durée moins l'autre fondu) serait réduit par le modèle : il est refusé.
+- **Effets audio de clip** : sur un clip de piste audio **ou vidéo** (comme le rack d'effets de l'inspecteur) ; un clip graphique ou de sous-titres
+  est refusé. Les paramètres sont ceux de l'effet (`parametric_eq`, `compressor`…), validés par le modèle : un nom inconnu ou une valeur hors bornes est refusé.
+  `add_clip_audio_effect` crée l'effet (`id` / `as`, unique dans le clip) ; sans identifiant, le modèle le nomme `afx-…`.
+- **Ducking** : `duck_music_under_voice` utilise les rôles de piste déjà posés dans le projet (il n'y a pas encore de verbe pour les changer) ; une association
+  existante reçoit le nouveau réglage et est réactivée, comme avec la commande de menu. Il refuse si une piste « musique » est verrouillée (elle serait atténuée) ;
+  la commande de menu ne regarde pas ce verrou.
+
 ## Pas encore là
 
 - **Animation de l'étalonnage et des paramètres d'effets** : le modèle ne les anime pas (aucune propriété animable de couleur ni d'effet). C'est une fonctionnalité de modèle à décider à part, pas un lot de verbes ; les calques d'image sont faits (`add_image_layer`).
@@ -394,7 +469,7 @@ Ces verbes appellent les fonctions de montage que l'interface appelle (`core/tim
 | Module | Rôle |
 | --- | --- |
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
-| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py` | les verbes d'images-clés de masque, d'effets de clip et de masques (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform et d'audio de clip (assemblés dans `VERBS` après leur verbe d'ancrage) |
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
