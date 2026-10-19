@@ -12,7 +12,7 @@ Kut-3D n'est **pas un clone de Blender** : on vise la 3D pensée pour la vidéo,
 
 ## Résumé de la décision
 
-1. **Un nouveau paquet `kut3d/`** à la racine, qui importe `core/` et jamais l'inverse. Il contient le modèle de scène,
+1. **Un nouveau paquet `kut3d/`** à la racine, **indépendant de `core/`** (un test d'architecture l'impose : ni `core`, ni `ui`, ni Qt hors de `kut3d/gpu/` et de `render/images.py`). Le pont vers Kut vit dans `core/` (`core/film.py`), qui importe `kut3d` en différé. Il contient le modèle de scène,
    les importeurs de formats, les matériaux et textures, l'animation (objets, caméra, personnages), le rendu hors fenêtre et
    la façade Python.
 2. **Les scripts de film sont des fichiers `.py` lancés explicitement** (R3 d'ADR-0005), jamais stockés dans un `.kut` ni
@@ -58,7 +58,9 @@ Ce que le code permet déjà, vérifié le 2026-10-19 :
 
 ### 1. Un paquet `kut3d/`, au-dessus de `core/`
 
-`kut3d/` importe `core/` ; `core/` n'importe jamais `kut3d/`. `ui/` peut importer `kut3d/`. Sous-modules :
+`kut3d/` n'importe ni `core/` ni `ui/` : c'est un test d'architecture (`tests/test_kut3d_model.py`), parce que `core/` n'est pas
+indépendant de Qt. Le pont est dans `core/` (`core/film.py`, `core/film_render.py`), qui n'importe `kut3d` qu'à l'intérieur de ses
+fonctions : `import core.film` reste léger. *Correction : la première version de cet ADR disait l'inverse.* Sous-modules :
 
 - **`model`** : `Node`, `Mesh` (positions, normales, UV), `Material`, `Skeleton`, `MorphTarget`, `AnimationClip`.
   Objets **immuables** (phase 1 livrée ; la sérialisation viendra avec le fichier `.kut3d`, phase 3).
@@ -200,7 +202,13 @@ Chaque phase est une PR (ou plusieurs) fusionnable seule.
 2. **Rendu image par image** : caméra, lumières, ombrage PBR avec textures, déformation par os (CPU numpy + shader GPU),
    passes alpha et profondeur. **Livrée** en 2a (référence numpy) et 2b (moteur QRhi). **Reporté** : ombres portées, flou de
    mouvement, éclairage par image (IBL), mipmaps ; à planifier avant le premier film, car la qualité d'image en dépend.
-3. **Façade Python + clip « scène 3D »** (`.kut` v18, migration, fichier `.kut3d`).
+3. **Façade Python + clip « scène 3D »**, en deux tranches :
+   - **3A. Façade `Film`** : **livrée.** `core/film.py` rend une scène en vidéo ProRes 4444 avec transparence, la pose dans un
+     projet Kut au-dessus d'un fond, ajoute de l'audio, sauve le `.kut` et exporte un MP4. **Aucun changement du format `.kut`**
+     (le fichier reste à la version qu'impose son contenu). Doc : [kut3d-film.md](../kut3d-film.md).
+   - **3B. Vrai clip « scène 3D »** (fichier `.kut3d`, nouvelle version du format projet : la **22**, pas la 18, les versions 18 à 21
+     étant prises par d'autres fonctions ; migration, plan de rendu, aperçu) puis verbes de script et interface. **À décider** : voir
+     les décisions ouvertes 8 à 10.
 4. **Animation**, en trois temps :
    - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel
      (`assimp` ou `trimesh`, licence à vérifier), ou conversion préalable en glTF ;
@@ -224,4 +232,11 @@ Les **phases 0 à 3 suffisent** à réaliser un premier court-métrage entièrem
 6. **Frontière « pas de création de rig »** : à confirmer. Kut-Studio importe et anime des personnages déjà rigués, mais ne
    propose ni modélisation, ni rig, ni peinture des poids.
 7. **Ordre vis-à-vis de l'étape 5 d'ADR-0005** (façade de lecture `describe()`) : la phase 3 de cet ADR la suppose ; faut-il
-   la livrer avant, ou en parallèle avec une façade minimale côté `kut3d/` ?
+   la livrer avant, ou en parallèle avec une façade minimale côté `kut3d/` ? *Tranchée pour la tranche 3A : une façade minimale côté `core/film.py`, sans attendre ADR-0005.*
+8. **Format `.kut` 22** (tranche 3B) : un projet qui contient un clip « scène 3D » ne s'ouvrirait plus dans une version antérieure,
+   comme pour les versions 19 à 21. Les projets sans clip 3D restent écrits à l'identique. À valider avant 3B.
+9. **Aperçu d'un clip « scène 3D »** : une image figée et approximative dans le moniteur, avec les segments fidèles par-dessus
+   (comme les calques graphiques), ou un rendu 3D en direct dans la boucle de lecture ? La première option réutilise l'existant.
+10. **Packaging** : embarquer les shaders `.qsb` (`build.py`) et corriger la sonde GPU, qui lance `sys.executable -m
+    kut3d.gpu.probe_worker`, inutilisable dans l'application empaquetée (repli silencieux sur numpy). À faire avant qu'un clip
+    3D soit visible dans une release.
