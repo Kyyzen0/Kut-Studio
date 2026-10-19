@@ -1,0 +1,60 @@
+# Kut-3D : un film par script Python
+
+Phase 3 (tranche A) d'[ADR-0009](adr/0009-kut3d-moteur-3d-scriptable.md) : la façade `core.film.Film` relie le rendu 3D
+([rendre une scène](kut3d-render.md)) au montage de Kut-Studio. Un script lancé à la main construit une scène, la rend en
+vidéo **avec transparence**, la pose au-dessus d'un fond dans un projet ordinaire, ajoute de l'audio, sauve le `.kut` et
+exporte un MP4. **Aucune fenêtre n'est ouverte** et le format `.kut` ne change pas.
+
+## Le flux
+
+```python
+from core.film import Film
+from kut3d import Scene, Camera, Instance, load_model
+
+film = Film("out/mon_film.kut", size=(1920, 1080), fps=24)      # le dossier « out » est créé
+film.background((0.05, 0.06, 0.10))                              # couleur RVB 0..1, ou chemin d'image / de vidéo
+shot = film.render_shot(scene_or_fn, duration=4.0, name="plan1", samples=2)
+film.place(shot, start=0.0, track=2)                             # V1 = le fond ; les plans vont à partir de V2
+film.audio("musique.wav", start=0.0, gain_db=-6.0)               # piste audio A1
+film.save()                                                      # écrit out/mon_film.kut
+film.export("out/mon_film.mp4")                                  # MP4 H.264 ; preset="youtube" (ou un autre préréglage de Kut)
+```
+
+Exemple complet, sans fichier externe : `.venv/bin/python examples/kut3d_hello_film.py out/` (un cube texturé qui tourne 3 s).
+
+## L'API
+
+- `Film(path, *, size=(1920, 1080), fps=24.0)` : `path` finit par `.kut`. `size` : deux entiers **pairs** (jamais arrondis en silence).
+- `background(couleur | chemin)` : couleur RVB (ou RVBA avec alpha 1), image (recadrée pour remplir le cadre) ou vidéo (au moins
+  aussi longue que le film). Le fond est fabriqué à l'enregistrement, à la durée exacte du film.
+- `render_shot(scene_or_fn, *, duration, name, samples=1, backend="auto", keep_frames=False, overwrite=False) -> Shot` :
+  `scene_or_fn` est une `Scene` (ses clips avancent) ou une fonction `t -> Scene` ; `Shot` est immuable (`name`, `path`,
+  `duration` = `frames / fps`, `frames`, `size`, `fps`). Un nom (lettres, chiffres, `_`) déjà pris est refusé sans `overwrite=True`.
+- `place(shot, *, start=0.0, track=2) -> clip_id` : refuse un chevauchement sur la même piste et un plan d'une autre taille.
+- `audio(chemin, *, start=0.0, track=1, gain_db=0.0, duration=None)` : fichier audio seul ; coupé à la fin des plans.
+- `save() -> Path`, `export(sortie, *, preset=None) -> Path`, `project()` (le `Project` construit), `duration`.
+- Toute erreur est une `FilmError` (une `ValueError`) en français ; les bornes sont vérifiées **avant** de rendre.
+
+## Ce qui est écrit sur disque
+
+```
+out/mon_film.kut               le projet
+out/mon_film_assets/plan1.mov  le plan : ProRes 4444 avec canal alpha, matrice BT.709 étiquetée
+out/mon_film_assets/background.mp4   le fond fabriqué (couleur ou image)
+out/mon_film.mp4               l'export
+```
+
+Les PNG intermédiaires (`mon_film_assets/plan1/frame_000001.png`...) sont supprimés après l'encodage, sauf `keep_frames=True`.
+Une erreur ou un Ctrl-C ne laisse aucun fichier partiel. Seuls les fichiers `frame_*.png` du dossier sont effacés.
+
+## Limites
+
+- Le plan est un **média vidéo ordinaire** : il n'y a pas encore de clip « scène 3D » natif dans la timeline, donc pas de
+  réglage de la scène depuis l'interface. Le `.kut` ne contient aucun script ni aucune scène.
+- Le format `.kut` n'est pas modifié : le film s'écrit dans la version que le contenu exige (comme un projet fait à la main).
+- Le ProRes 4444 est lourd (de quelques Mo à plusieurs dizaines de Mo par seconde selon la scène, en 1080p).
+- Un plan dure `round(durée x fps)` images ; durée d'un plan : 3600 s au plus, 100 000 images au plus.
+- Le rendu `numpy` de référence est lent (mesure : 4 s en 720p ≈ 22 s) ; `backend="auto"` prend le GPU quand il est utilisable.
+- La musique n'allonge pas le film. Pas de calques de texte ou de graphiques, de transitions ni de réglages d'export fins ici :
+  le projet sauvé s'ouvre dans Kut-Studio pour les ajouter.
+- Le script s'exécute avec le dépôt (`.venv/bin/python`) ; l'empaquetage de la façade dans l'application n'est pas traité.
