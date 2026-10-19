@@ -305,3 +305,11 @@ def test_hostile_inputs_are_bounded_at_parse():
     _invalid(_op("add_ducking_sidechain", music="A1"))
     _invalid(_op("add_ducking_sidechain", music="A1", voice="A2", id="x" * 1000))
     _invalid(_op("add_ducking_sidechain", music="A1", voice="A2", **{"as": "d"}), _op("add_ducking_sidechain", music="A3", voice="A2", **{"as": "d"}))
+
+
+def test_the_loop_rule_counts_pairs_about_to_be_created_together():
+    """Les rôles ne le produisent pas (une piste n'est pas à la fois musique et voix), mais la règle l'assure pour toute opération en masse."""
+    project = _project()
+    audio_rules.require_no_ducking_loop(project, "A1", "A2", (("A2", "A3"),))
+    with pytest.raises(ValueError, match="boucle"):
+        audio_rules.require_no_ducking_loop(project, "A3", "A1", (("A1", "A2"), ("A2", "A3")))
