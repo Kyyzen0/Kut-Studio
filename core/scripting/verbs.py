@@ -47,6 +47,8 @@ from ..node_graph import NodeGraphError
 from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
+from ..mograph_layers import add_layer, find_layer
+from .layer_rules import graphic_of, require_room, require_shallow
 from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_color_ops import set_media_color_matrix
@@ -383,13 +385,32 @@ def _graphics_track(project: Project, selector: Any) -> Any:
     return track
 
 
+def _graphic_group(project: Project, selector: str) -> str:
+    """Le groupe visé par ``add_graphic`` : un vrai groupe, déverrouillé (comme pour ``move_into_group``, un calque d'effets n'y va pas)."""
+    group_id = _clip_id(project, selector)
+    track, group = find_layer(project, group_id)
+    if graphic_of(group).type != GraphicType.GROUP:
+        raise ValueError(f"Le calque '{group_id}' n'est pas un groupe.")
+    if track.locked or graphic_of(group).locked:
+        raise ValueError(f"Le groupe '{group_id}' est verrouillé : son contenu ne change pas.")
+    return group_id
+
+
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = _graphics_track(project, a.get("track"))
-        clip = add_graphic_clip(
-            project, a["graphic"], timeline_start=float(a["at"]), duration=float(a["duration"]),
-            shape=a.get("shape", ShapeKind.RECTANGLE.value), track=track, clip_id=a.get("id"),
+        require_room(project, 1)
+        group_id = ""
+        if a.get("group") is not None:
+            if a["graphic"] == GraphicType.ADJUSTMENT.value:
+                raise ValueError("Un calque d'effets s'applique à toute la composition : il ne peut pas être dans un groupe.")
+            group_id = _graphic_group(project, a["group"])
+        clip = add_layer(
+            project, a["graphic"], at=float(a["at"]), duration=float(a["duration"]),
+            shape=a.get("shape", ShapeKind.RECTANGLE.value), group_id=group_id, track=track, clip_id=a.get("id"),
         )
+        if group_id:
+            require_shallow(project, clip.id)
         if a.get("text") is not None:
             update_graphic(clip, "text", a["text"])
         return clip
@@ -404,6 +425,7 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
         track = _graphics_track(project, a.get("track"))
         path = context.resolve_media(a["path"])
         width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
+        require_room(project, 1)
         clip = add_graphic_clip(
             project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),
@@ -1337,7 +1359,9 @@ VERBS: dict[str, Verb] = {
               Param("duration", Kind.NUMBER, "Durée en secondes.", minimum=0.04, maximum=MAX_TIME),
               Param("text", Kind.STRING, "Texte du calque (titre).", required=False, max_length=1000, multiline=True),
               Param("shape", Kind.ENUM, "Forme (pour « shape »).", required=False, choices=tuple(item.value for item in ShapeKind)),
-              Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track")),
+              Param("track", Kind.SELECTOR, "Piste de graphiques visée ; absente, la première éditable.", required=False, of="track"),
+              Param("group", Kind.SELECTOR, "Groupe où poser le calque (un groupe déverrouillé, pas pour un calque d'effets) ; absent, au niveau racine.",
+                    required=False, of="clip")),
              _add_graphic, creates="clip", group="graphics"),
         Verb("add_image_layer", "Pose une image fixe (PNG, JPEG, WebP…, dans le dossier du script) en calque graphique, au-dessus de la vidéo.",
              (Param("path", Kind.PATH, "Chemin de l'image, relatif au dossier du script."), _AT,
@@ -1599,6 +1623,8 @@ from .auto_verbs import AUTOMATION_VERBS  # noqa: E402
 from .clip_audio_verbs import CLIP_AUDIO_VERBS  # noqa: E402
 from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
+from .guide_verbs import GUIDE_VERBS  # noqa: E402
+from .layer_verbs import LAYER_VERBS  # noqa: E402
 from .mask_verbs import MASK_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
 from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
@@ -1606,18 +1632,19 @@ from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
 _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "move_clip": CLIP_EDIT_VERBS,               # le montage (rogner, couper, glisser…) juste après le déplacement
     "add_track": TRACK_VERBS,
-    "add_marker": MARKER_VERBS,
+    "add_marker": MARKER_VERBS + GUIDE_VERBS,    # les guides du moniteur après les repères
     "set_clip_enabled": EFFECT_VERBS,           # les effets d'un clip juste après lui, comme dans la documentation
     "remove_keyframe": ANIMATION_VERBS,         # les images clés de masque juste après celles du transform
     "clear_crop": MASK_VERBS,
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
     "update_track_insert": CLIP_AUDIO_VERBS,      # l'audio d'un clip après les inserts de piste
     "set_multicam_angle_offset": AUTOMATION_VERBS,   # rythme, plans, sous-titres, effets d'impact, modèles : en fin de table
+    "set_graphic": LAYER_VERBS,                   # les calques graphiques juste après leur création et leur apparence
 }
 
 
 def _with_extra_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
-    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``) juste après leur verbe d'ancrage."""
+    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``, ``layer_verbs``, ``guide_verbs``) juste après leur verbe d'ancrage."""
     result: dict[str, Verb] = {}
     for name, verb in table.items():
         result[name] = verb

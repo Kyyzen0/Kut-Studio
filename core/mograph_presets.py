@@ -306,17 +306,36 @@ def all_presets(settings_dir=None) -> list[MographPreset]:
     return [*builtin_presets(), *load_user_presets(settings_dir)]
 
 
-def apply_preset(project: Project, preset: MographPreset, *, at: float) -> list[Clip]:
+def builtin_preset_names() -> tuple[str, ...]:
+    """Les noms des presets intégrés (sans les construire)."""
+    return tuple(name for name, _category, _build in _BUILTINS)
+
+
+def main_layer_id(preset: MographPreset) -> str:
+    """Identifiant (dans le preset) de son calque principal : le premier calque hors groupe, du bas vers le haut de la pile
+    (le groupe d'un bandeau, le contrôleur d'un call-out, le calque d'un titre seul) ; ``""`` pour un preset vide."""
+    for raw in preset.clipboard.clips:
+        if not (raw.get("graphic") or {}).get("group_id"):
+            return str(raw["id"])
+    return ""
+
+
+def apply_preset(project: Project, preset: MographPreset, *, at: float, main_id: str | None = None) -> list[Clip]:
     """Ajoute les calques du preset à ``at`` (nouveaux identifiants) ; un preset intégré est reconstruit sur la toile
-    du projet (un bandeau 16:9 sortirait d'un cadre vertical)."""
+    du projet (un bandeau 16:9 sortirait d'un cadre vertical).
+
+    ``main_id`` : identifiant imposé de la copie du calque principal (:func:`main_layer_id`), pour les scripts ; ``None``
+    pour l'interface, qui ne change pas.
+    """
     if preset.builtin:
         preset = next((item for item in builtin_presets(project.width, project.height) if item.name == preset.name),
                       preset)
-    return paste_layers(project, preset.clipboard, at=at)
+    new_ids = {main_layer_id(preset): main_id} if main_id is not None and main_layer_id(preset) else None
+    return paste_layers(project, preset.clipboard, at=at, new_ids=new_ids)
 
 
 __all__ = [
-    "MographPreset", "PRESET_FORMAT", "all_presets", "apply_preset", "builtin_presets",
+    "MographPreset", "PRESET_FORMAT", "all_presets", "apply_preset", "builtin_preset_names", "builtin_presets",
     "clipboard_from_dict", "clipboard_to_dict", "delete_user_preset", "load_user_presets",
-    "presets_directory", "save_preset", "style_social_text",
+    "main_layer_id", "presets_directory", "save_preset", "style_social_text",
 ]

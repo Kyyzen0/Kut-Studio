@@ -165,8 +165,23 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
-| `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
+| `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée ; `group` : un groupe déverrouillé où poser le calque, jamais pour un calque d'effets) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
+| `delete_layers` | Supprime des calques graphiques (`clips`, 1 à 200 sans doublon) ; un groupe emporte son contenu, les enfants d'un parent supprimé sont détachés ; refusé si l'un d'eux, ou un groupe qui perdrait un membre, est verrouillé ; voir « Calques graphiques » |
+| `duplicate_layers` | Duplique des calques au même instant, au-dessus des originaux (`clips`) ; un groupe emporte son contenu ; **crée la copie du premier calque cité** (`id` / `as`) |
+| `rename_layer` | Renomme un calque (`clip`, `name`), y compris un calque verrouillé, comme le panneau Calques |
+| `set_layer_visible` | Affiche ou masque un calque (`clip`, `visible`), y compris un calque verrouillé |
+| `set_layer_locked` | Verrouille ou déverrouille un calque (`clip`, `locked`) |
+| `set_layer_motion_blur` | Active le flou de mouvement d'un calque déverrouillé (`clip`, `enabled`) |
+| `reorder_layer` | Place un calque au rang `index` parmi ses frères, 0 étant le plus bas (`clip`, `index`) ; hors de la pile : refusé |
+| `move_layer` | Monte (positif) ou descend (négatif) un calque d'`delta` rangs, non nul (`clip`, `delta`) ; hors de la pile : refusé |
+| `group_layers` | Regroupe des calques de même niveau (`clips`, `name`) ; **crée le groupe** (`id` / `as`) |
+| `ungroup_layers` | Dissout un groupe (`clip`) : neutre, il disparaît ; sinon il devient un contrôleur dont les membres héritent |
+| `move_into_group` | Place un calque dans un groupe, ou à la racine sans `group` (`clip`, `group`, `at`) ; boucle ou cible qui n'est pas un groupe : refusé |
+| `set_parent` | Fait suivre un parent (calque ou clip vidéo) à un calque (`clip`, `parent`, `at`) ; boucle, 32 niveaux dépassés ou apparence qui sauterait : refusé |
+| `clear_parent` | Détache un calque de son parent (`clip`, `at`) |
+| `apply_layer_preset` | Pose un preset **intégré** (`preset` : `Titre simple`, `Titre encadré`, `Titre espacé animé`, `Lower third`, `Call-out`, `Titre TikTok`, `Mot en couleur`, `Sous-titre karaoké` ; `at`) ; **crée le calque principal** (`id` / `as`) |
+| `apply_text_animation` | Pose une animation de texte sur un calque **texte** déverrouillé (`clip`, `animation` : `pop_in`, `slide_left`, `slide_right`, `slide_up`, `slide_down`, `fade_up`, `bounce`, `word_by_word`, `typewriter`, `karaoke` ; `start`) |
 | `add_track` | Ajoute une piste : `type` = `video`, `audio` ou `subtitle` (`name` : doit être libre, sinon refus) |
 | `remove_track` | Supprime une piste **vide** (`track`) |
 | `rename_track` | Renomme une piste, son identifiant ne change pas (`track`, `name` libre) |
@@ -224,6 +239,10 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
 | `set_cover_marker` | Pose le repère de couverture, le seul : l'ancien est remplacé (`at`, `name`) ; `id` / `as` |
 | `remove_marker` | Retire un repère (`marker`, par son identifiant) |
+| `add_guide` | Pose un guide dans le moniteur de la séquence active (`orientation` = `vertical` ou `horizontal`, `position` de −1 à 2) ; **crée le guide** (`id` / `as`) ; voir « Guides » |
+| `move_guide` | Déplace un guide (`guide`, `position`) ; un guide verrouillé ne bouge pas |
+| `remove_guide` | Retire un guide (`guide`) ; un guide verrouillé reste |
+| `clear_guides` | Retire les guides de la séquence active, sauf les guides verrouillés |
 | `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
 | `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |
 | `set_sequence_format` | Change le cadre et/ou la cadence d'une séquence (`sequence`, au moins un de `width`, `height`, `fps`) |
@@ -462,6 +481,44 @@ Ces verbes font ce que l'interface fait **après** une analyse, avec des donnée
 - **Identifiants** : `add_flash` (`id` / `as`) crée un calque cité ensuite ; `add_leaderboard` crée un **classement** (`id` / `as`) que `update_leaderboard` cite, et dont les calques sont
   recréés à chaque réédition. Les verbes qui créent plusieurs clips (coupes, sous-titres, diaporama) rendent des identifiants **générés** : relisez-les avec `describe`.
 
+## Calques graphiques
+
+Ces verbes appellent les fonctions que le panneau Calques, la bibliothèque de presets et la section « Animation du texte » appellent
+(`core/mograph_layers.py`, `core/mograph_presets.py`, `core/text_animations.py`) : le résultat est celui du geste correspondant. Ils sont dans
+`core/scripting/layer_verbs.py` ; leurs contrôles communs (bornes, verrous, profondeur) dans `core/scripting/layer_rules.py`. `add_graphic` crée le calque
+(avec `group`, directement dans un groupe) ; `set_graphic`, `set_transform`, les images clés et les masques le modifient.
+
+- **Citer ce qu'on crée** : `group_layers` crée le groupe, `duplicate_layers` la copie du **premier** calque cité (ses descendants, pour un groupe,
+  reçoivent des identifiants générés : `describe` les donne), `apply_layer_preset` le **calque principal** du preset (le premier hors groupe : le groupe d'un
+  bandeau, le contrôleur d'un call-out). Avec `id` ou `as`, les opérations suivantes les désignent par `{"ref": alias}`.
+- **Verrous** : le calque visé et sa piste doivent être déverrouillés ; font exception `rename_layer`, `set_layer_visible` et `set_layer_locked`, que le
+  panneau Calques permet sur un calque verrouillé ou d'une piste verrouillée (sinon il serait impossible de le déverrouiller). Un groupe verrouillé ne gagne ni ne perd de membre
+  (ajout, déplacement, suppression, duplication). Un verbe qui modifie des **tiers** refuse, sans rien changer, si l'un d'eux est un calque (ou une piste de
+  graphiques) verrouillé : les enfants détachés par `delete_layers`, les membres d'un groupe défait, et les frères que renumérote un changement d'ordre
+  (`reorder_layer`, `move_layer`, `group_layers` : un calque verrouillé qui changerait de rang fait refuser le verbe).
+- **Rien n'est ramené en silence** : le modèle ramènerait un index d'ordre aux bords de la pile ; il refuse ici (`reorder_layer`, `move_layer`). Un changement
+  de hiérarchie (`move_into_group`, `set_parent`, `clear_parent`) garde l'**apparence** du calque à l'instant `at` (défaut 0) en recalculant son transform ; si
+  le modèle ne peut pas la garder (parent à échelle nulle, valeur hors des bornes du transform, position **animée** ou pilotée par un suivi sous un parent
+  transformé), le verbe est refusé plutôt que de voir le calque sauter.
+- **Boucles et profondeur** : un calque ne peut pas être son propre parent, ni suivre son descendant (par parentage ou par groupe) ; un groupe ne se contient pas
+  lui-même ni son descendant ; un calque d'une autre séquence n'est pas atteignable (les identifiants sont ceux de la séquence active). Les chaînes de parentage et
+  les groupes imbriqués sont limités à 32 niveaux, calculés sur le graphe résultant (ancêtres du parent compris) : l'évaluation de la scène les parcourt récursivement.
+- **Bornes** : 200 calques au plus par opération, sans doublon dans la liste ; un projet ne dépasse pas 5 000 calques graphiques, **toutes séquences confondues** (changer de séquence active ne contourne pas la limite), vérifiés
+  avant toute création (`add_graphic`, `group_layers`, `duplicate_layers`, `apply_layer_preset`, `cut_clip` et `duplicate_clip` sur un calque) avec le nombre exact créé.
+- **Presets** : seuls les presets **intégrés** sont accessibles, reconstruits sur le cadre du projet (un bandeau 16:9 tient en vertical). Les presets de l'utilisateur
+  sont des fichiers de sa configuration, hors du projet et du dossier du script : un script ne les lit pas, et `save_preset` n'est pas un verbe (il écrirait hors du projet).
+- **Animation de texte** : un calque **texte** seulement (c'est tout ce que l'interface propose). Les images clés des propriétés que l'animation anime sont remplacées,
+  celles des autres propriétés restent ; `start` (secondes depuis le début du calque) doit laisser au moins 0,01 s ; `bounce` pose une image clé tous les 0,25 s et
+  est refusé au-delà de 500 s de calque.
+- Pas de verbe pour le presse-papiers de calques ni d'attributs (copier / coller), la sélection ni la tête de lecture : ce sont des états d'interface.
+
+## Guides
+
+`add_guide`, `move_guide`, `remove_guide` et `clear_guides` font ce que le moniteur fait (`core/canvas_guides.py`, `core/scripting/guide_verbs.py`). Un guide est visuel
+(jamais rendu à l'export) et appartient à la **séquence active**. `add_guide` crée le guide (`id` / `as`, sinon un identifiant de 8 caractères généré).
+La position est celle du modèle, de −1 à 2 (0 : bord haut ou gauche, 1 : bord bas ou droit) : le modèle ramènerait une autre valeur, elle est refusée. Un guide verrouillé
+dans l'interface ne bouge ni ne part, et `clear_guides` le laisse en place ; aucun verbe ne verrouille ou déverrouille un guide.
+
 ## Vitesse et remappage
 
 Ces verbes appellent les fonctions que l'inspecteur de vitesse, le menu « Vitesse » et l'éditeur de courbes appellent
@@ -645,7 +702,8 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 | Module | Rôle |
 | --- | --- |
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
-| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform et d'audio de clip (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py`, `layer_verbs.py`, `guide_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform, d'audio de clip, de calques graphiques et de guides (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/layer_rules.py` | les contrôles communs des verbes de calques : bornes, verrous des tiers, profondeur de la hiérarchie, apparence gardée |
 | `core/scripting/auto_verbs.py`, `impact_verbs.py`, `template_verbs.py`, `auto_rules.py` | les verbes de rythme, de plans, de sous-titres, d'effets d'impact et de modèles, et leurs règles communes (bornes, verrous) |
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
