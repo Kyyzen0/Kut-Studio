@@ -75,11 +75,9 @@ def _require_state_kept(project: Project, ids: list[str]) -> None:
     for track in project.tracks:
         if track.solo:
             solo.setdefault(track.type, set()).add(track.id)
-    chosen = []
     for clip_id in ids:
         clip = find_clip(project, clip_id)
         track = next(item for item in project.tracks if any(other.id == clip_id for other in item.clips))
-        chosen.append((clip, track))
         what = None
         if not clip.enabled:
             what = "est désactivé"
@@ -93,11 +91,6 @@ def _require_state_kept(project: Project, ids: list[str]) -> None:
             what = f"est masqué par le solo d'une autre piste ({track.type})"
         if what:
             raise ValueError(f"Le clip '{clip_id}' {what} : la composition ne garde pas cet état, réactivez-le ou retirez-le de la liste.")
-    videos = [track for _clip, track in chosen if track.type == "video"]
-    if videos:
-        host = next(track for track in project.tracks if track in videos)           # la plus basse (ordre des pistes)
-        if "video" in solo and host.id not in solo["video"]:
-            raise ValueError(f"La piste hôte '{host.id}' n'est pas en solo alors qu'une autre piste vidéo l'est : la composition serait masquée.")
 
 
 def _convert_to_composition(a: Mapping[str, Any]) -> Operation:

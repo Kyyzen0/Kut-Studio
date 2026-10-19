@@ -347,13 +347,13 @@ def _refused_script(change, clips) -> bool:
     return not _apply(project, _op("convert_to_composition", clips=clips))[1].ok
 
 
-def test_convert_refuses_a_host_track_that_the_solo_would_hide():
+def test_convert_refuses_a_layer_hidden_by_the_solo_of_another_graphics_track():
     project = _project()
-    project.tracks[1].solo = True                       # V2 en solo ; la sélection a c (V2) et a (V1) : l'hôte V1 ne l'est pas
-    assert "solo" in _direct(project, clips=["a", "c"])
+    project.tracks.append(Track("G2", "G2", "graphics", solo=True))
+    assert "solo" in _direct(project, clips=["a", "g"])
     only_solo = _project()
     only_solo.tracks[1].solo = True
-    assert _apply(only_solo, _op("convert_to_composition", clips=["c"], id="solo_ok"))[1].ok, "c est visible et son hôte (V2) aussi"
+    assert _apply(only_solo, _op("convert_to_composition", clips=["c"], id="solo_ok"))[1].ok, "c est visible (V2 en solo)"
 
 
 def test_convert_still_accepts_enabled_visible_clips():
