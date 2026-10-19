@@ -368,9 +368,17 @@ def test_error_message_does_not_echo_huge_input(tmp_path: Path) -> None:
 # --- architecture ---------------------------------------------------------------------------------------
 
 
-# Liste blanche, explicite et minimale : le SEUL fichier de `kut3d` qui peut toucher Qt (repli de décodage des
-# images non PNG), et seulement par un import PARESSEUX (dans une fonction).
+# Liste blanche, explicite et minimale : (1) `kut3d/render/images.py` (repli de décodage des images non PNG), seulement
+# par un import PARESSEUX (dans une fonction) ; (2) le sous-paquet `kut3d/gpu/` (moteur GPU « qrhi », phase 2b), où
+# seuls `renderer.py` et `qtapp.py` importent réellement PySide6 (voir QT_USERS) et ne sont chargés qu'au premier rendu
+# GPU (`test_importing_kut3d_loads_no_qt`). Tout le reste de `kut3d` reste sans Qt.
 QT_WHITELIST = {"kut3d/render/images.py"}
+QT_WHITELIST_DIRS = ("kut3d/gpu/",)
+QT_USERS = {"kut3d/render/images.py", "kut3d/gpu/qtapp.py", "kut3d/gpu/renderer.py"}
+
+
+def _qt_allowed(rel: str, lazy: bool) -> bool:
+    return (rel in QT_WHITELIST and lazy) or rel.startswith(QT_WHITELIST_DIRS)
 
 
 def _imports_with_depth(tree: ast.AST) -> list[tuple[str, bool, int]]:
@@ -408,15 +416,13 @@ def test_kut3d_does_not_import_qt_ui_or_core() -> None:
             if name.startswith("<relatif>"):
                 offenders.append(f"{rel}:{line} : {name}")
             elif name.split(".")[0] in forbidden:
-                qt_allowed = (
-                    name.split(".")[0] == "PySide6" and rel in QT_WHITELIST and lazy
-                )
+                qt_allowed = name.split(".")[0] == "PySide6" and _qt_allowed(rel, lazy)
                 if not qt_allowed:
                     offenders.append(f"{rel}:{line} : {name}")
     assert not offenders, offenders
 
 
-def test_the_qt_whitelist_is_exactly_the_image_fallback() -> None:
+def test_the_qt_users_are_exactly_the_image_fallback_and_the_gpu_engine() -> None:
     users = []
     for file in sorted((ROOT / "kut3d").rglob("*.py")):
         if any(
@@ -424,7 +430,7 @@ def test_the_qt_whitelist_is_exactly_the_image_fallback() -> None:
             for n, _, _ in _imports_with_depth(ast.parse(file.read_text()))
         ):
             users.append(file.relative_to(ROOT).as_posix())
-    assert users == sorted(QT_WHITELIST)
+    assert users == sorted(QT_USERS)
 
 
 def test_importing_kut3d_loads_no_qt() -> None:

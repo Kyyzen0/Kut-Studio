@@ -44,16 +44,44 @@ class Frame:
 
 
 Backend = Callable[[Scene, float, tuple[int, int], int], Frame]
+# Disponibilité d'un moteur : retourne None s'il est utilisable ici, sinon la raison (une phrase en français).
+Availability = Callable[[], str | None]
 _BACKENDS: dict[str, Backend] = {}
+_AVAILABILITY: dict[str, Availability] = {}
 
 
-def register_backend(name: str, fn: Backend) -> None:
-    """Enregistre un moteur : `fn(scene, t, (largeur, hauteur), samples) -> Frame`. Remplace un moteur du même nom."""
+def register_backend(
+    name: str, fn: Backend, *, available: Availability | None = None
+) -> None:
+    """Enregistre un moteur : `fn(scene, t, (largeur, hauteur), samples) -> Frame`. Remplace un moteur du même nom.
+
+    `available` (facultatif) dit si le moteur est utilisable sur cette machine : il retourne None (oui) ou la raison
+    du non. Sans lui, le moteur est supposé toujours disponible.
+    """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("register_backend : nom de moteur vide.")
     if not callable(fn):
         raise ValueError("register_backend : fn doit être appelable.")
+    if available is not None and not callable(available):
+        raise ValueError("register_backend : available doit être appelable.")
     _BACKENDS[name] = fn
+    if available is None:
+        _AVAILABILITY.pop(name, None)
+    else:
+        _AVAILABILITY[name] = available
+
+
+def backend_unavailable_reason(name: str) -> str | None:
+    """None si le moteur `name` est enregistré ET utilisable ici, sinon la raison (inconnu, ou celle du moteur)."""
+    if not isinstance(name, str) or name not in _BACKENDS:
+        return "moteur inconnu"
+    check = _AVAILABILITY.get(name)
+    return None if check is None else check()
+
+
+def backend_available(name: str) -> bool:
+    """Vrai si le moteur `name` est enregistré et utilisable sur cette machine (la sonde GPU est mise en cache)."""
+    return backend_unavailable_reason(name) is None
 
 
 def available_backends() -> tuple[str, ...]:

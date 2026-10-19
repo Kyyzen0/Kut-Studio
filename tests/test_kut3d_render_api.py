@@ -35,12 +35,13 @@ def simple_scene() -> Scene:
 
 
 def test_numpy_backend_is_registered_and_unknown_backend_lists_available_ones() -> None:
-    assert "numpy" in available_backends()
+    assert "numpy" in available_backends() and "qrhi" in available_backends()
     with pytest.raises(RenderError) as err:
-        render_frame(simple_scene(), size=(8, 8), backend="qrhi")
+        render_frame(simple_scene(), size=(8, 8), backend="vulkan")  # jamais enregistré
     assert (
-        "qrhi" in str(err.value)
+        "vulkan" in str(err.value)
         and "numpy" in str(err.value)
+        and "qrhi" in str(err.value)
         and "disponibles" in str(err.value)
     )
     with pytest.raises(RenderError) as err:

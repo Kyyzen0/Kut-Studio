@@ -1,7 +1,7 @@
-"""Kut-3D : modèle de scène 3D immuable, importeurs et rendu de référence (phases 1 et 2a d'ADR-0009).
+"""Kut-3D : modèle de scène 3D immuable, importeurs, rendu de référence et moteur GPU (phases 1, 2a et 2b d'ADR-0009).
 
-Ce paquet n'importe ni `ui` ni `core`, et n'utilise Qt qu'en repli paresseux pour décoder des textures non PNG
-(`kut3d.render.images`) : il s'utilise sans fenêtre.
+Ce paquet n'importe ni `ui` ni `core`. Qt n'est autorisé que dans `kut3d/gpu/` (moteur « qrhi ») et, en repli
+paresseux, dans `kut3d/render/images.py` (textures non PNG) ; `import kut3d` ne charge JAMAIS PySide6.
 """
 
 from __future__ import annotations
@@ -10,14 +10,17 @@ from kut3d.animation import Pose, evaluate_pose
 from kut3d.errors import (
     ImageDecodeError,
     ModelImportError,
+    RenderBackendUnavailable,
     RenderError,
     UnsupportedFormatError,
 )
+from kut3d.gpu import probe_qrhi
 from kut3d.importers import load_model, supported_extensions
 from kut3d.model import Model
 from kut3d.render import (
     Frame,
     available_backends,
+    backend_available,
     register_backend,
     render_frame,
     render_sequence,
@@ -42,12 +45,15 @@ __all__ = [
     "ModelImportError",
     "PointLight",
     "Pose",
+    "RenderBackendUnavailable",
     "RenderError",
     "Scene",
     "UnsupportedFormatError",
     "available_backends",
+    "backend_available",
     "evaluate_pose",
     "load_model",
+    "probe_qrhi",
     "register_backend",
     "render_frame",
     "render_sequence",

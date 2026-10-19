@@ -26,8 +26,23 @@ MAX_VERTICES = 6_000_000
 
 
 @dataclass(frozen=True, eq=False)
+class SkinDraw:
+    """Déformation par os d'un dessin laissée au moteur GPU (voir `assemble(..., gpu_skin_limit=...)`)."""
+
+    joints: Array  # (J + 1, 4, 4) float64 : matrices d'articulation, puis l'identité (sommets sans poids)
+    model: Array  # (4, 4) float64 : Instance.transform @ Model.root_transform (monde du maillage à peau)
+    normal_matrix: (
+        Array  # (3, 3) float64 : inverse transposée de la partie linéaire de `model`
+    )
+
+
+@dataclass(frozen=True, eq=False)
 class Geometry:
-    """Toute la scène en espace monde. `tri` indexe `pos` ; `tri_draw` dit de quel dessin vient chaque triangle."""
+    """Toute la scène en espace monde. `tri` indexe `pos` ; `tri_draw` dit de quel dessin vient chaque triangle.
+
+    Avec `gpu_skin_limit`, les dessins à peau en `draw_skin` ne sont PAS déformés : leurs sommets (`pos`, `nrm`,
+    `tan`) restent en pose de repos, dans le repère du maillage, avec `joints` / `joint_weights` par sommet.
+    """
 
     pos: Array  # (V, 3) float64
     nrm: Array  # (V, 3) float64 (unitaires, ou nuls si dégénérés)
@@ -39,6 +54,15 @@ class Geometry:
     tri_draw: Array  # (T,) int32
     draw_mat: Array  # (D,) int32 : indice dans `materials`
     materials: tuple[PreparedMaterial, ...]
+    joints: Array | None = (
+        None  # (V, 4) int32 : indice dans `SkinDraw.joints` (0 hors dessin à peau déféré)
+    )
+    joint_weights: Array | None = (
+        None  # (V, 4) float32, somme 1 (0 hors dessin à peau déféré)
+    )
+    draw_skin: tuple[
+        SkinDraw | None, ...
+    ] = ()  # par dessin : None = sommets déjà en espace monde
 
     @property
     def triangle_count(self) -> int:
@@ -104,17 +128,23 @@ def _morph(
     return pos, nrm
 
 
-def _skin(
-    mesh: Mesh, joints_m: Array, pos: Array, nrm: Array | None
-) -> tuple[Array, Array | None]:
+def _skin_weights(mesh: Mesh, n_joints: int) -> tuple[Array, Array, Array]:
+    """(indices (V, 4) int64, poids normalisés (V, 4) float64, sommet avec poids ? (V,)) d'un maillage à peau."""
     assert mesh.joints is not None and mesh.weights is not None
     jn = mesh.joints.astype(np.int64)
-    if jn.shape[0] and int(np.max(jn)) >= joints_m.shape[0]:
+    if jn.shape[0] and int(np.max(jn)) >= n_joints:
         raise RenderError("maillage à peau : un sommet référence un os inexistant.")
     w = mesh.weights.astype(np.float64)
     wsum = w.sum(axis=1)
     good = wsum > 1e-8
     w = np.where(good[:, None], w / np.where(good, wsum, 1.0)[:, None], 0.0)
+    return jn, w, good
+
+
+def _skin(
+    mesh: Mesh, joints_m: Array, pos: Array, nrm: Array | None
+) -> tuple[Array, Array | None]:
+    jn, w, good = _skin_weights(mesh, joints_m.shape[0])
     m = np.zeros((jn.shape[0], 3, 4))
     for k in range(4):
         m += w[:, k, None, None] * joints_m[jn[:, k], :3, :]
@@ -157,8 +187,22 @@ def _jobs(scene: Scene, t: float) -> list[tuple[Instance, Model, Pose, list[int]
     return jobs
 
 
-def assemble(scene: Scene, t: float) -> Geometry:
-    """Sommets déformés en espace monde pour toutes les instances, à l'instant `t`."""
+def _defer_skin(mesh: Mesh, material: object, n_joints: int, limit: int | None) -> bool:
+    """Vrai si la déformation par os de ce dessin est laissée au GPU (`gpu_skin_limit`). Repli CPU : alpha-blending (le
+    tri des triangles a besoin des sommets déformés), au-delà de `limit` articulations (+1 identité) et maillage sans
+    normales (le moteur numpy les recalcule sur la pose déformée ; les déformer depuis la pose de repos différerait)."""
+    if limit is None or n_joints + 1 > limit or mesh.normals is None:
+        return False
+    return getattr(material, "alpha_mode", None) != "blend"
+
+
+def assemble(scene: Scene, t: float, *, gpu_skin_limit: int | None = None) -> Geometry:
+    """Sommets déformés en espace monde pour toutes les instances, à l'instant `t`.
+
+    `gpu_skin_limit` (None = comportement historique, tout est déformé ici) : si un entier, les dessins à peau
+    opaques ou masqués dont `articulations + 1 <= gpu_skin_limit` ne sont pas déformés ; voir `Geometry`. Les formes
+    (morph targets) sont toujours appliquées ici, avant les os.
+    """
     jobs = _jobs(scene, t)
     pos_l: list[Array] = []
     nrm_l: list[Array] = []
@@ -166,9 +210,12 @@ def assemble(scene: Scene, t: float) -> Geometry:
     col_l: list[Array] = []
     tan_l: list[Array] = []
     sign_l: list[Array] = []
+    jn_l: list[Array] = []
+    jw_l: list[Array] = []
     tri_l: list[Array] = []
     draw_l: list[Array] = []
     draw_mat: list[int] = []
+    draw_skin: list[SkinDraw | None] = []
     mats: list[PreparedMaterial] = []
     mat_index: dict[tuple[int, bool], int] = {}
     offset = 0
@@ -182,24 +229,49 @@ def assemble(scene: Scene, t: float) -> Geometry:
             weights = pose.morph_weights(i, mesh)
             if mesh.morph_targets and weights.any():
                 pos, nrm = _morph(mesh, weights, pos, nrm)
+            material = (
+                None
+                if mesh.material_index is None
+                else model.materials[mesh.material_index]
+            )
             skinned = node.skin_index is not None and mesh.joints is not None
+            joints_m = None
+            deferred = False
             if skinned:
                 assert node.skin_index is not None
-                pos, nrm = _skin(mesh, pose.joint_matrices(node.skin_index), pos, nrm)
+                joints_m = pose.joint_matrices(node.skin_index)
+                deferred = _defer_skin(
+                    mesh, material, joints_m.shape[0], gpu_skin_limit
+                )
+                if not deferred:
+                    pos, nrm = _skin(mesh, joints_m, pos, nrm)
             world = np.asarray(inst.transform) @ np.asarray(model.root_transform)
             if not skinned:
                 world = world @ pose.world[i]
             lin = world[:3, :3]
             if abs(np.linalg.det(lin)) < 1e-18:
                 continue  # échelle nulle : le dessin est invisible
-            pos_w = pos @ lin.T + world[:3, 3]
+            mirrored = bool(np.linalg.det(lin) < 0)
             tri = mesh.indices.astype(np.int64)
-            if np.linalg.det(lin) < 0:
+            if mirrored:
                 tri = tri[:, [0, 2, 1]]
-            if nrm is None:
-                nrm_w = smooth_normals(pos_w, tri).astype(np.float64)
+            skin: SkinDraw | None = None
+            if deferred:
+                assert joints_m is not None
+                pos_w = pos  # pose de repos (après les formes), repère du maillage
+                assert nrm is not None  # garanti par _defer_skin
+                nrm_w = _normalize_rows(nrm)
+                skin = SkinDraw(
+                    joints=np.concatenate([joints_m, np.eye(4)[None]]),
+                    model=world,
+                    normal_matrix=np.linalg.inv(lin).T,
+                )
             else:
-                nrm_w = _normalize_rows(nrm @ np.linalg.inv(lin))
+                pos_w = pos @ lin.T + world[:3, 3]
+                if nrm is None:
+                    nrm_w = smooth_normals(pos_w, tri).astype(np.float64)
+                else:
+                    nrm_w = _normalize_rows(nrm @ np.linalg.inv(lin))
             has_uv = mesh.uvs is not None
             uv = (
                 mesh.uvs.astype(np.float64)
@@ -211,20 +283,33 @@ def assemble(scene: Scene, t: float) -> Geometry:
                 if mesh.colors is not None
                 else np.ones((n, 4), np.float32)
             )
-            material = (
-                None
-                if mesh.material_index is None
-                else model.materials[mesh.material_index]
-            )
             key = (id(material), has_uv)
             if key not in mat_index:
                 mat_index[key] = len(mats)
                 mats.append(prepare_material(material, has_uv))
             prepared = mats[mat_index[key]]
             if prepared.normal_tex is not None:
-                tan, sign = compute_tangents(pos_w, nrm_w, uv, tri)
+                # Dessin déféré : tangentes de la pose de repos (le GPU les déforme avec les os) ; le sens de la
+                # bitangente suit la symétrie `model`, comme le fait le calcul en espace monde.
+                rest_tri = mesh.indices.astype(np.int64) if deferred else tri
+                tan, sign = compute_tangents(pos_w, nrm_w, uv, rest_tri)
+                if deferred and mirrored:
+                    sign = -sign
             else:
                 tan, sign = np.zeros((n, 3)), np.ones(n)
+            if deferred:
+                assert joints_m is not None
+                jn, jw, good = _skin_weights(mesh, joints_m.shape[0])
+                last = joints_m.shape[0]  # indice de l'identité
+                jn = np.where(good[:, None], jn, 0)
+                jn[~good, 0] = last
+                jw = np.where(good[:, None], jw, 0.0)
+                jw[~good, 0] = 1.0
+                jn_l.append(jn.astype(np.int32))
+                jw_l.append(jw.astype(np.float32))
+            else:
+                jn_l.append(np.zeros((n, 4), np.int32))
+                jw_l.append(np.zeros((n, 4), np.float32))
             pos_l.append(pos_w)
             nrm_l.append(nrm_w)
             uv_l.append(uv)
@@ -234,6 +319,7 @@ def assemble(scene: Scene, t: float) -> Geometry:
             tri_l.append(tri + offset)
             draw_l.append(np.full(tri.shape[0], len(draw_mat), dtype=np.int32))
             draw_mat.append(mat_index[key])
+            draw_skin.append(skin)
             offset += n
     if not pos_l:
         empty = np.zeros((0, 3))
@@ -241,6 +327,7 @@ def assemble(scene: Scene, t: float) -> Geometry:
             empty, empty, np.zeros((0, 2)), np.zeros((0, 4), np.float32), empty,
             np.zeros(0), np.zeros((0, 3), np.int64), np.zeros(0, np.int32),
             np.zeros(0, np.int32), tuple(mats),
+            np.zeros((0, 4), np.int32), np.zeros((0, 4), np.float32), (),
         )  # fmt: skip
     return Geometry(
         pos=np.concatenate(pos_l),
@@ -253,4 +340,7 @@ def assemble(scene: Scene, t: float) -> Geometry:
         tri_draw=np.concatenate(draw_l),
         draw_mat=np.asarray(draw_mat, dtype=np.int32),
         materials=tuple(mats),
+        joints=np.concatenate(jn_l),
+        joint_weights=np.concatenate(jw_l),
+        draw_skin=tuple(draw_skin),
     )

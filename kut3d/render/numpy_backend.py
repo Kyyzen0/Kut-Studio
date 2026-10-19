@@ -33,7 +33,7 @@ from kut3d.scene import Scene
 SHADE_CHUNK = 1 << 18  # pixels ombrés d'un coup
 
 
-def _tri_modes(geo: Geometry) -> tuple[Array, Array]:
+def tri_modes(geo: Geometry) -> tuple[Array, Array]:
     """(mode alpha, double face) de chaque triangle du maillage."""
     mats = geo.materials
     mode = np.array([m.mode for m in mats], dtype=np.int8)
@@ -85,7 +85,7 @@ def _blend(
             acc_a[ys, xs] = alpha + acc_a[ys, xs] * (1.0 - alpha)
 
 
-def _reduce(
+def reduce_samples(
     acc_rgb: Array, acc_a: Array, depth: Array, k: int
 ) -> tuple[Array, Array, Array]:
     if k == 1:
@@ -103,7 +103,7 @@ def render_numpy(scene: Scene, t: float, size: tuple[int, int], samples: int) ->
     sw, sh = width * samples, height * samples
     geo = assemble(scene, t)
     cam = scene.camera
-    mode, double = _tri_modes(geo)
+    mode, double = tri_modes(geo)
     if int((mode == MODE_BLEND).sum()) > MAX_BLEND_TRIANGLES:
         raise RenderError(
             f"trop de triangles en alpha-blending (maximum {MAX_BLEND_TRIANGLES})."
@@ -130,11 +130,11 @@ def render_numpy(scene: Scene, t: float, size: tuple[int, int], samples: int) ->
                 mean_w = (1.0 / rt.invw[blended]).mean(axis=1)
                 far_first = blended[np.argsort(-mean_w, kind="stable")]
                 _blend(shader, rz, far_first, vis, float(cam.far), acc_rgb, acc_a)
-    rgb, a, depth = _reduce(acc_rgb, acc_a, vis.depth, samples)
-    return _finish(rgb, a, depth, scene.background, size)
+    rgb, a, depth = reduce_samples(acc_rgb, acc_a, vis.depth, samples)
+    return finish_frame(rgb, a, depth, scene.background, size)
 
 
-def _finish(
+def finish_frame(
     rgb: Array, a: Array, depth: Array, background: Array | None, size: tuple[int, int]
 ) -> Frame:
     if background is not None:

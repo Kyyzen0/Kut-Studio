@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Kut-3D : moteur de rendu GPU « qrhi » (interne, pas encore visible dans l'application).** Le paquet `kut3d` rend une scène 3D sur le GPU (Metal sur macOS, sans jamais ouvrir de fenêtre) environ 20 fois plus vite que la référence logicielle, avec le même résultat à la tolérance près ; il retombe sur la référence quand aucun GPU n'est utilisable. Voir [docs/kut3d-render.md](docs/kut3d-render.md).
+
 ### Fixed
 
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.

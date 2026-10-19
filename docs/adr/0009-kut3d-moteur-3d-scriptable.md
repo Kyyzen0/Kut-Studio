@@ -60,12 +60,19 @@ Ce que le code permet déjà, vérifié le 2026-10-19 :
 
 `kut3d/` importe `core/` ; `core/` n'importe jamais `kut3d/`. `ui/` peut importer `kut3d/`. Sous-modules :
 
-- **`model`** : `Scene`, `Node`, `Mesh` (positions, normales, UV), `Camera`, `Light`, `Material`, `Skeleton`, `Skin`,
-  `MorphTarget`, `AnimationClip`. Objets **immuables et sérialisables**.
+- **`model`** : `Node`, `Mesh` (positions, normales, UV), `Material`, `Skeleton`, `MorphTarget`, `AnimationClip`.
+  Objets **immuables** (phase 1 livrée ; la sérialisation viendra avec le fichier `.kut3d`, phase 3).
+- **`scene`** : `Camera`, lumières (ambiante, directionnelle, ponctuelle), `Instance`, `Scene` (phase 2a livrée). Écart avec le
+  premier découpage de cet ADR, qui rangeait caméra et lumières dans `model` : elles décrivent une mise en scène, pas un
+  modèle importé.
 - **`importers`** : registre par extension (§3).
-- **`animation`** : réutilise `core.animation.AnimationCurve` et ses interpolations ; pas de second système de courbes.
-  Porte aussi la lecture et le mélange de clips d'animation (décision 5).
-- **`render`** : rendu **hors fenêtre**, image par image, avec des passes couleur, alpha et profondeur.
+- **`animation`** : évalue aujourd'hui les canaux d'un clip glTF (pose, matrices d'articulation, poids de formes) **sans
+  importer `core/`**, qui n'est pas indépendant de Qt. La réutilisation de `core.animation.AnimationCurve` (un seul système de
+  courbes) est maintenue pour les images clés écrites par l'utilisateur, avec le mélange de clips (décision 5, phase 4).
+- **`render`** : rendu **hors fenêtre**, image par image, avec des passes couleur, alpha et profondeur ; moteur de référence
+  numpy et registre de moteurs (phase 2a livrée).
+- **`gpu`** : moteur QRhi (phase 2b livrée). C'est, avec le décodage JPEG de `render/images.py`, le seul endroit où `kut3d/`
+  importe Qt, sous liste blanche vérifiée par un test d'architecture.
 - **`api`** : la façade Python publique.
 
 ### 2. Les scripts
@@ -135,6 +142,13 @@ non instanciable), le spike passe par un `QRhiWidget` jamais affiché ; QRhi et 
 **Critères de choix** : fonctionne **sans fenêtre** sur macOS, Windows et Linux ; **déterministe** (même scène, mêmes pixels, à
 une tolérance près) ; **testable en CI**. Rien n'interdit de garder (c) comme référence et un moteur GPU pour la vitesse.
 
+**Mesuré en phase 2** (macOS / Metal, 27 scènes de comparaison) : le moteur `qrhi` s'accorde avec la référence numpy sur 99,7 à
+100 % des pixels à ±6 niveaux ; en 720p avec 20 000 triangles, il rend une image en environ 26 ms contre environ 550 ms. La
+couleur et la profondeur sortent de la même passe, dans deux cibles flottantes lues en retour : la profondeur est exacte, sans
+empaquetage. Un `backend="auto"` retombe sur numpy quand une sonde, lancée dans un sous-processus avec délai maximal, ne trouve
+pas de GPU utilisable. Sur la CI, les tests de rendu GPU ne tournent que sur demande (`KUT3D_GPU_TESTS=1`), car un runner peut
+exposer un GPU paravirtualisé. **Windows et Linux restent non testés** : l'orientation provisoire ci-dessus tient pour macOS.
+
 ## Conséquences
 
 **Positives.**
@@ -180,12 +194,12 @@ une tolérance près) ; **testable en CI**. Rien n'interdit de garder (c) comme 
 
 Chaque phase est une PR (ou plusieurs) fusionnable seule.
 
-0. **Cet ADR + spike de rendu hors fenêtre** (`experiments/kut3d-spike/`) : **livrée** (commit `87dd481`, branche
-   `feat/kut3d-phase0-spike`) ; résultats en décision 7.
+0. **Cet ADR + spike de rendu hors fenêtre** (`experiments/kut3d-spike/`) : **livrée** ; résultats en décision 7.
 1. **Modèle de scène + importeurs** : UV, matériaux, squelette, peau, formes de visage, clips d'animation ; importeurs OBJ,
-   PLY, STL, glTF / GLB ; normalisation ; tests sur des fichiers réels et mal formés.
+   PLY, STL, glTF / GLB ; normalisation ; tests sur des fichiers générés et mal formés. **Livrée.**
 2. **Rendu image par image** : caméra, lumières, ombrage PBR avec textures, déformation par os (CPU numpy + shader GPU),
-   passes alpha et profondeur.
+   passes alpha et profondeur. **Livrée** en 2a (référence numpy) et 2b (moteur QRhi). **Reporté** : ombres portées, flou de
+   mouvement, éclairage par image (IBL), mipmaps ; à planifier avant le premier film, car la qualité d'image en dépend.
 3. **Façade Python + clip « scène 3D »** (`.kut` v18, migration, fichier `.kut3d`).
 4. **Animation**, en trois temps :
    - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel

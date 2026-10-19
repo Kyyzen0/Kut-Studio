@@ -30,3 +30,7 @@ class RenderError(ValueError):
 
 class ImageDecodeError(RenderError):
     """Une texture n'a pas pu être décodée (fichier corrompu, tronqué, démesuré ou format non pris en charge)."""
+
+
+class RenderBackendUnavailable(RenderError):
+    """Un moteur de rendu demandé n'est pas utilisable ici (message : la raison réelle : Qt absent, pas de GPU...)."""
