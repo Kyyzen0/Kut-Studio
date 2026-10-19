@@ -126,6 +126,21 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_bus_insert_enabled` | Active ou désactive un insert (`bus`, `insert`, `enabled`) |
 | `update_bus_insert` | Modifie les paramètres d'un insert (`bus`, `insert`, `params`) |
 | `import_media` | Importe un fichier média dans le projet, **en lecture seule** (`path`) ; voir « Fichiers » ci-dessous |
+| `create_library_folder` | Crée un dossier de la bibliothèque, à la racine ou sous un `parent` (`name`, `color`) ; `id` / `as` |
+| `rename_library_folder` | Renomme un dossier (`folder`, `name`) |
+| `recolor_library_folder` | Change la couleur d'un dossier, ou l'efface sans `color` (`folder`, `color`) |
+| `move_library_folder` | Déplace un dossier sous un autre, ou à la racine sans `parent` (`folder`, `parent`) |
+| `delete_library_folder` | Supprime un dossier et ses sous-dossiers ; les médias qu'ils rangeaient reviennent à la racine (`folder`) |
+| `create_library_tag` | Crée une étiquette (`name`, `color`) ; `id` / `as` |
+| `rename_library_tag` | Renomme une étiquette (`tag`, `name`) |
+| `recolor_library_tag` | Change la couleur d'une étiquette (`tag`, `color`) |
+| `delete_library_tag` | Supprime une étiquette et la retire de tous les médias (`tag`) |
+| `move_media_to_folder` | Range un média dans un dossier, ou à la racine sans `folder` (`asset`, `folder`) |
+| `tag_media` | Pose une étiquette sur un média (`asset`, `tag`) |
+| `untag_media` | Retire une étiquette d'un média (`asset`, `tag`) |
+| `rename_media` | Renomme un média de la bibliothèque (`asset`, `name`) |
+| `relink_media` | Relie un média à un autre fichier, **en lecture seule** (`asset`, `path`) ; voir « Bibliothèque » ci-dessous |
+| `remove_media` | Retire un média **inutilisé** de la bibliothèque (`asset`) |
 | `add_clip` | Pose un média **du projet** sur une piste (`track`, `asset`, `at`) |
 | `delete_clip` | Supprime un clip (`clip`) |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
@@ -248,6 +263,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_sequence_format` | Change le cadre et/ou la cadence d'une séquence (`sequence`, au moins un de `width`, `height`, `fps`) |
 | `duplicate_sequence` | Copie indépendante d'une séquence, non activée (`sequence`, `name` libre optionnel) ; les clips de la copie ont des identifiants générés |
 | `insert_sequence_clip` | Insère une séquence comme clip imbriqué sur une piste vidéo ou audio **de la séquence active** (`sequence`, `track`, `at`, `source_in`, `source_out` dans la durée de la source) |
+| `nest_clips` | Déplace des clips de la séquence active dans une nouvelle séquence imbriquée (`clips`, `name`, `clip_id`) ; `id` / `as` |
+| `create_format_version` | Décline une séquence dans un format social (`sequence`, `format`, `name`) ; `id` / `as` |
 | `set_active_sequence` | Rend une séquence active : les verbes de piste, clip, bus et repère agissent ensuite sur elle (`sequence`) |
 | `delete_sequence` | Supprime une séquence ni active, ni dernière, ni imbriquée ailleurs (`sequence`) |
 | `create_multicam_source` | Crée une source Multicam, **non activée** : `angles` (1 à 64 objets `asset`, `offset` ≥ 0 en secondes, `name`), `name` libre optionnel ; le plus petit `offset` vaut 0 |
@@ -257,6 +274,10 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_multicam_audio` | Politique audio d'une source : `mode` = `follow` / `fixed` / `mix`, `angles` selon le mode (`sequence`) |
 | `rename_multicam_angle` | Renomme un angle et sa piste, nom libre dans la source (`sequence`, `angle`, `name`) |
 | `add_multicam_angle` | Ajoute un angle à une source (`sequence`, `asset`, `offset`, `name`) |
+| `create_multicam_from_clips` | Transforme des clips de la séquence active en source Multicam remplacée par un segment (`clips` : 2 à 64 objets `clip`, `name`, `offset` ; `name`, `segment_id`) ; `id` / `as` |
+| `flatten_multicam_segment` | Remplace un segment Multicam par les clips ordinaires qu'il montre (`clip`) |
+| `remove_multicam_angle` | Supprime un angle ; les segments qui le montrent passent à `replace_with` (`sequence`, `angle`, `replace_with`) |
+| `set_multicam_angle_color` | Couleur d'un angle dans la palette de l'interface (`sequence`, `angle`, `color_index` de 0 à 11) |
 | `set_multicam_angle_offset` | Recale un angle : son premier clip commence à `offset` (`sequence`, `angle`, `offset`) |
 | `set_beat_grid` | Pose la grille rythmique de la séquence active (`bpm` 20…300, `offset`, `beats_per_bar` 1…16) ; rien n'est mesuré |
 | `remove_beat_grid` | Supprime la grille rythmique (refusé s'il n'y en a pas) |
@@ -300,7 +321,17 @@ active. Pour remplir une autre séquence, un script la rend active avec `set_act
   qui la contiennent est le même que dans l'interface et figure dans le rapport.
 - Un nom de séquence **déjà pris est refusé** (le modèle numéroterait « Nom 2 » en silence) ; sans `name`, le modèle choisit.
 - `delete_sequence` n'a pas de `force` : une séquence encore utilisée, la séquence active et la dernière sont refusées.
-- Pas encore de verbe pour « créer une séquence à partir de la sélection » (la sélection est un état d'interface).
+- **`nest_clips`** (« Créer une séquence à partir de la sélection ») prend la sélection en liste : des clips de la séquence **active**, sans
+  doublon (200 au plus), éditables (piste et calque déverrouillés). La séquence créée reçoit `id` / `as`, le clip imbriqué `clip_id`. Refusés :
+  un nom pris (le nom par défaut « Séquence imbriquée » aussi), une transition qui relie un clip choisi à un clip resté dehors (le modèle la
+  retirerait), une sélection qui sépare un calque de son parent ou de son groupe, une imbrication de plus de 32 niveaux (ancêtres de la séquence
+  active compris), la séquence active quand c'est une source Multicam, et un clip verrouillé resté dehors que le modèle toucherait.
+- **`create_format_version`** décline une séquence dans un format social (`vertical`, `portrait`, `square`, `landscape`) : une copie mise
+  en page pour le cadre, comme « Exporter en plusieurs formats… ». Une version déjà là est **refusée** (l'interface la refait sur demande ;
+  un script supprime l'ancienne avec `delete_sequence`, puis en crée une neuve), de même qu'une version de version ; le nom par défaut
+  « <séquence> · <rapport> » doit être libre.
+- **Plafonds** : un projet compte au plus 200 séquences et 5 000 clips ; `create_sequence`, `duplicate_sequence`, `create_multicam_source`,
+  `nest_clips`, `create_multicam_from_clips` et `create_format_version` le vérifient avant de créer, toutes séquences comptées.
 
 ### Multicam
 
@@ -332,8 +363,18 @@ et leurs coupes sont ceux de la séquence **active**.
   coupe) ; `set_multicam_angle_offset` aussi pour la piste de l'angle.
 - `set_multicam_audio` : `follow` ne prend aucun angle, `fixed` exactement un, `mix` au moins un, sans doublon, chacun portant du son.
 - Pas de Multicam dans une Multicam, cycles et profondeur : refusés par le contrôle d'imbrication, comme `insert_sequence_clip`.
-- **Pas de verbe** pour la synchronisation automatique (audio, timecode : analyses), la création depuis des clips sélectionnés (la
-  sélection est un état d'interface), l'aplatissement, la couleur d'un angle (rang de palette du thème) ni la suppression d'un angle.
+- **`create_multicam_from_clips`** transforme des clips de la séquence active (vidéo ou son, 2 à 64) en source Multicam et les remplace par un
+  segment sur l'angle 1 (`segment_id`). Les angles se numérotent comme dans l'interface : vidéos d'abord, puis par position. Sans `offset`, les
+  positions actuelles synchronisent ; avec, **chaque** clip en donne un et le plus petit vaut 0, comme pour `create_multicam_source`. Un nom
+  d'angle doit être libre et ne pas ressembler à un `angle-N` d'un autre angle. Sont refusés une transition ou un suivi qui touche un clip choisi
+  (`delete_clip` les nettoierait, ce verbe-ci les laisserait pendre).
+- **`flatten_multicam_segment`** remplace un segment par des clips ordinaires aux identifiants générés ; il refuse ce que le modèle refuse
+  (remappage, étalonnage, transformation, gain, fondus, effets audio propres) et un segment qui porte du suivi.
+- **`remove_multicam_angle`** supprime la piste et les clips de l'angle ; `replace_with` est obligatoire si des segments le montrent (dans
+  **n'importe quelle** séquence, dont les pistes verrouillées sont refusées) et refusé sinon. Une transition, un suivi ou un ducking qui cite
+  l'angle est refusé.
+- **Pas de verbe** pour la synchronisation automatique (`apply_sync` : audio, timecode : des analyses, dont un script ne peut pas se faire
+  passer pour le résultat) ; `set_multicam_angle_offset` pose des décalages à la main.
 
 `params` d'un insert : un dictionnaire plat (nombres, booléens, textes courts) dont **le modèle** valide les noms et les bornes ; un
 paramètre inconnu est refusé avec le message du modèle. Le schéma complet (`Kut-Studio schema`) liste les champs de chaque verbe.
@@ -415,6 +456,23 @@ C'est le **seul** verbe qui lit un fichier, et il le lit en lecture seule (il so
 - Le média reçoit l'identifiant `id` (ou l'alias `as`) : `{"op": "import_media", "path": "voix.wav", "as": "voix"}` puis
   `{"op": "add_clip", "track": "A1", "asset": {"ref": "voix"}, "at": 0}`.
 - Le texte d'un chemin ne contient pas de caractère de contrôle et tient en 1 024 caractères.
+
+## Bibliothèque : dossiers, étiquettes, médias
+
+Les dossiers, étiquettes et affectations de la bibliothèque sont des champs du **projet** (enregistrés dans le `.kut`) : ces verbes se défont
+avec le reste du script. Un dossier ou une étiquette se désigne par son identifiant ou son nom exact (unique), `create_library_folder` /
+`create_library_tag` acceptent `id` / `as`.
+
+- Un nom fait 48 caractères au plus ; un nom qui est l'identifiant d'un autre dossier, étiquette ou média est refusé (l'identifiant l'emporterait
+  à la désignation). L'arbre a 32 niveaux au plus (calculés sur l'arbre résultant), un projet 1 000 dossiers et 500 étiquettes.
+- `delete_library_folder` fait comme l'interface (sous-dossiers compris, les médias reviennent à la racine) ; `tag_media` et `untag_media`
+  ne font rien si l'étiquette y est déjà / n'y est pas.
+- Seuls les médias de la bibliothèque (vidéo, son, image) sont visés, pas les médias techniques des calques et des sous-titres.
+- **`remove_media`** refuse un média encore utilisé par un clip de **n'importe quelle** séquence (l'interface le retire et laisse des clips orphelins).
+- **`relink_media`** lit un fichier, comme `import_media` : même dossier du script, même `--allow-outside`, même sonde `ffprobe` en lecture seule.
+  Il relit durée, cadre, cadence et métadonnées de tournage. Il refuse en plus ce que l'interface ne ferait que signaler : un autre genre de média,
+  un fichier plus court que ce que les clips lisent, un fichier déjà utilisé par un autre média, un média d'un clip dont la piste est verrouillée,
+  et du suivi lié à une autre taille ou cadence.
 
 ## Images fixes : `add_image_layer`
 
