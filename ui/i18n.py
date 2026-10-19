@@ -1979,6 +1979,7 @@ from ui.i18n_mograph import MOGRAPH_TRANSLATIONS as _MOGRAPH  # noqa: E402
 from ui.i18n_multicam import MULTICAM_TRANSLATIONS as _MULTICAM  # noqa: E402
 from ui.i18n_panels import PANELS_TRANSLATIONS as _PANELS  # noqa: E402
 from ui.i18n_social import SOCIAL_TRANSLATIONS as _SOCIAL  # noqa: E402
+from ui.i18n_transitions import TRANSITIONS_TRANSLATIONS as _TRANSITIONS  # noqa: E402
 from ui.i18n_tracking import TRACKING_TRANSLATIONS as _TRACKING  # noqa: E402
 from ui.i18n_time import TIME_TRANSLATIONS as _TIME  # noqa: E402
 from ui.i18n_updates import UPDATES_TRANSLATIONS as _UPDATES  # noqa: E402
@@ -2001,6 +2002,7 @@ DOMAIN_TABLES: dict[str, dict[str, dict[str, str]]] = {
     "ui.i18n_audio": _AUDIO,
     "ui.i18n_cli": _CLI,
     "ui.i18n_usage": _USAGE,
+    "ui.i18n_transitions": _TRANSITIONS,
 }
 
 

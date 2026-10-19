@@ -41,7 +41,8 @@ from typing import TYPE_CHECKING, Iterable, Sequence
 
 from .atomic_io import atomic_write_json
 from .favorites import set_favorite_member
-from .transitions import TransitionType
+from .transition_catalog import EXTENDED_TRANSITION_CATALOG
+from .transitions import TransitionType, transition_family
 from .platform_paths import user_config_dir
 
 LOGGER = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage uniquement
 class TransitionPresetCategory(str, Enum):
     """Catégories visibles dans la bibliothèque de transitions.
 
-    Les 18 transitions natives sont réparties en cinq familles pour
+    Les 43 transitions natives sont réparties en cinq familles pour
     faciliter la navigation : ``fade`` (fondus), ``wipe`` (balayages
     et glissements), ``shape`` (formes géométriques), ``dissolve``
     (dissolutions), ``smooth`` (glissements fluides). Les catégories
@@ -453,12 +454,14 @@ def _smooth_right_preset() -> TransitionPreset:
 def builtin_transition_presets() -> tuple[TransitionPreset, ...]:
     """Retourne la bibliothèque livrée avec l'application.
 
-    Le catalogue natif comprend désormais 18 transitions (4 historiques
-    + 14 ajoutées par la tâche 26) : fondu enchaîné, fondu au noir,
+    Le catalogue natif comprend 43 transitions (4 historiques, 14 ajoutées
+    par la tâche 26 et 25 du catalogue élargi, voir
+    :mod:`core.transition_catalog`) : fondu enchaîné, fondu au noir,
     fondu au blanc, quatre balayages (haut, bas, gauche, droite),
     quatre glissements (haut, bas, gauche, droite), cercle ouverture /
     fermeture, dissolution, pixellisation, transition radiale, et deux
-    glissements fluides (gauche, droite).
+    glissements fluides (gauche, droite) ; puis couvrir / révéler,
+    diagonales, ouvertures et variantes de fondu.
     """
     return (
         # Historiques (tâche 23)
@@ -481,6 +484,23 @@ def builtin_transition_presets() -> tuple[TransitionPreset, ...]:
         _fade_white_preset(),
         _smooth_left_preset(),
         _smooth_right_preset(),
+        *_extended_presets(),
+    )
+
+
+def _extended_presets() -> tuple[TransitionPreset, ...]:
+    """Les 25 presets du catalogue élargi : id = valeur de l'enum, catégorie = famille du type."""
+    return tuple(
+        make_transition_preset(
+            preset_id=entry.transition_type.value,
+            name=entry.name,
+            description=entry.description,
+            category=_infer_category(entry.transition_type),
+            transition_type=entry.transition_type,
+            default_duration=entry.default_duration,
+            builtin=True,
+        )
+        for entry in EXTENDED_TRANSITION_CATALOG
     )
 
 
@@ -598,28 +618,13 @@ def _infer_category(transition_type: TransitionType) -> TransitionPresetCategory
 
     La taxonomie reflète les familles introduites par la tâche 26 :
     les cinq catégories ``fade``, ``wipe``, ``shape``, ``dissolve`` et
-    ``smooth`` couvrent la totalité des 18 types natifs. Les types
+    ``smooth`` couvrent la totalité des 43 types natifs. Les types
     historiques (``CROSSFADE``, ``FADE_BLACK``, ``WIPE_LEFT``,
     ``WIPE_RIGHT``) sont rangés dans leurs catégories d'origine pour
     ne pas bouleverser les favoris déjà enregistrés par les utilisateurs.
     """
-    if transition_type in (
-        TransitionType.CROSSFADE,
-        TransitionType.FADE_BLACK,
-        TransitionType.FADE_WHITE,
-    ):
-        return TransitionPresetCategory.FADE
-    if transition_type in (
-        TransitionType.WIPE_LEFT,
-        TransitionType.WIPE_RIGHT,
-        TransitionType.WIPE_UP,
-        TransitionType.WIPE_DOWN,
-        TransitionType.SLIDE_LEFT,
-        TransitionType.SLIDE_RIGHT,
-        TransitionType.SLIDE_UP,
-        TransitionType.SLIDE_DOWN,
-    ):
-        return TransitionPresetCategory.WIPE
+    # Une seule taxonomie : :data:`core.transitions.TRANSITION_FAMILIES` (les types inconnus retombent sur ``wipe``).
+    return TransitionPresetCategory(transition_family(transition_type))
     if transition_type in (
         TransitionType.CIRCLE_OPEN,
         TransitionType.CIRCLE_CLOSE,
@@ -936,4 +941,4 @@ __all__ = [
 
 # Nombre de presets natifs à la livraison : utilisé par les tests pour
 # détecter une régression silencieuse (ajout / retrait accidentel).
-BUILTIN_TRANSITION_PRESETS_COUNT: int = 18
+BUILTIN_TRANSITION_PRESETS_COUNT: int = 43

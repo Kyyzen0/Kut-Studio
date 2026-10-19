@@ -90,7 +90,7 @@ from .project_model import (
     Track,
 )
 from .time_remapping import FlowQuality, FreezeFrameMode, TimeInterpolation, TimeRemapping
-from .transitions import Transition, TransitionType
+from .transitions import CATALOG_EXTENSION_TYPES, Transition, TransitionType
 from .visual_effects import (
     ADVANCED_TRANSFORM_PROPERTIES,
     TRANSFORM_PROPERTIES,
@@ -116,7 +116,8 @@ FORMAT_NAME = "kut-studio-project"
 
 CURRENT_VERSION = 17
 """Version courante du format public ``.kut`` (écrite par défaut ; voir :data:`PATH_MASK_VERSION` pour la 18,
-:data:`COLOR_MATRIX_VERSION` pour la 19 et :data:`EFFECT_ANIMATION_VERSION` pour la 20).
+:data:`COLOR_MATRIX_VERSION` pour la 19, :data:`EFFECT_ANIMATION_VERSION` pour la 20 et
+:data:`TRANSITION_CATALOG_VERSION` pour la 21).
 
 La version 20 n'est écrite que par un projet dont un clip porte une image clé générique ``fx.<effet>.<paramètre>`` (paramètre
 d'effet animé) ou ``color.<champ>`` (étalonnage animé), voir ``docs/adr/0008-animation-etalonnage-et-effets.md`` ; le
@@ -183,9 +184,16 @@ octet comme avant ; seul un projet qui en contient passe à 20 (ou reste à la p
 Un Kut-Studio plus ancien refuse le fichier au lieu d'ignorer les images clés d'un identifiant inconnu. Le chargeur lit
 17 à 20 de la même façon ; une image clé ``fx.*`` dont l'effet n'existe pas est ignorée (jamais une erreur de chargement)."""
 
+TRANSITION_CATALOG_VERSION = 21
+"""Version écrite par un projet dont au moins une transition utilise l'un des 25 types du catalogue élargi
+(:data:`core.transitions.CATALOG_EXTENSION_TYPES` : couvrir / révéler, diagonales, ouvertures, lissés verticaux, variantes
+de fondu). Même règle « version minimale nécessaire » : un projet qui n'en utilise aucun s'écrit octet pour octet comme
+avant ; un Kut-Studio plus ancien refuse le fichier avec le message explicite de ``_validate_envelope`` au lieu d'échouer
+sur un type de transition inconnu. Le chargeur lit 17 à 21 de la même façon."""
+
 SUPPORTED_VERSIONS: frozenset[int] = frozenset(
     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PATH_MASK_VERSION, COLOR_MATRIX_VERSION,
-     EFFECT_ANIMATION_VERSION}
+     EFFECT_ANIMATION_VERSION, TRANSITION_CATALOG_VERSION}
 )
 """Ensemble des versions que cette version de Kut-Studio sait lire.
 
@@ -543,6 +551,27 @@ def payload_uses_effect_animation(node: Any) -> bool:
     return False
 
 
+_CATALOG_TYPE_VALUES = frozenset(member.value for member in CATALOG_EXTENSION_TYPES)
+
+
+def payload_uses_catalog_transitions(node: Any) -> bool:
+    """``True`` si une transition sérialisée (``from_clip_id`` + ``type``) porte un type du catalogue élargi.
+
+    Même principe que :func:`payload_uses_path_masks` : on lit le résultat de la sérialisation, donc les transitions de
+    toutes les séquences sont vues.
+    """
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if "from_clip_id" in item and item.get("type") in _CATALOG_TYPE_VALUES:
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
+
+
 def project_uses_path_masks(project: Project) -> bool:
     """``True`` si le projet contient au moins un masque courbe (donc s'écrit en :data:`PATH_MASK_VERSION`)."""
     return payload_uses_path_masks(_build_payload(project)[_PROJECT_KEY])
@@ -557,6 +586,8 @@ def _build_payload(project: Project) -> dict[str, Any]:
         payload[_VERSION_KEY] = COLOR_MATRIX_VERSION
     if payload_uses_effect_animation(payload[_PROJECT_KEY]):
         payload[_VERSION_KEY] = EFFECT_ANIMATION_VERSION
+    if payload_uses_catalog_transitions(payload[_PROJECT_KEY]):
+        payload[_VERSION_KEY] = TRANSITION_CATALOG_VERSION
     return payload
 
 

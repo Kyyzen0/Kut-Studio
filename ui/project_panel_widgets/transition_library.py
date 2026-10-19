@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from core.transitions import transition_type_values
 from ui.adaptive_layout import ElidedLabel, FlowLayout, ShrinkableScrollArea
 from ui.design_system import DIALOG_MARGINS, Iconography, Radius, Sizes, Spacing, Typography, Weights
 from ui.i18n import translate
@@ -322,7 +325,7 @@ class TransitionLibraryView(QWidget):
             favorites_only = True
 
         visible = filter_transition_presets(
-            self._all_presets,
+            [_localized_preset(preset) for preset in self._all_presets],
             search=self._search_text,
             category=category,
             favorites=list(self._favorites),
@@ -473,6 +476,22 @@ _TRANSITION_CATEGORY_RANK: dict[str, int] = {
     "fade": 0,      # bleu
     "wipe": 3,      # violet
 }
+
+
+def _localized_preset(preset):
+    """Copie d'affichage d'un preset intégré dans la langue de l'interface (``core`` porte le français) ; un preset
+    utilisateur, ou un intégré sans traduction, reste tel quel. Le contenu persisté n'est jamais modifié."""
+    if not getattr(preset, "builtin", False):
+        return preset
+    name_key = f"transitions.preset.{preset.id}.name"
+    description_key = f"transitions.preset.{preset.id}.description"
+    name = translate(name_key)
+    description = translate(description_key)
+    return replace(
+        preset,
+        name=preset.name if name == f"[{name_key}]" else name,
+        description=preset.description if description == f"[{description_key}]" else description,
+    )
 
 
 def _transition_accent(category: str) -> str:
@@ -738,18 +757,8 @@ class SaveTransitionPresetDialog(QDialog):
         )
 
         self.type_combo = QComboBox()
-        self.type_combo.addItem(
-            translate("transitions.preset.crossfade.name"), "crossfade"
-        )
-        self.type_combo.addItem(
-            translate("transitions.preset.fade_black.name"), "fade_black"
-        )
-        self.type_combo.addItem(
-            translate("transitions.preset.wipe_left.name"), "wipe_left"
-        )
-        self.type_combo.addItem(
-            translate("transitions.preset.wipe_right.name"), "wipe_right"
-        )
+        for value in transition_type_values():
+            self.type_combo.addItem(translate(f"transitions.preset.{value}.name"), value)
         index = self.type_combo.findData(default_type)
         if index >= 0:
             self.type_combo.setCurrentIndex(index)
