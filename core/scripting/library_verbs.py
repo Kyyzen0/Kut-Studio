@@ -19,12 +19,15 @@ Règles communes :
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
 from ..library_organization import LibraryOrganization, MAX_NAME_LENGTH, compute_usage
 from ..media_probe import MediaProbeError, probe_media
 from ..project_model import MediaAsset, Project
+from ..template_slots import PHOTO_EXTENSIONS
+from .image_layer import read_image_size
 from .library_rules import (
     library_asset, require_depth, require_folder_room, require_name_not_an_id, require_tag_room,
 )
@@ -195,6 +198,19 @@ def _relink_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
         tracked = any(clip.tracking is not None and not clip.tracking.is_empty for clip in users)
 
         def checked_probe(text: str) -> MediaAsset:
+            still = Path(text).suffix.lower() in PHOTO_EXTENSIONS
+            if asset.media_type == "image":
+                # ``probe_media`` classe toute image fixe en « video » : une image se relit comme l'import de photos (Qt, extension
+                # confrontée au contenu), la durée et la cadence d'origine sont gardées.
+                if not still:
+                    raise MediaProbeError("ce fichier n'est pas une image : le média d'origine en est une.")
+                try:
+                    width, height = read_image_size(Path(text))
+                except ValueError as error:
+                    raise MediaProbeError(str(error)) from error
+                return MediaAsset(asset.id, text, asset.name, asset.duration, width, height, asset.fps, "image", has_audio=False)
+            if still:
+                raise MediaProbeError(f"ce fichier est une image, le média d'origine est de genre '{asset.media_type}'.")
             fresh = probe_media(text)                      # la sonde de l'import : lecture seule
             if fresh.media_type != asset.media_type:
                 raise MediaProbeError(f"ce fichier est de genre '{fresh.media_type}', le média d'origine est de genre '{asset.media_type}'.")

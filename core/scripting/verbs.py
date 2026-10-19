@@ -1146,7 +1146,7 @@ def _effective_angle_name(name: str | None, asset: Any) -> str:
 
 def _create_multicam_source(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        require_sequence_room(project)
+        require_sequence_room(project, clips=len(a["angles"]))          # un clip par angle
         source_name = a.get("name", "Multicam")                  # le défaut aussi : le modèle suffixerait « Multicam » s'il est pris
         _require_free_sequence_name(project, source_name)
         listed = a["angles"]

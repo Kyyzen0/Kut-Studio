@@ -78,7 +78,7 @@ def _create_multicam_from_clips(a: Mapping[str, Any]) -> Operation:
                 )
         source_name = a.get("name", "Multicam")
         _require_free_sequence_name(project, source_name)
-        require_sequence_room(project)
+        require_sequence_room(project, clips=1)                       # les copies d'angle remplacent les clips retirés : net, le segment
         by_id = {clip.id: (track, clip) for track in sequence.tracks for clip in track.clips}
         involved = set(ids)
         for transition in sequence.transitions:

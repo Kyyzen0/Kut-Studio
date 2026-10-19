@@ -457,3 +457,58 @@ def test_a_thousand_operations_of_the_same_creation_stop_at_the_bound(monkeypatc
     monkeypatch.setattr("core.scripting.library_rules.MAX_LIBRARY_TAGS", 50)
     report = _refused(_project(), *[{"op": "create_library_tag", "name": f"t{i}"} for i in range(1000)], message="limite")
     assert report.failed_index == 50
+
+
+def _png(path: Path, width: int = 7, height: int = 5) -> Path:
+    from PySide6.QtGui import QImage
+
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(0x336699)
+    assert image.save(str(path), "PNG")
+    return path
+
+
+def test_relink_media_relinks_a_real_image_and_keeps_images_and_videos_apart(tmp_path, probe):
+    folder = _folder(tmp_path, "film.mp4")
+    _png(folder / "photo.png", 7, 5)
+    project = _project()
+    project.media_assets.append(MediaAsset("img", "/x/p.png", "photo", 0.0, 100, 100, 30.0, "image"))
+    context = ScriptContext(folder)
+    project = deepcopy(project)
+    session = _ok(deepcopy(project), {"op": "relink_media", "asset": "img", "path": "photo.png"}, context=context)
+    asset = next(a for a in session.project.media_assets if a.id == "img")
+    assert (asset.width, asset.height, asset.media_type, asset.duration) == (7, 5, "image", 0.0) and asset.path.endswith("photo.png")
+    assert not probe["calls"], "une image ne passe pas par ffprobe (qui la classerait en vidéo)"
+    _refused(project, {"op": "relink_media", "asset": "img", "path": "film.mp4"}, context=context, message="pas une image")
+    _refused(project, {"op": "relink_media", "asset": "m", "path": "photo.png"}, context=context, message="est une image")
+    (folder / "faux.png").write_bytes(b"pas une image")
+    _refused(project, {"op": "relink_media", "asset": "img", "path": "faux.png"}, context=context, message="image")
+    _refused(project, {"op": "relink_media", "asset": "img", "path": "../photo.png"}, context=context, message="hors du dossier")
+
+
+def _at_cap(project: Project, monkeypatch) -> None:
+    from core.scripting.auto_rules import total_clips
+
+    monkeypatch.setattr("core.scripting.auto_rules.MAX_CLIPS_IN_PROJECT", total_clips(project))
+
+
+def test_every_sequence_creating_verb_counts_the_clips_it_adds_in_a_project_at_the_clip_cap(monkeypatch):
+    from core.multicam_ops import AngleSpec, create_multicam_source
+
+    project = _project()
+    project.tracks[0].clips.append(Clip("c1", "m", "V1", 0.0, 0.0, 2.0, label="c1"))
+    project.tracks[0].clips.append(Clip("c2", "n", "V1", 3.0, 0.0, 2.0, label="c2"))
+    create_sequence(project, "Autre", sequence_id="autre").tracks[0].clips.append(Clip("z", "m", "V1", 0.0, 0.0, 2.0, label="z"))
+    _at_cap(project, monkeypatch)
+    for op, message in (
+        ({"op": "duplicate_sequence", "sequence": "autre"}, "dépasseraient"),
+        ({"op": "create_multicam_source", "angles": [{"asset": "m"}, {"asset": "n"}]}, "dépasseraient"),
+        ({"op": "create_format_version", "sequence": "autre", "format": "square"}, "dépasseraient"),
+        ({"op": "create_multicam_from_clips", "clips": [{"clip": "c1"}, {"clip": "c2"}]}, "dépasseraient"),
+    ):
+        before = deepcopy(project)
+        session, report = _apply(project, op)
+        assert not report.ok and message in report.error, (op, report.error)
+        assert session.project.sequences == before.sequences, op
+    _ok(project, {"op": "create_sequence", "name": "Vide"})                          # une séquence vide n'ajoute aucun clip
+    _ok(project, {"op": "nest_clips", "clips": ["c1"], "name": "Un"})               # net : le clip imbriqué remplace le clip déplacé
