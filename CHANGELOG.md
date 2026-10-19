@@ -14,6 +14,12 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-19
+
+Version qui permet d'**animer les effets avec des images clés** : la luminosité, le contraste et la saturation de la correction de couleur, et l'intensité de la vignette ont leurs losanges ‹ ◆ ›, comme le mouvement, avec l'éditeur de courbes. Les scripts gagnent des verbes pour les images clés de masque et de calque graphique et pour les effets de clip. Deux correctifs s'y ajoutent : la luminosité négative de l'aperçu suit l'export, et annuler un export sous Windows ne laisse plus de fichier caché.
+
+**À savoir** : c'est une version « mineure » parce qu'elle change le **format des projets**. Un projet qui contient une courbe d'effet s'enregistre au format 20 et ne s'ouvre plus dans une version antérieure (qui le refuse au lieu de perdre l'animation) ; un projet sans courbe d'effet reste écrit exactement comme avant et s'ouvre partout. Seuls ces quatre réglages sont animables pour l'instant : le flou, la netteté, la lueur, l'aberration chromatique et la brume de chaleur restent fixes.
+
 ### Added
 
 - **Animer la correction de couleur et la vignette avec des images clés.** Dans l'onglet Effets de l'inspecteur, la luminosité, le contraste et la saturation de la *Correction couleur*, et l'intensité de la *Vignette*, ont comme Mouvement leurs losanges ‹ ◆ › : le losange pose ou retire une image clé à la tête de lecture, ‹ et › sautent d'une image clé à l'autre, et le curseur montre la valeur à la position de lecture (le modifier écrit l'image clé de cet instant). Chaque modification est annulable, deux effets du même type ont chacun leurs courbes, et une piste ou un calque verrouillé refuse la modification. Le clic droit sur le losange propose « Supprimer l'animation de l'effet » (en Avancé : interpolation, copier / coller et éditeur de courbes, qui liste ces réglages sous « Correction couleur — Luminosité »). Les losanges sont du niveau Studio. Voir [docs/animation.md](docs/animation.md).
@@ -724,7 +730,8 @@ plus récente). Les paquets ne sont pas signés (macOS : non notarisé) ; FFmpeg
 - Recherche de mises à jour sur GitHub Releases (*Aide › Rechercher des mises à jour…*), téléchargement vérifié
   (taille et SHA-256) et installation assistée.
 
-[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.5...v0.7.0
 [0.6.5]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Kyyzen0/Kut-Studio/compare/v0.6.2...v0.6.3
