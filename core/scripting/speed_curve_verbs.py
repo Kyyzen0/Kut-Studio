@@ -27,7 +27,7 @@ from ..time_presets import TimePreset, apply_preset
 from ..time_targets import SPEED_TARGET
 from .keyframe_rules import MAX_BLOCK, MAX_SLOPE, require_effective_tangents
 from .time_verbs import (
-    _AT, _MAX_POINTS, _RIPPLE, _TOLERANCE, _checked_move, _live_clip, _mode, _require_aligned, _speed_point, _time_clip,
+    _AT, _MAX_POINTS, _RIPPLE, _TOLERANCE, _checked_move, _mode, _require_aligned, _speed_point, _time_clip,
 )
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP
 
@@ -101,7 +101,7 @@ def _remove_speed_points(a: Mapping[str, Any]) -> Operation:
 
 def _apply_time_preset(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        clip_id = _live_clip(project, a["clip"], "apply_time_preset")
+        clip_id = _time_clip(project, a["clip"])      # un clip figé est refusé par le modèle (apply_preset)
         preset = TimePreset(a["preset"])
         at = a.get("at")
         if preset is TimePreset.FREEZE:

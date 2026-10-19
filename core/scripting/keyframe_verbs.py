@@ -64,11 +64,10 @@ def _effect_property(project: Project, a: Mapping[str, Any], verb: str) -> tuple
 def _add_effect_keyframe(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id, property_id = _effect_property(project, a, "add_effect_keyframe")
-        _id, clip, target = resolve_keyframe_target(project, clip_id, property_id, "add_effect_keyframe")
+        _id, _clip, target = resolve_keyframe_target(project, clip_id, property_id, "add_effect_keyframe")
         value = require_value(target, a["value"], str(a["parameter"]))
-        at = float(a["at"])
-        require_within(clip, at, "add_effect_keyframe")
-        return add_keyframe(project, clip_id, property_id, at, value, interpolation=a.get("interpolation"))
+        # L'instant hors du clip est refusé par le modèle (``add_keyframe`` : « Temps hors du clip »).
+        return add_keyframe(project, clip_id, property_id, float(a["at"]), value, interpolation=a.get("interpolation"))
 
     return operation
 

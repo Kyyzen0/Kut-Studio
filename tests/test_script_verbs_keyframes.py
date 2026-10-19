@@ -201,6 +201,18 @@ def test_set_keyframe_value_matches_the_model(prop, at, value):
     _parity(_animated, _op("set_keyframe_value", clip="a", property=prop, at=at, value=value), direct)
 
 
+def test_require_value_refuses_non_numbers_even_when_called_directly():
+    """Le décodage de script les refuse déjà ; la règle commune ne s'y fie pas."""
+    from core.animation_targets import get_target
+    from core.scripting.keyframe_rules import require_value
+
+    target = get_target("position_x")
+    for bad in (math.nan, math.inf, -math.inf, True, "1", None):
+        with pytest.raises(ValueError):
+            require_value(target, bad, "position_x")
+    assert require_value(target, 1, "position_x") == 1.0
+
+
 def test_set_keyframe_value_refuses_bounds_missing_keyframes_and_unsuitable_properties():
     report = _refused(_animated(), _op("set_keyframe_value", clip="a", property="fx.v1.intensity", at=2.0, value=1.5))
     assert "hors bornes" in report.error
@@ -323,6 +335,7 @@ def test_set_animation_enabled_matches_the_model_both_ways():
     _parity(_project, _op("set_animation_enabled", clip="a", property="fx.v1.intensity", enabled=True, at=0.0),
             lambda p: set_animation_enabled(p, "a", "fx.v1.intensity", True, 0.0))
     assert "hors du clip" in _refused(_project(), _op("set_animation_enabled", clip="a", property="scale", enabled=True, at=10.5)).error
+    assert "hors du clip" in _refused(_animated(), _op("set_animation_enabled", clip="a", property="position_x", enabled=False, at=10.5)).error
     assert "vitesse" in _refused(_project(), _op("set_animation_enabled", clip="a", property="time.speed", enabled=True, at=0.0)).error
 
 

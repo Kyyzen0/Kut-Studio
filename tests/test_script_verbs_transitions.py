@@ -121,6 +121,18 @@ def test_update_transition_refuses_without_a_change_and_with_bad_values():
     _invalid(_op("update_transition", transition="t1", duration=1.0, extra=1))
 
 
+def test_the_duration_limit_is_reported_before_any_placement_problem():
+    project = _joined()
+    project.tracks[0].clips.append(Clip("z", "m", "V1", 2.0, 0.0, 0.2))          # sur le chemin du clip entrant s'il était recalé à 1,5 s
+    assert "moitié" in _refused(project, _op("update_transition", transition="t1", duration=2.5)).error
+
+
+def test_a_transition_across_two_tracks_in_a_hand_edited_file_is_refused():
+    project = _joined()
+    project.transitions.append(Transition("tx", "a", "x", TransitionType.CROSSFADE, 0.5))
+    assert "même piste" in _refused(project, _op("update_transition", transition="tx", duration=0.25)).error
+
+
 def test_update_transition_never_overlaps_a_third_clip():
     """Raccourcir la transition recale le clip entrant vers la droite ; le modèle ne regarde pas ses voisins, un script reçoit le recalage refusé."""
     project = _joined()
