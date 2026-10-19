@@ -1457,7 +1457,7 @@ VERBS: dict[str, Verb] = {
               Param("inverted", Kind.BOOLEAN, "Fenêtre inversée.", required=False),
               Param("mode", Kind.ENUM, "add, subtract ou intersect.", required=False,
                     choices=tuple(item.value for item in MaskMode)),
-              Param("name", Kind.STRING, "Nom de la fenêtre.", required=False),
+              Param("name", Kind.STRING, "Nom de la fenêtre (vide : sans nom).", required=False, allow_empty=True),
               _nodes_param(required=False)),
              _add_color_window, creates="color_window", creates_scope="clip", group="color"),
         Verb("set_color_window", "Modifie une fenêtre d'étalonnage ; au moins un champ.",

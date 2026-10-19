@@ -55,7 +55,7 @@ def test_golden_output_of_a_small_fixed_project():
 
 def test_top_level_shape_and_versions():
     data = describe(small_project())
-    assert list(data) == ["describe_version", "project", "media", "sequences", "not_described"]
+    assert list(data) == ["describe_version", "project", "media", "color_presets", "sequences", "not_described"]
     assert data["describe_version"] == DESCRIBE_VERSION == api.DESCRIBE_VERSION and isinstance(DESCRIBE_VERSION, int)
     assert data["not_described"] == list(NOT_DESCRIBED_SECTIONS) and data["not_described"] == sorted(data["not_described"])
     assert data["project"] == {"name": "Démo", "width": 1280, "height": 720, "fps": 25.0, "duration": 30.0,
@@ -76,10 +76,10 @@ def _all_keys(node, found: set[str] | None = None) -> set[str]:
 
 def test_nothing_is_said_about_what_is_not_described():
     """Pas de clé vide à la place d'une donnée non lue : ``effects``, ``color_grade``… ne sont pas des clés de la sortie (seule la
-    liste ``not_described`` les nomme)."""
+    liste ``not_described`` les nomme). Les sections décrites par la partie B (effets, couleur, composition, images clés, bus…) n'y sont plus."""
     keys = _all_keys(describe(rich_project()))
-    for forbidden in ("effects", "audio_effects", "color_grade", "compositing", "composition", "tracking", "buses", "inserts",
-                      "automation", "bus_id", "transform_keyframes", "animation", "text_style", "ducking_config"):
+    for forbidden in ("tracking", "text_style", "fill_color", "font_size", "stroke_width", "beat_grid", "guides", "multicam",
+                      "motion_blur", "generated_groups", "library_folders", "library_tags", "library_assignments"):
         assert forbidden not in keys, forbidden
 
 
