@@ -711,12 +711,12 @@ bibliothèque, la page Composition et la sélection de la timeline appellent.
 - **Compositions** : `create_composition` pose une composition vide ; `convert_to_composition` y range des clips (chaque calque devient une
   branche de nœuds, à sens unique). Refusé, comme dans l'interface : clip imbriqué ou déjà composé, vitesse, suivi, fenêtres de couleur, effets animés
   (`fx.*`), calque d'effets ou parenté, piste verrouillée, plage prise sur la piste hôte. En plus : calque verrouillé refusé ; transitions, panoramique, fondus
-  et effets audio que la conversion perdrait (l'interface les annonce en barre d'état) : refusés tant qu'ils existent. Le contenu des nœuds n'est pas
+  et effets audio que la conversion perdrait (l'interface les annonce en barre d'état) : refusés tant qu'ils existent. Un clip désactivé, sur une piste masquée ou muette, un calque masqué ou un clip caché par un solo sont aussi refusés : la composition ne garde pas cet état et le contenu réapparaîtrait. Le contenu des nœuds n'est pas
   encore écrivable (`describe` le lit).
 - **Sélection multiple** : `delete_clips` (avec `ripple` optionnel) et `move_clips`, de 1 à 200 clips sans doublon. Tout est vérifié avant la première
   modification : clips cités, clips que le ripple ferait reculer, destinations. Le modèle saute en silence un clip introuvable : un script le reçoit
   refusé. Les calques graphiques se suppriment avec `delete_layers` (leur hiérarchie a ses règles). Un tiers touché par une suppression (enfant
-  d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé.
+  d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé ; c'est vérifié avant la première suppression.
 - **Identifiant du clip créé** : `id` / `as` ; les fonctions de composition reçoivent pour cela un paramètre optionnel `clip_id` (sans lui, l'interface ne change pas).
 
 ## Pas encore là
