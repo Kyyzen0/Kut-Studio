@@ -255,16 +255,17 @@ def test_a_scene_has_no_stabilization_nor_transition(tmp_path):
     assert clip.tracking is None and project.transitions == []
 
 
-# --- Plan de rendu (provisoire : B2b branchera le rendu) -----------------------------------------------------------------
+# --- Plan de rendu (B2b : le calque est rendu, fichier manquant = carte à l'écran + refus à l'export) ----------------------
 
 
-def test_a_project_with_a_scene_builds_a_render_plan_that_ignores_it_and_says_so(tmp_path):
-    project, clip, _scene = project_with_scene(tmp_path)
+def test_a_project_with_a_scene_builds_a_render_plan_that_draws_it(tmp_path):
+    project, clip, scene = project_with_scene(tmp_path)
     title = add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=3.0, clip_id="title")
     plan = build_render_plan(project)
-    assert [layer.clip_id for layer in plan.graphics_layers] == [title.id]
-    assert any("scène 3D" in warning and "scene" in warning for warning in plan.warnings)
-    assert plan.missing_media == ()
+    assert sorted(layer.clip_id for layer in plan.graphics_layers) == sorted([title.id, clip.id])
+    layer = next(item for item in plan.graphics_layers if item.clip_id == clip.id)
+    assert layer.graphic.type is GraphicType.SCENE3D and layer.graphic.source_path == str(scene.resolve())
+    assert plan.warnings == () and plan.missing_media == ()
 
 
 def test_a_loaded_version_22_project_builds_its_plan(tmp_path):
@@ -273,7 +274,7 @@ def test_a_loaded_version_22_project_builds_its_plan(tmp_path):
     save_project(project, path)
     assert json.loads(path.read_text(encoding="utf-8"))["version"] == 22
     plan = build_render_plan(load_project(path))
-    assert plan.graphics_layers == () and plan.warnings
+    assert [layer.clip_id for layer in plan.graphics_layers] == [clip.id] and plan.warnings == ()
 
 
 def test_a_hidden_track_or_a_disabled_clip_gives_no_warning(tmp_path):
@@ -289,6 +290,6 @@ def test_a_scene_inside_a_nested_sequence_does_not_break_the_plan(tmp_path):
     project, clip, _scene = project_with_scene(tmp_path, start=0.0, duration=3.0)
     create_sequence_from_selection(project, [clip.id], "Imbriquée")
     plan = build_render_plan(project)
-    assert plan.warnings and not plan.graphics_layers
-    assert plan.nested_sequences and all(not sub.plan.graphics_layers for sub in plan.nested_sequences)
+    assert plan.warnings == () and plan.missing_media == ()
+    assert plan.nested_sequences and any(sub.plan.graphics_layers for sub in plan.nested_sequences)
 

@@ -36,7 +36,7 @@ Ajouter un type de calque : voir ``docs/motion-graphics.md``.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
 
@@ -202,6 +202,10 @@ class GraphicOverlay:
     light_angle: float = 0.0
     light_density: float = 1.0
     light_time: float = 0.0          # temps local de l'image dessinée : posé par la scène, jamais saisi
+    # scène 3D : instant de la scène rendue (core.scene3d), posé par la scène, JAMAIS sérialisé. Hors du repr : l'empreinte d'un
+    # plan (fingerprint_plan) et les clés d'image reposent sur repr(graphic), qui ne doit pas changer pour les projets sans 3D ;
+    # le rendu 3D met l'instant dans sa propre clé (core.scene3d.render_identity).
+    scene_time: float = field(default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "type", GraphicType(self.type))
@@ -269,6 +273,7 @@ class GraphicOverlay:
         object.__setattr__(self, "light_angle", _bounded(self.light_angle, -360.0, 360.0, 0.0))
         object.__setattr__(self, "light_density", _bounded(self.light_density, 0.1, 4.0, 1.0))
         object.__setattr__(self, "light_time", _bounded(self.light_time, 0.0, 86400.0, 0.0))
+        object.__setattr__(self, "scene_time", _bounded(self.scene_time, 0.0, 86400.0, 0.0))
         if self.type == GraphicType.IMAGE and not self.source_path:
             raise ValueError("Un calque image doit référencer un fichier source.")
         if self.type == GraphicType.SCENE3D and not has_scene_suffix(self.source_path):
@@ -284,7 +289,11 @@ class GraphicOverlay:
         return self.type in (GraphicType.SHAPE, GraphicType.RECTANGLE)
 
 
-_GRAPHIC_FIELDS = frozenset(f.name for f in fields(GraphicOverlay))
+RUNTIME_FIELDS = frozenset({"scene_time"})
+"""Champs d'exécution : posés par la scène à chaque image (comme ``light_time``), mais ni écrits dans le projet ni lus ni
+modifiables : l'ajout d'un champ d'exécution ne change aucun octet d'un projet existant."""
+
+_GRAPHIC_FIELDS = frozenset(f.name for f in fields(GraphicOverlay)) - RUNTIME_FIELDS
 
 
 def graphic_defaults(
@@ -524,6 +533,8 @@ def graphic_to_dict(graphic: GraphicOverlay | None) -> dict | None:
         return None
     data = {}
     for item in fields(GraphicOverlay):
+        if item.name in RUNTIME_FIELDS:
+            continue
         value = getattr(graphic, item.name)
         if isinstance(value, tuple):
             value = list(value)

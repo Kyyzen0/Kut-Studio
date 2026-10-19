@@ -258,6 +258,7 @@ class GraphicLayer:
     color_grade: object = None
     role: str = "draw"
     label: str = ""
+    source_in: float = 0.0           # point d'entrée du clip : le temps d'une scène 3D est source_in + temps local du clip
 
     @property
     def is_rig(self) -> bool:
@@ -671,16 +672,16 @@ class _PlanBuilder:
                         continue
                     if clip.timeline_start >= high or clip.timeline_start + clip.duration <= low:
                         continue
+                    layer = _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))
                     if graphic.type == GraphicType.SCENE3D:
-                        # Provisoire (lot B2a) : le rendu d'une scène 3D est branché au lot B2b ; en attendant le calque
-                        # est ignoré et signalé, jamais une erreur (aperçu, annulation, export et réouverture restent sûrs).
-                        self.warnings.append(
-                            f"{clip.label or clip.id} : scène 3D pas encore rendue (clip ignoré dans cette version)."
-                        )
-                        continue
-                    graphics_layers.append(
-                        _graphic_layer(clip, track, track_index, state=self.effective(clip, sequence))
-                    )
+                        # Scène 3D : fichier manquant ou illisible = carte à l'écran, refus à l'export (core.scene3d_card).
+                        from .scene3d_card import checked_scene3d_layer
+
+                        layer, issue = checked_scene3d_layer(layer, clip)
+                        if issue is not None:
+                            self.warnings.append(issue[0])
+                            self.missing_media.append(issue[1])
+                    graphics_layers.append(layer)
                 continue
             if track.type not in {"video", "audio"}:
                 continue
@@ -1087,6 +1088,7 @@ def _graphic_layer(
         color_grade=getattr(clip, "color_grade", None),
         role=role,
         label=clip.label,
+        source_in=float(clip.source_in),
     )
 
 

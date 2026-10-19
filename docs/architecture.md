@@ -201,6 +201,23 @@ renvoyée à la recréation.
 Formats verticaux, grille rythmique, texte TikTok, lumière, templates, SFX, loudness et livrables d'export :
 [social-video.md](social-video.md) (où vit chaque chose, stratégie de parité aperçu = export = GPU, versions de cache).
 
+## Clip scène 3D : chemin de l'image
+
+Un clip `GraphicType.SCENE3D` suit le chemin des calques graphiques (`GraphicLayer` → `MographRenderer` → PNG nommés par
+empreinte → `.ffconcat` → FFmpeg) ; seule l'encre change :
+
+1. `build_render_plan` : `GraphicLayer.source_in` = point d'entrée du clip ; fichier manquant, `.kut3d` illisible ou modèle
+   manquant → carte de substitution (`core/scene3d_card.py`) + `warnings` + `missing_media` (export refusé).
+2. `GraphicsScene.evaluated_graphic` pose `GraphicOverlay.scene_time` (champ d'exécution, **jamais sérialisé** ni dans le `repr`,
+   comme `light_time`) = `source_in + temps local` ; 0 pour une scène sans animation (`core.scene3d.scene_time_at`).
+3. `layer_key` / `content_key` ajoutent `core.scene3d.render_identity` = (instant, signature profonde du `.kut3d`, taille, moteur
+   `numpy`, échantillons, `SCENE3D_RASTER_VERSION`) : un fichier modifié, un autre instant ou une autre version renomment les images.
+4. `draw_content` → `core.scene3d.draw_scene` → `scene_image` (`kut3d.render_frame`, numpy) dessinée dans la boîte du calque comme
+   une image. Une scène **animée** suit le flux plein cadre (`write_span_stream` : chaque image distincte ne se rend qu'une fois) ; une
+   scène **fixe** passe par la texture par contenu (une encre, posée par matrice).
+5. `fingerprint_plan` : signature profonde du `.kut3d` + `source_in` + `SCENE3D_RASTER_VERSION` **pour ces calques seulement**
+   (`RENDER_ENGINE_VERSION` inchangé : un plan sans 3D garde son empreinte, `tests/test_scene3d_render.py`).
+
 ## Format `.kut`
 
 * Version courante : `CURRENT_VERSION` (`core/project_io.py`) ; `SUPPORTED_VERSIONS` liste les versions lisibles. Version écrite : la minimale nécessaire (17 ; `PATH_MASK_VERSION` = 18 si le projet contient un masque courbe ; `COLOR_MATRIX_VERSION` = 19 si un média a un espace colorimétrique forcé ; `EFFECT_ANIMATION_VERSION` = 20 si un clip porte une image clé `fx.*` ou `color.*` ; `TRANSITION_CATALOG_VERSION` = 21 si une transition utilise l'un des 25 types du catalogue élargi, `core/transition_catalog.py` ; `SCENE3D_VERSION` = 22 si un calque graphique est une scène 3D, `GraphicType.SCENE3D`, `core/scene3d.py`).
