@@ -202,8 +202,6 @@ def _relink_media(a: Mapping[str, Any], context: ScriptContext | None) -> Operat
             if asset.media_type == "image":
                 # ``probe_media`` classe toute image fixe en « video » : une image se relit comme l'import de photos (Qt, extension
                 # confrontée au contenu), la durée et la cadence d'origine sont gardées.
-                if not still:
-                    raise MediaProbeError("ce fichier n'est pas une image : le média d'origine en est une.")
                 try:
                     width, height = read_image_size(Path(text))
                 except ValueError as error:
