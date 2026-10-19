@@ -66,6 +66,12 @@ def test_cut_or_delete_removes_stale_transition():
         (TransitionType.FADE_BLACK, "fadeblack"),
         (TransitionType.WIPE_LEFT, "wipeleft"),
         (TransitionType.WIPE_RIGHT, "wiperight"),
+        (TransitionType.PIXELIZE, "pixelize"),
+        (TransitionType.RADIAL, "radial"),
+        (TransitionType.CIRCLE_OPEN, "circleopen"),
+        (TransitionType.CIRCLE_CLOSE, "circleclose"),
+        (TransitionType.SMOOTH_LEFT, "smoothleft"),
+        (TransitionType.SMOOTH_RIGHT, "smoothright"),
     ],
 )
 def test_export_filter_contains_requested_xfade(transition_type, ffmpeg_name):

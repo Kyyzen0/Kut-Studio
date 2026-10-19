@@ -496,6 +496,12 @@ def test_store_get_preset_returns_builtin_or_user(tmp_path) -> None:
         ("fade_black", "fadeblack"),
         ("wipe_left", "wipeleft"),
         ("wipe_right", "wiperight"),
+        ("circle_open", "circleopen"),
+        ("circle_close", "circleclose"),
+        ("radial", "radial"),
+        ("pixelize", "pixelize"),
+        ("smooth_left", "smoothleft"),
+        ("smooth_right", "smoothright"),
     ],
 )
 def test_builtin_preset_maps_to_expected_ffmpeg_xfade(preset_id, ffmpeg_name):

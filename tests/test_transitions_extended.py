@@ -65,16 +65,13 @@ EXPECTED_FFMPEG_NAMES: dict[str, str] = {
     TransitionType.SLIDE_DOWN.value: "slidedown",
     # Dissolutions (tâche 26)
     TransitionType.DISSOLVE.value: "dissolve",
-    # Émulations : on retombe sur ``fade`` pour les types non couverts
-    # par ``xfade`` natif. Les filtres dédiés (``geq``, ``vstack``) sont
-    # en dehors du périmètre : un fondu doux est acceptable pour la
-    # prévisualisation.
-    TransitionType.PIXELIZE.value: "fade",
-    TransitionType.RADIAL.value: "fade",
-    TransitionType.CIRCLE_OPEN.value: "fade",
-    TransitionType.CIRCLE_CLOSE.value: "fade",
-    TransitionType.SMOOTH_LEFT.value: "fade",
-    TransitionType.SMOOTH_RIGHT.value: "fade",
+    # Formes, pixels et lissés : natifs dans ``xfade`` (plus de repli sur ``fade``).
+    TransitionType.PIXELIZE.value: "pixelize",
+    TransitionType.RADIAL.value: "radial",
+    TransitionType.CIRCLE_OPEN.value: "circleopen",
+    TransitionType.CIRCLE_CLOSE.value: "circleclose",
+    TransitionType.SMOOTH_LEFT.value: "smoothleft",
+    TransitionType.SMOOTH_RIGHT.value: "smoothright",
 }
 
 
