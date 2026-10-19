@@ -311,10 +311,12 @@ def test_the_gaps_are_real_and_named():
     with pytest.raises(ScriptInvalid):                    # une image clé d'effet : ``property`` n'accepte que le registre statique
         parse_script({"kut_script": 1, "ops": [{"op": "add_keyframe", "clip": "c1", "property": "fx.fx2.intensity", "at": 0, "value": 0.5}]})
     names = set(VERBS)
-    assert [n for n in names if any(word in n for word in ("composition", "chroma", "blend"))] == []
+    # « composition » : un script crée une composition vide ou y range des clips (lot 10), il n'écrit pas encore le contenu des nœuds.
+    assert sorted(n for n in names if any(word in n for word in ("composition", "chroma", "blend"))) == [
+        "convert_to_composition", "create_composition"]
     assert {"set_track_role", "set_automation_curve", "add_ducking_sidechain"} <= names                     # ces familles s'écrivent (voir « audio » ci-dessus)
     assert {n for n in names if "lut" in n} == {"import_lut", "remove_lut"}              # un LUT s'importe depuis un fichier, pas depuis une description
     assert not any("ducking_config" in n and n != "update_ducking_config" for n in names)                    # ``Track.ducking_config`` : aucun consommateur, aucun éditeur
     assert _apply_refused(rich_project(), {"op": "set_automation_curve", "track": "V1", "points": []})     # la courbe d'une piste vidéo : l'interface n'en a pas
     project = rich_project()
-    assert _clip_of(project, "x1").composition is not None and GAPS                       # la composition se lit, elle ne s'écrit pas
+    assert _clip_of(project, "x1").composition is not None and GAPS                       # les nœuds d'une composition se lisent, ils ne s'écrivent pas

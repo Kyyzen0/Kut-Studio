@@ -1622,11 +1622,14 @@ from .animation_verbs import ANIMATION_VERBS  # noqa: E402 - après la table : c
 from .audio_verbs import AUDIO_VERBS  # noqa: E402
 from .auto_verbs import AUTOMATION_VERBS  # noqa: E402
 from .clip_audio_verbs import CLIP_AUDIO_VERBS  # noqa: E402
+from .composition_verbs import COMPOSITION_VERBS  # noqa: E402
 from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
 from .guide_verbs import GUIDE_VERBS  # noqa: E402
 from .layer_verbs import LAYER_VERBS  # noqa: E402
 from .mask_verbs import MASK_VERBS  # noqa: E402
+from .preset_verbs import PRESET_VERBS  # noqa: E402
+from .selection_verbs import SELECTION_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
 from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
 
@@ -1640,6 +1643,9 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
     "update_track_insert": CLIP_AUDIO_VERBS,      # l'audio d'un clip après les inserts de piste
     "set_multicam_angle_offset": AUTOMATION_VERBS,   # rythme, plans, sous-titres, effets d'impact, modèles : en fin de table
+    "delete_clip": SELECTION_VERBS,               # la sélection (supprimer, déplacer plusieurs clips) juste après les verbes d'un clip
+    "reset_color_grade": PRESET_VERBS,            # les presets intégrés après l'étalonnage de base
+    "set_media_color_matrix": COMPOSITION_VERBS,
     "set_graphic": LAYER_VERBS,                   # les calques graphiques juste après leur création et leur apparence
     "set_track_visible": AUDIO_VERBS,             # rôle, courbe de volume, ducking et ordre des inserts après les réglages de piste
 }

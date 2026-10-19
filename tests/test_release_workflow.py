@@ -76,6 +76,9 @@ def test_a_release_is_built_from_a_green_state():
     assert "KUT_STUDIO_UPDATE_CHECK: \"off\"" in build
 
 
+SLOWEST_HEALTHY_RELEASE_SUITE_MINUTES = 38      # à relever si une suite saine de release dépasse cette valeur
+
+
 def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
     """v0.3.0 : un blocage natif sous Windows a gelé 50 min sans trace, jusqu'à l'annulation du job."""
     build = _jobs()["build"]
@@ -87,6 +90,10 @@ def test_a_hung_test_suite_leaves_its_stacks_and_fails_before_the_job_budget():
     step_minutes = re.search(r"^\s+timeout-minutes: (\d+)\s*$", suites[0], re.MULTILINE)
     job_minutes = re.search(r"^    timeout-minutes: (\d+)\s*$", build, re.MULTILINE)
     assert step_minutes and job_minutes and int(step_minutes.group(1)) < int(job_minutes.group(1))
+    # La suite saine la plus lente d'une release : Windows, v0.7.0, 37,9 min (mesure du 2026-10-20) ; la limite de l'étape
+    # laisse à un test bloqué (--timeout) le temps d'échouer par son nom au lieu d'une annulation muette de l'étape.
+    needed = SLOWEST_HEALTHY_RELEASE_SUITE_MINUTES * 60 + int(timeout.group(1))
+    assert int(step_minutes.group(1)) * 60 >= needed, f"il faut au moins {needed / 60:.0f} min"
 
 
 def test_only_the_publish_job_can_write_and_only_for_a_tag():
