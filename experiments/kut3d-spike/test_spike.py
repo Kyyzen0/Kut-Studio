@@ -7,6 +7,7 @@ triangles, l'échantillonnage nearest et l'arrondi des shaders diffèrent légè
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -102,6 +103,12 @@ def test_cube_geometry_counts() -> None:
         assert float(np.dot(np.cross(b - a, c - a), nrm[idx[t]])) > 0
 
 
+# Comme `tests/test_kut3d_gpu_render.py` : sur la CI, les voies GPU ne tournent que sur demande
+# (KUT3D_GPU_TESTS=1). Un runner sans GPU laisse chaque sous-processus aller jusqu'à son délai (~30 s).
+CI_OPT_OUT = bool(os.environ.get("CI")) and os.environ.get("KUT3D_GPU_TESTS") != "1"
+CI_OPT_OUT_REASON = "tests GPU désactivés sur la CI (KUT3D_GPU_TESTS=1 pour les lancer)"
+
+
 def _gpu_available(route: str) -> tuple[bool, str]:
     platforms = dict(run_spike.ROUTES)[route]
     reason = ""
@@ -134,6 +141,8 @@ def _load_png(path: Path) -> np.ndarray:
 def test_gpu_route_matches_numpy(
     route: str, out_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    if CI_OPT_OUT:
+        pytest.skip(CI_OPT_OUT_REASON)
     monkeypatch.setenv("KUT3D_SPIKE_OUT", str(out_dir))
     try:
         import PySide6  # noqa: F401

@@ -116,6 +116,10 @@ kut3d.backend_available("qrhi")   # bool (sonde en sous-processus, mise en cache
   sans GPU (la sonde y échoue proprement : Qt retombe sur `offscreen`). **Windows (Direct3D 11) et Linux (OpenGL / Vulkan)
   ne sont PAS testés** : le code suit `isYUpInFramebuffer()` (retournement de la relecture) et `clipSpaceCorrMatrix()`, et
   repose sur `gl_FrontFacing` pour les faces arrière ; à vérifier sur ces systèmes avant de s'y fier.
+- **Rechargement à chaud des textures par chemin** : une image modifiée sur le disque est relue au prochain rendu. La
+  détection compare la taille, la date et une empreinte blake2b des 8 premiers et 8 derniers Kio (le trailer d'un PNG
+  change dès qu'un pixel change). Limite : une modification interne d'un format autre que PNG (JPEG décodé par Qt), de
+  même taille et de même date, qui épargne le début et la fin du fichier peut passer inaperçue.
 - **Limites** : une image sur-échantillonnée plus large que la texture maximale du GPU (16 384 sur Metal) est refusée
   (`RenderBackendUnavailable`, donc `auto` retombe sur numpy) ; mémoire GPU ~ 28 octets par pixel sur-échantillonné ;
   jusqu'à 16 lumières ; un appel de dessin par groupe (matériau, peau) et par suite de triangles `blend` de même matériau

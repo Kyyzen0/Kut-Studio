@@ -412,7 +412,9 @@ def test_kut3d_does_not_import_qt_ui_or_core() -> None:
     assert len(files) >= 10
     for file in files:
         rel = file.relative_to(ROOT).as_posix()
-        for name, lazy, line in _imports_with_depth(ast.parse(file.read_text())):
+        for name, lazy, line in _imports_with_depth(
+            ast.parse(file.read_text(encoding="utf-8"))
+        ):
             if name.startswith("<relatif>"):
                 offenders.append(f"{rel}:{line} : {name}")
             elif name.split(".")[0] in forbidden:
@@ -427,7 +429,9 @@ def test_the_qt_users_are_exactly_the_image_fallback_and_the_gpu_engine() -> Non
     for file in sorted((ROOT / "kut3d").rglob("*.py")):
         if any(
             n.split(".")[0] == "PySide6"
-            for n, _, _ in _imports_with_depth(ast.parse(file.read_text()))
+            for n, _, _ in _imports_with_depth(
+                ast.parse(file.read_text(encoding="utf-8"))
+            )
         ):
             users.append(file.relative_to(ROOT).as_posix())
     assert users == sorted(QT_USERS)

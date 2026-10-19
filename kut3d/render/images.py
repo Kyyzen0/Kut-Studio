@@ -99,8 +99,31 @@ def decode_image(data: bytes) -> Array:
     return _decode_with_qt(data)
 
 
+FINGERPRINT_SPAN = 8192  # octets lus au début et à la fin d'un fichier pour l'empreinte
+
+
+def _file_fingerprint(path: Path, size: int) -> str:
+    """Empreinte blake2b (16 octets) du début et de la fin du fichier, ou de tout s'il tient dans deux fenêtres.
+
+    La date (`st_mtime_ns`) ne suffit pas : la résolution d'horloge de certains systèmes de fichiers (~15 ms sous
+    Windows) et les outils qui préservent les dates (`cp -p`, rsync, archives) laissent passer deux contenus de même
+    taille. Pour un PNG, la queue contient le trailer Adler-32 du flux zlib puis le CRC de IDAT : ils changent dès
+    qu'un pixel change. Limite connue : une modification interne d'un autre format (JPEG via Qt), de même taille et de
+    même date, qui épargne le début et la fin passe inaperçue.
+    """
+    digest = hashlib.blake2b(digest_size=16)
+    with path.open("rb") as handle:
+        digest.update(handle.read(FINGERPRINT_SPAN))
+        if size > 2 * FINGERPRINT_SPAN:
+            handle.seek(size - FINGERPRINT_SPAN)
+            digest.update(handle.read(FINGERPRINT_SPAN))
+        elif size > FINGERPRINT_SPAN:
+            digest.update(handle.read(FINGERPRINT_SPAN))
+    return digest.hexdigest()
+
+
 def load_texture_image(ref: TextureRef) -> Array:
-    """Image RGBA 8 bits (lecture seule) d'une texture, mise en cache par chemin (+ date) ou par contenu."""
+    """Image RGBA 8 bits (lecture seule) d'une texture, mise en cache par chemin (+ date, taille, empreinte) ou contenu."""
     path: Path | None
     if ref.data is not None:
         key: tuple[Any, ...] = (
@@ -119,7 +142,12 @@ def load_texture_image(ref: TextureRef) -> Array:
             raise ImageDecodeError(
                 f"texture trop volumineuse : {short(path.name)} ({st.st_size} octets)."
             )
-        key = ("path", str(path.resolve()), st.st_mtime_ns, st.st_size)
+        try:
+            fingerprint = _file_fingerprint(path, st.st_size)
+            resolved = str(path.resolve())
+        except OSError:  # disparu ou devenu illisible entre `stat` et la lecture
+            raise ImageDecodeError(f"texture illisible : {short(path.name)}.") from None
+        key = ("path", resolved, st.st_mtime_ns, st.st_size, fingerprint)
     else:
         raise ImageDecodeError(f"texture {short(ref.name)} sans chemin ni données.")
     cached = _CACHE.get(key)

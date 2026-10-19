@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import subprocess
 import sys
@@ -325,6 +326,58 @@ def test_load_texture_image_from_data_and_path_with_cache(tmp_path: Path) -> Non
         encode_png(other)
     )  # fichier modifié : rechargement (rechargement à chaud)
     assert np.array_equal(images.load_texture_image(TextureRef("p", path=path)), other)
+
+
+def test_rewritten_file_with_same_size_and_same_mtime_is_reloaded(
+    tmp_path: Path,
+) -> None:
+    """Fenêtre d'horloge grossière (Windows), `cp -p`, rsync : taille ET date identiques, contenu différent."""
+    images.clear_texture_cache()
+    rng = np.random.default_rng(3)
+    first = rng.integers(0, 256, (16, 16, 4), dtype=np.uint8)
+    second = rng.integers(0, 256, (16, 16, 4), dtype=np.uint8)
+    path = tmp_path / "same.png"
+    path.write_bytes(encode_png(first))
+    before = path.stat()
+    assert np.array_equal(images.load_texture_image(TextureRef("p", path=path)), first)
+    data = encode_png(second)
+    assert len(data) == before.st_size  # bruit incompressible : même taille
+    path.write_bytes(data)
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    after = path.stat()
+    assert (after.st_size, after.st_mtime_ns) == (before.st_size, before.st_mtime_ns)
+    assert np.array_equal(images.load_texture_image(TextureRef("p", path=path)), second)
+
+
+def test_large_file_fingerprint_sees_a_change_in_the_tail(tmp_path: Path) -> None:
+    images.clear_texture_cache()
+    path = tmp_path / "big.bin"
+    raw = bytearray(b"\x00" * (4 * images.FINGERPRINT_SPAN))
+    path.write_bytes(bytes(raw))
+    base = images._file_fingerprint(path, len(raw))
+    raw[-1] = 1
+    path.write_bytes(bytes(raw))
+    assert images._file_fingerprint(path, len(raw)) != base
+
+
+def test_file_vanishing_between_stat_and_read_is_a_clean_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    images.clear_texture_cache()
+    path = tmp_path / "gone.png"
+    path.write_bytes(encode_png(np.zeros((2, 2, 4), np.uint8)))
+    images.load_texture_image(TextureRef("p", path=path))
+    path.unlink()
+    with pytest.raises(ImageDecodeError, match="illisible"):
+        images.load_texture_image(TextureRef("p", path=path))  # disparu avant `stat`
+    path.write_bytes(encode_png(np.zeros((2, 2, 4), np.uint8)))
+
+    def boom(self: Path, *args: object, **kwargs: object) -> object:
+        raise PermissionError("verrouillé")
+
+    monkeypatch.setattr(Path, "open", boom)  # `stat` passe, la lecture échoue
+    with pytest.raises(ImageDecodeError, match="illisible"):
+        images.load_texture_image(TextureRef("p", path=path))
 
 
 def test_cache_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
