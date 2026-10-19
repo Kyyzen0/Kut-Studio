@@ -378,7 +378,8 @@ Ces verbes appellent les fonctions de montage que l'interface appelle (`core/tim
   les reçoit refusés. Les rognages, `slide_clip` et `roll_edit` refusent déjà d'eux-mêmes ce qui sortirait de la source ou rendrait un clip vide.
 - **Verrous** : piste verrouillée et calque graphique verrouillé sont refusés ; `slide_clip` et `roll_edit` refusent aussi si un voisin
   qu'ils modifieraient est un calque verrouillé. `move_clip_to_track` vérifie les deux pistes. `ripple_delete_clip` laisse en place les pistes
-  verrouillées. `remove_track` et `rename_track` ne regardent pas le verrou (l'interface non plus) ; `move_track` le refuse.
+  verrouillées. `ripple_trim_clip_start` et `ripple_delete_clip` refusent, sans rien déplacer, si un clip qu'ils feraient reculer est un calque
+  verrouillé (même sur une piste libre). `remove_track` et `rename_track` ne regardent pas le verrou (l'interface non plus) ; `move_track` le refuse.
 - **Pistes** : `remove_track` refuse une piste qui porte des clips. `set_track_volume` et `set_track_pan` visent le fader de la piste
   (le mélangeur de l'interface) : piste audio seulement, déverrouillée ; la courbe d'automation de la piste reste à part.
 - Pas de verbe pour la sélection multiple ni les actions qui lisent la tête de lecture : ce sont des états d'interface.

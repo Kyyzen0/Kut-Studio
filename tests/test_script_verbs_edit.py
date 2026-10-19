@@ -444,3 +444,33 @@ def test_rename_and_remove_do_not_look_at_the_lock_like_the_interface():
     """Documenté dans docs/scripting.md : l'interface renomme et supprime une piste (vide) verrouillée ; seul `move_track` la refuse."""
     _parity(_project, _op("rename_track", track="V3", name="Fond"), lambda p: rename_track(p, "V3", "Fond"))
     _parity(_project, _op("remove_track", track="V3"), lambda p: remove_track(p, "V3"))
+
+
+def _followers_project() -> Project:
+    """G1 : t1 (0-3), t2 (3-6, calque verrouillé) ; V1 inchangée ; le suiveur verrouillé est sur une piste libre."""
+    project = _graphics_project(lock_second=True)
+    project.tracks[0].clips.append(Clip("tard", "m", "V1", 20.0, 0.0, 1.0))
+    return project
+
+
+def test_ripple_verbs_refuse_when_a_locked_layer_would_be_shifted():
+    for operation in (_op("ripple_trim_clip_start", clip="t1", at=1.0), _op("ripple_delete_clip", clip="t1")):
+        project = _followers_project()
+        report = _refused(project, operation)             # rien ne bouge : t2 est resté à 3
+        assert "verrouill" in str(report.error) and find_clip(project, "t2").timeline_start == 3.0
+
+
+def test_ripple_verbs_still_work_when_no_locked_layer_follows():
+    project = _graphics_project(lock_second=False)
+    _session, report = _apply(project, _op("ripple_trim_clip_start", clip="t1", at=1.0))
+    assert report.ok, report.error
+    assert find_clip(project, "t2").timeline_start == 2.0
+    # Un calque verrouillé AVANT le clip n'est pas décalé : pas de refus.
+    before = _graphics_project(lock_second=False)
+    first = find_clip(before, "t1")
+    first.graphic = replace(first.graphic, locked=True)
+    _session, report = _apply(before, _op("ripple_delete_clip", clip="t2"))
+    assert report.ok, report.error
+    # Rogner à la position actuelle ne retire rien : rien ne recule, donc pas de refus.
+    _session, report = _apply(_followers_project(), _op("ripple_trim_clip_start", clip="t1", at=0.0))
+    assert report.ok, report.error

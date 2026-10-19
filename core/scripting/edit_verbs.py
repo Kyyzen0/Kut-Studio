@@ -16,7 +16,7 @@ Règles communes (celles des autres verbes) :
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from ..compositing_guard import ClipEditRefused, clip_edit_refusal
@@ -24,9 +24,9 @@ from ..project_model import MAX_GAIN_DB, MAX_PAN, MIN_GAIN_DB, MIN_PAN, Project
 from ..timeline_editing import (
     _asset_duration, _neighbors, relocate_clip, remove_marker, ripple_trim_left, roll_edit, set_cover_marker, slide_clip, slip_clip,
 )
-from ..timeline_operations import cut_clip, duplicate_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
+from ..timeline_operations import cut_clip, duplicate_clip, find_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
 from ..track_operations import move_track, remove_track, rename_track
-from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _pick, _require_unlocked, _track_id
+from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _owner_track, _pick, _require_unlocked, _track_id
 
 _MAX_INDEX = 10_000
 _TOLERANCE = 1e-9
@@ -50,8 +50,31 @@ def _trim_clip_end(a: Mapping[str, Any]) -> Operation:
     return lambda p: trim_clip_right(p, _editable_clip(p, a["clip"]), float(a["at"]))
 
 
+def _require_editable_followers(project: Project, clip_id: str, *, tracks: Iterable[Any]) -> None:
+    """Un ripple décale les clips qui commencent à la fin du clip visé ou après : aucun ne doit être un calque verrouillé.
+
+    Le modèle ne regarde que le verrou de piste ; un script ne déplace jamais un calque verrouillé, même sur une piste libre."""
+    clip = find_clip(project, clip_id)
+    boundary = float(clip.timeline_start + clip.duration)
+    for track in tracks:
+        if track.locked:
+            continue                                  # une piste verrouillée ne bouge pas, même en ripple
+        for other in track.clips:
+            if other.id != clip_id and other.timeline_start >= boundary - _TOLERANCE:
+                code = clip_edit_refusal(project, other.id, visual_only=False)
+                if code is not None:
+                    raise ClipEditRefused(code, other.id)
+
+
 def _ripple_trim_clip_start(a: Mapping[str, Any]) -> Operation:
-    return lambda p: ripple_trim_left(p, _editable_clip(p, a["clip"]), float(a["at"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        clip = find_clip(project, clip_id)
+        if float(a["at"]) - clip.timeline_start > _TOLERANCE:          # sinon rien n'est retiré, rien ne recule
+            _require_editable_followers(project, clip_id, tracks=[_owner_track(project, clip_id)])
+        return ripple_trim_left(project, clip_id, float(a["at"]))
+
+    return operation
 
 
 def _cut_clip(a: Mapping[str, Any]) -> Operation:
@@ -72,7 +95,12 @@ def _duplicate_clip(a: Mapping[str, Any]) -> Operation:
 
 
 def _ripple_delete_clip(a: Mapping[str, Any]) -> Operation:
-    return lambda p: ripple_delete_clip(p, _editable_clip(p, a["clip"]))
+    def operation(project: Project) -> Any:
+        clip_id = _editable_clip(project, a["clip"])
+        _require_editable_followers(project, clip_id, tracks=project.tracks)
+        return ripple_delete_clip(project, clip_id)
+
+    return operation
 
 
 def _slip_clip(a: Mapping[str, Any]) -> Operation:
