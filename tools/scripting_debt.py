@@ -79,6 +79,7 @@ EDIT_MODULES: dict[str, str] = {
     "leaderboard": "calques générés depuis des données (classement)",
     "scene_detection": "coupe d'un clip aux changements de plan",
     "canvas_guides": "guides du moniteur (séquence)",
+    "text_animations": "animations de texte : pose des images clés sur un calque texte",
     "color_grading": "étalonnage (ColorGradingService : un service, pas des fonctions de module)",
     "library_organization": "organisation de la bibliothèque (LibraryOrganization : un service)",
 }
@@ -86,6 +87,13 @@ EDIT_MODULES: dict[str, str] = {
 le modèle** : chacune est un verbe, ou une dette. La valeur dit pourquoi le module est là."""
 
 READ_MODULES: dict[str, str] = {
+    "animation_targets": "registre des propriétés animables (lecture)",
+    "beat_detection": "détection de rythme (analyse)",
+    "effect_targets": "paramètres d'effets évalués (lecture)",
+    "shortcuts": "raccourcis clavier : « sequence » y est une suite de touches, pas une séquence du modèle",
+    "time_editing": "restrictions de la courbe de vitesse (lecture)",
+    "time_map": "mapping temporel (lecture)",
+    "tracking_motion": "conversions de temps du suivi (lecture)",
     "color_windows": "scènes et mattes des fenêtres de couleur : calculs de rendu, pas d'édition (l'édition est dans color_nodes)",
     "composition_cache": "cache de rendu des compositions",
     "compositing_guard": "garde-fous de verrou (refus), appelés par les fonctions d'édition",
@@ -190,14 +198,14 @@ def candidate_verbs(root: Path = ROOT) -> dict[str, str]:
 
 
 def unclassified_modules(root: Path = ROOT) -> list[str]:
-    """Les modules de ``core/`` qui ont une fonction publique à premier paramètre ``project`` sans être dans :data:`EDIT_MODULES` ni
+    """Les modules de ``core/`` qui ont une fonction publique à premier paramètre de :data:`FIRST_PARAMS` (le même critère que :func:`candidate_verbs`) sans être dans :data:`EDIT_MODULES` ni
     :data:`READ_MODULES` : un module neuf force la décision « surface d'édition ou non »."""
     missing = []
     for path in sorted((root / "core").glob("*.py")):
         module = path.stem
         if module in EDIT_MODULES or module in READ_MODULES or module == "__init__":
             continue
-        if any(first == "project" for first in public_functions(module, root).values()):
+        if any(first in FIRST_PARAMS for first in public_functions(module, root).values()):
             missing.append(module)
     return missing
 

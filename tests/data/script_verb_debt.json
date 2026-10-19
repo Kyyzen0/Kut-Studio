@@ -173,6 +173,8 @@
   "core.template_slots.slot_at": "lecture seule",
   "core.template_slots.slot_card": "lecture seule",
   "core.template_slots.slot_label": "lecture seule",
+  "core.text_animations.apply_text_animation": "à faire : calques",
+  "core.text_animations.text_animation_keyframes": "lecture seule",
   "core.time_commands.apply_time_command": "interface seulement",
   "core.time_ops.capture_time_state": "interne",
   "core.time_ops.edit_speed_points": "à faire : vitesse",

@@ -132,3 +132,13 @@ def test_a_new_core_module_with_project_functions_must_be_classified(tmp_path, m
     assert tool.unclassified_modules(root) == ["model"]
     monkeypatch.setattr(tool, "READ_MODULES", {"model": "lecture"})
     assert tool.unclassified_modules(root) == []
+
+
+def test_a_module_whose_only_function_takes_a_clip_must_be_classified_too(tmp_path, monkeypatch):
+    """Même critère que les candidats (FIRST_PARAMS) : `clip`, `track` ou `sequence` en premier paramètre compte comme `project`."""
+    monkeypatch.setattr(tool, "EDIT_MODULES", {})
+    monkeypatch.setattr(tool, "READ_MODULES", {})
+    for first in ("clip", "track", "sequence"):
+        root = _fake_tree(tmp_path / first, f"def edit_it({first}): ...\n", "")
+        assert tool.unclassified_modules(root) == ["model"], first
+    assert tool.unclassified_modules(_fake_tree(tmp_path / "other", "def helper(value): ...\n", "")) == []
