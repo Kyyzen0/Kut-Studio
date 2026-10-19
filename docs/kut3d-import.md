@@ -37,9 +37,15 @@ FBX, DAE, 3MF et USD ne sont pas lus (phase 6).
 - `Mesh` : `positions`, `indices`, `normals`, `uvs`, `colors`, `joints`, `weights`, `morph_targets`, `material_index`.
   Les UV suivent la convention glTF (V vers le bas) : les importeurs OBJ et PLY retournent V.
 - `Material` : couleur, métal, rugosité, émission, `alpha_mode`, `double_sided` et des `TextureRef` (`path` ou `data`
-  embarquée) : **aucune image n'est décodée** à l'import.
+  embarquée) : **aucune image n'est décodée** à l'import. Un `TextureRef` porte aussi le réglage d'échantillonnage
+  (sampler glTF) : `wrap_s` / `wrap_t` (`repeat`, `clamp`, `mirror`) et `mag_filter` / `min_filter` (`linear`,
+  `nearest`). Les importeurs OBJ, PLY et STL gardent les défauts (répétition, linéaire). L'importeur glTF lit
+  `texture.sampler` : `REPEAT` / `CLAMP_TO_EDGE` / `MIRRORED_REPEAT` et `NEAREST` / `LINEAR` ; un filtre à mipmaps
+  (9984 à 9987) est **replié** sur `nearest` ou `linear` (pas de mipmaps) ; une valeur inconnue donne le défaut et un
+  avertissement dans `Model.warnings`.
 - `Skeleton`, `AnimationClip` / `AnimationChannel` : voir `kut3d/model.py` (forme des valeurs documentée).
-- Tout est `frozen`, les tableaux numpy sont en lecture seule. `Model.bounds()` tient compte des nœuds et de
+- Tout est `frozen`, les tableaux numpy sont en lecture seule **et copiés à la construction** (muter le tableau d'origine
+  ne change pas l'objet). `Model.bounds()` tient compte des nœuds et de
   `root_transform` ; un maillage à peau est pris en pose de liaison.
 
 ## Normalisation

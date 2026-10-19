@@ -417,6 +417,36 @@ def terrain_20k() -> Scene:
     )
 
 
+def _sampler_plane(**sampler: str) -> Scene:
+    """Plan dont les UV sortent de [0, 1] (de -0.5 à 1.5), texture 4 x 4 de couleurs franches, agrandie."""
+    mesh = quad_mesh(1.0, material_index=0)
+    mesh = replace(mesh, uvs=np.array(mesh.uvs) * 2.0 - 0.5)
+    rng = np.random.default_rng(3)
+    img = np.empty((4, 4, 4), np.uint8)
+    img[..., :3] = rng.integers(20, 255, (4, 4, 3))
+    img[..., 3] = 255
+    mat = flat((1, 1, 1, 1), base_color_texture=texture_ref(img, **sampler))
+    return scene(model_of(mesh, mat), camera=front_camera(3.0))
+
+
+def sampler_repeat_nearest() -> Scene:
+    return _sampler_plane(mag_filter="nearest", min_filter="nearest")
+
+
+def sampler_clamp() -> Scene:
+    return _sampler_plane(wrap_s="clamp", wrap_t="clamp")
+
+
+def sampler_mirror() -> Scene:
+    return _sampler_plane(wrap_s="mirror", wrap_t="mirror")
+
+
+def sampler_mixed_nearest() -> Scene:
+    return _sampler_plane(
+        wrap_s="mirror", wrap_t="clamp", mag_filter="nearest", min_filter="nearest"
+    )
+
+
 CASES: dict[str, Case] = {
     "checker": Case(checker),
     "pbr_lit": Case(pbr_lit),
@@ -445,4 +475,8 @@ CASES: dict[str, Case] = {
     "depth_two_layers": Case(depth_two_layers, size=(64, 64)),
     "near_clipped": Case(near_clipped, size=(96, 72)),
     "terrain_20k": Case(terrain_20k, size=(1280, 720)),
+    "sampler_repeat_nearest": Case(sampler_repeat_nearest, size=(96, 96)),
+    "sampler_clamp": Case(sampler_clamp, size=(96, 96)),
+    "sampler_mirror": Case(sampler_mirror, size=(96, 96)),
+    "sampler_mixed_nearest": Case(sampler_mixed_nearest, size=(96, 96)),
 }

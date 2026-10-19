@@ -43,12 +43,12 @@ def lin_to_srgb255(x: float) -> float:
     return 255.0 * (12.92 * x if x <= 0.0031308 else 1.055 * x ** (1 / 2.4) - 0.055)
 
 
-def texture_ref(rgba: Any, name: str = "tex") -> TextureRef:
+def texture_ref(rgba: Any, name: str = "tex", **sampler: str) -> TextureRef:
     """Une texture PNG embarquée à partir d'un tableau (H, W, 4) uint8 (ou une couleur unie 1x1)."""
     arr = np.asarray(rgba, dtype=np.uint8)
     if arr.ndim == 1:
         arr = arr.reshape(1, 1, 4)
-    return TextureRef(name=name, data=encode_png(arr), mime_type="image/png")
+    return TextureRef(name=name, data=encode_png(arr), mime_type="image/png", **sampler)
 
 
 def checker_rgba(

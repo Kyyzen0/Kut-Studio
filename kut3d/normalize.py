@@ -41,7 +41,11 @@ def normalization_matrix(
     m = scale_matrix(unit_scale)
     if up_axis == "z":
         m = m @ rotation_x(-90.0)
-    lo, hi = replace(model, root_transform=m).bounds()
+    # Bornes du modèle TEL QU'IL APPARAÎT avec le transform qu'il porte déjà, après la rotation d'axe et l'unité :
+    # la matrice retournée s'applique par-dessus (`M @ ancien`), donc ces bornes sont exactement celles à normaliser.
+    lo, hi = replace(
+        model, root_transform=m @ np.asarray(model.root_transform)
+    ).bounds()
     extent = float((hi - lo).max())
     k = 1.0
     if target_size is not None:

@@ -37,6 +37,10 @@ paths = render_sequence(scene, fps=24, duration=2.0, size=(1280, 720), out_dir="
   1 unité, atténuation en 1/d², fenêtrée par `range` (glTF). Intensité 1 : une surface blanche mate éclairée de face rend 1,0.
 - Calculs en **espace linéaire** ; textures `base_color` et `emissive` lues en sRGB, les autres en linéaire ; sortie en sRGB.
   Facteurs du matériau multipliés aux textures ; matériau absent = gris 0,8 mat.
+- **Échantillonnage** (`TextureRef.wrap_s` / `wrap_t` / `mag_filter` / `min_filter`, sampler glTF) : adressage
+  `repeat`, `clamp` ou `mirror` par axe, filtre bilinéaire ou voisin le plus proche (défaut : répétition + bilinéaire).
+  Pas de mipmaps. Le moteur numpy n'estime pas le niveau de détail : il applique `mag_filter` partout ; le GPU applique
+  `min_filter` aux surfaces réduites (les deux concordent tant que les deux filtres sont égaux, cas courant).
 - `Frame.color` : (H, W, 4) uint8, **alpha droit** (non prémultiplié) ; `alpha` : (H, W) float32 ; `depth` : (H, W) float32,
   **profondeur de vue** (distance le long de l'axe de visée, pas distance euclidienne), `inf` là où il n'y a rien.
 - `background` : `None` (alpha 0) ou RGBA de 4 flottants dans [0, 1] (sRGB, alpha droit).
@@ -80,7 +84,7 @@ kut3d.backend_available("qrhi")   # bool (sonde en sous-processus, mise en cache
 ```
 
 - **Comment** : PBR identique à numpy (mêmes formules, mêmes bornes de lumières, espace linéaire, sortie sRGB), toutes les
-  textures, `opaque` / `mask` / `blend`, culling et double face, profondeur, fond transparent ou opaque. Le rendu va dans des
+  textures (un `QRhiSampler` par réglage d'adressage / de filtre, mis en cache), `opaque` / `mask` / `blend`, culling et double face, profondeur, fond transparent ou opaque. Le rendu va dans des
   textures flottantes (couleur RGBA 32 bits linéaire prémultipliée + profondeur de vue R32F, deux cibles de couleur dans la
   même passe) relues par `readBackTexture` ; le mélange `blend` se fait en matériel, en linéaire, comme numpy. `samples`
   rend à `samples` fois la taille puis réduit **sur le CPU avec la fonction de numpy** (moyenne en linéaire, alpha pondéré),
@@ -118,6 +122,8 @@ kut3d.backend_available("qrhi")   # bool (sonde en sous-processus, mise en cache
   (une scène de verre aux matériaux entrelacés fait beaucoup de dessins).
 
 ### Écarts mesurés avec numpy (macOS / Metal, 27 scènes de `tests/kut3d_gpu_cases.py`)
+
+Quatre scènes de sampler (`sampler_*` : UV hors de [0, 1], `clamp`, `mirror`, `nearest`) ont été ajoutées ensuite ; elles passent aux mêmes tolérances (hors du tableau ci-dessous).
 
 Cube damier, scène PBR (directionnelle + ponctuelle, métal et diélectrique), cartes de normales, métal-rugosité / émission /
 occlusion, os (dont miroir et repli CPU), formes puis os, `mask`, `blend` trié, fond opaque et translucide, double face et

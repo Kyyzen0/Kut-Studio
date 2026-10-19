@@ -25,6 +25,7 @@ from kut3d.errors import ModelImportError, short
 from kut3d.geometry import smooth_normals
 from kut3d.importers._common import read_limited, texture_from_file
 from kut3d.importers.gltf_accessors import denormalize, read_accessor
+from kut3d.importers.gltf_sampler import sampler_fields
 from kut3d.mathutil import Array, matrix_to_trs, normalize_quaternion
 from kut3d.model import (
     AnimationChannel,
@@ -204,6 +205,8 @@ class _Loader:
         tex = _obj(_list(self.gltf, "textures"), index, "texture")
         assert isinstance(index, int)  # garanti par _obj
         ref = self._texture_ref(tex, index)
+        if ref is not None:
+            ref = replace(ref, **sampler_fields(self.gltf, tex, index, self.warnings))
         self._textures[index] = ref
         return ref
 
@@ -447,7 +450,11 @@ class _Loader:
 
     # -- animations ----------------------------------------------------------------------------------------
     def animation(
-        self, index: int, anim: dict[str, Any], node_count: int
+        self,
+        index: int,
+        anim: dict[str, Any],
+        node_count: int,
+        clones: dict[int, list[int]] | None = None,
     ) -> AnimationClip:
         samplers = _list(anim, "samplers")
         channels: list[AnimationChannel] = []
@@ -474,9 +481,14 @@ class _Loader:
                     f"animation {index} canal {ci} : nœud cible invalide."
                 )
             sampler = _obj(samplers, ch.get("sampler"), "sampler")
-            channels.append(
-                self._channel(index, ci, node, str(target["path"]), sampler)
-            )
+            built = self._channel(index, ci, node, str(target["path"]), sampler)
+            channels.append(built)
+            if (
+                built.path == "weights"
+            ):  # les nœuds `nom#k` portent les autres primitives du même maillage
+                channels.extend(
+                    replace(built, target_node=c) for c in (clones or {}).get(node, ())
+                )
         duration = max(
             (float(c.times[-1]) for c in channels if len(c.times)), default=0.0
         )
@@ -524,9 +536,10 @@ class _Loader:
 
 def _build_nodes(
     ld: _Loader, mesh_prims: list[list[int]]
-) -> tuple[list[Node], list[int], list[int]]:
-    """Retourne (nœuds, parent de chaque nœud glTF, racines) ; les nœuds ajoutés pour les primitives en plus
-    de la première viennent après les nœuds du fichier (les indices cibles des animations ne bougent pas)."""
+) -> tuple[list[Node], list[int], list[int], dict[int, list[int]]]:
+    """Retourne (nœuds, parent de chaque nœud glTF, racines, nœuds générés par nœud d'origine) ; les nœuds ajoutés
+    pour les primitives en plus de la première viennent après les nœuds du fichier (les indices cibles des
+    animations ne bougent pas)."""
     raw_nodes = _list(ld.gltf, "nodes")
     count = len(raw_nodes)
     parent_of = [-1] * count
@@ -541,6 +554,7 @@ def _build_nodes(
             parent_of[c] = i
     nodes: list[Node] = []
     extra: list[Node] = []
+    clones: dict[int, list[int]] = {}
     for i, nd in enumerate(raw_nodes):
         t, r, s = (
             _vec(nd, "translation", 3, (0.0, 0.0, 0.0)),
@@ -568,6 +582,7 @@ def _build_nodes(
         children = [int(c) for c in nd.get("children", [])]
         for k, extra_mesh in enumerate(prims[1:], start=1):
             children.append(count + len(extra))
+            clones.setdefault(i, []).append(count + len(extra))
             extra.append(
                 Node(
                     name=f"{name}#{k}",
@@ -594,7 +609,7 @@ def _build_nodes(
         roots = [int(x) for x in _list(scene, "nodes")]
     else:
         roots = [i for i in range(count) if parent_of[i] == -1]
-    return nodes + extra, parent_of, roots
+    return nodes + extra, parent_of, roots, clones
 
 
 def load(path: Path) -> Model:
@@ -630,7 +645,7 @@ def load(path: Path) -> Model:
                 ids.append(len(meshes))
                 meshes.append(built)
         mesh_prims.append(ids)
-    nodes, parent_of, roots = _build_nodes(ld, mesh_prims)
+    nodes, parent_of, roots, clones = _build_nodes(ld, mesh_prims)
     skeletons = [
         ld.skeleton(i, _obj(_list(gltf, "skins"), i, "skin"), nodes, parent_of)
         for i in range(len(_list(gltf, "skins")))
@@ -651,7 +666,9 @@ def load(path: Path) -> Model:
                     f"{meshes[nd.mesh_index].name} : JOINTS_0 dépasse le nombre d'os du skin."
                 )
     animations = [
-        ld.animation(i, _obj(_list(gltf, "animations"), i, "animation"), len(nodes))
+        ld.animation(
+            i, _obj(_list(gltf, "animations"), i, "animation"), len(nodes), clones
+        )
         for i in range(len(_list(gltf, "animations")))
     ]
     return Model(

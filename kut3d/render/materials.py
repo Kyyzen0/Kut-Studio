@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from kut3d.mathutil import Array
-from kut3d.model import ALPHA_MODES, Material, TextureRef
+from kut3d.model import ALPHA_MODES, DEFAULT_SAMPLER, Material, SamplerKey, TextureRef
 from kut3d.render.images import load_texture_image
 
 # Matériau d'un maillage qui n'en a pas (ADR-0009 : « gris par défaut »).
@@ -32,6 +32,8 @@ class PreparedMaterial:
     mode: int
     cutoff: float
     double_sided: bool
+    # réglage d'échantillonnage de chaque texture, dans l'ordre (base, normale, mr, émissive, occlusion)
+    samplers: tuple[SamplerKey, ...] = (DEFAULT_SAMPLER,) * 5
 
 
 def _tex(ref: TextureRef | None, use: bool) -> Array | None:
@@ -54,4 +56,14 @@ def prepare_material(material: Material | None, use_textures: bool) -> PreparedM
         mode=ALPHA_MODES.index(m.alpha_mode),
         cutoff=float(m.alpha_cutoff),
         double_sided=bool(m.double_sided),
+        samplers=tuple(
+            DEFAULT_SAMPLER if (r is None or not use_textures) else r.sampler
+            for r in (
+                m.base_color_texture,
+                m.normal_texture,
+                m.metallic_roughness_texture,
+                m.emissive_texture,
+                m.occlusion_texture,
+            )
+        ),
     )

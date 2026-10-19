@@ -22,6 +22,7 @@ from kut3d.render.materials import (
     MODE_OPAQUE,
     PreparedMaterial,
 )
+from kut3d.model import SamplerKey
 from kut3d.render.textures import sample_bilinear
 from kut3d.scene import AmbientLight, DirectionalLight, Light, PointLight
 
@@ -100,7 +101,7 @@ class Shader:
         base = col * mat.base.astype(np.float64)
         if mat.base_tex is not None:
             uv = _mix(geo.uv, idx, b)
-            base = base * sample_bilinear(mat.base_tex, uv, True)
+            base = base * sample_bilinear(mat.base_tex, uv, True, mat.samplers[0])
         return base[:, :3], base[:, 3]
 
     # -- ombrage d'un groupe --------------------------------------------------------------------------------------
@@ -121,20 +122,25 @@ class Shader:
         base, alpha = self._base(mat, idx, b)
         uv = _mix(geo.uv, idx, b)
         if mat.normal_tex is not None:
-            nrm = self._perturb(mat.normal_tex, uv, nrm, idx, b)
+            nrm = self._perturb(mat.normal_tex, mat.samplers[1], uv, nrm, idx, b)
         metallic = np.full(base.shape[0], mat.metallic)
         rough = np.full(base.shape[0], mat.roughness)
         if mat.mr_tex is not None:
-            mr = sample_bilinear(mat.mr_tex, uv, False)
+            mr = sample_bilinear(mat.mr_tex, uv, False, mat.samplers[2])
             rough = rough * mr[:, 1]
             metallic = metallic * mr[:, 2]
         rough = np.clip(rough, MIN_ROUGHNESS, 1.0)
         emissive = np.broadcast_to(mat.emissive.astype(np.float64), base.shape).copy()
         if mat.emissive_tex is not None:
-            emissive = emissive * sample_bilinear(mat.emissive_tex, uv, True)[:, :3]
+            emissive = (
+                emissive
+                * sample_bilinear(mat.emissive_tex, uv, True, mat.samplers[3])[:, :3]
+            )
         occlusion = np.ones(base.shape[0])
         if mat.occlusion_tex is not None:
-            occlusion = sample_bilinear(mat.occlusion_tex, uv, False)[:, 0]
+            occlusion = sample_bilinear(mat.occlusion_tex, uv, False, mat.samplers[4])[
+                :, 0
+            ]
         lit = self._lighting(base, metallic, rough, occlusion, pos, nrm, view)
         rgb = np.clip(lit + emissive, 0.0, 1.0).astype(np.float32)
         if mat.mode == MODE_OPAQUE:
@@ -146,10 +152,19 @@ class Shader:
         return rgb, a.astype(np.float32)
 
     def _perturb(
-        self, tex: Array, uv: Array, nrm: Array, idx: Array, b: Array
+        self,
+        tex: Array,
+        sampler: SamplerKey,
+        uv: Array,
+        nrm: Array,
+        idx: Array,
+        b: Array,
     ) -> Array:
         geo = self.geo
-        ts = sample_bilinear(tex, uv, False)[:, :3].astype(np.float64) * 2.0 - 1.0
+        ts = (
+            sample_bilinear(tex, uv, False, sampler)[:, :3].astype(np.float64) * 2.0
+            - 1.0
+        )
         ts = _unit(ts)
         tan = _mix(geo.tan, idx, b)
         tan = tan - nrm * np.sum(nrm * tan, axis=1, keepdims=True)

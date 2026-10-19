@@ -58,6 +58,7 @@ from kut3d.gpu.prepare import (
 from kut3d.gpu.qtapp import ensure_application
 from kut3d.gpu.shader_files import load_qsb
 from kut3d.mathutil import Array
+from kut3d.model import DEFAULT_SAMPLER, SamplerKey
 from kut3d.render.frame import Frame
 from kut3d.render.numpy_backend import finish_frame, reduce_samples
 from kut3d.scene import Scene
@@ -75,6 +76,15 @@ _VERTEX_FORMATS = (
 )
 _TEXTURE_BINDINGS = (3, 4, 5, 6, 7)  # base, normal, mr, emissive, occlusion
 _SRGB_SLOTS = (True, False, False, True, False)
+_FILTERS = {
+    "linear": QRhiSampler.Filter.Linear,
+    "nearest": QRhiSampler.Filter.Nearest,
+}
+_ADDRESS = {
+    "repeat": QRhiSampler.AddressMode.Repeat,
+    "clamp": QRhiSampler.AddressMode.ClampToEdge,
+    "mirror": QRhiSampler.AddressMode.Mirror,
+}
 
 
 def _api() -> QRhiWidget.Api:
@@ -137,7 +147,7 @@ class _Widget(QRhiWidget):
         self._ds: QRhiRenderBuffer | None = None
         self._rt: QRhiTextureRenderTarget | None = None
         self._rpd: QRhiRenderPassDescriptor | None = None
-        self._sampler: QRhiSampler | None = None
+        self._samplers: dict[SamplerKey, QRhiSampler] = {}  # un QRhiSampler par réglage
         self._white: QRhiTexture | None = None
         self._frame_ub: QRhiBuffer | None = None
         self._dummy_joints: QRhiBuffer | None = None
@@ -196,12 +206,7 @@ class _Widget(QRhiWidget):
             raise RenderBackendUnavailable(
                 "les shaders .qsb de kut3d sont illisibles : les régénérer."
             )
-        sampler = rhi.newSampler(
-            QRhiSampler.Filter.Linear, QRhiSampler.Filter.Linear, QRhiSampler.Filter.None_,
-            QRhiSampler.AddressMode.Repeat, QRhiSampler.AddressMode.Repeat,
-        )  # fmt: skip
-        sampler.create()
-        self._sampler = sampler
+        self._sampler_for(rhi, DEFAULT_SAMPLER)
         white = rhi.newTexture(QRhiTexture.Format.RGBA8, QSize(1, 1))
         white.create()
         self._white = white
@@ -220,8 +225,34 @@ class _Widget(QRhiWidget):
             [white] * 5,
         )
 
-    def _make_srb(self, rhi: QRhi, draw_ub: QRhiBuffer, joint_ub: QRhiBuffer, textures):
-        assert self._frame_ub is not None and self._sampler is not None
+    def _sampler_for(self, rhi: QRhi, key: SamplerKey) -> QRhiSampler:
+        """Le `QRhiSampler` d'un réglage (wrap_s, wrap_t, mag, min) ; créé une fois, gardé dans le cache.
+        Pas de mipmaps (mode `None_`) : un filtre à mipmaps du fichier a déjà été replié sur linéaire / nearest."""
+        hit = self._samplers.get(key)
+        if hit is not None:
+            return hit
+        wrap_s, wrap_t, mag, minf = key
+        sampler = rhi.newSampler(
+            _FILTERS[mag], _FILTERS[minf], QRhiSampler.Filter.None_,
+            _ADDRESS[wrap_s], _ADDRESS[wrap_t],
+        )  # fmt: skip
+        if not sampler.create():
+            raise RenderBackendUnavailable(
+                "création d'un échantillonneur GPU impossible."
+            )
+        self._samplers[key] = sampler
+        return sampler
+
+    def _make_srb(
+        self,
+        rhi: QRhi,
+        draw_ub: QRhiBuffer,
+        joint_ub: QRhiBuffer,
+        textures,
+        samplers: tuple[SamplerKey, ...] | None = None,
+    ):
+        assert self._frame_ub is not None
+        keys = samplers or (DEFAULT_SAMPLER,) * len(_TEXTURE_BINDINGS)
         srb = rhi.newShaderResourceBindings()
         both = _STAGES.VertexStage | _STAGES.FragmentStage
         bindings = [
@@ -229,10 +260,10 @@ class _Widget(QRhiWidget):
             QRhiShaderResourceBinding.uniformBuffer(1, both, draw_ub),
             QRhiShaderResourceBinding.uniformBuffer(2, _STAGES.VertexStage, joint_ub),
         ]
-        for slot, tex in zip(_TEXTURE_BINDINGS, textures, strict=True):
+        for slot, tex, key in zip(_TEXTURE_BINDINGS, textures, keys, strict=True):
             bindings.append(
                 QRhiShaderResourceBinding.sampledTexture(
-                    slot, _STAGES.FragmentStage, tex, self._sampler
+                    slot, _STAGES.FragmentStage, tex, self._sampler_for(rhi, key)
                 )
             )
         srb.setBindings(bindings)
@@ -455,7 +486,12 @@ class _Widget(QRhiWidget):
                     for tex, srgb in zip(run.textures, _SRGB_SLOTS, strict=True)
                 ]
                 draw_calls.append(
-                    (run, self._make_srb(rhi, self._draw_ubs[i], joint_ub, textures))
+                    (
+                        run,
+                        self._make_srb(
+                            rhi, self._draw_ubs[i], joint_ub, textures, run.samplers
+                        ),
+                    )
                 )
             self._evict_textures(used_ids)
         self.timings["upload_s"] = time.perf_counter() - started

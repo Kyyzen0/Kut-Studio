@@ -20,22 +20,29 @@ from kut3d.mathutil import Array, trs_to_matrix
 ALPHA_MODES = ("opaque", "mask", "blend")
 CHANNEL_PATHS = ("translation", "rotation", "scale", "weights")
 INTERPOLATIONS = ("linear", "step", "cubicspline")
+WRAP_MODES = ("repeat", "clamp", "mirror")
+FILTER_MODES = ("linear", "nearest")
+# Réglage d'échantillonnage d'une texture : (wrap_s, wrap_t, mag_filter, min_filter).
+SamplerKey = tuple[str, str, str, str]
+DEFAULT_SAMPLER: SamplerKey = ("repeat", "repeat", "linear", "linear")
 
 
 def _freeze(
     value: Any, dtype: Any, name: str, shape: tuple[int | None, ...] | None = None
 ) -> Array:
-    """Convertit en tableau numpy du bon type et de la bonne forme, en lecture seule."""
-    arr = np.asarray(value, dtype=dtype)
+    """Convertit en tableau numpy du bon type et de la bonne forme, en lecture seule.
+
+    Le tableau est TOUJOURS copié : l'objet figé a la propriété exclusive de sa mémoire, muter l'original
+    après coup ne le change pas (même si `value` est déjà du bon type)."""
+    arr = np.array(value, dtype=dtype, copy=True)
     if shape is not None:
         ok = arr.ndim == len(shape) and all(
             s is None or s == d for s, d in zip(shape, arr.shape)
         )
         if not ok:
             raise ValueError(f"{name} : forme {arr.shape} invalide (attendu {shape}).")
-    view = arr.view()
-    view.setflags(write=False)
-    return view
+    arr.setflags(write=False)
+    return arr
 
 
 def _freeze_opt(
@@ -135,12 +142,38 @@ class Mesh:
 
 @dataclass(frozen=True)
 class TextureRef:
-    """Référence d'image : un fichier (`path`) ou des octets embarqués (`data`). Jamais décodée en phase 1."""
+    """Référence d'image : un fichier (`path`) ou des octets embarqués (`data`). Jamais décodée en phase 1.
+
+    Le réglage d'échantillonnage (sampler glTF) suit l'image : `wrap_s` / `wrap_t` (`repeat`, `clamp`, `mirror`) et
+    `mag_filter` / `min_filter` (`linear`, `nearest`). Les valeurs par défaut sont le comportement historique
+    (bilinéaire, répétition). Les mipmaps ne sont pas pris en charge : un filtre glTF à mipmaps est replié sur
+    `linear` ou `nearest`."""
 
     name: str
     path: Path | None = None
     data: bytes | None = None
     mime_type: str | None = None
+    wrap_s: str = "repeat"
+    wrap_t: str = "repeat"
+    mag_filter: str = "linear"
+    min_filter: str = "linear"
+
+    def __post_init__(self) -> None:
+        for what, value in (("wrap_s", self.wrap_s), ("wrap_t", self.wrap_t)):
+            if value not in WRAP_MODES:
+                raise ValueError(f"{what} inconnu : {value!r} (attendu {WRAP_MODES}).")
+        for what, value in (
+            ("mag_filter", self.mag_filter),
+            ("min_filter", self.min_filter),
+        ):
+            if value not in FILTER_MODES:
+                raise ValueError(
+                    f"{what} inconnu : {value!r} (attendu {FILTER_MODES})."
+                )
+
+    @property
+    def sampler(self) -> SamplerKey:
+        return (self.wrap_s, self.wrap_t, self.mag_filter, self.min_filter)
 
 
 @dataclass(frozen=True, eq=False)

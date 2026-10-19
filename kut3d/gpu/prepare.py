@@ -16,6 +16,7 @@ import numpy as np
 from kut3d.errors import RenderError
 from kut3d.gpu.limits import MAX_GPU_JOINTS, MAX_GPU_LIGHTS
 from kut3d.mathutil import Array
+from kut3d.model import DEFAULT_SAMPLER, SamplerKey
 from kut3d.render.assemble import Geometry, SkinDraw, assemble
 from kut3d.render.limits import MAX_BLEND_TRIANGLES
 from kut3d.render.materials import MODE_BLEND, PreparedMaterial
@@ -43,6 +44,9 @@ class Run:
         Array | None, ...
     ]  # (base, normal, mr, emissive, occlusion), tableaux RGBA 8 bits
     joints: bytes | None  # JOINT_BLOCK_BYTES (dessin à peau déformé par le GPU) ou None
+    samplers: tuple[SamplerKey, ...] = (
+        DEFAULT_SAMPLER,
+    ) * 5  # réglage d'échantillonnage de chaque texture (wrap_s, wrap_t, mag, min)
 
 
 @dataclass(frozen=True, eq=False)
@@ -236,6 +240,7 @@ def plan_frame(scene: Scene, t: float, size: tuple[int, int]) -> FramePlan:
                         material.occlusion_tex,
                     ),
                     joints=None if skin is None else joint_block(skin),
+                    samplers=material.samplers,
                 )
             )
     return FramePlan(
