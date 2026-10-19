@@ -26,6 +26,7 @@ from ..timeline_editing import (
 )
 from ..timeline_operations import cut_clip, duplicate_clip, find_clip, ripple_delete_clip, trim_clip_left, trim_clip_right
 from ..track_operations import move_track, remove_track, rename_track
+from .layer_rules import require_room
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _owner_track, _pick, _require_unlocked, _track_id
 
 _MAX_INDEX = 10_000
@@ -77,9 +78,16 @@ def _ripple_trim_clip_start(a: Mapping[str, Any]) -> Operation:
     return operation
 
 
+def _room_for_copy(project: Project, clip_id: str) -> None:
+    """Couper ou dupliquer un calque graphique en crée un de plus : le plafond de calques du projet vaut aussi ici."""
+    if _owner_track(project, clip_id).type == "graphics":
+        require_room(project, 1)
+
+
 def _cut_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         clip_id = _editable_clip(project, a["clip"])
+        _room_for_copy(project, clip_id)
         _left, right = cut_clip(project, clip_id, float(a["at"]), right_clip_id=a.get("id"))
         return right                                  # l'objet créé : celui que le script peut citer ensuite
 
@@ -89,7 +97,9 @@ def _cut_clip(a: Mapping[str, Any]) -> Operation:
 def _duplicate_clip(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         at = a.get("at")
-        return duplicate_clip(project, _editable_clip(project, a["clip"]), None if at is None else float(at), new_clip_id=a.get("id"))
+        clip_id = _editable_clip(project, a["clip"])
+        _room_for_copy(project, clip_id)
+        return duplicate_clip(project, clip_id, None if at is None else float(at), new_clip_id=a.get("id"))
 
     return operation
 

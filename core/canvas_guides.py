@@ -66,12 +66,19 @@ def guide_from_dict(raw: object) -> Guide | None:
 # ---------------------------------------------------------------------------
 
 
-def add_guide(sequence, orientation: GuideOrientation | str, position: float) -> Guide:
+def add_guide(sequence, orientation: GuideOrientation | str, position: float, *, guide_id: str | None = None) -> Guide:
+    """Ajoute un guide. ``guide_id`` : identifiant imposé (scripts), vérifié (forme, unicité dans la séquence) ; ``None`` pour
+    l'interface, qui ne change pas : identifiant généré."""
     try:
         coerced = GuideOrientation(orientation)
     except ValueError:                   # même repli que ``Guide`` : une orientation inconnue devient verticale
         coerced = GuideOrientation.VERTICAL
-    guide = Guide(orientation=coerced, position=position)
+    identifier = ""
+    if guide_id is not None:
+        from .object_ids import resolve_object_id
+
+        identifier = resolve_object_id(guide_id, prefix="guide", kind="guide", taken={g.id for g in sequence.guides}, length=8)
+    guide = Guide(orientation=coerced, position=position, id=identifier)
     sequence.guides = [*sequence.guides, guide]
     return guide
 

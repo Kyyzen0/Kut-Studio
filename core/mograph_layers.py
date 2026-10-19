@@ -20,6 +20,7 @@ séquences imbriquées (:mod:`core.graph_cycles`).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
@@ -165,10 +166,17 @@ def add_layer(
     shape: ShapeKind | str = ShapeKind.RECTANGLE,
     source_path: str = "",
     group_id: str = "",
+    track: Track | None = None,
+    clip_id: str | None = None,
 ) -> Clip:
-    """Ajoute un calque (texte, forme, aplat, image, contrôleur, adjustment…)."""
+    """Ajoute un calque (texte, forme, aplat, image, contrôleur, adjustment…).
+
+    ``track`` et ``clip_id`` (piste imposée, identifiant imposé : scripts) valent ``None`` pour l'interface, qui ne
+    change pas : première piste de graphiques éditable, identifiant généré.
+    """
     clip = add_graphic_clip(
         project, kind, timeline_start=at, duration=duration, shape=shape, source_path=source_path,
+        track=track, clip_id=clip_id,
     )
     if group_id:
         find_layer(project, group_id)
@@ -380,8 +388,11 @@ def parent_candidates(project: Project, child_id: str) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def group_layers(project: Project, clip_ids: list[str], *, name: str = "Groupe") -> Clip:
-    """Regroupe des calques (même conteneur) ; le groupe n'est pas transformé."""
+def group_layers(project: Project, clip_ids: list[str], *, name: str = "Groupe", group_id: str | None = None) -> Clip:
+    """Regroupe des calques (même conteneur) ; le groupe n'est pas transformé.
+
+    ``group_id`` : identifiant imposé du groupe (scripts) ; ``None`` pour l'interface, qui en génère un comme avant.
+    """
     ids = list(dict.fromkeys(clip_ids))
     if not ids:
         raise LayerError("Aucun calque à grouper.")
@@ -405,7 +416,7 @@ def group_layers(project: Project, clip_ids: list[str], *, name: str = "Groupe")
         project, GraphicType.GROUP, timeline_start=start, duration=end - start,
         graphic=GraphicOverlay(type=GraphicType.GROUP, text="", width=int(box[0]), height=int(box[1]),
                                group_id=container, shadow_offset_x=0, shadow_offset_y=0),
-        track=top_track,
+        track=top_track, clip_id=group_id,
     )
     group.label = name
     # Le groupe prend la place de son membre le plus haut dans la pile.
@@ -685,16 +696,32 @@ def copy_layers(project: Project, clip_ids: list[str]) -> LayerClipboard:
     )
 
 
-def paste_layers(project: Project, clipboard: LayerClipboard, *, at: float) -> list[Clip]:
+def paste_layers(
+    project: Project, clipboard: LayerClipboard, *, at: float, new_ids: Mapping[str, str] | None = None,
+) -> list[Clip]:
     """Colle des calques à ``at`` dans la séquence active.
 
     Nouveaux identifiants ; parent et groupe sont rattachés aux copies quand
     ils ont été copiés ensemble, gardés s'ils existent dans la séquence
     cible, sinon détachés (jamais de référence cassée entre séquences).
+
+    ``new_ids`` : « identifiant copié -> identifiant imposé de sa copie » (scripts), vérifiés comme tout identifiant fourni
+    (forme, unicité dans le projet) avant le moindre effet ; ``None`` pour l'interface, qui ne change pas.
     """
     from .project_io import clip_from_dict
 
-    mapping = {raw["id"]: f"graphic-{uuid.uuid4().hex[:12]}" for raw in clipboard.clips}
+    imposed = dict(new_ids or {})
+    if imposed:
+        from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
+
+        taken = clip_ids(project)
+        known = {raw["id"] for raw in clipboard.clips}
+        for old, requested in imposed.items():
+            if old not in known:
+                raise ValueError(f"Identifiant imposé pour un calque qui n'est pas copié : {old!r}.")
+            taken.add(resolve_object_id(requested, prefix="graphic", kind="clip", taken=taken))
+            ensure_free_asset_id(project, f"graphic-asset-{requested}")
+    mapping = {raw["id"]: imposed.get(raw["id"]) or f"graphic-{uuid.uuid4().hex[:12]}" for raw in clipboard.clips}
     source_w, source_h = clipboard.canvas
     factor = (
         min(project.width / source_w, project.height / source_h)
@@ -708,7 +735,7 @@ def paste_layers(project: Project, clipboard: LayerClipboard, *, at: float) -> l
         data = deepcopy(raw)
         new_id = mapping[data["id"]]
         asset_raw = assets.get(data.get("asset_id"))
-        asset_id = f"graphic-asset-{uuid.uuid4().hex[:12]}"
+        asset_id = f"graphic-asset-{imposed[data['id']]}" if data["id"] in imposed else f"graphic-asset-{uuid.uuid4().hex[:12]}"
         if asset_raw is not None:
             project.media_assets.append(MediaAsset(**{**asset_raw, "id": asset_id}))
         else:
@@ -739,10 +766,10 @@ def paste_layers(project: Project, clipboard: LayerClipboard, *, at: float) -> l
     return created
 
 
-def duplicate_layers(project: Project, clip_ids: list[str]) -> list[Clip]:
-    """Duplique des calques au même instant, juste au-dessus des originaux."""
+def duplicate_layers(project: Project, clip_ids: list[str], *, new_ids: Mapping[str, str] | None = None) -> list[Clip]:
+    """Duplique des calques au même instant, juste au-dessus des originaux (``new_ids`` : voir :func:`paste_layers`)."""
     clipboard = copy_layers(project, clip_ids)
-    return paste_layers(project, clipboard, at=clipboard.base_time)
+    return paste_layers(project, clipboard, at=clipboard.base_time, new_ids=new_ids)
 
 
 # ---------------------------------------------------------------------------
