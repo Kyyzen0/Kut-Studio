@@ -353,4 +353,17 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   fenêtre prévient sans jamais refuser d'ouvrir. Le verrou est pris **avant** de lire le projet (CLI et fenêtre), la reprise d'un verrou
   périmé est sérialisée par une garde (relecture sous la garde), et l'enregistrement écrit à travers un lien symbolique. Limite
   assumée : consultatif, il ne protège que des programmes de Kut-Studio.
-- Étapes 5 à 7 : à faire, dans l'ordre.
+- **Étape 5 : partie A faite** (cette PR), partie B à faire. `core/scripting/api.py` est la façade publique (`API_VERSION`
+  `MAJEUR.MINEUR`, `DESCRIBE_VERSION`, `describe`, `describe_json` ; `Session.describe()`) et `Kut-Studio describe projet.kut [--json]`
+  la commande (mêmes conventions que `info`). La partie A décrit la **structure** : projet, médias, séquences, pistes, clips (place,
+  source, vitesse, transform, audio de base, calque graphique), transitions, repères ; ce qui n'est pas encore décrit est **nommé**
+  dans `not_described`, jamais remplacé par une clé vide. Format JSON seul (les **vues typées** immuables viennent avec l'étape 6).
+  **Complétude** par deux listes de dette qui ne peuvent que diminuer, comme le plafond mypy : `tests/data/describe_field_debt.json`
+  (chaque champ des dataclasses du modèle est décrit, exclu avec une raison — `core/scripting/describe_coverage.py` — ou en dette
+  avec sa section) et `tests/data/script_verb_debt.json` (chaque fonction publique d'édition des modules listés dans
+  `tools/scripting_debt.py` est référencée par le code de `core/scripting/` ou en dette avec une raison). `python -m
+  tools.scripting_debt fields|verbs --list|--summary|--update-baseline` les montre et les réduit. Reste (partie B) : effets,
+  couleur, composition, courbes, images clés, bus, qui sortent de la dette de champs à mesure qu'ils sont décrits. Documentation :
+  « Lire un projet » dans `docs/scripting.md`. Tests : `tests/test_describe.py`, `test_describe_completeness.py`,
+  `test_script_verb_completeness.py`, `test_scripting_api.py`, `test_cli_describe.py`.
+- Étapes 6 et 7 : à faire, dans l'ordre.

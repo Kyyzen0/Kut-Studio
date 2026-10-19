@@ -21,6 +21,7 @@ Kut-Studio validate script.json                          # le script seul : tout
 Kut-Studio apply script.json projet.kut --dry-run        # le rapport, rien d'écrit
 Kut-Studio apply script.json projet.kut -o resultat.kut  # écrit un autre fichier
 Kut-Studio schema > kut-script.schema.json               # pour un éditeur ou un outil
+Kut-Studio describe projet.kut --json                    # lire la structure d'un projet (voir « Lire un projet »)
 ```
 
 ## Règles
@@ -459,10 +460,79 @@ Gain, panoramique, fondus, effets audio d'un clip et ducking, comme l'inspecteur
   existante reçoit le nouveau réglage et est réactivée, comme avec la commande de menu. Il refuse si une piste « musique » est verrouillée (elle serait atténuée) ;
   la commande de menu ne regarde pas ce verrou.
 
+## Lire un projet : `describe`
+
+`describe` rend la **structure** d'un projet comme un dictionnaire JSON **versionné** : de quoi écrire un script sans deviner les
+identifiants, ou vérifier ce qu'un script a produit. Il ne modifie rien (ni le projet, ni aucun fichier : pas de verrou) et ne
+touche pas au disque sauf si on le demande.
+
+```bash
+Kut-Studio describe projet.kut            # un résumé lisible
+Kut-Studio describe projet.kut --json     # un objet JSON sur la sortie standard (clé `description`), comme `info --json`
+```
+
+```python
+from core.scripting.api import API_VERSION, describe, describe_json
+
+data = describe(project)                   # un dict, JSON strict ; check_media=True teste la présence des fichiers
+text = describe_json(project)              # le même, en texte (mêmes octets pour le même projet)
+```
+
+`Session.describe()` rend la même chose. La façade `core/scripting/api.py` est la **seule surface publique** : un test fige ses noms,
+et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur pour une rupture annoncée dans le CHANGELOG.
+
+**Un exemple court** (un projet à une piste, abrégé) :
+
+```json
+{
+  "describe_version": 1,
+  "project": {"name": "Démo", "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0, "active_sequence": "seq-main"},
+  "media": [{"id": "m1", "name": "a", "path": "/media/a.mp4", "media_type": "video", "duration": 4.0, "width": 1280,
+             "height": 720, "fps": 25.0, "has_audio": true, "color_matrix": "auto", "present": null}],
+  "sequences": [{
+    "id": "seq-main", "name": "Séquence principale", "active": true, "width": 1280, "height": 720, "fps": 25.0, "duration": 4.0,
+    "format_source": null,
+    "tracks": [{"id": "V1", "name": "V1", "type": "video", "locked": false, "visible": true, "muted": false, "solo": false,
+                "volume_db": 0.0, "pan": 0.0, "audio_role": "other",
+                "clips": [{"id": "c1", "kind": "media", "asset_id": "m1", "sequence_id": null, "angle_id": null,
+                           "template_slot": null, "label": "a", "text": "", "enabled": true, "timeline_start": 0.0,
+                           "duration": 4.0, "timeline_end": 4.0, "source_in": 0.0, "source_out": 4.0,
+                           "time_remapping": {"speed": 1.0, "reverse": false, "...": "..."}, "has_speed_curve": false,
+                           "transform": {"position_x": 0.0, "...": "..."}, "gain_db": 0.0, "pan": 0.0, "fade_in": 0.0,
+                           "fade_out": 0.0, "graphic": null, "has_keyframes": false}]}],
+    "transitions": [], "markers": []}],
+  "not_described": ["audio_automation", "audio_buses", "color", "effects", "..."]
+}
+```
+
+- **Ce qui est décrit** : le projet (nom, taille, cadence et durée de la séquence active), les médias (chemin, type, durée, métadonnées de
+  la sonde, `present`), les séquences (format, `format_source`), les pistes (verrou, visibilité, muet, solo, fader, panoramique, rôle),
+  les clips (identifiants du média, de la séquence imbriquée, de l'angle ; place, durée, plage source ; vitesse et remappage ; transform ;
+  audio de base ; calque graphique ; sous-titre), les transitions et les repères.
+- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` (effets, couleur, composition, courbes, images clés, bus…) : la
+  sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas. `has_keyframes` dit seulement qu'un clip en porte.
+- **Les noms de clés sont ceux des champs du modèle** (`timeline_start`, `asset_id`…), en anglais ; les durées sont en **secondes**. Les
+  clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `active`, la taille du projet) sont les seules
+  qui n'existent pas dans le modèle. `kind` vaut `media`, `sequence` (clip imbriqué), `composition` ou `graphic`.
+- **Valeurs** : JSON strict (une valeur non finie est `null`), nombres arrondis à 6 décimales, ordre des clés et des listes fixe (celui du
+  modèle). Une chaîne vide qui veut dire « aucun » (`asset_id`, `sequence_id`, `angle_id`…) est `null`.
+- **Médias** : `present` vaut `null` (inconnu) tant que la présence n'est pas demandée (`check_media=True`) ; la commande `describe` la
+  demande. Les médias techniques (sous-titres, calques) n'ont pas de fichier : `null` aussi.
+- **Une séquence imbriquée est citée** (`sequence_id`), jamais développée : sa description est dans `sequences`.
+- **Distinct du fichier `.kut`** : `describe_version` (entier) change quand une clé disparaît ou change de sens ; ajouter des clés (les
+  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture.
+- **Avec `schema` et `apply`** : `schema` dit ce qu'un script peut écrire, `apply` l'écrit, `describe` relit le résultat (les identifiants
+  d'un script, `id` ou `as`, se retrouvent tels quels dans la description).
+
+**Complétude.** Deux listes de dette qui ne peuvent que diminuer (`tests/data/`) empêchent la sortie et les verbes de dériver du modèle :
+`describe_field_debt.json` (chaque champ du modèle est décrit, exclu avec une raison, ou en dette avec sa section) et
+`script_verb_debt.json` (chaque fonction publique d'édition a un verbe, ou une raison écrite de ne pas en avoir). Un champ ou une fonction
+neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting_debt fields|verbs --list` montre la dette.
+
 ## Pas encore là
 
 - **Animation de l'étalonnage et des paramètres d'effets** : le modèle ne les anime pas (aucune propriété animable de couleur ni d'effet). C'est une fonctionnalité de modèle à décider à part, pas un lot de verbes ; les calques d'image sont faits (`add_image_layer`).
-- La **façade Python** (`run`) et la **console** viennent après (étapes 6 et 7 de l'ADR).
+- Le reste de `describe` (effets, couleur, composition, courbes, images clés, bus), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie B, 6 et 7 de l'ADR).
 
 ## Code
 
@@ -474,4 +544,7 @@ Gain, panoramique, fondus, effets audio d'un clip et ducking, comme l'inspecteur
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
 | `core/project_lock.py` | le verrou consultatif d'un projet (`ProjectLock`, `judge`, `read_lock`) |
-| `core/cli.py` | `apply`, `validate script.json`, `schema` |
+| `core/scripting/api.py` | la façade publique : `API_VERSION`, `DESCRIBE_VERSION`, `describe`, `describe_json` |
+| `core/scripting/describe.py`, `describe_coverage.py` | la lecture (`describe`), et la table champ par champ de ce qui est décrit, exclu ou en dette |
+| `tools/scripting_debt.py` | les deux listes de dette (champs de `describe`, verbes) |
+| `core/cli.py` | `apply`, `validate script.json`, `schema`, `describe` |

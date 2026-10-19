@@ -215,6 +215,25 @@ CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
     "cli.info.active": _t(" (active)", " (current)", " (activa)"),
     "cli.info.media": _t("Médias : {count} ({missing} introuvable(s))", "Media: {count} ({missing} missing)",
                          "Medios: {count} ({missing} no encontrado(s))"),
+    "cli.describe.project": _t(
+        "Projet : {name} (description, format {version})", "Project: {name} (description format {version})",
+        "Proyecto: {name} (descripción, formato {version})",
+    ),
+    "cli.describe.track": _t(
+        "    Piste {name} [{id}] {kind} : {clips} clip(s)", "    Track {name} [{id}] {kind}: {clips} clip(s)",
+        "    Pista {name} [{id}] {kind}: {clips} clip(s)",
+    ),
+    "cli.describe.extras": _t(
+        "    {transitions} transition(s), {markers} repère(s)", "    {transitions} transition(s), {markers} marker(s)",
+        "    {transitions} transición(es), {markers} marcador(es)",
+    ),
+    "cli.describe.not_described": _t(
+        "Pas encore décrit : {sections}", "Not described yet: {sections}", "Aún sin describir: {sections}",
+    ),
+    "cli.describe.hint": _t(
+        "Le détail (clips, transitions, repères) : ajoutez --json.", "For the full detail (clips, transitions, markers): add --json.",
+        "Para el detalle completo (clips, transiciones, marcadores): añada --json.",
+    ),
     "cli.presets.line": _t("  {id} — {summary}", "  {id} — {summary}", "  {id} — {summary}"),
     "cli.export.start": _t("Export de {project} vers {output} ({preset})", "Exporting {project} to {output} ({preset})",
                            "Exportando {project} a {output} ({preset})"),
