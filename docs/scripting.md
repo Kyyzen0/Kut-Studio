@@ -499,18 +499,24 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
                            "duration": 4.0, "timeline_end": 4.0, "source_in": 0.0, "source_out": 4.0,
                            "time_remapping": {"speed": 1.0, "reverse": false, "...": "..."}, "has_speed_curve": false,
                            "transform": {"position_x": 0.0, "...": "..."}, "gain_db": 0.0, "pan": 0.0, "fade_in": 0.0,
-                           "fade_out": 0.0, "graphic": null, "has_keyframes": false}]}],
-    "transitions": [], "markers": []}],
-  "not_described": ["audio_automation", "audio_buses", "color", "effects", "..."]
+                           "fade_out": 0.0, "graphic": null, "has_keyframes": false, "transform_keyframes": [], "effects": [],
+                           "audio_effects": [], "color_grade": null, "compositing": {"masks": [], "chroma_key": {"...": "..."},
+                           "blend_mode": "normal"}, "animation": [], "composition": null}]}],
+    "transitions": [], "markers": [], "buses": [], "ducking_sidechains": []}],
+  "color_presets": [],
+  "not_described": ["graphic_style", "library", "mograph", "multicam", "social", "text_style", "tracking"]
 }
 ```
 
 - **Ce qui est décrit** : le projet (nom, taille, cadence et durée de la séquence active), les médias (chemin, type, durée, métadonnées de
-  la sonde, `present`), les séquences (format, `format_source`), les pistes (verrou, visibilité, muet, solo, fader, panoramique, rôle),
-  les clips (identifiants du média, de la séquence imbriquée, de l'angle ; place, durée, plage source ; vitesse et remappage ; transform ;
-  audio de base ; calque graphique ; sous-titre), les transitions et les repères.
-- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` (effets, couleur, composition, courbes, images clés, bus…) : la
-  sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas. `has_keyframes` dit seulement qu'un clip en porte.
+  la sonde, `present`), les séquences (format, `format_source`, bus, associations de ducking), les pistes (verrou, visibilité, muet, solo,
+  fader, panoramique, rôle, bus, inserts, automation de volume, ducking), les clips (identifiants du média, de la séquence imbriquée, de
+  l'angle ; place, durée, plage source ; vitesse et remappage ; transform ; audio de base ; calque graphique ; sous-titre ; **effets
+  visuels et audio, étalonnage, compositing, composition, images clés**), les transitions, les repères et les préréglages d'étalonnage
+  du projet. Le détail des sections de la partie B est dans « Effets, couleur, composition, images clés et bus » ci-dessous.
+- **Ce qui ne l'est pas encore** est **nommé** dans `not_described` (style des calques graphiques, bibliothèque, motion graphics —
+  guides et flou de mouvement —, multicam, vidéo sociale, style de texte, suivi) : la sortie ne met jamais une clé vide à la place d'une
+  donnée qu'elle ne lit pas.
 - **Les noms de clés sont ceux des champs du modèle** (`timeline_start`, `asset_id`…), en anglais ; les durées sont en **secondes**. Les
   clés dérivées (`kind`, `duration`, `timeline_end`, `has_speed_curve`, `has_keyframes`, `active`, la taille du projet) sont les seules
   qui n'existent pas dans le modèle. `kind` vaut `media`, `sequence` (clip imbriqué), `composition` ou `graphic`.
@@ -520,9 +526,60 @@ et `API_VERSION` (`MAJEUR.MINEUR`) monte au mineur quand elle grandit, au majeur
   demande. Les médias techniques (sous-titres, calques) n'ont pas de fichier : `null` aussi.
 - **Une séquence imbriquée est citée** (`sequence_id`), jamais développée : sa description est dans `sequences`.
 - **Distinct du fichier `.kut`** : `describe_version` (entier) change quand une clé disparaît ou change de sens ; ajouter des clés (les
-  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture.
+  sections de `not_described` à mesure qu'elles sont décrites) n'est pas une rupture. La partie B n'a fait qu'**ajouter** des clés à la
+  forme de la partie A (qui n'était pas encore publiée) : la version reste `1`.
+- **Valeurs saisies, pas évaluées.** Une valeur décrite est celle du modèle (`effects[].params`, `transform`, `color_grade`…), pas celle que
+  la scène calcule à un instant : si le clip porte des images clés, la valeur rendue vient de la courbe, et un suivi (`tracking`, non
+  décrit) peut encore la remplacer au rendu.
 - **Avec `schema` et `apply`** : `schema` dit ce qu'un script peut écrire, `apply` l'écrit, `describe` relit le résultat (les identifiants
   d'un script, `id` ou `as`, se retrouvent tels quels dans la description).
+
+### Effets, couleur, composition, images clés et bus
+
+Chaque section garde les noms de champs du modèle et donne les **identifiants que les verbes attendent** : un script lit `describe`,
+puis vise ce qu'il vient de lire (`"effect": "fx1"`, `"node": "n2"`, `"bus": "b1"`…). Un test (`tests/test_describe_roundtrip.py`)
+reconstruit chaque famille depuis sa description seule, et rejoue la description sur le projet sans rien changer.
+
+| Clé (sous le clip, la piste, la séquence) | Contenu | Verbes qui visent ces objets |
+| --- | --- | --- |
+| `clips[].effects[]` | `id`, `type`, `enabled`, `params` (nom -> nombre), dans l'ordre d'application | `add_effect` (`id`), `update_effect`, `set_effect_enabled`, `move_effect`, `remove_effect` (`effect` = `id`) |
+| `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
+| `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
+| `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `duck_music_under_voice` (les rôles se lisent dans `audio_role`) |
+| `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>` |
+| `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
+| `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
+| `clips[].composition` | `graph.nodes[]` (`type` : `media`, `graphic`, `solid`, `transform`, `merge`, `mask`, `key`, `effects`, `grade`, `output`), `graph.links[]`, `duration`, `animation[]` | aucun (lecture seule) |
+| `color_presets[]` | `id`, `name`, `description`, `category`, `grade`, `builtin` | aucun |
+
+**Un extrait réel** (un clip avec un flou, une vignette animée et un étalonnage à deux nœuds ; les courbes sont abrégées) :
+
+```json
+"effects": [{"id": "fx1", "type": "blur", "enabled": true, "params": {"intensity": 4.0}},
+            {"id": "fx2", "type": "vignette", "enabled": false, "params": {"intensity": 0.7}}],
+"animation": [{"property_name": "fx.fx2.intensity", "time_seconds": 0.5, "value": 0.2, "interpolation": "linear",
+               "in_slope": null, "out_slope": null, "tangent_mode": "linked", "id": "kf3"}],
+"color_grade": {"nodes": [{"id": "n1", "type": "corrector", "label": "", "qualifier": null, "windows": [], "blur": 0.0, "sharpen": 0.0,
+                           "grade": {"exposure": 0.5, "contrast": 0.1, "saturation": 1.2, "temperature": 0.0, "hue": 0.0,
+                                     "shadows": 0.0, "highlights": 0.0, "curves": {"master": [[0.0, 0.0], "..."], "...": "..."},
+                                     "lut": null, "enabled": true, "lift": {"r": 0.1, "g": 0.0, "b": 0.0, "y": -0.05}, "...": "..."}},
+                          {"id": "m1", "type": "mixer", "kind": "layer"}],
+                "links": [{"source": "n1", "target": "m1", "port": 0}]}
+```
+
+- **Les courbes de transfert** sont des listes de couples `[entrée, sortie]` (16 points par défaut, par canal : `master`, `red`, `green`, `blue`) ;
+  `set_color_curve` vise un point par son `index` et ne change que sa `output`.
+- **Les images clés** d'un clip sont dans deux listes du modèle : `transform_keyframes` (les propriétés du transform) et `animation`
+  (le reste : `graphic.*`, `mask.<id>.<nom>`, et les paramètres d'effet `fx.<id de l'effet>.<paramètre>`). Les temps sont locaux au clip.
+  Une valeur d'image clé est un nombre, un booléen (`flip_h`) ou un couple `[x, y]`.
+- **Un bus, un insert, un morceau de la séquence** : les verbes agissent sur la séquence **active** ; pour viser les bus d'une autre
+  séquence, `set_active_sequence` d'abord.
+- **Une courbe de Bézier** : `nodes` réunit `points` et `handles` sous la forme que `set_mask_points` attend (`x`, `y`, `in_dx`, `in_dy`,
+  `out_dx`, `out_dy`) ; `null` pour les autres formes. Les `keyframes` d'un masque sont l'ancien format (linéaire) des fichiers
+  antérieurs ; les images clés d'un masque de compositing sont dans `animation` (`mask.<id>.<nom>`).
+- **Ce qu'aucun verbe n'écrit encore** (la lecture est là, l'écriture est à faire) : les images clés d'un paramètre d'effet
+  (`fx.*`), le LUT (`import_lut` lit un fichier), la composition nodale, le mode de fusion et l'incrustation (`chroma_key`), la courbe
+  d'automation de volume et les associations de ducking. Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
 
 **Complétude.** Deux listes de dette qui ne peuvent que diminuer (`tests/data/`) empêchent la sortie et les verbes de dériver du modèle :
 `describe_field_debt.json` (chaque champ du modèle est décrit, exclu avec une raison, ou en dette avec sa section) et
@@ -531,8 +588,8 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 
 ## Pas encore là
 
-- **Animation de l'étalonnage et des paramètres d'effets** : le modèle ne les anime pas (aucune propriété animable de couleur ni d'effet). C'est une fonctionnalité de modèle à décider à part, pas un lot de verbes ; les calques d'image sont faits (`add_image_layer`).
-- Le reste de `describe` (effets, couleur, composition, courbes, images clés, bus), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie B, 6 et 7 de l'ADR).
+- **Animation des effets** : la luminosité, le contraste et la saturation de la correction de couleur et l'intensité de la vignette s'animent dans l'application (`fx.<effet>.<paramètre>` dans `animation`) ; `describe` les lit, mais aucun verbe ne pose encore ces images clés.
+- Le reste de `describe` (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi : « partie C »), les **vues typées** et `run` (façade Python) puis la **console** viennent après (étapes 5 partie C, 6 et 7 de l'ADR).
 
 ## Code
 
@@ -545,6 +602,6 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
 | `core/project_lock.py` | le verrou consultatif d'un projet (`ProjectLock`, `judge`, `read_lock`) |
 | `core/scripting/api.py` | la façade publique : `API_VERSION`, `DESCRIBE_VERSION`, `describe`, `describe_json` |
-| `core/scripting/describe.py`, `describe_coverage.py` | la lecture (`describe`), et la table champ par champ de ce qui est décrit, exclu ou en dette |
+| `core/scripting/describe.py`, `describe_shapes.py`, `describe_color.py`, `describe_audio.py`, `describe_composition.py`, `describe_values.py`, `describe_coverage.py` | la lecture (`describe`) et ses formes réutilisées (effets, masques, images clés, étalonnage, audio, composition), et la table champ par champ de ce qui est décrit, exclu ou en dette |
 | `tools/scripting_debt.py` | les deux listes de dette (champs de `describe`, verbes) |
 | `core/cli.py` | `apply`, `validate script.json`, `schema`, `describe` |

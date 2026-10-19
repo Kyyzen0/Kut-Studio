@@ -1,10 +1,15 @@
-"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, partie A).
+"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, parties A et B).
 
 La sortie est **distincte du format de fichier** ``.kut`` : elle est faite pour être lue (par une personne, un outil, un LLM) et peut
-évoluer pour la lisibilité sans casser les projets. Elle décrit la **structure** : le projet, ses médias, ses séquences, leurs pistes,
-leurs clips (place, source, vitesse, audio de base, transform), leurs transitions et leurs repères. Ce qu'elle ne décrit pas encore
-(effets, couleur, composition, images clés, bus…) est **nommé** dans la clé ``not_described`` : elle ne met jamais une clé vide à la
-place d'une donnée qu'elle ne lit pas.
+évoluer pour la lisibilité sans casser les projets. Elle décrit le projet, ses médias, ses séquences, leurs pistes, leurs clips (place,
+source, vitesse, audio de base, transform), leurs transitions et leurs repères (partie A), puis les effets visuels et audio, l'étalonnage
+(réglage et graphe de nœuds), le compositing, la composition nodale, les images clés, les bus, les inserts, l'automation de volume et le
+ducking (partie B). Ce qu'elle ne décrit pas encore (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale,
+style de texte, suivi) est **nommé** dans la clé ``not_described`` : elle ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
+
+Les valeurs sont celles **saisies** (statiques) du modèle, jamais celles qu'évalue la scène à un instant : quand des images clés
+(``transform_keyframes``, ``animation``) existent, la valeur rendue vient de la courbe, et un suivi (section ``tracking``, non décrite)
+peut encore l'écraser au rendu.
 
 Garanties, que ``tests/test_describe.py`` vérifie :
 
@@ -25,54 +30,17 @@ from __future__ import annotations
 import json
 import math
 import os
-from enum import Enum
 from typing import Any
 
 from ..project_model import Clip, MediaAsset, Project, Sequence, Track
+from . import describe_audio, describe_color, describe_composition, describe_shapes
 from .describe_coverage import NOT_DESCRIBED_SECTIONS
+from .describe_values import enum, number, optional_text, text
 
 DESCRIBE_VERSION = 1
 """Version du format de la sortie de :func:`describe`. Elle change quand une clé disparaît ou change de sens ; ajouter une clé
-(la partie B décrit de nouvelles sections) n'est pas une rupture."""
-
-_DECIMALS = 6
-
-
-def _number(value: Any) -> Any:
-    """Un nombre JSON déterministe : flottant arrondi à 6 décimales, ``-0.0`` ramené à ``0.0``, non fini -> ``None``."""
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, int):
-        return value
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number):
-        return None
-    rounded = round(number, _DECIMALS)
-    return rounded + 0.0 if rounded == 0.0 else rounded
-
-
-def _text(value: Any) -> str:
-    """Une chaîne que le JSON et la sortie standard savent écrire (un demi-substitut isolé, possible dans un fichier abîmé, est remplacé)."""
-    text = value if isinstance(value, str) else ("" if value is None else str(value))
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:
-        return text.encode("utf-8", "replace").decode("utf-8")
-    return text
-
-
-def _optional_text(value: Any) -> str | None:
-    """Une chaîne, ou ``None`` quand elle est vide (« pas de séquence », « pas d'angle »)."""
-    text = _text(value)
-    return text or None
-
-
-def _enum(value: Any) -> Any:
-    return _text(value.value if isinstance(value, Enum) else value)
-
+n'est pas une rupture : la partie B (effets, couleur, composition, images clés, bus) ne fait qu'**ajouter** des clés (et retirer des noms de
+``not_described``) à la forme de la partie A, qui n'a pas encore été publiée dans une version : elle reste à ``1``."""
 
 def _present(asset: MediaAsset) -> bool | None:
     """Le fichier d'un média existe-t-il ? ``None`` quand la question n'a pas de sens (sous-titres en ligne, chemin vide)."""
@@ -88,25 +56,25 @@ def _metadata(asset: MediaAsset) -> dict[str, Any]:
     """Les métadonnées de la sonde qui ont une valeur (le défaut n'est pas écrit)."""
     data: dict[str, Any] = {}
     if asset.timecode:
-        data["timecode"] = _text(asset.timecode)
+        data["timecode"] = text(asset.timecode)
     if asset.timecode_fps:
-        data["timecode_fps"] = _number(asset.timecode_fps)
+        data["timecode_fps"] = number(asset.timecode_fps)
     if asset.time_reference is not None:
-        data["time_reference"] = _number(asset.time_reference)
+        data["time_reference"] = number(asset.time_reference)
     if asset.reel:
-        data["reel"] = _text(asset.reel)
+        data["reel"] = text(asset.reel)
     if asset.camera:
-        data["camera"] = _text(asset.camera)
+        data["camera"] = text(asset.camera)
     if asset.creation_time:
-        data["creation_time"] = _text(asset.creation_time)
+        data["creation_time"] = text(asset.creation_time)
     return data
 
 
 def _media(asset: MediaAsset, check_media: bool) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "id": _text(asset.id), "name": _text(asset.name), "path": _text(asset.path), "media_type": _text(asset.media_type),
-        "duration": _number(asset.duration), "width": _number(asset.width), "height": _number(asset.height),
-        "fps": _number(asset.fps), "has_audio": bool(asset.has_audio), "color_matrix": _text(asset.color_matrix),
+        "id": text(asset.id), "name": text(asset.name), "path": text(asset.path), "media_type": text(asset.media_type),
+        "duration": number(asset.duration), "width": number(asset.width), "height": number(asset.height),
+        "fps": number(asset.fps), "has_audio": bool(asset.has_audio), "color_matrix": text(asset.color_matrix),
         "present": _present(asset) if check_media else None,
     }
     metadata = _metadata(asset)
@@ -115,38 +83,14 @@ def _media(asset: MediaAsset, check_media: bool) -> dict[str, Any]:
     return data
 
 
-def _transform(clip: Clip) -> dict[str, Any]:
-    transform = clip.transform
-    return {
-        "position_x": _number(transform.position_x), "position_y": _number(transform.position_y),
-        "scale": _number(transform.scale), "rotation": _number(transform.rotation), "opacity": _number(transform.opacity),
-        "anchor_x": _number(transform.anchor_x), "anchor_y": _number(transform.anchor_y),
-        "scale_x": _number(transform.scale_x), "scale_y": _number(transform.scale_y), "skew": _number(transform.skew),
-        "flip_h": bool(transform.flip_h), "flip_v": bool(transform.flip_v), "fill": bool(transform.fill),
-        "pan_x": _number(transform.pan_x), "pan_y": _number(transform.pan_y),
-    }
-
-
 def _time_remapping(clip: Clip) -> dict[str, Any]:
     remapping = clip.time_remapping
     return {
-        "speed": _number(remapping.speed), "reverse": bool(remapping.reverse), "freeze_mode": _enum(remapping.freeze_mode),
-        "freeze_source_time": _number(remapping.freeze_source_time), "freeze_duration": _number(remapping.freeze_duration),
-        "interpolation": _enum(remapping.interpolation), "flow_quality": _enum(remapping.flow_quality),
+        "speed": number(remapping.speed), "reverse": bool(remapping.reverse), "freeze_mode": enum(remapping.freeze_mode),
+        "freeze_source_time": number(remapping.freeze_source_time), "freeze_duration": number(remapping.freeze_duration),
+        "interpolation": enum(remapping.interpolation), "flow_quality": enum(remapping.flow_quality),
         "preserve_pitch": bool(remapping.preserve_pitch), "remap_audio": bool(remapping.remap_audio),
-        "anchor": _number(remapping.anchor), "duration": _number(remapping.duration),
-    }
-
-
-def _graphic(clip: Clip) -> dict[str, Any] | None:
-    graphic = clip.graphic
-    if graphic is None:
-        return None
-    return {
-        "type": _enum(graphic.type), "text": _text(graphic.text), "source_path": _optional_text(graphic.source_path),
-        "width": _number(graphic.width), "height": _number(graphic.height), "visible": bool(graphic.visible),
-        "locked": bool(graphic.locked), "parent_id": _optional_text(graphic.parent_id),
-        "group_id": _optional_text(graphic.group_id), "z_order": _number(graphic.z_order),
+        "anchor": number(remapping.anchor), "duration": number(remapping.duration),
     }
 
 
@@ -173,15 +117,21 @@ def _clip(clip: Clip, length: float | None) -> dict[str, Any]:
     start = float(clip.timeline_start)
     end = start + length if length is not None else None
     return {
-        "id": _text(clip.id), "kind": _kind(clip), "asset_id": _optional_text(clip.asset_id),
-        "sequence_id": _optional_text(clip.sequence_id), "angle_id": _optional_text(clip.angle_id),
-        "template_slot": _optional_text(clip.template_slot), "label": _text(clip.label), "text": _text(clip.text),
-        "enabled": bool(clip.enabled), "timeline_start": _number(start), "duration": _number(length),
-        "timeline_end": _number(end), "source_in": _number(clip.source_in), "source_out": _number(clip.source_out),
+        "id": text(clip.id), "kind": _kind(clip), "asset_id": optional_text(clip.asset_id),
+        "sequence_id": optional_text(clip.sequence_id), "angle_id": optional_text(clip.angle_id),
+        "template_slot": optional_text(clip.template_slot), "label": text(clip.label), "text": text(clip.text),
+        "enabled": bool(clip.enabled), "timeline_start": number(start), "duration": number(length),
+        "timeline_end": number(end), "source_in": number(clip.source_in), "source_out": number(clip.source_out),
         "time_remapping": _time_remapping(clip), "has_speed_curve": bool(clip.has_speed_curve),
-        "transform": _transform(clip), "gain_db": _number(clip.gain_db), "pan": _number(clip.pan),
-        "fade_in": _number(clip.fade_in), "fade_out": _number(clip.fade_out), "graphic": _graphic(clip),
+        "transform": describe_shapes.transform(clip.transform), "gain_db": number(clip.gain_db), "pan": number(clip.pan),
+        "fade_in": number(clip.fade_in), "fade_out": number(clip.fade_out), "graphic": describe_shapes.graphic(clip.graphic),
         "has_keyframes": bool(clip.transform_keyframes or clip.animation),
+        "transform_keyframes": describe_shapes.keyframes(clip.transform_keyframes),
+        "effects": describe_shapes.effects(clip.effects), "audio_effects": describe_shapes.effects(clip.audio_effects),
+        "color_grade": describe_color.color_graph(clip.color_grade),
+        "compositing": describe_shapes.compositing(clip.compositing),
+        "animation": describe_shapes.keyframes(clip.animation),
+        "composition": describe_composition.composition(clip.composition),
     }
 
 
@@ -189,9 +139,11 @@ def _track(track: Track) -> tuple[dict[str, Any], list[float | None], list[bool]
     """La piste décrite, la durée de chacun de ses clips et leur état (pour la durée de la séquence, sans recalculer)."""
     lengths = [_length(clip) for clip in track.clips]
     data = {
-        "id": _text(track.id), "name": _text(track.name), "type": _text(track.type), "locked": bool(track.locked),
+        "id": text(track.id), "name": text(track.name), "type": text(track.type), "locked": bool(track.locked),
         "visible": bool(track.visible), "muted": bool(track.muted), "solo": bool(track.solo),
-        "volume_db": _number(track.volume_db), "pan": _number(track.pan), "audio_role": _text(track.audio_role),
+        "volume_db": number(track.volume_db), "pan": number(track.pan), "audio_role": text(track.audio_role),
+        "bus_id": describe_audio.bus_id(track), "inserts": describe_shapes.effects(track.inserts),
+        "automation": describe_audio.automation(track.automation), "ducking_config": describe_audio.ducking_config(track.ducking_config),
         "clips": [_clip(clip, length) for clip, length in zip(track.clips, lengths)],
     }
     return data, lengths, [bool(clip.enabled) for clip in track.clips]
@@ -213,21 +165,23 @@ def _sequence(sequence: Sequence, active: bool) -> dict[str, Any]:
                 ends.append(float(clip.timeline_start) + length)
     duration = None if unknown_end else (max(ends) if ends else 0.0)
     return {
-        "id": _text(sequence.id), "name": _text(sequence.name), "active": active, "width": _number(sequence.width),
-        "height": _number(sequence.height), "fps": _number(sequence.fps), "duration": _number(duration),
-        "format_source": _optional_text(sequence.format_source),
+        "id": text(sequence.id), "name": text(sequence.name), "active": active, "width": number(sequence.width),
+        "height": number(sequence.height), "fps": number(sequence.fps), "duration": number(duration),
+        "format_source": optional_text(sequence.format_source),
         "tracks": tracks,
         "transitions": [
             {
-                "id": _text(item.id), "from_clip_id": _text(item.from_clip_id), "to_clip_id": _text(item.to_clip_id),
-                "type": _enum(item.type), "duration": _number(item.duration),
+                "id": text(item.id), "from_clip_id": text(item.from_clip_id), "to_clip_id": text(item.to_clip_id),
+                "type": enum(item.type), "duration": number(item.duration),
             }
             for item in sequence.transitions
         ],
         "markers": [
-            {"id": _text(item.id), "time_seconds": _number(item.time_seconds), "name": _text(item.name), "category": _text(item.category)}
+            {"id": text(item.id), "time_seconds": number(item.time_seconds), "name": text(item.name), "category": text(item.category)}
             for item in sequence.markers
         ],
+        "buses": describe_audio.buses(sequence.buses),
+        "ducking_sidechains": describe_audio.sidechains(sequence.ducking_sidechains),
     }
 
 
@@ -257,7 +211,7 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
     return {
         "describe_version": DESCRIBE_VERSION,
         "project": {
-            "name": _text(project.name),
+            "name": text(project.name),
             "width": current["width"] if current else None,
             "height": current["height"] if current else None,
             "fps": current["fps"] if current else None,
@@ -265,6 +219,7 @@ def describe(project: Project, *, check_media: bool = False) -> dict[str, Any]:
             "active_sequence": current["id"] if current else None,
         },
         "media": [_media(asset, check_media) for asset in project.media_assets],
+        "color_presets": describe_color.presets(project.color_presets),
         "sequences": sequences,
         "not_described": list(NOT_DESCRIBED_SECTIONS),
     }

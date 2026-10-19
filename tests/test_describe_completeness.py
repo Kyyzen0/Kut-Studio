@@ -13,7 +13,7 @@ from describe_project import rich_project
 
 from core.scripting.describe import describe
 from core.scripting.describe_coverage import (
-    COVERED_CLASSES, DERIVED, DESCRIBED, EXCLUDED, NOT_DESCRIBED_SECTIONS,
+    COVERED_CLASSES, DERIVED, DESCRIBED, EXCLUDED, NOT_DESCRIBED_SECTIONS, SHAPE_ALIASES,
 )
 from tools import scripting_debt as debt_tool
 
@@ -29,7 +29,8 @@ def _paths(node, prefix: str = "", found: set[str] | None = None) -> set[str]:
         for key, value in node.items():
             path = f"{prefix}.{key}" if prefix else key
             found.add(path)
-            _paths(value, path, found)
+            if key != "params":                   # ``params`` d'un effet : table nom -> nombre, les noms sont ceux du modèle
+                _paths(value, path, found)
     elif isinstance(node, list):
         for item in node:
             _paths(item, prefix + "[]", found)
@@ -69,10 +70,29 @@ def test_the_covered_classes_are_the_model_dataclasses():
     assert all(dataclasses.is_dataclass(cls) for cls in classes.values())
 
 
+def _normalized(path: str) -> str:
+    """Le chemin d'une forme répétée ramené à celui de la forme déclarée (:data:`SHAPE_ALIASES`), jusqu'à ce qu'il n'y ait plus d'écho."""
+    changed = True
+    while changed:
+        changed = False
+        for alias, primary in sorted(SHAPE_ALIASES.items(), key=lambda item: -len(item[0])):
+            if path == alias or path.startswith((alias + ".", alias + "[")):
+                path = primary + path[len(alias):]
+                changed = True
+                break
+    return path
+
+
 def test_every_described_path_exists_in_a_real_output_and_every_output_key_is_declared():
-    """Un champ « décrit » dont la clé n'existe pas serait un mensonge ; une clé émise que personne ne déclare, une dérive."""
-    emitted = _paths(describe(rich_project(), check_media=True))
-    declared = {path for mapping in DESCRIBED.values() for path in mapping.values()}
+    """Un champ « décrit » dont la clé n'existe pas serait un mensonge ; une clé émise que personne ne déclare, une dérive.
+    Les échos d'une forme (:data:`SHAPE_ALIASES`) doivent exister aussi, et leurs clés sont celles de la forme déclarée."""
+    raw = _paths(describe(rich_project(), check_media=True))
+    missing_aliases = sorted(
+        alias for alias in SHAPE_ALIASES if not any(path == alias or path.startswith(alias + ".") for path in raw)
+    )
+    assert not missing_aliases, f"Échos de forme absents de la sortie du projet riche : {missing_aliases}"
+    emitted = {_normalized(path) for path in raw}
+    declared = {_normalized(path) for mapping in DESCRIBED.values() for path in mapping.values()}
     missing = sorted(declared - emitted)
     assert not missing, f"Chemins déclarés décrits mais absents de la sortie du projet riche : {missing}"
     known = declared | set(DERIVED)
@@ -98,20 +118,20 @@ def test_a_new_model_field_is_refused_until_decided(monkeypatch):
     comparison = debt_tool.compare_fields(_debt())
     assert any("colour" in problem for problem in comparison.bad_tables)          # décrit mais inexistant dans le modèle
     monkeypatch.undo()
-    trimmed = {name: section for name, section in _debt().items() if name != "Clip.effects"}
-    assert debt_tool.compare_fields(trimmed).undecided == ["Clip.effects"]
+    trimmed = {name: section for name, section in _debt().items() if name != "Clip.text_style"}
+    assert debt_tool.compare_fields(trimmed).undecided == ["Clip.text_style"]
 
 
 def test_a_described_field_must_leave_the_debt():
-    debt = _debt() | {"Clip.label": "effects"}
+    debt = _debt() | {"Clip.label": "text_style"}
     assert debt_tool.compare_fields(debt).resolved == ["Clip.label"]
-    debt = _debt() | {"Track.armed": "effects"}                                    # exclu : sort aussi de la dette
+    debt = _debt() | {"Track.armed": "text_style"}                                    # exclu : sort aussi de la dette
     assert debt_tool.compare_fields(debt).resolved == ["Track.armed"]
 
 
 def test_a_stale_entry_and_a_bad_section_are_refused():
-    assert debt_tool.compare_fields(_debt() | {"Clip.renamed_away": "effects"}).vanished == ["Clip.renamed_away"]
-    assert debt_tool.compare_fields(_debt() | {"Clip.effects": "n_importe_quoi"}).bad_section == ["Clip.effects"]
+    assert debt_tool.compare_fields(_debt() | {"Clip.renamed_away": "text_style"}).vanished == ["Clip.renamed_away"]
+    assert debt_tool.compare_fields(_debt() | {"Clip.text_style": "n_importe_quoi"}).bad_section == ["Clip.text_style"]
 
 
 def test_a_field_cannot_be_both_described_and_excluded(monkeypatch):

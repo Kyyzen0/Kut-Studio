@@ -40,7 +40,9 @@ ROOT = Path(__file__).resolve().parent.parent
 FIELD_DEBT_PATH = ROOT / "tests" / "data" / "describe_field_debt.json"
 VERB_DEBT_PATH = ROOT / "tests" / "data" / "script_verb_debt.json"
 SCRIPTING_DIR = ROOT / "core" / "scripting"
-_NOT_VERB_MODULES = frozenset({"api", "describe", "describe_coverage"})
+_NOT_VERB_MODULES = frozenset({
+    "api", "describe", "describe_coverage", "describe_values", "describe_shapes", "describe_color", "describe_audio", "describe_composition",
+})
 """Les modules de ``core/scripting/`` qui ne portent pas de verbe (la lecture) : ils ne comptent pas comme référence."""
 
 # --- Verbes ----------------------------------------------------------------------------------------------------------------
@@ -288,13 +290,33 @@ def write_verb_debt(debt: dict[str, str], path: Path = VERB_DEBT_PATH) -> None:
 
 def model_classes() -> dict[str, type]:
     """Les dataclasses dont chaque champ est décidé (noms de :data:`core.scripting.describe_coverage.COVERED_CLASSES`)."""
+    from core.animation import Keyframe
+    from core.audio_automation import AutomationPoint, DuckingConfig, DuckingSidechain, TrackAutomation
+    from core.audio_buses import AudioBus
+    from core.audio_effects_model import AudioEffect
+    from core.color_grading import ColorCurve, ColorCurves, ColorGrade, ColorPreset, LUTResource, Wheel
+    from core.color_nodes import ColorMixer, ColorNode, ColorNodeGraph
+    from core.color_qualifier import Qualifier
+    from core.composition import (
+        Composition, CompositionGraph, EffectsNode, GradeNode, GraphicNode, KeyNode, MaskNode, MediaNode, MergeNode, OutputNode,
+        SolidNode, TransformNode,
+    )
+    from core.compositing import ChromaKey, Compositing, Mask, MaskKeyframe
+    from core.effects_model import ClipEffect
     from core.graphics import GraphicOverlay
+    from core.node_graph import NodeLink
     from core.project_model import Clip, MediaAsset, Marker, Project, Sequence, Track
     from core.time_remapping import TimeRemapping
     from core.transitions import Transition
     from core.visual_effects import ClipTransform
 
-    classes = (Project, MediaAsset, Sequence, Track, Clip, Marker, Transition, TimeRemapping, ClipTransform, GraphicOverlay)
+    classes = (
+        Project, MediaAsset, Sequence, Track, Clip, Marker, Transition, TimeRemapping, ClipTransform, GraphicOverlay,
+        Keyframe, ClipEffect, AudioEffect, AudioBus, TrackAutomation, AutomationPoint, DuckingConfig, DuckingSidechain,
+        ColorGrade, ColorCurves, ColorCurve, Wheel, LUTResource, ColorNodeGraph, ColorNode, ColorMixer, NodeLink, Qualifier,
+        ColorPreset, Mask, MaskKeyframe, Compositing, ChromaKey, Composition, CompositionGraph, MediaNode, GraphicNode, SolidNode,
+        TransformNode, MergeNode, MaskNode, KeyNode, EffectsNode, GradeNode, OutputNode,
+    )
     return {cls.__name__: cls for cls in classes}
 
 

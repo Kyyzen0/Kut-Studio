@@ -36,6 +36,7 @@
       "present": null
     }
   ],
+  "color_presets": [],
   "sequences": [
     {
       "id": "seq-main",
@@ -58,6 +59,12 @@
           "volume_db": 0.0,
           "pan": 0.0,
           "audio_role": "other",
+          "bus_id": null,
+          "inserts": [],
+          "automation": {
+            "points": []
+          },
+          "ducking_config": null,
           "clips": [
             {
               "id": "c1",
@@ -110,7 +117,24 @@
               "fade_in": 0.0,
               "fade_out": 0.5,
               "graphic": null,
-              "has_keyframes": false
+              "has_keyframes": false,
+              "transform_keyframes": [],
+              "effects": [],
+              "audio_effects": [],
+              "color_grade": null,
+              "compositing": {
+                "masks": [],
+                "chroma_key": {
+                  "enabled": false,
+                  "color": "#00FF00",
+                  "tolerance": 0.1,
+                  "softness": 0.05,
+                  "spill_suppression": 0.0
+                },
+                "blend_mode": "normal"
+              },
+              "animation": [],
+              "composition": null
             },
             {
               "id": "c2",
@@ -163,7 +187,24 @@
               "fade_in": 0.5,
               "fade_out": 0.0,
               "graphic": null,
-              "has_keyframes": false
+              "has_keyframes": false,
+              "transform_keyframes": [],
+              "effects": [],
+              "audio_effects": [],
+              "color_grade": null,
+              "compositing": {
+                "masks": [],
+                "chroma_key": {
+                  "enabled": false,
+                  "color": "#00FF00",
+                  "tolerance": 0.1,
+                  "softness": 0.05,
+                  "spill_suppression": 0.0
+                },
+                "blend_mode": "normal"
+              },
+              "animation": [],
+              "composition": null
             }
           ]
         },
@@ -178,6 +219,12 @@
           "volume_db": -3.0,
           "pan": 0.0,
           "audio_role": "other",
+          "bus_id": null,
+          "inserts": [],
+          "automation": {
+            "points": []
+          },
+          "ducking_config": null,
           "clips": [
             {
               "id": "c3",
@@ -230,7 +277,24 @@
               "fade_in": 0.0,
               "fade_out": 0.0,
               "graphic": null,
-              "has_keyframes": false
+              "has_keyframes": false,
+              "transform_keyframes": [],
+              "effects": [],
+              "audio_effects": [],
+              "color_grade": null,
+              "compositing": {
+                "masks": [],
+                "chroma_key": {
+                  "enabled": false,
+                  "color": "#00FF00",
+                  "tolerance": 0.1,
+                  "softness": 0.05,
+                  "spill_suppression": 0.0
+                },
+                "blend_mode": "normal"
+              },
+              "animation": [],
+              "composition": null
             }
           ]
         }
@@ -251,19 +315,13 @@
           "name": "Idée",
           "category": "standard"
         }
-      ]
+      ],
+      "buses": [],
+      "ducking_sidechains": []
     }
   ],
   "not_described": [
-    "audio_automation",
-    "audio_buses",
-    "audio_effects",
-    "color",
-    "compositing",
-    "composition",
-    "effects",
     "graphic_style",
-    "keyframes",
     "library",
     "mograph",
     "multicam",
