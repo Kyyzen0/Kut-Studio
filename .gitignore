@@ -38,3 +38,6 @@ release-notes.md
 *.keychain-db
 kut-session-threads-*.txt
 junit-*.xml
+
+# Spike Kut-3D : images et shaders générés.
+experiments/kut3d-spike/out/
