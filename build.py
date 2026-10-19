@@ -82,6 +82,11 @@ def build_command(
     assets = ROOT / "assets"
     if assets.is_dir():
         command.extend(["--add-data", f"{assets}{separator}assets"])
+    # Kut-3D (rendu 3D) : importé en différé, donc invisible à l'analyse de PyInstaller ; ses shaders `.qsb` sont des
+    # données lues à côté du module (`kut3d/gpu/shader_files.py`) : même chemin relatif dans l'application.
+    command.extend(["--collect-submodules", "kut3d"])
+    shaders = ROOT / "kut3d" / "gpu" / "shaders"
+    command.extend(["--add-data", f"{shaders}{separator}kut3d/gpu/shaders"])
     icon = _icon_for(platform_name)
     if icon is not None:
         command.extend(["--icon", str(icon)])

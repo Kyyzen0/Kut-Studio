@@ -225,7 +225,7 @@ def test_a_hanging_worker_is_killed_at_the_timeout(
     monkeypatch.setattr(
         availability,
         "_worker_command",
-        lambda: [sys.executable, "-c", "import time; time.sleep(60)"],
+        lambda out_path=None: [sys.executable, "-c", "import time; time.sleep(60)"],
     )
     result = availability.probe_qrhi(platform="p", timeout=0.5)
     assert not result.ok and "n'a pas répondu" in result.reason and result.seconds < 20
@@ -237,15 +237,19 @@ def test_a_crashing_worker_does_not_take_the_caller_down(
 ) -> None:
     monkeypatch.delenv(availability.ENV_SWITCH, raising=False)
     monkeypatch.setattr(availability, "_pyside_installed", lambda: True)
-    crash = "import os, signal; os.kill(os.getpid(), signal.SIGSEGV)"
+    # SIGKILL et non SIGSEGV : un vrai plantage fait écrire un rapport par macOS et ouvre la fenêtre « Python s'est
+    # arrêté de façon inattendue » à chaque lancement des tests ; la mort par signal est la même pour la sonde.
+    crash = "import os, signal; os.kill(os.getpid(), signal.SIGKILL)"
     monkeypatch.setattr(
-        availability, "_worker_command", lambda: [sys.executable, "-c", crash]
+        availability,
+        "_worker_command",
+        lambda out_path=None: [sys.executable, "-c", crash],
     )
     result = availability.probe_qrhi(platform="p")
     assert not result.ok and "signal" in result.reason
 
 
-def test_environment_switch_and_frozen_application_disable_the_gpu_engine(
+def test_environment_switch_disables_the_gpu_engine_and_frozen_application_probes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = _patch_run(monkeypatch, _Run(stdout='{"ok": true, "backend": "Metal"}'))
@@ -253,9 +257,10 @@ def test_environment_switch_and_frozen_application_disable_the_gpu_engine(
     off = availability.probe_qrhi(platform="p")
     assert not off.ok and availability.ENV_SWITCH in off.reason and run.calls == 0
     monkeypatch.delenv(availability.ENV_SWITCH)
+    # Gelée, la sonde n'est plus refusée : elle part en sous-processus (commande testée dans test_kut3d_frozen.py).
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     frozen = availability.probe_qrhi(platform="q")
-    assert not frozen.ok and "empaquetée" in frozen.reason and run.calls == 0
+    assert frozen.ok and run.calls == 1
 
 
 def test_platform_resolution_never_imports_qt(monkeypatch: pytest.MonkeyPatch) -> None:

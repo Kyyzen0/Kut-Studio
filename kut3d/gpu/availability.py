@@ -12,8 +12,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,7 @@ from kut3d.errors import RenderBackendUnavailable, RenderError
 from kut3d.gpu.limits import PROBE_TIMEOUT_S
 
 ENV_SWITCH = "KUT3D_GPU"  # "off" : désactive le moteur GPU (diagnostic, CI)
+MAX_RESULT_BYTES = 4096  # le fichier de résultat de la sonde tient en quelques centaines d'octets : au-delà, refusé
 NATIVE = "native"  # plateforme Qt « par défaut du système » (cocoa sur macOS) : QT_QPA_PLATFORM retirée du fils
 
 
@@ -64,8 +67,28 @@ def _worker_env(platform: str) -> dict[str, str]:
     return env
 
 
-def _worker_command() -> list[str]:
-    return [sys.executable, "-m", "kut3d.gpu.probe_worker"]
+def _worker_command(out_path: str | None = None) -> list[str]:
+    """Commande de la sonde ; `out_path` : fichier où elle écrit son résultat (indispensable gelé, stdout y valant None)."""
+    from kut3d.gpu.probe_worker import OUT_FLAG, PROBE_FLAG  # différé : `import kut3d` ne charge pas la sonde
+
+    extra = [OUT_FLAG, out_path] if out_path else []
+    if getattr(sys, "frozen", False):
+        # Même forme que `core.process_supervisor.helper_command(PROBE_FLAG, ...)` (kut3d n'importe pas core ; un test
+        # vérifie l'égalité) : `sys.executable` est l'application elle-même.
+        return [sys.executable, PROBE_FLAG, *extra]
+    return [sys.executable, "-m", "kut3d.gpu.probe_worker", *extra]
+
+
+def _read_result_file(path: str) -> dict[str, object] | None:
+    """Contenu du fichier de résultat s'il est borné, JSON, objet : jamais d'exception, jamais de confiance aveugle."""
+    try:
+        if os.path.getsize(path) > MAX_RESULT_BYTES:
+            return None
+        with open(path, encoding="utf-8") as handle:
+            data = json.loads(handle.read(MAX_RESULT_BYTES + 1))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _pyside_installed() -> bool:
@@ -87,44 +110,56 @@ def _run_probe(platform: str, timeout: float) -> ProbeResult:
         return fail(
             f"moteur GPU désactivé par la variable d'environnement {ENV_SWITCH}."
         )
-    if getattr(sys, "frozen", False):
-        return fail(
-            "application empaquetée : le moteur GPU de Kut-3D n'est pas encore pris en charge (phase 3)."
-        )
     if not _pyside_installed():
         return fail("PySide6 n'est pas installé.")
+    # Le résultat passe par un fichier d'un dossier temporaire privé (mkdtemp : droits 0700), pas par stdout.
+    # Supprimé dans tous les cas (délai, plantage, échec).
     try:
-        done = subprocess.run(
-            _worker_command(),
-            env=_worker_env(platform),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return fail(f"la sonde GPU n'a pas répondu en {timeout:g} s (pilote bloqué ?).")
+        work = tempfile.mkdtemp(prefix="kut3d-probe-")
     except OSError as error:
-        return fail(f"impossible de lancer la sonde GPU : {error}")
-    last = next(
-        (ln for ln in reversed(done.stdout.splitlines()) if ln.startswith("{")), ""
-    )
+        return fail(f"impossible de créer le dossier de la sonde GPU : {error}")
+    out_file = os.path.join(work, "result.json")
     try:
-        data = json.loads(last)
-    except ValueError:
-        data = None
-    qt_platform = str(data.get("platform", "")) if isinstance(data, dict) else ""
+        try:
+            done = subprocess.run(
+                _worker_command(out_file),
+                env=_worker_env(platform),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return fail(
+                f"la sonde GPU n'a pas répondu en {timeout:g} s (pilote bloqué ?)."
+            )
+        except OSError as error:
+            return fail(f"impossible de lancer la sonde GPU : {error}")
+        data = _read_result_file(out_file)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    if data is None:  # repli : ligne JSON de stdout (sonde d'une version sans fichier de résultat)
+        last = next(
+            (ln for ln in reversed((done.stdout or "").splitlines()) if ln.startswith("{")),
+            "",
+        )
+        try:
+            parsed = json.loads(last[:MAX_RESULT_BYTES])
+        except ValueError:
+            parsed = None
+        data = parsed if isinstance(parsed, dict) else None
+    qt_platform = str(data.get("platform", ""))[:60] if isinstance(data, dict) else ""
     if done.returncode == 0 and isinstance(data, dict) and data.get("ok") is True:
         return ProbeResult(
             True,
             "",
             platform,
-            str(data.get("backend", "")),
+            str(data.get("backend", ""))[:60],
             time.perf_counter() - started,
             qt_platform,
         )
     if isinstance(data, dict) and data.get("reason"):
-        reason = str(data["reason"])
+        reason = str(data["reason"])[:300]
     elif done.returncode < 0:
         tail = [ln for ln in done.stderr.strip().splitlines() if ln.strip()]
         detail = f" : {tail[-1][:200]}" if tail else ""
