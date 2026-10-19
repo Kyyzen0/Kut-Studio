@@ -309,3 +309,28 @@ def test_the_checks_come_before_the_first_modification_even_without_the_session_
     with pytest.raises(ValueError, match="verrouillée"):
         VERBS["move_clips"].build({"placements": [{"clip": "a", "track": "V1", "at": 9.0}, {"clip": "d", "track": "V2", "at": 9.0}]})(locked)
     assert _state(locked) == before
+
+
+def test_locked_dependants_are_detected_before_the_deletion_even_without_the_session():
+    """Parent, groupe, source de suivi d'un clip verrouillé (même sur une autre séquence) : refus AVANT la suppression réelle."""
+    def child(locked_track: bool, locked_layer: bool, key: str) -> Project:
+        project = _project()
+        layer = add_graphic_clip(project, GraphicType.TEXT, timeline_start=0.0, duration=2.0, clip_id="g")
+        layer.graphic = replace(layer.graphic, locked=locked_layer, **{key: "a"})
+        next(t for t in project.tracks if t.type == "graphics").locked = locked_track
+        return project
+
+    for project in (child(False, True, "parent_id"), child(False, True, "group_id"), child(True, False, "parent_id")):
+        before = _state(project)
+        with pytest.raises(ValueError, match="dépend"):
+            VERBS["delete_clips"].build({"clips": ["a", "b"]})(project)
+        assert _state(project) == before, "la source n'est pas supprimée"
+
+    other = _project()
+    seq = Sequence("seq-b", "B", width=320, height=180, fps=30.0, tracks=[Track("V1", "V1", "video", locked=True, clips=[Clip("f", "m", "V1", 0.0, 0.0, 1.0)])])
+    seq.tracks[0].clips[0].tracking = ClipTracking(links=(TrackLink(source_clip_id="a", tracker_ids=("t1",), continuation_ids=("b",)),))
+    other.sequences.append(seq)
+    before = _state(other)
+    with pytest.raises(ValueError, match="dépend"):
+        VERBS["delete_clips"].build({"clips": ["a"]})(other)
+    assert _state(other) == before

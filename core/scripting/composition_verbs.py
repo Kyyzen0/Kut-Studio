@@ -68,10 +68,43 @@ def _require_nothing_dropped(project: Project, ids: list[str]) -> None:
             )
 
 
+def _require_state_kept(project: Project, ids: list[str]) -> None:
+    """La composition n'a ni le drapeau « désactivé » des clips, ni la visibilité, le muet ou le solo de leurs pistes, ni la visibilité d'un calque :
+    ce qui était masqué ou muet réapparaîtrait. Le modèle ne le conserve pas ; un script reçoit la conversion refusée."""
+    solo: dict[str, set[str]] = {}
+    for track in project.tracks:
+        if track.solo:
+            solo.setdefault(track.type, set()).add(track.id)
+    chosen = []
+    for clip_id in ids:
+        clip = find_clip(project, clip_id)
+        track = next(item for item in project.tracks if any(other.id == clip_id for other in item.clips))
+        chosen.append((clip, track))
+        what = None
+        if not clip.enabled:
+            what = "est désactivé"
+        elif not track.visible:
+            what = f"est sur la piste masquée '{track.id}'"
+        elif track.type == "video" and track.muted:
+            what = f"est sur la piste muette '{track.id}'"
+        elif getattr(clip.graphic, "visible", True) is False:
+            what = "est un calque masqué"
+        elif track.type in solo and track.id not in solo[track.type]:
+            what = f"est masqué par le solo d'une autre piste ({track.type})"
+        if what:
+            raise ValueError(f"Le clip '{clip_id}' {what} : la composition ne garde pas cet état, réactivez-le ou retirez-le de la liste.")
+    videos = [track for _clip, track in chosen if track.type == "video"]
+    if videos:
+        host = next(track for track in project.tracks if track in videos)           # la plus basse (ordre des pistes)
+        if "video" in solo and host.id not in solo["video"]:
+            raise ValueError(f"La piste hôte '{host.id}' n'est pas en solo alors qu'une autre piste vidéo l'est : la composition serait masquée.")
+
+
 def _convert_to_composition(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         ids = editable_clips(project, a["clips"], track_types=("video", "graphics"))
         _require_nothing_dropped(project, ids)
+        _require_state_kept(project, ids)
         return convert_to_composition(project, ids, a.get("name"), clip_id=a.get("id")).clip
 
     return operation

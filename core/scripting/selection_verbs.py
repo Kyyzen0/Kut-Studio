@@ -28,7 +28,7 @@ from ..project_model import Project
 from ..timeline_editing import ClipPlacement, delete_clips, move_clips
 from .auto_rules import MAX_LISTED_CLIPS, editable_clips
 from .edit_verbs import _require_editable_followers
-from .selection_rules import frozen_clips, require_untouched_clips
+from .selection_rules import frozen_clips, require_dependants_editable, require_untouched_clips
 from .verbs import Kind, Operation, Param, Verb, _AT, _CLIP, _TRACK, _owner_track, _pick, _require_unlocked
 
 _CLIPS = Param("clips", Kind.LIST, f"Les clips, par leur identifiant (1 à {MAX_LISTED_CLIPS}, sans doublon).", minimum=1,
@@ -47,6 +47,7 @@ def _delete_clips(a: Mapping[str, Any]) -> Operation:
         if ripple:
             for clip_id in ids:
                 _require_editable_followers(project, clip_id, tracks=project.tracks)
+        require_dependants_editable(project, ids)
         frozen = frozen_clips(project)
         delete_clips(project, ids, ripple=ripple)
         require_untouched_clips(project, frozen)

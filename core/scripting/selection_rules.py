@@ -33,4 +33,22 @@ def require_untouched_clips(project: Project, frozen: dict[str, Clip]) -> None:
             raise ValueError(f"Le clip verrouillé '{clip_id}' serait modifié par cette opération : refusée.")
 
 
-__all__ = ["frozen_clips", "require_untouched_clips"]
+def require_dependants_editable(project: Project, doomed: list[str]) -> None:
+    """Refuse, AVANT toute suppression, si l'un des clips ``doomed`` est le parent, le groupe ou la source de suivi d'un clip verrouillé.
+
+    Supprimer un clip efface ces références chez les tiers (``_release_clip_references``) : un tiers verrouillé (piste ou calque), sur
+    n'importe quelle séquence, serait modifié. Le filet :func:`require_untouched_clips` reste une seconde protection."""
+    gone = set(doomed)
+    for track in project.all_tracks():
+        for clip in track.clips:
+            graphic = getattr(clip, "graphic", None)
+            if not (track.locked or bool(getattr(graphic, "locked", False))) or clip.id in gone:
+                continue
+            tracking = getattr(clip, "tracking", None)
+            references = graphic is not None and gone & {getattr(graphic, "parent_id", ""), getattr(graphic, "group_id", "")}
+            follows = tracking is not None and any(link.continuation_ids and gone & set(link.source_ids) for link in tracking.links)
+            if references or follows:
+                raise ValueError(f"Le clip verrouillé '{clip.id}' dépend d'un clip supprimé (parent, groupe ou suivi) : refusé.")
+
+
+__all__ = ["frozen_clips", "require_dependants_editable", "require_untouched_clips"]

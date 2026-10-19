@@ -314,3 +314,47 @@ def test_convert_refuses_a_taken_or_malformed_id_before_touching_anything():
 def test_convert_can_reuse_the_id_of_a_converted_clip_only_if_it_is_free():
     """Un identifiant déjà pris reste refusé même s'il est celui d'un clip qui disparaît avec la conversion (règle simple et stricte)."""
     assert "existe déjà" in _refused(_project(), _op("convert_to_composition", clips=["c"], id="c")).error
+
+
+def _direct(project: Project, **args):
+    """Appelle l'opération du verbe SANS la session : le projet doit rester strictement inchangé après le refus."""
+    before = _state(project)
+    with pytest.raises(ValueError) as caught:
+        VERBS["convert_to_composition"].build(args)(project)
+    assert _state(project) == before
+    return str(caught.value)
+
+
+def test_convert_refuses_what_the_composition_would_reveal_or_unmute():
+    cases = {
+        "désactivé": lambda p: setattr(find_clip(p, "a"), "enabled", False),
+        "masquée": lambda p: setattr(p.tracks[0], "visible", False),
+        "muette": lambda p: setattr(p.tracks[0], "muted", True),
+        "calque masqué": lambda p: setattr(find_clip(p, "g"), "graphic", __import__("dataclasses").replace(find_clip(p, "g").graphic, visible=False)),
+        "solo": lambda p: setattr(p.tracks[1], "solo", True),                 # a (V1) est masqué par le solo de V2
+    }
+    for name, change in cases.items():
+        project = _project()
+        change(project)
+        message = _direct(project, clips=["a", "g"], name=None)
+        assert "composition" in message, name
+        assert _refused_script(change, ["a", "g"]), name
+
+
+def _refused_script(change, clips) -> bool:
+    project = _project()
+    change(project)
+    return not _apply(project, _op("convert_to_composition", clips=clips))[1].ok
+
+
+def test_convert_refuses_a_host_track_that_the_solo_would_hide():
+    project = _project()
+    project.tracks[1].solo = True                       # V2 en solo ; la sélection a c (V2) et a (V1) : l'hôte V1 ne l'est pas
+    assert "solo" in _direct(project, clips=["a", "c"])
+    only_solo = _project()
+    only_solo.tracks[1].solo = True
+    assert _apply(only_solo, _op("convert_to_composition", clips=["c"], id="solo_ok"))[1].ok, "c est visible et son hôte (V2) aussi"
+
+
+def test_convert_still_accepts_enabled_visible_clips():
+    assert _apply(_project(), _op("convert_to_composition", clips=["a", "c", "g"], id="ok"))[1].ok
