@@ -92,6 +92,18 @@ def _track_number(value: object, maximum: int, label: str = "track") -> int:
     return value
 
 
+def _check_video_background(path: Path) -> None:
+    """Refuse tout de suite un fond « vidéo » illisible, audio seul ou sans flux vidéo (sinon l'échec viendrait à project())."""
+    from .media_probe import MediaProbeError, probe_media
+
+    try:
+        asset = probe_media(str(path))
+    except MediaProbeError as error:
+        raise FilmError(f"Fond illisible : {short(str(error), 300)}") from error
+    if asset.media_type != "video":
+        raise FilmError(f"Le fond {short(path.name, 80)} n'est pas une vidéo ni une image (type {asset.media_type!r}).")
+
+
 class Film:
     """Un film en construction. Le projet est reconstruit à chaque :meth:`save` / :meth:`export` à partir de ce qui a été posé."""
 
@@ -119,6 +131,8 @@ class Film:
     def background(self, value: Any) -> None:
         """Fixe le fond (piste V1) : une couleur RVB(A) 0..1, ou le chemin d'une image ou d'une vidéo. Remplace le précédent."""
         spec = parse_background(value)
+        if spec.path is not None and not spec.is_image:
+            _check_video_background(spec.path)
         if any(item.track == 1 for item in self._placements):
             raise FilmError("La piste 1 porte déjà un plan : le fond l'occupe, posez les plans à partir de la piste 2.")
         self._background = spec
@@ -278,7 +292,7 @@ class Film:
                 probed = probe_media(str(background))
             except MediaProbeError as error:
                 raise FilmError(short(str(error), 300)) from error
-            if probed.duration + 1.0 / self.fps < total:
+            if probed.duration < total - _TOLERANCE:         # aucune tolérance : un clip plus court laisserait un trou sur V1
                 raise FilmError(f"Le fond dure {probed.duration:g} s, moins que le film ({total:g} s).")
             asset = add_asset("background", probed)
             asset.name = "Fond"

@@ -26,7 +26,7 @@ Exemple complet, sans fichier externe : `.venv/bin/python examples/kut3d_hello_f
 
 - `Film(path, *, size=(1920, 1080), fps=24.0)` : `path` finit par `.kut`. `size` : deux entiers **pairs** (jamais arrondis en silence).
 - `background(couleur | chemin)` : couleur RVB (ou RVBA avec alpha 1), image (recadrée pour remplir le cadre) ou vidéo (au moins
-  aussi longue que le film). Le fond est fabriqué à l'enregistrement, à la durée exacte du film.
+  aussi longue que le film, sans aucune tolérance ; un fichier audio seul, illisible ou sans flux vidéo est refusé dès l'appel). Le fond est fabriqué à l'enregistrement, à la durée exacte du film.
 - `render_shot(scene_or_fn, *, duration, name, samples=1, backend="auto", keep_frames=False, overwrite=False) -> Shot` :
   `scene_or_fn` est une `Scene` (ses clips avancent) ou une fonction `t -> Scene` ; `Shot` est immuable (`name`, `path`,
   `duration` = `frames / fps`, `frames`, `size`, `fps`). Un nom (lettres, chiffres, `_`) déjà pris est refusé sans `overwrite=True`.

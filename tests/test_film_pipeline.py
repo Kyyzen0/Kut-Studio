@@ -225,3 +225,66 @@ def test_the_hello_film_example_runs_end_to_end(tmp_path):
     assert out == tmp_path / "hello.mp4" and (tmp_path / "hello.kut").is_file()
     assert np.abs(frame[1, 1].astype(int) - (13, 15, 31)).max() <= 8          # le fond
     assert frame[32, 48].max() > 80                                            # le cube, au centre
+
+
+def make_video(path: Path, *, fps: float, frames: int) -> Path:
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=red:s=64x64:r={fps:g}", "-frames:v", str(frames),
+         "-pix_fmt", "yuv420p", str(path)], check=True,
+    )
+    return path
+
+
+def last_frame(path: Path, size: tuple[int, int]) -> np.ndarray:
+    out = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True,
+    )
+    frames = np.frombuffer(out.stdout, np.uint8).reshape(-1, size[1], size[0], 3)
+    return frames[-1]
+
+
+def test_video_background_half_a_frame_too_short_is_refused(tmp_path):
+    """Un fond plus court que le film, même d'une demi-image, laisserait la dernière image sans fond : refusé."""
+    short = make_video(tmp_path / "presque.mp4", fps=12.0, frames=11)            # 11/12 s, le film dure 1 s (6 i/s : ½ image de moins)
+    film = make_film(tmp_path)
+    film.background(short)
+    film.place(film.render_shot(quad_scene(), duration=1.0, name="plan1", backend="numpy"))
+    with pytest.raises(FilmError, match="Le fond dure"):
+        film.save()
+
+
+def test_fabricated_background_is_never_shorter_than_the_film(tmp_path):
+    """Le fond fabriqué par Film n'est jamais refusé à tort (durées non entières, cadences non entières)."""
+    for fps, seconds in ((6.0, 1.0), (24.0, 0.5), (29.97, 1.0), (23.976, 0.75)):
+        film = make_film(tmp_path, fps=fps)
+        film.background(BLUE)
+        film.place(film.render_shot(quad_scene(), duration=seconds, name=f"p{int(fps)}", backend="numpy"))
+        (back,) = [c for t in film.project().tracks if t.id == "V1" for c in t.clips]
+        assert back.source_out >= film.duration - 1e-6
+        assert back.source_out == pytest.approx(film.duration, abs=1e-3)
+
+
+def test_exact_length_video_background_shows_in_the_last_frame(tmp_path):
+    exact = make_video(tmp_path / "exact.mp4", fps=FPS, frames=6)
+    film = make_film(tmp_path)
+    film.background(exact)
+    film.place(film.render_shot(quad_scene(), duration=1.0, name="plan1", backend="numpy"))
+    out = film.export(tmp_path / "out" / "film.mp4")
+    corner = last_frame(out, SIZE)[3, 3].astype(int)
+    assert corner[0] > 150 and corner[1] < 90 and corner[2] < 90, corner        # rouge du fond, pas le noir du moteur
+
+
+def test_audio_unreadable_or_video_less_background_is_refused_at_the_call(tmp_path):
+    film = make_film(tmp_path)
+    wav = write_wav(tmp_path / "x.wav")
+    with pytest.raises(FilmError, match="vidéo"):
+        film.background(wav)
+    garbage = tmp_path / "casse.mp4"
+    garbage.write_bytes(b"pas une video" * 1000)
+    with pytest.raises(FilmError):
+        film.background(garbage)
+    audio_only = tmp_path / "son.m4a"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), str(audio_only)], check=True)
+    with pytest.raises(FilmError, match="vidéo"):
+        film.background(audio_only)
+    assert film._background is None                                             # rien n'a été retenu
