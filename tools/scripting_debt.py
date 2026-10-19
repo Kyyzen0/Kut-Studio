@@ -130,6 +130,8 @@ REASONS: dict[str, str] = {
     "interface seulement": "Geste de l'interface (sélection, presse-papiers, aimantation, aperçu) sans équivalent utile dans un script.",
     "interface seulement : persistance": "Écrit hors du projet (bibliothèque de presets de l'utilisateur, dans sa configuration) : une frontière de "
                                          "persistance qu'un script ne franchit pas (ADR-0005, décision 5 : un script ne lit ni n'écrit que le projet qu'on lui donne).",
+    "interface seulement : analyse": "Applique le résultat d'une analyse de média (corrélation audio, timecode) avec sa méthode, son statut et sa fiabilité : "
+                                     "un script n'analyse rien (ADR-0005) et ne peut pas se faire passer pour une mesure ; il pose des décalages à la main.",
     "à faire : montage": "Édition de la timeline qui aura un verbe.",
     "à faire : vitesse": "Vitesse et remappage : verbes à venir.",
     "à faire : calques": "Calques graphiques : verbes à venir.",

@@ -598,6 +598,8 @@ def create_multicam_from_clips(
     names: Mapping[str, str] | None = None,
     outcomes: Mapping[str, SyncOutcome] | None = None,
     audio: MulticamAudio | None = None,
+    sequence_id: str | None = None,
+    segment_id: str | None = None,
 ) -> tuple[Sequence, Clip]:
     """Transforme des clips de la timeline en une source Multicam et les remplace par **un** segment.
 
@@ -606,7 +608,8 @@ def create_multicam_from_clips(
     clip ; ``outcomes`` : résultat de synchronisation par clip (un décalage mesuré remplace la position, une mesure échouée
     garde la position et note l'échec) ; ``audio`` : politique audio, sinon celle de :func:`suggest_audio_policy`. Les
     clips d'origine sont retirés et un segment unique, sur l'angle 1, occupe la piste vidéo la plus basse de la sélection
-    à la plus petite position. Rien n'est modifié si l'opération est refusée.
+    à la plus petite position. Rien n'est modifié si l'opération est refusée. ``sequence_id`` / ``segment_id`` : identifiants imposés
+    de la source et du segment (scripts, voir :mod:`core.object_ids`) ; ``None`` les génère comme avant (l'interface ne les passe pas).
     """
     from .timeline_operations import _find_track_for_clip
 
@@ -656,7 +659,9 @@ def create_multicam_from_clips(
             sync_status=outcome.status if outcome is not None else SyncStatus.NONE,
             sync_confidence=outcome.confidence if outcome is not None else None,
         ))
-    sequence = create_multicam_source(project, specs, name=name, sync_method=sync_method, audio=audio)
+    sequence = create_multicam_source(
+        project, specs, name=name, sync_method=sync_method, audio=audio, sequence_id=sequence_id,
+    )
     video_tracks = [track for track, _clip in found if track.type == "video"]
     host = video_tracks[0] if video_tracks else found[0][0]
     for candidate in video_tracks[1:]:
@@ -667,7 +672,7 @@ def create_multicam_from_clips(
         track.clips = [item for item in track.clips if item.id != clip.id]
     first_angle = sequence.multicam.angles[0].id if sequence.multicam is not None else ""
     try:
-        segment = insert_multicam_clip(project, sequence.id, host.id, start, angle_id=first_angle)
+        segment = insert_multicam_clip(project, sequence.id, host.id, start, angle_id=first_angle, clip_id=segment_id)
     except MulticamError:
         # Rétablit les clips retirés : l'opération est atomique.
         for track, clip in found:
