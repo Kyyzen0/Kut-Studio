@@ -54,6 +54,14 @@ def _time_clip(project: Project, selector: str) -> str:
     return _editable_clip(project, selector, track_types=_TRACKS)
 
 
+def _live_clip(project: Project, selector: str, verb: str) -> str:
+    """Un clip éditable qui n'est pas figé : l'interface désactive ces réglages pour un arrêt sur image, le modèle les stockerait sans effet."""
+    clip_id = _time_clip(project, selector)
+    if find_clip(project, clip_id).time_remapping.freeze_mode == FreezeFrameMode.FREEZE:
+        raise ValueError(f"{verb} : le clip '{clip_id}' est figé ; retire l'image figée d'abord (remove_clip_freeze_frame).")
+    return clip_id
+
+
 def _mode(a: Mapping[str, Any]) -> RippleMode:
     return RippleMode(a.get("ripple", RippleMode.SOURCE.value))
 
@@ -70,11 +78,11 @@ def _speed_point(project: Project, clip_id: str, at: float) -> str:
 
 
 def _set_clip_speed(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_speed(p, _time_clip(p, a["clip"]), float(a["speed"]))
+    return lambda p: set_clip_speed(p, _live_clip(p, a["clip"], "set_clip_speed"), float(a["speed"]))
 
 
 def _set_clip_reverse(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_reverse(p, _time_clip(p, a["clip"]), bool(a["reverse"]))
+    return lambda p: set_clip_reverse(p, _live_clip(p, a["clip"], "set_clip_reverse"), bool(a["reverse"]))
 
 
 def _set_clip_freeze_frame(a: Mapping[str, Any]) -> Operation:
@@ -201,11 +209,11 @@ def _set_clip_interpolation(a: Mapping[str, Any]) -> Operation:
 
 
 def _set_clip_preserve_pitch(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_preserve_pitch(p, _time_clip(p, a["clip"]), bool(a["enabled"]))
+    return lambda p: set_clip_preserve_pitch(p, _live_clip(p, a["clip"], "set_clip_preserve_pitch"), bool(a["enabled"]))
 
 
 def _set_clip_remap_audio(a: Mapping[str, Any]) -> Operation:
-    return lambda p: set_clip_remap_audio(p, _time_clip(p, a["clip"]), bool(a["enabled"]))
+    return lambda p: set_clip_remap_audio(p, _live_clip(p, a["clip"], "set_clip_remap_audio"), bool(a["enabled"]))
 
 
 TIME_VERBS: tuple[Verb, ...] = (

@@ -431,6 +431,7 @@ Ces verbes appellent les fonctions que l'inspecteur de vitesse, le menu « Vites
   ralenti peut en recouvrir un autre, comme dans l'interface.
 - `insert_hold` aligne dans l'interface l'instant sur une image de la timeline ; le script doit déjà donner un instant sur une image
   (le message donne le plus proche) plutôt que de le voir déplacer.
+- `set_clip_speed`, `set_clip_reverse`, `set_clip_preserve_pitch` et `set_clip_remap_audio` sont refusés sur un clip figé (l'interface les désactive ; la valeur serait jetée à la levée du gel) ; `set_clip_freeze_frame` reste permis sur un clip figé, comme dans l'interface.
 - `remove_clip_freeze_frame` et `set_clip_freeze_duration` ne s'appliquent qu'à un clip figé : le modèle remettrait sinon à zéro la vitesse
   et le sens d'un clip qui n'est pas figé.
 

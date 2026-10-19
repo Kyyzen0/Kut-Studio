@@ -472,3 +472,17 @@ def test_a_slowed_clip_may_overlap_its_neighbour_like_in_the_interface():
     project = _parity(_project, _op("set_clip_speed", clip="a", speed=0.1), lambda p: set_clip_speed(p, "a", 0.1))
     first, second = find_clip(project, "a"), find_clip(project, "b")
     assert first.timeline_start + first.duration > second.timeline_start
+
+
+@pytest.mark.parametrize("operation", [
+    _op("set_clip_speed", clip="a", speed=2.0), _op("set_clip_reverse", clip="a", reverse=True),
+    _op("set_clip_preserve_pitch", clip="a", enabled=False), _op("set_clip_remap_audio", clip="a", enabled=False),
+], ids=lambda item: item["op"])
+def test_settings_the_interface_disables_are_refused_on_a_frozen_clip(operation):
+    report = _refused(_frozen(), operation)
+    assert "figé" in str(report.error)
+    _refused(_frozen(), operation, _op("set_clip_speed", clip="c", speed=2.0))      # atomique : l'opération valide qui suit n'est pas gardée
+
+
+def test_a_frozen_clip_can_be_frozen_again_like_in_the_interface():
+    _parity(_frozen, _op("set_clip_freeze_frame", clip="a", source_time=1.0, duration=2.0), lambda p: set_clip_freeze_frame(p, "a", 1.0, 2.0))
