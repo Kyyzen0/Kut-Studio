@@ -584,8 +584,10 @@ def prepare_graphics_streams(plan, width: int, height: int, fps) -> bool:
     """
     try:
         from .export_engine import ExportEngine
+        from .scene3d import strict_rendering
 
-        ExportEngine._build_filter_complex(plan, width, height, fps, None)
+        with strict_rendering():              # une scène 3D qui échoue n'écrit pas d'image vide dans le cache de l'export
+            ExportEngine._build_filter_complex(plan, width, height, fps, None)
         return True
     except Exception:
         LOGGER.debug("Graphe d'export non construit : flux motion graphics non préparés", exc_info=True)

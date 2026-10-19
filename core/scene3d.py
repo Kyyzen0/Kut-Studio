@@ -13,6 +13,9 @@ boîte du calque ; :func:`draw_scene` la dessine comme une image dans le rastér
 images clés, effets, masques et fusion s'appliquent donc comme à un calque image). Une scène sans animation vaut toujours
 l'instant 0 (:func:`scene_time_at`) : ses images identiques se rendent UNE fois. Coût : ≈ 550 ms par image en 720p (numpy).
 
+Politique d'erreur : **tolérant à l'écran** (:func:`draw_scene` laisse la boîte vide et journalise), **strict à l'export**
+(:func:`strict_rendering` fait lever :func:`draw_scene` ; :mod:`core.scene3d_check` éprouve les scènes avant l'export).
+
 ``import core.scene3d`` n'importe pas ``kut3d`` (ni numpy, ni Qt) : tout se charge à l'appel. Les fonctions de lecture n'ouvrent
 aucune fenêtre ; seul :func:`scene_image` appelle le moteur de rendu.
 """
@@ -24,6 +27,9 @@ import logging
 import os
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +80,10 @@ _IMAGES_LIMIT = 2
 _SCENES: OrderedDict[str, tuple[str, Any, bool]] = OrderedDict()
 _IMAGES: OrderedDict[tuple, Any] = OrderedDict()
 _CACHE_LOCK = threading.Lock()
+
+_STRICT: ContextVar[bool] = ContextVar("kut_scene3d_strict", default=False)
+_FAILED: set[tuple] = set()
+_FAILED_LIMIT = 256
 
 
 class Scene3DError(ValueError):
@@ -229,6 +239,7 @@ def clear_signature_cache() -> None:
     with _CACHE_LOCK:
         _SCENES.clear()
         _IMAGES.clear()
+        _FAILED.clear()
 
 
 # --- Scène chargée (mémoire bornée, revalidée par la signature) -------------------------------------------------------------
@@ -339,10 +350,13 @@ def render_identity(graphic: Any, box: tuple[float, float], mode: str = MODE_EXA
     Entre dans la clé d'image (``layer_key`` / ``content_key``) : un fichier modifié (le ``.kut3d``, un modèle, une texture, un
     ``.mtl``) renomme les images du cache disque, qui se renouvellent seules.
     """
-    return (
+    base = (
         float(getattr(graphic, "scene_time", 0.0)), scene_signature(graphic.source_path), render_size(box, mode),
         RENDER_BACKEND, RENDER_SAMPLES, SCENE3D_RASTER_VERSION,
     )
+    # Une image que l'écran n'a pas pu rendre (mémoire, texture) a été écrite vide dans le cache disque : sous une autre clé,
+    # l'export ne la relit pas et refait le rendu (qui échoue alors, ou réussit). Mémoire du processus seulement.
+    return base + ("failed",) if base in _FAILED else base
 
 
 def scene_image(graphic: Any, size: tuple[float, float] | None = None, mode: str = MODE_EXACT) -> Any:
@@ -378,18 +392,46 @@ def scene_image(graphic: Any, size: tuple[float, float] | None = None, mode: str
     return image
 
 
+@contextmanager
+def strict_rendering() -> Iterator[None]:
+    """Dans ce bloc, :func:`draw_scene` **lève** :class:`Scene3DError` au lieu de laisser la boîte vide (export).
+
+    Les aperçus (moniteur, segments d'aperçu fidèle, scopes) n'y entrent jamais : ils restent tolérants. Propre au fil
+    appelant (``ContextVar``) : le dessin des images se fait dans le fil qui construit le graphe d'export.
+    """
+    token = _STRICT.set(True)
+    try:
+        yield
+    finally:
+        _STRICT.reset(token)
+
+
+def render_failures() -> tuple[type[BaseException], ...]:
+    """Les erreurs d'un rendu de scène (illisible, hors bornes, texture, disque, mémoire)."""
+    from kut3d.errors import RenderError
+
+    return (Scene3DError, RenderError, OSError, MemoryError)
+
+
 def draw_scene(painter: Any, graphic: Any, width: float, height: float) -> None:
     """Dessine la scène de ``graphic`` dans la boîte ``(0, 0, width, height)`` (espace calque, transformation déjà posée).
 
-    Une scène qui ne se rend pas laisse la boîte vide et le dit dans le journal (l'aperçu ne lève jamais).
+    À l'écran, une scène qui ne se rend pas laisse la boîte vide et le dit dans le journal (l'aperçu ne lève jamais). Dans
+    :func:`strict_rendering` (export) elle lève :class:`Scene3DError` : un fichier exporté ne perd jamais une scène en silence.
     """
-    from kut3d.errors import RenderError
     from PySide6.QtCore import QRectF
 
     try:
         image = scene_image(graphic, (width, height))
-    except (Scene3DError, RenderError, OSError, MemoryError) as exc:
-        LOGGER.warning("Scène 3D non rendue (%s) : %s", _short(Path(graphic.source_path).name), _short(str(exc), 160))
+    except render_failures() as exc:
+        name = _short(Path(graphic.source_path).name)
+        if _STRICT.get():
+            raise Scene3DError(f"Scène 3D {name} non rendue : {_short(str(exc), 160)}") from exc
+        LOGGER.warning("Scène 3D non rendue (%s) : %s", name, _short(str(exc), 160))
+        with _CACHE_LOCK:
+            if len(_FAILED) >= _FAILED_LIMIT:
+                _FAILED.clear()
+            _FAILED.add(render_identity(graphic, (width, height))[:6])
         return
     painter.drawImage(QRectF(0, 0, width, height), image)
 
@@ -398,5 +440,6 @@ __all__ = [
     "INTERACTIVE_SIDE", "INVALID_PREFIX", "MISSING_SIGNATURE", "MODE_EXACT", "MODE_INTERACTIVE", "RENDER_BACKEND",
     "RENDER_SAMPLES", "SCENE3D_RASTER_VERSION", "SCENE_SUFFIX", "Scene3DError", "clear_signature_cache", "dependencies",
     "draw_scene", "ensure_fixed_speed", "has_scene_suffix", "is_animated", "is_scene3d_clip", "load_scene", "problem",
-    "render_identity", "render_size", "scene_image", "scene_signature", "scene_time_at", "validate",
+    "render_failures", "render_identity", "render_size", "scene_image", "scene_signature", "scene_time_at", "strict_rendering",
+    "validate",
 ]

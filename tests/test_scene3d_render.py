@@ -196,7 +196,8 @@ def test_an_unreadable_scene_raises_scene3d_error_and_draws_nothing(tmp_path, ca
     assert _alpha(canvas).max() == 0 and "non rendue" in caplog.text
 
 
-def test_an_undecodable_texture_draws_nothing_instead_of_raising(tmp_path, caplog):
+def test_an_undecodable_texture_draws_nothing_on_screen_instead_of_raising(tmp_path, caplog):
+    # À l'écran seulement : l'export, lui, refuse (tests/test_scene3d_strict_export.py).
     scene = write_static_scene(tmp_path, textured=True)
     (tmp_path / "tex.png").write_bytes(b"\x89PNG\r\n\x1a\nfake-image-bytes")
     from PySide6.QtGui import QImage, QPainter

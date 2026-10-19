@@ -207,7 +207,10 @@ Un clip `GraphicType.SCENE3D` suit le chemin des calques graphiques (`GraphicLay
 empreinte → `.ffconcat` → FFmpeg) ; seule l'encre change :
 
 1. `build_render_plan` : `GraphicLayer.source_in` = point d'entrée du clip ; fichier manquant, `.kut3d` illisible ou modèle
-   manquant → carte de substitution (`core/scene3d_card.py`) + `warnings` + `missing_media` (export refusé).
+   manquant → carte de substitution (`core/scene3d_card.py`) + `warnings` + `missing_media` (export refusé). Une dépendance qui
+   existe mais ne se rend pas (texture illisible, bornes de `kut3d`) est refusée à l'export par `check_export_request`
+   (`core/scene3d_check.py` : textures décodées + rendu d'essai 16x16, jamais dans `build_render_plan`) ; un échec de rendu pendant
+   l'export fait échouer l'export (`core.scene3d.strict_rendering`), l'écran reste tolérant (boîte vide + journal).
 2. `GraphicsScene.evaluated_graphic` pose `GraphicOverlay.scene_time` (champ d'exécution, **jamais sérialisé** ni dans le `repr`,
    comme `light_time`) = `source_in + temps local` ; 0 pour une scène sans animation (`core.scene3d.scene_time_at`).
 3. `layer_key` / `content_key` ajoutent `core.scene3d.render_identity` = (instant, signature profonde du `.kut3d`, taille, moteur
