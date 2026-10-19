@@ -2187,7 +2187,7 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
     Le mapping suit la nomenclature officielle de FFmpeg (``fade``,
     ``fadeblack``, ``wipeleft``, ``slideleft``, ``dissolve``, ``pixelize``,
     ``radial``, ``circleopen`` / ``circleclose``, ``smoothleft`` /
-    ``smoothright``, etc.) : chaque :class:`TransitionType` a son filtre
+    ``smoothright``, ``coverleft``, ``diagtl``, ``horzopen``, etc.) : chaque :class:`TransitionType` a son filtre
     ``xfade`` natif.
 
     Les types inconnus retombent sur ``fade`` plutôt que de planter :
@@ -2221,6 +2221,32 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
         TransitionType.CIRCLE_CLOSE: "circleclose",
         TransitionType.SMOOTH_LEFT: "smoothleft",
         TransitionType.SMOOTH_RIGHT: "smoothright",
+        # Catalogue élargi : couvrir / révéler, diagonales, ouvertures, lissés verticaux et variantes de fondu.
+        TransitionType.COVER_LEFT: "coverleft",
+        TransitionType.COVER_RIGHT: "coverright",
+        TransitionType.COVER_UP: "coverup",
+        TransitionType.COVER_DOWN: "coverdown",
+        TransitionType.REVEAL_LEFT: "revealleft",
+        TransitionType.REVEAL_RIGHT: "revealright",
+        TransitionType.REVEAL_UP: "revealup",
+        TransitionType.REVEAL_DOWN: "revealdown",
+        TransitionType.WIPE_TL: "wipetl",
+        TransitionType.WIPE_TR: "wipetr",
+        TransitionType.WIPE_BL: "wipebl",
+        TransitionType.WIPE_BR: "wipebr",
+        TransitionType.DIAG_TL: "diagtl",
+        TransitionType.DIAG_TR: "diagtr",
+        TransitionType.DIAG_BL: "diagbl",
+        TransitionType.DIAG_BR: "diagbr",
+        TransitionType.HORZ_OPEN: "horzopen",
+        TransitionType.HORZ_CLOSE: "horzclose",
+        TransitionType.VERT_OPEN: "vertopen",
+        TransitionType.VERT_CLOSE: "vertclose",
+        TransitionType.SMOOTH_UP: "smoothup",
+        TransitionType.SMOOTH_DOWN: "smoothdown",
+        TransitionType.FADE_FAST: "fadefast",
+        TransitionType.FADE_SLOW: "fadeslow",
+        TransitionType.FADE_GRAYS: "fadegrays",
     }
     name = mapping.get(transition.type)
     if name is not None:

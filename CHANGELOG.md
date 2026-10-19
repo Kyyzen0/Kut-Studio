@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- 25 nouvelles transitions dans la bibliothèque : recouvrements et dévoilements (4 sens chacun), balayages et diagonales depuis les quatre coins, ouvertures et fermetures horizontales et verticales, lissés vers le haut et le bas, et trois fondus (rapide, lent, par les gris). **À savoir** : un projet qui en utilise une s'enregistre au format 21 et ne s'ouvre plus dans une version antérieure ; sans elles, le fichier reste identique à avant.
+
 ### Fixed
 
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
