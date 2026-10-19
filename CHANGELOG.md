@@ -16,11 +16,13 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Added
 
+- **Lire un projet depuis un script ou la ligne de commande** : `Kut-Studio describe projet.kut [--json]` et `describe(project)` (module `core.scripting.api`, la seule surface publique du mode script) rendent la structure d'un projet (médias, séquences, pistes, clips avec leur vitesse, leur transform et leur audio de base, transitions, repères) en JSON versionné, sans rien modifier. Ce que la lecture ne couvre pas encore (effets, couleur, composition, images clés, bus…) est nommé dans la sortie. Voir [docs/scripting.md](docs/scripting.md).
 - Interne : l'application empaquetée embarque le moteur 3D (Kut-3D) et ses shaders, et sa sonde GPU fonctionne gelée ; le test de démarrage de l'application construite le vérifie.
 - Les scripts savent régler la vitesse et le remappage d'un clip (vitesse, sens, arrêt sur image, points de la courbe de vitesse, images intermédiaires), le transform, et l'audio d'un clip (gain, panoramique, fondus, effets audio) et ducker la musique sous la voix, avec les mêmes bornes, verrous et refus que l'interface.
 - Les scripts savent monter : rogner, couper (la moitié droite se cite ensuite), dupliquer, glisser, déplacer d'une piste à l'autre, supprimer en refermant le trou, gérer les pistes (supprimer, renommer, ordonner, fader et panoramique) et les repères, avec les mêmes refus que l'interface.
 - 25 nouvelles transitions dans la bibliothèque : recouvrements et dévoilements (4 sens chacun), balayages et diagonales depuis les quatre coins, ouvertures et fermetures horizontales et verticales, lissés vers le haut et le bas, et trois fondus (rapide, lent, par les gris). **À savoir** : un projet qui en utilise une s'enregistre au format 21 et ne s'ouvre plus dans une version antérieure ; sans elles, le fichier reste identique à avant.
 - **Kut-3D : moteur de rendu GPU « qrhi » (interne, pas encore visible dans l'application).** Le paquet `kut3d` rend une scène 3D sur le GPU (Metal sur macOS, sans jamais ouvrir de fenêtre) environ 20 fois plus vite que la référence logicielle, avec le même résultat à la tolérance près ; il retombe sur la référence quand aucun GPU n'est utilisable. Voir [docs/kut3d-render.md](docs/kut3d-render.md).
+- **Kut-3D : un film par script Python (interne, pas encore visible dans l'application).** La façade `core.film.Film` rend une scène 3D en vidéo avec transparence (ProRes 4444), la pose au-dessus d'un fond dans un projet ordinaire, ajoute de l'audio, sauve le `.kut` (format inchangé) et exporte un MP4, sans ouvrir de fenêtre. Voir [docs/kut3d-film.md](docs/kut3d-film.md).
 
 ### Fixed
 

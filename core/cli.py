@@ -29,7 +29,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-COMMANDS = ("info", "validate", "presets", "export", "apply", "schema")
+COMMANDS = ("info", "validate", "presets", "export", "apply", "schema", "describe")
 SCHEMA_VERSION = 1
 """Version du schéma des sorties ``--json`` : elle ne change que par une rupture, annoncée dans le journal des modifications."""
 
@@ -84,6 +84,10 @@ def _build_parser() -> argparse.ArgumentParser:
     info = commands.add_parser("info", help="résumé d'un projet")
     info.add_argument("project", help="fichier .kut")
     common(info)
+
+    describe = commands.add_parser("describe", help="décrit la structure d'un projet (séquences, pistes, clips…) en JSON versionné")
+    describe.add_argument("project", help="fichier .kut")
+    common(describe)
 
     validate = commands.add_parser("validate", help="vérifie qu'un projet s'ouvre (.kut) ou qu'un script est valide (.json)")
     validate.add_argument("project", help="fichier .kut, ou script .json")
@@ -238,6 +242,42 @@ def _cmd_info(args: argparse.Namespace, output: _Output) -> int:
         "media": {"count": len(project.media_assets), "missing": missing},
         "dropped": _dropped(report),
     })
+    return EXIT_OK
+
+
+def _cmd_describe(args: argparse.Namespace, output: _Output) -> int:
+    """La structure du projet (``core.scripting.api.describe``) : un résumé lisible, ou avec ``--json`` la description complète.
+
+    Lecture seule : le projet n'est pas modifié, aucun verrou n'est pris. La présence des médias est testée sur le disque (comme ``info``).
+    """
+    from .scripting.api import describe
+
+    loaded = _load(args.project, output)
+    if loaded is None:
+        return output.exit
+    project, report, path = loaded
+    if not report.intact:
+        output.warning(_t("cli.validate.dropped", total=report.total))
+        for section, count in _dropped(report).items():
+            output.warning(_t("cli.validate.dropped_line", section=_section_label(section), count=count))
+    description = describe(project, check_media=True)
+    output.line(_t("cli.describe.project", name=description["project"]["name"], version=description["describe_version"]))
+    for sequence in description["sequences"]:
+        clips = sum(len(track["clips"]) for track in sequence["tracks"])
+        output.line(_t(
+            "cli.info.sequence", name=sequence["name"], id=sequence["id"], active=_t("cli.info.active") if sequence["active"] else "",
+            width=sequence["width"], height=sequence["height"], fps=sequence["fps"],
+            duration="?" if sequence["duration"] is None else sequence["duration"], tracks=len(sequence["tracks"]), clips=clips,
+        ))
+        for track in sequence["tracks"]:
+            output.line(_t("cli.describe.track", name=track["name"], id=track["id"], kind=track["type"], clips=len(track["clips"])))
+        output.line(_t("cli.describe.extras", transitions=len(sequence["transitions"]), markers=len(sequence["markers"])))
+    media = description["media"]
+    output.line(_t("cli.info.media", count=len(media), missing=sum(1 for item in media if item["present"] is False)))
+    if description["not_described"]:
+        output.line(_t("cli.describe.not_described", sections=", ".join(description["not_described"])))
+    output.line(_t("cli.describe.hint"))
+    output.payload({"ok": True, "file": str(path), "description": description, "dropped": _dropped(report)})
     return EXIT_OK
 
 
@@ -611,7 +651,7 @@ def _build_request(project, sequence, spec, output_path: Path, args: argparse.Na
 
 _HANDLERS: dict[str, Callable[[argparse.Namespace, _Output], int]] = {
     "info": _cmd_info, "validate": _cmd_validate, "presets": _cmd_presets, "export": _cmd_export, "apply": _cmd_apply,
-    "schema": _cmd_schema,
+    "schema": _cmd_schema, "describe": _cmd_describe,
 }
 
 

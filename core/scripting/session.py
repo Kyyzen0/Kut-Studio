@@ -163,6 +163,13 @@ class Session:
     def project(self) -> Project:
         return self._project
 
+    def describe(self, *, check_media: bool = False) -> dict[str, Any]:
+        """Le projet comme un dictionnaire JSON versionné (:func:`core.scripting.api.describe`) : lecture seule, utilisable à tout moment
+        (y compris pendant une transaction : il décrit le projet tel qu'il est à cet instant)."""
+        from .describe import describe
+
+        return describe(self._project, check_media=check_media)
+
     # -- transactions ---------------------------------------------------------------------------------------------------
 
     def transaction(self, label: str, *, merge_key: str | None = None) -> Transaction:

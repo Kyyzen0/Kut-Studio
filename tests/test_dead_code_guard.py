@@ -22,6 +22,9 @@ ENTRY_POINTS = {
     # le seul consommateur de ``core.hardware_validation`` en dehors de ses tests, et c'est voulu. Tout autre
     # outil qui voudrait « sauver » un module de ``core/`` doit être ajouté ici en connaissance de cause.
     "tools.perf.hardware_validation": "tools/perf/hardware_validation.py",
+    # Façade Python des films (docs/kut3d-film.md) : ``core.film`` est consommée par les SCRIPTS de l'utilisateur, lancés à la
+    # main (ADR-0005, R3), jamais par l'application. L'exemple livré est le consommateur documenté et testé.
+    "examples.kut3d_hello_film": "examples/kut3d_hello_film.py",
 }
 
 

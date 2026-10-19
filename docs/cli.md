@@ -24,6 +24,7 @@ Depuis les sources : `python main.py info projet.kut`. Une commande est le premi
 | `validate SCRIPT.json` | le script est-il valide ? Toutes ses erreurs d'un coup, sans projet |
 | `apply SCRIPT PROJET -o SORTIE` | applique un script **en tout ou rien** ; `--dry-run` n'écrit rien, `--in-place` modifie le projet lui-même, `--allow-outside` laisse `import_media` et `add_image_layer` lire hors du dossier du script, et un projet tenu ouvert par l'application est **refusé** (verrou ; voir [scripting.md](scripting.md)) |
 | `schema` | écrit le schéma JSON des scripts, généré depuis la table de verbes |
+| `describe PROJET` | la structure du projet (séquences, pistes, clips, transitions, repères) : un résumé, ou avec `--json` la description complète versionnée ; lecture seule (voir [scripting.md](scripting.md)) |
 | `export PROJET -o SORTIE` | exporte, sans fenêtre, avec exactement la commande FFmpeg de l'interface |
 
 Options communes : `--json` (un objet JSON sur la sortie standard), `--lang fr|en|es` (aussi `KUT_STUDIO_LANG`, sinon `LANG`).

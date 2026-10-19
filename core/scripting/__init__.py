@@ -1,4 +1,4 @@
-"""Mode script (ADR-0005) : la session d'édition, le format déclaratif (verbes, décodeur, schéma) et, plus tard, la façade de lecture.
+"""Mode script (ADR-0005) : la session d'édition, le format déclaratif (verbes, décodeur, schéma) et la lecture d'un projet (``describe``, façade publique :mod:`core.scripting.api`).
 
 Rien ici n'exécute de code venu de données (règle R1) : une opération est une fonction que l'appelant fournit, ou un verbe de la table
 :data:`VERBS`, qui n'appelle que des fonctions de ``core/`` listées.
