@@ -269,8 +269,12 @@ def test_export_picks_a_sequence_by_id_or_by_name(media, tmp_path, capsys, qapp)
     add_clip_to_track(project, "m", other.tracks[0].id, 0.0)
     path = tmp_path / "p.kut"
     save_project(project, str(path))
-    for chosen, expected in (("seq-main", "seq-main"), ("Séquence principale", "seq-main"), (other.id, other.id), ("Autre", other.id)):
-        out_file = tmp_path / f"{expected}_{abs(hash(chosen)) % 1000}.mp4"
+    choices = (("seq-main", "seq-main"), ("Séquence principale", "seq-main"), (other.id, other.id), ("Autre", other.id))
+    for index, (chosen, expected) in enumerate(choices):
+        # Un nom UNIQUE par essai, fondé sur l'indice : le hash() d'une chaîne est aléatoire à chaque processus, et deux
+        # essais au même `expected` pouvaient tomber (1 fois sur 1 000) sur le même fichier, que le CLI refuse alors
+        # (code 64, « la sortie existe ») : c'était un échec intermittent de la CI.
+        out_file = tmp_path / f"{index}_{expected}.mp4"
         code, out, _err = _run("export", str(path), "-o", str(out_file), "--sequence", chosen, "--quiet", "--json", capsys=capsys)
         assert code == 0 and out_file.is_file(), chosen
         assert json.loads(out)["sequence"] == expected, chosen
