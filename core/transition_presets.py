@@ -560,6 +560,8 @@ def apply_transition_preset(
     to_clip_id: str,
     preset: TransitionPreset,
     duration: float | None = None,
+    *,
+    transition_id: str | None = None,
 ) -> "Transition":
     """Pose la transition ``preset`` entre deux clips vidéo consécut.
 
@@ -580,6 +582,7 @@ def apply_transition_preset(
         to_clip_id,
         preset.transition_type,
         actual_duration,
+        transition_id=transition_id,
     )
 
 
