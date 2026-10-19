@@ -177,18 +177,25 @@ def test_filter_by_category_returns_only_matching() -> None:
         "crossfade",
         "fade_black",
         "fade_white",
+        "fade_fast",
+        "fade_slow",
+        "fade_grays",
     }
 
 
 def test_filter_by_search_matches_name_and_id() -> None:
     library = builtin_transition_presets()
     matches = filter_transition_presets(library, search="wipe")
-    # Tâche 26 : 4 balayages (haut, bas, gauche, droite) au lieu de 2.
+    # Tâche 26 : 4 balayages (haut, bas, gauche, droite) au lieu de 2 ; catalogue élargi : 4 balayages de coin.
     assert {p.id for p in matches} == {
         "wipe_left",
         "wipe_right",
         "wipe_up",
         "wipe_down",
+        "wipe_tl",
+        "wipe_tr",
+        "wipe_bl",
+        "wipe_br",
     }
 
 
@@ -502,6 +509,31 @@ def test_store_get_preset_returns_builtin_or_user(tmp_path) -> None:
         ("pixelize", "pixelize"),
         ("smooth_left", "smoothleft"),
         ("smooth_right", "smoothright"),
+        ("cover_left", "coverleft"),
+        ("cover_right", "coverright"),
+        ("cover_up", "coverup"),
+        ("cover_down", "coverdown"),
+        ("reveal_left", "revealleft"),
+        ("reveal_right", "revealright"),
+        ("reveal_up", "revealup"),
+        ("reveal_down", "revealdown"),
+        ("wipe_tl", "wipetl"),
+        ("wipe_tr", "wipetr"),
+        ("wipe_bl", "wipebl"),
+        ("wipe_br", "wipebr"),
+        ("diag_tl", "diagtl"),
+        ("diag_tr", "diagtr"),
+        ("diag_bl", "diagbl"),
+        ("diag_br", "diagbr"),
+        ("horz_open", "horzopen"),
+        ("horz_close", "horzclose"),
+        ("vert_open", "vertopen"),
+        ("vert_close", "vertclose"),
+        ("smooth_up", "smoothup"),
+        ("smooth_down", "smoothdown"),
+        ("fade_fast", "fadefast"),
+        ("fade_slow", "fadeslow"),
+        ("fade_grays", "fadegrays"),
     ],
 )
 def test_builtin_preset_maps_to_expected_ffmpeg_xfade(preset_id, ffmpeg_name):

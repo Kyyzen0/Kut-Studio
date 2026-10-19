@@ -28,6 +28,7 @@ from core.transition_presets import (
     filter_transition_presets,
 )
 from core.transitions import (
+    CATALOG_EXTENSION_TYPES,
     TRANSITION_FAMILIES,
     Transition,
     TransitionType,
@@ -72,6 +73,32 @@ EXPECTED_FFMPEG_NAMES: dict[str, str] = {
     TransitionType.CIRCLE_CLOSE.value: "circleclose",
     TransitionType.SMOOTH_LEFT.value: "smoothleft",
     TransitionType.SMOOTH_RIGHT.value: "smoothright",
+    # Catalogue élargi (25 types ``xfade`` natifs)
+    TransitionType.COVER_LEFT.value: "coverleft",
+    TransitionType.COVER_RIGHT.value: "coverright",
+    TransitionType.COVER_UP.value: "coverup",
+    TransitionType.COVER_DOWN.value: "coverdown",
+    TransitionType.REVEAL_LEFT.value: "revealleft",
+    TransitionType.REVEAL_RIGHT.value: "revealright",
+    TransitionType.REVEAL_UP.value: "revealup",
+    TransitionType.REVEAL_DOWN.value: "revealdown",
+    TransitionType.WIPE_TL.value: "wipetl",
+    TransitionType.WIPE_TR.value: "wipetr",
+    TransitionType.WIPE_BL.value: "wipebl",
+    TransitionType.WIPE_BR.value: "wipebr",
+    TransitionType.DIAG_TL.value: "diagtl",
+    TransitionType.DIAG_TR.value: "diagtr",
+    TransitionType.DIAG_BL.value: "diagbl",
+    TransitionType.DIAG_BR.value: "diagbr",
+    TransitionType.HORZ_OPEN.value: "horzopen",
+    TransitionType.HORZ_CLOSE.value: "horzclose",
+    TransitionType.VERT_OPEN.value: "vertopen",
+    TransitionType.VERT_CLOSE.value: "vertclose",
+    TransitionType.SMOOTH_UP.value: "smoothup",
+    TransitionType.SMOOTH_DOWN.value: "smoothdown",
+    TransitionType.FADE_FAST.value: "fadefast",
+    TransitionType.FADE_SLOW.value: "fadeslow",
+    TransitionType.FADE_GRAYS.value: "fadegrays",
 }
 
 
@@ -131,9 +158,11 @@ def _project_with_two_clips() -> Project:
 # ---------------------------------------------------------------------------
 
 
-def test_transition_type_has_eighteen_values() -> None:
-    """Le catalogue natif expose 18 valeurs."""
-    assert len(TransitionType) == 18
+def test_transition_type_has_forty_three_values() -> None:
+    """Le catalogue natif expose 43 valeurs (18 + 25 du catalogue élargi)."""
+    assert len(TransitionType) == 43
+    assert len(CATALOG_EXTENSION_TYPES) == 25
+    assert all(member.value in {t.value for t in list(TransitionType)[18:]} for member in CATALOG_EXTENSION_TYPES)
 
 
 def test_historical_transition_types_are_preserved() -> None:
@@ -171,9 +200,12 @@ def test_all_expected_transition_types_exist() -> None:
     )
 
 
-def test_builtin_transition_presets_count_is_eighteen() -> None:
-    """La bibliothèque intégrée compte 18 presets."""
-    assert len(builtin_transition_presets()) == 18
+def test_builtin_transition_presets_count_is_forty_three() -> None:
+    """La bibliothèque intégrée compte 43 presets, un par type, au même identifiant que la valeur de l'enum."""
+    presets = builtin_transition_presets()
+    assert len(presets) == 43
+    assert {p.id for p in presets} == {t.value for t in TransitionType}
+    assert all(p.id == p.transition_type.value for p in presets)
 
 
 def test_every_transition_type_has_a_builtin_preset() -> None:
@@ -188,7 +220,7 @@ def test_every_transition_type_has_a_builtin_preset() -> None:
 
 
 def test_transition_families_cover_every_type() -> None:
-    """Les 5 familles couvrent la totalité des 18 types sans doublon."""
+    """Les 5 familles couvrent la totalité des 43 types sans doublon."""
     covered: set[TransitionType] = set()
     for family_members in TRANSITION_FAMILIES.values():
         for member in family_members:
@@ -230,6 +262,34 @@ def test_ffmpeg_mapping_for_each_type(ttype: str, expected: str) -> None:
     assert _ffmpeg_transition_name(transition) == expected
 
 
+def test_every_transition_type_has_an_explicit_xfade_name() -> None:
+    """Aucun type ne retombe en silence sur ``fade`` : seul ``crossfade`` s'appelle ``fade``, tous les noms diffèrent."""
+    assert set(EXPECTED_FFMPEG_NAMES) == {member.value for member in TransitionType}
+    produced = {
+        member: _ffmpeg_transition_name(_make_render_transition(member)) for member in TransitionType
+    }
+    assert [member for member, name in produced.items() if name == "fade"] == [TransitionType.CROSSFADE]
+    assert len(set(produced.values())) == len(TransitionType)
+
+
+@pytest.mark.parametrize("member", list(TransitionType), ids=lambda t: t.value)
+def test_every_transition_type_has_a_family_and_a_matching_category(member: TransitionType) -> None:
+    family = transition_family(member)
+    assert member in TRANSITION_FAMILIES[family]
+    preset = next(p for p in builtin_transition_presets() if p.transition_type is member)
+    assert preset.category.value == family
+
+
+def test_catalog_families_keep_the_five_existing_categories() -> None:
+    assert set(TRANSITION_FAMILIES) == {"fade", "wipe", "shape", "dissolve", "smooth"}
+    assert transition_family(TransitionType.COVER_LEFT) == "wipe"
+    assert transition_family(TransitionType.DIAG_BR) == "wipe"
+    assert transition_family(TransitionType.HORZ_OPEN) == "shape"
+    assert transition_family(TransitionType.VERT_CLOSE) == "shape"
+    assert transition_family(TransitionType.SMOOTH_UP) == "smooth"
+    assert transition_family(TransitionType.FADE_GRAYS) == "fade"
+
+
 def test_ffmpeg_mapping_handles_unknown_type() -> None:
     """Un type inconnu ne casse pas l'export (retombe sur ``fade``)."""
     transition = RenderTransition(
@@ -265,7 +325,7 @@ def test_filter_by_category_fade_includes_three_presets() -> None:
         category=TransitionPresetCategory.FADE,
     )
     ids = {p.id for p in matches}
-    assert ids == {"crossfade", "fade_black", "fade_white"}
+    assert ids == {"crossfade", "fade_black", "fade_white", "fade_fast", "fade_slow", "fade_grays"}
 
 
 def test_filter_by_category_wipe_includes_eight_presets() -> None:
@@ -275,7 +335,7 @@ def test_filter_by_category_wipe_includes_eight_presets() -> None:
         category=TransitionPresetCategory.WIPE,
     )
     ids = {p.id for p in matches}
-    assert ids == {
+    legacy = {
         "wipe_left",
         "wipe_right",
         "wipe_up",
@@ -285,6 +345,9 @@ def test_filter_by_category_wipe_includes_eight_presets() -> None:
         "slide_up",
         "slide_down",
     }
+    assert legacy <= ids
+    assert ids == {t.value for t in TRANSITION_FAMILIES["wipe"]}
+    assert len(ids) == 24
 
 
 def test_filter_by_category_shape_includes_three_presets() -> None:
@@ -293,7 +356,7 @@ def test_filter_by_category_shape_includes_three_presets() -> None:
         category=TransitionPresetCategory.SHAPE,
     )
     ids = {p.id for p in matches}
-    assert ids == {"circle_open", "circle_close", "radial"}
+    assert ids == {"circle_open", "circle_close", "radial", "horz_open", "horz_close", "vert_open", "vert_close"}
 
 
 def test_filter_by_category_dissolve_includes_two_presets() -> None:
@@ -311,7 +374,7 @@ def test_filter_by_category_smooth_includes_two_presets() -> None:
         category=TransitionPresetCategory.SMOOTH,
     )
     ids = {p.id for p in matches}
-    assert ids == {"smooth_left", "smooth_right"}
+    assert ids == {"smooth_left", "smooth_right", "smooth_up", "smooth_down"}
 
 
 def test_filter_by_search_finds_each_new_preset() -> None:

@@ -17,6 +17,7 @@ from core.project_model import MediaAsset, Project
 from core.project_io import load_project, save_project
 from core.timeline_operations import find_clip
 from core.timeline_view_model import build_clip_views
+from core.transitions import TransitionType
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +156,10 @@ def test_transition_library_renders_four_builtin_cards(qtbot, monkeypatch) -> No
     """La bibliothèque affiche les quatre préréglages sans combinatoire cachée."""
     window = _build_window(qtbot, monkeypatch)
     view = window.project_panel.transition_view
-    # Tâche 26 : 18 transitions natives (4 historiques + 14 ajoutées).
-    assert view.preset_count() == 18
-    assert {card.preset_id for card in view._cards.values()} == {
+    # Tâche 26 : 18 transitions natives (4 historiques + 14 ajoutées) ; catalogue élargi : 25 de plus.
+    assert view.preset_count() == 43
+    assert {card.preset_id for card in view._cards.values()} == {t.value for t in TransitionType}
+    assert {card.preset_id for card in view._cards.values()} >= {
         "crossfade",
         "fade_black",
         "fade_white",

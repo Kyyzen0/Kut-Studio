@@ -17,8 +17,11 @@ class TransitionType(str, Enum):
     ``wipe_right``) sont conservées telles quelles pour garantir la
     rétro‑compatibilité avec les fichiers ``.kut`` et les snapshots
     d'historique existants : tout projet enregistré avant la tâche 26
-    se charge sans perte. Les 14 nouveaux types complètent le
-    catalogue à 18 transitions natives.
+    se charge sans perte. Les 14 types de la tâche 26 portent le
+    catalogue à 18 transitions natives ; 25 types ``xfade`` de plus
+    (couvrir / révéler, diagonales, ouvertures, fondus) le portent à 43.
+    Les 25 derniers ne se relisent que depuis la version
+    :data:`core.project_io.TRANSITION_CATALOG_VERSION` du format ``.kut``.
 
     Le mapping vers les filtres ``xfade`` FFmpeg correspondants est
     défini dans :func:`core.export_engine._ffmpeg_transition_name`.
@@ -49,10 +52,46 @@ class TransitionType(str, Enum):
     # Glissements fluides
     SMOOTH_LEFT = "smooth_left"
     SMOOTH_RIGHT = "smooth_right"
+    # --- Catalogue élargi (25 types ``xfade``) : écrits en version 21 du .kut ---
+    # Couvrir / révéler
+    COVER_LEFT = "cover_left"
+    COVER_RIGHT = "cover_right"
+    COVER_UP = "cover_up"
+    COVER_DOWN = "cover_down"
+    REVEAL_LEFT = "reveal_left"
+    REVEAL_RIGHT = "reveal_right"
+    REVEAL_UP = "reveal_up"
+    REVEAL_DOWN = "reveal_down"
+    # Balayages en diagonale
+    WIPE_TL = "wipe_tl"
+    WIPE_TR = "wipe_tr"
+    WIPE_BL = "wipe_bl"
+    WIPE_BR = "wipe_br"
+    DIAG_TL = "diag_tl"
+    DIAG_TR = "diag_tr"
+    DIAG_BL = "diag_bl"
+    DIAG_BR = "diag_br"
+    # Ouvertures et fermetures en bandes, lissés verticaux
+    HORZ_OPEN = "horz_open"
+    HORZ_CLOSE = "horz_close"
+    VERT_OPEN = "vert_open"
+    VERT_CLOSE = "vert_close"
+    SMOOTH_UP = "smooth_up"
+    SMOOTH_DOWN = "smooth_down"
+    # Variantes de fondu
+    FADE_FAST = "fade_fast"
+    FADE_SLOW = "fade_slow"
+    FADE_GRAYS = "fade_grays"
+
+
+# Les 25 types ajoutés après la version 17 du format ``.kut`` : un projet qui en utilise un s'écrit en version 21.
+CATALOG_EXTENSION_TYPES: frozenset[TransitionType] = frozenset(
+    list(TransitionType)[18:]
+)
 
 
 # Catégorie large (utilisée par les filtres de la bibliothèque et par
-# ``_infer_category``). On regroupe les 18 types en cinq familles pour
+# ``_infer_category``). On regroupe les 43 types en cinq familles pour
 # faciliter la navigation : ``fade`` (fondus), ``wipe`` (balayages et
 # glissements), ``shape`` (cercle, radial, pixelisation), ``dissolve``
 # (dissolutions), ``smooth`` (glissements fluides). Cette taxonomie est
@@ -63,6 +102,9 @@ TRANSITION_FAMILIES: dict[str, tuple[TransitionType, ...]] = {
         TransitionType.CROSSFADE,
         TransitionType.FADE_BLACK,
         TransitionType.FADE_WHITE,
+        TransitionType.FADE_FAST,
+        TransitionType.FADE_SLOW,
+        TransitionType.FADE_GRAYS,
     ),
     "wipe": (
         TransitionType.WIPE_LEFT,
@@ -73,11 +115,31 @@ TRANSITION_FAMILIES: dict[str, tuple[TransitionType, ...]] = {
         TransitionType.SLIDE_RIGHT,
         TransitionType.SLIDE_UP,
         TransitionType.SLIDE_DOWN,
+        TransitionType.COVER_LEFT,
+        TransitionType.COVER_RIGHT,
+        TransitionType.COVER_UP,
+        TransitionType.COVER_DOWN,
+        TransitionType.REVEAL_LEFT,
+        TransitionType.REVEAL_RIGHT,
+        TransitionType.REVEAL_UP,
+        TransitionType.REVEAL_DOWN,
+        TransitionType.WIPE_TL,
+        TransitionType.WIPE_TR,
+        TransitionType.WIPE_BL,
+        TransitionType.WIPE_BR,
+        TransitionType.DIAG_TL,
+        TransitionType.DIAG_TR,
+        TransitionType.DIAG_BL,
+        TransitionType.DIAG_BR,
     ),
     "shape": (
         TransitionType.CIRCLE_OPEN,
         TransitionType.CIRCLE_CLOSE,
         TransitionType.RADIAL,
+        TransitionType.HORZ_OPEN,
+        TransitionType.HORZ_CLOSE,
+        TransitionType.VERT_OPEN,
+        TransitionType.VERT_CLOSE,
     ),
     "dissolve": (
         TransitionType.DISSOLVE,
@@ -86,8 +148,21 @@ TRANSITION_FAMILIES: dict[str, tuple[TransitionType, ...]] = {
     "smooth": (
         TransitionType.SMOOTH_LEFT,
         TransitionType.SMOOTH_RIGHT,
+        TransitionType.SMOOTH_UP,
+        TransitionType.SMOOTH_DOWN,
     ),
 }
+
+
+def transition_type_values() -> tuple[str, ...]:
+    """Valeurs de tous les types de transition, dans l'ordre des familles de :data:`TRANSITION_FAMILIES`.
+
+    Sert aux listes déroulantes de l'interface (inspecteur, enregistrement d'un preset) : un type absent d'une famille
+    s'ajoute à la fin, donc aucun type n'est jamais omis.
+    """
+    ordered = [member for members in TRANSITION_FAMILIES.values() for member in members]
+    ordered += [member for member in TransitionType if member not in ordered]
+    return tuple(member.value for member in ordered)
 
 
 def transition_family(transition_type: TransitionType | str) -> str:
