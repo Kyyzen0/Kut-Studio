@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.transitions import transition_type_values
 from core.visual_effects import (
     ANIMATABLE_PROPERTIES,
 )
@@ -309,10 +310,8 @@ class ConstructionMixin:
         transition_form.setContentsMargins(Spacing.md, Spacing.md, Spacing.md, Spacing.sm)
         transition_form.setSpacing(Spacing.xs)
         self.transition_type_combo = QComboBox()
-        self.transition_type_combo.addItem(translate("transitions.preset.crossfade.name"), "crossfade")
-        self.transition_type_combo.addItem(translate("transitions.preset.fade_black.name"), "fade_black")
-        self.transition_type_combo.addItem(translate("transitions.preset.wipe_left.name"), "wipe_left")
-        self.transition_type_combo.addItem(translate("transitions.preset.wipe_right.name"), "wipe_right")
+        for value in transition_type_values():
+            self.transition_type_combo.addItem(translate(f"transitions.preset.{value}.name"), value)
         self.transition_duration_spin = QDoubleSpinBox()
         self.transition_duration_spin.setRange(0.1, 5.0)
         self.transition_duration_spin.setDecimals(2)

@@ -154,6 +154,17 @@ TRANSITION_FAMILIES: dict[str, tuple[TransitionType, ...]] = {
 }
 
 
+def transition_type_values() -> tuple[str, ...]:
+    """Valeurs de tous les types de transition, dans l'ordre des familles de :data:`TRANSITION_FAMILIES`.
+
+    Sert aux listes déroulantes de l'interface (inspecteur, enregistrement d'un preset) : un type absent d'une famille
+    s'ajoute à la fin, donc aucun type n'est jamais omis.
+    """
+    ordered = [member for members in TRANSITION_FAMILIES.values() for member in members]
+    ordered += [member for member in TransitionType if member not in ordered]
+    return tuple(member.value for member in ordered)
+
+
 def transition_family(transition_type: TransitionType | str) -> str:
     """Famille d'un type de transition (clé de :data:`TRANSITION_FAMILIES`).
 
