@@ -1619,6 +1619,7 @@ VERBS: dict[str, Verb] = {
 """Le catalogue. L'ordre est celui de la documentation."""
 
 from .animation_verbs import ANIMATION_VERBS  # noqa: E402 - après la table : ces modules importent les paramètres et aides de celui-ci
+from .audio_verbs import AUDIO_VERBS  # noqa: E402
 from .clip_audio_verbs import CLIP_AUDIO_VERBS  # noqa: E402
 from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
@@ -1638,11 +1639,12 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
     "update_track_insert": CLIP_AUDIO_VERBS,      # l'audio d'un clip après les inserts de piste
     "set_graphic": LAYER_VERBS,                   # les calques graphiques juste après leur création et leur apparence
+    "set_track_visible": AUDIO_VERBS,             # rôle, courbe de volume, ducking et ordre des inserts après les réglages de piste
 }
 
 
 def _with_extra_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
-    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``, ``layer_verbs``, ``guide_verbs``) juste après leur verbe d'ancrage."""
+    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``, ``layer_verbs``, ``guide_verbs``, ``audio_verbs``) juste après leur verbe d'ancrage."""
     result: dict[str, Verb] = {}
     for name, verb in table.items():
         result[name] = verb

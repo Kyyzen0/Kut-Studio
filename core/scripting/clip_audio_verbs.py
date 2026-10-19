@@ -29,6 +29,7 @@ from ..audio_effects_model import (
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MAX_PAN, MIN_GAIN_DB, MIN_PAN, Project
 from ..timeline_operations import find_clip
+from .audio_rules import require_sidechain_room
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip, _pick, _require_unlocked
 
 _MAX_DELTA = 1000
@@ -164,9 +165,12 @@ def _move_clip_audio_effect(a: Mapping[str, Any]) -> Operation:
 
 def _duck_music_under_voice(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
-        for track in project.tracks:
-            if track.type == "audio" and str(getattr(track.audio_role, "value", track.audio_role)) == "music":
-                _require_unlocked(track)                     # l'atténuation change le son de cette piste
+        music = [track for track in project.tracks if track.type == "audio" and str(getattr(track.audio_role, "value", track.audio_role)) == "music"]
+        voices = [track for track in project.tracks if track.type == "audio" and str(getattr(track.audio_role, "value", track.audio_role)) == "voice"]
+        for track in music:
+            _require_unlocked(track)                         # l'atténuation change le son de cette piste
+        pairs = {(item.music_track_id, item.voice_track_id) for item in project.ducking_sidechains}
+        require_sidechain_room(project, sum(1 for m in music for v in voices if (m.id, v.id) not in pairs))     # la limite vaut aussi pour ce chemin de création
         return duck_music_under_voice(project, a.get("preset", "voice_over_music"))
 
     return operation

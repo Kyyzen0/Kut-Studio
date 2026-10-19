@@ -164,6 +164,19 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_track_muted` | Coupe ou rétablit le son d'une piste (`track`, `muted`) |
 | `set_track_locked` | Verrouille ou déverrouille une piste (`track`, `locked`) |
 | `set_track_visible` | Affiche ou masque une piste (`track`, `visible`) |
+| `set_track_role` | Rôle d'une piste **audio** déverrouillée : `voice`, `music`, `sfx` ou `other` (`track`, `role`) ; voir « Audio avancé » |
+| `add_automation_point` | Pose un point sur la courbe de volume d'une piste audio (`track`, `at`, `gain_db` de −24 à 12, `fade_seconds` de 0 à 5) ; un point existe déjà à cet instant : refusé |
+| `update_automation_point` | Modifie le gain ou le maintien du point situé à l'instant `at` (`track`, `at`, `gain_db`, `fade_seconds`, au moins l'un des deux) |
+| `move_automation_point` | Déplace le point situé à `at` vers `to` (`track`, `at`, `to`, `gain_db` facultatif) ; un instant déjà pris est refusé |
+| `remove_automation_point` | Retire le point situé à l'instant `at` (`track`, `at`) |
+| `clear_automation` | Efface la courbe de volume d'une piste audio (`track`) |
+| `set_automation_curve` | Remplace toute la courbe d'une piste audio (`track`, `points` : `time_seconds`, `gain_db`, `fade_seconds`, 0 à 1 000, instants strictement croissants) |
+| `add_ducking_sidechain` | La piste `music` baisse sous la piste `voice` (deux pistes audio déverrouillées ; `preset`, `threshold_db`, `reduction_db`, `attack_seconds`, `release_seconds`) ; `id` / `as` ; refusé pour une boucle, un doublon de paire ou au-delà de 256 associations |
+| `remove_ducking_sidechain` | Retire une association de ducking (`ducking` = son `id`) ; refusé si la piste baissée est verrouillée |
+| `set_ducking_enabled` | Active ou désactive une association sans la retirer (`ducking`, `enabled`) |
+| `update_ducking_config` | Modifie le réglage d'une association (`ducking` et au moins un des quatre réglages ; les autres restent) |
+| `move_track_insert` | Déplace un insert dans la chaîne d'une piste audio ou vidéo (`track`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
+| `move_bus_insert` | Déplace un insert dans la chaîne d'un bus (`bus`, `insert`, `delta` non nul) ; refusé s'il sortirait de la chaîne |
 | `add_image_layer` | Pose une **image fixe** du dossier du script en calque graphique (`path`, `at`, `duration` obligatoire, `track`) ; voir « Images » ci-dessous |
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée ; `group` : un groupe déverrouillé où poser le calque, jamais pour un calque d'effets) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
@@ -513,9 +526,27 @@ Gain, panoramique, fondus, effets audio d'un clip et ducking, comme l'inspecteur
 - **Effets audio de clip** : sur un clip de piste audio **ou vidéo** (comme le rack d'effets de l'inspecteur) ; un clip graphique ou de sous-titres
   est refusé. Les paramètres sont ceux de l'effet (`parametric_eq`, `compressor`…), validés par le modèle : un nom inconnu ou une valeur hors bornes est refusé.
   `add_clip_audio_effect` crée l'effet (`id` / `as`, unique dans le clip) ; sans identifiant, le modèle le nomme `afx-…`.
-- **Ducking** : `duck_music_under_voice` utilise les rôles de piste déjà posés dans le projet (il n'y a pas encore de verbe pour les changer) ; une association
+- **Ducking** : `duck_music_under_voice` utilise les rôles de piste (`set_track_role` les pose) ; une association
   existante reçoit le nouveau réglage et est réactivée, comme avec la commande de menu. Il refuse si une piste « musique » est verrouillée (elle serait atténuée) ;
-  la commande de menu ne regarde pas ce verrou.
+  la commande de menu ne regarde pas ce verrou. Il respecte aussi la limite d'associations du projet.
+
+## Audio avancé : rôle, courbe de volume, ducking, ordre des inserts
+
+Comme le menu ⋯ d'une piste audio, la bande de courbe de volume et les boîtes d'inserts (`core/scripting/audio_verbs.py`, règles dans `audio_rules.py`).
+
+- **Pistes** : la courbe, le rôle et le ducking sont ceux des pistes **audio** (l'interface n'en offre pas pour une piste vidéo, même si le modèle sait
+  lire la courbe d'une piste vidéo : `describe` la montre, aucun verbe ne l'écrit). Une piste verrouillée est refusée.
+- **Un point de la courbe se désigne par son instant** (`at`, secondes de la timeline, tel que `describe` le donne : il n'y a pas d'identifiant de
+  point). La recherche tolère l'arrondi de la description (6 décimales) et refuse une ambiguïté.
+- **Rien n'est remplacé ni ramené en silence** : le modèle remplace un point posé au même instant, un script reçoit un refus (`update_automation_point`
+  modifie). Le gain d'un point va de −24 à 12 dB (la plage de la bande), le maintien de 0 à 5 s, une courbe compte au plus 1 000 points.
+- **`set_automation_curve`** remplace toute la courbe d'une piste en une opération (instants strictement croissants) : c'est la forme qu'un script écrit
+  d'après `tracks[].automation.points[]` de `describe`.
+- **`add_ducking_sidechain`** : comme le menu « Baisser sous… », avec le réglage par défaut du modèle (ou un `preset`, puis des valeurs qui le complètent). Les
+  rôles de piste ne sont pas exigés (l'interface ne les regarde pas et l'export les ignore). Une boucle est refusée sur le graphe résultant (A sous B et B
+  sous A, ou plus long) ; un identifiant (`id` / `as`) ne reprend aucun de ceux du projet, toutes séquences comprises ; le projet compte au plus 256
+  associations, toutes séquences comprises. Retirer, activer ou régler une association exige que la piste baissée soit déverrouillée.
+- **Ordre des inserts** : `move_track_insert` et `move_bus_insert` refusent un déplacement qui sortirait de la chaîne (le modèle le ramènerait au bout).
 
 ## Lire un projet : `describe`
 
@@ -602,7 +633,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 | `clips[].effects[]` | `id`, `type`, `enabled`, `params` (nom -> nombre), dans l'ordre d'application | `add_effect` (`id`), `update_effect`, `set_effect_enabled`, `move_effect`, `remove_effect` (`effect` = `id`) |
 | `clips[].audio_effects[]`, `tracks[].inserts[]`, `buses[].inserts[]` | même forme | `add_clip_audio_effect`, `add_track_insert`, `add_bus_insert` ; `update_*`, `set_*_enabled`, `remove_*` (`effect` / `insert` = `id`) |
 | `sequences[].buses[]`, `tracks[].bus_id` | `id`, `name`, `volume_db`, `muted`, `inserts` ; `bus_id` vaut `null` pour le Master | `add_bus`, `rename_bus`, `set_bus_volume`, `set_bus_muted`, `route_track` (`bus` = `id`) |
-| `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `duck_music_under_voice` (les rôles se lisent dans `audio_role`) |
+| `tracks[].automation.points[]`, `tracks[].ducking_config`, `sequences[].ducking_sidechains[]` | points de la courbe de volume (`time_seconds`, `gain_db`, `fade_seconds`), réglage de ducking, associations musique / voix | `set_track_role` (`audio_role`), `add_automation_point` / `update_automation_point` / `move_automation_point` / `remove_automation_point` (`at` = `time_seconds`), `set_automation_curve`, `add_ducking_sidechain` (`id`), `update_ducking_config`, `set_ducking_enabled`, `remove_ducking_sidechain` (`ducking` = `id`), `duck_music_under_voice` ; `move_track_insert` / `move_bus_insert` pour l'ordre des inserts |
 | `clips[].transform_keyframes[]`, `clips[].animation[]` | une image clé : `property_name`, `time_seconds`, `value`, `interpolation`, `in_slope`, `out_slope`, `tangent_mode`, `id` | `add_keyframe` / `remove_keyframe` (`property` = `property_name`, `at` = `time_seconds`), `add_mask_keyframe` pour `mask.<id>.<nom>` |
 | `clips[].color_grade` | `null` (jamais étalonné) ou `{nodes, links}` : un réglage seul est le nœud `n1` ; un nœud est `corrector` (`grade`, `label`, `qualifier`, `windows`, `blur`, `sharpen`) ou `mixer` (`kind`) | `set_color_grade`, `set_color_curve`, `set_color_wheel`, `set_color_qualifier`, `set_color_detail`, `rename_color_node` (`node` = `id`, absent : le premier), `add_color_window` / `set_color_window` (`window` = `id`) |
 | `clips[].compositing` | `masks[]` (forme, position, taille, `mode`, `points` / `handles`, `nodes` pour une courbe), `chroma_key`, `blend_mode` | `add_mask`, `set_mask`, `set_mask_points` (`mask` = `id`), `set_crop` |
@@ -636,7 +667,7 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
   antérieurs ; les images clés d'un masque de compositing sont dans `animation` (`mask.<id>.<nom>`).
 - **Ce qu'aucun verbe n'écrit encore** (la lecture est là, l'écriture est à faire) : les images clés d'un paramètre d'effet
   (`fx.*`), le LUT (`import_lut` lit un fichier), la composition nodale, le mode de fusion et l'incrustation (`chroma_key`), la courbe
-  d'automation de volume et les associations de ducking. Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
+  de volume d'une piste vidéo et `tracks[].ducking_config` (un réglage que rien dans l'application ne lit ni n'édite). Un test les nomme : le jour où un verbe existe, il échoue et la liste se met à jour.
 
 **Complétude.** Deux listes de dette qui ne peuvent que diminuer (`tests/data/`) empêchent la sortie et les verbes de dériver du modèle :
 `describe_field_debt.json` (chaque champ du modèle est décrit, exclu avec une raison, ou en dette avec sa section) et
