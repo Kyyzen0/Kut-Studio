@@ -217,7 +217,12 @@ def test_a_scene_clip_inside_a_nested_sequence_renders_at_the_same_scene_time(tm
     nested = graph_frames(plan, count=40).astype(int)
     assert np.abs(nested[:10] - flat[:10]).max() <= 3                                    # avant le clip : le fond
     assert not np.array_equal(flat[12], flat[16])                                        # la scène bouge bien
-    assert np.abs(nested[10:30] - flat[10:30]).max() <= 6                                # même scène, mêmes instants
+    assert np.abs(nested[10:29] - flat[10:29]).max() <= 6                                # même scène, mêmes instants
+    # Dernière image du clip (indice 29) : sous FFmpeg 6.1 (Ubuntu 24.04), une séquence imbriquée perd sa dernière image et
+    # laisse voir le fond, pour TOUT calque (mesuré avec un aplat « solid » ou « rectangle » : même écart que la scène 3D) ;
+    # sous FFmpeg 7.x elle est conservée. On accepte donc « l'image à plat » ou « le fond », jamais un autre instant de la scène.
+    last = np.abs(nested[29] - flat[29]).max(), np.abs(nested[29] - flat[0]).max()
+    assert min(last) <= 6
 
 
 # (e) -----------------------------------------------------------------------------------------------------------------------

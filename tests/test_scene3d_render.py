@@ -396,7 +396,7 @@ def _assert_card_on_screen_and_refusal_on_export(project, clip, tmp_path):
     layer = next(item for item in plan.graphics_layers if item.clip_id == clip.id)
     assert layer.graphic.type is GraphicType.TEXT and layer.graphic.text == CARD_TEXT
     assert (layer.graphic.width, layer.graphic.height) == (clip.graphic.width, clip.graphic.height)
-    assert plan.warnings and clip.graphic.source_path.rsplit("/", 1)[-1] in plan.warnings[0]
+    assert plan.warnings and Path(clip.graphic.source_path).name in plan.warnings[0]
     assert plan.missing_media and "scène 3D" in plan.missing_media[0]
     _plan, renderer = _renderer(project)
     assert _alpha(renderer.render((clip.id,), 0.5)).max() > 0                           # la carte se voit à l'écran
