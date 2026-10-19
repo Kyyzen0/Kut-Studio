@@ -60,7 +60,7 @@ def make_film(tmp_path: Path, size=SIZE, fps=FPS) -> Film:
 
 
 def tree(folder: Path) -> list[str]:
-    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*"))
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))   # `/` aussi sous Windows
 
 
 def test_render_shot_is_a_prores_4444_video_with_alpha(tmp_path):
