@@ -128,6 +128,8 @@ REASONS: dict[str, str] = {
     "lecture seule": "Lit le modèle sans le modifier : pas un verbe (c'est le travail de describe).",
     "interne": "Brique d'une autre fonction (qui est un verbe, ou le sera) ou de la persistance : sans intérêt appelée seule.",
     "interface seulement": "Geste de l'interface (sélection, presse-papiers, aimantation, aperçu) sans équivalent utile dans un script.",
+    "interface seulement : persistance": "Écrit hors du projet (bibliothèque de presets de l'utilisateur, dans sa configuration) : une frontière de "
+                                         "persistance qu'un script ne franchit pas (ADR-0005, décision 5 : un script ne lit ni n'écrit que le projet qu'on lui donne).",
     "à faire : montage": "Édition de la timeline qui aura un verbe.",
     "à faire : vitesse": "Vitesse et remappage : verbes à venir.",
     "à faire : calques": "Calques graphiques : verbes à venir.",
@@ -142,7 +144,7 @@ REASONS: dict[str, str] = {
     "à faire : modèles et social": "Emplacements de modèle, montage sur le rythme, légendes, classements : verbes à venir.",
     "à faire : bibliothèque": "Organisation de la bibliothèque : verbes à venir.",
 }
-"""Les raisons permises d'une entrée de la dette des verbes. Les trois premières sont durables (pas un verbe) ; ``à faire : …`` est une
+"""Les raisons permises d'une entrée de la dette des verbes. Les quatre premières sont durables (pas un verbe) ; ``à faire : …`` est une
 promesse : l'entrée sort de la dette quand le verbe existe."""
 
 
