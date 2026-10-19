@@ -271,6 +271,24 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `rename_multicam_angle` | Renomme un angle et sa piste, nom libre dans la source (`sequence`, `angle`, `name`) |
 | `add_multicam_angle` | Ajoute un angle à une source (`sequence`, `asset`, `offset`, `name`) |
 | `set_multicam_angle_offset` | Recale un angle : son premier clip commence à `offset` (`sequence`, `angle`, `offset`) |
+| `set_beat_grid` | Pose la grille rythmique de la séquence active (`bpm` 20…300, `offset`, `beats_per_bar` 1…16) ; rien n'est mesuré |
+| `remove_beat_grid` | Supprime la grille rythmique (refusé s'il n'y en a pas) |
+| `cut_clips_on_beats` | Coupe des clips (`clips`, 1 à 200) sur les temps de la grille qu'ils traversent (`every` : un temps sur n) ; refusé sans grille, sans temps dans les clips, ou au-delà de 500 morceaux |
+| `distribute_on_grid` | Pose des clips (`clips`) bout à bout sur `beats_each` temps de la grille, à partir du temps le plus proche du premier ou de `start` |
+| `cut_clip_at_scenes` | Coupe un clip vidéo (`clip`) aux changements de plan donnés (`times` : 1 à 500 instants du **média**) ; un instant écarté par le modèle est refusé |
+| `add_subtitle_lines` | Pose des sous-titres (`lines` : 1 à 500 objets `start`, `end`, `text`, en secondes de la timeline, triés, sans recouvrement) sur une piste de sous-titres libre |
+| `add_karaoke_lines` | Pose des titres karaoké (`lines` comme ci-dessus, avec `word_starts` : un instant par mot) sur une piste de graphiques libre |
+| `apply_impact_zoom` | Zoom d'impact sur un clip vidéo ou un calque (`clip`, `strength`, `start`, `length`) ; refusé s'il dépasse le clip ou remplacerait des images clés d'échelle |
+| `apply_camera_shake` | Secousse de caméra (`clip`, `start`, `length`, `amplitude`, `rotation`, `seed`) ; mêmes refus, pour la position et la rotation |
+| `add_flash` | Flash plein cadre (`at`, `length`, `color`) sur la première piste de graphiques éditable ; `id` / `as` |
+| `apply_impact_on_cuts` | Zoom d'impact (et `flash`, `shake` si demandés) à chaque cut d'une piste vidéo (`track`, `zoom`) ; rend le nombre de cuts |
+| `apply_ken_burns` | Mouvement lent sur un clip vidéo ou une image (`clip`, `strength` 0,01…0,5) ; refusé si le clip a déjà des images clés d'échelle ou de position |
+| `fill_slot` | Met un média du projet (`asset`) dans un emplacement de modèle (`clip`) |
+| `fill_slot_with_photo` | Met une photo du dossier du script (`path`) dans un emplacement (`clip`) ; `ken_burns` (défaut oui) |
+| `fill_slots_with_photos` | Une photo par emplacement vide, dans l'ordre (`photos`, 1 à 100 ; `start` optionnel) ; plus de photos que d'emplacements est refusé |
+| `add_photo_slideshow` | Diaporama (`photos`, `start`, `seconds` ou `beats_per_photo`, `ken_burns`) : un emplacement par photo, bord à bord |
+| `add_leaderboard` | Classement animé (`rows` : 1 à 10 objets `rank`, `name`, `value`, `color` ; `start`, `duration`, `top`, `delay`) ; `id` / `as` |
+| `update_leaderboard` | Réédite un classement de la séquence active (`leaderboard`, `rows`, `duration`) ; ses calques sont remplacés |
 
 ### Séquences et séquences imbriquées
 
@@ -444,6 +462,37 @@ Ces verbes appellent les fonctions de montage que l'interface appelle (`core/tim
 - **Pistes** : `remove_track` refuse une piste qui porte des clips. `set_track_volume` et `set_track_pan` visent le fader de la piste
   (le mélangeur de l'interface) : piste audio seulement, déverrouillée ; la courbe d'automation de la piste reste à part.
 - Pas de verbe pour la sélection multiple ni les actions qui lisent la tête de lecture : ce sont des états d'interface.
+
+## Rythme, plans, sous-titres, effets d'impact et modèles
+
+Ces verbes font ce que l'interface fait **après** une analyse, avec des données que le script donne : ils n'analysent rien (ADR-0005, R1 et R2). Ils sont dans
+`core/scripting/auto_verbs.py`, `impact_verbs.py` et `template_verbs.py` (règles communes : `auto_rules.py`).
+
+- **Pas d'analyse** : ni mesure du tempo, ni détection de plans, ni transcription (des tâches lourdes qui décodent un média). Le script pose la grille
+  (`set_beat_grid`), donne les instants des plans (`cut_clip_at_scenes`) et les lignes de sous-titres (`add_subtitle_lines`). Les analyses restent des gestes
+  de l'interface, ainsi que `place_sfx` et `place_sfx_on_cuts` : ils **synthétisent et écrivent un fichier son** dans la bibliothèque de l'application, ce qu'un script ne
+  fait jamais (R2) ; pour un son, `import_media` puis `add_clip`.
+- **Grille rythmique** : `cut_clips_on_beats` et `distribute_on_grid` lisent la grille de la séquence **active** (`set_beat_grid` d'abord, sinon refus). Le nombre de morceaux
+  est calculé avant de couper.
+- **Plans** : les instants sont en secondes du **média**. Un instant que le modèle écarterait en silence (trop près d'un bord ou d'un autre, hors de la fenêtre du clip, en double)
+  est **refusé**, ainsi qu'un clip retimé, inversé, figé, imbriqué ou composé, ou qui n'est pas sur une piste vidéo.
+- **Sous-titres** : les lignes sont en secondes de la timeline, **triées et sans recouvrement** (comme celles de la transcription) ; elles vont sur une piste libre sur toute la plage
+  (jamais une piste verrouillée ou masquée), créée au besoin. `word_starts` d'un titre karaoké compte un instant par mot, croissant, dans la ligne.
+- **Effets d'impact** : ils *remplacent* les images clés d'échelle (zoom), de position et de rotation (secousse), ou d'échelle et de position (Ken Burns) de la plage qu'ils animent.
+  L'interface le fait sans rien dire ; un script reçoit un **refus** s'il y a des images clés dans cette plage (`remove_keyframe` ou `reset_transform` d'abord). Un effet plus long que le
+  clip est refusé aussi (le modèle l'écourterait), valeur par défaut comprise (zoom : 0,3 s, secousse : 0,45 s). Une valeur qui sortirait des bornes du transform (échelle 0,05–10,
+  position ±4) est refusée, jamais ramenée. Un calque de lumière ne prend pas de zoom d'impact. `fill_slot_with_photo` pose, comme l'interface, un Ken Burns qui remplace le zoom d'impact
+  du modèle de l'emplacement (`ken_burns: false` pour le garder).
+- **Durées et images clés** : une secousse dure 60 s au plus et le nombre d'images clés qu'elle poserait (3 par 1/15 s) est calculé avant, avec celles du clip, sous 2 000 ; "sur chaque cut" borne ses plans à 500.
+- **Verrous** : piste verrouillée et calque verrouillé sont refusés, pour **chaque** clip touché (les emplacements que `fill_slots_with_photos` choisit seul compris) (`apply_impact_on_cuts` vérifie tous les plans entrants avant d'écrire, `cut_clips_on_beats`
+  tous les clips). `update_leaderboard` refuse si un de ses calques, ou un calque qui en dépend (parent, groupe), est verrouillé.
+- **Photos** : mêmes règles de fichier que `add_image_layer` (dossier du script, `--allow-outside` décidé par l'appelant, en-tête seul lu, extension en accord avec le contenu, 8 192 pixels de
+  côté au plus), **toutes** ouvertes avant la première écriture. Une photo illisible est un refus (le modèle laisserait une carte vide), de même que des photos en trop (il les ignorerait).
+  `add_photo_slideshow` n'utilise la grille rythmique que si le script donne `beats_per_photo` (l'interface la prend si elle existe) ; les plans vont sur la première piste vidéo libre.
+- **Bornes de ressources** (avant de créer) : 500 clips créés par opération, 5 000 clips au total dans le projet **toutes séquences confondues** (les calques graphiques sont des clips) ;
+  200 clips cités, 100 photos, 10 lignes de classement.
+- **Identifiants** : `add_flash` (`id` / `as`) crée un calque cité ensuite ; `add_leaderboard` crée un **classement** (`id` / `as`) que `update_leaderboard` cite, et dont les calques sont
+  recréés à chaque réédition. Les verbes qui créent plusieurs clips (coupes, sous-titres, diaporama) rendent des identifiants **générés** : relisez-les avec `describe`.
 
 ## Calques graphiques
 
@@ -686,6 +735,7 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
 | `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py`, `layer_verbs.py`, `guide_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform, d'audio de clip, de calques graphiques et de guides (assemblés dans `VERBS` après leur verbe d'ancrage) |
 | `core/scripting/layer_rules.py` | les contrôles communs des verbes de calques : bornes, verrous des tiers, profondeur de la hiérarchie, apparence gardée |
+| `core/scripting/auto_verbs.py`, `impact_verbs.py`, `template_verbs.py`, `auto_rules.py` | les verbes de rythme, de plans, de sous-titres, d'effets d'impact et de modèles, et leurs règles communes (bornes, verrous) |
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |
 | `core/scripting/schema.py` | le schéma JSON, généré depuis la table |
 | `core/scripting/session.py` | la session : tout ou rien, une étape d'historique |
