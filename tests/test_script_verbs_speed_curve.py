@@ -220,10 +220,10 @@ def test_apply_time_preset_matches_the_model(preset, factory):
     _parity(factory, _op("apply_time_preset", clip="a", preset=preset), lambda p: apply_preset(p, "a", TimePreset(preset), fps=30.0))
 
 
-def test_apply_time_preset_on_an_audio_clip_and_with_timeline_ripple_matches_the_model():
+def test_apply_time_preset_on_an_audio_clip_and_with_source_ripple_matches_the_model():
     _parity(_project, _op("apply_time_preset", clip="sound", preset="slow_50"), lambda p: apply_preset(p, "sound", TimePreset.SLOW_50, fps=30.0))
-    _parity(_curved, _op("apply_time_preset", clip="a", preset="ramp_in", ripple="timeline"),
-            lambda p: apply_preset(p, "a", TimePreset.RAMP_IN, fps=30.0, mode=RippleMode.TIMELINE))
+    _parity(_curved, _op("apply_time_preset", clip="a", preset="ramp_in", ripple="source"),
+            lambda p: apply_preset(p, "a", TimePreset.RAMP_IN, fps=30.0, mode=RippleMode.SOURCE))
 
 
 def test_the_freeze_preset_needs_an_instant_on_a_frame_and_the_others_refuse_one():
