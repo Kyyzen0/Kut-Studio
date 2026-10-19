@@ -356,23 +356,14 @@ _PRESETS_ALL = [item.value for item in TimePreset if item is not TimePreset.FREE
 
 @pytest.mark.parametrize("factory", [_project, _curved], ids=["constant", "curved"])
 @pytest.mark.parametrize("preset", _PRESETS_ALL)
-def test_timeline_ripple_keeps_the_timeline_duration_for_every_preset(preset, factory):
-    factory = _roomy(factory)
-    """Sans le correctif, `slow_50` doublait un clip de 6 s en 12 s malgré `ripple: timeline` (le mode n'atteignait pas `set_clip_speed` ni `clear_speed_curve`)."""
-    before = _duration(factory())
-    session, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="timeline"))
+def test_timeline_ripple_is_refused_for_presets_the_model_cannot_honour(preset, factory):
+    """Le modèle (`apply_preset`) ne propage pas le mode aux vitesses constantes ni aux rampes : `slow_50` doublerait le clip malgré `timeline`."""
+    report = _refused(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="timeline"))
+    assert "ne conserve pas la durée" in report.error
+    _session, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="source"))
     assert report.ok, report.error
-    assert _duration(session.project) == pytest.approx(before, abs=1e-6)
-    source, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset, ripple="source"))
+    _session, report = _apply(factory(), _op("apply_time_preset", clip="a", preset=preset))             # défaut : source
     assert report.ok, report.error
-    if preset in ("slow_50", "slow_25", "fast_2", "fast_4"):
-        assert _duration(source.project) != pytest.approx(before)                    # le mode « source » change bien la durée : la différence est réelle
-
-
-def test_timeline_ripple_is_limited_by_the_end_of_the_media_like_the_model():
-    session, report = _apply(_project(), _op("apply_time_preset", clip="a", preset="fast_4", ripple="timeline"))      # 24 s de média pour 6 s, il n'y en a que 20
-    assert report.ok, report.error
-    assert _duration(session.project) == pytest.approx(5.0)
 
 
 def test_timeline_ripple_freeze_preset_keeps_the_duration_too():

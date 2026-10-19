@@ -22,7 +22,7 @@ from ..animation import InterpolationType, TangentMode
 from ..keyframe_editing import KeyframeRef, find_clip
 from ..project_model import Project
 from ..time_map import SPEED_LIMIT, SPEED_PROPERTY
-from ..time_ops import edit_speed_points, remove_speed_points, set_speed_point_interpolation, set_speed_tangents
+from ..time_ops import RippleMode, edit_speed_points, remove_speed_points, set_speed_point_interpolation, set_speed_tangents
 from ..time_presets import TimePreset, apply_preset
 from ..time_targets import SPEED_TARGET
 from .keyframe_rules import MAX_BLOCK, MAX_SLOPE, require_effective_tangents
@@ -110,6 +110,13 @@ def _apply_time_preset(a: Mapping[str, Any]) -> Operation:
             _require_aligned(project, find_clip(project, clip_id), float(at), "apply_time_preset")
         elif at is not None:
             raise ValueError(f"apply_time_preset : `at` ne sert qu'au préréglage `freeze` (pas à `{preset.value}`).")
+        if preset is not TimePreset.FREEZE and _mode(a) is RippleMode.TIMELINE:
+            # Le modèle ne propage pas le mode aux vitesses constantes (set_clip_speed) ni aux rampes (clear_speed_curve) : l'accepter promettrait
+            # une durée conservée que le préréglage ne conserve pas.
+            raise ValueError(
+                f"apply_time_preset : le préréglage `{preset.value}` ne conserve pas la durée de la timeline ; "
+                "utilisez ripple `source` (ou set_clip_speed / les verbes de courbe de vitesse)."
+            )
         apply_preset(project, clip_id, preset, local_time=0.0 if at is None else float(at), fps=float(project.fps), mode=_mode(a))
         return None
 
