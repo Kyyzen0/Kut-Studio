@@ -1,26 +1,33 @@
-# ADR-0007 : Kut-3D — un moteur 3D scriptable, intégré à la timeline
+# ADR-0009 : Kut-3D — un moteur 3D scriptable, intégré à la timeline
 
 **Statut :** Proposé
 **Date :** 2026-10-19
 **Décideurs :** mainteneur de Kut-Studio
 
 Objectif de l'utilisateur : **créer des films d'animation**, avec comme argument principal **des scripts Python**, et pouvoir
-**intégrer très facilement des fichiers OBJ et d'autres formats 3D**. Concrètement : décrire une scène 3D (modèles, caméra,
-lumières, mouvements) par un script, la rendre image par image, et la monter dans Kut-Studio comme n'importe quel clip.
+**intégrer très facilement des fichiers OBJ et d'autres formats 3D**, **ajouter des textures** et **animer des personnages**.
+Concrètement : décrire une scène 3D (modèles texturés, personnages animés, caméra, lumières, mouvements) par un script, la
+rendre image par image, et la monter dans Kut-Studio comme n'importe quel clip.
 Kut-3D n'est **pas un clone de Blender** : on vise la 3D pensée pour la vidéo, pas la modélisation ni la sculpture.
 
 ## Résumé de la décision
 
 1. **Un nouveau paquet `kut3d/`** à la racine, qui importe `core/` et jamais l'inverse. Il contient le modèle de scène,
-   les importeurs de formats, l'animation, le rendu hors fenêtre et la façade Python.
+   les importeurs de formats, les matériaux et textures, l'animation (objets, caméra, personnages), le rendu hors fenêtre et
+   la façade Python.
 2. **Les scripts de film sont des fichiers `.py` lancés explicitement** (R3 d'ADR-0005), jamais stockés dans un `.kut` ni
    exécutés à son ouverture. Un format déclaratif JSON pour la 3D viendra après, en suivant ADR-0005.
 3. **Un point d'entrée d'import, `load_model(chemin)`**, et un registre d'importeurs par extension : lecteurs maison
    (Python + numpy) pour OBJ+MTL, PLY, STL, glTF/GLB ; extras optionnels pour FBX, DAE, 3MF.
-4. **Intégration timeline** : un clip « scène 3D » référence un fichier `.kut3d` (scène JSON versionnée) ; le rendu produit
+4. **Textures** : matériaux PBR, UV et `.mtl` lus à l'import, rechargement à chaud, textures procédurales, et texture animée
+   issue d'un clip Kut (décision 4).
+5. **Animation de personnages** : glTF/GLB comme format central ; squelette, poids de peau, formes de visage et clips
+   d'animation dans le modèle de données dès la phase 1 ; on importe des personnages déjà rigués, on ne les crée pas
+   (décision 5).
+6. **Intégration timeline** : un clip « scène 3D » référence un fichier `.kut3d` (scène JSON versionnée) ; le rendu produit
    des images, avec passes alpha et profondeur, que Kut compose comme tout autre clip. Cela exige un `.kut` v18 et sa migration.
-5. **Moteur de rendu : provisoire.** Trois pistes (QRhi hors fenêtre, OpenGL hors écran via Qt, rasteriseur logiciel numpy),
-   à trancher par le spike de la phase 0 (`experiments/kut3d-spike/RESULTS.md`).
+7. **Moteur de rendu : provisoire.** Trois pistes (QRhi hors fenêtre, OpenGL hors écran via Qt, rasteriseur logiciel numpy),
+   à trancher par le spike de la phase 0 (`experiments/kut3d-spike/RESULTS.md`) ; phase 0 livrée (voir décision 7).
 
 ## Contexte
 
@@ -30,10 +37,10 @@ Ce que le code permet déjà, vérifié le 2026-10-19 :
 | --- | --- | --- |
 | Kut-Studio est un éditeur vidéo Python 3.11+ / PySide6 `>=6.6,<6.12`, FFmpeg externe ; le format projet `.kut` est du JSON en **version 17** | `requirements.txt`, `core/project_io.py` (`CURRENT_VERSION = 17`) | Ajouter un type de clip demande une version 18 et une migration. |
 | **Aucun code 3D** : ni maillage, ni caméra, ni Qt3D, ni three.js | recherche dans le dépôt ; `kut3d/` n'existe pas | On part de zéro : tout est à définir, rien à défaire. |
-| Un moteur GPU QRhi existe déjà, centré sur le moniteur | `ui/gpu_preview.py` (`QRhiWidget`), `core/gpu_backend.py`, `core/gpu_composite.py`, `core/gpu_effects.py`, shaders `assets/shaders/*.frag.qsb` | Une base pour le rendu GPU, mais liée à une fenêtre ; son usage hors fenêtre est précisément ce que le spike mesure. |
+| Un moteur GPU QRhi existe déjà, centré sur le moniteur | `ui/gpu_preview.py` (`QRhiWidget`), `core/gpu_backend.py`, `core/gpu_composite.py`, `core/gpu_effects.py`, shaders `assets/shaders/*.frag.qsb` | Une base pour le rendu GPU, mais liée à une fenêtre ; son usage hors fenêtre est ce que le spike de la phase 0 a mesuré (décision 7). |
 | L'animation est générique : courbes à images clés et six interpolations (`hold`, `linear`, `ease_in`, `ease_out`, `ease_in_out`, `bezier`) | `core/animation.py` (`AnimationCurve`, `InterpolationType`), `core/animation_targets.py` | Réutilisable tel quel pour animer position, rotation, focale, intensité de lumière. |
 | Le rendu d'image existe en partie hors de l'interface, mais l'image composée est assemblée dans `ui/` | `core/cpu_composite.py` (`compose_frame`) ; `CompositeFrame` est défini dans `core/gpu_composite.py` et **construit dans `ui/preview_panel.py:1369-1373`** | Le chemin « rendre une image sans fenêtre » n'est pas complet dans `core/` : Kut-3D ne peut pas s'y brancher sans le compléter ou le contourner. |
-| Le mode script est décidé, la façade Python ne l'est pas encore livrée | ADR-0005 (R1 : un `.kut` ne s'exécute jamais ; R3 : le Python ne tourne que sur demande explicite) ; 72 verbes déclaratifs dans `core/scripting/` (`verbs.py`, `session.py`, `script.py`) ; **`core/scripting/api.py` n'existe pas** (étapes 5 à 7 du plan d'ADR-0005 à faire) | La façade Python de Kut-3D ne peut s'appuyer sur celle d'ADR-0005 qu'une fois celle-ci livrée. |
+| Le mode script est décidé, la façade Python ne l'est pas encore livrée | ADR-0005 (R1 : un `.kut` ne s'exécute jamais ; R3 : le Python ne tourne que sur demande explicite) ; les verbes déclaratifs sont dans `core/scripting/` (`verbs.py`, `session.py`, `script.py`) ; **`core/scripting/api.py` n'existe pas** (étapes 5 à 7 du plan d'ADR-0005 à faire) | La façade Python de Kut-3D ne peut s'appuyer sur celle d'ADR-0005 qu'une fois celle-ci livrée. |
 | Les plans 3D actuels des productions sont rendus par **Blender externe**, puis assemblés par `core` | `productions/halloween_2026/build.py`, `productions/halloween_2026/blender/` (scripts `bpy`) | Kut-3D remplacerait cette brique externe ; c'est le premier cas d'usage réel. |
 | Architecture : `ui/` importe `core/`, jamais l'inverse ; FFmpeg uniquement via le superviseur | `docs/architecture.md`, `core/process_supervisor.py` | `kut3d/` s'insère sous `ui/`, à côté de `core/` ; il ne lance jamais FFmpeg lui-même. |
 | `core/` n'est pas totalement indépendant de Qt | 36 fichiers de `core/` référencent PySide6 | Un rendu « sans Qt » ne peut pas se reposer sur n'importe quel module de `core/`. |
@@ -53,9 +60,11 @@ Ce que le code permet déjà, vérifié le 2026-10-19 :
 
 `kut3d/` importe `core/` ; `core/` n'importe jamais `kut3d/`. `ui/` peut importer `kut3d/`. Sous-modules :
 
-- **`model`** : `Scene`, `Node`, `Mesh`, `Camera`, `Light`, `Material`. Objets **immuables et sérialisables**.
+- **`model`** : `Scene`, `Node`, `Mesh` (positions, normales, UV), `Camera`, `Light`, `Material`, `Skeleton`, `Skin`,
+  `MorphTarget`, `AnimationClip`. Objets **immuables et sérialisables**.
 - **`importers`** : registre par extension (§3).
 - **`animation`** : réutilise `core.animation.AnimationCurve` et ses interpolations ; pas de second système de courbes.
+  Porte aussi la lecture et le mélange de clips d'animation (décision 5).
 - **`render`** : rendu **hors fenêtre**, image par image, avec des passes couleur, alpha et profondeur.
 - **`api`** : la façade Python publique.
 
@@ -72,19 +81,45 @@ il est la forme sérialisée de la liste d'opérations que produit le script Pyt
 - **Lecteurs maison** (Python + numpy, sans dépendance supplémentaire) : **OBJ + MTL, PLY, STL, glTF / GLB**.
 - **Extras optionnels** (`trimesh` ou `assimp`) : **FBX, DAE, 3MF**. USD et Alembic plus tard.
 - **Normalisation automatique** : axe haut (Y ou Z), unités, centrage, mise à l'échelle.
-- **Confort** : textures et `.mtl` retrouvés automatiquement, matériau gris par défaut quand il manque, rechargement à chaud
-  quand le fichier source change, glisser-déposer dans l'application (nouveau type de `MediaAsset`, « modèle 3D »).
+- **Confort** : textures et `.mtl` retrouvés automatiquement (décision 4), matériau gris par défaut quand il manque,
+  rechargement à chaud quand le fichier source change, glisser-déposer dans l'application (nouveau type de `MediaAsset`, « modèle 3D »).
 - Les entrées sont bornées (taille de fichier, nombre de sommets et de faces) avant allocation, et une erreur n'en recopie
   pas le contenu.
 
-### 4. L'intégration à la timeline
+### 4. Les textures
+
+- **Matériaux PBR** : couleur de base, normales, rugosité / métal, émission, occlusion ; les canaux manquants prennent des
+  valeurs par défaut explicites, jamais une correction silencieuse.
+- **UV et `.mtl`** sont lus à l'import (OBJ+MTL, glTF) ; les chemins de textures restent confinés au dossier du modèle.
+- **Rechargement à chaud** d'une image modifiée sur le disque.
+- **API script** du genre `mesh.material.texture("base_color", "bois.png")`.
+- **Textures procédurales** générées par numpy (bruit, damier, dégradés), sans fichier image.
+- **Texture animée issue d'un clip ou d'une séquence Kut** : la timeline vidéo sert de texture à un objet 3D (écran de
+  télévision, façade, projection). C'est un atout propre à l'écosystème : la texture est évaluée à l'image courante du film.
+- **Hors périmètre initial** : peinture de texture 3D, dépliage UV automatique (un modèle sans UV garde un matériau uni).
+- Les images sont bornées en dimensions avant allocation ; le volume mémoire des textures est un risque suivi (voir Risques).
+
+### 5. L'animation de personnages
+
+- **glTF / GLB est le format central** : OBJ, PLY et STL n'ont ni squelette ni animation.
+- **Le modèle de données inclut dès la phase 1** : squelette (hiérarchie d'os), poids de peau (**4 influences par sommet**),
+  formes de visage (*morph targets*) et clips d'animation, même si le rendu et la lecture arrivent plus tard.
+- **Lecture et mélange de clips** : `personnage.play("marche", loop=True)`, fondu enchaîné entre clips.
+- **Contrôle des os par courbes** : les os se pilotent avec `core/animation.py` (`AnimationCurve`), pas de second système.
+- **Déformation par os** : sur **CPU (numpy)** comme référence de test, sur **GPU (vertex shader)** pour la production, selon
+  la même logique que le choix du moteur (décision 7).
+- **Plus tard** : visage et synchronisation labiale à partir de l'audio de Kut, retargeting, IK, import BVH.
+- **Limite assumée** : la **création d'un personnage de zéro** (modélisation, rig, peinture des poids) est **hors périmètre**.
+  On importe des personnages déjà rigués (glTF, FBX, VRM) et on les anime et les met en scène.
+
+### 6. L'intégration à la timeline
 
 Un clip « scène 3D » est un `Clip` qui référence un fichier **`.kut3d`** : une scène JSON, versionnée, qui suit les mêmes
 règles de rigueur que le `.kut` (version plus récente refusée, champs invalides refusés, aucun champ interprété comme du code).
 Cela exige un **`.kut` v18** avec une migration depuis la v17. Le rendu produit des images (couleur, alpha, profondeur) que
 Kut compose comme celles de n'importe quel clip : l'aperçu reste l'export.
 
-### 5. Le moteur de rendu : orientation donnée par le spike, à valider sur Windows et Linux
+### 7. Le moteur de rendu : orientation donnée par le spike, à valider sur Windows et Linux
 
 Le spike de la phase 0 (`experiments/kut3d-spike/RESULTS.md`) a été exécuté **sur macOS uniquement** : la voie numpy, QRhi (Metal)
 et OpenGL 4.1 hors écran rendent le même cube (99,997 % de pixels à ±12 niveaux). Orientation retenue, **provisoire** :
@@ -120,6 +155,16 @@ une tolérance près) ; **testable en CI**. Rien n'interdit de garder (c) comme 
   restent hors champ.
 - **Qualité du rendu.** Un rendu temps réel reste en retrait d'un path tracer : ombres, anti-crénelage et flou de mouvement
   sont requis pour un film, et ne sont pas gratuits.
+- **Peau et cheveux.** Un personnage crédible dans un film exige un rendu de peau (diffusion sous la surface) et de cheveux
+  bien au-delà de l'ombrage PBR de base ; à traiter comme un chantier à part, avec une première version volontairement simple.
+- **Déformation par os non mesurée.** Le spike ne couvrait que le cube : le coût et la fidélité de la déformation par os
+  (vertex shader QRhi, passage des matrices d'os, comparaison à la référence numpy) restent à mesurer avant de s'y engager.
+- **FBX : dépendance et licence.** Beaucoup de personnages gratuits sont en FBX, mais son importeur passe par une dépendance
+  (`assimp` ou `trimesh`) dont la licence et la distribution restent à vérifier.
+- **Licences des personnages et animations importés.** Un modèle ou une animation téléchargés ont leur propre licence
+  (usage commercial, attribution, redistribution) ; Kut-Studio ne les vérifie pas, l'utilisateur en est responsable.
+- **Volume mémoire des textures.** Textures 4K multiples, par objet et par image : borner les dimensions, mutualiser les
+  images identiques, libérer les textures hors plan.
 - **Performance du Python sur de gros maillages.** Numpy d'abord ; mesurer sur des modèles réels avant d'optimiser.
 - **Plafond PySide6.** Le moteur dépend de `PySide6 <6.12` (voir `requirements.txt`) ; le rendu hors fenêtre via Qt hérite de
   ses limites et de ses régressions.
@@ -135,23 +180,34 @@ une tolérance près) ; **testable en CI**. Rien n'interdit de garder (c) comme 
 
 Chaque phase est une PR (ou plusieurs) fusionnable seule.
 
-0. **Cet ADR + spike de rendu hors fenêtre** (`experiments/kut3d-spike/`) : mesurer les trois pistes du §5.
-1. **`model` + `importers`** : OBJ, PLY, STL, glTF ; normalisation ; tests sur des fichiers réels et mal formés.
-2. **Rendu image par image** : caméra, lumières, matériaux, passes alpha et profondeur.
+0. **Cet ADR + spike de rendu hors fenêtre** (`experiments/kut3d-spike/`) : **livrée** (commit `87dd481`, branche
+   `feat/kut3d-phase0-spike`) ; résultats en décision 7.
+1. **Modèle de scène + importeurs** : UV, matériaux, squelette, peau, formes de visage, clips d'animation ; importeurs OBJ,
+   PLY, STL, glTF / GLB ; normalisation ; tests sur des fichiers réels et mal formés.
+2. **Rendu image par image** : caméra, lumières, ombrage PBR avec textures, déformation par os (CPU numpy + shader GPU),
+   passes alpha et profondeur.
 3. **Façade Python + clip « scène 3D »** (`.kut` v18, migration, fichier `.kut3d`).
-4. **Animation 3D, texte 3D, caméra animée.**
+4. **Animation**, en trois temps :
+   - **4a** lecture de clips d'animation, animation d'objets et de caméra par courbes ; importeur **FBX** optionnel
+     (`assimp` ou `trimesh`, licence à vérifier), ou conversion préalable en glTF ;
+   - **4b** mélange de clips et contrôle des os par script ;
+   - **4c** visage, synchronisation labiale, IK, retargeting.
 5. **Interface** : glisser-déposer, viewport, rechargement à chaud.
-6. **Importeurs avancés** (FBX, DAE, 3MF, USD), plugins.
+6. **Importeurs avancés** (USD), plugins, bibliothèque d'assets.
 
-Les **phases 0 à 3 suffisent** à réaliser un premier court-métrage entièrement scripté.
+Les **phases 0 à 3 suffisent** à réaliser un premier court-métrage entièrement scripté, avec des modèles texturés ; les
+**personnages animés arrivent en phase 4**.
 
 ## Décisions ouvertes
 
 1. **Application séparée ou module intégré ?** Cet ADR propose le module intégré (un clip de la timeline) ; un exécutable
    séparé reste possible si le poids des dépendances l'exige.
 2. **Plateformes visées** : macOS d'abord, puis Windows et Linux ? Le critère « sans fenêtre partout » du spike en dépend.
-3. **Moteur de rendu final** : à trancher d'après `experiments/kut3d-spike/RESULTS.md`.
+3. **Moteur de rendu final** : à trancher d'après `experiments/kut3d-spike/RESULTS.md` (décision 7).
 4. **Politique de licence des extras** (`trimesh`, `assimp`) : compatibilité avec la distribution, extras optionnels ou
    embarqués.
-5. **Ordre vis-à-vis de l'étape 5 d'ADR-0005** (façade de lecture `describe()`) : la phase 3 de cet ADR la suppose ; faut-il
+5. **Stratégie FBX** : importeur optionnel (`assimp` ou `trimesh`, phase 4a) ou conversion préalable en glTF par l'utilisateur ?
+6. **Frontière « pas de création de rig »** : à confirmer. Kut-Studio importe et anime des personnages déjà rigués, mais ne
+   propose ni modélisation, ni rig, ni peinture des poids.
+7. **Ordre vis-à-vis de l'étape 5 d'ADR-0005** (façade de lecture `describe()`) : la phase 3 de cet ADR la suppose ; faut-il
    la livrer avant, ou en parallèle avec une façade minimale côté `kut3d/` ?
