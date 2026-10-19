@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
+
 ## [0.7.0] - 2026-10-19
 
 Version qui permet d'**animer les effets avec des images clés** : la luminosité, le contraste et la saturation de la correction de couleur, et l'intensité de la vignette ont leurs losanges ‹ ◆ ›, comme le mouvement, avec l'éditeur de courbes. Les scripts gagnent des verbes pour les images clés de masque et de calque graphique et pour les effets de clip. Deux correctifs s'y ajoutent : la luminosité négative de l'aperçu suit l'export, et annuler un export sous Windows ne laisse plus de fichier caché.

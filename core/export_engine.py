@@ -2185,14 +2185,10 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
     """Convertit un :class:`TransitionType` en nom de filtre ``xfade``.
 
     Le mapping suit la nomenclature officielle de FFmpeg (``fade``,
-    ``fadeblack``, ``wipeleft``, ``wiperight``, ``wipeup``, ``wipedown``,
-    ``slideleft``, ``slideright``, ``slideup``, ``slidedown``, etc.). Les
-    transitions qui ne sont pas couvertes par ``xfade`` (``pixelize``,
-    ``radial``, ``smooth_left`` / ``smooth_right``, ``circle_open`` /
-    ``circle_close``) sont émulées par un fondu enchaîné standard — un
-    filtre dédié serait possible mais nécessiterait un ``geq`` /
-    ``vstack`` coûteux. À ce niveau, le rendu reste visuellement proche
-    d'un fondu doux, ce qui est acceptable pour la prévisualisation.
+    ``fadeblack``, ``wipeleft``, ``slideleft``, ``dissolve``, ``pixelize``,
+    ``radial``, ``circleopen`` / ``circleclose``, ``smoothleft`` /
+    ``smoothright``, etc.) : chaque :class:`TransitionType` a son filtre
+    ``xfade`` natif.
 
     Les types inconnus retombent sur ``fade`` plutôt que de planter :
     un projet corrompu ou une future valeur doit produire un export
@@ -2217,22 +2213,18 @@ def _ffmpeg_transition_name(transition: RenderTransition) -> str:
         # Dissolutions (tâche 26)
         TransitionType.DISSOLVE: "dissolve",
         TransitionType.FADE_WHITE: "fadewhite",
+        # Formes, pixels et lissés : rendus nativement par ``xfade`` (ils
+        # étaient repliés sur ``fade`` avant que le mapping soit complété).
+        TransitionType.PIXELIZE: "pixelize",
+        TransitionType.RADIAL: "radial",
+        TransitionType.CIRCLE_OPEN: "circleopen",
+        TransitionType.CIRCLE_CLOSE: "circleclose",
+        TransitionType.SMOOTH_LEFT: "smoothleft",
+        TransitionType.SMOOTH_RIGHT: "smoothright",
     }
     name = mapping.get(transition.type)
     if name is not None:
         return name
-    # Types non couverts nativement par ``xfade`` : repli sur ``fade``.
-    # On garde la liste à jour pour faciliter la maintenance future.
-    fallback = {
-        TransitionType.PIXELIZE,
-        TransitionType.RADIAL,
-        TransitionType.CIRCLE_OPEN,
-        TransitionType.CIRCLE_CLOSE,
-        TransitionType.SMOOTH_LEFT,
-        TransitionType.SMOOTH_RIGHT,
-    }
-    if transition.type in fallback:
-        return "fade"
     # Type totalement inconnu : on retombe sur ``fade`` par sécurité
     # pour ne pas casser l'export d'un fichier corrompu.
     return "fade"
