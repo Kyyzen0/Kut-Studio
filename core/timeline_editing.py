@@ -481,10 +481,18 @@ def add_marker(
     return marker
 
 
-def set_cover_marker(project: Project, time_seconds: float, name: str = "") -> Marker:
-    """Pose **le** marqueur de couverture (catégorie ``cover``) : il n'y en a qu'un, l'ancien est remplacé."""
-    project.markers = [marker for marker in project.markers if marker.category != "cover"]
-    return add_marker(project, time_seconds, name, category="cover")
+def set_cover_marker(project: Project, time_seconds: float, name: str = "", *, marker_id: str | None = None) -> Marker:
+    """Pose **le** marqueur de couverture (catégorie ``cover``) : il n'y en a qu'un, l'ancien est remplacé.
+
+    ``marker_id`` : identifiant imposé (scripts) ; ``None`` en génère un, comme avant. Il est vérifié **avant** de retirer l'ancien
+    marqueur (un refus ne perd pas la couverture existante) ; celui de l'ancienne couverture, qui disparaît, peut être repris."""
+    kept = [marker for marker in project.markers if marker.category != "cover"]
+    if marker_id is not None:
+        from .object_ids import resolve_object_id
+
+        resolve_object_id(marker_id, prefix="marker", kind="repère", taken={m.id for m in kept}, length=8)
+    project.markers = kept
+    return add_marker(project, time_seconds, name, category="cover", marker_id=marker_id)
 
 
 def remove_marker(project: Project, marker_id: str) -> bool:

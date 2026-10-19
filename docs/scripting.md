@@ -128,6 +128,16 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_clip` | Pose un média **du projet** sur une piste (`track`, `asset`, `at`) |
 | `delete_clip` | Supprime un clip (`clip`) |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
+| `trim_clip_start` | Rogne le début d'un clip : il ne peut qu'avancer, la fin ne bouge pas (`clip`, `at` = nouveau début) |
+| `trim_clip_end` | Rogne ou étend la fin d'un clip, sans dépasser sa source (`clip`, `at` = nouvelle fin) |
+| `ripple_trim_clip_start` | Rogne le début d'un clip et fait reculer d'autant ceux qui le suivent sur sa piste (`clip`, `at`) |
+| `cut_clip` | Coupe un clip en deux (`clip`, `at` strictement à l'intérieur) ; **crée la moitié droite** (`id` / `as`), la gauche garde l'identifiant |
+| `duplicate_clip` | Duplique un clip sur sa piste, copie complète ; crée la copie (`clip`, `at` optionnel : sinon juste après la fin ; `id` / `as`) |
+| `ripple_delete_clip` | Supprime un clip et fait reculer d'autant tout ce qui le suit, sur les pistes non verrouillées (`clip`) |
+| `slip_clip` | Décale la fenêtre de source sans bouger le clip (`clip`, `delta` en secondes de source) ; hors de la source : refusé |
+| `slide_clip` | Glisse un clip en ajustant le voisin d'avant et celui d'après (`clip`, `at`) |
+| `roll_edit` | Déplace la coupe entre un clip et son voisin, durée totale inchangée (`clip`, `edge` = `left` ou `right`, `at`) ; sans voisin, c'est un trim |
+| `move_clip_to_track` | Déplace un clip dans le temps et vers une autre piste de même genre (`clip`, `track`, `at`) |
 | `set_clip_enabled` | Active ou désactive un clip (`clip`, `enabled`) |
 | `add_effect` | Ajoute un effet visuel à la fin de la chaîne d'un clip **vidéo** (`clip`, `type` = `color_correction`, `blur`, `sharpen`, `vignette`, `black_and_white`, `sepia`, `glow`, `chromatic_aberration`, `heat_haze` ; `params` optionnel, `enabled`) ; `id` / `as` (local au clip) ; un effet à instance unique déjà présent est refusé |
 | `remove_effect` | Retire un effet (`clip`, `effect`) |
@@ -146,6 +156,11 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `add_graphic` | Pose un calque graphique : `graphic` = `text`, `rectangle`, `solid`, `shape`, `adjustment` ou `null` (`at`, `duration`, `text`, `shape`, `track` : une piste de graphiques déverrouillée) |
 | `set_graphic` | Modifie un calque : `text`, `fill_color`, `stroke_color` (`#RRGGBB` ou `#RRGGBBAA`), `stroke_width`, `font_size`, `width`, `height` (au moins un) ; refusé pour une propriété **animée** (`graphic.*` : une valeur statique serait masquée par la courbe), comme `set_mask` |
 | `add_track` | Ajoute une piste : `type` = `video`, `audio` ou `subtitle` (`name` : doit être libre, sinon refus) |
+| `remove_track` | Supprime une piste **vide** (`track`) |
+| `rename_track` | Renomme une piste, son identifiant ne change pas (`track`, `name` libre) |
+| `move_track` | Place une piste à un index de la liste (`track`, `index` de 0 au nombre de pistes moins un) ; une piste verrouillée ne bouge pas |
+| `set_track_volume` | Règle le fader d'une piste **audio** déverrouillée (`track`, `volume_db` de −60 à 12) |
+| `set_track_pan` | Règle le panoramique d'une piste **audio** déverrouillée (`track`, `pan` de −1 à 1) |
 | `add_subtitle` | Pose un sous-titre sur une piste de sous-titres (`text`, `at`, `duration`, `track`) |
 | `add_transition` | Transition entre deux clips vidéo adjacents d'une même piste (`from_clip`, `to_clip`, `transition`, `duration`) |
 | `remove_transition` | Retire une transition (`transition`) |
@@ -178,6 +193,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `set_mask_points` | Remplace les sommets d'un polygone (`points`) ou les nœuds d'une courbe (`nodes`), un seul des deux selon la forme du masque (`clip`, `mask`) |
 | `remove_mask` | Retire un masque (`clip`, `mask`) avec ses images-clés `mask.<id>.*` et ses liaisons de suivi ; pas le recadrage (`clear_crop`) |
 | `add_marker` | Ajoute un repère (`at`, `name`, `category`) |
+| `set_cover_marker` | Pose le repère de couverture, le seul : l'ancien est remplacé (`at`, `name`) ; `id` / `as` |
+| `remove_marker` | Retire un repère (`marker`, par son identifiant) |
 | `create_sequence` | Crée une séquence vide, **non activée** (`name` libre, `width`, `height` pairs 16…8192, `fps` 1…240 ; sinon ceux de la séquence active) |
 | `rename_sequence` | Renomme une séquence (`sequence`, `name` libre) |
 | `set_sequence_format` | Change le cadre et/ou la cadence d'une séquence (`sequence`, au moins un de `width`, `height`, `fps`) |
@@ -349,6 +366,22 @@ l'interface), avec une durée que le script donne (`duration`, de 0,04 s à 1 00
 - `track` doit être une piste de **graphiques déverrouillée** (une piste vidéo, audio ou verrouillée est refusée).
 - **Limite** : c'est un calque graphique, donc **au-dessus de toute la vidéo** ; il ne participe pas aux transitions entre clips vidéo ni
   au remappage de temps. Poser une image comme clip d'une piste vidéo viendra plus tard.
+
+## Montage et pistes
+
+Ces verbes appellent les fonctions de montage que l'interface appelle (`core/timeline_operations.py`, `core/timeline_editing.py`,
+`core/track_operations.py`) : le résultat est celui du geste correspondant. Les verbes de ce domaine sont dans `core/scripting/edit_verbs.py`.
+
+- **Couper puis citer** : `cut_clip` crée la moitié droite ; avec `as`, les opérations suivantes la désignent par `{"ref": alias}`. Sans `id`
+  ni `as`, le modèle la nomme `<clip>-split-N`.
+- **Rien n'est ramené en silence** : le modèle bornerait un `slip_clip` qui sort de la source et un `move_track` hors de la liste ; un script
+  les reçoit refusés. Les rognages, `slide_clip` et `roll_edit` refusent déjà d'eux-mêmes ce qui sortirait de la source ou rendrait un clip vide.
+- **Verrous** : piste verrouillée et calque graphique verrouillé sont refusés ; `slide_clip` et `roll_edit` refusent aussi si un voisin
+  qu'ils modifieraient est un calque verrouillé. `move_clip_to_track` vérifie les deux pistes. `ripple_delete_clip` laisse en place les pistes
+  verrouillées. `remove_track` et `rename_track` ne regardent pas le verrou (l'interface non plus) ; `move_track` le refuse.
+- **Pistes** : `remove_track` refuse une piste qui porte des clips. `set_track_volume` et `set_track_pan` visent le fader de la piste
+  (le mélangeur de l'interface) : piste audio seulement, déverrouillée ; la courbe d'automation de la piste reste à part.
+- Pas de verbe pour la sélection multiple ni les actions qui lisent la tête de lecture : ce sont des états d'interface.
 
 ## Pas encore là
 

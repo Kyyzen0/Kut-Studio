@@ -14,6 +14,10 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- Les scripts savent monter : rogner, couper (la moitié droite se cite ensuite), dupliquer, glisser, déplacer d'une piste à l'autre, supprimer en refermant le trou, gérer les pistes (supprimer, renommer, ordonner, fader et panoramique) et les repères, avec les mêmes refus que l'interface.
+
 ### Fixed
 
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
