@@ -25,7 +25,8 @@ from ..impact_fx import (
 from ..ken_burns import DEFAULT_STRENGTH, apply_ken_burns
 from ..timeline_operations import find_clip
 from .auto_rules import (
-    graphic_type_of, require_fits, require_no_keyframes, require_room,
+    MAX_NEW_CLIPS_PER_OPERATION, MAX_SHAKE_SECONDS, graphic_type_of, require_count, require_fits, require_keyframe_room, require_no_keyframes,
+    require_room, shake_keyframe_count,
 )
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _TRACK, _editable_clip, _track_id
 
@@ -53,6 +54,7 @@ def _camera_shake(a: Mapping[str, Any]) -> Operation:
         clip = find_clip(project, _editable_clip(project, a["clip"], track_types=_VISUAL))
         start, length = float(a.get("start", 0.0)), float(a.get("length", SHAKE_SECONDS))
         end = require_fits(clip, start, length, "apply_camera_shake")
+        require_keyframe_room(clip, shake_keyframe_count(length), "apply_camera_shake")        # avant d'échantillonner à 15 Hz
         require_no_keyframes(clip, _SHAKE_POSITION, start, end, "apply_camera_shake")
         extra = {} if a.get("seed") is None else {"seed": int(a["seed"])}
         apply_camera_shake(clip, start=start, length=length, amplitude=float(a.get("amplitude", 0.012)),
@@ -86,10 +88,12 @@ def _apply_impact_on_cuts(a: Mapping[str, Any]) -> Operation:
         incoming = [clip for clip in track.clips if round(clip.timeline_start, 6) in times]       # ceux que le modèle touche
         if not incoming:
             raise ValueError(f"Aucun cut sur la piste '{track_id}' (des clips qui se suivent bord à bord).")
+        require_count(len(incoming), MAX_NEW_CLIPS_PER_OPERATION, "plans entrants")
         for clip in incoming:                             # verrous : le modèle vérifie piste et calque de chacun avant la première écriture
             if zoom > 0.0:
                 require_no_keyframes(clip, ("scale",), 0.0, require_fits(clip, 0.0, ZOOM_SECONDS, "apply_impact_on_cuts"), "apply_impact_on_cuts")
             if shake:
+                require_keyframe_room(clip, shake_keyframe_count(SHAKE_SECONDS), "apply_impact_on_cuts")
                 require_no_keyframes(clip, _SHAKE_POSITION, 0.0, require_fits(clip, 0.0, SHAKE_SECONDS, "apply_impact_on_cuts"), "apply_impact_on_cuts")
         require_room(project, len(incoming) if flash else 0)
         return apply_impact_on_cuts(project, track_id, zoom=zoom, flash=flash, shake=shake)
@@ -120,7 +124,8 @@ IMPACT_VERBS: tuple[Verb, ...] = (
     Verb("apply_camera_shake", "Secousse de caméra : position et rotation tirées au hasard (graine stable) toutes les 1/15 s, amorties jusqu'au repos. "
                                "Mêmes refus que apply_impact_zoom, pour les images clés de position et de rotation.",
          (_CLIP, _START,
-          Param("length", Kind.NUMBER, "Durée de la secousse, en secondes (défaut 0,45).", required=False, minimum=0.01, maximum=MAX_TIME),
+          Param("length", Kind.NUMBER, f"Durée de la secousse, en secondes, au plus {MAX_SHAKE_SECONDS:g} (défaut 0,45).", required=False, minimum=0.01,
+                maximum=MAX_SHAKE_SECONDS),
           Param("amplitude", Kind.NUMBER, "Amplitude, fraction du cadre, 0 à 1 (défaut 0,012).", required=False, minimum=0.0, maximum=1.0),
           Param("rotation", Kind.NUMBER, "Rotation maximale, degrés, 0 à 360 (défaut 1,2).", required=False, minimum=0.0, maximum=360.0),
           Param("seed", Kind.INTEGER, "Graine du hasard (défaut : dérivée de l'identifiant du clip, donc stable).", required=False, minimum=0,

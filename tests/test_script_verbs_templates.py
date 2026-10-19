@@ -296,6 +296,16 @@ def test_fill_slots_with_photos_refuses_what_the_model_ignores_silently(tmp_path
     _refused(_project(), _op("fill_slots_with_photos", photos=["p0.png"], start="plain"), folder=tmp_path)
 
 
+def test_fill_slots_with_photos_refuses_an_auto_selected_locked_layer_slot(tmp_path):
+    _photos(tmp_path, 3)
+    locked = _project()
+    find_clip(locked, "s1").graphic = GraphicOverlay(type=GraphicType.TEXT, text="x", locked=True)            # vide, piste libre, calque verrouillé
+    report = _refused(locked, _op("fill_slots_with_photos", photos=["p0.png", "p1.png"]), folder=tmp_path)
+    assert "verrouill" in report.error
+    session, report = _apply(locked, _op("fill_slots_with_photos", photos=["p0.png"], start="s2"), folder=tmp_path)   # s1 est avant le départ : non visé
+    assert report.ok
+
+
 def test_fill_slots_with_photos_skips_nothing_unseen_on_a_locked_track(tmp_path):
     _photos(tmp_path, 1)
     session, report = _apply(_project(), _op("fill_slots_with_photos", photos=["p0.png"]), folder=tmp_path)

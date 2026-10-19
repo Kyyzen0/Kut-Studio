@@ -16,11 +16,13 @@ du modèle qui les applique. Les analyses elles-mêmes restent des gestes de l'i
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from typing import Any
 
 from ..beat_grid import BeatGrid
 from ..graphics import GraphicOverlay
+from ..impact_fx import SHAKE_FREQUENCY
 from ..project_model import Clip, Project
 from .verbs import _editable_clip
 
@@ -32,6 +34,10 @@ MAX_LISTED_CLIPS = 200
 """Clips cités par une seule opération (liste de clips à couper, à répartir)."""
 MAX_PHOTOS = 100
 """Photos d'un diaporama ou d'un remplissage d'emplacements : chacune est ouverte (en-tête) avant la moindre écriture."""
+MAX_KEYFRAMES_PER_CLIP = 2_000
+"""Images clés de transform qu'un clip porte au plus après un effet de ces verbes (une secousse en pose 3 par pas de 1/15 s)."""
+MAX_SHAKE_SECONDS = 60.0
+"""Durée maximale d'une secousse : au-delà, ce n'est plus un effet d'impact."""
 TOLERANCE = 1e-6
 
 _KEYFRAME_TOLERANCE = 1e-6
@@ -97,6 +103,19 @@ def require_fits(clip: Clip, start: float, length: float, effect: str) -> float:
     return end
 
 
+def shake_keyframe_count(length: float) -> int:
+    """Nombre d'images clés que ``apply_camera_shake`` pose pour cette durée (le calcul du modèle : 3 propriétés, un pas de 1/15 s, au moins 2 pas)."""
+    steps = max(2, math.ceil(length * SHAKE_FREQUENCY))
+    return 3 * (steps + 1)
+
+
+def require_keyframe_room(clip: Clip, adding: int, effect: str) -> None:
+    """Refuse AVANT d'appeler le modèle si le clip porterait plus de :data:`MAX_KEYFRAMES_PER_CLIP` images clés (celles déjà là comprises)."""
+    total = len(clip.transform_keyframes) + adding
+    if total > MAX_KEYFRAMES_PER_CLIP:
+        raise ValueError(f"{effect} : le clip '{clip.id}' porterait {total} images clés de transform (au plus {MAX_KEYFRAMES_PER_CLIP}) ; réduisez la durée.")
+
+
 def graphic_type_of(clip: Clip) -> Any:
     """Le genre du calque graphique d'un clip (valeur texte), ``None`` pour un clip qui n'en a pas."""
     graphic = clip.graphic
@@ -107,6 +126,6 @@ def graphic_type_of(clip: Clip) -> Any:
 
 __all__ = [
     "MAX_CLIPS_IN_PROJECT", "MAX_LISTED_CLIPS", "MAX_NEW_CLIPS_PER_OPERATION", "MAX_PHOTOS", "TOLERANCE",
-    "editable_clips", "graphic_type_of", "require_count", "require_fits", "require_grid", "require_no_keyframes", "require_room",
+    "MAX_KEYFRAMES_PER_CLIP", "MAX_SHAKE_SECONDS", "editable_clips", "graphic_type_of", "require_keyframe_room", "shake_keyframe_count", "require_count", "require_fits", "require_grid", "require_no_keyframes", "require_room",
     "total_clips",
 ]

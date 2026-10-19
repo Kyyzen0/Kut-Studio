@@ -25,7 +25,7 @@ from ..leaderboard import (
     KIND, MAX_ROWS, Leaderboard, LeaderboardRow, build_leaderboard, leaderboard_from_dict, update_leaderboard,
 )
 from ..object_ids import resolve_object_id
-from ..template_slots import add_photo_slideshow, fill_slot, fill_slot_with_photo, fill_slots_with_photos, slideshow_cuts
+from ..template_slots import add_photo_slideshow, empty_slots, fill_slot, fill_slot_with_photo, fill_slots_with_photos, slideshow_cuts
 from ..timeline_operations import find_clip
 from ..compositing_guard import ClipEditRefused, clip_edit_refusal
 from .auto_rules import MAX_PHOTOS, require_grid, require_room
@@ -45,6 +45,23 @@ def _slot(project: Any, selector: str) -> str:
     if not find_clip(project, clip_id).template_slot:
         raise ValueError(f"Le clip '{clip_id}' n'est pas un emplacement de modèle.")
     return clip_id
+
+
+def _require_unlocked_targets(project: Any, start: str | None) -> None:
+    """Les emplacements que ``fill_slots_with_photos`` choisirait seuls (vides, pistes déverrouillées, après `start`) ne sont pas des calques verrouillés.
+
+    Le modèle ne filtre que les pistes verrouillées : il remplirait un calque verrouillé. Un script reçoit un refus, jamais un écrasement."""
+    key = None
+    if start is not None:
+        first = find_clip(project, start)
+        key = (first.timeline_start, first.track_id)
+    for clip in empty_slots(project):
+        track = next(item for item in project.tracks if item.id == clip.track_id)
+        if track.locked or (key is not None and (clip.timeline_start, clip.track_id) <= key):
+            continue
+        code = clip_edit_refusal(project, clip.id, visual_only=False)
+        if code is not None:
+            raise ClipEditRefused(code, clip.id)
 
 
 def _photos(context: ScriptContext, paths: list[str]) -> list[tuple[Any, tuple[int, int]]]:
@@ -77,6 +94,7 @@ def _fill_slots_with_photos(a: Mapping[str, Any], context: ScriptContext | None)
         if context is None:
             raise ValueError(_NO_CONTEXT.format(verb="fill_slots_with_photos"))
         start = None if a.get("start") is None else _slot(project, a["start"])
+        _require_unlocked_targets(project, start)
         photos = _photos(context, a["photos"])
         filled = fill_slots_with_photos(project, photos, start_clip_id=start, ken_burns=bool(a.get("ken_burns", True)))
         if len(filled) != len(photos):                    # photos en trop : le modèle les ignore, un script reçoit un refus (la session restaure)

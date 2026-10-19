@@ -224,6 +224,24 @@ def test_camera_shake_refusals(operation):
     _refused(_project(), operation)
 
 
+def test_camera_shake_duration_and_keyframe_count_are_bounded_before_sampling():
+    import time
+
+    huge = _project()
+    find_clip(huge, "a").source_out = 1_000_000.0
+    with pytest.raises(ScriptInvalid):                                                            # 45 millions d'images clés : refusé à la lecture
+        parse_script({"kut_script": 1, "ops": [_op("apply_camera_shake", clip="a", length=1_000_000)]})
+    start = time.perf_counter()
+    report = _refused(huge, _op("apply_camera_shake", clip="a", length=auto_rules.MAX_SHAKE_SECONDS))   # 60 s : 2 700 images clés > plafond
+    assert time.perf_counter() - start < 2.0 and "images clés" in report.error
+    crowded = _project()
+    find_clip(crowded, "a").transform_keyframes = [TransformKeyframe("opacity", float(n) / 100, 0.5) for n in range(auto_rules.MAX_KEYFRAMES_PER_CLIP - 5)]
+    _refused(crowded, _op("apply_camera_shake", clip="a"))                                        # celles déjà présentes comptent
+    assert auto_rules.shake_keyframe_count(0.45) == 3 * (7 + 1)
+    session, report = _apply(_project(), _op("apply_camera_shake", clip="a", length=4.0, seed=1))
+    assert report.ok and len(find_clip(session.project, "a").transform_keyframes) == auto_rules.shake_keyframe_count(4.0)
+
+
 def test_camera_shake_never_replaces_position_or_rotation_keyframes_and_respects_bounds():
     for name in ("position_x", "position_y", "rotation"):
         project = _project()
@@ -322,6 +340,20 @@ def test_impact_on_cuts_targets_a_video_track_whatever_the_cuts():
     graphics = _project()
     add_graphic_clip(graphics, "text", timeline_start=4.0, duration=2.0, track=graphics.tracks[5], clip_id="t2")
     assert "piste" in _refused(graphics, _op("apply_impact_on_cuts", track="G1")).error
+
+
+def test_impact_on_cuts_refuses_a_shake_that_would_overfill_a_clip():
+    crowded = _project()
+    find_clip(crowded, "c").transform_keyframes = [TransformKeyframe("opacity", float(n) / 100, 0.5) for n in range(auto_rules.MAX_KEYFRAMES_PER_CLIP - 5)]
+    report = _refused(crowded, _op("apply_impact_on_cuts", track="V1", shake=True))
+    assert "images clés" in report.error
+
+
+def test_impact_on_cuts_bounds_the_number_of_incoming_clips():
+    many = _project()
+    many.tracks.append(Track("V9", "V9", "video", clips=[Clip(f"m{n}", "m", "V9", float(n), 0.0, 1.0) for n in range(auto_rules.MAX_NEW_CLIPS_PER_OPERATION + 2)]))
+    report = _refused(many, _op("apply_impact_on_cuts", track="V9"))
+    assert "limite" in report.error
 
 
 def test_impact_on_cuts_refuses_a_locked_track_that_has_cuts():

@@ -150,7 +150,6 @@
   "core.sfx_placement.place_sfx": "interface seulement",
   "core.sfx_placement.place_sfx_on_cuts": "interface seulement",
   "core.sfx_placement.sfx_asset": "interne",
-  "core.template_slots.empty_slots": "lecture seule",
   "core.template_slots.is_empty_slot": "lecture seule",
   "core.template_slots.is_photo_slot": "lecture seule",
   "core.template_slots.slot_at": "lecture seule",

@@ -451,7 +451,8 @@ Ces verbes font ce que l'interface fait **après** une analyse, avec des donnée
   clip est refusé aussi (le modèle l'écourterait), valeur par défaut comprise (zoom : 0,3 s, secousse : 0,45 s). Une valeur qui sortirait des bornes du transform (échelle 0,05–10,
   position ±4) est refusée, jamais ramenée. Un calque de lumière ne prend pas de zoom d'impact. `fill_slot_with_photo` pose, comme l'interface, un Ken Burns qui remplace le zoom d'impact
   du modèle de l'emplacement (`ken_burns: false` pour le garder).
-- **Verrous** : piste verrouillée et calque verrouillé sont refusés, pour **chaque** clip touché (`apply_impact_on_cuts` vérifie tous les plans entrants avant d'écrire, `cut_clips_on_beats`
+- **Durées et images clés** : une secousse dure 60 s au plus et le nombre d'images clés qu'elle poserait (3 par 1/15 s) est calculé avant, avec celles du clip, sous 2 000 ; "sur chaque cut" borne ses plans à 500.
+- **Verrous** : piste verrouillée et calque verrouillé sont refusés, pour **chaque** clip touché (les emplacements que `fill_slots_with_photos` choisit seul compris) (`apply_impact_on_cuts` vérifie tous les plans entrants avant d'écrire, `cut_clips_on_beats`
   tous les clips). `update_leaderboard` refuse si un de ses calques, ou un calque qui en dépend (parent, groupe), est verrouillé.
 - **Photos** : mêmes règles de fichier que `add_image_layer` (dossier du script, `--allow-outside` décidé par l'appelant, en-tête seul lu, extension en accord avec le contenu, 8 192 pixels de
   côté au plus), **toutes** ouvertes avant la première écriture. Une photo illisible est un refus (le modèle laisserait une carte vide), de même que des photos en trop (il les ignorerait).
