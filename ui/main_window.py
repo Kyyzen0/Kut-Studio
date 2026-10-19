@@ -488,6 +488,9 @@ class MainWindow(
         self.properties_panel.animation_paste_requested.connect(self.paste_animation)
         self.properties_panel.graph_editor_requested.connect(self.open_graph_editor)
         self.properties_panel.active_property_changed.connect(self.set_active_animation_property)
+        self.properties_panel.effect_keyframe_set.connect(self.on_effect_keyframe_set)        # paramètres d'effets animables (ADR-0008)
+        self.properties_panel.effect_keyframe_removed.connect(self.on_effect_keyframe_removed)
+        self.properties_panel.effect_animation_cleared.connect(self.on_effect_animation_cleared)
         self.timeline_panel.keyframes_selected.connect(self.on_timeline_keyframes_selected)
         self.timeline_panel.keyframes_move_requested.connect(self.on_keyframes_move_requested)
         # Tâche 18 : time remapping
@@ -1389,6 +1392,7 @@ class MainWindow(
 
             self.properties_panel.update_effects_from_clip(
                 list(clip.effects), "video", editable=clip_edit_refusal(self.project, clip_id) is None,
+                keyframes=[k for k in clip.animation if k.property_name.startswith("fx.")],
             )
             # Le rack d'effets audio accepte les pistes ``video`` (si le
             # média porte de l'audio) et ``audio``. On détermine le type

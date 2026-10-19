@@ -98,6 +98,10 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
     effect_removed = Signal(str, str)
     effect_moved = Signal(str, str, int)
     effect_parameter_changed = Signal(str, str, str, float)
+    # Images clés des paramètres d'effets (ADR-0008, étape 4) : (clip, ``fx.<effet>.<paramètre>``, temps local, valeur)
+    effect_keyframe_set = Signal(str, str, float, float)
+    effect_keyframe_removed = Signal(str, str, float)
+    effect_animation_cleared = Signal(str, str)     # (clip, effet) : retire toutes les courbes de l'effet
     # Effets audio non destructifs (tâche 27)
     audio_effect_add_requested = Signal(str, str)
     # (clip_id, effect_type)
@@ -147,6 +151,8 @@ class PropertiesPanel(ConstructionMixin, SpeedGroupMixin, TabsMixin, UsageLevels
         self._selected_effect_id: str | None = None
         self._effect_param_widgets: dict[str, QDoubleSpinBox] = {}
         self._allow_effect_signals = True
+        self._current_effect_keyframes: list = []        # images clés ``fx.*`` du clip affiché
+        self._effect_keyframe_rows: dict = {}            # paramètre -> rangée ‹ ◆ › du réglage affiché
         # --- Effets audio (tâche 27) ---
         self._current_audio_effects: list[AudioEffect] = []
         self._selected_audio_effect_id: str | None = None

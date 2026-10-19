@@ -547,6 +547,37 @@ def special_clip_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
             )
 
 
+def effect_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
+    """Clip vidéo aux effets animables (ADR-0008, étape 4) : correction de couleur animée, puis vignette, onglet « Effets ».
+
+    Les effets sont ajoutés au projet de l'audit (jetable) au premier passage ; les rangées ‹ ◆ › n'existent que pour l'effet
+    affiché, c'est donc la seule mise en page où l'inspecteur les montre.
+    """
+    ids = _clip_ids(window, lambda track, clip: track.type == "video" and not clip.sequence_id)
+    if not ids:
+        return
+
+    def show(effect_type: str) -> None:
+        from core.effects_model import add_effect_to_clip, fx_property_id
+        from core.keyframe_editing import add_keyframe, find_clip
+
+        clip = find_clip(window.project, ids[0])
+        effect = next((e for e in clip.effects if e.type.value == effect_type), None)
+        if effect is None:
+            effect = add_effect_to_clip(window.project, ids[0], effect_type)
+            name = "brightness" if effect_type == "color_correction" else "intensity"
+            add_keyframe(window.project, ids[0], fx_property_id(effect.id, name), 0.0)
+        window._reload_timeline_preserving_selection(ids[0])
+        window._restore_clip_selection(ids[0])
+        panel = window.properties_panel
+        panel.effects_list.setCurrentRow([e.id for e in panel._current_effects].index(effect.id))
+        panel._select_inspector_tab(2)
+        settle(window)
+
+    for effect_type in ("color_correction", "vignette"):
+        yield f"inspecteur-effet-{effect_type.replace('_', '-')}", lambda t=effect_type: show(t)
+
+
 def window_scenarios(window) -> Iterable[tuple[str, Callable[[], None]]]:
     """Fenêtres et pages annexes : éditeur de courbes, panneau d'export."""
     yield "editeur-de-courbes", lambda: (window.open_graph_editor(), settle(window))
@@ -594,6 +625,7 @@ def _scenarios(window, usage_level: str = "advanced") -> Iterable[tuple[str, Cal
         if usage_level != "advanced":
             yield from open_options_scenarios(window)
     yield from special_clip_scenarios(window)
+    yield from effect_scenarios(window)
     yield from library_scenarios(window)
     yield from window_scenarios(window)
 

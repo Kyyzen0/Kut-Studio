@@ -164,6 +164,32 @@ def test_inspector_groups_of_special_clips_fit(window_at, size, name, usage_leve
     _assert_none(audit.scroll_clipping(window.properties_panel.scroll_area), "inspecteur coupé :")
 
 
+@pytest.mark.parametrize("size", audit.SIZES, ids=SIZE_IDS)
+@pytest.mark.parametrize("effect_type", ["color_correction", "vignette"])
+@LEVELS
+def test_inspector_with_an_animatable_effect_selected_fits(window_at, size, effect_type, usage_level):
+    """Étape 4 de l'ADR-0008 : les rangées ‹ ◆ › sous les réglages d'effets ne coupent ni ne débordent, à chaque niveau.
+
+    Aux niveaux Simple et Studio, la même vérification avec « Afficher plus d'options » et les pliants ouverts."""
+    window = window_at(size, usage_level)
+    dict(audit.effect_scenarios(window))[f"inspecteur-effet-{effect_type.replace('_', '-')}"]()
+    panel = window.properties_panel
+    try:
+        for opened in ((False, True) if usage_level != "advanced" else (False,)):
+            if opened:
+                audit.open_all_inspector_options(window)
+            rows = panel.effect_keyframe_widgets()
+            assert rows, "l'effet choisi doit avoir des rangées ‹ ◆ ›"
+            shown = [not row.gate.isHidden() for row in rows.values()]
+            assert all(shown) if (usage_level != "simple" or opened) else not any(shown)
+            audit.settle(window)
+            scroll = panel.scroll_area
+            _assert_none(audit.scroll_clipping(scroll), f"effet {effect_type} coupé à {size} ({usage_level}, ouvert={opened}) :")
+            assert audit.content_min_width_excess(scroll) <= 0
+    finally:
+        audit.close_all_inspector_options(window)
+
+
 # --- bibliothèque -------------------------------------------------------------------------------------
 
 

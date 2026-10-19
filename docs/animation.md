@@ -195,11 +195,43 @@ Une échelle animée sous `rotate` rend sur une toile fixe, dimensionnée par la
 (`max_transform_value`), aux côtés multiples de 4 : FFmpeg fixe la taille de sortie de `rotate` à la première image
 (`RENDER_ENGINE_VERSION` 9).
 
-## Paramètres d'effets : modèle et rendu, pas d'interface (ADR-0008, étapes 2 et 3)
+## Paramètres d'effets : animer la correction de couleur et la vignette (ADR-0008, étapes 2 à 4)
+
+### Pour l'utilisateur
+
+Sont animables : la **luminosité, le contraste et la saturation** de la *Correction couleur*, et l'**intensité** de la
+*Vignette*. Aucun autre réglage d'effet ne l'est encore : flou, netteté, lueur, aberration chromatique et brume de chaleur
+restent fixes (pas de losange sur leurs réglages).
+
+1. Sélectionnez un clip vidéo, onglet **Effets** de l'inspecteur, puis l'effet dans la liste.
+2. Sous chaque réglage animable, la rangée **‹ ◆ ›** fonctionne comme celle de Mouvement : le losange pose (ou retire) une
+   image clé à la tête de lecture, ‹ et › sautent à l'image clé précédente ou suivante.
+3. Tant que le réglage n'a pas d'image clé, le curseur change sa valeur de base. Une fois animé, **le curseur montre la valeur
+   évaluée à la tête de lecture** et la modifier écrit (ou met à jour) l'image clé de cet instant ; la valeur de base ne
+   bouge plus. Chaque modification est une étape d'historique (annuler / rétablir).
+4. Deux effets du même type (deux « Correction couleur ») ont des courbes séparées.
+5. Une piste ou un calque **verrouillé** refuse toute modification, comme pour la transformation.
+
+**Retirer l'animation.** Clic droit sur le losange : *Désactiver l'animation (garder la valeur actuelle)* retire la courbe de ce
+réglage ; *Supprimer l'animation de l'effet* retire celles de tous les réglages de l'effet (une seule étape d'historique ; chaque
+réglage garde la valeur qu'il montrait). Supprimer l'effet supprime aussi ses images clés. C'est ce geste qu'il faut pour
+**convertir le clip en composition**, qui refuse un clip aux effets animés (la composition rend ses effets à leur valeur de base).
+
+**Éditeur de courbes** (Avancé) : les réglages animables y sont listés sous « Correction couleur — Luminosité » (le second effet
+du même type : « Correction couleur n° 2 — Luminosité »). Interpolation, copier / coller et ouverture de l'éditeur sont dans le
+menu du losange, au niveau Avancé.
+
+**Niveaux d'usage** : les rangées ‹ ◆ › sont du niveau **Studio** (cachées en Simple, sauf avec « Afficher plus d'options » qui
+révèle le groupe Effets) ; le menu du losange n'offre que « Désactiver » et « Supprimer l'animation de l'effet » en Studio,
+l'interpolation, le copier / coller et l'éditeur de courbes en Avancé. Changer de niveau ne perd aucune valeur.
+
+**Format** : un fichier qui contient au moins une courbe d'effet s'écrit en version 20 et ne s'ouvre plus dans une version
+antérieure de Kut-Studio ; sans courbe il reste en version 17 (inchangé).
+
+### Modèle et rendu
 
 Le modèle porte des images clés sur les paramètres des effets de clip et l'export comme le moniteur les rendent pour les
-paramètres de la liste ci-dessous ; **aucun panneau ne les propose encore** (étape 4 de l'ADR) : tant qu'il n'y a pas
-d'interface, une image clé `fx.*` ne peut venir que d'un fichier. Un projet existant s'affiche et s'exporte exactement comme
+paramètres de la liste ci-dessous. Un projet existant s'affiche et s'exporte exactement comme
 avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractère pour caractère). Ce qui existe :
 
 - **Nom** : `fx.<identifiant de l'effet>.<paramètre>`, stocké dans `Clip.animation`. Le nom se découpe **par la droite** (le
@@ -215,8 +247,10 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   haut, étendue), dont le rendu par expression est écrit mais trop coûteux (voir « Coût de `geq` ») ; vitesse de la brume
   (saut de phase, voir plus bas). **Exclus** (`EXCLUDED_EFFECT_PARAMS`) : netteté, seuil et intensité de la lueur. Un test
   vérifie que chaque paramètre déclaré est dans exactement une de ces trois listes.
-- **`targets_for_clip(clip, piste)`** ne les liste pas par défaut (`include_effects=False`) : le Graph Editor et les commandes
-  d'animation restent identiques jusqu'à l'étape 4.
+- **`targets_for_clip(clip, piste)`** ne les liste pas par défaut (`include_effects=False`) : les commandes d'animation sans
+  propriété active (raccourcis) ne créent jamais de courbe d'effet. Le Graph Editor et le losange d'un réglage les passent à
+  `include_effects=True` (`_graph_properties` de la fenêtre principale) ; une courbe d'effet active ou déjà animée est visée par
+  les commandes comme n'importe quelle propriété.
 - **Valeur effective** : `effective_effect_parameters(clip, effet, t)` (fonction pure) rend les paramètres de base remplacés par
   la courbe, bornés ; sans image clé, exactement les paramètres de base. `evaluated_effects(effets, animation, t)` en fait
   autant pour tous les effets d'un clip (un effet sans image clé est rendu tel quel, le même objet).
@@ -283,8 +317,9 @@ avant (le graphe FFmpeg d'un clip sans image clé `fx.*` est identique, caractè
   inclinaison, miroirs), propriétés de forme et de texte (`graphic.*`) et
   masques (`mask.<id>.*`, une famille par masque) — voir
   `docs/motion-graphics.md`. L'audio a l'architecture mais pas encore ses cibles ;
-  les couleurs ne sont pas animables. Les paramètres des effets ont leurs cibles
-  enregistrées et rendues pour la correction de couleur et la vignette, **sans interface** (voir la section précédente).
+  les couleurs ne sont pas animables. Les paramètres des effets sont animables, avec interface, pour la correction de couleur
+  (luminosité, contraste, saturation) et la vignette (intensité) ; les autres réglages d'effets restent statiques (voir la
+  section précédente).
 - Éditeur de courbes : une propriété à la fois, première composante pour `vec2`.
 - Un glisser dans l'éditeur de courbes rafraîchit timeline et aperçu à chaque
   mouvement ; sur de très gros projets il peut sembler moins fluide.

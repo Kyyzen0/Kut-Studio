@@ -43,6 +43,7 @@ from core.keyframe_editing import (
 from ui import i18n
 from ui.adaptive_layout import ElidedLabel, make_shrinkable
 from ui.design_system import Iconography
+from ui.effect_property_labels import effect_property_label
 from ui.graph_editor_time import SpeedCurveEditing
 from ui.icons import IconName, make_icon
 from ui.theme import COLORS, label_style
@@ -504,14 +505,14 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         try:
             self.property_combo.clear()
             if clip is not None:
-                for pid in self.host._animation_properties(clip):
+                for pid in self.host._graph_properties(clip):
                     target = get_target(pid, clip)
                     animated = bool(target.get_keyframes(clip))
                     # Un losange devant les propriétés animées ; les autres reçoivent une icône vide pour que les libellés restent alignés.
-                    self.property_combo.addItem(_marker_icon(animated), _label(target), pid)
+                    self.property_combo.addItem(_marker_icon(animated), _label(target, clip), pid)
                 wanted = self.property_id or self.host.active_animation_property
                 if wanted is None or self.property_combo.findData(wanted) < 0:
-                    animated = [pid for pid in self.host._animation_properties(clip) if get_target(pid, clip).get_keyframes(clip)]
+                    animated = [pid for pid in self.host._graph_properties(clip) if get_target(pid, clip).get_keyframes(clip)]
                     wanted = animated[0] if animated else self.property_combo.itemData(0)
                 self.property_combo.setCurrentIndex(max(0, self.property_combo.findData(wanted)))
                 self.property_id = self.property_combo.currentData()
@@ -758,7 +759,11 @@ class GraphEditorWindow(SpeedCurveEditing, QWidget):
         self._refresh_fields() if self.property_id else None
 
 
-def _label(target) -> str:
+def _label(target, clip=None) -> str:
+    if clip is not None:
+        named = effect_property_label(clip, target)
+        if named:
+            return named
     text = i18n.translate(target.spec.label_key)
     return target.id if text.startswith("[") else text
 

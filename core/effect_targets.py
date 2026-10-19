@@ -28,6 +28,7 @@ from .effects_model import (
     EffectType,
     effect_by_id,
     fx_property_id,
+    is_effect_property,
     parameter_specs,
     set_clip_effects,
     split_fx_property,
@@ -170,7 +171,7 @@ def evaluated_effects(effects: Any, animation: Any, local_time: float) -> tuple[
     """
     result = []
     for effect in effects or ():
-        if animation and any(kf.property_name.startswith(f"{FX_PREFIX}{effect.id}.") for kf in animation):
+        if animation and any(is_effect_property(kf.property_name, effect.id) for kf in animation):
             values = _evaluate_parameters(animation, effect, local_time)
             if values != effect.params:
                 effect = replace(effect, params=values)

@@ -420,6 +420,13 @@ def split_fx_property(property_id: str) -> tuple[str, str] | None:
     return effect_id, parameter
 
 
+def is_effect_property(property_name: str, effect_id: str) -> bool:
+    """``True`` si ``property_name`` est un paramètre de l'effet ``effect_id`` : identifiant comparé EXACTEMENT après le
+    découpage par la droite (jamais par préfixe : les effets ``a`` et ``a.b`` coexistent)."""
+    parts = split_fx_property(property_name)
+    return parts is not None and parts[0] == effect_id
+
+
 def prune_effect_animation(clip: "Clip", *, reset_ids: Iterable[str] = ()) -> int:
     """Retire de ``clip.animation`` les images clés ``fx.*`` dont l'effet n'est plus dans ``clip.effects``.
 
@@ -623,6 +630,7 @@ __all__ = [
     "effect_by_id",
     "effect_by_type",
     "fx_property_id",
+    "is_effect_property",
     "has_live_effect_animation",
     "enabled_effects",
     "is_single_instance",

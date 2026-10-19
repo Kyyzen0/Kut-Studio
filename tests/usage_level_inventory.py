@@ -205,8 +205,47 @@ def _floor(widget: QWidget, panel) -> UsageLevel:
     return level
 
 
+EFFECT_SCENARIOS = ("color_correction", "vignette", "sharpen")
+"""Effets sélectionnés tour à tour (ADR-0008, étape 4) : les réglages et les losanges d'images clés d'un effet n'existent que
+pour l'effet affiché. La correction de couleur et la vignette ont des paramètres animables ; la netteté n'en a aucun."""
+
+
+def effect_view(kind: str):
+    """Une vue de clip vidéo qui porte les trois effets de ``EFFECT_SCENARIOS`` (dans cet ordre)."""
+    import dataclasses
+
+    from core.effects_model import EffectType, create_effect
+    from inspector_order import clip_states
+
+    effects = tuple(create_effect(EffectType(name), effect_id=f"inv-{name}") for name in EFFECT_SCENARIOS)
+    return dataclasses.replace(clip_states()["video"], effects=effects)
+
+
+def show_effect(panel, kind: str) -> None:
+    """Montre le clip aux trois effets avec ``kind`` sélectionné dans la liste (les réglages sont reconstruits)."""
+    panel.show_clip(effect_view(kind))
+    panel.effects_list.setCurrentRow(EFFECT_SCENARIOS.index(kind))
+    QApplication.processEvents()
+
+
+def inspector_scenarios(panel):
+    """L'inspecteur tel quel, puis une fois par effet de ``EFFECT_SCENARIOS`` ; le dernier état est remis à « aucun clip »."""
+    yield
+    for kind in EFFECT_SCENARIOS:
+        show_effect(panel, kind)
+        yield
+    panel.show_clip(None)
+
+
 def declared_inspector(panel) -> dict[str, UsageLevel]:
-    """Contrôles et choix de listes de l'inspecteur avec le niveau que le code leur donne."""
+    """Contrôles et choix de listes de l'inspecteur avec le niveau que le code leur donne (réunion des scénarios d'effets)."""
+    out: dict[str, UsageLevel] = {}
+    for _ in inspector_scenarios(panel):
+        out.update(_declared_inspector_now(panel))
+    return out
+
+
+def _declared_inspector_now(panel) -> dict[str, UsageLevel]:
     controls = inspector_controls(panel)
     key_of = {id(widget): key for key, widget in controls}
     out = {key: _floor(widget, panel) for key, widget in controls}
@@ -221,6 +260,13 @@ def declared_inspector(panel) -> dict[str, UsageLevel]:
 
 def helper_keys(panel) -> set[str]:
     """Contrôles de navigation qui passent de l'autre côté du niveau à dessein : pliants, lien du bas, doublure d'une action."""
+    helpers: set[str] = set()
+    for _ in inspector_scenarios(panel):
+        helpers |= _helper_keys_now(panel)
+    return helpers
+
+
+def _helper_keys_now(panel) -> set[str]:
     from ui.properties_widgets.level_gate import AdvancedFold, LevelGate
 
     inverse = {g for g in panel.findChildren(LevelGate) if g.inverse_of is not None}
@@ -236,13 +282,18 @@ def helper_keys(panel) -> set[str]:
 
 
 def visible_inspector(panel, states: dict, *, tabs=range(7)) -> set[str]:
-    """Contrôles et choix montrés dans au moins un état de clip et un onglet, au niveau (et aux gestes) courants."""
-    controls = inspector_controls(panel)
-    key_of = {id(widget): key for key, widget in controls}
+    """Contrôles et choix montrés dans au moins un état de clip et un onglet, au niveau (et aux gestes) courants.
+
+    Un passage de plus par effet de ``EFFECT_SCENARIOS`` : les réglages d'un effet n'existent qu'une fois l'effet choisi."""
     shown: set[str] = set()
-    for view in states.values():
+    views = [*states.values(), *(effect_view(kind) for kind in EFFECT_SCENARIOS)]
+    for position, view in enumerate(views):
         panel.show_clip(view)
+        if position >= len(states):
+            panel.effects_list.setCurrentRow(position - len(states))
         panel._set_group_condition(panel.transition_group, True)        # le contexte « une transition est sélectionnée »
+        controls = inspector_controls(panel)
+        key_of = {id(widget): key for key, widget in controls}
         for tab in tabs:
             panel._select_inspector_tab(tab)
             QApplication.processEvents()
@@ -257,6 +308,7 @@ def visible_inspector(panel, states: dict, *, tabs=range(7)) -> set[str]:
                 for index in range(combo.count()):
                     if not (isinstance(view_, QListView) and view_.isRowHidden(index) and index != combo.currentIndex()):
                         shown.add(f"{key_of[id(combo)]}|choix={combo.itemData(index)}")
+    panel.show_clip(None)
     return shown
 
 
