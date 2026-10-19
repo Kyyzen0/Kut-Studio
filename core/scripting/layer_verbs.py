@@ -28,11 +28,11 @@ from ..mograph_layers import (
     LayerClipboard, clear_parent, delete_layers, duplicate_layers, find_layer, group_layers, layer_clips, move_into_group,
     move_layer, rename_layer, reorder_layer, set_layer_locked, set_layer_visible, set_motion_blur, set_parent, siblings, ungroup,
 )
-from ..mograph_presets import MographPreset, apply_preset, builtin_preset_names
+from ..mograph_presets import MographPreset, apply_preset, builtin_preset_names, builtin_presets
 from ..project_model import Project
 from ..text_animations import TEXT_ANIMATIONS, apply_text_animation
 from .layer_rules import (
-    MAX_LAYERS_PER_OPERATION, appearance, frozen_layers, graphic_of, require_editable_container, require_not_over_limit, require_room,
+    MAX_LAYERS_PER_OPERATION, appearance, frozen_layers, graphic_of, require_editable_container, require_room,
     require_same_appearance, require_shallow, require_untouched,
 )
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _clip_id, _editable_clip
@@ -188,6 +188,7 @@ def _group_layers(a: Mapping[str, Any]) -> Operation:
         options: dict[str, Any] = {"group_id": a.get("id")}
         if a.get("name") is not None:
             options["name"] = a["name"]
+        require_room(project, 1)
         group = group_layers(project, ids, **options)
         require_shallow(project, group.id)
         return group
@@ -263,8 +264,9 @@ def _apply_layer_preset(a: Mapping[str, Any]) -> Operation:
         # Un preset intégré est reconstruit sur la toile du projet par ``apply_preset`` (qui ne regarde que son nom) : le
         # modèle porte donc un nom ici. Les presets de l'utilisateur sont des fichiers de sa configuration : un script n'en lit pas.
         named = MographPreset(str(a["preset"]), "", _NO_LAYERS, builtin=True)
+        built = next(item for item in builtin_presets(project.width, project.height) if item.name == named.name)
+        require_room(project, len(built.clipboard.clips))
         created = apply_preset(project, named, at=float(a["at"]), main_id=a.get("id"))
-        require_not_over_limit(project)
         return next(clip for clip in created if not graphic_of(clip).group_id)       # le calque principal : le premier hors groupe
 
     return _protected(operation)

@@ -45,18 +45,19 @@ def graphic_of(clip: Clip) -> GraphicOverlay:
 # --- Bornes -----------------------------------------------------------------------------------------------------------
 
 
+def total_layers(project: Project) -> int:
+    """Les calques graphiques de TOUTES les séquences du projet (le plafond est celui du projet, pas de la séquence active)."""
+    return sum(
+        1 for sequence in project.sequences for track in sequence.tracks if track.type == "graphics"
+        for clip in track.clips if isinstance(clip.graphic, GraphicOverlay)
+    )
+
+
 def require_room(project: Project, adding: int) -> None:
-    """Refuse de créer ``adding`` calques de plus si le projet dépasserait :data:`MAX_LAYERS_IN_PROJECT`."""
-    count = len(layer_clips(project))
+    """Refuse, AVANT toute création, ``adding`` calques de plus si le projet (toutes séquences) dépasserait :data:`MAX_LAYERS_IN_PROJECT`."""
+    count = total_layers(project)
     if count + adding > MAX_LAYERS_IN_PROJECT:
         raise ValueError(f"Le projet compte déjà {count} calques : {adding} de plus dépasseraient la limite de {MAX_LAYERS_IN_PROJECT}.")
-
-
-def require_not_over_limit(project: Project) -> None:
-    """Après une création dont le nombre de calques n'était pas connu d'avance (un preset) : refuse si le projet dépasse la limite."""
-    count = len(layer_clips(project))
-    if count > MAX_LAYERS_IN_PROJECT:
-        raise ValueError(f"Le projet compterait {count} calques : la limite est de {MAX_LAYERS_IN_PROJECT}.")
 
 
 # --- Verrous ----------------------------------------------------------------------------------------------------------
@@ -184,5 +185,5 @@ def require_same_appearance(before: list[tuple[float, float]], after: list[tuple
 
 __all__ = [
     "APPEARANCE_TOLERANCE", "MAX_HIERARCHY_DEPTH", "MAX_LAYERS_IN_PROJECT", "MAX_LAYERS_PER_OPERATION", "appearance", "frozen_layers", "graphic_of",
-    "require_editable_container", "require_not_over_limit", "require_room", "require_same_appearance", "require_shallow", "require_untouched",
+    "require_editable_container", "total_layers", "require_room", "require_same_appearance", "require_shallow", "require_untouched",
 ]

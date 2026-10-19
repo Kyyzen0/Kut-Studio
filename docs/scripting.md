@@ -454,8 +454,8 @@ Ces verbes appellent les fonctions que le panneau Calques, la bibliothèque de p
 - **Boucles et profondeur** : un calque ne peut pas être son propre parent, ni suivre son descendant (par parentage ou par groupe) ; un groupe ne se contient pas
   lui-même ni son descendant ; un calque d'une autre séquence n'est pas atteignable (les identifiants sont ceux de la séquence active). Les chaînes de parentage et
   les groupes imbriqués sont limités à 32 niveaux, calculés sur le graphe résultant (ancêtres du parent compris) : l'évaluation de la scène les parcourt récursivement.
-- **Bornes** : 200 calques au plus par opération, sans doublon dans la liste ; un projet ne dépasse pas 5 000 calques (un script qui double un groupe en boucle
-  est arrêté avant d'allouer).
+- **Bornes** : 200 calques au plus par opération, sans doublon dans la liste ; un projet ne dépasse pas 5 000 calques graphiques, **toutes séquences confondues** (changer de séquence active ne contourne pas la limite), vérifiés
+  avant toute création (`add_graphic`, `group_layers`, `duplicate_layers`, `apply_layer_preset`, `cut_clip` et `duplicate_clip` sur un calque) avec le nombre exact créé.
 - **Presets** : seuls les presets **intégrés** sont accessibles, reconstruits sur le cadre du projet (un bandeau 16:9 tient en vertical). Les presets de l'utilisateur
   sont des fichiers de sa configuration, hors du projet et du dossier du script : un script ne les lit pas, et `save_preset` n'est pas un verbe (il écrirait hors du projet).
 - **Animation de texte** : un calque **texte** seulement (c'est tout ce que l'interface propose). Les images clés des propriétés que l'animation anime sont remplacées,

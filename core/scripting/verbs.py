@@ -48,7 +48,7 @@ from ..compositing_guard import REFUSAL_LAYER_LOCKED, clip_edit_refusal
 from ..mograph_targets import graphic_property_id
 from ..graphics import GraphicType, ShapeKind, add_graphic_clip, update_graphic
 from ..mograph_layers import add_layer, find_layer
-from .layer_rules import graphic_of, require_shallow
+from .layer_rules import graphic_of, require_room, require_shallow
 from .image_layer import fitted_size, read_image_size
 from ..keyframe_editing import add_keyframe, clip_duration, remove_keyframe_at
 from ..media_color_ops import set_media_color_matrix
@@ -399,6 +399,7 @@ def _graphic_group(project: Project, selector: str) -> str:
 def _add_graphic(a: Mapping[str, Any]) -> Operation:
     def operation(project: Project) -> Any:
         track = _graphics_track(project, a.get("track"))
+        require_room(project, 1)
         group_id = ""
         if a.get("group") is not None:
             if a["graphic"] == GraphicType.ADJUSTMENT.value:
@@ -424,6 +425,7 @@ def _add_image_layer(a: Mapping[str, Any], context: ScriptContext | None) -> Ope
         track = _graphics_track(project, a.get("track"))
         path = context.resolve_media(a["path"])
         width, height = read_image_size(path)                  # tout est vérifié avant la moindre écriture
+        require_room(project, 1)
         clip = add_graphic_clip(
             project, "image", timeline_start=float(a["at"]), duration=float(a["duration"]), source_path=str(path),
             track=track, clip_id=a.get("id"),

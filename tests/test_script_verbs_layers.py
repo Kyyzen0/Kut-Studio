@@ -785,3 +785,55 @@ def test_the_frozen_witness_is_what_protects_third_parties():
 
 def test_graphic_overlay_class_is_what_the_layer_selectors_resolve():
     assert isinstance(_layer(_project(), "a").graphic, GraphicOverlay)
+
+
+# --- Plafond de calques du projet (toutes séquences) --------------------------------------------------------------------
+
+
+def _two_sequences() -> Project:
+    """5 calques dans la séquence active, 4 dans une autre : 9 en tout."""
+    project = _with_group()                                            # a, b, c, d, z et le groupe g : 6
+    other = Project("x", 320, 180, 30.0)
+    other.sequences[0].id = "seq2"
+    other.active_sequence_id = "seq2"
+    for index in range(3):
+        add_layer(other, "shape", at=0.0, duration=1.0, clip_id=f"autre{index}")
+    project.sequences.append(other.sequences[0])
+    return project
+
+
+_CREATING = (
+    _op("add_graphic", graphic="text", at=0, duration=1),
+    _op("add_graphic", graphic="text", at=0, duration=1, group="g"),
+    _op("group_layers", clips=["c", "d"]),
+    _op("duplicate_layers", clips=["c"]),
+    _op("duplicate_layers", clips=["g"]),
+    _op("apply_layer_preset", preset="Titre simple", at=0),
+    _op("apply_layer_preset", preset="Lower third", at=0),
+    _op("duplicate_clip", clip="c"),
+    _op("cut_clip", clip="c", at=1.0),
+)
+
+
+def test_the_layer_cap_counts_every_sequence(monkeypatch):
+    """Basculer sur une séquence peu peuplée ne contourne pas le plafond : il compte les calques de toutes les séquences."""
+    project = _two_sequences()
+    assert layer_rules.total_layers(project) == 9 and len(layers.layer_clips(project)) == 6
+    monkeypatch.setattr(layer_rules, "MAX_LAYERS_IN_PROJECT", 9)
+    for operation in _CREATING:
+        report = _refused(copy.deepcopy(project), operation, match="limite")
+        assert report is not None
+
+
+def test_every_creating_path_counts_exactly_what_it_creates(monkeypatch):
+    project = _two_sequences()
+    monkeypatch.setattr(layer_rules, "MAX_LAYERS_IN_PROJECT", 10)
+    for operation in (_CREATING[0], _CREATING[1], _CREATING[2], _CREATING[3], _CREATING[7], _CREATING[8], _CREATING[5]):
+        session, report = _apply(copy.deepcopy(project), operation)
+        assert report.ok, (operation, report.error)
+    _refused(copy.deepcopy(project), _CREATING[4], match="limite")            # un groupe et ses deux membres : 3
+    _refused(copy.deepcopy(project), _CREATING[6], match="limite")            # le bandeau : 4 calques
+    monkeypatch.setattr(layer_rules, "MAX_LAYERS_IN_PROJECT", 12)
+    _session, done = _apply(copy.deepcopy(project), _CREATING[4])
+    assert done.ok
+    _refused(copy.deepcopy(project), _CREATING[6], match="limite")            # 9 + 4 = 13
