@@ -353,7 +353,7 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   fenêtre prévient sans jamais refuser d'ouvrir. Le verrou est pris **avant** de lire le projet (CLI et fenêtre), la reprise d'un verrou
   périmé est sérialisée par une garde (relecture sous la garde), et l'enregistrement écrit à travers un lien symbolique. Limite
   assumée : consultatif, il ne protège que des programmes de Kut-Studio.
-- **Étape 5 : partie A faite** (cette PR), partie B à faire. `core/scripting/api.py` est la façade publique (`API_VERSION`
+- **Étape 5 : parties A et B faites**, partie C à faire. `core/scripting/api.py` est la façade publique (`API_VERSION`
   `MAJEUR.MINEUR`, `DESCRIBE_VERSION`, `describe`, `describe_json` ; `Session.describe()`) et `Kut-Studio describe projet.kut [--json]`
   la commande (mêmes conventions que `info`). La partie A décrit la **structure** : projet, médias, séquences, pistes, clips (place,
   source, vitesse, transform, audio de base, calque graphique), transitions, repères ; ce qui n'est pas encore décrit est **nommé**
@@ -362,8 +362,17 @@ Les cinq points laissés ouverts sont tranchés, tous sur la recommandation de l
   (chaque champ des dataclasses du modèle est décrit, exclu avec une raison — `core/scripting/describe_coverage.py` — ou en dette
   avec sa section) et `tests/data/script_verb_debt.json` (chaque fonction publique d'édition des modules listés dans
   `tools/scripting_debt.py` est référencée par le code de `core/scripting/` ou en dette avec une raison). `python -m
-  tools.scripting_debt fields|verbs --list|--summary|--update-baseline` les montre et les réduit. Reste (partie B) : effets,
-  couleur, composition, courbes, images clés, bus, qui sortent de la dette de champs à mesure qu'ils sont décrits. Documentation :
-  « Lire un projet » dans `docs/scripting.md`. Tests : `tests/test_describe.py`, `test_describe_completeness.py`,
-  `test_script_verb_completeness.py`, `test_scripting_api.py`, `test_cli_describe.py`.
+  tools.scripting_debt fields|verbs --list|--summary|--update-baseline` les montre et les réduit. **Partie B (faite)** : effets visuels et
+  audio, inserts de piste, bus, automation de volume, ducking, images clés (`transform_keyframes`, `animation`, y compris
+  `fx.<effet>.<paramètre>` et `mask.<id>.<nom>`), étalonnage (toujours un graphe de nœuds : un réglage seul est `n1`), compositing,
+  composition nodale (nœuds et liens, sans récursion) et préréglages d'étalonnage. La complétude porte maintenant sur 46 classes du
+  modèle (les sous-objets aussi : un champ neuf d'un effet, d'un nœud ou d'un masque oblige à une décision) ; une forme répétée (images
+  clés, masques, étalonnage) n'est déclarée qu'une fois (`SHAPE_ALIASES`). `DESCRIBE_VERSION` reste `1` : la partie B n'ajoute que des
+  clés à une forme encore non publiée. Un test d'aller-retour (`tests/test_describe_roundtrip.py`) reconstruit chaque famille depuis sa
+  seule description avec les verbes existants et rejoue la description sur le projet sans rien changer. **Reste** : (partie C) style des
+  calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale, style de texte, suivi ; et côté verbes (hors description)
+  les images clés d'effet `fx.*`, le mode de fusion, l'incrustation, l'automation de volume, les associations de ducking et la composition.
+  Documentation : « Lire un projet » dans `docs/scripting.md`. Tests : `tests/test_describe.py`, `test_describe_completeness.py`,
+  `test_describe_sections.py`, `test_describe_roundtrip.py`, `test_script_verb_completeness.py`, `test_scripting_api.py`,
+  `test_cli_describe.py`.
 - Étapes 6 et 7 : à faire, dans l'ordre.

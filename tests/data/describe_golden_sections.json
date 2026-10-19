@@ -1,0 +1,873 @@
+{
+  "c1": {
+    "effects": [
+      {
+        "id": "fx1",
+        "type": "blur",
+        "enabled": true,
+        "params": {
+          "intensity": 4.0
+        }
+      },
+      {
+        "id": "fx2",
+        "type": "vignette",
+        "enabled": false,
+        "params": {
+          "intensity": 0.7
+        }
+      }
+    ],
+    "color_grade": {
+      "nodes": [
+        {
+          "id": "n1",
+          "type": "corrector",
+          "grade": {
+            "exposure": 0.5,
+            "contrast": 0.1,
+            "saturation": 1.2,
+            "temperature": 0.0,
+            "hue": 0.0,
+            "shadows": 0.0,
+            "highlights": 0.0,
+            "lut": {
+              "path": "luts/look.cube",
+              "title": "Look",
+              "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 1234,
+              "missing": false
+            },
+            "enabled": true,
+            "lift": {
+              "r": 0.1,
+              "g": 0.0,
+              "b": 0.0,
+              "y": -0.05
+            },
+            "gamma": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "gain": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "offset": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            }
+          },
+          "label": "",
+          "qualifier": null,
+          "windows": [],
+          "blur": 0.0,
+          "sharpen": 0.0
+        },
+        {
+          "id": "n2",
+          "type": "corrector",
+          "grade": {
+            "exposure": 0.0,
+            "contrast": 0.0,
+            "saturation": 1.0,
+            "temperature": 12.0,
+            "hue": 0.0,
+            "shadows": 0.0,
+            "highlights": 0.0,
+            "lut": null,
+            "enabled": true,
+            "lift": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "gamma": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "gain": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "offset": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            }
+          },
+          "label": "Peau",
+          "qualifier": {
+            "enabled": true,
+            "use_hue": true,
+            "hue_center": 20.0,
+            "hue_width": 40.0,
+            "hue_soft": 0.0,
+            "use_sat": true,
+            "sat_low": 0.0,
+            "sat_high": 1.0,
+            "sat_soft": 0.0,
+            "use_lum": true,
+            "lum_low": 0.0,
+            "lum_high": 1.0,
+            "lum_soft": 0.0,
+            "invert": false
+          },
+          "windows": [
+            {
+              "shape": "ellipse",
+              "position_x": 0.5,
+              "position_y": 0.5,
+              "width": 0.3,
+              "height": 0.4,
+              "rotation": 0.0,
+              "feather": 0.03,
+              "expansion": 0.0,
+              "opacity": 1.0,
+              "inverted": false,
+              "keyframes": [],
+              "mode": "add",
+              "points": [],
+              "name": "",
+              "id": "w1",
+              "handles": [],
+              "nodes": null
+            }
+          ],
+          "blur": 2.0,
+          "sharpen": 0.5
+        },
+        {
+          "id": "n3",
+          "type": "corrector",
+          "grade": {
+            "exposure": 0.0,
+            "contrast": 0.0,
+            "saturation": 1.0,
+            "temperature": 0.0,
+            "hue": 0.0,
+            "shadows": 0.0,
+            "highlights": 0.0,
+            "lut": null,
+            "enabled": true,
+            "lift": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "gamma": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "gain": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            },
+            "offset": {
+              "r": 0.0,
+              "g": 0.0,
+              "b": 0.0,
+              "y": 0.0
+            }
+          },
+          "label": "",
+          "qualifier": null,
+          "windows": [],
+          "blur": 0.0,
+          "sharpen": 0.0
+        },
+        {
+          "id": "m1",
+          "type": "mixer",
+          "kind": "layer"
+        }
+      ],
+      "links": [
+        {
+          "source": "n1",
+          "target": "n2",
+          "port": 0
+        },
+        {
+          "source": "n1",
+          "target": "n3",
+          "port": 0
+        },
+        {
+          "source": "n2",
+          "target": "m1",
+          "port": 0
+        },
+        {
+          "source": "n3",
+          "target": "m1",
+          "port": 1
+        }
+      ]
+    },
+    "compositing": {
+      "masks": [
+        {
+          "shape": "ellipse",
+          "position_x": 0.4,
+          "position_y": 0.5,
+          "width": 0.5,
+          "height": 0.5,
+          "rotation": 0.0,
+          "feather": 0.1,
+          "expansion": 0.0,
+          "opacity": 1.0,
+          "inverted": true,
+          "keyframes": [],
+          "mode": "add",
+          "points": [],
+          "name": "Visage",
+          "id": "mk1",
+          "handles": [],
+          "nodes": null
+        },
+        {
+          "shape": "polygon",
+          "position_x": 0.5,
+          "position_y": 0.5,
+          "width": 0.5,
+          "height": 0.5,
+          "rotation": 0.0,
+          "feather": 0.0,
+          "expansion": 0.0,
+          "opacity": 1.0,
+          "inverted": false,
+          "keyframes": [],
+          "mode": "add",
+          "points": [
+            {
+              "x": 0.1,
+              "y": 0.1
+            },
+            {
+              "x": 0.9,
+              "y": 0.1
+            },
+            {
+              "x": 0.5,
+              "y": 0.9
+            }
+          ],
+          "name": "",
+          "id": "mk2",
+          "handles": [],
+          "nodes": null
+        },
+        {
+          "shape": "path",
+          "position_x": 0.5,
+          "position_y": 0.5,
+          "width": 0.5,
+          "height": 0.5,
+          "rotation": 0.0,
+          "feather": 0.0,
+          "expansion": 0.0,
+          "opacity": 1.0,
+          "inverted": false,
+          "keyframes": [],
+          "mode": "add",
+          "points": [
+            {
+              "x": 0.1,
+              "y": 0.1
+            },
+            {
+              "x": 0.9,
+              "y": 0.1
+            },
+            {
+              "x": 0.5,
+              "y": 0.9
+            }
+          ],
+          "name": "",
+          "id": "mk3",
+          "handles": [
+            {
+              "in_dx": 0.0,
+              "in_dy": 0.0,
+              "out_dx": 0.1,
+              "out_dy": 0.0
+            },
+            {
+              "in_dx": 0.0,
+              "in_dy": 0.0,
+              "out_dx": 0.0,
+              "out_dy": 0.1
+            },
+            {
+              "in_dx": 0.1,
+              "in_dy": 0.0,
+              "out_dx": 0.0,
+              "out_dy": 0.0
+            }
+          ],
+          "nodes": [
+            {
+              "x": 0.1,
+              "y": 0.1,
+              "in_dx": 0.0,
+              "in_dy": 0.0,
+              "out_dx": 0.1,
+              "out_dy": 0.0
+            },
+            {
+              "x": 0.9,
+              "y": 0.1,
+              "in_dx": 0.0,
+              "in_dy": 0.0,
+              "out_dx": 0.0,
+              "out_dy": 0.1
+            },
+            {
+              "x": 0.5,
+              "y": 0.9,
+              "in_dx": 0.1,
+              "in_dy": 0.0,
+              "out_dx": 0.0,
+              "out_dy": 0.0
+            }
+          ]
+        }
+      ],
+      "chroma_key": {
+        "enabled": true,
+        "color": "#0000FF",
+        "tolerance": 0.2,
+        "softness": 0.05,
+        "spill_suppression": 0.0
+      },
+      "blend_mode": "screen"
+    },
+    "transform_keyframes": [
+      {
+        "property_name": "scale",
+        "time_seconds": 0.0,
+        "value": 1.0,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf1"
+      },
+      {
+        "property_name": "scale",
+        "time_seconds": 1.0,
+        "value": 1.5,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf2"
+      }
+    ],
+    "animation": [
+      {
+        "property_name": "fx.fx2.intensity",
+        "time_seconds": 0.5,
+        "value": 0.2,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf3"
+      },
+      {
+        "property_name": "fx.fx2.intensity",
+        "time_seconds": 2.0,
+        "value": 0.9,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf4"
+      },
+      {
+        "property_name": "mask.mk1.feather",
+        "time_seconds": 0.0,
+        "value": 0.0,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf5"
+      },
+      {
+        "property_name": "mask.mk1.feather",
+        "time_seconds": 1.0,
+        "value": 0.3,
+        "interpolation": "linear",
+        "in_slope": null,
+        "out_slope": null,
+        "tangent_mode": "linked",
+        "id": "kf6"
+      }
+    ]
+  },
+  "c4": {
+    "audio_effects": [
+      {
+        "id": "afx1",
+        "type": "noise_reduce",
+        "enabled": true,
+        "params": {
+          "noise_floor_db": -30.0,
+          "strength": 0.8
+        }
+      },
+      {
+        "id": "afx2",
+        "type": "compressor",
+        "enabled": false,
+        "params": {
+          "threshold_db": -18.0,
+          "ratio": 3.0,
+          "attack_ms": 20.0,
+          "release_ms": 200.0,
+          "makeup_db": 4.0
+        }
+      }
+    ]
+  },
+  "x1": {
+    "composition": {
+      "graph": {
+        "nodes": [
+          {
+            "id": "a",
+            "type": "media",
+            "asset_id": "m1",
+            "start": 0.0,
+            "source_in": 0.0,
+            "source_out": 4.0,
+            "label": "",
+            "gain_db": -3.0,
+            "muted": false,
+            "fill": true,
+            "pan_x": 0.2,
+            "pan_y": 0.0
+          },
+          {
+            "id": "s",
+            "type": "solid",
+            "color": "#112233",
+            "label": ""
+          },
+          {
+            "id": "g",
+            "type": "graphic",
+            "graphic": {
+              "type": "text",
+              "text": "Titre",
+              "source_path": null,
+              "width": 900,
+              "height": 180,
+              "visible": true,
+              "locked": false,
+              "parent_id": null,
+              "group_id": null,
+              "z_order": 0
+            },
+            "start": 1.0,
+            "duration": 2.0,
+            "transform": {
+              "position_x": 0.0,
+              "position_y": 0.0,
+              "scale": 1.0,
+              "rotation": 0.0,
+              "opacity": 1.0,
+              "anchor_x": 0.5,
+              "anchor_y": 0.5,
+              "scale_x": 1.0,
+              "scale_y": 1.0,
+              "skew": 0.0,
+              "flip_h": false,
+              "flip_v": false,
+              "fill": false,
+              "pan_x": 0.0,
+              "pan_y": 0.0
+            },
+            "transform_keyframes": [
+              {
+                "property_name": "position_x",
+                "time_seconds": 0.0,
+                "value": 0.1,
+                "interpolation": "linear",
+                "in_slope": null,
+                "out_slope": null,
+                "tangent_mode": "linked",
+                "id": "gk1"
+              }
+            ],
+            "animation": [
+              {
+                "property_name": "graphic.width",
+                "time_seconds": 0.0,
+                "value": 500.0,
+                "interpolation": "linear",
+                "in_slope": null,
+                "out_slope": null,
+                "tangent_mode": "linked",
+                "id": "gk2"
+              }
+            ],
+            "label": "",
+            "masks": []
+          },
+          {
+            "id": "t",
+            "type": "transform",
+            "transform": {
+              "position_x": 0.0,
+              "position_y": 0.0,
+              "scale": 1.0,
+              "rotation": 0.0,
+              "opacity": 1.0,
+              "anchor_x": 0.5,
+              "anchor_y": 0.5,
+              "scale_x": 1.0,
+              "scale_y": 1.0,
+              "skew": 0.0,
+              "flip_h": false,
+              "flip_v": false,
+              "fill": false,
+              "pan_x": 0.0,
+              "pan_y": 0.0
+            },
+            "keyframes": [
+              {
+                "property_name": "scale",
+                "time_seconds": 0.0,
+                "value": 1.0,
+                "interpolation": "linear",
+                "in_slope": null,
+                "out_slope": null,
+                "tangent_mode": "linked",
+                "id": "tk1"
+              }
+            ],
+            "label": ""
+          },
+          {
+            "id": "mg",
+            "type": "merge",
+            "blend": "screen",
+            "opacity": 0.7,
+            "label": ""
+          },
+          {
+            "id": "e",
+            "type": "effects",
+            "effects": [
+              {
+                "id": "fx9",
+                "type": "blur",
+                "enabled": true,
+                "params": {
+                  "intensity": 3.0
+                }
+              }
+            ],
+            "label": ""
+          },
+          {
+            "id": "gr",
+            "type": "grade",
+            "grade": {
+              "nodes": [
+                {
+                  "id": "n1",
+                  "type": "corrector",
+                  "grade": {
+                    "exposure": 0.3,
+                    "contrast": 0.0,
+                    "saturation": 1.0,
+                    "temperature": 0.0,
+                    "hue": 0.0,
+                    "shadows": 0.0,
+                    "highlights": 0.0,
+                    "lut": null,
+                    "enabled": true,
+                    "lift": {
+                      "r": 0.0,
+                      "g": 0.0,
+                      "b": 0.0,
+                      "y": 0.0
+                    },
+                    "gamma": {
+                      "r": 0.0,
+                      "g": 0.0,
+                      "b": 0.0,
+                      "y": 0.0
+                    },
+                    "gain": {
+                      "r": 0.0,
+                      "g": 0.0,
+                      "b": 0.0,
+                      "y": 0.0
+                    },
+                    "offset": {
+                      "r": 0.0,
+                      "g": 0.0,
+                      "b": 0.0,
+                      "y": 0.0
+                    }
+                  },
+                  "label": "",
+                  "qualifier": null,
+                  "windows": [],
+                  "blur": 0.0,
+                  "sharpen": 0.0
+                }
+              ],
+              "links": []
+            },
+            "label": ""
+          },
+          {
+            "id": "mk",
+            "type": "mask",
+            "masks": [
+              {
+                "shape": "rectangle",
+                "position_x": 0.5,
+                "position_y": 0.5,
+                "width": 0.5,
+                "height": 0.5,
+                "rotation": 0.0,
+                "feather": 0.0,
+                "expansion": 0.0,
+                "opacity": 1.0,
+                "inverted": false,
+                "keyframes": [
+                  {
+                    "property_name": "feather",
+                    "time_seconds": 0.5,
+                    "value": 0.2
+                  }
+                ],
+                "mode": "add",
+                "points": [],
+                "name": "",
+                "id": "cm1",
+                "handles": [],
+                "nodes": null
+              }
+            ],
+            "label": ""
+          },
+          {
+            "id": "kn",
+            "type": "key",
+            "key": {
+              "enabled": true,
+              "color": "#00FF00",
+              "tolerance": 0.1,
+              "softness": 0.05,
+              "spill_suppression": 0.0
+            },
+            "label": ""
+          },
+          {
+            "id": "output",
+            "type": "output"
+          }
+        ],
+        "links": [
+          {
+            "source": "a",
+            "target": "t",
+            "port": 0
+          },
+          {
+            "source": "t",
+            "target": "mg",
+            "port": 0
+          },
+          {
+            "source": "s",
+            "target": "mg",
+            "port": 1
+          },
+          {
+            "source": "mg",
+            "target": "e",
+            "port": 0
+          },
+          {
+            "source": "e",
+            "target": "gr",
+            "port": 0
+          },
+          {
+            "source": "gr",
+            "target": "mk",
+            "port": 0
+          },
+          {
+            "source": "mk",
+            "target": "kn",
+            "port": 0
+          },
+          {
+            "source": "kn",
+            "target": "output",
+            "port": 0
+          }
+        ]
+      },
+      "duration": 4.0,
+      "animation": [
+        {
+          "property_name": "mask.cm1.feather",
+          "time_seconds": 0.5,
+          "value": 0.2,
+          "interpolation": "linear",
+          "in_slope": null,
+          "out_slope": null,
+          "tangent_mode": "linked",
+          "id": "ck1"
+        }
+      ]
+    }
+  },
+  "A1": {
+    "bus_id": "b1",
+    "inserts": [
+      {
+        "id": "ti1",
+        "type": "compressor",
+        "enabled": true,
+        "params": {
+          "threshold_db": -18.0,
+          "ratio": 4.0,
+          "attack_ms": 20.0,
+          "release_ms": 200.0,
+          "makeup_db": 4.0
+        }
+      }
+    ],
+    "automation": {
+      "points": [
+        {
+          "time_seconds": 0.0,
+          "gain_db": 0.0,
+          "fade_seconds": 0.0
+        },
+        {
+          "time_seconds": 2.0,
+          "gain_db": -6.0,
+          "fade_seconds": 0.5
+        }
+      ]
+    },
+    "ducking_config": {
+      "threshold_db": -18.0,
+      "reduction_db": 10.0,
+      "attack_seconds": 0.05,
+      "release_seconds": 0.4
+    }
+  },
+  "buses": [
+    {
+      "id": "b1",
+      "name": "Voix",
+      "volume_db": 0.0,
+      "muted": false,
+      "inserts": [
+        {
+          "id": "bi1",
+          "type": "compressor",
+          "enabled": true,
+          "params": {
+            "threshold_db": -18.0,
+            "ratio": 2.0,
+            "attack_ms": 20.0,
+            "release_ms": 200.0,
+            "makeup_db": 4.0
+          }
+        }
+      ]
+    }
+  ],
+  "ducking_sidechains": [
+    {
+      "id": "dk1",
+      "music_track_id": "A1",
+      "voice_track_id": "A2",
+      "config": {
+        "threshold_db": -20.0,
+        "reduction_db": 9.0,
+        "attack_seconds": 0.05,
+        "release_seconds": 0.4
+      },
+      "enabled": true
+    }
+  ],
+  "color_presets": [
+    {
+      "id": "p1",
+      "name": "Chaud",
+      "description": "Tons chauds",
+      "category": "warm",
+      "grade": {
+        "exposure": 0.0,
+        "contrast": 0.0,
+        "saturation": 1.0,
+        "temperature": 30.0,
+        "hue": 0.0,
+        "shadows": 0.0,
+        "highlights": 0.0,
+        "lut": null,
+        "enabled": true,
+        "lift": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0,
+          "y": 0.0
+        },
+        "gamma": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0,
+          "y": 0.0
+        },
+        "gain": {
+          "r": 0.1,
+          "g": 0.0,
+          "b": 0.0,
+          "y": 0.0
+        },
+        "offset": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0,
+          "y": 0.0
+        }
+      },
+      "builtin": false
+    }
+  ]
+}
