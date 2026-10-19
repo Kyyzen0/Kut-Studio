@@ -30,7 +30,7 @@ from ..object_ids import resolve_object_id
 from ..project_model import Clip, Project
 from ..timeline_operations import find_clip
 from ..tracking_model import (
-    AdaptMode, BorderMode, Precision, Smoothing, StabilizationMode, Tracker, TrackerSettings, TrackTarget,
+    AdaptMode, BorderMode, Precision, Smoothing, StabilizationMode, TrackData, Tracker, TrackerSettings, TrackTarget,
 )
 from ..tracking_ops import (
     add_link, add_tracker, bake_link, media_of, media_rate, remove_correction, remove_link, remove_stabilization,
@@ -106,6 +106,8 @@ def _add_tracker(a: Mapping[str, Any]) -> Operation:
         _clip, asset = trackable_clip(project, clip_id)
         require_within(clip, float(a["at"]))
         require_tracker_room(project, clip)
+        # Le nouveau tracker porte déjà une image : le total d'images suivies du projet (toutes séquences) compte celle-là aussi.
+        require_span(project, TrackData(), source_index_at(clip, media_rate(asset), float(a["at"])))
         x = None if "x" not in a else _in_image("x", float(a["x"]), float(asset.width), 0.0, 1.0)
         y = None if "y" not in a else _in_image("y", float(a["y"]), float(asset.height), 0.0, 1.0)
         tracker_id = _new_id(a, known_tracker_ids(project), "tracker")

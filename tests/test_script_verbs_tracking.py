@@ -251,6 +251,21 @@ def test_the_project_limit_counts_every_sequence_not_only_the_active_one(monkeyp
     _refused(project, _op("add_tracker", clip="v", at=0.0), match="limite")
 
 
+def test_add_tracker_counts_its_first_image_against_the_project_frame_cap_in_every_sequence(monkeypatch):
+    """Un projet déjà au plafond d'images suivies (ici dans une autre séquence) n'accepte pas un tracker de plus, qui porte déjà une image."""
+    from core.project_model import Sequence
+
+    project = _project()
+    project.sequences.append(Sequence(id="seq2", name="Autre", tracks=[Track("W1", "W1", "video", clips=[Clip("far", "m", "W1", 0.0, 0.0, 6.0)])]))
+    tracking_ops.add_tracker(project, "far", timeline_time=0.0, tracker_id="x1")
+    assert tracking_rules.tracked_frames(project) == 1 and not any(t.clips and t.clips[0].tracking for t in project.tracks)
+    monkeypatch.setattr(tracking_rules, "MAX_PROJECT_TRACK_FRAMES", 1)
+    _refused(project, _op("add_tracker", clip="v", at=0.0), match="trop d'images")
+    monkeypatch.setattr(tracking_rules, "MAX_PROJECT_TRACK_FRAMES", 2)
+    session, report = _apply(project, _op("add_tracker", clip="v", at=0.0))
+    assert report.ok
+
+
 # --- update_tracker ----------------------------------------------------------------------------------------------------------
 
 
