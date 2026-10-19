@@ -143,14 +143,19 @@ def test_end_to_end_with_closed_stdout_and_stderr(tmp_path: Path) -> None:
         raise SystemExit(probe_worker.main(["x", probe_worker.OUT_FLAG, {str(target)!r}]))
         """
     )
-    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}  # plateforme native, comme l'application
+    native = sys.platform == "darwin" and not os.environ.get("CI")
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    if not native:
+        # Le canal de résultat ne demande ni GPU ni écran : « offscreen » évite que Qt abandonne le processus sur un
+        # runner sans xcb-cursor (CI Linux) avant d'avoir écrit le résultat.
+        env["QT_QPA_PLATFORM"] = "offscreen"
     done = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=90, check=False, env=env
     )
     assert done.returncode in (0, 2), done.stderr
     data = json.loads(target.read_text(encoding="utf-8"))
     assert isinstance(data["ok"], bool)
-    if sys.platform == "darwin" and not os.environ.get("CI"):
+    if native:  # plateforme native, comme l'application : la sonde doit réussir
         assert data["ok"] is True, data
 
 
