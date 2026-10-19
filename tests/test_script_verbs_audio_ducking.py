@@ -200,6 +200,25 @@ def test_duck_music_under_voice_obeys_the_same_limit(monkeypatch):
     assert len(project.ducking_sidechains) == 1
 
 
+def test_duck_music_under_voice_refuses_a_pair_that_would_close_a_loop_and_changes_nothing():
+    project = _project()
+    project.ducking_sidechains.append(DuckingSidechain("manuel", "A2", "A1"))            # la voix baisse déjà sous la musique
+    report = _refused(project, _op("duck_music_under_voice"))
+    assert "boucle" in str(report.error)
+    project.ducking_sidechains[0] = DuckingSidechain("manuel", "A2", "A1", enabled=False)  # désactivée : elle compte encore
+    assert "boucle" in str(_refused(project, _op("duck_music_under_voice")).error)
+
+
+def test_duck_music_under_voice_ignores_existing_pairs_and_checks_new_pairs_together():
+    project = _project()
+    assert _apply(project, _op("duck_music_under_voice"))[1].ok
+    assert _apply(project, _op("duck_music_under_voice", preset="gentle"))[1].ok         # la paire existe : pas de nouvelle boucle à craindre
+    chain = _project()
+    chain.tracks[3].audio_role = "music"
+    chain.ducking_sidechains.append(DuckingSidechain("m", "A2", "A3"))                    # A2 (voix) baisse sous A3 (musique)
+    assert "boucle" in str(_refused(chain, _op("duck_music_under_voice")).error)         # A3 sous A2 fermerait la boucle
+
+
 @pytest.mark.parametrize("field,value", [
     ("threshold_db", 0.01), ("threshold_db", -60.01), ("reduction_db", 36.01), ("reduction_db", -0.01), ("attack_seconds", 0.004),
     ("attack_seconds", 5.01), ("release_seconds", 0.009), ("release_seconds", 10.01), ("threshold_db", math.nan), ("reduction_db", math.inf),

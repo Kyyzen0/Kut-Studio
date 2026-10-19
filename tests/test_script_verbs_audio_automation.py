@@ -270,6 +270,7 @@ def test_set_automation_curve_refuses_unordered_or_duplicate_instants_and_keeps_
         [{"time_seconds": 2.0, "gain_db": 0.0}, {"time_seconds": 1.0, "gain_db": 0.0}],
         [{"time_seconds": 1.0, "gain_db": 0.0}, {"time_seconds": 1.0, "gain_db": -3.0}],
         [{"time_seconds": 1.0, "gain_db": 0.0}, {"time_seconds": 1.0000000005, "gain_db": -3.0}],
+        [{"time_seconds": 1.0, "gain_db": 0.0}, {"time_seconds": 1.0000003, "gain_db": -3.0}],     # même instant une fois décrit (6 décimales)
     ):
         assert "croissants" in str(_refused(project, _op("set_automation_curve", track="A1", points=points)).error)
     assert _points(project) == [(9.0, -20.0, 0.0)]

@@ -30,13 +30,12 @@ from ..audio_effects_model import move_track_insert
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import Project
 from .audio_rules import (
-    MAX_AUTOMATION_POINTS, audio_track, point_time, require_free_instant, require_no_ducking_loop, require_point_room,
+    MAX_AUTOMATION_POINTS, TIME_TOLERANCE, audio_track, point_time, require_free_instant, require_no_ducking_loop, require_point_room,
     require_sidechain_room, sidechain_ids,
 )
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _BUS, _INSERT, _TRACK, _bus_id, _insert_id, _pick, _require_unlocked, _track_insert
 
 _MAX_DELTA = 1000
-_TOLERANCE = 1e-9
 _ROLES = tuple(item.value for item in TrackRole)
 
 _AT = Param("at", Kind.NUMBER, "Instant du point sur la timeline, en secondes.", minimum=0.0, maximum=MAX_TIME)
@@ -142,7 +141,7 @@ def _set_automation_curve(a: Mapping[str, Any]) -> Operation:
         if len(points) > MAX_AUTOMATION_POINTS:                      # le schéma le borne déjà ; la garde vaut aussi pour un appel direct
             raise ValueError(f"Une courbe compte au plus {MAX_AUTOMATION_POINTS} points ({len(points)} donnés).")
         for before, after in zip(points, points[1:]):
-            if float(after["time_seconds"]) <= float(before["time_seconds"]) + _TOLERANCE:
+            if float(after["time_seconds"]) <= float(before["time_seconds"]) + TIME_TOLERANCE:      # la tolérance de `describe`, comme add / move
                 raise ValueError("Les points de la courbe doivent être à des instants strictement croissants (aucun doublon).")
         service = _service()
         service.clear_automation(project, track.id)                  # l'ancienne courbe part en entier ; la session restaure si un point est refusé

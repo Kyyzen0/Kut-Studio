@@ -29,7 +29,7 @@ from ..audio_effects_model import (
 from ..object_ids import InvalidObjectId, resolve_object_id
 from ..project_model import MAX_GAIN_DB, MAX_PAN, MIN_GAIN_DB, MIN_PAN, Project
 from ..timeline_operations import find_clip
-from .audio_rules import require_sidechain_room
+from .audio_rules import require_no_ducking_loop, require_sidechain_room
 from .verbs import MAX_TIME, Kind, Operation, Param, Verb, _CLIP, _editable_clip, _pick, _require_unlocked
 
 _MAX_DELTA = 1000
@@ -170,7 +170,10 @@ def _duck_music_under_voice(a: Mapping[str, Any]) -> Operation:
         for track in music:
             _require_unlocked(track)                         # l'atténuation change le son de cette piste
         pairs = {(item.music_track_id, item.voice_track_id) for item in project.ducking_sidechains}
-        require_sidechain_room(project, sum(1 for m in music for v in voices if (m.id, v.id) not in pairs))     # la limite vaut aussi pour ce chemin de création
+        created = [(m.id, v.id) for m in music for v in voices if (m.id, v.id) not in pairs]
+        require_sidechain_room(project, len(created))     # la limite vaut aussi pour ce chemin de création
+        for index, (music_id, voice_id) in enumerate(created):         # chaque paire neuve, sur le graphe résultant (les précédentes comprises)
+            require_no_ducking_loop(project, music_id, voice_id, tuple(created[:index]))
         return duck_music_under_voice(project, a.get("preset", "voice_over_music"))
 
     return operation

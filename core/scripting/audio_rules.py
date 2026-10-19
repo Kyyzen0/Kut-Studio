@@ -88,14 +88,17 @@ def require_sidechain_room(project: Project, adding: int) -> None:
         raise ValueError(f"Le projet compte déjà {count} associations de ducking : {adding} de plus dépasseraient la limite de {MAX_SIDECHAINS}.")
 
 
-def require_no_ducking_loop(project: Project, music_id: str, voice_id: str) -> None:
+def require_no_ducking_loop(project: Project, music_id: str, voice_id: str, extra: tuple[tuple[str, str], ...] = ()) -> None:
     """Refuse l'association « ``music_id`` baisse sous ``voice_id`` » si, une fois ajoutée, le graphe « baissée par » aurait une boucle.
 
     La boucle se cherche sur le graphe résultant : il y en a une si ``voice_id`` est déjà (directement ou par d'autres pistes) baissée
-    par ``music_id``. Les associations désactivées comptent (réactivées, elles referment la boucle)."""
+    par ``music_id``. Les associations désactivées comptent (réactivées, elles referment la boucle). ``extra`` : des paires
+    ``(musique, voix)`` à compter comme déjà là (une opération en masse qui en crée plusieurs)."""
     ducked_by: dict[str, set[str]] = {}
     for sidechain in project.ducking_sidechains:
         ducked_by.setdefault(sidechain.music_track_id, set()).add(sidechain.voice_track_id)
+    for music, voice in extra:
+        ducked_by.setdefault(music, set()).add(voice)
     seen: set[str] = set()
     pending = [voice_id]
     while pending:
