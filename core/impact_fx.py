@@ -68,11 +68,15 @@ def apply_camera_shake(clip: Clip, *, start: float = 0.0, length: float = SHAKE_
     _replace(clip, frames, {"position_x", "position_y", "rotation"}, start, end)
 
 
-def add_flash(project: Project, at: float, *, length: float = FLASH_SECONDS, color: str = "#FFFFFF") -> Clip:
-    """Flash blanc : un calque de lumière ``flash`` plein cadre dont l'opacité tombe de 1 à 0 en ``length`` s."""
+def add_flash(
+    project: Project, at: float, *, length: float = FLASH_SECONDS, color: str = "#FFFFFF", clip_id: str | None = None,
+) -> Clip:
+    """Flash blanc : un calque de lumière ``flash`` plein cadre dont l'opacité tombe de 1 à 0 en ``length`` s.
+
+    ``clip_id`` : identifiant imposé du calque (scripts, voir :mod:`core.object_ids`) ; ``None`` (l'interface) : généré comme avant."""
     from .graphics import add_graphic_clip, update_graphic
 
-    clip = add_graphic_clip(project, "light", timeline_start=max(0.0, at), duration=max(1.0 / project.fps, length))
+    clip = add_graphic_clip(project, "light", timeline_start=max(0.0, at), duration=max(1.0 / project.fps, length), clip_id=clip_id)
     update_graphic(clip, "light_kind", "flash")
     update_graphic(clip, "fill_color", color)
     clip.label = "Flash"
