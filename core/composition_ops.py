@@ -38,6 +38,8 @@ from .composition import (
     MergeNode,
     TransformNode,
 )
+from .object_ids import clip_ids as _all_clip_ids
+from .object_ids import resolve_object_id
 from .project_model import Clip, Project, Track
 from .visual_effects import ClipTransform
 
@@ -158,10 +160,18 @@ def _branch(clip: Clip, track: Track, offset: float, graph: CompositionGraph, an
     return graph, last
 
 
-def convert_to_composition(project: Project, clip_ids, name: str | None = None) -> ConversionResult:
+def _composition_clip_id(project: Project, requested: str | None) -> str:
+    """L'identifiant du clip de composition : celui demandé (scripts, vérifié : forme et unicité au projet), sinon un identifiant généré."""
+    if requested is None:
+        return new_composition_id()
+    return resolve_object_id(requested, prefix="comp", kind="clip", taken=_all_clip_ids(project), length=10)
+
+
+def convert_to_composition(project: Project, clip_ids, name: str | None = None, *, clip_id: str | None = None) -> ConversionResult:
     """Remplace les clips ``clip_ids`` de la séquence active par un clip de composition (voir le module).
 
     Toute la modification est faite sur le projet passé : l'appelant enregistre ensuite **une** étape d'historique.
+    ``clip_id`` : identifiant imposé au clip créé (scripts ; vérifié avant toute modification), ``None`` en génère un.
     """
     wanted = list(dict.fromkeys(clip_ids or ()))
     if not wanted:
@@ -177,6 +187,7 @@ def convert_to_composition(project: Project, clip_ids, name: str | None = None) 
     if locked:
         raise CompositionError(f"Piste(s) verrouillée(s) : {', '.join(locked)}.")
     selected = {clip.id for _i, _t, clip in located}
+    new_id = _composition_clip_id(project, clip_id)          # avant toute modification : un identifiant refusé ne laisse rien derrière lui
     for _index, track, clip in located:
         reason = _refusal(clip, track, project, selected)
         if reason is not None:
@@ -224,7 +235,7 @@ def convert_to_composition(project: Project, clip_ids, name: str | None = None) 
             sequence.transitions.remove(transition)
     for _index, track, clip in located:
         track.clips.remove(clip)
-    comp_clip = Clip(id=new_composition_id(), asset_id="", track_id=host.id, timeline_start=start, source_in=0.0,
+    comp_clip = Clip(id=new_id, asset_id="", track_id=host.id, timeline_start=start, source_in=0.0,
                      source_out=end - start, label=name or "Composition", composition=composition)
     host.clips.append(comp_clip)
     host.clips.sort(key=lambda item: item.timeline_start)
@@ -232,8 +243,10 @@ def convert_to_composition(project: Project, clip_ids, name: str | None = None) 
 
 
 def create_composition(project: Project, track_id: str, at: float, duration: float,
-                       name: str | None = None) -> Clip:
-    """Un clip de composition vide (sa sortie seule : transparent) sur la piste vidéo ``track_id``, à ``at``."""
+                       name: str | None = None, *, clip_id: str | None = None) -> Clip:
+    """Un clip de composition vide (sa sortie seule : transparent) sur la piste vidéo ``track_id``, à ``at``.
+
+    ``clip_id`` : identifiant imposé au clip créé (scripts ; vérifié avant toute modification), ``None`` en génère un."""
     track = next((item for item in project.active_sequence.tracks if item.id == track_id), None)
     if track is None or track.type != "video":
         raise CompositionError("Une composition va sur une piste vidéo.")
@@ -246,7 +259,7 @@ def create_composition(project: Project, track_id: str, at: float, duration: flo
     if any(clip.timeline_start < start + duration - _EPSILON and clip.timeline_start + clip.duration > start + _EPSILON
            for clip in track.clips):
         raise CompositionError(f"La piste {track.name} n'est pas libre à cet endroit.")
-    clip = Clip(id=new_composition_id(), asset_id="", track_id=track.id, timeline_start=start, source_in=0.0,
+    clip = Clip(id=_composition_clip_id(project, clip_id), asset_id="", track_id=track.id, timeline_start=start, source_in=0.0,
                 source_out=duration, label=name or "Composition", composition=Composition(duration=duration))
     track.clips.append(clip)
     track.clips.sort(key=lambda item: item.timeline_start)

@@ -1625,6 +1625,7 @@ VERBS: dict[str, Verb] = {
 from .animation_verbs import ANIMATION_VERBS  # noqa: E402 - après la table : ces modules importent les paramètres et aides de celui-ci
 from .auto_verbs import AUTOMATION_VERBS  # noqa: E402
 from .clip_audio_verbs import CLIP_AUDIO_VERBS  # noqa: E402
+from .composition_verbs import COMPOSITION_VERBS  # noqa: E402
 from .edit_verbs import CLIP_EDIT_VERBS, MARKER_VERBS, TRACK_VERBS  # noqa: E402
 from .effect_verbs import EFFECT_VERBS  # noqa: E402
 from .guide_verbs import GUIDE_VERBS  # noqa: E402
@@ -1633,6 +1634,8 @@ from .library_verbs import LIBRARY_VERBS  # noqa: E402
 from .mask_verbs import MASK_VERBS  # noqa: E402
 from .multicam_verbs import MULTICAM_VERBS  # noqa: E402
 from .sequence_verbs import SEQUENCE_VERBS  # noqa: E402
+from .preset_verbs import PRESET_VERBS  # noqa: E402
+from .selection_verbs import SELECTION_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
 from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
 
@@ -1649,6 +1652,9 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "delete_sequence": SEQUENCE_VERBS,            # nest_clips et les versions de format juste après la gestion des séquences
     "add_multicam_angle": MULTICAM_VERBS,         # création depuis des clips, aplatir, supprimer un angle, couleur
     "import_media": LIBRARY_VERBS,                # la bibliothèque juste après l'import
+    "delete_clip": SELECTION_VERBS,               # la sélection (supprimer, déplacer plusieurs clips) juste après les verbes d'un clip
+    "reset_color_grade": PRESET_VERBS,            # les presets intégrés après l'étalonnage de base
+    "set_media_color_matrix": COMPOSITION_VERBS,
     "set_graphic": LAYER_VERBS,                   # les calques graphiques juste après leur création et leur apparence
 }
 
