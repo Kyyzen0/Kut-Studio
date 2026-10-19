@@ -35,7 +35,7 @@ from kut3d.scene_io_fields import (
     optional_number,
     text,
 )
-from kut3d.scene_io_paths import resolve_model_path
+from kut3d.scene_io_paths import check_relative_path, resolve_model_path
 
 SCENE_FORMAT_VERSION = 1
 FORMAT_NAME = "kut3d"
@@ -79,6 +79,11 @@ def read_document(path: Path) -> dict[str, Any]:
         raise SceneFileError(
             f"{path.name} : fichier trop volumineux (maximum {MAX_SCENE_BYTES} octets)."
         )
+    return parse_document(raw, path.name)
+
+
+def parse_document(raw: bytes, name: str) -> dict[str, Any]:
+    """Analyse les octets d'un `.kut3d` (JSON strict) ; `name` ne sert qu'aux messages."""
     try:
         doc = json.loads(
             raw.decode("utf-8-sig"),
@@ -86,16 +91,14 @@ def read_document(path: Path) -> dict[str, Any]:
             object_pairs_hook=_no_duplicates,
         )
     except RecursionError:
-        raise SceneFileError(
-            f"{path.name} : JSON trop profondément imbriqué."
-        ) from None
+        raise SceneFileError(f"{name} : JSON trop profondément imbriqué.") from None
     except (
         ValueError
     ) as exc:  # JSONDecodeError et UnicodeDecodeError en sont des sous-classes
         raise SceneFileError(
-            f"{path.name} : JSON invalide ({short(str(exc), 80)})."
+            f"{name} : JSON invalide ({short(str(exc), 80)})."
         ) from exc
-    return as_object(doc, path.name)
+    return as_object(doc, name)
 
 
 def _camera(value: Any) -> Camera:
@@ -178,17 +181,13 @@ def _normalize_options(value: Any, where: str) -> dict[str, Any]:
     return out
 
 
-def _model(
-    value: Any, index: int, base_dir: Path, allow_outside: bool
-) -> tuple[str, Model]:
+def _model_entry(value: Any, index: int) -> tuple[str, str, dict[str, Any], Any]:
+    """Valide une entrée de `models[]` sans toucher au disque : (id, chemin brut, options de `load_model`, matrice)."""
     where = f"models[{index}]"
     obj = as_object(value, where)
     check_keys(obj, where, ("id", "path"), ("normalize", "root_transform"))
     mid = model_id(obj["id"], f"{where}.id")
     raw_path = text(obj["path"], f"{where}.path", 1 << 12)
-    file = resolve_model_path(
-        base_dir, raw_path, f"{where}.path", allow_outside=allow_outside
-    )
     options = (
         _normalize_options(obj["normalize"], f"{where}.normalize")
         if "normalize" in obj
@@ -206,6 +205,21 @@ def _model(
             )
         # `root_transform` prime sur `normalize` : on charge sans normalisation puis on remplace la matrice.
         options = {"center": False}
+    return mid, raw_path, options, matrix
+
+
+def _load_entry(
+    index: int,
+    raw_path: str,
+    options: dict[str, Any],
+    matrix: Any,
+    base_dir: Path,
+    allow_outside: bool,
+) -> Model:
+    where = f"models[{index}]"
+    file = resolve_model_path(
+        base_dir, raw_path, f"{where}.path", allow_outside=allow_outside
+    )
     try:
         model = load_model(file, **options)
     except (
@@ -215,7 +229,7 @@ def _model(
         raise SceneFileError(f"{where} : {short(str(exc), 200)}") from exc
     if matrix is not None:
         model = model.with_root_transform(matrix)
-    return mid, model
+    return model
 
 
 def _instance(value: Any, index: int, models: dict[str, Model]) -> Instance:
@@ -245,8 +259,28 @@ def _instance(value: Any, index: int, models: dict[str, Model]) -> Instance:
     return _build(where, Instance, kwargs)  # type: ignore[no-any-return]
 
 
-def build_scene(doc: dict[str, Any], base_dir: Path, allow_outside: bool) -> Scene:
-    """Valide l'enveloppe puis construit la `Scene` ; chaque modèle est chargé une seule fois."""
+def build_scene(
+    doc: dict[str, Any],
+    base_dir: Path,
+    allow_outside: bool,
+    *,
+    models: dict[str, Model] | None = None,
+) -> Scene:
+    """Valide l'enveloppe puis construit la `Scene` ; chaque modèle est chargé une seule fois.
+
+    `models` (écrivain) : modèles déjà en mémoire par identifiant ; le fichier n'est alors pas relu mais l'entrée
+    et le chemin sont validés par les mêmes règles que pour un fichier."""
+    return build_scene_with_models(doc, base_dir, allow_outside, models=models)[0]
+
+
+def build_scene_with_models(
+    doc: dict[str, Any],
+    base_dir: Path,
+    allow_outside: bool,
+    *,
+    models: dict[str, Model] | None = None,
+) -> tuple[Scene, tuple[Model, ...]]:
+    """Comme `build_scene`, avec en plus TOUS les modèles déclarés (même sans instance), dans l'ordre du fichier."""
     if doc.get("format") != FORMAT_NAME:
         raise SceneFileError(
             f"format inconnu : {short(doc.get('format'), 30)} (« {FORMAT_NAME} » attendu)."
@@ -272,18 +306,29 @@ def build_scene(doc: dict[str, Any], base_dir: Path, allow_outside: bool) -> Sce
     background = _background(scene.get("background"))
     model_items = as_list(scene.get("models", []), "models", MAX_MODELS)
     instance_items = as_list(scene.get("instances", []), "instances", MAX_INSTANCES)
-    models: dict[str, Model] = {}
+    loaded: dict[str, Model] = {}
     for i, item in enumerate(model_items):
-        mid, model = _model(item, i, base_dir, allow_outside)
-        if mid in models:
+        mid, raw_path, options, matrix = _model_entry(item, i)
+        if mid in loaded:
             raise SceneFileError(
                 f"models[{i}] : identifiant {short(mid, 40)} en double."
             )
-        models[mid] = model
-    instances = [_instance(v, i, models) for i, v in enumerate(instance_items)]
+        if models is None:
+            loaded[mid] = _load_entry(
+                i, raw_path, options, matrix, base_dir, allow_outside
+            )
+        else:
+            check_relative_path(
+                raw_path, f"models[{i}].path", allow_outside=allow_outside
+            )
+            if mid not in models:
+                raise SceneFileError(f"models[{i}] : modèle {short(mid, 40)} absent.")
+            loaded[mid] = models[mid]
+    instances = [_instance(v, i, loaded) for i, v in enumerate(instance_items)]
     try:
-        return Scene(
+        built = Scene(
             instances=instances, lights=lights, camera=camera, background=background
         )
     except ValueError as exc:
         raise SceneFileError(f"scene : {short(str(exc), 160)}") from exc
+    return built, tuple(loaded.values())

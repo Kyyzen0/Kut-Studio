@@ -12,8 +12,13 @@ from pathlib import Path
 from kut3d.errors import SceneFileError, SceneVersionError
 from kut3d.importers._common import finalize_dependencies, material_texture_paths
 from kut3d.scene import Scene
-from kut3d.scene_io_read import SCENE_FORMAT_VERSION, build_scene, read_document
-from kut3d.scene_io_write import scene_document, serialize, write_atomic
+from kut3d.scene_io_read import (
+    SCENE_FORMAT_VERSION,
+    build_scene,
+    build_scene_with_models,
+    read_document,
+)
+from kut3d.scene_io_write import checked_bytes, write_atomic
 
 __all__ = [
     "SCENE_FORMAT_VERSION",
@@ -35,25 +40,25 @@ def save_scene(scene: Scene, path: str | Path, *, allow_outside: bool = False) -
     """Écrit la scène (clés triées, ASCII, `\\n`, UTF-8) de façon atomique.
 
     Chaque modèle doit venir d'un fichier source ; `root_transform` est toujours écrite (aller-retour exact).
-    Un modèle hors du dossier du fichier est refusé sauf `allow_outside=True`."""
+    Un modèle hors du dossier du fichier est refusé sauf `allow_outside=True`. Le contenu est relu par les validateurs
+    du lecteur AVANT de remplacer la destination : ce qui serait refusé à la lecture l'est à l'écriture."""
     p = Path(path)
     if not p.parent.is_dir():
         raise SceneFileError(f"{p.name} : le dossier de destination n'existe pas.")
-    write_atomic(
-        p, serialize(scene_document(scene, p.parent, allow_outside=allow_outside))
-    )
+    write_atomic(p, checked_bytes(scene, p.parent, allow_outside=allow_outside))
 
 
 def dependency_files(
     path: str | Path, *, allow_outside: bool = False
 ) -> tuple[Path, ...]:
-    """Le `.kut3d`, puis (trié, sans doublon) chaque fichier de modèle, ses MTL / .bin et ses textures :
+    """Le `.kut3d`, puis (trié, sans doublon) chaque fichier de modèle déclaré, ses MTL / .bin et ses textures :
     chemins absolus résolus."""
     p = Path(path)
-    scene = load_scene(p, allow_outside=allow_outside)
+    _, models = build_scene_with_models(
+        read_document(p), p.parent, allow_outside
+    )  # tous les modèles déclarés, même sans instance : la lecture les exige
     found: list[Path] = []
-    for inst in scene.instances:
-        model = inst.model
+    for model in models:
         found.append(model.source)
         found.extend(model.dependencies)
         for mat in model.materials:

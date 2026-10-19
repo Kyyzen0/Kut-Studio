@@ -237,7 +237,9 @@ def test_a_crashing_worker_does_not_take_the_caller_down(
 ) -> None:
     monkeypatch.delenv(availability.ENV_SWITCH, raising=False)
     monkeypatch.setattr(availability, "_pyside_installed", lambda: True)
-    crash = "import os, signal; os.kill(os.getpid(), signal.SIGSEGV)"
+    # SIGKILL et non SIGSEGV : un vrai plantage fait écrire un rapport par macOS et ouvre la fenêtre « Python s'est
+    # arrêté de façon inattendue » à chaque lancement des tests ; la mort par signal est la même pour la sonde.
+    crash = "import os, signal; os.kill(os.getpid(), signal.SIGKILL)"
     monkeypatch.setattr(
         availability, "_worker_command", lambda: [sys.executable, "-c", crash]
     )

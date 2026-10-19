@@ -58,9 +58,20 @@ ou nombre démesuré ; type faux (un booléen n'est pas un nombre) ; tableau de 
 `Camera`, les lumières ou `Instance` ; modèle introuvable ou illisible ; clip inexistant ; identifiant de modèle en double
 (1 à 64 caractères parmi lettres ASCII, chiffres, `_`, `-`). `save_scene` refuse un modèle sans fichier source.
 
+## Écriture aussi stricte que la lecture
+
+Avant de remplacer la destination, `save_scene` relit la forme sérialisée du document avec les validateurs du lecteur
+(`build_scene`, modèles non rechargés) : noms et clips ≤ 200 caractères, chemins, nombres finis, `root_transform`
+non dégénérée, nombre de lumières / instances / modèles, taille ≤ 16 Mio. Un document que `load_scene` refuserait est donc
+refusé à l'écriture (`SceneFileError`), la destination existante reste intacte et aucun temporaire ne traîne.
+
+`DirectionalLight` conserve telle quelle une direction déjà unitaire (|‖v‖ − 1| ≤ 1e-12) et ne normalise que les autres :
+la normalisation est idempotente, donc `save → load → save` redonne exactement les mêmes octets.
+
 ## Limites
 
 Fichier ≤ 16 Mio, JSON de profondeur bornée, ≤ 16 lumières, ≤ 2048 instances, ≤ 256 modèles, noms ≤ 200 caractères,
 chemins ≤ 1024. L'écriture est atomique (fichier temporaire puis remplacement), triée, en ASCII, terminée par `\n`.
-`dependency_files(path)` retourne le `.kut3d` puis, triés et sans doublon, les fichiers de modèle, leurs `.mtl`, `.bin`
+`dependency_files(path)` retourne le `.kut3d` puis, triés et sans doublon, les fichiers de tout modèle **déclaré** (même
+sans instance : `load_scene` l'exige), leurs `.mtl`, `.bin`
 externes et textures (`Model.dependencies`).

@@ -21,7 +21,12 @@ from kut3d.scene import (
 )
 from kut3d.scene_io_fields import MAX_MODELS, MAX_SCENE_BYTES, model_id
 from kut3d.scene_io_paths import check_relative_path
-from kut3d.scene_io_read import FORMAT_NAME, SCENE_FORMAT_VERSION
+from kut3d.scene_io_read import (
+    FORMAT_NAME,
+    SCENE_FORMAT_VERSION,
+    build_scene,
+    parse_document,
+)
 
 
 def _vec(arr: Any) -> list[float]:
@@ -93,7 +98,27 @@ def scene_document(
     scene: Scene, base_dir: Path, *, allow_outside: bool = False
 ) -> dict[str, Any]:
     """Le dictionnaire JSON de la scène ; `base_dir` = dossier du futur `.kut3d`."""
+    return _document_and_models(scene, base_dir, allow_outside)[0]
+
+
+def checked_bytes(
+    scene: Scene, base_dir: Path, *, allow_outside: bool = False
+) -> bytes:
+    """Les octets du fichier, après relecture de leur forme sérialisée par les validateurs du lecteur
+    (mêmes bornes, mêmes messages) : on n'écrit jamais ce que `load_scene` refuserait."""
+    doc, models = _document_and_models(scene, base_dir, allow_outside)
+    data = serialize(doc)
+    build_scene(
+        parse_document(data, "scène à écrire"), base_dir, allow_outside, models=models
+    )
+    return data
+
+
+def _document_and_models(
+    scene: Scene, base_dir: Path, allow_outside: bool
+) -> tuple[dict[str, Any], dict[str, Model]]:
     ids: dict[int, str] = {}
+    by_id: dict[str, Model] = {}
     models: list[dict[str, Any]] = []
     taken: set[str] = set()
     for inst in scene.instances:
@@ -106,6 +131,7 @@ def scene_document(
         mid = _unique_id(model, taken)
         taken.add(mid)
         ids[id(model)] = mid
+        by_id[mid] = model
         label = f"modèle {mid}"
         models.append(
             {
@@ -115,7 +141,7 @@ def scene_document(
             }
         )
     camera = scene.camera
-    return {
+    doc = {
         "format": FORMAT_NAME,
         "version": SCENE_FORMAT_VERSION,
         "scene": {
@@ -143,6 +169,7 @@ def scene_document(
             ],
         },
     }
+    return doc, by_id
 
 
 def _dump(value: Any, level: int, out: list[str]) -> None:
@@ -175,7 +202,15 @@ def _dump(value: Any, level: int, out: list[str]) -> None:
 
 def serialize(document: dict[str, Any]) -> bytes:
     out: list[str] = []
-    _dump(document, 0, out)
+    try:
+        _dump(document, 0, out)
+    except (
+        ValueError,
+        TypeError,
+    ) as exc:  # NaN, infini ou type hors JSON glissé après construction
+        raise SceneFileError(
+            f"valeur non écrivable dans le fichier ({short(str(exc), 80)})."
+        ) from exc
     data = ("".join(out) + "\n").encode("utf-8")
     if len(data) > MAX_SCENE_BYTES:
         raise SceneFileError(

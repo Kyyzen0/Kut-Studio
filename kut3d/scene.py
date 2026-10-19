@@ -21,6 +21,7 @@ MAX_LIGHTS = 16  # lumières par scène (le coût de l'ombrage est linéaire en 
 MAX_INSTANCES = 2048  # modèles posés dans une scène
 FOV_RANGE = (1.0, 170.0)  # degrés, bornes exclues
 _PARALLEL_EPS = 1e-6
+_UNIT_TOLERANCE = 1e-12  # |‖v‖ - 1| en dessous duquel un vecteur est déjà unitaire (normaliser est alors idempotent)
 
 
 def _vec(value: Any, n: int, name: str) -> Array:
@@ -160,7 +161,10 @@ class DirectionalLight:
         n = float(np.linalg.norm(d))
         if n < 1e-12:
             raise ValueError("la direction de la lumière est nulle.")
-        d = d / n
+        if (
+            abs(n - 1.0) > _UNIT_TOLERANCE
+        ):  # déjà unitaire : conservé tel quel (aller-retour fichier exact)
+            d = d / n
         d.setflags(write=False)
         object.__setattr__(self, "direction", d)
         object.__setattr__(self, "color", _positive_color(self.color, "couleur"))
