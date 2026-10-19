@@ -267,7 +267,8 @@ def _fake_home(tmp_path, monkeypatch):
     Le gardien de la supervision des processus (``main.py --kut-process-reaper``) est lancé au premier enfant FFmpeg du
     processus, avec l'environnement du moment, et crée aussitôt le dossier du journal : sous Linux (XDG)
     ``$HOME/.local/state/kut-studio``. Le test qui lance ce premier enfant (selon la répartition xdist) y trouvait un
-    ``.local`` dans son faux dossier personnel."""
+    ``.local`` dans son faux dossier personnel. Sous macOS le registre des processus va dans ``$HOME/Library/Caches`` (le
+    cache ignore XDG) : les surcharges ``KUT_STUDIO_*_DIR`` couvrent les trois plateformes."""
     home = tmp_path / "home"
     home.mkdir()
     elsewhere = tmp_path / "xdg"
@@ -276,7 +277,10 @@ def _fake_home(tmp_path, monkeypatch):
     for name, folder in (("XDG_STATE_HOME", "state"), ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache"),
                          ("XDG_CONFIG_HOME", "config")):
         monkeypatch.setenv(name, str(elsewhere / folder))
-    monkeypatch.setenv("KUT_STUDIO_LOG_DIR", str(elsewhere / "logs"))
+    # Les surcharges propres à l'application valent sur TOUTES les plateformes : macOS ignore XDG_CACHE_HOME (registre des
+    # processus sous ``$HOME/Library/Caches``), Windows lit LOCALAPPDATA / APPDATA.
+    for name, folder in (("KUT_STUDIO_LOG_DIR", "logs"), ("KUT_STUDIO_CACHE_DIR", "kut-cache"), ("KUT_STUDIO_DATA_DIR", "kut-data")):
+        monkeypatch.setenv(name, str(elsewhere / folder))
     return home
 
 
