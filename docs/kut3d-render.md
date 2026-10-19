@@ -105,6 +105,9 @@ kut3d.backend_available("qrhi")   # bool (sonde en sous-processus, mise en cache
 - **Disponibilité et sécurité** : la sonde (`kut3d.gpu.probe_qrhi`, `python -m kut3d.gpu.probe_worker` ; **gelée**, l'application se relance avec
   `--kut3d-gpu-probe`, traité en tête de `main.py` par `helper_mode_exit_code`, comme les autres modes auxiliaires) rend un triangle avec le
   vrai pipeline **dans un sous-processus, avec un délai de 30 s** : un plantage ou un blocage du pilote ne tue pas l'appelant.
+  Le résultat JSON passe par un **fichier** (`--kut3d-gpu-probe-out <chemin>`, dans un dossier temporaire privé que le père
+  crée, lit en le bornant à 4 Ko avec vérification des clés, puis supprime même après un délai ou un plantage), pas par stdout :
+  en mode fenêtré de PyInstaller (Windows), `sys.stdout` et `sys.stderr` valent `None`. Sans ce drapeau, la sonde écrit une ligne sur stdout.
   Le résultat est mis en cache par plateforme Qt. `backend="qrhi"` indisponible lève `RenderBackendUnavailable`
   (une `RenderError`) avec la **raison réelle** (PySide6 absent, plateforme Qt sans GPU, plantage du pilote, délai...).
   `"auto"` essaie le GPU puis retombe sur numpy (sonde échouée, autre fil, image trop grande pour les textures du GPU).

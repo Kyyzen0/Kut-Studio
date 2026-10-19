@@ -32,9 +32,9 @@ def test_source_probe_command_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_the_supervisor_runs_the_probe_for_its_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
-    monkeypatch.setattr(probe_worker, "main", lambda: calls.append(1) or 2)
+    monkeypatch.setattr(probe_worker, "main", lambda argv=None: calls.append(list(argv or [])) or 2)
     assert helper_mode_exit_code(["Kut-Studio", probe_worker.PROBE_FLAG]) == 2
-    assert calls == [1]
+    assert calls == [[probe_worker.PROBE_FLAG]]
     assert helper_mode_exit_code(["Kut-Studio"]) is None
 
 

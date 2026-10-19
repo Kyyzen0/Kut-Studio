@@ -395,7 +395,7 @@ def helper_mode_exit_code(argv: Sequence[str]) -> int | None:
         # Sonde GPU de Kut-3D de l'application gelée : sans journal ni Qt avant elle (import différé).
         from kut3d.gpu.probe_worker import main as probe_main
 
-        return probe_main()
+        return probe_main(arguments)
     if SLEEPER_FLAG in arguments:
         index = arguments.index(SLEEPER_FLAG)
         try:
