@@ -493,7 +493,6 @@ def _at_cap(project: Project, monkeypatch) -> None:
 
 
 def test_every_sequence_creating_verb_counts_the_clips_it_adds_in_a_project_at_the_clip_cap(monkeypatch):
-    from core.multicam_ops import AngleSpec, create_multicam_source
 
     project = _project()
     project.tracks[0].clips.append(Clip("c1", "m", "V1", 0.0, 0.0, 2.0, label="c1"))
