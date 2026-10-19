@@ -155,9 +155,10 @@ def test_set_speed_tangents_refuses_what_the_editor_does_not_offer_or_the_model_
     assert "au moins" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[1.0])).error
     assert "exclut" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[1.0], auto=True, in_slope=1.0)).error
     assert "égales" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[1.0], in_slope=1.0, out_slope=2.0)).error
-    assert "suivi" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[2.0], out_slope=1.0)).error            # le dernier point
-    assert "précédent" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[0.0], in_slope=1.0)).error        # le premier point
-    assert "bezier" in _refused(_curved(), _op("set_speed_tangents", clip="a", points=[1.0], out_slope=1.0)).error           # des segments linéaires
+    assert "suivi" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[2.0], out_slope=1.0, mode="broken")).error      # le dernier point
+    assert "précédent" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[0.0], in_slope=1.0, mode="broken")).error  # le premier point
+    assert "aucune pente" in _refused(_curved(), _op("set_speed_tangents", clip="a", points=[1.0], out_slope=1.0)).error             # des segments linéaires
+    assert "bezier" in _refused(_curved(), _op("set_speed_tangents", clip="a", points=[1.0], out_slope=1.0, mode="broken")).error
     assert "deux instants" in _refused(_bezier(), _op("set_speed_tangents", clip="a", points=[1.0, 1.0], mode="broken")).error
     for bad in (math.nan, math.inf, 1e7, True):
         _invalid(_op("set_speed_tangents", clip="a", points=[1.0], out_slope=bad))

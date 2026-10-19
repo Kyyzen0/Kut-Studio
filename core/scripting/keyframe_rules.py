@@ -107,7 +107,8 @@ def require_effective_tangents(
 
     - au moins un réglage ; ``auto`` (pentes automatiques) exclut les pentes ;
     - une pente sortante ne compte que si l'image clé est « Bézier » et suivie d'une autre ; une pente entrante que si la précédente est « Bézier » ;
-    - en mode **lié** les deux pentes sont égales : le modèle ne garderait que la sortante, deux valeurs différentes sont refusées.
+    - en mode **lié** les deux pentes sont égales (le modèle ne garderait que la sortante : deux valeurs différentes sont refusées) et il suffit
+      qu'un des deux côtés compte, car la description d'une image clé liée porte les deux pentes.
     """
     if in_slope is None and out_slope is None and mode is None and not auto:
         raise ValueError(f"{what} : donnez au moins une pente, un mode ou auto.")
@@ -117,13 +118,21 @@ def require_effective_tangents(
     frames = curve.keyframes
     if index is None:                                    # pragma: no cover - l'image clé vient d'être lue dans cette courbe
         raise KeyError("Image clé introuvable.")
-    if out_slope is not None and not (index + 1 < len(frames) and keyframe.interpolation is InterpolationType.BEZIER):
-        raise ValueError(f"{what} : out_slope ne compte que pour une image clé « bezier » suivie d'une autre (le rendu l'ignorerait).")
-    if in_slope is not None and not (index > 0 and frames[index - 1].interpolation is InterpolationType.BEZIER):
-        raise ValueError(f"{what} : in_slope ne compte que si l'image clé précédente est « bezier » (le rendu l'ignorerait).")
+    out_counts = index + 1 < len(frames) and keyframe.interpolation is InterpolationType.BEZIER
+    in_counts = index > 0 and frames[index - 1].interpolation is InterpolationType.BEZIER
     resulting = TangentMode(mode) if mode is not None else keyframe.tangent_mode
-    if resulting is TangentMode.LINKED and in_slope is not None and out_slope is not None and abs(in_slope - out_slope) > 1e-12:
-        raise ValueError(f"{what} : en mode « linked » les deux pentes sont égales ; donnez mode « broken » pour des pentes différentes.")
+    if resulting is TangentMode.LINKED:
+        # Lié : le modèle écrit la même pente des deux côtés (celle de sortie si elle est donnée) ; la description d'une image clé liée porte donc
+        # les deux, même quand un côté n'existe pas (première ou dernière image clé) : il suffit qu'un côté compte.
+        if in_slope is not None and out_slope is not None and abs(in_slope - out_slope) > 1e-12:
+            raise ValueError(f"{what} : en mode « linked » les deux pentes sont égales ; donnez mode « broken » pour des pentes différentes.")
+        if (in_slope is not None or out_slope is not None) and not (in_counts or out_counts):
+            raise ValueError(f"{what} : aucune pente ne compte ici : il faut une image clé « bezier » suivie d'une autre, ou précédée d'une « bezier » (le rendu l'ignorerait).")
+        return
+    if out_slope is not None and not out_counts:
+        raise ValueError(f"{what} : out_slope ne compte que pour une image clé « bezier » suivie d'une autre (le rendu l'ignorerait).")
+    if in_slope is not None and not in_counts:
+        raise ValueError(f"{what} : in_slope ne compte que si l'image clé précédente est « bezier » (le rendu l'ignorerait).")
 
 
 __all__ = [

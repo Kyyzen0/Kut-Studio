@@ -8,7 +8,7 @@ Deux preuves, pour chaque famille décrite (effets, effets audio, inserts, bus, 
 * **rejeu** : un script de « réglages » qui vise chaque objet décrit par son identifiant, avec ses valeurs, réussit sur le projet
   lui-même et ne change rien (la description reste identique).
 
-Ce qu'aucun verbe ne sait encore écrire (images clés d'effet ``fx.*``, LUT, composition, mode de fusion, incrustation, automation,
+Ce qu'aucun verbe ne sait encore écrire (LUT, composition, mode de fusion, incrustation, automation,
 associations de ducking) est listé dans ``GAPS`` et vérifié : le jour où un verbe existe, le test le dit.
 """
 
@@ -23,11 +23,12 @@ from describe_project import rich_project
 
 from core.color_grading import ColorGrade
 from core.color_nodes import ColorNode, ColorNodeGraph
+from core.effects_model import split_fx_property
 from core.scripting import ScriptInvalid, Session, apply_script, parse_script
 from core.scripting.describe import describe
 from core.scripting.verbs import VERBS
 
-GAPS = ("fx.* keyframes", "LUT", "composition", "blend_mode", "chroma_key", "automation", "ducking_sidechains", "ducking_config")
+GAPS = ("LUT", "composition", "blend_mode", "chroma_key", "automation", "ducking_sidechains", "ducking_config")
 _IDENTITY_X = [index / 15 for index in range(16)]
 
 
@@ -122,7 +123,9 @@ def _keyframe_ops(data: dict) -> list[dict]:
         common = {"clip": "c1", "property": name, "at": keyframe["time_seconds"], "value": keyframe["value"],
                   "interpolation": keyframe["interpolation"]}
         if name.startswith("fx."):
-            continue                                                   # GAPS : aucun verbe n'écrit une image clé d'effet
+            effect, parameter = split_fx_property(name)                # ``add_keyframe`` n'accepte pas ``fx.*`` : le verbe d'effet désigne l'effet
+            ops.append({"op": "add_effect_keyframe", **{key: value for key, value in common.items() if key != "property"}, "effect": effect, "parameter": parameter})
+            continue
         if name.startswith("mask."):
             _, mask, prop = name.split(".")
             ops.append({"op": "add_mask_keyframe", **common, "mask": mask, "property": prop})
@@ -163,7 +166,7 @@ def _family_view(data: dict) -> dict:
     """Ce que le script reconstruit, tel que décrit : les identifiants d'image clé sont tirés au hasard, les tangentes par défaut."""
     clip = _clip(data, "c1")
     keyframes = [(k["property_name"], k["time_seconds"], k["value"], k["interpolation"])
-                 for k in clip["transform_keyframes"] + clip["animation"] if not k["property_name"].startswith("fx.")]
+                 for k in clip["transform_keyframes"] + clip["animation"]]
     masks = [{key: value for key, value in mask.items() if key != "keyframes"} for mask in clip["compositing"]["masks"]]
     return {
         "effects": clip["effects"], "audio_effects": _clip(data, "c4")["audio_effects"], "inserts": _track(data, "A1")["inserts"],
@@ -179,7 +182,7 @@ def test_a_script_written_from_the_description_rebuilds_every_family():
     assert _family_view(describe(rebuilt)) != _family_view(wanted)           # le retrait a bien eu lieu
     ops = [op for family in ("effects", "buses", "masks", "keyframes", "color") for op in FAMILIES[family](wanted)]
     assert {op["op"] for op in ops} >= {"add_effect", "add_clip_audio_effect", "add_track_insert", "add_bus", "add_bus_insert",
-                                       "route_track", "add_mask", "add_keyframe", "add_mask_keyframe", "set_color_grade",
+                                       "route_track", "add_mask", "add_keyframe", "add_mask_keyframe", "add_effect_keyframe", "set_color_grade",
                                        "set_color_curve", "set_color_wheel", "set_color_qualifier", "add_color_window",
                                        "set_color_detail", "rename_color_node"}
     _apply(rebuilt, ops)
@@ -191,8 +194,8 @@ def test_each_family_alone_is_rebuilt_from_its_own_description(family):
     original = rich_project()
     wanted = describe(original)
     rebuilt = _strip(original)
-    if family == "keyframes":                                             # les images clés de masque supposent les masques
-        _apply(rebuilt, FAMILIES["masks"](wanted))
+    if family == "keyframes":                                             # les images clés de masque et d'effet supposent les masques et les effets
+        _apply(rebuilt, FAMILIES["masks"](wanted) + FAMILIES["effects"](wanted))
     _apply(rebuilt, FAMILIES[family](wanted))
     view, target = _family_view(describe(rebuilt)), _family_view(wanted)
     keys = {"effects": ("effects", "audio_effects", "inserts"), "buses": ("buses", "bus_id"), "masks": ("masks",),
@@ -271,7 +274,7 @@ def test_a_modification_written_from_the_description_is_visible_in_the_next_desc
 
 def test_the_gaps_are_real_and_named():
     """Chaque manque est une décision écrite : le jour où un verbe l'écrit, ce test échoue et ``GAPS`` (et la documentation) se mettent à jour."""
-    with pytest.raises(ScriptInvalid):                    # une image clé d'effet : ``property`` n'accepte que le registre statique
+    with pytest.raises(ScriptInvalid):                    # une image clé d'effet : ``property`` de ``add_keyframe`` n'accepte que le registre statique (``add_effect_keyframe`` existe)
         parse_script({"kut_script": 1, "ops": [{"op": "add_keyframe", "clip": "c1", "property": "fx.fx2.intensity", "at": 0, "value": 0.5}]})
     names = set(VERBS)
     assert [n for n in names if any(word in n for word in ("composition", "chroma", "blend", "automation", "sidechain"))] == []

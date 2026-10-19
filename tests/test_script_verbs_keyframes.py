@@ -298,11 +298,16 @@ def test_set_keyframe_tangents_refuses_what_the_editor_does_not_offer_or_the_mod
     assert "égales" in _refused(_animated(), _op("set_keyframe_tangents", **base, in_slope=1.0, out_slope=2.0)).error          # lié : une seule pente survivrait
     _apply(_animated(), _op("set_keyframe_tangents", **base, in_slope=1.0, out_slope=1.0))                                      # égales : permis
     last = {"clip": "a", "property": "fx.v1.intensity", "at": 4.0}
-    assert "suivie" in _refused(_animated(), _op("set_keyframe_tangents", **last, out_slope=1.0)).error                      # rien après : le rendu l'ignorerait
-    assert "précédente" in _refused(_animated(), _op("set_keyframe_tangents", clip="a", property="fx.v1.intensity", at=0.0, in_slope=1.0)).error
+    assert "suivie" in _refused(_animated(), _op("set_keyframe_tangents", **last, out_slope=1.0, mode="broken")).error      # rien après : le rendu l'ignorerait
+    assert "précédente" in _refused(_animated(), _op("set_keyframe_tangents", clip="a", property="fx.v1.intensity", at=0.0, in_slope=1.0, mode="broken")).error
+    _apply(_animated(), _op("set_keyframe_tangents", **last, out_slope=1.0))                                                # lié : la pente entrante, elle, compte
     straight = _animated()
     set_interpolation(straight, [_ref(straight, "fx.v1.intensity", 2.0)], "linear")
-    assert "bezier" in _refused(straight, _op("set_keyframe_tangents", **base, out_slope=1.0)).error
+    assert "bezier" in _refused(straight, _op("set_keyframe_tangents", **base, out_slope=1.0, mode="broken")).error
+    only_linear = copy.deepcopy(straight)
+    set_interpolation(only_linear, [_ref(only_linear, "fx.v1.intensity", 0.0)], "linear")
+    set_interpolation(only_linear, [_ref(only_linear, "fx.v1.intensity", 2.0)], "linear")
+    assert "aucune pente" in _refused(only_linear, _op("set_keyframe_tangents", **base, out_slope=1.0)).error
     for bad in (math.nan, math.inf, 1e7, -1e7, True):
         _invalid(_op("set_keyframe_tangents", **base, out_slope=bad))
     _invalid(_op("set_keyframe_tangents", **base, mode="smooth"))
@@ -477,3 +482,42 @@ def test_huge_and_hostile_inputs_are_bounded_at_parse():
     report = _refused(_animated(), _op("set_keyframe_value", clip="a", property="p" * 150, at=0.0, value=1.0))
     assert len(report.error) < 1_000
     assert keyframe_by_id(find_clip(_animated(), "a"), "position_x", "inconnu") is None
+
+
+# --- Aller-retour avec `describe` --------------------------------------------------------------------------------------------
+
+
+def test_the_tangents_and_interpolations_of_the_description_are_rewritten_by_the_verbs():
+    from core.scripting.describe import describe
+
+    original = _animated()
+    set_tangents(original, _ref(original, "fx.v1.intensity", 2.0), in_slope=0.1, out_slope=0.4, mode=TangentMode.BROKEN)
+    set_tangents(original, _ref(original, "fx.v1.intensity", 0.0), out_slope=0.3)
+    set_interpolation(original, [_ref(original, "position_x", 0.0)], "ease_out")
+    wanted = describe(original)
+    rebuilt = copy.deepcopy(original)
+    clip = find_clip(rebuilt, "a")
+    clip.animation, clip.transform_keyframes = [], []
+    ops: list[dict] = []
+    data = next(c for t in wanted["sequences"][0]["tracks"] for c in t["clips"] if c["id"] == "a")
+    for keyframe in data["transform_keyframes"] + data["animation"]:
+        name, base = keyframe["property_name"], {"clip": "a", "at": keyframe["time_seconds"]}
+        value = {"value": keyframe["value"], "interpolation": keyframe["interpolation"]}
+        if name.startswith("fx."):
+            _, effect, parameter = name.split(".")
+            ops.append(_op("add_effect_keyframe", **base, **value, effect=effect, parameter=parameter))
+        else:
+            ops.append(_op("add_keyframe", **base, **value, property=name))
+        slopes = {key: keyframe[key] for key in ("in_slope", "out_slope") if keyframe[key] is not None}
+        if slopes or keyframe["tangent_mode"] != "linked":
+            ops.append(_op("set_keyframe_tangents", **base, property=name, mode=keyframe["tangent_mode"], **slopes))
+    ordered = [op for op in ops if op["op"] != "set_keyframe_tangents"] + [op for op in ops if op["op"] == "set_keyframe_tangents"]   # les pentes après toutes les images clés
+    _session, report = _apply(rebuilt, *ordered)
+    assert report.ok, report.error
+
+    def view(project: Project):
+        tree = describe(project)
+        found = next(c for t in tree["sequences"][0]["tracks"] for c in t["clips"] if c["id"] == "a")
+        return [{key: value for key, value in k.items() if key != "id"} for k in found["transform_keyframes"] + found["animation"]]
+
+    assert view(rebuilt) == view(original)
