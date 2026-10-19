@@ -23,6 +23,8 @@ from kut3d.importers._common import (
     finalize_dependencies,
     material_texture_paths,
     read_limited,
+    safe_is_file,
+    safe_resolve,
     texture_from_file,
 )
 from kut3d.mathutil import Array
@@ -351,8 +353,12 @@ def _load_materials(
     for lib in mtllibs:
         candidates = [lib] + [t for t in lib.split() if t != lib]
         for cand in candidates:
-            target = (path.parent / cand.replace("\\", "/")).resolve()
-            if target.is_relative_to(path.parent.resolve()) and target.is_file():
+            target = safe_resolve(path.parent / cand.replace("\\", "/"))
+            if (
+                target is not None
+                and target.is_relative_to(path.parent.resolve())
+                and safe_is_file(target)
+            ):
                 deps.append(target)
                 for mat in _parse_mtl(target, warnings):
                     parsed.setdefault(mat.name, mat)

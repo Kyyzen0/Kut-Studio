@@ -20,7 +20,7 @@ from kut3d.scene import (
     Scene,
 )
 from kut3d.scene_io_fields import MAX_MODELS, MAX_SCENE_BYTES, model_id
-from kut3d.scene_io_paths import check_relative_path
+from kut3d.scene_io_paths import check_relative_path, filesystem_errors
 from kut3d.scene_io_read import (
     FORMAT_NAME,
     SCENE_FORMAT_VERSION,
@@ -65,23 +65,24 @@ def _relative_path(
             f"{label} : ce modèle n'a pas de fichier source (géométrie construite en code) : "
             "enregistrez-le d'abord dans un fichier OBJ, glTF, PLY ou STL."
         )
-    source = model.source.resolve()
-    try:
-        rel = Path(os.path.relpath(source, base_dir.resolve())).as_posix()
-    except ValueError:  # Windows : autre lecteur
-        raise SceneFileError(
-            f"{label} : le modèle {short(source.name)} est sur un autre lecteur que le .kut3d."
-        ) from None
-    if rel.split("/")[0] == ".." and not allow_outside:
-        raise SceneFileError(
-            f"{label} : le modèle {short(source.name)} est hors du dossier du .kut3d "
-            "(déplacez le fichier ou passez allow_outside=True)."
-        )
-    check_relative_path(rel, label, allow_outside=allow_outside)
-    if not source.is_file():
-        raise SceneFileError(
-            f"{label} : le fichier du modèle est introuvable ({short(source.name)})."
-        )
+    with filesystem_errors(label):
+        source = model.source.resolve()
+        try:
+            rel = Path(os.path.relpath(source, base_dir.resolve())).as_posix()
+        except ValueError:  # Windows : autre lecteur
+            raise SceneFileError(
+                f"{label} : le modèle {short(source.name)} est sur un autre lecteur que le .kut3d."
+            ) from None
+        if rel.split("/")[0] == ".." and not allow_outside:
+            raise SceneFileError(
+                f"{label} : le modèle {short(source.name)} est hors du dossier du .kut3d "
+                "(déplacez le fichier ou passez allow_outside=True)."
+            )
+        check_relative_path(rel, label, allow_outside=allow_outside)
+        if not source.is_file():
+            raise SceneFileError(
+                f"{label} : le fichier du modèle est introuvable ({short(source.name)})."
+            )
     return rel
 
 
@@ -231,7 +232,10 @@ def write_atomic(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_name, path)
-    except OSError as exc:
+    except (
+        OSError,
+        ValueError,
+    ) as exc:  # ValueError : octet nul ou demi-paire dans le chemin
         if tmp_name:
             try:
                 os.unlink(tmp_name)

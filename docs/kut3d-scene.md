@@ -47,9 +47,12 @@ instance règle son animation avec `loop` et `time_offset` (temps de l'animation
 
 Les chemins de modèles sont relatifs au dossier du `.kut3d`, écrits avec `/`. Sont refusés : chemin vide, absolu,
 lettre de lecteur, `\`, caractère nul, segment vide ou `.`, `..`, noms réservés de Windows (`CON`, `NUL`, `COM1`…),
-caractères `<>:"|?*`, nom finissant par un point ou une espace. La casse est préservée. Après résolution, le fichier doit
+caractères `<>:"|?*`, nom finissant par un point ou une espace, demi-paire de substitution UTF-16, et tout composant de plus de
+**255 octets UTF-8** (limite usuelle de Linux et macOS ; contrôle sans accès disque, donc identique partout : `é` en compte 2,
+un émoji 4). La longueur totale reste limitée à 1024 caractères. La casse est préservée. Après résolution, le fichier doit
 rester sous le dossier du `.kut3d` : un lien symbolique qui s'en échappe est refusé. `allow_outside=True` (jamais le
-défaut) autorise `..` et les liens qui sortent ; les chemins absolus restent refusés. `save_scene` applique les mêmes règles.
+défaut) autorise `..` et les liens qui sortent ; les chemins absolus restent refusés. `save_scene` applique les mêmes règles. Toute erreur du système de fichiers (permission, nom trop long, boucle de liens
+symboliques, dossier en lecture seule) devient une `SceneFileError` courte, sans le chemin fautif ; jamais une `OSError`.
 
 ## Refus à la lecture (`SceneFileError`, en français)
 

@@ -28,6 +28,7 @@ _PARSE_ERRORS = (
     RecursionError,
     MemoryError,
     OSError,
+    RuntimeError,  # Python < 3.13 : boucle de liens symboliques dans `resolve()`
 )
 
 
@@ -56,9 +57,13 @@ def load_model(
     (fichier illisible, corrompu ou démesuré). Les problèmes bénins vont dans `Model.warnings`.
     """
     p = Path(path)
-    if not p.exists():
+    try:  # nom trop long, permission refusée, octet nul : `exists` / `stat` ne les avalent pas toujours
+        exists, is_file = p.exists(), p.is_file()
+    except (OSError, ValueError):
+        raise ModelImportError(f"{short(p.name)} : chemin inutilisable.") from None
+    if not exists:
         raise FileNotFoundError(f"Fichier introuvable : {p.name}")
-    if not p.is_file():
+    if not is_file:
         raise ModelImportError(f"{p.name} : ce n'est pas un fichier.")
     ext = p.suffix.lower()
     importer = _REGISTRY.get(ext)
@@ -67,7 +72,11 @@ def load_model(
             f"{p.name} : format {short(ext or '(aucune extension)')} non pris en charge ; "
             f"formats pris en charge : {', '.join(supported_extensions())}."
         )
-    if p.stat().st_size > MAX_FILE_BYTES:
+    try:
+        size = p.stat().st_size
+    except OSError:
+        raise ModelImportError(f"{short(p.name)} : fichier illisible.") from None
+    if size > MAX_FILE_BYTES:
         raise ModelImportError(
             f"{p.name} : fichier trop volumineux (maximum {MAX_FILE_BYTES} octets)."
         )

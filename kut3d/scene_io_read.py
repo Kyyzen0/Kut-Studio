@@ -58,7 +58,7 @@ def read_document(path: Path) -> dict[str, Any]:
     """Lit et analyse le JSON (taille vérifiée AVANT la lecture) ; ne contrôle pas encore le contenu."""
     try:
         size = path.stat().st_size
-    except OSError:
+    except (OSError, ValueError):  # ValueError : octet nul dans le chemin
         raise SceneFileError(
             f"{path.name} : fichier introuvable ou illisible."
         ) from None

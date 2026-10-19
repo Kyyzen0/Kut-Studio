@@ -27,6 +27,8 @@ from kut3d.importers._common import (
     finalize_dependencies,
     material_texture_paths,
     read_limited,
+    safe_is_file,
+    safe_resolve,
     texture_from_file,
 )
 from kut3d.importers.gltf_accessors import denormalize, read_accessor
@@ -162,12 +164,12 @@ class _Loader:
         base = self.base.resolve()
         if "://" in text or text.startswith(("/", "\\")):
             raise ModelImportError(f"{what} : uri externe refusée ({short(uri)}).")
-        target = (base / text.replace("\\", "/")).resolve()
-        if not target.is_relative_to(base):
+        target = safe_resolve(base / text.replace("\\", "/"))
+        if target is not None and not target.is_relative_to(base):
             raise ModelImportError(
                 f"{what} : fichier hors du dossier du modèle ({short(uri)})."
             )
-        if not target.is_file():
+        if target is None or not safe_is_file(target):
             raise ModelImportError(f"{what} : fichier introuvable ({short(uri)}).")
         self.deps.append(target)
         return read_limited(target)
