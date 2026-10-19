@@ -290,3 +290,22 @@ def test_two_hundred_placements_are_read_and_applied_atomically():
                       tracks=[Track("V1", "V1", "video", clips=[Clip(f"k{i}", "m", "V1", float(i), 0.0, 1.0) for i in range(200)])])
     session, report = _apply(project, _move(*[(f"k{i}", "V1", float(i) + 1000.0) for i in range(200)]))
     assert report.ok and min(_starts(project).values()) == 1000.0 and session.undo() and _starts(project)["k0"] == 0.0
+
+
+def test_the_checks_come_before_the_first_modification_even_without_the_session_rollback():
+    """Le verbe appelé seul (sans la restauration de la session) ne laisse rien derrière lui : le refus précède toute écriture."""
+    project = _project()
+    find_clip(project, "e").graphic = GraphicOverlay(type=GraphicType.TEXT, locked=True)         # calque verrouillé que le ripple ferait reculer
+    before = _state(project)
+    operation = VERBS["delete_clips"].build({"clips": ["a"], "ripple": True})
+    with pytest.raises(ValueError, match="verrouillé"):
+        operation(project)
+    assert _state(project) == before
+    locked = _project()
+    locked.tracks[1].locked = True
+    before = _state(locked)
+    with pytest.raises(ValueError, match="verrouillée"):
+        VERBS["delete_clips"].build({"clips": ["a", "d"]})(locked)
+    with pytest.raises(ValueError, match="verrouillée"):
+        VERBS["move_clips"].build({"placements": [{"clip": "a", "track": "V1", "at": 9.0}, {"clip": "d", "track": "V2", "at": 9.0}]})(locked)
+    assert _state(locked) == before
