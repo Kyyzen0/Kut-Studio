@@ -73,10 +73,11 @@ def test_the_ffmpeg7_job_really_tests_ffmpeg_7_and_python_3_13_and_blocks() -> N
     assert re.search(r"^\s+timeout-minutes: \d+\s*$", job, re.MULTILINE)
 
 
-# Job le plus long d'une exécution saine sur main : Windows, exécution 38068119249 du 2026-10-10 (28 min 18 s, dont
-# 25 min 50 s de tests). Sur un même commit, un runner Windows lent double la durée des tests (12 → 26 min) ; à relever
-# si un job sain dépasse cette valeur.
-SLOWEST_HEALTHY_SUITE_JOB_MINUTES = 29
+# Job le plus long d'une exécution saine, par job, mesuré le 2026-10-20 sur les 40 dernières exécutions de
+# multiplatform.yml (arrondi à la minute supérieure) : Windows 44,8 min (médiane 38, 90e centile 44), Ubuntu 43,4, macOS
+# 42,6 ; Debian 36,0. Sur un même commit, un runner lent double la durée des tests. À relever si un job sain dépasse la
+# valeur de son job : la suite grandit (≈ 9 800 tests), la mesure du 2026-10-10 (29 min) était périmée.
+SLOWEST_HEALTHY_SUITE_JOB_MINUTES = {"test-and-build": 45, "linux-ffmpeg7": 36}
 
 
 @pytest.mark.parametrize("name", ["test-and-build", "linux-ffmpeg7"])
@@ -84,13 +85,14 @@ def test_a_suite_job_outlives_a_slow_runner_plus_one_stuck_test(name: str) -> No
     """Un test bloqué en fin de suite échoue par ``--timeout`` (son nom, le résumé) avant que le job ne soit tué.
 
     Sinon GitHub annule le job sans résumé ni ``--durations`` : rien ne dit quel test s'est bloqué, ni si le runner
-    était simplement lent. Avec ``timeout-minutes: 30``, un job sain sur un runner lent finissait à 2 min du délai.
+    était simplement lent. Avec ``timeout-minutes: 45``, un job Windows sain finissait à 0,2 min du délai (deux exécutions
+    de la PR #217 ont été annulées à 45,2 min alors que tous leurs tests avaient réussi).
     """
     job = _without_comments(_jobs()[name])
     minutes = re.search(r"^\s+timeout-minutes: (\d+)\s*$", job, re.MULTILINE)
     per_test = [int(seconds) for seconds in re.findall(r"--timeout=(\d+)\b", job)]
     assert minutes and per_test, "délai du job ou délai par test introuvable"
-    needed = SLOWEST_HEALTHY_SUITE_JOB_MINUTES * 60 + max(per_test)
+    needed = SLOWEST_HEALTHY_SUITE_JOB_MINUTES[name] * 60 + max(per_test)
     assert int(minutes.group(1)) * 60 >= needed, f"{name} : il faut au moins {needed / 60:.0f} min"
 
 

@@ -128,6 +128,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `import_media` | Importe un fichier média dans le projet, **en lecture seule** (`path`) ; voir « Fichiers » ci-dessous |
 | `add_clip` | Pose un média **du projet** sur une piste (`track`, `asset`, `at`) |
 | `delete_clip` | Supprime un clip (`clip`) |
+| `delete_clips` | Supprime plusieurs clips (`clips` : 1 à 200, sans doublon, hors calques graphiques ; `ripple` optionnel) ; tout est vérifié avant la première suppression |
+| `move_clips` | Déplace plusieurs clips d'un coup (`placements` : 1 à 200 objets `clip`, `track`, `at`) ; tout est vérifié avant le premier déplacement |
 | `move_clip` | Déplace un clip (`clip`, `at`) |
 | `trim_clip_start` | Rogne le début d'un clip : il ne peut qu'avancer, la fin ne bouge pas (`clip`, `at` = nouveau début) |
 | `trim_clip_end` | Rogne ou étend la fin d'un clip, sans dépasser sa source (`clip`, `at` = nouvelle fin) |
@@ -146,6 +148,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `update_effect` | Modifie des paramètres d'un effet (`clip`, `effect`, `params`, au moins un) : noms et bornes du modèle, un nom inconnu ou une valeur hors bornes est refusé |
 | `move_effect` | Déplace un effet dans la chaîne (`clip`, `effect`, `delta` non nul : −1 monte, 1 descend) ; un déplacement qui sortirait de la chaîne est refusé |
 | `set_media_color_matrix` | Choisit comment lire les couleurs d'un média vidéo (`asset` ou `clip`, `matrix` : `auto`, `bt601` ou `bt709`) ; voir « Espace colorimétrique d'un média » ci-dessous |
+| `create_composition` | Crée un clip de composition vide sur une piste vidéo libre (`track`, `at`, `duration` de 0,04 s à 3 600 s, `name` optionnel) ; crée le clip (`id` / `as`) |
+| `convert_to_composition` | Remplace des clips vidéo et calques graphiques par UN clip de composition, à sens unique (`clips`, `name` optionnel) ; crée le clip (`id` / `as`) ; voir « Presets, compositions et sélection multiple » |
 | `add_track_insert` | Ajoute un effet en insert sur une piste **audio ou vidéo** (`track`, `effect`, `params`, `enabled`) ; un **égaliseur** est l'effet `parametric_eq` |
 | `remove_track_insert` | Retire un insert de piste (`track`, `insert`) |
 | `set_track_insert_enabled` | Active ou désactive un insert de piste (`track`, `insert`, `enabled`) |
@@ -214,6 +218,8 @@ Cette liste est celle de `core/scripting/verbs.py` ; un test vérifie qu'elle ne
 | `remove_mask_keyframe` | Retire l'image clé d'une propriété d'un masque à un instant (`clip`, `mask`, `property`, `at`) |
 | `set_color_grade` | Règle l'étalonnage d'un nœud : `exposure`, `contrast`, `saturation`, `temperature`, `hue`, `shadows`, `highlights`, `enabled` (au moins un) ; `node` optionnel |
 | `reset_color_grade` | Remet l'étalonnage d'un nœud à neutre (`clip`, `node`) |
+| `apply_effect_preset` | Applique un preset d'effets **intégré** à un clip vidéo (`clip`, `preset`) |
+| `apply_color_preset` | Applique un preset d'étalonnage **intégré** à un clip (`clip`, `preset`, `node` optionnel) |
 | `set_color_curve` | Règle la sortie d'un point de courbe (`channel`, `index`, `output`) |
 | `reset_color_curve` | Remet une courbe à l'identité (`channel`) |
 | `set_color_wheel` | Règle une roue primaire (`wheel` = lift/gamma/gain/offset, `r`/`g`/`b`/`y`, au moins une) |
@@ -491,7 +497,7 @@ Ces verbes appellent les fonctions de montage que l'interface appelle (`core/tim
   verrouillé (même sur une piste libre). `remove_track` et `rename_track` ne regardent pas le verrou (l'interface non plus) ; `move_track` le refuse.
 - **Pistes** : `remove_track` refuse une piste qui porte des clips. `set_track_volume` et `set_track_pan` visent le fader de la piste
   (le mélangeur de l'interface) : piste audio seulement, déverrouillée ; la courbe d'automation de la piste reste à part.
-- Pas de verbe pour la sélection multiple ni les actions qui lisent la tête de lecture : ce sont des états d'interface.
+- Pas de verbe pour les actions qui lisent la tête de lecture : ce sont des états d'interface. La sélection multiple a ses verbes (`delete_clips`, `move_clips`, voir plus bas).
 
 ## Rythme, plans, sous-titres, effets d'impact et modèles
 
@@ -735,6 +741,27 @@ reconstruit chaque famille depuis sa description seule, et rejoue la description
 `script_verb_debt.json` (chaque fonction publique d'édition a un verbe, ou une raison écrite de ne pas en avoir). Un champ ou une fonction
 neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting_debt fields|verbs --list` montre la dette.
 
+## Presets, compositions et sélection multiple
+
+Ces verbes (`core/scripting/preset_verbs.py`, `composition_verbs.py`, `selection_verbs.py`, `selection_rules.py`) appellent les fonctions que la
+bibliothèque, la page Composition et la sélection de la timeline appellent.
+
+- **Presets intégrés seulement** : `preset` est un identifiant parmi ceux livrés avec l'application (liste dans le schéma). Les presets de
+  l'utilisateur vivent dans sa configuration, hors du projet : un script ne les lit pas. Capturer la chaîne d'un clip en preset écrit cette
+  bibliothèque : ce n'est pas un verbe. Un effet à instance unique (couleur, N&B, sépia, vignette) est **remplacé** par celui du preset, et ses
+  images clés disparaissent avec lui : l'interface le fait sans rien dire, un script reçoit l'application **refusée** tant que cet effet est animé.
+  `apply_color_preset` remplace le réglage d'un nœud et garde son LUT.
+- **Compositions** : `create_composition` pose une composition vide ; `convert_to_composition` y range des clips (chaque calque devient une
+  branche de nœuds, à sens unique). Refusé, comme dans l'interface : clip imbriqué ou déjà composé, vitesse, suivi, fenêtres de couleur, effets animés
+  (`fx.*`), calque d'effets ou parenté, piste verrouillée, plage prise sur la piste hôte. En plus : calque verrouillé refusé ; transitions, panoramique, fondus
+  et effets audio que la conversion perdrait (l'interface les annonce en barre d'état) : refusés tant qu'ils existent. Un clip désactivé, sur une piste masquée ou muette, un calque masqué ou un clip caché par un solo sont aussi refusés : la composition ne garde pas cet état et le contenu réapparaîtrait. Le contenu des nœuds n'est pas
+  encore écrivable (`describe` le lit).
+- **Sélection multiple** : `delete_clips` (avec `ripple` optionnel) et `move_clips`, de 1 à 200 clips sans doublon. Tout est vérifié avant la première
+  modification : clips cités, clips que le ripple ferait reculer, destinations. Le modèle saute en silence un clip introuvable : un script le reçoit
+  refusé. Les calques graphiques se suppriment avec `delete_layers` (leur hiérarchie a ses règles). Un tiers touché par une suppression (enfant
+  d'un calque, liaison de suivi, même sur une autre séquence) ne doit pas être verrouillé ; c'est vérifié avant la première suppression.
+- **Identifiant du clip créé** : `id` / `as` ; les fonctions de composition reçoivent pour cela un paramètre optionnel `clip_id` (sans lui, l'interface ne change pas).
+
 ## Pas encore là
 
 - **Animation des effets** : la luminosité, le contraste et la saturation de la correction de couleur et l'intensité de la vignette s'animent dans l'application (`fx.<effet>.<paramètre>` dans `animation`) ; `describe` les lit, mais aucun verbe ne pose encore ces images clés.
@@ -746,6 +773,7 @@ neufs font échouer les tests jusqu'à une décision. `python -m tools.scripting
 | --- | --- |
 | `core/scripting/verbs.py` | la table `VERBS` : paramètres typés et bornés, fonction du modèle appelée ; `ScriptContext` (le dossier permis) |
 | `core/scripting/animation_verbs.py`, `effect_verbs.py`, `mask_verbs.py`, `edit_verbs.py`, `time_verbs.py`, `transform_verbs.py`, `clip_audio_verbs.py`, `layer_verbs.py`, `guide_verbs.py` | les verbes d'images-clés de masque, d'effets de clip, de masques, de montage, de vitesse, de transform, d'audio de clip, de calques graphiques et de guides (assemblés dans `VERBS` après leur verbe d'ancrage) |
+| `core/scripting/preset_verbs.py`, `composition_verbs.py`, `selection_verbs.py`, `selection_rules.py` | les verbes de presets intégrés, de compositions et de sélection multiple, et la photographie des clips verrouillés |
 | `core/scripting/layer_rules.py` | les contrôles communs des verbes de calques : bornes, verrous des tiers, profondeur de la hiérarchie, apparence gardée |
 | `core/scripting/auto_verbs.py`, `impact_verbs.py`, `template_verbs.py`, `auto_rules.py` | les verbes de rythme, de plans, de sous-titres, d'effets d'impact et de modèles, et leurs règles communes (bornes, verrous) |
 | `core/scripting/script.py` | le décodeur strict (erreurs structurées), la lecture du fichier, l'application par la session |

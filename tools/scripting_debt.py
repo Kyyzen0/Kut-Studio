@@ -132,6 +132,7 @@ REASONS: dict[str, str] = {
                                          "persistance qu'un script ne franchit pas (ADR-0005, décision 5 : un script ne lit ni n'écrit que le projet qu'on lui donne).",
     "interface seulement : analyse": "Applique le résultat d'une analyse de médias (suivi de points : lecture des images, corrélation) : un script est "
                                      "une donnée et ne lance ni n'applique aucune analyse (ADR-0005, R1/R2) ; il pose ses points avec set_tracker_position.",
+    "remplacé": "Variante historique sans appelant, remplacée par une fonction qui a son verbe (la sienne copie moins : ni effets ni étalonnage).",
     "à faire : montage": "Édition de la timeline qui aura un verbe.",
     "à faire : vitesse": "Vitesse et remappage : verbes à venir.",
     "à faire : calques": "Calques graphiques : verbes à venir.",
@@ -146,7 +147,7 @@ REASONS: dict[str, str] = {
     "à faire : modèles et social": "Emplacements de modèle, montage sur le rythme, légendes, classements : verbes à venir.",
     "à faire : bibliothèque": "Organisation de la bibliothèque : verbes à venir.",
 }
-"""Les raisons permises d'une entrée de la dette des verbes. Les quatre premières sont durables (pas un verbe) ; ``à faire : …`` est une
+"""Les raisons permises d'une entrée de la dette des verbes. Les cinq premières sont durables (pas un verbe) ; ``à faire : …`` est une
 promesse : l'entrée sort de la dette quand le verbe existe."""
 
 
