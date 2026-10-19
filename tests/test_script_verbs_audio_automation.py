@@ -167,6 +167,14 @@ def test_move_to_an_instant_taken_by_another_point_is_refused():
     assert "déjà" in str(_refused(project, _op("move_automation_point", track="A1", at=1.0, to=2.0)).error)
 
 
+def test_move_next_to_another_point_is_refused_even_within_the_description_rounding():
+    project = _project()
+    service = AudioAutomationService()
+    service.add_automation_point(project, "A1", 1.0, -3.0)
+    service.add_automation_point(project, "A1", 2.0, -6.0)
+    _refused(project, _op("move_automation_point", track="A1", at=1.0, to=2.0000003))       # le modèle l'accepterait (> 1e-9), la description ne distinguerait plus les deux
+
+
 def test_update_needs_something_and_a_point_must_exist():
     project = _project()
     AudioAutomationService().add_automation_point(project, "A1", 1.0, -3.0)
