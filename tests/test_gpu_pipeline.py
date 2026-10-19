@@ -163,12 +163,37 @@ def test_gpu_eq_matches_the_export_on_slowly_varying_chroma():
 
 
 @needs_ffmpeg
+@pytest.mark.parametrize("contrast", [0.7, 1.0, 1.4])
+@pytest.mark.parametrize("brightness", [-1.0, -0.5, -0.4, -0.3, -0.2, -0.1, -0.01, 0.01, 0.1, 0.3, 0.5])
+def test_eq_plane_is_the_exact_luma_table_of_the_ffmpeg_eq_filter(brightness, contrast):
+    """La table luma 0..255 de ``eq`` (brightness, contrast) est celle d':func:`eq_plane`, entier pour entier.
+
+    FFmpeg stocke la luminosité en float32 : b = −0,1 donne ``int(100·b32 + 100)`` = 89 et non 90. Sans cet arrondi,
+    le moniteur s'écartait de 2 à 3 niveaux à luminosité négative, quel que soit le contraste.
+    """
+    np = pytest.importorskip("numpy")
+    ramp = np.arange(256, dtype=np.uint8)
+    completed = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", "256x2", "-i", "-",
+         "-vf", f"eq=brightness={brightness}:contrast={contrast}", "-f", "rawvideo", "-"],
+        input=np.tile(ramp, (2, 1)).tobytes(), capture_output=True, check=True)
+    got = np.frombuffer(completed.stdout, np.uint8)[:256]
+    factor, offset, _active = eq_plane(contrast, brightness)
+    expected = np.clip(np.floor(ramp * factor) + offset, 0, 255).astype(np.uint8)
+    assert np.array_equal(got, expected), (brightness, contrast, int(np.abs(got.astype(int) - expected).max()))
+
+
+@needs_ffmpeg
 @pytest.mark.parametrize("name, effects, mean_limit, p99_limit", [
     ("none", [], 0.5, 2.0),
     # Chroma aléatoire par blocs de 2 pixels (pire cas) : l'export applique ``eq`` aux plans 4:2:0 avant le
     # suréchantillonnage de la chroma, le moniteur après ; l'écrêtage de la saturation 1,8 ne commute pas avec
     # l'interpolation (2,7 mesuré, contre 0,5 avec la recopie de l'ancienne règle). Chroma lente : test suivant.
     ("eq", [E(EffectType.COLOR_CORRECTION, brightness=0.1, contrast=1.4, saturation=1.8)], 3.0, 26.0),
+    # Luminosité négative : FFmpeg arrondit la luminosité en float32 avant int(100·b + 100) (mêmes seuils que ci-dessus).
+    ("eq_negative_a", [E(EffectType.COLOR_CORRECTION, brightness=-0.1, contrast=1.4, saturation=1.8)], 3.0, 26.0),
+    ("eq_negative_b", [E(EffectType.COLOR_CORRECTION, brightness=-0.2, contrast=0.8, saturation=1.2)], 3.0, 26.0),
+    ("eq_negative_c", [E(EffectType.COLOR_CORRECTION, brightness=-0.5, contrast=1.2, saturation=1.0)], 3.0, 26.0),
     ("vignette", [E(EffectType.VIGNETTE, intensity=0.8)], 1.0, 4.0),
     ("black_and_white", [E(EffectType.BLACK_AND_WHITE)], 1.2, 3.0),
     ("sepia", [E(EffectType.SEPIA)], 0.6, 2.0),

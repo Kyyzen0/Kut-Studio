@@ -24,9 +24,7 @@ Effet (modèle)         Filtre de l'export   Formule GPU (codes normalisés 0..1
 Écarts connus, couverts par les tests de cohérence (tolérances) : FFmpeg
 quantifie sur 8 bits et trame la vignette, le GPU calcule en flottant ; la
 chroma est traitée à pleine résolution ; le noyau du flou est tronqué à
-:data:`MAX_BLUR_RADIUS` texels ; ``eq`` tronque ``100·b + 100`` en entier, et
-selon que le compilateur d'FFmpeg fusionne l'opération (FMA, clang ARM) ou non
-(x86), une luminosité comme −0,2 donne un pas d'écart (3 niveaux).
+:data:`MAX_BLUR_RADIUS` texels.
 
 Chaque effet a son repli CPU : le segment d'aperçu fidèle, rendu par
 FFmpeg avec le graphe de l'export. :func:`reference_layer` (numpy) reproduit
@@ -41,6 +39,7 @@ puis un test de cohérence contre le filtre FFmpeg de l'export.
 from __future__ import annotations
 
 import math
+import struct
 from dataclasses import dataclass
 
 OP_NONE = 0
@@ -248,7 +247,10 @@ def eq_plane(contrast: float, brightness: float) -> tuple[float, float, float]:
     """``(facteur, décalage, actif)`` du filtre ``eq`` d'FFmpeg pour un plan 8 bits.
 
     FFmpeg (``process_c``, hérité de MPlayer) calcule en entiers, **troncatures
-    flottantes comprises** (``int(100·b + 100)`` donne 79 pour b = −0,2) :
+    flottantes comprises** : la luminosité est stockée en **float32** et FFmpeg
+    calcule ``int(100·b32 + 100)`` avec ``b32 = float32(b)`` (en double sur cette valeur),
+    d'où 89 pour b = −0,1 (et non 90) et 100 pour b = 0,01 (et non 101). Le contraste,
+    lui, donne les mêmes ``int(c·4096)`` en float32 (vérifié de 0 à 2, pas 0,001) :
     ``pel = (src·C >> 12) + B`` avec ``C = int(contrast·4096)`` et
     ``B = int(100·b + 100)·511 // 200 − 128 − C // 32``. Le plan est laissé
     intact quand contraste = 1 et luminosité = 0. Le shader et :func:`reference_layer`
@@ -257,7 +259,12 @@ def eq_plane(contrast: float, brightness: float) -> tuple[float, float, float]:
     if contrast == 1.0 and brightness == 0.0:
         return (1.0, 0.0, 0.0)
     c = int(contrast * 256 * 16)
-    b = (int(100.0 * brightness + 100.0) * 511) // 200 - 128 - c // 32
+    # La luminosité d'FFmpeg est un float32 : on l'arrondit avant le calcul (sans numpy).
+    try:
+        brightness32 = struct.unpack("f", struct.pack("f", brightness))[0]
+    except OverflowError:  # hors float32 : le modèle borne à ±1, valeur laissée telle quelle
+        brightness32 = brightness
+    b = (int(100.0 * brightness32 + 100.0) * 511) // 200 - 128 - c // 32
     return (c / 4096.0, float(b), 1.0)
 
 
