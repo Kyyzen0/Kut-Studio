@@ -19,7 +19,14 @@ from kut3d.errors import (
     short,
 )
 from kut3d.geometry import fan_triangulate_ragged, smooth_normals
-from kut3d.importers._common import read_limited, texture_from_file
+from kut3d.importers._common import (
+    finalize_dependencies,
+    material_texture_paths,
+    read_limited,
+    safe_is_file,
+    safe_resolve,
+    texture_from_file,
+)
 from kut3d.mathutil import Array
 from kut3d.model import Material, Mesh, Model, Node
 
@@ -293,7 +300,8 @@ def load(path: Path) -> Model:
     tri_corners = c[tri]  # (T, 3, 3)
     tri_mat = np.asarray(face_mat, dtype=np.int64)[face_of]
 
-    materials = _load_materials(path, mtllibs, mat_names, warnings)
+    deps: list[Path] = []
+    materials = _load_materials(path, mtllibs, mat_names, warnings, deps)
     stem = path.stem
     used = list(dict.fromkeys(tri_mat.tolist()))
     meshes: list[Mesh] = []
@@ -322,6 +330,7 @@ def load(path: Path) -> Model:
         materials=tuple(materials),
         source=path,
         warnings=tuple(warnings),
+        dependencies=finalize_dependencies([*deps, *material_texture_paths(materials)]),
     )
 
 
@@ -333,15 +342,24 @@ def _name_of(mat_names: dict[str, int], index: int) -> str:
 
 
 def _load_materials(
-    path: Path, mtllibs: list[str], mat_names: dict[str, int], warnings: list[str]
+    path: Path,
+    mtllibs: list[str],
+    mat_names: dict[str, int],
+    warnings: list[str],
+    deps: list[Path],
 ) -> list[Material]:
     """Matériaux dans l'ordre de `mat_names` (l'indice d'un `usemtl` = indice du matériau)."""
     parsed: dict[str, Material] = {}
     for lib in mtllibs:
         candidates = [lib] + [t for t in lib.split() if t != lib]
         for cand in candidates:
-            target = (path.parent / cand.replace("\\", "/")).resolve()
-            if target.is_relative_to(path.parent.resolve()) and target.is_file():
+            target = safe_resolve(path.parent / cand.replace("\\", "/"))
+            if (
+                target is not None
+                and target.is_relative_to(path.parent.resolve())
+                and safe_is_file(target)
+            ):
+                deps.append(target)
                 for mat in _parse_mtl(target, warnings):
                     parsed.setdefault(mat.name, mat)
                 break

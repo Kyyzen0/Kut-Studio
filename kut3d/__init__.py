@@ -12,6 +12,8 @@ from kut3d.errors import (
     ModelImportError,
     RenderBackendUnavailable,
     RenderError,
+    SceneFileError,
+    SceneVersionError,
     UnsupportedFormatError,
 )
 from kut3d.gpu import probe_qrhi
@@ -25,6 +27,12 @@ from kut3d.render import (
     render_frame,
     render_sequence,
 )
+from kut3d.scene_io import (
+    SCENE_FORMAT_VERSION,
+    dependency_files,
+    load_scene,
+    save_scene,
+)
 from kut3d.scene import (
     AmbientLight,
     Camera,
@@ -35,6 +43,7 @@ from kut3d.scene import (
 )
 
 __all__ = [
+    "SCENE_FORMAT_VERSION",
     "AmbientLight",
     "Camera",
     "DirectionalLight",
@@ -48,14 +57,19 @@ __all__ = [
     "RenderBackendUnavailable",
     "RenderError",
     "Scene",
+    "SceneFileError",
+    "SceneVersionError",
     "UnsupportedFormatError",
     "available_backends",
     "backend_available",
+    "dependency_files",
     "evaluate_pose",
     "load_model",
+    "load_scene",
     "probe_qrhi",
     "register_backend",
     "render_frame",
     "render_sequence",
+    "save_scene",
     "supported_extensions",
 ]

@@ -34,3 +34,11 @@ class ImageDecodeError(RenderError):
 
 class RenderBackendUnavailable(RenderError):
     """Un moteur de rendu demandé n'est pas utilisable ici (message : la raison réelle : Qt absent, pas de GPU...)."""
+
+
+class SceneFileError(ValueError):
+    """Un fichier `.kut3d` n'a pas pu être lu ou écrit (message en français, sans recopier l'entrée entière)."""
+
+
+class SceneVersionError(SceneFileError):
+    """Le fichier `.kut3d` a été écrit par une version plus récente du format que celle connue ici."""
