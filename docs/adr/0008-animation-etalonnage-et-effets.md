@@ -309,6 +309,8 @@ chaîne statique ; une ligne seulement si la valeur change ; filtres nommés `gb
 `sendcmd` est placé juste avant le filtre visé dans la chaîne des effets (donc après le recalage de `PTS` au temps local du clip et
 après `scale` / `rotate`), et avant `format=rgba,split` pour le bloom.
 
+**Segment hors grille.** `setpts` tronque `skip / TB` au tick : un segment dont l'origine tombe entre deux images (ou, par erreur d'arrondi flottant, `0,3 / 0,1 = 2,9999999999999996`) a sa première image un tick plus tôt que `skip`. `segment_start` reproduit la troncature (mesuré contre `showinfo` sur 9 cadences x 13 origines) et le fichier de commandes vise ces images ; le montage double par ailleurs la première image d'un segment hors grille (comportement d'avant, non traité).
+
 **Fichier temporaire.** `_build_filter_complex(…, temporary_files=None)` (paramètre neuf, valeur par défaut `None` : l'interface ne
 change pas) pose un contexte (`command_files`) où chaque fichier de commandes est un fichier unique ajouté à la liste de
 l'appelant : `build_export_command` (la sienne, vidée en cas d'échec de la construction après l'écriture), `ExportEngine` (scopes :
