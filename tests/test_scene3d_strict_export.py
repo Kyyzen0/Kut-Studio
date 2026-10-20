@@ -8,13 +8,17 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import kut3d
 from core import cli, mograph_stream, scene3d
-from core.export_engine import ExportEngine, ExportFormat, ExportPreset, ExportRequest, check_export_request
+from core.export_engine import (
+    ExportEngine, ExportFormat, ExportPreset, ExportRequest, check_export_request, input_arguments,
+)
 from core.export_runner import ExportStatus, run_export
 from core.mograph_ffmpeg import prepare_graphics_streams
 from core.project_io import save_project
@@ -175,6 +179,41 @@ def test_a_preview_segment_graph_tolerates_a_failing_scene(tmp_path, monkeypatch
     _failing_render(monkeypatch, on_call=1)
     graph, video, _audio, _inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None, quality="draft")   # ne lève pas
     assert graph and video
+
+
+def _composed_frames(plan) -> np.ndarray:
+    """Images (N, H, W, 3) du graphe, sans encodage : un cache vide y reste visible au pixel près."""
+    graph, video, audio, inputs = ExportEngine._build_filter_complex(plan, W, H, FPS, None)
+    command = ["ffmpeg", "-v", "error"]
+    for path in inputs:
+        command += input_arguments(path)
+    command += ["-filter_complex", f"{graph};[{video}]format=rgb24[probe]", "-map", "[probe]",
+                "-f", "rawvideo", "-", "-map", f"[{audio}]", "-f", "null", "-"]
+    completed = subprocess.run(command, capture_output=True, timeout=180)
+    assert completed.returncode == 0, completed.stderr.decode(errors="replace")[-600:]
+    return np.frombuffer(completed.stdout, np.uint8).reshape(-1, H, W, 3)
+
+
+def test_a_failed_preview_does_not_poison_the_next_export(tmp_path, monkeypatch):
+    """L'écran écrit des images vides ; sans la mémoire du processus (autre export, oubli des échecs), elles ne sont pas resservies.
+
+    La clé disque est choisie avant le dessin, donc l'image vide porte le nom d'une image réussie. La marque « .unusable »
+    force le rendu suivant à la refaire. Sans elle, les deux instants ci-dessous seraient le fond, identiques.
+    """
+    scene = write_animated_scene(tmp_path)
+    project, _clip = project_with_background(tmp_path, scene)
+    plan = build_render_plan(project)
+    real = kut3d.render_frame
+    monkeypatch.setattr(kut3d, "render_frame", _raise_always(real))
+    ExportEngine._build_filter_complex(plan, W, H, FPS, None, horizon=100.0)   # scopes : tolérant, toute la durée du clip
+    poisoned = list(_cache(tmp_path).glob("f-*.png"))
+    assert poisoned
+    assert all(Path(str(path) + ".unusable").is_file() for path in poisoned)
+    scene3d.clear_signature_cache()                                            # plus aucune mémoire des échecs
+    monkeypatch.setattr(kut3d, "render_frame", real)
+    frames = _composed_frames(plan).astype(int)
+    assert not np.array_equal(frames[0], frames[5])                            # la scène animée est vraiment redessinée
+    assert not list(_cache(tmp_path).glob("*.unusable"))                       # l'image refaite redevient réutilisable
 
 
 def test_an_empty_image_cached_by_the_screen_never_serves_the_export(tmp_path, monkeypatch):

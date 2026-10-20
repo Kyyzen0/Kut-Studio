@@ -37,6 +37,7 @@ ensuite déclenche `.github/workflows/release.yml`.
 
 ### Fixed
 
+- Une scène 3D animée qu'un aperçu ou les scopes n'ont pas réussi à dessiner (mémoire, texture un instant illisible) n'est plus remplacée en silence par une image vide dans l'export suivant : le film la redessine. Un export annoncé réussi ne peut plus la perdre.
 - Six transitions (pixellisation, radiale, cercle qui s'ouvre, cercle qui se ferme, lissé gauche et droite) s'exportent enfin avec leur propre effet : elles étaient remplacées en silence par un simple fondu enchaîné.
 
 ## [0.7.0] - 2026-10-19

@@ -163,10 +163,10 @@ def test_a_failed_png_write_is_reported_after_the_others_finish(tmp_path, monkey
     monkeypatch.setattr(mograph_stream, "WRITE_WORKERS", 4)
     original = mograph_stream._write_png
 
-    def failing(image, target):
+    def failing(image, target, failed=False):
         if target.name.startswith("f-") and image.pixelColor(0, 0).red() == 7 * 3 % 256:
             raise OSError("disque plein")
-        original(image, target)
+        original(image, target, failed)
 
     monkeypatch.setattr(mograph_stream, "_write_png", failing)
     with pytest.raises(OSError, match="disque plein"):

@@ -57,10 +57,14 @@ _MEMO: OrderedDict[str, tuple[tuple[tuple[str, int, int], ...], str]] = OrderedD
 _MEMO_LOCK = threading.Lock()
 
 
-SCENE3D_RASTER_VERSION = 1
+SCENE3D_RASTER_VERSION = 2
 """Version du rendu d'une scène 3D dans un calque : dans la clé de chaque image du cache et dans l'empreinte des segments d'aperçu
 (calques 3D seulement). À incrémenter dès que la **même** scène à la même taille et au même instant se dessine autrement
-(moteur ``kut3d``, conversion en ``QImage``, pose dans la boîte)."""
+(moteur ``kut3d``, conversion en ``QImage``, pose dans la boîte).
+
+2 : retire du cache les images de la version 1. Un aperçu qui n'arrivait pas à rendre une scène animée y avait écrit une image
+vide sous la clé d'une image réussie ; un export ultérieur (autre processus, ou après oubli des échecs) la resservait et
+livrait un film sans la scène. Le dessin d'une scène qui se rend est inchangé."""
 
 RENDER_BACKEND = "numpy"
 """Moteur de rendu des clips 3D, en dur : le cache disque doit donner les mêmes images partout (un moteur GPU les ferait varier)."""
@@ -82,6 +86,7 @@ _IMAGES: OrderedDict[tuple, Any] = OrderedDict()
 _CACHE_LOCK = threading.Lock()
 
 _STRICT: ContextVar[bool] = ContextVar("kut_scene3d_strict", default=False)
+_TOLERATED: ContextVar[int] = ContextVar("kut_scene3d_tolerated", default=0)
 _FAILED: set[tuple] = set()
 _FAILED_LIMIT = 256
 
@@ -232,8 +237,18 @@ def scene_signature(path: str | os.PathLike[str]) -> str:
     return signature
 
 
+def tolerated_failures() -> int:
+    """Échecs de rendu avalés par :func:`draw_scene` dans ce fil (l'écran ne lève pas).
+
+    Le cache disque des calques (:mod:`core.mograph_stream`) compare ce compte avant et après chaque image : s'il a
+    augmenté, l'image écrite est vide et ne doit pas être resservie à l'export.
+    """
+    return _TOLERATED.get()
+
+
 def clear_signature_cache() -> None:
     """Oublie les signatures mémorisées, les scènes chargées et les dernières images rendues (tests)."""
+    _TOLERATED.set(0)
     with _MEMO_LOCK:
         _MEMO.clear()
     with _CACHE_LOCK:
@@ -354,8 +369,8 @@ def render_identity(graphic: Any, box: tuple[float, float], mode: str = MODE_EXA
         float(getattr(graphic, "scene_time", 0.0)), scene_signature(graphic.source_path), render_size(box, mode),
         RENDER_BACKEND, RENDER_SAMPLES, SCENE3D_RASTER_VERSION,
     )
-    # Une image que l'écran n'a pas pu rendre (mémoire, texture) a été écrite vide dans le cache disque : sous une autre clé,
-    # l'export ne la relit pas et refait le rendu (qui échoue alors, ou réussit). Mémoire du processus seulement.
+    # Mémoire du processus seulement, et posée APRÈS le choix du nom de fichier : elle ne protège pas un autre processus,
+    # ni les images déjà nommées. Le fichier vide porte une marque « .unusable » (core.mograph_stream), qui, elle, suit le disque.
     return base + ("failed",) if base in _FAILED else base
 
 
@@ -428,6 +443,7 @@ def draw_scene(painter: Any, graphic: Any, width: float, height: float) -> None:
         if _STRICT.get():
             raise Scene3DError(f"Scène 3D {name} non rendue : {_short(str(exc), 160)}") from exc
         LOGGER.warning("Scène 3D non rendue (%s) : %s", name, _short(str(exc), 160))
+        _TOLERATED.set(_TOLERATED.get() + 1)
         with _CACHE_LOCK:
             if len(_FAILED) >= _FAILED_LIMIT:
                 _FAILED.clear()
@@ -440,6 +456,7 @@ __all__ = [
     "INTERACTIVE_SIDE", "INVALID_PREFIX", "MISSING_SIGNATURE", "MODE_EXACT", "MODE_INTERACTIVE", "RENDER_BACKEND",
     "RENDER_SAMPLES", "SCENE3D_RASTER_VERSION", "SCENE_SUFFIX", "Scene3DError", "clear_signature_cache", "dependencies",
     "draw_scene", "ensure_fixed_speed", "has_scene_suffix", "is_animated", "is_scene3d_clip", "load_scene", "problem",
+    "tolerated_failures",
     "render_failures", "render_identity", "render_size", "scene_image", "scene_signature", "scene_time_at", "strict_rendering",
     "validate",
 ]
