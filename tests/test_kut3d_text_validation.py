@@ -257,14 +257,20 @@ def test_arrays_of_two_equal_descriptions_are_the_same_values() -> None:
     assert all(np.array_equal(x, y) for x, y in zip(a, b, strict=True))
 
 
-def test_a_family_that_qt_would_replace_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_family_that_qt_would_replace_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Une famille annoncée installée mais que Qt remplace par une autre à l'ouverture : refusée, jamais substituée en silence."""
     from PySide6.QtGui import QFontDatabase
 
     from kut3d import text_font
 
     real = QFontDatabase.families
-    monkeypatch.setattr(QFontDatabase, "families", staticmethod(lambda *a, **k: [*real(*a, **k), "Fantome Sans"]))
+    monkeypatch.setattr(
+        QFontDatabase,
+        "families",
+        staticmethod(lambda *a, **k: [*real(*a, **k), "Fantome Sans"]),
+    )
     monkeypatch.setattr(text_font, "_FACES", {})
     text_font.glyph.cache_clear()
     try:
