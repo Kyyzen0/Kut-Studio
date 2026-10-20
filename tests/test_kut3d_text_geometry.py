@@ -274,7 +274,13 @@ def test_the_mesh_is_deterministic_in_process_and_across_processes(
     reason="le plugin natif n'avorte que sous Linux sans affichage",
 )
 def test_a_headless_linux_process_without_display_builds_a_text(tmp_path: Path) -> None:
-    code = "from kut3d import Text3D\nfrom kut3d.primitive_mesh import primitive_arrays\nprint(len(primitive_arrays(Text3D('A'))[3]))\n"
+    code = (
+        "import sys\n"
+        "sys.path.insert(0, sys.argv[1])\n"  # -I ignore le cwd et PYTHONPATH : la racine du dépôt est passée explicitement
+        "from kut3d import Text3D\n"
+        "from kut3d.primitive_mesh import primitive_arrays\n"
+        "print(len(primitive_arrays(Text3D('A'))[3]))\n"
+    )
     env = {
         k: v
         for k, v in os.environ.items()
@@ -287,7 +293,7 @@ def test_a_headless_linux_process_without_display_builds_a_text(tmp_path: Path) 
         KUT_STUDIO_DATA_DIR=str(tmp_path / "d"),
     )
     out = subprocess.run(
-        [sys.executable, "-I", "-c", code],
+        [sys.executable, "-I", "-c", code, str(ROOT)],
         env=env,
         capture_output=True,
         text=True,

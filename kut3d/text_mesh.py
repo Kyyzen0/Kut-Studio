@@ -30,6 +30,7 @@ from kut3d.triangulate import (
     triangles_area,
     triangulate,
     vertex_normals,
+    within,
 )
 
 Arrays = tuple[Array, Array, Array, Array]
@@ -56,7 +57,15 @@ def _shrunk(rings: list[Array], distance: float, char: str) -> list[Array]:
         (signed_area(a) > 0) == (signed_area(b) > 0) and abs(signed_area(b)) > 0
         for a, b in zip(rings, inset, strict=True)
     )
-    if not same_sign or cross_properly(inset, inset) or cross_properly(inset, rings):
+    # un trou rétréci doit rester dans le contour extérieur rétréci (sinon la paroi entre les deux a disparu sans que
+    # les contours se croisent : l'anneau « passe à travers » lui-même)
+    holes_inside = all(within(h, inset[0]) for h in inset[1:])
+    if (
+        not same_sign
+        or not holes_inside
+        or cross_properly(inset, inset)
+        or cross_properly(inset, rings)
+    ):
         raise ValueError(
             f"le biseau est trop grand pour le caractère « {char} » : ses traits sont plus fins que le biseau."
         )

@@ -204,20 +204,46 @@ def test_a_character_missing_from_the_font_is_refused_never_replaced() -> None:
         primitive_arrays(Text3D("A", font="Police Qui N'Existe Pas"))
 
 
-def test_a_bevel_the_outline_cannot_hold_is_refused_with_the_character() -> None:
-    # limite connue : le contour fusionné du « e » de Saira Black a un interstice plus fin que le biseau le plus petit
-    # (voir docs/kut3d-scene.md) ; le refus nomme le caractère et ne change aucune valeur
+def _ring_with_a_wall(thickness: float) -> list[np.ndarray]:
+    o = np.array([(0, 0), (1, 0), (1, 1), (0, 1)], float)
+    t = thickness
+    return [
+        o,
+        np.array([(t, t), (t, 1 - t), (1 - t, 1 - t), (1 - t, t)], float),
+    ]  # trou en sens inverse
+
+
+def test_the_bevel_decision_is_deterministic_on_a_synthetic_contour() -> None:
+    """Sans police : un anneau dont la paroi fait 0,01 refuse un décalage de 0,05 (la paroi disparaîtrait), pas de 0,001."""
+    from kut3d.text_mesh import _shrunk
+
+    rings = _ring_with_a_wall(0.01)
+    with pytest.raises(ValueError, match=r"biseau .* « x »"):
+        _shrunk(rings, 0.05, "x")
+    assert len(_shrunk(rings, 0.001, "x")) == 2
+    thin = [np.array([(0, 0), (0.02, 0), (0.02, 1), (0, 1)], float)]
+    assert (
+        len(_shrunk(thin, 0.05, "x")) == 1
+    )  # un trait fin seul : décalage borné aux coins, jamais retourné
+
+
+def test_a_bevel_at_the_limit_is_refused_or_gives_a_closed_mesh_whatever_the_platform() -> (
+    None
+):
+    """Cas limite dépendant des contours de la police (arrondis / fusion Qt) : refusé avec le caractère, ou maillage valide."""
+    from tests.kut3d_text_helpers import is_closed
+
     spec = Text3D(
         "e", font="Saira ExtraCondensed Black", size=1.0, depth=1.0, bevel=0.002
     )
-    with pytest.raises(ValueError, match=r"biseau .* « e »"):
-        primitive_arrays(spec)
-    assert (
-        len(primitive_arrays(Text3D("e", font="Saira ExtraCondensed Black"))[3]) > 0
-    )  # sans biseau : aucun souci
-    assert (
-        len(primitive_arrays(Text3D("e", size=1.0, depth=1.0, bevel=0.01))[3]) > 0
-    )  # Anton, biseau maximal
+    try:
+        pos, _n, _uv, tri = primitive_arrays(spec)
+    except ValueError as exc:
+        assert "biseau" in str(exc) and "« e »" in str(exc)
+    else:
+        assert is_closed(pos, tri)
+    assert len(primitive_arrays(Text3D("e", font="Saira ExtraCondensed Black"))[3]) > 0
+    assert len(primitive_arrays(Text3D("e", size=1.0, depth=1.0, bevel=0.01))[3]) > 0
 
 
 def test_bevel_and_text_defaults_never_collide_with_a_forbidden_shape() -> None:

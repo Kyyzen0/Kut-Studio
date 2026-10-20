@@ -65,7 +65,7 @@ def _contains(ring: Array, x: float, y: float) -> bool:
     return bool(np.count_nonzero(straddle & (cross_x > x)) % 2)
 
 
-def _within(inner: Array, outer: Array) -> bool:
+def within(inner: Array, outer: Array) -> bool:
     """Vrai si le contour `inner` (qui ne coupe pas `outer`) est dans `outer` : vote des sommets, car deux contours qui se
     touchent en un point (cédille, queue du « Q ») ont des sommets SUR le bord de l'autre, où le test est ambigu."""
     votes = sum(_contains(outer, x, y) for x, y in inner)
@@ -77,7 +77,7 @@ def classify(rings: list[Array]) -> list[tuple[Array, list[Array]]]:
     impaire = trou de son plus proche contour englobant. Extérieurs orientés en sens direct, trous en sens inverse."""
     count = len(rings)
     inside = [
-        [j for j in range(count) if j != i and _within(rings[i], rings[j])]
+        [j for j in range(count) if j != i and within(rings[i], rings[j])]
         for i in range(count)
     ]
     areas = [abs(signed_area(r)) for r in rings]
