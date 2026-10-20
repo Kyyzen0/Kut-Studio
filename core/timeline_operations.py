@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .object_ids import clip_ids, ensure_free_asset_id, resolve_object_id
+from .scene3d import ensure_fixed_speed
 from .project_model import Clip, MediaAsset, Project, Track
 from .time_editing import Restriction, free_map, needs_general_path, restrict
 from .time_map import SPEED_PROPERTY, speed_keyframes, speed_keyframes_of
@@ -1281,6 +1282,7 @@ def set_clip_speed(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)             # une scène 3D se joue à sa vitesse (core.scene3d)
     
     # Valider la vitesse
     clamped_speed = clamp_speed(speed)
@@ -1329,6 +1331,7 @@ def set_clip_reverse(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)             # une scène 3D se joue à sa vitesse (core.scene3d)
     media_type = _clip_media_type(project, clip)
     
     # Valider le reverse (``replace`` : tout le reste du remappage est conservé ; une ancre explicite suit le sens)
@@ -1374,6 +1377,7 @@ def set_clip_freeze_frame(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)             # une scène 3D se joue à sa vitesse (core.scene3d)
     media_type = _clip_media_type(project, clip)
     
     # Créer le time remapping pour le freeze frame (les choix d'interpolation et d'audio sont conservés)
@@ -1451,6 +1455,7 @@ def set_clip_freeze_duration(
     track, index = _find_track_for_clip(project, clip_id)
     _ensure_track_editable(project, track)
     clip = track.clips[index]
+    ensure_fixed_speed(clip)             # une scène 3D se joue à sa vitesse (core.scene3d)
     media_type = _clip_media_type(project, clip)
     
     # Mettre à jour la durée

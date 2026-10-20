@@ -1632,6 +1632,7 @@ from .speed_curve_verbs import SPEED_CURVE_VERBS  # noqa: E402
 from .preset_verbs import PRESET_VERBS  # noqa: E402
 from .selection_verbs import SELECTION_VERBS  # noqa: E402
 from .time_verbs import TIME_VERBS  # noqa: E402
+from .tracking_verbs import TRACKING_VERBS  # noqa: E402
 from .transform_verbs import TRANSFORM_VERBS  # noqa: E402
 from .transition_verbs import TRANSITION_VERBS  # noqa: E402
 
@@ -1643,7 +1644,7 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
     "add_keyframe": KEYFRAME_VERBS + SPEED_CURVE_VERBS,   # images clés d'effet, édition d'une image clé, courbe de vitesse (suite)
     "add_transition": TRANSITION_VERBS,
     "remove_keyframe": ANIMATION_VERBS,         # les images clés de masque juste après celles du transform
-    "clear_crop": MASK_VERBS,
+    "clear_crop": MASK_VERBS + TRACKING_VERBS,    # le suivi et la stabilisation juste après les masques
     "remove_transition": TIME_VERBS + TRANSFORM_VERBS,   # vitesse et transform juste avant les images clés
     "update_track_insert": CLIP_AUDIO_VERBS,      # l'audio d'un clip après les inserts de piste
     "set_multicam_angle_offset": AUTOMATION_VERBS,   # rythme, plans, sous-titres, effets d'impact, modèles : en fin de table
@@ -1655,7 +1656,7 @@ _EXTRA_VERBS: dict[str, tuple[Verb, ...]] = {
 
 
 def _with_extra_verbs(table: dict[str, Verb]) -> dict[str, Verb]:
-    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``, ``layer_verbs``, ``guide_verbs``) juste après leur verbe d'ancrage."""
+    """Les verbes des modules annexes (``mask_verbs``, ``animation_verbs``, ``effect_verbs``, ``edit_verbs``, ``time_verbs``, ``transform_verbs``, ``clip_audio_verbs``, ``layer_verbs``, ``guide_verbs``, ``tracking_verbs``) juste après leur verbe d'ancrage."""
     result: dict[str, Verb] = {}
     for name, verb in table.items():
         result[name] = verb

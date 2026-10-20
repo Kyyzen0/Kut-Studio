@@ -98,6 +98,7 @@ MOGRAPH_TRANSLATIONS: dict[str, dict[str, str]] = {
     "mograph.type.group": _t("Groupe", "Group", "Grupo"),
     "mograph.type.adjustment": _t("Calque d'effets", "Adjustment layer", "Capa de ajuste"),
     "mograph.type.null": _t("Contrôleur", "Controller", "Controlador"),
+    "mograph.type.scene3d": _t("Scène 3D", "3D scene", "Escena 3D"),
     "mograph.graphics.center": _t("Centre", "Center", "Centro"),
     "mograph.compositing.shape_ellipse": _t("Ellipse", "Ellipse", "Elipse"),
     "mograph.compositing.mode_subtract": _t("Soustraire", "Subtract", "Restar"),
