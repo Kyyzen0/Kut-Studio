@@ -244,3 +244,19 @@ def test_a_photo_already_in_the_project_adds_no_media(monkeypatch, tmp_path):
     else:
         raise AssertionError("une photo neuve au plafond de médias devait être refusée")
     assert project == before
+
+
+@pytest.mark.parametrize("constant", ["MAX_CLIPS_IN_PROJECT", "MAX_MEDIA_IN_PROJECT"])
+def test_update_leaderboard_reserves_the_clips_and_media_of_the_rows_it_adds(constant, monkeypatch):
+    """Un classement réécrit avec une ligne de plus crée cinq calques : cinq clips et cinq médias internes (les anciens calques ne comptent pas)."""
+    rows = [{"rank": "1", "name": "A", "value": "1"}]
+    project = base_project()
+    assert _run("add_leaderboard", {"rows": rows, "start": 0.0, "duration": 3.0, "id": "lb1"}, project) is None
+    two = [*rows, {"rank": "2", "name": "B", "value": "2"}]
+    module = limits
+    have = limits.total_clips(project) if constant == "MAX_CLIPS_IN_PROJECT" else len(project.media_assets)
+    monkeypatch.setattr(module, constant, have + 4)
+    before = deepcopy(project)
+    assert _run("update_leaderboard", {"leaderboard": "lb1", "rows": two}, project) is not None and project == before
+    monkeypatch.setattr(module, constant, have + 5)
+    assert _run("update_leaderboard", {"leaderboard": "lb1", "rows": two}, project) is None
