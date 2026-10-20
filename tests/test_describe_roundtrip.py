@@ -10,6 +10,8 @@ Deux preuves, pour chaque famille décrite (effets, effets audio, inserts, bus, 
 
 Ce qu'aucun verbe ne sait encore écrire (images clés d'effet ``fx.*``, LUT, composition, mode de fusion, incrustation, réglage de ducking
 ``Track.ducking_config``, courbe de volume d'une piste vidéo) est listé dans ``GAPS`` et vérifié : le jour où un verbe existe, le test le dit.
+La partie C (bibliothèque, guides, grille, classement, Multicam, suivi, style des calques) a son propre fichier, ``test_describe_roundtrip_c.py`` ;
+ses manques sont dans ``GAPS_C``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,9 @@ from core.scripting.describe import describe
 from core.scripting.verbs import VERBS
 
 GAPS = ("fx.* keyframes", "LUT", "composition", "blend_mode", "chroma_key", "ducking_config", "video track automation")
+GAPS_C = ("graphic style beyond set_graphic", "locked guide", "sequence motion_blur", "text_style")
+"""Les manques de la partie C (vérifiés dans ``tests/test_describe_roundtrip_c.py``, qui a la même liste) : style des calques hors des sept
+champs de ``set_graphic``, guide verrouillé, flou de mouvement de la séquence, style de texte des sous-titres."""
 _IDENTITY_X = [index / 15 for index in range(16)]
 
 

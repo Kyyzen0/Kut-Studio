@@ -17,7 +17,6 @@ from pathlib import Path
 
 from describe_project import rich_project, small_project
 
-from core.canvas_guides import Guide
 from core.project_io import project_payload
 from core.project_model import MediaAsset, Project, Track
 from core.scripting.describe import describe, describe_json

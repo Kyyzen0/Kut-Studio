@@ -1,15 +1,16 @@
-"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, parties A et B).
+"""``describe`` : lire un projet comme un dictionnaire JSON versionné (ADR-0005, §5 ; étape 5, parties A, B et C).
 
 La sortie est **distincte du format de fichier** ``.kut`` : elle est faite pour être lue (par une personne, un outil, un LLM) et peut
 évoluer pour la lisibilité sans casser les projets. Elle décrit le projet, ses médias, ses séquences, leurs pistes, leurs clips (place,
 source, vitesse, audio de base, transform), leurs transitions et leurs repères (partie A), puis les effets visuels et audio, l'étalonnage
 (réglage et graphe de nœuds), le compositing, la composition nodale, les images clés, les bus, les inserts, l'automation de volume et le
-ducking (partie B). Ce qu'elle ne décrit pas encore (style des calques graphiques, bibliothèque, motion graphics, multicam, vidéo sociale,
-style de texte, suivi) est **nommé** dans la clé ``not_described`` : elle ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
+ducking (partie B), enfin la bibliothèque, les guides, le flou de mouvement, la grille rythmique, les classements, la source Multicam, le
+style des calques graphiques, le style de texte et le suivi (partie C). Plus rien n'est « non décrit » : la clé ``not_described`` reste
+(liste vide) pour nommer un futur champ sans décision, et la sortie ne met jamais une clé vide à la place d'une donnée qu'elle ne lit pas.
 
 Les valeurs sont celles **saisies** (statiques) du modèle, jamais celles qu'évalue la scène à un instant : quand des images clés
-(``transform_keyframes``, ``animation``) existent, la valeur rendue vient de la courbe, et un suivi (section ``tracking``, non décrite)
-peut encore l'écraser au rendu.
+(``transform_keyframes``, ``animation``) existent, la valeur rendue vient de la courbe, et un suivi (``tracking``) peut encore l'écraser
+au rendu.
 
 Garanties, que ``tests/test_describe.py`` vérifie :
 
@@ -39,8 +40,9 @@ from .describe_values import enum, number, optional_text, text
 
 DESCRIBE_VERSION = 1
 """Version du format de la sortie de :func:`describe`. Elle change quand une clé disparaît ou change de sens ; ajouter une clé
-n'est pas une rupture : la partie B (effets, couleur, composition, images clés, bus) ne fait qu'**ajouter** des clés (et retirer des noms de
-``not_described``) à la forme de la partie A, qui n'a pas encore été publiée dans une version : elle reste à ``1``."""
+n'est pas une rupture : les parties B et C (effets, couleur, composition, images clés, bus, puis bibliothèque, Multicam, suivi, style) ne
+font qu'**ajouter** des clés (et retirer des noms de ``not_described``) à la forme de la partie A, qui n'a pas encore été publiée dans
+une version : elle reste à ``1``."""
 
 def _present(asset: MediaAsset) -> bool | None:
     """Le fichier d'un média existe-t-il ? ``None`` quand la question n'a pas de sens (sous-titres en ligne, chemin vide)."""

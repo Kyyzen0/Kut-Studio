@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 from core.animation import Keyframe
-from core.beat_grid import BeatGrid
 from core.canvas_guides import Guide, GuideOrientation
 from core.audio_automation import AutomationPoint, DuckingConfig, DuckingSidechain, TrackAutomation
 from core.audio_buses import add_bus, add_bus_insert, route_track
