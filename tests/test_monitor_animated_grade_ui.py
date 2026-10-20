@@ -89,3 +89,86 @@ def test_underlay_clips_get_their_own_evaluated_grade(window, monkeypatch):
     window._sync_gpu_video_underlays(videos)
     mine = [entry for entry in captured if entry[0] == f"clip:{bottom.id}"]
     assert mine and mine[0][10] == effective_grade(bottom, window.playhead_seconds - bottom.timeline_start)
+
+
+def test_pausing_playback_settles_the_animated_grade(window, monkeypatch):
+    clip = _top_clip(window)
+    _animate(clip)
+    calls = []
+    original = window._sync_preview_to_timeline
+    monkeypatch.setattr(window, "_sync_preview_to_timeline", lambda: calls.append(1) or original())
+    window.playhead_seconds = clip.timeline_start + 0.7
+    window.is_playing = True
+    window._pause_internal()
+    assert calls == [1] and not window.is_playing
+    assert window.preview_panel._gpu_grade == effective_grade(clip, window.playhead_seconds - clip.timeline_start)
+
+
+def test_each_graded_layer_has_its_own_bake_slot(qtbot):
+    """Deux calques étalonnés (un animé) ne partagent pas l'emplacement : sinon la demande de l'un écrase celle de l'autre à chaque image."""
+    from core.gpu_composite import CompositeLayer, VideoSource
+    from core.gpu_effects import program_for
+    from ui.gpu_preview import GpuPreviewWidget
+
+    widget = GpuPreviewWidget(api="metal")
+    qtbot.addWidget(widget)
+    widget._sources["main"] = VideoSource("main", "nv12", 64, 36, "bt709", "video")
+    widget._sources["clip:b"] = VideoSource("clip:b", "nv12", 64, 36, "bt709", "video")
+    slots = []
+
+    class Recorder:
+        def lookup(self, grade, *, slot="", **_options):
+            slots.append(slot)
+
+        def latest(self, _slot=""):
+            return None
+
+        def failed(self, *_args, **_options):
+            return False
+
+    widget.grades = Recorder()
+    for source in ("main", "clip:b"):
+        widget._resolve_grade(CompositeLayer(source, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (0, 0, 64, 36), program=program_for(()),
+                                             grade=ColorGrade(exposure=0.3)), {})
+    assert slots == ["main:yuv", "clip:b:yuv"]
+
+
+def test_while_playing_the_monitor_shows_the_newest_baked_lut_even_if_the_requested_one_is_never_ready(qtbot):
+    """Un étalonnage animé demande une autre LUT à chaque image, plus vite qu'une cuisson ne dure : la LUT demandée n'est jamais prête
+    à l'image où on la demande. Sans repli sur la dernière LUT cuite du calque, le moniteur n'afficherait jamais l'étalonnage."""
+    import threading
+
+    from core.gpu_composite import CompositeLayer, VideoSource
+    from core.gpu_effects import program_for
+    from core.gpu_grade import LUT_SIZE, GradeLutCache
+    from ui.gpu_preview import GpuPreviewWidget
+
+    widget = GpuPreviewWidget(api="metal")
+    qtbot.addWidget(widget)
+    widget._sources["main"] = VideoSource("main", "nv12", 64, 36, "bt709", "video")
+    gate = threading.Semaphore(0)
+    baked = []
+
+    def bake(grade, **_options):
+        gate.acquire(timeout=5)
+        baked.append(grade.exposure)
+        return bytes(LUT_SIZE ** 3 * 3)
+
+    widget.grades = GradeLutCache(bake=bake)
+
+    def layer(exposure):
+        return CompositeLayer("main", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (0, 0, 64, 36), program=program_for(()),
+                              grade=ColorGrade(exposure=exposure))
+
+    assert widget._resolve_grade(layer(0.1), {}).grade_lut == "", "rien n'est encore cuit : le calque passe sans étalonnage"
+    gate.release()
+    deadline = threading.Event()
+    for _ in range(500):
+        if baked:
+            break
+        deadline.wait(0.01)
+    assert baked == [0.1]
+    for step in range(2, 8):                         # une nouvelle valeur à chaque image, la cuisson suivante est bloquée
+        shown = widget._resolve_grade(layer(0.1 * step), {})
+        assert shown.grade_lut, "la dernière LUT cuite reste affichée pendant que la suivante cuit"
+    gate.release(10)

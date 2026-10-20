@@ -211,6 +211,7 @@ class GradeLutCache:
         self._pending: OrderedDict[str, tuple[str, object, dict]] = OrderedDict()
         self._busy = False
         self._served: OrderedDict[str, int] = OrderedDict()      # emplacement → rang de sa dernière cuisson
+        self._latest: dict[str, str] = {}                        # emplacement → clé de la dernière LUT cuite avec succès
         self._rank = 0
 
     def lookup(self, grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = "",
@@ -229,6 +230,16 @@ class GradeLutCache:
             self._busy = True
         threading.Thread(target=self._work, name="kut-grade-lut", daemon=True).start()
         return None
+
+    def latest(self, slot: str = "") -> tuple[str, bytes] | None:
+        """La dernière LUT **cuite avec succès** pour cet emplacement, ou ``None`` (aucune, ou déjà sortie du cache).
+
+        C'est ce que le moniteur montre pendant qu'une cuisson attend : avec un étalonnage animé, la LUT demandée change à chaque
+        image et n'est jamais prête à l'image où elle est demandée ; la dernière cuite (ADR-0008, étape 7) est la plus proche."""
+        with self._lock:
+            key = self._latest.get(slot)
+            atlas = self._ready.get(key) if key is not None else None
+            return (key, atlas) if key is not None and atlas is not None else None
 
     def failed(self, grade, *, domain: str = DOMAIN_YUV, colorspace: str = "", color_range: str = "") -> bool:
         """La cuisson de cette LUT a échoué (le moniteur ne l'affichera pas)."""
@@ -259,7 +270,8 @@ class GradeLutCache:
                 self._served[slot] = self._rank
                 self._served.move_to_end(slot)
                 while len(self._served) > self.MAX_SLOTS_REMEMBERED:
-                    self._served.popitem(last=False)
+                    forgotten, _rank = self._served.popitem(last=False)
+                    self._latest.pop(forgotten, None)
             key, grade, options = job
             try:
                 atlas: bytes | None = self._bake(grade, **options)
@@ -268,6 +280,8 @@ class GradeLutCache:
                 atlas = None
             with self._lock:
                 self._ready[key] = atlas
+                if atlas is not None:
+                    self._latest[slot] = key
                 while len(self._ready) > self._capacity:
                     self._ready.popitem(last=False)
             if self._on_ready is not None:

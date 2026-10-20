@@ -811,12 +811,18 @@ class GpuPreviewWidget(QRhiWidget):
             return self._resolve_program(layer, program, options, images)
         slot = f"{getattr(layer, 'source', '')}:{options['domain']}"
         # Un emplacement par calque : deux calques étalonnés dont l'un est animé ne s'écrasent pas la demande (ADR-0008, étape 7).
+        newest = self.grades.latest(slot)           # avant la demande : celle-ci peut lancer une cuisson qui finit aussitôt
         found = self.grades.lookup(grade, **options, slot=slot)
         if found is None and not self.grades.failed(grade, **options):
             self._poll_grades()
         if found is None:
-            # Cuisson en cours (un curseur qu'on glisse) : la LUT précédente du calque, plutôt qu'un clignotement
-            # sans étalonnage ; aucune si le calque n'en a jamais eu.
+            # Cuisson en cours (un curseur qu'on glisse, ou un étalonnage animé dont la LUT change à chaque image) : la dernière
+            # LUT cuite pour ce calque, plutôt qu'un clignotement sans étalonnage ; aucune si le calque n'en a jamais eu.
+            if newest is not None and not self.grades.failed(grade, **options):
+                name = f"lut:{newest[0]}"
+                self._last_luts[slot] = name
+                images[name] = self._atlas_image(name, newest[1])
+                return replace(layer, grade=None, grade_lut=name)
             previous = self._last_luts.get(slot)
             if previous is not None and previous in self._lut_images and not self.grades.failed(grade, **options):
                 images[previous] = self._lut_images[previous]
