@@ -187,6 +187,43 @@ def test_a_failing_gpu_engine_falls_back_to_numpy(tmp_path, monkeypatch):
     assert calls == ["auto", "numpy"] and _center_rgb(image)[0] > 100
 
 
+def test_a_backend_transition_refreshes_even_a_preview_smaller_than_the_interim_side(tmp_path, monkeypatch):
+    """Revue de la PR #227 : la clé de l'image figée ne contenait que la taille. Pour une boîte d'au plus 240 px, passer de
+    ``("numpy", 240)`` à ``("auto", None)`` donnait la même clé : l'ancienne image numpy était resservie et le moteur GPU
+    devenu disponible n'était jamais appelé."""
+    spy = Spy(monkeypatch)
+    _p, _c, scene = _setup(write_static_scene(tmp_path))
+    scene3d_interactive.set_backend_provider(lambda: ("numpy", 240))
+    _render(scene, (64, 36), "interactive")
+    scene3d_interactive.set_backend_provider(lambda: ("auto", None))
+    _render(scene, (64, 36), "interactive")
+    assert [call["backend"] for call in spy.calls] == ["numpy", "auto"]
+    _render(scene, (64, 36), "interactive")                                    # même moteur, même image : servie par le cache
+    assert [call["backend"] for call in spy.calls] == ["numpy", "auto"]
+
+
+def test_a_numpy_failure_does_not_suppress_the_retry_with_the_gpu_engine(tmp_path, monkeypatch):
+    """Même collision pour la mémoire des échecs : un échec numpy ne doit pas interdire l'essai du moteur GPU."""
+    real = kut3d.render_frame
+    calls: list[str] = []
+
+    def flaky(scene, t=0.0, size=(640, 360), *, backend="numpy", samples=1):
+        calls.append(backend)
+        if backend == "numpy":
+            raise RuntimeError("numpy en échec")
+        return real(scene, t=t, size=size, backend="numpy", samples=samples)
+
+    monkeypatch.setattr(kut3d, "render_frame", flaky)
+    _p, _c, scene = _setup(write_static_scene(tmp_path))
+    scene3d_interactive.set_backend_provider(lambda: ("numpy", 240))
+    _render(scene, (64, 36), "interactive")                                   # échec : la carte est dessinée, jamais d'exception
+    assert calls == ["numpy"]
+    scene3d_interactive.set_backend_provider(lambda: ("auto", None))
+    image = _render(scene, (64, 36), "interactive")
+    assert calls == ["numpy", "auto"], calls                                    # l'essai GPU a bien eu lieu
+    assert _center_rgb(image)[0] > 100                                          # une vraie image, pas la carte
+
+
 def test_a_provider_that_raises_gives_numpy_small():
     def broken():
         raise RuntimeError("x")

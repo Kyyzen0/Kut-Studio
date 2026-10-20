@@ -87,7 +87,9 @@ def preview_image(graphic: Any, box: tuple[float, float], *, playing: bool = Fal
     constaté pour cette image n'est pas retenté tant que le fichier ou la taille ne changent pas (ni journalisé deux fois).
     """
     engine, side = preview_backend()
-    identity = render_identity(graphic, box, MODE_INTERACTIVE, side)
+    # Le moteur fait partie de l'identité : pour une boîte plus petite que ``side``, la taille seule ne change pas quand la sonde GPU
+    # répond (numpy 240 → auto), et l'image numpy déjà rendue ou un échec numpy mémorisé masqueraient le moteur GPU devenu disponible.
+    identity = render_identity(graphic, box, MODE_INTERACTIVE, side) + (engine,)
     path = str(graphic.source_path)
     with _LOCK:
         cached = _FROZEN.get(identity)
