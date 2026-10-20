@@ -231,22 +231,41 @@ def test_hold_switches_on_the_same_frame_in_python_and_ffmpeg_despite_float_nois
 
 
 def test_evaluation_cost_does_not_grow_with_the_number_of_keyframes():
-    """Recherche dichotomique : 1 000 keyframes ne coûtent pas 100× plus que 10."""
-    import time
+    """Recherche dichotomique : le nombre de sondages par évaluation croît en log2(n), pas en n.
 
-    def cost(count):
+    Mesure déterministe (aucun chronomètre) : l'ancienne version comparait des durées de moins d'une milliseconde et
+    échouait sur un runner chargé (×15 mesuré pour une limite ×10). On compte ici les lectures des instants des
+    keyframes (indexation ou itération) faites par une évaluation.
+    """
+    import math
+
+    class CountingTimes(list):
+        probes = 0
+
+        def __getitem__(self, index):
+            type(self).probes += 1
+            return super().__getitem__(index)
+
+        def __iter__(self):
+            for value in super().__iter__():
+                type(self).probes += 1
+                yield value
+
+    def worst_probes(count):
         c = curve(*(kf(i * 0.01, float(i % 9), list(I)[i % 6]) for i in range(count)))
         end = c.times[-1]
-        instants = [end * k / 997 for k in range(997)]
-        best = float("inf")
-        for _ in range(5):
-            start = time.perf_counter()
-            for t in instants:
-                c.evaluate(t)
-            best = min(best, time.perf_counter() - start)
-        return best
+        c._times = CountingTimes(c._times)
+        worst = 0
+        for k in range(997):
+            CountingTimes.probes = 0
+            c.evaluate(end * k / 997)
+            worst = max(worst, CountingTimes.probes)
+        return worst
 
-    assert cost(1000) < cost(10) * 10
+    for count in (10, 100, 1000):
+        # bisect : ~log2(n) comparaisons, plus les lectures des bornes (premier / dernier instant) et du résultat.
+        limit = math.ceil(math.log2(count)) + 6
+        assert worst_probes(count) <= limit, f"{count} keyframes : trop de sondages par évaluation"
 
 
 # --- Retours de revue : bornes et insertion hors de la courbe ------------------------------------

@@ -8,6 +8,7 @@ Après : 193 tics sur 200, pire tic 8 ms, 7,98 s en 8 s.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -158,15 +159,18 @@ def test_the_command_is_built_on_the_analyzer_thread_and_its_files_are_removed(t
 
     def factory():
         built_on.append(threading.get_ident())
-        # Une commande qui échoue vite : seul le thread de construction et le nettoyage comptent ici.
-        return ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "nullsrc", "-frames:v", "0", "-"], (str(leftover),)
+        # Une commande qui échoue vite : seul le thread de construction et le nettoyage comptent ici. Un processus
+        # Python trivial (et non un vrai ffmpeg, dont le démarrage dépendait du runner) échoue de façon déterministe.
+        return [sys.executable, "-I", "-S", "-c", "import sys; sys.exit(1)"], (str(leftover),)
 
     analyzer = ScopeAnalyzer(on_error=lambda *_a: done.set(), on_result=lambda *_a: done.set(), min_interval=0.0)
     try:
         analyzer.submit(playhead=0.0, command_factory=factory, force=True)
-        assert analyzer.wait_idle(10)
+        # Borne de détection de blocage, pas de performance : échoue seulement si le fil est réellement bloqué.
+        assert analyzer.wait_idle(60)
     finally:
         analyzer.close()
+    assert done.is_set()  # l'échec de la commande a bien été signalé (on_error)
     assert built_on and built_on[0] != threading.get_ident()
     assert not leftover.exists()
 
